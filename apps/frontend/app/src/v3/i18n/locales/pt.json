@@ -1198,6 +1198,13 @@
           "subject": "este ficheiro",
           "title": "Em que moeda está este extrato?"
         },
+        "dateOrder": {
+          "title": "Nestas datas, vem primeiro o dia ou o mês?",
+          "body": "Todas as datas deste ficheiro podem ser lidas das duas formas — 03/04 pode ser 3 de abril ou 4 de março — e o ficheiro não indica qual. Ainda não foi importado nada.",
+          "samples": "Tal como está no ficheiro",
+          "dayFirst": "Primeiro o dia — 31/12",
+          "monthFirst": "Primeiro o mês — 12/31"
+        },
         "format": "Formato",
         "holdingsTitle": "Posições tocadas",
         "importAnother": "Importar outro ficheiro",
@@ -2211,6 +2218,12 @@
         "needsCurrency_many": "{{count}} transações — precisam de uma moeda",
         "needsCurrency_one": "{{count}} transação — precisa de uma moeda",
         "needsCurrency_other": "{{count}} transações — precisam de uma moeda",
+        "needsDateOrderWithType_many": "{{count}} transações · {{fileType}} — precisam da ordem das datas",
+        "needsDateOrderWithType_one": "{{count}} transação · {{fileType}} — precisa da ordem das datas",
+        "needsDateOrderWithType_other": "{{count}} transações · {{fileType}} — precisam da ordem das datas",
+        "needsDateOrder_many": "{{count}} transações — precisam da ordem das datas",
+        "needsDateOrder_one": "{{count}} transação — precisa da ordem das datas",
+        "needsDateOrder_other": "{{count}} transações — precisam da ordem das datas",
         "nothingFound": "não foi encontrado nada",
         "symbolsOverflow": "{{symbols}} +{{hidden}}",
         "transfersToConfirm": "Transferências por confirmar",

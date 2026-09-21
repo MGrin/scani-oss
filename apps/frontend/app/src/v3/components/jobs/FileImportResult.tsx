@@ -11,7 +11,12 @@ import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
-import { type FileImportCurrencyPrompt, readFileImport } from '../../lib/job-results';
+import {
+  type FileImportCurrencyPrompt,
+  type FileImportDateOrder,
+  type FileImportDateOrderPrompt,
+  readFileImport,
+} from '../../lib/job-results';
 import { jobDetailPath, V3_CAPTURE_ROUTES, V3_ROUTES } from '../../lib/routes';
 import { FiatCurrencyField } from '../form/FiatCurrencyField';
 import { Field } from '../form/Field';
@@ -47,6 +52,17 @@ export function FileImportResult({ result, jobId }: { result: unknown; jobId: st
       <Block className="p-4">
         <p className="text-body text-muted-foreground">{t('v3.jobs.file.unreadablePayload')}</p>
       </Block>
+    );
+  }
+
+  if (view.needsDateOrder) {
+    return (
+      <DateOrderPrompt
+        accountId={view.accountId}
+        prompt={view.needsDateOrder}
+        warnings={view.warnings}
+        pickerJobId={jobId}
+      />
     );
   }
 
@@ -278,6 +294,7 @@ function CurrencyPrompt({
                 accountId,
                 requestId: crypto.randomUUID(),
                 defaultCurrency: chosen.symbol,
+                dateOrder: prompt.dateOrder,
               });
             }}
             className="w-full lg:w-auto lg:self-start"
@@ -292,6 +309,101 @@ function CurrencyPrompt({
             )}
           </Button>
         </div>
+      </Block>
+
+      <JobIssueList
+        title={t('v3.jobs.file.warningsTitle', { count: warnings.length })}
+        lines={warnings}
+      />
+    </div>
+  );
+}
+
+/**
+ * Every date in the file reads both ways — no day past 12 in either position —
+ * so the parse stopped rather than let `new Date()` pick month-first (SC-1291).
+ * The samples are shown as the file wrote them: the reader knows their bank's
+ * convention, and a date we had already interpreted would be the guess again.
+ */
+function DateOrderPrompt({
+  accountId,
+  prompt,
+  warnings,
+  pickerJobId,
+}: {
+  accountId: string;
+  prompt: FileImportDateOrderPrompt;
+  warnings: string[];
+  pickerJobId: string;
+}) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [failure, setFailure] = useState<string | null>(null);
+
+  const markActionTaken = trpc.jobs.markActionTaken.useMutation();
+  const reparse = trpc.fileImport.parseAndEnrich.useMutation({
+    onError: (error) => {
+      const copy = describeQueryError(error, t('v3.jobs.file.currency.subject'), 'save');
+      setFailure(`${copy.title}. ${copy.detail}`);
+    },
+    onSuccess: ({ jobId: newJobId }) => {
+      markActionTaken.mutate({ jobId: pickerJobId });
+      navigate(jobDetailPath(newJobId));
+    },
+  });
+
+  const choose = (dateOrder: FileImportDateOrder) => {
+    setFailure(null);
+    reparse.mutate({
+      r2Key: prompt.r2Key,
+      fileType: prompt.fileType as 'csv' | 'ofx' | 'qif',
+      accountId,
+      requestId: crypto.randomUUID(),
+      defaultCurrency: prompt.defaultCurrency,
+      dateOrder,
+    });
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <Block className="flex flex-col">
+        <BlockHeader title={t('v3.jobs.file.dateOrder.title')} />
+        <p className="px-4 pb-4 text-body text-muted-foreground">
+          {t('v3.jobs.file.dateOrder.body')}
+        </p>
+
+        {prompt.samples.length > 0 ? (
+          <>
+            <h3 className="border-t border-border px-4 pt-4 pb-2 text-label text-muted-foreground">
+              {t('v3.jobs.file.dateOrder.samples')}
+            </h3>
+            <p className="px-4 pb-4 font-mono text-body">{prompt.samples.join(' · ')}</p>
+          </>
+        ) : null}
+
+        <div className="flex flex-col gap-3 border-t border-border p-4 lg:flex-row">
+          <Button disabled={reparse.isPending} onClick={() => choose('day-first')}>
+            {t('v3.jobs.file.dateOrder.dayFirst')}
+          </Button>
+          <Button
+            variant="outline"
+            disabled={reparse.isPending}
+            onClick={() => choose('month-first')}
+          >
+            {t('v3.jobs.file.dateOrder.monthFirst')}
+          </Button>
+          {reparse.isPending ? (
+            <span className="flex items-center text-caption text-muted-foreground">
+              <Loader2 className="me-2 size-4 animate-spin" aria-hidden="true" />
+              {t('v3.jobs.file.currency.applying')}
+            </span>
+          ) : null}
+        </div>
+        {failure ? (
+          <p role="alert" className="px-4 pb-4 text-caption text-destructive">
+            {failure}
+          </p>
+        ) : null}
       </Block>
 
       <JobIssueList

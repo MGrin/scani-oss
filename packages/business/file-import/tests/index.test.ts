@@ -48,4 +48,15 @@ describe('parseStatement (unified entry point)', () => {
     expect(result.transactions).toHaveLength(1);
     expect(result.transactions[0]!.description).toBe('Pago');
   });
+
+  it('passes the caller-supplied date order through to the CSV and QIF parsers (SC-1291)', async () => {
+    const csv = 'Date,Description,Amount,Currency\n03/04/2026,A,-1,EUR\n05/06/2026,B,-1,EUR';
+    expect((await parseStatement(csv, 'x.csv')).ambiguousDateOrder?.rowCount).toBe(2);
+    const csvDay = await parseStatement(csv, 'x.csv', { dateOrder: 'day-first' });
+    expect(csvDay.transactions[0]!.date.toISOString().slice(0, 10)).toBe('2026-04-03');
+
+    const qif = '!Type:Bank\nD03/04/2026\nT-1\nPA\n^';
+    const qifMonth = await parseStatement(qif, 'x.qif', { dateOrder: 'month-first' });
+    expect(qifMonth.transactions[0]!.date.toISOString().slice(0, 10)).toBe('2026-03-04');
+  });
 });
