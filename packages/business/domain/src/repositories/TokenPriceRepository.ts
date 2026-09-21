@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewTokenPrice, TokenPrice, TokenPriceGranularity } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, desc, eq, gte, inArray, like, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, like, lte, ne, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 @Service()
@@ -376,6 +376,42 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
       );
       throw error;
     }
+  }
+
+  // `${tokenId}:${YYYY-MM-DD}` for every UTC day at or after `since` on which
+  // the token has any price against `baseTokenId`, whatever its granularity
+  // — if some path already wrote a price for that day there is nothing to
+  // fetch. `tokenIds` scopes the read; omitted, it is every token but the
+  // base. A per-user caller must pass its tokens: unscoped, this is one row
+  // per priced day of every token on the platform (SC-1283).
+  async findPricedDayKeys(
+    opts: { baseTokenId: string; since: Date; tokenIds?: readonly string[] },
+    transaction?: DatabaseTransaction
+  ): Promise<Set<string>> {
+    const keys = new Set<string>();
+    if (opts.tokenIds?.length === 0) return keys;
+    const rows = await this.getDb(transaction)
+      .selectDistinct({
+        tokenId: schema.tokenPrices.tokenId,
+        // The `AT TIME ZONE` pair is load-bearing: `date_trunc('day', ts)`
+        // on a `timestamptz` buckets in the SESSION timezone, which nothing
+        // in this repo pins. On a connection an hour east of UTC every key
+        // would land a day off the UTC series callers build, and a dedup
+        // over them would match nothing.
+        day: sql<string>`to_char(date_trunc('day', ${schema.tokenPrices.timestamp} AT TIME ZONE 'UTC'), 'YYYY-MM-DD')`,
+      })
+      .from(schema.tokenPrices)
+      .where(
+        and(
+          eq(schema.tokenPrices.baseTokenId, opts.baseTokenId),
+          gte(schema.tokenPrices.timestamp, opts.since),
+          opts.tokenIds
+            ? inArray(schema.tokenPrices.tokenId, [...opts.tokenIds])
+            : ne(schema.tokenPrices.tokenId, opts.baseTokenId)
+        )
+      );
+    for (const r of rows) keys.add(`${r.tokenId}:${r.day}`);
+    return keys;
   }
 
   // Find the closest price at or before `timestamp`, preferring rows of

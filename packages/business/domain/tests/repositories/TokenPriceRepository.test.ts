@@ -547,4 +547,69 @@ describe('TokenPriceRepository', () => {
       });
     });
   });
+
+  // SC-1283. The per-user history backfill asks which of its tokens' days are
+  // already priced. Unscoped, that read returned every token on the platform
+  // and its first allocation grew with the whole table.
+  describe('findPricedDayKeys', () => {
+    const at = (iso: string) => new Date(iso);
+    async function seed(tx: DatabaseTransaction) {
+      const mine = await makeToken(tx);
+      const theirs = await makeToken(tx);
+      const usd = await makeToken(tx);
+      for (const [tokenId, ts, granularity] of [
+        [mine.id, '2026-03-01T00:00:00Z', 'daily'],
+        [mine.id, '2026-03-02T15:30:00Z', 'intraday'],
+        [mine.id, '2026-01-01T00:00:00Z', 'daily'],
+        [theirs.id, '2026-03-01T00:00:00Z', 'daily'],
+      ] as const) {
+        await repo().create(
+          {
+            tokenId,
+            baseTokenId: usd.id,
+            price: '1',
+            timestamp: at(ts),
+            granularity,
+            source: 'test',
+          },
+          tx
+        );
+      }
+      return { mine: mine.id, theirs: theirs.id, usd: usd.id };
+    }
+
+    test('returns only the named tokens, one key per UTC day at or after `since`', async () => {
+      await withTestDb(async (tx) => {
+        const t = await seed(tx);
+        const keys = await repo().findPricedDayKeys(
+          { baseTokenId: t.usd, since: at('2026-02-01T00:00:00Z'), tokenIds: [t.mine] },
+          tx
+        );
+        expect([...keys].sort()).toEqual([`${t.mine}:2026-03-01`, `${t.mine}:2026-03-02`]);
+      });
+    });
+
+    test('an empty token list reads nothing', async () => {
+      await withTestDb(async (tx) => {
+        const t = await seed(tx);
+        const keys = await repo().findPricedDayKeys(
+          { baseTokenId: t.usd, since: at('2025-01-01T00:00:00Z'), tokenIds: [] },
+          tx
+        );
+        expect(keys.size).toBe(0);
+      });
+    });
+
+    test('no token list means every token but the base, for the all-users cron', async () => {
+      await withTestDb(async (tx) => {
+        const t = await seed(tx);
+        const keys = await repo().findPricedDayKeys(
+          { baseTokenId: t.usd, since: at('2026-02-01T00:00:00Z') },
+          tx
+        );
+        expect(keys.has(`${t.theirs}:2026-03-01`)).toBe(true);
+        expect(keys.has(`${t.mine}:2026-03-01`)).toBe(true);
+      });
+    });
+  });
 });

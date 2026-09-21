@@ -17,8 +17,9 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { ProviderRegistry } from '@scani/providers/core/registry';
-import { and, eq, gte, inArray, ne, sql } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import { HistoricalPriceBackfillService } from '../services';
 import { rollupLockKey } from './RollupPortfolioValueDailyUseCase';
@@ -98,6 +99,7 @@ export class BackfillHistoricalPricesUseCase {
   // Class-field DI — see note in BalanceAtTimeService.ts.
   private readonly backfillService = Container.get(HistoricalPriceBackfillService);
   private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
 
   // Walks every user's held tokens, identifies dates where we have a
   // transaction but no nearby daily price, and runs the backfill.
@@ -306,41 +308,17 @@ export class BackfillHistoricalPricesUseCase {
       }
     }
 
-    const existing = await db
-      .select({
-        tokenId: schema.tokenPrices.tokenId,
-        // Bucket to day in SQL so the JS set key matches the series
-        // format, which is built at midnight UTC.
-        //
-        // The `AT TIME ZONE` pair is load-bearing: `date_trunc('day', ts)`
-        // on a `timestamptz` buckets in the SESSION timezone, which nothing
-        // in this repo pins. On a connection an hour east of UTC every key
-        // here lands a day off the ones built below, the dedup matches
-        // nothing, and the run re-requests days it already holds. Prod's
-        // sessions are UTC, so this is identical there — that is the point,
-        // the correctness stops depending on a server setting nobody set.
-        //
-        // We accept ANY granularity here ('daily' OR 'intraday' OR
-        // 'tx-exact') — if some other path already wrote a price for
-        // (token, day), there's no point hitting the provider again.
-        // The previous version filtered to granularity='daily' only,
-        // which let intraday rows from the hourly pricing job slip
-        // past the dedup and forced redundant provider lookups.
-        day: sql<Date>`date_trunc('day', ${schema.tokenPrices.timestamp} AT TIME ZONE 'UTC') AT TIME ZONE 'UTC'`,
-      })
-      .from(schema.tokenPrices)
-      .where(
-        and(
-          eq(schema.tokenPrices.baseTokenId, opts.usdTokenId),
-          gte(schema.tokenPrices.timestamp, discoverySince),
-          ne(schema.tokenPrices.tokenId, opts.usdTokenId)
-        )
-      );
-    const havePriced = new Set<string>();
-    for (const r of existing) {
-      const dt = r.day instanceof Date ? r.day : new Date(r.day as unknown as string);
-      havePriced.add(`${r.tokenId}:${dt.toISOString().slice(0, 10)}`);
-    }
+    // A per-user run reads only its own candidates. Unscoped, this read every
+    // USD price row on the platform since the user's first trade, whoever
+    // held the token, to decide which of THIS user's days were already
+    // priced: an allocation proportional to the whole `token_prices` table,
+    // taken at the start of every portfolio-history backfill (SC-1283). The
+    // all-users cron wants nearly every token anyway and keeps the full scan.
+    const havePriced = await this.tokenPriceRepository.findPricedDayKeys({
+      baseTokenId: opts.usdTokenId,
+      since: discoverySince,
+      ...(opts.userId ? { tokenIds: [...userTokenSet] } : {}),
+    });
 
     // Day series in JS. `since` is already midnight UTC of the earliest
     // day we want to cover; step by 86400000ms until today inclusive.

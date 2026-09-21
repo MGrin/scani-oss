@@ -1,6 +1,7 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { OpeningBalanceReconciliationService } from '@scani/domain/services';
+import type { RollupSummary } from '@scani/domain/use-cases';
 import {
   BackfillHistoricalPricesUseCase,
   LinkTransferPairsUseCase,
@@ -8,8 +9,10 @@ import {
 } from '@scani/domain/use-cases';
 import {
   PORTFOLIO_HISTORY_BACKFILL,
+  PORTFOLIO_HISTORY_CHUNK_DAYS,
   PORTFOLIO_HISTORY_LOOKBACK_DAYS,
   type PortfolioHistoryBackfillJob,
+  type PortfolioHistoryRollupProgress,
 } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService, type ProcessorContext, UserJobProcessor } from '@scani/queue';
@@ -52,6 +55,78 @@ export async function scheduleLockHeldRetry(
 }
 
 const logger = createComponentLogger('processor:portfolio-history-backfill');
+
+// A resumed attempt reports zeros for the phases a previous attempt finished.
+const SKIPPED_RECONCILIATION = { holdingsTouched: 0, openingsSynthesized: 0 };
+const SKIPPED_PRICES = { attempted: 0, inserted: 0, alreadyHad: 0, providerMissing: 0 };
+
+// A saved position is only worth resuming on the UTC day it was laid out on.
+// A retry pressed the next day would otherwise skip today's row entirely, and
+// re-running from day 0 costs one full pass — the thing this job does anyway.
+export function resumableProgress(
+  progress: PortfolioHistoryRollupProgress | undefined,
+  now: Date
+): PortfolioHistoryRollupProgress | null {
+  if (!progress) return null;
+  if (progress.anchor.slice(0, 10) !== now.toISOString().slice(0, 10)) return null;
+  return progress;
+}
+
+// The nightly rollup and price-backfill crons take the same per-user lock the
+// rollup does, and a chunked run releases it between chunks. A chunk that
+// finds it held did not run, so it waits for the holder rather than spending
+// one of the job's two attempts.
+export const CHUNK_LOCK_WAIT_MS = 15_000;
+export const CHUNK_LOCK_MAX_WAITS = 20;
+
+export interface ChunkedRollupDeps {
+  rollup: (opts: {
+    userId: string;
+    lookbackDays: number;
+    runStart: Date;
+    dayOffsets: { from: number; to: number };
+  }) => Promise<RollupSummary>;
+  saveProgress: (progress: PortfolioHistoryRollupProgress) => Promise<void>;
+  onChunk: (daysDone: number, lookbackDays: number) => Promise<void>;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+// Walk the lookback window PORTFOLIO_HISTORY_CHUNK_DAYS at a time (SC-1283).
+// Each chunk is its own rollup call, so everything it prefetched and every
+// per-day result it built is unreachable before the next one starts; memory
+// stays at one chunk's worth however long the window is. Progress is saved
+// after each chunk, so an attempt stopped mid-window resumes at the next one.
+export async function runChunkedRollup(
+  userId: string,
+  lookbackDays: number,
+  start: PortfolioHistoryRollupProgress,
+  deps: ChunkedRollupDeps
+): Promise<{ usersProcessed: number; daysComputed: number; errors: RollupSummary['errors'] }> {
+  const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
+  const runStart = new Date(start.anchor);
+  const out = { usersProcessed: 0, daysComputed: 0, errors: [] as RollupSummary['errors'] };
+  let from = start.nextDayOffset;
+  while (from < lookbackDays) {
+    const to = Math.min(lookbackDays, from + PORTFOLIO_HISTORY_CHUNK_DAYS);
+    let summary = await deps.rollup({ userId, lookbackDays, runStart, dayOffsets: { from, to } });
+    for (let waits = 0; summary.usersSkipped > 0; waits++) {
+      if (waits >= CHUNK_LOCK_MAX_WAITS) {
+        throw new Error(
+          `Rollup lock for ${userId} stayed held; stopped at day offset ${from} of ${lookbackDays}`
+        );
+      }
+      await sleep(CHUNK_LOCK_WAIT_MS);
+      summary = await deps.rollup({ userId, lookbackDays, runStart, dayOffsets: { from, to } });
+    }
+    out.usersProcessed = Math.max(out.usersProcessed, summary.usersProcessed);
+    out.daysComputed += summary.daysComputed;
+    out.errors.push(...summary.errors);
+    await deps.saveProgress({ anchor: start.anchor, nextDayOffset: to });
+    await deps.onChunk(to, lookbackDays);
+    from = to;
+  }
+  return out;
+}
 
 interface PortfolioHistoryBackfillResult {
   tokenCount: number;
@@ -111,8 +186,8 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     return {
       tokenCount: data.tokenIds.length,
       lookbackDays: data.lookbackDays,
-      reconciliation: { holdingsTouched: 0, openingsSynthesized: 0 },
-      prices: { attempted: 0, inserted: 0, alreadyHad: 0, providerMissing: 0 },
+      reconciliation: SKIPPED_RECONCILIATION,
+      prices: SKIPPED_PRICES,
       rollup: { usersProcessed: 0, daysComputed: 0, errorCount: 0 },
     };
   }
@@ -121,6 +196,15 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     data: PortfolioHistoryBackfillJob,
     ctx: ProcessorContext
   ): Promise<PortfolioHistoryBackfillResult> {
+    const resume = resumableProgress(data.rollupProgress, new Date());
+    if (resume) {
+      logger.info(
+        { jobId: ctx.job.id, userId: data.userId, ...resume },
+        'Resuming portfolio history rollup where the last attempt stopped'
+      );
+      return this.rollupPhase(data, ctx, resume, SKIPPED_RECONCILIATION, SKIPPED_PRICES);
+    }
+
     const usdTokenId = await this.resolveUsdTokenId();
     await ctx.reportProgress(0.05);
 
@@ -157,9 +241,41 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     });
     await ctx.reportProgress(0.55);
 
-    const rollupSummary = await Container.get(RollupPortfolioValueDailyUseCase).execute({
-      userId: data.userId,
-      lookbackDays: data.lookbackDays,
+    const progress: PortfolioHistoryRollupProgress = {
+      anchor: new Date().toISOString(),
+      nextDayOffset: 0,
+    };
+    // Saved before the first chunk: from here a stopped attempt skips
+    // straight back to the rollup, the phases above having finished.
+    await this.saveProgress(data, ctx, progress);
+    return this.rollupPhase(data, ctx, progress, reconcileSummary, {
+      attempted: priceSummary.attempted,
+      inserted: priceSummary.inserted,
+      alreadyHad: priceSummary.alreadyHad,
+      providerMissing: priceSummary.providerMissing,
+    });
+  }
+
+  private async saveProgress(
+    data: PortfolioHistoryBackfillJob,
+    ctx: ProcessorContext,
+    progress: PortfolioHistoryRollupProgress
+  ): Promise<void> {
+    await ctx.job.updateData({ ...data, rollupProgress: progress });
+  }
+
+  private async rollupPhase(
+    data: PortfolioHistoryBackfillJob,
+    ctx: ProcessorContext,
+    start: PortfolioHistoryRollupProgress,
+    reconciliation: PortfolioHistoryBackfillResult['reconciliation'],
+    prices: PortfolioHistoryBackfillResult['prices']
+  ): Promise<PortfolioHistoryBackfillResult> {
+    const rollup = Container.get(RollupPortfolioValueDailyUseCase);
+    const rollupSummary = await runChunkedRollup(data.userId, data.lookbackDays, start, {
+      rollup: (opts) => rollup.execute(opts),
+      saveProgress: (progress) => this.saveProgress(data, ctx, progress),
+      onChunk: (daysDone, total) => ctx.reportProgress(0.55 + 0.4 * (daysDone / total)),
     });
     await ctx.reportProgress(0.95);
 
@@ -183,13 +299,8 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     return {
       tokenCount: data.tokenIds.length,
       lookbackDays: data.lookbackDays,
-      reconciliation: reconcileSummary,
-      prices: {
-        attempted: priceSummary.attempted,
-        inserted: priceSummary.inserted,
-        alreadyHad: priceSummary.alreadyHad,
-        providerMissing: priceSummary.providerMissing,
-      },
+      reconciliation,
+      prices,
       rollup: {
         usersProcessed: rollupSummary.usersProcessed,
         daysComputed: rollupSummary.daysComputed,
