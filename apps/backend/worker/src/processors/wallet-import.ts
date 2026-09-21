@@ -1,5 +1,6 @@
 import { ImportWalletAddressUseCase } from '@scani/domain/use-cases';
 import { WALLET_IMPORT, type WalletImportJob } from '@scani/jobs';
+import { isBurnAddress } from '@scani/providers/core';
 import { type ProcessorContext, UnrecoverableError, UserJobProcessor } from '@scani/queue';
 import { Container, Service } from 'typedi';
 
@@ -24,6 +25,11 @@ export class WalletImportProcessor extends UserJobProcessor<WalletImportJob, unk
    * imports.
    */
   protected async handle(data: WalletImportJob, ctx: ProcessorContext): Promise<unknown> {
+    // The api refuses these too; this covers a job enqueued before it did
+    // (SC-1271). Unrecoverable, so a stalled run is never retried.
+    if (isBurnAddress(data.address)) {
+      throw new UnrecoverableError('Refusing to import a burn address');
+    }
     const review = await Container.get(ImportWalletAddressUseCase).prepareReview(
       {
         address: data.address,
