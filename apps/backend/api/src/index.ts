@@ -62,6 +62,7 @@ import {
   createSignupLimiter,
   createStandardLimiter,
   createStrictLimiter,
+  edgeLockRefusal,
   observeRedisReachability,
   pingWithin,
   type StrandReport,
@@ -91,6 +92,7 @@ import {
   procedureCallRecorder,
   startConnectionTracking,
 } from '@scani/db';
+import { users } from '@scani/db/schema';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
 import { ProviderCredentialReport } from '@scani/providers/core/credential-report';
 import { aiOpenAIFactory } from '@scani/providers/providers/ai-openai';
@@ -122,6 +124,7 @@ import { tronFactory } from '@scani/providers/providers/tron';
 import { wiseFactory } from '@scani/providers/providers/wise';
 import { googleSheetsFactory } from '@scani/providers-google-sheets';
 import { createBetterAuth } from './auth/better-auth';
+import { createNewAddressCap } from './auth/new-address-cap';
 import { buildCorsOrigins, buildTrustedOrigins } from './config/browser-origins';
 import { initializeContainer } from './config/container';
 import { isLivenessProbe } from './lib/liveness';
@@ -378,6 +381,18 @@ const strictLimiter = createStrictLimiter(redisConnection, 60);
 // reveals "email exists" vs "new", so this limiter is the primary
 // defense against account enumeration brute force.
 const signupLimiter = createSignupLimiter(redisConnection, 6);
+const newAddressCap = createNewAddressCap({
+  redis: redisConnection,
+  perHour: env.AUTH_NEW_ADDRESS_SENDS_PER_HOUR,
+  hasAccount: async (email) => {
+    const [row] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(sql`lower(${users.email}) = ${email}`)
+      .limit(1);
+    return row !== undefined;
+  },
+});
 // Per-user limiter for session-revoke mutations. Threaded onto the tRPC
 // context via setSessionRevokeLimiterForContext below so the sessions
 // router can read it off `ctx`.
@@ -389,6 +404,9 @@ setSessionRevokeLimiterForContext(sessionRevokeLimiter);
 const wsAuthLimiter = createStrictLimiter(redisConnection, 30);
 
 const app = new Elysia()
+  // SC-1264. First, so a request that went round Cloudflare reaches nothing.
+  // Inert until SCANI_EDGE_LOCK=enforce.
+  .onRequest(({ request }) => edgeLockRefusal(request) ?? undefined)
   .onBeforeHandle(({ request, set }) => {
     const url = new URL(request.url);
     const requestId = crypto.randomUUID();
@@ -688,6 +706,11 @@ app
           retryAfterSec: res.retryAfterSec,
         };
       }
+    }
+    const capped = await newAddressCap(request.method, pathname, body);
+    if (!capped.send) {
+      logger.warn({ pathname }, 'New-address send budget spent; answering without sending');
+      return capped.body;
     }
     const cloneHeaders = new Headers();
     for (const [k, v] of Object.entries(headers ?? {})) {

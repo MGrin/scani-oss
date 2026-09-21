@@ -1225,6 +1225,8 @@
         "symbolsOverflow": "{{symbols}} +{{hidden}}",
         "needsCurrency_other": "{{count}} transaksi — perlu mata uang",
         "needsCurrencyWithType_other": "{{count}} transaksi · {{fileType}} — perlu mata uang",
+        "needsDateOrder_other": "{{count}} transaksi — perlu urutan tanggal",
+        "needsDateOrderWithType_other": "{{count}} transaksi · {{fileType}} — perlu urutan tanggal",
         "chains_other": "{{count}} rantai",
         "candidatesAcross_other": "{{count}} kandidat di {{chains}}",
         "nothingFound": "tidak ada yang ditemukan",
@@ -2389,6 +2391,13 @@
           "apply": "Impor dengan mata uang ini",
           "applying": "Mengimpor ulang…",
           "subject": "berkas ini"
+        },
+        "dateOrder": {
+          "title": "Dalam tanggal ini, mana yang lebih dulu: hari atau bulan?",
+          "body": "Setiap tanggal di berkas ini bisa dibaca dua arah — 03/04 bisa berarti 3 April atau 4 Maret — dan berkasnya tidak menyebutkan yang mana. Belum ada yang diimpor.",
+          "samples": "Seperti tertulis di berkas",
+          "dayFirst": "Hari dulu — 31/12",
+          "monthFirst": "Bulan dulu — 12/31"
         }
       },
       "manual": {

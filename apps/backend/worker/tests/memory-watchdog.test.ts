@@ -4,7 +4,7 @@
  * whether the process survives.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -36,7 +36,7 @@ function write(path: string, availableMb: number | null) {
 
 const marker = (path: string) => join(path, '..', 'stopped');
 
-function start(path: string) {
+function start(path: string, extra: Record<string, string> = {}) {
   const victim = Bun.spawn(['sleep', '60']);
   victims.push(victim);
   const watchdog = Bun.spawn(['sh', SCRIPT, String(victim.pid)], {
@@ -49,6 +49,7 @@ function start(path: string) {
       WATCHDOG_REPORT_EVERY: '1000',
       WATCHDOG_KILL_GRACE_S: '1',
       WATCHDOG_MARKER: marker(path),
+      ...extra,
     },
     stdout: 'pipe',
     stderr: 'pipe',
@@ -112,5 +113,114 @@ describe('memory-watchdog.sh (SC-1269)', () => {
     const { victim, watchdog } = start(meminfo(600));
     victim.kill('SIGKILL');
     expect(await watchdog.exited).toBe(0);
+  });
+});
+
+describe('the liveness ping (SC-1269)', () => {
+  // The probe reads a file, so a test can make Redis answer, stop answering, or never start.
+  function ping(path: string, answer: string) {
+    const file = join(path, '..', 'pong');
+    writeFileSync(file, answer);
+    return { file, env: { WATCHDOG_PING_CMD: `cat ${file}`, WATCHDOG_PING_STRIKES: '3' } };
+  }
+
+  test('once armed, consecutive misses stop the worker and say why', async () => {
+    const path = meminfo(600);
+    const p = ping(path, 'PONG');
+    const { victim, watchdog } = start(path, p.env);
+    await Bun.sleep(300);
+    expect(alive(victim.pid)).toBe(true);
+    writeFileSync(p.file, '');
+    expect(await watchdog.exited).toBe(0);
+    expect(existsSync(marker(path))).toBe(true);
+    await victim.exited;
+    expect(victim.signalCode).toBe('SIGTERM');
+    expect(await new Response(watchdog.stderr).text()).toContain('liveness ping missed');
+  });
+
+  test('a probe that never arms says so rather than protecting nothing in silence', async () => {
+    const path = meminfo(600);
+    const p = ping(path, 'NOAUTH Authentication required.');
+    const { victim, watchdog } = start(path, { ...p.env, WATCHDOG_PING_UNARMED_WARN: '3' });
+    await Bun.sleep(400);
+    expect(alive(victim.pid)).toBe(true);
+    victim.kill('SIGKILL');
+    await watchdog.exited;
+    expect(await new Response(watchdog.stderr).text()).toContain('liveness ping NOT ARMED');
+  });
+
+  test('an armed probe says so once', async () => {
+    const path = meminfo(600);
+    const p = ping(path, 'PONG');
+    const { victim, watchdog } = start(path, p.env);
+    await Bun.sleep(300);
+    victim.kill('SIGKILL');
+    await watchdog.exited;
+    const out = await new Response(watchdog.stdout).text();
+    expect(out.match(/liveness ping armed/g)?.length).toBe(1);
+  });
+
+  test('a Redis that never answered (still loading at boot) does not trip it', async () => {
+    const path = meminfo(600);
+    const p = ping(path, 'LOADING');
+    const { victim } = start(path, p.env);
+    await Bun.sleep(600);
+    expect(alive(victim.pid)).toBe(true);
+    expect(existsSync(marker(path))).toBe(false);
+  });
+
+  test('a Redis that keeps answering leaves the worker alone', async () => {
+    const path = meminfo(600);
+    const p = ping(path, 'PONG');
+    const { victim } = start(path, p.env);
+    await Bun.sleep(600);
+    expect(alive(victim.pid)).toBe(true);
+    expect(existsSync(marker(path))).toBe(false);
+  });
+});
+
+describe('the memory history (SC-1269)', () => {
+  const history = (path: string) => join(path, '..', 'history.log');
+  const read = (file: string) => (existsSync(file) ? readFileSync(file, 'utf8') : '');
+
+  test('records available memory and each watched process, one line per period', async () => {
+    const path = meminfo(600);
+    const other = Bun.spawn(['sleep', '60']);
+    victims.push(other);
+    const { victim, watchdog } = start(path, {
+      WATCHDOG_HISTORY_FILE: history(path),
+      WATCHDOG_HISTORY_EVERY: '1',
+      WATCHDOG_ALSO_PID: String(other.pid),
+    });
+    await Bun.sleep(400);
+    victim.kill('SIGKILL');
+    await watchdog.exited;
+    const lines = read(history(path)).trim().split('\n');
+    expect(lines.length).toBeGreaterThan(2);
+    expect(lines[0]).toMatch(
+      /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ available=600MB worker_rss=\d*MB other_rss=\d*MB$/
+    );
+  });
+
+  test('a stop is written to the history, so it survives the restart it causes', async () => {
+    const path = meminfo(40);
+    const { watchdog } = start(path, { WATCHDOG_HISTORY_FILE: history(path) });
+    await watchdog.exited;
+    expect(read(history(path))).toContain('STOPPING: available=40MB');
+  });
+
+  test('rotates at the size cap rather than growing without bound', async () => {
+    const path = meminfo(600);
+    writeFileSync(history(path), 'x'.repeat(2048));
+    const { victim, watchdog } = start(path, {
+      WATCHDOG_HISTORY_FILE: history(path),
+      WATCHDOG_HISTORY_EVERY: '1',
+      WATCHDOG_HISTORY_MAX_KB: '2',
+    });
+    await Bun.sleep(300);
+    victim.kill('SIGKILL');
+    await watchdog.exited;
+    expect(existsSync(`${history(path)}.1`)).toBe(true);
+    expect(read(history(path)).length).toBeLessThan(2048);
   });
 });

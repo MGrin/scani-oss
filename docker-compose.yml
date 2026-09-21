@@ -345,6 +345,10 @@ services:
       # a Solana RPC, so the E2E gate does not depend on a public API's rate
       # limiter. Refused in production by every env schema (SC-490).
       STUB_CHAIN_DATA: "${STUB_CHAIN_DATA:-}"
+      # Forwarded by the e2e runner, which signs in more new addresses per
+      # run than the hourly cap on them allows (SC-1260). Unset, the api's
+      # default of 100 applies.
+      AUTH_NEW_ADDRESS_SENDS_PER_HOUR: "${AUTH_NEW_ADDRESS_SENDS_PER_HOUR:-}"
       # ON by default here, because this stack is the one `bun run visual` and
       # the e2e suite photograph: it lets `payments.forecast` take an `asOf`, so
       # a forecast baseline does not move with the real date (SC-623). The api

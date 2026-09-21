@@ -42,7 +42,7 @@ export function SessionsSettings() {
   const settle = () => void utils.sessions.list.invalidate();
 
   const revoke = trpc.sessions.revoke.useMutation({
-    onMutate: ({ token }) => optimisticRevokeSession(utils, token),
+    onMutate: ({ id }) => optimisticRevokeSession(utils, id),
     onSuccess: () => showSuccess(t('v3.settings.sessions.revoked')),
     onError: (error, _variables, context) => {
       context?.restore();
@@ -98,7 +98,7 @@ export function SessionsSettings() {
               key={session.id}
               session={session}
               isPending={revoke.isPending}
-              onRevoke={(token) => revoke.mutate({ token })}
+              onRevoke={(id) => revoke.mutate({ id })}
             />
           ))}
         </DataRowList>

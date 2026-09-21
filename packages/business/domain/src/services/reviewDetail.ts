@@ -62,20 +62,31 @@ function readScreenshotParse(result: unknown): ReviewDetail | undefined {
 
 /**
  * file-import: the worker auto-stamps `action_taken_at` on every path
- * except the `needsCurrency` early return, so that is the only shape that
- * can reach this feed. Naming the blocker is the useful part — the row
- * exists precisely because a currency choice is outstanding.
+ * except its two early returns — `needsDateOrder` (SC-1291) and
+ * `needsCurrency` — so those are the only shapes that can reach this feed.
+ * Naming the blocker is the useful part — the row exists precisely because
+ * a choice is outstanding.
  */
 function readFileImport(result: unknown): ReviewDetail | undefined {
-  const pending = asRecord(asRecord(result)?.needsCurrency);
+  const root = asRecord(result);
+  const dates = asRecord(root?.needsDateOrder);
+  if (dates) {
+    const count = asPositiveInt(dates.rowCount);
+    if (count === null) return undefined;
+    return { code: 'datesNeedOrder', transactions: count, fileType: fileTypeOf(dates) };
+  }
+
+  const pending = asRecord(root?.needsCurrency);
   if (!pending) return undefined;
 
   const count = asPositiveInt(pending.transactionCount);
   if (count === null) return undefined;
 
-  const fileType =
-    typeof pending.fileType === 'string' && pending.fileType ? pending.fileType : undefined;
-  return { code: 'transactionsNeedCurrency', transactions: count, fileType };
+  return { code: 'transactionsNeedCurrency', transactions: count, fileType: fileTypeOf(pending) };
+}
+
+function fileTypeOf(pending: Record<string, unknown>): string | undefined {
+  return typeof pending.fileType === 'string' && pending.fileType ? pending.fileType : undefined;
 }
 
 /** wallet-import: `{ walletLabel, chainsDetected, candidateCount }` */

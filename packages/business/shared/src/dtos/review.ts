@@ -128,6 +128,11 @@ export const reviewDetailSchema = z.discriminatedUnion('code', [
     fileType: z.string().min(1).optional(),
   }),
   z.object({
+    code: z.literal('datesNeedOrder'),
+    transactions: z.number().int().nonnegative(),
+    fileType: z.string().min(1).optional(),
+  }),
+  z.object({
     code: z.literal('walletCandidates'),
     walletLabel: z.string().min(1).optional(),
     candidates: z.number().int().nonnegative(),
