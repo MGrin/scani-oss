@@ -125,5 +125,5 @@ export function parseQifStatement(
  * year. Folded to `1/5/04` so it reads like every other numeric date.
  */
 function normaliseQifDate(dateStr: string): string {
-  return dateStr.replace(/\s+/g, '').replace("'", '/');
+  return dateStr.replace(/\s+/g, '').replace(/'/g, '/');
 }
