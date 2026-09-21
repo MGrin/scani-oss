@@ -14,6 +14,12 @@ import { getBetterAuth, protectedProcedure, router } from '../trpc';
  *
  * Better-Auth supports unlimited concurrent sessions per user out of
  * the box; nothing here changes that, we just expose it.
+ *
+ * A session's TOKEN never leaves the server: it is the bearer credential
+ * itself, so a list that carried every one of them handed any script running
+ * in the page — one XSS — every device the user is signed in on (SC-1288).
+ * Rows are identified by the session's id, and `revoke` resolves the token
+ * from the caller's own session list.
  */
 export const sessionsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -29,7 +35,6 @@ export const sessionsRouter = router({
     const currentToken = current?.session?.token ?? null;
     return sessions.map((s) => ({
       id: s.id,
-      token: s.token,
       ipAddress: s.ipAddress ?? null,
       userAgent: s.userAgent ?? null,
       createdAt: s.createdAt,
@@ -40,7 +45,7 @@ export const sessionsRouter = router({
   }),
 
   revoke: protectedProcedure
-    .input(strictInput(z.object({ token: z.string().min(1) })))
+    .input(strictInput(z.object({ id: z.string().min(1) })))
     .mutation(async ({ ctx, input }) => {
       if (!ctx.headers) {
         throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Missing request headers' });
@@ -61,13 +66,11 @@ export const sessionsRouter = router({
         });
       }
       const auth = getBetterAuth();
-      // Defense in depth: Better-Auth's revokeSession scopes to the
-      // caller's user via the session cookie, but we don't want the
-      // safety of an internal API call sitting on a single library
-      // contract — verify the token belongs to the caller against the
-      // session list before revoking.
+      // The caller's own session list is both the lookup and the ownership
+      // check: an id that is not in it is someone else's or nobody's, and
+      // Better-Auth's revokeSession is then never asked.
       const sessions = await auth.api.listSessions({ headers: ctx.headers });
-      const owned = sessions.some((s) => s.token === input.token);
+      const owned = sessions.find((s) => s.id === input.id);
       if (!owned) {
         // NOT_FOUND rather than FORBIDDEN — don't tell a probing caller
         // whether the token exists for some other user.
@@ -75,7 +78,7 @@ export const sessionsRouter = router({
       }
       await auth.api.revokeSession({
         headers: ctx.headers,
-        body: { token: input.token },
+        body: { token: owned.token },
       });
       return { ok: true as const };
     }),

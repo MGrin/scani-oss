@@ -1198,6 +1198,13 @@
           "subject": "este archivo",
           "title": "¿En qué divisa está este extracto?"
         },
+        "dateOrder": {
+          "title": "¿En estas fechas va primero el día o el mes?",
+          "body": "Todas las fechas de este archivo se pueden leer de las dos maneras — 03/04 puede ser 3 de abril o 4 de marzo — y el archivo no indica cuál. Todavía no se ha importado nada.",
+          "samples": "Tal como aparece en el archivo",
+          "dayFirst": "Primero el día — 31/12",
+          "monthFirst": "Primero el mes — 12/31"
+        },
         "format": "Formato",
         "holdingsTitle": "Posiciones afectadas",
         "importAnother": "Importar otro archivo",
@@ -2211,6 +2218,12 @@
         "needsCurrency_many": "{{count}} transacciones — falta la divisa",
         "needsCurrency_one": "{{count}} transacción — falta la divisa",
         "needsCurrency_other": "{{count}} transacciones — falta la divisa",
+        "needsDateOrderWithType_many": "{{count}} transacciones · {{fileType}} — falta el orden de las fechas",
+        "needsDateOrderWithType_one": "{{count}} transacción · {{fileType}} — falta el orden de las fechas",
+        "needsDateOrderWithType_other": "{{count}} transacciones · {{fileType}} — falta el orden de las fechas",
+        "needsDateOrder_many": "{{count}} transacciones — falta el orden de las fechas",
+        "needsDateOrder_one": "{{count}} transacción — falta el orden de las fechas",
+        "needsDateOrder_other": "{{count}} transacciones — falta el orden de las fechas",
         "nothingFound": "no se ha encontrado nada",
         "symbolsOverflow": "{{symbols}} +{{hidden}}",
         "transfersToConfirm": "Transferencias por confirmar",

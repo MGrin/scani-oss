@@ -22,6 +22,7 @@ import { type CustomLogger, createComponentLogger } from '@scani/logging';
 import type { AIInferenceProvider } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { Container, Service } from 'typedi';
+import { AiSpendBudget } from './AiSpendBudget';
 
 export type ParsedAssetType = 'fiat' | 'crypto' | 'stock';
 
@@ -61,6 +62,8 @@ export interface CompleteTextResult {
 }
 
 export interface CompleteTextOptions {
+  /** Whose AI budget each provider attempt spends (SC-1265). */
+  userId: string;
   maxTokens?: number;
   temperature?: number;
   jsonMode?: boolean;
@@ -68,6 +71,8 @@ export interface CompleteTextOptions {
 }
 
 export interface ParseScreenshotOptions {
+  /** Whose AI budget each provider attempt spends (SC-1265). */
+  userId: string;
   provider?: string;
   accountType?: string;
   expectedCurrency?: string;
@@ -78,6 +83,8 @@ export interface ParseScreenshotOptions {
 }
 
 export interface ParseDocumentTextOptions {
+  /** Whose AI budget each provider attempt spends (SC-1265). */
+  userId: string;
   provider?: string;
   accountType?: string;
   expectedCurrency?: string;
@@ -87,6 +94,10 @@ export interface ParseDocumentTextOptions {
 @Service()
 export class AIRouter {
   private readonly logger: CustomLogger;
+  // Charged per provider ATTEMPT, outside each attempt's try: every attempt
+  // is a billed call whether it succeeds or not, and a refusal must stop the
+  // fallback rather than read as one more provider failure (SC-1265).
+  private readonly budget = Container.get(AiSpendBudget);
 
   constructor() {
     this.logger = createComponentLogger('ai-router');
@@ -139,7 +150,7 @@ export class AIRouter {
    */
   async parseScreenshot(
     imageBase64: string,
-    opts: ParseScreenshotOptions = {}
+    opts: ParseScreenshotOptions
   ): Promise<AIProviderResponse> {
     const providers = this.selectProviders(opts.provider);
     if (providers.length === 0) {
@@ -150,6 +161,7 @@ export class AIRouter {
 
     let lastError: Error | null = null;
     for (const provider of providers) {
+      await this.budget.reserve(opts.userId, 1);
       const start = Date.now();
       try {
         const result = await provider.parseScreenshot({
@@ -179,7 +191,7 @@ export class AIRouter {
 
   async parseDocumentText(
     text: string,
-    opts: ParseDocumentTextOptions = {}
+    opts: ParseDocumentTextOptions
   ): Promise<AIProviderResponse> {
     const providers = this.selectProviders(opts.provider);
     if (providers.length === 0) {
@@ -190,6 +202,7 @@ export class AIRouter {
     let lastError: Error | null = null;
     for (const provider of providers) {
       if (!provider.parseDocumentText) continue;
+      await this.budget.reserve(opts.userId, 1);
       const start = Date.now();
       try {
         const result = await provider.parseDocumentText(text, hint);
@@ -220,7 +233,7 @@ export class AIRouter {
    * a separate flag for `completeText`. Callers that need JSON output
    * should use `parseDocumentText` instead.
    */
-  async completeText(prompt: string, opts: CompleteTextOptions = {}): Promise<CompleteTextResult> {
+  async completeText(prompt: string, opts: CompleteTextOptions): Promise<CompleteTextResult> {
     const providers = this.getProviders();
     if (providers.length === 0) {
       throw new Error('AIRouter: no AI providers available for text completion');
@@ -228,6 +241,7 @@ export class AIRouter {
     let lastError: Error | null = null;
     for (const provider of providers) {
       if (!provider.completeText) continue;
+      await this.budget.reserve(opts.userId, 1);
       try {
         const result = await provider.completeText(prompt, {
           maxTokens: opts.maxTokens,

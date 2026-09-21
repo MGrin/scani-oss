@@ -2,14 +2,23 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { GroupRepository, UserRepository } from '@scani/domain/repositories';
 import { RenderPdfInput } from '@scani/shared';
+import { TRPCError } from '@trpc/server';
 import { desc, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
+import { USER_BUDGETS } from '../../config/limits';
 import { toNetWorthHistoryRow, userNetWorthDaily } from '../../lib/net-worth-series';
 import { accountLabel } from '../../lib/pdf/layout';
 import { renderStatement } from '../../lib/pdf/statement';
 import { strictInput } from '../lib/strict-input';
+import { UserBudget } from '../lib/user-budget';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
+
+const exportBudget = new UserBudget({
+  namespace: 'rl:export-everything',
+  max: USER_BUDGETS.EXPORTS_PER_HOUR,
+  windowMs: 60 * 60 * 1000,
+});
 
 /**
  * "Export everything" — one query that returns a portable copy of the account.
@@ -89,6 +98,13 @@ export const exportsRouter = router({
   everything: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
     const userId = dbUser.id;
+    const budget = await exportBudget.spend(`user:${userId}`);
+    if (!budget.ok) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: `Too many exports; retry in ${budget.retryAfterSec}s`,
+      });
+    }
 
     const [accounts, holdings, vendors, payments, groups, vaults, documents] = await Promise.all([
       db

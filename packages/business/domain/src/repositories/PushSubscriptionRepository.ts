@@ -26,14 +26,25 @@ export class PushSubscriptionRepository extends BaseRepository<
   protected readonly tableName = 'push_subscriptions';
 
   /**
-   * Register an endpoint, or re-point an existing one.
+   * Register an endpoint, or re-point an existing one. Null when the endpoint
+   * belongs to someone else and the caller could not prove it is the same
+   * subscription.
    *
-   * `onConflictDoUpdate` on the endpoint rather than `doNothing`, and the
-   * conflict path rewrites `user_id` too. A shared device is the case that
-   * needs it: the browser hands the same endpoint to whoever is signed in, so
-   * after a second person signs in on the same phone, `doNothing` would leave
-   * the row pointing at the first user and deliver their bill totals to
-   * somebody else's lock screen.
+   * A shared device is the case that needs re-pointing: the browser hands the
+   * same subscription to whoever is signed in, so after a second person signs
+   * in on the same phone the row must move, or it would deliver the first
+   * user's bill totals to somebody else's lock screen.
+   *
+   * But the endpoint alone is not proof of that, because it is a URL that can
+   * be observed. Until SC-1288 the conflict path rewrote `user_id` and both
+   * keys for anyone who sent it, so a stranger could re-point a victim's
+   * device at their own keys and the victim silently stopped receiving
+   * notifications. A shared browser presents the SAME `p256dh` and `auth` —
+   * `auth` is a secret only that browser holds — so the row moves to a new
+   * user only when both match, and it moves as a delete and a fresh insert
+   * rather than an in-place re-own, so nothing of the previous user's row
+   * carries over. The conflict update is limited to the row's own user, which
+   * also covers a concurrent insert by someone else landing between the two.
    */
   async upsert(
     input: {
@@ -44,9 +55,26 @@ export class PushSubscriptionRepository extends BaseRepository<
       userAgent?: string | null;
     },
     transaction?: DatabaseTransaction
-  ): Promise<PushSubscription> {
+  ): Promise<PushSubscription | null> {
     try {
       const database = this.getDb(transaction);
+      const [existing] = await database
+        .select()
+        .from(schema.pushSubscriptions)
+        .where(eq(schema.pushSubscriptions.endpoint, input.endpoint))
+        .limit(1);
+      if (existing && existing.userId !== input.userId) {
+        if (existing.p256dh !== input.p256dh || existing.auth !== input.auth) return null;
+        await database
+          .delete(schema.pushSubscriptions)
+          .where(
+            and(
+              eq(schema.pushSubscriptions.id, existing.id),
+              eq(schema.pushSubscriptions.userId, existing.userId)
+            )
+          );
+      }
+
       const [row] = await database
         .insert(schema.pushSubscriptions)
         .values({
@@ -59,15 +87,14 @@ export class PushSubscriptionRepository extends BaseRepository<
         .onConflictDoUpdate({
           target: schema.pushSubscriptions.endpoint,
           set: {
-            userId: input.userId,
             p256dh: input.p256dh,
             auth: input.auth,
             userAgent: input.userAgent ?? null,
           },
+          setWhere: eq(schema.pushSubscriptions.userId, input.userId),
         })
         .returning();
-      if (!row) throw new Error('push subscription upsert returned no row');
-      return row;
+      return row ?? null;
     } catch (error) {
       // The endpoint is a per-device identifier and personal data — see the
       // schema note — so it is counted, never logged.

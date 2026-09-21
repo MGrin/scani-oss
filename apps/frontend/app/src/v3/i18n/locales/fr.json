@@ -1867,6 +1867,13 @@
           "apply": "Importer avec cette devise",
           "applying": "Réimport…",
           "subject": "ce fichier"
+        },
+        "dateOrder": {
+          "title": "Dans ces dates, le jour vient-il avant le mois ?",
+          "body": "Chaque date de ce fichier se lit dans les deux sens — 03/04 peut être le 3 avril ou le 4 mars — et le fichier ne précise pas lequel. Rien n’a encore été importé.",
+          "samples": "Tel qu’écrit dans le fichier",
+          "dayFirst": "Jour d’abord — 31/12",
+          "monthFirst": "Mois d’abord — 12/31"
         }
       },
       "manual": {
@@ -1962,6 +1969,12 @@
         "needsCurrencyWithType_one": "{{count}} transaction · {{fileType}} — devise à préciser",
         "needsCurrencyWithType_many": "{{count}} transactions · {{fileType}} — devise à préciser",
         "needsCurrencyWithType_other": "{{count}} transactions · {{fileType}} — devise à préciser",
+        "needsDateOrder_one": "{{count}} transaction — ordre des dates à préciser",
+        "needsDateOrder_many": "{{count}} transactions — ordre des dates à préciser",
+        "needsDateOrder_other": "{{count}} transactions — ordre des dates à préciser",
+        "needsDateOrderWithType_one": "{{count}} transaction · {{fileType}} — ordre des dates à préciser",
+        "needsDateOrderWithType_many": "{{count}} transactions · {{fileType}} — ordre des dates à préciser",
+        "needsDateOrderWithType_other": "{{count}} transactions · {{fileType}} — ordre des dates à préciser",
         "chains_one": "{{count}} chaîne",
         "chains_many": "{{count}} chaînes",
         "chains_other": "{{count}} chaînes",

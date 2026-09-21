@@ -3,7 +3,6 @@ import { Container, Service } from 'typedi';
 import { BaseService } from '../BaseService';
 import { TokenValidationService } from '../tokens/TokenValidationService';
 import { AIRouter, type ParsedHolding, type ParsedPortfolio } from './AIRouter';
-import { AiSpendBudget } from './AiSpendBudget';
 
 // AI-driven screenshot → portfolio extraction. Image → LLM →
 // validate-each-holding → confidence filter.
@@ -11,7 +10,6 @@ import { AiSpendBudget } from './AiSpendBudget';
 export class ScreenshotParsingService extends BaseService {
   private readonly aiRouter = Container.get(AIRouter);
   private readonly tokenValidationService = Container.get(TokenValidationService);
-  private readonly budget = Container.get(AiSpendBudget);
 
   constructor() {
     super('ScreenshotParsingService');
@@ -37,7 +35,6 @@ export class ScreenshotParsingService extends BaseService {
       mimeType?: string;
     }
   ): Promise<ParsedPortfolio> {
-    await this.budget.reserve(options.userId, 1);
     try {
       this.logInfo('Starting screenshot parsing', {
         provider: options?.provider || 'default',
@@ -53,6 +50,7 @@ export class ScreenshotParsingService extends BaseService {
       }
 
       const aiResponse = await this.aiRouter.parseScreenshot(imageBase64, {
+        userId: options.userId,
         provider: options?.provider,
         accountType: options?.accountType,
         expectedCurrency: options?.expectedCurrency,
@@ -102,7 +100,6 @@ export class ScreenshotParsingService extends BaseService {
       minConfidence?: number;
     }
   ): Promise<ParsedPortfolio> {
-    await this.budget.reserve(options.userId, 1);
     try {
       this.logInfo('Starting document-text parsing', {
         provider: options?.provider || 'default',
@@ -118,6 +115,7 @@ export class ScreenshotParsingService extends BaseService {
       }
 
       const aiResponse = await this.aiRouter.parseDocumentText(text, {
+        userId: options.userId,
         provider: options?.provider,
         accountType: options?.accountType,
         expectedCurrency: options?.expectedCurrency,

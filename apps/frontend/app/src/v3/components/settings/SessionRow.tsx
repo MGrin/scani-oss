@@ -29,7 +29,6 @@ import { summariseUserAgent } from '../../lib/settings';
 
 interface SessionRowSession {
   id: string;
-  token: string;
   userAgent: string | null;
   ipAddress: string | null;
   updatedAt: string | Date;
@@ -39,7 +38,7 @@ interface SessionRowSession {
 interface SessionRowProps {
   session: SessionRowSession;
   isPending: boolean;
-  onRevoke: (token: string) => void;
+  onRevoke: (id: string) => void;
 }
 
 export function SessionRow({ session, isPending, onRevoke }: SessionRowProps) {
@@ -78,7 +77,7 @@ export function SessionRow({ session, isPending, onRevoke }: SessionRowProps) {
         disabledReason={session.isCurrent ? t('v3.settings.sessions.currentDevice') : undefined}
         consequence={t('v3.settings.sessions.revokeConsequence', { device, where })}
         onConfirm={() => {
-          onRevoke(session.token);
+          onRevoke(session.id);
           setConfirming(false);
         }}
       />

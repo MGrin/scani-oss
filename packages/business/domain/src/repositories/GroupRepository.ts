@@ -51,6 +51,31 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
     }
   }
 
+  /**
+   * The subset of `groupIds` this user owns, inactive groups included — the
+   * single-item assign use cases accept an inactive group of the caller's, so
+   * the bulk ones must too. Every write that takes a group id from a client
+   * checks it here first (SC-1286).
+   */
+  async findOwnedIds(
+    userId: string,
+    groupIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Set<string>> {
+    if (groupIds.length === 0) return new Set();
+    try {
+      const database = this.getDb(transaction);
+      const rows = await database
+        .select({ id: schema.groups.id })
+        .from(schema.groups)
+        .where(and(eq(schema.groups.userId, userId), inArray(schema.groups.id, groupIds)));
+      return new Set(rows.map((row) => row.id));
+    } catch (error) {
+      this.logger.error({ userId, count: groupIds.length, error }, 'Failed to find owned groups');
+      throw error;
+    }
+  }
+
   async findByUserWithCounts(
     userId: string,
     transaction?: DatabaseTransaction
@@ -123,7 +148,9 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           accountsCount: sql<number>`(
             SELECT COUNT(*)::int
             FROM account_groups ag
+            JOIN accounts a ON a.id = ag.account_id
             WHERE ag.group_id = "groups"."id"
+              AND a.user_id = "groups"."user_id"
           )`,
         })
         .from(schema.groups)
@@ -153,6 +180,10 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
    *
    * Every requested holding gets an entry, empty array included, so callers
    * never have to distinguish "no groups" from "not in the map".
+   *
+   * A group counts only when it has the holding's owner: a membership row
+   * pointing at someone else's group is ignored rather than trusted, because
+   * the bulk assign paths once wrote them (SC-1286) and production holds some.
    */
   private async resolveMembership(
     holdingIds: string[],
@@ -167,7 +198,14 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
     const direct = await database
       .select({ holdingId: schema.holdingGroups.holdingId, group: schema.groups })
       .from(schema.holdingGroups)
-      .innerJoin(schema.groups, eq(schema.holdingGroups.groupId, schema.groups.id))
+      .innerJoin(schema.holdings, eq(schema.holdingGroups.holdingId, schema.holdings.id))
+      .innerJoin(
+        schema.groups,
+        and(
+          eq(schema.holdingGroups.groupId, schema.groups.id),
+          eq(schema.groups.userId, schema.holdings.userId)
+        )
+      )
       .where(inArray(schema.holdingGroups.holdingId, holdingIds));
 
     const inherited = await database
@@ -177,7 +215,13 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
         schema.accountGroups,
         eq(schema.accountGroups.accountId, schema.holdings.accountId)
       )
-      .innerJoin(schema.groups, eq(schema.accountGroups.groupId, schema.groups.id))
+      .innerJoin(
+        schema.groups,
+        and(
+          eq(schema.accountGroups.groupId, schema.groups.id),
+          eq(schema.groups.userId, schema.holdings.userId)
+        )
+      )
       .where(inArray(schema.holdings.id, holdingIds));
 
     const vetoed = await database
@@ -257,7 +301,14 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           group: schema.groups,
         })
         .from(schema.accountGroups)
-        .innerJoin(schema.groups, eq(schema.accountGroups.groupId, schema.groups.id))
+        .innerJoin(schema.accounts, eq(schema.accountGroups.accountId, schema.accounts.id))
+        .innerJoin(
+          schema.groups,
+          and(
+            eq(schema.accountGroups.groupId, schema.groups.id),
+            eq(schema.groups.userId, schema.accounts.userId)
+          )
+        )
         .where(eq(schema.accountGroups.accountId, accountId));
 
       return results.map((r) => r.group);
@@ -542,7 +593,14 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
           group: schema.groups,
         })
         .from(schema.accountGroups)
-        .innerJoin(schema.groups, eq(schema.accountGroups.groupId, schema.groups.id))
+        .innerJoin(schema.accounts, eq(schema.accountGroups.accountId, schema.accounts.id))
+        .innerJoin(
+          schema.groups,
+          and(
+            eq(schema.accountGroups.groupId, schema.groups.id),
+            eq(schema.groups.userId, schema.accounts.userId)
+          )
+        )
         .where(inArray(schema.accountGroups.accountId, accountIds));
 
       // Build map of accountId -> groups

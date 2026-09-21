@@ -3,6 +3,7 @@ import {
   defaultInflowKey,
   extractXffTail,
   InMemoryInflowRateLimiter,
+  type RateLimiterConfig,
   resetRateLimiterConfig,
 } from '../src/index';
 
@@ -126,7 +127,7 @@ describe('extractXffTail', () => {
 });
 
 describe('defaultInflowKey on Fly (SC-1262)', () => {
-  const FLY = { FLY_APP_NAME: 'example-app' };
+  const FLY: RateLimiterConfig = { FLY_APP_NAME: 'example-app', SCANI_EDGE_LOCK: 'off' };
 
   test('keys on fly-client-ip and ignores every client-settable header', () => {
     const key = defaultInflowKey(
