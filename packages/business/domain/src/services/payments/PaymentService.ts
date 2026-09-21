@@ -10,6 +10,8 @@ import type {
 import { Decimal } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { AccountRepository } from '../../repositories/AccountRepository';
+import { DocumentExtractionRepository } from '../../repositories/DocumentExtractionRepository';
+import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
 import { PaymentOccurrenceRepository } from '../../repositories/PaymentOccurrenceRepository';
 import { PaymentRepository } from '../../repositories/PaymentRepository';
 import { VendorRepository } from '../../repositories/VendorRepository';
@@ -189,6 +191,8 @@ export class PaymentService {
   private readonly occurrenceRepository = Container.get(PaymentOccurrenceRepository);
   private readonly vendorRepository = Container.get(VendorRepository);
   private readonly accountRepository = Container.get(AccountRepository);
+  private readonly holdingTransactionRepository = Container.get(HoldingTransactionRepository);
+  private readonly extractionRepository = Container.get(DocumentExtractionRepository);
 
   async create(
     userId: string,
@@ -502,6 +506,11 @@ export class PaymentService {
    * manual "yes, paid" from the UI) leaves whatever was already there
    * alone, so re-confirming an auto-matched occurrence can't silently
    * unlink its transaction.
+   *
+   * Both links are checked against the caller before anything is written
+   * (SC-1287): the occurrence being yours says nothing about the transaction
+   * or extraction you point it at. A foreign id and a nonexistent one get the
+   * same refusal, so the answer cannot be used to probe for ids.
    */
   async settleOccurrence(
     userId: string,
@@ -510,6 +519,26 @@ export class PaymentService {
     transaction?: DatabaseTransaction
   ): Promise<PaymentOccurrence> {
     await this.requireOwnedOccurrence(userId, occurrenceId, transaction);
+
+    if (input.matchedTransactionId) {
+      const matched = await this.holdingTransactionRepository.findById(
+        input.matchedTransactionId,
+        transaction
+      );
+      if (matched?.userId !== userId) {
+        throw new Error('Matched transaction not found');
+      }
+    }
+    if (input.matchedExtractionId) {
+      const extraction = await this.extractionRepository.findByIdAndUser(
+        input.matchedExtractionId,
+        userId,
+        transaction
+      );
+      if (!extraction) {
+        throw new Error('Matched extraction not found');
+      }
+    }
 
     const patch: Partial<PaymentOccurrence> = { status: input.status };
     if (input.actualAmount !== undefined) {

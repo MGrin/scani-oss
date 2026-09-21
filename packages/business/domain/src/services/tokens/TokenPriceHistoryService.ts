@@ -34,10 +34,10 @@ export class TokenPriceHistoryService extends BaseService {
   /**
    * Create a custom token (private-company or other) with an initial manual
    * price, plus the first row in token_price_edit_history — all in one
-   * transaction. Any authenticated user can create a custom token; the
-   * token is shared (global, no userId column) and anyone can later edit
-   * its price via updateCustomTokenPrice. Throws if a token with the same
-   * (symbol, typeId) already exists.
+   * transaction. The token belongs to `userId` and is private to them
+   * (SC-1285). Throws if THEY already have a custom token with the same
+   * (symbol, typeId); another user's token with that symbol is invisible here
+   * and is not a conflict, so the refusal reveals nothing about anybody else.
    */
   async createCustomToken(
     data: {
@@ -69,7 +69,12 @@ export class TokenPriceHistoryService extends BaseService {
         const tokenType = await this.tokenTypeRepository.findByCode(data.typeCode, tx);
         this.assertExists(tokenType, `Token type '${data.typeCode}' not found`);
 
-        const existing = await this.tokenRepository.findBySymbolAndType(symbol, tokenType.id, tx);
+        const existing = await this.tokenRepository.findOwnedBySymbolAndType(
+          symbol,
+          tokenType.id,
+          userId,
+          tx
+        );
         if (existing) {
           throw new Error(
             `Custom token ${symbol} of type ${data.typeCode} already exists — pick the existing token instead.`
@@ -113,6 +118,7 @@ export class TokenPriceHistoryService extends BaseService {
             ...attributeDecimals(data.decimals, 'user'),
             iconUrl: data.iconUrl ?? null,
             providerMetadata,
+            createdByUserId: userId,
             isActive: true,
           },
           tx
@@ -159,8 +165,10 @@ export class TokenPriceHistoryService extends BaseService {
   }
 
   /**
-   * Append a new manual price to a custom token. Rejects if the token is
-   * not a custom type (private-company/other). Writes both a new
+   * Append a new manual price to a custom token. Only its owner may: for
+   * anybody else the token reads as not found, the same error a wrong id
+   * gets (SC-1285). Rejects a visible token that is not a custom type
+   * (private-company/other). Writes both a new
    * token_prices row (source='manual') and a token_price_edit_history
    * row, atomically.
    */
@@ -189,7 +197,7 @@ export class TokenPriceHistoryService extends BaseService {
       const baseSymbol = input.baseCurrencyCode.toUpperCase();
 
       return await this.withTransaction(async (tx) => {
-        const token = await this.tokenRepository.findById(input.tokenId, tx);
+        const token = await this.tokenRepository.findVisibleById(input.tokenId, input.userId, tx);
         this.assertExists(token, `Token ${input.tokenId} not found`);
 
         const tokenType = await this.tokenTypeRepository.findById(token.typeId, tx);
@@ -271,16 +279,27 @@ export class TokenPriceHistoryService extends BaseService {
   }
 
   /**
-   * Return the most recent price-edit history entries for a token,
-   * joined with editor email/name for display.
+   * The most recent price-edit history entries for a custom token the caller
+   * owns — and an empty list for anything else, which is what a token with no
+   * history returns too, so it says nothing about another user's token
+   * (SC-1285). An editor's email and name are returned only for the caller's
+   * own edits: the 2026-09-19 attack edited a token its account did not own,
+   * and that row must not hand its owner's reader somebody else's address.
    */
   async getPriceEditHistory(
     tokenId: string,
+    userId: string,
     limit = 50
   ): Promise<TokenPriceEditHistoryWithEditor[]> {
     try {
       this.validateNonEmptyString(tokenId, 'tokenId');
-      return await this.tokenPriceEditHistoryRepository.findByTokenId(tokenId, limit);
+      this.validateNonEmptyString(userId, 'userId');
+      const token = await this.tokenRepository.findVisibleById(tokenId, userId);
+      if (!token || token.createdByUserId !== userId) return [];
+      const rows = await this.tokenPriceEditHistoryRepository.findByTokenId(tokenId, limit);
+      return rows.map((row) =>
+        row.editedByUserId === userId ? row : { ...row, editorEmail: null, editorName: null }
+      );
     } catch (error) {
       throw this.handleError(error, 'getPriceEditHistory');
     }
