@@ -1,5 +1,6 @@
 import { UserJobRepository } from '@scani/domain/repositories';
 import {
+  InvalidBaseCurrencyError,
   ObservedBurnAnswerCurrencyMismatch,
   TokenService,
   UserService,
@@ -120,10 +121,16 @@ export const usersRouter = router({
       const { dbUser } = await requireAuth(ctx);
       await assertTokensVisible(dbUser.id, [input.baseCurrencyId]);
       const previousBaseCurrencyId = dbUser.baseCurrencyId;
-      const { user: updated, costBasisMethodChange } = await Container.get(UserService).updateUser(
-        dbUser.id,
-        input
-      );
+      let result: Awaited<ReturnType<UserService['updateUser']>>;
+      try {
+        result = await Container.get(UserService).updateUser(dbUser.id, input);
+      } catch (error) {
+        if (error instanceof InvalidBaseCurrencyError) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
+        }
+        throw error;
+      }
+      const { user: updated, costBasisMethodChange } = result;
       if (input.baseCurrencyId !== undefined && input.baseCurrencyId !== previousBaseCurrencyId) {
         emitEntityChange({
           entityType: 'user',
