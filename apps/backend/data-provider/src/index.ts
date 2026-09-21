@@ -11,6 +11,7 @@ const env = loadEnv();
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
 import { getNodeEnv, isNodeEnvProduction, servedVersion } from '@scani/config';
+import { turnstileRefusal } from '@scani/http-fetch';
 import { createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
@@ -337,6 +338,13 @@ const app = new Elysia()
     }
     const limited = await cloudAuthGate(request);
     if (limited) return limited;
+    const humanCheck = await turnstileRefusal(request, env.TURNSTILE_SECRET);
+    if (humanCheck) {
+      return new Response(JSON.stringify({ error: 'Forbidden', message: humanCheck.message }), {
+        status: humanCheck.status,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     return auth.handler(request);
   })
   .get('/', () => ({ status: 'ok', service: 'data-provider' }))

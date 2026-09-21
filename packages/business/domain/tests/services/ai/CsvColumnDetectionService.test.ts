@@ -3,28 +3,26 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy
 import { describe, expect, test } from 'bun:test';
 import { Container } from 'typedi';
 import { AIRouter } from '../../../src/services/ai/AIRouter';
-import { AiBudgetExceededError, AiSpendBudget } from '../../../src/services/ai/AiSpendBudget';
+import { AiBudgetExceededError } from '../../../src/services/ai/AiSpendBudget';
 import { CsvColumnDetectionService } from '../../../src/services/ai/CsvColumnDetectionService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
 restoreContainerAfterAll();
 
+// The router charges per provider attempt and throws when over budget; the
+// stub stands in for both, recording whose budget each call named.
 function setup(refuse: boolean) {
   const prompts: string[] = [];
   const reserved: string[] = [];
   Container.set(AIRouter, {
     hasAvailableProvider: () => true,
-    completeText: async (prompt: string) => {
+    completeText: async (prompt: string, opts: { userId: string }) => {
+      if (refuse) throw new AiBudgetExceededError('user');
+      reserved.push(opts.userId);
       prompts.push(prompt);
       return { content: '{"date":"Date","amount":"Amount"}', provider: 'ai-stub' };
     },
   } as unknown as AIRouter);
-  Container.set(AiSpendBudget, {
-    reserve: async (userId: string) => {
-      if (refuse) throw new AiBudgetExceededError('user');
-      reserved.push(userId);
-    },
-  } as unknown as AiSpendBudget);
   return { service: new CsvColumnDetectionService(), prompts, reserved };
 }
 
@@ -38,7 +36,7 @@ describe('CsvColumnDetectionService — AI budget (SC-1265)', () => {
     expect(prompts).toEqual([]);
   });
 
-  test('within budget it charges the importing user and maps the columns', async () => {
+  test('within budget it routes under the importing user and maps the columns', async () => {
     const { service, prompts, reserved } = setup(false);
     expect(await service.detectColumns('u1', HEADERS, ROWS)).toEqual({
       date: 'Date',
