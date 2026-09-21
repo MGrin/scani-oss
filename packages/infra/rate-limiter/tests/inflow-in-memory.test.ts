@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { defaultInflowKey, extractXffTail, InMemoryInflowRateLimiter } from '../src/index';
+import {
+  defaultInflowKey,
+  extractXffTail,
+  InMemoryInflowRateLimiter,
+  type RateLimiterConfig,
+  resetRateLimiterConfig,
+} from '../src/index';
 
 function req(headers: Record<string, string> = {}, method = 'GET'): Request {
   return new Request('http://test/', { method, headers });
@@ -117,5 +123,55 @@ describe('extractXffTail', () => {
 
   test('handles a single-entry list', () => {
     expect(extractXffTail('only')).toBe('only');
+  });
+});
+
+describe('defaultInflowKey on Fly (SC-1262)', () => {
+  const FLY: RateLimiterConfig = { FLY_APP_NAME: 'example-app', SCANI_EDGE_LOCK: 'off' };
+
+  test('keys on fly-client-ip and ignores every client-settable header', () => {
+    const key = defaultInflowKey(
+      req({
+        'fly-client-ip': '203.0.113.7',
+        'cf-connecting-ip': '1.1.1.1',
+        'x-real-ip': '3.3.3.3',
+        'x-forwarded-for': '9.9.9.9',
+      }),
+      FLY
+    );
+    expect(key).toBe('203.0.113.7');
+  });
+
+  test('with no fly-client-ip, one shared bucket, not a header the client chose', () => {
+    expect(defaultInflowKey(req({ 'cf-connecting-ip': '1.1.1.1', 'user-agent': 'a' }), FLY)).toBe(
+      defaultInflowKey(req({ 'cf-connecting-ip': '2.2.2.2', 'user-agent': 'b' }), FLY)
+    );
+  });
+
+  test('a rotated cf-connecting-ip from one Fly client still gets 429', async () => {
+    const saved = process.env.FLY_APP_NAME;
+    process.env.FLY_APP_NAME = 'example-app';
+    resetRateLimiterConfig();
+    try {
+      const limiter = new InMemoryInflowRateLimiter({
+        windowMs: 3_600_000,
+        max: 6,
+        namespace: 'rl:signup-test',
+      });
+      const verdicts = [];
+      for (let i = 0; i < 7; i++) {
+        verdicts.push(
+          await limiter.tryConsume(
+            req({ 'fly-client-ip': '198.51.100.23', 'cf-connecting-ip': `10.0.0.${i}` })
+          )
+        );
+      }
+      expect(verdicts.slice(0, 6).every((v) => v.ok)).toBe(true);
+      expect(verdicts[6]?.ok).toBe(false);
+    } finally {
+      if (saved === undefined) delete process.env.FLY_APP_NAME;
+      else process.env.FLY_APP_NAME = saved;
+      resetRateLimiterConfig();
+    }
   });
 });

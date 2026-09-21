@@ -62,6 +62,7 @@ import {
   createSignupLimiter,
   createStandardLimiter,
   createStrictLimiter,
+  edgeLockRefusal,
   observeRedisReachability,
   pingWithin,
   type StrandReport,
@@ -403,6 +404,9 @@ setSessionRevokeLimiterForContext(sessionRevokeLimiter);
 const wsAuthLimiter = createStrictLimiter(redisConnection, 30);
 
 const app = new Elysia()
+  // SC-1264. First, so a request that went round Cloudflare reaches nothing.
+  // Inert until SCANI_EDGE_LOCK=enforce.
+  .onRequest(({ request }) => edgeLockRefusal(request) ?? undefined)
   .onBeforeHandle(({ request, set }) => {
     const url = new URL(request.url);
     const requestId = crypto.randomUUID();

@@ -479,6 +479,7 @@
       "dependencies": {
         "@scani/deadline": "workspace:*",
         "typedi": "^0.10.0",
+        "zod": "^3.25.76",
       },
       "devDependencies": {
         "ioredis": "^5.10.1",

@@ -170,3 +170,41 @@ describe('the picker tells a screen reader what appeared', () => {
     expect(announced({ query: '   ' })).toBe('');
   });
 });
+
+/**
+ * An exact name that is already listed is not offered for creation (SC-1274).
+ *
+ * Typing "Kraken" listed the existing Kraken and, under it, `Add "Kraken"` —
+ * one click from a second institution with the identical name. A near-match is
+ * a legitimate different name, so that case keeps its create row.
+ */
+describe('the create row never duplicates a listed name', () => {
+  function rendered(query: string, labels: string[]): string {
+    return html(
+      <RecordPicker
+        value={null}
+        onSelect={() => {}}
+        onClear={() => {}}
+        query={query}
+        onQueryChange={() => {}}
+        open
+        onOpenChange={() => {}}
+        options={labels.map((label, index) => ({ id: `id-${index}`, label }))}
+        ariaLabel="institution"
+        placeholder="Search institutions"
+        emptyLabel="No institution by that name"
+        createLabel={(q) => `Add "${q}"`}
+        onCreate={() => {}}
+      />
+    ).replaceAll('&quot;', '"');
+  }
+
+  test('an exact match, in any case and with stray spaces, hides the create row', () => {
+    expect(rendered('Kraken', ['Kraken'])).not.toContain('Add "Kraken"');
+    expect(rendered(' kraken ', ['Kraken'])).not.toContain('Add "kraken"');
+  });
+
+  test('a near-match keeps it, because that is a different name', () => {
+    expect(rendered('Kraken', ['Kraken Pro'])).toContain('Add "Kraken"');
+  });
+});

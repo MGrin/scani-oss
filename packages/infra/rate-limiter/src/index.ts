@@ -1,3 +1,10 @@
+export {
+  loadRateLimiterConfig,
+  type RateLimiterConfig,
+  resetRateLimiterConfig,
+} from './config';
+export { cameThroughEdge, EDGE_HEADER, edgeLockRefusal } from './edge';
+
 import type { Redis } from 'ioredis';
 import { InMemoryInflowRateLimiter } from './inflow/in-memory';
 import type { InflowRateLimiter, InflowRateLimiterOptions } from './inflow/inflow-rate-limiter';

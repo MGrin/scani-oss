@@ -29,6 +29,7 @@ import { tronFactory } from '@scani/providers/providers/tron';
 import { yahooFinanceFactory } from '@scani/providers/providers/yahoo-finance';
 import {
   createOutflowLimiter,
+  edgeLockRefusal,
   observeRedisReachability,
   pingWithin,
   type StrandReport,
@@ -45,6 +46,7 @@ import { Container } from 'typedi';
 initSentry({ component: 'data-provider', release: env.SENTRY_RELEASE });
 
 import { type CloudBetterAuthInstance, createCloudBetterAuth } from './auth/better-auth';
+import { createCloudAuthGate } from './auth/cloud-auth-limit';
 import { type CloudDb, closeCloudDb, getCloudDb } from './db/connection';
 import { buildOpenApiDocument, renderScalarHtml } from './presentation/openapi';
 import { appRouter, installCloudDb, installUsageDeps } from './presentation/router';
@@ -77,6 +79,7 @@ logger.info({ port: PORT, host: HOST, nodeEnv: env.NODE_ENV }, '🚀 Starting Sc
 // buckets live in Redis where every data-provider replica shares fairness.
 const redisConnection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 setSharedRedis(redisConnection);
+const cloudAuthGate = createCloudAuthGate(redisConnection);
 
 /**
  * How long `/health/deep` waits for a Redis PING before calling it
@@ -170,6 +173,9 @@ interface RequestWithTracking extends Request {
 }
 
 const app = new Elysia()
+  // SC-1264. First, so a request that went round Cloudflare reaches nothing.
+  // Inert until SCANI_EDGE_LOCK=enforce.
+  .onRequest(({ request }) => edgeLockRefusal(request) ?? undefined)
   .onBeforeHandle(({ request, set }) => {
     // Cap inbound body size before parsing. tRPC envelopes plus the
     // largest legitimate AI request (a base64-encoded screenshot) are
@@ -329,6 +335,8 @@ const app = new Elysia()
         headers: { 'content-type': 'application/json' },
       });
     }
+    const limited = await cloudAuthGate(request);
+    if (limited) return limited;
     return auth.handler(request);
   })
   .get('/', () => ({ status: 'ok', service: 'data-provider' }))
