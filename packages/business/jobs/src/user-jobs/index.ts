@@ -19,8 +19,10 @@ export {
 } from './manual-holdings-create';
 export {
   PORTFOLIO_HISTORY_BACKFILL,
+  PORTFOLIO_HISTORY_CHUNK_DAYS,
   PORTFOLIO_HISTORY_LOOKBACK_DAYS,
   type PortfolioHistoryBackfillJob,
+  type PortfolioHistoryRollupProgress,
   portfolioHistoryBackfillSchema,
 } from './portfolio-history-backfill';
 export {
