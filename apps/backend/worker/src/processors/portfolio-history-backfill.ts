@@ -20,6 +20,7 @@ import { emitEntityChange } from '@scani/realtime';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { withJobLock } from '../lib/cron-lock';
+import { memoryStopReason, readMemory } from '../lib/memory-budget';
 
 // When the per-user advisory lock is held by an in-flight backfill, a
 // freshly-enqueued one would silently skip — leaving any data inserted
@@ -89,6 +90,18 @@ export interface ChunkedRollupDeps {
   saveProgress: (progress: PortfolioHistoryRollupProgress) => Promise<void>;
   onChunk: (daysDone: number, lookbackDays: number) => Promise<void>;
   sleep?: (ms: number) => Promise<void>;
+  // Why the next chunk must not start, or null to go ahead. Asked before
+  // every chunk, the first included.
+  memoryStopReason?: (fromDayOffset: number) => string | null;
+}
+
+// Thrown between chunks when the worker is too close to the VM's limit to
+// start another. Progress is already saved at that chunk, so the job's retry,
+// or a Retry pressed the same day, starts there. Stopping here is the point:
+// on 2026-09-21 the alternative was the box at 0 MB and the watchdog unable
+// to act for four minutes (SC-1283).
+export class RollupMemoryStop extends Error {
+  override readonly name = 'RollupMemoryStop';
 }
 
 // Walk the lookback window PORTFOLIO_HISTORY_CHUNK_DAYS at a time (SC-1283).
@@ -108,6 +121,12 @@ export async function runChunkedRollup(
   let from = start.nextDayOffset;
   while (from < lookbackDays) {
     const to = Math.min(lookbackDays, from + PORTFOLIO_HISTORY_CHUNK_DAYS);
+    const stop = deps.memoryStopReason?.(from);
+    if (stop) {
+      throw new RollupMemoryStop(
+        `${stop}; stopped before day offset ${from} of ${lookbackDays}, progress saved`
+      );
+    }
     let summary = await deps.rollup({ userId, lookbackDays, runStart, dayOffsets: { from, to } });
     for (let waits = 0; summary.usersSkipped > 0; waits++) {
       if (waits >= CHUNK_LOCK_MAX_WAITS) {
@@ -276,6 +295,14 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
       rollup: (opts) => rollup.execute(opts),
       saveProgress: (progress) => this.saveProgress(data, ctx, progress),
       onChunk: (daysDone, total) => ctx.reportProgress(0.55 + 0.4 * (daysDone / total)),
+      memoryStopReason: (fromDayOffset) => {
+        const reading = readMemory();
+        const reason = memoryStopReason(reading);
+        const fields = { jobId: ctx.job.id, userId: data.userId, fromDayOffset, ...reading };
+        if (reason) logger.warn({ ...fields, reason }, 'Stopping history rollup before a chunk');
+        else logger.info(fields, 'Starting history rollup chunk');
+        return reason;
+      },
     });
     await ctx.reportProgress(0.95);
 

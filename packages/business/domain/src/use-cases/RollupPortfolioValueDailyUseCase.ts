@@ -190,9 +190,16 @@ export class RollupPortfolioValueDailyUseCase {
             // Coverage joins the same prefetch: `has_complete_tx_history`
             // is a property of the import, not of the snapshot date, so
             // one read serves all `lookback` days (SC-149).
+            // Observations are read for THIS call's days only: the first
+            // row and the two bracketing each day, which is all the balance
+            // walk consults. The whole history was 112k rows per chunk on
+            // the portfolio that ran the worker out of memory (SC-1283).
             const [txHistory, observations, coverageByHolding] = await Promise.all([
               this.txRepository.findForHoldingsAll(holdingIds),
-              this.observationRepository.findForHoldingsAll(holdingIds),
+              this.observationRepository.findAnchorsForInstants(
+                holdingIds,
+                days.map((d) => d.at)
+              ),
               this.coverageRepository.findManyByHoldingIds(holdingIds),
             ]);
 

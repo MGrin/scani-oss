@@ -31,7 +31,10 @@ set -u
 pid="$1"
 meminfo="${WATCHDOG_MEMINFO:-/proc/meminfo}"
 interval="${WATCHDOG_INTERVAL_S:-5}"
-floor_mb="${WATCHDOG_MIN_AVAILABLE_MB:-96}"
+# 160, not the 96 it was: on 2026-09-21 a backfill chunk took the box from
+# 240 MB to 0 between two reads, and at 0 this loop's own TERM/KILL could not
+# run for about four minutes (SC-1283). The floor has to leave room to act in.
+floor_mb="${WATCHDOG_MIN_AVAILABLE_MB:-160}"
 strikes_needed="${WATCHDOG_STRIKES:-2}"
 report_every="${WATCHDOG_REPORT_EVERY:-120}"
 grace="${WATCHDOG_KILL_GRACE_S:-10}"
