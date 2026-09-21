@@ -3,6 +3,7 @@ import type { NewToken, Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { and, asc, desc, eq, gt, inArray, isNotNull, like, or, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
+import { catalogTokenOnly, customTokenVisibleTo } from '../lib/custom-token-visibility';
 
 @Service()
 export class TokenRepository extends BaseRepository<Token, NewToken> {
@@ -19,10 +20,13 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
     // occasionally win in prod imports. Prefer the most-legit row
     // (lowest scam probability), then the newest — newer user-created
     // tokens take priority over older seeded lookalikes.
+    //
+    // Catalog tokens only: every caller resolves a symbol on behalf of whoever
+    // asked, and a custom token is private to its owner (SC-1285).
     const results = await database
       .select()
       .from(schema.tokens)
-      .where(eq(schema.tokens.symbol, symbol.toUpperCase()))
+      .where(and(eq(schema.tokens.symbol, symbol.toUpperCase()), catalogTokenOnly()))
       .orderBy(asc(schema.tokens.isScamProbability), desc(schema.tokens.createdAt))
       .limit(1);
 
@@ -43,6 +47,66 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
       .limit(1);
 
     return results[0] || null;
+  }
+
+  /**
+   * The caller's own custom token with this symbol and type, if they have one.
+   * Symbol uniqueness on a custom token is per owner (SC-1285), so another
+   * user's token with the same symbol is not a conflict and is never returned.
+   */
+  async findOwnedBySymbolAndType(
+    symbol: string,
+    typeId: string,
+    ownerId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Token | null> {
+    const database = this.getDb(transaction);
+    const [row] = await database
+      .select()
+      .from(schema.tokens)
+      .where(
+        and(
+          eq(schema.tokens.symbol, symbol.toUpperCase()),
+          eq(schema.tokens.typeId, typeId),
+          eq(schema.tokens.createdByUserId, ownerId)
+        )
+      )
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * The token, if `userId` may see it — a catalog token, or a custom token
+   * they own (SC-1285). Another user's custom token reads exactly as a
+   * missing one, so a refusal cannot be told apart from a wrong id.
+   */
+  async findVisibleById(
+    tokenId: string,
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Token | null> {
+    const database = this.getDb(transaction);
+    const [row] = await database
+      .select()
+      .from(schema.tokens)
+      .where(and(eq(schema.tokens.id, tokenId), customTokenVisibleTo(userId)))
+      .limit(1);
+    return row ?? null;
+  }
+
+  /** The subset of `tokenIds` that `userId` may see (SC-1285). */
+  async findVisibleIds(
+    tokenIds: string[],
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Set<string>> {
+    if (tokenIds.length === 0) return new Set();
+    const database = this.getDb(transaction);
+    const rows = await database
+      .select({ id: schema.tokens.id })
+      .from(schema.tokens)
+      .where(and(inArray(schema.tokens.id, tokenIds), customTokenVisibleTo(userId)));
+    return new Set(rows.map((r) => r.id));
   }
 
   /**

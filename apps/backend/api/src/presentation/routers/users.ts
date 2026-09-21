@@ -26,6 +26,7 @@ import { Container } from 'typedi';
 import { z } from 'zod';
 import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
 import { strictInput } from '../lib/strict-input';
+import { assertTokensVisible } from '../lib/token-visibility';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -117,6 +118,7 @@ export const usersRouter = router({
     .output(CurrentUserDto)
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
+      await assertTokensVisible(dbUser.id, [input.baseCurrencyId]);
       const previousBaseCurrencyId = dbUser.baseCurrencyId;
       const { user: updated, costBasisMethodChange } = await Container.get(UserService).updateUser(
         dbUser.id,
