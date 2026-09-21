@@ -64,7 +64,12 @@ export const ogRouter = router({
     })
     .input(z.object({ url: z.string().url() }))
     .output(ogMetadataOut)
-    .query(async ({ input }): Promise<OGMetadata> => {
+    .query(async ({ ctx, input }): Promise<OGMetadata> => {
+      // The hostname, never the URL: a path or query can carry a token. The
+      // 2026-09-19 attack made 625 calls here and none recorded a target (SC-1284).
+      const host = new URL(input.url).hostname;
+      ctx.usage.annotate({ metadata: { host } });
+      log.info({ host }, 'OG fetch requested');
       try {
         const { html, truncated, finalUrl } = await fetchHtmlBounded(input.url);
         if (!html) return { ...EMPTY, finalUrl };
@@ -84,10 +89,8 @@ export const ogRouter = router({
           // The backend treats any throw as "no OG available", so mapping
           // every refusal reason to an empty result keeps the contract
           // simple. The reason is logged here for server-side debugging.
-          log.debug(
-            { url: input.url, reason: err.reason, message: err.message },
-            'OG fetch refused'
-          );
+          ctx.usage.annotate({ metadata: { refused: err.reason } });
+          log.info({ host, reason: err.reason, message: err.message }, 'OG fetch refused');
           return EMPTY;
         }
         throw new TRPCError({
