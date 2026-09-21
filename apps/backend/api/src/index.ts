@@ -382,7 +382,7 @@ const strictLimiter = createStrictLimiter(redisConnection, 60);
 const signupLimiter = createSignupLimiter(redisConnection, 6);
 const newAddressCap = createNewAddressCap({
   redis: redisConnection,
-  perHour: 100,
+  perHour: env.AUTH_NEW_ADDRESS_SENDS_PER_HOUR,
   hasAccount: async (email) => {
     const [row] = await db
       .select({ id: users.id })

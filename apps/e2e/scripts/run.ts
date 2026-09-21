@@ -673,6 +673,7 @@ async function main() {
     const upStatus = compose(['up', '-d', '--build', apiService(), ...BOOT_SERVICES], {
       STUB_AI: '1',
       STUB_CHAIN_DATA: '1',
+      AUTH_NEW_ADDRESS_SENDS_PER_HOUR: '100000',
     });
     if (upStatus !== 0) {
       const containers = readStackState();
