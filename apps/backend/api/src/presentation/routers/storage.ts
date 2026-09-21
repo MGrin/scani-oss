@@ -23,11 +23,19 @@ import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
-import { UPLOAD_LIMITS } from '../../config/limits';
+import { UPLOAD_LIMITS, USER_BUDGETS } from '../../config/limits';
 import { strictInput } from '../lib/strict-input';
+import { UserBudget } from '../lib/user-budget';
 import { protectedProcedure, router } from '../trpc';
 
 const MAX_SIZE_BYTES = UPLOAD_LIMITS.PRESIGN_UPLOAD_BYTES;
+
+// Counted in bytes, per UTC day (SC-1267).
+const uploadBudget = new UserBudget({
+  namespace: 'rl:upload-bytes',
+  max: USER_BUDGETS.UPLOAD_BYTES_PER_DAY,
+  windowMs: 24 * 60 * 60 * 1000,
+});
 
 // Per-purpose Content-Type allowlist. The presigned URL binds the
 // Content-Type into the SigV4 signature so R2 rejects a mismatched
@@ -100,6 +108,13 @@ export const storageRouter = router({
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: `File extension ".${ext}" is not allowed for purpose "${input.purpose}"`,
+        });
+      }
+      const budget = await uploadBudget.spend(`user:${ctx.userId}`, input.sizeBytes);
+      if (!budget.ok) {
+        throw new TRPCError({
+          code: 'TOO_MANY_REQUESTS',
+          message: `Daily upload allowance used; retry in ${budget.retryAfterSec}s`,
         });
       }
       const { uploadUrl, key, expiresAt, requiredHeaders } = await Container.get(

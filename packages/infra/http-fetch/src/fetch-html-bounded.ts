@@ -17,7 +17,8 @@
  * Guards:
  *   - Only `http:` / `https:` URLs.
  *   - DNS-resolved SSRF guard (rejects private / loopback / link-local /
- *     unique-local / fly-internal addresses).
+ *     unique-local / fly-internal addresses, and IPv6 forms that embed one),
+ *     with the connection pinned to the address it judged.
  *   - 4s end-to-end timeout via `AbortSignal.timeout`.
  *   - Response body truncated at `MAX_BYTES` via streaming reader.
  *   - Content-Type must start with `text/` (HTML-ish). JSON / binary
@@ -101,48 +102,115 @@ export async function withBudget<T>(work: Promise<T>, ms: number, label: string)
 // metadata endpoints reached by hostname.
 const BLOCKED_HOST_SUFFIXES = ['.internal', '.flycast', '.fly.dev'];
 
+function isPrivateOrReservedIpv4(bytes: ArrayLike<number>): boolean {
+  const a = bytes[0] ?? 0;
+  const b = bytes[1] ?? 0;
+  const c = bytes[2] ?? 0;
+  if (a === 0 || a === 10 || a === 127) return true;
+  if (a === 169 && b === 254) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 192 && b === 0 && c === 0) return true;
+  if (a === 198 && (b === 18 || b === 19)) return true;
+  if (a === 100 && b >= 64 && b <= 127) return true;
+  return a >= 224;
+}
+
+/** 16 bytes of an address `isIP` has already accepted as IPv6. */
+function ipv6Bytes(address: string): Uint8Array {
+  const bytes = new Uint8Array(16);
+  let text = address.split('%')[0] ?? '';
+  const tail: number[] = [];
+  const dotted = text.lastIndexOf(':');
+  if (text.includes('.')) {
+    for (const part of text.slice(dotted + 1).split('.')) tail.push(Number(part));
+    text = `${text.slice(0, dotted + 1)}0:0`;
+  }
+  const [head = '', rest] = text.split('::');
+  const toGroups = (s: string) => (s ? s.split(':').map((g) => Number.parseInt(g, 16)) : []);
+  const front = toGroups(head);
+  const back = rest === undefined ? [] : toGroups(rest);
+  const groups = [...front, ...new Array(8 - front.length - back.length).fill(0), ...back];
+  groups.forEach((g, i) => {
+    bytes[i * 2] = g >> 8;
+    bytes[i * 2 + 1] = g & 0xff;
+  });
+  if (tail.length === 4) bytes.set(tail, 12);
+  return bytes;
+}
+
+const startsWithBytes = (bytes: Uint8Array, prefix: number[]) =>
+  prefix.every((b, i) => bytes[i] === b);
+
 /**
- * True when the IP belongs to a range that must never be reachable from
- * a user-supplied URL. Covers IPv4 (RFC1918, loopback, link-local, CGNAT,
- * 0.0.0.0/8) and IPv6 (loopback, link-local, unique-local, IPv4-mapped).
+ * Classified on the 16 bytes, never on the text (SC-1284). WHATWG URL writes
+ * `[::ffff:127.0.0.1]` as `[::ffff:7f00:1]`, and a textual unwrap that only
+ * recognised the dotted form judged every mapped address public. Any prefix
+ * that carries an IPv4 address inside it is classified AS that IPv4 address,
+ * because that is where a kernel or a NAT64 gateway will actually send it.
+ */
+function isPrivateOrReservedIpv6(address: string): boolean {
+  const bytes = ipv6Bytes(address);
+  const zeros = (n: number) => bytes.subarray(0, n).every((b) => b === 0);
+  // ::ffff:0:0/96 mapped, and ::/96 compatible (which covers :: and ::1).
+  if (zeros(10) && bytes[10] === 0xff && bytes[11] === 0xff) {
+    return isPrivateOrReservedIpv4(bytes.subarray(12));
+  }
+  if (zeros(12)) return isPrivateOrReservedIpv4(bytes.subarray(12));
+  // ::ffff:0:0:0/96, SIIT's IPv4-translated form.
+  if (zeros(8) && bytes[8] === 0xff && bytes[9] === 0xff && bytes[10] === 0 && bytes[11] === 0) {
+    return isPrivateOrReservedIpv4(bytes.subarray(12));
+  }
+  // 64:ff9b::/96 well-known NAT64; 64:ff9b:1::/48 local-use NAT64 is never public.
+  if (startsWithBytes(bytes, [0x00, 0x64, 0xff, 0x9b, 0, 0, 0, 0, 0, 0, 0, 0])) {
+    return isPrivateOrReservedIpv4(bytes.subarray(12));
+  }
+  if (startsWithBytes(bytes, [0x00, 0x64, 0xff, 0x9b, 0x00, 0x01])) return true;
+  // 2002::/16 6to4 carries its IPv4 in bytes 2-5.
+  if (startsWithBytes(bytes, [0x20, 0x02])) return isPrivateOrReservedIpv4(bytes.subarray(2, 6));
+  // 2001::/32 Teredo hides an obfuscated IPv4 relay path; 2001:db8::/32 is documentation.
+  if (startsWithBytes(bytes, [0x20, 0x01, 0x00, 0x00])) return true;
+  if (startsWithBytes(bytes, [0x20, 0x01, 0x0d, 0xb8])) return true;
+  // 100::/64 discard.
+  if (startsWithBytes(bytes, [0x01, 0x00, 0, 0, 0, 0, 0, 0])) return true;
+  const first = bytes[0] ?? 0;
+  const second = bytes[1] ?? 0;
+  if ((first & 0xfe) === 0xfc) return true; // fc00::/7 unique-local (Fly 6PN)
+  if (first === 0xfe && (second & 0xc0) === 0x80) return true; // fe80::/10 link-local
+  if (first === 0xfe && (second & 0xc0) === 0xc0) return true; // fec0::/10 site-local
+  return first === 0xff; // multicast
+}
+
+/**
+ * True when the IP belongs to a range that must never be reachable from a
+ * user-supplied URL. Anything that is not an IP at all is refused too.
  */
 function isPrivateOrReservedAddress(address: string): boolean {
   const family = isIP(address);
-  if (family === 4) {
-    const parts = address.split('.').map(Number);
-    const [a, b] = parts;
-    if (a === undefined || b === undefined) return true;
-    if (a === 10) return true;
-    if (a === 127) return true;
-    if (a === 0) return true;
-    if (a === 169 && b === 254) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 100 && b >= 64 && b <= 127) return true;
-    if (a >= 224) return true;
-    return false;
-  }
-  if (family === 6) {
-    const lower = address.toLowerCase();
-    if (lower === '::' || lower === '::1') return true;
-    if (lower.startsWith('fe80:') || lower.startsWith('fe80::')) return true;
-    if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
-    if (lower.startsWith('::ffff:')) {
-      const mapped = lower.slice('::ffff:'.length);
-      if (isIP(mapped) === 4) return isPrivateOrReservedAddress(mapped);
-    }
-    return false;
-  }
+  if (family === 4) return isPrivateOrReservedIpv4(address.split('.').map(Number));
+  if (family === 6) return isPrivateOrReservedIpv6(address);
   return true;
 }
+
+/** Every address a hostname resolves to. Injectable so a rebinding resolver is testable. */
+export type Resolver = (hostname: string) => Promise<Array<{ address: string; family: number }>>;
+
+const resolveAll: Resolver = (hostname) => lookup(hostname, { all: true });
 
 /**
  * Exported so a second fetcher reuses THIS guard rather than growing its own
  * (SC-208). A private-address check that exists twice is one that will be
  * right in one place and stale in the other, and the second copy is always the
  * one nobody reviews.
+ *
+ * Returns the address that was judged, and a caller must CONNECT to that one
+ * (SC-1284): resolving the name a second time lets a rebinding resolver answer
+ * public here and loopback to `fetch`. `followRedirectsSafely` does this.
  */
-export async function assertHostIsPublic(hostname: string): Promise<void> {
+export async function assertHostIsPublic(
+  hostname: string,
+  resolve: Resolver = resolveAll
+): Promise<string> {
   const lowered = hostname.toLowerCase();
   if (lowered === 'localhost') {
     throw new BoundedFetchError('Blocked host (localhost)', 'blocked-host');
@@ -163,16 +231,17 @@ export async function assertHostIsPublic(hostname: string): Promise<void> {
     if (isPrivateOrReservedAddress(hostForIpCheck)) {
       throw new BoundedFetchError('Blocked private IP', 'blocked-host');
     }
-    return;
+    return hostForIpCheck;
   }
 
   let addresses: Array<{ address: string; family: number }>;
   try {
-    addresses = await lookup(hostname, { all: true });
+    addresses = await resolve(hostname);
   } catch {
     throw new BoundedFetchError(`DNS lookup failed for ${hostname}`, 'network');
   }
-  if (addresses.length === 0) {
+  const [first] = addresses;
+  if (!first) {
     throw new BoundedFetchError(`No addresses for ${hostname}`, 'network');
   }
   for (const { address } of addresses) {
@@ -180,6 +249,7 @@ export async function assertHostIsPublic(hostname: string): Promise<void> {
       throw new BoundedFetchError('Host resolves to a private address', 'blocked-host');
     }
   }
+  return first.address;
 }
 
 export interface FetchHtmlBoundedResult {
@@ -218,14 +288,18 @@ export type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 export async function followRedirectsSafely(
   start: URL,
   init: RequestInit,
-  fetchImpl: FetchLike = fetch
-): Promise<Response> {
+  fetchImpl: FetchLike = fetch,
+  resolve: Resolver = resolveAll
+): Promise<{ response: Response; url: URL }> {
   let current = start;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    const response = await fetchImpl(current.toString(), { ...init, redirect: 'manual' });
+    // The whole point: every hop is validated, not just the first — and the
+    // request goes to the address that was validated, not to a second lookup.
+    const address = await assertHostIsPublic(current.hostname, resolve);
+    const response = await fetchImpl(...pinnedRequest(current, address, init));
     const location = response.headers.get('location');
     const isRedirect = response.status >= 300 && response.status < 400 && location;
-    if (!isRedirect) return response;
+    if (!isRedirect) return { response, url: current };
 
     let next: URL;
     try {
@@ -236,11 +310,34 @@ export async function followRedirectsSafely(
     if (next.protocol !== 'http:' && next.protocol !== 'https:') {
       throw new BoundedFetchError(`Unsupported redirect protocol ${next.protocol}`, 'invalid-url');
     }
-    // The whole point: every hop is validated, not just the first.
-    await assertHostIsPublic(next.hostname);
     current = next;
   }
   throw new BoundedFetchError(`More than ${MAX_REDIRECTS} redirects`, 'network');
+}
+
+/**
+ * The request for `url`, sent to `address` (SC-1284).
+ *
+ * Bun's fetch has no `lookup` hook, so the pin is done in the URL: the host is
+ * replaced by the validated IP, `Host` carries the original host, and on https
+ * `tls.serverName` carries the original name. Bun sends that as SNI and — this
+ * is the load-bearing half — verifies the certificate against it. Without
+ * `serverName`, Bun 1.3.14 does not check the certificate's name at all when
+ * the URL host is an IP; `dns-rebinding-pin.test.ts` asserts both.
+ */
+function pinnedRequest(url: URL, address: string, init: RequestInit): [string, RequestInit] {
+  const target = new URL(url);
+  target.hostname = isIP(address) === 6 ? `[${address}]` : address;
+  const headers = new Headers(init.headers);
+  headers.set('Host', url.host);
+  const pinned: RequestInit & { tls?: { serverName: string } } = {
+    ...init,
+    headers,
+    redirect: 'manual',
+  };
+  const literal = url.hostname.startsWith('[') || isIP(url.hostname) !== 0;
+  if (url.protocol === 'https:' && !literal) pinned.tls = { serverName: url.hostname };
+  return [target.toString(), pinned];
 }
 
 export async function fetchHtmlBounded(
@@ -261,20 +358,21 @@ async function runFetchHtmlBounded(rawUrl: string): Promise<FetchHtmlBoundedResu
     throw new BoundedFetchError(`Unsupported protocol ${parsed.protocol}`, 'invalid-url');
   }
 
-  await assertHostIsPublic(parsed.hostname);
-
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   let response: Response;
+  let finalUrl: string;
   try {
-    response = await followRedirectsSafely(parsed, {
+    const walked = await followRedirectsSafely(parsed, {
       signal: controller.signal,
       headers: {
         Accept: 'text/html, application/xhtml+xml',
         'User-Agent': 'ScaniBot/1.0 (+https://scani.xyz)',
       },
     });
+    response = walked.response;
+    finalUrl = walked.url.toString();
   } catch (err) {
     if (err instanceof BoundedFetchError) {
       clearTimeout(timeoutId);
@@ -314,7 +412,7 @@ async function runFetchHtmlBounded(rawUrl: string): Promise<FetchHtmlBoundedResu
 
     const body = response.body;
     if (!body) {
-      return { html: '', truncated: false, finalUrl: response.url };
+      return { html: '', truncated: false, finalUrl };
     }
 
     const reader = body.getReader();
@@ -356,7 +454,7 @@ async function runFetchHtmlBounded(rawUrl: string): Promise<FetchHtmlBoundedResu
     for (const chunk of chunks) html += decoder.decode(chunk, { stream: true });
     html += decoder.decode();
 
-    return { html, truncated, finalUrl: response.url };
+    return { html, truncated, finalUrl };
   } finally {
     clearTimeout(timeoutId);
     if (!controller.signal.aborted) controller.abort();
