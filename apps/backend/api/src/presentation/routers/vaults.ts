@@ -17,6 +17,7 @@ import {
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { strictInput } from '../lib/strict-input';
+import { assertTokensVisible } from '../lib/token-visibility';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -85,6 +86,7 @@ export const vaultsRouter = router({
   // Create a new vault
   create: protectedProcedure.input(strictInput(CreateVaultDto)).mutation(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);
+    await assertTokensVisible(dbUser.id, [input.currencyId]);
     const vaultRepository = Container.get(VaultRepository);
 
     let result: Vault;
@@ -143,6 +145,7 @@ export const vaultsRouter = router({
       if (!vault || vault.userId !== dbUser.id) {
         throw new Error('Vault not found');
       }
+      await assertTokensVisible(dbUser.id, [input.data.currencyId]);
 
       const result = await vaultRepository.update(input.id, {
         ...input.data,

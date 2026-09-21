@@ -48,6 +48,7 @@ const deletedObjectKeys: string[] = [];
 
 let userId: string;
 let seededTokenIds: string[] = [];
+let seededCustomTokenId: string;
 let seededInstitutionId: string;
 let seededR2Key: string;
 /** Per-table counts for this user, taken after the seed and before the run. */
@@ -190,6 +191,9 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
     borrowedFromUserId: userId,
     outcome: 'ok',
   });
+  const custom = await makeToken(tx, { createdByUserId: userId });
+  seededCustomTokenId = custom.id;
+  seededTokenIds.push(custom.id);
 }
 
 beforeAll(async () => {
@@ -252,6 +256,14 @@ test('every table the manifest marks KEEP still holds this user — the control'
     if ((await rowsNamingUser(entry)) === 0) lost.push(getTableConfig(entry.table).name);
   }
   expect(lost).toEqual([]);
+});
+
+test('the user’s custom token survives with no owner, so nobody can see it (SC-1285)', async () => {
+  const [row] = await getDb()
+    .select({ owner: schema.tokens.createdByUserId })
+    .from(schema.tokens)
+    .where(eq(schema.tokens.id, seededCustomTokenId));
+  expect(row).toEqual({ owner: null });
 });
 
 test('an anonymised row survives with the user link severed', async () => {

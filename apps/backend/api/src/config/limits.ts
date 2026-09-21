@@ -48,3 +48,18 @@ export const CLIENT_ERROR_LIMITS = {
   /** Max length of a URL reported with the error (sanitized before logging). */
   URL_LEN: 2000,
 } as const;
+
+/**
+ * Per-caller allowances on endpoints that are expensive to serve (SC-1267).
+ * Scripted accounts on 2026-09-19 called exports.everything, getUploadUrl and
+ * clientErrors.report in loops; each figure sits well above what a person does
+ * in the same window.
+ */
+export const USER_BUDGETS = {
+  /** Full-account exports per user per hour. */
+  EXPORTS_PER_HOUR: 10,
+  /** Bytes of presigned uploads per user per UTC day: 30 max-size files. */
+  UPLOAD_BYTES_PER_DAY: 30 * UPLOAD_LIMITS.PRESIGN_UPLOAD_BYTES,
+  /** Client error reports per caller per 10 minutes; past it they are dropped. */
+  CLIENT_ERRORS_PER_10_MIN: 30,
+} as const;

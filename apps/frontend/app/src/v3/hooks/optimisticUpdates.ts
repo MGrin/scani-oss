@@ -435,14 +435,14 @@ export function insertCreatedGroup(
 
 export async function optimisticRevokeSession(
   utils: TrpcUtils,
-  token: string
+  id: string
 ): Promise<OptimisticSnapshot> {
   await utils.sessions.list.cancel();
   const prev = utils.sessions.list.getData();
   if (!prev) return NOOP_SNAPSHOT;
   utils.sessions.list.setData(
     undefined,
-    prev.filter((s) => s.token !== token)
+    prev.filter((s) => s.id !== id)
   );
   return {
     restore: () => utils.sessions.list.setData(undefined, prev),
