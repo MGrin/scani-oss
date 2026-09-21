@@ -23,9 +23,9 @@ refused, so you cannot break it, and it resets itself on a schedule. It is the
 same `scani/frontend-app` image [`docker-compose.prod.yml`](./docker-compose.prod.yml)
 pulls, so what you click through is what a self-hoster gets.
 
-**▶︎ [Try it free →](https://app.scani.xyz)** — the hosted version, running this
-exact codebase. Free for a year at every paid tier during the beta preview, no
-credit card.
+**▶︎ [Try it free →](https://app.scani.xyz)** — the hosted version. Its app, api and
+worker are this codebase; billing and analytics are private. Free for a year at
+every paid tier during the beta preview, no credit card.
 
 **📚 [Docs →](https://docs.scani.xyz/)** — quickstart, self-hosting,
 architecture, provider integrations, and the full env-var reference.
