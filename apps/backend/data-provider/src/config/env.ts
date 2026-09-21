@@ -102,6 +102,10 @@ const envSchema = z.object({
   // Better-Auth config (only consumed when CLOUD_MANAGEMENT_ENABLED).
   // Secret signs session tokens; trusted origins scope CORS+cookies.
   BETTER_AUTH_SECRET: z.string().optional(),
+  // Cloudflare Turnstile secret (SC-1266), checked on cloud sign-in and the
+  // contact form. Unset, both send mail without a human check; set it only once
+  // cloud and landing ship the widget, or both refuse everyone.
+  TURNSTILE_SECRET: z.string().optional(),
   BETTER_AUTH_URL: optionalUrl,
   CLOUD_FRONTEND_ORIGIN: optionalUrl,
 

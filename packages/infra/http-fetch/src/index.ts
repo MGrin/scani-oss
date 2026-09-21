@@ -14,3 +14,12 @@ export {
   type SiteIcon,
   sniffImageType,
 } from './site-icon';
+export {
+  isTurnstileAuthPath,
+  TURNSTILE_HEADER,
+  TURNSTILE_MESSAGES,
+  type TurnstileRefusal,
+  type TurnstileVerdict,
+  turnstileRefusal,
+  verifyTurnstile,
+} from './turnstile';
