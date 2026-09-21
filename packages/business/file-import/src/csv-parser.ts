@@ -1,4 +1,5 @@
 import Papa from 'papaparse';
+import { type DateOrder, parseStatementDate, resolveDateOrder } from './dates';
 import { detectBankTemplate } from './format-detector';
 import type { CsvColumnMapping, ParsedTransaction, ParseResult } from './types';
 import { BANK_TEMPLATES } from './types';
@@ -9,11 +10,14 @@ import { BANK_TEMPLATES } from './types';
  * @param content - Raw CSV file content
  * @param templateName - Bank template name (auto-detected if omitted)
  * @param customMapping - Custom column mapping (overrides template)
+ * @param options.dateOrder - Used only when neither the mapping's format nor
+ *   the data says which half of `03/04` is the day
  */
 export function parseCsvStatement(
   content: string,
   templateName?: string,
-  customMapping?: CsvColumnMapping
+  customMapping?: CsvColumnMapping,
+  options?: { dateOrder?: DateOrder }
 ): ParseResult {
   const warnings: string[] = [];
 
@@ -63,12 +67,27 @@ export function parseCsvStatement(
     }
   }
 
+  const dates = rows
+    .map((row) => getColumn(row, mapping.date)?.trim())
+    .filter((date): date is string => !!date);
+  const dateOrder = resolveDateOrder(dates, mapping.dateFormat, options?.dateOrder);
+  if ('ambiguous' in dateOrder) {
+    return {
+      transactions: [],
+      holdings: [],
+      format: 'csv',
+      bankTemplate: detectedTemplate,
+      warnings,
+      ambiguousDateOrder: dateOrder.ambiguous,
+    };
+  }
+
   // Parse each row
   const transactions: ParsedTransaction[] = [];
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]!;
     try {
-      const tx = parseRow(row, mapping);
+      const tx = parseRow(row, mapping, dateOrder.order);
       if (tx) transactions.push(tx);
     } catch (e) {
       warnings.push(`Row ${i + 2}: ${e instanceof Error ? e.message : 'parse error'}`);
@@ -229,7 +248,8 @@ function sanitizeCsvCell(value: string): string {
 
 function parseRow(
   row: Record<string, string>,
-  mapping: CsvColumnMapping
+  mapping: CsvColumnMapping,
+  dateOrder: DateOrder | null
 ): ParsedTransaction | null {
   const dateStr = getColumn(row, mapping.date)?.trim();
   const description = sanitizeCsvCell(getColumn(row, mapping.description)?.trim() || '');
@@ -255,7 +275,7 @@ function parseRow(
   const fee = normaliseStatementFee(getColumn(row, mapping.fee));
 
   return {
-    date: parseDate(dateStr, mapping.dateFormat),
+    date: parseStatementDate(dateStr, dateOrder),
     description,
     amount,
     currency,
@@ -293,35 +313,4 @@ function parseNumber(value: string | undefined): number | null {
 
   const num = Number(normalized);
   return Number.isNaN(num) ? null : num;
-}
-
-/** Parse a date string with optional format hint */
-function parseDate(dateStr: string, _format?: string): Date {
-  // Try native Date parsing first
-  const native = new Date(dateStr);
-  if (!Number.isNaN(native.getTime())) return native;
-
-  // Try common formats
-  // dd.MM.yyyy or dd.MM.yyyy HH:mm:ss (Russian banks)
-  const dotMatch = dateStr.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})/);
-  if (dotMatch) {
-    const [, day, month, year] = dotMatch;
-    return new Date(`${year}-${month!.padStart(2, '0')}-${day!.padStart(2, '0')}`);
-  }
-
-  // dd/MM/yyyy
-  const slashMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
-  if (slashMatch) {
-    const [, day, month, year] = slashMatch;
-    return new Date(`${year}-${month!.padStart(2, '0')}-${day!.padStart(2, '0')}`);
-  }
-
-  // dd-MM-yyyy
-  const dashMatch = dateStr.match(/^(\d{1,2})-(\d{1,2})-(\d{4})/);
-  if (dashMatch) {
-    const [, day, month, year] = dashMatch;
-    return new Date(`${year}-${month!.padStart(2, '0')}-${day!.padStart(2, '0')}`);
-  }
-
-  throw new Error(`Cannot parse date: ${dateStr}`);
 }

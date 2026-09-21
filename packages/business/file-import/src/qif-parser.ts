@@ -1,3 +1,4 @@
+import { type DateOrder, parseStatementDate, resolveDateOrder } from './dates';
 import type { ParsedTransaction, ParseResult } from './types';
 
 /**
@@ -16,9 +17,13 @@ import type { ParsedTransaction, ParseResult } from './types';
  * Note: QIF has no running balance field, so holdings extraction relies
  * on summing transactions (low confidence without a starting balance).
  */
-export function parseQifStatement(content: string): ParseResult {
+export function parseQifStatement(
+  content: string,
+  options?: { dateOrder?: DateOrder }
+): ParseResult {
   const warnings: string[] = [];
   const transactions: ParsedTransaction[] = [];
+  const entries: Array<{ dateStr: string; amount: number; description: string }> = [];
 
   // Split into records by ^
   const records = content.split('^').filter((r) => r.trim());
@@ -67,17 +72,34 @@ export function parseQifStatement(content: string): ParseResult {
     }
 
     if (!dateStr || amount === null) continue;
+    entries.push({ dateStr: normaliseQifDate(dateStr), amount, description: payee || memo });
+  }
 
+  const dateOrder = resolveDateOrder(
+    entries.map((entry) => entry.dateStr),
+    undefined,
+    options?.dateOrder
+  );
+  if ('ambiguous' in dateOrder) {
+    return {
+      transactions: [],
+      holdings: [],
+      format: 'qif',
+      warnings,
+      ambiguousDateOrder: dateOrder.ambiguous,
+    };
+  }
+
+  for (const entry of entries) {
     try {
-      const date = parseQifDate(dateStr);
       transactions.push({
-        date,
-        description: payee || memo || 'Unknown',
-        amount,
+        date: parseStatementDate(entry.dateStr, dateOrder.order),
+        description: entry.description || 'Unknown',
+        amount: entry.amount,
         currency: detectedCurrency || '',
       });
     } catch {
-      warnings.push(`Could not parse QIF date: ${dateStr}`);
+      warnings.push(`Could not parse QIF date: ${entry.dateStr}`);
     }
   }
 
@@ -99,25 +121,9 @@ export function parseQifStatement(content: string): ParseResult {
 }
 
 /**
- * Parse QIF date formats: MM/DD/YYYY, DD/MM/YYYY, MM-DD-YYYY, etc.
- * QIF dates are ambiguous — we try native parsing first, then common patterns.
+ * Quicken writes `1/ 5'04`: space-padded parts and an apostrophe before the
+ * year. Folded to `1/5/04` so it reads like every other numeric date.
  */
-function parseQifDate(dateStr: string): Date {
-  // Try native parsing (works for many formats)
-  const native = new Date(dateStr);
-  if (!Number.isNaN(native.getTime())) return native;
-
-  // Try dd/MM/yyyy (common in UK/EU QIF exports)
-  const slashMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (slashMatch) {
-    const [, dayOrMonth, monthOrDay, year] = slashMatch;
-    // Assume dd/MM/yyyy if first part > 12
-    if (Number(dayOrMonth) > 12) {
-      return new Date(`${year}-${monthOrDay!.padStart(2, '0')}-${dayOrMonth!.padStart(2, '0')}`);
-    }
-    // Ambiguous — assume MM/DD/YYYY (US convention)
-    return new Date(`${year}-${dayOrMonth!.padStart(2, '0')}-${monthOrDay!.padStart(2, '0')}`);
-  }
-
-  throw new Error(`Cannot parse QIF date: ${dateStr}`);
+function normaliseQifDate(dateStr: string): string {
+  return dateStr.replace(/\s+/g, '').replace(/'/g, '/');
 }

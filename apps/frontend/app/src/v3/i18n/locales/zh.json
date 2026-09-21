@@ -1225,6 +1225,8 @@
         "symbolsOverflow": "{{symbols}} 等 {{hidden}} 项",
         "needsCurrency_other": "{{count}} 笔交易——需要指定货币",
         "needsCurrencyWithType_other": "{{count}} 笔交易 · {{fileType}}——需要指定货币",
+        "needsDateOrder_other": "{{count}} 笔交易——需要指定日期顺序",
+        "needsDateOrderWithType_other": "{{count}} 笔交易 · {{fileType}}——需要指定日期顺序",
         "chains_other": "{{count}} 条链",
         "candidatesAcross_other": "{{chains}} 上共 {{count}} 个候选项",
         "nothingFound": "没有找到任何内容",
@@ -2389,6 +2391,13 @@
           "apply": "按这种货币导入",
           "applying": "正在重新导入…",
           "subject": "这个文件"
+        },
+        "dateOrder": {
+          "title": "这些日期是日在前还是月在前？",
+          "body": "这个文件里的每个日期都有两种读法——03/04 可能是 4 月 3 日，也可能是 3 月 4 日——而文件没有注明是哪一种。目前还没有导入任何内容。",
+          "samples": "文件中的原文",
+          "dayFirst": "日在前 — 31/12",
+          "monthFirst": "月在前 — 12/31"
         }
       },
       "manual": {
