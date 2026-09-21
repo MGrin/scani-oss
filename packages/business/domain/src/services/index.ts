@@ -314,6 +314,7 @@ export {
 export {
   COST_BASIS_METHOD_CHANGE_SOURCE,
   type CostBasisMethodChange,
+  InvalidBaseCurrencyError,
   ObservedBurnAnswerCurrencyMismatch,
   type UpdateUserResult,
   UserService,

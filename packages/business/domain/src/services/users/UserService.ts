@@ -6,6 +6,7 @@ import type { CostBasisMethodDto, ObservedBurnAnswerInput, UpdateUserInput } fro
 import { parseCostBasisMethod } from '@scani/shared';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { TokenRepository } from '../../repositories/TokenRepository';
 import { UserCostBasisMethodChangeRepository } from '../../repositories/UserCostBasisMethodChangeRepository';
 import { UserRepository } from '../../repositories/UserRepository';
 import { BaseService } from '../BaseService';
@@ -29,6 +30,21 @@ export class ObservedBurnAnswerCurrencyMismatch extends Error {
   constructor() {
     super('The observed-burn answer must be given in the account base currency');
     this.name = 'ObservedBurnAnswerCurrencyMismatch';
+  }
+}
+
+/**
+ * A base currency that is not an active fiat token (SC-1288).
+ *
+ * Every total in the app is priced in the base currency, and the picker offers
+ * exactly the active fiat tokens (`users.getSupportedCurrencies`). The API
+ * used to store any token id it was sent, so a crypto token, a stock or
+ * someone else's private company could become the unit everything renders in.
+ */
+export class InvalidBaseCurrencyError extends Error {
+  constructor() {
+    super('The base currency must be a supported fiat currency');
+    this.name = 'InvalidBaseCurrencyError';
   }
 }
 
@@ -68,6 +84,7 @@ export interface UpdateUserResult {
 export class UserService extends BaseService {
   private readonly userRepository = Container.get(UserRepository);
   private readonly costBasisMethodChanges = Container.get(UserCostBasisMethodChangeRepository);
+  private readonly tokenRepository = Container.get(TokenRepository);
 
   constructor() {
     super('UserService');
@@ -114,6 +131,13 @@ export class UserService extends BaseService {
     try {
       const existingUser = await this.userRepository.findById(userId, transaction);
       this.assertExists(existingUser, `User with ID ${userId} not found`);
+
+      if (data.baseCurrencyId) {
+        const token = await this.tokenRepository.findWithType(data.baseCurrencyId, transaction);
+        if (!token?.isActive || token.typeCode !== 'fiat') {
+          throw new InvalidBaseCurrencyError();
+        }
+      }
 
       // `parseCostBasisMethod` on the stored side because the column is `text`
       // with a CHECK, so the type system sees a string a database constraint
