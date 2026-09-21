@@ -4,6 +4,7 @@
 export type { ExtractedHolding } from '@scani/shared';
 
 import type { ExtractedHolding } from '@scani/shared';
+import type { AmbiguousDateOrder } from './dates';
 
 /** Common transaction format normalized from any bank statement */
 export interface ParsedTransaction {
@@ -41,6 +42,12 @@ export interface ParseResult {
   detectedCurrency?: string;
   /** Errors encountered during parsing (non-fatal) */
   warnings: string[];
+  /**
+   * Set when nothing in the file says whether `03/04` is 3 April or 4 March.
+   * `transactions` is then empty: the parse stops rather than guess, and the
+   * caller asks and re-parses with a `dateOrder` (SC-1291).
+   */
+  ambiguousDateOrder?: AmbiguousDateOrder;
 }
 
 export type StatementFormat = 'csv' | 'ofx' | 'mt940' | 'ib-csv' | 'pdf' | 'qif';

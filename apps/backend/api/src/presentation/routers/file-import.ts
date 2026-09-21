@@ -40,6 +40,9 @@ export const fileImportRouter = router({
           // file has no Currency column. Set by the picker UI on the
           // failed first-attempt's job-detail page.
           defaultCurrency: z.string().min(1).max(8).optional(),
+          // Set by the date-order prompt when the first attempt could not
+          // tell day from month (SC-1291).
+          dateOrder: z.enum(['day-first', 'month-first']).optional(),
         })
       )
     )
@@ -90,6 +93,7 @@ export const fileImportRouter = router({
         accountId: input.accountId,
         enrich: true,
         defaultCurrency: input.defaultCurrency,
+        dateOrder: input.dateOrder,
       });
       return { jobId };
     }),

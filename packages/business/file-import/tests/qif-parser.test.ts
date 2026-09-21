@@ -110,4 +110,50 @@ A123 Main St
     expect(result.transactions).toHaveLength(1);
     expect(result.transactions[0]?.description).toBe('Supermarket');
   });
+
+  // SC-1291: the ambiguous branch assumed US order and `new Date()` got there
+  // first anyway, so a UK export's 3 April was imported as 4 March.
+  describe('date order (SC-1291)', () => {
+    const qif = (...dates: string[]) =>
+      `!Type:Bank\n${dates.map((d) => `D${d}\nT-1.00\nPRow\n^`).join('\n')}`;
+    const isoDays = (result: ReturnType<typeof parseQifStatement>) =>
+      result.transactions.map((t) => t.date.toISOString().slice(0, 10));
+
+    it('reads a day-first file as day-first, including its days 1-12', () => {
+      expect(isoDays(parseQifStatement(qif('03/04/2026', '25/04/2026')))).toEqual([
+        '2026-04-03',
+        '2026-04-25',
+      ]);
+    });
+
+    it('reads a month-first file as month-first', () => {
+      expect(isoDays(parseQifStatement(qif('03/04/2026', '04/25/2026')))).toEqual([
+        '2026-03-04',
+        '2026-04-25',
+      ]);
+    });
+
+    it('reads the Quicken apostrophe year', () => {
+      expect(isoDays(parseQifStatement(qif("1/ 5'04", "1/25'04")))).toEqual([
+        '2004-01-05',
+        '2004-01-25',
+      ]);
+    });
+
+    it('flags an all-ambiguous file instead of guessing', () => {
+      const result = parseQifStatement(qif('03/04/2026', '05/06/2026'));
+      expect(result.transactions).toEqual([]);
+      expect(result.ambiguousDateOrder).toEqual({
+        rowCount: 2,
+        samples: ['03/04/2026', '05/06/2026'],
+      });
+    });
+
+    it('reads an ambiguous file in the order the caller supplies', () => {
+      const result = parseQifStatement(qif('03/04/2026', '05/06/2026'), {
+        dateOrder: 'day-first',
+      });
+      expect(isoDays(result)).toEqual(['2026-04-03', '2026-06-05']);
+    });
+  });
 });

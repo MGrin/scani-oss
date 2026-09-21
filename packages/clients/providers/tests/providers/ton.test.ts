@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
+import { WALLET_HISTORY_ROW_CAP } from '../../src/core/wallet-limits';
 import { TonProvider } from '../../src/providers/ton';
 
 function passthroughLimiter(): OutflowRateLimiter {
@@ -303,3 +304,38 @@ test.skipIf(process.env.SCANI_LIVE !== '1')(
   },
   60_000
 );
+
+describe('TonProvider.fetchTransactions over an address with no end (SC-1271)', () => {
+  test('stops at the row cap and retracts the history claim', async () => {
+    const p = new TonProvider(passthroughLimiter(), 'http://api');
+    const retractions: string[] = [];
+    let pages = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      pages += 1;
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          result: Array.from({ length: 100 }, (_, i) => ({
+            utime: 1_700_000_000 - pages,
+            transaction_id: { lt: String(1_000_000 - pages * 100 - i), hash: `h${pages}_${i}` },
+            in_msg: { source: 'EQSomeSender', destination: VALID_TON_FRIENDLY, value: '1' },
+            out_msgs: [],
+          })),
+        }),
+        { status: 200 }
+      );
+    }) as unknown as typeof fetch;
+    try {
+      const events = await p.fetchTransactions({
+        ...ctx,
+        retractHistoryClaim: (r: string) => retractions.push(r),
+      } as never);
+      expect(events.length).toBeGreaterThanOrEqual(WALLET_HISTORY_ROW_CAP);
+      expect(pages).toBe(WALLET_HISTORY_ROW_CAP / 100);
+      expect(retractions).toHaveLength(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});

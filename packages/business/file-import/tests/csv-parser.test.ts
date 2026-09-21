@@ -354,3 +354,94 @@ describe('number parsing is linear in the cell length (SC-483)', () => {
     expect(elapsed).toBeLessThan(250);
   });
 });
+
+// SC-1291: `new Date('03/04/2026')` is 4 March in every JS engine, so a
+// day-first bank's 3 April landed a month early and nothing said so. The
+// order is a property of the COLUMN — one value past 12 settles it for all.
+describe('date order (SC-1291)', () => {
+  const csv = (...dates: string[]) =>
+    `Date,Description,Amount,Currency\n${dates.map((d, i) => `${d},Row ${i},-1.00,EUR`).join('\n')}`;
+  const isoDays = (result: ReturnType<typeof parseCsvStatement>) =>
+    result.transactions.map((t) => t.date.toISOString().slice(0, 10));
+
+  it('reads a day-first column as day-first, including its days 1-12', () => {
+    expect(isoDays(parseCsvStatement(csv('03/04/2026', '25/04/2026')))).toEqual([
+      '2026-04-03',
+      '2026-04-25',
+    ]);
+  });
+
+  it('reads a month-first column as month-first', () => {
+    expect(isoDays(parseCsvStatement(csv('03/04/2026', '04/25/2026')))).toEqual([
+      '2026-03-04',
+      '2026-04-25',
+    ]);
+  });
+
+  for (const sep of ['.', '-']) {
+    it(`treats "${sep}" separators the same way`, () => {
+      const d = (s: string) => s.replaceAll('/', sep);
+      expect(isoDays(parseCsvStatement(csv(d('03/04/2026'), d('25/04/2026'))))).toEqual([
+        '2026-04-03',
+        '2026-04-25',
+      ]);
+      expect(isoDays(parseCsvStatement(csv(d('03/04/2026'), d('04/25/2026'))))).toEqual([
+        '2026-03-04',
+        '2026-04-25',
+      ]);
+      const ambiguous = parseCsvStatement(csv(d('03/04/2026'), d('05/06/2026')));
+      expect(ambiguous.transactions).toEqual([]);
+      expect(ambiguous.ambiguousDateOrder?.rowCount).toBe(2);
+    });
+  }
+
+  it('flags an all-ambiguous column instead of guessing, and imports nothing', () => {
+    const result = parseCsvStatement(csv('03/04/2026', '05/06/2026', '07/08/2026'));
+    expect(result.transactions).toEqual([]);
+    expect(result.ambiguousDateOrder).toEqual({
+      rowCount: 3,
+      samples: ['03/04/2026', '05/06/2026', '07/08/2026'],
+    });
+  });
+
+  it('reads an ambiguous column in the order the caller supplies', () => {
+    const day = parseCsvStatement(csv('03/04/2026', '05/06/2026'), undefined, undefined, {
+      dateOrder: 'day-first',
+    });
+    expect(day.ambiguousDateOrder).toBeUndefined();
+    expect(isoDays(day)).toEqual(['2026-04-03', '2026-06-05']);
+    const month = parseCsvStatement(csv('03/04/2026', '05/06/2026'), undefined, undefined, {
+      dateOrder: 'month-first',
+    });
+    expect(isoDays(month)).toEqual(['2026-03-04', '2026-05-06']);
+  });
+
+  it('lets a template date format win over the data', () => {
+    const monzo = `Transaction ID,Date,Time,Type,Name,Emoji,Category,Amount,Currency
+tx_1,03/04/2026,11:26:03,Card payment,Cafe,,Eating out,-3.00,GBP
+tx_2,05/06/2026,11:26:03,Card payment,Cafe,,Eating out,-3.00,GBP`;
+    const result = parseCsvStatement(monzo);
+    expect(result.bankTemplate).toBe('monzo');
+    expect(isoDays(result)).toEqual(['2026-04-03', '2026-06-05']);
+  });
+
+  it('reads the dd.MM.yyyy templates day-first for days 1-12', () => {
+    const tinkoff = `Дата операции,Описание,Сумма операции,Валюта операции,Остаток после операции
+03.04.2024 10:30:00,Кофе,-350.00,RUB,1000.00`;
+    const tx = parseCsvStatement(tinkoff, 'tinkoff').transactions[0]!;
+    expect(tx.date.toISOString()).toBe('2024-04-03T10:30:00.000Z');
+  });
+
+  it('leaves ISO dates alone', () => {
+    expect(isoDays(parseCsvStatement(csv('2026-04-03', '2026-04-25')))).toEqual([
+      '2026-04-03',
+      '2026-04-25',
+    ]);
+  });
+
+  it('reports a day that does not exist rather than rolling it over', () => {
+    const result = parseCsvStatement(csv('31/04/2026', '25/04/2026'));
+    expect(isoDays(result)).toEqual(['2026-04-25']);
+    expect(result.warnings.some((w) => w.includes('31/04/2026'))).toBe(true);
+  });
+});
