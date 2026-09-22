@@ -101,6 +101,8 @@ function parseAddHeaders(source: string): Map<string, string> {
 }
 
 /** `a 'x'; b y; c` → Map(a → "'x'", b → 'y', c → ''). */
+const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com';
+
 function parseCsp(value: string): Map<string, string> {
   const out = new Map<string, string>();
   for (const chunk of value.split(';')) {
@@ -229,7 +231,10 @@ describe('_headers and the nginx include declare one policy', () => {
   test('the CSP still constrains the directives an XSS payload would use', () => {
     const fromNginx = parseCsp(nginx.get('Content-Security-Policy') ?? '');
     expect(fromNginx.get('default-src')).toBe("'self'");
-    expect(fromNginx.get('script-src')).toBe("'self'");
+    // Exactly one third-party origin, Cloudflare Turnstile's (SC-1266): no
+    // wildcard, no 'unsafe-*', and any other host turns this red.
+    expect(fromNginx.get('script-src')).toBe(`'self' ${TURNSTILE_ORIGIN}`);
+    expect(fromNginx.get('frame-src')).toBe(TURNSTILE_ORIGIN);
     expect(fromNginx.get('object-src')).toBe("'none'");
     expect(fromNginx.get('frame-ancestors')).toBe("'none'");
     expect(fromNginx.get('base-uri')).toBe("'self'");
