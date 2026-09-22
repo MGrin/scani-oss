@@ -439,7 +439,7 @@
         "saved": "Épargné",
         "targetReached": "Cible atteinte — {{percent}} % de la cible",
         "stillToGo": "Il reste <remaining/> à épargner, sur une cible de <target/>",
-        "countingToward_one": "Comptent pour cet objectif ({{count}})",
+        "countingToward_one": "Compte pour cet objectif ({{count}})",
         "countingToward_many": "Comptent pour cet objectif ({{count}})",
         "countingToward_other": "Comptent pour cet objectif ({{count}})",
         "empty": "Rien ne compte encore pour cet objectif. Rattachez une position et elle commencera à contribuer à la cible.",
