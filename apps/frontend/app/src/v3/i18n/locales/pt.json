@@ -2060,6 +2060,15 @@
       },
       "vendorSpend": {
         "notSubtracted": "Não é descontado do que deve — são dois valores separados."
+      },
+      "suggestions": {
+        "title": "Parece recorrente",
+        "claim": "{{payee}} parece um pagamento mensal de <value></value>.",
+        "accept": "Adicionar como recorrente",
+        "dismiss": "Não é recorrente",
+        "evidence_one": "Com base em {{count}} pagamento:",
+        "evidence_many": "Com base em {{count}} pagamentos:",
+        "evidence_other": "Com base em {{count}} pagamentos:"
       }
     },
     "notFound": {

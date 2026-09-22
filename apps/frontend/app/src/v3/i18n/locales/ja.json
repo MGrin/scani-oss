@@ -616,6 +616,13 @@
         "couldEstimate_other": "そのうち{{count}}件は過去に決済があるため、その金額を代わりに使えます。",
         "useLastSettled_other": "最後に決済した金額を使う",
         "stopEstimating_other": "概算をやめる"
+      },
+      "suggestions": {
+        "title": "定期的な支払いのようです",
+        "claim": "{{payee}} は毎月 <value></value> の支払いのようです。",
+        "accept": "定期支払いとして追加",
+        "dismiss": "定期ではない",
+        "evidence_other": "{{count}} 件の支払いに基づく："
       }
     },
     "groups": {
