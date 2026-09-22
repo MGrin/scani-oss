@@ -13,6 +13,19 @@ async function createGroup(page: Page, name: string, holdingId: string): Promise
 }
 
 /**
+ * Every surface here renders its figure from `groups.getValues`, and under the
+ * Vite dev server WebKit can spend longer than an assertion's 5s fetching the
+ * route's modules before it even asks (SC-1294: 457 module requests in 6s, the
+ * query sent after the window had closed). Armed before navigating, as
+ * `gotoAccountPeek` does, so an answer that lands during `goto` is not missed.
+ */
+async function gotoWithGroupValues(page: Page, path: string): Promise<void> {
+  const values = page.waitForResponse((res) => res.url().includes('groups.getValues') && res.ok());
+  await page.goto(path);
+  await values;
+}
+
+/**
  * SC-1128, end to end: a group holding only closed positions used to headline
  * 0 on all three surfaces that show a group's value. Each now shows what those
  * positions are worth under a label saying they are inactive, and the group of
@@ -42,17 +55,17 @@ test.describe('groups: a group of only inactive holdings', () => {
     const liveGroup = await createGroup(page, liveName, live.id);
     const closedGroup = await createGroup(page, closedName, closed.id);
 
-    await page.goto(`/groups/${closedGroup}`);
+    await gotoWithGroupValues(page, `/groups/${closedGroup}`);
     await expect(page.getByText('Inactive value', { exact: true })).toBeVisible();
     await expect(
       page.getByText('Nothing listed here is active, so none of this is in your portfolio total.')
     ).toBeVisible();
 
-    await page.goto(`/groups/${liveGroup}`);
+    await gotoWithGroupValues(page, `/groups/${liveGroup}`);
     await expect(page.getByText('1,000.00').first()).toBeVisible();
     await expect(page.getByText('Inactive value', { exact: true })).toHaveCount(0);
 
-    await page.goto('/groups');
+    await gotoWithGroupValues(page, '/groups');
     // A table row on desktop, whose link wraps only the name; a button on a
     // phone or tablet.
     const row = (name: string) =>
@@ -67,7 +80,7 @@ test.describe('groups: a group of only inactive holdings', () => {
     await expect(liveRow).toContainText('1,000.00');
     await expect(liveRow).not.toContainText('Inactive');
 
-    await page.goto('/');
+    await gotoWithGroupValues(page, '/');
     await expect(page.getByRole('link', { name: new RegExp(closedName) })).toContainText(
       'Inactive'
     );
