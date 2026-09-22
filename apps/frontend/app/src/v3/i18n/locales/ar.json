@@ -1011,7 +1011,7 @@
         "addPayment": "إضافة دفعة"
       },
       "recurringSummary": {
-        "projectedEachMonth": "المتوقَّع شهريًا",
+        "projectedEachMonth": "الفواتير المتوقَّعة شهريًا",
         "estimatedFromHistory_zero": "يشمل {{count}} دفعة متغيرة المبلغ مُقدَّرة وفق آخر مبلغ تمّت تسويته لها.",
         "estimatedFromHistory_one": "يشمل دفعة واحدة متغيرة المبلغ مُقدَّرة وفق آخر مبلغ تمّت تسويته لها.",
         "estimatedFromHistory_two": "يشمل دفعتين متغيرتَي المبلغ مُقدَّرتين وفق آخر مبلغ تمّت تسويته لكل منهما.",
@@ -1066,6 +1066,7 @@
         "chooseVendor": "اختيار طرف مقابل",
         "pickCurrency": "اختيار عملة من القائمة",
         "setAnchorDate": "تحديد تاريخ الاستحقاق الأساسي",
+        "chooseDate": "اختر تاريخًا",
         "chooseCadence": "اختيار وتيرة التكرار",
         "setRepeatCount": "تحديد عدد صالح لمرات التكرار"
       },
@@ -1240,6 +1241,18 @@
         "stopEstimating_few": "إيقاف تقديرها",
         "stopEstimating_many": "إيقاف تقديرها",
         "stopEstimating_other": "إيقاف تقديرها"
+      },
+      "suggestions": {
+        "title": "يبدو متكررًا",
+        "claim": "يبدو أن {{payee}} دفعة شهرية بقيمة <value></value>.",
+        "accept": "إضافة كدفعة متكررة",
+        "dismiss": "ليست متكررة",
+        "evidence_zero": "بناءً على {{count}} دفعة:",
+        "evidence_one": "بناءً على دفعة واحدة:",
+        "evidence_two": "بناءً على دفعتين:",
+        "evidence_few": "بناءً على {{count}} دفعات:",
+        "evidence_many": "بناءً على {{count}} دفعة:",
+        "evidence_other": "بناءً على {{count}} دفعة:"
       }
     },
     "jobs": {
@@ -2296,7 +2309,9 @@
         "noResults": "لا يوجد حساب بهذا الاسم هنا.",
         "addNamed": "إضافة «{{name}}»",
         "addNew": "إضافة حساب جديد",
-        "pickExisting": "اختيار حساب موجود"
+        "pickExisting": "اختيار حساب موجود",
+        "firstPlaceholder": "سمِّ حسابك الأول…",
+        "noneYet": "لا توجد حسابات بعد — اكتب اسمًا لإضافة حسابك الأول."
       },
       "page": {
         "uploadAndRead": "الرفع والقراءة",
@@ -2792,6 +2807,39 @@
       },
       "runway": {
         "label": "يكفي المال حتى"
+      },
+      "returns": {
+        "title": "العوائد",
+        "chooseWindow": "اختر الفترة",
+        "window": {
+          "ytd": "منذ بداية العام",
+          "1y": "سنة",
+          "all": "الكل"
+        },
+        "twr": {
+          "label": "عائد الاستثمار",
+          "caption": "أداء ممتلكاتك بغض النظر عما أضفته أو سحبته."
+        },
+        "fx": {
+          "label": "منها أسعار الصرف",
+          "caption": "حققت أصولك <value/> بعملاتها الخاصة؛ والباقي من تحرك العملات مقابل عملتك."
+        },
+        "xirr": {
+          "label": "عائد أموالك",
+          "caption": "ما كسبته أموالك مع احتساب توقيت الإيداع والسحب.",
+          "approximate": "أكثر من معدل واحد يطابق إيداعاتك وسحوباتك، لذا اعتبره تقريبيًا."
+        },
+        "benchmarks": {
+          "label": "مقارنةً بـ",
+          "caption": "بيتكوين وS&P 500 لو اشتُريا واحتُفظ بهما في الأيام نفسها، بعملتك؛ والأسعار في الولايات المتحدة في الأشهر نفسها.",
+          "btc": "بيتكوين",
+          "sp500": "S&P 500 (SPY، السعر فقط)",
+          "usInflation": "التضخم في الولايات المتحدة (CPI-U)"
+        },
+        "perYear": "<value/> سنويًا",
+        "perYearUnit": "سنويًا",
+        "since": "منذ {{date}}.",
+        "partial": "تعذّر تسعير بعض الأيام بالكامل، لذا قد تكون هذه الأرقام غير دقيقة."
       }
     },
     "vaults": {
@@ -3103,7 +3151,25 @@
         "days_two": "منذ يومين",
         "days_few": "منذ {{count, number}} أيام",
         "days_many": "منذ {{count, number}} يومًا",
-        "days_other": "منذ {{count, number}} يوم"
+        "days_other": "منذ {{count, number}} يوم",
+        "inMinutes_zero": "بعد {{count, number}} دقيقة",
+        "inMinutes_one": "بعد دقيقة",
+        "inMinutes_two": "بعد دقيقتين",
+        "inMinutes_few": "بعد {{count, number}} دقائق",
+        "inMinutes_many": "بعد {{count, number}} دقيقة",
+        "inMinutes_other": "بعد {{count, number}} دقيقة",
+        "inHours_zero": "بعد {{count, number}} ساعة",
+        "inHours_one": "بعد ساعة",
+        "inHours_two": "بعد ساعتين",
+        "inHours_few": "بعد {{count, number}} ساعات",
+        "inHours_many": "بعد {{count, number}} ساعة",
+        "inHours_other": "بعد {{count, number}} ساعة",
+        "inDays_zero": "بعد {{count, number}} يوم",
+        "inDays_one": "بعد يوم",
+        "inDays_two": "بعد يومين",
+        "inDays_few": "بعد {{count, number}} أيام",
+        "inDays_many": "بعد {{count, number}} يومًا",
+        "inDays_other": "بعد {{count, number}} يوم"
       }
     },
     "entities": {

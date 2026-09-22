@@ -1,3 +1,4 @@
+import { StoreCommandTimeoutError, withDeadline } from '@scani/deadline';
 import { createComponentLogger } from '@scani/logging';
 import type { Redis } from 'ioredis';
 import { Service } from 'typedi';
@@ -7,6 +8,16 @@ import { LifecyclePublisher } from './lifecycle-publisher';
 const log = createComponentLogger('queue:lifecycle-publisher');
 
 const CHANNEL_PREFIX = 'rt:user:';
+
+/**
+ * "Best-effort, continuing" needs the publish to REJECT, and the shared client
+ * never does: it is built `maxRetriesPerRequest: null`, so a PUBLISH issued
+ * while Redis is down waits for a connection that may not return. Measured on
+ * a dead port before this bound (SC-1027): still pending after 4000ms, inside
+ * `UserJobProcessor`, which awaits it on every job. 250ms follows the inflow
+ * limiter and `PortfolioValueCache`.
+ */
+const PUBLISH_TIMEOUT_MS = 250;
 
 // Wire shape MUST stay compatible with @scani/realtime's
 // RealTimeUpdatesService psubscribe handler — the WS server forwards
@@ -35,8 +46,10 @@ export class RedisLifecyclePublisher extends LifecyclePublisher {
       timestamp: new Date().toISOString(),
     };
     try {
-      await Promise.resolve(
-        this.redis.publish(`${CHANNEL_PREFIX}${userId}`, JSON.stringify(message))
+      await withDeadline(
+        Promise.resolve(this.redis.publish(`${CHANNEL_PREFIX}${userId}`, JSON.stringify(message))),
+        PUBLISH_TIMEOUT_MS,
+        () => new StoreCommandTimeoutError('redis', 'PUBLISH job event', PUBLISH_TIMEOUT_MS)
       );
     } catch (err) {
       log.warn(

@@ -31,6 +31,8 @@ import {
   PaymentForecastService,
   PaymentHasSettledOccurrencesError,
   PaymentService,
+  RecurringSuggestionService,
+  SuggestionNotFoundError,
 } from '@scani/domain/services';
 import {
   AnchorOccurrenceMissingError,
@@ -51,6 +53,11 @@ const PAYMENT_KIND = z.enum(['fixed', 'variable']);
 const PAYMENT_INTERVAL_UNIT = z.enum(['week', 'month', 'quarter', 'year']);
 const OCCURRENCE_SETTLE_STATUS = z.enum(['matched', 'skipped']);
 const DATE_STRING = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a YYYY-MM-DD date string');
+
+const SuggestionKeySchema = z.object({
+  counterpartyKey: z.string().min(1).max(500),
+  currencyTokenId: z.string().uuid(),
+});
 
 const CreatePaymentInputSchema = z.object({
   vendorId: z.string().uuid(),
@@ -341,6 +348,55 @@ export const paymentsRouter = router({
             code: 'CONFLICT',
             message: `This payment has ${count} settled ${count === 1 ? 'date' : 'dates'} against it. End it instead — deleting would erase money that really moved.`,
           });
+        }
+        throw error;
+      }
+    }),
+
+  /**
+   * Monthly payments the user makes but never recorded (SC-674). Derived on
+   * every read from the caller's own outflows; nothing is stored until they
+   * accept one.
+   */
+  suggestions: protectedProcedure.query(({ ctx }) =>
+    Container.get(RecurringSuggestionService).list(ctx.userId)
+  ),
+
+  /** A dismissed suggestion stays dismissed: keyed on payee and currency, not on the series. */
+  dismissSuggestion: protectedProcedure
+    .input(strictInput(SuggestionKeySchema))
+    .mutation(async ({ ctx, input }) => {
+      await Container.get(RecurringSuggestionService).dismiss(
+        ctx.userId,
+        input.counterpartyKey,
+        input.currencyTokenId
+      );
+    }),
+
+  /**
+   * Records a suggestion as a recurring payment. The input NAMES a
+   * suggestion; the amount, anchor and payee are re-derived on the server,
+   * so a client cannot write a payment the detector did not find.
+   */
+  acceptSuggestion: protectedProcedure
+    .input(strictInput(SuggestionKeySchema))
+    .mutation(async ({ ctx, input }) => {
+      try {
+        const payment = await withTransaction(
+          (tx) =>
+            Container.get(RecurringSuggestionService).accept(
+              ctx.userId,
+              input.counterpartyKey,
+              input.currencyTokenId,
+              new Date(),
+              tx
+            ),
+          { name: 'payments.acceptSuggestion' }
+        );
+        return serializePayment(payment);
+      } catch (error) {
+        if (error instanceof SuggestionNotFoundError) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: error.message });
         }
         throw error;
       }

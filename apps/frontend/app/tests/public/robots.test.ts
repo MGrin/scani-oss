@@ -57,6 +57,23 @@ const NGINX_INCLUDE = await Bun.file(
   new URL('../../nginx-security-headers.inc.template', import.meta.url)
 ).text();
 const DOCKERFILE = await Bun.file(new URL('../../Dockerfile', import.meta.url)).text();
+const NGINX_SITE = await Bun.file(new URL('../../nginx.conf.template', import.meta.url)).text();
+
+/** The `map $request_uri $robots_tag` block's lines, keyed by pattern (SC-1111). */
+function robotsTagMap(): Map<string, string> {
+  const body = NGINX_SITE.match(/map\s+\$request_uri\s+\$robots_tag\s*\{([\s\S]*?)\n\}/)?.[1] ?? '';
+  const out = new Map<string, string>();
+  for (const m of body.matchAll(/^\s*("[^"]*"|\S+)\s+"([^"]*)"\s*;/gm)) {
+    out.set((m[1] ?? '').replace(/^"|"$/g, ''), m[2] ?? '');
+  }
+  return out;
+}
+
+/** The map's root arm, compiled the way nginx reads it: `~` then a regex. */
+function rootPattern(): RegExp {
+  const key = [...robotsTagMap().keys()].find((k) => k.startsWith('~'));
+  return new RegExp(key ? key.slice(1) : 'zz-no-root-arm');
+}
 const POLICY_SCRIPT_URL = new URL('../../docker-robots-policy.envsh', import.meta.url);
 const POLICY_SCRIPT = await Bun.file(POLICY_SCRIPT_URL).text();
 const ROBOTS_INDEX_ROOT = await Bun.file(
@@ -212,9 +229,12 @@ describe('both hosts serving this bundle send X-Robots-Tag', () => {
     const nginxValue = NGINX_INCLUDE.match(/^\s*add_header\s+X-Robots-Tag\s+"([^"]*)"/m)?.[1];
     const fromDockerfile = DOCKERFILE.match(/^ENV ROBOTS_DIRECTIVE="([^"]*)"/m)?.[1];
 
-    // biome-ignore lint/suspicious/noTemplateCurlyInString: the literal text nginx's envsubst looks for, not an unfinished template literal — asserting on it is the point
-    expect(nginxValue).toBe('${ROBOTS_DIRECTIVE}');
+    // The header comes from the per-path map (SC-1111), whose deep-route arm
+    // is a literal and whose root arm is the derived variable, so BOTH arms
+    // are compared: an unconfigured image sends `_headers`' value everywhere.
+    expect(nginxValue).toBe('$robots_tag');
     expect(`pages=${fromPages}`).toBe(`pages=${fromDockerfile}`);
+    expect(`pages=${fromPages}`).toBe(`pages=${robotsTagMap().get('default')}`);
   });
 
   test('that value is noindex and nofollow', () => {
@@ -338,8 +358,11 @@ describe('the policy script is wired the one way the entrypoint will honour', ()
     expect(`executable=${(mode & 0o111) !== 0}`).toBe('executable=true');
   });
 
-  test('nginx takes the header from the derived variable', () => {
-    expect(NGINX_INCLUDE).toContain('add_header X-Robots-Tag "${ROBOTS_DIRECTIVE}" always;');
+  test('nginx takes the header from the derived variable, on the root document only', () => {
+    expect(NGINX_INCLUDE).toContain('add_header X-Robots-Tag "$robots_tag" always;');
+    const arms = [...robotsTagMap().entries()].filter(([k]) => k.startsWith('~'));
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: the literal text nginx's envsubst looks for, not an unfinished template literal — asserting on it is the point
+    expect(arms.map(([, v]) => v)).toEqual(['${ROBOTS_DIRECTIVE}']);
   });
 
   test('it refuses an unrecognised policy rather than guessing a direction', () => {
@@ -376,5 +399,40 @@ describe("the script's rewrite pattern still matches the document it rewrites", 
 
   test('the pattern matches the meta as index.html currently spells it', () => {
     expect(new RegExp(sedPattern ?? 'zz-no-pattern-extracted').test(INDEX_HTML)).toBe(true);
+  });
+});
+
+/**
+ * THE HEADER IS SCOPED THE WAY `robots.txt` IS (SC-1111).
+ *
+ * Under `index-root`, `robots.txt` offers the root with an anchored `Allow: /$`
+ * and disallows the rest; the header said `index, follow` on every path, so a
+ * crawler that skips `robots.txt` and honours the header was told to index the
+ * unbounded soft-404 space `nginx-robots-index-root.txt` exists to close.
+ * Measured on the demo 2026-09-19: `/`, `/holdings` and `/zz-not-real` all
+ * answered `x-robots-tag: index, follow`.
+ */
+describe('X-Robots-Tag offers the root document and nothing else', () => {
+  test('every path but the root takes the literal noindex, whatever the policy', () => {
+    // A literal, not the variable: this arm must not move when the policy does.
+    expect(robotsTagMap().get('default')).toBe('noindex, nofollow');
+  });
+
+  test('the root arm matches the root document, with or without a query', () => {
+    // The CONTROL for the deep-route test below: a pattern that matched
+    // nothing would pass that one and send noindex to the root as well.
+    for (const uri of ['/', '/?utm_source=x']) {
+      expect(`${uri} root=${rootPattern().test(uri)}`).toBe(`${uri} root=true`);
+    }
+  });
+
+  test('deep routes, invented paths and the shell at its second address do not', () => {
+    for (const uri of ['/holdings', '/zz-not-real', '/index.html', '//', '/holdings?x=/']) {
+      expect(`${uri} root=${rootPattern().test(uri)}`).toBe(`${uri} root=false`);
+    }
+  });
+
+  test('it keys on the request line, which the internal redirect to /index.html does not rewrite', () => {
+    expect(NGINX_SITE).toMatch(/map\s+\$request_uri\s+\$robots_tag/);
   });
 });

@@ -174,6 +174,11 @@ export {
   type UpdatePaymentInput,
 } from './payments/PaymentService';
 export {
+  type RecurringSuggestion,
+  RecurringSuggestionService,
+  SuggestionNotFoundError,
+} from './payments/RecurringSuggestionService';
+export {
   generateOccurrences,
   type PaymentOccurrenceCandidate,
   type RecurrenceIntervalUnit,
@@ -247,6 +252,11 @@ export { PRICE_HUBS, type PriceHub } from './pricing/price-hubs';
 export { ReviewFeedService } from './ReviewFeedService';
 // returns/
 export { AssetCurrencyService } from './returns/AssetCurrencyService';
+export {
+  type BenchmarkReturn,
+  BenchmarkReturnService,
+  measuredDayInstant,
+} from './returns/BenchmarkReturnService';
 export {
   type ExternalFlow,
   type ExternalFlowSeries,

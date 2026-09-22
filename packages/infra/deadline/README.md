@@ -6,8 +6,8 @@ any package may take this without inheriting anything else.
 
 | Export | Purpose |
 |---|---|
-| `withRedisTimeout(work, timeoutMs, makeError)` | Race `work` against `timeoutMs`; reject with `makeError()` if the bound wins. Clears the timer, `unref`s it, and swallows the loser's late rejection. |
-| `RedisCommandTimeoutError` | `redis <operation> timed out after <n>ms`. Named distinctly from a connection error on purpose — the two describe different things to whoever reads the log. |
+| `withDeadline(work, timeoutMs, makeError)` | Race `work` against `timeoutMs`; reject with `makeError()` if the bound wins. Clears the timer, `unref`s it, and swallows the loser's late rejection. |
+| `StoreCommandTimeoutError` | `<store> <operation> timed out after <n>ms`. Named distinctly from a connection error on purpose — the two describe different things to whoever reads the log. |
 
 ## Why it exists
 

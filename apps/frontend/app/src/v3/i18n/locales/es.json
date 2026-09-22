@@ -13,7 +13,9 @@
         "searchPlaceholder": "Busca en tus cuentas…",
         "type": "Tipo",
         "typeLabel": "Tipo de cuenta",
-        "typePlaceholder": "Ahorro, valores, cripto…"
+        "typePlaceholder": "Ahorro, valores, cripto…",
+        "firstPlaceholder": "Ponle nombre a tu primera cuenta…",
+        "noneYet": "Aún no hay cuentas: escribe un nombre para añadir la primera."
       },
       "blocker": {
         "accountType": "elige el tipo de la cuenta",
@@ -272,7 +274,16 @@
         "justNow": "ahora mismo",
         "minutes_many": "hace {{count, number}} min",
         "minutes_one": "hace {{count, number}} min",
-        "minutes_other": "hace {{count, number}} min"
+        "minutes_other": "hace {{count, number}} min",
+        "inMinutes_many": "dentro de {{count, number}} min",
+        "inMinutes_one": "dentro de {{count, number}} min",
+        "inMinutes_other": "dentro de {{count, number}} min",
+        "inHours_many": "dentro de {{count, number}} h",
+        "inHours_one": "dentro de {{count, number}} h",
+        "inHours_other": "dentro de {{count, number}} h",
+        "inDays_many": "dentro de {{count, number}} d",
+        "inDays_one": "dentro de {{count, number}} d",
+        "inDays_other": "dentro de {{count, number}} d"
       },
       "unknownVendor": "Proveedor desconocido"
     },
@@ -1106,6 +1117,39 @@
         "ofTarget": "de <target></target>",
         "progress": "{{name}}: {{percent}} % de la meta",
         "title": "Objetivos"
+      },
+      "returns": {
+        "title": "Rentabilidad",
+        "chooseWindow": "Elige el periodo",
+        "window": {
+          "ytd": "Año",
+          "1y": "1 A",
+          "all": "Todo"
+        },
+        "twr": {
+          "label": "Rentabilidad de la inversión",
+          "caption": "Cómo les fue a tus activos, sin importar lo que añadiste o retiraste."
+        },
+        "fx": {
+          "label": "De ello, tipos de cambio",
+          "caption": "Tus activos hicieron <value/> en sus propias monedas; el resto fue el movimiento de las divisas frente a la tuya."
+        },
+        "xirr": {
+          "label": "Rentabilidad de tu dinero",
+          "caption": "Lo que ganó tu propio dinero, contando cuándo lo añadiste y retiraste.",
+          "approximate": "Más de una tasa encaja con tus aportes y retiradas, así que tómala como aproximada."
+        },
+        "benchmarks": {
+          "label": "Comparado con",
+          "caption": "Bitcoin y el S&P 500 comprados y mantenidos los mismos días, en tu moneda; los precios de EE. UU. en los mismos meses.",
+          "btc": "Bitcoin",
+          "sp500": "S&P 500 (SPY, solo precio)",
+          "usInflation": "Inflación de EE. UU. (CPI-U)"
+        },
+        "perYear": "<value/> al año",
+        "perYearUnit": "al año",
+        "since": "Desde el {{date}}.",
+        "partial": "Algunos días no pudieron valorarse del todo, así que estas cifras pueden no ser exactas."
       }
     },
     "jobs": {
@@ -1534,6 +1578,7 @@
         "estimateAboveZero": "haz que la estimación sea mayor que cero, o bórrala",
         "pickCurrency": "elige una divisa de la lista",
         "setAnchorDate": "define una fecha de anclaje",
+        "chooseDate": "elige una fecha",
         "setRepeatCount": "define un número de repeticiones válido"
       },
       "cadence": {
@@ -1897,7 +1942,7 @@
         "addPayment": "Añadir un pago"
       },
       "recurringSummary": {
-        "projectedEachMonth": "Proyectado cada mes",
+        "projectedEachMonth": "Facturas proyectadas cada mes",
         "estimatedFromHistory_many": "Incluye {{count}} pagos variables estimados a partir de sus últimos importes liquidados.",
         "estimatedFromHistory_one": "Incluye {{count}} pago variable estimado a partir de su último importe liquidado.",
         "estimatedFromHistory_other": "Incluye {{count}} pagos variables estimados a partir de sus últimos importes liquidados.",
@@ -2015,6 +2060,15 @@
       },
       "vendorSpend": {
         "notSubtracted": "No se descuenta de lo que debes — son dos cifras distintas."
+      },
+      "suggestions": {
+        "title": "Parece recurrente",
+        "claim": "{{payee}} parece un pago mensual de <value></value>.",
+        "accept": "Añadir como recurrente",
+        "dismiss": "No es recurrente",
+        "evidence_one": "Basado en {{count}} pago:",
+        "evidence_many": "Basado en {{count}} pagos:",
+        "evidence_other": "Basado en {{count}} pagos:"
       }
     },
     "notFound": {
@@ -2817,7 +2871,7 @@
         "backToVaults": "Objetivos",
         "colour": "Color",
         "countingToward_many": "Cuentan para este objetivo ({{count}})",
-        "countingToward_one": "Cuentan para este objetivo ({{count}})",
+        "countingToward_one": "Cuenta para este objetivo ({{count}})",
         "countingToward_other": "Cuentan para este objetivo ({{count}})",
         "dangerZone": "Zona sensible",
         "deleteCommit": "Eliminar este objetivo",

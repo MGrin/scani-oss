@@ -75,7 +75,16 @@
         "hours_other": "il y a {{count, number}} h",
         "days_one": "il y a {{count, number}} j",
         "days_many": "il y a {{count, number}} j",
-        "days_other": "il y a {{count, number}} j"
+        "days_other": "il y a {{count, number}} j",
+        "inMinutes_one": "dans {{count, number}} min",
+        "inMinutes_many": "dans {{count, number}} min",
+        "inMinutes_other": "dans {{count, number}} min",
+        "inHours_one": "dans {{count, number}} h",
+        "inHours_many": "dans {{count, number}} h",
+        "inHours_other": "dans {{count, number}} h",
+        "inDays_one": "dans {{count, number}} j",
+        "inDays_many": "dans {{count, number}} j",
+        "inDays_other": "dans {{count, number}} j"
       }
     },
     "notFound": {
@@ -430,7 +439,7 @@
         "saved": "Épargné",
         "targetReached": "Cible atteinte — {{percent}} % de la cible",
         "stillToGo": "Il reste <remaining/> à épargner, sur une cible de <target/>",
-        "countingToward_one": "Comptent pour cet objectif ({{count}})",
+        "countingToward_one": "Compte pour cet objectif ({{count}})",
         "countingToward_many": "Comptent pour cet objectif ({{count}})",
         "countingToward_other": "Comptent pour cet objectif ({{count}})",
         "empty": "Rien ne compte encore pour cet objectif. Rattachez une position et elle commencera à contribuer à la cible.",
@@ -1060,6 +1069,39 @@
       },
       "runway": {
         "label": "Autonomie financière"
+      },
+      "returns": {
+        "title": "Rendements",
+        "chooseWindow": "Choisir la période",
+        "window": {
+          "ytd": "Année",
+          "1y": "1 an",
+          "all": "Tout"
+        },
+        "twr": {
+          "label": "Rendement des placements",
+          "caption": "La performance de vos avoirs, quels que soient vos apports ou retraits."
+        },
+        "fx": {
+          "label": "Dont taux de change",
+          "caption": "Vos avoirs ont fait <value/> dans leur propre devise ; le reste vient des devises face à la vôtre."
+        },
+        "xirr": {
+          "label": "Rendement de votre argent",
+          "caption": "Ce qu’a rapporté votre propre argent, selon le moment des apports et des retraits.",
+          "approximate": "Plusieurs taux correspondent à vos apports et retraits : considérez-le comme approximatif."
+        },
+        "benchmarks": {
+          "label": "Comparé à",
+          "caption": "Bitcoin et le S&P 500 achetés et conservés sur les mêmes jours, dans votre devise ; les prix américains sur les mêmes mois.",
+          "btc": "Bitcoin",
+          "sp500": "S&P 500 (SPY, prix seul)",
+          "usInflation": "Inflation américaine (CPI-U)"
+        },
+        "perYear": "<value/> par an",
+        "perYearUnit": "par an",
+        "since": "Depuis le {{date}}.",
+        "partial": "Certains jours n’ont pas pu être entièrement valorisés, ces chiffres peuvent donc être inexacts."
       }
     },
     "holdings": {
@@ -1498,7 +1540,9 @@
         "noResults": "Aucun compte de ce nom ici.",
         "addNamed": "Ajouter « {{name}} »",
         "addNew": "Ajouter un nouveau compte",
-        "pickExisting": "Choisir un compte existant"
+        "pickExisting": "Choisir un compte existant",
+        "firstPlaceholder": "Nommez votre premier compte…",
+        "noneYet": "Aucun compte pour l’instant — saisissez un nom pour ajouter le premier."
       },
       "page": {
         "uploadAndRead": "Envoyer et lire le fichier",
@@ -2655,7 +2699,7 @@
         "addPayment": "Ajouter un paiement"
       },
       "recurringSummary": {
-        "projectedEachMonth": "Projeté chaque mois",
+        "projectedEachMonth": "Factures projetées chaque mois",
         "estimatedFromHistory_one": "Comprend {{count}} paiement variable estimé d’après son dernier règlement.",
         "estimatedFromHistory_many": "Comprend {{count}} paiements variables estimés d’après leurs derniers règlements.",
         "estimatedFromHistory_other": "Comprend {{count}} paiements variables estimés d’après leurs derniers règlements.",
@@ -2701,6 +2745,7 @@
         "chooseVendor": "choisissez un fournisseur",
         "pickCurrency": "choisissez une devise dans la liste",
         "setAnchorDate": "définissez une date de référence",
+        "chooseDate": "choisissez une date",
         "chooseCadence": "choisissez la fréquence de répétition",
         "setRepeatCount": "définissez un nombre de répétitions valide"
       },
@@ -2885,6 +2930,15 @@
         "stopEstimating_one": "Ne plus l’estimer",
         "stopEstimating_many": "Ne plus les estimer",
         "stopEstimating_other": "Ne plus les estimer"
+      },
+      "suggestions": {
+        "title": "Semble récurrent",
+        "claim": "{{payee}} ressemble à un paiement mensuel de <value></value>.",
+        "accept": "Ajouter comme récurrent",
+        "dismiss": "Pas récurrent",
+        "evidence_one": "D’après {{count}} paiement :",
+        "evidence_many": "D’après {{count}} paiements :",
+        "evidence_other": "D’après {{count}} paiements :"
       }
     }
   }

@@ -117,10 +117,10 @@ export function formatCompact(
       style: 'currency',
       currency,
       notation: 'compact',
-      maximumFractionDigits: 1,
+      maximumFractionDigits: options.decimals ?? 1,
     }).format(safe);
   } catch {
-    return `${currency} ${safe.toLocaleString(locale, { maximumFractionDigits: 1 })}`;
+    return `${currency} ${safe.toLocaleString(locale, { maximumFractionDigits: options.decimals ?? 1 })}`;
   }
 }
 

@@ -147,6 +147,27 @@ describe('typesetter', () => {
     expect(faces('三菱UFJ銀行')).toEqual(['Han-JP', 'Sans', 'Han-JP']);
   });
 
+  // SC-785. The Traditional-only tail: Han the JP and SC subsets both lack.
+  // The sample is DERIVED from the three bundled files rather than spelled as
+  // a literal, so it keeps meaning "Traditional-only" whatever the subsets hold.
+  it('sets a Traditional-only character in the Traditional face rather than marking it', () => {
+    const codepoints = (pkg: string, file: string) =>
+      new Set(
+        (fontkit.openSync(require.resolve(`@fontsource/${pkg}/files/${file}`)) as fontkit.Font)
+          .characterSet
+      );
+    const jp = codepoints('noto-sans-jp', 'noto-sans-jp-japanese-400-normal.woff');
+    const sc = codepoints('noto-sans-sc', 'noto-sans-sc-chinese-simplified-400-normal.woff');
+    const tc = codepoints('noto-sans-tc', 'noto-sans-tc-chinese-traditional-400-normal.woff');
+    const only = [...tc].filter((cp) => cp >= 0x4e00 && cp <= 0x9fff && !jp.has(cp) && !sc.has(cp));
+    // The control: without a non-empty tail this test would pass on nothing.
+    expect(only.length).toBeGreaterThan(100);
+    const sample = String.fromCodePoint(only[0] as number, only[1] as number);
+    expect(drawn(sample)).toBe(sample);
+    expect(drawn(sample)).not.toContain(UNSUPPORTED_MARK);
+    expect(faces(sample)).toEqual(['Han-TC']);
+  });
+
   it('resolves Han to real glyphs in the face it names, not to .notdef', () => {
     // `supports()` and a non-empty PDF both pass on a tree where the glyphs are
     // wrong: coverage is a claim about a character set, and what actually gets
