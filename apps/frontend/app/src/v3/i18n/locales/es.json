@@ -1536,6 +1536,7 @@
         "estimateAboveZero": "haz que la estimación sea mayor que cero, o bórrala",
         "pickCurrency": "elige una divisa de la lista",
         "setAnchorDate": "define una fecha de anclaje",
+        "chooseDate": "elige una fecha",
         "setRepeatCount": "define un número de repeticiones válido"
       },
       "cadence": {

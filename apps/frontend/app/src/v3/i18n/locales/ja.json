@@ -505,6 +505,7 @@
         "chooseVendor": "取引先を選択",
         "pickCurrency": "一覧から通貨を選択",
         "setAnchorDate": "起算日を設定",
+        "chooseDate": "日付を選択してください",
         "chooseCadence": "繰り返しの頻度を選択",
         "setRepeatCount": "有効な繰り返し回数を設定"
       },

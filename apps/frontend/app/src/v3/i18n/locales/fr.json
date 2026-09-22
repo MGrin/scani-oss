@@ -2703,6 +2703,7 @@
         "chooseVendor": "choisissez un fournisseur",
         "pickCurrency": "choisissez une devise dans la liste",
         "setAnchorDate": "définissez une date de référence",
+        "chooseDate": "choisissez une date",
         "chooseCadence": "choisissez la fréquence de répétition",
         "setRepeatCount": "définissez un nombre de répétitions valide"
       },
