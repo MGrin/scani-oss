@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
 import { expect, isolatedContextOptions, test } from '../../fixtures/test';
-import { createAccount, createHolding } from '../../fixtures/ui';
+import { createAccount, createHolding, materializeExternalToken } from '../../fixtures/ui';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 
@@ -30,6 +30,9 @@ test.describe('holdings: a scam verdict is per user', () => {
     browser,
   }, testInfo) => {
     await signIn({ page, testInfo });
+    // A currency offers no `Mark as scam` (SC-1251), and the seed carries only
+    // currencies, so the token is pulled in from search as a user would.
+    await materializeExternalToken(page, 'BTC');
     const mine = await createHolding(page, {
       accountId: (await createAccount(page, { name: `e2e-a-${testInfo.testId}` })).id,
       symbol: 'BTC',
@@ -39,6 +42,7 @@ test.describe('holdings: a scam verdict is per user', () => {
     const otherContext = await browser.newContext(isolatedContextOptions(testInfo, 'other-user'));
     const other = await otherContext.newPage();
     await signIn({ page: other, testInfo });
+    await materializeExternalToken(other, 'BTC');
     const theirs = await createHolding(other, {
       accountId: (await createAccount(other, { name: `e2e-b-${testInfo.testId}` })).id,
       symbol: 'BTC',
