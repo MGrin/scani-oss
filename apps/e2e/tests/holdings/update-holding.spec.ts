@@ -1,17 +1,9 @@
 import type { Page } from '@playwright/test';
 import { signIn } from '../../fixtures/auth';
 import { expect, test } from '../../fixtures/test';
-import { createAccount, createHolding } from '../../fixtures/ui';
+import { createAccount, createHolding, materializeExternalToken } from '../../fixtures/ui';
 
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
-
-interface TokenSearchHit {
-  id?: string;
-  symbol: string;
-  source: 'database' | 'external';
-  provider?: 'finnhub' | 'coingecko' | 'defillama';
-  metadata?: Record<string, unknown>;
-}
 
 interface HoldingsListResponse {
   result: {
@@ -143,44 +135,3 @@ test.describe('holdings: update', () => {
     expect(res.ok()).toBe(true);
   });
 });
-
-/**
- * Pull an external token search hit into the database, the same way the manual
- * -entry UI does when the user picks a CoinGecko result.
- *
- * No-op when the symbol is already a `database` hit, so the second worker to
- * reach it pays nothing. Throws with the hits it actually saw when the symbol
- * is nowhere — a silent skip here would leave the test above passing without
- * ever having exercised a priced holding, which is the one outcome worse than
- * it failing.
- */
-async function materializeExternalToken(page: Page, symbol: string): Promise<void> {
-  const input = encodeURIComponent(JSON.stringify({ query: symbol, limit: 10 }));
-  const res = await page.request.get(`${API_BASE_URL}/trpc/tokens.search?input=${input}`);
-  expect(res.ok()).toBe(true);
-  const { result } = (await res.json()) as { result: { data: TokenSearchHit[] } };
-
-  const matches = (hit: TokenSearchHit) => hit.symbol.toUpperCase() === symbol.toUpperCase();
-  if (result.data.some((hit) => hit.source === 'database' && matches(hit))) return;
-
-  const external = result.data.find(
-    (hit) =>
-      hit.source === 'external' &&
-      matches(hit) &&
-      (hit.provider === 'coingecko' || hit.provider === 'finnhub')
-  );
-  if (!external) {
-    const seen = result.data.map((hit) => `${hit.symbol}/${hit.source}`).join(', ');
-    throw new Error(`no materializable "${symbol}" in token search; saw: ${seen || '<nothing>'}`);
-  }
-
-  const created = await page.request.post(`${API_BASE_URL}/trpc/tokens.createFromExternal`, {
-    data: {
-      symbol: external.symbol,
-      metadata: external.metadata ?? {},
-      provider: external.provider,
-    },
-    headers: { 'content-type': 'application/json', origin: 'http://localhost:5173' },
-  });
-  expect(created.ok()).toBe(true);
-}
