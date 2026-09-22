@@ -1536,6 +1536,7 @@
         "estimateAboveZero": "ponha a estimativa acima de zero, ou limpe-a",
         "pickCurrency": "escolha uma moeda da lista",
         "setAnchorDate": "defina uma data de referência",
+        "chooseDate": "escolha uma data",
         "setRepeatCount": "defina um número de repetições válido"
       },
       "cadence": {

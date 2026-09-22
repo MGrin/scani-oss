@@ -505,6 +505,7 @@
         "chooseVendor": "选择一个收付方",
         "pickCurrency": "从列表中选择一种货币",
         "setAnchorDate": "设置起算日期",
+        "chooseDate": "选择日期",
         "chooseCadence": "选择重复的频率",
         "setRepeatCount": "设置有效的重复次数"
       },

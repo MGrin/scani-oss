@@ -560,6 +560,7 @@
         "chooseVendor": "choose a vendor",
         "pickCurrency": "pick a currency from the list",
         "setAnchorDate": "set an anchor date",
+        "chooseDate": "choose a date",
         "chooseCadence": "choose how often this repeats",
         "setRepeatCount": "set a valid repeat count"
       },
