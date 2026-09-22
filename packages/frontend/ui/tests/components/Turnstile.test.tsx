@@ -6,6 +6,7 @@ import { TURNSTILE_HEADER as SERVER_HEADER } from '../../../../infra/http-fetch/
 import {
   TURNSTILE_HEADER,
   TurnstileWidget,
+  turnstileBlocksSubmit,
   turnstileHeaders,
 } from '../../src/components/Turnstile';
 
@@ -32,5 +33,37 @@ describe('TurnstileWidget', () => {
   it('renders the container Cloudflare draws into when keyed', () => {
     const markup = renderToStaticMarkup(<TurnstileWidget siteKey="0x4AAA" onToken={() => {}} />);
     expect(markup).toContain('data-ui="turnstile"');
+  });
+});
+
+// SC-1266: a check that failed to run must not lock the form. The server is the
+// gate; a returning cloud visitor whose stale service worker blocked the script
+// could not sign in at all while the button waited for a token that never came.
+describe('turnstileBlocksSubmit', () => {
+  it('waits for a token while the check is running — the control', () => {
+    expect(turnstileBlocksSubmit({ required: true, token: null, failed: false })).toBe(true);
+  });
+
+  it('does not block once the check has FAILED to run', () => {
+    expect(turnstileBlocksSubmit({ required: true, token: null, failed: true })).toBe(false);
+  });
+
+  it('does not block with a token, or with no site key', () => {
+    expect(turnstileBlocksSubmit({ required: true, token: 'tok', failed: false })).toBe(false);
+    expect(turnstileBlocksSubmit({ required: false, token: null, failed: false })).toBe(false);
+  });
+
+  it('every form gates on it rather than on its own required && !token', async () => {
+    const root = new URL('../../../../../apps/frontend/', import.meta.url).pathname;
+    // cloud and landing are not in the public mirror; app is in both trees,
+    // so it is read unconditionally and a missing app file is a failure.
+    const files = ['app/src/pages/Auth.tsx'];
+    for (const f of ['cloud/src/pages/AuthPage.tsx', 'landing/src/components/sections/Contact.tsx'])
+      if (await Bun.file(root + f).exists()) files.push(f);
+    for (const file of files) {
+      const source = await Bun.file(root + file).text();
+      expect(source).toContain('turnstile.blocksSubmit');
+      expect(source).not.toMatch(/turnstile\.required\s*&&\s*!turnstile\.token/);
+    }
   });
 });

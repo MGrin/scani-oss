@@ -72,7 +72,7 @@ export function Auth() {
   // current THEN, not the one captured when the retry was queued.
   const turnstileToken = useRef(turnstile.token);
   turnstileToken.current = turnstile.token;
-  const needsHumanCheck = turnstile.required && !turnstile.token;
+  const needsHumanCheck = turnstile.blocksSubmit;
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [error, setError] = useState<string | null>(null);

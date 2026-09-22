@@ -11,7 +11,7 @@ const env = loadEnv();
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
 import { getNodeEnv, isNodeEnvProduction, servedVersion } from '@scani/config';
-import { turnstileRefusal } from '@scani/http-fetch';
+import { TURNSTILE_HEADER, turnstileRefusal } from '@scani/http-fetch';
 import { createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
@@ -290,7 +290,9 @@ const app = new Elysia()
           ? [MARKETING_ORIGIN]
           : true,
       credentials: true,
-      allowedHeaders: ['Authorization', 'Content-Type', 'x-request-id'],
+      // `TURNSTILE_HEADER` carries the cloud sign-in widget's token (SC-1266);
+      // unlisted, the browser's preflight fails the sign-in outright.
+      allowedHeaders: ['Authorization', 'Content-Type', 'x-request-id', TURNSTILE_HEADER],
       // Default `*` makes @elysiajs/cors echo every inbound request
       // header (incl. `via`, `host`, `fly-client-ip`, `x-forwarded-*`).
       // Browser callers only need `x-request-id` for tracing.
