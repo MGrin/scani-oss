@@ -22,6 +22,7 @@ import {
 import { formatRelative } from '../../lib/relative-time';
 import { accountHoldingsPath, V3_ROUTES } from '../../lib/routes';
 import { useOpenCapture } from '../capture/CaptureSheetContext';
+import { ReturnsBlock } from '../home/ReturnsBlock';
 import { EntityValueSummary } from './EntityValueSummary';
 import { InstitutionMark } from './InstitutionMark';
 
@@ -386,6 +387,7 @@ export function AccountsList({
                   : 'None',
             },
           ],
+          content: <ReturnsBlock scope={{ kind: 'account', id: account.id }} />,
           // The row is this link now (SC-560), so the sheet keeps it only for
           // the reader who arrived at the sheet directly — a shared
           // `/accounts/<id>`, or the back gesture landing on one. Removing it

@@ -19,6 +19,7 @@ export * from './entities';
 export * from './groups';
 export * from './holding-exclusions';
 export * from './holdings';
+export * from './inflation';
 export * from './institutions';
 export * from './job-heartbeats';
 export * from './operator-alarms';

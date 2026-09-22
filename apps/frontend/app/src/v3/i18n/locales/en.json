@@ -222,6 +222,39 @@
       },
       "runway": {
         "label": "Money lasts"
+      },
+      "returns": {
+        "title": "Returns",
+        "chooseWindow": "Choose the period",
+        "window": {
+          "ytd": "YTD",
+          "1y": "1Y",
+          "all": "All"
+        },
+        "twr": {
+          "label": "Investment return",
+          "caption": "How your holdings did, whatever you added or took out."
+        },
+        "fx": {
+          "label": "Of which, exchange rates",
+          "caption": "Your holdings did <value/> in their own currencies; the rest was currencies moving against yours."
+        },
+        "xirr": {
+          "label": "Your money's return",
+          "caption": "What your own money earned, counting when you added and withdrew it.",
+          "approximate": "More than one rate fits your deposits and withdrawals, so treat this as approximate."
+        },
+        "benchmarks": {
+          "label": "Compared with",
+          "caption": "Bitcoin and the S&P 500 bought and held over the same days, in your currency; US prices over the same months.",
+          "btc": "Bitcoin",
+          "sp500": "S&P 500 (SPY, price only)",
+          "usInflation": "US inflation (CPI-U)"
+        },
+        "perYear": "<value/> a year",
+        "perYearUnit": "a year",
+        "since": "Since {{date}}.",
+        "partial": "Some days could not be fully priced, so these figures may be off."
       }
     },
     "money": {
