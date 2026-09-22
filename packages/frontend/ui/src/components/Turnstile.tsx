@@ -101,9 +101,26 @@ export function TurnstileWidget({
   return <div data-ui="turnstile" ref={container} />;
 }
 
+/**
+ * Whether the form must wait for a token. A check that FAILED to run does not
+ * block: the server is the gate, and a server with no secret takes the request
+ * anyway. Blocking on failure locked out every visitor whose browser could not
+ * load the script, e.g. a returning cloud visitor whose stale service worker
+ * refetched it under the wrong CSP (SC-1266).
+ */
+export function turnstileBlocksSubmit(s: {
+  required: boolean;
+  token: string | null;
+  failed: boolean;
+}): boolean {
+  return s.required && !s.token && !s.failed;
+}
+
 export interface TurnstileState {
   /** False when no site key is configured: submit needs no token. */
   required: boolean;
+  /** Submit waits for the widget; false once the check has failed to run. */
+  blocksSubmit: boolean;
   token: string | null;
   /** The script or the check failed; the form should say so. */
   failed: boolean;
@@ -125,8 +142,10 @@ export function useTurnstile(siteKey: string | undefined): TurnstileState {
     setToken(null);
     setResetKey((k) => k + 1);
   }, []);
+  const required = Boolean(siteKey);
   return {
-    required: Boolean(siteKey),
+    required,
+    blocksSubmit: turnstileBlocksSubmit({ required, token, failed }),
     token,
     failed,
     reset,
