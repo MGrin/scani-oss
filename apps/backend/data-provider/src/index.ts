@@ -29,6 +29,7 @@ import { tonFactory } from '@scani/providers/providers/ton';
 import { tronFactory } from '@scani/providers/providers/tron';
 import { yahooFinanceFactory } from '@scani/providers/providers/yahoo-finance';
 import {
+  cameThroughEdge,
   createOutflowLimiter,
   edgeLockRefusal,
   observeRedisReachability,
@@ -372,10 +373,13 @@ const app = new Elysia()
   // Liveness — process is alive. Returns 200 from the moment Elysia
   // starts listening, even before init finishes. Useful for app-level
   // deep-health probes; NOT what Fly's machine check uses (see /ready).
-  .get('/health', () => ({
+  // `edge` says whether this request carried Cloudflare's x-scani-edge header,
+  // which is how the SC-1264 flip is proven before the origin lock enforces.
+  .get('/health', ({ request }: { request: Request }) => ({
     status: 'ok',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
+    edge: cameThroughEdge(request),
   }))
   .head('/health', ({ set }: { set: { status: number; headers: Record<string, string> } }) => {
     set.status = 200;

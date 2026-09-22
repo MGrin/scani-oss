@@ -59,6 +59,7 @@ const dataProviderReachable = await (async () => {
 // This must happen before any module that calls Container.get()
 import { assertQueueBindings, QueueClient, WorkerWakeClient } from '@scani/queue';
 import {
+  cameThroughEdge,
   createSessionRevokeLimiter,
   createSignupLimiter,
   createStandardLimiter,
@@ -738,10 +739,13 @@ app
     const cloned = new Request(request.url, init);
     return betterAuthInstance.handler(cloned);
   })
-  .get('/health', () => ({
+  // `edge` says whether this request carried Cloudflare's x-scani-edge header,
+  // which is how the SC-1264 flip is proven before the origin lock enforces.
+  .get('/health', ({ request }: { request: Request }) => ({
     status: 'ok',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
+    edge: cameThroughEdge(request),
   }))
   .head('/health', ({ set }: { set: { status: number; headers: Record<string, string> } }) => {
     set.status = 200;
