@@ -82,7 +82,19 @@
         "days_one": "{{count, number}} д назад",
         "days_few": "{{count, number}} д назад",
         "days_many": "{{count, number}} д назад",
-        "days_other": "{{count, number}} д назад"
+        "days_other": "{{count, number}} д назад",
+        "inMinutes_one": "через {{count, number}} мин",
+        "inMinutes_few": "через {{count, number}} мин",
+        "inMinutes_many": "через {{count, number}} мин",
+        "inMinutes_other": "через {{count, number}} мин",
+        "inHours_one": "через {{count, number}} ч",
+        "inHours_few": "через {{count, number}} ч",
+        "inHours_many": "через {{count, number}} ч",
+        "inHours_other": "через {{count, number}} ч",
+        "inDays_one": "через {{count, number}} д",
+        "inDays_few": "через {{count, number}} д",
+        "inDays_many": "через {{count, number}} д",
+        "inDays_other": "через {{count, number}} д"
       }
     },
     "notFound": {

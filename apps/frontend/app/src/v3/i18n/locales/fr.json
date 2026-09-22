@@ -75,7 +75,16 @@
         "hours_other": "il y a {{count, number}} h",
         "days_one": "il y a {{count, number}} j",
         "days_many": "il y a {{count, number}} j",
-        "days_other": "il y a {{count, number}} j"
+        "days_other": "il y a {{count, number}} j",
+        "inMinutes_one": "dans {{count, number}} min",
+        "inMinutes_many": "dans {{count, number}} min",
+        "inMinutes_other": "dans {{count, number}} min",
+        "inHours_one": "dans {{count, number}} h",
+        "inHours_many": "dans {{count, number}} h",
+        "inHours_other": "dans {{count, number}} h",
+        "inDays_one": "dans {{count, number}} j",
+        "inDays_many": "dans {{count, number}} j",
+        "inDays_other": "dans {{count, number}} j"
       }
     },
     "notFound": {

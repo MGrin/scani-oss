@@ -274,7 +274,16 @@
         "justNow": "ahora mismo",
         "minutes_many": "hace {{count, number}} min",
         "minutes_one": "hace {{count, number}} min",
-        "minutes_other": "hace {{count, number}} min"
+        "minutes_other": "hace {{count, number}} min",
+        "inMinutes_many": "dentro de {{count, number}} min",
+        "inMinutes_one": "dentro de {{count, number}} min",
+        "inMinutes_other": "dentro de {{count, number}} min",
+        "inHours_many": "dentro de {{count, number}} h",
+        "inHours_one": "dentro de {{count, number}} h",
+        "inHours_other": "dentro de {{count, number}} h",
+        "inDays_many": "dentro de {{count, number}} d",
+        "inDays_one": "dentro de {{count, number}} d",
+        "inDays_other": "dentro de {{count, number}} d"
       },
       "unknownVendor": "Proveedor desconocido"
     },
