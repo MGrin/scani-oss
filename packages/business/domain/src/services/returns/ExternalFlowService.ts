@@ -263,13 +263,33 @@ export class ExternalFlowService {
     return valueTransactionInBase(
       this.priceGraphService,
       undefined,
-      tx,
+      { ...tx, occurredAt: flowValuationInstant(tx.occurredAt) },
       qtyAbs,
       baseCurrencyId,
       heldTokenId,
       priceLookup
     );
   }
+}
+
+/**
+ * The instant a flow is valued at: the one the daily rollup values that day's
+ * balance at (SC-1254).
+ *
+ * A flow and the balance change it causes must be read at the same prices, or
+ * the difference lands in the return. Valued at its own timestamp, a deposit
+ * at 10:28 read the latest price at or before it, while the rollup valued the
+ * same money at 23:59:59.999Z. Where a pair has more than one price per day —
+ * a seeded series and a backfilled one, 5.7% apart — that turned flat cash
+ * into a −7.8% return.
+ *
+ * `RollupPortfolioValueDailyUseCase` values a past day at 23:59:59.999Z and
+ * today at the moment it runs, so today's flows are valued now.
+ */
+export function flowValuationInstant(occurredAt: Date, now: Date = new Date()): Date {
+  const endOfDay = new Date(occurredAt);
+  endOfDay.setUTCHours(23, 59, 59, 999);
+  return endOfDay.getTime() > now.getTime() ? now : endOfDay;
 }
 
 /**
