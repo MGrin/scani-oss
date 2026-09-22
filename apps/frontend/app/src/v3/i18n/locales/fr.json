@@ -1498,7 +1498,9 @@
         "noResults": "Aucun compte de ce nom ici.",
         "addNamed": "Ajouter « {{name}} »",
         "addNew": "Ajouter un nouveau compte",
-        "pickExisting": "Choisir un compte existant"
+        "pickExisting": "Choisir un compte existant",
+        "firstPlaceholder": "Nommez votre premier compte…",
+        "noneYet": "Aucun compte pour l’instant — saisissez un nom pour ajouter le premier."
       },
       "page": {
         "uploadAndRead": "Envoyer et lire le fichier",
