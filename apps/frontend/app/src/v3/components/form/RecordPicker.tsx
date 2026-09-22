@@ -161,10 +161,15 @@ export function RecordPicker({
     );
   }
 
-  const canCreate = Boolean(createLabel && onCreate);
   const shown = options.slice(0, maxRows);
   const withheld = options.length - shown.length;
   const trimmed = query.trim();
+  // A name already in the list is the record the user is looking at, not a new
+  // one: offering to create it is one click from an identical twin (SC-1274).
+  const exactMatch =
+    trimmed !== '' &&
+    options.some((option) => option.label.trim().toLowerCase() === trimmed.toLowerCase());
+  const canCreate = Boolean(createLabel && onCreate) && !exactMatch;
 
   // What a screen reader hears when the list below changes (SC-999). The list
   // is plain buttons under a plain input, so nothing else tells a non-sighted

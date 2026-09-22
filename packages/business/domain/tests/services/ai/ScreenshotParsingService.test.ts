@@ -3,6 +3,7 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy
 import { describe, expect, test } from 'bun:test';
 import { Container } from 'typedi';
 import { AIRouter, type ParsedPortfolio } from '../../../src/services/ai/AIRouter';
+import { AiBudgetExceededError } from '../../../src/services/ai/AiSpendBudget';
 import { ScreenshotParsingService } from '../../../src/services/ai/ScreenshotParsingService';
 import { TokenValidationService } from '../../../src/services/tokens/TokenValidationService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
@@ -18,15 +19,33 @@ interface ValidateCall {
 
 // Stubs AIRouter (returns `portfolio`) + TokenValidationService
 // (records every validateToken call), then builds the service.
-function setup(portfolio: ParsedPortfolio): {
+function setup(
+  portfolio: ParsedPortfolio,
+  opts: { refuse?: boolean } = {}
+): {
   service: ScreenshotParsingService;
   calls: ValidateCall[];
+  aiCalls: string[];
+  routedFor: string[];
 } {
   const calls: ValidateCall[] = [];
+  const aiCalls: string[] = [];
+  const routedFor: string[] = [];
 
   Container.set(AIRouter, {
     hasAvailableProvider: () => true,
-    parseScreenshot: async () => ({ portfolio, metadata: { provider: 'ai-stub' } }),
+    parseScreenshot: async (_img: string, o: { userId: string }) => {
+      if (opts.refuse) throw new AiBudgetExceededError('user');
+      routedFor.push(o.userId);
+      aiCalls.push('screenshot');
+      return { portfolio, metadata: { provider: 'ai-stub' } };
+    },
+    parseDocumentText: async (_text: string, o: { userId: string }) => {
+      if (opts.refuse) throw new AiBudgetExceededError('user');
+      routedFor.push(o.userId);
+      aiCalls.push('text');
+      return { portfolio, metadata: { provider: 'ai-stub' } };
+    },
   } as unknown as AIRouter);
 
   Container.set(TokenValidationService, {
@@ -38,7 +57,7 @@ function setup(portfolio: ParsedPortfolio): {
 
   const service = new ScreenshotParsingService();
   Container.set(ScreenshotParsingService, service);
-  return { service, calls };
+  return { service, calls, aiCalls, routedFor };
 }
 
 describe('ScreenshotParsingService — asset-type hinting', () => {
@@ -49,7 +68,7 @@ describe('ScreenshotParsingService — asset-type hinting', () => {
       overallConfidence: 0.9,
     });
 
-    const result = await service.parseScreenshot('img-base64');
+    const result = await service.parseScreenshot('img-base64', { userId: 'u1' });
 
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual({ symbol: 'USD', tokenTypeCode: 'fiat' });
@@ -62,9 +81,34 @@ describe('ScreenshotParsingService — asset-type hinting', () => {
       overallConfidence: 0.9,
     });
 
-    const result = await service.parseScreenshot('img-base64');
+    const result = await service.parseScreenshot('img-base64', { userId: 'u1' });
 
     expect(calls[0]).toEqual({ symbol: 'AAPL', tokenTypeCode: 'stock' });
     expect(result.holdings[0]?.assetType).toBe('stock');
+  });
+});
+
+describe('ScreenshotParsingService — AI budget (SC-1265)', () => {
+  const portfolio: ParsedPortfolio = { holdings: [], overallConfidence: 0.9 };
+
+  // The router charges per provider attempt; this service's part is to name
+  // the user and to let the router's refusal through unwrapped.
+  test("the router's refusal reaches the caller unwrapped on both paths", async () => {
+    const { service, aiCalls } = setup(portfolio, { refuse: true });
+    await expect(service.parseScreenshot('img', { userId: 'u1' })).rejects.toBeInstanceOf(
+      AiBudgetExceededError
+    );
+    await expect(service.parseDocumentText('text', { userId: 'u1' })).rejects.toBeInstanceOf(
+      AiBudgetExceededError
+    );
+    expect(aiCalls).toEqual([]);
+  });
+
+  test('each call routes under its own user, so the router charges the right budget', async () => {
+    const { service, aiCalls, routedFor } = setup(portfolio);
+    await service.parseScreenshot('img', { userId: 'u1' });
+    await service.parseDocumentText('text', { userId: 'u2' });
+    expect(routedFor).toEqual(['u1', 'u2']);
+    expect(aiCalls).toEqual(['screenshot', 'text']);
   });
 });

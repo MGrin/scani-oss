@@ -69,7 +69,11 @@ export class DocumentIngestionService {
       }
     }
 
-    const { invoices, usage } = await this.extractionService.extract(input.bytes, input.mimeType);
+    const { invoices, usage } = await this.extractionService.extract(
+      input.userId,
+      input.bytes,
+      input.mimeType
+    );
 
     const document =
       target ??

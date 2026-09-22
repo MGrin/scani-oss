@@ -147,11 +147,28 @@ interface FileImportHolding {
   isNew: boolean;
 }
 
+export type FileImportDateOrder = 'day-first' | 'month-first';
+
 export interface FileImportCurrencyPrompt {
   r2Key: string;
   fileType: string;
   transactionCount: number;
   preview: Array<{ date: string; description: string; amount: number }>;
+  /** Chosen on an earlier date-order prompt; the re-parse must keep it. */
+  dateOrder?: FileImportDateOrder;
+}
+
+export interface FileImportDateOrderPrompt {
+  r2Key: string;
+  fileType: string;
+  rowCount: number;
+  /** Raw, as the file spelled them — the reader recognises their own bank's dates. */
+  samples: string[];
+  defaultCurrency?: string;
+}
+
+function asDateOrder(value: unknown): FileImportDateOrder | undefined {
+  return value === 'day-first' || value === 'month-first' ? value : undefined;
 }
 
 export interface FileImportView {
@@ -164,6 +181,8 @@ export interface FileImportView {
   warnings: string[];
   /** Set when the file carried no usable currency and the parse stopped. */
   needsCurrency: FileImportCurrencyPrompt | null;
+  /** Set when nothing said whether `03/04` is day- or month-first (SC-1291). */
+  needsDateOrder: FileImportDateOrderPrompt | null;
 }
 
 export function readFileImport(result: unknown): FileImportView | null {
@@ -175,6 +194,7 @@ export function readFileImport(result: unknown): FileImportView | null {
   const created = new Set(asStringList(record.holdingsCreated));
   const needsCurrencyRaw = asRecord(record.needsCurrency);
   const hasCurrencyPrompt = typeof needsCurrencyRaw.r2Key === 'string';
+  const needsDateOrderRaw = asRecord(record.needsDateOrder);
 
   return {
     format: typeof record.format === 'string' ? record.format : '',
@@ -214,8 +234,23 @@ export function readFileImport(result: unknown): FileImportView | null {
               amount: asFiniteNumber(row.amount),
             };
           }),
+          dateOrder: asDateOrder(needsCurrencyRaw.dateOrder),
         }
       : null,
+    needsDateOrder:
+      typeof needsDateOrderRaw.r2Key === 'string'
+        ? {
+            r2Key: needsDateOrderRaw.r2Key,
+            fileType:
+              typeof needsDateOrderRaw.fileType === 'string' ? needsDateOrderRaw.fileType : '',
+            rowCount: asFiniteNumber(needsDateOrderRaw.rowCount),
+            samples: asStringList(needsDateOrderRaw.samples),
+            defaultCurrency:
+              typeof needsDateOrderRaw.defaultCurrency === 'string'
+                ? needsDateOrderRaw.defaultCurrency
+                : undefined,
+          }
+        : null,
   };
 }
 

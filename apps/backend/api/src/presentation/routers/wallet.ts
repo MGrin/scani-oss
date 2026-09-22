@@ -14,6 +14,7 @@ import {
   WALLET_IMPORT,
 } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
+import { isBurnAddress } from '@scani/providers/core';
 import { BullMqEnqueueService } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { TRPCError } from '@trpc/server';
@@ -26,7 +27,13 @@ import { protectedProcedure, router } from '../trpc';
 const logger = createComponentLogger('router:wallet');
 
 const ImportWalletSchema = z.object({
-  address: z.string().min(1, 'Wallet address is required').max(200, 'Wallet address is too long'),
+  address: z
+    .string()
+    .min(1, 'Wallet address is required')
+    .max(200, 'Wallet address is too long')
+    // Nobody holds a burn address, and importing one reads every transfer
+    // anyone ever sent to it (SC-1271).
+    .refine((a) => !isBurnAddress(a), 'That is a burn address, not a wallet'),
   displayName: z.string().max(100, 'Display name is too long').optional(),
   chain: z.string().min(1).default('auto'),
   requestId: z.string().uuid(),

@@ -40,15 +40,15 @@ test.describe('sessions: list + revoke', () => {
     const listRes = await pageA.request.get(`${API_BASE_URL}/trpc/sessions.list?input=%7B%7D`);
     expect(listRes.ok()).toBe(true);
     const listBody = (await listRes.json()) as {
-      result: { data: { token: string; isCurrent: boolean }[] };
+      result: { data: { id: string; isCurrent: boolean }[] };
     };
     expect(listBody.result.data.length).toBe(2);
-    const otherToken = listBody.result.data.find((s) => !s.isCurrent)?.token;
-    expect(otherToken).toBeTruthy();
+    const otherId = listBody.result.data.find((s) => !s.isCurrent)?.id;
+    expect(otherId).toBeTruthy();
 
     // Revoke B from A
     const revokeRes = await pageA.request.post(`${API_BASE_URL}/trpc/sessions.revoke`, {
-      data: { token: otherToken },
+      data: { id: otherId },
       headers: { 'content-type': 'application/json', origin: 'http://localhost:5173' },
     });
     expect(revokeRes.ok()).toBe(true);

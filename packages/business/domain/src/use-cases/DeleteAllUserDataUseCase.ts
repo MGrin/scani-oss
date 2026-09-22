@@ -1,4 +1,5 @@
 import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
+import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { withTransaction } from '@scani/db/transaction';
 import { createComponentLogger } from '@scani/logging';
@@ -35,69 +36,84 @@ export class DeleteAllUserDataUseCase {
     // The queue is in the same database since SC-518, but BullMQ holds its own
     // connection, so its writes are outside the tx just as R2's are. Doing both
     // *after* the commit is deliberate — see the purges at the bottom.
-    const echoed = new Map<PgTable, string[]>();
-
+    let echoed = new Map<PgTable, string[]>();
     await withTransaction(
       async (tx) => {
-        // Every table keyed on `users.id` is classified in the manifest, and
-        // the loop is driven by it rather than by a hand-written list of
-        // deletes. That is the whole point: this flow was correct when it was
-        // written and silently wrong three months later, because a new table
-        // is not a change to any file anyone re-reads (SC-1018). Junction
-        // tables (holdingGroups, accountGroups, vaultHoldings,
-        // holdingCoverage, documentExtractions, paymentOccurrences,
-        // vendorAliases) carry no userId and cascade from their parents here.
-        for (const entry of USER_DATA_TABLE_DISPOSITIONS) {
-          if (entry.kind === 'keep') continue;
-
-          if (entry.kind === 'anonymise') {
-            await tx
-              .update(entry.table)
-              .set({ [columnKey(entry.table, entry.userColumn)]: null })
-              .where(eq(entry.userColumn, userId));
-            continue;
-          }
-
-          const removed = await tx
-            .delete(entry.table)
-            .where(eq(entry.userColumn, userId))
-            .returning({ echo: entry.echo });
-          echoed.set(
-            entry.table,
-            removed.map((row) => String(row.echo))
-          );
-        }
-
-        // The user row survives on purpose — the account stays able to sign
-        // in — so its own columns are the one thing the FK enumeration above
-        // cannot reach. The manifest classifies them too; anything holding
-        // content the user entered is cleared here.
-        const cleared = USER_ROW_COLUMN_DISPOSITIONS.filter((c) => c.kind === 'clear');
-        if (cleared.length > 0) {
-          await tx
-            .update(schema.users)
-            .set(Object.fromEntries(cleared.map((c) => [columnKey(schema.users, c.column), null])))
-            .where(eq(schema.users.id, userId));
-        }
-
-        logger.info(
-          {
-            userId,
-            removed: Object.fromEntries(
-              [...echoed].map(([table, rows]) => [getTableConfig(table).name, rows.length])
-            ),
-            clearedUserColumns: cleared.length,
-          },
-          'All user data deleted successfully'
-        );
+        echoed = await this.deleteRows(tx, userId);
       },
       { name: 'deleteAllUserData', timeout: 30000 }
     );
-
-    await this.purgeStoredObjects(userId, echoed.get(schema.documents) ?? []);
-    await this.purgeQueuePayloads(userId, echoed.get(schema.userJobs) ?? []);
+    await this.purgeAfterCommit(userId, echoed);
 
     return { success: true };
+  }
+
+  /**
+   * The row half of the flow, inside a transaction the CALLER owns, so that
+   * `DeleteAccountUseCase` can remove the account in the same commit (SC-1260).
+   * Returns what `purgeAfterCommit` needs, which must run only once that
+   * transaction has committed.
+   */
+  async deleteRows(tx: DatabaseTransaction, userId: string): Promise<Map<PgTable, string[]>> {
+    const echoed = new Map<PgTable, string[]>();
+    // Every table keyed on `users.id` is classified in the manifest, and
+    // the loop is driven by it rather than by a hand-written list of
+    // deletes. That is the whole point: this flow was correct when it was
+    // written and silently wrong three months later, because a new table
+    // is not a change to any file anyone re-reads (SC-1018). Junction
+    // tables (holdingGroups, accountGroups, vaultHoldings,
+    // holdingCoverage, documentExtractions, paymentOccurrences,
+    // vendorAliases) carry no userId and cascade from their parents here.
+    for (const entry of USER_DATA_TABLE_DISPOSITIONS) {
+      if (entry.kind === 'keep') continue;
+
+      if (entry.kind === 'anonymise') {
+        await tx
+          .update(entry.table)
+          .set({ [columnKey(entry.table, entry.userColumn)]: null })
+          .where(eq(entry.userColumn, userId));
+        continue;
+      }
+
+      const removed = await tx
+        .delete(entry.table)
+        .where(eq(entry.userColumn, userId))
+        .returning({ echo: entry.echo });
+      echoed.set(
+        entry.table,
+        removed.map((row) => String(row.echo))
+      );
+    }
+
+    // The user row survives on purpose — the account stays able to sign
+    // in — so its own columns are the one thing the FK enumeration above
+    // cannot reach. The manifest classifies them too; anything holding
+    // content the user entered is cleared here.
+    const cleared = USER_ROW_COLUMN_DISPOSITIONS.filter((c) => c.kind === 'clear');
+    if (cleared.length > 0) {
+      await tx
+        .update(schema.users)
+        .set(Object.fromEntries(cleared.map((c) => [columnKey(schema.users, c.column), null])))
+        .where(eq(schema.users.id, userId));
+    }
+
+    logger.info(
+      {
+        userId,
+        removed: Object.fromEntries(
+          [...echoed].map(([table, rows]) => [getTableConfig(table).name, rows.length])
+        ),
+        clearedUserColumns: cleared.length,
+      },
+      'All user data deleted successfully'
+    );
+    return echoed;
+  }
+
+  /** The object-store and queue half; see the purges below for why it follows the commit. */
+  async purgeAfterCommit(userId: string, echoed: Map<PgTable, string[]>): Promise<void> {
+    await this.purgeStoredObjects(userId, echoed.get(schema.documents) ?? []);
+    await this.purgeQueuePayloads(userId, echoed.get(schema.userJobs) ?? []);
   }
 
   /**

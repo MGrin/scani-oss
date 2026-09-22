@@ -34,6 +34,7 @@ import {
   userNetWorthDaily,
 } from '../../lib/net-worth-series';
 import { strictInput } from '../lib/strict-input';
+import { assertTokensVisible } from '../lib/token-visibility';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -218,6 +219,7 @@ export const portfolioRouter = router({
     .input(strictInput(NetWorthSeriesInput))
     .query(async ({ ctx, input }) => {
       const { dbUser } = await requireAuth(ctx);
+      await assertTokensVisible(dbUser.id, [input.baseCurrencyId]);
       const baseId = input.baseCurrencyId ?? dbUser.baseCurrencyId ?? null;
       if (!baseId) {
         // No configured base → can't render a chart meaningfully.
@@ -308,6 +310,7 @@ export const portfolioRouter = router({
     .input(strictInput(NetWorthSeriesInput))
     .query(async ({ ctx, input }) => {
       const { dbUser } = await requireAuth(ctx);
+      await assertTokensVisible(dbUser.id, [input.baseCurrencyId]);
       const baseId = input.baseCurrencyId ?? dbUser.baseCurrencyId ?? null;
       if (!baseId) {
         return { series: [], baseCurrencyId: null, granularity: 'daily' as Granularity };

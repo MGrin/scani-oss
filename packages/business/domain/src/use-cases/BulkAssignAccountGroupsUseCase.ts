@@ -1,3 +1,4 @@
+import type { DatabaseTransaction } from '@scani/db';
 import { Container, Service } from 'typedi';
 import { AccountRepository } from '../repositories/AccountRepository';
 import { GroupRepository } from '../repositories/GroupRepository';
@@ -20,9 +21,10 @@ export class BulkAssignAccountGroupsUseCase {
 
   async execute(
     input: BulkAssignAccountGroupsInput,
-    userId: string
+    userId: string,
+    transaction?: DatabaseTransaction
   ): Promise<BulkAssignAccountGroupsResult> {
-    const userAccounts = await this.accountRepository.findByUser(userId);
+    const userAccounts = await this.accountRepository.findByUser(userId, transaction);
     const userAccountIds = new Set(userAccounts.map((a) => a.id));
 
     const invalidAccountIds = input.accountIds.filter((id) => !userAccountIds.has(id));
@@ -32,6 +34,12 @@ export class BulkAssignAccountGroupsUseCase {
           ', '
         )}`
       );
+    }
+
+    const groupIds = [...new Set([...input.addedGroupIds, ...input.removedGroupIds])];
+    const ownedGroupIds = await this.groupRepository.findOwnedIds(userId, groupIds, transaction);
+    if (groupIds.some((id) => !ownedGroupIds.has(id))) {
+      throw new Error('Unauthorized access to one or more groups');
     }
 
     // An account in a group is a STANDING RULE (SC-386): the account is in the
@@ -44,8 +52,12 @@ export class BulkAssignAccountGroupsUseCase {
     // total, so `removeAccountGroups` also drops the holdings' own rows — most
     // of which that cascade wrote — or removing the account would change
     // nothing a reader can see.
-    await this.groupRepository.addAccountGroups(input.accountIds, input.addedGroupIds);
-    await this.groupRepository.removeAccountGroups(input.accountIds, input.removedGroupIds);
+    await this.groupRepository.addAccountGroups(input.accountIds, input.addedGroupIds, transaction);
+    await this.groupRepository.removeAccountGroups(
+      input.accountIds,
+      input.removedGroupIds,
+      transaction
+    );
 
     return {
       success: true,

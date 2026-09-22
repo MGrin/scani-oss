@@ -106,6 +106,7 @@ const SYNTHETIC_USD_TOKEN: Token = {
   isActive: true,
   marketSegment: null,
   lookalikeOf: null,
+  createdByUserId: null,
   unpriceableUntil: null,
   lastPricingAttemptAt: null,
   createdAt: new Date(0),

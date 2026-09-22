@@ -19,7 +19,13 @@
  * deployment without a CloudDb.
  */
 
-import { LocalEmailService, renderContactReceivedEmail, SCANI_BRAND } from '@scani/email';
+import {
+  isDisposableEmail,
+  LocalEmailService,
+  renderContactReceivedEmail,
+  SCANI_BRAND,
+} from '@scani/email';
+import { TURNSTILE_MESSAGES } from '@scani/http-fetch';
 import { createComponentLogger } from '@scani/logging';
 import { createOutflowLimiter, getSharedRedis } from '@scani/rate-limiter';
 import { TRPCError } from '@trpc/server';
@@ -73,6 +79,8 @@ export const contactRouter = router({
         topic: z.enum(TOPICS).default('support'),
         message: z.string().trim().min(10).max(4000),
         referrer: z.string().max(200).optional(),
+        // Cloudflare Turnstile token from the form's widget (SC-1266).
+        turnstileToken: z.string().max(2048).optional(),
       })
     )
     .output(okOutput)
@@ -88,8 +96,25 @@ export const contactRouter = router({
         });
       }
 
+      const human = await ctx.checkHuman(input.turnstileToken);
+      if (!human.ok) {
+        throw new TRPCError(
+          human.reason === 'unavailable'
+            ? { code: 'INTERNAL_SERVER_ERROR', message: TURNSTILE_MESSAGES.unavailable }
+            : { code: 'FORBIDDEN', message: TURNSTILE_MESSAGES.failed }
+        );
+      }
+
       const name = input.name.trim();
       const email = input.email.trim().toLowerCase();
+
+      // SC-1260. A throwaway inbox cannot be replied to, so its message is
+      // noise in the support inbox. Same answer as a delivery, so a scripted
+      // caller learns nothing from it.
+      if (isDisposableEmail(email)) {
+        log.warn({ topic: input.topic }, 'Contact form from a disposable address dropped');
+        return { ok: true };
+      }
       const topicLabel = TOPIC_LABELS[input.topic];
       const emailService = Container.get(LocalEmailService);
 

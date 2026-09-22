@@ -380,6 +380,32 @@ export function latestMeasured<T extends CoveragePoint>(series: readonly T[]): T
 export interface NetWorthPoint extends CoveragePoint {
   date: string;
   totalValue: string;
+  /** Of `holdingsTotal`, how many were valued on a day before anything was on
+   *  record for them. `null` on rows written before the rollup counted it. */
+  holdingsBeforeRecords?: number | null;
+}
+
+/**
+ * The series from the first day the portfolio was on record (SC-1248).
+ *
+ * The rollup values the window's earlier days too, holding today's balance at
+ * each past day's price. On an established account that fills in a quiet
+ * stretch; on a portfolio added minutes ago it is the whole window, and Home
+ * put "−$24.99 vs 30d" in red under a first holding — a loss the user never
+ * had, on the first screen after onboarding. So a day on which every holding
+ * predates its own records is not history, and the leading run of them goes.
+ *
+ * Only the leading run: a day in the middle is surrounded by real ones, and a
+ * row that does not carry the count is never dropped on its absence.
+ */
+export function fromFirstRecord<T extends NetWorthPoint>(series: readonly T[]): T[] {
+  const first = series.findIndex(
+    (point) =>
+      point.holdingsTotal === 0 ||
+      point.holdingsBeforeRecords == null ||
+      point.holdingsBeforeRecords < point.holdingsTotal
+  );
+  return first === -1 ? [] : series.slice(first);
 }
 
 export interface PeriodDelta {

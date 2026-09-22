@@ -24,7 +24,9 @@ export class ScreenshotParsingService extends BaseService {
    */
   async parseScreenshot(
     imageBase64: string,
-    options?: {
+    options: {
+      /** Whose AI budget this call spends (SC-1265). */
+      userId: string;
       provider?: 'openai';
       accountType?: string;
       expectedCurrency?: string;
@@ -48,6 +50,7 @@ export class ScreenshotParsingService extends BaseService {
       }
 
       const aiResponse = await this.aiRouter.parseScreenshot(imageBase64, {
+        userId: options.userId,
         provider: options?.provider,
         accountType: options?.accountType,
         expectedCurrency: options?.expectedCurrency,
@@ -87,7 +90,9 @@ export class ScreenshotParsingService extends BaseService {
    */
   async parseDocumentText(
     text: string,
-    options?: {
+    options: {
+      /** Whose AI budget this call spends (SC-1265). */
+      userId: string;
       provider?: 'openai';
       accountType?: string;
       expectedCurrency?: string;
@@ -110,6 +115,7 @@ export class ScreenshotParsingService extends BaseService {
       }
 
       const aiResponse = await this.aiRouter.parseDocumentText(text, {
+        userId: options.userId,
         provider: options?.provider,
         accountType: options?.accountType,
         expectedCurrency: options?.expectedCurrency,

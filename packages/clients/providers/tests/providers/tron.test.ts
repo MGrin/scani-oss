@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
+import { WALLET_HISTORY_ROW_CAP } from '../../src/core/wallet-limits';
 import { TronProvider } from '../../src/providers/tron';
 import { tronBase58ToHex } from '../../src/providers/tron/address';
 
@@ -523,4 +524,50 @@ liveDescribe('TronProvider — live (SCANI_LIVE=1)', () => {
       expect(e.occurredAt instanceof Date).toBe(true);
     }
   }, 30_000);
+});
+
+describe('TronProvider.fetchTransactions over an address with no end (SC-1271)', () => {
+  test('each history stops at the row cap and the claim is retracted once', async () => {
+    const p = new TronProvider(passthroughLimiter(), 'http://api');
+    const walletHex = tronBase58ToHex(VALID_TRX).toLowerCase();
+    const counterparty = `41${'aa'.repeat(20)}`;
+    const retractions: string[] = [];
+    let calls = 0;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () => {
+      calls += 1;
+      return new Response(
+        JSON.stringify({
+          data: Array.from({ length: 200 }, (_, i) => ({
+            txID: `tx${calls}_${i}`,
+            block_timestamp: 1_700_000_000_000 - calls,
+            ret: [{ contractRet: 'SUCCESS' }],
+            raw_data: {
+              contract: [
+                {
+                  type: 'TransferContract',
+                  parameter: {
+                    value: { owner_address: counterparty, to_address: walletHex, amount: 1 },
+                  },
+                },
+              ],
+            },
+          })),
+          meta: { fingerprint: `fp${calls}` },
+        }),
+        { status: 200 }
+      );
+    }) as unknown as typeof fetch;
+    try {
+      await p.fetchTransactions({
+        ...ctx,
+        retractHistoryClaim: (r: string) => retractions.push(r),
+      } as never);
+      // Native and TRC-20 each stop at the cap.
+      expect(calls).toBe(2 * (WALLET_HISTORY_ROW_CAP / 200));
+      expect(retractions).toHaveLength(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

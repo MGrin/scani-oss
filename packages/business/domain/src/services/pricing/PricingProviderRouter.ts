@@ -169,6 +169,7 @@ export class PricingProviderRouter {
           scamScoreSource: 'heuristic',
           isActive: true,
           lookalikeOf: null,
+          createdByUserId: null,
           unpriceableUntil: null,
           lastPricingAttemptAt: null,
           createdAt: new Date(),

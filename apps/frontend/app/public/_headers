@@ -30,7 +30,7 @@
 #    do not buy. A self-hoster who WANTS the app indexed removes all three.
 
 /*
-  Content-Security-Policy: default-src 'self'; base-uri 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://your-api-host.example.com wss://your-api-host.example.com https://*.sentry.io https://*.ingest.sentry.io https://*.r2.cloudflarestorage.com; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; base-uri 'self'; script-src 'self' https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; connect-src 'self' https://your-api-host.example.com wss://your-api-host.example.com https://*.sentry.io https://*.ingest.sentry.io https://*.r2.cloudflarestorage.com; font-src 'self' data:; frame-ancestors 'none'; form-action 'self'; object-src 'none'
   X-Robots-Tag: noindex, nofollow
   X-Content-Type-Options: nosniff
   X-Frame-Options: DENY
