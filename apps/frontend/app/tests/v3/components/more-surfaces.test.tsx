@@ -4,6 +4,7 @@ const t = i18n.t.bind(i18n);
 
 import { describe, expect, test } from 'bun:test';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
+import { buildDataViewSheets } from '@scani/ui/v3/lib/export/data-view';
 import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
 import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -11,7 +12,7 @@ import { Trans } from 'react-i18next';
 import { StaticRouter } from 'react-router-dom/server';
 import { AccountsList } from '../../../src/v3/components/entities/AccountsList';
 import { InstitutionsList } from '../../../src/v3/components/entities/InstitutionsList';
-import { GroupsList } from '../../../src/v3/components/groups/GroupsList';
+import { GroupsList, groupsListConfig } from '../../../src/v3/components/groups/GroupsList';
 import { JobsList } from '../../../src/v3/components/jobs/JobsList';
 import { ReviewList } from '../../../src/v3/components/review/ReviewList';
 import { CustomTokensList, priceOrigin } from '../../../src/v3/components/tokens/CustomTokensList';
@@ -327,8 +328,22 @@ describe('GroupsList', () => {
     { id: 'g2', name: 'Empty', color: '#3b82f6', holdingsCount: 0, accountsCount: 0 },
   ];
   const VALUES = [
-    { groupId: 'g1', value: '48250.5', holdingsCounted: 12, unpricedSymbols: [] as string[] },
-    { groupId: 'g2', value: '0', holdingsCounted: 0, unpricedSymbols: [] },
+    {
+      groupId: 'g1',
+      value: '48250.5',
+      holdingsCounted: 12,
+      unpricedSymbols: [] as string[],
+      inactiveValue: '0',
+      inactiveHoldings: 0,
+    },
+    {
+      groupId: 'g2',
+      value: '0',
+      holdingsCounted: 0,
+      unpricedSymbols: [],
+      inactiveValue: '0',
+      inactiveHoldings: 0,
+    },
   ];
 
   function renderGroups(values = VALUES) {
@@ -357,7 +372,16 @@ describe('GroupsList', () => {
         groups={[
           { id: 'g3', name: 'House deposit', color: '#eab308', holdingsCount: 1, accountsCount: 1 },
         ]}
-        values={[{ groupId: 'g3', value: '10', holdingsCounted: 1, unpricedSymbols: [] }]}
+        values={[
+          {
+            groupId: 'g3',
+            value: '10',
+            holdingsCounted: 1,
+            unpricedSymbols: [],
+            inactiveValue: '0',
+            inactiveHoldings: 0,
+          },
+        ]}
         baseCurrency="EUR"
         query={SETTLED_QUERY_STATE}
         onCreate={noop}
@@ -376,11 +400,103 @@ describe('GroupsList', () => {
    *  unknown, and printing zero there would understate it by its whole value. */
   test('a group we could price nothing in shows no figure rather than zero', () => {
     const html = renderGroups([
-      { groupId: 'g1', value: '0', holdingsCounted: 0, unpricedSymbols: ['NEWCO'] },
-      { groupId: 'g2', value: '0', holdingsCounted: 0, unpricedSymbols: [] },
+      {
+        groupId: 'g1',
+        value: '0',
+        holdingsCounted: 0,
+        unpricedSymbols: ['NEWCO'],
+        inactiveValue: '0',
+        inactiveHoldings: 0,
+      },
+      {
+        groupId: 'g2',
+        value: '0',
+        holdingsCounted: 0,
+        unpricedSymbols: [],
+        inactiveValue: '0',
+        inactiveHoldings: 0,
+      },
     ]);
     expect(html).toContain('No value');
     expect(html).not.toContain('48,250.50');
+  });
+
+  /**
+   * SC-1128. A group of only closed positions showed 0 beside a list of rows
+   * that each carry a value. It now shows what they are worth, muted and
+   * badged Inactive — and only shows it: the sort, the export's value column
+   * and the total all still read 0, so the export's TOTAL is the portfolio's
+   * money and nothing else.
+   */
+  const WITH_CLOSED = [
+    {
+      groupId: 'g1',
+      value: '48250.5',
+      holdingsCounted: 12,
+      unpricedSymbols: [] as string[],
+      inactiveValue: '0',
+      inactiveHoldings: 0,
+    },
+    {
+      groupId: 'g2',
+      value: '0',
+      holdingsCounted: 0,
+      unpricedSymbols: [],
+      inactiveValue: '99999',
+      inactiveHoldings: 3,
+    },
+  ];
+
+  test('a group of only inactive holdings shows their worth, badged Inactive', () => {
+    const html = renderGroups(WITH_CLOSED);
+    expect(html).toContain('99,999.00');
+    expect(html).toContain('Inactive');
+    expect(html).toContain('48,250.50');
+    // The control: the same groups with no closed positions carry no badge.
+    expect(renderGroups()).not.toContain('Inactive');
+  });
+
+  test('the export marks that group on its name and keeps its value, and the TOTAL, at the active money', () => {
+    const config = groupsListConfig(
+      { groups: GROUPS, values: WITH_CLOSED, baseCurrency: 'EUR', onCreate: noop },
+      t,
+      noop
+    );
+    const {
+      sheets: [sheet],
+    } = buildDataViewSheets({
+      config,
+      items: GROUPS,
+      groupBy: '',
+      filtered: false,
+      filteredCount: 2,
+      totalCount: 2,
+      activeFilters: [],
+      searchTerm: '',
+      sortField: 'value',
+      sortDirection: 'desc',
+      generatedAt: new Date('2026-09-19T00:00:00.000Z'),
+    });
+    const valueAt = config.columns.findIndex((column) => column.key === 'value');
+    const nameAt = config.columns.findIndex((column) => column.key === 'name');
+    const cells = (sheet?.rows ?? []).map((row) => ({
+      name: row[nameAt],
+      value: row[valueAt],
+    }));
+
+    expect(cells.map((cell) => cell.name)).toEqual([
+      { kind: 'text', value: 'Taxable' },
+      { kind: 'text', value: 'Empty · Inactive' },
+    ]);
+    // The value column is the one the writers total, and it sums to the
+    // active money alone: the 99,999 of closed positions is in no cell.
+    expect(sheet?.totalColumns?.[valueAt]).toBe(true);
+    const total = cells.reduce(
+      (sum, cell) => sum + Number((cell.value as { value?: string })?.value ?? 0),
+      0
+    );
+    expect(total).toBe(48250.5);
+    expect(cells[1]?.value).toMatchObject({ kind: 'number', value: '0.00' });
   });
 });
 
