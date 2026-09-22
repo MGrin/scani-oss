@@ -31,7 +31,9 @@ add_header Cross-Origin-Resource-Policy "same-site" always;
 
 # Don't index the SPA — only the SSR landing page would.
 #
-# `${ROBOTS_DIRECTIVE}` is expanded by the same envsubst that fills
+# `$robots_tag` is nginx's, from the `map` in the site config: the root
+# document gets `${ROBOTS_DIRECTIVE}` and every other path `noindex, nofollow`
+# (SC-1111). `${ROBOTS_DIRECTIVE}` is expanded by the same envsubst that fills
 # `${CSP_CONNECT_SRC}` above, and it is DERIVED rather than set: the
 # Dockerfile defaults it to `noindex, nofollow`, and
 # `docker-robots-policy.envsh` overwrites it from `ROBOTS_POLICY` on every
@@ -42,4 +44,4 @@ add_header Cross-Origin-Resource-Policy "same-site" always;
 # moves all three; see that file. The sentence this replaces told a
 # self-hoster who wanted indexing to layer their own front-of-stack, which
 # was the honest advice while there was no knob to offer them.
-add_header X-Robots-Tag "${ROBOTS_DIRECTIVE}" always;
+add_header X-Robots-Tag "$robots_tag" always;
