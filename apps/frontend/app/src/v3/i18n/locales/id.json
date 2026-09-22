@@ -197,6 +197,39 @@
       },
       "runway": {
         "label": "Uang bertahan"
+      },
+      "returns": {
+        "title": "Imbal hasil",
+        "chooseWindow": "Pilih periode",
+        "window": {
+          "ytd": "YTD",
+          "1y": "1T",
+          "all": "Semua"
+        },
+        "twr": {
+          "label": "Imbal hasil investasi",
+          "caption": "Kinerja aset Anda, terlepas dari dana yang Anda tambah atau tarik."
+        },
+        "fx": {
+          "label": "Di antaranya, kurs",
+          "caption": "Aset Anda menghasilkan <value/> dalam mata uangnya sendiri; sisanya dari pergerakan kurs terhadap mata uang Anda."
+        },
+        "xirr": {
+          "label": "Imbal hasil uang Anda",
+          "caption": "Hasil uang Anda sendiri, dengan memperhitungkan kapan Anda menambah dan menariknya.",
+          "approximate": "Lebih dari satu tingkat cocok dengan setoran dan penarikan Anda, jadi anggap ini perkiraan."
+        },
+        "benchmarks": {
+          "label": "Dibandingkan dengan",
+          "caption": "Bitcoin dan S&P 500 dibeli dan ditahan pada hari yang sama, dalam mata uang Anda; harga di AS pada bulan yang sama.",
+          "btc": "Bitcoin",
+          "sp500": "S&P 500 (SPY, harga saja)",
+          "usInflation": "Inflasi AS (CPI-U)"
+        },
+        "perYear": "<value/> per tahun",
+        "perYearUnit": "per tahun",
+        "since": "Sejak {{date}}.",
+        "partial": "Beberapa hari tidak dapat dihargai sepenuhnya, jadi angka ini mungkin kurang tepat."
       }
     },
     "money": {

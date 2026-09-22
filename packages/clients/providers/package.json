@@ -23,6 +23,7 @@
     "./core/base/evm-traded-tokens": "./src/core/base/evm-traded-tokens.ts",
     "./providers/coingecko": "./src/providers/coingecko/index.ts",
     "./providers/defillama": "./src/providers/defillama/index.ts",
+    "./providers/bls": "./src/providers/bls/index.ts",
     "./providers/frankfurter": "./src/providers/frankfurter/index.ts",
     "./providers/finnhub": "./src/providers/finnhub/index.ts",
     "./providers/bitcoin": "./src/providers/bitcoin/index.ts",

@@ -15,6 +15,7 @@ import { AttentionRow } from '../components/home/AttentionRow';
 import { FirstRun } from '../components/home/FirstRun';
 import { GroupsBlock } from '../components/home/GroupsBlock';
 import { HeroBlock } from '../components/home/HeroBlock';
+import { ReturnsBlock } from '../components/home/ReturnsBlock';
 import { TopHoldingsBlock } from '../components/home/TopHoldingsBlock';
 import { UpcomingBlock } from '../components/home/UpcomingBlock';
 import { VaultsBlock } from '../components/home/VaultsBlock';
@@ -301,6 +302,12 @@ export function HomePage() {
           since an item left holding no child still spends six columns and a
           `gap-6` on nothing. CSS rather than lifting the queries up here: the
           page has no business knowing what makes a vault list empty. */}
+        {/* Beside groups and vaults, and collapsed the same way: it renders
+          nothing until there is history to measure (SC-1159). */}
+        <DashboardItem span="half" className="empty:hidden">
+          <ReturnsBlock />
+        </DashboardItem>
+
         <DashboardItem span="half" className="empty:hidden">
           <GroupsBlock />
         </DashboardItem>
