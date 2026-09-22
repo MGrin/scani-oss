@@ -1750,7 +1750,9 @@
         "noResults": "その名前の口座はここにありません。",
         "addNamed": "「{{name}}」を追加",
         "addNew": "新しい口座を追加",
-        "pickExisting": "既存の口座を選ぶ"
+        "pickExisting": "既存の口座を選ぶ",
+        "firstPlaceholder": "最初の口座に名前を付けてください…",
+        "noneYet": "まだ口座がありません。名前を入力して最初の口座を追加してください。"
       },
       "page": {
         "uploadAndRead": "アップロードして読み取る",

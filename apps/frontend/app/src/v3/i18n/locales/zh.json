@@ -1750,7 +1750,9 @@
         "noResults": "这里没有叫这个名字的账户。",
         "addNamed": "添加“{{name}}”",
         "addNew": "添加一个新账户",
-        "pickExisting": "选择一个已有的账户"
+        "pickExisting": "选择一个已有的账户",
+        "firstPlaceholder": "为你的第一个账户命名…",
+        "noneYet": "还没有账户——输入名称来添加第一个。"
       },
       "page": {
         "uploadAndRead": "上传并读取",
