@@ -32,8 +32,8 @@ test.describe('holdings: a scam verdict is per user', () => {
     await signIn({ page, testInfo });
     const mine = await createHolding(page, {
       accountId: (await createAccount(page, { name: `e2e-a-${testInfo.testId}` })).id,
-      symbol: 'USD',
-      quantity: '1000',
+      symbol: 'BTC',
+      quantity: '1',
     });
 
     const otherContext = await browser.newContext(isolatedContextOptions(testInfo, 'other-user'));
@@ -41,8 +41,8 @@ test.describe('holdings: a scam verdict is per user', () => {
     await signIn({ page: other, testInfo });
     const theirs = await createHolding(other, {
       accountId: (await createAccount(other, { name: `e2e-b-${testInfo.testId}` })).id,
-      symbol: 'USD',
-      quantity: '1000',
+      symbol: 'BTC',
+      quantity: '1',
     });
 
     await page.goto(`/holdings/${mine.id}`);
@@ -55,7 +55,7 @@ test.describe('holdings: a scam verdict is per user', () => {
       await page.getByRole('button', { name: 'Show full detail' }).click();
     }
     await page.getByRole('button', { name: 'Mark as scam', exact: true }).click();
-    await page.getByRole('button', { name: 'Mark USD as a scam' }).click();
+    await page.getByRole('button', { name: 'Mark BTC as a scam' }).click();
 
     await expect.poll(() => visibleHoldingIds(page)).not.toContain(mine.id);
     expect(await visibleHoldingIds(other)).toContain(theirs.id);
@@ -64,10 +64,10 @@ test.describe('holdings: a scam verdict is per user', () => {
     await page.getByRole('radio', { name: 'Hidden' }).click();
     // The same row is a table cell on desktop and a button on a phone or
     // tablet, whose name starts with the symbol and whose text has no node
-    // that is exactly `USD` (iPad e2e). Either is the row to open.
+    // that is exactly `BTC` (iPad e2e). Either is the row to open.
     await page
-      .getByRole('button', { name: /^USD\b/ })
-      .or(page.getByText('USD', { exact: true }))
+      .getByRole('button', { name: /^BTC\b/ })
+      .or(page.getByText('BTC', { exact: true }))
       .first()
       .click();
     await page.getByRole('button', { name: 'Not a scam' }).click();
