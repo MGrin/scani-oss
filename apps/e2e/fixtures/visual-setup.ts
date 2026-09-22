@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Browser, chromium, type Page } from '@playwright/test';
-import { FORECAST_AS_OF, type VisualSession } from '../visual/screens';
+import { BURN_AS_OF, FORECAST_AS_OF, type VisualSession } from '../visual/screens';
 import {
   type ObservedContent,
   provenanceFailure,
@@ -59,6 +59,10 @@ export const VISUAL_ALLOCATION_SESSION_FILE = resolve(E2E_ROOT, '.visual-allocat
  * spent — see `sessionUserAgent`.
  */
 export const VISUAL_FORECAST_SESSION_FILE = resolve(E2E_ROOT, '.visual-forecast-session.json');
+
+/** A fifth user whose money left the tracked perimeter, for the screens
+ *  declared `session: 'burn'` (SC-1219) — see `BURN_BOOK`. */
+export const VISUAL_BURN_SESSION_FILE = resolve(E2E_ROOT, '.visual-burn-session.json');
 
 /**
  * The websocket `scripts/visual.ts` publishes for the containerised browser.
@@ -200,6 +204,49 @@ const FORECAST_BOOK = [
 ] as const;
 
 /**
+ * Money that LEFT the tracked perimeter inside the observed window — the
+ * complete months before `BURN_AS_OF` — one payment of it valued from a stale
+ * quote (SC-1219).
+ *
+ * THE STALE ROW IS A CUSTOM TOKEN, and neither alternative holds still. A USD
+ * exit in a USD base is valued as itself and is never stale, and observed burn
+ * never reads a fee. A EUR exit is stale only until something writes a EUR
+ * rate near it — and `recordMovement` itself queues the backfill that does,
+ * daily from the payment to today. A custom token has no pricing provider, so
+ * its one price row is the manual one written when it was created.
+ *
+ * STALE ON EVERY RUN, with no date in it. That row is stamped with the api's
+ * "now" and the payment falls a month before `BURN_AS_OF`, about three months
+ * later — so the rate predates the payment by more than the 45-day cap whatever
+ * the calendar says. The token is created once per stack and reused; its row
+ * only ever gets older.
+ *
+ * The USD exits carry the drain so the token's price cannot reach the figure:
+ * 18,500 left at about 2,000 a month is about 9.25 months, clear of either
+ * rounding edge. One unit of the token stays held so the provenance count never
+ * depends on how a zero balance is listed.
+ */
+const BURN_ACCOUNTS = { operating: 'Operating', ledger: 'Private Ledger' } as const;
+const BURN_TOKEN = { symbol: 'VISBURN', name: 'Visual burn fixture' } as const;
+const BURN_BOOK = {
+  usd: '30500',
+  token: '3',
+  exits: [
+    { holding: 'usd', amount: '6000', monthsBeforeAsOf: 3 },
+    { holding: 'usd', amount: '6000', monthsBeforeAsOf: 1 },
+    { holding: 'token', amount: '2', monthsBeforeAsOf: 1 },
+  ],
+} as const;
+
+/** Noon UTC on the 15th, `months` before `BURN_AS_OF` — inside the window. */
+function burnDay(months: number): string {
+  const asOf = new Date(`${BURN_AS_OF}T00:00:00Z`);
+  return new Date(
+    Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth() - months, 15, 12)
+  ).toISOString();
+}
+
+/**
  * What this session actually holds, or `null` if it is not signed in.
  *
  * One request answering both questions, because they were always one question:
@@ -292,6 +339,61 @@ async function seedForecastBook(page: Page): Promise<void> {
   }
 }
 
+/** The fixture's custom token, created on the first run against a stack and
+ *  found by symbol after that — a second create is refused as a duplicate. */
+async function burnTokenSymbol(page: Page): Promise<string> {
+  try {
+    await trpcMutate(page, 'tokens.createCustom', {
+      symbol: BURN_TOKEN.symbol,
+      name: BURN_TOKEN.name,
+      typeCode: 'other',
+      manualPrice: 1,
+      baseCurrencyCode: 'USD',
+    });
+  } catch (error) {
+    if (!String(error).includes('already exists')) throw error;
+  }
+  return BURN_TOKEN.symbol;
+}
+
+/** Same intolerance of a partial seed as `seedForecastBook`: a missing exit
+ *  moves the runway, and a missing stale one removes the only thing the screen
+ *  this seeds exists to photograph. */
+async function seedBurnBook(page: Page): Promise<void> {
+  const operating = await createAccount(page, {
+    name: BURN_ACCOUNTS.operating,
+    type: 'Checking Account',
+  });
+  const usd = await createHolding(page, {
+    accountId: operating.id,
+    symbol: 'USD',
+    quantity: BURN_BOOK.usd,
+    jobTimeoutMs: 120_000,
+  });
+  const ledger = await createAccount(page, {
+    name: BURN_ACCOUNTS.ledger,
+    type: 'Checking Account',
+  });
+  const token = await createHolding(page, {
+    accountId: ledger.id,
+    symbol: await burnTokenSymbol(page),
+    quantity: BURN_BOOK.token,
+    jobTimeoutMs: 120_000,
+  });
+  const holding = { usd: usd.id, token: token.id };
+  for (const exit of BURN_BOOK.exits) {
+    await trpcMutate(page, 'holdings.recordMovement', {
+      movement: {
+        direction: 'outflow',
+        holdingId: holding[exit.holding],
+        amount: exit.amount,
+        occurredAt: burnDay(exit.monthsBeforeAsOf),
+        destination: 'left_control',
+      },
+    });
+  }
+}
+
 async function storedSessionIsValid(browser: Browser, file: string): Promise<boolean> {
   if (!existsSync(file)) return false;
   const context = await browser.newContext({ storageState: file, baseURL: BASE_URL });
@@ -322,6 +424,7 @@ const DECLARED_CONTENT: Record<VisualSession, SessionContent> = {
     holdings: ALLOCATION_PORTFOLIO.length,
   },
   forecast: { accounts: [FORECAST_PORTFOLIO.account], holdings: 1 },
+  burn: { accounts: [BURN_ACCOUNTS.operating, BURN_ACCOUNTS.ledger], holdings: 2 },
 };
 
 /**
@@ -438,8 +541,11 @@ export default async function globalSetup(): Promise<void> {
       [VISUAL_EMPTY_SESSION_FILE, 'empty', 'visual-empty', undefined],
       [VISUAL_ALLOCATION_SESSION_FILE, 'allocation', 'visual-allocation', seedAllocationPortfolio],
       [VISUAL_FORECAST_SESSION_FILE, 'forecast', 'visual-forecast', seedForecastBook],
+      [VISUAL_BURN_SESSION_FILE, 'burn', 'visual-burn', seedBurnBook],
     ] as const) {
-      if (!fresh && (await storedSessionIsValid(browser, file))) {
+      // `burn` is never reused: its payments are dated from `BURN_AS_OF`, which
+      // moves every month, so a stored one would drift out of its own window.
+      if (!fresh && session !== 'burn' && (await storedSessionIsValid(browser, file))) {
         // intentional: tells the operator which user the baselines describe
         console.log(`Reusing stored ${label} session (VISUAL_FRESH=1 to reseed).`);
       } else {
