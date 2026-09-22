@@ -3,6 +3,7 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import i18n from 'i18next';
 import {
+  allInactiveGroupAmount,
   compareGroupAmounts,
   type GroupValue,
   groupAmount,
@@ -20,9 +21,54 @@ function value(partial: Partial<GroupValue> = {}): GroupValue {
     value: '1000',
     holdingsCounted: 2,
     unpricedSymbols: [],
+    inactiveValue: '0',
+    inactiveHoldings: 0,
     ...partial,
   };
 }
+
+/**
+ * SC-1128, the group half of SC-1122. A group of nothing but inactive holdings
+ * headlined zero over rows that each carry a value; the server now reports
+ * what those holdings are worth beside it.
+ */
+describe('allInactiveGroupAmount', () => {
+  const none = value({ value: '0', holdingsCounted: 0 });
+
+  test('every holding inactive: the headline is what they are worth', () => {
+    expect(allInactiveGroupAmount({ ...none, inactiveValue: '150.5', inactiveHoldings: 2 })).toBe(
+      150.5
+    );
+  });
+
+  test('one active holding keeps the ordinary figure, however much the inactive ones are worth', () => {
+    expect(
+      allInactiveGroupAmount(
+        value({ holdingsCounted: 1, inactiveValue: '900', inactiveHoldings: 1 })
+      )
+    ).toBeNull();
+  });
+
+  test('an unpriced active position keeps the group UNKNOWN, not an inactive total', () => {
+    expect(
+      allInactiveGroupAmount({
+        ...none,
+        unpricedSymbols: ['XYZ'],
+        inactiveValue: '50',
+        inactiveHoldings: 1,
+      })
+    ).toBeNull();
+  });
+
+  test('an empty group is not "all inactive", and no value yet is no override', () => {
+    expect(allInactiveGroupAmount(none)).toBeNull();
+    expect(allInactiveGroupAmount(undefined)).toBeNull();
+  });
+
+  test('inactive holdings with no price read as 0 under the label, not as unknown', () => {
+    expect(allInactiveGroupAmount({ ...none, inactiveValue: '0', inactiveHoldings: 2 })).toBe(0);
+  });
+});
 
 describe('groupAmount', () => {
   test('a priced group reads its total', () => {
