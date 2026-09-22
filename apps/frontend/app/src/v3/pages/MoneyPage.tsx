@@ -11,6 +11,7 @@ import { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import { trpc } from '@/lib/trpc';
 import { ForecastView } from '../components/money/ForecastView';
 import { RecurringList } from '../components/money/RecurringList';
+import { RecurringSuggestions } from '../components/money/RecurringSuggestions';
 import { UpcomingFeed } from '../components/money/UpcomingFeed';
 import { VendorList } from '../components/money/VendorList';
 import { historyEstimatesByPaymentId } from '../lib/forecast';
@@ -197,6 +198,8 @@ export function MoneyPage() {
           historyEstimates={historyEstimates}
         />
       ) : null}
+
+      {segment === 'recurring' ? <RecurringSuggestions tokenSymbolById={tokenSymbolById} /> : null}
 
       {segment === 'recurring' ? (
         <RecurringList

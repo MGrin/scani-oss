@@ -154,6 +154,12 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
   },
   {
     kind: 'delete',
+    table: schema.recurringSuggestionDismissals,
+    userColumn: schema.recurringSuggestionDismissals.userId,
+    echo: schema.recurringSuggestionDismissals.id,
+  },
+  {
+    kind: 'delete',
     table: schema.transferReviewRules,
     userColumn: schema.transferReviewRules.userId,
     echo: schema.transferReviewRules.id,

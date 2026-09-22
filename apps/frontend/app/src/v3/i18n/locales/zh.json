@@ -616,6 +616,13 @@
         "couldEstimate_other": "其中有 {{count}} 笔浮动付款此前结算过，因此可以用它们上次的金额来替代。",
         "useLastSettled_other": "使用它们上次的结算金额",
         "stopEstimating_other": "不再为它们估算"
+      },
+      "suggestions": {
+        "title": "看起来是定期付款",
+        "claim": "{{payee}} 看起来是每月 <value></value> 的付款。",
+        "accept": "添加为定期付款",
+        "dismiss": "不是定期付款",
+        "evidence_other": "基于 {{count}} 笔付款："
       }
     },
     "groups": {

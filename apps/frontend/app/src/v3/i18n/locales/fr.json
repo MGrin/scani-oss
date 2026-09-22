@@ -2930,6 +2930,15 @@
         "stopEstimating_one": "Ne plus l’estimer",
         "stopEstimating_many": "Ne plus les estimer",
         "stopEstimating_other": "Ne plus les estimer"
+      },
+      "suggestions": {
+        "title": "Semble récurrent",
+        "claim": "{{payee}} ressemble à un paiement mensuel de <value></value>.",
+        "accept": "Ajouter comme récurrent",
+        "dismiss": "Pas récurrent",
+        "evidence_one": "D’après {{count}} paiement :",
+        "evidence_many": "D’après {{count}} paiements :",
+        "evidence_other": "D’après {{count}} paiements :"
       }
     }
   }
