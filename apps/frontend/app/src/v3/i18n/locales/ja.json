@@ -465,7 +465,7 @@
         "addPayment": "支払を追加"
       },
       "recurringSummary": {
-        "projectedEachMonth": "毎月の予測額",
+        "projectedEachMonth": "毎月の請求の予測額",
         "estimatedFromHistory_other": "金額が変動する支払{{count}}件を、最後に決済した金額から概算して含めています。",
         "notCounted_other": "金額が変動する支払{{count}}件には概算がないため、含めていません。"
       },

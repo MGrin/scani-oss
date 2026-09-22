@@ -465,7 +465,7 @@
         "addPayment": "Tambahkan pembayaran"
       },
       "recurringSummary": {
-        "projectedEachMonth": "Proyeksi tiap bulan",
+        "projectedEachMonth": "Proyeksi tagihan tiap bulan",
         "estimatedFromHistory_other": "Termasuk {{count}} pembayaran berubah-ubah yang diperkirakan dari jumlah terakhir yang diselesaikan.",
         "notCounted_other": "{{count}} pembayaran berubah-ubah tidak memiliki perkiraan dan tidak dihitung."
       },

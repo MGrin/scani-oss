@@ -2657,7 +2657,7 @@
         "addPayment": "Ajouter un paiement"
       },
       "recurringSummary": {
-        "projectedEachMonth": "Projeté chaque mois",
+        "projectedEachMonth": "Factures projetées chaque mois",
         "estimatedFromHistory_one": "Comprend {{count}} paiement variable estimé d’après son dernier règlement.",
         "estimatedFromHistory_many": "Comprend {{count}} paiements variables estimés d’après leurs derniers règlements.",
         "estimatedFromHistory_other": "Comprend {{count}} paiements variables estimés d’après leurs derniers règlements.",

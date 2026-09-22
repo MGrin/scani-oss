@@ -1899,7 +1899,7 @@
         "addPayment": "Añadir un pago"
       },
       "recurringSummary": {
-        "projectedEachMonth": "Proyectado cada mes",
+        "projectedEachMonth": "Facturas proyectadas cada mes",
         "estimatedFromHistory_many": "Incluye {{count}} pagos variables estimados a partir de sus últimos importes liquidados.",
         "estimatedFromHistory_one": "Incluye {{count}} pago variable estimado a partir de su último importe liquidado.",
         "estimatedFromHistory_other": "Incluye {{count}} pagos variables estimados a partir de sus últimos importes liquidados.",
