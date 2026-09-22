@@ -61,7 +61,10 @@
         "justNow": "たった今",
         "minutes_other": "{{count, number}}分前",
         "hours_other": "{{count, number}}時間前",
-        "days_other": "{{count, number}}日前"
+        "days_other": "{{count, number}}日前",
+        "inMinutes_other": "{{count, number}}分後",
+        "inHours_other": "{{count, number}}時間後",
+        "inDays_other": "{{count, number}}日後"
       }
     },
     "notFound": {

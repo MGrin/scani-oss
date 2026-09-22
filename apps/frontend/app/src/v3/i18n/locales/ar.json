@@ -3106,7 +3106,25 @@
         "days_two": "منذ يومين",
         "days_few": "منذ {{count, number}} أيام",
         "days_many": "منذ {{count, number}} يومًا",
-        "days_other": "منذ {{count, number}} يوم"
+        "days_other": "منذ {{count, number}} يوم",
+        "inMinutes_zero": "بعد {{count, number}} دقيقة",
+        "inMinutes_one": "بعد دقيقة",
+        "inMinutes_two": "بعد دقيقتين",
+        "inMinutes_few": "بعد {{count, number}} دقائق",
+        "inMinutes_many": "بعد {{count, number}} دقيقة",
+        "inMinutes_other": "بعد {{count, number}} دقيقة",
+        "inHours_zero": "بعد {{count, number}} ساعة",
+        "inHours_one": "بعد ساعة",
+        "inHours_two": "بعد ساعتين",
+        "inHours_few": "بعد {{count, number}} ساعات",
+        "inHours_many": "بعد {{count, number}} ساعة",
+        "inHours_other": "بعد {{count, number}} ساعة",
+        "inDays_zero": "بعد {{count, number}} يوم",
+        "inDays_one": "بعد يوم",
+        "inDays_two": "بعد يومين",
+        "inDays_few": "بعد {{count, number}} أيام",
+        "inDays_many": "بعد {{count, number}} يومًا",
+        "inDays_other": "بعد {{count, number}} يوم"
       }
     },
     "entities": {

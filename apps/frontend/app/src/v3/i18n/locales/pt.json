@@ -274,7 +274,16 @@
         "justNow": "agora mesmo",
         "minutes_many": "há {{count, number}} min",
         "minutes_one": "há {{count, number}} min",
-        "minutes_other": "há {{count, number}} min"
+        "minutes_other": "há {{count, number}} min",
+        "inMinutes_many": "em {{count, number}} min",
+        "inMinutes_one": "em {{count, number}} min",
+        "inMinutes_other": "em {{count, number}} min",
+        "inHours_many": "em {{count, number}} h",
+        "inHours_one": "em {{count, number}} h",
+        "inHours_other": "em {{count, number}} h",
+        "inDays_many": "em {{count, number}} d",
+        "inDays_one": "em {{count, number}} d",
+        "inDays_other": "em {{count, number}} d"
       },
       "unknownVendor": "Fornecedor desconhecido"
     },
