@@ -99,6 +99,16 @@ describe('describePendingReview — file-import', () => {
       describePendingReview('file-import', { needsCurrency: { transactionCount: 7 } })
     ).toEqual({ code: 'transactionsNeedCurrency', transactions: 7, fileType: undefined });
   });
+
+  // SC-1291: the second early return — nothing said whether 03/04 is day- or
+  // month-first, so the import stopped and waits on the user.
+  test('describes the pending date-order choice', () => {
+    expect(
+      describePendingReview('file-import', {
+        needsDateOrder: { r2Key: 'k', fileType: 'csv', rowCount: 9, samples: ['03/04/2026'] },
+      })
+    ).toEqual({ code: 'datesNeedOrder', transactions: 9, fileType: 'csv' });
+  });
 });
 
 describe('describePendingReview — wallet-import', () => {

@@ -130,7 +130,6 @@ describe('the guarded one does not follow redirects blindly', () => {
     const code = src.replace(/\/\*\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
     expect(code).not.toContain("redirect: 'follow'");
     expect(code).toContain('followRedirectsSafely(');
-    expect(code).toContain('assertHostIsPublic(');
   });
 
   test('and its host guard is called from the hop walk, not only at the entry point', async () => {
@@ -139,6 +138,9 @@ describe('the guarded one does not follow redirects blindly', () => {
       src.indexOf('export async function followRedirectsSafely'),
       src.indexOf('export async function fetchHtmlBounded')
     );
-    expect(walk).toContain('assertHostIsPublic(next.hostname)');
+    // Every hop, including the first, and the request is pinned to the answer
+    // that was judged rather than re-resolved by `fetch` (SC-1284).
+    expect(walk).toContain('assertHostIsPublic(current.hostname, resolve)');
+    expect(walk).toContain('fetchImpl(...pinnedRequest(current, address, init))');
   });
 });

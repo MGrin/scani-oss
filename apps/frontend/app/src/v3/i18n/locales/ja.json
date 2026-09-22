@@ -1225,6 +1225,8 @@
         "symbolsOverflow": "{{symbols}} +{{hidden}}",
         "needsCurrency_other": "{{count}}件の取引 — 通貨の指定が必要です",
         "needsCurrencyWithType_other": "{{count}}件の取引 · {{fileType}} — 通貨の指定が必要です",
+        "needsDateOrder_other": "{{count}}件の取引 — 日付の順序の指定が必要です",
+        "needsDateOrderWithType_other": "{{count}}件の取引 · {{fileType}} — 日付の順序の指定が必要です",
         "chains_other": "{{count}}チェーン",
         "candidatesAcross_other": "{{chains}} にまたがる{{count}}件の候補",
         "nothingFound": "該当なし",
@@ -2389,6 +2391,13 @@
           "apply": "この通貨で取り込む",
           "applying": "取り込み直しています…",
           "subject": "このファイル"
+        },
+        "dateOrder": {
+          "title": "これらの日付は日が先ですか、月が先ですか？",
+          "body": "このファイルの日付はどれも2通りに読めます（03/04 は4月3日とも3月4日とも読めます）。ファイルにはどちらかが示されていません。まだ何も取り込まれていません。",
+          "samples": "ファイルの記載どおり",
+          "dayFirst": "日が先 — 31/12",
+          "monthFirst": "月が先 — 12/31"
         }
       },
       "manual": {

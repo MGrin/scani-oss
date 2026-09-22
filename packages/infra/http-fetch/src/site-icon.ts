@@ -26,7 +26,6 @@
  */
 
 import {
-  assertHostIsPublic,
   BoundedFetchError,
   type FetchLike,
   fetchHtmlBounded,
@@ -127,8 +126,9 @@ export function sniffImageType(bytes: Uint8Array): string | null {
 /**
  * Fetch one URL and return it only if the bytes are an image we will re-serve.
  *
- * Same three guards as `fetchHtmlBounded` — protocol, `assertHostIsPublic`,
- * per-hop redirect revalidation — plus a hard byte cap enforced while reading
+ * Same guards as `fetchHtmlBounded` — protocol, then `followRedirectsSafely`'s
+ * per-hop `assertHostIsPublic` with the connection pinned to the address it
+ * judged — plus a hard byte cap enforced while reading
  * rather than from `Content-Length`, which the peer chooses.
  */
 export async function fetchImageBounded(
@@ -145,11 +145,10 @@ export async function fetchImageBounded(
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     throw new BoundedFetchError(`Unsupported protocol ${parsed.protocol}`, 'invalid-url');
   }
-  await assertHostIsPublic(parsed.hostname);
-
   let response: Response;
+  let finalUrl: URL;
   try {
-    response = await followRedirectsSafely(
+    ({ response, url: finalUrl } = await followRedirectsSafely(
       parsed,
       {
         signal: init.signal,
@@ -159,7 +158,7 @@ export async function fetchImageBounded(
         },
       },
       fetchImpl
-    );
+    ));
   } catch (err) {
     if (err instanceof BoundedFetchError) throw err;
     if (err instanceof Error && (err.name === 'AbortError' || err.name === 'TimeoutError')) {
@@ -192,7 +191,7 @@ export async function fetchImageBounded(
       'bad-content-type'
     );
   }
-  return { bytes, contentType, sourceUrl: response.url || parsed.toString() };
+  return { bytes, contentType, sourceUrl: finalUrl.toString() };
 }
 
 /**

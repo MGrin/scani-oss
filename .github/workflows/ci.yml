@@ -527,6 +527,9 @@ jobs:
         env:
           STUB_AI: "1"
           STUB_CHAIN_DATA: "1"
+          # One suite run signs in more new addresses than the api's hourly
+          # cap on them allows (SC-1260).
+          AUTH_NEW_ADDRESS_SENDS_PER_HOUR: "100000"
 
       # `docker compose up` reports only `service "x" didn't complete
       # successfully: exit 1` and discards the container's own output, so a

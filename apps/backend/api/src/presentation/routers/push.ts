@@ -71,13 +71,22 @@ export const pushRouter = router({
         return { stored: false as const, reason: 'server-not-configured' as const };
       }
 
-      await Container.get(PushSubscriptionRepository).upsert({
+      const stored = await Container.get(PushSubscriptionRepository).upsert({
         userId: ctx.userId,
         endpoint: input.subscription.endpoint,
         p256dh: input.subscription.keys.p256dh,
         auth: input.subscription.keys.auth,
         userAgent: input.userAgent ?? null,
       });
+      if (!stored) {
+        // Another user's endpoint, presented with keys that are not its own:
+        // not a shared browser, which would carry the same keys (SC-1288).
+        pushLogger.warn(
+          { userId: ctx.userId },
+          "Refused a push subscription for another user's endpoint"
+        );
+        return { stored: false as const, reason: 'endpoint-taken' as const };
+      }
       return { stored: true as const };
     }),
 

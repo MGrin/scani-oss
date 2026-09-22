@@ -39,6 +39,18 @@
         "needsCurrencyWithType_few": "{{count}} عمليات · {{fileType}} — يلزم تحديد العملة",
         "needsCurrencyWithType_many": "{{count}} عمليةً · {{fileType}} — يلزم تحديد العملة",
         "needsCurrencyWithType_other": "{{count}} عملية · {{fileType}} — يلزم تحديد العملة",
+        "needsDateOrder_zero": "لا توجد عمليات تحتاج إلى تحديد ترتيب التاريخ",
+        "needsDateOrder_one": "عملية واحدة — يلزم تحديد ترتيب التاريخ",
+        "needsDateOrder_two": "عمليتان — يلزم تحديد ترتيب التاريخ",
+        "needsDateOrder_few": "{{count}} عمليات — يلزم تحديد ترتيب التاريخ",
+        "needsDateOrder_many": "{{count}} عمليةً — يلزم تحديد ترتيب التاريخ",
+        "needsDateOrder_other": "{{count}} عملية — يلزم تحديد ترتيب التاريخ",
+        "needsDateOrderWithType_zero": "لا توجد عمليات · {{fileType}} — يلزم تحديد ترتيب التاريخ",
+        "needsDateOrderWithType_one": "عملية واحدة · {{fileType}} — يلزم تحديد ترتيب التاريخ",
+        "needsDateOrderWithType_two": "عمليتان · {{fileType}} — يلزم تحديد ترتيب التاريخ",
+        "needsDateOrderWithType_few": "{{count}} عمليات · {{fileType}} — يلزم تحديد ترتيب التاريخ",
+        "needsDateOrderWithType_many": "{{count}} عمليةً · {{fileType}} — يلزم تحديد ترتيب التاريخ",
+        "needsDateOrderWithType_other": "{{count}} عملية · {{fileType}} — يلزم تحديد ترتيب التاريخ",
         "chains_zero": "{{count}} سلسلة كتل",
         "chains_one": "سلسلة كتل واحدة",
         "chains_two": "سلسلتي كتل",
@@ -1585,6 +1597,13 @@
           "apply": "الاستيراد بهذه العملة",
           "applying": "جارٍ إعادة الاستيراد…",
           "subject": "هذا الملف"
+        },
+        "dateOrder": {
+          "title": "في هذه التواريخ، هل يأتي اليوم أولاً أم الشهر؟",
+          "body": "يمكن قراءة كل تاريخ في هذا الملف بطريقتين — فقد يكون 03/04 هو 3 أبريل أو 4 مارس — ولا يحدد الملف أيهما. لم يُستورد أي شيء بعد.",
+          "samples": "كما هو مكتوب في الملف",
+          "dayFirst": "اليوم أولاً — 31/12",
+          "monthFirst": "الشهر أولاً — 12/31"
         }
       },
       "manual": {
