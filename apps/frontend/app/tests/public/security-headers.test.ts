@@ -172,6 +172,21 @@ function ownDirectives(body: string): string {
   return out.replace(/location\s+[^\n]*$/gm, '');
 }
 
+/**
+ * An `add_header` value that names an nginx `map` variable, replaced by the
+ * value that map gives the ROOT document (SC-1111). `X-Robots-Tag` is scoped
+ * per path now; its root arm is the one that carries the envsubst placeholder
+ * an operator's policy changes, and `robots.test.ts` pins the other arm.
+ */
+function resolveThroughMap(value: string | undefined): string | undefined {
+  const variable = value?.match(/^\$([a-z_]+)$/)?.[1];
+  if (!variable) return value;
+  const map = NGINX_SITE.match(
+    new RegExp(`map\\s+\\$request_uri\\s+\\$${variable}\\s*\\{([\\s\\S]*?)\\n\\}`)
+  )?.[1];
+  return map?.match(/"~\^\/[^"]*"\s+"([^"]*)"/)?.[1];
+}
+
 const declared = parseHeadersFile(HEADERS_FILE);
 const nginx = parseAddHeaders(NGINX_INCLUDE);
 
@@ -192,7 +207,7 @@ describe('_headers and the nginx include declare one policy', () => {
     // `NGINX_ONLY_HEADERS` comment above describes going wrong for this same
     // header once already.
     for (const name of PARAMETERISED_BY_NGINX) {
-      const placeholder = nginx.get(name);
+      const placeholder = resolveThroughMap(nginx.get(name));
       expect(`${name} is parameterised: ${placeholder?.startsWith('${')}`).toBe(
         `${name} is parameterised: true`
       );

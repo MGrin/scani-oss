@@ -6,6 +6,7 @@ import {
   emptyAccountTarget,
   type NewAccountDraft,
   type NewInstitutionDraft,
+  withInstitution,
 } from '../lib/manual-entry';
 
 /**
@@ -17,8 +18,8 @@ import {
  * page, because the rules are the interesting part and duplicating them is how
  * they go out of sync:
  *
- * - **Changing the institution clears the account under it.** Keeping it would
- *   submit an account that belongs somewhere else entirely.
+ * - **Changing the institution clears a chosen account under it**, and keeps a
+ *   new one being typed in — see `withInstitution`.
  * - **Picking an account fills in the institution it belongs to**, when that
  *   field was left empty. Someone who knows the account name but not which of
  *   two brokers holds it should not have to answer the harder question first.
@@ -80,7 +81,7 @@ export function useAccountTarget(): AccountTarget {
     patchAccount: (next) =>
       setDraft((current) => ({ ...current, newAccount: { ...current.newAccount, ...next } })),
     selectInstitution: (institutionId) =>
-      patch({ institutionId, accountId: '', accountMode: 'existing' }),
+      setDraft((current) => withInstitution(current, institutionId)),
     selectAccount: (accountId, institutionId) =>
       setDraft((current) => ({
         ...current,

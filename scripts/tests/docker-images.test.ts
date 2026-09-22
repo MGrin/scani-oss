@@ -506,3 +506,41 @@ describe('every file that states the whole image set agrees with it', () => {
     expect(checked.length).toBe(SHARED.length + exclusive.length);
   });
 });
+
+/**
+ * SC-1187 / SC-1208. The published `frontend-app` image names the commit it was
+ * built from. The demo runs that image, and until this it was the one surface
+ * whose `/version.json` carried no `commit`, so `deploy-probe --commit` could
+ * only answer UNVERIFIED there.
+ *
+ * Two halves in two trees: the Dockerfile travels, the workflow that passes
+ * the value exists only upstream — so each tree asserts the half it holds, and
+ * the private tree asserts the workflow's ABSENCE rather than skipping it.
+ */
+describe('the published frontend-app image names its commit', () => {
+  const DOCKERFILE = readFileSync(path.join(REPO_ROOT, 'apps/frontend/app/Dockerfile'), 'utf8');
+
+  test('the build stage declares SCANI_COMMIT before it builds', () => {
+    const buildStage = DOCKERFILE.slice(
+      DOCKERFILE.search(/^FROM \S+ AS build$/m),
+      DOCKERFILE.search(/^FROM \S+ AS runtime$/m)
+    );
+    const arg = buildStage.search(/^ARG SCANI_COMMIT=$/m);
+    const build = buildStage.search(/^RUN bun run build$/m);
+    expect(`arg=${arg >= 0} build=${build >= 0} ordered=${arg < build}`).toBe(
+      'arg=true build=true ordered=true'
+    );
+  });
+
+  test('the publish workflow passes the tagged commit to the frontend-app build', () => {
+    if (existsSync(PRIVATE_MARKER)) {
+      expect(existsSync(PUBLISH_WORKFLOW)).toBe(false);
+      return;
+    }
+    const workflow = readFileSync(PUBLISH_WORKFLOW, 'utf8');
+    expect(workflow).toContain(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, matched as literal text — not an unfinished template literal
+      "${{ matrix.image == 'frontend-app' && format('SCANI_COMMIT={0}', github.sha) || '' }}"
+    );
+  });
+});

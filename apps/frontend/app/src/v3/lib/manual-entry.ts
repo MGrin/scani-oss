@@ -89,6 +89,24 @@ export function emptyHolding(uid: string): HoldingDraft {
   return { uid, tokenId: '', tokenLabel: '', balance: '', label: '' };
 }
 
+/**
+ * The draft after an existing institution is chosen.
+ *
+ * A **chosen** account is cleared: it belongs to whichever institution it was
+ * under, and keeping it would submit it somewhere else entirely. A **new**
+ * account being typed in stays — it has no institution yet to disagree with,
+ * and the worker binds it to the one chosen here. Clearing it too threw away
+ * the account a newcomer had just named, with nothing but a disabled Save
+ * button to say so (SC-1250).
+ */
+export function withInstitution(
+  draft: AccountTargetDraft,
+  institutionId: string
+): AccountTargetDraft {
+  if (draft.accountMode === 'new') return { ...draft, institutionId };
+  return { ...draft, institutionId, accountId: '', accountMode: 'existing' };
+}
+
 export function emptyAccountTarget(): AccountTargetDraft {
   return {
     institutionMode: 'existing',

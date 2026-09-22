@@ -56,23 +56,39 @@ function toDate(input: DateInput): Date | null {
  * shared version's, unchanged — this is a translation, not a redesign, and the
  * two have to agree while both are on screen (v2 and v3 render the same rows).
  *
- * That includes the signed count: a timestamp in the future has produced
- * `-5m ago` since this logic was written, and it is left alone here rather
- * than quietly corrected, because a fix visible on no screen we can currently
- * open is not one to bundle into a string move. English renders `-5` and
- * `5` through the same plural form, so no key hides it.
+ * **So a future time reads "in 12m", as the shared one has since SC-1038**
+ * (SC-1047). Until then this copy kept the signed count on purpose and
+ * rendered `-12m ago`, which no key could hide: English has one plural form
+ * for `-12` and `12`. The magnitude is taken before the unit is chosen, which
+ * also fixes the asymmetric rounding — `Math.round(-1.5)` is -1 where
+ * `Math.round(1.5)` is 2, so 90s ahead read a unit smaller than 90s behind.
+ * The tense is a KEY rather than a prefix because word order is the
+ * translator's: `in 12m`, `dans 12 min`, `12分後`, `через 12 мин`.
  */
 export function formatRelative(t: TFunction, input: DateInput): string {
   const date = toDate(input);
   if (!date) return '—';
   const diffMs = Date.now() - date.getTime();
-  const seconds = Math.round(diffMs / 1000);
-  if (Math.abs(seconds) < 45) return t('v3.common.relative.justNow');
+  const future = diffMs < 0;
+  const seconds = Math.round(Math.abs(diffMs) / 1000);
+  if (seconds < 45) return t('v3.common.relative.justNow');
   const minutes = Math.round(seconds / 60);
-  if (Math.abs(minutes) < 60) return t('v3.common.relative.minutes', { count: minutes });
+  if (minutes < 60) {
+    return future
+      ? t('v3.common.relative.inMinutes', { count: minutes })
+      : t('v3.common.relative.minutes', { count: minutes });
+  }
   const hours = Math.round(minutes / 60);
-  if (Math.abs(hours) < 24) return t('v3.common.relative.hours', { count: hours });
+  if (hours < 24) {
+    return future
+      ? t('v3.common.relative.inHours', { count: hours })
+      : t('v3.common.relative.hours', { count: hours });
+  }
   const days = Math.round(hours / 24);
-  if (Math.abs(days) < 30) return t('v3.common.relative.days', { count: days });
+  if (days < 30) {
+    return future
+      ? t('v3.common.relative.inDays', { count: days })
+      : t('v3.common.relative.days', { count: days });
+  }
   return formatDate(date);
 }

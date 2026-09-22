@@ -159,8 +159,12 @@ export function AccountPicker({
   // back to the rows it hid.
   const showSearch = options.length >= SEARCH_THRESHOLD || query.length > 0;
 
+  // `min-w-0` because a fieldset's UA default is `min-inline-size: min-content`:
+  // one unbroken wallet address widened the whole control past its container,
+  // and `truncate` on the row never engaged. It ran into the neighbouring pane
+  // in both directions — the RTL shot just made it obvious (SC-1205).
   return (
-    <fieldset className="flex flex-col gap-2">
+    <fieldset className="flex min-w-0 flex-col gap-2">
       <legend className="sr-only">{legend}</legend>
 
       {showSearch ? (

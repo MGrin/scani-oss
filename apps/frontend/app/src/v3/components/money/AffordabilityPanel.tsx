@@ -81,7 +81,14 @@ export function AffordabilityPanel({
   const [currency, setCurrency] = useState<{ id: string; label: string } | null>(null);
   const [date, setDate] = useState(todayDateString());
 
-  const ready = amount.trim() !== '' && Number(amount) > 0 && currency !== null && date !== '';
+  const blockers: string[] = [];
+  if (!(amount.trim() !== '' && Number(amount) > 0))
+    blockers.push(t('v3.money.blocker.enterAmount'));
+  // A typed code is not a pick until it is chosen from the list, so this is the
+  // line that tells someone who typed "GBP" what is still missing (SC-1258).
+  if (currency === null) blockers.push(t('v3.money.blocker.pickCurrency'));
+  if (date === '') blockers.push(t('v3.money.blocker.chooseDate'));
+  const ready = blockers.length === 0;
 
   const ask = () => {
     if (!ready || !currency) return;
@@ -131,6 +138,11 @@ export function AffordabilityPanel({
           </Button>
         ) : null}
       </div>
+      {!disabled && blockers.length > 0 ? (
+        <p className="text-caption text-muted-foreground">
+          {t('v3.form.blockers', { blockers: blockers.join(', ') })}
+        </p>
+      ) : null}
 
       {observedVerdict ? (
         <ObservedAffordabilityAnswer verdict={observedVerdict} baseSymbol={baseSymbol} />

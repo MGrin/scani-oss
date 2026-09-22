@@ -27,6 +27,7 @@
         "@fontsource/ibm-plex-sans-arabic": "^5.3.0",
         "@fontsource/noto-sans-jp": "^5.3.0",
         "@fontsource/noto-sans-sc": "^5.3.0",
+        "@fontsource/noto-sans-tc": "^5.3.0",
         "@scani/cloud-client": "workspace:*",
         "@scani/config": "workspace:*",
         "@scani/db": "workspace:*",
@@ -75,6 +76,7 @@
         "@elysiajs/trpc": "^1.1.0",
         "@scani/config": "workspace:*",
         "@scani/db": "workspace:*",
+        "@scani/deadline": "workspace:*",
         "@scani/email": "workspace:*",
         "@scani/http-fetch": "workspace:*",
         "@scani/logging": "workspace:*",
@@ -761,6 +763,8 @@
     "@fontsource/noto-sans-jp": ["@fontsource/noto-sans-jp@5.3.0", "", {}, "sha512-OZbBzZ8LrFRs2RFT2Cc0HUV2C2ZeSfyEXhDJWR0EZuZaraJfRubpvrFmUnCljuBDEkw8Vn6CE/+nf9dj9b+0lg=="],
 
     "@fontsource/noto-sans-sc": ["@fontsource/noto-sans-sc@5.3.0", "", {}, "sha512-HeqIlGm0+ohOKxZLuHj1qW6r6avHH0OWdKERAcSDI0RQ+MXrteuLKA+M+5eOA8rYy0MFvOR5AT0fQo2rUkye0Q=="],
+
+    "@fontsource/noto-sans-tc": ["@fontsource/noto-sans-tc@5.3.0", "", {}, "sha512-+0MguVH2vIxkVJLiaMHVKHk+yJZmZvMU9d8z88JdUx8C2CgMLOtm7WNloi3HYlvCNy7TpuvjIUvh5iiGp6INxQ=="],
 
     "@hapi/bourne": ["@hapi/bourne@3.0.0", "", {}, "sha512-Waj1cwPXJDucOib4a3bAISsKJVb15MKi9IvmTI/7ssVEm6sywXGjVJDhl6/umt1pK1ZS7PacXU3A1PmFKHEZ2w=="],
 

@@ -35,6 +35,7 @@ export const VIEW_PREFERENCE_KEYS = {
   homeAllocationDimension: 'home.allocation-dimension',
   homeMetric: 'home.metric',
   homePeriod: 'home.period',
+  homeReturnsWindow: 'home.returns-window',
   moneyForecastHorizon: 'money.forecast-horizon',
 } as const;
 

@@ -1,6 +1,7 @@
 import '../../i18n-preload';
 
 import { describe, expect, test } from 'bun:test';
+import { formatRelative as sharedFormatRelative } from '@scani/shared';
 import i18n from 'i18next';
 import { formatRelative } from '../../../src/v3/lib/relative-time';
 
@@ -63,13 +64,41 @@ describe('formatRelative', () => {
   });
 
   /**
-   * A future timestamp has rendered a signed count since this logic was
-   * written, and the copy keeps it rather than quietly correcting it — a fix
-   * visible on no screen anyone can currently open does not belong in a string
-   * move. Pinned so the next reader knows it was seen.
+   * SC-1047. A future timestamp read `-5m ago` here, knowingly, until the
+   * shared copy was fixed (SC-1038) and the two stopped agreeing. English has
+   * one plural form for `-5` and `5`, so no key could expose it.
    */
-  test('a future timestamp keeps the shared version’s signed count', () => {
-    expect(formatRelative(t, new Date(Date.now() + 5 * MINUTE))).toBe('-5m ago');
+  test.each([
+    ['5m', 5 * MINUTE, 'in 5m'],
+    ['59m', 59 * MINUTE, 'in 59m'],
+    ['3h', 3 * HOUR, 'in 3h'],
+    ['2d', 2 * DAY, 'in 2d'],
+  ])('%s ahead reads as %p, never a signed count', (_label, offset, expected) => {
+    expect(formatRelative(t, new Date(Date.now() + offset))).toBe(expected);
+  });
+
+  test('the same distance rounds to the same magnitude either side of now', () => {
+    // `Math.round(-1.5)` is -1 and `Math.round(1.5)` is 2: rounding the signed
+    // difference made 90s ahead read a unit smaller than 90s behind.
+    expect(formatRelative(t, ago(90 * SECOND))).toBe('2m ago');
+    expect(formatRelative(t, new Date(Date.now() + 90 * SECOND))).toBe('in 2m');
+    expect(formatRelative(t, new Date(Date.now() + 30 * SECOND))).toBe('just now');
+  });
+
+  /**
+   * The invariant this file's docstring states: v2 and v3 render the same
+   * rows, so the keyed copy must print what the shared one prints, in both
+   * directions. Offsets sit mid-unit so the few milliseconds between the two
+   * calls cannot straddle a rounding edge.
+   */
+  test('it agrees with the shared formatRelative in English, past and future', () => {
+    const offsets = [10 * SECOND, 100 * SECOND, 25.3 * MINUTE, 5.2 * HOUR, 3.1 * DAY, 45 * DAY];
+    for (const offset of offsets) {
+      for (const sign of [-1, 1]) {
+        const when = new Date(Date.now() + sign * offset);
+        expect(formatRelative(t, when)).toBe(sharedFormatRelative(when));
+      }
+    }
   });
 
   /**

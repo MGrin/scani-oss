@@ -407,7 +407,7 @@
         "col": {
           "kind": "種類",
           "service": "サービス",
-          "whatItSyncs": "同期する内容"
+          "about": "概要"
         },
         "config": {
           "search": "検索"
