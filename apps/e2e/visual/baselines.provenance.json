@@ -156,6 +156,19 @@
       "sha256": "d2599e7f4dc55c451be2520c169a7921f62936e91223cf14832207479d9429ee",
       "capturedAt": "2026-09-11T09:35:45.749Z"
     },
+    "home-runway-stale-phone": {
+      "head": "4dac244bf0495b9be779077251685c7fad8a1bf9",
+      "renderedDigest": "a0438d1713ae55067aa81774fa46dfd2cea99d6ce8f6aa12ae1115d309b21a14",
+      "dirty": [],
+      "dirtyCount": 0,
+      "base": {
+        "ref": "631eb32daafecfb7e37fc6b105821d7f1f9875f1",
+        "confirmed": true,
+        "behind": 1
+      },
+      "sha256": "3a06f30dc0468bab1f7d0358c22ad02388b7c6f5536046af2e071c9195722485",
+      "capturedAt": "2026-09-19T04:16:20.950Z"
+    },
     "kitchen-sink-desktop": {
       "head": "2117f66ee6eded0f65e0d324daba61e36384e95e",
       "renderedDigest": "7ce245bcdf74ebb98336d120d77f1b25c7ec91f14e457cce8d8d558c9941874b",

@@ -80,8 +80,15 @@ type VisualViewport = 'desktop' | 'phone';
  * cashflow forecast (SC-623). Same reason again: recurring payments on the
  * seeded user would rewrite both of its home baselines, because home's
  * "What's due" block lists them.
+ *
+ * `burn` is a fifth user whose money has LEFT the tracked perimeter, one
+ * payment of it valued from a stale quote (SC-1219). Not `forecast`: an
+ * observed drain flips home's runway line from the committed book to the
+ * observed branch, which would take the book's own photograph away. It is
+ * reseeded on EVERY run, because its dates are relative to now — see
+ * `BURN_AS_OF`.
  */
-export type VisualSession = 'seeded' | 'empty' | 'allocation' | 'forecast';
+export type VisualSession = 'seeded' | 'empty' | 'allocation' | 'forecast' | 'burn';
 
 /**
  * Every screen renders at this instant. A form that defaults a date field to
@@ -110,6 +117,28 @@ export const FIXED_NOW = new Date('2027-03-04T09:15:00Z');
  * stack with `ALLOW_FORECAST_AS_OF=1` — the compose default.
  */
 export const FORECAST_AS_OF = FIXED_NOW.toISOString().slice(0, 10);
+
+/**
+ * The api's "today" for a screen declaring `burnAsOf`: the first of the month
+ * four months after the REAL one (SC-1219).
+ *
+ * Relative rather than pinned, because a stale quote cannot be pinned. The api
+ * stamps every price it writes with its own "now", so the only way to have a
+ * rate more than the 45-day cap older than a payment is to put the payment in
+ * the future: the burn session's payments fall in the months just before this
+ * day, and the custom token's one price row was written at seeding time, months
+ * earlier. A fixed date instead goes fresh on the day the real calendar reaches
+ * it — a red build on a date, caused by nobody.
+ *
+ * The first of a month so it holds still for the whole month, and the setup and
+ * the spec — two processes — agree on it.
+ */
+export const BURN_AS_OF = (() => {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 4, 1))
+    .toISOString()
+    .slice(0, 10);
+})();
 
 /**
  * Which way the document reads (SC-760).
@@ -255,6 +284,18 @@ export interface VisualScreen {
    * received and fails unless each is `FORECAST_AS_OF`.
    */
   forecastAsOf?: true;
+  /**
+   * The observed drain on this screen must count at least one stale-valued
+   * payment (SC-1219). The caption it gates renders only then, so a seed that
+   * stopped reaching the component would still photograph a clean line and
+   * `--update` would write it. Read from every `payments.forecast` response.
+   */
+  staleValued?: true;
+  /**
+   * Pins the api's clock to `BURN_AS_OF` rather than `FORECAST_AS_OF`, and is
+   * checked the same way. For the `burn` session only (SC-1219).
+   */
+  burnAsOf?: true;
   /**
    * Photograph this one element rather than the page.
    *
@@ -448,6 +489,19 @@ export const VISUAL_SCREENS: readonly VisualScreen[] = [
       "Home's one projected line: a dashed rule and a Projected mark under two solid foot-lines, " +
       'on the screen a reader scans rather than reads. Photographed as an element because the ' +
       "rows above it are dated by the api's clock, which this gate cannot pin.",
+  },
+  {
+    name: 'home-runway-stale-phone',
+    route: '/',
+    session: 'burn',
+    viewport: 'phone',
+    element: '[data-ui="runway-line"]',
+    burnAsOf: true,
+    staleValued: true,
+    why:
+      'The runway at recent spending with its stale-quote caption, which takes a line of its own ' +
+      '(`basis-full`) and is the only thing on the line that reflows it. No other session drains ' +
+      'money out of the tracked perimeter, so nothing else reaches the branch.',
   },
   // --- the RTL pass (SC-760) -------------------------------------------------
   //
