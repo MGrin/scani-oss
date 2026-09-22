@@ -16,7 +16,7 @@ import { DataProviderHealthMonitor } from '@scani/cloud-client/health-monitor';
 import { probeDataProvider } from '@scani/cloud-client/health-probe';
 import { getNodeEnv, isNodeEnvProduction, servedVersion } from '@scani/config';
 import { assertDemoOnlyDatabase } from '@scani/domain/demo';
-import { turnstileRefusal } from '@scani/http-fetch';
+import { TURNSTILE_HEADER, turnstileRefusal } from '@scani/http-fetch';
 import { createComponentLogger, createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { setSharedRedis } from '@scani/rate-limiter';
@@ -598,8 +598,9 @@ const app = new Elysia()
       // `LANGUAGE_HEADER` is what the auth client puts the reader's interface
       // language on (SC-412). A custom header makes the sign-in POST
       // preflighted, so omitting it here does not degrade the letter to
-      // English — it fails the request outright.
-      allowedHeaders: ['Authorization', 'Content-Type', LANGUAGE_HEADER],
+      // English — it fails the request outright. `TURNSTILE_HEADER` carries
+      // the sign-in widget's token (SC-1266) and fails the same way.
+      allowedHeaders: ['Authorization', 'Content-Type', LANGUAGE_HEADER, TURNSTILE_HEADER],
     })
   )
   .onAfterHandle(({ set }) => {
