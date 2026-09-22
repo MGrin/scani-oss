@@ -73,6 +73,15 @@ export function hasCustomPrice(holding: Pick<HoldingWithDetails, 'token'>): bool
   return CUSTOM_PRICE_TOKEN_TYPES.has(holding.token.typeCode);
 }
 
+/**
+ * Whether "Mark as scam" belongs on this holding (SC-1251). The verdict hides
+ * the TOKEN, so on a national currency it would take every holding in it out
+ * of the total — and a currency is not a token anyone can scam with.
+ */
+export function canMarkScam(holding: Pick<HoldingWithDetails, 'token'>): boolean {
+  return holding.token.typeCode !== 'fiat';
+}
+
 /** Whether interest can be configured against this holding's account. */
 export function supportsApy(holding: Pick<HoldingWithDetails, 'account'>): boolean {
   return APY_ACCOUNT_TYPES.has(holding.account.typeCode);

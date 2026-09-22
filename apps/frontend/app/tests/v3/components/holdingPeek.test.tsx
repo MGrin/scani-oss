@@ -508,3 +508,30 @@ describe('the pot name', () => {
     expect(renderNode(unnamed?.value)).toContain('Not named');
   });
 });
+
+describe('Mark as scam (SC-1251)', () => {
+  function body(item: HoldingWithDetails): string {
+    return renderToStaticMarkup(
+      <StaticRouter location="/holdings/h1">
+        <TrpcContext>
+          <PeekBody spec={holdingPeekSpec(item, CONTEXT)} />
+        </TrpcContext>
+      </StaticRouter>
+    );
+  }
+  const label = t('v3.holdings.scam.markAction');
+
+  test('is offered on a token', () => {
+    expect(body(holding())).toInclude(label);
+  });
+
+  test('is withheld on a national currency, which it would hide wholesale', () => {
+    const euro = holding({
+      token: { ...holding().token, symbol: 'EUR', name: 'Euro', type: 'Fiat', typeCode: 'fiat' },
+    });
+    const html = body(euro);
+    expect(html).not.toInclude(label);
+    // Control: the same body rendered, so the absence is a reading.
+    expect(html).toInclude('Amount');
+  });
+});

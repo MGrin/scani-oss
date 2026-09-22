@@ -18,6 +18,7 @@ import { institutionIconUrl } from '@/lib/icons';
 import { tokenDisplayName } from '@/lib/utils';
 import {
   amountDecimals,
+  canMarkScam,
   describeSource,
   hasCustomPrice,
   holdingGainLoss,
@@ -552,14 +553,16 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
           currency={ctx.currency}
           symbol={holding.token.symbol}
         />
-        <div className="flex">
-          <HoldingScamAction
-            holding={holding}
-            currency={ctx.currency}
-            onMarkScam={ctx.onMarkScam}
-            isPending={ctx.isMarkingScam}
-          />
-        </div>
+        {canMarkScam(holding) ? (
+          <div className="flex">
+            <HoldingScamAction
+              holding={holding}
+              currency={ctx.currency}
+              onMarkScam={ctx.onMarkScam}
+              isPending={ctx.isMarkingScam}
+            />
+          </div>
+        ) : null}
       </>
     ),
     sections,
