@@ -12,6 +12,7 @@ import {
   IMPORT_ACCEPT,
   IMPORT_FORMATS_KEY,
 } from '@/v3/lib/capture-forms';
+import { renderDesktop } from '../../../../../../packages/frontend/ui/tests/helpers/render-desktop';
 
 // Resolved through the real instance against the shipped `en.json`.
 const t = i18n.t.bind(i18n);
@@ -177,6 +178,24 @@ describe('the integrations list', () => {
     expect(markup).toContain('Kraken');
     expect(markup).toContain('Acme Pension');
     expect(markup).toContain('Other');
+  });
+
+  // The third column holds the institution's own description ("Luxembourg-based
+  // cryptocurrency exchange"), so a header promising what gets synced is a claim
+  // the cells never back (SC-1256).
+  test('the description column is headed for what it holds, not what syncs', () => {
+    // The header row exists only on the desktop table; the phone list has none.
+    const markup = renderDesktop(
+      <StaticRouter location="/integrations">
+        <IntegrationsList
+          integrations={[integration('kraken', 'Kraken', 'crypto_exchange')]}
+          query={SETTLED_QUERY_STATE}
+        />
+      </StaticRouter>
+    );
+    expect(markup).toContain('<table');
+    expect(markup).toContain('>About<');
+    expect(markup).not.toContain('What it syncs');
   });
 
   test('a provider with no institution type at all is still listed', () => {

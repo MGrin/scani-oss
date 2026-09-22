@@ -500,7 +500,7 @@
         "col": {
           "kind": "Вид",
           "service": "Сервис",
-          "whatItSyncs": "Что синхронизирует"
+          "about": "О сервисе"
         },
         "config": {
           "search": "Поиск"

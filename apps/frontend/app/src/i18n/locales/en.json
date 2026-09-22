@@ -438,7 +438,7 @@
         "col": {
           "kind": "Kind",
           "service": "Service",
-          "whatItSyncs": "What it syncs"
+          "about": "About"
         },
         "config": {
           "search": "Search"

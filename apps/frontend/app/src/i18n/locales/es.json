@@ -458,7 +458,7 @@
         "col": {
           "kind": "Clase",
           "service": "Servicio",
-          "whatItSyncs": "Qué sincroniza"
+          "about": "Acerca de"
         },
         "config": {
           "search": "Buscar"
