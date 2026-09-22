@@ -465,7 +465,7 @@
         "addPayment": "添加一笔付款"
       },
       "recurringSummary": {
-        "projectedEachMonth": "每月预测金额",
+        "projectedEachMonth": "每月账单预测金额",
         "estimatedFromHistory_other": "其中包含 {{count}} 笔按上次结算金额估算的浮动付款。",
         "notCounted_other": "有 {{count}} 笔浮动付款没有估算金额，未计入。"
       },
