@@ -24,6 +24,7 @@ import { MemberList } from '../components/membership/MemberList';
 import { MemberPicker } from '../components/membership/MemberPicker';
 import { useGroupMembership } from '../hooks/useGroupMembership';
 import {
+  allInactiveGroupAmount,
   GROUP_ACCOUNT_NOTE_KEY,
   groupAmount,
   groupCoverageLine,
@@ -165,6 +166,11 @@ export function GroupDetailPage() {
   // listed below" is a worse sentence than the one this replaced.
   const listedHoldings = membership.isLoading ? null : countOfKind(membership.members, 'holding');
   const inactive = inactiveGroupNote(inactiveMemberCount(membership.members), t);
+  // Every holding inactive: headline what they are worth under a label that
+  // says so, as the holdings list does (SC-1122, SC-1128). The inactive-count
+  // sentence would then restate the whole group, so it gives way to one line.
+  const allInactiveAmount = allInactiveGroupAmount(groupValue);
+  const allInactive = allInactiveAmount !== null;
 
   return (
     <PageLayout measure="wide">
@@ -190,10 +196,10 @@ export function GroupDetailPage() {
         ) : (
           <StatTile
             emphasis="hero"
-            label={t('v3.groups.detail.value')}
+            label={t(allInactive ? 'v3.holdings.summary.inactiveValue' : 'v3.groups.detail.value')}
             value={
               <Numeric
-                value={groupAmount(groupValue)}
+                value={allInactive ? allInactiveAmount : groupAmount(groupValue)}
                 currency={valuesQuery.data?.baseCurrency ?? 'USD'}
               />
             }
@@ -201,10 +207,14 @@ export function GroupDetailPage() {
         )}
 
         <div className="flex flex-col gap-1 text-caption text-muted-foreground">
-          <p>{groupCoverageLine(groupValue, listedHoldings, t)}</p>
+          <p>
+            {allInactive
+              ? t('v3.holdings.summary.allInactive')
+              : groupCoverageLine(groupValue, listedHoldings, t)}
+          </p>
           {/* The two reasons the figure covers fewer rows than the list shows,
            *  together and directly under the sentence that states the gap. */}
-          {inactive ? <p>{inactive}</p> : null}
+          {inactive && !allInactive ? <p>{inactive}</p> : null}
           {unpriced ? <p>{unpriced}</p> : null}
           {/* Said only where it can bite: on a group with no account in it the
            *  sentence explains a mechanism the reader cannot see. */}

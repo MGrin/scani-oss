@@ -20,6 +20,9 @@ export interface GroupValue {
   value: string;
   holdingsCounted: number;
   unpricedSymbols: string[];
+  /** What the group's inactive holdings are worth. Never part of `value`. */
+  inactiveValue: string;
+  inactiveHoldings: number;
 }
 
 export function groupValuesById(values: readonly GroupValue[]): Map<string, GroupValue> {
@@ -37,6 +40,30 @@ export function groupAmount(value: GroupValue | undefined): number | null {
   if (!value) return null;
   if (value.holdingsCounted === 0 && value.unpricedSymbols.length > 0) return null;
   const parsed = Number.parseFloat(value.value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+/**
+ * The figure to headline when every holding in the group is inactive, or
+ * `null` in every other case (SC-1128, the group half of SC-1122).
+ *
+ * `value` covers active holdings only, so a group of nothing but closed
+ * positions headlined zero over a list of rows that each carry a value. The
+ * server now reports what those positions are worth beside it, and this
+ * returns that only under the one condition where it may be headlined: no
+ * active holding counted, none unpriced, and at least one inactive.
+ *
+ * Unpriced symbols keep the ordinary reading: a group whose active positions
+ * could not be priced is UNKNOWN (`groupAmount` returns null), and an
+ * inactive-value headline there would replace "we do not know" with a figure.
+ *
+ * Every caller shows this under a label saying it is inactive, and none adds
+ * it to anything: a sort or a TOTAL reads `groupAmount`, which stays 0.
+ */
+export function allInactiveGroupAmount(value: GroupValue | undefined): number | null {
+  if (!value || value.holdingsCounted !== 0 || value.unpricedSymbols.length > 0) return null;
+  if (value.inactiveHoldings === 0) return null;
+  const parsed = Number.parseFloat(value.inactiveValue);
   return Number.isFinite(parsed) ? parsed : null;
 }
 

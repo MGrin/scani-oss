@@ -1,3 +1,4 @@
+import { Badge } from '@scani/ui/ui/badge';
 import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
@@ -77,7 +78,22 @@ export function GroupsBlock() {
             }
             label={row.name}
             sublabel={row.sublabel}
-            value={<Numeric value={row.value} currency={currency} compact />}
+            value={
+              row.inactiveValue === null ? (
+                <Numeric value={row.value} currency={currency} compact />
+              ) : (
+                // Every holding in the group is inactive (SC-1128): what they
+                // are worth, muted and labelled, rather than a bare 0.
+                <span className="inline-flex items-center gap-2">
+                  <Badge variant="secondary" className="shrink-0">
+                    {t('v3.holdings.peek.inactive')}
+                  </Badge>
+                  <span className="text-muted-foreground">
+                    <Numeric value={row.inactiveValue} currency={currency} compact />
+                  </span>
+                </span>
+              )
+            }
             href={groupDetailPath(row.id)}
             aria-label={t('v3.home.groups.openGroup', { name: row.name })}
           />
