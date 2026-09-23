@@ -34,6 +34,7 @@ export const storageRouter = router({
   presignUpload: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/storage.presignUpload',
         tags: ['storage'],
@@ -65,6 +66,7 @@ export const storageRouter = router({
   presignDownload: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'GET',
         path: '/trpc/storage.presignDownload',
         tags: ['storage'],
@@ -88,6 +90,7 @@ export const storageRouter = router({
   objectExists: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/storage.objectExists',
         tags: ['storage'],
@@ -121,6 +124,7 @@ export const storageRouter = router({
   readTempBlob: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/storage.readTempBlob',
         tags: ['storage'],
@@ -160,6 +164,7 @@ export const storageRouter = router({
   readObject: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/storage.readObject',
         tags: ['storage'],
@@ -212,6 +217,7 @@ export const storageRouter = router({
   writeObject: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/storage.writeObject',
         tags: ['storage'],
@@ -251,6 +257,7 @@ export const storageRouter = router({
   copyObject: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/storage.copyObject',
         tags: ['storage'],
@@ -289,6 +296,7 @@ export const storageRouter = router({
   deleteTempBlob: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/storage.deleteTempBlob',
         tags: ['storage'],
