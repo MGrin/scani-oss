@@ -38,13 +38,32 @@ function successSchema(operation: Operation): Record<string, unknown> | undefine
 
 describe('OpenAPI document', () => {
   test('exposes every operation the routers annotate', () => {
+    // 8 since SC-1277 stopped publishing the 9 internal procedures below.
     // 17 since SC-587 removed the `pricing.*` (5) and `ai.*` (4) routers.
     // The 26 - 9 = 17 is worth keeping as arithmetic rather than a new
     // number: it is the independent check that the deletion removed
     // exactly the nine procedures the PR says it did.
     // (26 since SC-208 added `storage.readObject` + `storage.writeObject`;
     // 24 since SC-167 added `storage.objectExists`.)
-    expect(everyOperation().length).toBe(17);
+    expect(everyOperation().length).toBe(8);
+  });
+
+  // SC-1277. `email.send` and the eight `storage.*` procedures are
+  // `internalProcedure`: every customer key gets 403 FORBIDDEN (SC-585). A
+  // reference that lists them promises a Tier 2 customer calls they can never
+  // make, which is worse than not documenting them.
+  test('publishes no internal procedure', () => {
+    const internal = Object.keys(paths).filter(
+      (path) => path.startsWith('/trpc/storage.') || path.startsWith('/trpc/email.')
+    );
+    expect(internal).toEqual([]);
+  });
+
+  test('describes only what a customer key can call', () => {
+    const description = (doc.info as { description: string }).description;
+    for (const gone of ['pricing', 'AI', 'storage', 'email']) {
+      expect(description, `description still names ${gone}`).not.toContain(gone);
+    }
   });
 
   test('no operation publishes an empty response schema', () => {

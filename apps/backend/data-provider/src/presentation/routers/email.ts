@@ -24,6 +24,7 @@ export const emailRouter = router({
   send: internalProcedure
     .meta({
       openapi: {
+        enabled: false,
         method: 'POST',
         path: '/trpc/email.send',
         tags: ['email'],
