@@ -11,6 +11,25 @@
 # No production dependencies: Postgres, Redis, SMTP (Mailpit), and S3-compatible
 # object storage (MinIO) all run in containers.
 #
+# EVERY PUBLISHED PORT BINDS 127.0.0.1 (SC-1299). Compose's default is all
+# interfaces, so this stack put an unauthenticated Postgres holding whatever
+# you have imported on every network the machine is joined to. Measured
+# 2026-09-23 from the host's own LAN address: `psql -h <lan-ip> -p <pg port>
+# -U scani -d postgres` opened a session with the credentials written a few
+# lines below, and `inet_server_addr()` answered. Nothing else stood in the
+# way — the machine it was measured on has its firewall off, which is the
+# common case for a laptop.
+#
+# Loopback is the bind because nothing off-box needs these: the host-side
+# tooling dials localhost, and container-to-container traffic goes by compose
+# DNS name (`postgres:5432`, `redis:6379`) and never through a published port,
+# so the api and worker are untouched. To reach a service from another device
+# — a phone on the same Wi-Fi testing the PWA — republish that ONE service in
+# a `docker-compose.override.yml`, a deliberate per-service act rather than
+# the default for all nine.
+# `scripts/tests/compose-binds-loopback.test.ts` fails the build on a port
+# that drops the prefix.
+#
 # Default ports (host-side offsets to avoid clashing with other local services):
 #   Postgres        : localhost:5433   (override: POSTGRES_HOST_PORT)
 #   Redis           : localhost:6380   (override: REDIS_HOST_PORT)
@@ -57,7 +76,7 @@ services:
       POSTGRES_PASSWORD: scani
       POSTGRES_DB: scani
     ports:
-      - "${POSTGRES_HOST_PORT:-5433}:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -71,7 +90,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "${REDIS_HOST_PORT:-6380}:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:-6380}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -84,8 +103,8 @@ services:
     image: axllent/mailpit:latest
     restart: unless-stopped
     ports:
-      - "${MAILPIT_SMTP_HOST_PORT:-1026}:1025"   # SMTP
-      - "${MAILPIT_UI_HOST_PORT:-8026}:8025"     # Web UI
+      - "127.0.0.1:${MAILPIT_SMTP_HOST_PORT:-1026}:1025"   # SMTP
+      - "127.0.0.1:${MAILPIT_UI_HOST_PORT:-8026}:8025"     # Web UI
     environment:
       MP_MAX_MESSAGES: 500
       MP_SMTP_AUTH_ACCEPT_ANY: 1
@@ -109,8 +128,8 @@ services:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "${MINIO_API_HOST_PORT:-9000}:9000"      # S3 API
-      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"  # Web console
+      - "127.0.0.1:${MINIO_API_HOST_PORT:-9000}:9000"      # S3 API
+      - "127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-9001}:9001"  # Web console
     volumes:
       - minio-data:/data
     healthcheck:
@@ -215,7 +234,7 @@ services:
       env-sync:
         condition: service_completed_successfully
     ports:
-      - "${DATA_PROVIDER_HOST_PORT:-8082}:8082"
+      - "127.0.0.1:${DATA_PROVIDER_HOST_PORT:-8082}:8082"
     env_file:
       - path: ./.env
         required: false
@@ -299,7 +318,7 @@ services:
       data-provider:
         condition: service_started
     ports:
-      - "${API_HOST_PORT:-3011}:3001"
+      - "127.0.0.1:${API_HOST_PORT:-3011}:3001"
     # Root .env flows through — the `environment:` block below overrides any
     # key that needs a container-network URL instead of the host-side default
     # (DATABASE_URL, REDIS_URL, SMTP_URL, S3_ENDPOINT, …). Everything else —
@@ -432,7 +451,7 @@ services:
     environment:
       VITE_API_URL: http://localhost:${API_HOST_PORT:-3011}
     ports:
-      - "${FRONTEND_HOST_PORT:-5173}:5173"
+      - "127.0.0.1:${FRONTEND_HOST_PORT:-5173}:5173"
     volumes:
       - .:/app
       - workspace-node-modules:/app/node_modules
