@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  activateWaitingWorker,
   interpretServiceWorkerMessage,
   requestServiceWorkerUpdate,
   serviceWorkerReady,
@@ -48,7 +49,7 @@ export function deployedVersion(payload: unknown): string | null {
  * 2. Listens for service worker state changes (waiting → update available)
  *
  * When an update is detected, shows a banner. When the user clicks "Update",
- * tells the waiting SW to skipWaiting and reloads the page. Dismissals are
+ * hands the page to the waiting SW and reloads it. Dismissals are
  * persisted per version so the banner doesn't loop back every poll interval.
  */
 export function useAppUpdate(): AppUpdateState {
@@ -58,7 +59,6 @@ export function useAppUpdate(): AppUpdateState {
   // The version currently being offered to the user (from the /version.json
   // poll). `null` for service-worker-only updates with no version string.
   const offeredVersion = useRef<string | null>(null);
-  const waitingWorker = useRef<ServiceWorker | null>(null);
 
   // Surface an update unless the user already dismissed this exact version.
   const offerUpdate = useCallback((version: string | null) => {
@@ -96,7 +96,6 @@ export function useAppUpdate(): AppUpdateState {
 
     const checkWaiting = (registration: ServiceWorkerRegistration) => {
       if (registration.waiting) {
-        waitingWorker.current = registration.waiting;
         offerUpdate(offeredVersion.current);
       }
     };
@@ -121,7 +120,6 @@ export function useAppUpdate(): AppUpdateState {
         newWorker.addEventListener('statechange', () => {
           if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
             // New SW installed while old one is still controlling — update available
-            waitingWorker.current = newWorker;
             offerUpdate(offeredVersion.current);
           }
         });
@@ -222,20 +220,15 @@ export function useAppUpdate(): AppUpdateState {
         await Promise.all(cacheNames.map((name) => caches.delete(name)));
       }
 
-      if (waitingWorker.current) {
-        // Tell the waiting SW to take over
-        waitingWorker.current.postMessage({ type: 'SKIP_WAITING' });
-      } else {
-        // No waiting worker — also tell current SW to clear its caches.
-        // `serviceWorkerReady` is bounded: when registration failed there is
-        // no worker and a bare await would strand the banner on "Updating…"
-        // forever, trapping the user on the stale bundle.
-        const registration = await serviceWorkerReady();
-        if (registration) {
-          registration.active?.postMessage({ type: 'CLEAR_CACHE' });
-          // Trigger a SW update check
-          await requestServiceWorkerUpdate(registration);
-        }
+      // `serviceWorkerReady` is bounded: when registration failed there is no
+      // worker and a bare await would strand the banner on "Updating…" forever,
+      // trapping the user on the stale bundle.
+      const registration = await serviceWorkerReady();
+      if (registration && !(await activateWaitingWorker(registration))) {
+        // No newer worker — tell the current one to clear its caches, and check
+        // for one.
+        registration.active?.postMessage({ type: 'CLEAR_CACHE' });
+        await requestServiceWorkerUpdate(registration);
       }
     } catch {
       // Best effort — proceed with reload regardless

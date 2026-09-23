@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
 import {
+  activateWaitingWorker,
   interpretServiceWorkerMessage,
   listenForServiceWorkerReports,
   registerServiceWorker,
@@ -155,6 +156,82 @@ describe('serviceWorkerReady', () => {
     setNavigator(undefined);
 
     expect(await serviceWorkerReady(10)).toBeNull();
+  });
+});
+
+// SC-1310. The update hook posted SKIP_WAITING to a worker it had captured
+// itself, and a banner raised by the worker's own message or by the version poll
+// had captured none — so Update reloaded without asking, the reload came back to
+// the same banner, and only a second press worked. Reproduced in a browser
+// against a production build before this fix: one press, still `waiting`;
+// second press, gone.
+describe('activateWaitingWorker', () => {
+  function fakeWorker(): ServiceWorker & { posted: unknown[] } {
+    const posted: unknown[] = [];
+    return { posted, postMessage: (m: unknown) => posted.push(m) } as unknown as ServiceWorker & {
+      posted: unknown[];
+    };
+  }
+
+  function setContainer(): { takeOver: () => void; listeners: () => number } {
+    const handlers = new Set<() => void>();
+    setNavigator({
+      addEventListener: (type: string, h: () => void) =>
+        type === 'controllerchange' && handlers.add(h),
+      removeEventListener: (type: string, h: () => void) =>
+        type === 'controllerchange' && handlers.delete(h),
+    });
+    return {
+      takeOver: () => {
+        for (const h of handlers) h();
+      },
+      listeners: () => handlers.size,
+    };
+  }
+
+  test('asks the waiting worker read from the registration, and resolves when it takes over', async () => {
+    const container = setContainer();
+    const waiting = fakeWorker();
+    const done = activateWaitingWorker({ waiting } as unknown as ServiceWorkerRegistration, 5000);
+
+    expect(waiting.posted).toEqual([{ type: 'SKIP_WAITING' }]);
+    container.takeOver();
+    expect(await done).toBe(true);
+    expect(container.listeners()).toBe(0);
+  });
+
+  test('asks a worker that is still installing, which activates once installed', async () => {
+    const container = setContainer();
+    const installing = fakeWorker();
+    const done = activateWaitingWorker(
+      { waiting: null, installing } as unknown as ServiceWorkerRegistration,
+      5000
+    );
+
+    expect(installing.posted).toEqual([{ type: 'SKIP_WAITING' }]);
+    container.takeOver();
+    expect(await done).toBe(true);
+  });
+
+  test('reports false and posts nothing when there is no newer worker', async () => {
+    setContainer();
+    const active = fakeWorker();
+    const registration = { waiting: null, installing: null, active };
+
+    expect(await activateWaitingWorker(registration as unknown as ServiceWorkerRegistration)).toBe(
+      false
+    );
+    expect(active.posted).toEqual([]);
+  });
+
+  test('gives up after the timeout when the worker never takes over', async () => {
+    const container = setContainer();
+    const waiting = fakeWorker();
+
+    expect(
+      await activateWaitingWorker({ waiting } as unknown as ServiceWorkerRegistration, 10)
+    ).toBe(true);
+    expect(container.listeners()).toBe(0);
   });
 });
 

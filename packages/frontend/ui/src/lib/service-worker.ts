@@ -117,6 +117,46 @@ export async function requestServiceWorkerUpdate(
   }
 }
 
+const ACTIVATION_TIMEOUT_MS = 3000;
+
+/**
+ * Hand the page to the newer worker this registration holds, resolving once it
+ * controls the page or after `timeoutMs`, so a worker that never takes over
+ * cannot strand the caller. Returns whether there was a worker to hand over to.
+ *
+ * The worker is read from the registration at the moment of asking. The update
+ * hook used to post to a worker it had captured itself, and the banner can be
+ * raised without one being captured — by the worker's own `SW_UPDATE_WAITING`,
+ * by the version poll, or by an install that finished before the hook
+ * subscribed. Then Update reloaded without ever sending `SKIP_WAITING`, the
+ * reload came back under the old worker to the same banner, and only a second
+ * press worked (SC-1310, and SC-1266's "Update did not activate the worker").
+ */
+export async function activateWaitingWorker(
+  registration: ServiceWorkerRegistration,
+  timeoutMs: number = ACTIVATION_TIMEOUT_MS
+): Promise<boolean> {
+  const worker = registration.waiting ?? registration.installing;
+  if (!worker) return false;
+
+  const container = navigator.serviceWorker;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let onTakeover = () => {};
+  const takenOver = new Promise<void>((resolve) => {
+    onTakeover = resolve;
+    timer = setTimeout(resolve, timeoutMs);
+  });
+  container.addEventListener('controllerchange', onTakeover);
+  try {
+    worker.postMessage({ type: 'SKIP_WAITING' });
+    await takenOver;
+  } finally {
+    clearTimeout(timer);
+    container.removeEventListener('controllerchange', onTakeover);
+  }
+  return true;
+}
+
 /**
  * `navigator.serviceWorker.ready` never settles while no worker has ever
  * reached activation — precisely the state a failed registration leaves
