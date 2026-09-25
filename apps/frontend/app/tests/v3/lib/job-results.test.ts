@@ -101,6 +101,35 @@ describe('file-import', () => {
       { date: '2026-01-02T00:00:00Z', description: 'Coffee', amount: -3.4 },
     ]);
   });
+
+  test('carries a date order already chosen into the currency prompt (SC-1291)', () => {
+    const view = readFileImport({
+      ...base,
+      needsCurrency: { r2Key: 'k', fileType: 'csv', transactionCount: 1, dateOrder: 'day-first' },
+    });
+    expect(view?.needsCurrency?.dateOrder).toBe('day-first');
+  });
+
+  test('reads the date-order prompt when the parse stopped for one (SC-1291)', () => {
+    const view = readFileImport({
+      ...base,
+      needsDateOrder: {
+        r2Key: 'u/1/file.csv',
+        fileType: 'csv',
+        rowCount: 3,
+        samples: ['03/04/2026', '05/06/2026'],
+        defaultCurrency: 'EUR',
+      },
+    });
+    expect(view?.needsDateOrder).toEqual({
+      r2Key: 'u/1/file.csv',
+      fileType: 'csv',
+      rowCount: 3,
+      samples: ['03/04/2026', '05/06/2026'],
+      defaultCurrency: 'EUR',
+    });
+    expect(readFileImport(base)?.needsDateOrder).toBeNull();
+  });
 });
 
 describe('manual-holdings-create', () => {

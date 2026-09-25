@@ -4,6 +4,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import type { AIInferenceProvider, AIResult } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { Container } from 'typedi';
+import { AiBudgetExceededError, AiSpendBudget } from '../../../src/services/ai/AiSpendBudget';
 import { InvoiceExtractionService } from '../../../src/services/documents/InvoiceExtractionService';
 import {
   INVOICE_EXTRACTION_PROMPT,
@@ -131,13 +132,21 @@ function stubRegistry(provider: AIInferenceProvider): void {
   } as unknown as ProviderRegistry);
 }
 
+let refuseBudget = false;
+
 function service(): InvoiceExtractionService {
+  Container.set(AiSpendBudget, {
+    reserve: async () => {
+      if (refuseBudget) throw new AiBudgetExceededError('global');
+    },
+  } as unknown as AiSpendBudget);
   const instance = new InvoiceExtractionService();
   Container.set(InvoiceExtractionService, instance);
   return instance;
 }
 
 afterEach(() => {
+  refuseBudget = false;
   Container.set(ProviderRegistry, new ProviderRegistry());
 });
 
@@ -168,7 +177,7 @@ describe('InvoiceExtractionService — text path', () => {
     const { provider, calls } = makeFullProvider(ONE_INVOICE);
     stubRegistry(provider);
 
-    const result = await service().extract(TEXT_PDF, 'application/pdf');
+    const result = await service().extract('u1', TEXT_PDF, 'application/pdf');
 
     expect(calls.parseDocumentText).toHaveLength(1);
     expect(calls.parseScreenshot).toHaveLength(0);
@@ -182,7 +191,7 @@ describe('InvoiceExtractionService — vision fallback', () => {
     const { provider, calls } = makeVisionOnlyProvider(ONE_INVOICE);
     stubRegistry(provider);
 
-    const result = await service().extract(TEXT_PDF, 'application/pdf');
+    const result = await service().extract('u1', TEXT_PDF, 'application/pdf');
 
     expect(calls.parseScreenshot).toHaveLength(1);
     expect(calls.parseScreenshot[0]?.mimeType).toBe('application/pdf');
@@ -196,7 +205,7 @@ describe('InvoiceExtractionService — scanned path', () => {
     const { provider, calls } = makeFullProvider(ONE_INVOICE);
     stubRegistry(provider);
 
-    const result = await service().extract(SCANNED_PDF, 'application/pdf');
+    const result = await service().extract('u1', SCANNED_PDF, 'application/pdf');
 
     expect(calls.parseScreenshot).toHaveLength(1);
     expect(calls.parseDocumentText).toHaveLength(0);
@@ -211,7 +220,7 @@ describe('InvoiceExtractionService — scanned path', () => {
     const { provider, calls } = makeFullProvider(ONE_INVOICE);
     stubRegistry(provider);
 
-    await service().extract(SCANNED_PDF, 'application/pdf');
+    await service().extract('u1', SCANNED_PDF, 'application/pdf');
 
     expect(calls.parseScreenshot[0]?.systemPrompt).toBe(INVOICE_EXTRACTION_PROMPT);
     expect(calls.parseScreenshot[0]?.hint).toBeUndefined();
@@ -227,7 +236,7 @@ describe('InvoiceExtractionService — scanned path', () => {
     };
     stubRegistry(provider);
 
-    expect(service().extract(SCANNED_PDF, 'application/pdf')).rejects.toThrow(
+    expect(service().extract('u1', SCANNED_PDF, 'application/pdf')).rejects.toThrow(
       'PDF input not supported'
     );
   });
@@ -238,7 +247,7 @@ describe('InvoiceExtractionService — multi-invoice', () => {
     const { provider } = makeFullProvider(TWO_INVOICES);
     stubRegistry(provider);
 
-    const result = await service().extract(TEXT_PDF, 'application/pdf');
+    const result = await service().extract('u1', TEXT_PDF, 'application/pdf');
 
     expect(result.invoices).toHaveLength(2);
     expect(result.invoices[0]?.ordinal).toBe(0);
@@ -253,7 +262,7 @@ describe('InvoiceExtractionService — traceability', () => {
     const { provider } = makeFullProvider(TWO_INVOICES);
     stubRegistry(provider);
 
-    const result = await service().extract(TEXT_PDF, 'application/pdf');
+    const result = await service().extract('u1', TEXT_PDF, 'application/pdf');
 
     for (const invoice of result.invoices) {
       expect(invoice.promptVersion).toBe(PROMPT_VERSION);
@@ -265,7 +274,7 @@ describe('InvoiceExtractionService — traceability', () => {
     const { provider } = makeFullProvider(ONE_INVOICE);
     stubRegistry(provider);
 
-    const result = await service().extract(SCANNED_PDF, 'application/pdf');
+    const result = await service().extract('u1', SCANNED_PDF, 'application/pdf');
 
     expect(result.invoices[0]?.extractorKind).toBe('vision-llm');
   });
@@ -281,7 +290,7 @@ describe('InvoiceExtractionService — cost tracking', () => {
     });
     stubRegistry(provider);
 
-    const result = await service().extract(TEXT_PDF, 'application/pdf');
+    const result = await service().extract('u1', TEXT_PDF, 'application/pdf');
 
     expect(result.usage.upstreamCostUsd).toBeCloseTo(0.0123, 6);
   });
@@ -290,7 +299,7 @@ describe('InvoiceExtractionService — cost tracking', () => {
     const { provider } = makeFullProvider(ONE_INVOICE);
     stubRegistry(provider);
 
-    const result = await service().extract(TEXT_PDF, 'application/pdf');
+    const result = await service().extract('u1', TEXT_PDF, 'application/pdf');
 
     expect(result.usage.upstreamCostUsd).toBe(0);
   });
@@ -301,7 +310,7 @@ describe('InvoiceExtractionService — malformed responses', () => {
     const { provider } = makeFullProvider(null);
     stubRegistry(provider);
 
-    const result = await service().extract(TEXT_PDF, 'application/pdf');
+    const result = await service().extract('u1', TEXT_PDF, 'application/pdf');
 
     expect(result.invoices).toEqual([]);
   });
@@ -310,7 +319,7 @@ describe('InvoiceExtractionService — malformed responses', () => {
     const { provider } = makeFullProvider('not json, just a string');
     stubRegistry(provider);
 
-    const result = await service().extract(TEXT_PDF, 'application/pdf');
+    const result = await service().extract('u1', TEXT_PDF, 'application/pdf');
 
     expect(result.invoices).toEqual([]);
   });
@@ -319,7 +328,7 @@ describe('InvoiceExtractionService — malformed responses', () => {
     const { provider } = makeFullProvider({});
     stubRegistry(provider);
 
-    const result = await service().extract(TEXT_PDF, 'application/pdf');
+    const result = await service().extract('u1', TEXT_PDF, 'application/pdf');
 
     expect(result.invoices).toEqual([]);
   });
@@ -328,7 +337,7 @@ describe('InvoiceExtractionService — malformed responses', () => {
     const { provider } = makeFullProvider({ invoices: [{}] });
     stubRegistry(provider);
 
-    const result = await service().extract(TEXT_PDF, 'application/pdf');
+    const result = await service().extract('u1', TEXT_PDF, 'application/pdf');
 
     expect(result.invoices).toHaveLength(1);
     expect(result.invoices[0]?.ordinal).toBe(0);
@@ -339,7 +348,7 @@ describe('InvoiceExtractionService — malformed responses', () => {
   test('no AI provider available yields an empty array, not a throw', async () => {
     Container.set(ProviderRegistry, { getAIProviders: () => [] } as unknown as ProviderRegistry);
 
-    const result = await service().extract(TEXT_PDF, 'application/pdf');
+    const result = await service().extract('u1', TEXT_PDF, 'application/pdf');
 
     expect(result.invoices).toEqual([]);
     expect(result.usage.upstreamCostUsd).toBe(0);
@@ -351,7 +360,7 @@ describe('InvoiceExtractionService — malformed responses', () => {
     });
     stubRegistry(provider);
 
-    const result = await service().extract(TEXT_PDF, 'application/pdf');
+    const result = await service().extract('u1', TEXT_PDF, 'application/pdf');
 
     expect(result.invoices[0]?.totalAmount).toBeNull();
   });
@@ -363,7 +372,7 @@ describe('InvoiceExtractionService — date normalisation', () => {
       invoices: [{ vendorNameRaw: 'Acme', issueDate, dueDate, lineItems: [] }],
     });
     stubRegistry(provider);
-    const result = await service().extract(TEXT_PDF, 'application/pdf');
+    const result = await service().extract('u1', TEXT_PDF, 'application/pdf');
     return result.invoices[0];
   }
 
@@ -426,10 +435,27 @@ describe('InvoiceExtractionService — prompt authority', () => {
       getAIProviders: () => [provider],
     } as unknown as ProviderRegistry);
 
-    await new InvoiceExtractionService().extract(TEXT_PDF, 'application/pdf');
+    await new InvoiceExtractionService().extract('u1', TEXT_PDF, 'application/pdf');
 
     expect(seen).toHaveLength(1);
     expect(seen[0]?.systemPrompt).toBe(INVOICE_EXTRACTION_PROMPT);
     expect(seen[0]?.hint).toBeUndefined();
+  });
+});
+
+describe('InvoiceExtractionService — AI budget (SC-1265)', () => {
+  test('over budget, neither path calls the model', async () => {
+    const { provider, calls } = makeFullProvider(ONE_INVOICE);
+    stubRegistry(provider);
+    refuseBudget = true;
+
+    await expect(service().extract('u1', TEXT_PDF, 'application/pdf')).rejects.toBeInstanceOf(
+      AiBudgetExceededError
+    );
+    await expect(service().extract('u1', SCANNED_PDF, 'application/pdf')).rejects.toBeInstanceOf(
+      AiBudgetExceededError
+    );
+    expect(calls.parseDocumentText).toHaveLength(0);
+    expect(calls.parseScreenshot).toHaveLength(0);
   });
 });

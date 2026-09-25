@@ -16,6 +16,10 @@ export {
   AttachHoldingToVaultUseCase,
 } from './AttachHoldingToVaultUseCase';
 export {
+  BackfillBenchmarkPricesUseCase,
+  type BenchmarkBackfillResult,
+} from './BackfillBenchmarkPricesUseCase';
+export {
   BackfillHistoricalPricesUseCase,
   type BackfillSummary,
 } from './BackfillHistoricalPricesUseCase';
@@ -45,7 +49,9 @@ export {
   CreatePaymentFromExtractionUseCase,
   ExtractionNotFoundError,
 } from './CreatePaymentFromExtractionUseCase';
+export { DeleteAccountUseCase } from './DeleteAccountUseCase';
 export { DeleteAllUserDataUseCase } from './DeleteAllUserDataUseCase';
+export { DeleteCloudAccountUseCase } from './DeleteCloudAccountUseCase';
 export {
   type DeleteHoldingResult,
   DeleteHoldingUseCase,

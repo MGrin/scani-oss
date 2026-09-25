@@ -129,9 +129,20 @@ const envSchema = z.object({
   // refuses (403) when unset, so a missing value disables the feature
   // gracefully instead of blocking prod boot.
   SCREENSHOT_BOT_SECRET: z.string().min(32).optional(),
+  // Cloudflare Turnstile secret (SC-1266). Unset, sign-in sends mail without a
+  // human check; set it only once the app ships the widget, or every sign-in
+  // is refused.
+  TURNSTILE_SECRET: z.string().optional(),
 
   // SCANI_CLOUD_URL + SCANI_CLOUD_API_KEY are owned by @scani/cloud-client's
   // own env schema. Required in prod; optional in dev (local fallback).
+
+  // The hourly budget of sign-in codes and links sent to addresses with no
+  // account, shared by every caller (SC-1260). The e2e runner raises it: one
+  // suite run signs in more new addresses than a real hour of sign-ups.
+  AUTH_NEW_ADDRESS_SENDS_PER_HOUR: z
+    .union([z.literal('').transform(() => undefined), z.coerce.number().int().positive()])
+    .optional(),
 
   STUB_AI: inProd
     ? z.literal(undefined).optional()

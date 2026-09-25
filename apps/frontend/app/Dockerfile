@@ -42,6 +42,13 @@ ENV VITE_API_URL=${VITE_API_URL} \
     VITE_SENTRY_DSN=${VITE_SENTRY_DSN} \
     VITE_SENTRY_ENABLED=${VITE_SENTRY_ENABLED}
 
+# The commit this image is built from, written into `/version.json` by
+# `viteVersion()` so a running image can say what it serves — the Pages sites
+# have since SC-964, and the demo, which runs this image, could not (SC-1187,
+# SC-1208). An ARG reaches the RUN below as its environment; empty means a
+# local build, which names no commit rather than guessing one.
+ARG SCANI_COMMIT=
+
 WORKDIR /app/apps/frontend/app
 RUN bun run build
 

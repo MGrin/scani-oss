@@ -88,6 +88,14 @@ describe('contactRouter.submit — delivery', () => {
     expect(receipt?.to).toBe('jane@example.com');
   });
 
+  test('a submission from a throwaway inbox answers ok and mails nobody (SC-1260)', async () => {
+    const caller = contactRouter.createCaller(buildUnauthedContext({ clientIp: '203.0.113.60' }));
+    await expect(caller.submit(validInput({ email: 'pentest@uberip.com' }))).resolves.toEqual({
+      ok: true,
+    });
+    expect(fake.sent).toEqual([]);
+  });
+
   test('surfaces INTERNAL_SERVER_ERROR when the ops notification fails to send', async () => {
     fake.failNext = true;
     const caller = contactRouter.createCaller(buildUnauthedContext({ clientIp: '203.0.113.21' }));
@@ -110,5 +118,49 @@ describe('contactRouter.submit — rate limiting', () => {
     await expect(caller.submit(validInput({ email: 'r6@example.com' }))).rejects.toMatchObject({
       code: 'TOO_MANY_REQUESTS',
     });
+  });
+});
+
+// SC-1266. The human check runs after the rate limiter and before any mail:
+// a refused or unverifiable submission sends nothing at all.
+describe('contactRouter.submit — human check', () => {
+  test("the form's token is what gets checked", async () => {
+    const seen: (string | undefined)[] = [];
+    const caller = contactRouter.createCaller(
+      buildUnauthedContext({
+        clientIp: '203.0.113.60',
+        checkHuman: async (token) => {
+          seen.push(token);
+          return { ok: true, checked: true };
+        },
+      })
+    );
+    await caller.submit(validInput({ turnstileToken: 'tok-1' }));
+    expect(seen).toEqual(['tok-1']);
+    expect(fake.sent.length).toBeGreaterThan(0);
+  });
+
+  test('a refused check is FORBIDDEN and sends no mail', async () => {
+    const caller = contactRouter.createCaller(
+      buildUnauthedContext({
+        clientIp: '203.0.113.61',
+        checkHuman: async () => ({ ok: false, reason: 'rejected' }),
+      })
+    );
+    await expect(caller.submit(validInput())).rejects.toMatchObject({ code: 'FORBIDDEN' });
+    expect(fake.sent).toEqual([]);
+  });
+
+  test('a check that could not be completed sends no mail either', async () => {
+    const caller = contactRouter.createCaller(
+      buildUnauthedContext({
+        clientIp: '203.0.113.62',
+        checkHuman: async () => ({ ok: false, reason: 'unavailable' }),
+      })
+    );
+    await expect(caller.submit(validInput())).rejects.toMatchObject({
+      code: 'INTERNAL_SERVER_ERROR',
+    });
+    expect(fake.sent).toEqual([]);
   });
 });

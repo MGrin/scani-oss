@@ -19,6 +19,38 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.46.0](https://github.com/MGrin/scani-oss/compare/v0.45.0...v0.46.0) (2026-09-19)
+
+
+### Features
+
+* a scam verdict belongs to the user who gave it (SC-1160) ([8a1ad69](https://github.com/MGrin/scani-oss/commit/8a1ad69d71ce73691a605747ed364153f0e73f28))
+* api, data-provider and worker serve their commit at /version.json ([7f2139a](https://github.com/MGrin/scani-oss/commit/7f2139a1e9db71e57c9b78ed00a6a896479f3dd3))
+* **i18n:** Arabic, held out of the picker until the layout lands (SC-201) ([458b674](https://github.com/MGrin/scani-oss/commit/458b6746091483e059540fdef1f06a494a38e348))
+* **i18n:** finish the right-to-left pass, and pin the rule family that escaped it ([74860f9](https://github.com/MGrin/scani-oss/commit/74860f91059962bce7e41a4db803d43eb889ed49))
+* **i18n:** the Arabic faces, and the joining-script gap the PDF marked into words (SC-201) ([77f0a67](https://github.com/MGrin/scani-oss/commit/77f0a67f9673516a1da5e904078420db13342f44))
+* **pdf:** a right-to-left statement starts from the right edge (SC-1198) ([800dad4](https://github.com/MGrin/scani-oss/commit/800dad42889fd480e3a5196b59b2f229a483be9b))
+* **pdf:** the statement in the reader's language — words, figures and dates (SC-1199) ([eecec75](https://github.com/MGrin/scani-oss/commit/eecec753f86d7b4d28e41ee3d218f7f47c0c84ee))
+* **v3:** home runway carries the stale-quote note ([5fa6bbc](https://github.com/MGrin/scani-oss/commit/5fa6bbc638f24ba2ea34f99d6ffe8c8924745ee2))
+
+
+### Bug Fixes
+
+* **app:** Mark as scam moves into the peek body, where a phone can reach it (SC-1160) ([04edefd](https://github.com/MGrin/scani-oss/commit/04edefd0ed65b833cfceb4a01d0b28b69143f268))
+* **db:** every Postgres connection verifies the server ([7fb5231](https://github.com/MGrin/scani-oss/commit/7fb5231babcca2c164ac4c83a3712ebf6eca7acd))
+* **demo:** the same_network transfer band is reachable on seeded data ([617c6c2](https://github.com/MGrin/scani-oss/commit/617c6c27de8d45dc3ca2a8076c5ba6036847360c))
+* **digest:** a zero included total still sends (SC-1228) ([8ed7d59](https://github.com/MGrin/scani-oss/commit/8ed7d593fcdd1ff48d1434f5b48533b0ada7215d))
+* **digest:** quote the dashboard's total, not the rollup's user row (SC-1228) ([e59eb9f](https://github.com/MGrin/scani-oss/commit/e59eb9fca535d68e64ab4ff3c6da86abb4f40a7d))
+* **docker:** api and data-provider images stop installing Next.js ([7675cc6](https://github.com/MGrin/scani-oss/commit/7675cc6265507482c2128340d04ad53e0641a892))
+* **e2e:** visual and shots refuse a stopped Mailpit by name ([ed1bf65](https://github.com/MGrin/scani-oss/commit/ed1bf65136ad97fbc5d8576a3959ab65312748fe))
+* **i18n:** format every Arabic locale in Western digits and the Gregorian calendar ([62e8347](https://github.com/MGrin/scani-oss/commit/62e8347f58defd655885b02d00fc24bd6270a144))
+* **i18n:** money is an LTR island, so Arabic stops reading $US (SC-1229) ([9ae1788](https://github.com/MGrin/scani-oss/commit/9ae1788eadb4c08846c984dad5e0c0450c16f006))
+* **pdf:** a space in a figure column no longer fails the whole export (SC-1201) ([6fa1a51](https://github.com/MGrin/scani-oss/commit/6fa1a51385226bb752be874671bd749f6c82da5d))
+* **ui:** a 403 is not an expired session (SC-1210) ([1fb1b20](https://github.com/MGrin/scani-oss/commit/1fb1b20b39df0eb4213b6873ac79896f7aa02b71))
+* **ui:** an amount field still reads the Arabic-Indic digits a keypad types ([d9dbd9e](https://github.com/MGrin/scani-oss/commit/d9dbd9ee783bd8048a87f401036f7bf7e6e93b2b))
+* **ui:** Select uses the v3 type scale and caps height to the viewport (SC-990, SC-993) ([e726698](https://github.com/MGrin/scani-oss/commit/e726698ba14023f0bd98e4a55a4242f8dbce54cb))
+* **worker:** the postgres crash whitelist no longer names the minifier's variable (SC-1231) ([c0fc692](https://github.com/MGrin/scani-oss/commit/c0fc6922e1156eb5d5563af5594122a170e5a28d))
+
 ## [0.45.0](https://github.com/MGrin/scani-oss/compare/v0.44.0...v0.45.0) (2026-09-14)
 
 

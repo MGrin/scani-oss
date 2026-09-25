@@ -61,7 +61,10 @@
         "justNow": "刚刚",
         "minutes_other": "{{count, number}} 分钟前",
         "hours_other": "{{count, number}} 小时前",
-        "days_other": "{{count, number}} 天前"
+        "days_other": "{{count, number}} 天前",
+        "inMinutes_other": "{{count, number}} 分钟后",
+        "inHours_other": "{{count, number}} 小时后",
+        "inDays_other": "{{count, number}} 天后"
       }
     },
     "notFound": {
@@ -194,6 +197,39 @@
       },
       "runway": {
         "label": "资金可支撑"
+      },
+      "returns": {
+        "title": "收益",
+        "chooseWindow": "选择期间",
+        "window": {
+          "ytd": "年初至今",
+          "1y": "1年",
+          "all": "全部"
+        },
+        "twr": {
+          "label": "投资收益",
+          "caption": "无论你存入或取出多少，持仓本身的表现。"
+        },
+        "fx": {
+          "label": "其中汇率",
+          "caption": "您的持仓以各自货币计为 <value/>；其余来自汇率相对您货币的变动。"
+        },
+        "xirr": {
+          "label": "你的资金收益",
+          "caption": "计入你存入和取出资金的时间后，你自己的钱赚了多少。",
+          "approximate": "有不止一个利率符合你的存取款，因此请视为近似值。"
+        },
+        "benchmarks": {
+          "label": "对比",
+          "caption": "在相同日期买入并持有的比特币和标普 500（以您的货币计），以及相同月份的美国物价。",
+          "btc": "比特币",
+          "sp500": "标普 500（SPY，仅价格）",
+          "usInflation": "美国通胀（CPI-U）"
+        },
+        "perYear": "每年 <value/>",
+        "perYearUnit": "每年",
+        "since": "自 {{date}} 起。",
+        "partial": "部分日期无法完全估值，因此这些数字可能不准确。"
       }
     },
     "money": {
@@ -465,7 +501,7 @@
         "addPayment": "添加一笔付款"
       },
       "recurringSummary": {
-        "projectedEachMonth": "每月预测金额",
+        "projectedEachMonth": "每月账单预测金额",
         "estimatedFromHistory_other": "其中包含 {{count}} 笔按上次结算金额估算的浮动付款。",
         "notCounted_other": "有 {{count}} 笔浮动付款没有估算金额，未计入。"
       },
@@ -505,6 +541,7 @@
         "chooseVendor": "选择一个收付方",
         "pickCurrency": "从列表中选择一种货币",
         "setAnchorDate": "设置起算日期",
+        "chooseDate": "选择日期",
         "chooseCadence": "选择重复的频率",
         "setRepeatCount": "设置有效的重复次数"
       },
@@ -579,6 +616,13 @@
         "couldEstimate_other": "其中有 {{count}} 笔浮动付款此前结算过，因此可以用它们上次的金额来替代。",
         "useLastSettled_other": "使用它们上次的结算金额",
         "stopEstimating_other": "不再为它们估算"
+      },
+      "suggestions": {
+        "title": "看起来是定期付款",
+        "claim": "{{payee}} 看起来是每月 <value></value> 的付款。",
+        "accept": "添加为定期付款",
+        "dismiss": "不是定期付款",
+        "evidence_other": "基于 {{count}} 笔付款："
       }
     },
     "groups": {
@@ -1225,6 +1269,8 @@
         "symbolsOverflow": "{{symbols}} 等 {{hidden}} 项",
         "needsCurrency_other": "{{count}} 笔交易——需要指定货币",
         "needsCurrencyWithType_other": "{{count}} 笔交易 · {{fileType}}——需要指定货币",
+        "needsDateOrder_other": "{{count}} 笔交易——需要指定日期顺序",
+        "needsDateOrderWithType_other": "{{count}} 笔交易 · {{fileType}}——需要指定日期顺序",
         "chains_other": "{{count}} 条链",
         "candidatesAcross_other": "{{chains}} 上共 {{count}} 个候选项",
         "nothingFound": "没有找到任何内容",
@@ -1748,7 +1794,9 @@
         "noResults": "这里没有叫这个名字的账户。",
         "addNamed": "添加“{{name}}”",
         "addNew": "添加一个新账户",
-        "pickExisting": "选择一个已有的账户"
+        "pickExisting": "选择一个已有的账户",
+        "firstPlaceholder": "为你的第一个账户命名…",
+        "noneYet": "还没有账户——输入名称来添加第一个。"
       },
       "page": {
         "uploadAndRead": "上传并读取",
@@ -2389,6 +2437,13 @@
           "apply": "按这种货币导入",
           "applying": "正在重新导入…",
           "subject": "这个文件"
+        },
+        "dateOrder": {
+          "title": "这些日期是日在前还是月在前？",
+          "body": "这个文件里的每个日期都有两种读法——03/04 可能是 4 月 3 日，也可能是 3 月 4 日——而文件没有注明是哪一种。目前还没有导入任何内容。",
+          "samples": "文件中的原文",
+          "dayFirst": "日在前 — 31/12",
+          "monthFirst": "月在前 — 12/31"
         }
       },
       "manual": {

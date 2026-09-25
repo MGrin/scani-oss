@@ -98,7 +98,7 @@ function displayedDecimals(
   if (format === 'currency') {
     // `formatCompact` falls back to the plain formatter below 1,000, since
     // "$0.5K" is silly — so the precision changes at that boundary too.
-    if (compact) return absolute < 1_000 ? (decimals ?? 0) : 1;
+    if (compact) return absolute < 1_000 ? (decimals ?? 0) : (decimals ?? 1);
     if (decimals !== undefined) return decimals;
     return delta ? 2 : moneyDecimals(absolute);
   }

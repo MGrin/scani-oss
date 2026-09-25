@@ -337,9 +337,20 @@ describe('an idle worker with a far-future delayed job still starts new work pro
  * now pings the worker after a user enqueues, and the ping interrupts that
  * wait. All three arms share one fixture and differ only in the ping, so the
  * control is the same fixture with the wake disabled.
+ *
+ * NO TIMER RUNS INSIDE THESE ARMS (SC-1242). With a 6s cap, the worker's own
+ * timer re-LISTENed before the post-add read on a loaded gate (1 of 13080), so
+ * a correct run read 1 where 0 was asserted. The cap is 900s here, so only the
+ * wake or the test can end the idle wait. The two arms whose subject is the
+ * timer end it with `interruptIdleWait`, which is exactly what the timer does,
+ * after showing the job did not start on its own. That the real timer ends the
+ * wait and re-LISTENs is the silent-window arm's subject above.
  */
 describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
-  const CAP_S = 6;
+  const CAP_S = 900;
+  // The wake arm's bound. The timer arms hold this long first, so "it would
+  // have started anyway" is ruled out over the same interval the wake beats.
+  const WAKE_BOUND_MS = 2_500;
   const SECRET = 'test_wake_secret_at_least_32_characters_long';
 
   async function suspendedWorker() {
@@ -420,15 +431,34 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
     const addedAt = await addWithNobodyListening(queue, name, 'while-suspended');
     expect(await wakeClient(url, SECRET).ping()).toBe('woken');
     expect(wakes.n).toBe(1);
-    const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
-    expect(startedAt - addedAt).toBeLessThan(2_500); // [wall-clock]
+    const startedAt = await waitFor(() => started.get('while-suspended'), 5_000);
+    expect(startedAt - addedAt).toBeLessThan(WAKE_BOUND_MS); // [wall-clock]
 
     await Bun.sleep(500);
     const againAt = Date.now();
     await queue.add('after-wake', {});
-    const againStartedAt = await waitFor(() => started.get('after-wake'), (CAP_S + 3) * 1_000);
-    expect(againStartedAt - againAt).toBeLessThan(2_500); // [wall-clock]
+    const againStartedAt = await waitFor(() => started.get('after-wake'), 5_000);
+    expect(againStartedAt - againAt).toBeLessThan(WAKE_BOUND_MS); // [wall-clock]
   });
+
+  /**
+   * Nothing but the end of the idle wait can start the job: no listener, no
+   * wake, and a 900s timer. Hold for the wake arm's bound, then end the wait as
+   * the timer would. A lower bound on a start that nothing can cause, so load
+   * only lengthens the hold, never shortens it.
+   */
+  async function startsOnlyWhenTheWaitEnds(
+    worker: PgWorker,
+    started: Map<string, number>,
+    job: string
+  ): Promise<void> {
+    await Bun.sleep(WAKE_BOUND_MS);
+    expect(started.get(job)).toBeUndefined();
+    const endedAt = Date.now();
+    interruptIdleWait(worker);
+    const startedAt = await waitFor(() => started.get(job), 5_000);
+    expect(startedAt - endedAt).toBeLessThan(WAKE_BOUND_MS); // [wall-clock]
+  }
 
   // The control. Without it the arm above could pass on a NOTIFY that still
   // reached a live connection, and would say nothing about the wake.
@@ -437,23 +467,22 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
   // two facts that leave the timer as the only way in: nobody was listening
   // when the job was enqueued, and nothing woke the worker (SC-1220).
   test('CONTROL: with the wake disabled, it waits for the timer', async () => {
-    const { name, queue, started, wakes, listenersAtEnqueue } = await suspendedWorker();
+    const { name, queue, started, wakes, worker, listenersAtEnqueue } = await suspendedWorker();
     expect(listenersAtEnqueue).toBe(0);
-    const addedAt = await addWithNobodyListening(queue, name, 'while-suspended');
+    await addWithNobodyListening(queue, name, 'while-suspended');
     expect(await wakeClient(undefined, SECRET).ping()).toBe('unconfigured');
-    const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
+    await startsOnlyWhenTheWaitEnds(worker, started, 'while-suspended');
     expect(wakes.n).toBe(0);
-    expect(startedAt - addedAt).toBeLessThan((CAP_S + 2) * 1_000); // [wall-clock]
   });
 
-  test('a failed wake costs nothing: the job still starts within the timer bound', async () => {
-    const { name, queue, started, wakes, listenersAtEnqueue, url } = await suspendedWorker();
+  test('a failed wake costs nothing: the job still starts when the timer ends the wait', async () => {
+    const { name, queue, started, wakes, worker, listenersAtEnqueue, url } =
+      await suspendedWorker();
     expect(listenersAtEnqueue).toBe(0);
-    const addedAt = await addWithNobodyListening(queue, name, 'while-suspended');
+    await addWithNobodyListening(queue, name, 'while-suspended');
     expect(await wakeClient(url, 'another_secret_of_at_least_32_characters').ping()).toBe('failed');
-    const startedAt = await waitFor(() => started.get('while-suspended'), (CAP_S + 3) * 1_000);
+    await startsOnlyWhenTheWaitEnds(worker, started, 'while-suspended');
     expect(wakes.n).toBe(0);
-    expect(startedAt - addedAt).toBeLessThan((CAP_S + 2) * 1_000); // [wall-clock]
   });
 
   /**
@@ -472,7 +501,7 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
     expect(await listeners(name)).toBe(0);
 
     interruptIdleWait(worker);
-    await reListenedAt(name, (CAP_S + 4) * 1_000);
+    await reListenedAt(name, 5_000);
 
     await queue.add('while-listening', {});
     expect(await listeners(name)).toBe(1);

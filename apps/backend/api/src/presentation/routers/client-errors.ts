@@ -1,7 +1,9 @@
 import { createComponentLogger } from '@scani/logging';
+import { defaultInflowKey } from '@scani/rate-limiter';
 import { z } from 'zod';
-import { CLIENT_ERROR_LIMITS } from '../../config/limits';
+import { CLIENT_ERROR_LIMITS, USER_BUDGETS } from '../../config/limits';
 import { strictInput } from '../lib/strict-input';
+import { UserBudget } from '../lib/user-budget';
 import { publicProcedure, router } from '../trpc';
 
 const logger = createComponentLogger('router:client-errors');
@@ -22,6 +24,20 @@ const MAX_ROUTE_LEN = 500;
 const MAX_USER_AGENT_LEN = 500;
 const MAX_APP_VERSION_LEN = 50;
 
+// SC-1267. Past the allowance a report is dropped and still answered ok: the
+// caller is a browser's error boundary, which has nothing useful to do with a
+// refusal, and a flood only needs to stop reaching the logs.
+const reportBudget = new UserBudget({
+  namespace: 'rl:client-errors',
+  max: USER_BUDGETS.CLIENT_ERRORS_PER_10_MIN,
+  windowMs: 10 * 60 * 1000,
+});
+
+function reporterKey(userId: string | null | undefined, headers: Headers | null): string {
+  if (userId) return `user:${userId}`;
+  return `ip:${defaultInflowKey(new Request('http://client-errors/', { headers: headers ?? undefined }))}`;
+}
+
 const reportInput = z.object({
   message: z.string().min(1).max(MAX_MESSAGE_LEN),
   stack: z.string().max(MAX_STACK_LEN).optional(),
@@ -33,6 +49,8 @@ const reportInput = z.object({
 
 export const clientErrorsRouter = router({
   report: publicProcedure.input(strictInput(reportInput)).mutation(async ({ ctx, input }) => {
+    const budget = await reportBudget.spend(reporterKey(ctx.userId, ctx.headers));
+    if (!budget.ok) return { ok: true, recorded: false };
     logger.error(
       {
         userId: ctx.userId ?? null,
@@ -45,6 +63,6 @@ export const clientErrorsRouter = router({
       },
       'Client error reported'
     );
-    return { ok: true };
+    return { ok: true, recorded: true };
   }),
 });

@@ -4,6 +4,7 @@ import {
   BoundedFetchError,
   type FetchLike,
   followRedirectsSafely,
+  type Resolver,
 } from '../src/fetch-html-bounded';
 
 /**
@@ -37,6 +38,9 @@ import {
  * 93.184.216.34 and 93.184.216.35 are public addresses and skip DNS entirely.
  */
 
+/** `example.com` answers a public address without touching a resolver. */
+const resolve: Resolver = async () => [{ address: '93.184.216.34', family: 4 }];
+
 function redirectTo(location: string, status = 302): Response {
   return new Response(null, { status, headers: { location } });
 }
@@ -62,18 +66,18 @@ describe('a redirect cannot walk us into the private network', () => {
     // target, and reachable from inside Fly.
     const { fetch, visited } = scripted([redirectTo('http://169.254.169.254/latest/meta-data/')]);
     await expect(
-      followRedirectsSafely(new URL('https://example.com/'), {}, fetch)
+      followRedirectsSafely(new URL('https://example.com/'), {}, fetch, resolve)
     ).rejects.toBeInstanceOf(BoundedFetchError);
 
     // Refused BEFORE the second request went out. Under `redirect: 'follow'`
     // the request had already been made by the time anyone could object.
-    expect(visited).toEqual(['https://example.com/']);
+    expect(visited).toEqual(['https://93.184.216.34/']);
   });
 
   test('a redirect to a fly-internal name is refused', async () => {
     const { fetch, visited } = scripted([redirectTo('http://scani-worker.internal:6379/')]);
     await expect(
-      followRedirectsSafely(new URL('https://example.com/'), {}, fetch)
+      followRedirectsSafely(new URL('https://example.com/'), {}, fetch, resolve)
     ).rejects.toBeInstanceOf(BoundedFetchError);
     expect(visited).toHaveLength(1);
   });
@@ -81,14 +85,14 @@ describe('a redirect cannot walk us into the private network', () => {
   test('a redirect to loopback is refused', async () => {
     const { fetch } = scripted([redirectTo('http://127.0.0.1:8080/')]);
     await expect(
-      followRedirectsSafely(new URL('https://example.com/'), {}, fetch)
+      followRedirectsSafely(new URL('https://example.com/'), {}, fetch, resolve)
     ).rejects.toBeInstanceOf(BoundedFetchError);
   });
 
   test('a redirect to a non-http scheme is refused', async () => {
     const { fetch } = scripted([redirectTo('file:///etc/passwd')]);
     await expect(
-      followRedirectsSafely(new URL('https://example.com/'), {}, fetch)
+      followRedirectsSafely(new URL('https://example.com/'), {}, fetch, resolve)
     ).rejects.toBeInstanceOf(BoundedFetchError);
   });
 
@@ -110,10 +114,15 @@ describe('a redirect cannot walk us into the private network', () => {
 describe('THE SUCCESS PATH — asserted deliberately', () => {
   test('a direct 200 is returned untouched, with one request', async () => {
     const { fetch, visited } = scripted([new Response('hello', { status: 200 })]);
-    const r = await followRedirectsSafely(new URL('https://example.com/'), {}, fetch);
+    const { response: r } = await followRedirectsSafely(
+      new URL('https://example.com/'),
+      {},
+      fetch,
+      resolve
+    );
     expect(r.status).toBe(200);
     expect(await r.text()).toBe('hello');
-    expect(visited).toEqual(['https://example.com/']);
+    expect(visited).toEqual(['https://93.184.216.34/']);
   });
 
   test('an ordinary public redirect is followed', async () => {
@@ -123,7 +132,11 @@ describe('THE SUCCESS PATH — asserted deliberately', () => {
       redirectTo('https://93.184.216.35/'),
       new Response('final', { status: 200 }),
     ]);
-    const r = await followRedirectsSafely(new URL('https://93.184.216.34/'), {}, fetch);
+    const { response: r } = await followRedirectsSafely(
+      new URL('https://93.184.216.34/'),
+      {},
+      fetch
+    );
     expect(r.status).toBe(200);
     expect(visited).toEqual(['https://93.184.216.34/', 'https://93.184.216.35/']);
   });
@@ -140,7 +153,12 @@ describe('THE SUCCESS PATH — asserted deliberately', () => {
   test('a 3xx with no Location is a response, not a redirect', async () => {
     // 304 Not Modified carries no Location and must not be walked.
     const { fetch } = scripted([new Response(null, { status: 304 })]);
-    const r = await followRedirectsSafely(new URL('https://example.com/'), {}, fetch);
+    const { response: r } = await followRedirectsSafely(
+      new URL('https://example.com/'),
+      {},
+      fetch,
+      resolve
+    );
     expect(r.status).toBe(304);
   });
 });
@@ -165,7 +183,7 @@ describe('the guard itself, now shared rather than copied', () => {
   });
 
   test('public hostnames pass, private literals do not', async () => {
-    await expect(assertHostIsPublic('93.184.216.34')).resolves.toBeUndefined();
+    await expect(assertHostIsPublic('93.184.216.34')).resolves.toBe('93.184.216.34');
     await expect(assertHostIsPublic('localhost')).rejects.toBeInstanceOf(BoundedFetchError);
     await expect(assertHostIsPublic('10.1.2.3')).rejects.toBeInstanceOf(BoundedFetchError);
     await expect(assertHostIsPublic('169.254.169.254')).rejects.toBeInstanceOf(BoundedFetchError);

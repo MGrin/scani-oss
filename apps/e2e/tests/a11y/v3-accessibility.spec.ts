@@ -1,4 +1,4 @@
-import type { BrowserContext, Page } from '@playwright/test';
+import type { BrowserContext, Frame, Page, Request } from '@playwright/test';
 import {
   type A11yFinding,
   formatFindings,
@@ -93,8 +93,37 @@ async function seed(target: Page): Promise<void> {
 }
 
 async function visit(route: string, shellTimeoutMs = SHELL_TIMEOUT_MS): Promise<void> {
-  await page.goto(route);
-  await page.waitForSelector('[data-ui="v3"]', { timeout: shellTimeoutMs });
+  // SC-790. WebKit fails here as "interrupted by another navigation to /", as
+  // an internal error, and as a shell that never appears, and a retry hides
+  // most of them. Recording every main-frame navigation makes the next red
+  // name what navigated the page, rather than only that something did.
+  // `framenavigated` also fires for pushState/replaceState, so document
+  // requests are recorded beside it: only a real load issues one.
+  const startedAt = Date.now();
+  const navigations: string[] = [];
+  const onNavigated = (frame: Frame) => {
+    if (frame === page.mainFrame())
+      navigations.push(`+${Date.now() - startedAt}ms nav ${frame.url()}`);
+  };
+  const onRequest = (request: Request) => {
+    if (request.resourceType() === 'document' && request.frame() === page.mainFrame()) {
+      navigations.push(`+${Date.now() - startedAt}ms doc ${request.url()}`);
+    }
+  };
+  page.on('framenavigated', onNavigated);
+  page.on('request', onRequest);
+  try {
+    await page.goto(route);
+    await page.waitForSelector('[data-ui="v3"]', { timeout: shellTimeoutMs });
+  } catch (err) {
+    throw new Error(
+      `${(err as Error).message}\nmain-frame navigations during visit(${route}): ${navigations.join(' | ') || 'none'}`,
+      { cause: err }
+    );
+  } finally {
+    page.off('framenavigated', onNavigated);
+    page.off('request', onRequest);
+  }
   // The loading ramp (V3-16) holds a skeleton through its first beat, and a
   // skeleton has neither text to contrast nor a target to size. Letting the
   // network go quiet is what makes the scan land on the real screen.

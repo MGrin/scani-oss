@@ -1,14 +1,16 @@
+import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import type { V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
-import { exportCount, exportMoney } from '@scani/ui/v3/lib/export/cell';
+import { exportCount, exportMoney, exportText } from '@scani/ui/v3/lib/export/cell';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import type { TFunction } from 'i18next';
 import { Tags } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import {
+  allInactiveGroupAmount,
   compareGroupAmounts,
   type GroupValue,
   groupAmount,
@@ -35,6 +37,12 @@ import { groupDetailPath } from '../../lib/routes';
  * "which of these is the big one" was the question the surface could not
  * answer. A group we could not price sorts last rather than as zero, in either
  * direction: unknown is not small.
+ *
+ * **A group of only inactive holdings shows what they are worth, muted and
+ * badged Inactive** (SC-1128), where it used to show 0 beside a list of rows
+ * that each carry a value. That figure is display only: the sort, the export's
+ * value column and its TOTAL all read `amount`, which stays 0, so the TOTAL
+ * still equals the portfolio's money. The export marks the row on its name.
  */
 
 export interface GroupRow {
@@ -79,15 +87,36 @@ function ColorMark({ color }: { color: string }) {
   );
 }
 
-export function GroupsList({ groups, values, baseCurrency, query, onCreate }: GroupsListProps) {
-  const { t } = useTranslation();
-  const navigate = useNavigate();
-
+/**
+ * The list's whole configuration, outside the component so a test can build
+ * the export from it exactly as the sheet does (SC-1128).
+ */
+export function groupsListConfig(
+  { groups, values, baseCurrency, onCreate }: Omit<GroupsListProps, 'query'>,
+  t: TFunction,
+  navigate: (path: string) => void
+): V3DataViewConfig<GroupRow> {
   const valueById = groupValuesById(values);
   const amount = (group: GroupRow): number | null => groupAmount(valueById.get(group.id));
-  const figure = (group: GroupRow) => <Numeric value={amount(group)} currency={baseCurrency} />;
+  const inactiveAmount = (group: GroupRow): number | null =>
+    allInactiveGroupAmount(valueById.get(group.id));
+  const inactiveLabel = t('v3.holdings.peek.inactive');
+  const figure = (group: GroupRow) => {
+    const inactive = inactiveAmount(group);
+    if (inactive === null) return <Numeric value={amount(group)} currency={baseCurrency} />;
+    return (
+      <span className="inline-flex items-center gap-2">
+        <Badge variant="secondary" className="shrink-0">
+          {inactiveLabel}
+        </Badge>
+        <span className="text-muted-foreground">
+          <Numeric value={inactive} currency={baseCurrency} />
+        </span>
+      </span>
+    );
+  };
 
-  const config: V3DataViewConfig<GroupRow> = {
+  return {
     pageKey: 'groups',
     data: groups,
     nounKey: 'ui.dataView.noun.groups',
@@ -149,6 +178,10 @@ export function GroupsList({ groups, values, baseCurrency, query, onCreate }: Gr
             <span className="truncate text-label">{group.name}</span>
           </span>
         ),
+        exportValue: (group) =>
+          exportText(
+            inactiveAmount(group) === null ? group.name : `${group.name} · ${inactiveLabel}`
+          ),
       },
       {
         key: 'value',
@@ -186,6 +219,11 @@ export function GroupsList({ groups, values, baseCurrency, query, onCreate }: Gr
     onRowClick: (group) => navigate(groupDetailPath(group.id)),
     rowHref: (group) => groupDetailPath(group.id),
   };
+}
 
+export function GroupsList({ query, ...props }: GroupsListProps) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const config = groupsListConfig(props, t, navigate);
   return <V3DataView config={config} getId={(group) => group.id} query={query} />;
 }

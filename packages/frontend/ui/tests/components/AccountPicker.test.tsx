@@ -155,4 +155,15 @@ describe('AccountPicker', () => {
     expect(html).not.toContain('ui.accountPicker');
     expect(html).toContain('Search accounts');
   });
+
+  // SC-1205: a fieldset's UA default is `min-inline-size: min-content`, so one
+  // unbroken wallet address widened the whole control past its pane and the
+  // rows' `truncate` never engaged. The kitchen-sink baselines are what show it;
+  // this keeps the one class that prevents it from being tidied away.
+  test('the fieldset may shrink below its longest unbroken row', () => {
+    const html = markup({
+      options: [{ id: 'w', name: 'Solana Network · 7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU' }],
+    });
+    expect(html).toMatch(/<fieldset class="[^"]*\bmin-w-0\b/);
+  });
 });

@@ -848,7 +848,7 @@ describe('RecurringList', () => {
    * here at all, so the only outflow (€42 monthly) is the whole figure.
    */
   test('projected-each-month counts active outflows only', () => {
-    expect(renderRecurring()).toInclude('Projected each month');
+    expect(renderRecurring()).toInclude('Projected bills each month');
     expect(renderRecurring()).toInclude('€42.00');
   });
 
@@ -922,6 +922,12 @@ function renderCommitment(
  * so narrowing the set has to move the figure (V3-32).
  */
 describe('RecurringSummary', () => {
+  // The table under this figure lists income rows too, and the figure leaves
+  // them out, so the label has to say which way the money goes (SC-1259).
+  test('says it is bills, since income rows sit in the same table', () => {
+    expect(renderCommitment([PAYMENT, SALARY])).toInclude('Projected bills each month');
+  });
+
   test('adds up the set it is handed, not the whole book', () => {
     const second = { ...PAYMENT, id: 'payment-second', expectedAmount: '58.00' };
     expect(renderCommitment([PAYMENT, second])).toInclude('€100.00');
@@ -1169,7 +1175,7 @@ describe('VendorList', () => {
   // The two claims stay two figures — one about the future, one about the past.
   test('the summary separates what is projected from what has been paid', () => {
     const html = renderVendors();
-    expect(html).toInclude('Projected each month');
+    expect(html).toInclude('Projected bills each month');
     expect(html).toInclude('Paid, last 12 months');
   });
 
@@ -1202,7 +1208,7 @@ describe('VendorList', () => {
     // figure beside it, because both substitute the same history estimates.
     // The NOUN is what keeps the two apart, so assert both are on screen.
     expect(html).toInclude('Projected income per month');
-    expect(html).toInclude('Projected each month');
+    expect(html).toInclude('Projected bills each month');
     expect(html).toInclude('Not subtracted from what you owe');
     // The bills figure is untouched by the salary sitting next to it.
     expect(html).toInclude('€84.00');

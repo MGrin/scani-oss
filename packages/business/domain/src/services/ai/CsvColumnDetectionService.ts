@@ -1,6 +1,7 @@
 import { Container, Service } from 'typedi';
 import { BaseService } from '../BaseService';
 import { AIRouter } from './AIRouter';
+import { AiBudgetExceededError } from './AiSpendBudget';
 
 // AI-driven CSV column mapping — sends headers + 2 sample rows and asks
 // the LLM to guess which column is `date`, `amount`, `balance`, etc.
@@ -14,6 +15,7 @@ export class CsvColumnDetectionService extends BaseService {
   }
 
   async detectColumns(
+    userId: string,
     headers: string[],
     sampleRows: Record<string, string>[]
   ): Promise<Record<string, string> | null> {
@@ -47,6 +49,7 @@ Rules:
 
     try {
       const result = await this.aiRouter.completeText(prompt, {
+        userId,
         maxTokens: 150,
         temperature: 0,
         jsonMode: true,
@@ -74,6 +77,14 @@ Rules:
 
       return Object.keys(validated).length > 0 ? validated : null;
     } catch (error) {
+      // Over budget reads exactly like "no AI provider": the statement parser
+      // falls back to its own column heuristics (SC-1265).
+      if (error instanceof AiBudgetExceededError) {
+        this.logWarning('AI budget spent; CSV columns left to the heuristics', {
+          scope: error.scope,
+        });
+        return null;
+      }
       this.logWarning('AI CSV column detection failed', {
         error: error instanceof Error ? error.message : error,
       });

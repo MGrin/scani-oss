@@ -59,6 +59,9 @@ export function AccountField({
   const types = trpc.accountTypes.getAll.useQuery();
 
   const all = accounts.data ?? [];
+  // A newcomer has nothing to search or go back to, so the field says what to
+  // do instead of offering a list that cannot exist (SC-1249).
+  const hasNone = accounts.isSuccess && all.length === 0;
   const scoped = institutionIsNew
     ? []
     : institutionId
@@ -101,8 +104,10 @@ export function AccountField({
           onOpenChange={setOpen}
           options={options}
           isLoading={accounts.isLoading}
-          placeholder={t('v3.capture.account.searchPlaceholder')}
-          emptyLabel={t('v3.capture.account.noResults')}
+          placeholder={t(
+            hasNone ? 'v3.capture.account.firstPlaceholder' : 'v3.capture.account.searchPlaceholder'
+          )}
+          emptyLabel={t(hasNone ? 'v3.capture.account.noneYet' : 'v3.capture.account.noResults')}
           createLabel={(text) =>
             text ? t('v3.capture.account.addNamed', { name: text }) : t('v3.capture.account.addNew')
           }
@@ -120,18 +125,20 @@ export function AccountField({
 
   return (
     <div className="flex flex-col gap-3">
-      <Button
-        variant="ghost"
-        className="-ms-2 self-start"
-        disabled={disabled}
-        onClick={() => {
-          onDraftChange({ name: '', typeId: '' });
-          onModeChange('existing');
-        }}
-      >
-        <ArrowLeft className={cn(MIRROR_IN_RTL, 'me-1 h-4 w-4')} aria-hidden="true" />
-        {t('v3.capture.account.pickExisting')}
-      </Button>
+      {hasNone ? null : (
+        <Button
+          variant="ghost"
+          className="-ms-2 self-start"
+          disabled={disabled}
+          onClick={() => {
+            onDraftChange({ name: '', typeId: '' });
+            onModeChange('existing');
+          }}
+        >
+          <ArrowLeft className={cn(MIRROR_IN_RTL, 'me-1 h-4 w-4')} aria-hidden="true" />
+          {t('v3.capture.account.pickExisting')}
+        </Button>
+      )}
 
       <Field label={t('v3.capture.account.name')} htmlFor="manual-account-name">
         <Input

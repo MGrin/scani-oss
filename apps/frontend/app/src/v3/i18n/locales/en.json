@@ -68,7 +68,13 @@
         "hours_one": "{{count, number}}h ago",
         "hours_other": "{{count, number}}h ago",
         "days_one": "{{count, number}}d ago",
-        "days_other": "{{count, number}}d ago"
+        "days_other": "{{count, number}}d ago",
+        "inMinutes_one": "in {{count, number}}m",
+        "inMinutes_other": "in {{count, number}}m",
+        "inHours_one": "in {{count, number}}h",
+        "inHours_other": "in {{count, number}}h",
+        "inDays_one": "in {{count, number}}d",
+        "inDays_other": "in {{count, number}}d"
       }
     },
     "notFound": {
@@ -216,6 +222,39 @@
       },
       "runway": {
         "label": "Money lasts"
+      },
+      "returns": {
+        "title": "Returns",
+        "chooseWindow": "Choose the period",
+        "window": {
+          "ytd": "YTD",
+          "1y": "1Y",
+          "all": "All"
+        },
+        "twr": {
+          "label": "Investment return",
+          "caption": "How your holdings did, whatever you added or took out."
+        },
+        "fx": {
+          "label": "Of which, exchange rates",
+          "caption": "Your holdings did <value/> in their own currencies; the rest was currencies moving against yours."
+        },
+        "xirr": {
+          "label": "Your money's return",
+          "caption": "What your own money earned, counting when you added and withdrew it.",
+          "approximate": "More than one rate fits your deposits and withdrawals, so treat this as approximate."
+        },
+        "benchmarks": {
+          "label": "Compared with",
+          "caption": "Bitcoin and the S&P 500 bought and held over the same days, in your currency; US prices over the same months.",
+          "btc": "Bitcoin",
+          "sp500": "S&P 500 (SPY, price only)",
+          "usInflation": "US inflation (CPI-U)"
+        },
+        "perYear": "<value/> a year",
+        "perYearUnit": "a year",
+        "since": "Since {{date}}.",
+        "partial": "Some days could not be fully priced, so these figures may be off."
       }
     },
     "money": {
@@ -517,7 +556,7 @@
         "addPayment": "Add a payment"
       },
       "recurringSummary": {
-        "projectedEachMonth": "Projected each month",
+        "projectedEachMonth": "Projected bills each month",
         "estimatedFromHistory_one": "Includes {{count}} variable payment estimated from its last settled amount.",
         "estimatedFromHistory_other": "Includes {{count}} variable payments estimated from their last settled amounts.",
         "notCounted_one": "{{count}} variable payment has no estimate and is not counted.",
@@ -560,6 +599,7 @@
         "chooseVendor": "choose a vendor",
         "pickCurrency": "pick a currency from the list",
         "setAnchorDate": "set an anchor date",
+        "chooseDate": "choose a date",
         "chooseCadence": "choose how often this repeats",
         "setRepeatCount": "set a valid repeat count"
       },
@@ -654,6 +694,14 @@
         "useLastSettled_other": "Use their last settled amounts",
         "stopEstimating_one": "Stop estimating it",
         "stopEstimating_other": "Stop estimating them"
+      },
+      "suggestions": {
+        "title": "Looks recurring",
+        "claim": "{{payee}} looks like a monthly payment of <value></value>.",
+        "accept": "Add as recurring",
+        "dismiss": "Not recurring",
+        "evidence_one": "Based on {{count}} payment:",
+        "evidence_other": "Based on {{count}} payments:"
       }
     },
     "groups": {
@@ -1336,6 +1384,10 @@
         "needsCurrency_other": "{{count}} transactions — needs a currency",
         "needsCurrencyWithType_one": "{{count}} transaction · {{fileType}} — needs a currency",
         "needsCurrencyWithType_other": "{{count}} transactions · {{fileType}} — needs a currency",
+        "needsDateOrder_one": "{{count}} transaction — needs a date order",
+        "needsDateOrder_other": "{{count}} transactions — needs a date order",
+        "needsDateOrderWithType_one": "{{count}} transaction · {{fileType}} — needs a date order",
+        "needsDateOrderWithType_other": "{{count}} transactions · {{fileType}} — needs a date order",
         "chains_one": "{{count}} chain",
         "chains_other": "{{count}} chains",
         "candidatesAcross_one": "{{count}} candidate across {{chains}}",
@@ -1902,7 +1954,9 @@
         "noResults": "No account by that name here.",
         "addNamed": "Add “{{name}}”",
         "addNew": "Add a new account",
-        "pickExisting": "Pick an existing account"
+        "pickExisting": "Pick an existing account",
+        "firstPlaceholder": "Name your first account…",
+        "noneYet": "No accounts yet — type a name to add your first."
       },
       "page": {
         "uploadAndRead": "Upload and read it",
@@ -2570,6 +2624,13 @@
           "apply": "Import with this currency",
           "applying": "Re-importing…",
           "subject": "this file"
+        },
+        "dateOrder": {
+          "title": "Is the day or the month first in these dates?",
+          "body": "Every date in this file reads both ways — 03/04 could be 3 April or 4 March — and the file does not say which. Nothing has been imported yet.",
+          "samples": "As written in the file",
+          "dayFirst": "Day first — 31/12",
+          "monthFirst": "Month first — 12/31"
         }
       },
       "manual": {

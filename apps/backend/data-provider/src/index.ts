@@ -11,6 +11,7 @@ const env = loadEnv();
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
 import { getNodeEnv, isNodeEnvProduction, servedVersion } from '@scani/config';
+import { TURNSTILE_HEADER, turnstileRefusal } from '@scani/http-fetch';
 import { createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
@@ -28,7 +29,9 @@ import { tonFactory } from '@scani/providers/providers/ton';
 import { tronFactory } from '@scani/providers/providers/tron';
 import { yahooFinanceFactory } from '@scani/providers/providers/yahoo-finance';
 import {
+  cameThroughEdge,
   createOutflowLimiter,
+  edgeLockRefusal,
   observeRedisReachability,
   pingWithin,
   type StrandReport,
@@ -45,6 +48,7 @@ import { Container } from 'typedi';
 initSentry({ component: 'data-provider', release: env.SENTRY_RELEASE });
 
 import { type CloudBetterAuthInstance, createCloudBetterAuth } from './auth/better-auth';
+import { createCloudAuthGate } from './auth/cloud-auth-limit';
 import { type CloudDb, closeCloudDb, getCloudDb } from './db/connection';
 import { buildOpenApiDocument, renderScalarHtml } from './presentation/openapi';
 import { appRouter, installCloudDb, installUsageDeps } from './presentation/router';
@@ -77,6 +81,7 @@ logger.info({ port: PORT, host: HOST, nodeEnv: env.NODE_ENV }, '🚀 Starting Sc
 // buckets live in Redis where every data-provider replica shares fairness.
 const redisConnection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 setSharedRedis(redisConnection);
+const cloudAuthGate = createCloudAuthGate(redisConnection);
 
 /**
  * How long `/health/deep` waits for a Redis PING before calling it
@@ -170,6 +175,9 @@ interface RequestWithTracking extends Request {
 }
 
 const app = new Elysia()
+  // SC-1264. First, so a request that went round Cloudflare reaches nothing.
+  // Inert until SCANI_EDGE_LOCK=enforce.
+  .onRequest(({ request }) => edgeLockRefusal(request) ?? undefined)
   .onBeforeHandle(({ request, set }) => {
     // Cap inbound body size before parsing. tRPC envelopes plus the
     // largest legitimate AI request (a base64-encoded screenshot) are
@@ -283,7 +291,9 @@ const app = new Elysia()
           ? [MARKETING_ORIGIN]
           : true,
       credentials: true,
-      allowedHeaders: ['Authorization', 'Content-Type', 'x-request-id'],
+      // `TURNSTILE_HEADER` carries the cloud sign-in widget's token (SC-1266);
+      // unlisted, the browser's preflight fails the sign-in outright.
+      allowedHeaders: ['Authorization', 'Content-Type', 'x-request-id', TURNSTILE_HEADER],
       // Default `*` makes @elysiajs/cors echo every inbound request
       // header (incl. `via`, `host`, `fly-client-ip`, `x-forwarded-*`).
       // Browser callers only need `x-request-id` for tracing.
@@ -329,6 +339,15 @@ const app = new Elysia()
         headers: { 'content-type': 'application/json' },
       });
     }
+    const limited = await cloudAuthGate(request);
+    if (limited) return limited;
+    const humanCheck = await turnstileRefusal(request, env.TURNSTILE_SECRET);
+    if (humanCheck) {
+      return new Response(JSON.stringify({ error: 'Forbidden', message: humanCheck.message }), {
+        status: humanCheck.status,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     return auth.handler(request);
   })
   .get('/', () => ({ status: 'ok', service: 'data-provider' }))
@@ -354,10 +373,13 @@ const app = new Elysia()
   // Liveness — process is alive. Returns 200 from the moment Elysia
   // starts listening, even before init finishes. Useful for app-level
   // deep-health probes; NOT what Fly's machine check uses (see /ready).
-  .get('/health', () => ({
+  // `edge` says whether this request carried Cloudflare's x-scani-edge header,
+  // which is how the SC-1264 flip is proven before the origin lock enforces.
+  .get('/health', ({ request }: { request: Request }) => ({
     status: 'ok',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
+    edge: cameThroughEdge(request),
   }))
   .head('/health', ({ set }: { set: { status: number; headers: Record<string, string> } }) => {
     set.status = 200;

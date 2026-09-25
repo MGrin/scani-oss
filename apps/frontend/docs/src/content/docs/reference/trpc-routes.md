@@ -35,7 +35,7 @@ Located in `apps/backend/api/src/presentation/routers/`.
 | `screenshots` | Upload screenshot to S3, enqueue `screenshot-parse` job. |
 | `file-import` | Upload CSV / file, enqueue `file-import` job. |
 | `storage` | Presigned URL minting for direct S3 reads. |
-| `payments` | Recurring bills and income: CRUD, pause / end, the occurrence feed (`upcoming` returns overdue rows too), and manual settlement. |
+| `payments` | Recurring bills and income: CRUD, pause / end, the occurrence feed (`upcoming` returns overdue rows too), manual settlement, and suggested recurring payments detected from outflows (list, dismiss, accept). |
 | `vendors` | Who a payment is with. List, create, rename, and merge two vendors into one. |
 | `documents` | Upload an invoice, read its parse status, confirm or reject the extraction. |
 | `review` | Read-model over everything awaiting the user — pending job results plus pending document extractions. |

@@ -82,7 +82,19 @@
         "days_one": "{{count, number}} д назад",
         "days_few": "{{count, number}} д назад",
         "days_many": "{{count, number}} д назад",
-        "days_other": "{{count, number}} д назад"
+        "days_other": "{{count, number}} д назад",
+        "inMinutes_one": "через {{count, number}} мин",
+        "inMinutes_few": "через {{count, number}} мин",
+        "inMinutes_many": "через {{count, number}} мин",
+        "inMinutes_other": "через {{count, number}} мин",
+        "inHours_one": "через {{count, number}} ч",
+        "inHours_few": "через {{count, number}} ч",
+        "inHours_many": "через {{count, number}} ч",
+        "inHours_other": "через {{count, number}} ч",
+        "inDays_one": "через {{count, number}} д",
+        "inDays_few": "через {{count, number}} д",
+        "inDays_many": "через {{count, number}} д",
+        "inDays_other": "через {{count, number}} д"
       }
     },
     "notFound": {
@@ -415,6 +427,39 @@
       },
       "runway": {
         "label": "Денег хватит"
+      },
+      "returns": {
+        "title": "Доходность",
+        "chooseWindow": "Выберите период",
+        "window": {
+          "ytd": "С начала года",
+          "1y": "1 год",
+          "all": "Всё время"
+        },
+        "twr": {
+          "label": "Доходность вложений",
+          "caption": "Как показали себя активы, независимо от пополнений и выводов."
+        },
+        "fx": {
+          "label": "Из них — валютные курсы",
+          "caption": "Ваши активы дали <value/> в своих валютах; остальное — движение валют относительно вашей."
+        },
+        "xirr": {
+          "label": "Доходность ваших денег",
+          "caption": "Сколько заработали ваши собственные деньги с учётом того, когда вы их вносили и выводили.",
+          "approximate": "Вашим пополнениям и выводам подходит больше одной ставки, поэтому это приблизительная оценка."
+        },
+        "benchmarks": {
+          "label": "В сравнении с",
+          "caption": "Биткоин и S&P 500, купленные и удерживаемые те же дни, в вашей валюте; цены в США за те же месяцы.",
+          "btc": "Биткоин",
+          "sp500": "S&P 500 (SPY, только цена)",
+          "usInflation": "Инфляция в США (CPI-U)"
+        },
+        "perYear": "<value/> в год",
+        "perYearUnit": "в год",
+        "since": "С {{date}}.",
+        "partial": "Некоторые дни не удалось полностью оценить, поэтому цифры могут быть неточными."
       }
     },
     "groups": {
@@ -980,7 +1025,7 @@
         "addPayment": "Добавить платёж"
       },
       "recurringSummary": {
-        "projectedEachMonth": "Прогноз на месяц",
+        "projectedEachMonth": "Прогноз счетов на месяц",
         "estimatedFromHistory_one": "Включая {{count}} платёж с плавающей суммой, оценённый по последнему закрытому платежу.",
         "estimatedFromHistory_few": "Включая {{count}} платежа с плавающей суммой, оценённых по последним закрытым платежам.",
         "estimatedFromHistory_many": "Включая {{count}} платежей с плавающей суммой, оценённых по последним закрытым платежам.",
@@ -1029,6 +1074,7 @@
         "chooseVendor": "выберите контрагента",
         "pickCurrency": "выберите валюту из списка",
         "setAnchorDate": "задайте дату привязки",
+        "chooseDate": "выберите дату",
         "chooseCadence": "выберите, как часто это повторяется",
         "setRepeatCount": "задайте корректное число повторов"
       },
@@ -1163,6 +1209,16 @@
         "stopEstimating_few": "Не оценивать их",
         "stopEstimating_many": "Не оценивать их",
         "stopEstimating_other": "Не оценивать их"
+      },
+      "suggestions": {
+        "title": "Похоже на регулярный платёж",
+        "claim": "{{payee}} похоже на ежемесячный платёж: <value></value>.",
+        "accept": "Добавить как регулярный",
+        "dismiss": "Не регулярный",
+        "evidence_one": "По {{count}} платежу:",
+        "evidence_few": "По {{count}} платежам:",
+        "evidence_many": "По {{count}} платежам:",
+        "evidence_other": "По {{count}} платежам:"
       }
     },
     "holdings": {
@@ -1747,9 +1803,9 @@
         "targetReached": "Цель достигнута — {{percent}}% от неё",
         "stillToGo": "осталось <remaining/> из цели <target/>",
         "countingToward_one": "Идёт в эту копилку ({{count}})",
-        "countingToward_few": "Идёт в эту копилку ({{count}})",
-        "countingToward_many": "Идёт в эту копилку ({{count}})",
-        "countingToward_other": "Идёт в эту копилку ({{count}})",
+        "countingToward_few": "Идут в эту копилку ({{count}})",
+        "countingToward_many": "Идут в эту копилку ({{count}})",
+        "countingToward_other": "Идут в эту копилку ({{count}})",
         "empty": "В эту копилку пока ничего не идёт. Привяжите позицию — и она начнёт работать на цель.",
         "attachHolding": "Привязать позицию",
         "details": "Подробности",
@@ -2108,6 +2164,13 @@
           "apply": "Импортировать в этой валюте",
           "applying": "Импортируем заново…",
           "subject": "этот файл"
+        },
+        "dateOrder": {
+          "title": "В этих датах сначала идёт день или месяц?",
+          "body": "Каждую дату в этом файле можно прочитать двумя способами — 03/04 может быть 3 апреля или 4 марта, — а в файле не указано, каким. Пока ничего не импортировано.",
+          "samples": "Как записано в файле",
+          "dayFirst": "Сначала день — 31/12",
+          "monthFirst": "Сначала месяц — 12/31"
         }
       },
       "manual": {
@@ -2482,7 +2545,9 @@
         "noResults": "Счёта с таким названием здесь нет.",
         "addNamed": "Добавить «{{name}}»",
         "addNew": "Добавить новый счёт",
-        "pickExisting": "Выбрать существующий счёт"
+        "pickExisting": "Выбрать существующий счёт",
+        "firstPlaceholder": "Назовите свой первый счёт…",
+        "noneYet": "Счетов пока нет — введите название, чтобы добавить первый."
       },
       "page": {
         "uploadAndRead": "Загрузить и прочитать",
@@ -2575,6 +2640,14 @@
         "needsCurrencyWithType_few": "{{count}} операции · {{fileType}} — нужна валюта",
         "needsCurrencyWithType_many": "{{count}} операций · {{fileType}} — нужна валюта",
         "needsCurrencyWithType_other": "{{count}} операции · {{fileType}} — нужна валюта",
+        "needsDateOrder_one": "{{count}} операция — нужен порядок дат",
+        "needsDateOrder_few": "{{count}} операции — нужен порядок дат",
+        "needsDateOrder_many": "{{count}} операций — нужен порядок дат",
+        "needsDateOrder_other": "{{count}} операции — нужен порядок дат",
+        "needsDateOrderWithType_one": "{{count}} операция · {{fileType}} — нужен порядок дат",
+        "needsDateOrderWithType_few": "{{count}} операции · {{fileType}} — нужен порядок дат",
+        "needsDateOrderWithType_many": "{{count}} операций · {{fileType}} — нужен порядок дат",
+        "needsDateOrderWithType_other": "{{count}} операции · {{fileType}} — нужен порядок дат",
         "chains_one": "{{count}} сеть",
         "chains_few": "{{count}} сети",
         "chains_many": "{{count}} сетей",

@@ -1,6 +1,9 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
-import { BackfillHistoricalPricesUseCase } from '@scani/domain/use-cases';
+import {
+  BackfillBenchmarkPricesUseCase,
+  BackfillHistoricalPricesUseCase,
+} from '@scani/domain/use-cases';
 import { HISTORICAL_PRICE_BACKFILL_SCHEDULE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { ScheduledJobProcessor } from '@scani/queue';
@@ -42,6 +45,7 @@ export class HistoricalPriceBackfillProcessor extends ScheduledJobProcessor {
         },
         '✅ Historical price backfill complete'
       );
+      await this.backfillBenchmarks(usdTokenId);
     } catch (error) {
       logger.error(
         {
@@ -51,6 +55,21 @@ export class HistoricalPriceBackfillProcessor extends ScheduledJobProcessor {
         '❌ Historical price backfill failed'
       );
       throw error;
+    }
+  }
+
+  /**
+   * The returns card's comparison lines (SC-464). Logged and swallowed: a
+   * benchmark nobody holds must never be the reason a holding goes unpriced.
+   */
+  private async backfillBenchmarks(usdTokenId: string): Promise<void> {
+    try {
+      await Container.get(BackfillBenchmarkPricesUseCase).execute({ usdTokenId });
+    } catch (error) {
+      logger.error(
+        { error: error instanceof Error ? error.message : String(error) },
+        '❌ Benchmark price backfill failed'
+      );
     }
   }
 }

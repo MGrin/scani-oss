@@ -105,7 +105,8 @@ another orchestrator:
   The api's `/readyz` endpoint returns **503** with a `Schema
   not ready: missing tables …` payload, and the worker logs
   `⏳ Awaiting schema readiness …` in a restart loop. Run the
-  migrate command, then `docker compose restart api worker`.
+  migrate command, then
+  `docker compose -f docker-compose.prod.yml restart api worker`.
 </Aside>
 
 ## What's in the compose file
@@ -114,7 +115,7 @@ another orchestrator:
 |---|---|---|---|
 | `postgres` | `postgres:16-alpine` | (internal) | Other compose services. |
 | `redis` | `redis:7-alpine` | (internal) | Other compose services. |
-| `minio` + `minio-init` | `minio/minio:latest`, `minio/mc:latest` | (internal) | Other compose services. |
+| `minio` + `minio-init` | `pgsty/minio`, `pgsty/mc` (pinned in the compose file) | (internal) | Other compose services. |
 | `mailpit` | `axllent/mailpit:latest` | `127.0.0.1:8026` | You, to read your own sign-in code. Replace with real SMTP before anyone else signs in. |
 | `migrate` (profile-gated) | `scani/migrate:${SCANI_IMAGE_TAG:-latest}` | (none) | One-shot; exits after applying migrations. |
 | `data-provider` | `scani/data-provider:${SCANI_IMAGE_TAG:-latest}` | (internal) | `api`, `worker`. |
@@ -197,8 +198,9 @@ iterating on a new migration locally.
 ### When to run it
 
 - **First install:** before the first `docker compose -f docker-compose.prod.yml up -d`.
-- **Every upgrade:** after `docker compose pull` and before
-  `docker compose up -d` / `restart`. Some upgrades ship schema
+- **Every upgrade:** after `docker compose -f docker-compose.prod.yml pull`
+  and before `docker compose -f docker-compose.prod.yml up -d` / `restart`.
+  Some upgrades ship schema
   changes; some don't. Always running migrate first is safe and
   cheap.
 

@@ -15,6 +15,7 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { notScamFor } from '@scani/domain/lib/scam-verdict';
 import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
+import { BenchmarkReturnService, ReturnsService } from '@scani/domain/services';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
@@ -23,6 +24,7 @@ import Decimal from 'decimal.js';
 import { and, eq, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { lacksCoverage } from '../../lib/data-quality-flags';
 import {
   type AggregatedDailyPoint,
   aggregateIncludedHoldingRows,
@@ -33,7 +35,9 @@ import {
   unmeasuredDates,
   userNetWorthDaily,
 } from '../../lib/net-worth-series';
+import { withoutPeriodSeries } from '../../lib/returns-response';
 import { strictInput } from '../lib/strict-input';
+import { assertTokensVisible } from '../lib/token-visibility';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
@@ -213,11 +217,59 @@ async function assertScopeOwnership(
   if (!row[0]) throw new TRPCError({ code: 'NOT_FOUND', message: 'Institution not found' });
 }
 
+/**
+ * The windows Home's returns card offers (SC-1159). User scope only, no custom
+ * range and no per-period series: those are what a later screen asks for, and
+ * a parameter nothing sends is the never-called surface SC-756 deleted.
+ */
+const ReturnsInput = z.object({
+  window: z.discriminatedUnion('kind', [
+    z.object({ kind: z.literal('ytd') }),
+    z.object({ kind: z.literal('1y') }),
+    z.object({ kind: z.literal('all') }),
+  ]),
+  // Omitted = user-wide, for Home. An account or institution is its detail
+  // panel asking about itself, and is checked as the chart's scope is.
+  scope: z
+    .object({
+      kind: z.enum(['account', 'institution']),
+      id: z.string().uuid(),
+    })
+    .optional(),
+});
+
 export const portfolioRouter = router({
+  /**
+   * Time- and money-weighted return over a window, from the SC-457 engine.
+   * Deleted by SC-756 as a route with no screen; it returns with one, the
+   * returns card on Home and on account and institution detail, and only with
+   * what that card reads.
+   */
+  getReturns: protectedProcedure.input(strictInput(ReturnsInput)).query(async ({ ctx, input }) => {
+    const { dbUser } = await requireAuth(ctx);
+    if (input.scope) await assertScopeOwnership(dbUser.id, input.scope);
+    const outcome = await Container.get(ReturnsService).compute({
+      userId: dbUser.id,
+      scope: input.scope ?? { kind: 'user' },
+      window: input.window,
+    });
+    // An account with no base currency has no rollup rows to measure, so
+    // there is nothing to show and nothing has gone wrong.
+    if (outcome.status !== 'ok') return { returns: null, benchmarks: [] };
+    const window = outcome.returns.effectiveWindow;
+    // Over exactly the days the portfolio was measured on, so the comparison
+    // starts and ends where the return does (SC-464).
+    const benchmarks = window
+      ? await Container.get(BenchmarkReturnService).over(window, outcome.returns.baseCurrencyId)
+      : [];
+    return { returns: withoutPeriodSeries(outcome.returns), benchmarks };
+  }),
+
   getNetWorthSeries: protectedProcedure
     .input(strictInput(NetWorthSeriesInput))
     .query(async ({ ctx, input }) => {
       const { dbUser } = await requireAuth(ctx);
+      await assertTokensVisible(dbUser.id, [input.baseCurrencyId]);
       const baseId = input.baseCurrencyId ?? dbUser.baseCurrencyId ?? null;
       if (!baseId) {
         // No configured base → can't render a chart meaningfully.
@@ -308,6 +360,7 @@ export const portfolioRouter = router({
     .input(strictInput(NetWorthSeriesInput))
     .query(async ({ ctx, input }) => {
       const { dbUser } = await requireAuth(ctx);
+      await assertTokensVisible(dbUser.id, [input.baseCurrencyId]);
       const baseId = input.baseCurrencyId ?? dbUser.baseCurrencyId ?? null;
       if (!baseId) {
         return { series: [], baseCurrencyId: null, granularity: 'daily' as Granularity };
@@ -486,6 +539,7 @@ export const portfolioRouter = router({
       dup_symbol: boolean;
       opening_negative: boolean;
       has_coverage: boolean;
+      has_transactions: boolean;
     }>(sql`
       WITH shown AS (
         SELECT h.id, h.token_id, h.balance::numeric AS balance_n,
@@ -549,7 +603,8 @@ export const portfolioRouter = router({
         (s.type_code = 'fiat') AS is_fiat,
         (s.symbol IN (SELECT symbol FROM dup)) AS dup_symbol,
         (c.opening_balance_quantity::numeric < 0) AS opening_negative,
-        (c.holding_id IS NOT NULL) AS has_coverage
+        (c.holding_id IS NOT NULL) AS has_coverage,
+        (lt.last_tx_at IS NOT NULL) AS has_transactions
       FROM shown s
       LEFT JOIN last_tx lt ON lt.holding_id = s.id
       LEFT JOIN holding_coverage c ON c.holding_id = s.id
@@ -568,6 +623,7 @@ export const portfolioRouter = router({
       dup_symbol: boolean;
       opening_negative: boolean;
       has_coverage: boolean;
+      has_transactions: boolean;
     }>;
 
     // `total` describes the reader's whole holdings table rather than the
@@ -606,7 +662,7 @@ export const portfolioRouter = router({
       noRecentPrice: idsWhere(unpriced),
       noPriceSource: idsWhere(noSource),
       negativeOpening: idsWhere((row) => row.opening_negative),
-      noCoverage: idsWhere((row) => !row.has_coverage),
+      noCoverage: idsWhere(lacksCoverage),
     } as const;
 
     /**

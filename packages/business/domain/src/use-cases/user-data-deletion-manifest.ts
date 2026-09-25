@@ -154,6 +154,12 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
   },
   {
     kind: 'delete',
+    table: schema.recurringSuggestionDismissals,
+    userColumn: schema.recurringSuggestionDismissals.userId,
+    echo: schema.recurringSuggestionDismissals.id,
+  },
+  {
+    kind: 'delete',
     table: schema.transferReviewRules,
     userColumn: schema.transferReviewRules.userId,
     echo: schema.transferReviewRules.id,
@@ -212,6 +218,14 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
     userColumn: schema.credentialPoolBorrowLog.borrowedFromUserId,
     reason:
       'An operational audit of the shared credential pool with no user-facing reader — one insert in `credential-pool.ts` writes it and nothing anywhere reads the column. Its FK is already ON DELETE SET NULL, so the schema has decided the user link is severable; severing it here leaves the pool its own history and leaves no row naming this account.',
+  },
+
+  {
+    kind: 'anonymise',
+    table: schema.tokens,
+    userColumn: schema.tokens.createdByUserId,
+    reason:
+      "The account's custom tokens (SC-1285). A custom token with no owner is visible to nobody, so severing the link removes it from every reader, this account included. It is not deleted: `holdings`, `vaults`, `payments`, `users.base_currency_id` and `token_prices.base_token_id` all reference `tokens` ON DELETE RESTRICT, and a row another account attached before SC-1285 would abort the whole deletion. The FK is already ON DELETE SET NULL, so the schema has decided the link is severable.",
   },
 
   {

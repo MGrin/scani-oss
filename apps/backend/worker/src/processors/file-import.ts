@@ -52,6 +52,8 @@ interface FileImportSummary {
   needsCurrency?: {
     r2Key: string;
     fileType: string;
+    // Carried so the currency re-parse keeps an order the user already chose.
+    dateOrder?: 'day-first' | 'month-first';
     transactionCount: number;
     transactionPreview: Array<{
       date: string;
@@ -59,6 +61,16 @@ interface FileImportSummary {
       amount: number;
       balance: number | null;
     }>;
+  };
+  // Set when nothing in the file says whether `03/04` is 3 April or 4 March
+  // (SC-1291). The job-detail UI asks and re-enqueues with `dateOrder`; like
+  // `needsCurrency`, nothing has been ingested.
+  needsDateOrder?: {
+    r2Key: string;
+    fileType: string;
+    rowCount: number;
+    samples: string[];
+    defaultCurrency?: string;
   };
 }
 
@@ -101,7 +113,8 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     await ctx.reportStatus(`Parsing ${data.fileType.toUpperCase()} statement…`);
     const parsed = await parseStatement(buf.toString('utf-8'), `import.${data.fileType}`, {
       aiColumnDetector: (headers, sampleRows) =>
-        csvColumnDetection.detectColumns(headers, sampleRows),
+        csvColumnDetection.detectColumns(data.userId, headers, sampleRows),
+      dateOrder: data.dateOrder,
     });
 
     logger.info(
@@ -114,6 +127,27 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
       },
       'Statement parsed'
     );
+
+    // Date-order gate, ahead of the currency one: the preview that gate
+    // shows is dates, and it cannot show them before their order is known.
+    if (parsed.ambiguousDateOrder) {
+      return {
+        format: parsed.format,
+        accountId: data.accountId,
+        transactionCount: 0,
+        observationCount: 0,
+        holdingsCreated: [],
+        holdingsTouched: [],
+        warnings: parsed.warnings,
+        needsDateOrder: {
+          r2Key: data.r2Key,
+          fileType: data.fileType,
+          rowCount: parsed.ambiguousDateOrder.rowCount,
+          samples: parsed.ambiguousDateOrder.samples,
+          defaultCurrency: data.defaultCurrency,
+        },
+      };
+    }
 
     // Currency-fallback gate: if the file has no Currency column and
     // parseStatement didn't auto-detect one, ask the user to pick one
@@ -137,6 +171,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
         needsCurrency: {
           r2Key: data.r2Key,
           fileType: data.fileType,
+          dateOrder: data.dateOrder,
           transactionCount: parsed.transactions.length,
           transactionPreview: parsed.transactions.slice(0, 5).map((tx) => ({
             date: tx.date.toISOString(),

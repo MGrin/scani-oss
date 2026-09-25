@@ -11,6 +11,25 @@
 # No production dependencies: Postgres, Redis, SMTP (Mailpit), and S3-compatible
 # object storage (MinIO) all run in containers.
 #
+# EVERY PUBLISHED PORT BINDS 127.0.0.1 (SC-1299). Compose's default is all
+# interfaces, so this stack put an unauthenticated Postgres holding whatever
+# you have imported on every network the machine is joined to. Measured
+# 2026-09-23 from the host's own LAN address: `psql -h <lan-ip> -p <pg port>
+# -U scani -d postgres` opened a session with the credentials written a few
+# lines below, and `inet_server_addr()` answered. Nothing else stood in the
+# way — the machine it was measured on has its firewall off, which is the
+# common case for a laptop.
+#
+# Loopback is the bind because nothing off-box needs these: the host-side
+# tooling dials localhost, and container-to-container traffic goes by compose
+# DNS name (`postgres:5432`, `redis:6379`) and never through a published port,
+# so the api and worker are untouched. To reach a service from another device
+# — a phone on the same Wi-Fi testing the PWA — republish that ONE service in
+# a `docker-compose.override.yml`, a deliberate per-service act rather than
+# the default for all nine.
+# `scripts/tests/compose-binds-loopback.test.ts` fails the build on a port
+# that drops the prefix.
+#
 # Default ports (host-side offsets to avoid clashing with other local services):
 #   Postgres        : localhost:5433   (override: POSTGRES_HOST_PORT)
 #   Redis           : localhost:6380   (override: REDIS_HOST_PORT)
@@ -57,7 +76,7 @@ services:
       POSTGRES_PASSWORD: scani
       POSTGRES_DB: scani
     ports:
-      - "${POSTGRES_HOST_PORT:-5433}:5432"
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -71,7 +90,7 @@ services:
     restart: unless-stopped
     command: ["redis-server", "--appendonly", "yes"]
     ports:
-      - "${REDIS_HOST_PORT:-6380}:6379"
+      - "127.0.0.1:${REDIS_HOST_PORT:-6380}:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -84,8 +103,8 @@ services:
     image: axllent/mailpit:latest
     restart: unless-stopped
     ports:
-      - "${MAILPIT_SMTP_HOST_PORT:-1026}:1025"   # SMTP
-      - "${MAILPIT_UI_HOST_PORT:-8026}:8025"     # Web UI
+      - "127.0.0.1:${MAILPIT_SMTP_HOST_PORT:-1026}:1025"   # SMTP
+      - "127.0.0.1:${MAILPIT_UI_HOST_PORT:-8026}:8025"     # Web UI
     environment:
       MP_MAX_MESSAGES: 500
       MP_SMTP_AUTH_ACCEPT_ANY: 1
@@ -95,22 +114,21 @@ services:
   # dev so screenshot + file-import flows work without a cloud account.
   # Data persists in the named volume; reset with `docker compose down -v`.
   minio:
-    # `minio/*` was REMOVED from Docker Hub (SC-1156): a pull of the tag AND of a
-    # digest we already held both come back `pull access denied … may require
-    # 'docker login'`, while `postgres:16` pulls fine from the same daemon in the
-    # same second. quay.io is MinIO's own registry and serves the identical image
-    # — the manifest digest below is byte-for-byte the one Docker Hub served for
-    # `RELEASE.2025-04-22T22-12-26Z`. Pinned tag AND digest because an unpinned
-    # upstream tag disappearing is exactly the failure this line is repairing.
-    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e
+    # MinIO no longer publishes images anywhere: `minio/*` left Docker Hub
+    # (SC-1156) and `quay.io/minio/*` answers 401 since 2026-09-24 (SC-1321), so
+    # a machine without cached layers cannot start this stack. `pgsty/*` is the
+    # maintained community build of the same server, same on-disk format, so an
+    # existing `minio-data` volume carries over. Tag AND digest are pinned,
+    # because an upstream tag disappearing is the failure this line repairs.
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
     restart: unless-stopped
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "${MINIO_API_HOST_PORT:-9000}:9000"      # S3 API
-      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"  # Web console
+      - "127.0.0.1:${MINIO_API_HOST_PORT:-9000}:9000"      # S3 API
+      - "127.0.0.1:${MINIO_CONSOLE_HOST_PORT:-9001}:9001"  # Web console
     volumes:
       - minio-data:/data
     healthcheck:
@@ -121,7 +139,7 @@ services:
 
   # One-shot bucket creator. Exits as soon as the dev bucket exists.
   minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-04-16T18-13-26Z@sha256:aead63c77f9db9107f1696fb08ecb0faeda23729cde94b0f663edf4fe09728e3
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z@sha256:cfc83108c3abb371f8fb84d99c1fdc88f8c237e022409b0081fb7c0a3be634dd
     depends_on:
       minio:
         condition: service_healthy
@@ -215,7 +233,7 @@ services:
       env-sync:
         condition: service_completed_successfully
     ports:
-      - "${DATA_PROVIDER_HOST_PORT:-8082}:8082"
+      - "127.0.0.1:${DATA_PROVIDER_HOST_PORT:-8082}:8082"
     env_file:
       - path: ./.env
         required: false
@@ -299,7 +317,7 @@ services:
       data-provider:
         condition: service_started
     ports:
-      - "${API_HOST_PORT:-3011}:3001"
+      - "127.0.0.1:${API_HOST_PORT:-3011}:3001"
     # Root .env flows through — the `environment:` block below overrides any
     # key that needs a container-network URL instead of the host-side default
     # (DATABASE_URL, REDIS_URL, SMTP_URL, S3_ENDPOINT, …). Everything else —
@@ -345,6 +363,10 @@ services:
       # a Solana RPC, so the E2E gate does not depend on a public API's rate
       # limiter. Refused in production by every env schema (SC-490).
       STUB_CHAIN_DATA: "${STUB_CHAIN_DATA:-}"
+      # Forwarded by the e2e runner, which signs in more new addresses per
+      # run than the hourly cap on them allows (SC-1260). Unset, the api's
+      # default of 100 applies.
+      AUTH_NEW_ADDRESS_SENDS_PER_HOUR: "${AUTH_NEW_ADDRESS_SENDS_PER_HOUR:-}"
       # ON by default here, because this stack is the one `bun run visual` and
       # the e2e suite photograph: it lets `payments.forecast` take an `asOf`, so
       # a forecast baseline does not move with the real date (SC-623). The api
@@ -428,7 +450,7 @@ services:
     environment:
       VITE_API_URL: http://localhost:${API_HOST_PORT:-3011}
     ports:
-      - "${FRONTEND_HOST_PORT:-5173}:5173"
+      - "127.0.0.1:${FRONTEND_HOST_PORT:-5173}:5173"
     volumes:
       - .:/app
       - workspace-node-modules:/app/node_modules

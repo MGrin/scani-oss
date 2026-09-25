@@ -1,5 +1,6 @@
 import { relations, sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   boolean,
   index,
   integer,
@@ -217,6 +218,21 @@ export const tokens = pgTable(
      * characters themselves and nothing re-scores it (SC-197).
      */
     lookalikeOf: text('lookalike_of'),
+    /**
+     * The owner of a CUSTOM token (`private-company` / `other`), which is
+     * private to them (SC-1285, mgrin 2026-09-21). NULL on every catalog
+     * token, which nobody owns — and NULL on a custom token means nobody may
+     * see or price it, never that everybody may. Ownership is a question about
+     * the type as well as this column: `customTokenVisibleTo` in
+     * `@scani/domain` is the one predicate that asks both. Symbol uniqueness
+     * is per owner: two partial unique indexes, created in the SC-1285
+     * migration because Drizzle cannot express them.
+     */
+    // `users.base_currency_id` references this table, so the return type is
+    // stated: inferring it would be circular.
+    createdByUserId: uuid('created_by_user_id').references((): AnyPgColumn => users.id, {
+      onDelete: 'set null',
+    }),
     isActive: boolean('is_active').notNull().default(true),
     // Cooldown gate consulted by the historical-price backfill: when set
     // and in the future, the backfill skips the token instead of asking

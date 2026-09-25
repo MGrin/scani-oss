@@ -15,7 +15,8 @@
       "offline": "Anda sedang offline. Kami akan mengirim kode Anda begitu koneksi kembali.",
       "hintCode": "Kami akan mengirimkan kode 6 digit untuk masuk.",
       "hintLink": "Kami akan mengirimkan tautan masuk yang aman.",
-      "newAccount": "Baru di Scani? Akun Anda akan dibuat secara otomatis."
+      "newAccount": "Baru di Scani? Akun Anda akan dibuat secara otomatis.",
+      "humanCheckFailed": "Pemeriksaan manusia tidak dapat dimuat. Nonaktifkan pemblokir untuk challenges.cloudflare.com, lalu muat ulang."
     },
     "code": {
       "title": "Masukkan kode verifikasi",
@@ -406,7 +407,7 @@
         "col": {
           "kind": "Jenis",
           "service": "Layanan",
-          "whatItSyncs": "Yang disinkronkan"
+          "about": "Tentang"
         },
         "config": {
           "search": "Cari"

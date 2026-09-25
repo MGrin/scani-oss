@@ -15,7 +15,8 @@
       "offline": "オフラインです。接続が戻り次第、コードをお送りします。",
       "hintCode": "サインイン用の6桁のコードをお送りします。",
       "hintLink": "サインイン用の安全なマジックリンクをお送りします。",
-      "newAccount": "Scaniは初めてですか？アカウントは自動的に作成されます。"
+      "newAccount": "Scaniは初めてですか？アカウントは自動的に作成されます。",
+      "humanCheckFailed": "人間確認を読み込めませんでした。challenges.cloudflare.com のブロッカーを無効にしてから再読み込みしてください。"
     },
     "code": {
       "title": "確認コードを入力",
@@ -406,7 +407,7 @@
         "col": {
           "kind": "種類",
           "service": "サービス",
-          "whatItSyncs": "同期する内容"
+          "about": "概要"
         },
         "config": {
           "search": "検索"

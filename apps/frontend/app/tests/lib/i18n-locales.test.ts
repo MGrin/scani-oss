@@ -334,3 +334,69 @@ describe('every English key is answered', () => {
     }
   });
 });
+
+/**
+ * No locale defines a key English does not (SC-1238) — the direction the block
+ * above deliberately leaves open.
+ *
+ * `missingAgainstEnglish` is one-directional because `ru`'s `ui` branch is a
+ * superset of the app's English: it carries the design system's strings, whose
+ * English lives in `@scani/ui`'s own file. So the reference here is BOTH
+ * English files. The app's alone reads 194 to 204 false positives per locale,
+ * 1580 across the eight, and a guard that fires on correct data gets deleted.
+ *
+ * What it catches: scani-oss#549, an Arabic leg, carried four
+ * `v3.money.forecast.*` keys that the mirror's English did not define and its
+ * source did not read. Nothing failed. They were stripped because someone
+ * diffed keys by hand, one step before the merge. A key only a translation
+ * defines is never rendered, so it is always a leak from somewhere else: a
+ * private copy, a stale file, or a branch that moved on.
+ *
+ * A plural form is answered by its English stem, whatever the category: `_few`
+ * is what Russian needs and what the English file cannot name.
+ */
+describe('no locale defines a key English does not (SC-1238)', () => {
+  const kit = JSON.parse(
+    readFileSync(
+      resolve(import.meta.dir, '../../../../../packages/frontend/ui/src/i18n/locales/en.json'),
+      'utf8'
+    )
+  ) as Record<string, unknown>;
+  const PLURAL = /^(.*)_(zero|one|two|few|many|other)$/;
+
+  function orphans(defined: readonly string[], english: readonly string[]): string[] {
+    const keys = new Set(english);
+    const stems = new Set(english.map((key) => PLURAL.exec(key)?.[1]).filter(Boolean));
+    return defined.filter((key) => {
+      if (keys.has(key)) return false;
+      const stem = PLURAL.exec(key)?.[1];
+      return !(stem && stems.has(stem));
+    });
+  }
+
+  const english = [...paths(merged('en')), ...paths(kit)];
+
+  test('both English files are in the reference, and neither is empty', () => {
+    expect(paths(merged('en')).length).toBeGreaterThan(1000);
+    expect(paths(kit).filter((p) => p.startsWith('ui.')).length).toBeGreaterThan(100);
+  });
+
+  test('every key a locale defines is one English defines', () => {
+    const found: string[] = [];
+    for (const code of codes(SHELL)) {
+      if (code === 'en') continue;
+      for (const key of orphans(paths(merged(code)), english)) found.push(`${code}: ${key}`);
+    }
+    expect(found).toEqual([]);
+  });
+
+  test('the falsifier: a key only a translation defines is named', () => {
+    expect(orphans(['v3.money.forecast.verdictOk', 'v3.money.title'], ['v3.money.title'])).toEqual([
+      'v3.money.forecast.verdictOk',
+    ]);
+  });
+
+  test('the control: an ordinary shared key, and a plural form English cannot name, pass', () => {
+    expect(orphans(['v3.new.key', 'v3.items_few'], ['v3.new.key', 'v3.items_one'])).toEqual([]);
+  });
+});

@@ -15,7 +15,8 @@
       "offline": "Vous êtes hors ligne. Nous enverrons votre code dès que la connexion sera rétablie.",
       "hintCode": "Nous vous enverrons un code à 6 chiffres pour vous connecter.",
       "hintLink": "Nous vous enverrons un lien magique sécurisé pour vous connecter.",
-      "newAccount": "Nouveau sur Scani ? Votre compte sera créé automatiquement."
+      "newAccount": "Nouveau sur Scani ? Votre compte sera créé automatiquement.",
+      "humanCheckFailed": "La vérification humaine n'a pas pu se charger. Désactivez tout bloqueur pour challenges.cloudflare.com, puis rechargez."
     },
     "code": {
       "title": "Saisissez le code de vérification",
@@ -468,7 +469,7 @@
         "col": {
           "kind": "Nature",
           "service": "Service",
-          "whatItSyncs": "Ce qu’elle synchronise"
+          "about": "À propos"
         },
         "config": {
           "search": "Rechercher"

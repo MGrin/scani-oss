@@ -36,6 +36,7 @@
     "./components/PullToRefresh": "./src/components/PullToRefresh.tsx",
     "./components/ScaniLogo": "./src/components/ScaniLogo.tsx",
     "./components/ThemeToggle": "./src/components/ThemeToggle.tsx",
+    "./components/Turnstile": "./src/components/Turnstile.tsx",
     "./hooks/useAppUpdate": "./src/hooks/useAppUpdate.ts",
     "./hooks/useDebouncedValue": "./src/hooks/useDebouncedValue.ts",
     "./hooks/useDismissOnHide": "./src/hooks/useDismissOnHide.ts",

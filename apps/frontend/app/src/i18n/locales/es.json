@@ -47,7 +47,8 @@
       "offline": "No tienes conexión. Enviaremos tu código en cuanto se restablezca.",
       "submit": "Continuar con el correo",
       "subtitle": "Introduce tu correo para iniciar sesión o crear una cuenta",
-      "title": "Bienvenido"
+      "title": "Bienvenido",
+      "humanCheckFailed": "No se pudo cargar la verificación humana. Desactiva cualquier bloqueador para challenges.cloudflare.com y recarga."
     },
     "exits": {
       "label": "Más sobre Scani"
@@ -457,7 +458,7 @@
         "col": {
           "kind": "Clase",
           "service": "Servicio",
-          "whatItSyncs": "Qué sincroniza"
+          "about": "Acerca de"
         },
         "config": {
           "search": "Buscar"

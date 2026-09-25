@@ -94,10 +94,19 @@ export class RollupPortfolioValueDailyUseCase {
       // follow-up flow that wants to materialize cached daily values for
       // exactly the user who just created a holding.
       userId?: string;
+      // The frozen "now" the day list is anchored on. A caller walking one
+      // window in several calls passes the same instant to each, so every
+      // chunk lands on the same day boundaries a single call would (SC-1283).
+      runStart?: Date;
+      // Compute only the days whose index in the lookback list (0 = today)
+      // falls in [from, to). Omitted, the whole window.
+      dayOffsets?: { from: number; to: number };
     } = {}
   ): Promise<RollupSummary> {
     const start = Date.now();
     const lookback = opts.lookbackDays ?? 30;
+    const fromOffset = Math.max(0, opts.dayOffsets?.from ?? 0);
+    const toOffset = Math.min(lookback, opts.dayOffsets?.to ?? lookback);
     const summary: RollupSummary = {
       usersProcessed: 0,
       daysComputed: 0,
@@ -110,9 +119,9 @@ export class RollupPortfolioValueDailyUseCase {
     // boundaries — `Date.now()` drifting across a long run could bucket
     // two users on different days at midnight UTC, producing inconsistent
     // snapshots. Pre-compute the lookback day list here too.
-    const runStart = new Date();
+    const runStart = opts.runStart ?? new Date();
     const days: Array<{ at: Date; snapshotDate: string }> = [];
-    for (let i = 0; i < lookback; i++) {
+    for (let i = fromOffset; i < toOffset; i++) {
       const day = new Date(runStart.getTime() - i * 24 * 60 * 60 * 1000);
       // Today's bucket uses the exact runStart so we get a real "right
       // now" snapshot rather than pretending it's end-of-day UTC in the
@@ -181,9 +190,16 @@ export class RollupPortfolioValueDailyUseCase {
             // Coverage joins the same prefetch: `has_complete_tx_history`
             // is a property of the import, not of the snapshot date, so
             // one read serves all `lookback` days (SC-149).
+            // Observations are read for THIS call's days only: the first
+            // row and the two bracketing each day, which is all the balance
+            // walk consults. The whole history was 112k rows per chunk on
+            // the portfolio that ran the worker out of memory (SC-1283).
             const [txHistory, observations, coverageByHolding] = await Promise.all([
               this.txRepository.findForHoldingsAll(holdingIds),
-              this.observationRepository.findForHoldingsAll(holdingIds),
+              this.observationRepository.findAnchorsForInstants(
+                holdingIds,
+                days.map((d) => d.at)
+              ),
               this.coverageRepository.findManyByHoldingIds(holdingIds),
             ]);
 

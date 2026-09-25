@@ -61,7 +61,10 @@
         "justNow": "たった今",
         "minutes_other": "{{count, number}}分前",
         "hours_other": "{{count, number}}時間前",
-        "days_other": "{{count, number}}日前"
+        "days_other": "{{count, number}}日前",
+        "inMinutes_other": "{{count, number}}分後",
+        "inHours_other": "{{count, number}}時間後",
+        "inDays_other": "{{count, number}}日後"
       }
     },
     "notFound": {
@@ -194,6 +197,39 @@
       },
       "runway": {
         "label": "資金の持続"
+      },
+      "returns": {
+        "title": "リターン",
+        "chooseWindow": "期間を選択",
+        "window": {
+          "ytd": "年初来",
+          "1y": "1年",
+          "all": "全期間"
+        },
+        "twr": {
+          "label": "投資リターン",
+          "caption": "入金や出金に関係なく、保有資産がどう推移したか。"
+        },
+        "fx": {
+          "label": "うち為替",
+          "caption": "保有資産はそれぞれの通貨で <value/>。残りはあなたの通貨に対する為替の動きです。"
+        },
+        "xirr": {
+          "label": "あなたのお金のリターン",
+          "caption": "入金・出金のタイミングを含めて、あなた自身のお金が稼いだ分。",
+          "approximate": "入出金に合う利率が複数あるため、概算としてご覧ください。"
+        },
+        "benchmarks": {
+          "label": "比較対象",
+          "caption": "同じ期間に購入・保有したビットコインと S&P 500（あなたの通貨で）、および同じ月の米国の物価。",
+          "btc": "ビットコイン",
+          "sp500": "S&P 500（SPY、価格のみ）",
+          "usInflation": "米国のインフレ率（CPI-U）"
+        },
+        "perYear": "年率 <value/>",
+        "perYearUnit": "年率",
+        "since": "{{date}} から。",
+        "partial": "一部の日は完全に評価できなかったため、数値がずれている可能性があります。"
       }
     },
     "money": {
@@ -465,7 +501,7 @@
         "addPayment": "支払を追加"
       },
       "recurringSummary": {
-        "projectedEachMonth": "毎月の予測額",
+        "projectedEachMonth": "毎月の請求の予測額",
         "estimatedFromHistory_other": "金額が変動する支払{{count}}件を、最後に決済した金額から概算して含めています。",
         "notCounted_other": "金額が変動する支払{{count}}件には概算がないため、含めていません。"
       },
@@ -505,6 +541,7 @@
         "chooseVendor": "取引先を選択",
         "pickCurrency": "一覧から通貨を選択",
         "setAnchorDate": "起算日を設定",
+        "chooseDate": "日付を選択してください",
         "chooseCadence": "繰り返しの頻度を選択",
         "setRepeatCount": "有効な繰り返し回数を設定"
       },
@@ -579,6 +616,13 @@
         "couldEstimate_other": "そのうち{{count}}件は過去に決済があるため、その金額を代わりに使えます。",
         "useLastSettled_other": "最後に決済した金額を使う",
         "stopEstimating_other": "概算をやめる"
+      },
+      "suggestions": {
+        "title": "定期的な支払いのようです",
+        "claim": "{{payee}} は毎月 <value></value> の支払いのようです。",
+        "accept": "定期支払いとして追加",
+        "dismiss": "定期ではない",
+        "evidence_other": "{{count}} 件の支払いに基づく："
       }
     },
     "groups": {
@@ -1225,6 +1269,8 @@
         "symbolsOverflow": "{{symbols}} +{{hidden}}",
         "needsCurrency_other": "{{count}}件の取引 — 通貨の指定が必要です",
         "needsCurrencyWithType_other": "{{count}}件の取引 · {{fileType}} — 通貨の指定が必要です",
+        "needsDateOrder_other": "{{count}}件の取引 — 日付の順序の指定が必要です",
+        "needsDateOrderWithType_other": "{{count}}件の取引 · {{fileType}} — 日付の順序の指定が必要です",
         "chains_other": "{{count}}チェーン",
         "candidatesAcross_other": "{{chains}} にまたがる{{count}}件の候補",
         "nothingFound": "該当なし",
@@ -1748,7 +1794,9 @@
         "noResults": "その名前の口座はここにありません。",
         "addNamed": "「{{name}}」を追加",
         "addNew": "新しい口座を追加",
-        "pickExisting": "既存の口座を選ぶ"
+        "pickExisting": "既存の口座を選ぶ",
+        "firstPlaceholder": "最初の口座に名前を付けてください…",
+        "noneYet": "まだ口座がありません。名前を入力して最初の口座を追加してください。"
       },
       "page": {
         "uploadAndRead": "アップロードして読み取る",
@@ -2389,6 +2437,13 @@
           "apply": "この通貨で取り込む",
           "applying": "取り込み直しています…",
           "subject": "このファイル"
+        },
+        "dateOrder": {
+          "title": "これらの日付は日が先ですか、月が先ですか？",
+          "body": "このファイルの日付はどれも2通りに読めます（03/04 は4月3日とも3月4日とも読めます）。ファイルにはどちらかが示されていません。まだ何も取り込まれていません。",
+          "samples": "ファイルの記載どおり",
+          "dayFirst": "日が先 — 31/12",
+          "monthFirst": "月が先 — 12/31"
         }
       },
       "manual": {

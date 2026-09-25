@@ -13,7 +13,9 @@
         "searchPlaceholder": "Pesquisar nas suas contas…",
         "type": "Tipo",
         "typeLabel": "Tipo de conta",
-        "typePlaceholder": "Poupança, corretagem, cripto…"
+        "typePlaceholder": "Poupança, corretagem, cripto…",
+        "firstPlaceholder": "Dê um nome à sua primeira conta…",
+        "noneYet": "Ainda não há contas — escreva um nome para adicionar a primeira."
       },
       "blocker": {
         "accountType": "escolha o tipo da conta",
@@ -272,7 +274,16 @@
         "justNow": "agora mesmo",
         "minutes_many": "há {{count, number}} min",
         "minutes_one": "há {{count, number}} min",
-        "minutes_other": "há {{count, number}} min"
+        "minutes_other": "há {{count, number}} min",
+        "inMinutes_many": "em {{count, number}} min",
+        "inMinutes_one": "em {{count, number}} min",
+        "inMinutes_other": "em {{count, number}} min",
+        "inHours_many": "em {{count, number}} h",
+        "inHours_one": "em {{count, number}} h",
+        "inHours_other": "em {{count, number}} h",
+        "inDays_many": "em {{count, number}} d",
+        "inDays_one": "em {{count, number}} d",
+        "inDays_other": "em {{count, number}} d"
       },
       "unknownVendor": "Fornecedor desconhecido"
     },
@@ -1106,6 +1117,39 @@
         "ofTarget": "de <target></target>",
         "progress": "{{name}}: {{percent}}% da meta",
         "title": "Objetivos"
+      },
+      "returns": {
+        "title": "Rentabilidade",
+        "chooseWindow": "Escolha o período",
+        "window": {
+          "ytd": "Ano",
+          "1y": "1 A",
+          "all": "Tudo"
+        },
+        "twr": {
+          "label": "Rentabilidade do investimento",
+          "caption": "Como os seus ativos se saíram, independentemente do que adicionou ou retirou."
+        },
+        "fx": {
+          "label": "Dos quais, câmbio",
+          "caption": "Os seus ativos fizeram <value/> nas suas próprias moedas; o resto foram as moedas a mexer face à sua."
+        },
+        "xirr": {
+          "label": "Rentabilidade do seu dinheiro",
+          "caption": "O que o seu próprio dinheiro rendeu, contando quando o adicionou e retirou.",
+          "approximate": "Mais de uma taxa se ajusta aos seus depósitos e levantamentos, por isso considere-a aproximada."
+        },
+        "benchmarks": {
+          "label": "Comparado com",
+          "caption": "Bitcoin e o S&P 500 comprados e mantidos nos mesmos dias, na sua moeda; os preços nos EUA nos mesmos meses.",
+          "btc": "Bitcoin",
+          "sp500": "S&P 500 (SPY, só preço)",
+          "usInflation": "Inflação dos EUA (CPI-U)"
+        },
+        "perYear": "<value/> ao ano",
+        "perYearUnit": "ao ano",
+        "since": "Desde {{date}}.",
+        "partial": "Alguns dias não puderam ser totalmente avaliados, por isso estes valores podem não ser exatos."
       }
     },
     "jobs": {
@@ -1197,6 +1241,13 @@
           "preview": "{{shown}} de {{total}}",
           "subject": "este ficheiro",
           "title": "Em que moeda está este extrato?"
+        },
+        "dateOrder": {
+          "title": "Nestas datas, vem primeiro o dia ou o mês?",
+          "body": "Todas as datas deste ficheiro podem ser lidas das duas formas — 03/04 pode ser 3 de abril ou 4 de março — e o ficheiro não indica qual. Ainda não foi importado nada.",
+          "samples": "Tal como está no ficheiro",
+          "dayFirst": "Primeiro o dia — 31/12",
+          "monthFirst": "Primeiro o mês — 12/31"
         },
         "format": "Formato",
         "holdingsTitle": "Posições tocadas",
@@ -1527,6 +1578,7 @@
         "estimateAboveZero": "ponha a estimativa acima de zero, ou limpe-a",
         "pickCurrency": "escolha uma moeda da lista",
         "setAnchorDate": "defina uma data de referência",
+        "chooseDate": "escolha uma data",
         "setRepeatCount": "defina um número de repetições válido"
       },
       "cadence": {
@@ -1890,7 +1942,7 @@
         "addPayment": "Adicionar um pagamento"
       },
       "recurringSummary": {
-        "projectedEachMonth": "Projetado por mês",
+        "projectedEachMonth": "Contas projetadas por mês",
         "estimatedFromHistory_many": "Inclui {{count}} pagamentos variáveis estimados pelos seus últimos montantes liquidados.",
         "estimatedFromHistory_one": "Inclui {{count}} pagamento variável estimado pelo seu último montante liquidado.",
         "estimatedFromHistory_other": "Inclui {{count}} pagamentos variáveis estimados pelos seus últimos montantes liquidados.",
@@ -2008,6 +2060,15 @@
       },
       "vendorSpend": {
         "notSubtracted": "Não é descontado do que deve — são dois valores separados."
+      },
+      "suggestions": {
+        "title": "Parece recorrente",
+        "claim": "{{payee}} parece um pagamento mensal de <value></value>.",
+        "accept": "Adicionar como recorrente",
+        "dismiss": "Não é recorrente",
+        "evidence_one": "Com base em {{count}} pagamento:",
+        "evidence_many": "Com base em {{count}} pagamentos:",
+        "evidence_other": "Com base em {{count}} pagamentos:"
       }
     },
     "notFound": {
@@ -2211,6 +2272,12 @@
         "needsCurrency_many": "{{count}} transações — precisam de uma moeda",
         "needsCurrency_one": "{{count}} transação — precisa de uma moeda",
         "needsCurrency_other": "{{count}} transações — precisam de uma moeda",
+        "needsDateOrderWithType_many": "{{count}} transações · {{fileType}} — precisam da ordem das datas",
+        "needsDateOrderWithType_one": "{{count}} transação · {{fileType}} — precisa da ordem das datas",
+        "needsDateOrderWithType_other": "{{count}} transações · {{fileType}} — precisam da ordem das datas",
+        "needsDateOrder_many": "{{count}} transações — precisam da ordem das datas",
+        "needsDateOrder_one": "{{count}} transação — precisa da ordem das datas",
+        "needsDateOrder_other": "{{count}} transações — precisam da ordem das datas",
         "nothingFound": "não foi encontrado nada",
         "symbolsOverflow": "{{symbols}} +{{hidden}}",
         "transfersToConfirm": "Transferências por confirmar",

@@ -108,6 +108,15 @@ describe('reviewDetailText — file-import', () => {
   test('omits the file type when the row has none', () => {
     expect(needsCurrency(7)).toBe('7 transactions — needs a currency');
   });
+
+  test('describes the pending date-order choice (SC-1291)', () => {
+    const needsDateOrder = (transactions: number, fileType?: string) =>
+      detail((texts) =>
+        reviewDetailText(texts, { code: 'datesNeedOrder', transactions, fileType })
+      );
+    expect(needsDateOrder(9, 'csv')).toBe('9 transactions · CSV — needs a date order');
+    expect(needsDateOrder(1)).toBe('1 transaction — needs a date order');
+  });
 });
 
 describe('reviewDetailText — wallet-import', () => {

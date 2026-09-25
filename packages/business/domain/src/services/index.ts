@@ -174,6 +174,11 @@ export {
   type UpdatePaymentInput,
 } from './payments/PaymentService';
 export {
+  type RecurringSuggestion,
+  RecurringSuggestionService,
+  SuggestionNotFoundError,
+} from './payments/RecurringSuggestionService';
+export {
   generateOccurrences,
   type PaymentOccurrenceCandidate,
   type RecurrenceIntervalUnit,
@@ -248,6 +253,11 @@ export { ReviewFeedService } from './ReviewFeedService';
 // returns/
 export { AssetCurrencyService } from './returns/AssetCurrencyService';
 export {
+  type BenchmarkReturn,
+  BenchmarkReturnService,
+  measuredDayInstant,
+} from './returns/BenchmarkReturnService';
+export {
   type ExternalFlow,
   type ExternalFlowSeries,
   ExternalFlowService,
@@ -314,6 +324,7 @@ export {
 export {
   COST_BASIS_METHOD_CHANGE_SOURCE,
   type CostBasisMethodChange,
+  InvalidBaseCurrencyError,
   ObservedBurnAnswerCurrencyMismatch,
   type UpdateUserResult,
   UserService,

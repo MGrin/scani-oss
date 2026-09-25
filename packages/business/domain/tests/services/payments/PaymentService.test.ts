@@ -913,6 +913,125 @@ describe('PaymentService', () => {
   });
 
   describe('settleOccurrence', () => {
+    /**
+     * B settling B's own occurrence against A's transaction — exploited on
+     * 2026-09-19 between an attacker's own accounts (SC-1287). The occurrence
+     * check passed, and the transaction id was written unchecked.
+     *
+     * The refusal for a FOREIGN id and for one that does not exist must read
+     * the same: before this, a random id failed the foreign key and a real one
+     * succeeded, which answered "does this transaction exist" for anyone.
+     */
+    describe("refuses to link another user's transaction or extraction (SC-1287)", () => {
+      async function scaffold(tx: DatabaseTransaction) {
+        const a = await makeUser(tx);
+        const b = await makeUser(tx);
+        const payment = await makePayment(tx, { userId: b.id, expectedAmount: '12.99' });
+        const occurrence = await makePaymentOccurrence(tx, {
+          paymentId: payment.id,
+          dueDate: todayUtcString(),
+          expectedAmount: '12.99',
+        });
+        return { a, b, occurrence };
+      }
+
+      async function refusal(run: () => Promise<unknown>): Promise<string> {
+        try {
+          await run();
+        } catch (error) {
+          return (error as Error).message;
+        }
+        throw new Error('expected settleOccurrence to refuse');
+      }
+
+      const MISSING_ID = '00000000-0000-4000-8000-000000000000';
+
+      test("A's transaction is refused like a nonexistent one, and nothing is written", async () => {
+        await withTestDb(async (tx) => {
+          const { a, b, occurrence } = await scaffold(tx);
+          const foreign = await makeHoldingTransaction(tx, { userId: a.id, quantity: '-12.99' });
+
+          const foreignMessage = await refusal(() =>
+            service().settleOccurrence(
+              b.id,
+              occurrence.id,
+              { status: 'matched', matchedTransactionId: foreign.id },
+              tx
+            )
+          );
+          const missingMessage = await refusal(() =>
+            service().settleOccurrence(
+              b.id,
+              occurrence.id,
+              { status: 'matched', matchedTransactionId: MISSING_ID },
+              tx
+            )
+          );
+
+          expect(foreignMessage).toBe(missingMessage);
+          const row = await occurrences().findByIdAndUser(occurrence.id, b.id, tx);
+          expect(row?.status).toBe('scheduled');
+          expect(row?.matchedTransactionId).toBeNull();
+        });
+      });
+
+      test("an extraction of A's document is refused like a nonexistent one", async () => {
+        await withTestDb(async (tx) => {
+          const { a, b, occurrence } = await scaffold(tx);
+          const document = await makeDocument(tx, { userId: a.id });
+          const foreign = await makeDocumentExtraction(tx, { documentId: document.id });
+
+          const foreignMessage = await refusal(() =>
+            service().settleOccurrence(
+              b.id,
+              occurrence.id,
+              { status: 'matched', matchedExtractionId: foreign.id },
+              tx
+            )
+          );
+          const missingMessage = await refusal(() =>
+            service().settleOccurrence(
+              b.id,
+              occurrence.id,
+              { status: 'matched', matchedExtractionId: MISSING_ID },
+              tx
+            )
+          );
+
+          expect(foreignMessage).toBe(missingMessage);
+          const row = await occurrences().findByIdAndUser(occurrence.id, b.id, tx);
+          expect(row?.matchedExtractionId).toBeNull();
+        });
+      });
+
+      test("B's own transaction and extraction still link, and null still unlinks — the control", async () => {
+        await withTestDb(async (tx) => {
+          const { b, occurrence } = await scaffold(tx);
+          const own = await makeHoldingTransaction(tx, { userId: b.id, quantity: '-12.99' });
+          const document = await makeDocument(tx, { userId: b.id });
+          const extraction = await makeDocumentExtraction(tx, { documentId: document.id });
+
+          const linked = await service().settleOccurrence(
+            b.id,
+            occurrence.id,
+            { status: 'matched', matchedTransactionId: own.id, matchedExtractionId: extraction.id },
+            tx
+          );
+          expect(linked.matchedTransactionId).toBe(own.id);
+          expect(linked.matchedExtractionId).toBe(extraction.id);
+
+          const unlinked = await service().settleOccurrence(
+            b.id,
+            occurrence.id,
+            { status: 'matched', matchedTransactionId: null, matchedExtractionId: null },
+            tx
+          );
+          expect(unlinked.matchedTransactionId).toBeNull();
+          expect(unlinked.matchedExtractionId).toBeNull();
+        });
+      });
+    });
+
     test('marks a scheduled occurrence matched, and repeating the same call is idempotent', async () => {
       await withTestDb(async (tx) => {
         const user = await makeUser(tx);

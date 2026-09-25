@@ -1,30 +1,30 @@
 {
   "baselines": {
     "forecast-desktop": {
-      "head": "160da87bddc5058c481e26b78924c37c14e3fcb9",
-      "renderedDigest": "2c55dc68f2f694ab8f6f2e5da4b1f07a78bac244c5fe9c329ab02ec424c9e166",
+      "head": "64ac5157abcd24c74d137faf06fb485319fdf00d",
+      "renderedDigest": "698cefa06d69dcf5f8180e6a16186b691591200304026e0ca3a71fe95f67ee43",
       "dirty": [],
       "dirtyCount": 0,
       "base": {
-        "ref": "2375224e50aeff689ad53622e09e6a66d8c34fc2",
+        "ref": "64ac5157abcd24c74d137faf06fb485319fdf00d",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "a63700cbc98682fc30d1a1d3048eb30bfab7330b5f2603a1b6b63461fc1822bd",
-      "capturedAt": "2026-09-11T09:35:45.749Z"
+      "sha256": "9a929ba4e7420c919f5833c8e521a974e7d21d0100f59b03817d309d855bbc54",
+      "capturedAt": "2026-09-25T01:24:56.804Z"
     },
     "forecast-phone": {
-      "head": "160da87bddc5058c481e26b78924c37c14e3fcb9",
-      "renderedDigest": "2c55dc68f2f694ab8f6f2e5da4b1f07a78bac244c5fe9c329ab02ec424c9e166",
+      "head": "64ac5157abcd24c74d137faf06fb485319fdf00d",
+      "renderedDigest": "698cefa06d69dcf5f8180e6a16186b691591200304026e0ca3a71fe95f67ee43",
       "dirty": [],
       "dirtyCount": 0,
       "base": {
-        "ref": "2375224e50aeff689ad53622e09e6a66d8c34fc2",
+        "ref": "64ac5157abcd24c74d137faf06fb485319fdf00d",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "1dd5869ee2414b497aeb828396193d8811400aaad60641cf17468f229bcab491",
-      "capturedAt": "2026-09-11T09:35:45.749Z"
+      "sha256": "8bb319a8f85488f8f4f5dcc6b3ce9fcd8cbba66861005833ef9a2a0a91f156e7",
+      "capturedAt": "2026-09-25T01:25:42.920Z"
     },
     "holdings-desktop": {
       "sha256": "f706f1dc056537081a9bd4fb3ad3d1b993868b9c7c5a3d79446b1f0ae825e9fb",
@@ -40,17 +40,17 @@
       }
     },
     "holdings-desktop-ar": {
-      "head": "59e56e17878be840350c5eb3ec710a8781e77cc5",
-      "renderedDigest": "b4fbb290371fea7897752350e7d2588e0a0183c94985ff0eb789c9487ad063ed",
-      "dirty": ["apps/e2e/visual/screens.ts", "apps/e2e/visual/v3-screens.spec.ts"],
-      "dirtyCount": 2,
+      "head": "0c9a464a152f08f53ff9a2b8169f9179d403e96e",
+      "renderedDigest": "9f9aa37b66b43ef61d5d245cd57a3aeb3bcdb4a5bd6f15bb4c6f36f489074427",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "59e56e17878be840350c5eb3ec710a8781e77cc5",
+        "ref": "0c9a464a152f08f53ff9a2b8169f9179d403e96e",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "7352148e21cd14ee43337979f8f24489be020cd103c298e28501d65e6c933046",
-      "capturedAt": "2026-09-18T09:04:50.324Z"
+      "sha256": "e2821abad81a344f336e03031a2091cd6fcb8ba0f3a5f4f7558ff378e57327ae",
+      "capturedAt": "2026-09-18T23:00:50.909Z"
     },
     "holdings-desktop-rtl": {
       "sha256": "d4e9fdd2afefa243b90865ac565a36ef2c3c781f2b39abb532237801b03d882f",
@@ -156,44 +156,66 @@
       "sha256": "d2599e7f4dc55c451be2520c169a7921f62936e91223cf14832207479d9429ee",
       "capturedAt": "2026-09-11T09:35:45.749Z"
     },
-    "kitchen-sink-desktop": {
-      "head": "499e65090670cc5f9a28774a71c5ab07fa2af7fc",
-      "renderedDigest": "9f9aa37b66b43ef61d5d245cd57a3aeb3bcdb4a5bd6f15bb4c6f36f489074427",
+    "home-runway-stale-phone": {
+      "head": "4dac244bf0495b9be779077251685c7fad8a1bf9",
+      "renderedDigest": "a0438d1713ae55067aa81774fa46dfd2cea99d6ce8f6aa12ae1115d309b21a14",
       "dirty": [],
       "dirtyCount": 0,
       "base": {
-        "ref": "4c7499a7ecb93f609f1de5d601f5b90afd2d915a",
+        "ref": "631eb32daafecfb7e37fc6b105821d7f1f9875f1",
+        "confirmed": true,
+        "behind": 1
+      },
+      "sha256": "3a06f30dc0468bab1f7d0358c22ad02388b7c6f5536046af2e071c9195722485",
+      "capturedAt": "2026-09-19T04:16:20.950Z"
+    },
+    "kitchen-sink-desktop": {
+      "head": "2117f66ee6eded0f65e0d324daba61e36384e95e",
+      "renderedDigest": "7ce245bcdf74ebb98336d120d77f1b25c7ec91f14e457cce8d8d558c9941874b",
+      "dirty": [
+        "packages/frontend/ui/src/v3/components/AccountPicker.tsx",
+        "packages/frontend/ui/tests/v3/components/AccountPicker.test.tsx"
+      ],
+      "dirtyCount": 2,
+      "base": {
+        "ref": "2117f66ee6eded0f65e0d324daba61e36384e95e",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "ff1ad5d28798f65c8f3f42da9d7ec7dcea6f08321a4b2f37f750a77ec5b43840",
-      "capturedAt": "2026-09-18T22:27:19.446Z"
+      "sha256": "dd98d7406f7ee7d356d0c7ab9753e2e3c8ffccac4fe5e7069788fa33ddac790a",
+      "capturedAt": "2026-09-19T02:07:38.254Z"
     },
     "kitchen-sink-desktop-rtl": {
-      "head": "d75c368fcea39d5eea8576b467bf87c82922b72a",
-      "renderedDigest": "a2f5815b60be4c1dd99ff9927c5800467adb28fa3284c4a8505c484b3202cc0a",
-      "dirty": [],
-      "dirtyCount": 0,
+      "head": "2117f66ee6eded0f65e0d324daba61e36384e95e",
+      "renderedDigest": "7ce245bcdf74ebb98336d120d77f1b25c7ec91f14e457cce8d8d558c9941874b",
+      "dirty": [
+        "packages/frontend/ui/src/v3/components/AccountPicker.tsx",
+        "packages/frontend/ui/tests/v3/components/AccountPicker.test.tsx"
+      ],
+      "dirtyCount": 2,
       "base": {
-        "ref": "aec169b5eb8e357ce17e10c3cc5ba11a27ddde8c",
+        "ref": "2117f66ee6eded0f65e0d324daba61e36384e95e",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "3f91e4103c23ee54ce95c3eedbec6381c870dca64925c712a14ca9d9b7522ffe",
-      "capturedAt": "2026-09-15T13:13:10.776Z"
+      "sha256": "d5e0f4550089574b3ccfebe8391ba3fa8a942509beee5088292a8ce9cb6c55ee",
+      "capturedAt": "2026-09-19T02:07:38.254Z"
     },
     "kitchen-sink-phone": {
-      "head": "499e65090670cc5f9a28774a71c5ab07fa2af7fc",
-      "renderedDigest": "9f9aa37b66b43ef61d5d245cd57a3aeb3bcdb4a5bd6f15bb4c6f36f489074427",
-      "dirty": [],
-      "dirtyCount": 0,
+      "head": "2117f66ee6eded0f65e0d324daba61e36384e95e",
+      "renderedDigest": "7ce245bcdf74ebb98336d120d77f1b25c7ec91f14e457cce8d8d558c9941874b",
+      "dirty": [
+        "packages/frontend/ui/src/v3/components/AccountPicker.tsx",
+        "packages/frontend/ui/tests/v3/components/AccountPicker.test.tsx"
+      ],
+      "dirtyCount": 2,
       "base": {
-        "ref": "4c7499a7ecb93f609f1de5d601f5b90afd2d915a",
+        "ref": "2117f66ee6eded0f65e0d324daba61e36384e95e",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "b1805ac29627e4e17646aa7ce7c54506c8ffdffc0bec889677dbfc6f9ffe8e2c",
-      "capturedAt": "2026-09-18T22:27:19.446Z"
+      "sha256": "44408de983b089b8010550fa109d9feba844d2a63a0fc97aa9802239628f730f",
+      "capturedAt": "2026-09-19T02:07:38.254Z"
     },
     "payment-form-phone": {
       "head": "e50d9281d7f96143d3f0a4c93703a2eddc368dcf",
