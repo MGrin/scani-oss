@@ -615,7 +615,11 @@
         "estimatedCount_other": "{{count}} pembayaran berubah-ubah dihargai dari jumlah terakhir yang diselesaikan, bukan dari perkiraan yang dimasukkan siapa pun.",
         "couldEstimate_other": "{{count}} dari pembayaran berubah-ubah itu pernah diselesaikan sebelumnya, jadi jumlah terakhirnya bisa dipakai sebagai pengganti.",
         "useLastSettled_other": "Pakai jumlah terakhir yang diselesaikan",
-        "stopEstimating_other": "Berhenti memperkirakannya"
+        "stopEstimating_other": "Berhenti memperkirakannya",
+        "verdictOk": "Aman sampai",
+        "verdictRunsOut": "Uang habis",
+        "declineLabel": "Saldo pada laju pengeluaran terakhir, sampai {{month}}",
+        "methodTitle": "Bagaimana ini dihitung"
       },
       "suggestions": {
         "title": "Tampak berulang",

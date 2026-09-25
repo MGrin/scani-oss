@@ -10,7 +10,7 @@ import { QueryError } from '@scani/ui/v3/components/feedback/QueryError';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { useDelayedLoading } from '@scani/ui/v3/hooks/useDelayedLoading';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
-import { TrendingDown } from 'lucide-react';
+import { ChevronDown, TrendingDown } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
@@ -23,8 +23,12 @@ import {
   DEFAULT_FORECAST_HORIZON,
   FORECAST_HORIZONS,
   type ForecastHorizon,
+  type MaterialCaveat,
+  materialCaveats,
+  monthAfter,
   monthSequence,
   type OneOffOutflow,
+  observedDecline,
   project,
   projectedShare,
   runway,
@@ -62,14 +66,30 @@ import { formatProjectionMonth, ProjectionChart } from './ProjectionChart';
  * agreeing with the reader's framing rather than answering them. So the runway
  * block names its own window, and the chart block names its own.
  *
- * ## What the surface admits to
+ * ## What the surface admits to, and WHERE it admits it (SC-1068)
  *
- * Four things, and every one of them is a denominator rather than an apology:
- * what the liquid figure counted and what it set aside as illiquid (mgrin took
- * the broadest definition, which makes this load-bearing); how many payments
- * could not be projected at all; what is already overdue and therefore not in
- * the forward series; and any currency that had no rate. A figure with no
- * denominator beside it is the failure this codebase keeps meeting.
+ * The honesty is unchanged and none of it was deleted. What moved is its
+ * PLACE. Measured at 390px before this ticket: the answer was one line and the
+ * methodology under it was nine, filling 500px of a 714px scroller, and the
+ * affordability checker — the one control here that asks a question a person
+ * actually has — sat 1153px below the fold, more than a full screen down. That
+ * is what "very awkward presentation" was describing, and it was not
+ * carelessness: the view was built to say what it could not count before it
+ * said what it found, which is a value this codebase holds correctly
+ * elsewhere. Here it inverted the page, and an answer that arrives tenth reads
+ * as unreliable whatever it says.
+ *
+ * So: the verdict and its date first, the line that verdict IS underneath it,
+ * then only the caveats that could move it (`materialCaveats` in
+ * `lib/forecast.ts` carries the whole argument for what "could" means), then
+ * the affordability checker, then the book. Everything else is one tap away
+ * behind `<ForecastMethod>` rather than scrolled past.
+ *
+ * Two caveats were RE-PARENTED rather than filtered, and that is a correction
+ * of fact rather than a presentation choice: `unprojectable` and `overdue`
+ * qualify the recurring book's walk, not the observed runway, so they now sit
+ * with the block that draws that walk. They were never able to move the
+ * headline.
  */
 
 type ForecastData = RouterOutputs['payments']['forecast'];
@@ -210,6 +230,52 @@ export function ForecastView({
   );
 
   /**
+   * THE DATE, which the page did not have (SC-1068).
+   *
+   * `observedRunwayMonths` answers in whole months and the page printed that
+   * count, so a reader wanting "when" had to add 27 months to today in their
+   * head. This is that addition, through `monthSequence`'s own calendar walk
+   * so it cannot drift from the months the chart is drawn over.
+   *
+   * `null` when the window has no perimeter exits — the committed walk below
+   * is then the only answer there is, and it has a date of its own.
+   */
+  const runwayMonth = useMemo(
+    () => (forecast && observedMonths !== null ? monthAfter(forecast.today, observedMonths) : null),
+    [forecast, observedMonths]
+  );
+
+  /** The verdict, drawn. See `observedDecline` for why it is not the book's
+   *  walk — on a book funded from outside the perimeter that line RISES, and
+   *  a rising chart under "the money lasts N months" is two answers stacked. */
+  const decline = useMemo(
+    () =>
+      forecast && observedMonths !== null && effectiveBurn !== null
+        ? observedDecline(forecast.liquid.amount, effectiveBurn, forecast.today, observedMonths)
+        : null,
+    [forecast, observedMonths, effectiveBurn]
+  );
+
+  /** The seam. `lib/forecast.ts` carries the argument; nothing is decided here. */
+  const material = useMemo(
+    () =>
+      forecast
+        ? materialCaveats({
+            liquid: forecast.liquid,
+            perMonth: effectiveBurn,
+            perMonthMedian: forecast.observedBurn?.perMonthMedian ?? null,
+            denominatorIsMeasured: forecast.observedBurnAnswer?.kind !== 'override',
+            notCountedOutflows: forecast.observedBurn
+              ? forecast.observedBurn.excluded.unclassified +
+                forecast.observedBurn.excluded.untracked +
+                forecast.observedBurn.excluded.unvalued
+              : 0,
+          })
+        : [],
+    [forecast, effectiveBurn]
+  );
+
+  /**
    * The one-off in base currency, through `convertTotalsToBase` — the one
    * conversion path this tab uses everywhere else.
    */
@@ -330,57 +396,154 @@ export function ForecastView({
           is a projection missing its largest term, erring in the flattering
           direction by construction. So it does not get to be the runway. */}
       <Block className="flex flex-col gap-3 border-dashed p-4">
-        {/* Note the order against `pending`. The observed figure answers even
-            while the rates are still coming, and that is correct rather than a
-            slip: `perMonthMean` and `liquid.amount` both arrive from the
-            server already in base currency, so it has no foreign half to be
-            missing. SC-210's rule — a burn without rates is too small and the
-            runway too long — is about the committed walk below, which is why
-            that one still shows "working it out". */}
-        <ProjectedTile
-          emphasis="hero"
-          label={t('v3.money.forecast.runwayLabel')}
-          value={
-            observedMonths !== null ? (
-              t('v3.money.forecast.observedRunway', { count: observedMonths })
-            ) : pending ? (
-              <span className="text-muted-foreground">{t('v3.money.forecast.working')}</span>
-            ) : (
-              <RunwayFigure answer={answer} />
-            )
-          }
-          note={<RunwayBasis forecast={forecast} baseSymbol={rates.baseSymbol} />}
-        />
-        {observedMonths !== null && forecast.observedBurn ? (
-          <ObservedBasis
-            burn={forecast.observedBurn}
-            share={share}
-            baseSymbol={rates.baseSymbol}
-            answer={forecast.observedBurnAnswer}
+        {/* THE VERDICT IS THE LABEL AND THE VALUE TOGETHER, READ AS ONE
+            SENTENCE: "You're OK until — Feb 2029" (SC-1068).
+
+            mgrin asked for a plain verdict plus the date things get tight. The
+            DATE is what takes `text-display`, and that is a measurement rather
+            than a preference: the type scale has six roles and nothing between
+            20px and 44px (`v3-tokens-root.css`), so a sentence set at display
+            size wraps — the previous hero, "About 27 months at recent
+            spending", wrapped to FOUR lines and took 190px of a 844px phone.
+            `formatProjectionMonth` renders a short month, so the date fits the
+            326px of content a 390px viewport leaves and the claim is one line.
+
+            TWO STATES AND NO THIRD (mgrin, 2026-09-07). A "getting tight" band
+            between them was offered and declined, on the reasoning
+            `materialCaveats` is built from: a band needs a number somebody has
+            to defend, and the DATE already carries the nuance a band would
+            have approximated.
+
+            THE BOUNDARY IS THE WINDOW THIS BLOCK ALREADY DECLARES IT ANSWERS
+            OVER, so it is not a new parameter — `horizonMonths`, the full
+            twelve months the server returns, which the class doc above states
+            the runway is always answered across. A runway ending inside the
+            window the page is about is the not-OK state; one reaching past it
+            is the OK state. Both name a date, which is why the split costs the
+            reader nothing: the sentence tells you which side you are on and the
+            figure tells you by how much.
+
+            The duration is not lost; it is the line underneath, in the words
+            it was already translated into. */}
+        {runwayMonth !== null ? (
+          <>
+            <ProjectedTile
+              emphasis="hero"
+              label={t(
+                observedMonths !== null && observedMonths >= forecast.horizonMonths
+                  ? 'v3.money.forecast.verdictOk'
+                  : 'v3.money.forecast.verdictRunsOut'
+              )}
+              value={formatProjectionMonth(runwayMonth)}
+            />
+            {/* `text-body`, not `text-caption`. This is the second half of the
+                answer, not a qualification of it, and the caption role is what
+                every qualification on this surface uses. */}
+            <p className="text-body text-muted-foreground">
+              {t('v3.money.forecast.observedRunway', { count: observedMonths ?? 0 })}
+            </p>
+          </>
+        ) : (
+          /* No perimeter exits in the window, so there is no measured rate to
+             divide and the committed walk is the only answer there is. It
+             carries its own date when it reaches zero, and when it does not it
+             has to say what the book is DOING — "more than 12 months" is
+             otherwise indistinguishable between a book gaining and one barely
+             losing. */
+          <>
+            <ProjectedTile
+              emphasis="hero"
+              label={t('v3.money.forecast.runwayLabel')}
+              value={
+                pending ? (
+                  <span className="text-muted-foreground">{t('v3.money.forecast.working')}</span>
+                ) : (
+                  <RunwayFigure answer={answer} />
+                )
+              }
+            />
+            {!pending && answer.kind === 'lasts' ? (
+              <p className="text-body text-muted-foreground">
+                <Trans
+                  i18nKey="v3.money.forecast.netPerMonth"
+                  components={{
+                    value: (
+                      <Numeric
+                        delta
+                        indicator="sign"
+                        value={answer.netPerMonth.toString()}
+                        currency={rates.baseSymbol}
+                      />
+                    ),
+                  }}
+                />
+              </p>
+            ) : null}
+          </>
+        )}
+
+        {/* THE BALANCE-OVER-TIME LINE, and it is the verdict drawn rather than
+            a second opinion — `liquid − burn × t`, the same division the
+            sentence above rounds. Its x-intercept IS the date that sentence
+            names, so the two cannot disagree. The book's own walk keeps its
+            chart, its horizon control and its wiggle, in the block below that
+            is explicitly about the book. */}
+        {decline !== null && runwayMonth !== null ? (
+          <ProjectionChart
+            points={decline}
+            opening={forecast.liquid.amount}
+            currency={rates.baseSymbol}
+            label={t('v3.money.forecast.declineLabel', {
+              month: formatProjectionMonth(runwayMonth),
+            })}
+            height={160}
           />
         ) : null}
-        {/* Only when the book is the answer, which is now the fallback. A
-            window with no date in it has to say what the book is DOING, or
-            "more than 12 months" is indistinguishable between a book that
-            gains €1,200 a month and one that loses €10. */}
-        {observedMonths === null && !pending && answer.kind === 'lasts' ? (
-          <p className="text-caption text-muted-foreground">
-            <Trans
-              i18nKey="v3.money.forecast.netPerMonth"
-              components={{
-                value: (
-                  <Numeric
-                    delta
-                    indicator="sign"
-                    value={answer.netPerMonth.toString()}
-                    currency={rates.baseSymbol}
-                  />
-                ),
-              }}
-            />
-          </p>
+
+        {/* ONLY WHAT COULD MOVE THE ANSWER. The rule, the two arms and every
+            candidate it rules out are in `materialCaveats`; nothing about
+            "material" is decided at this call site, deliberately. */}
+        {material.length > 0 ? (
+          <div className="flex flex-col gap-1">
+            {material.map((caveat) => (
+              <MaterialCaveatLine
+                key={caveat.kind}
+                caveat={caveat}
+                burn={forecast.observedBurn}
+                baseSymbol={rates.baseSymbol}
+              />
+            ))}
+          </div>
         ) : null}
+
+        {/* Everything the page used to lead with. Reachable in one tap, and
+            still on the same screen as the figure it qualifies — which is the
+            half of SC-461's rule that survives this ticket intact: a caveat
+            that scrolls away from its number is not a caveat, and one behind a
+            control that names it does not scroll away. */}
+        <ForecastMethod
+          forecast={forecast}
+          share={share}
+          baseSymbol={rates.baseSymbol}
+          promoted={new Set(material.map((caveat) => caveat.kind))}
+        />
       </Block>
+
+      {/* PROMOTED TO SECOND (SC-1068). The ticket names this the one part of
+          the view that asks a question a person actually has, and it was
+          measured at 1153px below the fold on a 390px phone — past the whole
+          methodology, past the book's chart, past two totals. Directly under
+          the answer it is the natural next question: that is how long the
+          money lasts, so what does this cost me. */}
+      <AffordabilityPanel
+        oneOff={oneOff}
+        onChange={setOneOff}
+        verdict={verdict}
+        observedVerdict={observedVerdict}
+        baseSymbol={rates.baseSymbol}
+        tokens={tokens}
+        disabled={pending}
+      />
 
       {/* Hidden entirely when there is nothing scheduled, which is now
           reachable: the page renders on observed burn alone, and this block
@@ -484,16 +647,12 @@ export function ForecastView({
         </Block>
       )}
 
-      <AffordabilityPanel
-        oneOff={oneOff}
-        onChange={setOneOff}
-        verdict={verdict}
-        observedVerdict={observedVerdict}
-        baseSymbol={rates.baseSymbol}
-        tokens={tokens}
-        disabled={pending}
-      />
-
+      {/* RE-PARENTED, not filtered (SC-1068). Both of these qualify the
+          RECURRING BOOK's walk — a variable payment with no estimate and a
+          bill already overdue are missing from the projected series and from
+          nothing else — so neither was ever able to move the observed runway
+          the page now leads with. They belong next to the figure they
+          actually qualify, and the seam never had to judge them. */}
       <ForecastEstimates
         forecast={forecast}
         onEstimateFromHistory={onEstimateFromHistory}
@@ -506,6 +665,189 @@ export function ForecastView({
         pending={estimateFromHistoryPending}
       />
     </div>
+  );
+}
+
+/**
+ * The kinds already stated beside the answer, so nothing is printed twice.
+ *
+ * A set rather than a list of booleans: the seam returns a list of kinds and
+ * the two derivation components each ask about a different one, so a shape
+ * that grows with the seam and needs no second edit is the honest one.
+ */
+type PromotedKinds = ReadonlySet<MaterialCaveat['kind']>;
+
+/**
+ * A caveat that could move the answer, in the words it already had.
+ *
+ * These are the SAME strings the derivation used, deliberately: this ticket is
+ * about placement and precedence, not about rewriting copy that is already
+ * translated into eight languages and already says the true thing. What
+ * changed is that they are now shown only when `materialCaveats` says they
+ * could move the figure they sit under — and are absent, rather than reworded,
+ * when it says they could not.
+ *
+ * They take `text-caption` like every other qualification on this surface, and
+ * that is the point of the redesign rather than an oversight: a caveat is
+ * still a caveat when it is material. What it is not, any more, is the first
+ * thing on the page.
+ */
+function MaterialCaveatLine({
+  caveat,
+  burn,
+  baseSymbol,
+}: {
+  caveat: MaterialCaveat;
+  burn: ForecastData['observedBurn'];
+  baseSymbol: string;
+}) {
+  const { t } = useTranslation();
+
+  if (caveat.kind === 'illiquid') {
+    return (
+      <p className="text-caption text-muted-foreground">
+        <Trans
+          i18nKey="v3.money.forecast.basisIlliquid"
+          values={{ count: caveat.count }}
+          components={{ value: <Numeric value={caveat.amount} currency={baseSymbol} /> }}
+        />
+      </p>
+    );
+  }
+
+  if (caveat.kind === 'notCounted') {
+    return (
+      <p className="text-caption text-muted-foreground">
+        {t('v3.money.forecast.observedNotCounted', { count: caveat.count })}
+      </p>
+    );
+  }
+
+  // `spread`. Guarded rather than asserted: the seam only ever raises this
+  // with an observed burn in hand, but a component that would throw if that
+  // ever stopped being true is one this page cannot afford — it is the page
+  // whose whole job is answering how long the money lasts.
+  if (!burn) return null;
+  return (
+    <p className="text-caption text-muted-foreground">
+      <Trans
+        i18nKey="v3.money.forecast.observedSpread"
+        components={{
+          min: <Numeric value={burn.perMonthMin} currency={baseSymbol} />,
+          max: <Numeric value={burn.perMonthMax} currency={baseSymbol} />,
+          median: <Numeric value={burn.perMonthMedian} currency={baseSymbol} />,
+        }}
+      />
+    </p>
+  );
+}
+
+/**
+ * HOW THE ANSWER WAS WORKED OUT — everything this page used to lead with.
+ *
+ * ## Nothing here was deleted, and that distinction is the whole ticket
+ *
+ * SC-1068 is a complaint about PRECEDENCE, not about honesty. The window the
+ * mean was taken over, who classified the money it is made of, what could not
+ * be priced, what is already overdue — every one of those still renders, in
+ * the order and with the arguments SC-661/SC-673 gave them, on the same screen
+ * as the figure they qualify. They are one tap away instead of ahead of the
+ * answer.
+ *
+ * That keeps the half of SC-461's rule this ticket does not touch: *a caveat
+ * that scrolls away from the number it qualifies is not a caveat*. A caveat
+ * behind a control that names it has not scrolled away — it is on the same
+ * block, and opening it costs one tap rather than a screen and a half of
+ * scrolling past it, which is what the measurement found.
+ *
+ * ## THE CONFIDENCE STATEMENTS ARE IN HERE UNCONDITIONALLY, AND HE RULED IT
+ *
+ * The provenance split, the stale-quote count and the "mean of N complete
+ * months" line do not change the number — they change how much of it you
+ * should believe. So `materialCaveats` cannot judge them: there is no
+ * "including it" to compute, and asking whether they move the answer returns
+ * *cannot say* for every account, which would make the filter always-show, i.e.
+ * no filter. They are not passed through it and they are not conditional.
+ *
+ * **This reversed an argument attributed to mgrin by name** — the comments
+ * below, which are rewritten rather than deleted for exactly that reason.
+ * SC-661 was his response to not recognising the figure, remedy EXPLAIN BEFORE
+ * ASKING; SC-1068 is the same man on the same block, remedy ZERO
+ * QUALIFICATIONS BEFORE THE ANSWER. **Asked which wins, he chose SC-1068, on
+ * 2026-09-07.** Not a worker's call, and not taken as one.
+ *
+ * ## Closed by default, and `<details>` rather than `<Accordion>`
+ *
+ * A disclosure that opens itself has moved the qualifications back above the
+ * answer while looking like it did not — this ticket with an extra control in
+ * it — so it starts closed.
+ *
+ * `<details>` is the primitive, and the choice is about what a CLOSED
+ * disclosure contains. Radix's accordion unmounts its content, so the
+ * provenance and the excluded counts leave the document entirely; find-in-page
+ * cannot reach them, and neither can this component's own tests, which render
+ * through `renderToStaticMarkup` and assert on strings. A caveat a reader
+ * cannot search for and a guard that cannot see it are both worse than a
+ * chevron. `<details>` keeps the text in the DOM, and browsers expand it to
+ * show a find-in-page hit. `GenericJobResult` already uses it here.
+ *
+ * ## The tap target, and what this row does NOT get
+ *
+ * `min-h-tap` is banned in app v3 source (`token-hygiene.test.ts`) because on
+ * a non-interactive element it forces a 44px row on a MOUSE, which is what
+ * V3-23 exists to undo. The hit area is supposed to come from the token layer
+ * instead — and that layer's coarse-pointer floor lists `button`,
+ * `[role='button']`, `a[href]` and friends, with **no `summary`**
+ * (`v3-tokens.css`, the `@media (pointer: coarse)` block). So this row asks
+ * for its height by padding, which is what the hygiene rule tells a surface to
+ * do, and lands a little under 44 on touch.
+ *
+ * Stated rather than silently accepted: `GenericJobResult`'s `<details>` is
+ * the same, so adding `summary` to that selector list would fix both in one
+ * line. That is a change to a shared token file affecting every v3 screen, so
+ * it is offered as its own ticket rather than folded into a forecast redesign.
+ */
+function ForecastMethod({
+  forecast,
+  share,
+  baseSymbol,
+  promoted,
+}: {
+  forecast: ForecastData;
+  share: Decimal | null;
+  baseSymbol: string;
+  promoted: PromotedKinds;
+}) {
+  const { t } = useTranslation();
+  const observedMonths =
+    forecast.observedBurn && forecast.observedBurnAnswer?.kind === 'override'
+      ? forecast.observedBurnAnswer.amount
+      : (forecast.observedBurn?.perMonthMean ?? null);
+
+  return (
+    <details className="group border-t border-dashed border-border">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-3 text-caption text-muted-foreground transition-colors duration-fast ease-emphasized hover:text-foreground [&::-webkit-details-marker]:hidden">
+        {t('v3.money.forecast.methodTitle')}
+        <ChevronDown
+          aria-hidden="true"
+          className="h-4 w-4 shrink-0 transition-transform duration-base ease-emphasized group-open:rotate-180"
+        />
+      </summary>
+      <div className="flex flex-col gap-2 pb-2">
+        <p className="text-caption text-muted-foreground">
+          <RunwayBasis forecast={forecast} baseSymbol={baseSymbol} promoted={promoted} />
+        </p>
+        {forecast.observedBurn && observedMonths !== null ? (
+          <ObservedBasis
+            burn={forecast.observedBurn}
+            share={share}
+            baseSymbol={baseSymbol}
+            answer={forecast.observedBurnAnswer}
+            promoted={promoted}
+          />
+        ) : null}
+      </div>
+    </details>
   );
 }
 
@@ -536,7 +878,18 @@ function RunwayFigure({ answer }: { answer: ReturnType<typeof runway> }) {
  * would never actually sell the equities in that number can then discount it
  * themselves, which they cannot do from a bare count of months.
  */
-function RunwayBasis({ forecast, baseSymbol }: { forecast: ForecastData; baseSymbol: string }) {
+function RunwayBasis({
+  forecast,
+  baseSymbol,
+  promoted,
+}: {
+  forecast: ForecastData;
+  baseSymbol: string;
+  /** Kinds already stated beside the answer. Printed once, never twice: a
+   *  reader who opens the derivation to check a sentence they just read and
+   *  finds it again learns nothing and doubts they read it the first time. */
+  promoted: PromotedKinds;
+}) {
   const liquid = forecast.liquid;
   const figure = <Numeric value={liquid.amount} currency={baseSymbol} />;
   const illiquid = <Numeric value={liquid.illiquid.amount} currency={baseSymbol} />;
@@ -548,7 +901,7 @@ function RunwayBasis({ forecast, baseSymbol }: { forecast: ForecastData; baseSym
         values={{ count: liquid.countedHoldings }}
         components={{ value: figure }}
       />
-      {liquid.illiquid.count > 0 ? (
+      {liquid.illiquid.count > 0 && !promoted.has('illiquid') ? (
         <>
           {' '}
           <Trans
@@ -619,14 +972,25 @@ function ObservedBasis({
   share,
   baseSymbol,
   answer,
+  promoted,
 }: {
   burn: NonNullable<ForecastData['observedBurn']>;
   share: Decimal | null;
   baseSymbol: string;
   answer: ForecastData['observedBurnAnswer'] | undefined;
+  /** See `RunwayBasis`. The ORDERING arguments below are unchanged; what a
+   *  promoted kind removes is one line, not the sequence the rest sit in. */
+  promoted: PromotedKinds;
 }) {
   const { t } = useTranslation();
   /**
+   * THIS SUM MOVED TO `materialCaveats` AND THE REASONING CAME WITH IT
+   * (SC-1068). The sentence it fed rendered exactly when the count was above
+   * zero, and the seam's second arm promotes it on exactly that condition — so
+   * a copy left here could never render. What follows is why the three terms
+   * are the three terms, kept because `materialCaveats` takes the total and
+   * cannot state it.
+   *
    * THREE TERMS, AND THEY ARE NOT IN HERE FOR THE SAME REASON.
    *
    * `internal` is deliberately NOT in this sum. A `paired` or `internal`
@@ -660,8 +1024,6 @@ function ObservedBasis({
    * stayed, `untracked` because we BELIEVE it stayed. Different claims,
    * different confidence.
    */
-  const notCounted = burn.excluded.unclassified + burn.excluded.untracked + burn.excluded.unvalued;
-
   return (
     <div className="flex flex-col gap-1">
       <p className="text-caption text-muted-foreground">
@@ -673,7 +1035,7 @@ function ObservedBasis({
           }}
         />
       </p>
-      {burn.perMonthMin !== burn.perMonthMax ? (
+      {burn.perMonthMin !== burn.perMonthMax && !promoted.has('spread') ? (
         <p className="text-caption text-muted-foreground">
           <Trans
             i18nKey="v3.money.forecast.observedSpread"
@@ -690,15 +1052,40 @@ function ObservedBasis({
           {t('v3.money.forecast.ofWhichProjected', { percent: share.times(100).toFixed(0) })}
         </p>
       ) : null}
-      {/* PROVENANCE SITS ABOVE THE EXCLUDED SENTENCE, and the placement is part
-          of the fix rather than a layout preference (SC-661, mgrin).
+      {/* SUPERSEDED BY SC-1068 ON MGRIN'S RULING OF 2026-09-07. Rewritten
+          rather than deleted, because a reversal with no record reads as drift
+          and the next reader restores what was reversed.
 
-          The excluded line is a small honest caveat about 4 EXCLUDED rows. This
-          is a large claim about 76% of the value that IS COUNTED. They are
-          OPPOSITE OPERATIONS, and adjacent they read as two versions of one
-          caveat — a reader who has just been told some rows were left out takes
-          the next qualifier as more of the same and stops. Arriving second, the
-          larger claim would be dressed as a footnote to the smaller one. */}
+          WHAT SC-661 DECIDED, and it was his call too: provenance sat ABOVE the
+          excluded sentence, and the placement was part of the fix rather than a
+          layout preference. Its reason was sound and is worth keeping. The
+          excluded line is a small honest caveat about a handful of EXCLUDED
+          rows; provenance is a large claim about the majority of the value that
+          IS COUNTED. Opposite operations — adjacent and in that order, a reader
+          who has just been told some rows were left out takes the next
+          qualifier as more of the same and stops, so the larger claim arrives
+          dressed as a footnote to the smaller one.
+
+          WHY IT NO LONGER APPLIES. The two are no longer adjacent, and cannot
+          be. The excluded sentence is a MATERIAL caveat under `materialCaveats`
+          — it carries no magnitude, and counting those rows can only shorten
+          the runway — so it sits beside the answer. Provenance is a CONFIDENCE
+          statement: it does not change the number, it changes how much of it
+          you should believe, so there is no "including it" to compute and the
+          materiality test returns *cannot say* for every account. A test that
+          can only answer that is not a filter, which is why it goes behind the
+          disclosure unconditionally rather than by rule.
+
+          Separated by a disclosure control, neither can be read as a footnote
+          to the other whatever order the document is in — which is a stronger
+          form of the guarantee SC-661 bought with an ordering.
+
+          THE TWO DECISIONS ARE GENUINELY OPPOSED AND HE SETTLED IT. SC-661 was
+          his response to not recognising the figure, remedy EXPLAIN BEFORE
+          ASKING. SC-1068 is the same man on the same block, remedy ZERO
+          QUALIFICATIONS BEFORE THE ANSWER. Asked which wins, he chose SC-1068.
+          `forecast.test.tsx` asserts the separation, so restoring the old order
+          fails a test rather than passing quietly. */}
       <BurnProvenance burn={burn} />
       {burn.staleValued > 0 ? (
         // SITS BETWEEN PROVENANCE AND THE EXCLUDED LINE, and both neighbours
@@ -719,18 +1106,26 @@ function ObservedBasis({
           {t('v3.money.forecast.observedStaleValued', { count: burn.staleValued })}
         </p>
       ) : null}
-      {notCounted > 0 ? (
-        <p className="text-caption text-muted-foreground">
-          {t('v3.money.forecast.observedNotCounted', { count: notCounted })}
-        </p>
-      ) : null}
-      {/* THE ASK COMES LAST, AND THAT ORDER IS THE ARGUMENT (SC-661).
+      {/* THE ASK COMES LAST, AND THAT ORDER IS STILL THE ARGUMENT (SC-661) —
+          but the claim it makes is narrower since SC-1068, and saying so is
+          the point of this note.
 
-          His complaint was that he does not recognise the figure. Everything
-          above is why — what window it covers, what it excludes, and that 76%
-          of it rests on answers nobody recorded making. Asking first would be
-          asking him to judge a number before being told any of that, which is
-          how the measured drain got read as an alien one in the first place. */}
+          SC-661's reason is unchanged and correct: his complaint was that he
+          does not recognise the figure, everything above the ask is why, and
+          asking first would be asking him to judge a number before being told
+          any of it — which is how the measured drain got read as an alien one.
+
+          WHAT CHANGED IS THE SCOPE OF "ABOVE". SC-661 could say *everything
+          above is why* about the whole screen, because the derivation was the
+          screen. It is now behind a disclosure, so this ordering governs what a
+          reader meets AFTER they open it, and the ask is the last thing in
+          there rather than the last thing on the page. A reader who never opens
+          it is never asked — which is the trade SC-1068 made deliberately, and
+          it is a real cost: the correction affordance, the one input on this
+          chain that is genuinely his, is now one tap further away. Named here
+          rather than discovered.
+
+          The order inside the derivation is asserted by `forecast.test.tsx`. */}
       <BurnAnswer answer={answer} measured={burn.perMonthMean} baseSymbol={baseSymbol} />
     </div>
   );

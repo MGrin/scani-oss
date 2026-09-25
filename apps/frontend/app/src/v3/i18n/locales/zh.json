@@ -615,7 +615,11 @@
         "estimatedCount_other": "有 {{count}} 笔浮动付款是按上次结算金额定价的，而不是按任何人填写的估算值。",
         "couldEstimate_other": "其中有 {{count}} 笔浮动付款此前结算过，因此可以用它们上次的金额来替代。",
         "useLastSettled_other": "使用它们上次的结算金额",
-        "stopEstimating_other": "不再为它们估算"
+        "stopEstimating_other": "不再为它们估算",
+        "verdictOk": "无忧至",
+        "verdictRunsOut": "资金将耗尽于",
+        "declineLabel": "按近期支出速度的余额，至 {{month}}",
+        "methodTitle": "这是如何计算的"
       },
       "suggestions": {
         "title": "看起来是定期付款",
