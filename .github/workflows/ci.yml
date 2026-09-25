@@ -872,7 +872,8 @@ jobs:
       - name: No tracked source file is invisible to the scan above
         run: bun scripts/check-nul-bytes.ts
 
-  # Single required status check named in the `main-protection` ruleset.
+  # One of the two required status checks in the `main-protection` ruleset;
+  # the other is `Title is not a changelog entry` from pr-title.yml.
   # Always runs (so docs-only PRs don't trip "skipped == failed" gating)
   # and fails only when an upstream job actually failed or was cancelled.
   ci-success:
