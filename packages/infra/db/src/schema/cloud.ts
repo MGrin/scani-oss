@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   boolean,
   index,
@@ -112,6 +113,9 @@ export const cloudApiKeys = pgTable(
   (t) => ({
     ownerUserIdIdx: index('cloud_api_keys_owner_user_id_idx').on(t.ownerUserId),
     tenantIdIdx: index('cloud_api_keys_tenant_id_idx').on(t.tenantId),
+    hashedKeyLiveIdx: index('cloud_api_keys_hashed_key_idx')
+      .on(t.hashedKey)
+      .where(sql`${t.revokedAt} IS NULL`),
   })
 );
 

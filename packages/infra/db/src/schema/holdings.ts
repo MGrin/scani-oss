@@ -102,6 +102,12 @@ export const holdings = pgTable(
     accountTokenExternalUq: uniqueIndex('holdings_account_token_external_uq')
       .on(table.accountId, table.tokenId, table.externalId)
       .where(sql`external_id IS NOT NULL`),
+    userVisibleNonzeroBalanceIdx: index('idx_holdings_user_visible_nonzero_balance')
+      .on(table.userId)
+      .where(sql`${table.balance}::numeric > 0 AND ${table.isHidden} = false`),
+    userVisibleZeroBalanceIdx: index('idx_holdings_user_visible_zero_balance')
+      .on(table.userId)
+      .where(sql`${table.balance}::numeric = 0 AND ${table.isHidden} = false`),
   })
 );
 
@@ -298,6 +304,9 @@ export const holdingTransactions = pgTable(
     transferReviewRuleIdx: index('idx_holding_tx_transfer_review_rule')
       .on(table.transferReviewRuleId)
       .where(sql`transfer_review_rule_id IS NOT NULL`),
+    counterpartyIdx: index('idx_holding_tx_counterparty')
+      .on(table.userId, table.counterparty)
+      .where(sql`${table.counterparty} IS NOT NULL`),
   })
 );
 

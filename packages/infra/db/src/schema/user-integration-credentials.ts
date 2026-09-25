@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   bigserial,
   boolean,
@@ -85,6 +85,9 @@ export const userIntegrationCredentials = pgTable(
       table.userId,
       table.institutionId
     ),
+    syncBlockedUntilIdx: index('idx_uic_sync_blocked_until')
+      .on(table.syncBlockedUntil)
+      .where(sql`${table.syncBlockedUntil} IS NOT NULL`),
   })
 );
 

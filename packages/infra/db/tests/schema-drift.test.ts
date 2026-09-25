@@ -1,11 +1,20 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import postgres from 'postgres';
 import {
+  checkIndexDrift,
   checkSchemaDrift,
+  type DatabaseIndexRow,
+  describeIndexDrift,
   describeSchemaDrift,
+  diffIndexes,
   diffSchema,
+  expectedIndexes,
   expectedSchema,
+  INDEX_EXCEPTIONS,
+  type IndexShape,
+  normaliseSql,
   type SchemaDriftReport,
+  truncateIdentifier,
 } from '../src/schema-drift';
 
 /**
@@ -170,5 +179,158 @@ describe('expectedSchema', () => {
     // rather than the probe silently comparing nothing against nothing.
     expect(expected.size).toBeGreaterThanOrEqual(10);
     expect([...(expected.get('users') ?? [])]).toContain(OMITTED_COLUMN);
+  });
+});
+
+/**
+ * SC-946. SC-938's index was in every deployed database and declared nowhere
+ * for 15 days, and the column probe above cannot see an index by
+ * construction. The direction that bit was the DECLARATION missing, so the
+ * comparison runs both ways and compares full definitions.
+ */
+describe('index drift (SC-946)', () => {
+  test('the migrated schema this suite runs on matches every declared index', async () => {
+    const report = await checkIndexDrift({ timeoutMs: 10_000 });
+    // Non-vacuous: a drizzle that stopped exposing indexes would compare nothing.
+    expect(report.checkedIndexes).toBeGreaterThan(50);
+    expect({
+      undeclared: report.undeclared,
+      missing: report.missing,
+      differing: report.differing.map((d) => d.name),
+      staleExceptions: report.staleExceptions,
+    }).toEqual({ undeclared: [], missing: [], differing: [], staleExceptions: [] });
+    expect(report.ok).toBe(true);
+  });
+
+  test('an undeclared index is named, and constraint-backed ones are excluded by rule', async () => {
+    const schema = await newSchema();
+    await sql.unsafe(
+      `create table "${schema}"."users" (id text primary key, email text, handle text unique)`
+    );
+    await sql.unsafe(`create index zz_undeclared_idx on "${schema}"."users" (handle)`);
+    const report = await checkIndexDrift({ pgSchema: schema, timeoutMs: 10_000 });
+    expect(report.undeclared).toEqual(['users.zz_undeclared_idx']);
+    // The control: the primary key and the UNIQUE constraint each own an index
+    // that no drizzle `index()` can declare, and neither may be flagged.
+    expect(report.undeclared.join()).not.toContain('users_pkey');
+    expect(report.undeclared.join()).not.toContain('users_handle_key');
+  });
+
+  test('a definition that differs only in its expression is drift; the same name on the right one is not', async () => {
+    const schema = await newSchema();
+    await sql.unsafe(`create table "${schema}"."users" (id text primary key, email text)`);
+    await sql.unsafe(`create unique index users_email_lower_unique on "${schema}"."users" (email)`);
+    const wrong = await checkIndexDrift({ pgSchema: schema, timeoutMs: 10_000 });
+    expect(wrong.differing.map((d) => d.name)).toEqual(['users_email_lower_unique']);
+
+    await sql.unsafe(`drop index "${schema}".users_email_lower_unique`);
+    await sql.unsafe(
+      `create unique index users_email_lower_unique on "${schema}"."users" (lower(email))`
+    );
+    const right = await checkIndexDrift({ pgSchema: schema, timeoutMs: 10_000 });
+    expect(right.differing.map((d) => d.name)).toEqual([]);
+    expect(right.missing).not.toContain('users.users_email_lower_unique');
+  });
+
+  test('the message names each kind of disagreement', () => {
+    const shape: IndexShape = {
+      table: 't',
+      unique: false,
+      method: 'btree',
+      keys: ['a'],
+      where: null,
+    };
+    const message = describeIndexDrift({
+      ok: false,
+      undeclared: ['t.u_idx'],
+      missing: ['t.m_idx'],
+      differing: [{ name: 'd_idx', database: shape, declared: { ...shape, keys: ['b'] } }],
+      staleExceptions: ['s_idx'],
+      checkedIndexes: 4,
+      latencyMs: 1,
+    });
+    for (const part of [
+      'undeclared t.u_idx',
+      'missing t.m_idx',
+      'definition d_idx',
+      'stale exception s_idx',
+    ]) {
+      expect(message).toContain(part);
+    }
+  });
+
+  test('a declared index the database lacks is named', () => {
+    const declared: IndexShape = {
+      table: 't',
+      unique: false,
+      method: 'btree',
+      keys: ['a'],
+      where: null,
+    };
+    const result = diffIndexes(new Map([['t_a_idx', declared]]), [], {});
+    expect(result.missing).toEqual(['t.t_a_idx']);
+  });
+
+  test('an exception whose index is gone goes red, so the list cannot rot', () => {
+    const row: DatabaseIndexRow = {
+      index_name: 'kept_idx',
+      table_name: 't',
+      is_unique: false,
+      method: 'btree',
+      keys: ['a'],
+      where: null,
+    };
+    const exceptions = {
+      kept_idx: { reason: 'r', migration: 'm' },
+      gone_idx: { reason: 'r', migration: 'm' },
+    };
+    const result = diffIndexes(new Map(), [row], exceptions);
+    expect(result.undeclared).toEqual([]);
+    expect(result.staleExceptions).toEqual(['gone_idx']);
+  });
+
+  test('every exception names a reason and a migration that exists', async () => {
+    for (const [name, entry] of Object.entries(INDEX_EXCEPTIONS)) {
+      expect(entry.reason.length).toBeGreaterThan(20);
+      const file = Bun.file(new URL(`../src/migrations/${entry.migration}`, import.meta.url));
+      expect(await file.text()).toContain(name);
+    }
+  });
+
+  test('a name drizzle declares longer than Postgres stores is compared as Postgres stores it', () => {
+    const long =
+      'portfolio_value_daily_user_id_scope_kind_scope_id_snapshot_date_base_currency_id_pk';
+    expect(truncateIdentifier(long)).toBe(
+      'portfolio_value_daily_user_id_scope_kind_scope_id_snapshot_date'
+    );
+    expect(truncateIdentifier('short_idx')).toBe('short_idx');
+    for (const name of expectedIndexes().keys()) {
+      expect(new TextEncoder().encode(name).length).toBeLessThanOrEqual(63);
+    }
+  });
+
+  describe('normaliseSql — each rule is one a real sweep needed', () => {
+    test('drizzle qualifies columns with the table and Postgres does not', () => {
+      expect(normaliseSql('"users"."email" IS NOT NULL')).toBe(normaliseSql('email IS NOT NULL'));
+    });
+
+    test('Postgres rewrites IN (…) as = ANY (ARRAY[…]) with casts', () => {
+      expect(normaliseSql("kind IN ('withdraw', 'transfer_out')")).toBe(
+        normaliseSql("(kind = ANY (ARRAY['withdraw'::text, 'transfer_out'::text]))")
+      );
+    });
+
+    test('a cast is dropped without swallowing the clause after it', () => {
+      expect(
+        normaliseSql('"holdings"."balance"::numeric > 0 AND "holdings"."is_hidden" = false')
+      ).toBe(normaliseSql('((balance)::numeric > (0)::numeric) AND (is_hidden = false)'));
+      expect(normaliseSql('a::numeric > 0 AND b = 1')).toContain('andb=1');
+      expect(normaliseSql('x::timestamp with time zone > now() AND y')).toContain('andy');
+    });
+
+    test('the control: a real difference survives normalisation', () => {
+      expect(normaliseSql('email')).not.toBe(normaliseSql('lower(email)'));
+      expect(normaliseSql('a > 0')).not.toBe(normaliseSql('a = 0'));
+    });
   });
 });

@@ -50,6 +50,10 @@ export const vendors = pgTable(
       table.normalizedName
     ),
     userMatchKeyIdx: index('idx_vendors_user_match_key').on(table.userId, table.matchKey),
+    matchKeyTrgmIdx: index('idx_vendors_match_key_trgm').using(
+      'gin',
+      table.matchKey.op('gin_trgm_ops')
+    ),
   })
 );
 
