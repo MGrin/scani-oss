@@ -1,30 +1,30 @@
 {
   "baselines": {
     "forecast-desktop": {
-      "head": "160da87bddc5058c481e26b78924c37c14e3fcb9",
-      "renderedDigest": "2c55dc68f2f694ab8f6f2e5da4b1f07a78bac244c5fe9c329ab02ec424c9e166",
+      "head": "64ac5157abcd24c74d137faf06fb485319fdf00d",
+      "renderedDigest": "698cefa06d69dcf5f8180e6a16186b691591200304026e0ca3a71fe95f67ee43",
       "dirty": [],
       "dirtyCount": 0,
       "base": {
-        "ref": "2375224e50aeff689ad53622e09e6a66d8c34fc2",
+        "ref": "64ac5157abcd24c74d137faf06fb485319fdf00d",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "a63700cbc98682fc30d1a1d3048eb30bfab7330b5f2603a1b6b63461fc1822bd",
-      "capturedAt": "2026-09-11T09:35:45.749Z"
+      "sha256": "9a929ba4e7420c919f5833c8e521a974e7d21d0100f59b03817d309d855bbc54",
+      "capturedAt": "2026-09-25T01:24:56.804Z"
     },
     "forecast-phone": {
-      "head": "160da87bddc5058c481e26b78924c37c14e3fcb9",
-      "renderedDigest": "2c55dc68f2f694ab8f6f2e5da4b1f07a78bac244c5fe9c329ab02ec424c9e166",
+      "head": "64ac5157abcd24c74d137faf06fb485319fdf00d",
+      "renderedDigest": "698cefa06d69dcf5f8180e6a16186b691591200304026e0ca3a71fe95f67ee43",
       "dirty": [],
       "dirtyCount": 0,
       "base": {
-        "ref": "2375224e50aeff689ad53622e09e6a66d8c34fc2",
+        "ref": "64ac5157abcd24c74d137faf06fb485319fdf00d",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "1dd5869ee2414b497aeb828396193d8811400aaad60641cf17468f229bcab491",
-      "capturedAt": "2026-09-11T09:35:45.749Z"
+      "sha256": "8bb319a8f85488f8f4f5dcc6b3ce9fcd8cbba66861005833ef9a2a0a91f156e7",
+      "capturedAt": "2026-09-25T01:25:42.920Z"
     },
     "holdings-desktop": {
       "sha256": "f706f1dc056537081a9bd4fb3ad3d1b993868b9c7c5a3d79446b1f0ae825e9fb",
