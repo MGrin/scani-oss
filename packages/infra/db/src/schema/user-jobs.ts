@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   index,
   integer,
@@ -104,6 +105,12 @@ export const userJobs = pgTable(
       table.state,
       table.createdAt
     ),
+    notDismissedIdx: index('idx_user_jobs_not_dismissed')
+      .on(table.userId, table.createdAt)
+      .where(sql`${table.dismissedAt} IS NULL`),
+    userDeadIdx: index('idx_user_jobs_user_dead')
+      .on(table.userId, table.deadAt)
+      .where(sql`${table.deadAt} IS NOT NULL AND ${table.actionTakenAt} IS NULL`),
   })
 );
 

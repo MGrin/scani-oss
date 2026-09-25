@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   boolean,
@@ -10,6 +10,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
 } from 'drizzle-orm/pg-core';
 import { holdings } from './holdings';
@@ -224,8 +225,8 @@ export const tokens = pgTable(
      * see or price it, never that everybody may. Ownership is a question about
      * the type as well as this column: `customTokenVisibleTo` in
      * `@scani/domain` is the one predicate that asks both. Symbol uniqueness
-     * is per owner: two partial unique indexes, created in the SC-1285
-     * migration because Drizzle cannot express them.
+     * is per owner: two partial unique indexes from the SC-1285 migration,
+     * declared below with the table's other indexes.
      */
     // `users.base_currency_id` references this table, so the return type is
     // stated: inferring it would be circular.
@@ -246,11 +247,33 @@ export const tokens = pgTable(
     symbolIdx: index('idx_tokens_symbol').on(table.symbol),
     typeIdIdx: index('idx_tokens_type_id').on(table.typeId),
     unpriceableUntilIdx: index('idx_tokens_unpriceable_until').on(table.unpriceableUntil),
-    // Note: the 3-tuple unique constraint and EVM contract jsonb index
-    // are created in migration 0055 directly — Drizzle's `unique()` /
-    // `index()` builders can't express `COALESCE(...)` or expression
-    // indexes over jsonb paths. Drizzle's introspection won't see them
-    // but the database enforces them.
+    // Both were created by hand in `0000_clean_start` and left undeclared on
+    // the belief that drizzle could not express them; `.on()` takes `sql`, so
+    // it can. Undeclared, they were invisible to every check that reads this
+    // file (SC-946).
+    // SC-1285 made both partial: the catalog and unowned custom tokens stay
+    // unique on the old key, and an owner's own tokens are unique per owner.
+    symbolTypeSegmentUq: uniqueIndex('tokens_symbol_type_segment_unique')
+      .on(table.symbol, table.typeId, sql`COALESCE(${table.marketSegment}, '')`)
+      .where(sql`${table.createdByUserId} IS NULL`),
+    ownerSymbolTypeUq: uniqueIndex('tokens_owner_symbol_type_unique')
+      .on(
+        table.createdByUserId,
+        table.symbol,
+        table.typeId,
+        sql`COALESCE(${table.marketSegment}, '')`
+      )
+      .where(sql`${table.createdByUserId} IS NOT NULL`),
+    etherscanContractIdx: index('tokens_etherscan_contract_idx')
+      .on(
+        sql`(${table.providerMetadata} -> 'etherscan') ->> 'chainId'`,
+        sql`(${table.providerMetadata} -> 'etherscan') ->> 'contractAddress'`
+      )
+      .where(sql`${table.providerMetadata} ? 'etherscan'`),
+    lookalikeOfIdx: index('idx_tokens_lookalike_of')
+      .on(table.lookalikeOf)
+      .where(sql`${table.lookalikeOf} IS NOT NULL`),
+    scamScoreVersionIdx: index('idx_tokens_scam_score_version').on(table.scamScoreVersion),
   })
 );
 
