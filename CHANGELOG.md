@@ -19,6 +19,77 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.47.0](https://github.com/MGrin/scani-oss/compare/v0.46.0...v0.47.0) (2026-09-25)
+
+
+### Features
+
+* **ai:** cap AI spend per user per day and across everyone per hour (SC-1265) ([fe27382](https://github.com/MGrin/scani-oss/commit/fe27382c4770f124b33c5b62848d6f740f70305a))
+* **api:** /health reports whether the request came through Cloudflare (SC-1264) ([c983710](https://github.com/MGrin/scani-oss/commit/c9837103798eafa27ad1c77af785e5a54a78db4e))
+* **api:** an api can refuse requests that went round Cloudflare (SC-1264) ([47b601e](https://github.com/MGrin/scani-oss/commit/47b601e440e9507b142b4e151c2440aae10bae9f))
+* **api:** the returns answer carries what BTC and the S&P 500 did (SC-464) ([750b365](https://github.com/MGrin/scani-oss/commit/750b36511baa829875973b20cd285e6ffc0d629a))
+* **app:** account and institution detail show their own returns (SC-1159) ([95cf19a](https://github.com/MGrin/scani-oss/commit/95cf19a6f11747f4ae712d660f0852a217d39d9d))
+* **app:** Home shows how the portfolio did, time- and money-weighted (SC-1159) ([6cac008](https://github.com/MGrin/scani-oss/commit/6cac008eeb677b3d2618f43d171cd4881dd7b26a))
+* **app:** show suggested recurring payments on Recurring (SC-674) ([b0abb55](https://github.com/MGrin/scani-oss/commit/b0abb556939d5ddae0869531299518bdb3e2c577))
+* **app:** the returns card compares against Bitcoin and the S&P 500 (SC-464) ([007070c](https://github.com/MGrin/scani-oss/commit/007070cb7f2d033ab41d3e8b7071ea1e591a1b02))
+* **app:** the returns card splits out what exchange rates did (SC-1159) ([9219885](https://github.com/MGrin/scani-oss/commit/9219885e2d9abf5d58ff8b83d257cd95a8b69194))
+* **auth:** a Cloudflare Turnstile check before sign-in or contact mail goes out (SC-1266) ([57566f4](https://github.com/MGrin/scani-oss/commit/57566f4bc8187ef182d20c85d356532a662b33be))
+* **auth:** the Turnstile widget on sign-in, and the CSP it needs (SC-1266) ([8624665](https://github.com/MGrin/scani-oss/commit/86246653629888103cced9e13eaf440b89da11ac))
+* **domain:** benchmark price history for BTC and the S&P 500 (SC-464) ([ade3d0c](https://github.com/MGrin/scani-oss/commit/ade3d0c6daf0c473e20e72982be34577ae64fc6b))
+* **domain:** delete a cloud-console account and its API keys (SC-1263) ([81734d2](https://github.com/MGrin/scani-oss/commit/81734d2cccfe088881dc558994a72133d9a256d5))
+* **domain:** delete an account, not only its data (SC-1260) ([a12bd34](https://github.com/MGrin/scani-oss/commit/a12bd34e99949a66b0163a28c9c7e357052e8882))
+* **forecast:** port SC-1068's two-state verdict to the mirror (SC-1214) ([edfcbc8](https://github.com/MGrin/scani-oss/commit/edfcbc85f4dce1ba2341eb1f5857b9b4a1eb59d6))
+* **payments:** suggest recurring payments nobody recorded (SC-674) ([a25cd80](https://github.com/MGrin/scani-oss/commit/a25cd800097a3d57b32e2770c37e1942299fbb38))
+* **pdf:** set Traditional Chinese names instead of marking them (SC-785) ([59c8177](https://github.com/MGrin/scani-oss/commit/59c8177b458984ec098a96ee185336f0fdaed015))
+* the returns card compares against US inflation (SC-1255) ([ac264cb](https://github.com/MGrin/scani-oss/commit/ac264cbf7fe0f73fdb5686e11ec2912733ecda5f))
+* **worker:** the watchdog keeps a memory history on the persistent volume (SC-1269) ([3293fa9](https://github.com/MGrin/scani-oss/commit/3293fa983211f37374aadfdabe95c39c6fcad725))
+
+
+### Bug Fixes
+
+* **ai:** charge the AI budget per provider attempt, not per call (SC-1265) ([00c2db5](https://github.com/MGrin/scani-oss/commit/00c2db54e74c0043a60b8600ab842b97580b9e60))
+* **api:** a hand-typed holding is not flagged for having no coverage row (SC-1252) ([92e9858](https://github.com/MGrin/scani-oss/commit/92e985845eff9079b902226ef5cf27c074f5cf3a))
+* **api:** an hourly cap on codes and links sent to new addresses (SC-1260) ([f45fda2](https://github.com/MGrin/scani-oss/commit/f45fda2a3597d2e96959266d7f400e924219cbd9))
+* **api:** cap exports, upload bytes and client error reports per caller (SC-1267) ([7d35827](https://github.com/MGrin/scani-oss/commit/7d358271de4a77ae231d859470f168ee9093c6d5))
+* **api:** three hardening items from the attack audit (SC-1288) ([b699269](https://github.com/MGrin/scani-oss/commit/b69926922bf3e2ab2723eb05b5cbf8d1cc969229))
+* **app:** a currency holding does not offer Mark as scam (SC-1251) ([2bdd270](https://github.com/MGrin/scani-oss/commit/2bdd270aecee65594003bf535cd48c3673c85e35))
+* **app:** a finished import no longer reads as waiting on you until reload (SC-1275) ([2dccde8](https://github.com/MGrin/scani-oss/commit/2dccde878e674838bfa30f3a4ffaaf667bbcdfc3))
+* **app:** a newcomer's first account is asked for, not searched for (SC-1249) ([2a62d75](https://github.com/MGrin/scani-oss/commit/2a62d7580afbaae1bc0143729b20c3375368b5f8))
+* **app:** choosing an institution keeps the new account being typed in (SC-1250) ([46cf66b](https://github.com/MGrin/scani-oss/commit/46cf66b858d592566545038a04e4c08390dbfd48))
+* **app:** Home's history starts at the first holding (SC-1248) ([5f5e862](https://github.com/MGrin/scani-oss/commit/5f5e862ab6cbc685f16ac539a4006554ec97076e))
+* **app:** the comparison caption says inflation is prices, not a holding (SC-1255) ([e8e63d5](https://github.com/MGrin/scani-oss/commit/e8e63d54e554481958e6f7a1b2222c45230bcf19))
+* **app:** the job row catch-up poll stops after 30 tries (SC-1275) ([0584b6d](https://github.com/MGrin/scani-oss/commit/0584b6dd6d732f0ed529d83813f379d940ff97da))
+* **app:** the movement form shows the current balance as the holdings table does (SC-1253) ([ab550b9](https://github.com/MGrin/scani-oss/commit/ab550b99fd2f6910f756b202cef90626a9ab8030))
+* **app:** the net-worth axis names each tick differently (SC-1247) ([a1f41e3](https://github.com/MGrin/scani-oss/commit/a1f41e3fe6296dd8be43523f979a2bb86cb67eb7))
+* **app:** the picker no longer offers to create a name it already lists (SC-1274) ([9d32ede](https://github.com/MGrin/scani-oss/commit/9d32ede98d8e910d3b462fb7d0b9dbc8dfe1d9a2))
+* **app:** the S&P 500 line says it is price only (SC-464) ([fd978ea](https://github.com/MGrin/scani-oss/commit/fd978ea89e11eb16fb3a6b4805ba26d9e0d43b1a))
+* **compose:** pull MinIO from pgsty now that quay.io/minio answers 401 ([4afaec3](https://github.com/MGrin/scani-oss/commit/4afaec3f9785af49336ef9e82a51d0b58a1a485b))
+* **data-provider:** cap the cloud console's sign-in and OTP sends (SC-1260) ([fe7da81](https://github.com/MGrin/scani-oss/commit/fe7da812847821e3d141156756bf28a4ab206ab6))
+* **data-provider:** the API reference lists only what a customer key can call ([0129610](https://github.com/MGrin/scani-oss/commit/0129610d2952be76c17a03dbc54a89e0b2c2c404))
+* **db:** declare the two SC-1285 token indexes the drift check now sees (SC-946) ([e377396](https://github.com/MGrin/scani-oss/commit/e377396620221fae4dca31c4d46c2727fd97984b))
+* **dev-stack:** every published port binds 127.0.0.1 (SC-1299) ([bba0a51](https://github.com/MGrin/scani-oss/commit/bba0a51a02a08a1ac49773cbc5242b6748795db7))
+* **domain:** a flow is valued at the instant its day's balance is (SC-1254) ([9cdb2f9](https://github.com/MGrin/scani-oss/commit/9cdb2f984b11416d3d4df3f55766c85539593419))
+* **domain:** write the recurrence key separator as \x00, not a literal NUL (SC-674) ([0c247f5](https://github.com/MGrin/scani-oss/commit/0c247f52395e97ae28db69b1a55ca95b74f5f8b1))
+* **email:** no mail is sent to a throwaway inbox (SC-1260) ([e9a4f95](https://github.com/MGrin/scani-oss/commit/e9a4f95384e8bfcbb21a6c95d4310b3ed7bb95d6))
+* **email:** read an address's domain without a polynomial regex (SC-1260) ([d5ee1fa](https://github.com/MGrin/scani-oss/commit/d5ee1fa568e876b5db3c7cdaef92ba9a62c0a8d5))
+* **email:** strip spaces before a trailing &gt; when reading a domain (SC-1260) ([53cc241](https://github.com/MGrin/scani-oss/commit/53cc2414fc22f7221e4f6972efaabf9f2bf48174))
+* **file-import:** decide day/month order per column, never by new Date() (SC-1291) ([e48e326](https://github.com/MGrin/scani-oss/commit/e48e326b6ff33a5b2a779d516d43f9da52bbee8b))
+* **file-import:** fold every apostrophe in a QIF date, not only the first (SC-1291) ([bbcfafb](https://github.com/MGrin/scani-oss/commit/bbcfafb00ddc3768bae0a197992d681b0ca00391))
+* **groups:** bulk assign checks that every group is the caller's (SC-1286) ([70c56e7](https://github.com/MGrin/scani-oss/commit/70c56e7f1077c48daf14527a39d9d9d56c161b18))
+* **inflation:** BLS is in the admin catalog, and the benchmark test seeds its own span (SC-1255) ([3bce92a](https://github.com/MGrin/scani-oss/commit/3bce92a541d001ec5a4a9bd450803b2a208a09b2))
+* let the Turnstile token through CORS, and fail open when the check cannot load (SC-1266) ([50acdc9](https://github.com/MGrin/scani-oss/commit/50acdc98ac6dd90247ff909716283891d1120c01))
+* **payments:** settling an occurrence checks the linked transaction is yours (SC-1287) ([ddb62d1](https://github.com/MGrin/scani-oss/commit/ddb62d1a7ef6aa80ca8b6e792fc9651d0eb40b02))
+* **pwa:** Update hands the page to the waiting worker in one press ([acb1a84](https://github.com/MGrin/scani-oss/commit/acb1a84555d5979c999410e770dd1a022903ff56))
+* **rate-limiter:** on Fly, per-IP limits key on fly-client-ip alone (SC-1262) ([99df28b](https://github.com/MGrin/scani-oss/commit/99df28bfdccdacb8e29d5fead2d1809ae118d05e))
+* **tokens:** a custom token is private to the user who created it (SC-1285) ([215c7a8](https://github.com/MGrin/scani-oss/commit/215c7a8c8b987b118e70f3621d2c826f6e72578c))
+* **tokens:** delete-all-data severs a custom token's owner (SC-1285) ([f06949b](https://github.com/MGrin/scani-oss/commit/f06949b9f0f71d8b6dab36ae7fb1949a4b5de089))
+* **wallets:** bound how much one wallet import may read (SC-1271) ([bb88380](https://github.com/MGrin/scani-oss/commit/bb88380012975df1b1b2aeb78aa938a37fb3d422))
+* **worker:** a liveness probe that never arms says so (SC-1269) ([56cc3c3](https://github.com/MGrin/scani-oss/commit/56cc3c3bce20574554f87091471d22579945aca0))
+* **worker:** read only the observations each backfill chunk uses (SC-1283) ([2dc8fda](https://github.com/MGrin/scani-oss/commit/2dc8fda4dd072b087b712d1af64fc47c37b19d52))
+* **worker:** stop the history backfill from loading every token's prices (SC-1283) ([5d065e3](https://github.com/MGrin/scani-oss/commit/5d065e303d17a91a6fabfca64e445765bc60aed2))
+* **worker:** stop the worker before the VM runs out of memory (SC-1269) ([2618be0](https://github.com/MGrin/scani-oss/commit/2618be05ba22b9fb5d2b939e99ad02addc1d360e))
+* **worker:** the watchdog also stops a worker whose Redis stops answering (SC-1269) ([73412c1](https://github.com/MGrin/scani-oss/commit/73412c1d3bd310c4706ce47144a8a828c8051de2))
+
 ## [0.46.0](https://github.com/MGrin/scani-oss/compare/v0.45.0...v0.46.0) (2026-09-19)
 
 
