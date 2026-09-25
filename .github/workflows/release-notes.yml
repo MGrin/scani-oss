@@ -35,8 +35,10 @@ name: Release notes
 # repository. The cost is that the result is not automatically a check on the
 # pull request, so this posts a commit status itself.
 #
-# NOT A REQUIRED CHECK. `main-protection` requires `CI Success` alone, so this
-# is red-and-visible on the release PR rather than blocking. Adding it to that
+# NOT A REQUIRED CHECK. `main-protection` requires exactly two contexts, `CI
+# Success` and `Title is not a changelog entry` (read from the live ruleset
+# 2026-09-25, SC-1125), and this is neither, so it is red-and-visible on the
+# release PR rather than blocking. Adding it to that
 # ruleset's required contexts is a repository-settings change; scani-oss is not
 # under Terraform (SC-565), so it is a manual one.
 
