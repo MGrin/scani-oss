@@ -15,6 +15,16 @@ service. MIT licensed.
 [![X](https://img.shields.io/badge/X-%40scani__xyz-000000?logo=x&logoColor=white)](https://x.com/scani_xyz)
 [![GitHub Sponsors](https://img.shields.io/github/sponsors/MGrin?label=Sponsor&logo=GitHub-Sponsors&color=ea4aaa)](https://github.com/sponsors/MGrin)
 
+<a href="https://scani.xyz/#walkthrough">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="./.github/assets/walkthrough-dark-desktop.webp">
+  <img alt="Scani in one minute: a narrated walkthrough of the live demo (opens scani.xyz)" src="./.github/assets/walkthrough-light-desktop.webp">
+</picture>
+</a>
+
+**▶︎ [Watch Scani in one minute →](https://scani.xyz/#walkthrough)** — a narrated
+walkthrough of the live demo, with captions.
+
 **▶︎ [Live demo →](https://demo.scani.xyz)** — a read-only instance with no
 account, no email and no credential. Seeded with one invented cross-border
 portfolio (a UK consultant with EUR income, GBP costs, a USD brokerage and
