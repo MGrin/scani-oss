@@ -89,6 +89,15 @@ comment is deliberately in that position; explanatory prose should not be.
 * **worker:** stop the history backfill from loading every token's prices (SC-1283) ([5d065e3](https://github.com/MGrin/scani-oss/commit/5d065e303d17a91a6fabfca64e445765bc60aed2))
 * **worker:** stop the worker before the VM runs out of memory (SC-1269) ([2618be0](https://github.com/MGrin/scani-oss/commit/2618be05ba22b9fb5d2b939e99ad02addc1d360e))
 * **worker:** the watchdog also stops a worker whose Redis stops answering (SC-1269) ([73412c1](https://github.com/MGrin/scani-oss/commit/73412c1d3bd310c4706ce47144a8a828c8051de2))
+* **app:** X-Robots-Tag offers the root document and nothing else (SC-1111) ([8a318d7](https://github.com/MGrin/scani-oss/commit/8a318d760f1c163ad9d8b613cf68ece3fb5e73a2))
+* **app:** a group of only inactive holdings headlines their value, not zero (SC-1128) ([3a56b91](https://github.com/MGrin/scani-oss/commit/3a56b915264da6e90bddede2c981477ca74937ef))
+* **app:** the published frontend image names the commit it was built from (SC-1208, SC-1187) ([6b26302](https://github.com/MGrin/scani-oss/commit/6b26302ce7a804fecbb02531c08d1e7778ced2f7))
+* **app:** v3 says "in 12m" for a future time instead of "-12m ago" (SC-1047) ([15727d5](https://github.com/MGrin/scani-oss/commit/15727d50266803dfc0db0bf1958936937e726426))
+* **db:** declare the 12 hand-made indexes and compare indexes in schema-drift (SC-946) ([f487cd1](https://github.com/MGrin/scani-oss/commit/f487cd1c0bec4bfa42c981197dc20edf68d60d9f))
+* **i18n:** the vault's "counting toward" heading agrees with its count (SC-811) ([b5c0f9b](https://github.com/MGrin/scani-oss/commit/b5c0f9b326d689b8db8f1535973a43274c29ebc8))
+* **redis:** bound the cost breaker and the job-event publish so they fail open (SC-1027) ([85dd864](https://github.com/MGrin/scani-oss/commit/85dd864ae45b235620b9ce64011e2848233142bc))
+* **ui:** the account picker stays inside its pane, in either direction (SC-1205) ([415d24e](https://github.com/MGrin/scani-oss/commit/415d24ecc178b53fe2db85326cb2982ccd959e99))
+* every group surface shows an all-inactive group's worth, labelled (SC-1128) ([40be2a3](https://github.com/MGrin/scani-oss/commit/40be2a36db4f6f7659b616205fa9ac55e47759b9))
 
 ## [0.46.0](https://github.com/MGrin/scani-oss/compare/v0.45.0...v0.46.0) (2026-09-19)
 
