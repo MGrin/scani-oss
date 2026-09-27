@@ -138,3 +138,6 @@ scripts/.source-mutation-journal-*.json
 # fixture this line does not reach — it asks git, so deleting this line turns
 # those tests red rather than turning the guard into a no-op.
 **/scani-test-fixture-*
+
+# Generated from migration SQL by db:journal for drizzle-kit.
+packages/infra/db/src/migrations/meta/_journal.json
