@@ -19,6 +19,13 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.47.1](https://github.com/MGrin/scani-oss/compare/v0.47.0...v0.47.1) (2026-09-27)
+
+
+### Bug Fixes
+
+* harden ownership uploads logging and job admission ([37016c9](https://github.com/MGrin/scani-oss/commit/37016c9152445f7387c46038f28da01b575c032e))
+
 ## [0.47.0](https://github.com/MGrin/scani-oss/compare/v0.46.0...v0.47.0) (2026-09-25)
 
 
