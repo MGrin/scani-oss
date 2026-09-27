@@ -19,6 +19,13 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.48.0](https://github.com/MGrin/scani-oss/compare/v0.47.1...v0.48.0) (2026-09-27)
+
+
+### Features
+
+* **self-host:** keep Tier 2 data local and bundle SeaweedFS ([eddbc7d](https://github.com/MGrin/scani-oss/commit/eddbc7d9140848abb65a14b0aa39c61be76bb7b6))
+
 ## [0.47.1](https://github.com/MGrin/scani-oss/compare/v0.47.0...v0.47.1) (2026-09-27)
 
 
