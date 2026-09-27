@@ -8,13 +8,6 @@ import {
   TRANSACTION_SECTIONS,
 } from '../../src/providers/ibkr/statement-warnings';
 
-/**
- * SC-435. Every IBKR transaction in production is a `<Trade>` — no dividend,
- * interest, deposit or withdrawal has ever arrived, while the cash plainly
- * moved. The parser handles all of them, so the rows are absent before we ever
- * see them, and a section the query never requested looked exactly like a
- * section with nothing in it.
- */
 describe('hasFlexSection', () => {
   test('finds a section that has rows in it', () => {
     const xml =
@@ -90,7 +83,7 @@ describe('describeMissingSections', () => {
   test('the Cash Transactions case names the loss and the screen that fixes it', () => {
     const message = describeMissingSections(
       missingFlexSections('<Trades />', TRANSACTION_SECTIONS)
-    );
+    )?.text;
 
     expect(message).toContain('"Cash Transactions" section');
     expect(message).toContain(
@@ -111,7 +104,7 @@ describe('describeMissingSections', () => {
   test('it hedges rather than asserting the query is misconfigured', () => {
     const message = describeMissingSections(
       missingFlexSections('<Trades />', TRANSACTION_SECTIONS)
-    );
+    )?.text;
 
     expect(message).toContain('carried no');
     expect(message).toContain('If you have had any');
@@ -120,7 +113,7 @@ describe('describeMissingSections', () => {
   test('two missing sections are one warning, not two', () => {
     const message = describeMissingSections(
       missingFlexSections('<AccountInformation accountId="U123" />', TRANSACTION_SECTIONS)
-    );
+    )?.text;
 
     expect(message).toContain('"Trades" or "Cash Transactions" sections');
     expect(message).toContain('no buys or sells could be imported');
@@ -139,7 +132,7 @@ describe('describeUnmappedCashTypes', () => {
   });
 
   test('it names the type verbatim — the string IS the fix', () => {
-    const message = describeUnmappedCashTypes(new Map([['Bond Interest Received', 3]]));
+    const message = describeUnmappedCashTypes(new Map([['Bond Interest Received', 3]]))?.text;
 
     expect(message).toContain('"Bond Interest Received" (3)');
     expect(message).toContain('3 cash transactions');
@@ -147,7 +140,7 @@ describe('describeUnmappedCashTypes', () => {
   });
 
   test('singular reads as singular', () => {
-    const message = describeUnmappedCashTypes(new Map([['Carbon Credits', 1]]));
+    const message = describeUnmappedCashTypes(new Map([['Carbon Credits', 1]]))?.text;
 
     expect(message).toContain('1 cash transaction in this statement');
     expect(message).toContain('so it was not imported');
@@ -160,7 +153,7 @@ describe('describeUnmappedCashTypes', () => {
    * Flex Query" here would send them to fix a setting that is already correct.
    */
   test('it says whose problem it is, and does not send the user to IBKR', () => {
-    const message = describeUnmappedCashTypes(new Map([['Something New', 1]]));
+    const message = describeUnmappedCashTypes(new Map([['Something New', 1]]))?.text;
 
     expect(message).toContain('ours to fix, not yours');
     expect(message).not.toContain('Flex Queries');
@@ -176,7 +169,7 @@ describe('describeUnmappedCashTypes', () => {
         ['E', 4],
         ['F', 5],
       ])
-    );
+    )?.text;
 
     expect(message).toContain('"B" (9), "F" (5), "E" (4), "D" (3)');
     expect(message).toContain('and 2 further types');

@@ -109,6 +109,17 @@ while read -r _local_ref local_sha _remote_ref _remote_sha; do
     continue
   fi
 
+  # Refuse foreign history even when the changed files are public-safe.
+  # A clean tree cannot prove that its ancestors contain no private code.
+  mirror_roots=$(git rev-list --max-parents=0 "refs/remotes/${REMOTE_NAME}/main" 2>/dev/null) || mirror_roots=""
+  [ -n "$mirror_roots" ] || fail "cannot read the root of ${REMOTE_NAME}/main, so this push's HISTORY WAS NOT CHECKED. Run \`git fetch ${REMOTE_NAME}\` and push again. This is not a pass."
+  pushed_roots=$(git rev-list --max-parents=0 "$local_sha") || fail "could not list the root commits of what is being pushed — HISTORY WAS NOT CHECKED. This is not a pass."
+  for root in $pushed_roots; do
+    if ! printf '%s\n' "$mirror_roots" | grep -qx "$root"; then
+      fail "this push reaches root commit ${root}, which ${REMOTE_NAME}/main does not have: it carries history that is not the mirror's, most likely PRIVATE history (SC-1342). Build the port from ${REMOTE_NAME}/main and cherry-pick onto it."
+    fi
+  done
+
   if [ ! -f scripts/check-oss-bound-paths.ts ]; then
     # pre-commit NOTES here and that is right for a commit, which is local and
     # amendable. This is the last gate before the content is public, so the

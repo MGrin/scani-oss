@@ -9,6 +9,10 @@ function returns(overrides: Record<string, unknown> = {}): Input {
   return {
     requestedWindow: { kind: 'ytd', from: '2026-01-01', to: '2026-09-19' },
     effectiveWindow: { from: '2026-01-01', to: '2026-09-19' },
+    baseCurrencyId: 'usd',
+    startValue: '100000',
+    endValue: '124000',
+    netExternalFlow: '4000',
     twr: {
       cumulative: '0.25',
       annualized: null,
@@ -78,7 +82,13 @@ describe('returnsView (SC-1159)', () => {
   test('the exchange-rate split is shown when rates moved the result', () => {
     const view = returnsView(
       returns({
-        attribution: { assetReturn: '0.2', currencyReturn: '0.05', unattributedPeriods: 0 },
+        attribution: {
+          assetReturn: '0.2',
+          currencyReturn: '0.05',
+          crossTerm: '0.01',
+          baseReturn: '0.26',
+          unattributedPeriods: 0,
+        },
       })
     );
     expect(view?.fx?.asset).toBeCloseTo(20, 2);
@@ -88,7 +98,13 @@ describe('returnsView (SC-1159)', () => {
   test('no split, or rates that did nothing, shows no split', () => {
     expect(returnsView(returns())?.fx).toBeNull();
     const baseOnly = returns({
-      attribution: { assetReturn: '0.25', currencyReturn: '0', unattributedPeriods: 0 },
+      attribution: {
+        assetReturn: '0.25',
+        currencyReturn: '0',
+        crossTerm: '0',
+        baseReturn: '0.25',
+        unattributedPeriods: 0,
+      },
     });
     expect(returnsView(baseOnly)?.fx).toBeNull();
   });
@@ -96,7 +112,13 @@ describe('returnsView (SC-1159)', () => {
   test('a split that could not cover every period marks the window partial', () => {
     const view = returnsView(
       returns({
-        attribution: { assetReturn: '0.2', currencyReturn: '0.05', unattributedPeriods: 2 },
+        attribution: {
+          assetReturn: '0.2',
+          currencyReturn: '0.05',
+          crossTerm: '0.01',
+          baseReturn: '0.26',
+          unattributedPeriods: 2,
+        },
       })
     );
     expect(view?.partial).toBe(true);
@@ -112,5 +134,57 @@ describe('returnsView (SC-1159)', () => {
 
   test('no benchmarks is an empty list, not a reason to hide the card', () => {
     expect(returnsView(returns())?.benchmarks).toEqual([]);
+  });
+});
+
+describe('the money half of the view (SC-1297)', () => {
+  test('the change, what went in, and what the portfolio did on its own', () => {
+    const money = returnsView(returns())?.money;
+    expect(money?.change).toBeCloseTo(24000, 6);
+    expect(money?.contributed).toBeCloseTo(4000, 6);
+    expect(money?.gain).toBeCloseTo(20000, 6);
+    expect(money?.from).toBe('2026-01-01');
+  });
+
+  test('the two legs add back to the gain exactly, cross term and all', () => {
+    const money = returnsView(
+      returns({
+        attribution: {
+          assetReturn: '0.2',
+          currencyReturn: '0.05',
+          crossTerm: '0.01',
+          baseReturn: '0.26',
+          unattributedPeriods: 0,
+        },
+      })
+    )?.money;
+    expect(money?.market).not.toBeNull();
+    expect(money?.currency).not.toBeNull();
+    // Not "close to the gain": the bar's three labels are read as a sum.
+    expect((money?.market as number) + (money?.currency as number)).toBeCloseTo(
+      money?.gain as number,
+      6
+    );
+  });
+
+  test('no split is two nulls, never a confident zero', () => {
+    const money = returnsView(returns())?.money;
+    expect(money?.market).toBeNull();
+    expect(money?.currency).toBeNull();
+  });
+
+  test('a window with no value at one end has no money to report', () => {
+    expect(returnsView(returns({ endValue: null }))?.money).toBeNull();
+    expect(returnsView(returns({ startValue: null }))?.money).toBeNull();
+  });
+
+  test('flows the engine could not value are counted, not folded in', () => {
+    const base = returns();
+    const money = returnsView(
+      returns({ coverage: { ...(base as { coverage: object }).coverage, unvaluedFlows: 3 } })
+    )?.money;
+    expect(money?.unvalued).toBe(3);
+    // Control: a clean window reports none.
+    expect(returnsView(base)?.money?.unvalued).toBe(0);
   });
 });

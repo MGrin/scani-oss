@@ -40,14 +40,14 @@ export class ReviewFeedService {
   private readonly balanceGaps = Container.get(BalanceGapService);
 
   async listPending(userId: string): Promise<ReviewItem[]> {
-    const items = [
-      ...(await this.fromJobs(userId)),
-      ...(await this.fromDeadJobs(userId)),
-      ...(await this.fromExtractions(userId)),
-      ...(await this.fromTransfers(userId)),
-      ...(await this.fromBalanceGaps(userId)),
-    ];
-    return items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const sources = await Promise.all([
+      this.fromJobs(userId),
+      this.fromDeadJobs(userId),
+      this.fromExtractions(userId),
+      this.fromTransfers(userId),
+      this.fromBalanceGaps(userId),
+    ]);
+    return sources.flat().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
 
   private async fromJobs(userId: string): Promise<ReviewItem[]> {

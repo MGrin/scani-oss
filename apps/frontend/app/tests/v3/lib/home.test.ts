@@ -35,7 +35,9 @@ import {
   qualityHeadline,
   qualityOmissions,
   rebasePnlSeries,
+  resolveHomeMetric,
   resolvePeriodDelta,
+  returnsWindowRequest,
   sparklineSeries,
   summariseQuality,
   topHoldingRows,
@@ -43,6 +45,7 @@ import {
   unreviewedTransfersNote,
   vaultRows,
 } from '../../../src/v3/lib/home';
+import { readViewPreference, VIEW_PREFERENCE_KEYS } from '../../../src/v3/lib/view-preference';
 
 /** The real `t`, so these assertions pin the English `en.json` produces. */
 const t = i18n.t.bind(i18n);
@@ -799,12 +802,14 @@ describe('vaultRows', () => {
 });
 
 describe('home metrics', () => {
-  test('the toggle offers exactly net worth and PnL', () => {
-    expect(HOME_METRICS.map((metric) => metric.key)).toEqual(['net-worth', 'pnl']);
+  // Returns joined them in SC-1301 — a third value of a control that already
+  // existed, and the reason the comparison chart is no longer below the fold.
+  test('the toggle offers exactly net worth, PnL and returns', () => {
+    expect(HOME_METRICS.map((metric) => metric.key)).toEqual(['net-worth', 'pnl', 'returns']);
   });
 
   test('the key list is exactly the metrics on offer', () => {
-    expect(HOME_METRIC_KEYS).toEqual(['net-worth', 'pnl']);
+    expect(HOME_METRIC_KEYS).toEqual(['net-worth', 'pnl', 'returns']);
   });
 });
 
@@ -1067,12 +1072,12 @@ describe('unreviewedTransfersNote', () => {
     // avoid asserting the part we do not makes the sentence false the other
     // way.
     const line = unreviewedTransfersNote(quality({ transfersUnreviewed: 3 }), t);
-    expect(line).toBe('Realized PnL excludes 3 unconfirmed transfers');
+    expect(line).toBe('Realized PnL excludes 3 unclassified payments out');
   });
 
   test('one transfer is a transfer', () => {
     expect(unreviewedTransfersNote(quality({ transfersUnreviewed: 1 }), t)).toBe(
-      'Realized PnL excludes 1 unconfirmed transfer'
+      'Realized PnL excludes 1 unclassified payment out'
     );
   });
 
@@ -1158,7 +1163,7 @@ describe('unreviewedTransfersNote', () => {
     const q = summariseQuality(stale, { includeBasis: true, transfersUnreviewedNow: 2 });
     expect(q?.transfersUnreviewed).toBe(2);
     expect(unreviewedTransfersNote(q as FigureQuality, t)).toBe(
-      'Realized PnL excludes 2 unconfirmed transfers'
+      'Realized PnL excludes 2 unclassified payments out'
     );
   });
 });
@@ -1196,5 +1201,120 @@ describe('latestPnlSource', () => {
         transfersUnreviewedNow: 0,
       })?.basisUnknown
     ).toBe(2);
+  });
+});
+
+/**
+ * The home chart's range and the returns window are ONE control once Returns
+ * is the selected tab (SC-1301) — and since SC-1305 they are the SAME days
+ * rather than a mapping between them.
+ *
+ * The mapping this replaces is the defect. It sent every range of 365 days or
+ * fewer that did not begin on 1 January to `1y`, so 1M, 3M and 6M produced one
+ * identical window, one identical query and one identical chart: the period
+ * control moved and nothing a reader could see changed. The first test below
+ * is that failure written down — it read 1 against an expected 3 on the code
+ * this replaces.
+ */
+describe('returnsWindowRequest', () => {
+  test('1M, 3M and 6M are three different requests', () => {
+    const at = new Date('2026-09-23T09:00:00Z');
+    const asked = ['30d', '90d', '180d'].map((key) =>
+      JSON.stringify(returnsWindowRequest(homePeriodByKey(key), at))
+    );
+    expect(new Set(asked).size).toBe(3);
+  });
+
+  test('the request is exactly the days the chart draws', () => {
+    const at = new Date('2026-09-23T09:00:00Z');
+    const range = homePeriodRange(homePeriodByKey('90d'), at);
+    expect(returnsWindowRequest(homePeriodByKey('90d'), at)).toEqual({
+      kind: 'custom',
+      from: range.from,
+      to: range.to,
+    });
+  });
+
+  test("it shares the chart's window, so the two are one query key (SC-164)", () => {
+    // Not merely equal — the SAME object, because `homePeriodRange` caches per
+    // period per calendar day and two structurally equal Dates computed
+    // milliseconds apart are two requests.
+    const at = new Date('2026-09-23T09:00:00Z');
+    const request = returnsWindowRequest(homePeriodByKey('30d'), at);
+    const range = homePeriodRange(homePeriodByKey('30d'), at);
+    expect(request.from).toBe(range.from);
+    expect(request.to).toBe(range.to);
+  });
+});
+
+/**
+ * The Returns tab is withdrawn rather than left empty (SC-1301), and the
+ * stored choice has to survive that without stranding anybody.
+ */
+describe('resolveHomeMetric', () => {
+  test('with no returns history the tab is not offered at all', () => {
+    expect(
+      resolveHomeMetric({ chosen: 'net-worth', hasReturns: false, returnsPending: false })
+    ).toEqual({ metric: 'net-worth', offered: false });
+  });
+
+  test('a stored Returns over an account with no history falls back to net worth', () => {
+    expect(
+      resolveHomeMetric({ chosen: 'returns', hasReturns: false, returnsPending: false })
+    ).toEqual({ metric: 'net-worth', offered: false });
+  });
+
+  test('a stored Returns gets the tab immediately while the answer is in flight', () => {
+    // The alternative is net worth for one round trip and then a jump, which
+    // reads as the app changing its mind about what the reader asked for.
+    expect(
+      resolveHomeMetric({ chosen: 'returns', hasReturns: false, returnsPending: true })
+    ).toEqual({ metric: 'returns', offered: true });
+  });
+
+  test('a reader on another tab is not shown one that may be about to vanish', () => {
+    expect(
+      resolveHomeMetric({ chosen: 'net-worth', hasReturns: false, returnsPending: true })
+    ).toEqual({ metric: 'net-worth', offered: false });
+  });
+
+  test('with history it is offered whichever tab is on', () => {
+    for (const chosen of ['net-worth', 'pnl', 'returns'] as const) {
+      expect(resolveHomeMetric({ chosen, hasReturns: true, returnsPending: false })).toEqual({
+        metric: chosen,
+        offered: true,
+      });
+    }
+  });
+});
+
+describe('the chosen tab survives a reload', () => {
+  function storageHolding(value: string | null) {
+    return {
+      getItem: () => value,
+      setItem: () => undefined,
+    };
+  }
+
+  test('Returns comes back as Returns', () => {
+    expect(
+      readViewPreference(
+        VIEW_PREFERENCE_KEYS.homeMetric,
+        'net-worth',
+        HOME_METRIC_KEYS,
+        storageHolding('returns')
+      )
+    ).toBe('returns');
+  });
+
+  test('a fresh profile opens on net worth', () => {
+    expect(
+      readViewPreference(
+        VIEW_PREFERENCE_KEYS.homeMetric,
+        'net-worth',
+        HOME_METRIC_KEYS,
+        storageHolding(null)
+      )
+    ).toBe('net-worth');
   });
 });

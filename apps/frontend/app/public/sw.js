@@ -254,6 +254,26 @@ async function putInCache(cacheName, request, response) {
   }
 }
 
+/**
+ * Fetch a script or stylesheet, going past the browser's HTTP cache once if
+ * the first answer is the SPA shell.
+ *
+ * The shell is served under `/assets/*`, so it carries that rule's year-long
+ * `immutable` header, and the BROWSER's HTTP cache keeps it under the chunk's
+ * name. Not caching it here is not enough: this worker's own `fetch` reads
+ * that cache, so every later load gets the shell again and the page stays on
+ * "Could not load the interface" until the user clears site data. Measured in
+ * production 2026-09-24, just after a deploy: an edge still on the previous
+ * release answered the new `V3App` chunk with the shell, and the tab stayed
+ * broken across reloads. `cache: 'reload'` bypasses that entry AND replaces
+ * it, so once the edge serves the chunk the next load heals.
+ */
+async function fetchAsset(request) {
+  const response = await fetch(request);
+  if (!isMissingAsset(request, response)) return response;
+  return fetch(request, { cache: 'reload' });
+}
+
 /** Cache a fresh response unless it is the SPA shell standing in for a missing asset. */
 async function cacheIfSound(request, response, cacheName) {
   if (isMissingAsset(request, response)) {
@@ -272,7 +292,7 @@ async function cacheFirstStrategy(request, cacheName) {
   const cached = await matchCache(request);
   if (cached) return cached;
 
-  const response = await fetch(request);
+  const response = await fetchAsset(request);
   await cacheIfSound(request, response, cacheName);
   return response;
 }
@@ -308,7 +328,7 @@ async function networkFirstStrategy(request, cacheName) {
 async function staleWhileRevalidate(request, cacheName) {
   const cached = await matchCache(request);
 
-  const fetchPromise = fetch(request)
+  const fetchPromise = fetchAsset(request)
     .then(async (response) => {
       await cacheIfSound(request, response, cacheName);
       return response;

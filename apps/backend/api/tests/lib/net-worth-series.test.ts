@@ -250,9 +250,14 @@ describe('no caller reads the user-scope row for user-wide history', () => {
         code.includes('portfolioValueDaily') && code.includes("scopeKind, 'user'");
       expect(`${file}:${usesUserScope}`).toBe(`${file}:false`);
       // Both must reach user-wide history through the one function; a second
-      // source is what SC-98 was.
-      expect(`${file}:${code.includes('userNetWorthDaily')}`).toBe(`${file}:true`);
+      // source is what SC-98 was. The chart reaches it through the cache
+      // (SC-1369), which is checked below to delegate rather than recompute.
+      const viaOneFunction = /\b(cachedUserNetWorthDaily|userNetWorthDaily)\(/.test(code);
+      expect(`${file}:${viaOneFunction}`).toBe(`${file}:true`);
     }
+    const cache = await Bun.file(`${import.meta.dir}/../../src/lib/net-worth-cache.ts`).text();
+    expect(cache.includes('portfolioValueDaily')).toBe(false);
+    expect(cache).toContain('compute: typeof userNetWorthDaily = userNetWorthDaily');
   });
 });
 

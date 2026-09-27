@@ -1,46 +1,4 @@
 #!/usr/bin/env bash
-#
-# Build and publish the five Scani images from this machine, following the
-# same steps and the same tags as `.github/workflows/docker-publish.yml` in
-# MGrin/scani-oss.
-#
-# Why this exists: the same reason scripts/deploy-local.sh does. The publish
-# workflow lives in the public mirror, whose Actions are unmetered and do run,
-# but it is reachable only through a release-please tag — and the private repo,
-# where the work actually happens, has Actions billing that FLAPS and has
-# blocked for most of that repo's history (SC-128, SC-433, SC-1023). The
-# observable cost is that `scani/*:latest` sat at 0.12.0 from
-# 2026-08-12 while main moved on, and the 0.13.0 release PR has been parked
-# at `action_required` since 2026-08-15. A self-hoster running `:latest` gets
-# whatever main looked like a fortnight ago, and nothing says so.
-#
-# Which images, and the Dockerfile each is built from, are declared once in
-# `scripts/lib/docker-images.ts` and read from there — see below. This comment
-# deliberately does not restate the list.
-#
-# Tagging matches the workflow's `docker/metadata-action` output for a
-# `v1.2.3` tag push: `1.2.3`, `1.2`, `1`, and `latest`. Pass the version
-# without the leading `v`.
-#
-# Usage:
-#   scripts/publish-images-local.sh 0.13.0             # all five, multi-arch, push
-#   scripts/publish-images-local.sh 0.13.0 api worker  # only these
-#   DRY_RUN=1 scripts/publish-images-local.sh 0.13.0   # print the plan, touch nothing
-#   PUSH=0 scripts/publish-images-local.sh 0.13.0      # build both arches, push nothing
-#
-# This script refuses to run outside a MGrin/scani-oss checkout. The build
-# context is its own parent directory and the file exists in the private repo
-# too, so the copy you invoke is the source that gets published — see the
-# build-context guard below. `DRY_RUN=1` still prints the plan from anywhere.
-#
-# Credentials: `docker login` must already hold a Docker Hub token with
-# write on the `scani/*` repos (the same DOCKERHUB_TOKEN the workflow uses).
-# This script never reads a secret file and never logs one.
-#
-# Multi-arch on one machine needs buildx with a container driver — the
-# default `docker` driver cannot emit a multi-platform manifest. The script
-# creates a dedicated builder the first time and reuses it after.
-#
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -119,47 +77,7 @@ for image in "${IMAGES[@]}"; do
 done
 
 
-# ── the build-context guard ───────────────────────────────────────────────
-#
-# The build context is this file's own parent directory (`REPO_ROOT` above),
-# and this file exists in BOTH MGrin/scani (private) and MGrin/scani-oss
-# (public). Run the private copy and it builds `scani/*` from private source
-# and pushes it to a public registry under the org account: the images build,
-# the manifests push, `:latest` moves, every self-hoster pulls private code,
-# and nothing in the output looks wrong. Once an image is on someone else's
-# disk it cannot be unpublished. This is the one failure the repo split exists
-# to prevent, and the only one with no undo (SC-478).
-#
-# It came within one judgement call of happening on 2026-08-20. A worker
-# recommended publishing from the private branch and its reasoning was careful
-# and evidence-backed: it had verified that tree byte-identical to post-merge
-# OSS main, and at the moment it checked, it was. The claim went stale within
-# hours when another PR merged privately. What stopped it was one reader
-# overriding one report — which is a judgement, not a control. This is the
-# control.
-#
-# Two independent checks, because there is no undo:
-#
-#   1. `origin` must be $SOURCE_REPO. A remote is the soundest cheap identity
-#      for a checkout: paths get copied and branches get renamed, but `origin`
-#      is what the tree actually pushes to. It must be `origin` SPECIFICALLY —
-#      the private repo carries $SOURCE_REPO as `upstream`, so "some remote is
-#      scani-oss" is true in both trees and would wave the private one through.
-#   2. No $PRIVATE_MARKER in the build context. This catches what the remote
-#      check cannot: a tree whose `origin` is right but which has had private
-#      files copied into it, or a private clone whose remotes were renamed.
-#
-# Both fail CLOSED — an unidentifiable context is refused, not assumed public.
-#
-# DRY_RUN=1 downgrades a refusal to a warning, so the plan can still be printed
-# from anywhere: printing a plan builds nothing, tags nothing and pushes
-# nothing.
 
-# `https://github.com/MGrin/scani-oss.git`, `git@github.com:MGrin/scani-oss.git`
-# and `ssh://git@github.com/MGrin/scani-oss` are the same repository. Reduce any
-# of them to `mgrin/scani-oss` rather than comparing whole URLs, so a checkout
-# cloned over ssh is not refused for a reason that has nothing to do with which
-# repository it is.
 remote_slug() {
   local url="${1%/}"
   url="${url%.git}"
@@ -301,8 +219,14 @@ smoke_frontend_boots() {
   bun apps/e2e/scripts/check-spa-boots.ts "http://localhost:${port}/" || code=$?
   docker rm -f "$name" >/dev/null 2>&1 || true
 
-  [ "$code" -eq 0 ] || die "the frontend-app image renders nothing. NOT publishing. See SC-509."
-  ok "the frontend-app bundle mounts"
+  # Exit 1 is the only verdict about the BUNDLE. 3 means the checker could not
+  # look — no browser, or no page — and names its own remedy above (SC-1309).
+  case "$code" in
+    0) ok "the frontend-app bundle mounts" ;;
+    1) die "the frontend-app image renders nothing. NOT publishing. See SC-509." ;;
+    3) die "COULD NOT CHECK whether the frontend-app image renders — the bundle was NOT assessed. Fix the check (remedy above) and re-run. NOT publishing. See SC-1309." ;;
+    *) die "the frontend boot check exited ${code}, which is neither a verdict nor a could-not-check — the bundle was NOT assessed. NOT publishing." ;;
+  esac
 }
 
 if ! docker buildx inspect "$BUILDER" >/dev/null 2>&1; then

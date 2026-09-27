@@ -69,6 +69,10 @@ function result(
     startValue: '100',
     endValue: '121',
     netExternalFlow: '0',
+    series: [
+      { date: '2026-01-01', value: '100', netExternalFlow: '0' },
+      { date: '2026-03-01', value: '121', netExternalFlow: '0' },
+    ],
     twr,
     attribution,
     xirr: {

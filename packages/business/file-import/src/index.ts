@@ -8,6 +8,7 @@ export { detectBankTemplate, detectFormat } from './format-detector';
 export { parseIbCsvStatement } from './ib-csv-parser';
 export { parseOfxStatement } from './ofx-parser';
 export { parseQifStatement } from './qif-parser';
+export { statementPayee } from './statement-payee';
 export type {
   CsvColumnMapping,
   ExtractedHolding,

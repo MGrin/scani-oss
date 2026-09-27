@@ -12,8 +12,14 @@ import {
   dismissalKey,
   RecurringSuggestionDismissalRepository,
 } from '../../repositories/RecurringSuggestionDismissalRepository';
+import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
+import { TokenRepository } from '../../repositories/TokenRepository';
 import { VendorRepository } from '../../repositories/VendorRepository';
-import { detectMonthlyRecurrences, type ObservedOutflow } from './detectRecurrences';
+import {
+  currencyClasses,
+  detectMonthlyRecurrences,
+  type ObservedOutflow,
+} from './detectRecurrences';
 import { PaymentService } from './PaymentService';
 
 /** How far back the detector looks. A year plus a month, so a full year of monthly payments fits. */
@@ -29,7 +35,8 @@ export interface RecurringSuggestion {
   amount: string;
   /** YYYY-MM-DD of the latest matched payment; an accepted payment is anchored here. */
   anchorDate: string;
-  evidence: { transactionId: string; date: string; amount: string }[];
+  /** Each payment in its own coin: a series may mix coins worth the same. */
+  evidence: { transactionId: string; date: string; amount: string; currencyTokenId: string }[];
 }
 
 export class SuggestionNotFoundError extends Error {
@@ -62,6 +69,8 @@ export class RecurringSuggestionService {
   private readonly vendorRepository = Container.get(VendorRepository);
   private readonly dismissals = Container.get(RecurringSuggestionDismissalRepository);
   private readonly paymentService = Container.get(PaymentService);
+  private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
 
   async list(
     userId: string,
@@ -77,7 +86,9 @@ export class RecurringSuggestionService {
       )
     ).filter(
       (tx) =>
-        tx.counterparty && (tx.transferReview === null || tx.transferReview === 'left_control')
+        tx.counterparty &&
+        tx.transferGroupId === null &&
+        (tx.transferReview === null || tx.transferReview === 'left_control')
     );
     if (rows.length === 0) return [];
 
@@ -85,22 +96,24 @@ export class RecurringSuggestionService {
       [...new Set(rows.map((tx) => tx.holdingId))],
       transaction
     );
-    const currencyOf = new Map(holdings.map((h) => [h.id, h.tokenId]));
+    const tokenOf = new Map(holdings.map((h) => [h.id, h.tokenId]));
     const byId = new Map(rows.map((tx) => [tx.id, tx]));
 
-    const outflows: ObservedOutflow[] = rows.flatMap((tx) => {
-      const currency = currencyOf.get(tx.holdingId);
-      if (!currency) return [];
-      return [
-        {
-          id: tx.id,
-          occurredAt: tx.occurredAt,
-          amount: new Decimal(tx.quantity).abs().toString(),
-          currency,
-          counterparty: vendorMatchKey(tx.counterparty as string),
-        },
-      ];
+    const paid = rows.flatMap((tx) => {
+      const tokenId = tokenOf.get(tx.holdingId);
+      return tokenId
+        ? [{ tx, tokenId, counterparty: vendorMatchKey(tx.counterparty as string) }]
+        : [];
     });
+    const classOf = await this.currencyClassesOf(paid, transaction);
+    const tokenOfTx = new Map(paid.map((p) => [p.tx.id, p.tokenId]));
+    const outflows: ObservedOutflow[] = paid.map(({ tx, tokenId, counterparty }) => ({
+      id: tx.id,
+      occurredAt: tx.occurredAt,
+      amount: new Decimal(tx.quantity).abs().toString(),
+      currency: classOf.get(tokenId) ?? tokenId,
+      counterparty,
+    }));
 
     const [covered, dismissed] = await Promise.all([
       this.coverage(userId, transaction),
@@ -109,24 +122,30 @@ export class RecurringSuggestionService {
 
     return detectMonthlyRecurrences(outflows, asOf)
       .filter((found) => found.status === 'active')
-      .filter((found) => !dismissed.has(dismissalKey(found.counterparty, found.currency)))
+      .map((found) => ({
+        found,
+        tokens: [...new Set(found.transactionIds.map((id) => tokenOfTx.get(id) as string))],
+      }))
       .filter(
-        (found) =>
-          !covered.payees.has(dismissalKey(found.counterparty, found.currency)) &&
+        ({ found, tokens }) =>
+          !tokens.some((t) => dismissed.has(dismissalKey(found.counterparty, t))) &&
+          !tokens.some((t) => covered.payees.has(dismissalKey(found.counterparty, t))) &&
           !found.transactionIds.some((id) => covered.transactionIds.has(id))
       )
-      .map((found) => {
+      .map(({ found }) => {
         const matched = found.transactionIds.map((id) => byId.get(id)).filter((tx) => !!tx);
+        const last = found.transactionIds.at(-1) as string;
         return {
           counterparty: (matched.at(-1)?.counterparty as string) ?? found.counterparty,
           counterpartyKey: found.counterparty,
-          currencyTokenId: found.currency,
+          currencyTokenId: tokenOfTx.get(last) as string,
           amount: found.amount,
           anchorDate: isoDate(found.lastAt),
           evidence: matched.map((tx) => ({
             transactionId: tx.id,
             date: isoDate(tx.occurredAt),
             amount: new Decimal(tx.quantity).abs().toString(),
+            currencyTokenId: tokenOfTx.get(tx.id) as string,
           })),
         };
       });
@@ -189,6 +208,39 @@ export class RecurringSuggestionService {
       },
       transaction
     );
+  }
+
+  /**
+   * Priced only for a payee paid in more than one token, so the common case
+   * reads no prices at all. Prices are compared in USD because that is the
+   * base every stablecoin and forex edge is stored against.
+   */
+  private async currencyClassesOf(
+    paid: { tokenId: string; counterparty: string }[],
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, string>> {
+    const tokensByPayee = new Map<string, Set<string>>();
+    for (const { counterparty, tokenId } of paid) {
+      tokensByPayee.set(counterparty, (tokensByPayee.get(counterparty) ?? new Set()).add(tokenId));
+    }
+    const mixed = new Set(
+      [...tokensByPayee.values()].filter((tokens) => tokens.size > 1).flatMap((t) => [...t])
+    );
+    if (mixed.size === 0) return new Map();
+
+    const usd = await this.tokenRepository.findBySymbol('USD', transaction);
+    if (!usd) return new Map();
+    const latest = await this.tokenPriceRepository.findLatestPricesForTokensAnyBase(
+      [...mixed],
+      usd.id,
+      transaction
+    );
+    const prices = new Map<string, string>();
+    for (const [tokenId, row] of latest) {
+      if (row.baseTokenId === usd.id) prices.set(tokenId, row.price);
+    }
+    if (mixed.has(usd.id)) prices.set(usd.id, '1');
+    return currencyClasses(mixed, prices);
   }
 
   /** Payees an outflow payment already covers, and transactions already matched to one. */

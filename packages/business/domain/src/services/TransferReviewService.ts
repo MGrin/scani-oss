@@ -14,6 +14,7 @@ import type {
   HiddenTransferReview,
   PendingTransferReview,
   TransferCandidate,
+  TransferCandidateCombination,
   TransferCandidateReason,
   TransferDestination,
   TransferDestinationRef,
@@ -49,14 +50,16 @@ import { type DeclaredPairLegFacts, declaredPairLegs } from '../lib/declared-tra
 import { holdingIsUntouched } from '../lib/holding-untouched';
 import { ilikePattern } from '../lib/text-search';
 import {
+  arrivalCombinations,
   CANDIDATE_QTY_EPSILON,
   CANDIDATE_REASON_RANK,
   CANDIDATE_WINDOW_MS,
-  candidatePairClass,
   INFLOW_KINDS,
   MATCH_WINDOW_MS,
+  MAX_COMBINED_ARRIVALS,
   OUTFLOW_KINDS,
   QTY_MATCH_EPSILON,
+  reviewPairClass,
   type TransferLeg,
 } from '../lib/transfer-matching';
 import {
@@ -109,7 +112,13 @@ export type TransferResolveResult =
    * a holding that is present and deliberately refused, and it would send the
    * reader back to a picker to choose the same account again.
    */
-  | { ok: false; reason: 'own_wallet_destination'; address: string };
+  | { ok: false; reason: 'own_wallet_destination'; address: string }
+  /**
+   * Deposits paired together whose total is not the withdrawal (SC-1365). The
+   * same shape a split's arithmetic refusal takes, for the same reason: the
+   * reader needs the number back.
+   */
+  | { ok: false; reason: 'sum'; expected: string };
 
 /**
  * The same, plus the two ways a *division* can be refused: "the parts add up
@@ -118,8 +127,7 @@ export type TransferResolveResult =
  */
 export type SplitResolveResult =
   | TransferResolveResult
-  | { ok: false; reason: 'invalid'; message: string }
-  | { ok: false; reason: 'sum'; expected: string };
+  | { ok: false; reason: 'invalid'; message: string };
 
 /**
  * Breaking a matcher-made pairing (SC-350). `unlinked` carries every leg that
@@ -190,41 +198,6 @@ export interface OwnWalletDisposal {
   answerSource: AnswerSource;
 }
 
-/**
- * What answering `internal` writes on the destination, and why writing it is
- * safe (SC-187, amended by SC-856).
- *
- * **`holdings.balance` is not derived from `holding_transactions`.** The ledger
- * is strictly additive — `holdings.ts:75` says so and
- * `HoldingTransactionRepository.bulkUpsert` is the proof: no insert path
- * anywhere updates a balance. `BalanceAtTimeService` treats the current balance
- * as the *anchor* and walks transactions backwards from it, so an inflow dated
- * in the past leaves today's balance untouched and lowers the reconstructed
- * balance *before* that date by the same amount. All of that still holds and is
- * what makes the arrival row worth writing on its own.
- *
- * **What does NOT follow is that never moving the anchor is the whole answer to
- * the double-count question, and this docblock said it was.** The sentence it
- * carried — *"whatever produced the destination's balance already observed the
- * arrival"* — is a claim about the DESTINATION, and SC-614 quoted it to rule
- * this path safe. It is true of a destination a balance sync owns and false of
- * one nobody syncs, where the anchor is nobody's to state and the owner ends up
- * raising it by hand — an edit that writes a SECOND arrival. Measured: one
- * movement, three arrival rows on a hand-maintained holding at
- * `source = 'manual'`.
- *
- * So the answer is now WHO OWNS THE BALANCE, asked in one place —
- * `anchorIsUnobserved`, below — and the SC-187 story reads as one of its two
- * branches rather than as the rule. The reported Revolut holding, whose balance
- * the user had already raised by 3,500 by hand, is the case `paired` is for:
- * that edit wrote an arrival, and `internal` means nothing recorded one.
- *
- * A balance is written in two places, both of them the first or the only value
- * anyone has for it: a destination holding that did not exist, opened at the
- * amount that moved in (`openingOf`), and an existing destination that no sync
- * will ever correct. Neither is a change to a number somebody chose, and the
- * form says which it is before it is committed.
- */
 const CREATED_INFLOW_KIND = 'transfer_in';
 
 /**
@@ -558,88 +531,17 @@ export class TransferReviewService {
           ? await this.marketValue(quantity, row.tx.tokenId, user.baseCurrencyId, row.tx.occurredAt)
           : null,
         baseCurrencyCode,
-        candidates: await this.candidatesFor(userId, {
+        ...(await this.candidateSetsFor(userId, {
           id: row.tx.id,
           tokenId: row.tx.tokenId,
           quantity,
           occurredAt: row.tx.occurredAt,
-        }),
+        })),
       });
     }
     return results;
   }
 
-  /**
-   * Answer every unanswered transfer to a destination the reader has MARKED
-   * *"always a disposal"* — the writing half of the rules feature (SC-380).
-   *
-   * mgrin was asked whether a rule may book a disposal unattended and said:
-   * *"Auto-answer, but only on addresses I explicitly mark."* This is that
-   * sentence as code, and it lives here rather than in
-   * `TransferReviewRuleService` so that it is the same expression that decides
-   * what the queue shows.
-   *
-   * **It is called by the writers, and never by a read (SC-1071).** It used to
-   * run first thing in `pendingSummary` and `listPending`, so reading the queue
-   * decided which world the PnL caption was in: before the mark a matched row is
-   * a disposal whose gain is not booked and the caption counts it, after it the
-   * gain is booked and the caption does not. Neither number was wrong — the
-   * caption was right only once somebody had opened a page. And the rollup the
-   * caption is served from (SC-1070) could not be that somebody without a write
-   * inside a walk over every user and every day.
-   *
-   * So the mark is applied where a row comes to fall under it. Every writer
-   * that can put a row inside `ruleWritablePredicate` calls this after its
-   * write:
-   *
-   * - `TransferReviewRuleService.create` — the rule itself;
-   * - `TransactionImportCoordinator` (wallet and exchange sync) and the
-   *   `file-import` processor (statements) — a new outflow, or a re-import
-   *   that changed an existing row's destination, kind or quantity;
-   * - `reopen`, `bulkResolve` and `unlinkPair` below — an answer or a link
-   *   taken off a row;
-   * - the nightly `transfer-linking` sweep, after the matcher, for every user.
-   *   It is the net under everything else: `backfill-counterparty` rewriting a
-   *   key, a wallet leaving `user_wallets`, a batch above the cap, and every
-   *   row that was already unmarked when reads stopped marking.
-   *
-   * Manual entry and manual balance edits are not on the list because they
-   * cannot match: neither writes a `counterparty` or a payload `to`, and
-   * `transfer_counterparty_key` returns NULL on NULL input, which equals no
-   * rule key. Openings, interest and fees write a kind outside `OUTFLOW_KINDS`,
-   * and a declared transfer writes its withdrawal already linked. The demo
-   * seeder is left to the sweep.
-   *
-   * **What it may write to is `ruleWritablePredicate`, and that predicate is
-   * the whole safety argument** — read it there rather than trusting a
-   * paraphrase. Two things about it are worth repeating at the write itself:
-   * the group-id gate it inherits from `pendingPredicate` is why this cannot
-   * produce SC-382's 29-row state, where an answer reads as given and books
-   * nothing; and `transfer_review_source IS NULL` is why an answer stamped
-   * `user` cannot be overwritten, in either direction, ever.
-   *
-   * **The gate is repeated on the UPDATE itself and that is not belt-and-braces.**
-   * The candidate select happens outside the transaction and `bulkClassify`
-   * re-reads rows inside it, but `bulkClassify` admits a row already answered
-   * `left_control` or `untracked` — correct for a bulk apply the reader is
-   * driving, wrong here, where the reader answering the row in another tab in
-   * the intervening millisecond must win. Putting `ruleWritablePredicate` in
-   * the UPDATE's own WHERE makes the check happen under the row lock, so the
-   * count returned is the count actually written.
-   *
-   * `bulkClassify` is reused rather than reimplemented for gate 4: a
-   * `left_control` on a destination in the reader's own `user_wallets` is
-   * refused, which is SC-350's ten wrong answers as a standing check. Marking
-   * such an address is already refused at authoring time; this catches the
-   * order that authoring cannot — mark a destination, then register it as your
-   * own wallet — and it catches it by SKIPPING the row rather than failing the
-   * read, so the transfer stays in the queue as a question rather than
-   * disappearing into a booked gain.
-   *
-   * Capped at `MAX_BULK_TRANSFER_ROWS` per call. Above that the remainder is
-   * answered by the next writer or the nightly sweep; the largest population
-   * this queue has ever had is 236.
-   */
   async applyDisposalMarks(userId: string): Promise<number> {
     const candidates = await db
       .select({
@@ -820,6 +722,12 @@ export class TransferReviewService {
     decision: TransferReviewDecision,
     opts: {
       matchTransactionId?: string;
+      /**
+       * More deposits that are the same money as `matchTransactionId`, when it
+       * arrived in parts — 4,000 recorded as 3,000 and 1,000 (SC-1365). All of
+       * them join one group and their total must be the withdrawal's.
+       */
+      alsoMatchTransactionIds?: string[];
       destination?: TransferDestinationRef;
       answerSource?: AnswerAttribution;
       /**
@@ -861,8 +769,20 @@ export class TransferReviewService {
 
       if (decision === 'paired' && opts.matchTransactionId) {
         groupId = crypto.randomUUID();
-        const linked = await claimInflow(tx, userId, outflow, opts.matchTransactionId, groupId);
-        if (!linked) return { ok: false, reason: 'partner_gone' } as const;
+        const also = opts.alsoMatchTransactionIds ?? [];
+        if (also.length > 0) {
+          const refused = await claimInflowSet(
+            tx,
+            userId,
+            outflow,
+            [opts.matchTransactionId, ...also],
+            groupId
+          );
+          if (refused) return refused;
+        } else {
+          const linked = await claimInflow(tx, userId, outflow, opts.matchTransactionId, groupId);
+          if (!linked) return { ok: false, reason: 'partner_gone' } as const;
+        }
       }
 
       if (decision === 'internal' && opts.destination) {
@@ -897,43 +817,6 @@ export class TransferReviewService {
     return opts.transaction ? run(opts.transaction) : db.transaction(run);
   }
 
-  /**
-   * Where an `internal` answer can send this transfer (SC-187).
-   *
-   * Every holding of the same token except the one it left, plus every OTHER
-   * account that holds none — because "the money went to an account I track
-   * that has no position in this token yet" is a real destination, and
-   * refusing it would send the reader off to create a holding by hand and come
-   * back.
-   *
-   * **`OTHER` is load-bearing** (SC-1151). The account the money left keeps
-   * its own second same-token holding, and does not get the "open one here"
-   * row: a withdrawal cannot arrive in a fresh copy of the position it
-   * departed. See the `continue` in `destinationsFor` for what that costs.
-   *
-   * Minus anything across an ownership boundary (SC-859), which is the one
-   * exclusion that is about the ANSWER rather than about the token: money
-   * moving between two sets of books is not an internal transfer, and
-   * `writeInflow` refuses to write one.
-   *
-   * **The destination is a holding, not an account**, and the row carries the
-   * two facts that tell two same-token holdings in one account apart: the
-   * balance and the source. Production has exactly that shape — one Airwallex
-   * account, two USD holdings with different balances, one imported and one
-   * manual — and by name alone they are indistinguishable.
-   *
-   * **Ranked, and still nothing is pre-selected** (SC-850). Those are two
-   * different acts and only the second is the one SC-150 refused: guessing
-   * which account the money went to writes a transaction, while putting the
-   * accounts that could plausibly have received it at the top writes nothing
-   * and can be ignored by scrolling. Alphabetical order was not neutral — it
-   * was a ranking too, by a fact about the account's name, and it put an
-   * Airwallex fiat account above every Solana wallet for a SOL transfer while
-   * telling the reader nothing they did not already know.
-   *
-   * Within a band the order is still by account name, so the list reads the
-   * same way twice.
-   */
   async listDestinations(userId: string, transactionId: string): Promise<TransferDestination[]> {
     const [outflow] = await db
       .select({
@@ -1101,21 +984,6 @@ export class TransferReviewService {
       );
       const existing = byAccount.get(account.accountId) ?? [];
       if (existing.length === 0) {
-        // The account the money LEFT is not somewhere to OPEN a position in
-        // the token it just sent away (SC-1151). The source HOLDING is
-        // excluded by id above, and a second same-token holding in the same
-        // account stays — that is SC-187's measured production shape, one
-        // Airwallex account with two USD holdings and a withdrawal between
-        // them. This is the other branch, and it has no such shape behind it:
-        // reaching it means the holding the money left was the account's only
-        // position in this token, so "create one here" describes the money
-        // arriving in a second copy of the position it departed.
-        //
-        // It is the one row the reported portfolio was offered on production:
-        // until SC-1151 the entity boundary skipped every other account above,
-        // leaving the source itself. With that filter gone, the list is empty
-        // after this `continue` only when the reader has no other account at
-        // all, which is what the picker's empty sentence says (SC-930).
         if (account.accountId === sourceAccountId) continue;
         destinations.push({
           accountId: account.accountId,
@@ -1156,33 +1024,6 @@ export class TransferReviewService {
     );
   }
 
-  /**
-   * Record an answer that applies to PARTS of the transaction (SC-181).
-   *
-   * The reported shape: a 4,000 USD Airwallex withdrawal of which 3,500 moved
-   * to an account Scani cannot see and 500 genuinely left. Every SC-150 answer
-   * is about the whole row, so the only options were to overstate the gain by
-   * 3,500 or understate it by 500 — wrong in a direction either way, which is
-   * the error family SC-149/150/151/166 have all been about.
-   *
-   * Three rules it enforces that the form also enforces, because the form is
-   * not the only caller and a split that does not add up is a new way to be
-   * wrong about money:
-   *
-   * - **The parts sum EXACTLY to the row's quantity.** Checked here, against
-   *   the row this transaction actually is, inside the same transaction that
-   *   writes it — not against a quantity the client sent, which is the number
-   *   under dispute.
-   * - **Whole or nothing.** There is no partially-answered state to persist:
-   *   `transfer_review` goes to `'split'` in the same statement as the parts,
-   *   so the queue predicate keeps working and the count still reaches zero.
-   * - **A `paired` part re-checks its partner**, exactly as `resolve` does,
-   *   and for the same reason: the candidate list is minutes old and a nightly
-   *   run can have claimed that inflow in between.
-   *
-   * Nothing is inferred. The division comes from the person; this refuses
-   * anything that does not add up rather than making it add up.
-   */
   async resolveSplit(
     userId: string,
     transactionId: string,
@@ -1417,52 +1258,6 @@ export class TransferReviewService {
     });
   }
 
-  /**
-   * Undo an answer, putting the row back in the queue.
-   *
-   * A review surface without this one is a trap: every decision here is a
-   * judgement made from partial memory, and "I picked the wrong deposit" has
-   * to be recoverable or the careful reader stops answering at all. Clearing
-   * a `paired` decision also clears the group id from BOTH legs, otherwise
-   * the pairing survives its own reversal.
-   *
-   * It clears a split the same way, which is what makes a division reversible
-   * — including back to a whole answer (SC-181). There is no separate unsplit
-   * operation: reopening returns the row to the queue, where all five shapes
-   * of answer are available again.
-   *
-   * **An `internal` answer's created deposit is DELETED here** (SC-187), and
-   * it has to be: that row exists only because of the answer being withdrawn,
-   * and leaving it behind would mean the next answer books the arrival a
-   * second time — a 3,500 inflow on Revolut for a withdrawal now marked as a
-   * disposal. It is found by `(source, external_id)` rather than by the group
-   * id, so a row whose group id was cleared by some other path is still
-   * reachable. Nothing else can match: no other writer uses that source, and
-   * the external id is this transaction's own id.
-   *
-   * **A transfer the OWNER DECLARED is UNDONE here instead** (SC-618, mgrin
-   * 2026-08-26), and the difference is not cosmetic. A declared transfer moved
-   * BOTH anchors, so clearing the answer and unlinking the pair left the source
-   * down, the destination up,
-   * and nothing saying why: money that has moved with no explanation, plus an
-   * ungrouped arrival that `CostBasisService.walkComponent` opens a fresh lot
-   * at market for — the invented gain this whole feature exists to prevent.
-   *
-   * So for that one shape, and only that one, this restores both anchors and
-   * deletes both legs. **A queue answer restores at most the DESTINATION's**,
-   * and only where it moved one — `clearAnswer` reads the arrival row's own
-   * marker to know (SC-856). The sentence that used to stand here, *"every
-   * queue answer moves no balance"*, was true of `internal` until `writeInflow`
-   * learned to move a destination no sync will correct; it is stated in one
-   * place now, on the row, rather than assumed in two.
-   *
-   * The row then leaves the answered list rather than
-   * returning to the queue, which is the honest outcome: the withdrawal was
-   * not observed by an importer that we are now unsure about, it was a
-   * sentence the owner typed, and withdrawing the sentence removes it. See
-   * `declaredPairLegs` for why the test is the shared `external_id` and not
-   * the source.
-   */
   async reopen(userId: string, transactionId: string): Promise<boolean> {
     const reopened = await db.transaction(async (tx) => {
       const [row] = await tx
@@ -1656,47 +1451,6 @@ export class TransferReviewService {
       );
   }
 
-  /**
-   * Put both anchors back and delete both legs of a declared transfer
-   * (SC-618).
-   *
-   * ## Why the balances go through `UpdateHoldingUseCase`
-   *
-   * Because a second writer with its own `UPDATE holdings SET balance` is
-   * exactly what SC-245 was: every manual balance edit ever made was missing
-   * from `holding_balance_observations`, and a missing observation does not
-   * degrade `BalanceAtTimeService`, it makes it CONFIDENTLY WRONG on every
-   * date after the gap. Routing through `execute` gets the ownership-scoped
-   * update, the observation and the vault recalculation, all of which this
-   * needs and none of which it should own.
-   *
-   * `editCause` is deliberately omitted, and that is the whole reason this can
-   * reuse that path: `ManualBalanceEditService.record` is called only when a
-   * cause is present, so the anchor moves and NO ledger row is synthesized.
-   * Writing one would be the opposite of an undo — it would leave a reversing
-   * `deposit` and `withdraw` behind, which is a shape mgrin considered and did
-   * not choose.
-   *
-   * ## `balance - quantity`, and why there is no clamp
-   *
-   * `quantity` is signed, so this is the exact inverse of what the declaration
-   * did: the withdrawal's `-2000` adds 2000 back to the source, the arrival's
-   * `+2000` takes 2000 off the destination. It reads TODAY's anchor rather
-   * than the balance at declaration time, which is correct — if a sync or
-   * another edit has restated the figure since, the restatement stands and
-   * only this transfer's own contribution is removed.
-   *
-   * That can leave a destination negative if something else took the money out
-   * first. Left visible rather than clamped or refused: clamping silently
-   * loses the difference, refusing traps the owner with a transfer they cannot
-   * withdraw, and a visibly wrong figure is one they can correct. Undo being
-   * the exact inverse of do is worth more here than a rule that makes them
-   * differ.
-   *
-   * The DELETE is scoped by `userId` as well as by id — the ids came from a
-   * `userId`-scoped read, so this is belt and braces on the one statement here
-   * that destroys rows.
-   */
   private async undoDeclaredTransfer(
     tx: DatabaseTransaction,
     userId: string,
@@ -2088,48 +1842,6 @@ export class TransferReviewService {
     return result;
   }
 
-  /**
-   * Take an answer off a row the review queue can never ask about (SC-338).
-   *
-   * **The state this exists for.** `transfer_review` answers one question —
-   * "did this leave your control?" — and the queue only ever asks it about an
-   * `OUTFLOW_KINDS` row. A re-import can change `kind` underneath an answer:
-   * `bulkUpsert` carries `kind` and `swap_group_id` through `ON CONFLICT` and
-   * deliberately does not carry `transfer_review`, because that column belongs
-   * to a person. So an outflow answered while it was a `transfer_out` and later
-   * recognised as a swap leg keeps an answer to a question nobody is asking
-   * about it. Six rows in production are in exactly that state, all six from
-   * the 2026-08-14 raw `UPDATE`.
-   *
-   * **It was not inert, which is the reason this is a write and not a shrug.**
-   * The ledger's arithmetic is unaffected — `walkComponent` tests
-   * `OUTFLOW_SELL_KINDS` before `OUTFLOW_NEUTRAL_KINDS` and the sell branch
-   * never reads the answer, so a `swap_out` realizes on its kind whatever the
-   * column says. But `disposalAnswerSourceOf` read the column with no kind
-   * gate, so every disposal these rows booked was stamped `unattributed`, and
-   * `RealizedLedger` rendered that as an "Answer not recorded" badge and the
-   * sentence *"Recorded as having left your portfolio, so this gain was booked.
-   * There is no record of anyone answering it."* Both are false about a swap:
-   * the gain was booked because it is a swap, and no answer is owed.
-   *
-   * SC-402 put the kind gate in that reader, so the sentence is gone whether or
-   * not this method has run. It stays because the row itself is still wrong —
-   * an answer to a question nobody asks about it — and because the next reader
-   * of the column should not have to rediscover why it is there.
-   *
-   * **The kind gate is the containment and it lives here, not in the caller.**
-   * A method that can clear an answer is one revision away from clearing a
-   * `left_control` that books 18k of proceeds, so it refuses anything the
-   * queue could ask about rather than trusting a use case to have checked.
-   * What remains for the caller is the evidence — see
-   * `RepairSwapLegAnswersUseCase`, which additionally refuses a stamped answer,
-   * a linked row, a split, and a swap leg with no `swap_group_id`.
-   *
-   * `'repair'` rather than `null` for the same reason
-   * `withdrawSameHoldingPairing` uses it: this whole population exists because
-   * a raw `UPDATE` left no record of who decided, and a repair that also left
-   * none would be the same mistake in the other direction.
-   */
   async clearInapplicableAnswer(
     userId: string,
     transactionId: string
@@ -2374,47 +2086,6 @@ export class TransferReviewService {
     return result;
   }
 
-  /**
-   * Break a same-holding pairing that somebody ANSWERED, and withdraw the
-   * answer with it (SC-378).
-   *
-   * WHY THIS IS NOT AN OVERRIDE, AND WHY IT IS NOT A FLAG ON THE OTHER TWO.
-   *
-   * `unlinkPair` refuses an answered group so no automated process overwrites
-   * a human decision. `reopen-transfer-answers.ts` refuses to reopen a row the
-   * queue could not answer, so nobody is asked an unanswerable question twice.
-   * Both are right, and composed they made seven production rows unfixable:
-   * mgrin answered `paired` on seven groups whose two legs sit on ONE holding,
-   * and unlinking was refused because he had answered while reopening was
-   * refused because there was no candidate to answer with. The pairing the
-   * system had by then proven false could not be undone precisely BECAUSE he
-   * had answered it.
-   *
-   * The way out is not a `--force`. It is that a same-holding group is
-   * provably not a transfer — SC-347's `candidatePairClass` returns null for
-   * one, so the queue can no longer even offer the pairing — and an answer
-   * about a movement that did not happen is not a judgement being overruled.
-   * It is a question being withdrawn, which is Scani's to do because Scani
-   * asked it.
-   *
-   * **The proof is `withdrawPairingRefusal`, computed here on legs read inside
-   * this transaction.** There is no parameter that widens it. A group spanning
-   * two holdings, mixing two sources, or sharing one upstream event id is
-   * refused `not_artifact` however it was named, and an artifact nobody
-   * answered is refused `no_answer` and sent to `unlinkPair`. So this method
-   * cannot be pointed at an ordinary answer, and the two writes stay disjoint.
-   *
-   * What the rows look like afterwards: `transfer_group_id` null on every leg,
-   * `transfer_review` null on the answered ones, and `transfer_review_source`
-   * = `repair` on those — unanswered, with the record that Scani and not the
-   * user made it so. They are back in the queue as questions, where
-   * `left_control` and `untracked` are answerable with no candidate at all.
-   *
-   * Nothing is booked. `isConfirmedDisposal` is `left_control` alone, so a
-   * freed outflow carrying no answer is `hold`; and inside a same-holding
-   * group the legs were already a structural no-op (SC-344). Cost basis and
-   * realized PnL do not move — which is the whole expected impact.
-   */
   async withdrawSameHoldingPairing(
     userId: string,
     transactionId: string
@@ -2501,6 +2172,18 @@ export class TransferReviewService {
     userId: string,
     outflow: { id: string; tokenId: string; quantity: Decimal; occurredAt: Date }
   ): Promise<TransferCandidate[]> {
+    return (await this.candidateSetsFor(userId, outflow)).candidates;
+  }
+
+  /**
+   * `candidatesFor` and the deposit COMBINATIONS (SC-1365), from one read of
+   * the inflows either could be drawn from. `listPending` asks for both on
+   * every row, and two queries per row is the cost this avoids.
+   */
+  private async candidateSetsFor(
+    userId: string,
+    outflow: { id: string; tokenId: string; quantity: Decimal; occurredAt: Date }
+  ): Promise<{ candidates: TransferCandidate[]; combinations: TransferCandidateCombination[] }> {
     const outflowLeg = await legFacts(db, outflow.id);
     const rows = await db
       .select({
@@ -2543,12 +2226,15 @@ export class TransferReviewService {
         )
       );
 
-    const scored = rows.flatMap(({ tx, accountName, institutionName, tokenSymbol, ...facts }) => {
-      // Identity and direction first, on the same rule the matcher uses. A
-      // candidate this refuses is not a near miss the reader could settle —
-      // it is a different asset, or an arrival that predates the departure.
-      if (outflowLeg === null) return [];
-      if (candidatePairClass(outflowLeg, toTransferLeg({ tx, ...facts })) === null) return [];
+    // Identity and direction first, on the same rule the matcher uses. A
+    // candidate this refuses is not a near miss the reader could settle — it
+    // is a different asset, or an arrival that predates the departure.
+    const reachable = rows.filter(
+      ({ tx, accountName: _a, institutionName: _i, tokenSymbol: _t, ...facts }) =>
+        outflowLeg !== null && reviewPairClass(outflowLeg, toTransferLeg({ tx, ...facts })) !== null
+    );
+
+    const scored = reachable.flatMap(({ tx, accountName, institutionName, tokenSymbol }) => {
       const inQty = new Decimal(tx.quantity).abs();
       const delta = inQty.minus(outflow.quantity);
       // Percentage of the OUTFLOW, not of the inflow: the outflow is the row
@@ -2593,7 +2279,20 @@ export class TransferReviewService {
       ];
     });
 
-    return scored
+    // `ambiguous` says another deposit matched too, which is only true when one
+    // did. A lone match is in the queue because the matcher may not take it
+    // alone — the deposit was typed by hand (SC-611), or it crosses an entity
+    // boundary (SC-1364) — and telling that reader "so does another deposit"
+    // sends them looking for a row that does not exist.
+    const strictCount = scored.filter((c) => c.withinStrictTolerance).length;
+    const labelled =
+      strictCount === 1
+        ? scored.map((c) =>
+            c.withinStrictTolerance ? { ...c, reason: 'matches' as TransferCandidateReason } : c
+          )
+        : scored;
+
+    const candidates = labelled
       .sort((a, b) => {
         const byReason =
           (CANDIDATE_REASON_RANK[a.reason] ?? 99) - (CANDIDATE_REASON_RANK[b.reason] ?? 99);
@@ -2603,6 +2302,45 @@ export class TransferReviewService {
         return Math.abs(a.timeDeltaMs) - Math.abs(b.timeDeltaMs);
       })
       .slice(0, 8);
+
+    const named = new Map(reachable.map((r) => [r.tx.id, r]));
+    const combinations = arrivalCombinations(
+      { quantityAbs: outflow.quantity, occurredAt: outflow.occurredAt },
+      reachable.map(({ tx }) => ({
+        transactionId: tx.id,
+        holdingId: tx.holdingId,
+        quantityAbs: new Decimal(tx.quantity).abs(),
+        occurredAt: tx.occurredAt,
+      }))
+    ).flatMap((parts): TransferCandidateCombination[] => {
+      const first = named.get(parts[0]?.transactionId ?? '');
+      if (!first) return [];
+      const total = parts.reduce((sum, p) => sum.add(p.quantityAbs), new Decimal(0));
+      return [
+        {
+          holdingId: first.tx.holdingId,
+          accountName: first.accountName,
+          institutionName: first.institutionName,
+          tokenSymbol: first.tokenSymbol,
+          quantity: total.toString(),
+          quantityDeltaPct: outflow.quantity.isZero()
+            ? 0
+            : total
+                .minus(outflow.quantity)
+                .div(outflow.quantity)
+                .mul(100)
+                .toDecimalPlaces(3)
+                .toNumber(),
+          parts: parts.map((p) => ({
+            transactionId: p.transactionId,
+            quantity: p.quantityAbs.toString(),
+            occurredAt: p.occurredAt.toISOString(),
+          })),
+        },
+      ];
+    });
+
+    return { candidates, combinations };
   }
 
   /**
@@ -2695,22 +2433,6 @@ export class TransferReviewService {
     return found;
   }
 
-  /**
-   * The same invariant, on the way IN — so the eleventh row cannot become a
-   * twelfth (SC-365).
-   *
-   * `counterpartyIsOwnWallet` already puts the fact on the queue row, and mgrin
-   * answered `left_control` ten times anyway, forty-four minutes after the
-   * address shipped. Telling the reader something true is not the same as
-   * making the wrong answer unavailable, and a repair with no guard behind it
-   * only resets the clock.
-   *
-   * Refusing rather than silently rewriting: the answer is the user's and the
-   * refusal has to be legible, so this returns a reason the API turns into a
-   * sentence naming the wallet. `untracked` remains available for the case the
-   * reader genuinely means — the money is still theirs, somewhere Scani cannot
-   * see — and it books nothing.
-   */
   private async refuseOwnWalletDisposal(
     userId: string,
     outflow: HoldingTransaction,
@@ -2799,13 +2521,75 @@ async function claimInflow(
     legFacts(tx, inflow.id),
   ]);
   if (!outflowLeg || !inflowLeg) return false;
-  if (candidatePairClass(outflowLeg, inflowLeg) === null) return false;
+  if (reviewPairClass(outflowLeg, inflowLeg) === null) return false;
 
   await tx
     .update(schema.holdingTransactions)
     .set({ transferGroupId: groupId, updatedAt: sql`now()` })
     .where(eq(schema.holdingTransactions.id, inflow.id));
   return true;
+}
+
+/**
+ * Claim SEVERAL inflows as one outflow's arrival (SC-1365) — the money landed
+ * in parts. Null on success; otherwise the refusal to return, and the caller's
+ * transaction rolls back whatever was claimed before it.
+ *
+ * Each part passes `claimInflow`'s own checks. Beyond them: no part may
+ * predate the withdrawal, because the cost walk hands buffered lots only to
+ * arrivals it reaches after the departure; and the parts must total the
+ * withdrawal within the net the candidate list is drawn from, since a
+ * combination is only ever offered inside it.
+ */
+async function claimInflowSet(
+  tx: DatabaseTransaction,
+  userId: string,
+  outflow: HoldingTransaction,
+  inflowIds: readonly string[],
+  groupId: string
+): Promise<Extract<TransferResolveResult, { ok: false }> | null> {
+  if (new Set(inflowIds).size !== inflowIds.length || inflowIds.length > MAX_COMBINED_ARRIVALS) {
+    return { ok: false, reason: 'partner_gone' };
+  }
+  const parts = await tx
+    .select({
+      quantity: schema.holdingTransactions.quantity,
+      occurredAt: schema.holdingTransactions.occurredAt,
+    })
+    .from(schema.holdingTransactions)
+    .where(
+      and(
+        inArray(schema.holdingTransactions.id, [...inflowIds]),
+        eq(schema.holdingTransactions.userId, userId)
+      )
+    );
+  if (parts.length !== inflowIds.length) return { ok: false, reason: 'partner_gone' };
+  if (parts.some((p) => p.occurredAt.getTime() < outflow.occurredAt.getTime())) {
+    return { ok: false, reason: 'partner_gone' };
+  }
+  const expected = new Decimal(outflow.quantity).abs();
+  const total = parts.reduce((sum, p) => sum.add(new Decimal(p.quantity).abs()), new Decimal(0));
+  if (total.minus(expected).abs().gt(expected.mul(CANDIDATE_QTY_EPSILON))) {
+    return { ok: false, reason: 'sum', expected: expected.toString() };
+  }
+  for (const id of inflowIds) {
+    if (!(await claimInflow(tx, userId, outflow, id, groupId))) {
+      // A refusal is RETURNED, and the transaction around it commits — so the
+      // parts claimed before this one are released here, or they would stay
+      // linked to an outflow that was never answered.
+      await tx
+        .update(schema.holdingTransactions)
+        .set({ transferGroupId: null, updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(schema.holdingTransactions.userId, userId),
+            eq(schema.holdingTransactions.transferGroupId, groupId)
+          )
+        );
+      return { ok: false, reason: 'partner_gone' };
+    }
+  }
+  return null;
 }
 
 /**
@@ -2818,39 +2602,6 @@ async function claimInflow(
  */
 type InflowWriteResult = { ok: true } | { ok: false; reason: 'destination_gone' };
 
-/**
- * Write the arrival an `internal` answer describes (SC-187).
- *
- * This is the whole of what makes the fourth answer worth having. The user is
- * telling the system something true — "that 3,500 went to my Revolut savings"
- * — and until now the system had nowhere to keep it: the destination is a
- * holding nobody imports for, so the counterpart transaction does not exist
- * and no matcher could ever have found it. So one is written, carrying the
- * same `transfer_group_id` as the outflow, which is what makes it a real pair
- * rather than a lookalike. `walkComponent` needs no new branch: it inherits
- * the buffered lots on any `transfer_in` sharing the group id, so the cost
- * basis crosses intact and no gain is invented at either end.
- *
- * Five properties worth stating, because each is load-bearing:
- *
- * - **It refuses a destination across an ownership boundary** (SC-859), on the
- *   rule `candidatePairClass` applies to a pair. This answer writes the same
- *   shared group id the matcher would have written, so guarding one and not
- *   the other refused the pairing and permitted its outcome.
- * - **It moves an existing destination's `holdings.balance` only where nobody
- *   else will** (SC-856). See `arrivalMovesTheAnchor` below. `CREATED_INFLOW_KIND`
- *   above has the half of the reasoning that is still true: on a destination a
- *   sync owns, the arrival is already in the balance and moving it would count
- *   the money twice.
- * - **A destination with no holding gets one**, and WHO OWNS ITS BALANCE
- *   decides how it is opened (SC-356). See `openingOf` below.
- * - **`external_id` is the outflow's id**, which makes the write idempotent
- *   under the `(holding_id, source, external_id)` unique constraint and makes
- *   `reopen` able to find it again.
- * - **The destination is re-validated here**, inside the writing transaction,
- *   against the token the outflow actually carries. The picker's list is
- *   minutes old and a holding can be deleted in between.
- */
 async function writeInflow(
   tx: DatabaseTransaction,
   userId: string,
@@ -2871,25 +2622,6 @@ async function writeInflow(
     .where(and(eq(schema.accounts.id, destination.accountId), eq(schema.accounts.userId, userId)))
     .limit(1);
   if (!account) return { ok: false, reason: 'destination_gone' };
-
-  // NO ENTITY CHECK HERE, and its absence is a decision rather than an
-  // oversight (mgrin, 2026-09-12, reopening SC-929). SC-859 refused this write
-  // across an entity boundary on the reasoning that `internal` shares a
-  // `transfer_group_id`, `walkComponent` inherits the buffered lots through
-  // it, and carrying basis between the owner's books and their company's is
-  // the wrong answer on both sets at once.
-  //
-  // **Entities are a reporting convenience, not an ownership change.** Both
-  // accounts are the same person's, so the movement is money staying put and
-  // the carry is correct — which is what the OWNER-DECLARED door
-  // (`linkDeclaredPair`) has always done and what SC-859 never changed. The
-  // two doors agree again, in the other direction.
-  //
-  // What this does NOT touch is `candidatePairClass`, so the MATCHER still
-  // refuses to pair across the boundary on its own and the queue still will
-  // not recommend one. That asymmetry is deliberate and narrow: relaxing a
-  // predicate a nightly job acts on without anybody answering is a change to
-  // what happens unattended, and it is not this ticket's to make.
 
   let holdingId = destination.holdingId;
   // Recorded on the arrival row below, on EVERY branch. See
@@ -3044,57 +2776,6 @@ async function writeInflow(
   return { ok: true };
 }
 
-/**
- * Should this arrival move the destination's `holdings.balance`? (SC-856)
- *
- * ## The premise SC-187 wrote down, and the half of it that is false
- *
- * `CREATED_INFLOW_KIND` states it plainly: the outflow came from an import and
- * "whatever produced the destination's balance already observed the arrival, so
- * moving it would count the money twice". SC-614 re-derived the same sentence
- * when it fixed this arithmetic on the manual-edit path, and used it to rule
- * the queue path safe — *"in the transfer-review queue the outflow arrived from
- * an import, and the destination's balance was observed independently by its
- * own sync"*.
- *
- * Both sentences are about the DESTINATION, and both quietly assume it has a
- * sync. Where it does not, nothing ever observes that balance: the arrival is
- * recorded, no money moves, and the owner raises the figure by hand — which
- * writes a SECOND arrival, `kind = 'deposit'`, `source = 'user-balance-edit'`.
- * Measured on production 2026-08-28/29: one movement out of an imported account
- * left THREE arrival rows on a hand-maintained savings holding, whose ledger now
- * sums a whole extra movement above its own anchor.
- *
- * ## Why the predicate is two questions and not one
- *
- * "Will a balance sync write this row?" needs a yes from BOTH, and the ticket's
- * own case is the reason the account half alone is not enough:
- *
- * - **The holding.** `HoldingsSyncHelper` skips `MANUAL_HOLDING_SOURCE`
- *   unconditionally — a hand-curated row is one no sync may adopt, which is
- *   what protects it and also what strands it. The production destination is
- *   exactly this: `holdings.source = 'manual'`. Asking only about the account
- *   would leave that row unfixed the moment the institution behind it carries
- *   credentials, because the ACCOUNT is then sync-owned while the ROW is still
- *   nobody's.
- * - **The account.** `resolveSyncSource` — the same call `openingOf` makes two
- *   functions down, for the same question about a holding that does not exist
- *   yet. A sync-owned row on an account whose credentials have gone is as
- *   unobserved as a manual one.
- *
- * ## What this deliberately does NOT do
- *
- * It does not move every anchor. On a destination a sync owns, the balance
- * already includes the arrival by the time anyone answers, and moving it is the
- * double-count the current behaviour exists to prevent — the reason SC-614
- * split the callers rather than adding a flag to `writeInflow`.
- *
- * It also cannot tell whether the owner has ALREADY raised the balance by hand
- * before answering. Nothing can: a hand edit with no stated cause moves the
- * anchor and writes no row. That case has its own answer in the queue —
- * `paired`, against the deposit the edit wrote — and `internal` means "nothing
- * recorded the arrival, write it for me".
- */
 function anchorIsUnobserved(
   holding: { source: string },
   accountSyncSource: BalanceSyncSource | null
@@ -3160,37 +2841,6 @@ async function moveUnobservedAnchor(
   return true;
 }
 
-/**
- * How to open a holding this answer had to create (SC-356).
- *
- * The old answer was one branch: `source = 'manual'` at the amount that moved.
- * That is right for the destination SC-187 was built for — a Revolut savings
- * account maintained by hand, where the money is genuinely sitting there and
- * nobody else will ever say otherwise — and wrong for a wallet or an exchange,
- * for two reasons that compound:
- *
- * - `HoldingsSyncHelper` reconciles against every existing holding EXCEPT the
- *   manual ones, so the opening balance becomes PERMANENT: no sync may correct
- *   it. Six `internal` answers in the SC-350 repair would have opened 4,250
- *   USDT across two Ethereum wallets that hold none.
- * - Being invisible to the sync, the row is not found either, so the next time
- *   the chain reports that token the sync creates a SECOND holding for the
- *   same (account, token) — the split shape where per-holding tx dedup lets one
- *   upstream event be ingested onto both rows.
- *
- * So on a sync-owned account the row is opened as the sync's own, at zero, and
- * the sync corrects it on its next pass. Zero rather than the moved amount
- * because the wallet path runs `staleStrategy: 'preserve'`: a token the chain
- * does not report is never visited, so a non-zero opening for a token the
- * wallet does not actually hold would survive every future sync — handing the
- * row to the sync is not on its own enough to remove it.
- *
- * Nothing here is about cost basis. The ARRIVAL is written to the ledger on
- * both branches, carrying the outflow's `transfer_group_id`, and that is what
- * `walkComponent` inherits lots through. `holdings.balance` is an anchor, not
- * a sum: which number it opens at changes what the dashboard shows and what
- * reconciliation synthesizes as an opening, never what the transfer cost.
- */
 async function openingOf(
   tx: DatabaseTransaction,
   account: SyncOwnableAccount,

@@ -270,9 +270,11 @@ describe('presignUpload', () => {
     const svc = svcWithEnv();
     const before = Date.now();
     const result = await svc.presignUpload({ ...defaultOpts(), ttlSeconds: 60 });
+    const after = Date.now();
     const expiresAt = Date.parse(result.expiresAt);
-    expect(expiresAt - before).toBeGreaterThanOrEqual(60_000 - 50);
-    expect(expiresAt - before).toBeLessThanOrEqual(60_000 + 50);
+    expect(new URL(result.uploadUrl).searchParams.get('X-Amz-Expires')).toBe('60');
+    expect(expiresAt).toBeGreaterThanOrEqual(before + 60_000);
+    expect(expiresAt).toBeLessThanOrEqual(after + 60_000);
   });
 
   test('default TTL is 15 minutes', async () => {

@@ -5,6 +5,7 @@ import {
   listenForServiceWorkerReports,
   registerServiceWorker,
   requestServiceWorkerUpdate,
+  servedByWorker,
   serviceWorkerReady,
   setServiceWorkerReporter,
   wasDocumentControlledAtLoad,
@@ -344,5 +345,28 @@ describe('wasDocumentControlledAtLoad', () => {
     setNavigator({ controller: {} });
 
     expect(wasDocumentControlledAtLoad()).toBe(atLoad);
+  });
+});
+
+describe('servedByWorker (SC-790)', () => {
+  test('a page the worker claimed while it was loading was not served by it', () => {
+    // The first install finishes during a second load of `/` and claims it
+    // before the bundle runs. The controller is set, but the navigation went
+    // to the network: reloading for SW_ACTIVATED here is the WebKit
+    // "interrupted by another navigation" the e2e walk kept hitting.
+    expect(servedByWorker(true, { workerStart: 0 })).toBe(false);
+  });
+
+  test('a page whose navigation went through the worker was', () => {
+    expect(servedByWorker(true, { workerStart: 812.4 })).toBe(true);
+  });
+
+  test('no controller is never served, whatever the timing says', () => {
+    expect(servedByWorker(false, { workerStart: 812.4 })).toBe(false);
+    expect(servedByWorker(false, undefined)).toBe(false);
+  });
+
+  test('without navigation timing it falls back to the controller', () => {
+    expect(servedByWorker(true, undefined)).toBe(true);
   });
 });

@@ -18,9 +18,9 @@ import { trpc } from '@elysiajs/trpc';
 import { loadCloudClientConfig } from '@scani/cloud-client';
 import { DataProviderHealthMonitor } from '@scani/cloud-client/health-monitor';
 import { probeDataProvider } from '@scani/cloud-client/health-probe';
-import { getNodeEnv, isNodeEnvProduction, servedVersion } from '@scani/config';
+import { getNodeEnv, healthBodyFor, isNodeEnvProduction, servedVersion } from '@scani/config';
 import { assertDemoOnlyDatabase } from '@scani/domain/demo';
-import { TURNSTILE_HEADER, turnstileRefusal } from '@scani/http-fetch';
+import { isBlockedAuthPath, TURNSTILE_HEADER, turnstileRefusal } from '@scani/http-fetch';
 import { createComponentLogger, createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { setSharedRedis } from '@scani/rate-limiter';
@@ -73,6 +73,7 @@ import {
   createSignupLimiter,
   createStandardLimiter,
   createStrictLimiter,
+  defaultInflowKey,
   edgeLockRefusal,
   observeRedisReachability,
   pingWithin,
@@ -137,10 +138,15 @@ import { tonFactory } from '@scani/providers/providers/ton';
 import { tronFactory } from '@scani/providers/providers/tron';
 import { wiseFactory } from '@scani/providers/providers/wise';
 import { googleSheetsFactory } from '@scani/providers-google-sheets';
-import { createBetterAuth } from './auth/better-auth';
+import { CLIENT_IP_HEADER, createBetterAuth } from './auth/better-auth';
 import { createNewAddressCap } from './auth/new-address-cap';
-import { buildCorsOrigins, buildTrustedOrigins } from './config/browser-origins';
+import {
+  buildCorsOrigins,
+  buildTrustedOrigins,
+  isAllowedWebSocketOrigin,
+} from './config/browser-origins';
 import { initializeContainer } from './config/container';
+import { monitorEventLoopStalls } from './lib/event-loop-stalls';
 import { isLivenessProbe } from './lib/liveness';
 import { registerAdminDataRoutes } from './presentation/http/admin-data';
 import { registerAdminJobsRoutes } from './presentation/http/admin-jobs';
@@ -171,25 +177,12 @@ try {
         frankfurterFactory,
         coingeckoFactory,
         finnhubFactory,
-        // Chain providers — public-endpoint balance + address-validator
-        // dispatch for wallet imports.
-        // STUB_CHAIN_DATA=1 registers a fixture chain provider FIRST so
-        // wallet-import detection + balance fetch resolve locally instead
-        // of calling blockchain.info / Etherscan / a Solana RPC. The env
-        // schemas refuse STUB_CHAIN_DATA=1 in production, so a misconfigured
-        // prod deploy crashes at boot rather than serving fixture balances
-        // (SC-490).
         ...(process.env.STUB_CHAIN_DATA === '1' ? [chainStubFactory] : []),
         etherscanFactory,
         bitcoinFactory,
         solanaFactory,
         tronFactory,
         tonFactory,
-        // AI: STUB_AI=1 registers a fixed-payload provider FIRST so the
-        // e2e suite gets deterministic AI results without an OpenAI key.
-        // The data-provider config schema refuses STUB_AI=1 in production,
-        // so a misconfigured prod deploy crashes the data-provider at boot
-        // before this branch ever fires.
         ...(process.env.STUB_AI === '1' ? [aiStubFactory] : []),
         aiOpenAIFactory,
       ]),
@@ -267,15 +260,6 @@ const redisConnection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null })
 // and, more usefully, turns it into state `/health/deep` can report: how long,
 // how many attempts, and whether the failure is name resolution (which does
 // not self-heal) or connection (which does).
-/**
- * How long `/health/deep` waits for a Redis PING before calling it unreachable.
- *
- * Sized against ioredis's own retry cadence rather than against a latency
- * budget: the default `retryStrategy` tops out at one attempt every 2000ms, so
- * a ping unanswered for a full retry interval is not waiting on a slow Redis,
- * it is waiting on one that is not there. Healthy production latency here is
- * 1ms (SC-294).
- */
 const REDIS_PING_TIMEOUT_MS = 2_000;
 
 const redisReachability = observeRedisReachability(redisConnection, logger, 'redis');
@@ -611,8 +595,6 @@ const app = new Elysia()
   })
   .use(
     cors({
-      // env.FRONTEND_URL is validated at startup: required + https in production.
-      // In dev this also allows loopback on any port — see browser-origins.ts.
       origin: buildCorsOrigins(env.FRONTEND_URL, browserOriginOptions),
       credentials: true,
       // `LANGUAGE_HEADER` is what the auth client puts the reader's interface
@@ -681,6 +663,11 @@ app
   // Elysia has already consumed the original request body stream, so we
   // rebuild the Request from the parsed body before handing it off.
   .all('/api/auth/*', async ({ request, body, headers, set }) => {
+    // Routes Better-Auth mounts that nothing of ours uses (SC-1351).
+    if (isBlockedAuthPath(new URL(request.url).pathname)) {
+      set.status = 404;
+      return { error: 'Not Found' };
+    }
     // A demo instance has no accounts to sign into and must not grow any: a
     // sign-up here would put a second user in the database, which is exactly
     // what `assertDemoOnlyDatabase` refuses to boot against — so the next
@@ -745,6 +732,8 @@ app
     for (const [k, v] of Object.entries(headers ?? {})) {
       if (typeof v === 'string') cloneHeaders.set(k, v);
     }
+    // Overwrites anything the client sent under this name (SC-1351).
+    cloneHeaders.set(CLIENT_IP_HEADER, defaultInflowKey(request));
     const init: RequestInit = {
       method: request.method,
       headers: cloneHeaders,
@@ -775,7 +764,7 @@ app
   // shape, so the deploy reads what is SERVED rather than a per-laptop record
   // (SC-1182). Only the sha: nothing else from the environment.
   .get('/version.json', () => servedVersion(Bun.env.SERVICE_VERSION))
-  .get('/health/db', async ({ set }: { set: { status: number } }) => {
+  .get('/health/db', async ({ request, set }: { request: Request; set: { status: number } }) => {
     try {
       const startTime = Date.now();
       await db.execute(sql`SELECT 1 as health_check`);
@@ -785,7 +774,7 @@ app
       const activeConnections = await getActiveConnectionsCount();
       const monitoringStats = getConnectionMonitoringStats();
 
-      return {
+      return healthBodyFor(request, env.DIAGNOSTICS_TOKEN, {
         status: 'ok',
         timestamp: new Date().toISOString(),
         database: {
@@ -798,32 +787,32 @@ app
             'active Scani sessions across this database, excluding this probe',
           monitoring: monitoringStats,
         },
-      };
+      });
     } catch (error) {
       set.status = 503;
       logger.error({ error }, '❌ Database health check failed');
-      return {
+      return healthBodyFor(request, env.DIAGNOSTICS_TOKEN, {
         status: 'error',
         message: error instanceof Error ? error.message : 'Database connection failed',
         timestamp: new Date().toISOString(),
-      };
+      });
     }
   })
-  .get('/health/ws', ({ set }: { set: { status: number } }) => {
+  .get('/health/ws', ({ request, set }: { request: Request; set: { status: number } }) => {
     try {
       const stats = Container.get(WebSocketRealtimeUpdatesService).getStats();
-      return {
+      return healthBodyFor(request, env.DIAGNOSTICS_TOKEN, {
         status: 'ok',
         timestamp: new Date().toISOString(),
         websocket: stats,
-      };
+      });
     } catch (error) {
       set.status = 503;
-      return {
+      return healthBodyFor(request, env.DIAGNOSTICS_TOKEN, {
         status: 'error',
         message: error instanceof Error ? error.message : 'Unknown error',
         timestamp: new Date().toISOString(),
-      };
+      });
     }
   })
   // Readiness probe — `docker-compose.prod.yml`'s healthcheck for the api
@@ -844,7 +833,7 @@ app
   // forgets `docker compose --profile migrate run --rm migrate` on a
   // fresh prod-compose deploy. Without it, the api binds, /health
   // returns 200, but every authenticated route 500s on missing tables.
-  .get('/readyz', async ({ set }: { set: { status: number } }) => {
+  .get('/readyz', async ({ request, set }: { request: Request; set: { status: number } }) => {
     const checks: Record<string, { ok: boolean; latencyMs: number; error?: string }> = {};
     const dbStart = performance.now();
     try {
@@ -898,18 +887,21 @@ app
 
     const ok = checks.db.ok && checks.redis.ok && checks.schema.ok;
     if (!ok) set.status = 503;
-    return {
+    return healthBodyFor(request, env.DIAGNOSTICS_TOKEN, {
       status: ok ? 'ok' : 'error',
       timestamp: new Date().toISOString(),
       checks,
-    };
+    });
   })
   // Deep health: everything the three user flows depend on. Returns 200 iff
   // DB + Redis + R2 + AI are all reachable; 503 with a per-check breakdown
   // otherwise. Used by the deploy-time smoke test to catch silent breakage
   // before traffic hits the new machine.
-  .get('/health/deep', async ({ set }: { set: { status: number } }) => {
-    const checks: Record<string, { ok: boolean; latencyMs?: number; error?: string }> = {};
+  .get('/health/deep', async ({ request, set }: { request: Request; set: { status: number } }) => {
+    const checks: Record<
+      string,
+      { ok: boolean; latencyMs?: number; error?: string; nameResolutionFailure?: boolean }
+    > = {};
 
     try {
       const t0 = performance.now();
@@ -942,13 +934,6 @@ app
       }
     }
 
-    // SC-946. Index drift, both directions and full definitions — REPORTED,
-    // never gated, and not one of `checks`, for the reason given at
-    // `providerCredentials` below. The comparison was proven clean against a
-    // freshly migrated database, and production may carry an index no
-    // migration made; gating on it before a production reading would 503 the
-    // next deploy on a difference nobody has looked at. It moves into `checks`
-    // once a production reading shows it clean.
     let indexes: { status: 'clean' | 'drift' | 'unread'; latencyMs?: number; detail?: string };
     if (!checks.db.ok) {
       indexes = { status: 'unread', detail: 'the database check failed' };
@@ -1017,6 +1002,7 @@ app
     if (reachability.state === 'unreachable' && checks.redis?.ok !== true) {
       checks.redisReachability = {
         ok: false,
+        nameResolutionFailure: reachability.nameResolutionFailure,
         error: reachability.nameResolutionFailure
           ? `host does not resolve from this machine for ${reachability.unreachableForMs}ms (${reachability.consecutiveErrors} attempts) — will not self-heal`
           : `unreachable for ${reachability.unreachableForMs}ms (${reachability.consecutiveErrors} attempts): ${reachability.lastError}`,
@@ -1039,7 +1025,12 @@ app
         try {
           const res = await fetch(`${cloudUrl.replace(/\/$/, '')}/health/r2`, {
             signal: ctrl.signal,
-            headers: { accept: 'application/json' },
+            headers: {
+              accept: 'application/json',
+              ...(env.DIAGNOSTICS_TOKEN
+                ? { authorization: `Bearer ${env.DIAGNOSTICS_TOKEN}` }
+                : {}),
+            },
           });
           const latencyMs = Math.round(performance.now() - t0);
           if (res.ok) {
@@ -1089,13 +1080,13 @@ app
     // choice rather than an outage. Folding it in would 503 every dev and
     // self-host deployment that has not bought a CoinGecko Pro plan, and an
     // endpoint that is always red is one nobody reads.
-    return {
+    return healthBodyFor(request, env.DIAGNOSTICS_TOKEN, {
       status: allOk ? 'ok' : 'degraded',
       timestamp: new Date().toISOString(),
       checks,
       indexes,
       providerCredentials: Container.get(ProviderCredentialReport).healthPayload(),
-    };
+    });
   })
   .ws('/', {
     // biome-ignore lint/suspicious/noExplicitAny: Elysia WebSocket types
@@ -1120,6 +1111,13 @@ app
         method: 'GET',
         headers,
       });
+      // The session cookie alone cannot say the app opened this socket; any
+      // other *.scani.xyz page is same-site and sends it too (SC-1351).
+      if (!isAllowedWebSocketOrigin(rawHeaders?.origin, env.FRONTEND_URL, browserOriginOptions)) {
+        connectionLogger.warn({ origin: rawHeaders?.origin }, 'WebSocket from a foreign origin');
+        ws.close(4403, 'Forbidden origin');
+        return;
+      }
       const limit = await wsAuthLimiter.tryConsume(wsPseudoRequest);
       if ('ok' in limit && !limit.ok) {
         connectionLogger.warn(
@@ -1208,15 +1206,6 @@ app
 
 wsLogger.info({ port: PORT, host: HOST }, '🔌 WebSocket endpoint configured');
 
-// The layer that makes SCANI_DEMO_MODE impossible to set in production, as
-// opposed to merely inadvisable (SC-466).
-//
-// Demo mode hands every anonymous request a session, so the only question that
-// matters is whose data is behind it. This one is asked of the database rather
-// than of configuration, because configuration is the thing that was wrong.
-// Production holds real accounts; the flag set there does not open a demo, it
-// stops the process here, before the port is open and before a single request
-// is served. `assertDemoOnlyUsers` states why an EMPTY database refuses too.
 if (demoConfig.enabled) {
   try {
     await assertDemoOnlyDatabase();
@@ -1229,6 +1218,15 @@ if (demoConfig.enabled) {
     process.exit(1);
   }
 }
+
+// SC-1322: names the procedures holding the thread when a cheap one is slow.
+// A 20ms tick costs nothing measurable; 50ms is the smallest stall a Home load
+// shows, and anything shorter is ordinary interleaving.
+monitorEventLoopStalls({
+  intervalMs: 20,
+  thresholdMs: 50,
+  onStall: (stall) => logger.warn(stall, 'event-loop stall'),
+});
 
 const server = app.listen(PORT, () => {
   logger.info(

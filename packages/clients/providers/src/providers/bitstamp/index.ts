@@ -285,7 +285,7 @@ export class BitstampProvider
       // Last allowed page, and the feed still had a full one to give. The
       // walk is ascending, so what is missing is the recent end.
       if (page === MAX_PAGES - 1) {
-        capped.note({ walk: 'the user-transactions ledger', pages: MAX_PAGES, rows: offset });
+        capped.note({ walk: { kind: 'userTransactionsLedger' }, pages: MAX_PAGES, rows: offset });
       }
     }
 
@@ -308,11 +308,7 @@ export class BitstampProvider
     // A warning, never a retraction: this walk annotates events the ledger
     // walk above already produced, so a short one costs a txid and not a row
     // (SC-426). Saying nothing at all was what SC-428 was filed for.
-    annotationCap.warn(
-      ctx,
-      this.providerKey,
-      'some deposits and withdrawals in this run carry no on-chain transaction id'
-    );
+    annotationCap.warn(ctx, this.providerKey, 'missingTxIds');
     return events;
   }
 
@@ -355,7 +351,7 @@ export class BitstampProvider
       if (all.length < CRYPTO_TX_PAGE_SIZE) break;
       offset += all.length;
       if (page === MAX_PAGES - 1) {
-        capped.note({ walk: 'the crypto-transactions lookup', pages: MAX_PAGES, rows: offset });
+        capped.note({ walk: { kind: 'cryptoTransactionsLookup' }, pages: MAX_PAGES, rows: offset });
       }
     }
     return out;

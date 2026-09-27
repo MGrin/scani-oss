@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { authClient } from './auth-client';
 import { trpc } from './trpc';
 import { getTrpcAuthHeaders } from './trpc-auth-headers';
+import { trpcBatchLane } from './trpc-batch-lane';
 
 const isNetworkError = (error: unknown): boolean => {
   if (error instanceof TRPCClientError && error.data?.code === 'UNAUTHORIZED') return false;
@@ -119,18 +120,14 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
 
     return trpc.createClient({
       links: [
-        // `dashboard.*` (getOverview / getAssetAllocation) are CPU-heavy
-        // whole-portfolio valuation passes. Sharing one HTTP batch with the
-        // light dashboard procedures gated the entire page on the slowest
-        // call — a batch response cannot return until every procedure in it
-        // resolves. Routing them to a dedicated batch lets the rest of the
-        // dashboard render while valuation is still in flight; the two heavy
-        // procedures stay batched together so the server's per-request cache
-        // still dedupes the valuation across them.
         splitLink({
-          condition: (op) => op.path.startsWith('dashboard.'),
+          condition: (op) => trpcBatchLane(op.path) === 'dashboard',
           true: makeBatchLink(),
-          false: makeBatchLink(),
+          false: splitLink({
+            condition: (op) => trpcBatchLane(op.path) === 'returns',
+            true: makeBatchLink(),
+            false: makeBatchLink(),
+          }),
         }),
       ],
     });

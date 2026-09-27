@@ -41,14 +41,6 @@ function makeService(): CostBasisService {
   return instance;
 }
 
-/**
- * A service whose price graph answers for exactly one token (SC-397).
- *
- * The fallback tests need the asymmetry that produces the bug in production:
- * one side of a swap prices and the other does not. `priceable` is the token
- * that does; anything else converts to null, the way a token with no price
- * history behaves.
- */
 function makeServiceWithSpot(priceable: string, rate: string): CostBasisService {
   Container.set(HoldingRepository, {} as unknown as HoldingRepository);
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
@@ -144,9 +136,6 @@ describe('CostBasisService.walkLots', () => {
   });
 
   test('a swap_out whose counter cannot be priced realizes from the held token (SC-397)', async () => {
-    // BTC prices at 130; the counter asset does not price at all, which is
-    // the production shape — MATIC has no price row before 2023-10-25 and the
-    // swap against it is dated 2022-05-10.
     const svc = makeServiceWithSpot(BTC, '130');
     const r = await svc.walkLots(
       undefined,
@@ -533,6 +522,73 @@ describe('CostBasisService.walkComponent', () => {
     expect(r.get('A')?.realizedPnl.toString()).toBe('0');
     expect(r.get('A')?.costBasis.toString()).toBe('0');
     expect(r.get('B')?.costBasis.toString()).toBe('0');
+  });
+
+  /**
+   * SC-1365. One withdrawal paired with TWO arrivals — 10 left A and landed on
+   * B as 7 and then 3. Each arrival carries its share of the original cost.
+   * Before, the first took all 1,000 of it and the second opened a fresh lot
+   * at its own price, so selling the first 7 booked 1,050 − 1,000 = 50 where
+   * the truth is 1,050 − 700 = 350, and the 3 left over held a basis of 450
+   * instead of 300.
+   */
+  test('a withdrawal paired with two arrivals splits its cost between them', async () => {
+    const svc = makeService();
+    const txsByHolding = new Map<string, HoldingTransaction[]>([
+      [
+        'A',
+        [
+          tx({
+            holdingId: 'A',
+            kind: 'buy',
+            quantity: '10',
+            occurredAt: '2024-01-01',
+            priceNative: '100',
+            priceNativeTokenId: USD,
+          }),
+          tx({
+            holdingId: 'A',
+            kind: 'transfer_out',
+            quantity: '-10',
+            occurredAt: '2024-02-01',
+            transferGroupId: 'g1',
+          }),
+        ],
+      ],
+      [
+        'B',
+        [
+          tx({
+            holdingId: 'B',
+            kind: 'deposit',
+            quantity: '7',
+            occurredAt: '2024-02-01T01:00:00Z',
+            transferGroupId: 'g1',
+          }),
+          tx({
+            holdingId: 'B',
+            kind: 'deposit',
+            quantity: '3',
+            occurredAt: '2024-02-01T12:00:00Z',
+            priceNative: '150',
+            priceNativeTokenId: USD,
+            transferGroupId: 'g1',
+          }),
+          tx({
+            holdingId: 'B',
+            kind: 'sell',
+            quantity: '-7',
+            occurredAt: '2024-03-01',
+            priceNative: '150',
+            priceNativeTokenId: USD,
+          }),
+        ],
+      ],
+    ]);
+    const r = await svc.walkComponent(undefined, ['A', 'B'], txsByHolding, FUTURE, USD, heldTokens);
+    expect(r.get('B')?.realizedPnl.toString()).toBe('350');
+    expect(r.get('B')?.costBasis.toString()).toBe('300');
+    expect(r.get('A')?.realizedPnl.toString()).toBe('0');
   });
 
   /**

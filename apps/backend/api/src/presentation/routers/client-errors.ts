@@ -1,7 +1,9 @@
 import { createComponentLogger } from '@scani/logging';
+import { captureReportedError } from '@scani/logging/sentry';
 import { defaultInflowKey } from '@scani/rate-limiter';
 import { z } from 'zod';
 import { CLIENT_ERROR_LIMITS, USER_BUDGETS } from '../../config/limits';
+import { clientErrorEvent } from '../lib/client-error-event';
 import { strictInput } from '../lib/strict-input';
 import { UserBudget } from '../lib/user-budget';
 import { publicProcedure, router } from '../trpc';
@@ -12,7 +14,8 @@ const logger = createComponentLogger('router:client-errors');
  * Client-side error reporting endpoint.
  *
  * The V2 ErrorBoundary posts to this on every caught exception. Errors are
- * logged as structured JSON so they can be found via log search / grep.
+ * logged as structured JSON and sent to Sentry, because Fly keeps the log for
+ * minutes and a report nobody saw in time is lost (SC-1333).
  *
  * Intentionally a public procedure: if auth is the thing that's broken,
  * we still want the error report.
@@ -45,6 +48,7 @@ const reportInput = z.object({
   route: z.string().max(MAX_ROUTE_LEN).optional(),
   userAgent: z.string().max(MAX_USER_AGENT_LEN).optional(),
   appVersion: z.string().max(MAX_APP_VERSION_LEN).optional(),
+  level: z.enum(['error', 'warning']).optional(),
 });
 
 export const clientErrorsRouter = router({
@@ -63,6 +67,7 @@ export const clientErrorsRouter = router({
       },
       'Client error reported'
     );
+    captureReportedError(clientErrorEvent(input, ctx.userId ?? null));
     return { ok: true, recorded: true };
   }),
 });

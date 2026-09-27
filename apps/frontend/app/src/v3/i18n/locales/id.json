@@ -133,7 +133,8 @@
       "metric": {
         "netWorth": "Kekayaan bersih",
         "pnl": "PnL",
-        "pnlFull": "Laba dan rugi"
+        "pnlFull": "Laba dan rugi",
+        "returns": "Imbal hasil"
       },
       "period": {
         "label7d": "1mg",
@@ -160,8 +161,17 @@
         "noHistory": "Belum ada riwayat untuk periode ini",
         "noMeasurementSince": "Tidak ada pengukuran sejak {{date}} — titik terakhir adalah total langsung hari ini, bukan hasil rekap harian.",
         "retry": "Ulangi",
+        "hideFigure": "Sembunyikan jumlah",
+        "showFigure": "Tampilkan jumlah",
+        "figureHidden": "Jumlah disembunyikan",
         "realized": "Terealisasi",
-        "unrealized": "Belum terealisasi"
+        "unrealized": "Belum terealisasi",
+        "returnsPending": "Menghitung hasil Anda",
+        "returnsChartPending": "Menghitung hasil Anda terhadap Bitcoin, S&P 500, dan harga AS",
+        "returnsNoChart": "Hari terukur belum cukup untuk menggambar perbandingannya.",
+        "returnsOverPeriod": "Imbal hasil · {{period}}",
+        "returnsSince": "Imbal hasil · sejak {{date}}",
+        "returnsNoRate": "Imbal hasil untuk periode ini belum dihitung"
       },
       "quality": {
         "allPriced_other": "Semua {{count}} kepemilikan sudah dihargai",
@@ -169,7 +179,7 @@
         "withUnpriceable_other": "{{fraction}} · {{count}} tidak dapat dihargai",
         "staleQuotes_other": "{{count}} harga usang",
         "noBasis_other": "{{count}} tanpa basis biaya (keuntungan adalah batas atas)",
-        "unreviewedTransfers_other": "PnL terealisasi tidak mencakup {{count}} transfer yang belum dikonfirmasi"
+        "unreviewedTransfers_other": "PnL terealisasi tidak mencakup {{count}} pembayaran keluar yang belum diklasifikasikan"
       },
       "dueIn": {
         "today": "Hari ini",
@@ -229,12 +239,39 @@
         "perYear": "<value/> per tahun",
         "perYearUnit": "per tahun",
         "since": "Sejak {{date}}.",
-        "partial": "Beberapa hari tidak dapat dihargai sepenuhnya, jadi angka ini mungkin kurang tepat."
+        "partial": "Beberapa hari tidak dapat dihargai sepenuhnya, jadi angka ini mungkin kurang tepat.",
+        "headline": {
+          "up": "Naik <amount/> sejak {{date}}",
+          "down": "Turun <amount/> sejak {{date}}",
+          "flat": "Tidak berubah sejak {{date}}"
+        },
+        "attribution": {
+          "label": "Dari mana asalnya",
+          "contributed": "Anda setor",
+          "withdrew": "Anda tarik",
+          "market": "Pasar",
+          "currency": "Mata uang",
+          "combined": "Pasar dan mata uang",
+          "unvalued_other": "{{count}} pergerakan dana tidak dapat dinilai, jadi rincian ini mungkin meleset."
+        },
+        "chart": {
+          "you": "Anda",
+          "label": "Portofolio Anda dibandingkan Bitcoin, S&P 500, dan harga di AS selama periode ini",
+          "unavailable": "Grafik perbandingan gagal dimuat. Angka di atas tidak terpengaruh.",
+          "truncated": "Grafik mengambil sampel periode agar tetap cepat; angka di atas memakai setiap hari."
+        },
+        "gaps": {
+          "label": "Unggul atau tertinggal",
+          "caption": "Berapa jadinya setoran dan penarikan yang sama di masing-masing. Persentasenya adalah imbal hasilnya sendiri.",
+          "vs": "vs {{name}}"
+        },
+        "details": "Tingkat imbal hasil di baliknya"
       }
     },
     "money": {
       "upcoming": {
         "overdueTotal_other": "Terlambat, {{count}} tagihan",
+        "dayTotalEstimated_other": "Kira-kira, termasuk {{count}} tagihan perkiraan:",
         "noneAhead_other": "Tidak ada yang jatuh tempo dalam {{count}} hari ke depan.",
         "seeRecurring": "Lihat pembayaran berulang",
         "addPayment": "Tambahkan pembayaran",
@@ -714,7 +751,7 @@
       }
     },
     "realizedLedger": {
-      "answerTransfers": "Jawab transfer yang menunggu",
+      "answerTransfers": "Jawab pembayaran keluar yang menunggu",
       "portion": "Bagian {{index}} dari {{total}} atas satu {{noun}}",
       "noun": {
         "sale": "penjualan",
@@ -1125,7 +1162,11 @@
         "deleteConsequence": "Semua isi akun ini akan hilang, termasuk setiap berkas yang Anda unggah beserta salinan tersimpannya. Login Anda tetap ada, tanpa isi apa pun. Tindakan ini tidak dapat dibatalkan.",
         "deleteInFlight": "Data Anda sedang dihapus.",
         "deleted": "Semua data Anda telah dihapus",
-        "deleteFailed": "Penghapusan gagal"
+        "deleteFailed": "Penghapusan gagal",
+        "accountIntro": "Menghapus akun Anda menghapus data di atas beserta login-nya. Anda akan keluar dan tidak dapat masuk lagi ke akun ini.",
+        "accountTrigger": "Hapus akun saya",
+        "accountConfirm": "Hapus akun saya",
+        "accountConsequence": "Data Anda, login Anda, dan semua perangkat yang masuk akan dihapus. Mendaftar lagi dengan email ini membuat akun baru yang kosong. Tindakan ini tidak dapat dibatalkan."
       },
       "export": {
         "title": "Data Anda",
@@ -1246,6 +1287,18 @@
         "changeConfirm": "Hitung ulang keuntungan saya dengan {{method}}",
         "changeInFlight": "Keuntungan Anda sedang dihitung ulang.",
         "recomputing": "Menghitung ulang keuntungan Anda — angka di seluruh aplikasi masih menyesuaikan."
+      },
+      "accountDeletion": {
+        "failed": "Penghapusan akun Anda tidak selesai, jadi akun ini masih ada.",
+        "failedFallback": "Coba lagi, atau hubungi dukungan dan kami akan menghapusnya.",
+        "pending": "Akun Anda sedang dihapus.",
+        "retry": "Coba lagi"
+      },
+      "reauth": {
+        "title": "Konfirmasi bahwa ini Anda",
+        "description": "Penghapusan memerlukan masuk baru-baru ini. Kami akan mengirim kode 6 digit ke {{email}}.",
+        "send": "Kirimi saya kode",
+        "sending": "Mengirim…"
       }
     },
     "feedback": {
@@ -1257,7 +1310,7 @@
     "review": {
       "page": {
         "title": "Tinjauan",
-        "transfersTitle": "Transfer yang perlu dikonfirmasi",
+        "transfersTitle": "Pembayaran keluar untuk diklasifikasikan",
         "answered": "Dijawab",
         "balancesTitle": "Perubahan saldo yang perlu dijelaskan"
       },
@@ -1267,7 +1320,7 @@
       "item": {
         "jobFailed": "{{job}} gagal",
         "invoiceExtracted": "Faktur berhasil dibaca",
-        "transfersToConfirm": "Transfer yang perlu dikonfirmasi",
+        "transfersToConfirm": "Pembayaran keluar untuk diklasifikasikan",
         "holdings_other": "{{count}} kepemilikan",
         "holdingsWithSymbols_other": "{{count}} kepemilikan · {{symbols}}",
         "symbolsOverflow": "{{symbols}} +{{hidden}}",
@@ -1279,7 +1332,7 @@
         "candidatesAcross_other": "{{count}} kandidat di {{chains}}",
         "nothingFound": "tidak ada yang ditemukan",
         "labelled": "{{label}} · {{body}}",
-        "unpairedTransfers_other": "{{count}} transfer keluar tanpa setoran yang cocok",
+        "unpairedTransfers_other": "{{count}} pembayaran keluar untuk diklasifikasikan",
         "balanceChangesToExplain": "Perubahan saldo yang perlu dijelaskan",
         "unexplainedBalanceChanges_other": "{{count}} perubahan saldo yang tidak dapat kami jelaskan"
       },
@@ -1355,13 +1408,13 @@
           "leftControl": "Tercatat sebagai pelepasan",
           "untracked": "Tercatat sebagai masih milik Anda",
           "split": "Tercatat — setiap bagian menurut ketentuannya sendiri",
-          "gone": "Transfer itu sudah tidak menunggu lagi",
+          "gone": "Pembayaran keluar itu sudah tidak menunggu lagi",
           "splitRejected": "Pembagian itu tidak diterima",
           "fee": "Tercatat sebagai biaya"
         },
         "ownWalletNotice": "Ini masuk ke dompet yang Anda tambahkan, jadi uangnya masih milik Anda. Pasangkan dengan setoran yang cocok, atau catat ke mana uangnya berpindah — memilih bahwa uangnya keluar dari portofolio Anda akan membukukannya sebagai penjualan.",
         "withdrawnNotice": "Scani menarik kembali jawaban sebelumnya atas transfer ini. Jawaban itu diberikan atas sebuah pemasangan yang sejak itu kami tunjukkan bukan transfer sama sekali, jadi pertanyaannya kembali — dan mungkin tidak ada setoran di sini yang bisa ditunjuk.",
-        "withdrawnRuleNotice": "Anda menarik kembali jawaban yang diberikan aturan Anda atas transfer ini, jadi transfer ini kembali ke sini untuk Anda jawab sendiri. Aturan itu tidak akan menjawabnya lagi."
+        "withdrawnRuleNotice": "Anda menarik kembali jawaban yang diberikan aturan Anda atas pembayaran keluar ini, jadi pembayaran keluar ini kembali ke sini untuk Anda jawab sendiri. Aturan itu tidak akan menjawabnya lagi."
       },
       "destinationPicker": {
         "loading": "Memuat akun Anda…",
@@ -1378,6 +1431,8 @@
         "unreviewedBehaviour": "Selama ini belum dijawab, Scani tidak membukukan keuntungan apa pun atasnya — memindahkan koin Anda sendiri bukanlah penjualan, dan menebak bahwa itu penjualan adalah cara keuntungan fiktif masuk ke grafik Anda. Jika salah satu dari ini memang keluar dari portofolio Anda, keuntungannya belum masuk ke total terealisasi Anda sampai Anda menyatakannya.",
         "unreviewedNote": "Selama belum dijawab, ini tidak membukukan keuntungan ke arah mana pun.",
         "candidateReason": {
+          "combined": "Bersama-sama, {{count}} setoran ini membentuk jumlahnya",
+          "matches": "Cocok jumlah dan waktunya",
           "ambiguous": "Cocok — tetapi setoran lain juga cocok",
           "quantity": "Jumlahnya berbeda {{pct}}",
           "time": "Di luar rentang {{window}} yang kami pakai untuk mencocokkan",
@@ -1475,8 +1530,8 @@
         "reopen": {
           "internal": "Setoran yang dicatat pada akun satunya ikut dihapus — kalau tidak, jawaban Anda berikutnya akan menghitung uang itu dua kali. Jika menjawabnya membuat saldo akun itu berubah, perubahan itu juga dikembalikan. Transfernya kembali ke antrean.",
           "internalCreated": "Akun itu tidak melacak token ini sama sekali sebelum Anda menjawab, jadi Scani membuat kepemilikannya sekaligus setorannya. Keduanya dihapus — kecuali jika sejak itu ada hal lain yang tercatat atas kepemilikan tersebut, dalam hal itu kepemilikannya tetap ada. Transfernya kembali ke antrean, dan tidak ada saldo lain yang berubah.",
-          "leftControl": "Keuntungan yang dibukukan ini akan dikurangkan dari total terealisasi Anda sampai Anda menjawabnya lagi, dan transfernya kembali ke antrean.",
-          "default": "Transfernya kembali ke antrean, dan tidak ada yang diselesaikan tentangnya sampai Anda menjawabnya lagi.",
+          "leftControl": "Keuntungan yang dibukukan ini akan dikurangkan dari total terealisasi Anda sampai Anda menjawabnya lagi, dan pembayaran keluar itu kembali ke antrean.",
+          "default": "Pembayaran keluar itu kembali ke antrean, dan tidak ada yang diselesaikan tentangnya sampai Anda menjawabnya lagi.",
           "declared": "Ini transfer yang Anda catat sendiri, jadi membatalkannya mengembalikan kedua saldo ke keadaan sebelumnya — akun asalnya naik lagi, akun tujuannya turun lagi — dan menghapus kedua entrinya. Transfer ini tidak kembali ke antrean: tidak ada pertanyaan yang tersisa untuk dijawab."
         },
         "gap": {
@@ -1490,10 +1545,10 @@
         "bulk": {
           "consequence": {
             "loading": "Menghitung dampak tindakan ini…",
-            "none": "Tidak satu pun transfer yang dipilih bisa dijawab dengan cara ini.",
-            "leftControl_other": "Menghitung {{count}} transfer sebagai pelepasan — sekitar {{amount}} hasil penjualan dibandingkan dengan yang Anda bayarkan.",
-            "leftControlUnpriced_other": "Menghitung {{count}} transfer sebagai pelepasan. Scani tidak punya harga untuk satu pun dari mereka pada harinya, jadi tidak ada yang dibukukan.",
-            "untracked_other": "Mencatat {{count}} transfer sebagai masih milik Anda, di tempat yang tidak bisa dilihat Scani. Tidak ada yang direalisasikan.",
+            "none": "Tidak satu pun pembayaran keluar yang dipilih bisa dijawab dengan cara ini.",
+            "leftControl_other": "Menghitung {{count}} pembayaran keluar sebagai pelepasan — sekitar {{amount}} hasil penjualan dibandingkan dengan yang Anda bayarkan.",
+            "leftControlUnpriced_other": "Menghitung {{count}} pembayaran keluar sebagai pelepasan. Scani tidak punya harga untuk satu pun dari mereka pada harinya, jadi tidak ada yang dibukukan.",
+            "untracked_other": "Mencatat {{count}} pembayaran keluar sebagai masih milik Anda, di tempat yang tidak bisa dilihat Scani. Tidak ada yang direalisasikan.",
             "takesBack_other": "Itu mengurangi sekitar {{amount}} keuntungan terealisasi dari {{count}} yang saat ini dihitung sebagai pelepasan.",
             "takesBackUnpriced_other": "{{count}} di antaranya saat ini dihitung sebagai pelepasan, dan Scani tidak punya harga untuk satu pun dari mereka, jadi tidak ada yang berkurang.",
             "unpriced_other": "{{count}} lagi tidak punya harga pada harinya dan tidak membukukan apa pun, jadi angkanya adalah batas bawah."
@@ -1506,15 +1561,15 @@
             "ownWallet_other": "{{count}} masuk ke dompet yang Anda daftarkan, dimulai dari {{address}} — semuanya tidak keluar dari portofolio Anda, jadi tidak bisa dihitung sebagai pelepasan.",
             "answered_other": "{{count}} sudah dijawab “{{answer}}”. Buka kembali dari barisnya masing-masing untuk mengubahnya.",
             "linked_other": "{{count}} sudah dikaitkan dengan setoran, jadi jawaban di sini tidak akan mengubah apa pun.",
-            "gone_other": "{{count}} sudah bukan transfer yang bisa dijawab."
+            "gone_other": "{{count}} sudah bukan pembayaran keluar yang bisa dijawab."
           },
-          "deselect_other": "Batalkan pilihan atas {{count}} transfer itu",
-          "overCap": "Pilih paling banyak {{max}} transfer sekaligus.",
+          "deselect_other": "Batalkan pilihan atas {{count}} pembayaran keluar itu",
+          "overCap": "Pilih paling banyak {{max}} pembayaran keluar sekaligus.",
           "undo": "Batalkan",
           "toast": {
-            "leftControl_other": "{{count}} transfer dihitung sebagai pelepasan",
-            "untracked_other": "{{count}} transfer dicatat sebagai masih milik Anda",
-            "undone_other": "{{count}} transfer dikembalikan seperti semula",
+            "leftControl_other": "{{count}} pembayaran keluar dihitung sebagai pelepasan",
+            "untracked_other": "{{count}} pembayaran keluar dicatat sebagai masih milik Anda",
+            "undone_other": "{{count}} pembayaran keluar dikembalikan seperti semula",
             "refused": "Tidak ada yang diubah",
             "undoFailed": "Tidak dapat membatalkan itu"
           }
@@ -1529,9 +1584,9 @@
         "revoke": "Tarik kembali aturan ini",
         "revokeCommit": "Tarik kembali aturan ini",
         "field": {
-          "counterparty": "Transfer ini masuk ke",
+          "counterparty": "Pembayaran ini masuk ke",
           "key": "Aturannya akan mencocokkan",
-          "keyHint": "Jumlahnya sengaja tidak disertakan, sehingga transfer berikutnya ke tujuan yang sama juga cocok.",
+          "keyHint": "Jumlahnya sengaja tidak disertakan, sehingga pembayaran berikutnya ke tujuan yang sama juga cocok.",
           "note": "Tujuan ini apa?",
           "notePlaceholder": "Alamat setoran Bybit saya",
           "verdict": "Apa yang harus dilakukan aturan ini"
@@ -1542,35 +1597,35 @@
           "alwaysADisposal": "Jawab sebagai pelepasan"
         },
         "consequence": {
-          "askMe": "Setiap transfer ke {{key}}, berapa pun jumlahnya, tetap berada di antrean ini dan membawa catatan Anda. Tidak ada yang dijawab dan tidak ada keuntungan yang dibukukan — Anda tetap memutuskan satu per satu.",
-          "notADisposal": "Setiap transfer ke {{key}}, berapa pun jumlahnya, keluar dari antrean ini dan dicantumkan di bawah Aturan tujuan. Tidak ada yang ditulis padanya: transfer yang belum dijawab tidak membukukan keuntungan, dan menarik kembali aturannya akan mengembalikan semuanya ke sini.",
-          "mark_other": "Menjawab {{count}} transfer ke tujuan ini sebagai telah keluar dari portofolio Anda, membukukan {{proceeds}} hasil penjualan. Setiap transfer berikutnya ke sana dijawab dengan cara yang sama, tanpa dibuka. Masing-masing tetap bisa dibatalkan sendiri, dan menarik kembali salah satunya menghentikan aturan itu mencakup transfer tersebut untuk selamanya.",
-          "markUnpriced_other": "{{count}} transfer ke tujuan ini dijawab sebagai telah keluar dari portofolio Anda. Tidak satu pun punya harga pada harinya, jadi tidak ada yang dibukukan hari ini. Setiap transfer berikutnya ke sana dijawab dengan cara yang sama, tanpa dibuka.",
+          "askMe": "Setiap pembayaran keluar ke {{key}}, berapa pun jumlahnya, tetap berada di antrean ini dan membawa catatan Anda. Tidak ada yang dijawab dan tidak ada keuntungan yang dibukukan — Anda tetap memutuskan satu per satu.",
+          "notADisposal": "Setiap pembayaran keluar ke {{key}}, berapa pun jumlahnya, keluar dari antrean ini dan dicantumkan di bawah Aturan tujuan. Tidak ada yang ditulis padanya: pembayaran keluar yang belum dijawab tidak membukukan keuntungan, dan menarik kembali aturannya akan mengembalikan semuanya ke sini.",
+          "mark_other": "Menjawab {{count}} pembayaran keluar ke tujuan ini sebagai telah keluar dari portofolio Anda, membukukan {{proceeds}} hasil penjualan. Setiap pembayaran keluar berikutnya ke sana dijawab dengan cara yang sama, tanpa dibuka. Masing-masing tetap bisa dibatalkan sendiri, dan menarik kembali salah satunya menghentikan aturan itu mencakup pembayaran keluar tersebut untuk selamanya.",
+          "markUnpriced_other": "{{count}} pembayaran keluar ke tujuan ini dijawab sebagai telah keluar dari portofolio Anda. Tidak satu pun punya harga pada harinya, jadi tidak ada yang dibukukan hari ini. Setiap pembayaran keluar berikutnya ke sana dijawab dengan cara yang sama, tanpa dibuka.",
           "markUnpricedTail_other": "{{count}} di antaranya tidak punya harga pada harinya dan tidak membukukan apa pun.",
-          "markFuture": "Tidak ada yang menunggu untuk tujuan ini saat ini, jadi tidak ada yang dijawab hari ini. Setiap transfer berikutnya ke sana dijawab sebagai telah keluar dari portofolio Anda, tanpa dibuka, dan membukukan keuntungan."
+          "markFuture": "Tidak ada yang menunggu untuk tujuan ini saat ini, jadi tidak ada yang dijawab hari ini. Setiap pembayaran keluar berikutnya ke sana dijawab sebagai telah keluar dari portofolio Anda, tanpa dibuka, dan membukukan keuntungan."
         },
         "revokeConsequence": {
-          "notADisposal_other": "{{count}} transfer kembali ke antrean. Tidak ada yang pernah ditulis padanya, jadi tidak ada yang perlu dibatalkan.",
-          "askMe": "Transfer ke tujuan ini berhenti membawa catatan Anda. Aturan itu tidak pernah menjawabnya, jadi tidak ada lagi yang berubah.",
-          "markKeep_other": "Aturan itu berhenti menjawab transfer baru ke tujuan ini. {{count}} transfer yang sudah dijawabnya tetap terjawab dan tetap membukukan keuntungannya — centang kotak di atas untuk menarik kembali semuanya juga.",
-          "markWithdraw_other": "Aturan itu berhenti menjawab transfer baru, dan {{count}} transfer yang dijawabnya kembali ke antrean tanpa jawaban. Keuntungannya berhenti dibukukan."
+          "notADisposal_other": "{{count}} pembayaran keluar kembali ke antrean. Tidak ada yang pernah ditulis padanya, jadi tidak ada yang perlu dibatalkan.",
+          "askMe": "Pembayaran keluar ke tujuan ini berhenti membawa catatan Anda. Aturan itu tidak pernah menjawabnya, jadi tidak ada lagi yang berubah.",
+          "markKeep_other": "Aturan itu berhenti menjawab pembayaran keluar baru ke tujuan ini. {{count}} pembayaran keluar yang sudah dijawabnya tetap terjawab dan tetap membukukan keuntungannya — centang kotak di atas untuk menarik kembali semuanya juga.",
+          "markWithdraw_other": "Aturan itu berhenti menjawab pembayaran keluar baru, dan {{count}} pembayaran keluar yang dijawabnya kembali ke antrean tanpa jawaban. Keuntungannya berhenti dibukukan."
         },
         "row": {
-          "hiding_other": "Menahan {{count}} transfer di luar antrean",
-          "labelling_other": "Memberi nama pada {{count}} transfer di antrean",
-          "answering_other": "Menjawab {{count}} transfer sebagai pelepasan"
+          "hiding_other": "Menahan {{count}} pembayaran keluar di luar antrean",
+          "labelling_other": "Memberi nama pada {{count}} pembayaran keluar di antrean",
+          "answering_other": "Menjawab {{count}} pembayaran keluar sebagai pelepasan"
         },
         "hidden": {
-          "title": "Transfer yang ditahan oleh aturan Anda",
+          "title": "Pembayaran keluar yang ditahan oleh aturan Anda",
           "body": "Tidak satu pun dari ini yang sudah dijawab. Semuanya menunggu, di luar antrean, dan tarik kembali aturannya untuk memasukkannya."
         },
         "empty": {
           "title": "Belum ada aturan tujuan",
-          "body": "Buka sebuah transfer di antrean dan catat ke mana perginya. Setiap transfer berikutnya ke tujuan yang sama akan membawa catatan Anda, berapa pun jumlahnya — dan tujuan yang Anda tandai akan dijawab untuk Anda."
+          "body": "Buka sebuah pembayaran keluar di antrean dan catat ke mana perginya. Setiap pembayaran berikutnya ke tujuan yang sama akan membawa catatan Anda, berapa pun jumlahnya — dan tujuan yang Anda tandai akan dijawab untuk Anda."
         },
         "notice": {
           "label": "Catatan Anda tentang tujuan ini",
-          "markExempt": "Anda menandai tujuan ini sebagai pelepasan, dan Anda menarik kembali jawaban itu pada transfer ini. Transfer ini tidak akan dijawab otomatis lagi."
+          "markExempt": "Anda menandai tujuan ini sebagai pelepasan, dan Anda menarik kembali jawaban itu pada pembayaran keluar ini. Pembayaran keluar ini tidak akan dijawab otomatis lagi."
         },
         "toast": {
           "created": "Aturan disimpan",
@@ -1695,11 +1750,11 @@
         },
         "statement": {
           "title": "Unggah berkas rekening koran",
-          "description": "Ekspor CSV, TSV, OFX, atau QIF dari bank atau pialang. Kami membaca kepemilikannya dan menunjukkan apa yang kami temukan sebelum ada yang disimpan."
+          "description": "Ekspor CSV, TSV, OFX, atau QIF dari bank atau pialang. Kami langsung mengimpor kepemilikan dan transaksinya, lalu menunjukkan apa saja yang ditambahkan."
         },
         "either": {
           "title": "Unggah sebuah berkas",
-          "description": "Tangkapan layar saldo, rekening koran, atau ekspor dari pialang. Kami membaca kepemilikannya dan menunjukkan apa yang kami temukan sebelum ada yang disimpan."
+          "description": "Tangkapan layar saldo, rekening koran, atau ekspor dari pialang. Tangkapan layar kami tunjukkan dulu sebelum ada yang disimpan; file rekening langsung diimpor."
         },
         "whereItBelongs": "Di mana tempatnya"
       },
@@ -2333,7 +2388,29 @@
         "walkUnconfirmed": "{{provider}}: paginator tidak memastikan bahwa ia sudah mencapai ujung riwayat akun ini",
         "ibkrStatementWindow": "ibkr: laporan Flex ini mencakup {{from}} dan sesudahnya, jadi apa pun sebelum itu tidak pernah diambil. Rentangnya adalah pengaturan pada Flex Query tersimpan Anda dan Scani tidak memilihnya — untuk menjangkau lebih jauh ke belakang, ubah rentang tanggal kueri itu (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), simpan, lalu jalankan impor lagi.",
         "ibkrStatementWindowPeriod": "ibkr: laporan Flex ini mencakup {{from}} dan sesudahnya (period \"{{period}}\"), jadi apa pun sebelum itu tidak pernah diambil. Rentangnya adalah pengaturan pada Flex Query tersimpan Anda dan Scani tidak memilihnya — untuk menjangkau lebih jauh ke belakang, ubah rentang tanggal kueri itu (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), simpan, lalu jalankan impor lagi.",
-        "ibkrStatementWindowUnknown": "ibkr: laporan Flex ini tidak menyebut periode mana yang dicakupnya, jadi ia tidak bisa dibaca sebagai riwayat lengkap akun. Rentangnya adalah pengaturan pada Flex Query tersimpan Anda dan Scani tidak memilihnya — untuk menjangkau lebih jauh ke belakang, ubah rentang tanggal kueri itu (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), simpan, lalu jalankan impor lagi."
+        "ibkrStatementWindowUnknown": "ibkr: laporan Flex ini tidak menyebut periode mana yang dicakupnya, jadi ia tidak bisa dibaca sebagai riwayat lengkap akun. Rentangnya adalah pengaturan pada Flex Query tersimpan Anda dan Scani tidak memilihnya — untuk menjangkau lebih jauh ke belakang, ubah rentang tanggal kueri itu (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), simpan, lalu jalankan impor lagi.",
+        "pageCapRetracted": "{{provider}}: {{walks}} — sisa riwayat akun ini tidak pernah diambil",
+        "pageCapMissingTxIds": "{{provider}}: {{walks}} — beberapa deposit dan penarikan dalam proses ini tidak memiliki ID transaksi on-chain",
+        "pageCapAddressHistory": "riwayat alamat berhenti di batas {{pages}} halaman setelah {{rows}} baris",
+        "pageCapUserTransactionsLedger": "buku besar user-transactions berhenti di batas {{pages}} halaman setelah {{rows}} baris",
+        "pageCapCryptoTransactionsLookup": "pencarian crypto-transactions berhenti di batas {{pages}} halaman setelah {{rows}} baris",
+        "pageCapAccountList": "daftar akun berhenti di batas {{pages}} halaman setelah {{rows}} baris",
+        "pageCapAccountTransactions": "transaksi untuk akun {{account}} berhenti di batas {{pages}} halaman setelah {{rows}} baris",
+        "pageCapSymbolTrades": "perdagangan {{symbol}} berhenti di batas {{pages}} halaman setelah {{rows}} baris",
+        "pageCapTransfers": "transfer berhenti di batas {{pages}} halaman setelah {{rows}} baris",
+        "pageCapCurrencyDeposits": "deposit {{currency}} berhenti di batas {{pages}} halaman setelah {{rows}} baris",
+        "pageCapCurrencyWithdrawals": "penarikan {{currency}} berhenti di batas {{pages}} halaman setelah {{rows}} baris",
+        "pageCapFeed": "feed {{path}} berhenti di batas {{pages}} halaman setelah {{rows}} baris",
+        "pageCapTrxTransfers": "riwayat transfer TRX berhenti di batas {{pages}} halaman setelah {{rows}} baris",
+        "pageCapTrc20Transfers": "riwayat transfer TRC-20 berhenti di batas {{pages}} halaman setelah {{rows}} baris",
+        "pageCapFurtherWalks_other": "{{count}} penelusuran lain juga berhenti dengan cara yang sama",
+        "ibkrMissingSections_other": "ibkr: laporan Flex ini tidak memuat bagian {{sections}}, jadi {{consequences}}. Jika Anda pernah memilikinya, tambahkan ke Flex Query Anda (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), simpan, lalu jalankan impor lagi.",
+        "ibkrMissingTrades": "tidak ada pembelian atau penjualan yang bisa diimpor",
+        "ibkrMissingCashTransactions": "tidak ada dividen, bunga, deposit, penarikan, atau biaya yang bisa diimpor",
+        "ibkrUnmappedCashTypes_other": "ibkr: {{count}} transaksi kas dalam laporan ini memiliki tipe yang tidak dikenali Scani — {{types}} — jadi tidak diimpor. Ini tugas kami untuk memperbaikinya, bukan Anda: mohon laporkan.",
+        "ibkrFurtherTypes_other": "{{count}} tipe lainnya",
+        "ibkrIncompleteCashRows_other": "ibkr: {{count}} transaksi kas dalam laporan ini datang dengan kolom wajib yang kosong — {{blanks}} — jadi tidak diimpor. Jika Flex Query Anda tidak memiliki kolom tersebut, tambahkan (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), simpan, lalu jalankan impor lagi. Jika kolomnya ada, datanya sampai ke kami dalam keadaan kosong dan ini tugas kami: mohon laporkan.",
+        "ibkrBlankFields": "{{rows}} tanpa {{fields}}"
       },
       "wallet": {
         "subject": "dompet ini",
@@ -2426,7 +2503,10 @@
           "updated": "Diperbarui",
           "transactions_other": "{{count}} transaksi",
           "statementClose": "Saldo penutup",
-          "noClosingBalance": "Tidak ada saldo penutup"
+          "noClosingBalance": "Tidak ada saldo penutup",
+          "balanceUnknown": "Saldo tidak diketahui",
+          "fromRows": "Dari baris ini. Atur saldo sebenarnya jika sebelumnya sudah ada dana",
+          "setBalance": "Atur saldo"
         },
         "warningsTitle_other": "{{count}} peringatan",
         "importAnother": "Impor berkas lain",
@@ -2461,6 +2541,7 @@
         },
         "unpricedNote_other": "{{count}} baris belum memiliki harga. Semuanya tetap tersimpan — segarkan dari Kepemilikan, atau tunggu penyapuan harga tiap jam berikutnya.",
         "addMore": "Tambah lagi",
+        "seeOnHome": "Lihat di Beranda",
         "unreadablePayload": "Proses ini selesai tanpa hasil yang bisa kami baca. Tidak ada yang berubah pada portofolio Anda."
       },
       "generic": {

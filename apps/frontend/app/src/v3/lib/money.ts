@@ -370,6 +370,30 @@ export function estimatedTotals(
   return { totals: sumAmountsByCurrency(priced), count: priced.length };
 }
 
+/**
+ * What one date of the upcoming feed adds up to: each row's shown amount,
+ * committed or estimated from its history, so the figure beside a date heading
+ * is the sum of the rows under it. `count` is how many of those rows stand on
+ * an estimate, which makes the figure approximate.
+ */
+export function dayTotals(
+  occurrences: readonly EstimableOccurrence[],
+  historyEstimates: ReadonlyMap<string, HistoryEstimate>
+): EstimatedOccurrenceTotals {
+  let count = 0;
+  const totals = sumAmountsByCurrency(
+    occurrences.map((occurrence) => {
+      const estimate = historyEstimateFor(occurrence, historyEstimates);
+      if (estimate !== null) count += 1;
+      return {
+        amount: occurrence.expectedAmount ?? occurrence.actualAmount ?? estimate?.amount ?? '0',
+        currencyTokenId: occurrence.payment.currencyTokenId,
+      };
+    })
+  );
+  return { totals, count };
+}
+
 /** How many payments point at each vendor — the one figure the vendor list has
  *  to show, and the one v2 recomputed inline on every render. */
 export function countByVendorId(payments: readonly { vendorId: string }[]): Map<string, number> {

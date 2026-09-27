@@ -61,7 +61,7 @@ describe('reviewTitle', () => {
 
   test('the producers with one fixed name keep it', () => {
     expect(reviewTitle(v3, { code: 'invoiceExtracted' })).toBe('Invoice extracted');
-    expect(reviewTitle(v3, { code: 'transfersToConfirm' })).toBe('Transfers to confirm');
+    expect(reviewTitle(v3, { code: 'transfersToConfirm' })).toBe('Payments out to classify');
     expect(reviewTitle(v3, { code: 'balanceChangesToExplain' })).toBe('Balance changes to explain');
   });
 });
@@ -147,10 +147,10 @@ describe('reviewDetailText — the other producers', () => {
 
   test('the transfer queue counts what is waiting, singular and plural', () => {
     expect(detail((t) => reviewDetailText(t, { code: 'unpairedTransfers', transfers: 12 }))).toBe(
-      '12 transfers out with no matching deposit'
+      '12 payments out to classify'
     );
     expect(detail((t) => reviewDetailText(t, { code: 'unpairedTransfers', transfers: 1 }))).toBe(
-      '1 transfer out with no matching deposit'
+      '1 payment out to classify'
     );
   });
 

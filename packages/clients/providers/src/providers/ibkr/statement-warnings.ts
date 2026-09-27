@@ -1,41 +1,5 @@
-/**
- * What a Flex statement failed to give us, said in the reader's words (SC-435).
- *
- * Two ways an IBKR ledger comes back short, and until now neither said
- * anything: a section the saved query never requested, and a row we received
- * and could not place. They have the same symptom — money that moved with no
- * transaction against it — and completely different fixes, one the user's and
- * one ours.
- *
- * ── Sections ──────────────────────────────────────────────────────────────
- *
- * **A Flex Query's section list is the USER'S, not ours.** We send a token and
- * a query id; which sections come back is a per-query setting ticked in IBKR's
- * UI, and a query saved without "Cash Transactions" returns a statement that
- * parses perfectly and contains no dividend, interest, deposit or withdrawal
- * ever. Every IBKR transaction we have seen in production is a `<Trade>`, and
- * the cash that plainly moved has no row at all.
- *
- * We could not tell those apart. The statement runs to hundreds of kilobytes
- * and we pulled four
- * sections out of it without once checking that four were sent, so a section
- * the query never requested and a section with nothing in it read the same:
- * as "you had no dividends this year".
- *
- * The discriminator is the CONTAINER element. `<CashTransaction>` rows sit
- * inside a `<CashTransactions>` wrapper, and the wrapper is what a selected
- * section produces — so its absence is about the query, while its presence
- * with nothing inside is about the account. That second case stays silent on
- * purpose: a user who genuinely had no dividends does not need telling, and a
- * warning they see every sync teaches the eye to skip the place the real one
- * appears.
- *
- * The wording is hedged for the same reason it is scoped to the container: it
- * reports what the statement CONTAINED, which is checkable here, rather than
- * how the query is CONFIGURED, which is not visible from this side.
- */
-
-import type { JobNotice } from '../../core/types';
+import type { JobNotice, JobNoticeList } from '../../core/types';
+import { englishList } from '../../core/utils/english-list';
 
 /** One section of an Activity Flex Query. */
 export interface FlexSection {
@@ -47,17 +11,24 @@ export interface FlexSection {
   readonly consequence: string;
 }
 
+/** A section whose absence is warned on, so its consequence is keyed (SC-1028). */
+export interface WarnedFlexSection extends FlexSection {
+  readonly consequenceKey: string;
+}
+
 /** The two that feed `fetchTransactions`. */
-export const TRANSACTION_SECTIONS: readonly FlexSection[] = [
+export const TRANSACTION_SECTIONS: readonly WarnedFlexSection[] = [
   {
     element: 'Trades',
     label: 'Trades',
     consequence: 'no buys or sells could be imported',
+    consequenceKey: 'v3.jobs.notices.ibkrMissingTrades',
   },
   {
     element: 'CashTransactions',
     label: 'Cash Transactions',
     consequence: 'no dividends, interest, deposits, withdrawals or fees could be imported',
+    consequenceKey: 'v3.jobs.notices.ibkrMissingCashTransactions',
   },
 ];
 
@@ -82,40 +53,46 @@ export function hasFlexSection(xml: string, element: string): boolean {
   return new RegExp(`<${element}(?=[\\s>/])`).test(xml);
 }
 
-export function missingFlexSections(xml: string, sections: readonly FlexSection[]): FlexSection[] {
+export function missingFlexSections<S extends FlexSection>(
+  xml: string,
+  sections: readonly S[]
+): S[] {
   return sections.filter((section) => !hasFlexSection(xml, section.element));
 }
 
 /**
  * One warning naming every missing section, rather than one per section.
  *
- * **Unkeyed on purpose (SC-434), and for the same reason as `PageCapWatch`.**
- * `describeStatementWindow` below is keyed because everything it interpolates
- * is an identifier — an ISO date, IBKR's own `period` name. This one
- * interpolates `FlexSection.consequence`, which is English prose written in
- * this file (`no dividends, interest, deposits, withdrawals or fees could be
- * imported`), joined into a variable-length list. `JobNotice.params` is flat
- * primitives because it crosses a jsonb column, so that list has to arrive
- * pre-joined as one string — a key would put a translated frame around
- * untranslated English, which reads worse than the English sentence it
- * replaces. Keying it means keying the sections, which is a change to the
- * section table rather than to this function.
+ * Keyed as a frame plus two lists (SC-1028): the section labels are what the
+ * user ticks in IBKR's own English UI, so they travel as they are, and each
+ * consequence is a keyed clause of its own. The client joins both lists in the
+ * reader's language — "or" between labels, "and" between consequences.
  *
  * A reader missing two sections has one problem — a query saved with the wrong
  * boxes ticked — and should meet it once, next to the single edit that fixes
  * it. Returns null when nothing is missing, so the caller has nothing to say.
  */
-export function describeMissingSections(missing: readonly FlexSection[]): string | null {
+export function describeMissingSections(missing: readonly WarnedFlexSection[]): JobNotice | null {
   if (missing.length === 0) return null;
-  const labels = missing.map((s) => `"${s.label}"`).join(' or ');
-  const consequences = missing.map((s) => s.consequence).join(', and ');
-  return (
-    `ibkr: this Flex statement carried no ${labels} ` +
-    `${missing.length === 1 ? 'section' : 'sections'}, so ${consequences}. ` +
-    `If you have had any, add ${missing.length === 1 ? 'it' : 'them'} to your Flex Query ` +
-    '(IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), ' +
-    'save, and re-run the import.'
-  );
+  const sections: JobNoticeList = {
+    type: 'disjunction',
+    items: missing.map((s) => ({ key: null, text: `"${s.label}"` })),
+  };
+  const consequences: JobNoticeList = {
+    type: 'conjunction',
+    items: missing.map((s) => ({ key: s.consequenceKey, text: s.consequence })),
+  };
+  return {
+    key: 'v3.jobs.notices.ibkrMissingSections',
+    params: { count: missing.length },
+    lists: { sections, consequences },
+    text:
+      `ibkr: this Flex statement carried no ${englishList(sections)} ` +
+      `${missing.length === 1 ? 'section' : 'sections'}, so ${englishList(consequences)}. ` +
+      `If you have had any, add ${missing.length === 1 ? 'it' : 'them'} to your Flex Query ` +
+      '(IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), ' +
+      'save, and re-run the import.',
+  };
 }
 
 /** How many distinct type strings the warning names before it summarizes. */
@@ -134,26 +111,35 @@ const TYPES_NAMED = 4;
  * is what has to be added to the map, and a reader who forwards the warning
  * has forwarded the whole bug report.
  *
- * **Unkeyed (SC-434).** The types themselves are IBKR identifiers and would
- * travel fine, but `and N further types` is an English clause inside the same
- * interpolated list, and the sentence pluralises on a count in three places —
- * which in Russian is three `_one`/`_few`/`_many` stems per key, the
- * hand-written plural table `providerHorizon` avoids by wording its number
- * through `Intl` instead. Neither is unsolvable; both are more than a
- * migration.
+ * Keyed per SC-1028: the type strings are IBKR identifiers and travel as
+ * they are, and the counted remainder is a keyed item of the same list, so
+ * every plural is the client's `count` rather than an English suffix.
  */
-export function describeUnmappedCashTypes(counts: ReadonlyMap<string, number>): string | null {
+export function describeUnmappedCashTypes(counts: ReadonlyMap<string, number>): JobNotice | null {
   if (counts.size === 0) return null;
   const rows = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  const named = rows.slice(0, TYPES_NAMED).map(([type, n]) => `"${type}" (${n})`);
-  const rest = rows.length - named.length;
-  if (rest > 0) named.push(`and ${rest} further type${rest === 1 ? '' : 's'}`);
+  const items: JobNotice[] = rows
+    .slice(0, TYPES_NAMED)
+    .map(([type, n]) => ({ key: null, text: `"${type}" (${n})` }));
+  const rest = rows.length - items.length;
+  if (rest > 0) {
+    items.push({
+      key: 'v3.jobs.notices.ibkrFurtherTypes',
+      params: { count: rest },
+      text: `${rest} further type${rest === 1 ? '' : 's'}`,
+    });
+  }
+  const types: JobNoticeList = { type: 'conjunction', items };
   const total = rows.reduce((sum, [, n]) => sum + n, 0);
-  return (
-    `ibkr: ${total} cash transaction${total === 1 ? '' : 's'} in this statement had a type ` +
-    `Scani does not recognise — ${named.join(', ')} — so ${total === 1 ? 'it was' : 'they were'} ` +
-    'not imported. This one is ours to fix, not yours: please report it.'
-  );
+  return {
+    key: 'v3.jobs.notices.ibkrUnmappedCashTypes',
+    params: { count: total },
+    lists: { types },
+    text:
+      `ibkr: ${total} cash transaction${total === 1 ? '' : 's'} in this statement had a type ` +
+      `Scani does not recognise — ${englishList(types)} — so ${total === 1 ? 'it was' : 'they were'} ` +
+      'not imported. This one is ours to fix, not yours: please report it.',
+  };
 }
 
 /**
@@ -161,6 +147,8 @@ export function describeUnmappedCashTypes(counts: ReadonlyMap<string, number>): 
  * produce the same key and the same sentence.
  */
 const CASH_FIELD_ORDER = ['type', 'currency', 'amount'] as const;
+
+const FIELD_SEPARATOR = ' or ';
 
 /**
  * Cash rows that arrived carrying money with a required field blank (SC-873).
@@ -179,10 +167,8 @@ const CASH_FIELD_ORDER = ['type', 'currency', 'amount'] as const;
  * one the next time anybody looks, whereas an absent one is what this warning
  * now points at. A blank `type` cannot be classified at all.
  *
- * **Unkeyed (SC-434):** the list is `N with no currency or amount` — our own
- * English joining IBKR's field names — so the clause inside the interpolation
- * would stay English under a Russian frame. Same boundary as
- * `describeMissingSections` above.
+ * Keyed per SC-1028 as a list of per-field-set clauses, each carrying its
+ * own list of IBKR field names, which are identifiers and travel as they are.
  *
  * It names the FIELD rather than the row because that is what says whose fix
  * it is. The same field blank on every row is a Flex Query column that was
@@ -191,20 +177,38 @@ const CASH_FIELD_ORDER = ['type', 'currency', 'amount'] as const;
  * different actions, and a warning that only counted rows would send every
  * reader down the same one.
  */
-export function describeIncompleteCashRows(counts: ReadonlyMap<string, number>): string | null {
+export function describeIncompleteCashRows(counts: ReadonlyMap<string, number>): JobNotice | null {
   if (counts.size === 0) return null;
   const rows = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
   const total = rows.reduce((sum, [, n]) => sum + n, 0);
-  const named = rows.map(([fields, n]) => `${n} with no ${fields}`).join(', ');
-  return (
-    `ibkr: ${total} cash transaction${total === 1 ? '' : 's'} in this statement ` +
-    `arrived with a required field blank — ${named} — so ` +
-    `${total === 1 ? 'it was' : 'they were'} not imported. ` +
-    'If your Flex Query is missing those columns, add them (IBKR Client Portal → ' +
-    'Performance & Reports → Flex Queries → edit the query), save, and re-run the ' +
-    'import. If the columns are there, the data came to us blank and this one is ' +
-    'ours: please report it.'
-  );
+  const blanks: JobNoticeList = {
+    type: 'conjunction',
+    items: rows.map(([key, n]) => {
+      const fields: JobNoticeList = {
+        type: 'disjunction',
+        items: key.split(FIELD_SEPARATOR).map((field) => ({ key: null, text: field })),
+      };
+      return {
+        key: 'v3.jobs.notices.ibkrBlankFields',
+        params: { rows: n },
+        lists: { fields },
+        text: `${n} with no ${englishList(fields)}`,
+      };
+    }),
+  };
+  return {
+    key: 'v3.jobs.notices.ibkrIncompleteCashRows',
+    params: { count: total },
+    lists: { blanks },
+    text:
+      `ibkr: ${total} cash transaction${total === 1 ? '' : 's'} in this statement ` +
+      `arrived with a required field blank — ${englishList(blanks)} — so ` +
+      `${total === 1 ? 'it was' : 'they were'} not imported. ` +
+      'If your Flex Query is missing those columns, add them (IBKR Client Portal → ' +
+      'Performance & Reports → Flex Queries → edit the query), save, and re-run the ' +
+      'import. If the columns are there, the data came to us blank and this one is ' +
+      'ours: please report it.',
+  };
 }
 
 /** The blank fields of one cash row, in `CASH_FIELD_ORDER`, joined for a count key. */
@@ -213,7 +217,7 @@ export function incompleteCashFieldsKey(row: {
   currency: string;
   amount: string;
 }): string {
-  return CASH_FIELD_ORDER.filter((field) => !row[field]).join(' or ');
+  return CASH_FIELD_ORDER.filter((field) => !row[field]).join(FIELD_SEPARATOR);
 }
 
 /** The window a `<FlexStatement>` says it covers. `from` is null when the

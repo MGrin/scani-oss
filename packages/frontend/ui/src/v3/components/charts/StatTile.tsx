@@ -21,6 +21,9 @@ import { cn } from '../../../lib/cn';
 interface StatTileProps {
   /** Sentence case, no trailing colon. */
   label: string;
+  /** A small control that acts on the figure, drawn beside the label so it
+   *  never takes width from the figure itself (SC-72). */
+  labelAction?: ReactNode;
   /** A `<Numeric>` in almost every case. */
   value: ReactNode;
   /** A `<DeltaPill>` in almost every case. */
@@ -33,6 +36,7 @@ interface StatTileProps {
 
 export function StatTile({
   label,
+  labelAction,
   value,
   delta,
   trend,
@@ -46,7 +50,14 @@ export function StatTile({
       {/* The label leads because it is what makes the figure mean anything,
           but it is caption-weight: on a phone the eye should land on the
           number and read the label second. */}
-      <span className="text-caption text-muted-foreground">{label}</span>
+      {labelAction ? (
+        <span className="flex items-center gap-1">
+          <span className="text-caption text-muted-foreground">{label}</span>
+          {labelAction}
+        </span>
+      ) : (
+        <span className="text-caption text-muted-foreground">{label}</span>
+      )}
       {/* No `data-figure-line` here, deliberately: a tile is often a flex item
           whose own width comes from this figure, and a size container's inline
           size must not depend on its contents — declaring the line here

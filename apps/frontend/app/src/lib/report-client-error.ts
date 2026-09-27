@@ -11,6 +11,8 @@
  * throw creates infinite loops on already-broken UIs.
  */
 
+import { isChunkLoadError } from '@scani/ui/lib/lazy-chunk';
+
 const MAX_MESSAGE_LEN = 2000;
 const MAX_STACK_LEN = 8000;
 const MAX_COMPONENT_STACK_LEN = 8000;
@@ -40,6 +42,9 @@ export async function reportClientError(input: ReportClientErrorInput): Promise<
           : undefined,
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
       appVersion: import.meta.env.VITE_APP_VERSION as string | undefined,
+      // A chunk that would not load is the network or a deploy, not a bug in
+      // this code, so it is filed below an error (SC-1380).
+      level: isChunkLoadError(input.error) ? ('warning' as const) : undefined,
     };
 
     // tRPC v10 accepts raw JSON for non-batched mutations.

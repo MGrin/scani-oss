@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewTokenPrice, TokenPrice, TokenPriceGranularity } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, desc, eq, gte, inArray, like, lte, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, like, lt, lte, ne, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 @Service()
@@ -414,26 +414,59 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
     return keys;
   }
 
-  // Find the closest price at or before `timestamp`, preferring rows of
-  // a specific granularity. Used by PriceGraphService to bias toward
-  // 'tx-exact' when pricing a known trade, or 'daily' when rendering a
-  // chart, while still allowing fallthrough to other granularities when
-  // the preferred one is missing.
-  // Bulk fetch every price row for the given (tokenId, baseTokenId)
-  // pairs whose timestamp is on or before `until`. One query, one
-  // round-trip — used by the rollup hot-path to replace 80k+
-  // per-(day, holding) lookups with one prefetch.
-  //
-  // The pair set is folded into a single WHERE using a tuple-IN
-  // expression: `(token_id, base_token_id) IN ((t1,b1), (t2,b2), …)`.
-  // Postgres treats it as an indexable equality on the composite, so
-  // even with ~500 pairs the planner walks the existing
-  // `idx_token_prices_lookup (token_id, base_token_id, timestamp DESC)`
-  // index per pair and concatenates results.
+  /**
+   * A hash of the rows `findManyForPairsUpTo` returns for the same arguments:
+   * the in-window rows and each pair-and-granularity's carry-in row before
+   * `since`. Computed in SQL so the caller decodes one row instead of the set.
+   * It hashes over the pairs' cross-product rather than the exact pair set, a
+   * superset, so it can only change more often than the lookup, never less.
+   */
+  async fingerprintForPairsUpTo(
+    pairs: ReadonlyArray<{ tokenId: string; baseTokenId: string }>,
+    until: Date,
+    since?: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<string> {
+    if (pairs.length === 0) return '';
+    const tokenIds = [...new Set(pairs.map((p) => p.tokenId))];
+    const baseIds = [...new Set(pairs.map((p) => p.baseTokenId))];
+    const tokens = sql`ARRAY[${sql.join(
+      tokenIds.map((id) => sql`${id}`),
+      sql`, `
+    )}]::uuid[]`;
+    const bases = sql`ARRAY[${sql.join(
+      baseIds.map((id) => sql`${id}`),
+      sql`, `
+    )}]::uuid[]`;
+    const row = (p: string) =>
+      sql.raw(
+        `${p}.id::text || ':' || ${p}.price || ':' || ${p}.timestamp::text || ':' || ${p}.granularity`
+      );
+    const carryIn = since
+      ? sql`(SELECT md5(coalesce(string_agg(${row('c')}, ',' ORDER BY c.id), '')) FROM (
+          SELECT DISTINCT ON (token_id, base_token_id, granularity) id, price, timestamp, granularity
+            FROM token_prices
+           WHERE token_id = ANY(${tokens}) AND base_token_id = ANY(${bases}) AND timestamp < ${since.toISOString()}::timestamptz
+           ORDER BY token_id, base_token_id, granularity, timestamp DESC) c)`
+      : sql`''`;
+    const result = (await this.getDb(transaction).execute(sql`
+      SELECT concat_ws('|',
+        (SELECT md5(coalesce(string_agg(${row('w')}, ',' ORDER BY w.id), ''))
+           FROM token_prices w
+          WHERE w.token_id = ANY(${tokens}) AND w.base_token_id = ANY(${bases})
+            AND w.timestamp <= ${until.toISOString()}::timestamptz
+            ${since ? sql`AND w.timestamp >= ${since.toISOString()}::timestamptz` : sql``}),
+        ${carryIn}
+      ) AS v
+    `)) as unknown as Array<{ v: string }>;
+    return result[0]?.v ?? '';
+  }
+
   async findManyForPairsUpTo(
     pairs: ReadonlyArray<{ tokenId: string; baseTokenId: string }>,
     until: Date,
-    transaction?: DatabaseTransaction
+    transaction?: DatabaseTransaction,
+    since?: Date
   ): Promise<TokenPrice[]> {
     if (pairs.length === 0) return [];
     try {
@@ -453,14 +486,18 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
       // pair set — this is N+M queries collapsed to 1 with a small
       // post-filter, far simpler than the SQL tuple-IN dance and
       // hits the same composite index plan.
-      const rows = await database
+      const inPairSet = and(
+        inArray(schema.tokenPrices.tokenId, tokenIds),
+        inArray(schema.tokenPrices.baseTokenId, baseIds)
+      );
+      const windowRows = database
         .select()
         .from(schema.tokenPrices)
         .where(
           and(
-            inArray(schema.tokenPrices.tokenId, tokenIds),
-            inArray(schema.tokenPrices.baseTokenId, baseIds),
-            lte(schema.tokenPrices.timestamp, until)
+            inPairSet,
+            lte(schema.tokenPrices.timestamp, until),
+            ...(since ? [gte(schema.tokenPrices.timestamp, since)] : [])
           )
         )
         .orderBy(
@@ -468,6 +505,27 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
           asc(schema.tokenPrices.baseTokenId),
           desc(schema.tokenPrices.timestamp)
         );
+      // Two statements rather than a UNION, run together: each is one index
+      // scan the planner already knows, and the second is bounded by the pair
+      // set rather than by the history, so it costs a fraction of the first.
+      const carryIn = since
+        ? database
+            .selectDistinctOn([
+              schema.tokenPrices.tokenId,
+              schema.tokenPrices.baseTokenId,
+              schema.tokenPrices.granularity,
+            ])
+            .from(schema.tokenPrices)
+            .where(and(inPairSet, lt(schema.tokenPrices.timestamp, since)))
+            .orderBy(
+              asc(schema.tokenPrices.tokenId),
+              asc(schema.tokenPrices.baseTokenId),
+              asc(schema.tokenPrices.granularity),
+              desc(schema.tokenPrices.timestamp)
+            )
+        : Promise.resolve([] as TokenPrice[]);
+      const [inWindow, before] = await Promise.all([windowRows, carryIn]);
+      const rows = [...inWindow, ...before];
       // Strip rows that don't match a wanted pair (the cross-product
       // expansion can include unwanted (tokenA, baseB) combinations).
       const wanted = new Set(unique.map((p) => `${p.tokenId}|${p.baseTokenId}`));

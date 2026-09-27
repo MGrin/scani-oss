@@ -3,6 +3,7 @@ import * as schema from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { and, desc, eq, isNull, lte } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { mapWithConcurrency } from '../../lib/map-with-concurrency';
 import {
   BENCHMARKS,
   type Benchmark,
@@ -30,6 +31,17 @@ export function measuredDayInstant(day: string, now: Date = new Date()): Date {
 }
 
 /**
+ * How many of a benchmark's days convert at once (SC-1306).
+ *
+ * Eight rather than "all of them": the router caps a chart at 120 points and
+ * two benchmarks run in parallel, so an unbounded map is 240 concurrent
+ * database round trips from one request. Eight per benchmark keeps the whole
+ * card inside a small, predictable share of the pool while removing the
+ * serial cost that made this the slowest thing on the dashboard.
+ */
+const DAY_CONVERSION_CONCURRENCY = 8;
+
+/**
  * What each benchmark did over the window a return was measured on (SC-464),
  * in the reader's base currency.
  *
@@ -54,6 +66,82 @@ export class BenchmarkReturnService {
       this.inflationOver(window),
     ]);
     return inflation ? [...prices, inflation] : prices;
+  }
+
+  /**
+   * Each benchmark's price on each of `days`, in the reader's base currency
+   * (SC-1297), so the same money can be charted as if it had gone there
+   * instead. Inflation is an index rather than a price and is returned on the
+   * same shape, rebased to the first day that has one.
+   *
+   * A day with no price is ABSENT from its map rather than carried forward.
+   * A flat segment drawn through a gap is a claim the benchmark did not move,
+   * which is the one thing an unpriced day cannot support.
+   *
+   * Every day is converted through `PriceGraphService` INDIVIDUALLY rather
+   * than through a bulk query, because the cumulative figure printed beside
+   * this chart is computed that way — a second price path could disagree with
+   * the number it sits under.
+   *
+   * That is a constraint on the PATH and says nothing about the ORDER, and
+   * this sentence used to read "one day at a time", which was taken as both
+   * (SC-1306). It meant one day per conversion; it was implemented as one
+   * conversion at a time, and a 120-point chart therefore cost 120 sequential
+   * round trips — the slowest thing on the dashboard once the returns engine
+   * itself was fixed. The days now go out `DAY_CONVERSION_CONCURRENCY` at a
+   * time through the same call with the same arguments, so the numbers are
+   * unchanged. `sampleDays` bounds how many there are.
+   */
+  async pricesOn(
+    days: string[],
+    baseCurrencyId: string,
+    now: Date = new Date()
+  ): Promise<Map<BenchmarkKey, Map<string, Decimal>>> {
+    const out = new Map<BenchmarkKey, Map<string, Decimal>>();
+
+    await Promise.all(
+      BENCHMARKS.map(async (benchmark) => {
+        const tokenId = await this.tokenIdOf(benchmark);
+        if (!tokenId) return;
+        const prices = new Map<string, Decimal>();
+        const converted = await mapWithConcurrency(days, DAY_CONVERSION_CONCURRENCY, (day) =>
+          this.priceGraphService.convert(
+            new Decimal(1),
+            tokenId,
+            baseCurrencyId,
+            measuredDayInstant(day, now),
+            { tx: undefined, preferGranularity: 'daily' }
+          )
+        );
+        days.forEach((day, i) => {
+          const price = converted[i];
+          if (price?.amount.gt(0)) prices.set(day, price.amount);
+        });
+        if (prices.size > 0) out.set(benchmark.key, prices);
+      })
+    );
+
+    const inflation = await this.inflationIndexOn(days);
+    if (inflation.size > 0) out.set(US_INFLATION.key, inflation);
+    return out;
+  }
+
+  /**
+   * The CPI index on each day, read as the value for the month that day falls
+   * in. A month whose figure is unpublished — CPI lands mid-way through the
+   * following month — has no entry, so the line stops rather than flattening.
+   */
+  private async inflationIndexOn(days: string[]): Promise<Map<string, Decimal>> {
+    const byMonth = new Map<string, Decimal | null>();
+    const index = new Map<string, Decimal>();
+
+    for (const day of days) {
+      const month = monthOf(day);
+      if (!byMonth.has(month)) byMonth.set(month, await this.indexAt(month));
+      const value = byMonth.get(month);
+      if (value?.gt(0)) index.set(day, value);
+    }
+    return index;
   }
 
   /**

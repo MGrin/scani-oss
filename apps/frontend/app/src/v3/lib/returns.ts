@@ -1,3 +1,8 @@
+// The CONFIGURED Decimal, not `decimal.js` directly: this file travels to the
+// public mirror, whose root manifest does not declare the package, and a
+// second unconfigured instance is the defect SC-889 closed rather than the
+// declaration it looked like.
+import { Decimal, splitChangeIntoMoney } from '@scani/shared';
 import { toFiniteNumber } from '@scani/ui/v3/lib/numeric';
 import type { RouterOutputs } from '@/lib/trpc';
 
@@ -12,6 +17,23 @@ import type { RouterOutputs } from '@/lib/trpc';
  */
 
 export type ReturnsWindow = 'ytd' | '1y' | 'all';
+
+/**
+ * What `getReturns` is actually asked for (SC-1305).
+ *
+ * The three NAMED windows are what the account and institution cards offer,
+ * and they are a picker's values — a reader chooses "YTD". A `custom` range is
+ * what the home chart sends: its period control already decides which days are
+ * on the axis, and before this existed those days were mapped onto the nearest
+ * named window, so 1M, 3M and 6M all asked for `1y` and the control moved
+ * without changing anything on screen.
+ *
+ * Dates rather than date strings, because `z.coerce.date()` is what the router
+ * parses and tRPC serialises a `Date` to the ISO string it coerces back.
+ */
+export type ReturnsWindowRequest =
+  | { kind: ReturnsWindow }
+  | { kind: 'custom'; from: Date; to: Date };
 
 export const RETURNS_WINDOWS: readonly { key: ReturnsWindow; labelKey: string }[] = [
   { key: 'ytd', labelKey: 'v3.home.returns.window.ytd' },
@@ -31,6 +53,44 @@ export const BENCHMARK_LABEL_KEYS: Record<BenchmarkKey, string> = {
   sp500: 'v3.home.returns.benchmarks.sp500',
   us_inflation: 'v3.home.returns.benchmarks.usInflation',
 };
+
+/**
+ * The window in money, which is what the card leads with (SC-1297).
+ *
+ * Derived from `getReturns` alone — the cheap call — rather than from the
+ * comparison procedure that carries the chart. The chart pays for one
+ * benchmark price per measured day, and a card that went blank because a price
+ * lookup timed out is the failure this separation exists to prevent.
+ *
+ * The arithmetic itself is `@scani/shared`'s `splitChangeIntoMoney`, the same
+ * function the server's comparison payload is built with. Two copies would let
+ * the bar and the chart above it disagree for a reason no reader could see.
+ */
+export interface ReturnsMoney {
+  /** Closing value minus opening value, base currency. */
+  change: number;
+  /** Deposits minus withdrawals over the same days. */
+  contributed: number;
+  /** What the portfolio did on its own: `change - contributed`. */
+  gain: number;
+  /**
+   * The gain's asset leg, carrying the cross term so `market + currency` is
+   * the gain to the last digit — the bar's labels are read as a sum, and a
+   * third segment for an interaction term is not a thing to explain on a home
+   * screen.
+   *
+   * Null WITH `currency` when the rates cannot split it: over a window whose
+   * base return is ~0 the two shares are enormous fractions of nothing. The
+   * card then says "market and currency" rather than printing two numbers
+   * that would swap sign on a rounding difference.
+   */
+  market: number | null;
+  currency: number | null;
+  /** The first measured day: what "since" in the sentence points at. */
+  from: string;
+  /** Flows the engine could not value. Never folded into a leg (SC-149). */
+  unvalued: number;
+}
 
 export interface ReturnsView {
   /** Percent, not a fraction. `annualized` is null under a year. */
@@ -54,6 +114,8 @@ export interface ReturnsView {
   since: string | null;
   /** Some of the window could not be fully priced or valued. */
   partial: boolean;
+  /** Null when the window has no value at one of its ends. */
+  money: ReturnsMoney | null;
 }
 
 function percent(fraction: string | null | undefined): number | null {
@@ -108,5 +170,30 @@ export function returnsView(
     return cumulative === null ? [] : [{ key: b.key, cumulative }];
   });
 
-  return { twr, xirr, fx, benchmarks: compared, since, partial };
+  return { twr, xirr, fx, benchmarks: compared, since, partial, money: moneyOf(returns) };
+}
+
+function moneyOf(returns: Returns): ReturnsMoney | null {
+  const { startValue, endValue, effectiveWindow } = returns;
+  if (startValue === null || endValue === null || !effectiveWindow) return null;
+
+  const split = splitChangeIntoMoney({
+    openingValue: new Decimal(startValue),
+    closingValue: new Decimal(endValue),
+    netFlow: new Decimal(returns.netExternalFlow),
+    attribution: returns.attribution ?? null,
+  });
+
+  const gain = split.gain.toNumber();
+  return {
+    change: new Decimal(endValue).minus(startValue).toNumber(),
+    contributed: split.contributions.toNumber(),
+    gain,
+    // The cross term is folded into the asset leg rather than shown, so the
+    // two printed figures still add back to the gain exactly.
+    currency: split.currency === null ? null : split.currency.toNumber(),
+    market: split.currency === null ? null : gain - split.currency.toNumber(),
+    from: effectiveWindow.from,
+    unvalued: returns.coverage.unvaluedFlows,
+  };
 }

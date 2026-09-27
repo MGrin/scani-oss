@@ -12,6 +12,7 @@ import {
   VISUAL_SESSION_FILE,
 } from '../fixtures/visual-setup';
 import { BASELINE_SHRINK_ALLOW_ENV, baselineBytes, baselineCollapse } from './capture-size';
+import { pinReturnsWindow, RETURNS_PROCEDURES } from './returns-window';
 import { describeSpinner, ROUTE_PENDING, readPendingRoutes } from './route-pending';
 import {
   ALLOCATION_DIMENSION_STORAGE_KEY,
@@ -149,6 +150,63 @@ async function pinForecastClock(page: Page, screen: VisualScreen): Promise<Forec
   });
 
   return reads;
+}
+
+/** What `pinReturnsClock` did to every returns request the page sent. */
+interface ReturnsReads {
+  pinned: number;
+  refused: string[];
+}
+
+/**
+ * Dates every returns window from `FORECAST_AS_OF` — the pinned day — instead of
+ * the api's clock (SC-1300); `returns-window.ts` says why. On every screen,
+ * because every home screen renders the Returns card and pinning a request a
+ * screen never sends costs nothing: the same argument `FIXED_NOW` makes.
+ *
+ * A window it cannot pin still goes out, and is reported rather than dropped:
+ * aborting would photograph a card stuck loading, which is a worse lie.
+ */
+async function pinReturnsClock(page: Page): Promise<ReturnsReads> {
+  const reads: ReturnsReads = { pinned: 0, refused: [] };
+  const isReturns = (procedure: string) =>
+    (RETURNS_PROCEDURES as readonly string[]).includes(procedure);
+
+  await page.route(
+    (url) => trpcProcedures(url).some(isReturns),
+    async (route) => {
+      const url = new URL(route.request().url());
+      const procedures = trpcProcedures(url);
+      const raw = url.searchParams.get('input');
+      const parsed = (raw ? JSON.parse(raw) : {}) as Record<string, unknown>;
+      const batch = url.searchParams.get('batch') === '1';
+      const input: Record<string, unknown> = { ...parsed };
+      procedures.forEach((procedure, index) => {
+        if (!isReturns(procedure)) return;
+        const pin = pinReturnsWindow(batch ? parsed[index] : parsed, FORECAST_AS_OF);
+        if (pin.kind === 'refused') {
+          reads.refused.push(`${procedure}: ${pin.reason}`);
+          return;
+        }
+        if (pin.kind === 'pinned') reads.pinned += 1;
+        if (batch) input[index] = pin.input;
+        else Object.assign(input, pin.input);
+      });
+      url.searchParams.set('input', JSON.stringify(input));
+      await route.fallback({ url: url.toString() });
+    }
+  );
+
+  return reads;
+}
+
+function assertReturnsPinned(screen: VisualScreen, reads: ReturnsReads, fail: Fail): void {
+  if (reads.refused.length === 0) return;
+  fail(
+    `${screen.name}: a returns request went out with a window dated from the api's real clock ` +
+      `(${reads.refused.join('; ')}), so the card on this picture moves with the real date. ` +
+      'See returns-window.ts (SC-1300).'
+  );
 }
 
 /** The day a screen's forecast is dated from — see `burnAsOf` in `screens.ts`. */
@@ -816,6 +874,7 @@ function declare(screen: VisualScreen): void {
     // apply to the requests that navigation already made.
     const network = await pinExternalNetwork(page);
     const forecastReads = await pinForecastClock(page, screen);
+    const returnsReads = await pinReturnsClock(page);
     await stallDataIfAsked(page);
     const loads = trackDocumentLoads(page);
     // Read before `goto`, because `toHaveScreenshot` has already overwritten
@@ -870,6 +929,7 @@ function declare(screen: VisualScreen): void {
     await assertPinnedBytes(page, network, screen, fail);
     await assertAllocationFolded(page, screen, fail);
     assertForecastPinned(screen, forecastReads, fail);
+    assertReturnsPinned(screen, returnsReads, fail);
     // LAST, and that is the whole point of it. The four above each name a
     // specific cause or a specific missing thing, and where one of them
     // applies its message is strictly more useful than a byte count. This one

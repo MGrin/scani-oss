@@ -16,6 +16,7 @@ import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { UserRepository } from '../../repositories/UserRepository';
 import { PriceGraphService } from '../pricing/PriceGraphService';
+import { BalanceGapListingCache, balanceGapListingKey } from './BalanceGapListingCache';
 import { ManualBalanceEditService } from './ManualBalanceEditService';
 
 /** The list, plus what it left out and why. */
@@ -29,83 +30,8 @@ export interface BalanceGapListing {
 /** Why answering was refused. `null` on success. */
 export type BalanceGapAnswerRefusal = 'gone' | 'already-answered' | 'no-longer-a-gap';
 
-/**
- * The only source that counts as "the sync saw this" (SC-501).
- *
- * Every other value in `holding_balance_observations.source` — `manual`,
- * `manual-edit-backfill`, `statement-close`, `screenshot` — describes a
- * balance a PERSON put there, and asking again is asking somebody to explain
- * their own sentence back to us.
- *
- * **This does NOT cover a live manual balance edit, and the claim that it did
- * was the whole of SC-606's third prompt.** `HoldingService.recordBalanceObservation`
- * writes `sync-capture` whatever the caller, `UpdateHoldingUseCase` included —
- * so an edit made through the app has always landed on the `sync-capture` side
- * of this test, and this suppression has never once fired for one. The
- * sentence that used to sit here said SC-510 had already asked, which was true
- * about the QUESTION and false about the row, and it made a prompt nobody
- * could account for look impossible.
- *
- * What covers a live edit instead is `gap_review`, stamped into that
- * observation's own insert with the cause the user gave — so the interval
- * leaves at `candidate.gapReview !== null` below, which is "answered" rather
- * than "suppressed", which is what it is. The values named above are still
- * suppressed here and still need to be: `manual-edit-backfill` is SC-510's
- * historical backfill and `statement-close` is a figure read off a statement,
- * and neither carries an answer to stamp.
- *
- * Measured on production 2026-08-22: a handful of drifting intervals close on
- * a non-sync observation, and one of them is the single largest gap by value in
- * the entire product. So this suppression is not
- * a rounding correction — without it the first row the owner is shown is one
- * they already answered.
- */
 const SYNC_OBSERVATION_SOURCE = 'sync-capture';
 
-/**
- * "We think money moved here — tell us."
- *
- * ## What it does NOT do
- *
- * It never books a flow. `flowRoleOf` is untouched, no heuristic assigns a
- * kind, and no default is applied to a gap nobody answered. The drift stays
- * exactly where SC-481 left it — interpolated across the interval, marked
- * `interpolated` through to `portfolio_value_daily`, and attributed to
- * performance — until a person says otherwise.
- *
- * That restraint IS the feature. Booking observation-boundary drift as an
- * external flow would cancel an untracked departure against an untracked
- * arrival and take a time-weighted return close to what net worth says; it
- * would do so by declaring an undated, unexplained balance change to be a
- * contribution or a withdrawal on the evidence that the balance changed and
- * we hold no reason. Asking makes the claim the owner's, with a date and an
- * amount they supply, and the return then corrects itself through the
- * ordinary transaction path — `ManualBalanceEditService` writes a `deposit`
- * or a `withdraw`, `flowRoleOf` classifies it `external`, and the returns
- * engine nets it out. Nothing here touches the returns maths.
- *
- * ## Why the suppressions ship with it rather than after it
- *
- * Each is measured on production and each removes a prompt that is not money:
- * a feed artefact that reverses on the next interval, a balance the owner
- * typed, a movement the owner has already booked by hand, and a figure too
- * small to be worth a question. Priced, the first alone would put a brokerage
- * glitch in the second and third largest positions in the whole queue. A
- * queue whose first row is visibly wrong is a queue nobody opens twice, and
- * nearly all of the real money behind it is then never reached — so the
- * suppressions are not polish, they are what makes the rest of the feature
- * reachable.
- *
- * **None of them is an age window**, and `BALANCE_GAP_SETTLING_MS` in
- * @scani/shared records why at length: "the feed will deliver this shortly"
- * is a prediction, it was tested against a real 1,000 USDC transfer on
- * 2026-08-22 and was still false forty-seven minutes later. Every suppression
- * here is checkable at the instant it is applied.
- *
- * Every one of them is COUNTED. "62 of 379, and here is where the other 317
- * went" is a different claim from "62", and a queue that quietly drops rows
- * cannot be told apart from a query that missed them.
- */
 @Service()
 export class BalanceGapService {
   private readonly observations = Container.get(HoldingBalanceObservationRepository);
@@ -114,6 +40,7 @@ export class BalanceGapService {
   private readonly tokens = Container.get(TokenRepository);
   private readonly priceGraph = Container.get(PriceGraphService);
   private readonly manualBalanceEdits = Container.get(ManualBalanceEditService);
+  private readonly listingCache = Container.get(BalanceGapListingCache);
 
   /**
    * The queue, and the accounting for what is not in it.
@@ -125,8 +52,36 @@ export class BalanceGapService {
    * disappear with the time of day.
    */
   async listPending(userId: string): Promise<BalanceGapListing> {
-    const suppressed = emptySuppressionCounts();
     const candidates = await this.observations.findGapCandidatesForUser(userId);
+    const user = await this.users.findById(userId);
+    const baseCurrencyId = user?.baseCurrencyId ?? null;
+    const baseCurrency = baseCurrencyId ? await this.currencyCode(baseCurrencyId) : '';
+
+    // Over EVERY candidate's token and instant, a superset of what the listing
+    // prices, so a price that lands for any of them is a different key.
+    const times = candidates.map((candidate) => candidate.to.getTime());
+    const priceVersion =
+      baseCurrencyId && candidates.length > 0
+        ? await this.priceGraph.priceLookupFingerprint(
+            candidates.map((candidate) => candidate.tokenId),
+            baseCurrencyId,
+            new Date(Math.max(...times)),
+            new Date(Math.min(...times))
+          )
+        : '';
+
+    return this.listingCache.getOrCompute(
+      balanceGapListingKey(userId, baseCurrencyId, baseCurrency, priceVersion, candidates),
+      () => this.priceListing(candidates, baseCurrencyId, baseCurrency)
+    );
+  }
+
+  private async priceListing(
+    candidates: BalanceGapCandidate[],
+    baseCurrencyId: string | null,
+    baseCurrency: string
+  ): Promise<BalanceGapListing> {
+    const suppressed = emptySuppressionCounts();
 
     // Drift for every candidate first, because the reversal test needs the
     // NEXT interval's drift and that neighbour may itself be suppressed or
@@ -134,12 +89,9 @@ export class BalanceGapService {
     // gap's fate depend on the order the others were examined.
     const drifts = candidates.map((candidate) => driftOf(candidate));
 
-    const user = await this.users.findById(userId);
-    const baseCurrencyId = user?.baseCurrencyId ?? null;
-    const baseCurrency = baseCurrencyId ? await this.currencyCode(baseCurrencyId) : '';
-
     const items: BalanceGap[] = [];
     let examined = 0;
+    const toPrice: Array<{ candidate: BalanceGapCandidate; drift: Decimal }> = [];
 
     for (let index = 0; index < candidates.length; index += 1) {
       const candidate = candidates[index];
@@ -161,13 +113,28 @@ export class BalanceGapService {
         continue;
       }
 
+      toPrice.push({ candidate, drift });
+    }
+
+    const priceLookup =
+      baseCurrencyId && toPrice.length > 0
+        ? await this.priceGraph.buildPriceLookup(
+            toPrice.map(({ candidate }) => candidate.tokenId),
+            baseCurrencyId,
+            new Date(Math.max(...toPrice.map(({ candidate }) => candidate.to.getTime()))),
+            undefined,
+            new Date(Math.min(...toPrice.map(({ candidate }) => candidate.to.getTime())))
+          )
+        : undefined;
+
+    for (const { candidate, drift } of toPrice) {
       const baseValue = baseCurrencyId
         ? await this.priceGraph.convert(
             drift.abs(),
             candidate.tokenId,
             baseCurrencyId,
             candidate.to,
-            { tx: undefined }
+            { tx: undefined, priceLookup }
           )
         : null;
       if (!baseValue) {
@@ -199,10 +166,6 @@ export class BalanceGapService {
       });
     }
 
-    // Largest first. The queue is a backlog rather than a stream — the oldest
-    // gap in production is fifteen months old — so "what is worth my
-    // attention" beats "what happened most recently", and the figure the
-    // ordering uses is the one the threshold used.
     items.sort((a, b) => new Decimal(b.baseValue).comparedTo(new Decimal(a.baseValue)));
 
     return { items, examined, suppressed };
@@ -257,18 +220,6 @@ export class BalanceGapService {
     const holding = await this.holdings.findById(candidate.holdingId);
     if (!holding || holding.userId !== userId) return { refusal: 'gone' };
 
-    // Where the flow is stamped. The two observations are the evidence and
-    // what they prove is that the balance moved inside `(from, to]`, so that
-    // is where the row goes — a flow written outside lands in a different
-    // interval, becomes ITS unexplained drift with the opposite sign, and
-    // manufactures a second question while leaving this one unexplained under
-    // a stamp saying it was handled.
-    //
-    // Clamped rather than refused, and the difference matters: a date field
-    // collects a day, a day becomes an instant at LOCAL MIDNIGHT, and measured
-    // on production 2026-08-22 an honest date-only answer from a UTC+8 owner
-    // landed fourteen hours before the hour it explained. A bound would have
-    // refused nearly every real answer.
     const occurredAt = clampToInterval(input.occurredAt ?? candidate.to, candidate);
 
     let wroteKind: AnswerBalanceGapResult['wroteKind'] = null;

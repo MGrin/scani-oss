@@ -93,9 +93,10 @@ export {
   ParseScreenshotUseCase,
 } from './ParseScreenshotUseCase';
 export {
-  PlanTradeFeeRecomputeUseCase,
-  type TradeFeeRecomputePlan,
-} from './PlanTradeFeeRecomputeUseCase';
+  type HistoryRecomputeCohort,
+  type HistoryRecomputePlan,
+  PlanHistoryRecomputeUseCase,
+} from './PlanHistoryRecomputeUseCase';
 export {
   type ReconcilePaymentsSummary,
   ReconcilePaymentsUseCase,

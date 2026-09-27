@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
-import type { TransactionEvent, TransactionFetchContext } from '../../src/core/types';
+import {
+  type NoticeInput,
+  type TransactionEvent,
+  type TransactionFetchContext,
+  toJobNotice,
+} from '../../src/core/types';
 import { BitstampProvider } from '../../src/providers/bitstamp';
 import { CoinbaseProvider } from '../../src/providers/coinbase';
 import { GeminiProvider } from '../../src/providers/gemini';
@@ -41,11 +46,11 @@ function contextWithSink(institutionCode: string, creds: Record<string, string>)
     baseCurrency: { id: 'usd', symbol: 'USD' },
     credentialsRef: { userId: 'u', institutionId: 'i' },
     resolveCredentials: async () => creds,
-    retractHistoryClaim: (reason: string) => {
-      retractions.push(reason);
+    retractHistoryClaim: (reason: NoticeInput) => {
+      retractions.push(toJobNotice(reason).text);
     },
-    noteWarning: (reason: string) => {
-      notices.push(reason);
+    noteWarning: (reason: NoticeInput) => {
+      notices.push(toJobNotice(reason).text);
     },
   } as unknown as TransactionFetchContext;
   return { ctx, retractions, notices };

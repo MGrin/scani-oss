@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./tailwind-preset": "./tailwind-preset.js",
+    "./vite/missing-asset-plugin": "./src/vite/missing-asset-plugin.ts",
     "./vite/version-plugin": "./src/vite/version-plugin.ts",
     "./styles/globals.css": "./src/styles/globals.css",
     "./styles/v3-fonts.css": "./src/styles/v3-fonts.css",

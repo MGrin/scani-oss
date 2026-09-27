@@ -177,3 +177,44 @@ describe('buildUsageMiddleware', () => {
     expect(firstEvent(sink).provider).toBe('unknown');
   });
 });
+
+// SC-1353: the hourly quota was keyed by API key, and an owner may mint many
+// keys, so one account got N times the budget and could drain the upstream
+// windows it shares with production. The budget belongs to the owner.
+describe('hourly quota is per owner, not per key (SC-1353)', () => {
+  function recordingLimiter() {
+    const consumed: string[] = [];
+    return {
+      consumed,
+      limiter: {
+        tryConsume: async (key: string) => {
+          consumed.push(key);
+          return { ok: true as const };
+        },
+      } as never,
+    };
+  }
+  const run = (mw: ReturnType<typeof buildUsageMiddleware>, auth: TestCtx['auth']) =>
+    mw({
+      ctx: { ...makeCtx(), auth },
+      path: 'pricing.getPrice',
+      type: 'query',
+      next: async () => ({ ok: true }),
+    });
+
+  it('two keys of one owner draw on one budget', async () => {
+    const { consumed, limiter } = recordingLimiter();
+    const mw = buildUsageMiddleware({ sink: new CapturingSink(), quotaLimiter: limiter });
+    await run(mw, { apiKeyId: 'key-a', tenantId: 't1', ownerUserId: 'owner-1' });
+    await run(mw, { apiKeyId: 'key-b', tenantId: 't1', ownerUserId: 'owner-1' });
+    expect(new Set(consumed).size).toBe(1);
+    expect(consumed[0]).toContain('owner-1');
+  });
+
+  it('a key with no owner keeps its own budget (control)', async () => {
+    const { consumed, limiter } = recordingLimiter();
+    const mw = buildUsageMiddleware({ sink: new CapturingSink(), quotaLimiter: limiter });
+    await run(mw, { apiKeyId: 'env-key', tenantId: 't9', ownerUserId: null });
+    expect(consumed).toEqual(['env-key']);
+  });
+});

@@ -190,10 +190,37 @@ export async function serviceWorkerReady(
  * `navigator.serviceWorker.controller` is non-null and can no longer answer
  * the question that matters — was this document *served* under a worker?
  */
-const controlledAtLoad =
+/**
+ * A controller at module evaluation is not enough on its own (SC-790). A
+ * first-install worker that finishes while a later navigation is still
+ * fetching its bundle claims that document before this module runs, so the
+ * controller is set although the document came from the network. The page
+ * then took the worker's `SW_ACTIVATED` as an update and reloaded mid-load —
+ * reproduced on WebKit as "Navigation to / is interrupted by another
+ * navigation to /". `workerStart` is non-zero only when the navigation went
+ * through a worker, which is the question asked here.
+ */
+export function servedByWorker(
+  hasController: boolean,
+  navigation: { workerStart: number } | undefined
+): boolean {
+  if (!hasController) return false;
+  return navigation === undefined || navigation.workerStart > 0;
+}
+
+function navigationTiming(): { workerStart: number } | undefined {
+  if (typeof performance === 'undefined' || typeof performance.getEntriesByType !== 'function') {
+    return undefined;
+  }
+  return performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+}
+
+const controlledAtLoad = servedByWorker(
   typeof navigator !== 'undefined' &&
-  'serviceWorker' in navigator &&
-  Boolean(navigator.serviceWorker.controller);
+    'serviceWorker' in navigator &&
+    Boolean(navigator.serviceWorker.controller),
+  navigationTiming()
+);
 
 export function wasDocumentControlledAtLoad(): boolean {
   return controlledAtLoad;

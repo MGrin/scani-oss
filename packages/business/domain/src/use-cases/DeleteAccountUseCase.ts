@@ -35,20 +35,6 @@ export class DeleteAccountUseCase {
           .where(eq(schema.users.id, userId));
         if (!user) return false;
 
-        // `token_price_edit_history` attributes a GLOBAL price change and its FK
-        // is ON DELETE RESTRICT. Refusing here, before anything is touched, says
-        // why; the FK alone would fail the final delete with a constraint name.
-        const [edit] = await tx
-          .select({ id: schema.tokenPriceEditHistory.id })
-          .from(schema.tokenPriceEditHistory)
-          .where(eq(schema.tokenPriceEditHistory.editedByUserId, userId))
-          .limit(1);
-        if (edit) {
-          throw new Error(
-            `Account ${userId} edited a global token price; its attribution is kept, so the account cannot be deleted`
-          );
-        }
-
         echoed = await this.data.deleteRows(tx, userId);
 
         await tx.delete(schema.userSessions).where(eq(schema.userSessions.userId, userId));

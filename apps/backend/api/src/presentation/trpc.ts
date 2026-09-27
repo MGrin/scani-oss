@@ -13,6 +13,7 @@ import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import type { BetterAuthInstance } from '../auth/better-auth';
 import { isDemoMode } from '../config/demo';
+import { enterProcedure } from '../lib/event-loop-stalls';
 import { unrecognizedKeysFrom } from './lib/strict-input';
 import { type AuthContext, createAuthContext } from './middleware/auth';
 
@@ -111,6 +112,7 @@ export const createContext = async (opts?: FetchCreateContextFnOptions): Promise
         userId: demoUser.id,
         email: demoUser.email,
         isAuthenticated: true,
+        sessionCreatedAt: null,
         dbUser: null,
       }
     : opts?.req
@@ -119,6 +121,7 @@ export const createContext = async (opts?: FetchCreateContextFnOptions): Promise
           userId: null,
           email: null,
           isAuthenticated: false,
+          sessionCreatedAt: null,
           dbUser: null,
         };
 
@@ -290,7 +293,11 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
   );
 
   try {
-    const result = await next();
+    const leave = enterProcedure(path);
+    let loopBlockedMs = 0;
+    const result = await next().finally(() => {
+      loopBlockedMs = leave();
+    });
     const duration = timer.end();
     const serializedOutput =
       logOutput && result.ok && result.data !== undefined ? safeStringify(result.data) : undefined;
@@ -299,6 +306,7 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
       procedureLogger.info(
         {
           duration: `${duration}ms`,
+          loopBlockedMs,
           outputSize: serializedOutput ? serializedOutput.length : undefined,
           output:
             logOutput && serializedOutput
@@ -313,6 +321,7 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
       procedureLogger.warn(
         {
           duration: `${duration}ms`,
+          loopBlockedMs,
           error: result.error,
         },
         `⚠️ Procedure completed with error: ${path}`

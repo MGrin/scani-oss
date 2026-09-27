@@ -118,6 +118,7 @@ Both optional; unset, sign-in and the contact form work with no check. Set the s
 |---|---|---|
 | `VITE_TURNSTILE_SITE_KEY` | app, cloud, landing (frontend) | Public site key for the Turnstile widget on sign-in and the contact form. Baked at build time. |
 | `TURNSTILE_SECRET` | api, data-provider | Verifies the widget's token before an unauthenticated request sends mail. A missing or rejected token is refused (403); Cloudflare unreachable is refused (503). |
+| `DIAGNOSTICS_TOKEN` | api, data-provider | 32+ chars. **Optional.** Bearer that unlocks the detailed bodies of `/readyz`, `/health/db`, `/health/ws`, `/health/deep` and the data-provider's `/health/r2`. Unset, every caller gets status and per-check `ok` only. Use one value on both. |
 
 ## Logging
 
@@ -202,9 +203,19 @@ All exposed by `apps/backend/api` (and surfaced via nginx as
 |---|---|---|
 | `/health` | Process liveness. 200 if the api process is up. | Cheap k8s liveness probe. |
 | `/readyz` | Readiness. 200 only if **DB + Redis + schema** are all healthy. Returns 503 (with a per-check breakdown) if migrations haven't been applied. | k8s readiness probe; load-balancer upstream check; `docker-compose.prod.yml` api healthcheck. |
-| `/health/db` | DB ping + pool stats. | Operator debugging. |
-| `/health/ws` | WebSocket stats. | Operator debugging. |
+| `/health/db` | DB ping + pool stats (with the bearer). | Operator debugging. |
+| `/health/ws` | WebSocket stats (with the bearer). | Operator debugging. |
 | `/health/deep` | DB + schema-drift + Redis + S3 + AI. 200 `ok` / 503 `degraded` with a per-check breakdown. Storage is local in Tier 1/2 and follows managed routing otherwise. Also reports `providerCredentials` — which platform provider keys are absent — and `costControls` — which of the two spend bounds are enforcing, distinguishing a bound set to `0` (`off`) from one that was never set (`unset`). Both are **reported, never gated**, so neither can 503 a deployment that simply has not bought a key or has no external callers to bound. | Deploy-time smoke test. NOT for traffic routing — slow. |
+
+`/readyz`, `/health/db`, `/health/ws` and `/health/deep` keep their status
+codes for every caller, but return their detail — error text, pool stats,
+`providerCredentials`, `costControls`, index definitions — only to a request
+carrying `Authorization: Bearer <DIAGNOSTICS_TOKEN>`. Anyone else gets
+`status`, `timestamp` and each check's `ok`, which is everything a probe or a
+deploy smoke reads. Unset, nobody gets the detail. The data-provider's
+`/health/deep` and `/health/r2` follow the same rule with its own
+`DIAGNOSTICS_TOKEN`; give the api the same value so its R2 check can read the
+data-provider's detail.
 
 The `data-provider` exposes `/health` (process liveness) on its bind
 port. The prod `frontend-app` image exposes `/healthz` (nginx alive),

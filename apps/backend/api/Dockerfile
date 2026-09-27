@@ -6,7 +6,7 @@
 # curl for the healthcheck. No `node_modules`, no `bun` runtime, no
 # `packages/` tree at runtime.
 
-ARG BUN_VERSION=1.3.13
+ARG BUN_VERSION=1.4.2
 
 # ---------- deps ----------
 FROM oven/bun:${BUN_VERSION} AS deps

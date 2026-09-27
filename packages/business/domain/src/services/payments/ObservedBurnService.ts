@@ -8,82 +8,6 @@ import { BaseService } from '../BaseService';
 import { PriceGraphService } from '../pricing/PriceGraphService';
 import { monthKey } from './forecast';
 
-/**
- * How fast money actually leaves the tracked perimeter (SC-657).
- *
- * ## Why the recurring book cannot answer this
- *
- * Runway was `liquid ÷ burn` with burn read from the book of recurring
- * payments. Reported by mgrin from production use: that book does not
- * describe how he spends money. Income arrives, some goes to tracked wealth
- * accounts, the rest goes to current accounts Scani deliberately does not
- * track, and is spent from there. For something expensive he moves money OUT
- * of a tracked account into an untracked one.
- *
- * So from Scani's side his burn is not a schedule. It is **the rate at which
- * money leaves the tracked perimeter**, and that signal already exists: on a
- * book of that shape it is several hundred reviewed outflows over several
- * years, spread over something like $2k–$18k a month — synthetic figures, the
- * shape is the point — and nothing like a recurrence.
- *
- * ## `left_control` only, and `untracked` deliberately NOT
- *
- * The two look interchangeable and are not. `transfer-review.ts` defines them:
- * `left_control` is "it really did leave the portfolio: sold off-platform,
- * gifted, spent"; `untracked` is "still the user's money, in an account Scani
- * cannot see (a cold wallet, an exchange we have no key for)". Moving coin to
- * a cold wallet is wealth changing address, not money spent, and counting it
- * would report a burn nobody incurred.
- *
- * `paired` and `internal` are excluded for the same reason more obviously:
- * both name a destination INSIDE the perimeter.
- *
- * That choice is a judgement about two English sentences, so it is stated
- * here, counted in `excluded`, and shown on the surface rather than left for
- * a reader to infer from a number.
- *
- * ### It is a VOCABULARY ASSUMPTION, and it can go wrong silently
- *
- * Note the tension with the paragraph above: mgrin describes his spending
- * destination as "current accounts, **not tracked by scani**". By the
- * vocabulary's own definition that is an untracked account — so the same
- * real-world move could reasonably be answered either way, and which one he
- * clicks may be habit rather than semantics.
- *
- * Today the assumption holds empirically: 303 `left_control` rows against 5
- * `untracked`, and the `left_control` months match the magnitudes he
- * described. So this is not currently costing anything.
- *
- * **The hazard is that the failure has no signal.** If answers start landing
- * on `untracked`, burn falls, the runway lengthens, and nothing goes red —
- * the number does not become wrong loudly, it quietly stops counting a
- * category. `excluded.untracked` rising while `total` falls is the only place
- * it is visible, which is the reason that count is returned rather than
- * dropped.
- *
- * ## Complete calendar months only
- *
- * The current month is excluded because it is partial. Averaging a month that
- * is three days old drags the mean down and makes the runway LONGER — wrong
- * in the flattering direction, which is the one direction this codebase
- * refuses to be wrong in (`RunwayLine.tsx`: "a line that is wrong in the
- * flattering direction is worse than no line").
- *
- * ## The mean, not the median, and why it is on the surface
- *
- * A real book's months span an order of magnitude, so the two differ
- * materially and the choice is visible in the figure on screen. The mean is
- * the only one that makes `liquid ÷ burn` mean what it says: total ÷ months IS
- * the rate the balance actually drained at, and an exceptional month is real
- * money that really left. The median answers a different question — what a typical month looks
- * like — and a runway built on it survives on paper past the point the
- * account is empty.
- *
- * `min`, `max` and `median` travel with the mean so the spread the mean hides
- * is available to say out loud. A single number over that range, presented
- * alone, is more confident than the data.
- */
-
 /** Complete calendar months averaged. Matches the forecast's 6-month default. */
 export const OBSERVED_BURN_WINDOW_MONTHS = 6;
 
@@ -112,46 +36,6 @@ export interface ObservedBurnExcluded {
   unvalued: number;
 }
 
-/**
- * WHO ANSWERED THE ROWS THIS FIGURE IS MADE OF, by VALUE (SC-661/SC-673).
- *
- * ## Why value and never count
- *
- * The figure this qualifies is a value — base-currency money, and months
- * derived from money — so a count-weighted share describes a different
- * quantity than the number it sits under. Measured on the production book,
- * window 2026-02..2026-07: **a minority of rows carry a user stamp, and the
- * share that is not the user's is markedly higher by VALUE than by COUNT.**
- * The unattributed rows are the big ones — the single largest transaction is a
- * fifth of the window on its own and has no source.
- *
- * The count is the flattering one, so it is not returned at all rather than
- * returned with a comment asking nobody to use it. This feature has erred
- * flattering at every layer examined — the committed book, the decoder, and a
- * declared estimate would have too. The caption that exists to stop that must
- * not do it as well.
- *
- * ## Three classes, and the middle one is not decoration
- *
- * `rule` and `repair` are collapsed into `automated` because they are the same
- * claim to a reader: a named mechanism decided this, and you can go and read
- * it. `unattributed` is a different claim — a decision with no author at all.
- * Collapsing those two would be the same error as collapsing `internal` into
- * `untracked` on the excluded side: one is a fact, the other is the absence of
- * one.
- *
- * The distinction is load-bearing because of an ASYMMETRY on the production
- * book: the transfer-linking repair job DOES stamp itself — all 5
- * internal/paired rows carry `repair` — so whatever answered the unstamped
- * rows was not that job. The benign reading, that a known job did it and
- * forgot to stamp, is ruled out by the known job stamping.
- *
- * ## The value is the same proxy the burn itself uses
- *
- * Accumulated from the same `valueTransactionInBase` result the month buckets
- * are built from, so the three parts sum to `total` exactly and cannot drift
- * from the figure they describe.
- */
 interface ObservedBurnProvenance {
   /** Base currency. The user answered these. */
   user: string;
@@ -391,11 +275,18 @@ export class ObservedBurnService extends BaseService {
       if (tx.tokenId) tokenIds.add(tx.tokenId);
       if (tx.priceNativeTokenId) tokenIds.add(tx.priceNativeTokenId);
     }
+    // SC-1322: bounded at the earliest instant valued below, which is SC-1306's
+    // rule for `since`. Unbounded, this loaded every pair's whole price history
+    // for a window that looks at six months of it.
+    const earliestExit = new Date(
+      Math.min(...exits.map((tx) => new Date(tx.occurredAt).getTime()))
+    );
     const priceLookup = await this.priceGraphService.buildPriceLookup(
       tokenIds,
       baseCurrencyId,
       to,
-      undefined
+      undefined,
+      earliestExit
     );
 
     const byMonth = new Map<string, Decimal>(months.map((month) => [month, new Decimal(0)]));

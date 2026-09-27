@@ -139,22 +139,37 @@ test('an id with no user reads as not deleted, so a re-run is harmless', async (
   });
 });
 
-test('refuses an account that edited a global price, and deletes nothing', async () => {
+test('deletes an account that priced a custom token, keeping the edit without its author (SC-1261)', async () => {
   const target = await seedAccount(`editor-${randomUUID().slice(0, 8)}@example.invalid`);
+  const control = await seedAccount(`other-${randomUUID().slice(0, 8)}@example.invalid`);
+  let tokenId = '';
   await getDb().transaction(async (tx) => {
     const token = await makeToken(tx);
     const base = await makeToken(tx);
     createdTokens.push(token.id, base.id);
-    await tx.insert(schema.tokenPriceEditHistory).values({
-      tokenId: token.id,
-      baseTokenId: base.id,
-      newPrice: '1',
-      editedByUserId: target.userId,
-    });
+    tokenId = token.id;
+    await tx.insert(schema.tokenPriceEditHistory).values([
+      { tokenId: token.id, baseTokenId: base.id, newPrice: '1', editedByUserId: target.userId },
+      { tokenId: token.id, baseTokenId: base.id, newPrice: '2', editedByUserId: control.userId },
+    ]);
   });
 
-  await expect(Container.get(DeleteAccountUseCase).execute(target.userId)).rejects.toThrow(
-    /edited a global token price/
-  );
-  expect(await counts(target)).toEqual(EVERYTHING);
+  expect(await Container.get(DeleteAccountUseCase).execute(target.userId)).toEqual({
+    deleted: true,
+  });
+  expect(await counts(target)).toEqual(NOTHING);
+
+  const edits = await getDb()
+    .select({
+      price: schema.tokenPriceEditHistory.newPrice,
+      by: schema.tokenPriceEditHistory.editedByUserId,
+    })
+    .from(schema.tokenPriceEditHistory)
+    .where(eq(schema.tokenPriceEditHistory.tokenId, tokenId));
+  // The target's edit survives unattributed; the control's keeps its author.
+  expect(edits.sort((a, b) => a.price.localeCompare(b.price))).toEqual([
+    { price: '1', by: null },
+    { price: '2', by: control.userId },
+  ]);
+  expect(await counts(control)).toEqual(EVERYTHING);
 });

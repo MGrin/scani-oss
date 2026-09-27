@@ -86,6 +86,37 @@ describe('file-import', () => {
     expect(readFileImport(base)?.holdings[1]?.closingBalance).toBeNull();
   });
 
+  test('a created holding with no close carries the balance its rows gave it (SC-1324)', () => {
+    const view = readFileImport({
+      ...base,
+      holdingsCreated: ['h2'],
+      holdingsTouched: [
+        { ...base.holdingsTouched[1], balanceFrom: 'imported-rows', rowsBalance: '2012.3' },
+      ],
+    });
+    expect(view?.holdings[0]).toMatchObject({
+      balanceFrom: 'imported-rows',
+      rowsBalance: '2012.3',
+    });
+  });
+
+  test('a spending-only file reads as unknown, with no figure', () => {
+    const view = readFileImport({
+      ...base,
+      holdingsTouched: [{ ...base.holdingsTouched[1], balanceFrom: 'unknown', rowsBalance: null }],
+    });
+    expect(view?.holdings[0]).toMatchObject({ balanceFrom: 'unknown', rowsBalance: null });
+  });
+
+  test('a result written before SC-1324 reads as unchanged, and an unknown word does too', () => {
+    expect(readFileImport(base)?.holdings[1]?.balanceFrom).toBe('unchanged');
+    const odd = readFileImport({
+      ...base,
+      holdingsTouched: [{ ...base.holdingsTouched[1], balanceFrom: 'guessed' }],
+    });
+    expect(odd?.holdings[0]?.balanceFrom).toBe('unchanged');
+  });
+
   test('reads the currency prompt when the parse stopped for one', () => {
     const view = readFileImport({
       ...base,

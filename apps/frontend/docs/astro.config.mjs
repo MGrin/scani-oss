@@ -17,6 +17,8 @@ if (commit !== '' && !/^[0-9a-f]{40}$/.test(commit)) {
 // https://astro.build/config
 export default defineConfig({
   site: 'https://docs.scani.xyz',
+  // Astro uses cookie v2; an external import from dist would resolve the admin toolchain's v0 copy.
+  vite: { environments: { prerender: { resolve: { noExternal: ['cookie'] } } } },
   // The pipeline hangs off `markdown.processor` rather than the top-level
   // `markdown.remarkPlugins` / `markdown.rehypePlugins` keys, which Astro
   // deprecated in 6.x. The deprecated keys still work — Astro migrates them

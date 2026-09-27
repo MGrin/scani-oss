@@ -7,6 +7,7 @@ import { useDelayedLoading } from '@scani/ui/v3/hooks/useDelayedLoading';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
+import { useHomeChart } from '@/v3/hooks/useHomeChart';
 import { useReviewFeed } from '@/v3/hooks/useReviewFeed';
 import { useOpenCapture } from '../components/capture/CaptureSheetContext';
 import { StaleNotice } from '../components/feedback/StaleNotice';
@@ -19,13 +20,7 @@ import { ReturnsBlock } from '../components/home/ReturnsBlock';
 import { TopHoldingsBlock } from '../components/home/TopHoldingsBlock';
 import { UpcomingBlock } from '../components/home/UpcomingBlock';
 import { VaultsBlock } from '../components/home/VaultsBlock';
-import {
-  DEFAULT_HOME_PERIOD,
-  HOME_PERIOD_KEYS,
-  homePeriodByKey,
-  homePeriodRange,
-} from '../lib/home';
-import { readViewPreference, VIEW_PREFERENCE_KEYS } from '../lib/view-preference';
+import { AccountDeletionNotice } from '../components/settings/AccountDeletionNotice';
 
 /**
  * The v3 home screen — what it contains. How wide it is belongs to
@@ -97,20 +92,14 @@ function HomeSkeleton() {
  * A prefetch rather than a restructure: the two queries share a key, so when
  * `HeroBlock` mounts it finds this request in flight and joins it. Nothing
  * about what the screen renders, or when, changes — only when the asking
- * starts. The window comes from `homePeriodRange`, which is what makes the two
- * keys identical.
+ * starts. The window is `useHomeChart`'s own `range`, the identical object
+ * `HeroBlock` queries with, which is what makes the two keys identical.
  */
-function useNetWorthSeriesPrefetch(): void {
+function useNetWorthSeriesPrefetch(range: { from: Date; to: Date }): void {
   const utils = trpc.useUtils();
   useEffect(() => {
-    const period = homePeriodByKey(
-      readViewPreference(VIEW_PREFERENCE_KEYS.homePeriod, DEFAULT_HOME_PERIOD.key, HOME_PERIOD_KEYS)
-    );
-    void utils.portfolio.getNetWorthSeries.prefetch({
-      ...homePeriodRange(period),
-      granularity: 'auto',
-    });
-  }, [utils]);
+    void utils.portfolio.getNetWorthSeries.prefetch({ ...range, granularity: 'auto' });
+  }, [utils, range]);
 }
 
 /**
@@ -160,7 +149,12 @@ export function HomePage() {
   const openCapture = useOpenCapture();
   const { count: reviewCount } = useReviewFeed();
   const loadingPhase = useDelayedLoading(overview.isLoading);
-  useNetWorthSeriesPrefetch();
+  // Held here rather than in `HeroBlock` because two blocks read it now: the
+  // hero draws the selected tab, and the returns block below gives up its own
+  // window picker and its copy of the money sentence while Returns is that tab
+  // (SC-1301).
+  const chart = useHomeChart();
+  useNetWorthSeriesPrefetch(chart.range);
 
   const currency = overview.data?.portfolioValue.baseCurrency ?? 'USD';
   const total = overview.data?.portfolioValue.totalValue;
@@ -203,30 +197,10 @@ export function HomePage() {
     );
   }
 
-  // Genuinely empty, not filtered-empty: this is the first screen of a new
-  // account, so it is the onboarding — one named route in, with the sheet a
-  // lower-emphasis press away. `FirstRun` renders it, because it also has to
-  // know whether an import is already running (SC-451).
-  //
-  // **Why a file leads.** #1069 argued it from SC-450's funnel — fewer accounts
-  // connected an integration than got a holding in, read as a preference for
-  // non-credential paths. The per-job rows do not support that reading and it is
-  // corrected here: the gap is manual entry, not file import, and connecting an
-  // exchange is in fact the single most-picked first route.
-  //
-  // What the rows do say is stronger. Most accounts never enqueued a capture job
-  // of any kind — every one of them with one session or none — and every account
-  // that did ended up holding a position. Nobody has ever started an import and
-  // failed. So the route is not chosen on a conversion rate, because every route
-  // converts; it is chosen on what it asks of someone with one session of
-  // patience, and `/import` asks for a file and no credential.
-  //
-  // It names the screenshot before the file for the one measurement that is
-  // unambiguous: `file-import` has never run in production, and
-  // `screenshot-parse` has.
   if (overview.data.counts.holdings === 0) {
     return (
       <PageLayout className="items-start">
+        <AccountDeletionNotice />
         <FirstRun onOpenCapture={openCapture} />
         {/* The empty screen is exactly where a dead job hides best, and this
             branch used to return before the attention row (SC-153). Someone
@@ -243,6 +217,10 @@ export function HomePage() {
     <>
       <HomeHeading />
       <DashboardGrid>
+        {/* Before everything else: an account its owner asked to delete, and
+          believes is gone, is still here (SC-1276). Renders nothing otherwise. */}
+        <AccountDeletionNotice className="col-span-full" />
+
         {/* Above everything, because it qualifies everything: with the api
           unreachable this screen renders a full portfolio to the cent off the
           cache and used to say nothing at all about how old it was (SC-71 9.1).
@@ -259,7 +237,7 @@ export function HomePage() {
           that turns width directly into resolution — a wider trace is a longer
           readable history, not just a bigger picture. */}
         <DashboardItem span="full">
-          <HeroBlock total={total} currency={currency} />
+          <HeroBlock total={total} currency={currency} chart={chart} />
         </DashboardItem>
 
         {/* Full width because it is an alert: a row that has to be noticed
@@ -305,7 +283,12 @@ export function HomePage() {
         {/* Beside groups and vaults, and collapsed the same way: it renders
           nothing until there is history to measure (SC-1159). */}
         <DashboardItem span="half" className="empty:hidden">
-          <ReturnsBlock />
+          {/* The sentence and the comparison chart are up in the hero while
+            Returns is the selected tab, so what is left here is the
+            attribution bar and the ahead/behind rows — a table, which is a
+            different reading rhythm from a chart inside a hero. The window
+            travels with it so both halves describe the same days. */}
+          <ReturnsBlock heroWindow={chart.metric === 'returns' ? chart.returns.request : null} />
         </DashboardItem>
 
         <DashboardItem span="half" className="empty:hidden">

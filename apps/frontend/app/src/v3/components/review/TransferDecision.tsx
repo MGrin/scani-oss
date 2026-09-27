@@ -1,6 +1,7 @@
 import type {
   PendingTransferReview,
   TransferCandidate,
+  TransferCandidateCombination,
   TransferDestination,
   TransferReviewDecision,
 } from '@scani/shared';
@@ -16,6 +17,8 @@ import {
   candidateLocation,
   candidateReasonLabel,
   candidateSummary,
+  combinationKey,
+  combinationSummary,
   DECISION_LABELS,
   decisionConsequence,
   SPLIT_LABELS,
@@ -165,6 +168,8 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
   });
 
   const chosen = item.candidates.find((c) => c.transactionId === selectedId) ?? null;
+  const chosenCombination = item.combinations.find((c) => combinationKey(c) === selectedId) ?? null;
+  const hasAnyMatch = item.candidates.length + item.combinations.length > 0;
   const isPending = resolve.isPending || resolveSplit.isPending;
   // The candidate picker lives above both answers, so a candidate chosen
   // before the editor was opened has to reach the `paired` row inside it. The
@@ -179,6 +184,12 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
       transactionId: item.transactionId,
       decision,
       ...(decision === 'paired' && chosen ? { matchTransactionId: chosen.transactionId } : {}),
+      ...(decision === 'paired' && chosenCombination
+        ? {
+            matchTransactionId: chosenCombination.parts[0]?.transactionId,
+            alsoMatchTransactionIds: chosenCombination.parts.slice(1).map((p) => p.transactionId),
+          }
+        : {}),
       ...(decision === 'internal' && destination
         ? {
             destination: {
@@ -206,7 +217,7 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
         <h3 className="text-caption font-medium uppercase tracking-wide text-muted-foreground">
           {t('v3.review.decision.possibleMatches')}
         </h3>
-        {item.candidates.length === 0 ? (
+        {!hasAnyMatch ? (
           <p className="text-body text-muted-foreground">
             {t('v3.review.decision.noCandidates', { symbol: item.tokenSymbol })}
           </p>
@@ -220,6 +231,16 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
                 groupName={`match-${item.transactionId}`}
                 selected={candidate.transactionId === selectedId}
                 onSelect={() => setSelectedId(candidate.transactionId)}
+              />
+            ))}
+            {item.combinations.map((combination) => (
+              <CombinationRow
+                key={combinationKey(combination)}
+                item={item}
+                combination={combination}
+                groupName={`match-${item.transactionId}`}
+                selected={combinationKey(combination) === selectedId}
+                onSelect={() => setSelectedId(combinationKey(combination))}
               />
             ))}
           </fieldset>
@@ -249,16 +270,14 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
             <ConfirmAction
               label={t(DECISION_LABELS.paired.triggerKey)}
               confirmLabel={t(DECISION_LABELS.paired.commitKey)}
-              consequence={decisionConsequence(t, 'paired', item, chosen)}
+              consequence={decisionConsequence(t, 'paired', item, chosen ?? chosenCombination)}
               // `canConfirm` false is "not yet — pick one", which is what the
               // consequence line says. `disabledReason` is for the case where
               // picking is not possible at all, and the two are not the same
               // state: a dead commit button behind an open confirm is the
               // thing `ConfirmAction`'s own doc calls out.
-              canConfirm={Boolean(chosen)}
-              {...(item.candidates.length === 0
-                ? { disabledReason: t('v3.review.decision.noLinkTarget') }
-                : {})}
+              canConfirm={Boolean(chosen ?? chosenCombination)}
+              {...(!hasAnyMatch ? { disabledReason: t('v3.review.decision.noLinkTarget') } : {})}
               isPending={isPending}
               open={openDecision === 'paired'}
               onOpenChange={(open) => setOpenDecision(open ? 'paired' : null)}
@@ -381,32 +400,6 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
   );
 }
 
-/**
- * "You wrote this down" — the note the reader left about this address
- * (SC-375).
- *
- * Above the answers for the same reason `OwnWalletNotice` is: the failure this
- * queue keeps producing is not a missing fact but a fact that arrives beside a
- * decision instead of in front of it. mgrin answered 560 transfers and his
- * summary of the experience was *"I honestly can not remember that anymore
- * anyway"* — so the note, in his own words, is the single most useful thing
- * that can be on this screen.
- *
- * It says a rule matched and it never says a rule answered — because a rule
- * that HAD answered this row would have taken it out of the queue. That was
- * trivially true in SC-375, where no verdict could write anything. It stays
- * true after SC-380 for a subtler reason worth stating: an `always_a_disposal`
- * rule can only reach this screen on a row whose answer the reader personally
- * took back, and that row is exempt from it permanently. So the second line
- * exists — the reader has to be told the standing sentence about this
- * destination is a disposal AND that this transfer is no longer covered by it,
- * or the note reads as a claim about the row in front of them.
- *
- * **Nothing below is pre-selected because of it**, whatever the verdict, which
- * is the same rule `OwnWalletNotice` follows for the strongest fact in the
- * dataset. A rule that pre-selected `left_control` here would be answering the
- * row it was just overruled on.
- */
 function RuleNotice({ item }: { item: PendingTransferReview }) {
   const { t } = useTranslation();
   if (item.matchedRule === null) return null;
@@ -573,6 +566,39 @@ function CandidateRow({
         className={`text-caption ${candidate.withinStrictTolerance ? 'text-foreground' : 'text-muted-foreground'}`}
       >
         {candidateReasonLabel(t, candidate)}
+      </span>
+    </ChoiceRow>
+  );
+}
+
+/**
+ * Several deposits on one holding that together are this withdrawal
+ * (SC-1365), as one radio in the same group as the single candidates — the
+ * reader is choosing what the money arrived as, and "in two parts" is one
+ * answer to that, not a second question.
+ */
+function CombinationRow({
+  item,
+  combination,
+  groupName,
+  selected,
+  onSelect,
+}: {
+  item: PendingTransferReview;
+  combination: TransferCandidateCombination;
+  groupName: string;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ChoiceRow name={groupName} checked={selected} onSelect={onSelect}>
+      <span className="truncate text-body font-medium">{candidateLocation(combination)}</span>
+      <span className="text-caption text-muted-foreground">
+        {combinationSummary(t, item, combination)}
+      </span>
+      <span className="text-caption text-foreground">
+        {t('v3.review.transfer.candidateReason.combined', { count: combination.parts.length })}
       </span>
     </ChoiceRow>
   );

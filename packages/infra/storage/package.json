@@ -14,9 +14,9 @@
   },
   "dependencies": {
     "@scani/config": "workspace:*",
+    "aws4fetch": "^1.0.20",
     "typedi": "^0.10.0",
-    "zod": "^3.25.76",
-    "aws4fetch": "^1.0.20"
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "typescript": "^5.9.3"

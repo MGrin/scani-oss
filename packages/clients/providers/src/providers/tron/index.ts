@@ -33,7 +33,7 @@ import type {
   WithUserCreds,
 } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
-import { PageCapWatch } from '../../core/utils/page-cap';
+import { type PageCapWalk, PageCapWatch } from '../../core/utils/page-cap';
 import { WALLET_HISTORY_ROW_CAP } from '../../core/wallet-limits';
 import { tronBase58ToHex } from './address';
 
@@ -273,7 +273,7 @@ export class TronProvider
     for await (const row of this.paginate<TronNativeTxRow>(
       `${this.apiUrl}/v1/accounts/${encodeURIComponent(address)}/transactions`,
       { only_confirmed: 'true' },
-      'the TRX transfer history',
+      { kind: 'trxTransfers' },
       capped
     )) {
       const event = this.toNativeEvent(row, walletHex);
@@ -287,7 +287,7 @@ export class TronProvider
     for await (const row of this.paginate<TronTrc20Row>(
       `${this.apiUrl}/v1/accounts/${encodeURIComponent(address)}/transactions/trc20`,
       { only_confirmed: 'true' },
-      'the TRC-20 transfer history',
+      { kind: 'trc20Transfers' },
       capped
     )) {
       const event = this.toTrc20Event(row, address);
@@ -299,7 +299,7 @@ export class TronProvider
   private async *paginate<T>(
     baseUrl: string,
     extraParams: Record<string, string>,
-    walk: string,
+    walk: PageCapWalk,
     capped: PageCapWatch
   ): AsyncGenerator<T> {
     let fingerprint: string | undefined;

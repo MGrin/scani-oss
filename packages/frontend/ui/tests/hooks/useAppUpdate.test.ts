@@ -1,5 +1,5 @@
-import { describe, expect, test } from 'bun:test';
-import { deployedVersion } from '@scani/ui/hooks/useAppUpdate';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { bundleVersion, deployedVersion, offersOnFirstRead } from '@scani/ui/hooks/useAppUpdate';
 import { versionPayload } from '@scani/ui/vite/version-plugin';
 
 /**
@@ -47,5 +47,50 @@ describe('deployedVersion', () => {
     expect(deployedVersion({ version: 42 })).toBeNull();
     expect(deployedVersion(null)).toBeNull();
     expect(deployedVersion('<!doctype html>')).toBeNull();
+  });
+});
+
+/**
+ * The first read of a page load used to compare the served version with the one
+ * the PREVIOUS visit saw. A page that had just loaded the new build was offered
+ * the update anyway, once after every deploy; with a dozen deploys a day the
+ * banner read as appearing at random.
+ */
+describe('offersOnFirstRead', () => {
+  test('a page already running the served build is not offered, whatever the last visit saw', () => {
+    expect(offersOnFirstRead('2-b', '2-b', '1-a')).toBe(false);
+    expect(offersOnFirstRead('2-b', '2-b', null)).toBe(false);
+  });
+
+  test('a page running an older bundle is offered, even when the last visit already saw the new one', () => {
+    expect(offersOnFirstRead('2-b', '1-a', '2-b')).toBe(true);
+    expect(offersOnFirstRead('2-b', '1-a', null)).toBe(true);
+  });
+
+  test('a bundle that cannot say falls back to the last visit', () => {
+    expect(offersOnFirstRead('2-b', null, '1-a')).toBe(true);
+    expect(offersOnFirstRead('2-b', null, '2-b')).toBe(false);
+    expect(offersOnFirstRead('2-b', null, null)).toBe(false);
+  });
+});
+
+describe('bundleVersion', () => {
+  const g = globalThis as { __SCANI_BUILD_VERSION__?: unknown };
+  afterEach(() => {
+    delete g.__SCANI_BUILD_VERSION__;
+  });
+
+  test('a build without the plugin names no version', () => {
+    expect(bundleVersion()).toBeNull();
+  });
+
+  test('reads the id the build put in', () => {
+    g.__SCANI_BUILD_VERSION__ = '7-xyz';
+    expect(bundleVersion()).toBe('7-xyz');
+  });
+
+  test('a dev bundle is not a version', () => {
+    g.__SCANI_BUILD_VERSION__ = 'dev';
+    expect(bundleVersion()).toBeNull();
   });
 });

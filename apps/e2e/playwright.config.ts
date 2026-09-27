@@ -13,6 +13,7 @@ export default defineConfig({
     ? [['html', { open: 'never' }], ['github']]
     : [['html', { open: 'on-failure' }], ['list']],
   use: {
+    launchOptions: { args: ['--password-store=basic', '--use-mock-keychain'] },
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',

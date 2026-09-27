@@ -3,7 +3,11 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import { createElement, Fragment, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { RECORD_PICKER_MAX_ROWS, RecordPicker } from '../../../src/v3/components/form/RecordPicker';
+import {
+  pickerEnterAction,
+  RECORD_PICKER_MAX_ROWS,
+  RecordPicker,
+} from '../../../src/v3/components/form/RecordPicker';
 
 /**
  * The list says when it continues (SC-862).
@@ -206,5 +210,41 @@ describe('the create row never duplicates a listed name', () => {
 
   test('a near-match keeps it, because that is a different name', () => {
     expect(rendered('Kraken', ['Kraken Pro'])).toContain('Add "Kraken"');
+  });
+});
+
+describe('Enter takes the answer the typed text names, and only that (SC-1273)', () => {
+  const main = { id: 'acc-main', label: 'Main' };
+  const savings = { id: 'acc-savings', label: 'Savings' };
+
+  test('an empty list and a typed name: Enter creates it', () => {
+    expect(pickerEnterAction({ query: ' Main ', options: [], canCreate: true })).toEqual({
+      kind: 'create',
+      name: 'Main',
+    });
+  });
+
+  test('a listed record named exactly that, in any case: Enter selects it, never a twin', () => {
+    expect(
+      pickerEnterAction({ query: 'main', options: [main, savings], canCreate: false })
+    ).toEqual({ kind: 'select', option: main });
+  });
+
+  test('matches that are not the typed name are a choice: Enter does nothing', () => {
+    expect(pickerEnterAction({ query: 'Ma', options: [main], canCreate: true })).toBeNull();
+  });
+
+  test('a near-duplicate above the create row is a choice too', () => {
+    expect(
+      pickerEnterAction({ query: 'Mian', options: [], suggestions: [main], canCreate: true })
+    ).toBeNull();
+  });
+
+  test('a field that cannot create does nothing on an unknown name', () => {
+    expect(pickerEnterAction({ query: 'Main', options: [], canCreate: false })).toBeNull();
+  });
+
+  test('nothing typed: nothing happens', () => {
+    expect(pickerEnterAction({ query: '   ', options: [main], canCreate: true })).toBeNull();
   });
 });

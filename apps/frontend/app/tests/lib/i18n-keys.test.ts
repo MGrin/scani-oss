@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import shellEn from '../../src/i18n/locales/en.json';
 import v3En from '../../src/v3/i18n/locales/en.json';
@@ -188,13 +188,43 @@ function collectKeys(): KeyRef[] {
   return refs;
 }
 
-function resolve(key: string): unknown {
-  let node: unknown = en;
+function lookup(root: unknown, key: string): unknown {
+  let node: unknown = root;
   for (const segment of key.split('.')) {
     if (typeof node !== 'object' || node === null) return undefined;
     node = (node as Record<string, unknown>)[segment];
   }
   return node;
+}
+
+/**
+ * A directory under `src/v3` that ships its own `locales/en.json` registers
+ * that bundle itself, and its sources are keyed against it as well as the
+ * shared one. Nothing else may see its keys: a file OUTSIDE the directory
+ * resolves against the shared bundle only, so a key moved out of it still
+ * fails here. `v3/i18n` is the shared bundle, not one of these.
+ */
+function selfKeyedDirs(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const full = join(dir, entry);
+    if (!statSync(full).isDirectory() || full === join(V3_ROOT, 'i18n')) continue;
+    if (existsSync(join(full, 'locales', 'en.json'))) out.push(full);
+    else out.push(...selfKeyedDirs(full));
+  }
+  return out;
+}
+
+const SELF_KEYED = selfKeyedDirs(V3_ROOT);
+
+function ownBundle(dir: string, code = 'en'): Record<string, unknown> {
+  return JSON.parse(readFileSync(join(dir, 'locales', `${code}.json`), 'utf8'));
+}
+
+function resolve(key: string, file?: string): unknown {
+  const dir = file ? SELF_KEYED.find((d) => file.startsWith(`${d}/`)) : undefined;
+  const own = dir ? lookup(ownBundle(dir), key) : undefined;
+  return own ?? lookup(en, key);
 }
 
 const REFS = collectKeys();
@@ -207,10 +237,10 @@ describe('i18n keys in the keyed roots', () => {
   });
 
   test('every key a keyed root references resolves to a string in en.json', () => {
-    const missing = REFS.filter((r) => typeof resolve(r.key) !== 'string')
+    const missing = REFS.filter((r) => typeof resolve(r.key, r.file) !== 'string')
       // A pluralised key lives in en.json as `key_one` / `key_other`; the bare
       // key is correctly absent.
-      .filter((r) => !(r.pluralised && typeof resolve(`${r.key}_other`) === 'string'))
+      .filter((r) => !(r.pluralised && typeof resolve(`${r.key}_other`, r.file) === 'string'))
       .map((r) => `${r.file.replace(/.*\/src\//, 'src/')}:${r.line} → ${r.key}`);
     expect(missing).toEqual([]);
   });
@@ -290,6 +320,10 @@ describe('i18n keys in the keyed roots', () => {
       'v3.entities.account.bulkDeleteConsequence_other',
       'v3.holdings.bulk.deleteConsequence_one',
       'v3.holdings.bulk.deleteConsequence_other',
+      // Same shape in a job notice (SC-1028): the sections are printed as
+      // `{{sections}}`, and the count picks "section"/"sections" and "it"/"them".
+      'v3.jobs.notices.ibkrMissingSections_one',
+      'v3.jobs.notices.ibkrMissingSections_other',
       // "Repeats every week" — at one occurrence English states the period as
       // a bare noun and prints no number, exactly as the field's own default
       // of "1" reads today. The count is there to choose the noun's form,
@@ -435,15 +469,59 @@ describe('i18n keys in the keyed roots', () => {
   test('every counted key has both plural forms', () => {
     const broken = REFS.filter((r) => r.pluralised)
       // …except the ambiguous indirect ones, which resolve bare.
-      .filter((r) => typeof resolve(r.key) !== 'string')
+      .filter((r) => typeof resolve(r.key, r.file) !== 'string')
       .filter(
         (r) =>
-          typeof resolve(`${r.key}_one`) !== 'string' ||
-          typeof resolve(`${r.key}_other`) !== 'string'
+          typeof resolve(`${r.key}_one`, r.file) !== 'string' ||
+          typeof resolve(`${r.key}_other`, r.file) !== 'string'
       )
       .map((r) => `${r.file.replace(/.*\/src\//, 'src/')}:${r.line} → ${r.key}`);
     expect(broken).toEqual([]);
   });
+});
+
+function leaves(node: unknown, prefix = ''): string[] {
+  if (typeof node !== 'object' || node === null) return [prefix];
+  return Object.entries(node as Record<string, unknown>).flatMap(([k, v]) =>
+    leaves(v, prefix ? `${prefix}.${k}` : k)
+  );
+}
+
+describe('a directory with its own locale bundle', () => {
+  const OUTSIDE = join(V3_ROOT, 'pages', 'SettingsPage.tsx');
+
+  test.each(SELF_KEYED.map((d) => [d.replace(/.*\/src\//, 'src/'), d]))(
+    '%s: its keys resolve inside it and nowhere else',
+    (_label, dir) => {
+      const keys = leaves(ownBundle(dir));
+      expect(keys.length).toBeGreaterThan(0);
+      for (const key of keys) {
+        expect(typeof resolve(key, join(dir, 'Any.tsx'))).toBe('string');
+        // The narrowness: the same key referenced from outside is missing, and
+        // it does not shadow a shared key either.
+        expect(resolve(key, OUTSIDE)).toBeUndefined();
+      }
+    }
+  );
+
+  test.each(SELF_KEYED.map((d) => [d.replace(/.*\/src\//, 'src/'), d]))(
+    '%s: every shared language is present and answers every English key',
+    (_label, dir) => {
+      const json = (d: string) =>
+        readdirSync(d)
+          .filter((f) => f.endsWith('.json'))
+          .sort();
+      const shared = json(join(V3_ROOT, 'i18n', 'locales'));
+      expect(json(join(dir, 'locales'))).toEqual(shared);
+      const english = leaves(ownBundle(dir)).sort();
+      for (const file of shared) {
+        expect({ file, keys: leaves(ownBundle(dir, file.replace(/\.json$/, ''))).sort() }).toEqual({
+          file,
+          keys: english,
+        });
+      }
+    }
+  );
 });
 
 /**
@@ -488,7 +566,13 @@ describe('every job-notice key the server names is in the bundle', () => {
     }
   }
 
-  const inBundle = new Set(Object.keys(v3En.v3.jobs.notices).map((k) => `v3.jobs.notices.${k}`));
+  // A producer names a pluralised key by its stem and i18next picks the form
+  // from `count`, so the bundle's `_one`/`_other` are read as that stem.
+  const inBundle = new Set(
+    Object.keys(v3En.v3.jobs.notices).map(
+      (k) => `v3.jobs.notices.${k.replace(/_(zero|one|two|few|many|other)$/, '')}`
+    )
+  );
 
   test('the scan reached the producers at all', () => {
     // Non-vacuous both ways: an empty scan would make the rule below pass by

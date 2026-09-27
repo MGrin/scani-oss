@@ -612,4 +612,178 @@ describe('TokenPriceRepository', () => {
       });
     });
   });
+  describe('fingerprintForPairsUpTo', () => {
+    const SINCE = new Date('2026-01-01T00:00:00Z');
+    const UNTIL = new Date('2026-04-01T00:00:00Z');
+
+    async function seeded(tx: DatabaseTransaction) {
+      const token = await makeToken(tx);
+      const base = await makeToken(tx);
+      const write = (timestamp: string, price: string, granularity = 'daily') =>
+        tx
+          .insert(schema.tokenPrices)
+          .values({
+            tokenId: token.id,
+            baseTokenId: base.id,
+            price,
+            timestamp: new Date(timestamp),
+            granularity,
+            source: 'test',
+          })
+          .returning();
+      await write('2020-01-01T00:00:00Z', '1');
+      await write('2023-06-01T00:00:00Z', '2');
+      const [inWindow] = await write('2026-02-01T00:00:00Z', '4');
+      const pairs = [{ tokenId: token.id, baseTokenId: base.id }];
+      const read = () => repo().fingerprintForPairsUpTo(pairs, UNTIL, SINCE, tx);
+      return { write, read, inWindowId: inWindow!.id };
+    }
+
+    test('unchanged rows read the same fingerprint — the control', async () => {
+      await withTestDb(async (tx) => {
+        const { read } = await seeded(tx);
+        expect(await read()).toBe(await read());
+      });
+    });
+
+    test('a price that lands inside the window changes it', async () => {
+      await withTestDb(async (tx) => {
+        const { write, read } = await seeded(tx);
+        const before = await read();
+        await write('2026-03-01T00:00:00Z', '5');
+        expect(await read()).not.toBe(before);
+      });
+    });
+
+    test('a corrected price inside the window changes it', async () => {
+      await withTestDb(async (tx) => {
+        const { read, inWindowId } = await seeded(tx);
+        const before = await read();
+        await tx
+          .update(schema.tokenPrices)
+          .set({ price: '4.5' })
+          .where(eq(schema.tokenPrices.id, inWindowId));
+        expect(await read()).not.toBe(before);
+      });
+    });
+
+    test('a newer carry-in row before the window changes it', async () => {
+      await withTestDb(async (tx) => {
+        const { write, read } = await seeded(tx);
+        const before = await read();
+        await write('2025-12-01T00:00:00Z', '3');
+        expect(await read()).not.toBe(before);
+      });
+    });
+
+    test('rows the lookup never reads leave it alone', async () => {
+      await withTestDb(async (tx) => {
+        const { write, read } = await seeded(tx);
+        const before = await read();
+        // Superseded by the 2023 carry-in, and after `until`.
+        await write('2019-01-01T00:00:00Z', '0.5');
+        await write('2026-05-01T00:00:00Z', '9');
+        expect(await read()).toBe(before);
+      });
+    });
+  });
+
+  describe('findManyForPairsUpTo with a lower bound', () => {
+    async function seedPair(tx: DatabaseTransaction) {
+      const token = await makeToken(tx);
+      const base = await makeToken(tx);
+      const write = async (timestamp: string, price: string, granularity: 'daily' | 'hourly') => {
+        await tx.insert(schema.tokenPrices).values({
+          tokenId: token.id,
+          baseTokenId: base.id,
+          price,
+          timestamp: new Date(timestamp),
+          granularity,
+          source: 'test',
+        });
+      };
+      await write('2020-01-01T00:00:00Z', '1', 'daily');
+      await write('2023-06-01T00:00:00Z', '2', 'daily');
+      await write('2023-07-01T00:00:00Z', '3', 'hourly');
+      await write('2026-02-01T00:00:00Z', '4', 'daily');
+      await write('2026-03-01T00:00:00Z', '5', 'daily');
+      return { token, base };
+    }
+
+    const SINCE = new Date('2026-01-01T00:00:00Z');
+    const UNTIL = new Date('2026-04-01T00:00:00Z');
+
+    test('no `since` still reads the whole history, so every other caller is untouched', async () => {
+      await withTestDb(async (tx) => {
+        const { token, base } = await seedPair(tx);
+        const rows = await repo().findManyForPairsUpTo(
+          [{ tokenId: token.id, baseTokenId: base.id }],
+          UNTIL,
+          tx
+        );
+        expect(rows.map((r) => r.price).sort()).toEqual(['1', '2', '3', '4', '5']);
+      });
+    });
+
+    test('`since` keeps the window and ONE carry-in row per granularity', async () => {
+      await withTestDb(async (tx) => {
+        const { token, base } = await seedPair(tx);
+        const rows = await repo().findManyForPairsUpTo(
+          [{ tokenId: token.id, baseTokenId: base.id }],
+          UNTIL,
+          tx,
+          SINCE
+        );
+        // 4 and 5 are inside the window. 2 is the newest daily before it and 3
+        // the newest hourly; 1 is superseded by 2 and is the row this drops.
+        expect(rows.map((r) => r.price).sort()).toEqual(['2', '3', '4', '5']);
+      });
+    });
+
+    test('a pair whose ONLY price predates the window still answers', async () => {
+      await withTestDb(async (tx) => {
+        const token = await makeToken(tx);
+        const base = await makeToken(tx);
+        await tx.insert(schema.tokenPrices).values({
+          tokenId: token.id,
+          baseTokenId: base.id,
+          price: '7',
+          timestamp: new Date('2019-05-05T00:00:00Z'),
+          granularity: 'daily',
+          source: 'test',
+        });
+        const rows = await repo().findManyForPairsUpTo(
+          [{ tokenId: token.id, baseTokenId: base.id }],
+          UNTIL,
+          tx,
+          SINCE
+        );
+        // Dropping it would turn a priced flow into an unvalued one — the
+        // exact substitution `PriceLookup.covers` exists to prevent.
+        expect(rows.map((r) => r.price)).toEqual(['7']);
+      });
+    });
+
+    test('the carry-in row does not leak across pairs', async () => {
+      await withTestDb(async (tx) => {
+        const { token, base } = await seedPair(tx);
+        const other = await makeToken(tx);
+        await tx.insert(schema.tokenPrices).values({
+          tokenId: other.id,
+          baseTokenId: base.id,
+          price: '99',
+          timestamp: new Date('2021-01-01T00:00:00Z'),
+          granularity: 'daily',
+          source: 'test',
+        });
+        const rows = await repo().findManyForPairsUpTo(
+          [{ tokenId: token.id, baseTokenId: base.id }],
+          UNTIL,
+          tx,
+          SINCE
+        );
+        expect(rows.some((r) => r.price === '99')).toBe(false);
+      });
+    });
+  });
 });

@@ -65,6 +65,7 @@ beforeAll(async () => {
   institutionTypeId = institutionType!.id;
   const [institution] = await db
     .insert(schema.institutions)
+    // A catalogue row: every user may put an account on it (SC-1354).
     .values({ name: `SC-1340 ${suffix}`, typeId: institutionTypeId, isVerified: true })
     .returning();
   institutionId = institution!.id;

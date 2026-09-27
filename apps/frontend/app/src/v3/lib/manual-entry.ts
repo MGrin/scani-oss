@@ -46,6 +46,25 @@ export interface NewAccountDraft {
 }
 
 /**
+ * The account type a new account most likely has, from the kind of institution
+ * holding it (SC-1327). An exchange asking "what type of account is this?" is a
+ * question with one answer, so it is answered for the reader. A bank is left
+ * unanswered, because checking and savings are both likely.
+ */
+export function defaultAccountTypeCode(institutionTypeCode: string | undefined): string | null {
+  switch (institutionTypeCode) {
+    case 'crypto_exchange':
+    case 'crypto_wallet':
+      return 'crypto';
+    case 'broker':
+    case 'investment_fund':
+      return 'investment';
+    default:
+      return null;
+  }
+}
+
+/**
  * Where a capture lands — an institution and an account under it, either
  * chosen or being created.
  *
@@ -122,11 +141,6 @@ export function emptyDraft(uid: string): ManualEntryDraft {
   return { ...emptyAccountTarget(), holdings: [emptyHolding(uid)] };
 }
 
-/**
- * `revolut.com` → `https://revolut.com`. Returns undefined for an empty field,
- * which is what the DTO wants for "no website" — an empty string would be
- * stored as one and then rendered as a broken favicon.
- */
 export function normalizeWebsite(raw: string): string | undefined {
   const trimmed = raw.trim();
   if (!trimmed) return undefined;
@@ -174,17 +188,6 @@ export function describeAccountTargetBlockers(t: TFunction, draft: AccountTarget
   return accountTargetBlockerKeys(draft).map((key) => t(key));
 }
 
-/**
- * Tokens this form names on more than one row — the rows that have to say
- * WHICH pot they are before they can be sent.
- *
- * `updateHoldings` below is always empty, so every row here becomes an INSERT.
- * Two rows for one token therefore become two holdings in one account for one
- * token: that is how one Tinkoff payload put four RUB rows in production and
- * one Revolut payload put two USD rows (SC-303). Four RUB rows off one bank
- * screen turned out to be four real products, which is why the answer is to
- * ask rather than to refuse (SC-330).
- */
 export function contestedHoldingTokenIds(holdings: readonly HoldingDraft[]): Set<string> {
   return contestedHoldingTokens(completedHoldings(holdings));
 }

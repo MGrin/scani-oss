@@ -168,6 +168,12 @@ export interface ReturnsResult {
   endValue: string | null;
   /** Sum of every external flow inside the effective window, base currency. */
   netExternalFlow: string;
+  /**
+   * The measured days themselves, so a caller can chart the window it was
+   * just given a single number for (SC-1297). Same points the TWR chained
+   * over — a second valuation path is what SC-60 exists to prevent.
+   */
+  series: { date: string; value: string; netExternalFlow: string }[];
   /** `null` when fewer than two days were measured — an absence, not a zero. */
   twr: TwrResult | null;
   /**
@@ -222,19 +228,21 @@ export class ReturnsService {
     // the gap, and the flows counted for it span exactly the same gap, so the
     // arithmetic stays right and only the reported `effectiveWindow` widens.
     const anchorFrom = new Date(window.from.getTime() - ANCHOR_LOOKBACK_DAYS * DAY_MS);
-    const rows = await this.dailyRepository.findIncludedHoldingScopeRange(
-      request.userId,
-      baseCurrencyId,
-      anchorFrom,
-      window.to,
-      undefined,
-      request.scope.kind === 'user' ? undefined : holdings.map((h) => h.holdingId)
-    );
+    const [rows, currencyByHolding] = await Promise.all([
+      this.dailyRepository.findIncludedHoldingScopeRange(
+        request.userId,
+        baseCurrencyId,
+        anchorFrom,
+        window.to,
+        undefined,
+        request.scope.kind === 'user' ? undefined : holdings.map((h) => h.holdingId)
+      ),
+      // Which currency each holding's own price is set in, so the value series
+      // can be split by currency as it is folded rather than re-walked after.
+      this.currencyByHolding(holdings.map((h) => h.holdingId)),
+    ]);
 
     const weights = new Map(holdings.map((h) => [h.holdingId, h.weight]));
-    // Which currency each holding's own price is set in, so the value series
-    // can be split by currency as it is folded rather than re-walked after.
-    const currencyByHolding = await this.currencyByHolding(holdings.map((h) => h.holdingId));
     const series = buildSeries(rows, weights, currencyByHolding);
     const points = selectWindowPoints(series, window);
 
@@ -255,6 +263,7 @@ export class ReturnsService {
           startValue: null,
           endValue: null,
           netExternalFlow: '0',
+          series: [],
           twr: null,
           attribution: null,
           xirr: { status: 'undefined', reason: 'too-few-flows' },
@@ -283,8 +292,12 @@ export class ReturnsService {
     );
 
     const measuredDates = points.map((point) => point.date);
+    const allFlows = [
+      ...flows,
+      ...arrivalFlows(rows, weights, flows, measuredDates.slice(1), first.date),
+    ];
     const { byDate, byDateAndCurrency, unattributed } = netFlowByDate(
-      flows,
+      allFlows,
       measuredDates.slice(1),
       currencyByHolding
     );
@@ -314,9 +327,14 @@ export class ReturnsService {
         startValue: first.value.toString(),
         endValue: last.value.toString(),
         netExternalFlow: netExternalFlow.toString(),
+        series: valuationPoints.map((point) => ({
+          date: point.date,
+          value: point.value.toString(),
+          netExternalFlow: point.netExternalFlow.toString(),
+        })),
         twr,
         attribution,
-        xirr: xirr(toCashflows(first, last, flows, unattributed)),
+        xirr: xirr(toCashflows(first, last, allFlows, unattributed)),
         coverage: {
           measuredDays: points.length,
           windowDays:
@@ -332,6 +350,74 @@ export class ReturnsService {
         },
       },
     };
+  }
+
+  /**
+   * Whether this scope has a return to show at all — the one bit Home needs,
+   * without the run that produces the figure (SC-1306).
+   *
+   * Home asks it on EVERY load, because the Returns tab withdraws itself when
+   * the answer is no, and until this existed the only way to ask was `compute`.
+   * That put a p50 of 4952ms in front of the dashboard for every reader,
+   * including the ones who never open the tab.
+   *
+   * ## It is the same question, not an approximation of it
+   *
+   * `returnsView` shows money exactly when `compute` produced a `twr`, and
+   * `computeTimeWeightedReturn` is `null` below two points. `selectWindowPoints`
+   * builds those points as the measured days INSIDE the window plus, at most,
+   * the last measured day strictly before it. So two points exist exactly when
+   * the two newest measured days in `[anchorFrom, window.to]` include one at or
+   * after `window.from`:
+   *
+   *   - both inside  -> two points inside
+   *   - newest inside, second older -> one point plus its anchor
+   *   - newest older than the window -> nothing inside, so no points at all
+   *
+   * which is why the read is `ORDER BY snapshot_date DESC LIMIT 2` and why
+   * ONE row, or two whose newest predates the window, is a no.
+   *
+   * A scope with one measured day and enough flows for an XIRR is the one case
+   * this answers `false` about where `compute` would have a figure. It is a
+   * deliberate direction: a withheld tab is recoverable on the next load, and
+   * `useHomeChart` hands the decision back to `getReturns` the moment the tab
+   * is open, so nothing is permanently hidden by it.
+   */
+  async hasHistory(
+    request: Omit<ReturnsRequest, 'baseCurrencyId'> & { baseCurrencyId?: string }
+  ): Promise<boolean> {
+    const now = request.now ?? new Date();
+    const window = resolveReturnWindow(request.window, now);
+
+    const requested = request.baseCurrencyId?.trim();
+    const baseCurrencyId =
+      requested && requested.length > 0
+        ? requested
+        : ((await this.userRepository.findById(request.userId))?.baseCurrencyId ?? null);
+    if (!baseCurrencyId) return false;
+
+    // A user-wide scope is every holding, so the contract in SQL already says
+    // so and there is nothing to resolve. Anything narrower has to be resolved
+    // and owned before it can be asked about — the same check `compute` makes.
+    let holdingIds: string[] | undefined;
+    if (request.scope.kind !== 'user') {
+      const holdings = await this.scopeResolver.resolve(request.userId, request.scope);
+      if (holdings === null) return false;
+      holdingIds = holdings.map((h) => h.holdingId);
+    }
+
+    const anchorFrom = new Date(window.from.getTime() - ANCHOR_LOOKBACK_DAYS * DAY_MS);
+    const days = await this.dailyRepository.findLatestMeasuredDays(
+      request.userId,
+      baseCurrencyId,
+      anchorFrom,
+      window.to,
+      2,
+      undefined,
+      holdingIds
+    );
+    if (days.length < 2) return false;
+    return (days[0] as string) >= window.from.toISOString().slice(0, 10);
   }
 
   /**
@@ -359,7 +445,8 @@ export class ReturnsService {
    * carrying every currency the window touched, each with the day's rate into
    * base.
    *
-   * The rate work is bounded by ONE prefetch, whatever the window's length.
+   * The rate work is bounded by ONE prefetch, whatever the window's length,
+   * and since SC-1306 that prefetch is bounded in TIME as well as in count.
    * That is not an optimisation — SC-471 is a ticket about this exact request
    * spending 51 of its 53 seconds on sequential `token_prices` reads, and a
    * rate per currency per day would have been 1,470 more of them on the
@@ -414,11 +501,18 @@ export class ReturnsService {
     const rates = new Map<string, Map<string, Decimal | null>>();
     if (currencyTokenIds.length === 0) return rates;
 
+    // Bounded to the START of the earliest day this will be asked about
+    // (SC-1306). Every conversion below happens at `<date>T23:59:59.999Z`, so
+    // a bound at the earliest date's midnight sits strictly before the
+    // earliest ask — which is what the repository's carry-in row needs in
+    // order to answer identically to the unbounded fetch.
+    const earliest = dates.length > 0 ? dates.reduce((a, b) => (a < b ? a : b)) : null;
     const priceLookup = await this.priceGraphService.buildPriceLookup(
       currencyTokenIds,
       baseCurrencyId,
       until,
-      undefined
+      undefined,
+      earliest ? new Date(`${earliest}T00:00:00.000Z`) : undefined
     );
 
     for (const currencyTokenId of currencyTokenIds) {
@@ -429,10 +523,6 @@ export class ReturnsService {
           currencyTokenId,
           baseCurrencyId,
           new Date(`${date}T23:59:59.999Z`),
-          // `daily` because these are end-of-day valuations and forex history
-          // is written daily — nearly every CAD row in production is, and
-          // the handful of intraday rows are mid-morning quotes that would
-          // disagree with the close the value series was built from.
           { preferGranularity: 'daily', priceLookup, tx: undefined }
         );
         // A pair with no rate stays `null` all the way to the attribution,
@@ -488,6 +578,7 @@ function buildSeries(
     totalValue: string;
     coverageQuality: string;
     holdingsWithKnownValue: number;
+    holdingsTotal: number;
   }>,
   weights: ReadonlyMap<string, Decimal>,
   currencyByHolding: ReadonlyMap<string, string | null>
@@ -496,6 +587,10 @@ function buildSeries(
   for (const row of rows) {
     const weight = weights.get(row.holdingId);
     if (!weight) continue;
+    // A holding the day does not contain — before its first record, the
+    // rollup counts nothing for it (SC-1323). Its row is not an unpriced
+    // holding and must not grade the day 'unknown'.
+    if (row.holdingsTotal === 0) continue;
     const date = String(row.snapshotDate).slice(0, 10);
     const existing = byDate.get(date) ?? {
       date,
@@ -519,6 +614,73 @@ function buildSeries(
   return [...byDate.values()]
     .filter((point) => point.measured)
     .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * A holding's first priced day inside the window, booked as money put in
+ * (SC-1323).
+ *
+ * The rollup counts a holding only from its first record, so one added
+ * mid-window steps the value up on the day it appears. Left unbooked, that
+ * step is a market gain of its whole value — a 0.5 BTC typed in by hand
+ * became "+$42,081". It is funding, like `opening_balance`: the value it
+ * arrived with, less whatever its own ledger already booked into that day, so
+ * a deposit recorded on the same day is not counted twice.
+ *
+ * A holding priced on the opening day is already inside the opening value and
+ * books nothing.
+ */
+function arrivalFlows(
+  rows: ReadonlyArray<{
+    snapshotDate: string;
+    holdingId: string;
+    totalValue: string;
+    holdingsWithKnownValue: number;
+  }>,
+  weights: ReadonlyMap<string, Decimal>,
+  ledgerFlows: readonly ExternalFlow[],
+  measuredDates: readonly string[],
+  openingDate: string
+): ExternalFlow[] {
+  const arrival = new Map<string, { date: string; value: Decimal }>();
+  for (const row of rows) {
+    const weight = weights.get(row.holdingId);
+    if (!weight || row.holdingsWithKnownValue <= 0) continue;
+    const date = String(row.snapshotDate).slice(0, 10);
+    const seen = arrival.get(row.holdingId);
+    if (!seen || date < seen.date) {
+      arrival.set(row.holdingId, { date, value: new Decimal(row.totalValue).mul(weight) });
+    }
+  }
+
+  const sortedDates = [...measuredDates].sort();
+  const bucketOf = (at: Date) => {
+    const day = at.toISOString().slice(0, 10);
+    return sortedDates.find((date) => date >= day);
+  };
+
+  const booked: ExternalFlow[] = [];
+  for (const [holdingId, { date, value }] of arrival) {
+    if (date <= openingDate || !sortedDates.includes(date)) continue;
+    const ledger = ledgerFlows
+      .filter((flow) => flow.holdingId === holdingId && bucketOf(flow.occurredAt) === date)
+      .reduce((sum, flow) => sum.add(flow.baseAmount), new Decimal(0));
+    const amount = value.sub(ledger);
+    if (amount.isZero()) continue;
+    booked.push({
+      transactionId: `arrival:${holdingId}`,
+      holdingId,
+      kind: 'opening_balance',
+      occurredAt: new Date(`${date}T00:00:00.000Z`),
+      tokenId: '',
+      quantity: '0',
+      baseAmount: amount.toString(),
+      valuationBasis: null,
+      stale: false,
+      weight: (weights.get(holdingId) as Decimal).toString(),
+    });
+  }
+  return booked;
 }
 
 /**

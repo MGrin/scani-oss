@@ -103,6 +103,9 @@ export function ManualHoldingsCreateResult({ result }: { result: unknown }) {
 
       <div className="flex flex-col gap-2 lg:flex-row">
         <Button asChild className="lg:flex-none">
+          <Link to={V3_ROUTES.home}>{t('v3.jobs.manual.seeOnHome')}</Link>
+        </Button>
+        <Button asChild variant="outline" className="lg:flex-none">
           <Link to={`${V3_ROUTES.holdings}?account=${encodeURIComponent(view.accountId)}`}>
             {t('v3.jobs.review.viewHoldings')}
           </Link>

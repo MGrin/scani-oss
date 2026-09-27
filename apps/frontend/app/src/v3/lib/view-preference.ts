@@ -33,6 +33,7 @@ const PREFIX = 'scani.v3.view.';
  */
 export const VIEW_PREFERENCE_KEYS = {
   homeAllocationDimension: 'home.allocation-dimension',
+  homeFigureVisibility: 'home.figure-visibility',
   homeMetric: 'home.metric',
   homePeriod: 'home.period',
   homeReturnsWindow: 'home.returns-window',

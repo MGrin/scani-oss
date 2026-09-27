@@ -374,6 +374,70 @@ describe('GateProvider', () => {
       fetchHook.restore();
     }
   });
+
+  // SC-1302. Gate caps `from`/`to` at 30 days on all four history endpoints
+  // — "Record query time range cannot exceed 30 days" for the ledger and the
+  // two wallet walks, "The range not allowed to exceed 30 days" for
+  // my_trades — and a `since`-less run substitutes a FIVE-YEAR look-back.
+  //
+  // This is the SC-171 shape rather than the loud SC-166 one: every walk in
+  // `fetchTransactions` is wrapped in `.catch(() => [])`, so Gate's rejection
+  // of the five-year span never surfaces as a failure. It reads as an account
+  // with no history, and the import completes green having written nothing.
+  //
+  // The assertion is on EVERY window sent, not on a happy path, and the
+  // length check above it is the control — a run that sent no ranged request
+  // at all would satisfy every span assertion vacuously.
+  test('a since-less run asks for no window Gate will reject', async () => {
+    const p = new GateProvider(passthroughLimiter());
+    const day = 24 * 60 * 60;
+    const RANGED = [
+      '/spot/accounts/ledger',
+      '/spot/my_trades',
+      '/wallet/deposits',
+      '/wallet/withdrawals',
+    ];
+    const spans: Array<{ path: string; from: number; to: number }> = [];
+
+    const fetchHook = queueFetch((url) => {
+      const u = new URL(url);
+      if (u.pathname.endsWith('/spot/accounts')) {
+        return { body: [{ currency: 'btc', available: '0.5', locked: '0' }] };
+      }
+      spans.push({
+        path: u.pathname,
+        from: Number(u.searchParams.get('from')),
+        to: Number(u.searchParams.get('to')),
+      });
+      return { body: [] };
+    });
+
+    const before = Math.floor(Date.now() / 1000);
+    try {
+      await p.fetchTransactions({ ...ctx } as never);
+    } finally {
+      fetchHook.restore();
+    }
+    const after = Math.floor(Date.now() / 1000);
+
+    expect(spans.length).toBeGreaterThan(0);
+    for (const endpoint of RANGED) {
+      expect(spans.some((s) => s.path.endsWith(endpoint))).toBe(true);
+    }
+
+    const tooWide = spans
+      .filter((s) => s.to - s.from > 30 * day)
+      .map((s) => `${s.path} spans ${((s.to - s.from) / day).toFixed(1)}d`);
+    expect(tooWide).toEqual([]);
+
+    // Splitting must not shorten the reach: the windows still cover the whole
+    // five years the single request used to ask for, ending at `until`.
+    const minFrom = Math.min(...spans.map((s) => s.from));
+    const maxTo = Math.max(...spans.map((s) => s.to));
+    expect(maxTo).toBeGreaterThanOrEqual(before - 1);
+    expect(maxTo).toBeLessThanOrEqual(after + 1);
+    expect(maxTo - minFrom).toBeGreaterThanOrEqual(5 * 365 * day - 1);
+  });
 });
 
 // ---------------------------------------------------------------------------

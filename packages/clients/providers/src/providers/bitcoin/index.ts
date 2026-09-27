@@ -267,7 +267,7 @@ export class BitcoinProvider
       // The address is the requester's choice, so its size is too (SC-1271).
       if (events.length >= WALLET_HISTORY_ROW_CAP) {
         capped.note({
-          walk: 'the address history',
+          walk: { kind: 'addressHistory' },
           pages: offset / TX_PAGE_SIZE + 1,
           rows: events.length,
         });

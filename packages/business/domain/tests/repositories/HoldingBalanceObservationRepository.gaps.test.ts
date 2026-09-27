@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
+import { sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HoldingBalanceObservationRepository } from '../../src/repositories/HoldingBalanceObservationRepository';
 import { withTestDb } from '../../test/helpers/db';
@@ -210,8 +211,8 @@ describe('findGapCandidatesForUser', () => {
 
   test('an unchanged balance with a transaction inside it IS a candidate', async () => {
     // Money in and money out inside one interval leaves both readings equal,
-    // so `balance <> previous_balance` is not a sound pre-filter and the
-    // query deliberately does not use one.
+    // so `balance <> previous_balance` alone is not a sound pre-filter: the
+    // query also visits every interval a transaction lands in (SC-1319).
     await withTestDb(async (tx) => {
       const { userId, accountId, tokenId } = await fixture(tx);
       const holding = await makeHolding(tx, { userId, accountId, tokenId });
@@ -310,6 +311,192 @@ describe('setGapReview', () => {
       );
       expect(reopened?.gapReview).toBeNull();
       expect(reopened?.gapReviewedAt).toBeNull();
+    });
+  });
+});
+
+/**
+ * SC-1319: the query reads only pairs that moved or hold a transaction, and
+ * each observation's predecessor is stored by a trigger. These cases are the
+ * ways a stored predecessor goes stale; the last compares the whole result
+ * with the full `LAG` derivation it replaced.
+ */
+describe('the stored predecessor (SC-1319)', () => {
+  test('an observation inserted into the past relinks the one after it', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, accountId, tokenId } = await fixture(tx);
+      const holding = await makeHolding(tx, { userId, accountId, tokenId });
+      const closing = await observe(tx, {
+        userId,
+        holdingId: holding.id,
+        balance: '250',
+        observedAt: T2,
+      });
+      await observe(tx, { userId, holdingId: holding.id, balance: '100', observedAt: T0 });
+      await observe(tx, { userId, holdingId: holding.id, balance: '100', observedAt: T1 });
+
+      const rows = await repo().findGapCandidatesForUser(userId, tx);
+      expect(rows.map((r) => [r.observationId, r.from.toISOString(), r.previousBalance])).toEqual([
+        [closing, T1.toISOString(), '100'],
+      ]);
+    });
+  });
+
+  test('several observations of one holding in ONE statement link to each other', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, accountId, tokenId } = await fixture(tx);
+      const holding = await makeHolding(tx, { userId, accountId, tokenId });
+      await tx.insert(schema.holdingBalanceObservations).values(
+        [
+          ['100', T0],
+          ['100', T1],
+          ['400', T2],
+        ].map(([balance, observedAt]) => ({
+          userId,
+          holdingId: holding.id,
+          balance: balance as string,
+          observedAt: observedAt as Date,
+          source: 'sync-capture',
+        }))
+      );
+
+      const rows = await repo().findGapCandidatesForUser(userId, tx);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.from).toEqual(T1);
+      expect(rows[0]?.previousBalance).toBe('100');
+    });
+  });
+
+  test('deleting an observation relinks its successor to the one before', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, accountId, tokenId } = await fixture(tx);
+      const holding = await makeHolding(tx, { userId, accountId, tokenId });
+      await observe(tx, { userId, holdingId: holding.id, balance: '100', observedAt: T0 });
+      const middle = await observe(tx, {
+        userId,
+        holdingId: holding.id,
+        balance: '250',
+        observedAt: T1,
+      });
+      const last = await observe(tx, {
+        userId,
+        holdingId: holding.id,
+        balance: '250',
+        observedAt: T2,
+      });
+      await tx.execute(sql`DELETE FROM holding_balance_observations WHERE id = ${middle}`);
+
+      const rows = await repo().findGapCandidatesForUser(userId, tx);
+      expect(rows.map((r) => [r.observationId, r.from.toISOString(), r.previousBalance])).toEqual([
+        [last, T0.toISOString(), '100'],
+      ]);
+    });
+  });
+
+  test('moving an observation in time relinks both places it touched', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, accountId, tokenId } = await fixture(tx);
+      const holding = await makeHolding(tx, { userId, accountId, tokenId });
+      const first = await observe(tx, {
+        userId,
+        holdingId: holding.id,
+        balance: '100',
+        observedAt: T0,
+      });
+      await observe(tx, { userId, holdingId: holding.id, balance: '250', observedAt: T1 });
+      await observe(tx, { userId, holdingId: holding.id, balance: '250', observedAt: T2 });
+      // T0 moves past T2: the chain becomes 250 (T1) -> 250 (T2) -> 100 (T3).
+      const T3 = new Date('2026-06-04T00:00:00Z');
+      await tx.execute(
+        sql`UPDATE holding_balance_observations SET observed_at = ${T3.toISOString()} WHERE id = ${first}`
+      );
+
+      const rows = await repo().findGapCandidatesForUser(userId, tx);
+      expect(rows.map((r) => [r.observationId, r.from.toISOString(), r.previousBalance])).toEqual([
+        [first, T2.toISOString(), '250'],
+      ]);
+    });
+  });
+
+  test('matches the full LAG derivation over a seeded mixed history', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, accountId, tokenId } = await fixture(tx);
+      // A deterministic generator, so a failure reproduces.
+      let seed = 1319;
+      const next = () => {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        return seed / 2147483648;
+      };
+      const day = (n: number, hour = 0) => new Date(Date.UTC(2026, 0, 1 + n, hour));
+
+      for (let h = 0; h < 4; h++) {
+        const holding = await makeHolding(tx, { userId, accountId, tokenId });
+        let balance = 100;
+        for (let d = 0; d < 40; d++) {
+          const roll = next();
+          if (roll < 0.15) balance += Math.round(next() * 50) - 25;
+          if (roll > 0.85) {
+            await makeHoldingTransaction(tx, {
+              userId,
+              holdingId: holding.id,
+              tokenId,
+              kind: 'deposit',
+              quantity: String(Math.round(next() * 20)),
+              occurredAt: day(d, 12),
+            });
+          }
+          if (roll > 0.95) {
+            // On the observation's own instant: inside the interval it closes.
+            await makeHoldingTransaction(tx, {
+              userId,
+              holdingId: holding.id,
+              tokenId,
+              kind: 'withdraw',
+              quantity: '-3',
+              occurredAt: day(d),
+            });
+          }
+          await observe(tx, {
+            userId,
+            holdingId: holding.id,
+            balance: String(balance),
+            observedAt: day(d),
+          });
+        }
+        // Inserted out of order, after the rest.
+        await observe(tx, { userId, holdingId: holding.id, balance: '7', observedAt: day(20, 6) });
+      }
+
+      const legacy = (await tx.execute(sql`
+        WITH paired AS (
+          SELECT o.id, o.holding_id, o.observed_at, o.balance,
+                 LAG(o.observed_at) OVER w AS previous_observed_at,
+                 LAG(o.balance) OVER w AS previous_balance
+          FROM holding_balance_observations o
+          WHERE o.user_id = ${userId}
+          WINDOW w AS (PARTITION BY o.holding_id ORDER BY o.observed_at)
+        )
+        SELECT paired.id, bridge.explained::text AS explained
+        FROM paired
+        LEFT JOIN LATERAL (
+          SELECT COALESCE(SUM(t.quantity::numeric), 0) AS explained
+          FROM holding_transactions t
+          WHERE t.holding_id = paired.holding_id
+            AND t.occurred_at > paired.previous_observed_at
+            AND t.occurred_at <= paired.observed_at
+        ) AS bridge ON TRUE
+        WHERE paired.previous_observed_at IS NOT NULL
+          AND paired.observed_at > paired.previous_observed_at
+          AND (paired.balance::numeric - paired.previous_balance::numeric - bridge.explained) <> 0
+        ORDER BY paired.holding_id, paired.observed_at
+      `)) as unknown as Array<{ id: string; explained: string }>;
+
+      const rows = await repo().findGapCandidatesForUser(userId, tx);
+      // The control: a history that produced no gaps would agree vacuously.
+      expect(legacy.length).toBeGreaterThan(10);
+      expect(rows.map((r) => [r.observationId, r.explained])).toEqual(
+        legacy.map((r) => [r.id, r.explained])
+      );
     });
   });
 });

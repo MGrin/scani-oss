@@ -17,6 +17,7 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { emailOTP, magicLink } from 'better-auth/plugins';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Container } from 'typedi';
+import { languageFromAuthContext } from './request-language';
 import { screenshotBotPlugin } from './screenshot-bot-plugin';
 import { recordSignupSource, signupSourceFromAuthContext } from './signup-source';
 
@@ -57,6 +58,15 @@ async function getDefaultBaseCurrencyId(): Promise<string | null> {
   })();
   return cachedDefaultBaseCurrencyId;
 }
+
+/**
+ * The header Better-Auth reads the client IP from (SC-1351). Its default is
+ * the FIRST `X-Forwarded-For` entry, which the client writes, so a caller
+ * could rotate it past Better-Auth's own per-IP limits and plant any address
+ * in `user_sessions.ip_address`. The `/api/auth/*` handler overwrites this
+ * header on every request with `defaultInflowKey`, the edge-derived address.
+ */
+export const CLIENT_IP_HEADER = 'x-scani-client-ip';
 
 export function createBetterAuth(opts: {
   baseURL: string;
@@ -150,48 +160,40 @@ export function createBetterAuth(opts: {
         },
       },
       session: {
-        // Absolute session-max enforcement. The base session config
-        // sets `expiresIn = 7 days` with `updateAge = 1 day` — a
-        // sliding window that, by itself, has no hard ceiling. An
-        // active user (or a compromised long-lived token used
-        // weekly to keep it alive) could ride the same session for
-        // months. This hook rejects any session whose `createdAt` is
-        // more than ABSOLUTE_SESSION_MAX_MS in the past, regardless
-        // of how recently it was touched. The user is forced through
-        // a fresh sign-in (magic link / passkey / OTP) at that
-        // point, which re-mints a fresh sessionId.
+        // Absolute session-max enforcement (SC-1351). The base config
+        // (`expiresIn` 7 days, `updateAge` 1 day) is a sliding window with no
+        // ceiling of its own. A refresh passes only `{ expiresAt, updatedAt }`,
+        // so the session's `createdAt` comes from the endpoint context, which
+        // `/get-session` has already loaded. Capping the new expiry at
+        // `createdAt + ABSOLUTE_SESSION_MAX_MS` lets Better-Auth's own expiry
+        // path end the session: the next lookup finds it expired, deletes the
+        // row and clears the cookie. The earlier version read `createdAt` from
+        // the update data, which never carries it, so it never fired.
         update: {
-          before: async (session) => {
-            const createdAt = session.createdAt;
-            if (!createdAt) return;
-            const ageMs = Date.now() - new Date(createdAt).getTime();
-            if (ageMs > ABSOLUTE_SESSION_MAX_MS) {
-              authLogger.info(
-                {
-                  userId: session.userId,
-                  sessionId: session.id,
-                  ageDays: Math.floor(ageMs / (24 * 60 * 60 * 1000)),
-                },
-                'Session exceeded absolute max age; refusing extension'
-              );
-              // Throwing rejects the update; Better-Auth then
-              // treats the session as unresolved and forces the
-              // user back through sign-in.
-              throw new Error('Session exceeded absolute max age');
-            }
-            // Returning `false` from a Better-Auth `before` hook
-            // means "no changes" — pass the data through unchanged.
-            return false;
+          before: async (data, ctx) => {
+            const createdAt = ctx?.context.session?.session.createdAt;
+            if (!createdAt || !data.expiresAt) return;
+            const cap = new Date(new Date(createdAt).getTime() + ABSOLUTE_SESSION_MAX_MS);
+            if (new Date(data.expiresAt) <= cap) return;
+            authLogger.info(
+              { userId: ctx?.context.session?.session.userId },
+              'Session refresh capped at its absolute max age'
+            );
+            return { data: { ...data, expiresAt: cap } };
           },
         },
       },
     },
     emailVerification: {
-      sendVerificationEmail: ({ user, url }) => {
-        sendInBackground(() => email.sendVerificationEmail({ to: user.email, url, brand }), {
-          userId: user.id,
-          kind: 'verification',
-        });
+      sendVerificationEmail: ({ user, url }, ctx) => {
+        const language = languageFromAuthContext(ctx);
+        sendInBackground(
+          () => email.sendVerificationEmail({ to: user.email, url, language, brand }),
+          {
+            userId: user.id,
+            kind: 'verification',
+          }
+        );
         return Promise.resolve();
       },
       sendOnSignUp: true,
@@ -216,6 +218,7 @@ export function createBetterAuth(opts: {
     },
     advanced: {
       useSecureCookies: opts.baseURL.startsWith('https://'),
+      ipAddress: { ipAddressHeaders: [CLIENT_IP_HEADER] },
       database: {
         // users.id is a uuid column; override Better-Auth's default nanoid
         // so both tables agree on format.
@@ -290,10 +293,11 @@ export function createBetterAuth(opts: {
     //     same gate.
     plugins: [
       magicLink({
-        sendMagicLink: async ({ email: to, url }) => {
-          authLogger.info({ email: to }, '🪄 Magic-link callback fired');
+        sendMagicLink: async ({ email: to, url }, ctx) => {
+          const language = languageFromAuthContext(ctx);
+          authLogger.info({ email: to, language }, '🪄 Magic-link callback fired');
           try {
-            await email.sendMagicLink({ to, url, brand });
+            await email.sendMagicLink({ to, url, language, brand });
             authLogger.info({ email: to }, '✅ Magic link sent');
           } catch (err) {
             authLogger.error(
@@ -321,9 +325,10 @@ export function createBetterAuth(opts: {
         // reasoning as magicLink.storeToken above). The user-facing OTP
         // is still emailed in plaintext; only the DB stores the hash.
         storeOTP: 'hashed',
-        sendVerificationOTP: async ({ email: to, otp, type }) => {
+        sendVerificationOTP: async ({ email: to, otp, type }, ctx) => {
+          const language = languageFromAuthContext(ctx);
           try {
-            await email.sendOtp({ to, code: otp, type, brand });
+            await email.sendOtp({ to, code: otp, type, language, brand });
             authLogger.info({ email: to, type }, '✅ OTP sent');
           } catch (err) {
             authLogger.error(

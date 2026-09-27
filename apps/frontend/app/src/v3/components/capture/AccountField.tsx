@@ -4,10 +4,14 @@ import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
 import { ArrowLeft } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
-import type { NewAccountDraft, PickMode } from '../../lib/manual-entry';
+import {
+  defaultAccountTypeCode,
+  type NewAccountDraft,
+  type PickMode,
+} from '../../lib/manual-entry';
 import { Field } from '../form/Field';
 import { RecordPicker } from '../form/RecordPicker';
 
@@ -32,6 +36,9 @@ interface AccountFieldProps {
   /** Empty while nothing is chosen; ignored entirely when `institutionIsNew`. */
   institutionId: string;
   institutionIsNew: boolean;
+  /** The institution's own type — chosen or being created — which suggests the
+   *  new account's type. Empty when unknown. */
+  institutionTypeId: string;
   onModeChange: (mode: PickMode) => void;
   /** `institutionId` is the account's own, so the picker can fill the field
    *  above when it was left empty. */
@@ -46,6 +53,7 @@ export function AccountField({
   draft,
   institutionId,
   institutionIsNew,
+  institutionTypeId,
   onModeChange,
   onSelect,
   onDraftChange,
@@ -57,6 +65,16 @@ export function AccountField({
 
   const accounts = trpc.accounts.getAll.useQuery();
   const types = trpc.accountTypes.getAll.useQuery();
+  const institutionTypes = trpc.institutionTypes.getAll.useQuery();
+
+  const suggestedCode = defaultAccountTypeCode(
+    institutionTypes.data?.find((type) => type.id === institutionTypeId)?.code
+  );
+  const suggestedTypeId = types.data?.find((type) => type.code === suggestedCode)?.id;
+  useEffect(() => {
+    if (mode === 'new' && !draft.typeId && suggestedTypeId)
+      onDraftChange({ typeId: suggestedTypeId });
+  }, [mode, draft.typeId, suggestedTypeId, onDraftChange]);
 
   const all = accounts.data ?? [];
   // A newcomer has nothing to search or go back to, so the field says what to

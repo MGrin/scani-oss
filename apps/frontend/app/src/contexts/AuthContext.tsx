@@ -90,6 +90,9 @@ export interface AuthContextType {
   /** `turnstileToken` rides as a header; the server checks it once keyed (SC-1266). */
   authenticate: (email: string, turnstileToken?: string | null) => Promise<AuthAttemptResult>;
   verifyCode: (email: string, token: string) => Promise<AuthAttemptResult>;
+  /** Always a 6-digit code, never a magic link: used to confirm the signed-in
+   *  person before an irreversible action, without leaving the page (SC-1351). */
+  sendCode: (email: string, turnstileToken?: string | null) => Promise<AuthAttemptResult>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
 }
@@ -247,6 +250,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return attempt(() => authClient.signIn.magicLink({ email, callbackURL, fetchOptions }));
   };
 
+  const sendCode = (email: string, turnstileToken?: string | null): Promise<AuthAttemptResult> =>
+    attempt(() =>
+      authClient.emailOtp.sendVerificationOtp({
+        email,
+        type: 'sign-in',
+        fetchOptions: { headers: turnstileHeaders(turnstileToken) },
+      })
+    );
+
   const verifyCode = async (email: string, code: string): Promise<AuthAttemptResult> => {
     const result = await attempt(() => authClient.signIn.emailOtp({ email, otp: code }));
     if (result.error) return result;
@@ -322,6 +334,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     retrySession: resolveSession,
     authenticate,
     verifyCode,
+    sendCode,
     signOut: handleSignOut,
     resetPassword,
   };

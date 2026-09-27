@@ -5,6 +5,7 @@ import {
   buildHoldingsBatchInput,
   completedHoldings,
   contestedHoldingTokenIds,
+  defaultAccountTypeCode,
   describeManualEntryBlockers,
   emptyAccountTarget,
   emptyDraft,
@@ -124,9 +125,6 @@ describe('repeatedHoldingTokenIds', () => {
   });
 
   test('the Tinkoff shape — four rows, one token — reports it once', () => {
-    // `updateHoldings` is always empty here, so each of these becomes its own
-    // INSERT and the account ends up with four holdings for one token
-    // (SC-303). Four RUB rows is the exact payload that did it in production.
     const rows = ['a', 'b', 'c', 'd'].map((uid) => ({
       uid,
       tokenId: 'tok-rub',
@@ -350,5 +348,23 @@ describe('resolving the account a capture lands in', () => {
 
   test('an unfinished target resolves to nothing rather than to a partial write', () => {
     expect(buildEnsureAccountInput(emptyAccountTarget())).toBeNull();
+  });
+});
+
+describe('defaultAccountTypeCode (SC-1327)', () => {
+  test('an exchange or a wallet holds crypto', () => {
+    expect(defaultAccountTypeCode('crypto_exchange')).toBe('crypto');
+    expect(defaultAccountTypeCode('crypto_wallet')).toBe('crypto');
+  });
+
+  test('a broker or a fund holds investments', () => {
+    expect(defaultAccountTypeCode('broker')).toBe('investment');
+    expect(defaultAccountTypeCode('investment_fund')).toBe('investment');
+  });
+
+  test('a bank is left to the reader, because checking and savings are both likely', () => {
+    expect(defaultAccountTypeCode('bank')).toBeNull();
+    expect(defaultAccountTypeCode('other')).toBeNull();
+    expect(defaultAccountTypeCode(undefined)).toBeNull();
   });
 });

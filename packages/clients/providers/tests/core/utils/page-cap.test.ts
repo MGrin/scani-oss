@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import type { TransactionFetchContext } from '../../../src/core/types';
+import {
+  type NoticeInput,
+  type TransactionFetchContext,
+  toJobNotice,
+} from '../../../src/core/types';
 import { PageCapWatch } from '../../../src/core/utils/page-cap';
 
 function sink(): { ctx: TransactionFetchContext; retractions: string[] } {
@@ -9,8 +13,8 @@ function sink(): { ctx: TransactionFetchContext; retractions: string[] } {
     baseCurrency: { id: 'usd', symbol: 'USD' },
     credentialsRef: { userId: 'u', institutionId: 'i' },
     resolveCredentials: async () => ({}),
-    retractHistoryClaim: (reason: string) => {
-      retractions.push(reason);
+    retractHistoryClaim: (reason: NoticeInput) => {
+      retractions.push(toJobNotice(reason).text);
     },
   } as unknown as TransactionFetchContext;
   return { ctx, retractions };
@@ -28,7 +32,7 @@ describe('PageCapWatch', () => {
   test('one capped walk retracts once, naming the cap and the rows it did return', () => {
     const { ctx, retractions } = sink();
     const watch = new PageCapWatch();
-    watch.note({ walk: 'the user-transactions ledger', pages: 200, rows: 200_000 });
+    watch.note({ walk: { kind: 'userTransactionsLedger' }, pages: 200, rows: 200_000 });
 
     expect(watch.capped).toBe(true);
     watch.retract(ctx, 'bitstamp');
@@ -44,12 +48,18 @@ describe('PageCapWatch', () => {
     const { ctx, retractions } = sink();
     const watch = new PageCapWatch();
     for (let i = 1; i <= 5; i++) {
-      watch.note({ walk: `account ${i}`, pages: 200, rows: 20_000 });
+      watch.note({
+        walk: { kind: 'accountTransactions', account: String(i) },
+        pages: 200,
+        rows: 20_000,
+      });
     }
     watch.retract(ctx, 'coinbase');
 
     expect(retractions).toHaveLength(1);
-    expect(retractions[0]).toContain('account 1 stopped at its 200-page cap after 20000 rows');
+    expect(retractions[0]).toContain(
+      'transactions for account 1 stopped at its 200-page cap after 20000 rows'
+    );
     expect(retractions[0]).toContain('account 3 stopped at its 200-page cap');
     expect(retractions[0]).toContain('2 further walks did the same');
     // The fourth and fifth are counted, not named — a reader learns nothing
@@ -60,7 +70,9 @@ describe('PageCapWatch', () => {
   test('a single unnamed walk is counted in the singular', () => {
     const { ctx, retractions } = sink();
     const watch = new PageCapWatch();
-    for (let i = 1; i <= 4; i++) watch.note({ walk: `account ${i}`, pages: 50, rows: 1 });
+    for (let i = 1; i <= 4; i++) {
+      watch.note({ walk: { kind: 'accountTransactions', account: String(i) }, pages: 50, rows: 1 });
+    }
     watch.retract(ctx, 'coinbase');
     expect(retractions[0]).toContain('1 further walk did the same');
   });
@@ -71,7 +83,7 @@ describe('PageCapWatch', () => {
   // only trying to annotate.
   test('a context with no retraction channel is survivable', () => {
     const watch = new PageCapWatch();
-    watch.note({ walk: 'ledger', pages: 400, rows: 1 });
+    watch.note({ walk: { kind: 'feed', path: '/ledger' }, pages: 400, rows: 1 });
     expect(() => watch.retract({} as TransactionFetchContext, 'kucoin')).not.toThrow();
   });
 });

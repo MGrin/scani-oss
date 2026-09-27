@@ -48,6 +48,7 @@ export default defineConfig({
   globalSetup: './fixtures/visual-setup',
   snapshotPathTemplate: '{testDir}/__screenshots__/{arg}{ext}',
   use: {
+    launchOptions: { args: ['--password-store=basic', '--use-mock-keychain'] },
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173',
     connectOptions: { wsEndpoint: remoteEndpoint(), exposeNetwork: '<loopback>' },
     trace: 'off',

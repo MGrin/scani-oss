@@ -29,6 +29,13 @@ describe('shouldReportTimezone', () => {
     expect(shouldReportTimezone(null, null)).toBe(false);
     expect(shouldReportTimezone(null, 'Asia/Makassar')).toBe(false);
   });
+
+  test('never reports from the read-only demo', () => {
+    // The demo refuses every write with a 403, so a report there is two failed
+    // requests in the console on every page and nothing stored (SC-1138).
+    expect(shouldReportTimezone('Asia/Makassar', null, { readOnly: true })).toBe(false);
+    expect(shouldReportTimezone('Asia/Makassar', null, { readOnly: false })).toBe(true);
+  });
 });
 
 describe('browserTimezone', () => {

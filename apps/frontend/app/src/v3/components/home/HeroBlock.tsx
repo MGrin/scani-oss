@@ -5,22 +5,15 @@ import { Block } from '@scani/ui/v3/components/Block';
 import { DeltaPill } from '@scani/ui/v3/components/charts/DeltaPill';
 import { StatTile } from '@scani/ui/v3/components/charts/StatTile';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
-import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
+import type { HomeChart } from '../../hooks/useHomeChart';
 import { useReviewFeed } from '../../hooks/useReviewFeed';
-import { useViewPreference } from '../../hooks/useViewPreference';
 import {
-  DEFAULT_HOME_PERIOD,
   fromFirstRecord,
-  HOME_METRIC_KEYS,
-  HOME_METRICS,
-  HOME_PERIOD_KEYS,
   HOME_PERIODS,
   heroDeltaState,
   heroFigureQuality,
-  homePeriodByKey,
-  homePeriodRange,
   lastMeasuredBeforeToday,
   latestPnl,
   netWorthChartPoints,
@@ -28,23 +21,33 @@ import {
   resolvePeriodDelta,
 } from '../../lib/home';
 import { todayDateString } from '../../lib/paymentTotals';
+import { comparisonView } from '../../lib/returns-comparison';
 import { pendingTransferCount } from '../../lib/review';
-import { VIEW_PREFERENCE_KEYS } from '../../lib/view-preference';
 import { CoverageNote } from './CoverageNote';
+import { FigureVisibilityToggle, MaskedFigure, useFigureVisibility } from './FigureVisibility';
 import { HistoryExport } from './HistoryExport';
 import { NetWorthTape } from './NetWorthTape';
 import { formatChartDate, PortfolioChart } from './PortfolioChart';
+import { ReturnsHeroChart } from './ReturnsHeroChart';
+import { ReturnsHeroTile } from './ReturnsHeroTile';
 
 /**
  * "How much do I have" and "what changed" — the two questions §2.1 gives the
  * top of the screen, now answered with the chart the user actually opens the
  * app for rather than with a glyph of it.
  *
- * The block owns the period **and** the metric because both control the same
- * two figures. Hoisting either into `HomePage` would put the state one level
- * above the only thing that reads it, and the layout ticket (V3-37) is about to
- * move these blocks into a grid — a block that carries its own state moves as
- * one piece.
+ * The block used to own the period **and** the metric, because both controlled
+ * the same two figures and hoisting either would have put the state one level
+ * above the only thing reading it. Returns as a third tab (SC-1301) ended
+ * that: the range now also drives the returns window, and the block below the
+ * hero has to know which tab is on so it can give up its own window picker and
+ * its copy of the money sentence. Both live in `useHomeChart` now, called once
+ * by `HomePage`.
+ *
+ * **With Returns on, the hero is a stat tile and a comparison chart.** It was
+ * a bare sentence until SC-1305, which is the one thing about this block that
+ * did not match its siblings; the tile is `ReturnsHeroTile` and the card below
+ * renders nothing where its own sentence would be while this tab is on.
  *
  * The PnL series is fetched only while PnL is on screen. It is the more
  * expensive of the two queries and v2 pays the same way, by unmounting the
@@ -96,37 +99,34 @@ interface HeroBlockProps {
   /** From `dashboard.getOverview` — the live total, a day ahead of the rollup. */
   total: string | undefined;
   currency: string;
+  /**
+   * The tab, the range and the returns window, owned by `HomePage` since
+   * SC-1301 — the block below the hero reads the same three facts.
+   */
+  chart: HomeChart;
 }
 
-export function HeroBlock({ total, currency }: HeroBlockProps) {
+export function HeroBlock({ total, currency, chart }: HeroBlockProps) {
   const { t } = useTranslation();
-  // Both survive a reload (V3-48). The period was the arguable one: it seeds the
-  // series fetch, so remembering 1Y changes what loads on first paint. It is
-  // persisted anyway — the reader who works in years re-picks it on every visit
-  // otherwise, and the extra cost is bounded because `granularity: 'auto'`
-  // downsamples a longer window rather than returning more points.
-  const [periodKey, setPeriodKey] = useViewPreference(
-    VIEW_PREFERENCE_KEYS.homePeriod,
-    DEFAULT_HOME_PERIOD.key,
-    HOME_PERIOD_KEYS
+  const { metric, period, periodKey, range } = chart;
+  // Money figures only: both money tabs share it, so switching to PnL while
+  // hidden cannot show what the net-worth tab was hiding (SC-1375).
+  const figure = useFigureVisibility();
+  const figureToggle = (
+    <FigureVisibilityToggle hidden={figure.settingHidden} onToggle={figure.toggle} />
   );
-  const [metric, setMetric] = useViewPreference(
-    VIEW_PREFERENCE_KEYS.homeMetric,
-    'net-worth' as const,
-    HOME_METRIC_KEYS
-  );
-
-  const period = homePeriodByKey(periodKey);
-  // The window is pinned to the period rather than to the clock, so a refetch
-  // does not shift the baseline out from under the delta on the screen. It is
-  // resolved through `homePeriodRange` so `HomePage` can ask for the same
-  // window — and therefore the same query — before this block exists (SC-164).
-  const range = useMemo(() => homePeriodRange(period), [period]);
 
   const series = trpc.portfolio.getNetWorthSeries.useQuery({ ...range, granularity: 'auto' });
   const pnlSeries = trpc.portfolio.getPnLSeries.useQuery(
     { ...range, granularity: 'auto' },
     { enabled: metric === 'pnl' }
+  );
+  // The expensive half — one benchmark price per measured day — asked for only
+  // while the tab that draws it is on. Same window, and therefore the same
+  // query, as the `ReturnsBlock` below, which needs it for the gaps.
+  const comparisonQuery = trpc.portfolio.getReturnsComparison.useQuery(
+    { window: chart.returns.request },
+    { enabled: metric === 'returns' }
   );
 
   const { items: reviewItems } = useReviewFeed();
@@ -137,7 +137,6 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
     (date) => firstRecord !== undefined && date >= firstRecord
   );
   const today = todayDateString();
-  const delta = resolvePeriodDelta(points, total);
   const trend = netWorthChartPoints(points, total, today, unmeasured);
   // Only for net worth: the PnL series still carries its uncovered days as
   // rows, so its curve breaks on its own and the axis needs no explaining.
@@ -146,6 +145,9 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
   const pnlLatest = latestPnl(pnl);
 
   const isPnl = metric === 'pnl';
+  const isReturns = metric === 'returns';
+  const delta = resolvePeriodDelta(points, total);
+  const comparison = comparisonView(comparisonQuery.data);
   // What the figure above does not know, said next to it (SC-146, SC-149,
   // SC-151). Every omission it can report runs one way — dust nothing quotes,
   // a quote past our freshness window, a cost basis we could not fully rebuild
@@ -192,40 +194,73 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
 
   return (
     <Block className="flex flex-col gap-4 p-4">
-      {isPnl ? (
+      {isReturns ? (
+        // The same tile the other two tabs render, not a sentence (SC-1305):
+        // three values of one control should not change the shape of the block
+        // above them. It renders the moment `getReturns` answers and never
+        // waits on the chart below it.
+        //
+        // A skeleton rather than a zeroed tile while that call is in flight:
+        // "Unchanged" is a claim, and one that would be wrong for every reader
+        // who has this tab.
+        chart.returns.view ? (
+          <ReturnsHeroTile
+            view={chart.returns.view}
+            currency={currency}
+            periodSuffixKey={period.suffixKey}
+          />
+        ) : (
+          <>
+            <Skeleton aria-hidden="true" className="h-9 w-64" />
+            <span className="sr-only" role="status">
+              {t('v3.home.hero.returnsPending')}
+            </span>
+          </>
+        )
+      ) : isPnl ? (
         <StatTile
           emphasis="hero"
           label={t('v3.home.hero.pnlOverPeriod', { period: t(period.suffixKey) })}
+          labelAction={figureToggle}
           value={
-            <Numeric value={pnlLatest?.total ?? null} currency={currency} delta indicator="sign" />
+            <MaskedFigure hidden={figure.hidden} onPeek={figure.onPeek}>
+              <Numeric
+                value={pnlLatest?.total ?? null}
+                currency={currency}
+                delta
+                indicator="sign"
+              />
+            </MaskedFigure>
           }
           delta={
             pnlState === 'delta' && pnlLatest ? (
               // Realized and unrealized as figures rather than as two stacked
               // bands: the split is the reason to look at PnL rather than at
               // net worth, and reading it off a stacked area is estimation.
-              <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                <span className="text-caption text-muted-foreground">
-                  {t('v3.home.hero.realized')}{' '}
-                  <Numeric
-                    value={pnlLatest.realized}
-                    currency={currency}
-                    delta
-                    indicator="sign"
-                    compact
-                  />
+              <MaskedFigure hidden={figure.hidden} onPeek={figure.onPeek}>
+                <span className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  <span className="text-caption text-muted-foreground">
+                    {t('v3.home.hero.realized')}{' '}
+                    <Numeric
+                      value={pnlLatest.realized}
+                      currency={currency}
+                      delta
+                      indicator="sign"
+                      compact
+                    />
+                  </span>
+                  <span className="text-caption text-muted-foreground">
+                    {t('v3.home.hero.unrealized')}{' '}
+                    <Numeric
+                      value={pnlLatest.unrealized}
+                      currency={currency}
+                      delta
+                      indicator="sign"
+                      compact
+                    />
+                  </span>
                 </span>
-                <span className="text-caption text-muted-foreground">
-                  {t('v3.home.hero.unrealized')}{' '}
-                  <Numeric
-                    value={pnlLatest.unrealized}
-                    currency={currency}
-                    delta
-                    indicator="sign"
-                    compact
-                  />
-                </span>
-              </span>
+              </MaskedFigure>
             ) : pnlState === 'loading' ? (
               <DeltaPending />
             ) : pnlState === 'failed' ? (
@@ -241,30 +276,37 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
         <StatTile
           emphasis="hero"
           label={t('v3.home.metric.netWorth')}
-          value={<NetWorthTape value={total} currency={currency} />}
+          labelAction={figureToggle}
+          value={
+            <MaskedFigure hidden={figure.hidden} onPeek={figure.onPeek}>
+              <NetWorthTape value={total} currency={currency} />
+            </MaskedFigure>
+          }
           delta={
             deltaState === 'delta' && delta ? (
-              <span className="flex flex-wrap items-center gap-2">
-                <DeltaPill value={delta.absolute} currency={currency} />
-                {/* One decimal, and muted rather than toned: the pill beside it
+              <MaskedFigure hidden={figure.hidden} onPeek={figure.onPeek}>
+                <span className="flex flex-wrap items-center gap-2">
+                  <DeltaPill value={delta.absolute} currency={currency} />
+                  {/* One decimal, and muted rather than toned: the pill beside it
                     already carries the direction in colour, and a second
                     coloured figure would make the reader check whether the two
                     disagree. It keeps its sign because muted ink cannot say
                     which way it went. */}
-                {delta.percent === null ? null : (
-                  <Numeric
-                    value={delta.percent}
-                    format="percent"
-                    decimals={1}
-                    delta
-                    indicator="sign"
-                    className="text-caption text-muted-foreground"
-                  />
-                )}
-                <span className="text-caption text-muted-foreground">
-                  {t('v3.home.hero.vsPeriod', { period: t(period.suffixKey) })}
+                  {delta.percent === null ? null : (
+                    <Numeric
+                      value={delta.percent}
+                      format="percent"
+                      decimals={1}
+                      delta
+                      indicator="sign"
+                      className="text-caption text-muted-foreground"
+                    />
+                  )}
+                  <span className="text-caption text-muted-foreground">
+                    {t('v3.home.hero.vsPeriod', { period: t(period.suffixKey) })}
+                  </span>
                 </span>
-              </span>
+              </MaskedFigure>
             ) : deltaState === 'loading' ? (
               <DeltaPending />
             ) : deltaState === 'failed' ? (
@@ -285,7 +327,7 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
           the same rule the delta line follows, and for the same reason: a
           coverage claim under a stale figure describes a day nobody asked
           about. */}
-      {quality && !loading && !failed ? <CoverageNote quality={quality} /> : null}
+      {quality && !loading && !failed && !isReturns ? <CoverageNote quality={quality} /> : null}
 
       {/* The export sits beside the metric control rather than in the block's
           header: it acts on the *chart's* data, and putting it next to the two
@@ -296,11 +338,11 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
       <div className="flex items-center gap-2">
         <Segmented
           value={metric}
-          onValueChange={setMetric}
+          onValueChange={chart.chooseMetric}
           aria-label={t('v3.home.hero.choosePlot')}
           className="min-w-0 flex-1"
         >
-          {HOME_METRICS.map((option) => (
+          {chart.metrics.map((option) => (
             <SegmentedItem key={option.key} value={option.key}>
               {t(option.labelKey)}
             </SegmentedItem>
@@ -309,7 +351,14 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
         <HistoryExport currency={currency} periodKey={periodKey} />
       </div>
 
-      {loading ? (
+      {isReturns ? (
+        <ReturnsHeroChart
+          comparison={comparison}
+          comparisonPending={comparisonQuery.isLoading}
+          comparisonFailed={comparisonQuery.isError && comparisonQuery.data === undefined}
+          currency={currency}
+        />
+      ) : loading ? (
         <Skeleton aria-hidden="true" className="h-[200px] w-full" />
       ) : failed ? (
         // A chart of no points reads as "you have no history". An empty frame
@@ -327,6 +376,7 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
           pnl={pnl}
           currency={currency}
           granularity={granularity}
+          amountsHidden={figure.hidden}
           label={t('v3.home.hero.chartLabel', {
             metric: isPnl ? t('v3.home.metric.pnlFull') : t('v3.home.metric.netWorth'),
             period: t(period.suffixKey),
@@ -339,7 +389,7 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
           there is nowhere in the plot area to put a label for days that have
           no points. Settings' Data-quality panel is where the same fact is
           explained per holding. */}
-      {measuredThrough && !loading && !failed ? (
+      {measuredThrough && !loading && !failed && !isReturns ? (
         <p className="text-caption text-muted-foreground">
           {t('v3.home.hero.noMeasurementSince', {
             date: formatChartDate(measuredThrough, 'daily'),
@@ -351,7 +401,7 @@ export function HeroBlock({ total, currency }: HeroBlockProps) {
           which is what keeps them from ever describing different windows. */}
       <Segmented
         value={periodKey}
-        onValueChange={setPeriodKey}
+        onValueChange={chart.choosePeriod}
         aria-label={t('v3.home.hero.changePeriod')}
       >
         {HOME_PERIODS.map((option) => (

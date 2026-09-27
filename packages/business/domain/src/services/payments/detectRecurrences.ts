@@ -114,3 +114,25 @@ export function detectMonthlyRecurrences(
   }
   return found;
 }
+
+export function currencyClasses(
+  tokenIds: Iterable<string>,
+  prices: ReadonlyMap<string, string>
+): Map<string, string> {
+  const classes = new Map<string, string>();
+  const priced: { id: string; price: Decimal }[] = [];
+  for (const id of new Set(tokenIds)) {
+    const price = prices.get(id);
+    if (price === undefined || new Decimal(price).lte(0)) classes.set(id, id);
+    else priced.push({ id, price: new Decimal(price) });
+  }
+  priced.sort((a, b) => a.price.comparedTo(b.price) || a.id.localeCompare(b.id));
+  let anchor: { id: string; price: Decimal } | undefined;
+  for (const token of priced) {
+    if (!anchor || token.price.minus(anchor.price).gt(anchor.price.times(AMOUNT_TOLERANCE))) {
+      anchor = token;
+    }
+    classes.set(token.id, anchor.id);
+  }
+  return classes;
+}

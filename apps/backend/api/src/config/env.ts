@@ -42,7 +42,6 @@ const envSchema = z.object({
   // the Postgres backend, out of `DATABASE_URL`'s `bullmq` schema (SC-518).
   REDIS_URL: urlSchema,
 
-  // Frontend origin for CORS. Required in production, must be https://.
   FRONTEND_URL: inProd ? httpsUrlInProduction : urlSchema.default('http://localhost:5173'),
 
   // This backend's own public URL — Better-Auth needs it to generate
@@ -60,19 +59,9 @@ const envSchema = z.object({
   // the worker cannot decrypt what the api wrote and every exchange-import
   // silently fails.
 
-  // Better-Auth session signing secret. Required in production.
   BETTER_AUTH_SECRET: inProd
     ? z.string().min(32, { message: 'BETTER_AUTH_SECRET must be at least 32 chars in production' })
     : z.string().optional(),
-
-  // Web Push (VAPID_SUBJECT, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY) is owned by
-  // @scani/push's own env schema. Unlike every other package secret it is
-  // OPTIONAL in production too: the api shipped without these long before push
-  // existed, so making them required would take the api down on the deploy
-  // that introduced a feature nobody had enabled. Absence is surfaced instead
-  // of enforced — `push.publicKey` answers null and `push.subscribe` refuses.
-  // The worker needs the SAME values, or a subscription taken here can never
-  // be sent to there.
 
   // Email config (FASTMAIL_API_TOKEN, SMTP_URL, SMTP_FROM) is owned by
   // @scani/email's own env schema; the api only sees it indirectly via
@@ -111,6 +100,11 @@ const envSchema = z.object({
   SENTRY_ENVIRONMENT: z.string().optional(),
   SENTRY_RELEASE: z.string().optional(),
 
+  // SC-1357. Bearer for the detailed health bodies (raw errors, pool config,
+  // missing provider keys). Unset, every caller gets status + per-check `ok`
+  // only, which is all a deploy smoke or a container healthcheck reads.
+  DIAGNOSTICS_TOKEN: z.string().min(32).optional(),
+
   // HMAC shared secret for job-management actions (BullMQ retry/remove,
   // DLQ replay). Required in prod.
   JOBS_HMAC_SECRET: requiredInProd(z.string().min(32), 'JOBS_HMAC_SECRET'),
@@ -148,17 +142,10 @@ const envSchema = z.object({
     ? z.literal(undefined).optional()
     : z.union([z.literal('1'), z.literal('')]).optional(),
 
-  // Test-only: when "1", chain activity probes and balance fetches
-  // resolve from a local fixture instead of blockchain.info / Etherscan /
-  // a Solana RPC. Refused in production — fixture balances shown to a
-  // user would be worse than an outage, because they look like data.
   STUB_CHAIN_DATA: inProd
     ? z.literal(undefined).optional()
     : z.union([z.literal('1'), z.literal('')]).optional(),
 
-  // Test-only: when "1", `payments.forecast` honours an `asOf` date so the
-  // visual gate can photograph a forecast that does not move with the real
-  // date (SC-623). Refused in production — see `presentation/lib/forecast-as-of.ts`.
   ALLOW_FORECAST_AS_OF: inProd
     ? z.literal(undefined).optional()
     : z.union([z.literal('1'), z.literal('')]).optional(),

@@ -34,7 +34,14 @@ function asStringList(value: unknown): string[] {
 export interface JobLine {
   key: string | null;
   params?: Record<string, string | number>;
+  /** Lists the key interpolates, each rendered item by item (SC-1028). */
+  lists?: Record<string, JobLineList>;
   text: string;
+}
+
+interface JobLineList {
+  type: 'conjunction' | 'disjunction';
+  items: JobLine[];
 }
 
 /**
@@ -59,10 +66,91 @@ export function readJobLines(record: Record<string, unknown>): JobLine[] {
     const line = typeof detail.text === 'string' ? detail.text : text[index];
     if (line === undefined) return asPlainLine(text[index] ?? '');
     const key = typeof detail.key === 'string' ? detail.key : null;
-    return key === null
+    if (key === null) return { key: null, text: line };
+    if (detail.lists === undefined) return { key, params: asParams(detail.params), text: line };
+    const lists = asLists(detail.lists, LIST_DEPTH);
+    // A key whose lists did not survive the read would render its `{{walks}}`
+    // placeholder raw, so the line falls back to the server's sentence whole.
+    return lists === null
       ? { key: null, text: line }
-      : { key, params: asParams(detail.params), text: line };
+      : { key, params: asParams(detail.params), lists, text: line };
   });
+}
+
+/** The deepest nesting a producer writes is two (IBKR's blank-field clauses). */
+const LIST_DEPTH = 3;
+
+function asLists(value: unknown, depth: number): Record<string, JobLineList> | null {
+  if (depth === 0 || !value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const out: Record<string, JobLineList> = {};
+  for (const [name, raw] of Object.entries(value)) {
+    const list = asRecord(raw);
+    if (list.type !== 'conjunction' && list.type !== 'disjunction') return null;
+    if (!Array.isArray(list.items)) return null;
+    const items: JobLine[] = [];
+    for (const entry of list.items) {
+      const item = asListItem(entry, depth - 1);
+      if (item === null) return null;
+      items.push(item);
+    }
+    out[name] = { type: list.type, items };
+  }
+  return out;
+}
+
+function asListItem(value: unknown, depth: number): JobLine | null {
+  const item = asRecord(value);
+  if (typeof item.text !== 'string') return null;
+  if (item.key === null) return { key: null, text: item.text };
+  if (typeof item.key !== 'string') return null;
+  if (item.lists === undefined)
+    return { key: item.key, params: asParams(item.params), text: item.text };
+  const lists = asLists(item.lists, depth);
+  return lists === null
+    ? null
+    : { key: item.key, params: asParams(item.params), lists, text: item.text };
+}
+
+type Translate = (key: string, options: Record<string, string | number>) => string;
+type Resolves = (key: string, options: Record<string, string | number>) => boolean;
+
+/**
+ * The line a reader sees: translated when every key in it resolves, and the
+ * server's English sentence whole when any one does not.
+ *
+ * All or nothing, because a partial render is the defect SC-1028 removed: a
+ * Russian frame around one English clause reads worse than the English
+ * sentence it replaces. `resolves` is asked with the params, since a plural
+ * key exists only under its `_one`/`_other` forms.
+ */
+export function renderJobLine(
+  line: JobLine,
+  t: Translate,
+  resolves: Resolves,
+  language: string
+): string {
+  return translateLine(line, t, resolves, language) ?? line.text;
+}
+
+function translateLine(
+  line: JobLine,
+  t: Translate,
+  resolves: Resolves,
+  language: string
+): string | null {
+  if (line.key === null) return line.text;
+  const params = { ...line.params };
+  if (!resolves(line.key, params)) return null;
+  for (const [name, list] of Object.entries(line.lists ?? {})) {
+    const parts: string[] = [];
+    for (const item of list.items) {
+      const part = translateLine(item, t, resolves, language);
+      if (part === null) return null;
+      parts.push(part);
+    }
+    params[name] = new Intl.ListFormat(language, { type: list.type }).format(parts);
+  }
+  return t(line.key, params);
 }
 
 function asPlainLine(text: string): JobLine {
@@ -144,8 +232,22 @@ interface FileImportHolding {
   /** The statement's own closing figure, canonical. `null` when the file
    *  carried none — which is not the same as a closing balance of zero. */
   closingBalance: string | null;
+  /** Where the balance came from (SC-1324). A result written before that
+   *  reads `unchanged`, which is what it was. */
+  balanceFrom: FileImportBalanceFrom;
+  /** The sum of the imported rows, set only when `balanceFrom` is `imported-rows`. */
+  rowsBalance: string | null;
   isNew: boolean;
 }
+
+type FileImportBalanceFrom = 'statement-close' | 'imported-rows' | 'unknown' | 'unchanged';
+
+const BALANCE_FROM: readonly FileImportBalanceFrom[] = [
+  'statement-close',
+  'imported-rows',
+  'unknown',
+  'unchanged',
+];
 
 export type FileImportDateOrder = 'day-first' | 'month-first';
 
@@ -213,6 +315,13 @@ export function readFileImport(result: unknown): FileImportView | null {
         closingBalance:
           typeof holding.closingBalance === 'string' && holding.closingBalance.length > 0
             ? holding.closingBalance
+            : null,
+        balanceFrom: BALANCE_FROM.find((word) => word === holding.balanceFrom) ?? 'unchanged',
+        rowsBalance:
+          holding.balanceFrom === 'imported-rows' &&
+          typeof holding.rowsBalance === 'string' &&
+          holding.rowsBalance.length > 0
+            ? holding.rowsBalance
             : null,
         isNew: created.has(holdingId),
       };

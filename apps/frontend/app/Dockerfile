@@ -7,7 +7,7 @@
 # ${API_UPSTREAM} (defaults to http://api:3001 — matches the
 # docker-compose.prod.yml service name).
 
-ARG BUN_VERSION=1.3.13
+ARG BUN_VERSION=1.4.2
 ARG NGINX_VERSION=1.27-alpine
 
 # ---------- deps + build ----------
@@ -91,6 +91,10 @@ COPY --from=build /app/apps/frontend/app/dist /usr/share/nginx/html
 # read that format, so leaving it in the web root publishes a config file
 # describing rules this deployment does not get from it (SC-561).
 RUN rm -f /usr/share/nginx/html/_headers
+
+# `_worker.js` and `_routes.json` are the Pages half of SC-1318's missing-asset
+# rule; nginx gets the same rule from its own `/assets/` location.
+RUN rm -f /usr/share/nginx/html/_worker.js /usr/share/nginx/html/_routes.json
 
 # The nginx:alpine official image runs every file under
 # `/etc/nginx/templates/` through `envsubst` at container start (see

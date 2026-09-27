@@ -38,7 +38,9 @@ describe('cloud auth gate (SC-1260)', () => {
 
   test.each([
     ['POST', '/api/auth/sign-in/magic-link', true],
-    ['POST', '/api/auth/sign-in/email-otp', true],
+    // Checks a code and sends nothing; counting it let ~10 IPs lock everyone
+    // out of the global budget (SC-1351).
+    ['POST', '/api/auth/sign-in/email-otp', false],
     ['POST', '/api/auth/email-otp/send-verification-otp', true],
     ['POST', '/api/auth/sign-up/email', true],
     ['GET', '/api/auth/sign-in/magic-link', false],

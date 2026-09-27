@@ -192,7 +192,9 @@ The degraded line also carries a `degraded` array of just the unset
 variable names, which is the cheaper thing to alert on.
 
 The api serves the same record at `/health/deep` under
-`providerCredentials`. An unkeyed provider deliberately does not turn
+`providerCredentials` when `DIAGNOSTICS_TOKEN` (32+ characters) is configured
+and supplied as `Authorization: Bearer <token>`. Public probes expose status
+only. An unkeyed provider deliberately does not turn
 that endpoint red — it is a configuration choice, not an outage.
 
 ### Production
@@ -201,12 +203,16 @@ The repo ships a [`docker-compose.prod.yml`](./docker-compose.prod.yml)
 that pulls pre-built multi-arch images from Docker Hub
 (`scani/api`, `scani/worker`, `scani/data-provider`,
 `scani/frontend-app`, plus the opt-in `scani/migrate` schema runner)
-and wires them up with Postgres + Redis + SeaweedFS. Two-command
-bring-up — migrations are explicit, not auto-applied:
+and wires them up with Postgres + Redis + SeaweedFS. Use the guided installer
+from a dedicated directory to generate application and storage secrets:
 
 ```bash
-cp .env.example .env                                                            # set real values
+bash scripts/self-host.sh
+```
 
+Migrations are explicit, not auto-applied. With the generated configuration:
+
+```bash
 # Apply schema migrations (do this on first install AND on every upgrade)
 docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
 
@@ -220,13 +226,11 @@ standalone `docker run`) and what the app does if you forget the
 migrate step (api's `/readyz` returns 503, worker logs
 `Awaiting schema readiness` in a restart loop).
 
-For a real deployment, set the required env vars in `.env`
-(`BACKEND_URL`, `FRONTEND_URL`, `BETTER_AUTH_SECRET`, `ENCRYPTION_KEY`,
-`JOBS_HMAC_SECRET`, `DATA_PROVIDER_API_KEY`, `SCANI_CLOUD_API_KEY`,
-`LOG_ID_PEPPER`), and put your own TLS-terminating reverse proxy in
-front of the `frontend-app` container (the only one that needs to be
-reachable from the public internet — nginx inside it proxies `/api`
-and `/ws` to `api` over the compose network).
+The installer generates application secrets. Set `BACKEND_URL` and
+`FRONTEND_URL` to your public URLs and use your own TLS-terminating reverse
+proxy in front of `frontend-app`. Its nginx proxies `/api` and `/ws` to the
+API over the compose network. Tier 2 additionally needs your Scani Cloud key;
+its database and S3 storage stay on your infrastructure.
 
 To use managed Postgres / Redis / S3-compatible storage, comment out
 the corresponding services in `docker-compose.prod.yml` and point

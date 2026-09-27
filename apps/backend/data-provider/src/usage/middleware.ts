@@ -129,11 +129,12 @@ export function buildUsageMiddleware({ sink, quotaLimiter, globalCostBreaker }: 
       }
     }
 
-    // Per-key hourly quota. Skip when no limiter is wired (OSS / dev),
-    // when the request is unauthenticated (cookie path takes over),
-    // when it's the OSS shared key (no per-key counter), or when there
-    // is no tenantId attribution. The limiter is keyed by apiKeyId so
-    // a single tenant's keys carry independent budgets.
+    // Hourly quota. Skip when no limiter is wired (OSS / dev), when the
+    // request is unauthenticated (cookie path takes over), when it's the OSS
+    // shared key, or when there is no tenantId attribution. The budget is
+    // the OWNER's (SC-1353): keyed per API key, an owner who minted N keys
+    // got N budgets and could drain the upstream windows shared with
+    // production. A key with no owner keeps its own.
     if (
       quotaLimiter &&
       ctx.auth &&
@@ -141,7 +142,9 @@ export function buildUsageMiddleware({ sink, quotaLimiter, globalCostBreaker }: 
       ctx.auth.tenantId !== 'oss' &&
       ctx.auth.tenantId !== 'dev'
     ) {
-      const budget = await quotaLimiter.tryConsume(ctx.auth.apiKeyId);
+      const budget = await quotaLimiter.tryConsume(
+        ctx.auth.ownerUserId ? `owner:${ctx.auth.ownerUserId}` : ctx.auth.apiKeyId
+      );
       if (!budget.ok) {
         const retryAfterSec = Math.ceil(budget.retryAfterMs / 1000);
         // Annotate so the sink records the rejected event with the

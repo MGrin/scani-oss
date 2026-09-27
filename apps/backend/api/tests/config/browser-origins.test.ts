@@ -4,6 +4,7 @@ import { Elysia } from 'elysia';
 import {
   buildCorsOrigins,
   buildTrustedOrigins,
+  isAllowedWebSocketOrigin,
   LOOPBACK_ORIGIN,
 } from '../../src/config/browser-origins';
 
@@ -153,5 +154,28 @@ describe('CORS responses in development', () => {
 
   test('a lookalike hostname is refused', async () => {
     expect(await allowOriginFor(app, 'http://localhost.evil.example')).toBeNull();
+  });
+});
+
+// SC-1351: the realtime WebSocket authenticated by cookie alone. The cookie is
+// SameSite=Strict, but any page on another *.scani.xyz host is same-site, so the
+// handshake's Origin is the only thing that says the app opened it.
+describe('isAllowedWebSocketOrigin (SC-1351)', () => {
+  test('production accepts the app and refuses everything else', () => {
+    expect(isAllowedWebSocketOrigin(PROD_FRONTEND, PROD_FRONTEND, PROD)).toBe(true);
+    expect(isAllowedWebSocketOrigin('https://evil.example', PROD_FRONTEND, PROD)).toBe(false);
+    expect(isAllowedWebSocketOrigin('https://docs.scani.xyz', PROD_FRONTEND, PROD)).toBe(false);
+    expect(isAllowedWebSocketOrigin('http://localhost:5173', PROD_FRONTEND, PROD)).toBe(false);
+  });
+
+  test('development also accepts loopback', () => {
+    expect(isAllowedWebSocketOrigin('http://127.0.0.1:5173', FRONTEND, DEV)).toBe(true);
+    expect(isAllowedWebSocketOrigin('https://evil.example', FRONTEND, DEV)).toBe(false);
+  });
+
+  // A browser always sends Origin on a WebSocket handshake. Without one the
+  // caller is not a browser, and cannot be carrying a victim's cookie.
+  test('a handshake with no Origin is not a browser and is let through', () => {
+    expect(isAllowedWebSocketOrigin(undefined, PROD_FRONTEND, PROD)).toBe(true);
   });
 });

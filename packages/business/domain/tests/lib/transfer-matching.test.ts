@@ -10,7 +10,13 @@
 
 import { describe, expect, test } from 'bun:test';
 import Decimal from 'decimal.js';
-import { candidatePairClass, type TransferLeg } from '../../src/lib/transfer-matching';
+import {
+  type ArrivalPart,
+  arrivalCombinations,
+  candidatePairClass,
+  reviewPairClass,
+  type TransferLeg,
+} from '../../src/lib/transfer-matching';
 
 const T0 = new Date('2026-03-14T08:36:35.000Z');
 
@@ -98,10 +104,6 @@ describe('candidatePairClass', () => {
   });
 
   test('refuses one holding on the SAME token row, which is the shape that got made', () => {
-    // The groups of SC-347 are all this: one holding, one token row, two
-    // unrelated events. `same_token` returned before the holding was ever
-    // looked at, so the condition this file already tested applied to bridges
-    // alone — and every same-holding group in production is a same_token pair.
     expect(candidatePairClass(leg(), leg({ transactionId: 'tx-2' }))).toBeNull();
   });
 });
@@ -156,5 +158,71 @@ describe('candidatePairClass — the entity boundary', () => {
     // every portfolio until they draw one. If this went red the feature would
     // be silently unpairing every existing user's transfers.
     expect(candidatePairClass(leg(), unassigned)).toBe('same_token');
+  });
+});
+
+/**
+ * The same boundary, for a pair a person is choosing (SC-1364). Only the
+ * unattended predicate keeps it; the review queue's did too, and offered a
+ * company-to-personal transfer nothing but the answer that writes a second
+ * arrival.
+ */
+describe('reviewPairClass — no entity boundary, every other rule', () => {
+  test('pairs across the boundary where the unattended predicate refuses', () => {
+    const out = leg({ entityId: 'entity-company' });
+    const inflow = leg({ transactionId: 'tx-2', holdingId: 'holding-b', entityId: null });
+
+    expect(reviewPairClass(out, inflow)).toBe('same_token');
+    expect(candidatePairClass(out, inflow)).toBeNull();
+  });
+
+  test('still refuses one holding, and a bridge arriving before it left', () => {
+    const out = leg({ entityId: 'entity-company' });
+
+    expect(reviewPairClass(out, leg({ transactionId: 'tx-2', entityId: null }))).toBeNull();
+    const early = arrival({ entityId: null, occurredAt: new Date(T0.getTime() - 60_000) });
+    expect(reviewPairClass(out, early)).toBeNull();
+    // Control: the same bridge arriving after it left pairs.
+    expect(reviewPairClass(out, arrival({ entityId: null }))).toBe('bridged_asset');
+  });
+});
+
+describe('arrivalCombinations — money that landed in parts (SC-1365)', () => {
+  const out = { quantityAbs: new Decimal('4000'), occurredAt: T0 };
+  const part = (id: string, qty: string, minutes: number, holdingId = 'revolut'): ArrivalPart => ({
+    transactionId: id,
+    holdingId,
+    quantityAbs: new Decimal(qty),
+    occurredAt: new Date(T0.getTime() + minutes * 60_000),
+  });
+  const ids = (found: ArrivalPart[][]) => found.map((c) => c.map((p) => p.transactionId));
+
+  test('finds 3,000 + 1,000 on one holding', () => {
+    expect(ids(arrivalCombinations(out, [part('a', '3000', 11), part('b', '1000', 800)]))).toEqual([
+      ['a', 'b'],
+    ]);
+  });
+
+  test('does not combine parts on two different holdings', () => {
+    const found = arrivalCombinations(out, [part('a', '3000', 11), part('b', '1000', 20, 'wise')]);
+    expect(found).toEqual([]);
+  });
+
+  test('ignores a part that landed before the withdrawal, and one that is the whole amount', () => {
+    expect(arrivalCombinations(out, [part('a', '3000', -5), part('b', '1000', 20)])).toEqual([]);
+    expect(
+      arrivalCombinations(out, [part('a', '4000', 5), part('b', '1000', 20), part('c', '3000', 30)])
+    ).toHaveLength(1);
+  });
+
+  test('ranks the closest total first and caps the parts at three', () => {
+    const found = arrivalCombinations(out, [
+      part('a', '2000', 1),
+      part('b', '1000', 2),
+      part('c', '1000', 3),
+      part('d', '1900', 4),
+    ]);
+    expect(ids(found)[0]).toEqual(['a', 'b', 'c']);
+    expect(found.every((c) => c.length <= 3)).toBe(true);
   });
 });

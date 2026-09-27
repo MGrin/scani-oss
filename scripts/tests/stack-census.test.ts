@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { afterAll, describe, expect, test } from 'bun:test';
+import { mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   type CensusContainer,
@@ -16,6 +17,7 @@ import {
   parseHumanSize,
   parseVolumeList,
   parseVolumeSizes,
+  pathSuffix,
   type StackState,
 } from '../lib/stack-census';
 import { composeProjectName } from '../lib/worktree';
@@ -365,5 +367,47 @@ describe('this is a reporter and stays one', () => {
     // Without this the test above passes on a regex that stopped matching.
     const reaper = `spawnSync('docker', ['compose', '-p', project, 'down', '-v']);`;
     expect(reaper).toMatch(/['"`]down['"`]/);
+  });
+});
+
+/**
+ * SC-973. A working_dir that could not be READ rendered ` — gone`, the same
+ * three characters as one that is absent. A symlink loop is the fixture for
+ * the third state: `stat` fails with ELOOP whoever runs it, root included,
+ * where a chmod-000 directory would read fine as root.
+ */
+describe('a path that could not be looked at is not called gone', () => {
+  const scratch = mkdtempSync(path.join(tmpdir(), 'census-sc973-'));
+  const LOOP = path.join(scratch, 'a');
+  symlinkSync(path.join(scratch, 'b'), LOOP);
+  symlinkSync(LOOP, path.join(scratch, 'b'));
+  afterAll(() => rmSync(scratch, { recursive: true, force: true }));
+
+  test('CONTROL: a directory that is there carries no suffix', () => {
+    expect(pathSuffix(LIVE_DIR)).toBe('');
+  });
+
+  test('CONTROL: a directory that is absent is gone', () => {
+    expect(pathSuffix(GONE_DIR)).toBe(' — gone');
+  });
+
+  test('an unreadable path says it could not look, naming the errno', () => {
+    expect(pathSuffix(LOOP)).toBe(' — could not look (ELOOP), which is not a claim it is gone');
+  });
+
+  test('the report renders it that way under its project', () => {
+    const census: MachineCensus = {
+      blind: null,
+      checkouts: 1,
+      enumeration: { kind: 'enumerated', projects: new Set([LIVE_PROJECT]) },
+      projects: censusProjects({
+        containers: [container({ project: GONE_PROJECT, workingDir: LOOP })],
+        volumes: [],
+        liveProjects: new Set([LIVE_PROJECT]),
+      }),
+    };
+    const text = formatCensus(census);
+    expect(text).toContain(`${LOOP} — could not look (ELOOP)`);
+    expect(text).not.toContain(`${LOOP} — gone`);
   });
 });

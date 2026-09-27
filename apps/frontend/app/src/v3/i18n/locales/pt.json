@@ -48,7 +48,7 @@
       },
       "fileImport": {
         "either": {
-          "description": "Uma captura de ecrã de saldos, um extrato bancário ou uma exportação de uma corretora. Lemos as posições a partir dele e mostramos-lhe o que encontrámos antes de guardar seja o que for.",
+          "description": "Uma captura de ecrã de saldos, um extrato bancário ou uma exportação de uma corretora. Uma captura é-lhe mostrada antes de guardar seja o que for; um ficheiro de extrato é importado logo.",
           "title": "Carregar um ficheiro"
         },
         "screenshot": {
@@ -56,7 +56,7 @@
           "title": "Carregar uma captura de ecrã"
         },
         "statement": {
-          "description": "Uma exportação CSV, TSV, OFX ou QIF de um banco ou de uma corretora. Lemos as posições a partir dela e mostramos-lhe o que encontrámos antes de guardar seja o que for.",
+          "description": "Uma exportação CSV, TSV, OFX ou QIF de um banco ou de uma corretora. Importamos logo as posições e os movimentos e depois mostramos-lhe o que foi adicionado.",
           "title": "Carregar um ficheiro de extrato"
         },
         "whereItBelongs": "A que pertence"
@@ -1033,8 +1033,17 @@
         "pnlOverPeriod": "Lucros e perdas · {{period}}",
         "realized": "Realizados",
         "retry": "Tentar outra vez",
+        "hideFigure": "Ocultar valor",
+        "showFigure": "Mostrar valor",
+        "figureHidden": "Valor oculto",
         "unrealized": "Não realizados",
-        "vsPeriod": "vs. {{period}}"
+        "vsPeriod": "vs. {{period}}",
+        "returnsPending": "A calcular como te saíste",
+        "returnsChartPending": "A calcular como te saíste face ao Bitcoin, ao S&P 500 e aos preços dos EUA",
+        "returnsNoChart": "Ainda não há dias medidos suficientes para desenhar a comparação.",
+        "returnsOverPeriod": "Rentabilidade · {{period}}",
+        "returnsSince": "Rentabilidade · desde {{date}}",
+        "returnsNoRate": "A rentabilidade ainda não foi calculada para este período"
       },
       "historyExport": {
         "action": "Exportar o histórico",
@@ -1061,7 +1070,8 @@
       "metric": {
         "netWorth": "Património líquido",
         "pnl": "L&P",
-        "pnlFull": "Lucros e perdas"
+        "pnlFull": "Lucros e perdas",
+        "returns": "Retorno"
       },
       "period": {
         "label180d": "6M",
@@ -1086,9 +1096,9 @@
         "staleQuotes_many": "{{count}} cotações desatualizadas",
         "staleQuotes_one": "{{count}} cotação desatualizada",
         "staleQuotes_other": "{{count}} cotações desatualizadas",
-        "unreviewedTransfers_many": "Os L&P realizados excluem {{count}} transferências por confirmar",
-        "unreviewedTransfers_one": "Os L&P realizados excluem {{count}} transferência por confirmar",
-        "unreviewedTransfers_other": "Os L&P realizados excluem {{count}} transferências por confirmar",
+        "unreviewedTransfers_many": "Os L&P realizados excluem {{count}} pagamentos de saída por classificar",
+        "unreviewedTransfers_one": "Os L&P realizados excluem {{count}} pagamento de saída por classificar",
+        "unreviewedTransfers_other": "Os L&P realizados excluem {{count}} pagamentos de saída por classificar",
         "withUnpriceable_many": "{{fraction}} · {{count}} sem cotação possível",
         "withUnpriceable_one": "{{fraction}} · {{count}} sem cotação possível",
         "withUnpriceable_other": "{{fraction}} · {{count}} sem cotação possível"
@@ -1149,7 +1159,35 @@
         "perYear": "<value/> ao ano",
         "perYearUnit": "ao ano",
         "since": "Desde {{date}}.",
-        "partial": "Alguns dias não puderam ser totalmente avaliados, por isso estes valores podem não ser exatos."
+        "partial": "Alguns dias não puderam ser totalmente avaliados, por isso estes valores podem não ser exatos.",
+        "headline": {
+          "up": "<amount/> a mais desde {{date}}",
+          "down": "<amount/> a menos desde {{date}}",
+          "flat": "Sem alteração desde {{date}}"
+        },
+        "attribution": {
+          "label": "De onde veio",
+          "contributed": "Adicionou",
+          "withdrew": "Retirou",
+          "market": "Mercado",
+          "currency": "Moeda",
+          "combined": "Mercado e moeda",
+          "unvalued_one": "Não foi possível valorizar {{count}} movimento, pelo que esta divisão pode estar errada.",
+          "unvalued_many": "Não foi possível valorizar {{count}} movimentos, pelo que esta divisão pode estar errada.",
+          "unvalued_other": "Não foi possível valorizar {{count}} movimentos, pelo que esta divisão pode estar errada."
+        },
+        "chart": {
+          "you": "Você",
+          "label": "A sua carteira face ao Bitcoin, ao S&P 500 e aos preços nos EUA, ao longo do período",
+          "unavailable": "Não foi possível carregar o gráfico comparativo. Os valores acima não são afetados.",
+          "truncated": "O gráfico amostra o período para ser rápido; os valores acima usam todos os dias."
+        },
+        "gaps": {
+          "label": "À frente ou atrás",
+          "caption": "No que os mesmos depósitos e levantamentos teriam dado em cada um. A percentagem é o que rendeu.",
+          "vs": "face a {{name}}"
+        },
+        "details": "As taxas por trás disto"
       }
     },
     "jobs": {
@@ -1257,6 +1295,9 @@
         "row": {
           "new": "Nova",
           "noClosingBalance": "Sem saldo de fecho",
+          "balanceUnknown": "Saldo desconhecido",
+          "fromRows": "Com base nestas linhas. Defina o saldo real se já havia dinheiro antes",
+          "setBalance": "Definir o saldo",
           "statementClose": "Fecho do extrato",
           "transactions_many": "{{count}} transações",
           "transactions_one": "{{count}} transação",
@@ -1303,7 +1344,39 @@
         "walkUnconfirmed": "{{provider}}: o paginador não confirmou ter chegado ao fim do histórico desta conta",
         "ibkrStatementWindow": "ibkr: este extrato Flex cobre de {{from}} em diante, portanto nada anterior chegou a ser buscado. O intervalo é uma configuração da sua Flex Query salva e a Scani não o escolhe — para alcançar datas mais antigas, altere o intervalo de datas dessa consulta (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo.",
         "ibkrStatementWindowPeriod": "ibkr: este extrato Flex cobre de {{from}} em diante (period «{{period}}»), portanto nada anterior chegou a ser buscado. O intervalo é uma configuração da sua Flex Query salva e a Scani não o escolhe — para alcançar datas mais antigas, altere o intervalo de datas dessa consulta (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo.",
-        "ibkrStatementWindowUnknown": "ibkr: este extrato Flex não diz qual período cobre, portanto não pode ser lido como o histórico completo da conta. O intervalo é uma configuração da sua Flex Query salva e a Scani não o escolhe — para alcançar datas mais antigas, altere o intervalo de datas dessa consulta (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo."
+        "ibkrStatementWindowUnknown": "ibkr: este extrato Flex não diz qual período cobre, portanto não pode ser lido como o histórico completo da conta. O intervalo é uma configuração da sua Flex Query salva e a Scani não o escolhe — para alcançar datas mais antigas, altere o intervalo de datas dessa consulta (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo.",
+        "pageCapRetracted": "{{provider}}: {{walks}} — o restante do histórico desta conta nunca foi buscado",
+        "pageCapMissingTxIds": "{{provider}}: {{walks}} — alguns depósitos e saques desta execução não têm ID de transação on-chain",
+        "pageCapAddressHistory": "o histórico do endereço parou no limite de {{pages}} páginas após {{rows}} linhas",
+        "pageCapUserTransactionsLedger": "o registro user-transactions parou no limite de {{pages}} páginas após {{rows}} linhas",
+        "pageCapCryptoTransactionsLookup": "a consulta crypto-transactions parou no limite de {{pages}} páginas após {{rows}} linhas",
+        "pageCapAccountList": "a lista de contas parou no limite de {{pages}} páginas após {{rows}} linhas",
+        "pageCapAccountTransactions": "as transações da conta {{account}} pararam no limite de {{pages}} páginas após {{rows}} linhas",
+        "pageCapSymbolTrades": "as negociações de {{symbol}} pararam no limite de {{pages}} páginas após {{rows}} linhas",
+        "pageCapTransfers": "as transferências pararam no limite de {{pages}} páginas após {{rows}} linhas",
+        "pageCapCurrencyDeposits": "os depósitos de {{currency}} pararam no limite de {{pages}} páginas após {{rows}} linhas",
+        "pageCapCurrencyWithdrawals": "os saques de {{currency}} pararam no limite de {{pages}} páginas após {{rows}} linhas",
+        "pageCapFeed": "o feed {{path}} parou no limite de {{pages}} páginas após {{rows}} linhas",
+        "pageCapTrxTransfers": "o histórico de transferências de TRX parou no limite de {{pages}} páginas após {{rows}} linhas",
+        "pageCapTrc20Transfers": "o histórico de transferências TRC-20 parou no limite de {{pages}} páginas após {{rows}} linhas",
+        "pageCapFurtherWalks_one": "mais {{count}} percurso fez o mesmo",
+        "pageCapFurtherWalks_many": "mais {{count}} percursos fizeram o mesmo",
+        "pageCapFurtherWalks_other": "mais {{count}} percursos fizeram o mesmo",
+        "ibkrMissingSections_one": "ibkr: este extrato Flex não trouxe a seção {{sections}}, portanto {{consequences}}. Se você teve alguma, adicione-a à sua Flex Query (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo.",
+        "ibkrMissingSections_many": "ibkr: este extrato Flex não trouxe as seções {{sections}}, portanto {{consequences}}. Se você teve alguma, adicione-as à sua Flex Query (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo.",
+        "ibkrMissingSections_other": "ibkr: este extrato Flex não trouxe as seções {{sections}}, portanto {{consequences}}. Se você teve alguma, adicione-as à sua Flex Query (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo.",
+        "ibkrMissingTrades": "nenhuma compra ou venda pôde ser importada",
+        "ibkrMissingCashTransactions": "nenhum dividendo, juro, depósito, saque ou taxa pôde ser importado",
+        "ibkrUnmappedCashTypes_one": "ibkr: {{count}} transação de caixa deste extrato tinha um tipo que a Scani não reconhece — {{types}} — então não foi importada. Isto cabe a nós corrigir, não a você: por favor, reporte.",
+        "ibkrUnmappedCashTypes_many": "ibkr: {{count}} transações de caixa deste extrato tinham um tipo que a Scani não reconhece — {{types}} — então não foram importadas. Isto cabe a nós corrigir, não a você: por favor, reporte.",
+        "ibkrUnmappedCashTypes_other": "ibkr: {{count}} transações de caixa deste extrato tinham um tipo que a Scani não reconhece — {{types}} — então não foram importadas. Isto cabe a nós corrigir, não a você: por favor, reporte.",
+        "ibkrFurtherTypes_one": "mais {{count}} tipo",
+        "ibkrFurtherTypes_many": "mais {{count}} tipos",
+        "ibkrFurtherTypes_other": "mais {{count}} tipos",
+        "ibkrIncompleteCashRows_one": "ibkr: {{count}} transação de caixa deste extrato chegou com um campo obrigatório em branco — {{blanks}} — então não foi importada. Se faltam essas colunas na sua Flex Query, adicione-as (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo. Se as colunas estão lá, os dados chegaram em branco para nós e isto cabe a nós: por favor, reporte.",
+        "ibkrIncompleteCashRows_many": "ibkr: {{count}} transações de caixa deste extrato chegaram com um campo obrigatório em branco — {{blanks}} — então não foram importadas. Se faltam essas colunas na sua Flex Query, adicione-as (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo. Se as colunas estão lá, os dados chegaram em branco para nós e isto cabe a nós: por favor, reporte.",
+        "ibkrIncompleteCashRows_other": "ibkr: {{count}} transações de caixa deste extrato chegaram com um campo obrigatório em branco — {{blanks}} — então não foram importadas. Se faltam essas colunas na sua Flex Query, adicione-as (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo. Se as colunas estão lá, os dados chegaram em branco para nós e isto cabe a nós: por favor, reporte.",
+        "ibkrBlankFields": "{{rows}} sem {{fields}}"
       },
       "kind": {
         "deleteAllData": "Eliminar todos os dados da conta",
@@ -1325,6 +1398,7 @@
       },
       "manual": {
         "addMore": "Adicionar mais",
+        "seeOnHome": "Ver no Início",
         "priced": "Com preço",
         "row": {
           "new": "Nova",
@@ -2001,6 +2075,9 @@
         "overdueTotal_many": "Em atraso, {{count}} despesas",
         "overdueTotal_one": "Em atraso, {{count}} despesa",
         "overdueTotal_other": "Em atraso, {{count}} despesas",
+        "dayTotalEstimated_one": "Aproximadamente, com {{count}} despesa estimada:",
+        "dayTotalEstimated_many": "Aproximadamente, com {{count}} despesas estimadas:",
+        "dayTotalEstimated_other": "Aproximadamente, com {{count}} despesas estimadas:",
         "row": "{{vendor}}, vence-se a {{date}}",
         "seeRecurring": "Ver os pagamentos recorrentes"
       },
@@ -2106,7 +2183,7 @@
       "answer": {
         "unattributedLabel": "Resposta não registada"
       },
-      "answerTransfers": "Responder às transferências pendentes",
+      "answerTransfers": "Responder aos pagamentos de saída pendentes",
       "basis": {
         "partialLabel": "Custo de aquisição parcial",
         "partialNote": "Baseado num histórico que sabemos estar incompleto, ou num preço fora da nossa janela de atualidade.",
@@ -2229,7 +2306,7 @@
         "ownWalletNotice": "Isto foi para uma carteira que adicionou, por isso o dinheiro continua a ser seu. Emparelhe com o depósito correspondente, ou registe para onde se moveu — escolher que saiu do seu portefólio regista-o como uma venda.",
         "possibleMatches": "Correspondências possíveis",
         "toast": {
-          "gone": "Essa transferência já não está à espera",
+          "gone": "Esse pagamento de saída já não está à espera",
           "internal": "Registado — o depósito está agora do outro lado",
           "leftControl": "Registado como uma alienação",
           "paired": "Ligado — o custo de aquisição vai com ele",
@@ -2240,7 +2317,7 @@
         },
         "whatHappened": "O que aconteceu",
         "withdrawnNotice": "O Scani retirou uma resposta anterior sobre esta transferência. Foi dada a respeito de um emparelhamento que entretanto mostrámos não ser sequer uma transferência, por isso a pergunta voltou — e pode não haver aqui nenhum depósito para apontar.",
-        "withdrawnRuleNotice": "Retirou a resposta que a sua regra deu a esta transferência, por isso ela voltou aqui para lhe responder você. A regra não voltará a respondê-la."
+        "withdrawnRuleNotice": "Retirou a resposta que a sua regra deu a este pagamento de saída, por isso ele voltou aqui para lhe responder você. A regra não voltará a respondê-lo."
       },
       "destinationPicker": {
         "legend": "Para onde foi este dinheiro",
@@ -2284,13 +2361,13 @@
         "needsDateOrder_other": "{{count}} transações — precisam da ordem das datas",
         "nothingFound": "não foi encontrado nada",
         "symbolsOverflow": "{{symbols}} +{{hidden}}",
-        "transfersToConfirm": "Transferências por confirmar",
+        "transfersToConfirm": "Pagamentos de saída por classificar",
         "unexplainedBalanceChanges_many": "{{count}} variações de saldo que não conseguimos explicar",
         "unexplainedBalanceChanges_one": "{{count}} variação de saldo que não conseguimos explicar",
         "unexplainedBalanceChanges_other": "{{count}} variações de saldo que não conseguimos explicar",
-        "unpairedTransfers_many": "{{count}} transferências de saída sem depósito correspondente",
-        "unpairedTransfers_one": "{{count}} transferência de saída sem depósito correspondente",
-        "unpairedTransfers_other": "{{count}} transferências de saída sem depósito correspondente"
+        "unpairedTransfers_many": "{{count}} pagamentos de saída por classificar",
+        "unpairedTransfers_one": "{{count}} pagamento de saída por classificar",
+        "unpairedTransfers_other": "{{count}} pagamentos de saída por classificar"
       },
       "kind": {
         "transferOut": "Transferência de saída",
@@ -2316,7 +2393,7 @@
         "answered": "Respondidas",
         "balancesTitle": "Variações de saldo por explicar",
         "title": "Revisão",
-        "transfersTitle": "Transferências por confirmar"
+        "transfersTitle": "Pagamentos de saída por classificar"
       },
       "queues": {
         "clear": "Nada pendente"
@@ -2325,39 +2402,39 @@
         "alreadyRuled": "Já tem uma regra para este destino",
         "commit": "Criar esta regra",
         "consequence": {
-          "askMe": "Todas as transferências para {{key}}, seja qual for o montante, ficam nesta fila e levam a sua nota. Nada é respondido e nenhum ganho é apurado — continua a decidir cada uma.",
-          "markFuture": "Neste momento não está nada à espera para este destino, por isso hoje não é respondido nada. Todas as transferências posteriores para ele são respondidas como tendo saído do seu portefólio, sem serem abertas, e apuram um ganho.",
+          "askMe": "Todos os pagamentos de saída para {{key}}, seja qual for o montante, ficam nesta fila e levam a sua nota. Nada é respondido e nenhum ganho é apurado — continua a decidir cada um.",
+          "markFuture": "Neste momento não está nada à espera para este destino, por isso hoje não é respondido nada. Todos os pagamentos de saída posteriores para ele são respondidos como tendo saído do seu portefólio, sem serem abertos, e apuram um ganho.",
           "markUnpricedTail_many": "{{count}} delas não têm preço no seu dia e não apuram nada.",
           "markUnpricedTail_one": "{{count}} delas não tem preço no seu dia e não apura nada.",
           "markUnpricedTail_other": "{{count}} delas não têm preço no seu dia e não apuram nada.",
-          "markUnpriced_many": "{{count}} transferências para este destino são respondidas como tendo saído do seu portefólio. Nenhuma delas tem preço no seu dia, por isso hoje não é apurado nada. Todas as transferências posteriores para ele são respondidas da mesma forma, sem serem abertas.",
-          "markUnpriced_one": "{{count}} transferência para este destino é respondida como tendo saído do seu portefólio. Nenhuma delas tem preço no seu dia, por isso hoje não é apurado nada. Todas as transferências posteriores para ele são respondidas da mesma forma, sem serem abertas.",
-          "markUnpriced_other": "{{count}} transferências para este destino são respondidas como tendo saído do seu portefólio. Nenhuma delas tem preço no seu dia, por isso hoje não é apurado nada. Todas as transferências posteriores para ele são respondidas da mesma forma, sem serem abertas.",
-          "mark_many": "Responde a {{count}} transferências para este destino como tendo saído do seu portefólio, apurando {{proceeds}} de produto. Todas as transferências posteriores para ele são respondidas da mesma forma, sem serem abertas. Cada uma continua a poder ser anulada por si só, e retirar uma faz a regra deixar de cobrir essa transferência para sempre.",
-          "mark_one": "Responde a {{count}} transferência para este destino como tendo saído do seu portefólio, apurando {{proceeds}} de produto. Todas as transferências posteriores para ele são respondidas da mesma forma, sem serem abertas. Cada uma continua a poder ser anulada por si só, e retirar uma faz a regra deixar de cobrir essa transferência para sempre.",
-          "mark_other": "Responde a {{count}} transferências para este destino como tendo saído do seu portefólio, apurando {{proceeds}} de produto. Todas as transferências posteriores para ele são respondidas da mesma forma, sem serem abertas. Cada uma continua a poder ser anulada por si só, e retirar uma faz a regra deixar de cobrir essa transferência para sempre.",
-          "notADisposal": "Todas as transferências para {{key}}, seja qual for o montante, saem desta fila e passam a estar listadas em Regras de destino. Não lhes é escrito nada: uma transferência sem resposta não apura nenhum ganho, e retirar a regra traz todas elas diretamente de volta para aqui."
+          "markUnpriced_many": "{{count}} pagamentos de saída para este destino são respondidos como tendo saído do seu portefólio. Nenhum deles tem preço no seu dia, por isso hoje não é apurado nada. Todos os pagamentos de saída posteriores para ele são respondidos da mesma forma, sem serem abertos.",
+          "markUnpriced_one": "{{count}} pagamento de saída para este destino é respondido como tendo saído do seu portefólio. Nenhum deles tem preço no seu dia, por isso hoje não é apurado nada. Todos os pagamentos de saída posteriores para ele são respondidos da mesma forma, sem serem abertos.",
+          "markUnpriced_other": "{{count}} pagamentos de saída para este destino são respondidos como tendo saído do seu portefólio. Nenhum deles tem preço no seu dia, por isso hoje não é apurado nada. Todos os pagamentos de saída posteriores para ele são respondidos da mesma forma, sem serem abertos.",
+          "mark_many": "Responde a {{count}} pagamentos de saída para este destino como tendo saído do seu portefólio, apurando {{proceeds}} de produto. Todos os pagamentos de saída posteriores para ele são respondidos da mesma forma, sem serem abertos. Cada um continua a poder ser anulado por si só, e retirar um faz a regra deixar de cobrir esse pagamento de saída para sempre.",
+          "mark_one": "Responde a {{count}} pagamento de saída para este destino como tendo saído do seu portefólio, apurando {{proceeds}} de produto. Todos os pagamentos de saída posteriores para ele são respondidos da mesma forma, sem serem abertos. Cada um continua a poder ser anulado por si só, e retirar um faz a regra deixar de cobrir esse pagamento de saída para sempre.",
+          "mark_other": "Responde a {{count}} pagamentos de saída para este destino como tendo saído do seu portefólio, apurando {{proceeds}} de produto. Todos os pagamentos de saída posteriores para ele são respondidos da mesma forma, sem serem abertos. Cada um continua a poder ser anulado por si só, e retirar um faz a regra deixar de cobrir esse pagamento de saída para sempre.",
+          "notADisposal": "Todos os pagamentos de saída para {{key}}, seja qual for o montante, saem desta fila e passam a estar listados em Regras de destino. Não lhes é escrito nada: um pagamento de saída sem resposta não apura nenhum ganho, e retirar a regra traz todos eles diretamente de volta para aqui."
         },
         "empty": {
-          "body": "Abra uma transferência na fila e escreva para onde foi. Todas as transferências posteriores para o mesmo destino levarão a sua nota, seja qual for o montante — e os destinos que marcar são respondidos por si.",
+          "body": "Abra um pagamento de saída na fila e escreva para onde foi. Todos os pagamentos posteriores para o mesmo destino levarão a sua nota, seja qual for o montante — e os destinos que marcar são respondidos por si.",
           "title": "Ainda não há regras de destino"
         },
         "field": {
-          "counterparty": "Esta transferência foi para",
+          "counterparty": "Este pagamento foi para",
           "key": "A regra vai corresponder a",
-          "keyHint": "O montante fica de fora de propósito, para que a próxima transferência para o mesmo destino também corresponda.",
+          "keyHint": "O montante fica de fora de propósito, para que o próximo pagamento para o mesmo destino também corresponda.",
           "note": "O que é este destino?",
           "notePlaceholder": "O meu endereço de depósito da Bybit",
           "verdict": "O que a regra deve fazer"
         },
         "hidden": {
           "body": "Nenhuma destas foi respondida. Estão à espera, fora da fila, e retirar a regra traz-nas para dentro.",
-          "title": "Transferências que as suas regras estão a reter"
+          "title": "Pagamentos de saída que as suas regras estão a reter"
         },
         "manage": "Ver as suas regras de destino",
         "notice": {
           "label": "A sua nota sobre este destino",
-          "markExempt": "Marcou este destino como uma alienação, e retirou essa resposta nesta transferência. Ela não voltará a ser respondida automaticamente."
+          "markExempt": "Marcou este destino como uma alienação, e retirou essa resposta neste pagamento de saída. Ele não voltará a ser respondido automaticamente."
         },
         "refusal": {
           "ownWallet": "{{key}} é uma das suas próprias carteiras. Dinheiro que se move para ela não saiu do seu portefólio, por isso não pode ser marcado como uma alienação."
@@ -2365,27 +2442,27 @@
         "revoke": "Retirar esta regra",
         "revokeCommit": "Retirar esta regra",
         "revokeConsequence": {
-          "askMe": "As transferências para este destino deixam de levar a sua nota. Nunca foram respondidas pela regra, por isso não muda mais nada.",
-          "markKeep_many": "A regra deixa de responder a novas transferências para este destino. As {{count}} transferências que já respondeu continuam respondidas e continuam a apurar os seus ganhos — assinale a caixa acima para as retirar também.",
-          "markKeep_one": "A regra deixa de responder a novas transferências para este destino. A {{count}} transferência que já respondeu continua respondida e continua a apurar o seu ganho — assinale a caixa acima para a retirar também.",
-          "markKeep_other": "A regra deixa de responder a novas transferências para este destino. As {{count}} transferências que já respondeu continuam respondidas e continuam a apurar os seus ganhos — assinale a caixa acima para as retirar também.",
-          "markWithdraw_many": "A regra deixa de responder a novas transferências, e as {{count}} transferências que respondeu voltam à fila sem resposta. Os seus ganhos deixam de ser apurados.",
-          "markWithdraw_one": "A regra deixa de responder a novas transferências, e a {{count}} transferência que respondeu volta à fila sem resposta. O seu ganho deixa de ser apurado.",
-          "markWithdraw_other": "A regra deixa de responder a novas transferências, e as {{count}} transferências que respondeu voltam à fila sem resposta. Os seus ganhos deixam de ser apurados.",
-          "notADisposal_many": "{{count}} transferências voltam para a fila. Não lhes foi escrito nada, por isso não há nada a anular.",
-          "notADisposal_one": "{{count}} transferência volta para a fila. Não lhe foi escrito nada, por isso não há nada a anular.",
-          "notADisposal_other": "{{count}} transferências voltam para a fila. Não lhes foi escrito nada, por isso não há nada a anular."
+          "askMe": "Os pagamentos de saída para este destino deixam de levar a sua nota. Nunca foram respondidos pela regra, por isso não muda mais nada.",
+          "markKeep_many": "A regra deixa de responder a novos pagamentos de saída para este destino. Os {{count}} pagamentos de saída que já respondeu continuam respondidos e continuam a apurar os seus ganhos — assinale a caixa acima para os retirar também.",
+          "markKeep_one": "A regra deixa de responder a novos pagamentos de saída para este destino. O {{count}} pagamento de saída que já respondeu continua respondido e continua a apurar o seu ganho — assinale a caixa acima para o retirar também.",
+          "markKeep_other": "A regra deixa de responder a novos pagamentos de saída para este destino. Os {{count}} pagamentos de saída que já respondeu continuam respondidos e continuam a apurar os seus ganhos — assinale a caixa acima para os retirar também.",
+          "markWithdraw_many": "A regra deixa de responder a novos pagamentos de saída, e os {{count}} pagamentos de saída que respondeu voltam à fila sem resposta. Os seus ganhos deixam de ser apurados.",
+          "markWithdraw_one": "A regra deixa de responder a novos pagamentos de saída, e o {{count}} pagamento de saída que respondeu volta à fila sem resposta. O seu ganho deixa de ser apurado.",
+          "markWithdraw_other": "A regra deixa de responder a novos pagamentos de saída, e os {{count}} pagamentos de saída que respondeu voltam à fila sem resposta. Os seus ganhos deixam de ser apurados.",
+          "notADisposal_many": "{{count}} pagamentos de saída voltam para a fila. Não lhes foi escrito nada, por isso não há nada a anular.",
+          "notADisposal_one": "{{count}} pagamento de saída volta para a fila. Não lhe foi escrito nada, por isso não há nada a anular.",
+          "notADisposal_other": "{{count}} pagamentos de saída voltam para a fila. Não lhes foi escrito nada, por isso não há nada a anular."
         },
         "row": {
-          "answering_many": "Respondeu a {{count}} transferências como alienações",
-          "answering_one": "Respondeu a {{count}} transferência como alienação",
-          "answering_other": "Respondeu a {{count}} transferências como alienações",
-          "hiding_many": "Mantém {{count}} transferências fora da fila",
-          "hiding_one": "Mantém {{count}} transferência fora da fila",
-          "hiding_other": "Mantém {{count}} transferências fora da fila",
-          "labelling_many": "Dá nome a {{count}} transferências na fila",
-          "labelling_one": "Dá nome a {{count}} transferência na fila",
-          "labelling_other": "Dá nome a {{count}} transferências na fila"
+          "answering_many": "Respondeu a {{count}} pagamentos de saída como alienações",
+          "answering_one": "Respondeu a {{count}} pagamento de saída como alienação",
+          "answering_other": "Respondeu a {{count}} pagamentos de saída como alienações",
+          "hiding_many": "Mantém {{count}} pagamentos de saída fora da fila",
+          "hiding_one": "Mantém {{count}} pagamento de saída fora da fila",
+          "hiding_other": "Mantém {{count}} pagamentos de saída fora da fila",
+          "labelling_many": "Dá nome a {{count}} pagamentos de saída na fila",
+          "labelling_one": "Dá nome a {{count}} pagamento de saída na fila",
+          "labelling_other": "Dá nome a {{count}} pagamentos de saída na fila"
         },
         "title": "Regras de destino",
         "toast": {
@@ -2448,14 +2525,14 @@
             "untracked_other": "Registar {{count}} como continuando a ser minhas"
           },
           "consequence": {
-            "leftControlUnpriced_many": "Conta {{count}} transferências como alienações. O Scani não tem preço para nenhuma delas no seu dia, por isso não é apurado nada.",
-            "leftControlUnpriced_one": "Conta {{count}} transferência como uma alienação. O Scani não tem preço para ela nesse dia, por isso não é apurado nada.",
-            "leftControlUnpriced_other": "Conta {{count}} transferências como alienações. O Scani não tem preço para nenhuma delas no seu dia, por isso não é apurado nada.",
-            "leftControl_many": "Conta {{count}} transferências como alienações — cerca de {{amount}} de produto face ao que pagou.",
-            "leftControl_one": "Conta {{count}} transferência como uma alienação — cerca de {{amount}} de produto face ao que pagou.",
-            "leftControl_other": "Conta {{count}} transferências como alienações — cerca de {{amount}} de produto face ao que pagou.",
+            "leftControlUnpriced_many": "Conta {{count}} pagamentos de saída como alienações. O Scani não tem preço para nenhum deles no seu dia, por isso não é apurado nada.",
+            "leftControlUnpriced_one": "Conta {{count}} pagamento de saída como uma alienação. O Scani não tem preço para ele nesse dia, por isso não é apurado nada.",
+            "leftControlUnpriced_other": "Conta {{count}} pagamentos de saída como alienações. O Scani não tem preço para nenhum deles no seu dia, por isso não é apurado nada.",
+            "leftControl_many": "Conta {{count}} pagamentos de saída como alienações — cerca de {{amount}} de produto face ao que pagou.",
+            "leftControl_one": "Conta {{count}} pagamento de saída como uma alienação — cerca de {{amount}} de produto face ao que pagou.",
+            "leftControl_other": "Conta {{count}} pagamentos de saída como alienações — cerca de {{amount}} de produto face ao que pagou.",
             "loading": "A apurar o que isto faria…",
-            "none": "Nenhuma das transferências selecionadas pode ser respondida desta forma.",
+            "none": "Nenhum dos pagamentos de saída selecionados pode ser respondido desta forma.",
             "takesBackUnpriced_many": "{{count}} delas estão neste momento contadas como alienações, e o Scani não tem preço para nenhuma delas, por isso não sai nada.",
             "takesBackUnpriced_one": "{{count}} delas está neste momento contada como uma alienação, e o Scani não tem preço para ela, por isso não sai nada.",
             "takesBackUnpriced_other": "{{count}} delas estão neste momento contadas como alienações, e o Scani não tem preço para nenhuma delas, por isso não sai nada.",
@@ -2465,21 +2542,21 @@
             "unpriced_many": "Mais {{count}} não têm preço no seu dia e não apuram nada, por isso o valor é um mínimo.",
             "unpriced_one": "Mais {{count}} não tem preço no seu dia e não apura nada, por isso o valor é um mínimo.",
             "unpriced_other": "Mais {{count}} não têm preço no seu dia e não apuram nada, por isso o valor é um mínimo.",
-            "untracked_many": "Regista {{count}} transferências como continuando a ser suas, algures onde o Scani não vê. Nada é realizado.",
-            "untracked_one": "Regista {{count}} transferência como continuando a ser sua, algures onde o Scani não vê. Nada é realizado.",
-            "untracked_other": "Regista {{count}} transferências como continuando a ser suas, algures onde o Scani não vê. Nada é realizado."
+            "untracked_many": "Regista {{count}} pagamentos de saída como continuando a ser seus, algures onde o Scani não vê. Nada é realizado.",
+            "untracked_one": "Regista {{count}} pagamento de saída como continuando a ser seu, algures onde o Scani não vê. Nada é realizado.",
+            "untracked_other": "Regista {{count}} pagamentos de saída como continuando a ser seus, algures onde o Scani não vê. Nada é realizado."
           },
-          "deselect_many": "Desselecionar essas {{count}} transferências",
-          "deselect_one": "Desselecionar essa {{count}} transferência",
-          "deselect_other": "Desselecionar essas {{count}} transferências",
-          "overCap": "Selecione no máximo {{max}} transferências de cada vez.",
+          "deselect_many": "Desselecionar esses {{count}} pagamentos de saída",
+          "deselect_one": "Desselecionar esse {{count}} pagamento de saída",
+          "deselect_other": "Desselecionar esses {{count}} pagamentos de saída",
+          "overCap": "Selecione no máximo {{max}} pagamentos de saída de cada vez.",
           "refusal": {
             "answered_many": "{{count}} já estão respondidas com “{{answer}}”. Reabra-as a partir das suas próprias linhas para as alterar.",
             "answered_one": "{{count}} já está respondida com “{{answer}}”. Reabra-a a partir da sua própria linha para a alterar.",
             "answered_other": "{{count}} já estão respondidas com “{{answer}}”. Reabra-as a partir das suas próprias linhas para as alterar.",
-            "gone_many": "{{count}} já não são transferências que possam ser respondidas.",
-            "gone_one": "{{count}} já não é uma transferência que possa ser respondida.",
-            "gone_other": "{{count}} já não são transferências que possam ser respondidas.",
+            "gone_many": "{{count}} já não são pagamentos de saída que possam ser respondidos.",
+            "gone_one": "{{count}} já não é um pagamento de saída que possa ser respondido.",
+            "gone_other": "{{count}} já não são pagamentos de saída que possam ser respondidos.",
             "linked_many": "{{count}} já estão ligadas a depósitos, por isso uma resposta aqui não mudaria nada.",
             "linked_one": "{{count}} já está ligada a um depósito, por isso uma resposta aqui não mudaria nada.",
             "linked_other": "{{count}} já estão ligadas a depósitos, por isso uma resposta aqui não mudaria nada.",
@@ -2488,21 +2565,23 @@
             "ownWallet_other": "{{count}} foram para carteiras que registou, a começar por {{address}} — não saíram do seu portefólio, por isso não podem ser contadas como alienações."
           },
           "toast": {
-            "leftControl_many": "{{count}} transferências contadas como alienações",
-            "leftControl_one": "{{count}} transferência contada como uma alienação",
-            "leftControl_other": "{{count}} transferências contadas como alienações",
+            "leftControl_many": "{{count}} pagamentos de saída contados como alienações",
+            "leftControl_one": "{{count}} pagamento de saída contado como uma alienação",
+            "leftControl_other": "{{count}} pagamentos de saída contados como alienações",
             "refused": "Não foi alterado nada",
             "undoFailed": "Não foi possível anular isso",
-            "undone_many": "{{count}} transferências repostas como estavam",
-            "undone_one": "{{count}} transferência reposta como estava",
-            "undone_other": "{{count}} transferências repostas como estavam",
-            "untracked_many": "{{count}} transferências registadas como continuando a ser suas",
-            "untracked_one": "{{count}} transferência registada como continuando a ser sua",
-            "untracked_other": "{{count}} transferências registadas como continuando a ser suas"
+            "undone_many": "{{count}} pagamentos de saída repostos como estavam",
+            "undone_one": "{{count}} pagamento de saída reposto como estava",
+            "undone_other": "{{count}} pagamentos de saída repostos como estavam",
+            "untracked_many": "{{count}} pagamentos de saída registados como continuando a ser seus",
+            "untracked_one": "{{count}} pagamento de saída registado como continuando a ser seu",
+            "untracked_other": "{{count}} pagamentos de saída registados como continuando a ser seus"
           },
           "undo": "Anular"
         },
         "candidateReason": {
+          "combined": "Juntos, estes {{count}} depósitos somam o valor",
+          "matches": "Corresponde ao valor e ao horário",
           "ambiguous": "Corresponde — mas outro depósito também",
           "both": "{{pct}} de diferença, e fora da janela de {{window}}",
           "quantity": "O montante difere em {{pct}}",
@@ -2576,10 +2655,10 @@
         },
         "reopen": {
           "declared": "Esta é uma transferência que registou você, por isso anulá-la repõe os dois saldos como estavam antes dela — a conta de onde saiu volta a subir, a conta onde chegou volta a descer — e remove os dois lançamentos. Não regressa à fila: não fica nenhuma pergunta por responder.",
-          "default": "A transferência regressa à fila, e nada a seu respeito fica decidido até lhe responder outra vez.",
+          "default": "O pagamento de saída regressa à fila, e nada a seu respeito fica decidido até lhe responder outra vez.",
           "internal": "O depósito que isto registou na outra conta é eliminado com ela — caso contrário a sua próxima resposta contaria esse dinheiro duas vezes. Se a resposta tiver alterado o saldo dessa conta, essa alteração também é revertida. A transferência regressa à fila.",
           "internalCreated": "Essa conta não acompanhava nada deste token antes de responder, por isso o Scani criou a posição além do depósito. Ambos são removidos — a não ser que entretanto tenha sido registado algo contra essa posição, caso em que ela fica. A transferência regressa à fila, e nenhum outro saldo muda.",
-          "leftControl": "O ganho que isto apurou sai do seu total realizado até lhe responder outra vez, e a transferência regressa à fila."
+          "leftControl": "O ganho que isto apurou sai do seu total realizado até lhe responder outra vez, e o pagamento de saída regressa à fila."
         },
         "split": {
           "balanceNew": "É criada lá uma nova posição de {{symbol}}, com esse depósito como saldo.",
@@ -2615,7 +2694,11 @@
         "deleteIntro": "Eliminar os seus dados remove tudo o que existe nesta conta: posições, ligações, pagamentos e os ficheiros que carregou. O acesso em si mantém-se, vazio.",
         "deleteTrigger": "Eliminar todos os meus dados",
         "deleted": "Todos os seus dados foram eliminados",
-        "deleting": "A eliminar…"
+        "deleting": "A eliminar…",
+        "accountIntro": "Eliminar a sua conta apaga os dados acima e o próprio acesso. A sessão é terminada e não poderá voltar a entrar nela.",
+        "accountTrigger": "Eliminar a minha conta",
+        "accountConfirm": "Eliminar a minha conta",
+        "accountConsequence": "Os seus dados, o seu acesso e todos os dispositivos com sessão iniciada desaparecem. Registar-se novamente com este email cria uma conta nova e vazia. Não é possível anular."
       },
       "dataQuality": {
         "duplicateChip": "{{symbol}}×{{count}}",
@@ -2744,6 +2827,18 @@
         "changeConfirm": "Recalcular os meus ganhos com {{method}}",
         "changeInFlight": "Os seus ganhos estão a ser recalculados.",
         "recomputing": "A recalcular os seus ganhos — os números da aplicação ainda estão a assentar."
+      },
+      "accountDeletion": {
+        "failed": "A eliminação da sua conta não foi concluída, por isso a conta continua aqui.",
+        "failedFallback": "Tente novamente ou contacte o suporte e nós removemo-la.",
+        "pending": "A sua conta está a ser eliminada.",
+        "retry": "Tentar novamente"
+      },
+      "reauth": {
+        "title": "Confirme que é você",
+        "description": "Para excluir, é preciso ter entrado recentemente. Enviaremos um código de 6 dígitos para {{email}}.",
+        "send": "Enviar-me um código",
+        "sending": "A enviar…"
       }
     },
     "shell": {

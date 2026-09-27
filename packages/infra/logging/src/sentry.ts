@@ -131,6 +131,32 @@ export function captureException(err: unknown, tags?: Record<string, string>): v
   }
 }
 
+/**
+ * An error that happened somewhere else and was reported here, such as a
+ * browser's error boundary posting to the api (SC-1333). There is no Error
+ * object on this side, so it is a message at level error, with the stack the
+ * reporter sent carried as data.
+ */
+export function captureReportedError(event: {
+  message: string;
+  level?: 'error' | 'warning';
+  tags: Record<string, string>;
+  extra: Record<string, string>;
+  userId: string | null;
+}): void {
+  if (!initialized) return;
+  try {
+    Sentry.captureMessage(event.message, {
+      level: event.level ?? 'error',
+      tags: event.tags,
+      extra: event.extra,
+      user: event.userId ? { id: event.userId } : undefined,
+    });
+  } catch {
+    // A failing Sentry capture must not bubble into the caller's error path.
+  }
+}
+
 // Used by cloud-client tRPC instrumentation to leave a trail of
 // data-provider calls (route + status + duration). When the backend
 // later throws, the Sentry event carries the cloud-hop context.

@@ -86,6 +86,7 @@ function pending(overrides: Partial<PendingTransferReview> = {}): PendingTransfe
     marketValueInBase: '3120.44',
     baseCurrencyCode: 'EUR',
     candidates: [],
+    combinations: [],
     ...overrides,
   };
 }
@@ -353,9 +354,6 @@ describe('list plumbing', () => {
   });
 
   test('never says the institution twice, on the list rows either (SC-850)', () => {
-    // The queue rows and the candidate rows sit on the SAME sheet as the
-    // destination picker that was reported. `Airwallex · Airwallex` there and
-    // not here would have answered the complaint on one line of one screen.
     expect(
       pendingLocation(pending({ institutionName: 'Airwallex', accountName: 'Airwallex' }))
     ).toBe('Airwallex');
@@ -657,7 +655,7 @@ describe('bulkConsequence', () => {
 
   test('states the disposal in money, formatted — never a raw figure', () => {
     const said = bulkConsequence(t, 'left_control', preview());
-    expect(said).toInclude('3 transfers');
+    expect(said).toInclude('3 payments out');
     expect(said).toInclude('€41,203.55');
     expect(said).not.toInclude('41203.554321');
   });
@@ -695,7 +693,7 @@ describe('bulkConsequence', () => {
 
   test('says so plainly when nothing in the selection can be answered', () => {
     expect(bulkConsequence(t, 'left_control', preview({ eligible: [] }))).toInclude(
-      'None of the selected transfers'
+      'None of the selected payments out'
     );
   });
 });
