@@ -11,7 +11,7 @@ import type { GlobalCostBreaker } from '../usage/global-cost-breaker';
 import { buildUsageMiddleware, createUsageContext, type UsageContext } from '../usage/middleware';
 import { NoopUsageSink, type UsageSink } from '../usage/sink';
 
-export interface CloudSessionUser {
+interface CloudSessionUser {
   id: string;
   email: string;
   name: string | null;

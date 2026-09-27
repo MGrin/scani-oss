@@ -3,7 +3,7 @@ import { addUiLocale } from '@scani/ui/i18n';
 import { DataViewTable } from '@scani/ui/v3/components/data-view/DataViewTable';
 import type { V3ColumnDef } from '@scani/ui/v3/lib/data-view';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 
 // The fixtures' own labels, registered the way a host registers its own
 // (SC-262). The assertions below are unchanged English — that is what shows

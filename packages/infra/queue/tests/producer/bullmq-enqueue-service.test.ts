@@ -120,7 +120,7 @@ describe('BullMqEnqueueService — happy path', () => {
     await svc.add(TEST_DESCRIPTOR, { userId: 'u1', requestId: 'r1', resourceId: 'res-9' });
     expect(addCalls[0]?.name).toBe('test-job');
     expect(addCalls[0]?.data).toEqual({ userId: 'u1', requestId: 'r1', resourceId: 'res-9' });
-    expect((addCalls[0]?.opts as { jobId: string }).jobId).toBe('test-job_u1_res-9_r1');
+    expect((addCalls[0]!.opts as { jobId: string }).jobId).toBe('test-job_u1_res-9_r1');
   });
 
   test('overrides take precedence over descriptor.defaultOpts', async () => {
@@ -131,7 +131,7 @@ describe('BullMqEnqueueService — happy path', () => {
       { userId: 'u1', requestId: 'r1', resourceId: 'res-9' },
       { attempts: 99 }
     );
-    expect((addCalls[0]?.opts as { attempts: number }).attempts).toBe(99);
+    expect((addCalls[0]!.opts as { attempts: number }).attempts).toBe(99);
   });
 });
 

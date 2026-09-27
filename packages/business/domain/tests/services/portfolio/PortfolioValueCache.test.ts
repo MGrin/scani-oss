@@ -62,6 +62,77 @@ afterEach(() => {
 });
 
 describe('PortfolioValueCache', () => {
+  test('busting a user stops sharing and caching a computation begun before the mutation', async () => {
+    const redis = makeFakeRedis();
+    useFakeRedis(redis);
+    const cache = new PortfolioValueCache();
+    const key = createPortfolioRedisKey('u1', undefined, 'c1');
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const old = cache.getOrCompute(key, async () => {
+      await held;
+      return sampleResult('old');
+    });
+    await flush();
+    await cache.bust('u1');
+    const current = cache.getOrCompute(key, async () => sampleResult('new'));
+    release();
+    expect((await current).totalValue).toBe('new');
+    await old;
+    await flush();
+    expect(JSON.parse(redis.store.get(key)!).totalValue).toBe('new');
+  });
+
+  for (const configured of [true, false]) {
+    test(`coalesces concurrent misses with Redis ${configured ? 'configured' : 'absent'}`, async () => {
+      if (configured) useFakeRedis(makeFakeRedis());
+      else setSharedRedis(null);
+      const cache = new PortfolioValueCache();
+      let calls = 0;
+      const factory = async () => {
+        calls++;
+        await flush();
+        return sampleResult('42');
+      };
+      const results = await Promise.all(
+        Array.from({ length: 12 }, () => cache.getOrCompute('pv:v2:u1:all:c1:v1', factory))
+      );
+      expect(calls).toBe(1);
+      expect(results.every((result) => result.totalValue === '42')).toBe(true);
+    });
+  }
+
+  test('a failed computation is shared and a later request can retry', async () => {
+    setSharedRedis(null);
+    const cache = new PortfolioValueCache();
+    let calls = 0;
+    const fail = async () => {
+      calls++;
+      await flush();
+      throw new Error('pricing unavailable');
+    };
+    const results = await Promise.allSettled([
+      cache.getOrCompute('same', fail),
+      cache.getOrCompute('same', fail),
+    ]);
+    expect(results.every((result) => result.status === 'rejected')).toBe(true);
+    expect(calls).toBe(1);
+    expect((await cache.getOrCompute('same', async () => sampleResult('9'))).totalValue).toBe('9');
+  });
+
+  test('different users and versions compute independently', async () => {
+    setSharedRedis(null);
+    const cache = new PortfolioValueCache();
+    const results = await Promise.all(
+      ['u1:v1', 'u2:v1', 'u1:v2'].map((key, index) =>
+        cache.getOrCompute(key, async () => sampleResult(String(index)))
+      )
+    );
+    expect(results.map((result) => result.totalValue)).toEqual(['0', '1', '2']);
+  });
+
   test('miss runs the factory and caches the result', async () => {
     const redis = makeFakeRedis();
     useFakeRedis(redis);

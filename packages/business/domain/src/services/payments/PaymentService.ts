@@ -1,4 +1,4 @@
-import type { DatabaseTransaction } from '@scani/db';
+import { type DatabaseTransaction, getDb } from '@scani/db';
 import type {
   Payment,
   PaymentDirection,
@@ -199,6 +199,7 @@ export class PaymentService {
     input: CreatePaymentInput,
     transaction?: DatabaseTransaction
   ): Promise<Payment> {
+    if (!transaction) return getDb().transaction((tx) => this.create(userId, input, tx));
     await this.assertVendorOwnership(userId, input.vendorId, transaction);
     await this.assertAccountOwnership(userId, input.accountId, transaction);
 

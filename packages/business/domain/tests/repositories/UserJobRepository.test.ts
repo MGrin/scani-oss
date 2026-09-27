@@ -216,7 +216,7 @@ describe('UserJobRepository', () => {
       // And the detail path still has it — the point is that one query pays
       // for the payload and the other does not, not that it went away.
       const detail = await repo().findOneMine(user.id, jobId, tx);
-      expect((detail?.result as { chains: unknown[] }).chains).toHaveLength(200);
+      expect((detail?.result as { chains: unknown[] } | undefined)?.chains).toHaveLength(200);
     });
   });
 

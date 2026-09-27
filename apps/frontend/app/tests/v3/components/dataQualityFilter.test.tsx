@@ -5,7 +5,7 @@ import type { HoldingWithDetails } from '@scani/shared';
 import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
 import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { holdingsDataViewConfig } from '../../../src/v3/components/holdings/holdingsConfig';
 import type { DataQualitySets } from '../../../src/v3/lib/dataQuality';
 

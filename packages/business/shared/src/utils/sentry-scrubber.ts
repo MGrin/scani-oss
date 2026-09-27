@@ -33,6 +33,11 @@ const JWT_RE = /\beyJ[A-Za-z0-9_-]{4,1024}\.[A-Za-z0-9_-]{4,1024}\.[A-Za-z0-9_-]
 // remains useful.
 const AUTH_HEADER_RE = /(authorization\s*:\s*(?:bearer|token)\s+)([^\s"'<>]+)/gi;
 
+// Credential-shaped query parameters: provider keys travel as `&token=` in
+// URLs that reach error text (SC-1350). Only the value is replaced.
+const QUERY_CREDENTIAL_RE =
+  /([?&](?:token|api_?key|apikey|access_token|refresh_token|secret|client_secret|password|key)=)[^&#\s"'<>]+/gi;
+
 const REDACTED = '<redacted>';
 
 export function scrubString(input: string): string {
@@ -40,6 +45,7 @@ export function scrubString(input: string): string {
   return input
     .replace(JWT_RE, REDACTED)
     .replace(AUTH_HEADER_RE, `$1${REDACTED}`)
+    .replace(QUERY_CREDENTIAL_RE, `$1${REDACTED}`)
     .replace(EMAIL_RE, REDACTED);
 }
 

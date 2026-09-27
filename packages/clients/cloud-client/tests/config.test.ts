@@ -154,24 +154,21 @@ describe('loadCloudClientConfig — SCANI_CLOUD_URL schema', () => {
       expect(cfg.SCANI_CLOUD_URL).toBe('http://scani-demo-data-provider.internal:8082');
     });
 
-    test.each([
-      'true',
-      '0',
-      '',
-      'yes',
-      undefined,
-    ])('SCANI_DEMO_MODE=%p does NOT exempt anything', (value) => {
-      // The exactness of `=== '1'` is the security property, and the
-      // carve-out inherits it. A near-miss spelling must fail closed —
-      // otherwise a typo'd flag on a real instance would silently turn the
-      // production requirement off.
-      expect(() =>
-        loadCloudClientConfig({
-          NODE_ENV: 'production',
-          ...(value === undefined ? {} : { SCANI_DEMO_MODE: value }),
-        } as NodeJS.ProcessEnv)
-      ).toThrow(/SCANI_CLOUD_URL.*is required in production/s);
-    });
+    test.each(['true', '0', '', 'yes', undefined])(
+      'SCANI_DEMO_MODE=%p does NOT exempt anything',
+      (value) => {
+        // The exactness of `=== '1'` is the security property, and the
+        // carve-out inherits it. A near-miss spelling must fail closed —
+        // otherwise a typo'd flag on a real instance would silently turn the
+        // production requirement off.
+        expect(() =>
+          loadCloudClientConfig({
+            NODE_ENV: 'production',
+            ...(value === undefined ? {} : { SCANI_DEMO_MODE: value }),
+          } as NodeJS.ProcessEnv)
+        ).toThrow(/SCANI_CLOUD_URL.*is required in production/s);
+      }
+    );
   });
 
   describe('in development', () => {

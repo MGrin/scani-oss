@@ -187,6 +187,27 @@ export class PushSubscriptionRepository extends BaseRepository<
       .innerJoin(schema.users, eq(schema.pushSubscriptions.userId, schema.users.id));
   }
 
+  /**
+   * Keep only the user's `keep` newest subscriptions, never the one just
+   * stored. Every row is an endpoint the api and worker send to, so the count
+   * per user is bounded; the oldest goes rather than refusing the new device,
+   * which is the one the person is holding (SC-1346).
+   */
+  async trimToNewest(
+    userId: string,
+    keep: number,
+    keepId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<number> {
+    const rows = await this.findByUser(userId, transaction);
+    const evict = rows
+      .filter((row) => row.id !== keepId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(Math.max(keep - 1, 0))
+      .map((row) => row.id);
+    return await this.deleteByIds(evict, transaction);
+  }
+
   /** How many devices are subscribed, for the Settings screen's own copy. */
   async countByUser(userId: string, transaction?: DatabaseTransaction): Promise<number> {
     const database = this.getDb(transaction);

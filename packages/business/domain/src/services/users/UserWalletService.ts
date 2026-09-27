@@ -118,13 +118,21 @@ export class UserWalletService extends BaseService {
   }
 
   /**
-   * Remove an institution from a wallet's institution list
+   * Remove an institution from a wallet's institution list.
+   *
+   * `walletId` comes from an account's `metadata`, which the client can write,
+   * so a wallet that is not `userId`'s is "not found" (SC-1336).
    */
-  async removeInstitutionFromWallet(walletId: string, institutionId: string): Promise<UserWallet> {
+  async removeInstitutionFromWallet(
+    walletId: string,
+    institutionId: string,
+    userId: string
+  ): Promise<UserWallet> {
     try {
       this.logInfo('Removing institution from wallet', { walletId, institutionId });
 
-      const wallet = await this.userWalletRepository.findById(walletId);
+      const found = await this.userWalletRepository.findById(walletId);
+      const wallet = found?.userId === userId ? found : null;
       this.assertExists(wallet, `Wallet with ID ${walletId} not found`);
 
       const institutionIds = (wallet.institutionIds as string[]) || [];
@@ -165,13 +173,14 @@ export class UserWalletService extends BaseService {
    * accounts the user just deleted. Removing the row makes the sync
    * pipeline forget the wallet cleanly.
    */
-  async hardDeleteWallet(walletId: string): Promise<void> {
+  async hardDeleteWallet(walletId: string, userId: string): Promise<void> {
     try {
       this.logInfo('Hard-deleting wallet', { walletId });
 
       const wallet = await this.userWalletRepository.findById(walletId);
-      if (!wallet) {
-        // Already gone — treat as success so callers don't need to guard.
+      if (wallet?.userId !== userId) {
+        // Already gone, or not this user's (SC-1336) — nothing of theirs to
+        // delete, so succeed and callers need not guard.
         return;
       }
 

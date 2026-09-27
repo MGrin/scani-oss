@@ -256,7 +256,7 @@ fi
 biome_relevant=$(staged_files -- '*.ts' '*.tsx' '*.js' '*.jsx' '*.json' '*.jsonc' || true)
 if [ -n "$biome_relevant" ]; then
   note "biome check --staged"
-  if ! bunx --bun @biomejs/biome@2.4.12 check --staged --no-errors-on-unmatched; then
+  if ! bunx --bun @biomejs/biome@2.5.14 check --staged --no-errors-on-unmatched; then
     fail "biome check reported errors"
   fi
   ok "biome clean"

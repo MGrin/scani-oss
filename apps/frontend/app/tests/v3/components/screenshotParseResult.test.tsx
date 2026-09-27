@@ -3,7 +3,7 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { DiscardedReviewCard } from '@/v3/components/jobs/DiscardedReviewCard';
 import { ScreenshotParseResult } from '@/v3/components/jobs/ScreenshotParseResult';
 import { resolveV3ReviewRenderer } from '@/v3/lib/job-result';

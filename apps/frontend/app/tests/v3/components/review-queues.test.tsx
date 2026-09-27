@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { BALANCE_GAP_REVIEW_KIND, TRANSFER_REVIEW_KIND } from '@scani/shared';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { ReviewQueues } from '../../../src/v3/components/review/ReviewQueues';
 import type { ReviewWireRow } from '../../../src/v3/lib/review-text';
 

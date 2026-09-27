@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { CaptureHeader } from '../../../src/v3/components/capture/CaptureHeader';
 import en from '../../../src/v3/i18n/locales/en.json';
 import { readV3Source } from '../helpers/v3-sources';

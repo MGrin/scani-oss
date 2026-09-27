@@ -1,11 +1,22 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { S3Client } from 'bun';
-import { type HealthResult, type PresignUploadOptions, StorageService } from '../src/index';
+import {
+  type HealthResult,
+  isMissingObjectError,
+  isObjectTooLargeError,
+  type PresignUploadOptions,
+  StorageService,
+} from '../src/index';
 
 interface S3FileCall {
   key: string;
-  op: 'presign' | 'arrayBuffer' | 'delete';
+  op: 'presign' | 'stream' | 'arrayBuffer' | 'delete' | 'write';
   presign?: { method: string; expiresIn: number; type?: string };
+  // What `file(key, options)` was handed. `undefined` means no second
+  // argument at all, which is NOT the same as `{ bucket: undefined }` —
+  // the latter overrides the client's configured bucket with nothing.
+  fileOptions?: { bucket?: string };
+  writeType?: string;
 }
 
 interface FakeS3Options {
@@ -17,17 +28,29 @@ interface FakeS3Options {
 function buildFakeS3(opts: FakeS3Options): { sdk: S3Client; calls: S3FileCall[]; label: string } {
   const calls: S3FileCall[] = [];
   const sdk = {
-    file: (key: string) => ({
+    file: (key: string, fileOptions?: { bucket?: string }) => ({
       presign: (presign: { method: string; expiresIn: number; type?: string }) => {
-        calls.push({ key, op: 'presign', presign });
+        calls.push({ key, op: 'presign', presign, fileOptions });
         return `https://${opts.label}.example/${encodeURIComponent(key)}?ttl=${presign.expiresIn}&method=${presign.method}`;
       },
+      stream: () => {
+        calls.push({ key, op: 'stream', fileOptions });
+        return new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(opts.bytes ?? new Uint8Array([1, 2, 3]));
+            controller.close();
+          },
+        });
+      },
       arrayBuffer: async () => {
-        calls.push({ key, op: 'arrayBuffer' });
+        calls.push({ key, op: 'arrayBuffer', fileOptions });
         return (opts.bytes ?? new Uint8Array([1, 2, 3])).buffer;
       },
+      write: async (_bytes: Uint8Array, writeOpts?: { type?: string }) => {
+        calls.push({ key, op: 'write', fileOptions, writeType: writeOpts?.type });
+      },
       delete: async () => {
-        calls.push({ key, op: 'delete' });
+        calls.push({ key, op: 'delete', fileOptions });
         if (opts.deleteError) throw new Error(opts.deleteError);
       },
     }),
@@ -182,6 +205,25 @@ describe('env validation', () => {
 });
 
 describe('presignUpload', () => {
+  test('the real signer binds the declared byte length and content type', async () => {
+    class RealSignerStorage extends StorageService {
+      protected override env() {
+        return validEnv;
+      }
+    }
+    const result = await new RealSignerStorage().presignUpload({
+      keyPrefix: 'document/u1',
+      extension: 'pdf',
+      contentType: 'application/pdf',
+      contentLength: 123,
+    });
+    expect(new URL(result.uploadUrl).searchParams.get('X-Amz-SignedHeaders')?.split(';')).toEqual([
+      'content-length',
+      'content-type',
+      'host',
+    ]);
+  });
+
   function defaultOpts(): PresignUploadOptions {
     return {
       keyPrefix: 'screenshot',
@@ -195,63 +237,60 @@ describe('presignUpload', () => {
     return new TestStorageService({ envOverride: validEnv });
   }
 
-  test('uses the public endpoint, not the server endpoint', () => {
+  test('uses the public endpoint, not the server endpoint', async () => {
     const svc = svcWithEnv();
-    svc.presignUpload(defaultOpts());
-    const publicFake = svc.fakeFor(PUBLIC_ENDPOINT);
-    expect(publicFake?.calls.some((c) => c.op === 'presign' && c.presign?.method === 'PUT')).toBe(
-      true
-    );
+    const result = await svc.presignUpload(defaultOpts());
+    expect(new URL(result.uploadUrl).origin).toBe(PUBLIC_ENDPOINT);
     expect(svc.fakeFor(SERVER_ENDPOINT)).toBeUndefined();
   });
 
-  test('builds keys under temp/<keyPrefix>/<uuid>.<ext>', () => {
+  test('builds keys under temp/<keyPrefix>/<uuid>.<ext>', async () => {
     const svc = svcWithEnv();
-    const result = svc.presignUpload(defaultOpts());
+    const result = await svc.presignUpload(defaultOpts());
     expect(result.key).toMatch(/^temp\/screenshot\/[0-9a-f-]{36}\.png$/);
   });
 
-  test('strips a leading dot from extension', () => {
+  test('strips a leading dot from extension', async () => {
     const svc = svcWithEnv();
-    const result = svc.presignUpload({ ...defaultOpts(), extension: '.csv' });
+    const result = await svc.presignUpload({ ...defaultOpts(), extension: '.csv' });
     expect(result.key).toMatch(/\.csv$/);
     expect(result.key).not.toMatch(/\.\.csv$/);
   });
 
-  test('returns content-type + content-length in requiredHeaders', () => {
+  test('returns content-type + content-length in requiredHeaders', async () => {
     const svc = svcWithEnv();
-    const result = svc.presignUpload({ ...defaultOpts(), contentLength: 12_345 });
+    const result = await svc.presignUpload({ ...defaultOpts(), contentLength: 12_345 });
     expect(result.requiredHeaders).toEqual({
       'content-type': 'image/png',
       'content-length': '12345',
     });
   });
 
-  test('respects ttlSeconds and reflects it in expiresAt', () => {
+  test('respects ttlSeconds and reflects it in expiresAt', async () => {
     const svc = svcWithEnv();
     const before = Date.now();
-    const result = svc.presignUpload({ ...defaultOpts(), ttlSeconds: 60 });
+    const result = await svc.presignUpload({ ...defaultOpts(), ttlSeconds: 60 });
     const expiresAt = Date.parse(result.expiresAt);
     expect(expiresAt - before).toBeGreaterThanOrEqual(60_000 - 50);
     expect(expiresAt - before).toBeLessThanOrEqual(60_000 + 50);
   });
 
-  test('default TTL is 15 minutes', () => {
+  test('default TTL is 15 minutes', async () => {
     const svc = svcWithEnv();
     const before = Date.now();
-    const result = svc.presignUpload(defaultOpts());
+    const result = await svc.presignUpload(defaultOpts());
     const expiresAt = Date.parse(result.expiresAt);
     expect(expiresAt - before).toBeGreaterThanOrEqual(15 * 60 * 1000 - 50);
   });
 
-  test('two consecutive uploads produce different keys (uuid is random)', () => {
+  test('two consecutive uploads produce different keys (uuid is random)', async () => {
     const svc = svcWithEnv();
-    const a = svc.presignUpload(defaultOpts());
-    const b = svc.presignUpload(defaultOpts());
+    const a = await svc.presignUpload(defaultOpts());
+    const b = await svc.presignUpload(defaultOpts());
     expect(a.key).not.toBe(b.key);
   });
 
-  test('rejects keyPrefix containing path traversal', () => {
+  test('rejects keyPrefix containing path traversal', async () => {
     const svc = svcWithEnv();
     expect(() => svc.presignUpload({ ...defaultOpts(), keyPrefix: '../etc/passwd' })).toThrow(
       /invalid keyPrefix/i
@@ -261,20 +300,20 @@ describe('presignUpload', () => {
     );
   });
 
-  test('rejects keyPrefix with leading / trailing / double slash', () => {
+  test('rejects keyPrefix with leading / trailing / double slash', async () => {
     const svc = svcWithEnv();
     expect(() => svc.presignUpload({ ...defaultOpts(), keyPrefix: '/screenshot' })).toThrow();
     expect(() => svc.presignUpload({ ...defaultOpts(), keyPrefix: 'screenshot/' })).toThrow();
     expect(() => svc.presignUpload({ ...defaultOpts(), keyPrefix: 'a//b' })).toThrow();
   });
 
-  test('rejects keyPrefix longer than 200 chars', () => {
+  test('rejects keyPrefix longer than 200 chars', async () => {
     const svc = svcWithEnv();
     const huge = 'a'.repeat(201);
     expect(() => svc.presignUpload({ ...defaultOpts(), keyPrefix: huge })).toThrow();
   });
 
-  test('rejects extension with non-alphanumeric characters', () => {
+  test('rejects extension with non-alphanumeric characters', async () => {
     const svc = svcWithEnv();
     expect(() => svc.presignUpload({ ...defaultOpts(), extension: 'png/foo' })).toThrow(
       /invalid extension/i
@@ -284,9 +323,9 @@ describe('presignUpload', () => {
     );
   });
 
-  test('accepts a multi-segment alphanumeric keyPrefix', () => {
+  test('accepts a multi-segment alphanumeric keyPrefix', async () => {
     const svc = svcWithEnv();
-    const result = svc.presignUpload({ ...defaultOpts(), keyPrefix: 'screenshot/user-123' });
+    const result = await svc.presignUpload({ ...defaultOpts(), keyPrefix: 'screenshot/user-123' });
     expect(result.key).toMatch(/^temp\/screenshot\/user-123\/[0-9a-f-]{36}\.png$/);
   });
 });
@@ -419,5 +458,138 @@ describe('healthCheck', () => {
     const svc = new TestStorageService();
     const result = await svc.healthCheck();
     expect(result.ok).toBe(false);
+  });
+});
+
+/**
+ * SC-793. The nightly `db-backup` job writes to the archive bucket while
+ * everything else keeps writing to the job-uploads one, so `write`/`read` take
+ * a per-call bucket. It is per-call and not a second configured client on
+ * purpose: moving the default is what would make an unrelated upload land in a
+ * bucket nobody is looking at.
+ */
+describe('per-call bucket override', () => {
+  /**
+   * `test-bucket` IS A FIXTURE AND MUST STAY ONE (SC-1112). This block named a
+   * real bucket, and nothing in it depended on that: every assertion here is
+   * that whatever key and bucket the caller passes arrive on `fileOptions`
+   * unchanged, which any two strings establish.
+   *
+   * The reason to say so is the shape of this file rather than the value. It is
+   * `oss-eligible`, present upstream and drifted, so the ordinary repair —
+   * converge it — is the one act that publishes whatever the private half
+   * carries. And no guard would have stopped it: run from a mirror checkout
+   * against these exact added lines, `check-oss-data-shapes`, `check-oss-figures`,
+   * `check-oss-prose` and `check-oss-internal-refs` all PASS on real
+   * denominators, because a bucket is a NAME and the identifier rules read
+   * shapes. The scanner says as much in its own refusal text.
+   */
+  test('write targets the named bucket', async () => {
+    const svc = new TestStorageService({ envOverride: validEnv });
+    await svc.write('archive-fixture.dump', new Uint8Array([9]), 'application/octet-stream', {
+      bucket: 'test-bucket',
+    });
+
+    const call = svc.fakeFor(SERVER_ENDPOINT)?.calls.find((c) => c.op === 'write');
+    expect(call?.fileOptions).toEqual({ bucket: 'test-bucket' });
+    expect(call?.writeType).toBe('application/octet-stream');
+  });
+
+  test('read targets the named bucket', async () => {
+    const svc = new TestStorageService({ envOverride: validEnv });
+    await svc.read('archive-fixture.dump', { bucket: 'test-bucket' });
+
+    const call = svc.fakeFor(SERVER_ENDPOINT)?.calls.find((c) => c.op === 'arrayBuffer');
+    expect(call?.fileOptions).toEqual({ bucket: 'test-bucket' });
+  });
+
+  /**
+   * must-be-ABSENT control. Handing Bun's S3Client `{ bucket: undefined }`
+   * overrides the configured bucket with nothing rather than leaving it alone,
+   * so an override helper that always passes an object breaks every existing
+   * caller — silently, because the failure is a 404 on a bucket-less URL.
+   */
+  test('no override passes NO options object, not one holding undefined', async () => {
+    const svc = new TestStorageService({ envOverride: validEnv });
+    await svc.write('icons/a.png', new Uint8Array([1]), 'image/png');
+    await svc.read('icons/a.png');
+
+    for (const call of svc.fakeFor(SERVER_ENDPOINT)?.calls ?? []) {
+      expect(call.fileOptions).toBeUndefined();
+    }
+  });
+
+  test('an empty-string bucket is treated as no override', async () => {
+    const svc = new TestStorageService({ envOverride: validEnv });
+    await svc.write('icons/a.png', new Uint8Array([1]), 'image/png', { bucket: '' });
+
+    expect(
+      svc.fakeFor(SERVER_ENDPOINT)?.calls.find((c) => c.op === 'write')?.fileOptions
+    ).toBeUndefined();
+  });
+});
+
+// SC-1345: a presigned PUT does not bind its size, so the only size an upload
+// is known to have is the one storage reports. A capped read asks first, and
+// refuses before a single byte of the body is pulled into memory.
+describe('read with maxBytes', () => {
+  test('rejects a replacement body larger than its earlier HEAD', async () => {
+    const svc = new TestStorageService({
+      envOverride: validEnv,
+      serverBytes: new Uint8Array(16),
+      fetcher: async () => new Response(null, { status: 200, headers: { 'content-length': '4' } }),
+    });
+    await expect(svc.read('temp/file-import/u1/a.csv', { maxBytes: 8 })).rejects.toMatchObject({
+      name: 'ObjectTooLargeError',
+    });
+  });
+
+  const head = (status: number, headers: Record<string, string> = {}) => ({
+    envOverride: validEnv,
+    fetcher: async () => new Response(null, { status, headers }),
+  });
+  const bodyReads = (svc: TestStorageService) =>
+    (svc.fakeFor(SERVER_ENDPOINT)?.calls ?? []).filter(
+      (c) => c.op === 'arrayBuffer' || c.op === 'stream'
+    );
+
+  test('an object over the cap is refused before its body is read', async () => {
+    const svc = new TestStorageService(head(200, { 'content-length': '8388609' }));
+    const err = await svc.read('temp/file-import/u1/a.csv', { maxBytes: 8388608 }).catch((e) => e);
+    expect(isObjectTooLargeError(err)).toBe(true);
+    expect(isMissingObjectError(err)).toBe(false);
+    expect(bodyReads(svc)).toEqual([]);
+    expect(svc.fetcherCalls[0]?.init.method).toBe('HEAD');
+  });
+
+  test('an object at the cap is read', async () => {
+    const svc = new TestStorageService({
+      ...head(200, { 'content-length': '3' }),
+      serverBytes: new Uint8Array([7, 8, 9]),
+    });
+    const buf = await svc.read('temp/file-import/u1/a.csv', { maxBytes: 3 });
+    expect([...buf]).toEqual([7, 8, 9]);
+    expect(bodyReads(svc)).toHaveLength(1);
+  });
+
+  test('a size storage will not state is refused, not guessed', async () => {
+    const svc = new TestStorageService(head(200));
+    const err = await svc.read('temp/file-import/u1/a.csv', { maxBytes: 10 }).catch((e) => e);
+    expect(isObjectTooLargeError(err)).toBe(true);
+    expect(bodyReads(svc)).toEqual([]);
+  });
+
+  test('a missing object still reads as missing', async () => {
+    const svc = new TestStorageService(head(404));
+    const err = await svc.read('temp/file-import/u1/a.csv', { maxBytes: 10 }).catch((e) => e);
+    expect(isMissingObjectError(err)).toBe(true);
+    expect(bodyReads(svc)).toEqual([]);
+  });
+
+  test('without a cap the read is unchanged: no HEAD first', async () => {
+    const svc = new TestStorageService({ envOverride: validEnv });
+    await svc.read('temp/file-import/u1/a.csv');
+    expect(svc.fetcherCalls).toEqual([]);
+    expect(bodyReads(svc)).toHaveLength(1);
   });
 });

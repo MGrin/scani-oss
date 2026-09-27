@@ -54,7 +54,7 @@ export class DocumentRetentionService {
   }
 
   /**
-   * Copy the document's object to its permanent key and persist that key on
+   * Store the bytes already parsed at the permanent key and persist that key on
    * the row. The temp object is deliberately NOT deleted here — the parse
    * path already owns exactly one cleanup of the key it was handed, and a
    * move that deleted the source would make a failure between copy and
@@ -63,11 +63,11 @@ export class DocumentRetentionService {
    * Idempotent: a document already retained (any re-parse) is returned
    * untouched, so the permanent object is never rewritten from itself.
    */
-  async retain(document: Document): Promise<Document> {
+  async retain(document: Document, bytes: Uint8Array): Promise<Document> {
     if (this.isRetained(document.r2Key)) return document;
 
     const retainedKey = this.retainedKeyFor(document);
-    await this.storage.copy(document.r2Key, retainedKey, document.mimeType);
+    await this.storage.write(retainedKey, bytes, document.mimeType);
 
     const updated = await this.documents.update(document.id, { r2Key: retainedKey });
     if (!updated) {

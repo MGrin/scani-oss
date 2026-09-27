@@ -3,7 +3,7 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import type { HoldingWithDetails } from '@scani/shared';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { HoldingsSummary } from '../../../src/v3/components/holdings/HoldingsSummary';
 
 /**

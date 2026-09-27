@@ -320,25 +320,24 @@ describe('admin gate, body drained before the route parser', () => {
 describe('SC-1043: redis-read reaches the client with a usable command name', () => {
   const base = listen(withJobsRoutes, true);
 
-  it.each([
-    ['ZCARD'],
-    ['zcard'],
-    ['HGETALL'],
-  ])('POST with %s returns 200, not the 500 the uppercased name produced', async (name) => {
-    const body = JSON.stringify({ commands: [[name, 'rl:coingecko']] });
-    const res = await fetch(base + REDIS_READ, {
-      method: 'POST',
-      headers: {
-        ...signedHeaders('POST', REDIS_READ, sha256Hex(body)),
-        'content-type': 'application/json',
-      },
-      body,
-    });
-    // The 500 carried the ioredis message in `error`; assert the shape of
-    // success rather than the absence of one particular string.
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ results: [0] });
-  });
+  it.each([['ZCARD'], ['zcard'], ['HGETALL']])(
+    'POST with %s returns 200, not the 500 the uppercased name produced',
+    async (name) => {
+      const body = JSON.stringify({ commands: [[name, 'rl:coingecko']] });
+      const res = await fetch(base + REDIS_READ, {
+        method: 'POST',
+        headers: {
+          ...signedHeaders('POST', REDIS_READ, sha256Hex(body)),
+          'content-type': 'application/json',
+        },
+        body,
+      });
+      // The 500 carried the ioredis message in `error`; assert the shape of
+      // success rather than the absence of one particular string.
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ results: [0] });
+    }
+  );
 
   it('CONTROL: the strict fakeRedis rejects a name ioredis does not define', () => {
     // Without this, a green above cannot be told from a stub that accepts

@@ -90,7 +90,7 @@ interface LocalCall {
 class StubStorageService extends StorageService {
   calls: LocalCall[] = [];
 
-  override presignUpload(opts: PresignUploadOptions): PresignedUpload {
+  override async presignUpload(opts: PresignUploadOptions): Promise<PresignedUpload> {
     this.calls.push({ op: 'presignUpload', args: opts });
     return {
       uploadUrl: 'https://local.example/put',

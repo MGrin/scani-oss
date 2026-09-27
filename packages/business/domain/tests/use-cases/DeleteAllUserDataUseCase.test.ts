@@ -76,6 +76,8 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
     observedBurnOverrideAt: new Date(),
   });
   userId = user.id;
+  // An institution the user typed in is theirs and goes with them (SC-1354).
+  await makeInstitution(tx, { createdByUserId: userId });
 
   const account = await makeAccount(tx, { userId, institutionId: institution.id });
   const holding = await makeHolding(tx, { userId, accountId: account.id, tokenId: token.id });

@@ -95,15 +95,14 @@ describe('describePriceRefresh', () => {
    * only safe default — the alternative tells someone nothing happened when it
    * may have.
    */
-  test.each([
-    [null],
-    [undefined],
-    [{}],
-  ])('an unreadable result %p degrades to updated', (report) => {
-    expect(describePriceRefresh(t, report as Record<string, never> | null, 'BTC').kind).toBe(
-      'updated'
-    );
-  });
+  test.each([[null], [undefined], [{}]])(
+    'an unreadable result %p degrades to updated',
+    (report) => {
+      expect(describePriceRefresh(t, report as Record<string, never> | null, 'BTC').kind).toBe(
+        'updated'
+      );
+    }
+  );
 
   // Every branch renders a sentence rather than the key it asked for — the
   // failure mode i18next makes silent, and the one a hand-written stub `t`

@@ -26,6 +26,15 @@ describe('scrubString', () => {
     );
   });
 
+  test('redacts credential query parameters (SC-1350)', () => {
+    expect(
+      scrubString('fetch failed - URL: https://finnhub.io/api/v1/quote?symbol=AAPL&token=c0ffee123')
+    ).toBe('fetch failed - URL: https://finnhub.io/api/v1/quote?symbol=AAPL&token=<redacted>');
+    expect(scrubString('/cb?code=abc&api_key=k1&x=1&apiKey=k2&access_token=k3')).toBe(
+      '/cb?code=abc&api_key=<redacted>&x=1&apiKey=<redacted>&access_token=<redacted>'
+    );
+  });
+
   test('leaves benign strings unchanged', () => {
     expect(scrubString('Failed to fetch portfolio')).toBe('Failed to fetch portfolio');
     expect(scrubString('user clicked dashboard')).toBe('user clicked dashboard');

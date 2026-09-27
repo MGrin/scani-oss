@@ -47,9 +47,13 @@ export class AccountService extends BaseService {
       this.validateRequiredFields(data, ['institutionId', 'name', 'typeId', 'institutionId']);
       this.validateNonEmptyString(data.name, 'name');
 
-      // Validate institution exists and belongs to user
-      const institution = await this.institutionRepository.findById(data.institutionId!, tx);
-      this.assertExists(institution, `Institution with ID ${data.institutionId} not found`);
+      // Another user's own institution reads as missing, the same as one that
+      // does not exist (SC-1354).
+      const visible = await this.institutionRepository.isVisibleTo(data.institutionId!, userId, tx);
+      this.assertExists(
+        visible ? true : null,
+        `Institution with ID ${data.institutionId} not found`
+      );
 
       const account = await this.accountRepository.create(
         {
@@ -58,7 +62,7 @@ export class AccountService extends BaseService {
           institutionId: data.institutionId!,
           userId,
           description: data.description || null,
-          metadata: (data.metadata as Record<string, unknown>) || {},
+          metadata: {},
           isActive: true,
         },
         tx
@@ -184,11 +188,13 @@ export class AccountService extends BaseService {
     };
   }
 
-  async deleteAccount(accountId: string, _userId: string): Promise<boolean> {
+  async deleteAccount(accountId: string, userId: string): Promise<boolean> {
     try {
       this.logInfo('Deleting account', { accountId });
 
-      const existing = await this.accountRepository.findById(accountId);
+      // Another user's account is "not found", not "forbidden": the caller
+      // learns nothing about an id that is not theirs (SC-1336).
+      const existing = await this.accountRepository.findByIdAndUser(accountId, userId);
       this.assertExists(existing, `Account with ID ${accountId} not found`);
 
       // Check if this is a wallet account with user_wallet association.
@@ -214,7 +220,8 @@ export class AccountService extends BaseService {
         try {
           const updatedWallet = await this.userWalletService.removeInstitutionFromWallet(
             userWalletId,
-            existing.institutionId
+            existing.institutionId,
+            userId
           );
           this.logInfo('Removed institution from user wallet', {
             accountId,
@@ -228,7 +235,7 @@ export class AccountService extends BaseService {
             // Last institution for this wallet — the user is fully removing
             // the wallet from the system. Hard-delete so the sync cron has
             // no row to re-detect chains against on its next pass.
-            await this.userWalletService.hardDeleteWallet(userWalletId);
+            await this.userWalletService.hardDeleteWallet(userWalletId, userId);
             this.logInfo('Hard-deleted user wallet after last account removal', {
               accountId,
               userWalletId,
@@ -347,8 +354,15 @@ export class AccountService extends BaseService {
 
       // Validate institution exists if being updated
       if (data.institutionId !== undefined && data.institutionId !== existing.institutionId) {
-        const institution = await this.institutionRepository.findById(data.institutionId, tx);
-        this.assertExists(institution, `Institution with ID ${data.institutionId} not found`);
+        const visible = await this.institutionRepository.isVisibleTo(
+          data.institutionId,
+          userId,
+          tx
+        );
+        this.assertExists(
+          visible ? true : null,
+          `Institution with ID ${data.institutionId} not found`
+        );
       }
 
       // Validate account type exists if being updated

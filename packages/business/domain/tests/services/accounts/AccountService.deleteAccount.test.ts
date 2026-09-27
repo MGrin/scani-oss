@@ -18,7 +18,7 @@ const ACCOUNT_ID = '33333333-3333-3333-3333-333333333333';
 
 function makeAccountRepoStub(remainingActive: number): AccountRepository {
   return {
-    findById: async () =>
+    findByIdAndUser: async () =>
       ({
         id: ACCOUNT_ID,
         userId: USER_ID,

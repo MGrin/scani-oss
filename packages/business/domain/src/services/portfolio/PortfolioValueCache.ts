@@ -56,6 +56,8 @@ const REDIS_TIMEOUT_MS = 250;
  */
 @Service()
 export class PortfolioValueCache {
+  private readonly inFlight = new Map<string, Promise<PortfolioValueResult>>();
+
   /**
    * Return the cached valuation for `key`, or run `factory`, cache its
    * result, and return it. A missing, failing or *unresponsive* Redis
@@ -66,6 +68,22 @@ export class PortfolioValueCache {
   async getOrCompute(
     key: string,
     factory: () => Promise<PortfolioValueResult>
+  ): Promise<PortfolioValueResult> {
+    const existing = this.inFlight.get(key);
+    if (existing) return existing;
+    const pending = this.compute(key, factory, () => this.inFlight.get(key) === pending);
+    this.inFlight.set(key, pending);
+    try {
+      return await pending;
+    } finally {
+      if (this.inFlight.get(key) === pending) this.inFlight.delete(key);
+    }
+  }
+
+  private async compute(
+    key: string,
+    factory: () => Promise<PortfolioValueResult>,
+    isCurrent: () => boolean
   ): Promise<PortfolioValueResult> {
     const redis = getSharedRedis();
     if (!redis) return factory();
@@ -85,9 +103,10 @@ export class PortfolioValueCache {
 
     // Fire-and-forget write: a slow Redis must add zero latency to the
     // response. The key already encodes user + account + base currency.
-    redis
-      .set(key, JSON.stringify(value), 'EX', TTL_SECONDS)
-      .catch((error) => logger.warn({ error, key }, 'Portfolio-value cache write failed'));
+    if (isCurrent())
+      redis
+        .set(key, JSON.stringify(value), 'EX', TTL_SECONDS)
+        .catch((error) => logger.warn({ error, key }, 'Portfolio-value cache write failed'));
 
     return value;
   }
@@ -103,6 +122,9 @@ export class PortfolioValueCache {
    * than their read.
    */
   async bust(userId: string): Promise<void> {
+    for (const key of this.inFlight.keys()) {
+      if (key.startsWith(`pv:v2:${userId}:`)) this.inFlight.delete(key);
+    }
     const redis = getSharedRedis();
     if (!redis) return;
 

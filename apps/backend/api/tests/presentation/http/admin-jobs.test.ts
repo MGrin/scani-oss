@@ -137,22 +137,23 @@ describe('SC-1043: the validator emits names ioredis will accept', () => {
     ['HGETALL', ['rl:coingecko']],
   ];
 
-  it.each(
-    ALLOWLISTED
-  )('%s: the validated pipeline builds against a real ioredis client', (name, argv) => {
-    const validated = validateRedisReadCommands([[name, ...argv]]);
-    expect(validated.ok).toBe(true);
-    if (!validated.ok) return;
+  it.each(ALLOWLISTED)(
+    '%s: the validated pipeline builds against a real ioredis client',
+    (name, argv) => {
+      const validated = validateRedisReadCommands([[name, ...argv]]);
+      expect(validated.ok).toBe(true);
+      if (!validated.ok) return;
 
-    const client = lazyClient();
-    try {
-      // The exact call the route makes at admin-jobs.ts's
-      // `redis.pipeline(validated.commands)`. This threw for all seven.
-      expect(() => client.pipeline(validated.commands)).not.toThrow();
-    } finally {
-      client.disconnect();
+      const client = lazyClient();
+      try {
+        // The exact call the route makes at admin-jobs.ts's
+        // `redis.pipeline(validated.commands)`. This threw for all seven.
+        expect(() => client.pipeline(validated.commands)).not.toThrow();
+      } finally {
+        client.disconnect();
+      }
     }
-  });
+  );
 
   it('emits names that are real methods on ioredis Pipeline, whatever case came in', () => {
     // Both directions: the admin app sends uppercase (providerStatus.ts),

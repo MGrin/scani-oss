@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink } from '@trpc/client';
 import { getQueryKey } from '@trpc/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { BaseCurrencyProvider } from '../../../src/contexts/BaseCurrencyContext';
 import { trpc } from '../../../src/lib/trpc';
 import { RunwayLine } from '../../../src/v3/components/home/RunwayLine';

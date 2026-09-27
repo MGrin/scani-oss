@@ -1,4 +1,9 @@
-import { type PresignedUpload, type PresignUploadOptions, StorageService } from '@scani/storage';
+import {
+  type PresignedUpload,
+  type PresignUploadOptions,
+  type ReadOptions,
+  StorageService,
+} from '@scani/storage';
 import { Container, Service } from 'typedi';
 import { CloudStorage } from '../cloud-services/cloud-storage';
 import { getCloudClient } from '../runtime';
@@ -6,7 +11,7 @@ import { getCloudClient } from '../runtime';
 // Re-exported here rather than made a direct `@scani/storage` dependency of
 // every consumer: callers reach object storage through this facade, so the
 // predicate that classifies its errors belongs on the same boundary.
-export { isMissingObjectError } from '@scani/storage';
+export { isMissingObjectError, isObjectTooLargeError } from '@scani/storage';
 
 // Cloud-or-local dispatcher resolved via typedi. When SCANI_CLOUD_URL is set
 // the call routes through the data-provider; otherwise it falls through to
@@ -34,10 +39,10 @@ export class StorageFacade {
     return this.local().exists(key);
   }
 
-  read(key: string): Promise<Buffer> {
+  read(key: string, opts?: Pick<ReadOptions, 'maxBytes'>): Promise<Buffer> {
     const cloud = this.cloud();
-    if (cloud) return cloud.read(key);
-    return this.local().read(key);
+    if (cloud) return cloud.read(key, opts);
+    return this.local().read(key, opts);
   }
 
   readObject(key: string): Promise<{ bytes: Uint8Array; contentType: string } | null> {

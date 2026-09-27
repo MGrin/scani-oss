@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Institution, NewInstitution } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, eq, ne, sql } from 'drizzle-orm';
+import { and, desc, eq, ne, or, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 export type StaleSyncTarget = {
@@ -121,19 +121,82 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
   }
 
   /**
-   * An active institution whose name matches, ignoring case and
-   * surrounding whitespace.
+   * Who may see an institution (SC-1354): the verified catalogue, a row the
+   * user created, or a row one of their accounts already hangs off. The third
+   * arm keeps a legacy row with no owner working for the one user using it.
+   */
+  private visibleTo(userId: string) {
+    return or(
+      eq(schema.institutions.isVerified, true),
+      eq(schema.institutions.createdByUserId, userId),
+      sql`exists (select 1 from ${schema.accounts} where ${schema.accounts.institutionId} = ${schema.institutions.id} and ${schema.accounts.userId} = ${userId})`
+    );
+  }
+
+  /** Active institutions this user may see, for the picker. */
+  async findVisibleTo(userId: string, transaction?: DatabaseTransaction): Promise<Institution[]> {
+    return this.getDb(transaction)
+      .select()
+      .from(schema.institutions)
+      .where(and(eq(schema.institutions.isActive, true), this.visibleTo(userId)))
+      .orderBy(schema.institutions.name);
+  }
+
+  /** Whether this user may attach an account to the institution. */
+  async isVisibleTo(
+    institutionId: string,
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<boolean> {
+    const [row] = await this.getDb(transaction)
+      .select({ id: schema.institutions.id })
+      .from(schema.institutions)
+      .where(and(eq(schema.institutions.id, institutionId), this.visibleTo(userId)))
+      .limit(1);
+    return row !== undefined;
+  }
+
+  /**
+   * The verified institution for a site, matched on its normalised host
+   * (`siteHost`), so `https://www.revolut.com` and `revolut.com/app` are one
+   * site (SC-1354). Seeded rows are written both with and without `www.`, so
+   * the stored value is normalised in the query rather than trusted.
+   */
+  async findVerifiedBySiteHost(
+    host: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Institution | null> {
+    const [row] = await this.getDb(transaction)
+      .select()
+      .from(schema.institutions)
+      .where(
+        and(
+          eq(schema.institutions.isVerified, true),
+          eq(schema.institutions.isActive, true),
+          sql`split_part(split_part(regexp_replace(lower(trim(${schema.institutions.website})), '^https?://(www\.)?', ''), '/', 1), ':', 1) = ${host}`
+        )
+      )
+      .orderBy(schema.institutions.createdAt)
+      .limit(1);
+    return row ?? null;
+  }
+
+  /**
+   * An active institution this user may see whose name matches, ignoring case
+   * and surrounding whitespace.
    *
-   * `institutions` is a shared catalogue with no uniqueness on `name`, so
-   * the import flow's "Add <name>" happily inserted a second row next to
-   * the seeded one. The user then saw two identical picker rows, chose the
-   * empty one, and was told their account did not exist (SC-135).
+   * There is no uniqueness on `name`, so the import flow's "Add <name>" once
+   * inserted a second row next to the seeded one; the user then picked the
+   * empty one and was told their account did not exist (SC-135). Reuse stays,
+   * but only among rows this user may see: reusing another user's row by name
+   * is how one user's typed name reached everyone (SC-1354).
    *
-   * Ordered by `created_at` so the seeded catalogue row — the one every
-   * other user's data already hangs off — wins over any later duplicate.
+   * Verified rows first, then oldest, so the catalogue row wins over a
+   * duplicate the user typed.
    */
   async findByNameInsensitive(
     name: string,
+    userId: string,
     transaction?: DatabaseTransaction
   ): Promise<Institution | null> {
     const database = this.getDb(transaction);
@@ -143,10 +206,11 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
       .where(
         and(
           sql`lower(trim(${schema.institutions.name})) = lower(trim(${name}))`,
-          eq(schema.institutions.isActive, true)
+          eq(schema.institutions.isActive, true),
+          this.visibleTo(userId)
         )
       )
-      .orderBy(schema.institutions.createdAt)
+      .orderBy(desc(schema.institutions.isVerified), schema.institutions.createdAt)
       .limit(1);
     return row ?? null;
   }

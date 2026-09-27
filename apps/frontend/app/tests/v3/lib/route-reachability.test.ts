@@ -300,16 +300,17 @@ describe('every destination can be reached without typing its URL', () => {
     expect(all.length).toBeGreaterThan(20);
   });
 
-  test.each(
-    all.map((destination) => [destination.expr, destination] as const)
-  )('%s', (_expr, destination) => {
-    if (NAV_PATHS.has(destination.path)) return;
-    const inbound = linksTo(destination.expr);
-    expect(
-      inbound,
-      `${destination.expr} (${destination.path}) is registered in V3App and nothing in src/ ` +
-        'links to it, so it is reachable only by typing the URL. Give it a nav entry or a ' +
-        'Link from the surface a reader would look for it on.'
-    ).not.toEqual([]);
-  });
+  test.each(all.map((destination) => [destination.expr, destination] as const))(
+    '%s',
+    (_expr, destination) => {
+      if (NAV_PATHS.has(destination.path)) return;
+      const inbound = linksTo(destination.expr);
+      expect(
+        inbound,
+        `${destination.expr} (${destination.path}) is registered in V3App and nothing in src/ ` +
+          'links to it, so it is reachable only by typing the URL. Give it a nav entry or a ' +
+          'Link from the surface a reader would look for it on.'
+      ).not.toEqual([]);
+    }
+  );
 });

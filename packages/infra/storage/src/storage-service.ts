@@ -1,8 +1,10 @@
 import { urlSchema } from '@scani/config';
+import { AwsV4Signer } from 'aws4fetch';
 import { S3Client } from 'bun';
 import { Service } from 'typedi';
 import { z } from 'zod';
 import { isMissingObjectError } from './missing-object';
+import { ObjectTooLargeError } from './object-too-large';
 
 export interface PresignUploadOptions {
   keyPrefix: string;
@@ -16,10 +18,7 @@ export interface PresignedUpload {
   uploadUrl: string;
   key: string;
   expiresAt: string;
-  // Bun's `presign` binds `host` into the signature but not `content-type` /
-  // `content-length`; we still hand them back so callers can include them
-  // verbatim, and the call-site admission validation (allowlists, size caps)
-  // is the real defence against arbitrary uploads.
+  // Both headers are signed; the browser supplies its actual Content-Length.
   requiredHeaders: Record<string, string>;
 }
 
@@ -28,6 +27,14 @@ export type HealthResult = { ok: true; latencyMs: number } | { ok: false; error:
 /** Target a bucket other than the configured `S3_BUCKET` for one call. */
 export interface BucketOverride {
   bucket?: string;
+}
+
+export interface ReadOptions extends BucketOverride {
+  /**
+   * Reject oversized metadata early and cap bytes consumed from the actual
+   * body independently, including when an object changes after the HEAD.
+   */
+  maxBytes?: number;
 }
 
 // `{ bucket: undefined }` is not the same as `undefined` to Bun's S3Client —
@@ -106,7 +113,7 @@ export class StorageService {
   private serverSdk: S3Client | null = null;
   private publicSdk: S3Client | null = null;
 
-  presignUpload(opts: PresignUploadOptions): PresignedUpload {
+  presignUpload(opts: PresignUploadOptions): Promise<PresignedUpload> {
     const ttl = opts.ttlSeconds ?? DEFAULT_UPLOAD_TTL_SECONDS;
     if (opts.keyPrefix.length > MAX_KEY_PREFIX_LENGTH || !KEY_PREFIX_PATTERN.test(opts.keyPrefix)) {
       throw new Error(
@@ -121,21 +128,39 @@ export class StorageService {
           'Only alphanumeric extensions ≤ 10 chars are allowed.'
       );
     }
+    if (!Number.isSafeInteger(opts.contentLength) || opts.contentLength <= 0) {
+      throw new Error('StorageService.presignUpload: contentLength must be a positive integer');
+    }
     const key = `${TEMP_PREFIX}${opts.keyPrefix}/${crypto.randomUUID()}.${ext}`;
-    const uploadUrl = this.publicClient().file(key).presign({
-      method: 'PUT',
-      expiresIn: ttl,
-      type: opts.contentType,
-    });
-    return {
-      uploadUrl,
-      key,
-      expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
-      requiredHeaders: {
-        'content-type': opts.contentType,
-        'content-length': String(opts.contentLength),
-      },
+    const cfg = this.requireConfig();
+    const url = new URL(
+      `${cfg.publicEndpoint.replace(/\/$/, '')}/${encodeURIComponent(cfg.bucket)}/${key}`
+    );
+    url.searchParams.set('X-Amz-Expires', String(ttl));
+    const requiredHeaders = {
+      'content-type': opts.contentType,
+      'content-length': String(opts.contentLength),
     };
+    // Bun's native presigner signs only host. aws4fetch must explicitly sign
+    // all headers, or it too excludes Content-Length and Content-Type.
+    return new AwsV4Signer({
+      url: url.toString(),
+      method: 'PUT',
+      headers: requiredHeaders,
+      accessKeyId: cfg.accessKeyId,
+      secretAccessKey: cfg.secretAccessKey,
+      region: cfg.region,
+      service: 's3',
+      signQuery: true,
+      allHeaders: true,
+    })
+      .sign()
+      .then(({ url }) => ({
+        uploadUrl: url.toString(),
+        key,
+        expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
+        requiredHeaders,
+      }));
   }
 
   presignDownload(key: string, ttlSeconds: number = DEFAULT_DOWNLOAD_TTL_SECONDS): string {
@@ -163,22 +188,59 @@ export class StorageService {
    * reported as "it is missing".
    */
   async exists(key: string): Promise<boolean> {
-    const url = this.serverClient().file(key).presign({
-      method: 'HEAD',
-      expiresIn: EXISTS_PRESIGN_TTL_SECONDS,
-    });
-    const res = await this.fetcher(url, {
-      method: 'HEAD',
-      signal: AbortSignal.timeout(EXISTS_TIMEOUT_MS),
-    });
+    const res = await this.head(key);
     if (res.status === 200) return true;
     if (res.status === 403 || res.status === 404) return false;
     throw new Error(`StorageService.exists: unexpected status ${res.status} for ${key}`);
   }
 
-  async read(key: string, opts?: BucketOverride): Promise<Buffer> {
-    const bytes = await this.serverClient().file(key, bucketOpt(opts)).arrayBuffer();
-    return Buffer.from(bytes);
+  async read(key: string, opts?: ReadOptions): Promise<Buffer> {
+    const file = this.serverClient().file(key, bucketOpt(opts));
+    const maxBytes = opts?.maxBytes;
+    if (maxBytes === undefined) return Buffer.from(await file.arrayBuffer());
+    if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0)
+      throw new Error('maxBytes must be a positive integer');
+    await this.assertWithin(key, maxBytes, opts);
+    const reader = file.stream().getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > maxBytes) throw new ObjectTooLargeError(key, size, maxBytes);
+        chunks.push(value);
+      }
+      return Buffer.concat(chunks, size);
+    } finally {
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+  }
+
+  private async assertWithin(key: string, maxBytes: number, opts?: BucketOverride): Promise<void> {
+    const res = await this.head(key, opts);
+    // Worded so `isMissingObjectError` classifies it the way it classifies
+    // the body read this replaces: callers treat a missing upload as terminal.
+    if (res.status === 403 || res.status === 404) throw new Error(`NoSuchKey: ${key}`);
+    if (res.status !== 200) {
+      throw new Error(`StorageService.read: unexpected status ${res.status} for ${key}`);
+    }
+    const stated = res.headers.get('content-length');
+    const size = stated === null || !/^\d+$/.test(stated) ? null : Number(stated);
+    if (size === null || size > maxBytes) throw new ObjectTooLargeError(key, size, maxBytes);
+  }
+
+  private head(key: string, opts?: BucketOverride): Promise<Response> {
+    const url = this.serverClient().file(key, bucketOpt(opts)).presign({
+      method: 'HEAD',
+      expiresIn: EXISTS_PRESIGN_TTL_SECONDS,
+    });
+    return this.fetcher(url, {
+      method: 'HEAD',
+      signal: AbortSignal.timeout(EXISTS_TIMEOUT_MS),
+    });
   }
 
   /**
@@ -252,7 +314,7 @@ export class StorageService {
     assertSafeKey(fromKey, 'copy source');
     assertSafeKey(toKey, 'copy destination');
     const client = this.serverClient();
-    const bytes = await client.file(fromKey).arrayBuffer();
+    const bytes = await this.read(fromKey, { maxBytes: 8 * 1024 * 1024 });
     await client.file(toKey).write(bytes, contentType ? { type: contentType } : undefined);
   }
 

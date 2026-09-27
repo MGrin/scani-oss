@@ -62,7 +62,7 @@ export function createCurrencyToken(t: TFunction, currencySymbol: string): Token
  *   (`tokens.createCustom`, `z.string().min(1).max(200)`). Rendering a
  *   translation of it would show somebody something they did not write.
  * - The rest arrive verbatim from Finnhub / CoinGecko / DefiLlama
- *   (`TokenService.createManyFromExternal`), so there is no key to translate
+ *   (`TokenService.createFromExternal`), so there is no key to translate
  *   them under and no authority to invent one.
  *
  * `tokens.name` is also WRITE-ONCE — of the thirteen `update(tokens).set(…)`

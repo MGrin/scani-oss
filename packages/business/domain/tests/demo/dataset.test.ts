@@ -302,7 +302,7 @@ describe('demo dataset — a wallet account is shaped like an imported one', () 
     const accountByKey = new Map(dataset.accounts.map((row) => [row.key, row]));
     const holdingByKey = new Map(dataset.holdings.map((row) => [row.key, row]));
     const chainOf = (accountKey: string): string | undefined =>
-      (accountByKey.get(accountKey)?.metadata as { chainId?: string }).chainId;
+      (accountByKey.get(accountKey)?.metadata as { chainId?: string } | undefined)?.chainId;
 
     const unanswered = dataset.transactions.filter(
       (tx) =>

@@ -26,9 +26,9 @@ function makeDocument(overrides: Partial<Document> = {}): Document {
   } as Document;
 }
 
-function makeService(opts: { copy?: () => Promise<void>; updated?: unknown } = {}) {
-  const copy = mock(opts.copy ?? (async () => undefined));
-  Container.set(StorageFacade, { copy } as unknown as StorageFacade);
+function makeService(opts: { write?: () => Promise<void>; updated?: unknown } = {}) {
+  const write = mock(opts.write ?? (async () => undefined));
+  Container.set(StorageFacade, { write } as unknown as StorageFacade);
 
   const update = mock(async (_id: string, patch: Partial<Document>) => {
     if ('updated' in opts) return opts.updated;
@@ -38,10 +38,31 @@ function makeService(opts: { copy?: () => Promise<void>; updated?: unknown } = {
 
   const instance = new DocumentRetentionService();
   Container.set(DocumentRetentionService, instance);
-  return { instance, copy, update };
+  return { instance, write, update };
 }
 
 describe('DocumentRetentionService', () => {
+  test('retains the exact parsed bytes even when the upload was replaced', async () => {
+    const objects = new Map<string, Uint8Array>();
+    const document = makeDocument();
+    const parsed = new Uint8Array([1, 2, 3]);
+    objects.set(document.r2Key, new Uint8Array([9, 9, 9]));
+    Container.set(StorageFacade, {
+      copy: async (from: string, to: string) => {
+        objects.set(to, objects.get(from)!);
+      },
+      write: async (key: string, bytes: Uint8Array) => {
+        objects.set(key, bytes);
+      },
+    } as unknown as StorageFacade);
+    Container.set(DocumentRepository, {
+      update: async (_id: string, patch: Partial<Document>) => ({ ...document, ...patch }),
+    } as unknown as DocumentRepository);
+    const service = new DocumentRetentionService();
+    const retained = await service.retain(document, parsed);
+    expect(objects.get(retained.r2Key)).toEqual(parsed);
+  });
+
   test('the permanent key is per-user, per-document, and keeps the extension', async () => {
     const { instance } = makeService();
     expect(instance.retainedKeyFor(makeDocument())).toBe(`documents/${USER}/${DOC_ID}.pdf`);
@@ -59,16 +80,16 @@ describe('DocumentRetentionService', () => {
 
   test('retain copies the object rather than moving it', async () => {
     // A move would leave a failure between "source deleted" and "key
-    // persisted" with no copy of the file at all. The parse path owns the
+    // persisted" with no write of the file at all. The parse path owns the
     // one delete of the temp upload.
-    const { instance, copy, update } = makeService();
+    const { instance, write, update } = makeService();
     const document = makeDocument();
 
-    const retained = await instance.retain(document);
+    const retained = await instance.retain(document, new Uint8Array([1, 2, 3]));
 
-    expect(copy).toHaveBeenCalledWith(
-      document.r2Key,
+    expect(write).toHaveBeenCalledWith(
       `documents/${USER}/${DOC_ID}.pdf`,
+      new Uint8Array([1, 2, 3]),
       'application/pdf'
     );
     expect(update).toHaveBeenCalledWith(DOC_ID, { r2Key: `documents/${USER}/${DOC_ID}.pdf` });
@@ -78,11 +99,11 @@ describe('DocumentRetentionService', () => {
   test('retain is a no-op for an already-retained document', async () => {
     // Every re-parse reaches here with the permanent key; rewriting the
     // object from itself would be pointless work and a needless risk.
-    const { instance, copy, update } = makeService();
+    const { instance, write, update } = makeService();
     const document = makeDocument({ r2Key: `documents/${USER}/${DOC_ID}.pdf` });
 
-    expect(await instance.retain(document)).toBe(document);
-    expect(copy).not.toHaveBeenCalled();
+    expect(await instance.retain(document, new Uint8Array([1, 2, 3]))).toBe(document);
+    expect(write).not.toHaveBeenCalled();
     expect(update).not.toHaveBeenCalled();
   });
 
@@ -96,6 +117,6 @@ describe('DocumentRetentionService', () => {
     const { instance } = makeService({ updated: null });
     const document = makeDocument();
 
-    expect((await instance.retain(document)).r2Key).toBe(document.r2Key);
+    expect((await instance.retain(document, new Uint8Array([1, 2, 3]))).r2Key).toBe(document.r2Key);
   });
 });

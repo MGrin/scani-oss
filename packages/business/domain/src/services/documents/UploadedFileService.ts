@@ -65,7 +65,7 @@ export class UploadedFileService {
     if (existing) {
       return this.retention.isRetained(existing.r2Key)
         ? existing
-        : this.retain({ ...existing, r2Key: input.r2Key });
+        : this.retain({ ...existing, r2Key: input.r2Key }, input.bytes);
     }
 
     const document = await this.documents.create({
@@ -79,12 +79,12 @@ export class UploadedFileService {
       sourceKind: input.sourceKind ?? 'upload',
     });
 
-    return this.retain(document);
+    return this.retain(document, input.bytes);
   }
 
-  private async retain(document: Document): Promise<Document> {
+  private async retain(document: Document, bytes: Uint8Array): Promise<Document> {
     try {
-      return await this.retention.retain(document);
+      return await this.retention.retain(document, bytes);
     } catch (error) {
       logger.error(
         {

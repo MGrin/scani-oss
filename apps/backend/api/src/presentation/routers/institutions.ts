@@ -1,9 +1,10 @@
 import { createCloudOGClient } from '@scani/cloud-client/cloud-services/cloud-og-client';
 import { getCloudClient } from '@scani/cloud-client/runtime';
-import { InstitutionRepository } from '@scani/domain/repositories';
-import { InstitutionService } from '@scani/domain/services';
+import { InstitutionRepository, InstitutionTypeRepository } from '@scani/domain/repositories';
+import { InstitutionService, siteHost } from '@scani/domain/services';
 import { BoundedFetchError, fetchHtmlBounded } from '@scani/http-fetch';
 import { createComponentLogger } from '@scani/logging';
+import { TRPCError } from '@trpc/server';
 import ogs from 'open-graph-scraper';
 import { Container } from 'typedi';
 import { z } from 'zod';
@@ -150,12 +151,9 @@ function checkUserRateLimit(userId: string): boolean {
 // keeps its per-user rate gate and in-process cache — those need
 // authenticated context the data-provider doesn't have. Resolved
 // lazily so tests can swap the client via @scani/cloud-client/runtime.
-let cloudOG: ReturnType<typeof createCloudOGClient> | null | undefined;
 function resolveCloudOG(): ReturnType<typeof createCloudOGClient> | null {
-  if (cloudOG !== undefined) return cloudOG;
   const client = getCloudClient();
-  cloudOG = client ? createCloudOGClient(client) : null;
-  return cloudOG;
+  return client ? createCloudOGClient(client) : null;
 }
 
 async function extractOG(url: string): Promise<OGData> {
@@ -182,10 +180,54 @@ async function extractOG(url: string): Promise<OGData> {
   };
 }
 
+/** Collapse whitespace and control characters, and cap the length. */
+function cleanText(value: string, max: number): string {
+  const printable = Array.from(value, (ch) => {
+    const code = ch.charCodeAt(0);
+    return code < 32 || code === 127 ? ' ' : ch;
+  }).join('');
+  return printable.replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+/** One bounded, cached, rate-limited scrape of a site's origin. */
+async function scrapeSite(origin: string, userId: string): Promise<OGData> {
+  const cached = getOGFromCache(origin);
+  if (cached) return cached;
+  if (!checkUserRateLimit(userId)) {
+    institutionsLogger.warn({ userId, origin }, 'Site scrape rate limit exceeded');
+    return EMPTY_OG;
+  }
+  if (!(await tryAcquireFetchSlot())) {
+    institutionsLogger.warn(
+      { origin, inFlight: inFlightFetches },
+      'Site scrape concurrency cap hit'
+    );
+    return EMPTY_OG;
+  }
+  try {
+    const data = await extractOG(origin);
+    setOGInCache(origin, data, OG_CACHE_TTL_MS);
+    return data;
+  } catch (error) {
+    institutionsLogger.warn(
+      {
+        origin,
+        reason: error instanceof BoundedFetchError ? error.reason : undefined,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      'Site scrape failed'
+    );
+    setOGInCache(origin, EMPTY_OG, OG_NEGATIVE_CACHE_TTL_MS);
+    return EMPTY_OG;
+  } finally {
+    releaseFetchSlot();
+  }
+}
+
 export const institutionsRouter = router({
-  // Get all institutions
-  getAll: protectedProcedure.query(async () => {
-    return await Container.get(InstitutionRepository).findAll();
+  // The institutions this user may pick: the verified catalogue plus their own (SC-1354).
+  getAll: protectedProcedure.query(async ({ ctx }) => {
+    return await Container.get(InstitutionRepository).findVisibleTo(ctx.userId);
   }),
 
   getByUserId: protectedProcedure.query(async ({ ctx }) => {
@@ -197,65 +239,45 @@ export const institutionsRouter = router({
     return await Container.get(InstitutionService).getInstitutionsByUserIdWithSummary(dbUser.id);
   }),
 
-  // Fetch Open Graph metadata for a user-supplied website URL.
+  // An institution from its website, shared with everyone (SC-1354, mgrin
+  // 2026-09-26). The client sends a URL and nothing else: name, logo and
+  // description come from the server's own scrape of the site's origin, so a
+  // client cannot publish arbitrary text into every user's picker. A site that
+  // already has a verified row is reused without scraping. `null` means the
+  // site gave no name; the user then types one, and that row stays private.
   //
-  // This is the institution-creation autofill ("user pastes revolut.com,
-  // we autofill name + icon"). The naive implementation OOM-killed the
-  // backend because:
-  //   1. `open-graph-scraper` buffers the entire response body in RAM.
-  //   2. No concurrency cap — a handful of slow/geo-blocked URLs could
-  //      stack hundreds of MB on a 512MB machine.
-  //   3. No SSRF guard on user-supplied URLs.
-  // Mitigations layered here:
-  //   - `fetchHtmlBounded` caps response body at 512KB and blocks private
-  //     hosts before the fetch ever starts.
-  //   - `tryAcquireFetchSlot` caps concurrent external fetches at 3.
-  //   - Per-user sliding-window limiter (20 / 60s) keeps any one client
-  //     from being able to blow past the cache with unique URLs.
-  //   - Positive results cached for 1h, empty/failed for 5 min.
-  getOpenGraphMetadata: protectedProcedure
-    .input(strictInput(z.object({ url: z.string().url() })))
-    .query(async ({ input, ctx }) => {
-      const cached = getOGFromCache(input.url);
-      if (cached) return cached;
-
-      if (!checkUserRateLimit(ctx.userId)) {
-        institutionsLogger.warn(
-          { userId: ctx.userId, url: input.url },
-          'OG metadata rate limit exceeded — returning empty metadata'
-        );
-        return EMPTY_OG;
+  // The scrape is the old autofill's, with its guards: `fetchHtmlBounded` caps
+  // the body at 512KB and blocks private hosts, at most 3 fetches run at once,
+  // 20 per user per minute, and results are cached (1h, empty ones 5 min).
+  createFromWebsite: protectedProcedure
+    .input(strictInput(z.object({ url: z.string().url(), typeId: z.string().uuid().optional() })))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const host = siteHost(input.url);
+      if (!host) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Not a public website' });
       }
+      const service = Container.get(InstitutionService);
+      const existing = await Container.get(InstitutionRepository).findVerifiedBySiteHost(host);
+      if (existing) return { id: existing.id, name: existing.name };
 
-      const acquired = await tryAcquireFetchSlot();
-      if (!acquired) {
-        institutionsLogger.warn(
-          { url: input.url, inFlight: inFlightFetches },
-          'OG metadata concurrency cap hit — returning empty metadata'
-        );
-        return EMPTY_OG;
-      }
+      const origin = `https://${host}`;
+      const og = await scrapeSite(origin, dbUser.id);
+      const name = cleanText(og.siteName || og.title, 120);
+      if (!name) return null;
 
-      try {
-        const data = await extractOG(input.url);
-        setOGInCache(input.url, data, OG_CACHE_TTL_MS);
-        return data;
-      } catch (error) {
-        if (error instanceof BoundedFetchError) {
-          institutionsLogger.warn(
-            { url: input.url, reason: error.reason, message: error.message },
-            'OG metadata fetch refused'
-          );
-        } else {
-          institutionsLogger.warn(
-            { url: input.url, error: error instanceof Error ? error.message : String(error) },
-            'OG metadata fetch failed'
-          );
-        }
-        setOGInCache(input.url, EMPTY_OG, OG_NEGATIVE_CACHE_TTL_MS);
-        return EMPTY_OG;
-      } finally {
-        releaseFetchSlot();
+      const typeId =
+        input.typeId ?? (await Container.get(InstitutionTypeRepository).findByCode('other'))?.id;
+      if (!typeId) {
+        throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'No institution type' });
       }
+      const { institution } = await service.ensureFromSite({
+        host,
+        name,
+        description: cleanText(og.description, 500) || null,
+        logoUrl: /^https:\/\//i.test(og.image) ? og.image : null,
+        typeId,
+      });
+      return { id: institution.id, name: institution.name };
     }),
 });

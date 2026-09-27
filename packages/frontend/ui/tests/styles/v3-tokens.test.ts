@@ -171,16 +171,14 @@ describe.each(MODES)('%s mode', (_mode, tokens) => {
   });
 
   describe('theme derivation', () => {
-    test.each([
-      '--gain',
-      '--loss',
-      '--neutral',
-      '--interactive',
-    ] as const)('%s keeps its hue across themes so identity survives a theme flip', (token) => {
-      expect(parseHslTriplet(light[token] as string).h).toBe(
-        parseHslTriplet(dark[token] as string).h
-      );
-    });
+    test.each(['--gain', '--loss', '--neutral', '--interactive'] as const)(
+      '%s keeps its hue across themes so identity survives a theme flip',
+      (token) => {
+        expect(parseHslTriplet(light[token] as string).h).toBe(
+          parseHslTriplet(dark[token] as string).h
+        );
+      }
+    );
 
     test('gain and loss differ in luminance, not only in hue', () => {
       for (const [, theme] of themes) {
@@ -231,18 +229,19 @@ describe.each(MODES)('%s mode', (_mode, tokens) => {
     /** Past this, `<AllocationBar>` folds to `--chart-other`. */
     const UNRESERVED_SLOTS = [1, 2, 3, 4, 5, 6] as const;
 
-    test.each([
-      ...SLOTS,
-    ])('--chart-%i keeps one hue across themes, so a series survives a theme flip', (slot) => {
-      // The v2 bug this ramp exists to fix: globals.css gives the same slot
-      // unrelated hues per theme, so flipping the theme reassigns which colour
-      // means "crypto". Saturation and lightness are re-solved per theme; the
-      // hue is one number.
-      const token = `--chart-${slot}`;
-      expect(parseHslTriplet(light[token] as string).h).toBe(
-        parseHslTriplet(dark[token] as string).h
-      );
-    });
+    test.each([...SLOTS])(
+      '--chart-%i keeps one hue across themes, so a series survives a theme flip',
+      (slot) => {
+        // The v2 bug this ramp exists to fix: globals.css gives the same slot
+        // unrelated hues per theme, so flipping the theme reassigns which colour
+        // means "crypto". Saturation and lightness are re-solved per theme; the
+        // hue is one number.
+        const token = `--chart-${slot}`;
+        expect(parseHslTriplet(light[token] as string).h).toBe(
+          parseHslTriplet(dark[token] as string).h
+        );
+      }
+    );
 
     test.each(themes)('the %s ramp is the palette the validator passed', (name, theme) => {
       expect(SLOTS.map((slot) => toHex(theme[`--chart-${slot}`] as string))).toEqual([
@@ -250,39 +249,41 @@ describe.each(MODES)('%s mode', (_mode, tokens) => {
       ]);
     });
 
-    test.each(
-      themes
-    )('%s stays inside the skill lightness band and chroma floor', (name, theme) => {
-      const [lo, hi] = name === 'light' ? [0.43, 0.77] : [0.48, 0.67];
-      for (const slot of SLOTS) {
-        const { l, c } = oklch(theme[`--chart-${slot}`] as string);
-        expect(l).toBeGreaterThanOrEqual(lo as number);
-        expect(l).toBeLessThanOrEqual(hi as number);
-        // Below ~0.10 a hue reads as gray and stops doing identity work.
-        expect(c).toBeGreaterThanOrEqual(0.1);
+    test.each(themes)(
+      '%s stays inside the skill lightness band and chroma floor',
+      (name, theme) => {
+        const [lo, hi] = name === 'light' ? [0.43, 0.77] : [0.48, 0.67];
+        for (const slot of SLOTS) {
+          const { l, c } = oklch(theme[`--chart-${slot}`] as string);
+          expect(l).toBeGreaterThanOrEqual(lo as number);
+          expect(l).toBeLessThanOrEqual(hi as number);
+          // Below ~0.10 a hue reads as gray and stops doing identity work.
+          expect(c).toBeGreaterThanOrEqual(0.1);
+        }
       }
-    });
+    );
 
-    test.each(
-      themes
-    )('in %s, each semantic token collides with a reserved slot', (_name, theme) => {
-      // The ordering constraint made checkable, and the reason `<AllocationBar>`
-      // folds at six. Eight hues cannot all stay clear of a violet accent and a
-      // red loss token, so the collisions were *placed*: violet at slot 7 and
-      // red at slot 8, past where the bar ever reaches. Reorder the ramp and
-      // this fails, which is the point.
-      //
-      // Measured nearest slot (ΔE OKLab ×100): --interactive → slot 7 at 8.3
-      // light / 4.6 dark; --loss → slot 8 at 11.1 light / 5.5 dark.
-      const nearest = (token: string) =>
-        SLOTS.map((slot) => ({
-          slot,
-          d: deltaE(theme[`--chart-${slot}`] as string, theme[token] as string),
-        })).sort((a, b) => a.d - b.d)[0]?.slot;
+    test.each(themes)(
+      'in %s, each semantic token collides with a reserved slot',
+      (_name, theme) => {
+        // The ordering constraint made checkable, and the reason `<AllocationBar>`
+        // folds at six. Eight hues cannot all stay clear of a violet accent and a
+        // red loss token, so the collisions were *placed*: violet at slot 7 and
+        // red at slot 8, past where the bar ever reaches. Reorder the ramp and
+        // this fails, which is the point.
+        //
+        // Measured nearest slot (ΔE OKLab ×100): --interactive → slot 7 at 8.3
+        // light / 4.6 dark; --loss → slot 8 at 11.1 light / 5.5 dark.
+        const nearest = (token: string) =>
+          SLOTS.map((slot) => ({
+            slot,
+            d: deltaE(theme[`--chart-${slot}`] as string, theme[token] as string),
+          })).sort((a, b) => a.d - b.d)[0]?.slot;
 
-      expect(nearest('--interactive')).toBe(7);
-      expect(nearest('--loss')).toBe(8);
-    });
+        expect(nearest('--interactive')).toBe(7);
+        expect(nearest('--loss')).toBe(8);
+      }
+    );
 
     test.each(themes)('in %s, gain stays clear of every slot the bar can show', (_name, theme) => {
       // Green has no reserved slot to hide in — slot 6 *is* green and the bar
@@ -311,18 +312,19 @@ describe.each(MODES)('%s mode', (_mode, tokens) => {
       }
     });
 
-    test.each(
-      themes
-    )('in %s, --chart-other is not mistakable for a slot beside it', (_name, theme) => {
-      // "Other" only ever appears alongside slots 1-6, so those are the pairs
-      // that matter. Measured worst: 14.3 light, 13.7 dark — both slot 1, the
-      // closest hue family to a blue-gray.
-      for (const slot of UNRESERVED_SLOTS) {
-        expect(
-          deltaE(theme['--chart-other'] as string, theme[`--chart-${slot}`] as string)
-        ).toBeGreaterThan(13);
+    test.each(themes)(
+      'in %s, --chart-other is not mistakable for a slot beside it',
+      (_name, theme) => {
+        // "Other" only ever appears alongside slots 1-6, so those are the pairs
+        // that matter. Measured worst: 14.3 light, 13.7 dark — both slot 1, the
+        // closest hue family to a blue-gray.
+        for (const slot of UNRESERVED_SLOTS) {
+          expect(
+            deltaE(theme['--chart-other'] as string, theme[`--chart-${slot}`] as string)
+          ).toBeGreaterThan(13);
+        }
       }
-    });
+    );
   });
 
   describe('type scale', () => {

@@ -28,7 +28,7 @@ const storage = (): StorageService => Container.get(StorageService);
 // 256KB of payload, expressed in base64 characters (4 chars per 3 bytes).
 // Enforced on the wire so an oversized body is refused by zod before it is
 // decoded into a Buffer, rather than after.
-const WRITE_OBJECT_MAX_BASE64_CHARS = Math.ceil((256 * 1024 * 4) / 3);
+const WRITE_OBJECT_MAX_BASE64_CHARS = 4 * Math.ceil((8 * 1024 * 1024) / 3);
 
 export const storageRouter = router({
   presignUpload: internalProcedure
@@ -132,11 +132,11 @@ export const storageRouter = router({
         protect: true,
       },
     })
-    .input(z.object({ key: z.string() }))
+    .input(z.object({ key: z.string(), maxBytes: z.number().int().positive().optional() }))
     .output(z.object({ base64: z.string(), byteLength: z.number() }))
     .mutation(async ({ input }) => {
       try {
-        const buf = await storage().read(input.key);
+        const buf = await storage().read(input.key, { maxBytes: input.maxBytes });
         return { base64: buf.toString('base64'), byteLength: buf.byteLength };
       } catch (err) {
         log.warn(
@@ -210,10 +210,8 @@ export const storageRouter = router({
   // `presignUpload` would force them into `temp/<prefix>/<uuid>`, a jail for
   // user uploads that a permanent object does not belong in.
   //
-  // Capped at 256KB. That is twice the icon cap in `@scani/http-fetch`, and
-  // the point of the cap is that this is not a general file-upload endpoint:
-  // if a caller ever needs one, it should have to change this line and say
-  // why.
+  // Icons are capped at 256KB; retained documents accept up to 8MB so the
+  // worker can persist the exact bytes it parsed instead of re-reading a mutable upload.
   writeObject: internalProcedure
     .meta({
       openapi: {
@@ -236,6 +234,8 @@ export const storageRouter = router({
     .mutation(async ({ input }) => {
       try {
         const bytes = Buffer.from(input.base64, 'base64');
+        const maxBytes = input.key.startsWith('documents/') ? 8 * 1024 * 1024 : 256 * 1024;
+        if (bytes.byteLength > maxBytes) throw new Error('Object exceeds the write limit');
         await storage().write(input.key, bytes, input.contentType);
         return { ok: true };
       } catch (err) {

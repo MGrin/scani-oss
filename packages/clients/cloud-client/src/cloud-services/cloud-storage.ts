@@ -35,9 +35,12 @@ export class CloudStorage {
     }
   }
 
-  async read(key: string): Promise<Buffer> {
+  async read(key: string, opts?: { maxBytes?: number }): Promise<Buffer> {
     try {
-      const { base64 } = await this.client.storage.readTempBlob.mutate({ key });
+      const { base64 } = await this.client.storage.readTempBlob.mutate({
+        key,
+        ...(opts?.maxBytes === undefined ? {} : { maxBytes: opts.maxBytes }),
+      });
       return Buffer.from(base64, 'base64');
     } catch (err) {
       throw CloudError.wrap(err);

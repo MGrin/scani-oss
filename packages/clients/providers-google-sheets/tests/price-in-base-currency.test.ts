@@ -46,23 +46,22 @@ describe('priceInBaseCurrency', () => {
    * — around a third too high, and indistinguishable from a real price.
    * This is the assertion that fails on that shape.
    */
-  it.each(
-    LISTED
-  )('refuses rather than publishing the native $symbol figure when conversion fails', async ({
-    cad,
-  }) => {
-    const outcome = await priceInBaseCurrency({
-      rawPrice: cad,
-      currency: 'CAD',
-      baseCurrencySymbol: 'USD',
-      timestamp: new Date(),
-      convertPrice: refuses('CAD->USD rate lookup failed: The operation was aborted.'),
-      symbol: 'X',
-    });
+  it.each(LISTED)(
+    'refuses rather than publishing the native $symbol figure when conversion fails',
+    async ({ cad }) => {
+      const outcome = await priceInBaseCurrency({
+        rawPrice: cad,
+        currency: 'CAD',
+        baseCurrencySymbol: 'USD',
+        timestamp: new Date(),
+        convertPrice: refuses('CAD->USD rate lookup failed: The operation was aborted.'),
+        symbol: 'X',
+      });
 
-    expect(outcome.ok).toBe(false);
-    expect(JSON.stringify(outcome)).not.toContain(cad);
-  });
+      expect(outcome.ok).toBe(false);
+      expect(JSON.stringify(outcome)).not.toContain(cad);
+    }
+  );
 
   /**
    * The other half of the same defect: the new-token paths assigned the

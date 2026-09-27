@@ -3,7 +3,7 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import { TRANSFER_REVIEW_KIND } from '@scani/shared';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import type { BaseCurrencyRates } from '../../../src/hooks/useBaseCurrencyRates';
 import { CoverageNote } from '../../../src/v3/components/home/CoverageNote';
 import { DisclosureButton } from '../../../src/v3/components/home/DisclosureButton';

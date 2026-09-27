@@ -163,20 +163,15 @@ describe('resolveNumeric — deltas', () => {
 });
 
 describe('resolveNumeric — the placeholder', () => {
-  test.each([
-    null,
-    undefined,
-    '',
-    '   ',
-    'not a number',
-    Number.NaN,
-    Number.POSITIVE_INFINITY,
-  ])('renders %p as the unpriceable placeholder rather than zero', (value) => {
-    const parts = resolveNumeric(value, USD);
-    expect(parts.isPlaceholder).toBe(true);
-    expect(parts.text).toBe('—');
-    expect(parts.tone).toBeNull();
-  });
+  test.each([null, undefined, '', '   ', 'not a number', Number.NaN, Number.POSITIVE_INFINITY])(
+    'renders %p as the unpriceable placeholder rather than zero',
+    (value) => {
+      const parts = resolveNumeric(value, USD);
+      expect(parts.isPlaceholder).toBe(true);
+      expect(parts.text).toBe('—');
+      expect(parts.tone).toBeNull();
+    }
+  );
 
   // `@scani/shared`'s formatCurrency renders NaN as $0.00 on purpose so v2
   // callers never had to sanitize; v3 refuses to state a figure it does not

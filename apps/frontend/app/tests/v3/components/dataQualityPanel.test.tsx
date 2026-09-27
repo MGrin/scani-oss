@@ -7,7 +7,7 @@ import { getQueryKey } from '@trpc/react-query';
 import i18n from 'i18next';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { trpc } from '../../../src/lib/trpc';
 import { DataQualitySettings } from '../../../src/v3/components/settings/DataQualitySettings';
 import { DATA_QUALITY_KINDS } from '../../../src/v3/lib/dataQuality';

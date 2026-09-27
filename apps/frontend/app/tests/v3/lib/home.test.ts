@@ -246,9 +246,12 @@ describe('allocationHref', () => {
     ['institution', 'inst-1', '/holdings?institution=inst-1'],
     ['account', 'acct-1', '/holdings?account=acct-1'],
     ['group', 'grp-1', '/holdings?group=grp-1'],
-  ] as const)('the %s cut opens the holdings list filtered to the slice', (dimension, key, href) => {
-    expect(allocationHref(dimension, key)).toBe(href);
-  });
+  ] as const)(
+    'the %s cut opens the holdings list filtered to the slice',
+    (dimension, key, href) => {
+      expect(allocationHref(dimension, key)).toBe(href);
+    }
+  );
 
   test('an id needing escaping is escaped rather than mangling the query', () => {
     expect(allocationHref('account', 'a b&c')).toBe('/holdings?account=a%20b%26c');

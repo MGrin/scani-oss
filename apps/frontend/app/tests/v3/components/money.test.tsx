@@ -6,7 +6,7 @@ import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
 import i18n from 'i18next';
 import { createElement, Fragment, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { renderDesktop } from '../../../../../../packages/frontend/ui/tests/helpers/render-desktop';
 import type { BaseCurrencyRates } from '../../../src/hooks/useBaseCurrencyRates';
 import { rankCurrencyMatches, tokenLabel } from '../../../src/v3/components/money/CurrencyField';

@@ -144,14 +144,12 @@ describe('describeRepeatInterval', () => {
     );
   });
 
-  test.each([
-    ['year'],
-    ['quarter'],
-    ['month'],
-    ['week'],
-  ] as const)('%s has both forms in en.json', (unit) => {
-    expect(describeRepeatInterval(t, '1', unit)).not.toBe(describeRepeatInterval(t, '4', unit));
-  });
+  test.each([['year'], ['quarter'], ['month'], ['week']] as const)(
+    '%s has both forms in en.json',
+    (unit) => {
+      expect(describeRepeatInterval(t, '1', unit)).not.toBe(describeRepeatInterval(t, '4', unit));
+    }
+  );
 
   // The count comes straight off a text input, so it is a string that may be
   // empty, zero or not a number at all while the reader is still typing.

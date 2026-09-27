@@ -45,8 +45,14 @@ import { Elysia } from 'elysia';
 import { Redis } from 'ioredis';
 import { Container } from 'typedi';
 
-initSentry({ component: 'data-provider', release: env.SENTRY_RELEASE });
+initSentry({
+  component: 'data-provider',
+  release: env.SENTRY_RELEASE,
+  scrubEvent: scrubSentryEvent,
+  scrubBreadcrumb: scrubSentryBreadcrumb,
+});
 
+import { scrubSentryBreadcrumb, scrubSentryEvent } from '@scani/shared';
 import { type CloudBetterAuthInstance, createCloudBetterAuth } from './auth/better-auth';
 import { createCloudAuthGate } from './auth/cloud-auth-limit';
 import { type CloudDb, closeCloudDb, getCloudDb } from './db/connection';

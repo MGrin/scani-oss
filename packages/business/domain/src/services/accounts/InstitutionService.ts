@@ -42,15 +42,17 @@ export class InstitutionService extends BaseService {
       this.validateRequiredFields(data, ['name', 'typeId']);
       this.validateNonEmptyString(data.name, 'name');
 
-      // Reuse before insert. `institutions` is a shared catalogue with no
-      // unique constraint on `name`, and the capture flow's "Add <name>"
-      // affordance sits directly under the matching existing row — so the
-      // ordinary mis-tap produced a second, identical institution holding
-      // none of the user's accounts, and the next import reported their
-      // account as missing (SC-135). The duplicate is invisible on every
-      // screen, which is what makes it worth preventing here rather than
-      // warning about it in one picker.
-      const existing = await this.institutionRepository.findByNameInsensitive(data.name, tx);
+      // Reuse before insert. There is no unique constraint on `name`, and the
+      // capture flow's "Add <name>" affordance sits directly under the matching
+      // existing row — so the ordinary mis-tap produced a second, identical
+      // institution holding none of the user's accounts, and the next import
+      // reported their account as missing (SC-135). Only rows this user may
+      // see are reused; another user's typed row is not (SC-1354).
+      const existing = await this.institutionRepository.findByNameInsensitive(
+        data.name,
+        userId,
+        tx
+      );
       if (existing) {
         this.logInfo('Reusing existing institution with the same name', {
           institutionId: existing.id,
@@ -68,6 +70,9 @@ export class InstitutionService extends BaseService {
           website: data.website || null,
           logoUrl: data.logoUrl || null,
           isActive: true,
+          // A typed institution is the creator's until someone verifies it.
+          isVerified: false,
+          createdByUserId: userId,
         },
         tx
       );
@@ -76,6 +81,48 @@ export class InstitutionService extends BaseService {
       return { institution, created: true };
     } catch (error) {
       throw this.handleError(error, 'ensureInstitution');
+    }
+  }
+
+  /**
+   * The shared institution for a site, creating it verified if none exists
+   * (SC-1354, mgrin 2026-09-26). Every field here comes from the server's own
+   * scrape of `https://<host>`; the caller must never pass client input as
+   * `name`, `description` or `logoUrl`, or anyone could publish anything to
+   * every user's picker under a real site's name.
+   *
+   * Two concurrent first creations of one site race on the verified-website
+   * unique index; the loser reads the winner's row.
+   */
+  async ensureFromSite(site: {
+    host: string;
+    name: string;
+    description: string | null;
+    logoUrl: string | null;
+    typeId: string;
+  }): Promise<{ institution: Institution; created: boolean }> {
+    const existing = await this.institutionRepository.findVerifiedBySiteHost(site.host);
+    if (existing) return { institution: existing, created: false };
+    try {
+      const institution = await this.institutionRepository.create({
+        name: site.name,
+        typeId: site.typeId,
+        description: site.description,
+        website: `https://${site.host}`,
+        logoUrl: site.logoUrl,
+        isActive: true,
+        isVerified: true,
+        createdByUserId: null,
+      });
+      this.logInfo('Shared institution created from its site', {
+        institutionId: institution.id,
+        host: site.host,
+      });
+      return { institution, created: true };
+    } catch (error) {
+      const raced = await this.institutionRepository.findVerifiedBySiteHost(site.host);
+      if (raced) return { institution: raced, created: false };
+      throw this.handleError(error, 'ensureFromSite');
     }
   }
 

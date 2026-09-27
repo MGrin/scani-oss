@@ -14,12 +14,12 @@
   },
   "dependencies": {
     "@scani/logging": "workspace:*",
-    "nodemailer": "^6",
+    "nodemailer": "^9.1.1",
     "typedi": "^0.10.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/nodemailer": "^6",
-    "typescript": "^5"
+    "@types/nodemailer": "^6.4.24",
+    "typescript": "^5.9.3"
   }
 }

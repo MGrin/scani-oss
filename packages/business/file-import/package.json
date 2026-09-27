@@ -16,10 +16,10 @@
     "@scani/logging": "workspace:*",
     "@scani/shared": "workspace:*",
     "ofx-js": "^0.2.0",
-    "papaparse": "^5.5.3"
+    "papaparse": "^5.7.0"
   },
   "devDependencies": {
     "@types/papaparse": "^5.5.2",
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   }
 }

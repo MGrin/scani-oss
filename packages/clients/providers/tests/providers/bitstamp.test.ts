@@ -338,13 +338,13 @@ describe('BitstampProvider.fetchTransactions', () => {
 
       const dep = out.find((e) => e.externalId === 'user-tx:1');
       expect(dep?.kind).toBe('deposit');
-      expect((dep?.rawPayload as { txid?: string }).txid).toBe('0xabc123');
+      expect((dep!.rawPayload as { txid?: string }).txid).toBe('0xabc123');
 
       const trade = out.find((e) => e.externalId === 'user-tx:2');
       expect(trade?.kind).toBe('sell');
       expect(trade?.priceNative?.value).toBe('50000');
       // Trade events should not get a txid from the crypto-tx feed.
-      expect((trade?.rawPayload as { txid?: string }).txid).toBeUndefined();
+      expect((trade!.rawPayload as { txid?: string }).txid).toBeUndefined();
 
       // user_transactions: page 0 returns < 1000, loop breaks after one fetch.
       expect(userTxCalls).toEqual([0]);

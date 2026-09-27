@@ -55,7 +55,9 @@ const sink = Bun.serve({
   async fetch(req) {
     // A Sentry envelope is newline-delimited JSON: one envelope header, then
     // (item header, item payload) pairs.
-    const lines = (await req.text()).split('\n').filter(Boolean);
+    const body = new Uint8Array(await req.arrayBuffer());
+    const decoded = req.headers.get('content-encoding') === 'gzip' ? Bun.gunzipSync(body) : body;
+    const lines = new TextDecoder().decode(decoded).split('\n').filter(Boolean);
     for (let i = 1; i < lines.length; i += 2) {
       let header: { type?: string };
       try {

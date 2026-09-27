@@ -24,7 +24,12 @@ import { LANGUAGE_HEADER } from '@scani/shared';
 
 // Sentry is the first thing we wire up so any subsequent boot-time failure
 // reaches the error tracker instead of being lost to stdout.
-initSentry({ component: 'backend', release: env.SENTRY_RELEASE });
+initSentry({
+  component: 'backend',
+  release: env.SENTRY_RELEASE,
+  scrubEvent: scrubSentryEvent,
+  scrubBreadcrumb: scrubSentryBreadcrumb,
+});
 
 const wsLogger = createComponentLogger('websocket');
 
@@ -73,6 +78,7 @@ import {
   strandedRedisError,
 } from '@scani/rate-limiter';
 import { RedisRealtimeUpdatesService, WebSocketRealtimeUpdatesService } from '@scani/realtime';
+import { scrubSentryBreadcrumb, scrubSentryEvent } from '@scani/shared';
 import { StorageService } from '@scani/storage';
 import { sql } from 'drizzle-orm';
 import { Elysia } from 'elysia';
@@ -774,8 +780,11 @@ app
         database: {
           connected: true,
           queryTime: `${queryTime}ms`,
+          queryTimeScope: 'health query round trip, including connection acquisition',
           poolConfig: connectionStats,
           activeConnections,
+          activeConnectionsScope:
+            'active Scani sessions across this database, excluding this probe',
           monitoring: monitoringStats,
         },
       };

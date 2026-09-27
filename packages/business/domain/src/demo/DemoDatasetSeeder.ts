@@ -507,7 +507,8 @@ export class DemoDatasetSeeder {
     if (existing) return existing.id;
     const [created] = await db
       .insert(schema.institutions)
-      .values({ name, typeId, hasIntegration: false })
+      // The demo's catalogue, shared by every demo visitor.
+      .values({ name, typeId, hasIntegration: false, isVerified: true })
       .returning({ id: schema.institutions.id });
     return (created as { id: string }).id;
   }

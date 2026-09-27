@@ -8,7 +8,7 @@ import { httpBatchLink } from '@trpc/client';
 import i18n from 'i18next';
 import { createElement, Fragment, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { trpc } from '../../../src/lib/trpc';
 import {
   type HoldingPeekContext,

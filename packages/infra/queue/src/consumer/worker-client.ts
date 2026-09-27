@@ -3,6 +3,7 @@ import { createComponentLogger } from '@scani/logging';
 import { withSpan } from '@scani/logging/sentry';
 import {
   createPostgresBackend,
+  DelayedError,
   type Job,
   type PostgresQueueBackend,
   Queue,
@@ -188,15 +189,17 @@ export class WorkerClient {
     const { job } = entry;
     const processor = this.processors.get(job.name);
     if (!processor) throw new Error(`No processor registered for job '${job.name}'`);
-    // Gate scheduled jobs through the cron semaphore (when one was
-    // configured) so the hourly cron tide can't pin the entire
-    // worker concurrency budget. The slot is held in BullMQ either
-    // way — the semaphore just stalls the actual handler invocation
-    // until a cron-budget slot frees up.
-    const release =
-      this.cronSemaphore && this.scheduledNames.has(job.name)
-        ? await this.cronSemaphore.acquire()
-        : null;
+    // Waiting inside dispatch already occupies a BullMQ slot. Defer excess
+    // cron work without spending an attempt, allowing user jobs to be admitted.
+    let release: (() => void) | null = null;
+    if (this.cronSemaphore && this.scheduledNames.has(job.name)) {
+      const { inFlight, capacity } = this.cronSemaphore.stats();
+      if (inFlight >= capacity) {
+        await job.moveToDelayed(Date.now() + 1000, entry.token);
+        throw new DelayedError();
+      }
+      release = await this.cronSemaphore.acquire();
+    }
     if (entry.handedBack) {
       release?.();
       return undefined;

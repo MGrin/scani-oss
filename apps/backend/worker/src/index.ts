@@ -66,8 +66,14 @@ import {
   startRedisStrandWatchdog,
   strandedRedisError,
 } from '@scani/rate-limiter';
+import { scrubSentryBreadcrumb, scrubSentryEvent } from '@scani/shared';
 
-initSentry({ component: 'worker', release: env.SENTRY_RELEASE });
+initSentry({
+  component: 'worker',
+  release: env.SENTRY_RELEASE,
+  scrubEvent: scrubSentryEvent,
+  scrubBreadcrumb: scrubSentryBreadcrumb,
+});
 
 // Probe the data-provider at boot. The previous version exited on
 // failure; the 2026-05-09 outage taught us that a transient

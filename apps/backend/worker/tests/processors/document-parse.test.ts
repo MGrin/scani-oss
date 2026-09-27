@@ -3,8 +3,8 @@ import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
 import { DocumentRepository } from '@scani/domain/repositories';
 import { DocumentIngestionService, DocumentRetentionService } from '@scani/domain/services';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
-import type { DocumentParseJob } from '@scani/jobs';
-import { type ProcessorContext, UnrecoverableError } from '@scani/queue';
+import { type DocumentParseJob, UPLOADED_FILE_MAX_BYTES } from '@scani/jobs';
+import { type ProcessorContext, UnrecoverableError, userFacingMessage } from '@scani/queue';
 import { Container } from 'typedi';
 import { DocumentParseProcessor } from '../../src/processors/document-parse';
 
@@ -61,13 +61,13 @@ function makeProcessor(opts: {
   document: ReturnType<typeof makeDocument>;
   deduped?: boolean;
   read?: () => Promise<Buffer>;
-  copy?: () => Promise<void>;
+  write?: () => Promise<void>;
   ingestFails?: boolean;
 }) {
   const read = mock(opts.read ?? (async () => Buffer.from('pdf-bytes')));
-  const copy = mock(opts.copy ?? (async () => undefined));
+  const write = mock(opts.write ?? (async () => undefined));
   const del = mock(async () => undefined);
-  Container.set(StorageFacade, { read, copy, delete: del } as unknown as StorageFacade);
+  Container.set(StorageFacade, { read, write, delete: del } as unknown as StorageFacade);
 
   const update = mock(async (_id: string, patch: { r2Key: string }) => ({
     ...opts.document,
@@ -90,7 +90,7 @@ function makeProcessor(opts: {
   // exactly the predicate under test, so stubbing it would test nothing.
   Container.set(DocumentRetentionService, new DocumentRetentionService());
 
-  return { processor: new TestableProcessor(), read, copy, del, update, ingest };
+  return { processor: new TestableProcessor(), read, write, del, update, ingest };
 }
 
 function job(overrides: Partial<DocumentParseJob> = {}): DocumentParseJob {
@@ -106,15 +106,39 @@ function job(overrides: Partial<DocumentParseJob> = {}): DocumentParseJob {
 }
 
 describe('DocumentParseProcessor retention', () => {
+  // SC-1345: the presigned PUT does not bind its size, so this read is the
+  // first point that can refuse an oversized object before holding it.
+  test('reads the upload with the upload cap, so storage refuses an oversized one first', async () => {
+    const { processor, read } = makeProcessor({ document: makeDocument(TEMP_KEY) });
+    await processor.run(job(), makeCtx());
+    expect(read).toHaveBeenCalledWith(TEMP_KEY, { maxBytes: UPLOADED_FILE_MAX_BYTES });
+  });
+
+  // SC-1363: an object over the cap never shrinks, so the job ends on its
+  // first attempt and tells the owner why.
+  test('an oversized upload fails once, and says it is over 8 MB', async () => {
+    const { processor } = makeProcessor({
+      document: makeDocument(TEMP_KEY),
+      read: async () => {
+        throw new Error(
+          `ObjectTooLarge: ${TEMP_KEY} is ${9 * 2 ** 20} bytes, over the ${UPLOADED_FILE_MAX_BYTES}-byte limit`
+        );
+      },
+    });
+    const err = await processor.run(job(), makeCtx()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect(userFacingMessage(err)).toBe('This file is larger than 8 MB. Upload a smaller file.');
+  });
+
   test('a fresh parse promotes the upload and deletes only the temp key', async () => {
-    const { processor, copy, del, update } = makeProcessor({ document: makeDocument(TEMP_KEY) });
+    const { processor, write, del, update } = makeProcessor({ document: makeDocument(TEMP_KEY) });
 
     const result = await processor.run(job(), makeCtx());
 
-    expect(copy).toHaveBeenCalledWith(TEMP_KEY, RETAINED_KEY, 'application/pdf');
+    expect(write).toHaveBeenCalledWith(RETAINED_KEY, Buffer.from('pdf-bytes'), 'application/pdf');
     expect(update).toHaveBeenCalledWith(DOC_ID, { r2Key: RETAINED_KEY });
     // Exactly one delete, and it is the temp upload — never the object the
-    // copy just created.
+    // write just created.
     expect(del).toHaveBeenCalledTimes(1);
     expect(del).toHaveBeenCalledWith(TEMP_KEY);
     expect(result.documentId).toBe(DOC_ID);
@@ -122,13 +146,13 @@ describe('DocumentParseProcessor retention', () => {
 
   test('a retained file survives the parse path cleanup', async () => {
     // A re-parse is handed the document's own permanent key. Deleting it
-    // would destroy the only copy of the file.
-    const { processor, copy, del } = makeProcessor({ document: makeDocument(RETAINED_KEY) });
+    // would destroy the only write of the file.
+    const { processor, write, del } = makeProcessor({ document: makeDocument(RETAINED_KEY) });
 
     await processor.run(job({ r2Key: RETAINED_KEY, reparseOf: DOC_ID }), makeCtx());
 
     expect(del).not.toHaveBeenCalled();
-    expect(copy).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
   });
 
   test('a retained key is never deleted even when the job omits reparseOf', async () => {
@@ -143,8 +167,8 @@ describe('DocumentParseProcessor retention', () => {
 
   test('a dedup short-circuit still deletes its temp upload', async () => {
     // Nothing was promoted — the matched document was retained by the parse
-    // that first ingested it — so the temp copy is pure garbage.
-    const { processor, copy, del } = makeProcessor({
+    // that first ingested it — so the temp write is pure garbage.
+    const { processor, write, del } = makeProcessor({
       document: makeDocument(RETAINED_KEY),
       deduped: true,
     });
@@ -152,7 +176,7 @@ describe('DocumentParseProcessor retention', () => {
     const result = await processor.run(job(), makeCtx());
 
     expect(result.deduped).toBe(true);
-    expect(copy).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
     expect(del).toHaveBeenCalledTimes(1);
     expect(del).toHaveBeenCalledWith(TEMP_KEY);
   });
@@ -172,7 +196,7 @@ describe('DocumentParseProcessor retention', () => {
     // started.
     const { processor, del } = makeProcessor({
       document: makeDocument(TEMP_KEY),
-      copy: async () => {
+      write: async () => {
         throw new Error('R2 unavailable');
       },
     });

@@ -61,22 +61,24 @@ describe('a Dockerfile healthcheck reads the port from the environment (SC-492)'
     expect(probes.map((p) => p.app).sort()).toContain('data-provider');
   });
 
-  test.each(
-    probes.map((p) => [p.app, p.line] as const)
-  )('%s probes a port taken from the environment', (_app, line) => {
-    // Only localhost probes are in scope: a healthcheck that talks to
-    // something else is not making a claim about this server's port.
-    if (!/localhost/.test(line)) return;
-    expect(line).toContain('${PORT');
-  });
+  test.each(probes.map((p) => [p.app, p.line] as const))(
+    '%s probes a port taken from the environment',
+    (_app, line) => {
+      // Only localhost probes are in scope: a healthcheck that talks to
+      // something else is not making a claim about this server's port.
+      if (!/localhost/.test(line)) return;
+      expect(line).toContain('${PORT');
+    }
+  );
 
-  test.each(
-    probes.map((p) => [p.app, p.line] as const)
-  )('%s does not write a literal port into a localhost probe', (_app, line) => {
-    if (!/localhost/.test(line)) return;
-    // `localhost:1234` with digits straight after the colon is the banned
-    // shape. `localhost:${PORT:-1234}` is fine — the default lives inside
-    // the expansion, where an environment can still override it.
-    expect(line).not.toMatch(/localhost:\d/);
-  });
+  test.each(probes.map((p) => [p.app, p.line] as const))(
+    '%s does not write a literal port into a localhost probe',
+    (_app, line) => {
+      if (!/localhost/.test(line)) return;
+      // `localhost:1234` with digits straight after the colon is the banned
+      // shape. `localhost:${PORT:-1234}` is fine — the default lives inside
+      // the expansion, where an environment can still override it.
+      expect(line).not.toMatch(/localhost:\d/);
+    }
+  );
 });

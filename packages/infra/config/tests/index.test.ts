@@ -119,13 +119,12 @@ describe('httpsUrlInProduction (production mode)', () => {
 
   // A LAN address is not a secure context in any browser, so it must not slip
   // through with the loopback hosts.
-  test.each([
-    'http://192.168.1.10:8080',
-    'http://10.0.0.5',
-    'http://notlocalhost.com',
-  ])('still rejects non-loopback http URL %s', (url) => {
-    expect(httpsUrlInProduction.safeParse(url).success).toBe(false);
-  });
+  test.each(['http://192.168.1.10:8080', 'http://10.0.0.5', 'http://notlocalhost.com'])(
+    'still rejects non-loopback http URL %s',
+    (url) => {
+      expect(httpsUrlInProduction.safeParse(url).success).toBe(false);
+    }
+  );
 
   test('still rejects malformed URLs (urlSchema base check fires first)', () => {
     expect(httpsUrlInProduction.safeParse('not a url').success).toBe(false);

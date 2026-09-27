@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { addBreadcrumb, captureException, flushSentry, initSentry } from '../src/sentry';
+import {
+  addBreadcrumb,
+  captureException,
+  flushSentry,
+  initSentry,
+  prepareSentryEvent,
+} from '../src/sentry';
 
 // All assertions in this file run with SENTRY_DSN unset (the test default),
 // so every helper short-circuits via its `initialized` guard. We're proving
@@ -62,5 +68,25 @@ describe('initSentry idempotence', () => {
   test('a second initSentry call without DSN remains a no-op', () => {
     expect(() => initSentry({ component: 'backend' })).not.toThrow();
     expect(() => initSentry({ component: 'data-provider' })).not.toThrow();
+  });
+});
+
+describe('prepareSentryEvent (SC-1350)', () => {
+  const scrub = <T>(event: T): T => JSON.parse(JSON.stringify(event).replaceAll('SECRET-1', 'x'));
+
+  test('runs the app-supplied scrubber over every event it keeps', () => {
+    const event = { message: 'fetch failed ?token=SECRET-1', request: { url: '/trpc/x' } };
+    expect(JSON.stringify(prepareSentryEvent(event, scrub))).not.toContain('SECRET-1');
+  });
+
+  test('still drops bot scans', () => {
+    expect(
+      prepareSentryEvent({ request: { url: 'https://api.scani.xyz/.env' } }, scrub)
+    ).toBeNull();
+  });
+
+  test('control: with no scrubber the event is returned unchanged', () => {
+    const event = { message: 'plain' };
+    expect(prepareSentryEvent(event)).toEqual({ message: 'plain' });
   });
 });

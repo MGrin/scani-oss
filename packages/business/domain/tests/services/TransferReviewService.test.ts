@@ -3083,27 +3083,27 @@ describe('TransferReviewService — the own-wallet invariant (SC-365)', () => {
       expect(found[0]?.counterparty).toBe(OWN);
     });
 
-    test.each([
-      'user',
-      'repair',
-    ] as const)('finds a %s-stamped left_control row too — the source is reported, never filtered on', async (source) => {
-      const f = fixture!;
-      await addOwnWallet(f, OWN);
-      const id = await insertOutflow(f, {
-        at: anchor(),
-        quantity: '-100',
-        externalId: `sc365-src-${source}`,
-        kind: 'transfer_out',
-        transferReview: 'left_control',
-        transferReviewedAt: anchor(),
-        transferReviewSource: source,
-        rawPayload: { to: OWN },
-      });
+    test.each(['user', 'repair'] as const)(
+      'finds a %s-stamped left_control row too — the source is reported, never filtered on',
+      async (source) => {
+        const f = fixture!;
+        await addOwnWallet(f, OWN);
+        const id = await insertOutflow(f, {
+          at: anchor(),
+          quantity: '-100',
+          externalId: `sc365-src-${source}`,
+          kind: 'transfer_out',
+          transferReview: 'left_control',
+          transferReviewedAt: anchor(),
+          transferReviewSource: source,
+          rawPayload: { to: OWN },
+        });
 
-      const found = await service().ownWalletDisposals(f.userId);
-      expect(found.map((d) => d.transactionId)).toEqual([id]);
-      expect(found[0]?.answerSource).toBe(source);
-    });
+        const found = await service().ownWalletDisposals(f.userId);
+        expect(found.map((d) => d.transactionId)).toEqual([id]);
+        expect(found[0]?.answerSource).toBe(source);
+      }
+    );
 
     test('finds a SPLIT row whose left_control portion realizes onto an own wallet', async () => {
       const f = fixture!;
@@ -3176,22 +3176,22 @@ describe('TransferReviewService — the own-wallet invariant (SC-365)', () => {
       expect(await service().ownWalletDisposals(f.userId)).toEqual([]);
     });
 
-    test.each([
-      'internal',
-      'untracked',
-    ] as const)('ignores a %s answer to an own wallet — it books nothing', async (decision) => {
-      const f = fixture!;
-      await addOwnWallet(f, OWN);
-      await insertOutflow(f, {
-        at: anchor(),
-        quantity: '-100',
-        externalId: `sc365-ok-${decision}`,
-        kind: 'transfer_out',
-        transferReview: decision,
-        rawPayload: { to: OWN },
-      });
-      expect(await service().ownWalletDisposals(f.userId)).toEqual([]);
-    });
+    test.each(['internal', 'untracked'] as const)(
+      'ignores a %s answer to an own wallet — it books nothing',
+      async (decision) => {
+        const f = fixture!;
+        await addOwnWallet(f, OWN);
+        await insertOutflow(f, {
+          at: anchor(),
+          quantity: '-100',
+          externalId: `sc365-ok-${decision}`,
+          kind: 'transfer_out',
+          transferReview: decision,
+          rawPayload: { to: OWN },
+        });
+        expect(await service().ownWalletDisposals(f.userId)).toEqual([]);
+      }
+    );
 
     test('reads the address from the PAYLOAD, and matches across EIP-55 casing', async () => {
       const f = fixture!;
