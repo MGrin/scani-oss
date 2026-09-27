@@ -16,8 +16,8 @@
     "@scani/logging": "workspace:*"
   },
   "devDependencies": {
-    "ioredis": "^5.10.1",
+    "ioredis": "^5.11.1",
     "typedi": "^0.10.0",
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   }
 }

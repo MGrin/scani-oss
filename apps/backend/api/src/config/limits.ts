@@ -1,3 +1,4 @@
+import { UPLOADED_FILE_MAX_BYTES } from '@scani/jobs';
 /**
  * Centralized admission-validation limits.
  *
@@ -12,17 +13,17 @@
 export const UPLOAD_LIMITS = {
   /**
    * Max size for a single presigned upload (screenshots, CSV files).
-   * Enforced at admission (storage.getUploadUrl), and by the presigned URL
-   * itself, which binds Content-Length into the SigV4 signature — R2 rejects
-   * a PUT that does not match.
+   * Admitted at storage.getUploadUrl and NOT enforced by the upload itself:
+   * this said the presigned URL binds Content-Length into its signature, and
+   * it does not — Bun's presign signs only `host` (SC-1345). The bound that
+   * holds is the worker's read, which asks storage for the object's size and
+   * refuses past this number before downloading it.
    *
-   * That signature is the whole enforcement. This used to add "and the R2
-   * bucket has a lifecycle rule that sweeps oversized blobs"; an R2 lifecycle
-   * rule can only match on prefix and age, so no such rule is expressible,
-   * and none existed (SC-144). The 30-day `temp/` expiry that exists now is
-   * an orphan backstop and knows nothing about size.
+   * An R2 lifecycle rule cannot help either: it matches on prefix and age
+   * only (SC-144). The 30-day `temp/` expiry is an orphan backstop and knows
+   * nothing about size.
    */
-  PRESIGN_UPLOAD_BYTES: 8 * 1024 * 1024, // 8 MB
+  PRESIGN_UPLOAD_BYTES: UPLOADED_FILE_MAX_BYTES,
 
   /**
    * Max decoded-bytes budget for an inline file-import preview. Smaller
@@ -62,4 +63,6 @@ export const USER_BUDGETS = {
   UPLOAD_BYTES_PER_DAY: 30 * UPLOAD_LIMITS.PRESIGN_UPLOAD_BYTES,
   /** Client error reports per caller per 10 minutes; past it they are dropped. */
   CLIENT_ERRORS_PER_10_MIN: 30,
+  /** Test notifications per user per hour; each one POSTs to every device (SC-1346). */
+  PUSH_TESTS_PER_HOUR: 10,
 } as const;

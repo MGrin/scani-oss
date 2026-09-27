@@ -3,7 +3,7 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { DocumentsList } from '../../../src/v3/components/documents/DocumentsList';
 import { DocumentTotalsSummary } from '../../../src/v3/components/documents/DocumentTotalsSummary';
 import {

@@ -54,13 +54,14 @@ describe('Numeric — gain and loss are never colour alone', () => {
 
   // The whole point of the component: v2 encoded direction as
   // `text-green-600` / `text-red-600` with no second channel, in 47 places.
-  test.each([
-    1234.5, -1234.5,
-  ])('the direction of %p survives with every colour stripped', (value) => {
-    const html = renderToStaticMarkup(<Numeric value={value} currency="USD" delta />);
-    const withoutColour = html.replace(/class="[^"]*"/g, '');
-    expect(withoutColour).toMatch(value > 0 ? /[+↑]/ : /[−↓]/);
-  });
+  test.each([1234.5, -1234.5])(
+    'the direction of %p survives with every colour stripped',
+    (value) => {
+      const html = renderToStaticMarkup(<Numeric value={value} currency="USD" delta />);
+      const withoutColour = html.replace(/class="[^"]*"/g, '');
+      expect(withoutColour).toMatch(value > 0 ? /[+↑]/ : /[−↓]/);
+    }
+  );
 
   test('indicator="sign" drops the arrow and keeps the sign', () => {
     const html = renderToStaticMarkup(

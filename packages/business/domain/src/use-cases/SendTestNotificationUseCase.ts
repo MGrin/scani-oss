@@ -21,7 +21,7 @@ export type TestNotificationOutcome =
    *  was created under. Ours to fix, and nothing can be delivered until it
    *  is (see `isVapidMismatch`). */
   | { status: 'vapid-mismatch' }
-  | { status: 'failed'; statusCode: number | null; reason: string };
+  | { status: 'failed'; statusCode: number | null };
 
 export interface TestNotificationDevice {
   /**
@@ -174,17 +174,11 @@ function describeOutcome(result: Awaited<ReturnType<PushSender['send']>>): TestN
     case 'not-configured':
       // The keys went away between the check above and the send. Vanishingly
       // rare, and still not something to report as a delivery.
-      return {
-        status: 'failed',
-        statusCode: null,
-        reason: `Push is not configured: missing ${result.missing.join(', ')}`,
-      };
+      return { status: 'failed', statusCode: null };
     case 'failed':
       if (isVapidMismatch(result.statusCode)) return { status: 'vapid-mismatch' };
-      return {
-        status: 'failed',
-        statusCode: result.statusCode ?? null,
-        reason: result.reason,
-      };
+      // The upstream error text stays in the sender's log: returned to the
+      // caller it described whatever host the endpoint named (SC-1346).
+      return { status: 'failed', statusCode: result.statusCode ?? null };
   }
 }

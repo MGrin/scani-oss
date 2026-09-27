@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import type { AnsweredTransferReview } from '@scani/shared';
 import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { AnsweredTransferList } from '../../../src/v3/components/review/AnsweredTransferList';
 
 /**

@@ -6,6 +6,7 @@ import { SCREENSHOT_PARSE, type ScreenshotParseJob } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { type ProcessorContext, UserJobProcessor } from '@scani/queue';
 import { Container, Service } from 'typedi';
+import { readUpload } from '../lib/read-upload';
 
 const logger = createComponentLogger('processor:screenshot-parse');
 
@@ -32,7 +33,7 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
       const fileLabel = total > 1 ? ` (${i + 1}/${total})` : '';
       try {
         await ctx.reportStatus(`Reading file${fileLabel}…`);
-        const buf = await storage.read(key);
+        const buf = await readUpload(storage, key);
         const mimeType = inferMime(key);
         // Recorded and retained BEFORE the AI call: the user uploaded this
         // file whether or not the extractor can read it, and a screenshot

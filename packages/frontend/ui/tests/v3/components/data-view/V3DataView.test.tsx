@@ -7,7 +7,7 @@ import type { V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
 import { SETTLED_QUERY_STATE, type V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { Wallet } from 'lucide-react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { renderDesktop } from '../../../helpers/render-desktop';
 
 // The fixtures' own labels, registered the way a host registers its own

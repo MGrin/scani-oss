@@ -116,6 +116,14 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
     userColumn: schema.accounts.userId,
     echo: schema.accounts.id,
   },
+  // An institution the user typed in is theirs alone, so it goes with them.
+  // After the accounts, so their echo is intact; nobody else's can exist (SC-1354).
+  {
+    kind: 'delete',
+    table: schema.institutions,
+    userColumn: schema.institutions.createdByUserId,
+    echo: schema.institutions.id,
+  },
   {
     kind: 'delete',
     table: schema.entities,

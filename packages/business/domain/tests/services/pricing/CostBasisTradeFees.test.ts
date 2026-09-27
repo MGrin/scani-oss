@@ -135,99 +135,99 @@ describe('a ledger with no trade fees is untouched (SC-1142 control)', () => {
   });
 });
 
-describe.each([
-  'fifo',
-  'uk_section_104',
-] as const)('%s — the fee is the only thing that moves', (method) => {
-  test('an acquisition fee raises the lot cost by exactly the fee', async () => {
-    const without = await walk([buy()], method);
-    const withFee = await walk([buy({ feeQuantity: '-1', feeTokenId: USD })], method);
-    expect(without.costBasis.toString()).toBe('100');
-    expect(withFee.costBasis.toString()).toBe('101');
-    expect(withFee.openQty.toString()).toBe('1');
-  });
+describe.each(['fifo', 'uk_section_104'] as const)(
+  '%s — the fee is the only thing that moves',
+  (method) => {
+    test('an acquisition fee raises the lot cost by exactly the fee', async () => {
+      const without = await walk([buy()], method);
+      const withFee = await walk([buy({ feeQuantity: '-1', feeTokenId: USD })], method);
+      expect(without.costBasis.toString()).toBe('100');
+      expect(withFee.costBasis.toString()).toBe('101');
+      expect(withFee.openQty.toString()).toBe('1');
+    });
 
-  test('a disposal fee lowers realized gain by exactly the fee', async () => {
-    const without = await walk([buy(), sell()], method);
-    const withFee = await walk([buy(), sell({ feeQuantity: '-1', feeTokenId: USD })], method);
-    expect(without.realizedPnl.toString()).toBe('50');
-    expect(withFee.realizedPnl.toString()).toBe('49');
-    expect(withFee.costBasis.toString()).toBe('0');
-  });
+    test('a disposal fee lowers realized gain by exactly the fee', async () => {
+      const without = await walk([buy(), sell()], method);
+      const withFee = await walk([buy(), sell({ feeQuantity: '-1', feeTokenId: USD })], method);
+      expect(without.realizedPnl.toString()).toBe('50');
+      expect(withFee.realizedPnl.toString()).toBe('49');
+      expect(withFee.costBasis.toString()).toBe('0');
+    });
 
-  test('both fees on one round trip cost exactly both fees', async () => {
-    const r = await walk(
-      [buy({ feeQuantity: '-1', feeTokenId: USD }), sell({ feeQuantity: '-2', feeTokenId: USD })],
-      method
-    );
-    // 150 - 2 proceeds against 100 + 1 of cost.
-    expect(r.realizedPnl.toString()).toBe('47');
-  });
+    test('both fees on one round trip cost exactly both fees', async () => {
+      const r = await walk(
+        [buy({ feeQuantity: '-1', feeTokenId: USD }), sell({ feeQuantity: '-2', feeTokenId: USD })],
+        method
+      );
+      // 150 - 2 proceeds against 100 + 1 of cost.
+      expect(r.realizedPnl.toString()).toBe('47');
+    });
 
-  test('the per-row ledger still sums to the scalar, fee included', async () => {
-    const r = await walk(
-      [
-        // Quantities that halve the pool exactly. A draw of a third leaves the
-        // rows 1e-25 apart from the scalar with or without any fee, which is
-        // `drawPooled`'s rounding and not what this asserts.
-        buy({ quantity: '2', feeQuantity: '-3', feeTokenId: USD }),
-        buy({
-          quantity: '2',
-          occurredAt: '2024-02-01T10:00:00Z',
-          priceNative: '120',
-          feeQuantity: '-1',
-          feeTokenId: USD,
-        }),
-        sell({ quantity: '-2', feeQuantity: '-4', feeTokenId: USD }),
-      ],
-      method
-    );
-    const summed = r.collect.reduce((s, m) => (m.gain ? s.add(m.gain) : s), new Decimal(0));
-    expect(summed.toString()).toBe(r.realizedPnl.toString());
-  });
+    test('the per-row ledger still sums to the scalar, fee included', async () => {
+      const r = await walk(
+        [
+          // Quantities that halve the pool exactly. A draw of a third leaves the
+          // rows 1e-25 apart from the scalar with or without any fee, which is
+          // `drawPooled`'s rounding and not what this asserts.
+          buy({ quantity: '2', feeQuantity: '-3', feeTokenId: USD }),
+          buy({
+            quantity: '2',
+            occurredAt: '2024-02-01T10:00:00Z',
+            priceNative: '120',
+            feeQuantity: '-1',
+            feeTokenId: USD,
+          }),
+          sell({ quantity: '-2', feeQuantity: '-4', feeTokenId: USD }),
+        ],
+        method
+      );
+      const summed = r.collect.reduce((s, m) => (m.gain ? s.add(m.gain) : s), new Decimal(0));
+      expect(summed.toString()).toBe(r.realizedPnl.toString());
+    });
 
-  test('the transfer-linked walk applies the same fees as the singleton walk', async () => {
-    const svc = makeService();
-    const component = await svc.walkComponent(
-      undefined,
-      ['A', 'B'],
-      byHolding([
-        buy({ feeQuantity: '-1', feeTokenId: USD }),
-        tx({
-          holdingId: 'A',
-          kind: 'transfer_out',
-          quantity: '-1',
-          occurredAt: '2024-03-01T10:00:00Z',
-          transferGroupId: 'g',
-        }),
-        tx({
-          holdingId: 'B',
-          kind: 'transfer_in',
-          quantity: '1',
-          occurredAt: '2024-03-01T10:00:00Z',
-          transferGroupId: 'g',
-        }),
-        sell({ holdingId: 'B', feeQuantity: '-2', feeTokenId: USD }),
-      ]),
-      FUTURE,
-      USD,
-      HELD_TOKENS,
-      undefined,
-      new Map(),
-      undefined,
-      method
-    );
-    const single = await walk(
-      [buy({ feeQuantity: '-1', feeTokenId: USD }), sell({ feeQuantity: '-2', feeTokenId: USD })],
-      method
-    );
-    // The lot carried its fee-inclusive cost across the move, and the sale on
-    // the far side paid its own fee.
-    expect(component.get('B')?.realizedPnl.toString()).toBe('47');
-    expect(component.get('B')?.realizedPnl.toString()).toBe(single.realizedPnl.toString());
-    expect(component.get('A')?.realizedPnl.toString()).toBe('0');
-  });
-});
+    test('the transfer-linked walk applies the same fees as the singleton walk', async () => {
+      const svc = makeService();
+      const component = await svc.walkComponent(
+        undefined,
+        ['A', 'B'],
+        byHolding([
+          buy({ feeQuantity: '-1', feeTokenId: USD }),
+          tx({
+            holdingId: 'A',
+            kind: 'transfer_out',
+            quantity: '-1',
+            occurredAt: '2024-03-01T10:00:00Z',
+            transferGroupId: 'g',
+          }),
+          tx({
+            holdingId: 'B',
+            kind: 'transfer_in',
+            quantity: '1',
+            occurredAt: '2024-03-01T10:00:00Z',
+            transferGroupId: 'g',
+          }),
+          sell({ holdingId: 'B', feeQuantity: '-2', feeTokenId: USD }),
+        ]),
+        FUTURE,
+        USD,
+        HELD_TOKENS,
+        undefined,
+        new Map(),
+        undefined,
+        method
+      );
+      const single = await walk(
+        [buy({ feeQuantity: '-1', feeTokenId: USD }), sell({ feeQuantity: '-2', feeTokenId: USD })],
+        method
+      );
+      // The lot carried its fee-inclusive cost across the move, and the sale on
+      // the far side paid its own fee.
+      expect(component.get('B')?.realizedPnl.toString()).toBe('47');
+      expect(component.get('B')?.realizedPnl.toString()).toBe(single.realizedPnl.toString());
+      expect(component.get('A')?.realizedPnl.toString()).toBe('0');
+    });
+  }
+);
 
 describe('what a fee is worth', () => {
   test('a fee in the held token is valued at the trade’s own execution rate', async () => {
@@ -451,26 +451,26 @@ describe('a fee is valued once per price snapshot (SC-1145)', () => {
     expect(calls.length).toBe(10);
   });
 
-  test.each([
-    'fifo',
-    'uk_section_104',
-  ] as const)('%s — a remembered fee produces the figures a fresh one does', async (method) => {
-    const rows = feeRows();
-    const fresh = await walkWith(makeService(), rows, undefined, method);
-    const svc = makeService();
-    const lookup = new PriceLookup([]);
-    const first = await walkWith(svc, rows, lookup, method);
-    const again = await walkWith(svc, rows, lookup, method);
-    expect(first).toBe(fresh);
-    expect(again).toBe(fresh);
-    // The fees reach the figures at all, or the equality above proves nothing.
-    expect(fresh).not.toBe(
-      await walkWith(
-        makeService(),
-        rows.map((r) => ({ ...r, feeQuantity: null, feeTokenId: null })),
-        undefined,
-        method
-      )
-    );
-  });
+  test.each(['fifo', 'uk_section_104'] as const)(
+    '%s — a remembered fee produces the figures a fresh one does',
+    async (method) => {
+      const rows = feeRows();
+      const fresh = await walkWith(makeService(), rows, undefined, method);
+      const svc = makeService();
+      const lookup = new PriceLookup([]);
+      const first = await walkWith(svc, rows, lookup, method);
+      const again = await walkWith(svc, rows, lookup, method);
+      expect(first).toBe(fresh);
+      expect(again).toBe(fresh);
+      // The fees reach the figures at all, or the equality above proves nothing.
+      expect(fresh).not.toBe(
+        await walkWith(
+          makeService(),
+          rows.map((r) => ({ ...r, feeQuantity: null, feeTokenId: null })),
+          undefined,
+          method
+        )
+      );
+    }
+  );
 });

@@ -60,8 +60,10 @@ describe('FinnhubProvider', () => {
     const aapl = makeMockToken({ id: 'aapl', symbol: 'AAPL' });
     const originalFetch = globalThis.fetch;
     let capturedUrl = '';
-    globalThis.fetch = (async (url: string) => {
+    let capturedKey = null as string | null;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
       capturedUrl = url;
+      capturedKey = new Headers(init?.headers).get('X-Finnhub-Token');
       return new Response(
         JSON.stringify({ c: 175.5, d: 0, dp: 0, h: 0, l: 0, o: 0, pc: 0, t: 0 }),
         { status: 200 }
@@ -72,7 +74,9 @@ describe('FinnhubProvider', () => {
       expect(quote?.price).toBe('175.5');
       expect(quote?.source).toBe('finnhub');
       expect(capturedUrl).toContain('symbol=AAPL');
-      expect(capturedUrl).toContain('token=test-key');
+      // The key travels as a header: a URL reaches error text and logs (SC-1350).
+      expect(capturedUrl).not.toContain('test-key');
+      expect(capturedKey).toBe('test-key');
     } finally {
       globalThis.fetch = originalFetch;
     }
@@ -159,6 +163,26 @@ describe('FinnhubProvider', () => {
       expect(capturedUrl).toContain('/stock/candle');
       expect(capturedUrl).toContain('resolution=D');
       expect(capturedUrl).toContain('symbol=AAPL');
+      expect(capturedUrl).not.toContain('test-key');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('searchTokens sends the key as a header, not in the URL (SC-1350)', async () => {
+    const p = new FinnhubProvider(passthroughLimiter(), { apiKey: 'test-key' });
+    const originalFetch = globalThis.fetch;
+    let capturedUrl = '';
+    let capturedKey = null as string | null;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      capturedUrl = url;
+      capturedKey = new Headers(init?.headers).get('X-Finnhub-Token');
+      return new Response(JSON.stringify({ count: 0, result: [] }), { status: 200 });
+    }) as unknown as typeof fetch;
+    try {
+      await p.searchTokens('AAPL');
+      expect(capturedUrl).not.toContain('test-key');
+      expect(capturedKey).toBe('test-key');
     } finally {
       globalThis.fetch = originalFetch;
     }

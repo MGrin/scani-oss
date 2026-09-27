@@ -62,13 +62,8 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
           },
           mutations: {
             networkMode: 'online',
-            retry: (failureCount, error) => {
-              // Don't retry on 401 errors
-              if (error instanceof TRPCClientError && error.data?.code === 'UNAUTHORIZED') {
-                return false;
-              }
-              return failureCount < 1;
-            },
+            // A lost response may follow a committed write. Retrying requires an idempotency key.
+            retry: false,
           },
         },
       })

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import i18n from 'i18next';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { NotFoundPage } from '../../../src/v3/pages/NotFoundPage';
 
 /**

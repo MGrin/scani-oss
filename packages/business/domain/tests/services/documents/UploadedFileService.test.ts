@@ -21,9 +21,9 @@ const HASH = createHash('sha256').update(BYTES).digest('hex');
 const TEMP_KEY = `temp/screenshot/${USER}/abc123.png`;
 const RETAINED_KEY = `documents/${USER}/${DOC_ID}.png`;
 
-function makeService(opts: { existing?: Document | null; copy?: () => Promise<void> } = {}) {
-  const copy = mock(opts.copy ?? (async () => undefined));
-  Container.set(StorageFacade, { copy } as unknown as StorageFacade);
+function makeService(opts: { existing?: Document | null; write?: () => Promise<void> } = {}) {
+  const write = mock(opts.write ?? (async () => undefined));
+  Container.set(StorageFacade, { write } as unknown as StorageFacade);
 
   const findByPurposeAndContentHash = mock(async () => opts.existing ?? null);
   const create = mock(async (values: Partial<Document>) => ({ id: DOC_ID, ...values }) as Document);
@@ -42,7 +42,7 @@ function makeService(opts: { existing?: Document | null; copy?: () => Promise<vo
 
   const instance = new UploadedFileService();
   Container.set(UploadedFileService, instance);
-  return { instance, copy, create, findByPurposeAndContentHash, update };
+  return { instance, write, create, findByPurposeAndContentHash, update };
 }
 
 const INPUT = {
@@ -56,7 +56,7 @@ const INPUT = {
 
 describe('UploadedFileService.record', () => {
   test('a screenshot upload becomes a documents row and a retained object', async () => {
-    const { instance, create, copy } = makeService();
+    const { instance, create, write } = makeService();
 
     const document = await instance.record(INPUT);
 
@@ -70,7 +70,7 @@ describe('UploadedFileService.record', () => {
       originalFilename: 'abc123.png',
       sourceKind: 'upload',
     });
-    expect(copy).toHaveBeenCalledWith(TEMP_KEY, RETAINED_KEY, 'image/png');
+    expect(write).toHaveBeenCalledWith(RETAINED_KEY, BYTES, 'image/png');
     expect(document.r2Key).toBe(RETAINED_KEY);
   });
 
@@ -85,13 +85,13 @@ describe('UploadedFileService.record', () => {
       r2Key: `documents/${USER}/${DOC_ID}.csv`,
       contentHash: HASH,
     } as Document;
-    const { instance, create, copy } = makeService({ existing });
+    const { instance, create, write } = makeService({ existing });
 
     const document = await instance.record({ ...INPUT, purpose: 'file-import' });
 
     expect(document).toBe(existing);
     expect(create).not.toHaveBeenCalled();
-    expect(copy).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
   });
 
   test('a reused row that never got retained is retained from the new upload', async () => {
@@ -106,19 +106,19 @@ describe('UploadedFileService.record', () => {
       originalFilename: 'abc123.png',
       contentHash: HASH,
     } as Document;
-    const { instance, copy } = makeService({ existing });
+    const { instance, write } = makeService({ existing });
 
     const document = await instance.record(INPUT);
 
-    expect(copy).toHaveBeenCalledWith(TEMP_KEY, RETAINED_KEY, 'image/png');
+    expect(write).toHaveBeenCalledWith(RETAINED_KEY, BYTES, 'image/png');
     expect(document.r2Key).toBe(RETAINED_KEY);
   });
 
   test('a retention failure still yields the row rather than throwing', async () => {
-    // The caller's real work is a parse or an import. Losing the kept copy
+    // The caller's real work is a parse or an import. Losing the kept write
     // degrades the row to the pre-retention state; it must not fail the job.
     const { instance } = makeService({
-      copy: async () => {
+      write: async () => {
         throw new Error('R2 unavailable');
       },
     });

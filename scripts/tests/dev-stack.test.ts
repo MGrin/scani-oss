@@ -1002,7 +1002,7 @@ describe('up asks Postgres the question the caller cares about (SC-748)', () => 
     const compose = readFileSync(new URL('../../docker-compose.yml', import.meta.url), 'utf8');
     const healthcheck = /test:\s*\[\s*"CMD-SHELL",\s*"(pg_isready[^"]*)"/.exec(compose);
     expect(healthcheck).not.toBeNull();
-    expect((healthcheck?.[1] as string).includes('-h')).toBe(false);
+    expect(healthcheck![1]!.includes('-h')).toBe(false);
 
     // Comments stripped first, because this asks what the CODE does and the
     // paragraph explaining WHY it is not pg_isready has to be free to name it.

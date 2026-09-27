@@ -8,6 +8,7 @@ export {
   type SyncOwnableAccount,
 } from './accounts/BalanceSyncOwnershipService';
 export { InstitutionService } from './accounts/InstitutionService';
+export { siteHost } from './accounts/site-host';
 // ai/
 export { AIRouter } from './ai/AIRouter';
 export { CsvColumnDetectionService } from './ai/CsvColumnDetectionService';

@@ -53,15 +53,12 @@ describe('isLoopbackHost', () => {
     expect(isLoopbackHost(host)).toBe(true);
   });
 
-  it.each([
-    'postgres',
-    'db',
-    '10.0.0.4',
-    '192.168.1.5',
-    'ep-cool-1234.us-east-2.aws.neon.tech',
-  ])('does not treat %s as loopback', (host) => {
-    expect(isLoopbackHost(host)).toBe(false);
-  });
+  it.each(['postgres', 'db', '10.0.0.4', '192.168.1.5', 'ep-cool-1234.us-east-2.aws.neon.tech'])(
+    'does not treat %s as loopback',
+    (host) => {
+      expect(isLoopbackHost(host)).toBe(false);
+    }
+  );
 });
 
 describe('parseAllowRemote', () => {

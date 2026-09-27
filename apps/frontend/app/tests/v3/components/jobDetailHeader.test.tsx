@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink } from '@trpc/client';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { trpc } from '../../../src/lib/trpc';
 import {
   JobDetailHeader,

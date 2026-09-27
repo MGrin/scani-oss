@@ -3,7 +3,7 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { CaptureList } from '../../../src/v3/components/capture/CaptureSheet';
 import { CAPTURE_GROUPS, CAPTURE_ROUTES } from '../../../src/v3/lib/capture';
 

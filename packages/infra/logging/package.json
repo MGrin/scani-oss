@@ -19,7 +19,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@sentry/node": "^8.49.0",
-    "typescript": "^5"
+    "@sentry/node": "^10.75.3",
+    "typescript": "^5.9.3"
   }
 }

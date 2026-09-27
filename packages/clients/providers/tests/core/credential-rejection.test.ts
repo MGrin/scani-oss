@@ -24,15 +24,13 @@ describe('credentialRejection', () => {
     });
   });
 
-  test.each([
-    'rate-limited',
-    'retryable',
-    'unrecoverable',
-    'not-supported',
-  ] as const)('a %s ProviderError is re-thrown rather than blamed on the credential', (kind) => {
-    const err = new ProviderError(`something ${kind}`, kind, 'ibkr');
-    expect(() => credentialRejection(err)).toThrow(err);
-  });
+  test.each(['rate-limited', 'retryable', 'unrecoverable', 'not-supported'] as const)(
+    'a %s ProviderError is re-thrown rather than blamed on the credential',
+    (kind) => {
+      const err = new ProviderError(`something ${kind}`, kind, 'ibkr');
+      expect(() => credentialRejection(err)).toThrow(err);
+    }
+  );
 
   test('an unclassified throw is re-thrown — an unknown failure is not evidence', () => {
     const err = new Error('fetch failed');

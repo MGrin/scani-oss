@@ -273,14 +273,14 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
     type,
   });
 
-  const shouldLogPayload = logConfig.level === 'debug' || logConfig.level === 'trace';
-  const serializedInput =
-    shouldLogPayload && input !== undefined ? safeStringify(input) : undefined;
+  const logInput = logConfig.logRequestBodies;
+  const logOutput = logConfig.logResponseBodies;
+  const serializedInput = logInput && input !== undefined ? safeStringify(input) : undefined;
 
   procedureLogger.debug(
     {
       input:
-        shouldLogPayload && serializedInput
+        logInput && serializedInput
           ? serializedInput.length > 1000
             ? `[Large input: ${serializedInput.length} chars]`
             : input
@@ -293,9 +293,7 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
     const result = await next();
     const duration = timer.end();
     const serializedOutput =
-      shouldLogPayload && result.ok && result.data !== undefined
-        ? safeStringify(result.data)
-        : undefined;
+      logOutput && result.ok && result.data !== undefined ? safeStringify(result.data) : undefined;
 
     if (result.ok) {
       procedureLogger.info(
@@ -303,7 +301,7 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
           duration: `${duration}ms`,
           outputSize: serializedOutput ? serializedOutput.length : undefined,
           output:
-            shouldLogPayload && serializedOutput
+            logOutput && serializedOutput
               ? serializedOutput.length > 1000
                 ? `[Large output: ${serializedOutput.length} chars]`
                 : result.data

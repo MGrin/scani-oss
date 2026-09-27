@@ -21,6 +21,7 @@ import Container from 'typedi';
 import { z } from 'zod';
 import { LruCache } from '../../lib/lru-cache';
 import { enqueueCurrencyRateRefresh } from '../lib/currency-rate-refresh';
+import { externalSearchMetadata, matchVerifiedExternalToken } from '../lib/external-token';
 import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
@@ -97,6 +98,24 @@ async function setOwnScamVerdict(
   });
   void enqueuePortfolioRollup(dbUser.id);
   return { success: true as const, tokenId: token.id };
+}
+
+// The provider search dedupes one hit per provider and symbol, so a pick made
+// from a NAME search may not be the hit a ticker search keeps: ask both.
+async function verifyExternalPick(pick: {
+  symbol: string;
+  provider: 'finnhub' | 'coingecko';
+  metadata: Record<string, unknown>;
+}): Promise<Record<string, unknown> | null> {
+  const cloudClient = getCloudClient();
+  if (!cloudClient) return null;
+  const name = typeof pick.metadata.name === 'string' ? pick.metadata.name.slice(0, 100) : '';
+  const queries = [...new Set([pick.symbol, name].filter((q) => q.length > 0))];
+  const settled = await Promise.allSettled(
+    queries.map((query) => cloudClient.tokens.search.query({ query, limit: 50 }))
+  );
+  const serverResults = settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
+  return matchVerifiedExternalToken(serverResults, pick);
 }
 
 export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
@@ -337,15 +356,7 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
                 decimals: item.type === 'Crypto' ? 18 : 2,
                 source: 'external' as const,
                 provider,
-                metadata: {
-                  symbol: item.symbol,
-                  name: item.name,
-                  type: item.type,
-                  currency: item.currency,
-                  exchange: item.exchange,
-                  provider,
-                  ...(item.providerMetadata ?? {}),
-                },
+                metadata: externalSearchMetadata(item),
               });
             }
 
@@ -386,9 +397,17 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
       )
       .mutation(async ({ input, ctx }) => {
         const { dbUser } = await requireAuth(ctx);
-        const { symbol, metadata, provider } = input;
+        const { symbol, provider } = input;
 
-        // Delegate to service for business logic
+        const metadata = await verifyExternalPick(input);
+        if (!metadata) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'That token could not be confirmed with its provider. Search for it again and pick it from the list.',
+          });
+        }
+
         const createdToken = await tokenService.createFromExternal(
           symbol,
           metadata,

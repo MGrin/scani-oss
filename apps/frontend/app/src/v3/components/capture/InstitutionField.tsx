@@ -51,6 +51,7 @@ export function InstitutionField({
   const [open, setOpen] = useState(false);
   const [fetchingSite, setFetchingSite] = useState(false);
   const utils = trpc.useUtils();
+  const createFromWebsite = trpc.institutions.createFromWebsite.useMutation();
 
   const institutions = trpc.institutions.getAll.useQuery();
   const types = trpc.institutionTypes.getAll.useQuery();
@@ -82,21 +83,29 @@ export function InstitutionField({
   const selectedLabel = items.find((institution) => institution.id === value)?.name ?? value;
 
   /**
-   * Fills the name from the site's OpenGraph metadata. Silent on failure by
-   * design — the name field is right there, and an error toast for "we could
-   * not guess it for you" is noise about something the user was going to do
-   * anyway.
+   * Adds the institution from its website (SC-1354): the server scrapes the
+   * site and returns the shared catalogue row for it, creating that row if this
+   * is the first time anyone has added the site. The field then shows it as
+   * picked. Silent when the site gives no name: the name field is right there,
+   * and a hand-typed institution stays private to this user.
    */
-  const fetchSiteName = async () => {
+  const addFromWebsite = async () => {
     const url = normalizeWebsite(draft.website);
     if (!url || fetchingSite) return;
     setFetchingSite(true);
     try {
-      const meta = await utils.institutions.getOpenGraphMetadata.fetch({ url });
-      const name = meta.siteName || meta.title;
-      if (name) onDraftChange({ name });
+      const found = await createFromWebsite.mutateAsync({
+        url,
+        ...(draft.typeId ? { typeId: draft.typeId } : {}),
+      });
+      if (found) {
+        await utils.institutions.getAll.invalidate();
+        onDraftChange({ name: '', typeId: '', website: '' });
+        onSelect(found.id);
+        onModeChange('existing');
+      }
     } catch {
-      // Handled above.
+      // Not a public site, or the scrape failed: the user types the name.
     }
     setFetchingSite(false);
   };
@@ -167,9 +176,8 @@ export function InstitutionField({
             id="manual-institution-website"
             value={draft.website}
             onChange={(event) => onDraftChange({ website: event.target.value })}
-            onBlur={() => void fetchSiteName()}
             onKeyDown={(event) => {
-              if (event.key === 'Enter') void fetchSiteName();
+              if (event.key === 'Enter') void addFromWebsite();
             }}
             placeholder="revolut.com"
             className="min-w-0 flex-1 text-body"
@@ -180,7 +188,7 @@ export function InstitutionField({
             size="icon"
             className="shrink-0"
             aria-label={t('v3.capture.institution.lookUpName')}
-            onClick={() => void fetchSiteName()}
+            onClick={() => void addFromWebsite()}
             disabled={fetchingSite || !draft.website.trim() || disabled}
           >
             {fetchingSite ? (

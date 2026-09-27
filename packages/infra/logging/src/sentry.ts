@@ -22,9 +22,23 @@ function isBotScanEvent(event: Sentry.Event): boolean {
   }
 }
 
+type Scrub = <T>(value: T) => T;
+
+/**
+ * What `beforeSend` does: drop bot scans, then scrub. The scrubber is passed
+ * in by the app because it lives in `@scani/shared`, which an infra package
+ * may not import (SC-1350).
+ */
+export function prepareSentryEvent<T extends Sentry.Event>(event: T, scrub?: Scrub): T | null {
+  if (isBotScanEvent(event)) return null;
+  return scrub ? scrub(event) : event;
+}
+
 export function initSentry(opts: {
   component?: 'backend' | 'worker' | 'data-provider';
   release?: string;
+  scrubEvent?: Scrub;
+  scrubBreadcrumb?: Scrub;
 }): void {
   const dsn = process.env.SENTRY_DSN;
   if (!dsn || initialized) return;
@@ -35,10 +49,9 @@ export function initSentry(opts: {
     tracesSampleRate: 0.1,
     initialScope: opts.component ? { tags: { component: opts.component } } : undefined,
     integrations: (defaults) => defaults,
-    beforeSend(event) {
-      if (isBotScanEvent(event)) return null;
-      return event;
-    },
+    beforeSend: (event) => prepareSentryEvent(event, opts.scrubEvent),
+    beforeBreadcrumb: (breadcrumb) =>
+      opts.scrubBreadcrumb ? opts.scrubBreadcrumb(breadcrumb) : breadcrumb,
   });
   initialized = true;
 }

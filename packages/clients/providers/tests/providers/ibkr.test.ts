@@ -457,17 +457,17 @@ describe('IbkrProvider — Flex error classification', () => {
     expect(error?.retryAfterMs).toBe(60_000);
   });
 
-  test.each([
-    ['1010'],
-    ['1012'],
-  ])('%s is auth-failed and carries NO window — time does not fix a bad token', async (code) => {
-    const error = await classify(code, 'Invalid token');
+  test.each([['1010'], ['1012']])(
+    '%s is auth-failed and carries NO window — time does not fix a bad token',
+    async (code) => {
+      const error = await classify(code, 'Invalid token');
 
-    expect(error?.kind).toBe('auth-failed');
-    // A window here would only postpone telling the user, who is the only
-    // one who can fix it.
-    expect(error?.retryAfterMs).toBeUndefined();
-  });
+      expect(error?.kind).toBe('auth-failed');
+      // A window here would only postpone telling the user, who is the only
+      // one who can fix it.
+      expect(error?.retryAfterMs).toBeUndefined();
+    }
+  );
 
   test('an unmapped code is unrecoverable rather than silently retryable', async () => {
     const error = await classify('1099', 'Something else entirely');
@@ -515,71 +515,71 @@ describe('IbkrProvider — poll exhaustion', () => {
     };
   }
 
-  test.each([
-    ['1001'],
-    ['1019'],
-  ])('SendRequest still answering %s after the whole budget is retryable, not unrecoverable', async (code) => {
-    const stub = alwaysFlexError(code, 'Statement could not be generated at this time.');
-    try {
-      const error = await new IbkrProvider(passthroughLimiter(), noSleep)
-        .fetchBalances(ctx as never)
-        .then(() => null)
-        .catch((err: unknown) => err as ProviderError);
+  test.each([['1001'], ['1019']])(
+    'SendRequest still answering %s after the whole budget is retryable, not unrecoverable',
+    async (code) => {
+      const stub = alwaysFlexError(code, 'Statement could not be generated at this time.');
+      try {
+        const error = await new IbkrProvider(passthroughLimiter(), noSleep)
+          .fetchBalances(ctx as never)
+          .then(() => null)
+          .catch((err: unknown) => err as ProviderError);
 
-      expect(error).toBeInstanceOf(ProviderError);
-      expect(error?.kind).toBe('retryable');
-      // No window: the queue decides when to try again, and `retryAfterMs`
-      // would tell the caller not to contact IBKR at all.
-      expect(error?.retryAfterMs).toBeUndefined();
-      expect(error?.message).toBe(
-        `IBKR SendRequest still transient after 6 retries (last: code ${code}: Statement could not be generated at this time.)`
-      );
-      // The budget was actually spent, rather than the first answer being
-      // mistaken for exhaustion.
-      expect(stub.calls()).toBe(6);
-    } finally {
-      stub.restore();
+        expect(error).toBeInstanceOf(ProviderError);
+        expect(error?.kind).toBe('retryable');
+        // No window: the queue decides when to try again, and `retryAfterMs`
+        // would tell the caller not to contact IBKR at all.
+        expect(error?.retryAfterMs).toBeUndefined();
+        expect(error?.message).toBe(
+          `IBKR SendRequest still transient after 6 retries (last: code ${code}: Statement could not be generated at this time.)`
+        );
+        // The budget was actually spent, rather than the first answer being
+        // mistaken for exhaustion.
+        expect(stub.calls()).toBe(6);
+      } finally {
+        stub.restore();
+      }
     }
-  });
+  );
 
-  test.each([
-    ['1001'],
-    ['1019'],
-  ])('GetStatement still answering %s after the whole budget is retryable, not unrecoverable', async (code) => {
-    const originalFetch = globalThis.fetch;
-    let getStatementCalls = 0;
-    globalThis.fetch = (async (input: string | URL | Request) => {
-      const url = String(input instanceof Request ? input.url : input);
-      if (url.includes('SendRequest')) {
+  test.each([['1001'], ['1019']])(
+    'GetStatement still answering %s after the whole budget is retryable, not unrecoverable',
+    async (code) => {
+      const originalFetch = globalThis.fetch;
+      let getStatementCalls = 0;
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        const url = String(input instanceof Request ? input.url : input);
+        if (url.includes('SendRequest')) {
+          return new Response(
+            '<FlexStatementResponse><Status>Success</Status><ReferenceCode>REF1</ReferenceCode><Url>https://gdcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement</Url></FlexStatementResponse>',
+            { status: 200 }
+          );
+        }
+        getStatementCalls++;
         return new Response(
-          '<FlexStatementResponse><Status>Success</Status><ReferenceCode>REF1</ReferenceCode><Url>https://gdcdyn.interactivebrokers.com/AccountManagement/FlexWebService/GetStatement</Url></FlexStatementResponse>',
+          `<FlexStatementResponse><Status>Fail</Status><ErrorCode>${code}</ErrorCode><ErrorMessage>Statement generation in progress</ErrorMessage></FlexStatementResponse>`,
           { status: 200 }
         );
+      }) as unknown as typeof fetch;
+
+      try {
+        const error = await new IbkrProvider(passthroughLimiter(), noSleep)
+          .fetchBalances(ctx as never)
+          .then(() => null)
+          .catch((err: unknown) => err as ProviderError);
+
+        expect(error).toBeInstanceOf(ProviderError);
+        expect(error?.kind).toBe('retryable');
+        expect(error?.retryAfterMs).toBeUndefined();
+        expect(error?.message).toBe(
+          `IBKR report still generating after 24 retries (last: code ${code}: Statement generation in progress)`
+        );
+        expect(getStatementCalls).toBe(24);
+      } finally {
+        globalThis.fetch = originalFetch;
       }
-      getStatementCalls++;
-      return new Response(
-        `<FlexStatementResponse><Status>Fail</Status><ErrorCode>${code}</ErrorCode><ErrorMessage>Statement generation in progress</ErrorMessage></FlexStatementResponse>`,
-        { status: 200 }
-      );
-    }) as unknown as typeof fetch;
-
-    try {
-      const error = await new IbkrProvider(passthroughLimiter(), noSleep)
-        .fetchBalances(ctx as never)
-        .then(() => null)
-        .catch((err: unknown) => err as ProviderError);
-
-      expect(error).toBeInstanceOf(ProviderError);
-      expect(error?.kind).toBe('retryable');
-      expect(error?.retryAfterMs).toBeUndefined();
-      expect(error?.message).toBe(
-        `IBKR report still generating after 24 retries (last: code ${code}: Statement generation in progress)`
-      );
-      expect(getStatementCalls).toBe(24);
-    } finally {
-      globalThis.fetch = originalFetch;
     }
-  });
+  );
 
   test('a code the classifier HAS ranked still wins over the poll budget', async () => {
     // 1025 is the lockout. It is not in the transient set, so it must still

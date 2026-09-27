@@ -137,45 +137,46 @@ describe('every locale the app ships sets the statement in its own words', () =>
     for (const code of held) expect(isOfferedLanguage(code)).toBe(false);
   });
 
-  it.each(
-    locales
-  )('%s: every word reaches the page, in a face that can set it', async (_, file) => {
-    const words = await wordsOf(file);
-    const type = await loadTypesetter();
-    const drawn = drawnCodepoints(await renderStatement(statement(words)));
-    const empty = drawnCodepoints(await renderStatement(statement(words, 0)));
+  it.each(locales)(
+    '%s: every word reaches the page, in a face that can set it',
+    async (_, file) => {
+      const words = await wordsOf(file);
+      const type = await loadTypesetter();
+      const drawn = drawnCodepoints(await renderStatement(statement(words)));
+      const empty = drawnCodepoints(await renderStatement(statement(words, 0)));
 
-    const onPage = (word: string, page: Set<number>) =>
-      letters(word).filter((point) => !page.has(point));
+      const onPage = (word: string, page: Set<number>) =>
+        letters(word).filter((point) => !page.has(point));
 
-    for (const key of [
-      'pageOf',
-      'account',
-      'generated',
-      'rows',
-      'amounts',
-      'amountsWithheld',
-    ] as const) {
-      // Missing code points NAMED, so a failure says which word lost which letter.
-      expect({ key, missing: onPage(words[key], drawn) }).toEqual({ key, missing: [] });
-      expect(type.supports(words[key])).toBe(true);
+      for (const key of [
+        'pageOf',
+        'account',
+        'generated',
+        'rows',
+        'amounts',
+        'amountsWithheld',
+      ] as const) {
+        // Missing code points NAMED, so a failure says which word lost which letter.
+        expect({ key, missing: onPage(words[key], drawn) }).toEqual({ key, missing: [] });
+        expect(type.supports(words[key])).toBe(true);
+      }
+      // The totals label is set in capitals, so the page carries `ИТОГО` and never
+      // the `г` of `Итого`; asking for the lowercase would fail on a correct page.
+      expect({ key: 'total', missing: onPage(headerText(words.total), drawn) }).toEqual({
+        key: 'total',
+        missing: [],
+      });
+      expect(type.supports(headerText(words.total))).toBe(true);
+      expect({ key: 'noRows', missing: onPage(words.noRows, empty) }).toEqual({
+        key: 'noRows',
+        missing: [],
+      });
+      // Never marked: a label the fonts cannot set would be disclosed as a
+      // substitution and drawn as `[?]`, which is the failure this guards.
+      expect(type.supports(words.characters)).toBe(true);
+      expect(type.supports(words.unsupportedNote)).toBe(true);
     }
-    // The totals label is set in capitals, so the page carries `ИТОГО` and never
-    // the `г` of `Итого`; asking for the lowercase would fail on a correct page.
-    expect({ key: 'total', missing: onPage(headerText(words.total), drawn) }).toEqual({
-      key: 'total',
-      missing: [],
-    });
-    expect(type.supports(headerText(words.total))).toBe(true);
-    expect({ key: 'noRows', missing: onPage(words.noRows, empty) }).toEqual({
-      key: 'noRows',
-      missing: [],
-    });
-    // Never marked: a label the fonts cannot set would be disclosed as a
-    // substitution and drawn as `[?]`, which is the failure this guards.
-    expect(type.supports(words.characters)).toBe(true);
-    expect(type.supports(words.unsupportedNote)).toBe(true);
-  });
+  );
 
   it('control — the probe can say NO: a word never set is not found', async () => {
     // Without this, "every letter was drawn" and "the probe returns every code

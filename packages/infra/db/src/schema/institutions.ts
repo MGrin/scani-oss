@@ -1,6 +1,16 @@
-import { relations } from 'drizzle-orm';
-import { boolean, index, pgTable, real, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { relations, sql } from 'drizzle-orm';
+import {
+  boolean,
+  index,
+  pgTable,
+  real,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { accounts } from './accounts';
+import { users } from './users';
 
 // Dynamic enum table for institution types — 'bank', 'broker', 'cex',
 // 'blockchain', etc. Lives in the DB so admins can extend the catalog
@@ -16,8 +26,9 @@ export const institutionTypes = pgTable('institution_types', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-// Public catalog of financial institutions (banks, brokers, exchanges,
-// blockchain networks). Available to all users.
+// Financial institutions (banks, brokers, exchanges, blockchain networks).
+// Verified rows are the catalogue every user sees. A row a user types in
+// belongs to them (`createdByUserId`) and nobody else sees it (SC-1354).
 export const institutions = pgTable(
   'institutions',
   {
@@ -30,12 +41,22 @@ export const institutions = pgTable(
     website: text('website'),
     logoUrl: text('logo_url'),
     hasIntegration: boolean('has_integration').notNull().default(false), // Indicates if institution has API integration support
+    isVerified: boolean('is_verified').notNull().default(false),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id, {
+      onDelete: 'cascade',
+    }),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
-    uniqueInstitutionWebsite: unique().on(table.website),
+    verifiedWebsite: uniqueIndex('institutions_verified_website_unique')
+      .on(table.website)
+      .where(sql`${table.isVerified}`),
+    ownerWebsite: uniqueIndex('institutions_owner_website_unique')
+      .on(table.createdByUserId, table.website)
+      .where(sql`not ${table.isVerified}`),
+    createdByIdx: index('idx_institutions_created_by_user_id').on(table.createdByUserId),
     nameIdx: index('idx_institutions_name').on(table.name),
   })
 );

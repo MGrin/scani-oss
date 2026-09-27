@@ -18,7 +18,7 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "ioredis": "^5.10.1",
-    "typescript": "^5"
+    "ioredis": "^5.11.1",
+    "typescript": "^5.9.3"
   }
 }

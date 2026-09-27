@@ -17,12 +17,13 @@
     "@scani/deadline": "workspace:*",
     "@scani/logging": "workspace:*",
     "bullmq": "^6.2.0",
-    "ioredis": "^5.10.1",
-    "pg": "^8",
+    "ioredis": "^5.11.1",
+    "pg": "^8.23.0",
     "typedi": "^0.10.0",
     "zod": "^3.25.76"
   },
   "devDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.9.3",
+    "@types/pg": "^8.23.1"
   }
 }

@@ -399,13 +399,12 @@ describe('InvoiceExtractionService — date normalisation', () => {
   });
 
   // The regex alone accepts both; only the round-trip catches them.
-  test.each([
-    '2026-02-30',
-    '2026-13-01',
-    '2026-00-10',
-  ])('the impossible calendar day %p is rejected', async (value) => {
-    expect((await extractDates(value, value))?.issueDate).toBeNull();
-  });
+  test.each(['2026-02-30', '2026-13-01', '2026-00-10'])(
+    'the impossible calendar day %p is rejected',
+    async (value) => {
+      expect((await extractDates(value, value))?.issueDate).toBeNull();
+    }
+  );
 
   test('a missing date stays null rather than becoming a string', async () => {
     const invoice = await extractDates(null, undefined);

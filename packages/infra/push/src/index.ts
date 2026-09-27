@@ -5,6 +5,7 @@ export {
   resolveVapid,
   type VapidResolution,
 } from './config';
+export { isAllowedPushEndpoint } from './push-endpoint';
 export {
   isSubscriptionGone,
   isVapidMismatch,

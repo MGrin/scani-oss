@@ -14,9 +14,18 @@ describe('CreateAccountDto', () => {
       name: 'Savings',
       typeId: VALID_UUID,
       description: 'Rainy-day fund',
-      metadata: { walletAddress: '0xabc' },
     });
     expect(result.success).toBe(true);
+  });
+
+  test('carries no client metadata: a planted userWalletId never reaches the server (SC-1341)', () => {
+    const result = CreateAccountDto.safeParse({
+      name: 'Savings',
+      typeId: VALID_UUID,
+      metadata: { userWalletId: VALID_UUID },
+    });
+    expect(result.success).toBe(true);
+    expect(result.success && 'metadata' in result.data).toBe(false);
   });
 
   test('rejects empty name', () => {

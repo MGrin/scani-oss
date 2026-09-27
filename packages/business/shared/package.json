@@ -22,7 +22,7 @@
     "test:coverage:html": "bun test --coverage --coverage-reporter=html"
   },
   "devDependencies": {
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "decimal.js": "^10.6.0",

@@ -140,13 +140,12 @@ describe('CORS responses in production', () => {
 describe('CORS responses in development', () => {
   const app = buildApp(FRONTEND, DEV);
 
-  test.each([
-    'http://localhost:5173',
-    'http://127.0.0.1:5173',
-    'http://127.0.0.1:4173',
-  ])('allows loopback origin %s', async (origin) => {
-    expect(await allowOriginFor(app, origin)).toBe(origin);
-  });
+  test.each(['http://localhost:5173', 'http://127.0.0.1:5173', 'http://127.0.0.1:4173'])(
+    'allows loopback origin %s',
+    async (origin) => {
+      expect(await allowOriginFor(app, origin)).toBe(origin);
+    }
+  );
 
   test('a disallowed origin is still refused', async () => {
     expect(await allowOriginFor(app, 'https://evil.example')).toBeNull();

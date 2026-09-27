@@ -31,17 +31,14 @@ describe('cn', () => {
   describe('v3 type roles', () => {
     // Without the `font-size` extension in cn.ts, tailwind-merge files these
     // under text *colour* and deletes them when a colour is merged in after.
-    test.each([
-      'display',
-      'title',
-      'body',
-      'label',
-      'caption',
-    ])('text-%s survives a text colour merged in after it', (role) => {
-      expect(cn(`text-${role}`, 'text-muted-foreground')).toBe(
-        `text-${role} text-muted-foreground`
-      );
-    });
+    test.each(['display', 'title', 'body', 'label', 'caption'])(
+      'text-%s survives a text colour merged in after it',
+      (role) => {
+        expect(cn(`text-${role}`, 'text-muted-foreground')).toBe(
+          `text-${role} text-muted-foreground`
+        );
+      }
+    );
 
     test('the roles still conflict with each other and with Tailwind sizes', () => {
       expect(cn('text-caption', 'text-title')).toBe('text-title');

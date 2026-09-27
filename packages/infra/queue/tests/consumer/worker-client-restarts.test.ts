@@ -196,38 +196,39 @@ function uniqueQueue(): string {
 }
 
 describe('a long job across worker restarts (SC-1146)', () => {
-  test.each(
-    Object.entries(RESTARTS)
-  )('three restarts by %s mid-job: the job still completes, and no stall is counted', async (_how, restart) => {
-    const name = uniqueQueue();
-    const queue = makeQueue(name);
-    const { state, processor } = longJob(4);
-    const job = await queue.add('long-job', {}, { attempts: 2 });
+  test.each(Object.entries(RESTARTS))(
+    'three restarts by %s mid-job: the job still completes, and no stall is counted',
+    async (_how, restart) => {
+      const name = uniqueQueue();
+      const queue = makeQueue(name);
+      const { state, processor } = longJob(4);
+      const job = await queue.add('long-job', {}, { attempts: 2 });
 
-    let worker = await boot(name, processor);
-    for (let n = 1; n <= 3; n++) {
-      const outcome = await waitFor(async () => {
-        if (state.starts === n) return 'running';
-        const row = await jobRow(name, job.id!);
-        return row?.state === 'failed' ? row : undefined;
-      }, 10_000);
-      if (outcome !== 'running') {
-        throw new Error(`the job failed before run ${n}: ${JSON.stringify(outcome)}`);
+      let worker = await boot(name, processor);
+      for (let n = 1; n <= 3; n++) {
+        const outcome = await waitFor(async () => {
+          if (state.starts === n) return 'running';
+          const row = await jobRow(name, job.id!);
+          return row?.state === 'failed' ? row : undefined;
+        }, 10_000);
+        if (outcome !== 'running') {
+          throw new Error(`the job failed before run ${n}: ${JSON.stringify(outcome)}`);
+        }
+        await restart(worker);
+        const next = await boot(name, processor);
+        await skipStallClock(name, worker, next);
+        worker = next;
       }
-      await restart(worker);
-      const next = await boot(name, processor);
-      await skipStallClock(name, worker, next);
-      worker = next;
-    }
 
-    const row = await settled(name, job.id!);
-    expect(row.state).toBe('completed');
-    expect(state.starts).toBe(4);
-    expect(row.stalled_count).toBe(0);
-    // The completing run is the only attempt counted; the three interrupted
-    // runs spent none.
-    expect(row.attempts_made).toBe(1);
-  });
+      const row = await settled(name, job.id!);
+      expect(row.state).toBe('completed');
+      expect(state.starts).toBe(4);
+      expect(row.stalled_count).toBe(0);
+      // The completing run is the only attempt counted; the three interrupted
+      // runs spent none.
+      expect(row.attempts_made).toBe(1);
+    }
+  );
 
   test('a job that crashes the worker every time ends up failed, after exactly two runs', async () => {
     const name = uniqueQueue();

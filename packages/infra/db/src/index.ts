@@ -25,10 +25,6 @@ export {
 export {
   endConnectionTracking,
   getConnectionMonitoringStats,
-  recordConnectionAcquired,
-  recordConnectionReleased,
-  recordQueryExecuted,
-  resetConnectionMonitoringStats,
   startConnectionTracking,
 } from './connection-monitor';
 export { type UpsertJobHeartbeatInput, upsertJobHeartbeat } from './job-heartbeat-writer';

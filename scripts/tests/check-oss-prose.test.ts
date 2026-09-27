@@ -397,13 +397,13 @@ describe('a migration comment is read', () => {
  * carries the same control for the same reason.
  */
 describe("the guard's own sources carry no claim", () => {
-  test.each([
-    ['scripts/check-oss-prose.ts'],
-    ['scripts/tests/check-oss-prose.test.ts'],
-  ])('%s is clean', (rel) => {
-    const found = findInContent(rel, readFileSync(path.join(ROOT, rel), 'utf8')).findings;
-    expect(found.map((f) => `${f.path}:${f.line}  ${f.sentence}`)).toEqual([]);
-  });
+  test.each([['scripts/check-oss-prose.ts'], ['scripts/tests/check-oss-prose.test.ts']])(
+    '%s is clean',
+    (rel) => {
+      const found = findInContent(rel, readFileSync(path.join(ROOT, rel), 'utf8')).findings;
+      expect(found.map((f) => `${f.path}:${f.line}  ${f.sentence}`)).toEqual([]);
+    }
+  );
 });
 
 /**

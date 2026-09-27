@@ -4,7 +4,7 @@ import { DocumentRepository, UserJobRepository } from '@scani/domain/repositorie
 import { DocumentRetentionService, UploadedFileService } from '@scani/domain/services';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { ParseScreenshotUseCase } from '@scani/domain/use-cases/ParseScreenshotUseCase';
-import type { ScreenshotParseJob } from '@scani/jobs';
+import { type ScreenshotParseJob, UPLOADED_FILE_MAX_BYTES } from '@scani/jobs';
 import type { ProcessorContext } from '@scani/queue';
 import { Container } from 'typedi';
 import { ScreenshotParseProcessor } from '../../src/processors/screenshot-parse';
@@ -40,11 +40,13 @@ class TestableProcessor extends ScreenshotParseProcessor {
   }
 }
 
-function makeProcessor(opts: { existing?: unknown; parse?: () => Promise<unknown> } = {}) {
-  const read = mock(async () => Buffer.from('png-bytes'));
-  const copy = mock(async () => undefined);
+function makeProcessor(
+  opts: { existing?: unknown; parse?: () => Promise<unknown>; read?: () => Promise<Buffer> } = {}
+) {
+  const read = mock(opts.read ?? (async () => Buffer.from('png-bytes')));
+  const write = mock(async () => undefined);
   const del = mock(async () => undefined);
-  Container.set(StorageFacade, { read, copy, delete: del } as unknown as StorageFacade);
+  Container.set(StorageFacade, { read, write, delete: del } as unknown as StorageFacade);
 
   const findByPurposeAndContentHash = mock(async () => opts.existing ?? null);
   const create = mock(async (values: Record<string, unknown>) => ({ id: DOC_ID, ...values }));
@@ -66,7 +68,7 @@ function makeProcessor(opts: { existing?: unknown; parse?: () => Promise<unknown
   const markActionTaken = mock(async () => undefined);
   Container.set(UserJobRepository, { markActionTaken } as unknown as UserJobRepository);
 
-  return { processor: new TestableProcessor(), read, copy, del, create, execute };
+  return { processor: new TestableProcessor(), read, write, del, create, execute };
 }
 
 function job(overrides: Partial<ScreenshotParseJob> = {}): ScreenshotParseJob {
@@ -83,8 +85,31 @@ function job(overrides: Partial<ScreenshotParseJob> = {}): ScreenshotParseJob {
 }
 
 describe('ScreenshotParseProcessor file retention', () => {
+  // SC-1345: see the same test in document-parse.test.ts.
+  test('reads each upload with the upload cap, so storage refuses an oversized one first', async () => {
+    const { processor, read } = makeProcessor();
+    await processor.run(job(), makeCtx());
+    expect(read).toHaveBeenCalledWith(TEMP_KEY, { maxBytes: UPLOADED_FILE_MAX_BYTES });
+  });
+
+  // SC-1363: the refusal reaches the owner as a sentence, not as `ObjectTooLarge: <key>`.
+  test('an oversized screenshot is reported to its owner as over 8 MB', async () => {
+    const { processor } = makeProcessor({
+      read: async () => {
+        throw new Error(
+          `ObjectTooLarge: ${TEMP_KEY} is ${9 * 2 ** 20} bytes, over the ${UPLOADED_FILE_MAX_BYTES}-byte limit`
+        );
+      },
+    });
+    const out = (await processor.run(job(), makeCtx())) as {
+      results: { success: boolean; error?: string }[];
+    };
+    expect(out.results[0]?.success).toBe(false);
+    expect(out.results[0]?.error).toBe('This file is larger than 8 MB. Upload a smaller file.');
+  });
+
   test('a screenshot upload becomes a documents row and a retained object', async () => {
-    const { processor, create, copy, del } = makeProcessor();
+    const { processor, create, write, del } = makeProcessor();
 
     await processor.run(job(), makeCtx());
 
@@ -96,9 +121,9 @@ describe('ScreenshotParseProcessor file retention', () => {
       mimeType: 'image/png',
       originalFilename: 'abc.png',
     });
-    expect(copy).toHaveBeenCalledWith(TEMP_KEY, RETAINED_KEY, 'image/png');
+    expect(write).toHaveBeenCalledWith(RETAINED_KEY, Buffer.from('png-bytes'), 'image/png');
     // Exactly one delete, and it is the temp upload — never the object the
-    // copy just created.
+    // write just created.
     expect(del).toHaveBeenCalledTimes(1);
     expect(del).toHaveBeenCalledWith(TEMP_KEY);
   });
@@ -106,7 +131,7 @@ describe('ScreenshotParseProcessor file retention', () => {
   test('a file that fails to parse is still recorded and kept', async () => {
     // Recording happens before the AI call on purpose: a screenshot the
     // extractor choked on is exactly the one the user wants to look at again.
-    const { processor, create, copy } = makeProcessor({
+    const { processor, create, write } = makeProcessor({
       parse: async () => {
         throw new Error('model unavailable');
       },
@@ -116,7 +141,7 @@ describe('ScreenshotParseProcessor file retention', () => {
 
     expect(result.summary.failureCount).toBe(1);
     expect(create).toHaveBeenCalledTimes(1);
-    expect(copy).toHaveBeenCalledWith(TEMP_KEY, RETAINED_KEY, 'image/png');
+    expect(write).toHaveBeenCalledWith(RETAINED_KEY, Buffer.from('png-bytes'), 'image/png');
   });
 
   test('a retained key handed to this job is never deleted', async () => {

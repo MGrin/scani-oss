@@ -132,6 +132,6 @@ describe('SC-804 — backend images install no optional peers and lose no requir
     // If this goes red, better-auth stopped offering `next` as a peer, and the
     // flag may no longer be needed — re-measure before deleting it.
     expect(peerReport(readLock(), '@scani/backend').optionalPeers.has('next')).toBe(true);
-    expect(readLock().packages.next).toBeDefined();
+    expect(peerReport(readLock(), '@scani/backend').reachable.has('next')).toBe(false);
   });
 });

@@ -7,7 +7,7 @@ import { StatTile } from '@scani/ui/v3/components/charts/StatTile';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { ALLOCATION_OTHER_KEY } from '@scani/ui/v3/lib/chart';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { AllocationBar } from '../../../src/v3/components/charts/AllocationBar';
 
 /**

@@ -19,7 +19,8 @@ export const CreateAccountDto = z.object({
   name: z.string().min(1).max(100),
   typeId: z.string().uuid(),
   description: z.string().max(500).optional(),
-  metadata: z.record(z.unknown()).optional(),
+  // No `metadata`: server code reads keys in it (`userWalletId`,
+  // `walletAddress`, `chainId`) as trusted, and no client sends any (SC-1341).
 });
 
 export type AccountWihSumaryDTO = Account & {

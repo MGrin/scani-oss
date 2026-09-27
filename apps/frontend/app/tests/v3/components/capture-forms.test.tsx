@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
 import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { CaptureHeader } from '@/v3/components/capture/CaptureHeader';
 import { CaptureSubmit } from '@/v3/components/capture/CaptureSubmit';
 import { FileDropField } from '@/v3/components/capture/FileDropField';

@@ -21,7 +21,7 @@ export default async function globalSetup() {
   // have silently pointed at apps/e2e/fixtures/scripts/… the moment
   // anything ran it under Bun.
   const e2eRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
-  const result = spawnSync('bun', ['scripts/wait-for-stack.ts'], {
+  const result = spawnSync('bun', [join(e2eRoot, 'scripts/wait-for-stack.ts')], {
     stdio: 'inherit',
     cwd: e2eRoot,
   });

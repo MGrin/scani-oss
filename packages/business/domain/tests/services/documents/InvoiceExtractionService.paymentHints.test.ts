@@ -69,15 +69,12 @@ describe('InvoiceExtractionService — paymentStatus normalisation', () => {
     );
   });
 
-  test.each([
-    ['partially paid'],
-    ['maybe'],
-    [''],
-    ['   '],
-    ['paid?'],
-  ])('yields null for the unrecognised value %p rather than guessing', async (raw) => {
-    expect((await extractOne({ paymentStatus: raw })).paymentStatus).toBeNull();
-  });
+  test.each([['partially paid'], ['maybe'], [''], ['   '], ['paid?']])(
+    'yields null for the unrecognised value %p rather than guessing',
+    async (raw) => {
+      expect((await extractOne({ paymentStatus: raw })).paymentStatus).toBeNull();
+    }
+  );
 
   test('yields null when the field is absent, a number, or explicitly null', async () => {
     expect((await extractOne({})).paymentStatus).toBeNull();
@@ -108,15 +105,12 @@ describe('InvoiceExtractionService — billingPeriod normalisation', () => {
     );
   });
 
-  test.each([
-    ['biweekly'],
-    ['every 2 months'],
-    ['one-off'],
-    ['12 months'],
-    [''],
-  ])('yields null for the unsupported cadence %p', async (raw) => {
-    expect((await extractOne({ billingPeriod: raw })).billingPeriod).toBeNull();
-  });
+  test.each([['biweekly'], ['every 2 months'], ['one-off'], ['12 months'], ['']])(
+    'yields null for the unsupported cadence %p',
+    async (raw) => {
+      expect((await extractOne({ billingPeriod: raw })).billingPeriod).toBeNull();
+    }
+  );
 
   test('yields null when the field is absent, a number, or explicitly null', async () => {
     expect((await extractOne({})).billingPeriod).toBeNull();

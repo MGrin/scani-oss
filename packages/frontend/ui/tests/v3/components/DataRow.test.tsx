@@ -5,7 +5,7 @@ import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 // `StaticRouter`, not `MemoryRouter`: a linked row needs a router context, and
 // the memory one floods server rendering with `useLayoutEffect` warnings.
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 
 function renderRow(element: ReactElement) {
   return renderToStaticMarkup(

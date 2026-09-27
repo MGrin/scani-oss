@@ -4,6 +4,7 @@ import { MANUAL_HOLDINGS_CREATE } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { CreateAccountDto, CreateInstitutionDto, HOLDING_LABEL_MAX_LENGTH } from '@scani/shared';
+import { TRPCError } from '@trpc/server';
 import Container from 'typedi';
 import { z } from 'zod';
 import { strictInput } from '../lib/strict-input';
@@ -107,9 +108,16 @@ export const batchOperationsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       if (input.accountId) {
+        // The answer is read as "this account is yours" by whatever comes
+        // next, so it is checked here rather than trusted downstream (SC-1340).
+        const owned = await Container.get(AccountRepository).findByIdAndUser(
+          input.accountId,
+          dbUser.id
+        );
+        if (!owned) throw new TRPCError({ code: 'NOT_FOUND', message: 'Account not found' });
         return {
-          accountId: input.accountId,
-          institutionId: null as string | null,
+          accountId: owned.id,
+          institutionId: owned.institutionId as string | null,
           createdAccount: false,
           createdInstitution: false,
         };

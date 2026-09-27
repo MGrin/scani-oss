@@ -385,14 +385,12 @@ describe('a space in a figure column', () => {
 
   // The four that always rendered — the control. If the fix had broken the
   // path that was never broken, these are what would say so.
-  it.each([
-    'ab',
-    'a:b',
-    '05:31',
-    '2026-09-15',
-  ])('renders %p, which never contained a space', async (value) => {
-    expect(pageCount(await renderStatement(figure(value)))).toBe(1);
-  });
+  it.each(['ab', 'a:b', '05:31', '2026-09-15'])(
+    'renders %p, which never contained a space',
+    async (value) => {
+      expect(pageCount(await renderStatement(figure(value)))).toBe(1);
+    }
+  );
 
   it.each([
     ['an ASCII space', 'a b'],

@@ -111,18 +111,12 @@ describe('the allowlist is the binary side, so no text-extension list can rot', 
     expect(hasKnownBinaryExtension(`img/logo${ext}`)).toBe(true);
   });
 
-  test.each([
-    '.ts',
-    '.tsx',
-    '.md',
-    '.json',
-    '.yml',
-    '.sh',
-    '.css',
-    '.sql',
-  ])('%s is not — including extensions no text-side list would have enumerated', (ext) => {
-    expect(hasKnownBinaryExtension(`src/thing${ext}`)).toBe(false);
-  });
+  test.each(['.ts', '.tsx', '.md', '.json', '.yml', '.sh', '.css', '.sql'])(
+    '%s is not — including extensions no text-side list would have enumerated',
+    (ext) => {
+      expect(hasKnownBinaryExtension(`src/thing${ext}`)).toBe(false);
+    }
+  );
 
   test('an extensionless tracked file is not allowlisted', () => {
     expect(hasKnownBinaryExtension('Dockerfile')).toBe(false);

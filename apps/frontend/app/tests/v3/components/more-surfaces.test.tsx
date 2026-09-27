@@ -9,7 +9,7 @@ import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
 import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Trans } from 'react-i18next';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { AccountsList } from '../../../src/v3/components/entities/AccountsList';
 import { InstitutionsList } from '../../../src/v3/components/entities/InstitutionsList';
 import { GroupsList, groupsListConfig } from '../../../src/v3/components/groups/GroupsList';

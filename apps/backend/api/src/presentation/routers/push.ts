@@ -1,13 +1,24 @@
 import { PushSubscriptionRepository } from '@scani/domain/repositories';
 import { SendTestNotificationUseCase } from '@scani/domain/use-cases';
 import { createComponentLogger } from '@scani/logging';
-import { PushSender } from '@scani/push';
+import { isAllowedPushEndpoint, PushSender } from '@scani/push';
+import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { USER_BUDGETS } from '../../config/limits';
 import { strictInput } from '../lib/strict-input';
+import { UserBudget } from '../lib/user-budget';
 import { protectedProcedure, router } from '../trpc';
 
 const pushLogger = createComponentLogger('router:push');
+
+const MAX_DEVICES_PER_USER = 10;
+
+const pushTestBudget = new UserBudget({
+  namespace: 'rl:push-test',
+  max: USER_BUDGETS.PUSH_TESTS_PER_HOUR,
+  windowMs: 60 * 60 * 1000,
+});
 
 /**
  * A `PushSubscription.toJSON()`, exactly as the browser produces it.
@@ -71,7 +82,18 @@ export const pushRouter = router({
         return { stored: false as const, reason: 'server-not-configured' as const };
       }
 
-      const stored = await Container.get(PushSubscriptionRepository).upsert({
+      if (!isAllowedPushEndpoint(input.subscription.endpoint)) {
+        // Every stored endpoint is a URL the api and worker later POST to,
+        // so only the browsers' own push services are accepted (SC-1346).
+        pushLogger.warn(
+          { userId: ctx.userId },
+          'Refused a push subscription: not a known push service'
+        );
+        return { stored: false as const, reason: 'endpoint-not-allowed' as const };
+      }
+
+      const subscriptions = Container.get(PushSubscriptionRepository);
+      const stored = await subscriptions.upsert({
         userId: ctx.userId,
         endpoint: input.subscription.endpoint,
         p256dh: input.subscription.keys.p256dh,
@@ -87,6 +109,7 @@ export const pushRouter = router({
         );
         return { stored: false as const, reason: 'endpoint-taken' as const };
       }
+      await subscriptions.trimToNewest(ctx.userId, MAX_DEVICES_PER_USER, stored.id);
       return { stored: true as const };
     }),
 
@@ -121,6 +144,13 @@ export const pushRouter = router({
    * push service reports as gone.
    */
   test: protectedProcedure.mutation(async ({ ctx }) => {
+    const budget = await pushTestBudget.spend(`user:${ctx.userId}`);
+    if (!budget.ok) {
+      throw new TRPCError({
+        code: 'TOO_MANY_REQUESTS',
+        message: `Too many test notifications; retry in ${budget.retryAfterSec}s`,
+      });
+    }
     return await Container.get(SendTestNotificationUseCase).execute(ctx.userId);
   }),
 });

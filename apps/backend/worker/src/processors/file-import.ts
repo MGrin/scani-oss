@@ -25,6 +25,7 @@ import {
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService, type ProcessorContext, UserJobProcessor } from '@scani/queue';
 import { Container, Service } from 'typedi';
+import { readUpload } from '../lib/read-upload';
 
 const logger = createComponentLogger('processor:file-import');
 
@@ -91,7 +92,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     const ingester = Container.get(StatementTransactionIngester);
 
     await ctx.reportStatus('Reading uploaded file…');
-    const buf = await storage.read(data.r2Key);
+    const buf = await readUpload(storage, data.r2Key);
     // Recorded and retained before parsing: a statement that failed to
     // import is precisely the file the user wants back, and recording
     // ahead of the currency gate means the `needsCurrency` early return

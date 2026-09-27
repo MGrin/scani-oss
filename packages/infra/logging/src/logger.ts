@@ -1,6 +1,7 @@
 import { getNodeEnv } from '@scani/config';
 import pino from 'pino';
 import { loadLoggingConfig } from './config';
+import { LOG_REDACT } from './redact';
 
 export type LogContext = object;
 
@@ -117,143 +118,133 @@ const createHumanReadableLogger = () => {
     fatal: '💀',
   };
 
-  return pino({
-    level: logConfig.level,
-    base: {
-      pid: process.pid,
-      hostname: logConfig.hostname,
-      service: logConfig.serviceName,
-      version: logConfig.serviceVersion,
-    },
-    timestamp: logConfig.timestamp ? () => `,"timestamp":"${new Date().toISOString()}"` : false,
-    formatters: {
-      log: (object: Record<string, unknown>) => ({
-        ...object,
-        environment: getNodeEnv() || 'development',
-      }),
-    },
-    hooks: {
-      logMethod: (inputArgs, method, level) => {
-        if (logConfig.pretty) {
-          let logObj: Record<string, unknown>;
-          let message: string;
-
-          if (typeof inputArgs[0] === 'string') {
-            message = inputArgs[0];
-            logObj = {};
-          } else {
-            logObj = (inputArgs[0] as Record<string, unknown>) || {};
-            message = (inputArgs[1] as string) || '';
-          }
-
-          const timestamp = new Date().toLocaleTimeString('en-US', {
-            hour12: false,
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-          } as Intl.DateTimeFormatOptions);
-
-          const levelName = levelNames[level] || 'info';
-          const emoji = levelEmojis[levelName] || '📝';
-          const color = logConfig.colorize ? colors[levelName] : '';
-          const reset = logConfig.colorize ? colors.reset : '';
-
-          const component = logObj.component
-            ? `[${(logObj.component as string).toUpperCase()}]`
-            : '';
-          const requestId = logObj.requestId
-            ? `{${(logObj.requestId as string).substring(0, 8)}}`
-            : '';
-
-          const context: string[] = [];
-
-          if (logObj.method && logObj.url) {
-            context.push(`${logObj.method} ${logObj.url}`);
-          }
-
-          if (logObj.procedure) {
-            context.push(`${logObj.procedure}`);
-          }
-
-          if (logObj.duration) {
-            context.push(`⏱️ ${logObj.duration}`);
-          }
-
-          if (logObj.statusCode) {
-            const emoji = (logObj.statusCode as number) >= 400 ? '🔴' : '🟢';
-            context.push(`${emoji}${logObj.statusCode}`);
-          }
-
-          if (logObj.connectionId) {
-            context.push(`conn:${(logObj.connectionId as string).substring(0, 8)}`);
-          }
-
-          if (logObj.query) {
-            const queryStr = logObj.query as string;
-            const queryPreview = queryStr.substring(0, 40) + (queryStr.length > 40 ? '...' : '');
-            context.push(`SQL:${queryPreview}`);
-          }
-
-          if (logObj.error) {
-            // `error` is a string at most call sites and an Error at some.
-            // Assuming the object shape printed `❌undefined:undefined` over
-            // every string one — the pretty renderer erasing the reason a
-            // thing failed, in the format an operator reads off `docker
-            // compose logs` (SC-490).
-            context.push(`❌${renderError(logObj.error)}`);
-          }
-
-          if (logObj.messageType) {
-            context.push(`WS:${logObj.messageType}`);
-          }
-
-          // Catch-all for any structured field the caller passed that
-          // isn't explicitly rendered above. Without this the hook
-          // silently dropped jobId / name / durationMs etc., so worker
-          // logs read "▶️ Processing job" with no clue which one.
-          const reservedKeys = new Set([
-            'component',
-            'requestId',
-            'method',
-            'url',
-            'procedure',
-            'duration',
-            'statusCode',
-            'connectionId',
-            'query',
-            'error',
-            'messageType',
-            'level',
-            'time',
-            'timestamp',
-            'pid',
-            'hostname',
-            'service',
-            'version',
-            'environment',
-            'msg',
-            'v',
-          ]);
-          for (const [key, value] of Object.entries(logObj)) {
-            if (reservedKeys.has(key)) continue;
-            if (value === undefined || value === null || value === '') continue;
-            const rendered = typeof value === 'object' ? JSON.stringify(value) : String(value);
-            const short = rendered.length > 100 ? `${rendered.slice(0, 97)}...` : rendered;
-            context.push(`${key}=${short}`);
-          }
-
-          const contextStr = context.length > 0 ? ` | ${context.join(' | ')}` : '';
-          const humanReadable = `${color}🕒 ${timestamp} ${emoji} ${levelName
-            .toUpperCase()
-            .padEnd(5)} ${component} ${requestId} ${message}${contextStr}${reset}`;
-
-          console.log(humanReadable);
-        } else {
-          return method.apply(this, inputArgs);
-        }
+  return pino(
+    {
+      level: logConfig.level,
+      redact: LOG_REDACT,
+      serializers: { error: pino.stdSerializers.err },
+      base: {
+        pid: process.pid,
+        hostname: logConfig.hostname,
+        service: logConfig.serviceName,
+        version: logConfig.serviceVersion,
+      },
+      timestamp: logConfig.timestamp ? () => `,"timestamp":"${new Date().toISOString()}"` : false,
+      formatters: {
+        log: (object: Record<string, unknown>) => ({
+          ...object,
+          environment: getNodeEnv() || 'development',
+        }),
       },
     },
-  });
+    {
+      write(line: string) {
+        // Pino serializes and redacts before this destination sees the entry.
+        const logObj = JSON.parse(line) as Record<string, unknown>;
+        const message = typeof logObj.msg === 'string' ? logObj.msg : '';
+        const timestamp = new Date().toLocaleTimeString('en-US', {
+          hour12: false,
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+        } as Intl.DateTimeFormatOptions);
+
+        const levelName = levelNames[Number(logObj.level)] || 'info';
+        const emoji = levelEmojis[levelName] || '📝';
+        const color = logConfig.colorize ? colors[levelName] : '';
+        const reset = logConfig.colorize ? colors.reset : '';
+
+        const component = logObj.component ? `[${(logObj.component as string).toUpperCase()}]` : '';
+        const requestId = logObj.requestId
+          ? `{${(logObj.requestId as string).substring(0, 8)}}`
+          : '';
+
+        const context: string[] = [];
+
+        if (logObj.method && logObj.url) {
+          context.push(`${logObj.method} ${logObj.url}`);
+        }
+
+        if (logObj.procedure) {
+          context.push(`${logObj.procedure}`);
+        }
+
+        if (logObj.duration) {
+          context.push(`⏱️ ${logObj.duration}`);
+        }
+
+        if (logObj.statusCode) {
+          const emoji = (logObj.statusCode as number) >= 400 ? '🔴' : '🟢';
+          context.push(`${emoji}${logObj.statusCode}`);
+        }
+
+        if (logObj.connectionId) {
+          context.push(`conn:${(logObj.connectionId as string).substring(0, 8)}`);
+        }
+
+        if (logObj.query) {
+          const queryStr = logObj.query as string;
+          const queryPreview = queryStr.substring(0, 40) + (queryStr.length > 40 ? '...' : '');
+          context.push(`SQL:${queryPreview}`);
+        }
+
+        if (logObj.error) {
+          // `error` is a string at most call sites and an Error at some.
+          // Assuming the object shape printed `❌undefined:undefined` over
+          // every string one — the pretty renderer erasing the reason a
+          // thing failed, in the format an operator reads off `docker
+          // compose logs` (SC-490).
+          context.push(`❌${renderError(logObj.error)}`);
+        }
+
+        if (logObj.messageType) {
+          context.push(`WS:${logObj.messageType}`);
+        }
+
+        // Catch-all for any structured field the caller passed that
+        // isn't explicitly rendered above. Without this the hook
+        // silently dropped jobId / name / durationMs etc., so worker
+        // logs read "▶️ Processing job" with no clue which one.
+        const reservedKeys = new Set([
+          'component',
+          'requestId',
+          'method',
+          'url',
+          'procedure',
+          'duration',
+          'statusCode',
+          'connectionId',
+          'query',
+          'error',
+          'messageType',
+          'level',
+          'time',
+          'timestamp',
+          'pid',
+          'hostname',
+          'service',
+          'version',
+          'environment',
+          'msg',
+          'v',
+        ]);
+        for (const [key, value] of Object.entries(logObj)) {
+          if (reservedKeys.has(key)) continue;
+          if (value === undefined || value === null || value === '') continue;
+          const rendered = typeof value === 'object' ? JSON.stringify(value) : String(value);
+          const short = rendered.length > 100 ? `${rendered.slice(0, 97)}...` : rendered;
+          context.push(`${key}=${short}`);
+        }
+
+        const contextStr = context.length > 0 ? ` | ${context.join(' | ')}` : '';
+        const humanReadable = `${color}🕒 ${timestamp} ${emoji} ${levelName
+          .toUpperCase()
+          .padEnd(5)} ${component} ${requestId} ${message}${contextStr}${reset}`;
+
+        console.log(humanReadable);
+      },
+    }
+  );
 };
 
 export const logger = (
@@ -261,6 +252,8 @@ export const logger = (
     ? createHumanReadableLogger()
     : pino({
         level: logConfig.level,
+        redact: LOG_REDACT,
+        serializers: { error: pino.stdSerializers.err },
         base: {
           pid: process.pid,
           hostname: logConfig.hostname,

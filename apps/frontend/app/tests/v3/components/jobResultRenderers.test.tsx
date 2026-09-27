@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import i18n from 'i18next';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { StaticRouter } from 'react-router-dom/server';
+import { StaticRouter } from 'react-router-dom';
 import { ExchangeImportResult } from '@/v3/components/jobs/ExchangeImportResult';
 import { FileImportResult } from '@/v3/components/jobs/FileImportResult';
 import { GenericJobResult } from '@/v3/components/jobs/GenericJobResult';

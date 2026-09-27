@@ -59,7 +59,7 @@
     "seed:demo": "bun src/demo/cli.ts"
   },
   "dependencies": {
-    "@firecrawl/pdf-inspector": "^1.13.0",
+    "@firecrawl/pdf-inspector": "^1.25.0",
     "@scani/cloud-client": "workspace:*",
     "@scani/config": "workspace:*",
     "@scani/db": "workspace:*",
@@ -75,13 +75,13 @@
     "@scani/security": "workspace:*",
     "@scani/shared": "workspace:*",
     "decimal.js": "^10.6.0",
-    "drizzle-orm": "^0.45.2",
+    "drizzle-orm": "^0.45.3",
     "postgres": "^3.4.9",
     "typedi": "^0.10.0",
-    "unpdf": "^1.6.2"
+    "unpdf": "^1.8.1"
   },
   "devDependencies": {
     "reflect-metadata": "^0.2.2",
-    "typescript": "^5"
+    "typescript": "^5.9.3"
   }
 }

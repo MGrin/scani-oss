@@ -99,6 +99,12 @@ export class FinnhubProvider implements HistoricalPriceProvider, TokenIdentityPr
     this.logger = createComponentLogger('provider:finnhub');
   }
 
+  // Finnhub accepts the key as a header, which keeps it out of the URL — and
+  // a URL is what reaches error text, logs and Sentry (SC-1350).
+  private authInit(): RequestInit {
+    return { headers: { 'X-Finnhub-Token': this.opts.apiKey } };
+  }
+
   /**
    * US-listed stocks/ETFs only. Two gates, in order:
    *   1. **Require explicit `finnhub.symbol` metadata.** A bare token row
@@ -124,9 +130,11 @@ export class FinnhubProvider implements HistoricalPriceProvider, TokenIdentityPr
     const symbol = this.resolveSymbol(t);
     if (!symbol) return null;
 
-    const url = `${FINNHUB_BASE_URL}/quote?symbol=${encodeURIComponent(symbol)}&token=${this.opts.apiKey}`;
+    const url = `${FINNHUB_BASE_URL}/quote?symbol=${encodeURIComponent(symbol)}`;
     try {
-      const response = await this.limiter.execute(async () => fetchWithTimeout(url));
+      const response = await this.limiter.execute(async () =>
+        fetchWithTimeout(url, this.authInit())
+      );
       if (!response.ok) {
         this.logger.warn({ status: response.status, symbol }, 'Finnhub /quote non-OK');
         return null;
@@ -245,9 +253,11 @@ export class FinnhubProvider implements HistoricalPriceProvider, TokenIdentityPr
    */
   async searchTokens(query: string, limit = 10): Promise<TokenSearchResult[]> {
     if (!this.opts.apiKey) return [];
-    const url = `${FINNHUB_BASE_URL}/search?q=${encodeURIComponent(query)}&token=${this.opts.apiKey}`;
+    const url = `${FINNHUB_BASE_URL}/search?q=${encodeURIComponent(query)}`;
     try {
-      const response = await this.limiter.execute(() => fetchWithTimeout(url, undefined, 3000, 0));
+      const response = await this.limiter.execute(() =>
+        fetchWithTimeout(url, this.authInit(), 3000, 0)
+      );
       if (!response.ok) {
         this.logger.warn({ status: response.status, query }, 'Finnhub /search non-OK');
         return [];
@@ -334,8 +344,10 @@ export class FinnhubProvider implements HistoricalPriceProvider, TokenIdentityPr
       const windowTo = Math.min(windowFrom + FINNHUB_MAX_RANGE_SECS, toSec);
       const url =
         `${FINNHUB_BASE_URL}/stock/candle?symbol=${encodeURIComponent(symbol)}` +
-        `&resolution=D&from=${windowFrom}&to=${windowTo}&token=${this.opts.apiKey}`;
-      const response = await this.limiter.execute(async () => fetchWithTimeout(url));
+        `&resolution=D&from=${windowFrom}&to=${windowTo}`;
+      const response = await this.limiter.execute(async () =>
+        fetchWithTimeout(url, this.authInit())
+      );
       if (!response.ok) {
         this.logger.warn(
           { status: response.status, symbol, from: windowFrom, to: windowTo },

@@ -167,7 +167,7 @@ describe('UserJobProcessor — orchestration', () => {
     >;
     expect((completedEvent.result as Record<string, unknown>).handled).toBe(huge);
 
-    const published = publisherCalls.at(-1)?.payload as Record<string, unknown>;
+    const published = publisherCalls.at(-1)!.payload as Record<string, unknown>;
     const wire = published.result as Record<string, unknown>;
     expect('handled' in wire).toBe(false);
     expect(readTruncationNotice(wire)?.omittedFields).toEqual(['handled']);
@@ -210,7 +210,7 @@ describe('UserJobProcessor — orchestration', () => {
 
     // …while the wire copy carries one, which is the pair that makes the two
     // budgets separately observable.
-    const wire = (publisherCalls.at(-1)?.payload as Record<string, unknown>).result;
+    const wire = (publisherCalls.at(-1)!.payload as Record<string, unknown>).result;
     expect(readTruncationNotice(wire)).not.toBeNull();
   });
 

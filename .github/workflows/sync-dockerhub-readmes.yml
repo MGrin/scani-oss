@@ -19,6 +19,10 @@ on:
       - 'scripts/lib/docker-images.ts'
       - '.github/workflows/sync-dockerhub-readmes.yml'
       - 'bunfig.toml'
+      - '.github/actions/setup-bun/action.yml'
+      - '**/package.json'
+      - 'bun.lock'
+      - 'patches/**'
   pull_request:
     paths:
       - 'docker-readmes/**'
@@ -26,6 +30,10 @@ on:
       - 'scripts/lib/docker-images.ts'
       - '.github/workflows/sync-dockerhub-readmes.yml'
       - 'bunfig.toml'
+      - '.github/actions/setup-bun/action.yml'
+      - '**/package.json'
+      - 'bun.lock'
+      - 'patches/**'
   workflow_dispatch:
 
 permissions:

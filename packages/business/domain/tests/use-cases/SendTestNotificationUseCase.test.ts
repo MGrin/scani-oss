@@ -167,11 +167,8 @@ describe('SendTestNotificationUseCase', () => {
 
     const report = await useCase.execute('u1');
 
-    expect(report.devices[0]?.outcome).toEqual({
-      status: 'failed',
-      statusCode: 429,
-      reason: 'Too many requests',
-    });
+    // The status code is kept; the upstream error text is not (SC-1346).
+    expect(report.devices[0]?.outcome).toEqual({ status: 'failed', statusCode: 429 });
     expect(subscriptions.deleted).toEqual([]);
   });
 
@@ -185,11 +182,7 @@ describe('SendTestNotificationUseCase', () => {
 
     const report = await useCase.execute('u1');
 
-    expect(report.devices[0]?.outcome).toEqual({
-      status: 'failed',
-      statusCode: null,
-      reason: 'getaddrinfo ENOTFOUND',
-    });
+    expect(report.devices[0]?.outcome).toEqual({ status: 'failed', statusCode: null });
   });
 
   test('a deployment with no VAPID keys refuses rather than reporting an empty result', async () => {

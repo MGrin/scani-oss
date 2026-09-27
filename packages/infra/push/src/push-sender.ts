@@ -2,6 +2,9 @@ import { createComponentLogger } from '@scani/logging';
 import { Service } from 'typedi';
 import webpush from 'web-push';
 import { resolveVapid } from './config';
+import { isAllowedPushEndpoint } from './push-endpoint';
+
+const PUSH_SEND_TIMEOUT_MS = 10_000;
 
 const logger = createComponentLogger('push:sender');
 
@@ -111,6 +114,13 @@ export class PushSender {
       return { status: 'not-configured', missing: vapid.missing };
     }
 
+    // Rows stored before the allowlist existed are checked here too, so no
+    // path sends to a host the subscribe route would now refuse (SC-1346).
+    if (!isAllowedPushEndpoint(target.endpoint)) {
+      logger.warn('Push send refused: the endpoint is not a known push service');
+      return { status: 'failed', reason: 'endpoint-not-allowed' };
+    }
+
     try {
       await webpush.sendNotification(
         { endpoint: target.endpoint, keys: { p256dh: target.p256dh, auth: target.auth } },
@@ -121,6 +131,7 @@ export class PushSender {
           // enough that a reminder about tomorrow can never arrive after
           // tomorrow has started.
           TTL: 6 * 60 * 60,
+          timeout: PUSH_SEND_TIMEOUT_MS,
         }
       );
       return { status: 'sent' };

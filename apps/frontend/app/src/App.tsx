@@ -61,12 +61,7 @@ function App() {
     <FormatLocaleProvider>
       <AuthProvider>
         <InstallPromptHost />
-        <Router
-          future={{
-            v7_startTransition: true,
-            v7_relativeSplatPath: true,
-          }}
-        >
+        <Router>
           <Routes>
             {/* Public auth routes */}
             <Route path="/auth" element={<AuthScreen />} />

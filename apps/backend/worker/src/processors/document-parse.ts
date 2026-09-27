@@ -10,6 +10,7 @@ import {
   userFacing,
 } from '@scani/queue';
 import { Container, Service } from 'typedi';
+import { readUpload } from '../lib/read-upload';
 
 const logger = createComponentLogger('processor:document-parse');
 
@@ -69,7 +70,7 @@ export class DocumentParseProcessor extends UserJobProcessor<
     const document =
       result.deduped || data.reparseOf
         ? result.document
-        : await this.retain(retention, result.document, ctx.job.id);
+        : await this.retain(retention, result.document, buf, ctx.job.id);
 
     logger.info(
       {
@@ -133,10 +134,11 @@ export class DocumentParseProcessor extends UserJobProcessor<
   private async retain(
     retention: DocumentRetentionService,
     document: Document,
+    bytes: Uint8Array,
     jobId: string | undefined
   ): Promise<Document> {
     try {
-      return await retention.retain(document);
+      return await retention.retain(document, bytes);
     } catch (error) {
       // The AI spend is already incurred and the extractions are written —
       // failing the job here would re-bill the same file on retry. The row
@@ -162,7 +164,7 @@ export class DocumentParseProcessor extends UserJobProcessor<
     r2Key: string
   ): Promise<Buffer> {
     try {
-      return await storage.read(r2Key);
+      return await readUpload(storage, r2Key);
     } catch (error) {
       // Anything other than "the object is not there" — a 5xx, a dropped
       // connection, bad credentials — is a real incident: leave it raw so

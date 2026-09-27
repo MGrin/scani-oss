@@ -1,8 +1,8 @@
 import { getNodeEnv, postgresJsSsl } from '@scani/config';
 import { createComponentLogger, logConfig } from '@scani/logging';
+import { sql } from 'drizzle-orm';
 import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
-import { recordQueryExecuted } from './connection-monitor';
 import {
   assertNoConflictingOptionsParam,
   READ_ONLY_STARTUP_OPTION,
@@ -104,8 +104,6 @@ db = drizzlePostgres(client, {
   logger: logConfig.logSqlQueries
     ? {
         logQuery: (query, params) => {
-          const startTime = Date.now();
-
           dbLogger.debug(
             {
               query: query.substring(0, 1000),
@@ -113,12 +111,6 @@ db = drizzlePostgres(client, {
             },
             '📊 Drizzle PostgreSQL Query'
           );
-
-          // Record query execution for monitoring
-          // Note: We don't have exact duration here since Drizzle doesn't provide it
-          // This is a best-effort approximation
-          const duration = Date.now() - startTime;
-          recordQueryExecuted(undefined, query, duration);
         },
       }
     : false,
@@ -208,22 +200,18 @@ export function getConnectionStats() {
   };
 }
 
-/**
- * Get active database connections count from PostgreSQL
- * Useful for monitoring connection pool usage
- */
-export async function getActiveConnectionsCount(): Promise<number> {
+/** Active Scani sessions across this database, excluding this diagnostic query. */
+export async function getActiveConnectionsCount(): Promise<number | null> {
   try {
-    const result = await db.execute<{ count: number }>(
-      // Query pg_stat_activity for connections from this application
-      // biome-ignore lint/suspicious/noExplicitAny: Raw SQL query with unknown result type
-      `SELECT COUNT(*)::int as count FROM pg_stat_activity WHERE application_name LIKE 'scani-%'` as any
-    );
-    // biome-ignore lint/suspicious/noExplicitAny: Result type varies by query
-    return (result as any)?.rows?.[0]?.count || 0;
+    const result = await db.execute<{ count: number }>(sql`
+      SELECT COUNT(*)::int AS count FROM pg_stat_activity
+      WHERE datname = current_database() AND application_name LIKE 'scani-%'
+        AND state = 'active' AND pid <> pg_backend_pid()
+    `);
+    return result[0]?.count ?? null;
   } catch (error) {
-    dbLogger.warn({ error }, 'Failed to get active connections count');
-    return 0;
+    dbLogger.warn({ error }, 'Failed to read active database sessions');
+    return null;
   }
 }
 
@@ -231,8 +219,5 @@ export async function getActiveConnectionsCount(): Promise<number> {
 export {
   endConnectionTracking,
   getConnectionMonitoringStats,
-  recordConnectionAcquired,
-  recordConnectionReleased,
-  recordQueryExecuted,
   startConnectionTracking,
 } from './connection-monitor';
