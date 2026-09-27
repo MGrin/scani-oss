@@ -203,7 +203,7 @@ export class CoinbaseProvider
     // end of the list — whole accounts, and therefore whole ledgers, are
     // missing rather than merely truncated.
     if (nextUri) {
-      capped?.note({ walk: 'the account list', pages: MAX_ACCOUNT_PAGES, rows: all.length });
+      capped?.note({ walk: { kind: 'accountList' }, pages: MAX_ACCOUNT_PAGES, rows: all.length });
     }
     return all;
   }
@@ -232,7 +232,7 @@ export class CoinbaseProvider
     }
     if (nextUri) {
       capped.note({
-        walk: `transactions for account ${accountId}`,
+        walk: { kind: 'accountTransactions', account: accountId },
         pages: MAX_TX_PAGES_PER_ACCOUNT,
         rows,
       });

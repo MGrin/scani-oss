@@ -3,7 +3,20 @@ import { getDb as getDbConnection } from '@scani/db/connection';
 import type { UserJob, UserJobState } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { REVIEWABLE_JOB_NAMES, type ReviewOutcome } from '@scani/shared';
-import { and, desc, eq, getTableColumns, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
+import {
+  aliasedTable,
+  and,
+  desc,
+  eq,
+  getTableColumns,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  notExists,
+  sql,
+} from 'drizzle-orm';
 import { Service } from 'typedi';
 
 /**
@@ -104,6 +117,15 @@ export class UserJobRepository {
         // biome-ignore lint/suspicious/noExplicitAny: jsonb accepts any JSON-serializable value
         result: result as any,
         error: null,
+        // A job that finished is not dead. `markRequeued` already clears these
+        // for the app's own Retry, but a job can reach `completed` by other
+        // routes — a retry issued against the queue directly, or an attempt
+        // that lands after the terminal write — and the stamp is what the
+        // review feed reads. Left set, a SUCCEEDED job sits in Review saying
+        // it failed, and the only way out is Dismiss, which asserts the user
+        // dealt with a failure that never happened.
+        deadAt: null,
+        failureReason: null,
         finishedAt: new Date(),
         updatedAt: new Date(),
       })
@@ -217,6 +239,9 @@ export class UserJobRepository {
     transaction?: DatabaseTransaction
   ): Promise<UserJob[]> {
     const db = this.getDb(transaction);
+    // Self-join: the subquery below compares one `user_jobs` row against
+    // others, so the inner reference needs a name of its own.
+    const laterRun = aliasedTable(schema.userJobs, 'later_run');
     const rows = await db
       .select()
       .from(schema.userJobs)
@@ -224,10 +249,53 @@ export class UserJobRepository {
         and(
           eq(schema.userJobs.userId, userId),
           isNotNull(schema.userJobs.deadAt),
+          // Belt to `markCompleted`'s braces: a row that reads `completed`
+          // is not a failure whatever its stamp says, and this filter fixes
+          // every row already written that way without waiting for a repair.
+          ne(schema.userJobs.state, 'completed'),
           isNull(schema.userJobs.actionTakenAt),
           // Dismissing IS dealing with it — the feed must not ask again
           // (SC-292). Same reasoning as the `markCancelled` exclusion above.
-          isNull(schema.userJobs.dismissedAt)
+          isNull(schema.userJobs.dismissedAt),
+          // …and a later run of the same job, for the same user, that reached
+          // `completed` has already answered the question this row is asking
+          // (SC-1303). The record stays TRUE and stays readable through
+          // `findOneMine`; it stops being something to ACT on.
+          //
+          // NOT the line above it. That one is about a row whose own stamp had
+          // become false (SC-1296). Here each daily import is its own row and
+          // each of these genuinely failed — what was missing is that a true
+          // failure record has no expiry. Six `transaction-import` rows sat in
+          // two users' feeds for ten weeks over a Bybit window-cap defect fixed
+          // hours after the last one died (SC-1302), and the only control the
+          // feed offered was Dismiss, which writes `dismissed_at` — a claim the
+          // USER dealt with a failure. They did not; we fixed it.
+          //
+          // Three narrowings, each a way to be wrong if dropped:
+          //   `gt(created_at)`  an EARLIER success says nothing about a failure
+          //                     that followed it.
+          //   same `user_id`    another user's success is about their
+          //                     credentials and their exchange account.
+          //   same `job_name`   a wallet import completing is not evidence
+          //                     about a transaction import.
+          //
+          // `>` is strict, so runs that tie retire nothing and the dead job
+          // stays visible. That is the safe direction, and it is the one a
+          // test inside a single transaction hits: `created_at` defaults to
+          // `now()`, which is transaction-start time.
+          notExists(
+            db
+              .select({ one: sql`1` })
+              .from(laterRun)
+              .where(
+                and(
+                  eq(laterRun.userId, schema.userJobs.userId),
+                  eq(laterRun.jobName, schema.userJobs.jobName),
+                  eq(laterRun.state, 'completed'),
+                  gt(laterRun.createdAt, schema.userJobs.createdAt)
+                )
+              )
+          )
         )
       )
       // `created_at` breaks the tie: two jobs killed by the same worker
@@ -490,6 +558,34 @@ export class UserJobRepository {
       )
       .returning({ jobId: schema.userJobs.jobId });
     return updated.length > 0;
+  }
+
+  /**
+   * The newest account deletion that did not finish (SC-1276). A completed one
+   * leaves no row — it cascades with `users` — so a standing row is either
+   * still running or failed, and the owner, signed out when it was queued,
+   * would otherwise believe the account is gone. A dismissed failure is one
+   * they have already been told about.
+   */
+  async findUnfinishedAccountDeletion(
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<UserJob | null> {
+    const db = this.getDb(transaction);
+    const [row] = await db
+      .select()
+      .from(schema.userJobs)
+      .where(
+        and(
+          eq(schema.userJobs.userId, userId),
+          eq(schema.userJobs.jobName, 'user-data-delete'),
+          sql`${schema.userJobs.payloadSummary} ->> 'deleteAccount' = 'true'`,
+          isNull(schema.userJobs.dismissedAt)
+        )
+      )
+      .orderBy(desc(schema.userJobs.createdAt))
+      .limit(1);
+    return (row as UserJob | undefined) ?? null;
   }
 
   /** Count of in-flight jobs for the top-nav badge. */

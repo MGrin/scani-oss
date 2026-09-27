@@ -30,6 +30,14 @@ export default defineConfig({
   },
   projects: VIEWPORTS.map((viewport) => ({
     name: viewport.name,
-    use: { ...devices[viewport.device] },
+    use: {
+      ...devices[viewport.device],
+      launchOptions: {
+        args:
+          devices[viewport.device]?.defaultBrowserType === 'chromium'
+            ? ['--password-store=basic', '--use-mock-keychain']
+            : [],
+      },
+    },
   })),
 });

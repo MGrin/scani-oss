@@ -1,5 +1,5 @@
 import type { NewHoldingBalanceObservation, NewHoldingTransaction } from '@scani/db/schema';
-import type { ParsedTransaction, ParseResult } from '@scani/file-import';
+import { type ParsedTransaction, type ParseResult, statementPayee } from '@scani/file-import';
 import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import { Service } from 'typedi';
@@ -108,6 +108,9 @@ export class StatementTransactionIngester {
       }
 
       const externalId = this.buildExternalId(tx, ordinal);
+      // Marked, because elsewhere `counterparty` is an address or an account
+      // identifier and this is a best reading of free text (SC-1325).
+      const payee = statementPayee(tx.description);
 
       transactions.push({
         userId: input.userId,
@@ -118,10 +121,12 @@ export class StatementTransactionIngester {
         occurredAt,
         externalId,
         source: sourceTag,
+        counterparty: payee,
         sourceMetadata: {
           description: tx.description,
           bankTemplate: parseResult.bankTemplate ?? null,
           format: parseResult.format,
+          ...(payee === null ? {} : { counterpartyFrom: 'description' }),
         },
         rawPayload: (tx.raw ?? null) as Record<string, unknown> | null,
       });

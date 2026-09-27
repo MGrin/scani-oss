@@ -217,7 +217,7 @@ export class TonProvider
       if (txs.length < TX_PAGE_LIMIT) break;
       // The address is the requester's choice, so its size is too (SC-1271).
       if (events.length >= WALLET_HISTORY_ROW_CAP) {
-        capped.note({ walk: 'the address history', pages, rows: events.length });
+        capped.note({ walk: { kind: 'addressHistory' }, pages, rows: events.length });
         break;
       }
       const last = txs[txs.length - 1];

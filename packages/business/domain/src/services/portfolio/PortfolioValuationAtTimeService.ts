@@ -228,17 +228,18 @@ export class PortfolioValuationAtTimeService {
 
     // Pull all of the user's holdings. We value each against `at` regardless
     // of its current visibility flags — the history chart shouldn't change
-    // retroactively when a holding is later hidden.
-    const allHoldings = await this.holdingRepository.findByUser(userId, opts.tx);
+    // retroactively when a holding is later hidden. Inactive is not a
+    // visibility flag: `findByUser` returns those rows "visible but excluded
+    // from totals", Home excludes them, and counting one here put a
+    // deactivated $888K position on every day of a chart whose Home read
+    // ~$117K (SC-1328).
+    const allHoldings = (await this.holdingRepository.findByUser(userId, opts.tx)).filter(
+      (h) => h.isActive
+    );
 
     // Apply the per-entity scope filter (institution / account /
-    // holding). Holdings created after `at` are kept in the pool —
-    // BalanceAtTimeService's "holdings current" anchor propagates
-    // their present balance backward (with at-time FX), which is the
-    // intended behaviour for the history chart. An earlier revision
-    // dropped them here to keep the coverage denominator honest, but
-    // that produced an empty chart for users whose holdings were all
-    // created in the last day or two (the typical onboarding case).
+    // holding). A holding is valued only on days its own records reach —
+    // see the `beforeRecords` skip in the loop below (SC-1323).
     const holdings = await this.applyScope(allHoldings, opts.scope, userId, opts.tx);
 
     const unpriceableTokenIds =
@@ -259,11 +260,25 @@ export class PortfolioValuationAtTimeService {
     let staleAnchoredCount = 0;
     let oldestAnchorAt: Date | null = null;
     let stalePricedCount = 0;
-    let beforeRecordsCount = 0;
     let interpolatedCount = 0;
+
+    // Holdings whose earliest record is after `at`. They are absent from the
+    // day rather than valued on it: `BalanceAtTimeService` would hand back
+    // today's balance, and at each past day's price that drew a holding added
+    // a minute ago as held for 400 days — "Down $2,132 since 31 Dec 2025" to a
+    // newcomer, and "+5.2% vs 30d" once a second, older holding kept those
+    // days on the chart (SC-1323). SC-252 had already stopped calling such a
+    // day 'full'; nothing we hold says what the balance was, so it now counts
+    // nothing. The day the holding appears, its value is a contribution —
+    // `ReturnsService` books it as one.
+    let absentCount = 0;
 
     for (const h of holdings) {
       const result = await this.balanceAtTimeService.getBalance(h.id, at, opts.tx, opts.caches);
+      if (result.beforeRecords) {
+        absentCount += 1;
+        continue;
+      }
       // Only ever consulted on a branch that produced no value —
       // a holding we *did* price is priceable by demonstration, and a
       // zero balance is worth zero in any currency. Keeping the flag off
@@ -302,10 +317,6 @@ export class PortfolioValuationAtTimeService {
       if (result.balance.isZero()) {
         total = total.add(0);
         knownCount += 1;
-        // A zero reconstructed below our earliest record is as unfounded as
-        // a non-zero one: it is `current balance - sum(all known txs)`
-        // landing on zero, not an observation of an empty position.
-        if (result.beforeRecords) beforeRecordsCount += 1;
         if (result.interpolated) interpolatedCount += 1;
         perHolding.push({
           holdingId: h.id,
@@ -382,7 +393,6 @@ export class PortfolioValuationAtTimeService {
 
       total = total.add(priced.amount);
       knownCount += 1;
-      if (result.beforeRecords) beforeRecordsCount += 1;
       if (result.interpolated) interpolatedCount += 1;
       if (result.anchor === 'observation-before') {
         staleAnchoredCount += 1;
@@ -411,30 +421,15 @@ export class PortfolioValuationAtTimeService {
       });
     }
 
-    const holdingsTotal = holdings.length;
+    const holdingsTotal = holdings.length - absentCount;
     const priceableTotal = holdingsTotal - unpriceableCount;
     let coverageQuality: CoverageQuality;
     if (priceableTotal === 0) {
-      // Nothing in scope we could ever price, so `total` is 0 because we
-      // measured nothing — not because the scope was worth nothing.
-      // Calling that 'full' let the chart draw a confident €0 between two
-      // days that were plainly worth something (observed in production on
-      // institution-scope rows), and the period delta was then computed
-      // against that zero.
-      // A scope containing only unpriceable dust lands here too, which is
-      // the same statement: we have no measurement of it.
       coverageQuality = 'unknown';
     } else {
       const knownRatio = knownCount / priceableTotal;
       if (knownRatio >= COVERAGE_FULL_THRESHOLD) {
-        // `beforeRecordsCount` joined this condition in SC-252. Without it a
-        // date more than a year before a holding's first transaction read
-        // 'full' — the strongest claim the vocabulary has, about a period
-        // nothing in our data describes.
-        coverageQuality =
-          staleAnchoredCount > 0 || stalePricedCount > 0 || beforeRecordsCount > 0
-            ? 'partial'
-            : 'full';
+        coverageQuality = staleAnchoredCount > 0 || stalePricedCount > 0 ? 'partial' : 'full';
       } else if (knownRatio >= COVERAGE_PARTIAL_THRESHOLD) {
         coverageQuality = 'estimated';
       } else {
@@ -454,7 +449,8 @@ export class PortfolioValuationAtTimeService {
       holdingsStalePriced: stalePricedCount,
       holdingsStaleAnchored: staleAnchoredCount,
       oldestAnchorAt,
-      holdingsBeforeRecords: beforeRecordsCount,
+      // A holding before its records is now absent rather than counted (SC-1323).
+      holdingsBeforeRecords: 0,
       holdingsInterpolated: interpolatedCount,
       perHolding,
     };

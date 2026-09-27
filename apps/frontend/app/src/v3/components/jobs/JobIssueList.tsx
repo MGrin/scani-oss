@@ -1,7 +1,7 @@
-import type { TFunction } from 'i18next';
+import type { i18n as I18n, TFunction } from 'i18next';
 import { AlertTriangle } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { capList, type JobLine } from '../../lib/job-results';
+import { capList, type JobLine, renderJobLine } from '../../lib/job-results';
 
 /**
  * What a run could not do, listed short and counted whole.
@@ -42,14 +42,14 @@ import { capList, type JobLine } from '../../lib/job-results';
  * never heard of it. The server's English is exactly what shipped before any
  * of this, so the mechanism's worst case is the previous behaviour.
  */
-function sentence(
-  line: string | JobLine,
-  t: TFunction,
-  i18n: { exists: (key: string) => boolean }
-): string {
+function sentence(line: string | JobLine, t: TFunction, i18n: I18n): string {
   if (typeof line === 'string') return line;
-  if (line.key === null || !i18n.exists(line.key)) return line.text;
-  return t(line.key, { ...line.params });
+  return renderJobLine(
+    line,
+    (key, options) => t(key, options),
+    (key, options) => i18n.exists(key, options),
+    i18n.resolvedLanguage ?? i18n.language
+  );
 }
 
 export function JobIssueList({

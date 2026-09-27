@@ -41,21 +41,6 @@ export interface PriceGraphOptions {
   // to cover, and falls back to the repository for the rest. Build it with
   // `buildPriceLookup` so the covered set matches what this walks.
   priceLookup?: PriceLookup;
-  /**
-   * The transaction every read on this call must go through, or `undefined`
-   * for the connection pool.
-   *
-   * REQUIRED, and not `tx?:` — that is the whole point (SC-600). A test
-   * running inside `withTestDb` gets a transaction the pool cannot see, so a
-   * call that omits it does not fail: it reads an empty database and returns
-   * `null`, and every assertion downstream goes on passing against nothing.
-   * Measured 2026-08-23: inside one `withTestDb` callback the transaction saw
-   * 1 holding and `PnLAtTimeService.getPnL` saw 0.
-   *
-   * Optional, that failure stays available at every call site nobody thought
-   * about. Required, the compiler names them — and `undefined` remains the
-   * right answer in production, it just has to be written down.
-   */
   tx: DatabaseTransaction | undefined;
 }
 
@@ -204,12 +189,47 @@ export class PriceGraphService {
   // "keep in sync" hazard whose failure mode is silent — a pair the preload
   // misses is a DB round-trip at best and, before `PriceLookup.covers`,
   // a fabricated "no price" at worst.
+  //
+  // `since` bounds the fetch to the instants the caller will actually ask
+  // about (SC-1306). It is forwarded verbatim to the repository, whose
+  // carry-in row keeps the lookup's answers identical to the unbounded ones
+  // for every instant at or after it — so a caller derives it from the
+  // EARLIEST instant it will convert at, never from the window it displays.
+  // Omitted, nothing changes: the rollup prices every day a holding has ever
+  // had and has no lower bound to give.
   async buildPriceLookup(
     tokenIds: Iterable<string>,
     baseCurrencyId: string,
     until: Date,
-    tx: DatabaseTransaction | undefined
+    tx: DatabaseTransaction | undefined,
+    since?: Date
   ): Promise<PriceLookup> {
+    const pairs = await this.lookupPairs(tokenIds, baseCurrencyId, tx);
+    const rows = await this.tokenPriceRepository.findManyForPairsUpTo(pairs, until, tx, since);
+    return new PriceLookup(rows, pairs);
+  }
+
+  /**
+   * A hash of exactly the price rows `buildPriceLookup` would read for the same
+   * arguments, computed in the database so the caller decodes one row. A cache
+   * of anything priced through that lookup keys on it, so a price that lands or
+   * is corrected inside the window is a different key (SC-1369).
+   */
+  async priceLookupFingerprint(
+    tokenIds: Iterable<string>,
+    baseCurrencyId: string,
+    until: Date,
+    since?: Date
+  ): Promise<string> {
+    const pairs = await this.lookupPairs(tokenIds, baseCurrencyId, undefined);
+    return this.tokenPriceRepository.fingerprintForPairsUpTo(pairs, until, since);
+  }
+
+  private async lookupPairs(
+    tokenIds: Iterable<string>,
+    baseCurrencyId: string,
+    tx: DatabaseTransaction | undefined
+  ): Promise<Array<{ tokenId: string; baseTokenId: string }>> {
     const hubIds = await this.resolveHubTokenIds(tx);
     const baseAndHubs = new Set<string>([baseCurrencyId, ...hubIds]);
     const pairs: Array<{ tokenId: string; baseTokenId: string }> = [];
@@ -226,8 +246,7 @@ export class PriceGraphService {
     for (const a of anchors) {
       for (const b of anchors) pushPair(a, b);
     }
-    const rows = await this.tokenPriceRepository.findManyForPairsUpTo(pairs, until, tx);
-    return new PriceLookup(rows, pairs);
+    return pairs;
   }
 
   // Try a direct edge between two tokens. Uses the forward price if
@@ -277,24 +296,6 @@ export class PriceGraphService {
     return null;
   }
 
-  // Resolve each hub to the `tokens` row it names. Public because the
-  // nightly rollup prefetches every (token, hub) price pair into a
-  // PriceLookup and has to preload the same ids this walks — it used to
-  // keep its own hub list and its own resolver, with a "keep in sync"
-  // comment and nothing that checked (SC-315).
-  //
-  // Each hub is resolved on `(symbol, typeId, marketSegment: null)`,
-  // which the `tokens_symbol_type_segment_unique` constraint makes at
-  // most one row. That matters because a symbol is not an identity here:
-  // `USDT` has more than one row in production, all crypto, so narrowing to the
-  // type alone still leaves `findBySymbolAndType`'s
-  // `asc(isScamProbability), desc(createdAt)` tiebreak to guess between
-  // the merged canonical row and one chain's ERC-20. The canonical row
-  // is the one carrying the price edges (migration 0007 merged the
-  // chain-spread duplicates into it and forced its segment to NULL), so
-  // guessing the other one takes the entire USDT lane out of service —
-  // every one-hop route through it fails and falls through to the next
-  // hub, silently.
   async resolveHubTokenIds(
     tx: DatabaseTransaction | undefined,
     hubs: readonly PriceHub[] = PRICE_HUBS

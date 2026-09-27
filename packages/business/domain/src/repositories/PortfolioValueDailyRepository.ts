@@ -6,7 +6,7 @@ import type {
 } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
-import { and, asc, desc, eq, gte, inArray, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lte, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import { notScamFor } from '../lib/scam-verdict';
 
@@ -54,6 +54,42 @@ export interface IncludedHoldingScopeRow {
   holdingsBasisUnknown: number;
   transfersUnreviewed: number;
 }
+
+const daily = schema.portfolioValueDaily;
+
+// Every column the rollup derives. The PnL three are here because leaving them
+// out once left them stale on a re-run (the rollup wrote them on INSERT only).
+const DERIVED_COLUMNS = [
+  'totalValue',
+  'coverageQuality',
+  'holdingsWithKnownValue',
+  'holdingsTotal',
+  'holdingsUnpriceable',
+  'holdingsStalePriced',
+  'holdingsStaleAnchored',
+  'oldestAnchorAt',
+  'holdingsBeforeRecords',
+  'holdingsInterpolated',
+  'holdingsBasisUnknown',
+  'transfersUnreviewed',
+  'costBasis',
+  'realizedPnl',
+  'unrealizedPnl',
+] as const;
+
+const excluded = (key: (typeof DERIVED_COLUMNS)[number]) => sql.raw(`EXCLUDED.${daily[key].name}`);
+
+const ON_ROLLUP_CONFLICT = {
+  target: [daily.userId, daily.scopeKind, daily.scopeId, daily.snapshotDate, daily.baseCurrencyId],
+  set: {
+    ...Object.fromEntries(DERIVED_COLUMNS.map((key) => [key, excluded(key)])),
+    computedAt: sql`now()`,
+  },
+  setWhere: sql`(${sql.join(
+    DERIVED_COLUMNS.map((key) => daily[key]),
+    sql`, `
+  )}) IS DISTINCT FROM (${sql.join(DERIVED_COLUMNS.map(excluded), sql`, `)})`,
+};
 
 // Composite primary key (user_id, snapshot_date, base_currency_id); can't use
 // BaseRepository.
@@ -172,6 +208,77 @@ export class PortfolioValueDailyRepository {
       this.logger.error(
         { userId, baseCurrencyId, from, to, error: error instanceof Error ? error.message : error },
         'Failed to find included holding-scope portfolio_value_daily range'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * The newest `limit` distinct days that carry a MEASUREMENT, under exactly
+   * the inclusion contract `findIncludedHoldingScopeRange` applies (SC-1306).
+   *
+   * It exists so a caller can answer "is there a return to show here" without
+   * reading the series it would be computed from. Home asks that on every load
+   * — the Returns tab withdraws itself when the answer is no — and paying a
+   * full TWR/XIRR/attribution run for one bit put a p50 of 4952ms in front of
+   * the dashboard for every reader, including ones who never open the tab.
+   *
+   * `holdings_with_known_value > 0` is the same predicate `buildSeries` folds
+   * on: a day where nothing in scope could be priced is dropped there rather
+   * than plotted at zero, so counting it here would offer a tab with nothing
+   * behind it.
+   *
+   * Newest-first and capped, so the planner walks the date index backwards and
+   * stops. Two rows is all any caller has needed: see `ReturnsService.hasHistory`
+   * for why that is the whole question and not an approximation of it.
+   */
+  async findLatestMeasuredDays(
+    userId: string,
+    baseCurrencyId: string,
+    from: Date,
+    to: Date,
+    limit: number,
+    transaction?: DatabaseTransaction,
+    holdingIds?: readonly string[]
+  ): Promise<string[]> {
+    if (holdingIds !== undefined && holdingIds.length === 0) return [];
+    if (limit <= 0) return [];
+    try {
+      const db = this.getDb(transaction);
+      const includedHoldings = db
+        .select({ id: schema.holdings.id })
+        .from(schema.holdings)
+        .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
+        .where(
+          and(
+            eq(schema.holdings.userId, userId),
+            eq(schema.holdings.isHidden, false),
+            eq(schema.holdings.isActive, true),
+            notScamFor(),
+            ...(holdingIds ? [inArray(schema.holdings.id, [...holdingIds])] : [])
+          )
+        );
+      const rows = await db
+        .selectDistinct({ snapshotDate: schema.portfolioValueDaily.snapshotDate })
+        .from(schema.portfolioValueDaily)
+        .where(
+          and(
+            eq(schema.portfolioValueDaily.userId, userId),
+            eq(schema.portfolioValueDaily.scopeKind, 'holding'),
+            eq(schema.portfolioValueDaily.baseCurrencyId, baseCurrencyId),
+            gte(schema.portfolioValueDaily.snapshotDate, from.toISOString().slice(0, 10)),
+            lte(schema.portfolioValueDaily.snapshotDate, to.toISOString().slice(0, 10)),
+            gt(schema.portfolioValueDaily.holdingsWithKnownValue, 0),
+            sql`${schema.portfolioValueDaily.scopeId} = ANY(ARRAY(${includedHoldings}))`
+          )
+        )
+        .orderBy(desc(schema.portfolioValueDaily.snapshotDate))
+        .limit(limit);
+      return rows.map((row) => String(row.snapshotDate).slice(0, 10));
+    } catch (error) {
+      this.logger.error(
+        { userId, baseCurrencyId, from, to, error: error instanceof Error ? error.message : error },
+        'Failed to read the latest measured portfolio_value_daily days'
       );
       throw error;
     }
@@ -324,53 +431,53 @@ export class PortfolioValueDailyRepository {
     }
   }
 
+  // Every user with a stored user-scope day on or after `since` and a base
+  // currency — the reach of a history recompute over that window (SC-1323).
+  // No base currency means the rollup skips the user anyway.
+  async findUserIdsWithHistorySince(
+    since: Date,
+    opts: { userId?: string } = {},
+    transaction?: DatabaseTransaction
+  ): Promise<string[]> {
+    try {
+      const db = this.getDb(transaction);
+      const pvd = schema.portfolioValueDaily;
+      const conditions = [
+        eq(pvd.scopeKind, 'user'),
+        gte(pvd.snapshotDate, since.toISOString().slice(0, 10)),
+        isNotNull(schema.users.baseCurrencyId),
+      ];
+      if (opts.userId) conditions.push(eq(pvd.userId, opts.userId));
+      const rows = await db
+        .selectDistinct({ userId: pvd.userId })
+        .from(pvd)
+        .innerJoin(schema.users, eq(schema.users.id, pvd.userId))
+        .where(and(...conditions))
+        .orderBy(asc(pvd.userId));
+      return rows.map((r) => r.userId);
+    } catch (error) {
+      this.logger.error(
+        { since, opts, error: error instanceof Error ? error.message : error },
+        'Failed to find users with stored portfolio history'
+      );
+      throw error;
+    }
+  }
+
+  /** Null when the row already held these values, so nothing was written. */
   async upsert(
     row: NewPortfolioValueDaily,
     transaction?: DatabaseTransaction
-  ): Promise<PortfolioValueDaily> {
+  ): Promise<PortfolioValueDaily | null> {
     try {
       const db = this.getDb(transaction);
       const results = await db
         .insert(schema.portfolioValueDaily)
         // biome-ignore lint/suspicious/noExplicitAny: Drizzle insert type constraint
         .values(row as any)
-        .onConflictDoUpdate({
-          target: [
-            schema.portfolioValueDaily.userId,
-            schema.portfolioValueDaily.scopeKind,
-            schema.portfolioValueDaily.scopeId,
-            schema.portfolioValueDaily.snapshotDate,
-            schema.portfolioValueDaily.baseCurrencyId,
-          ],
-          set: {
-            totalValue: sql`EXCLUDED.total_value`,
-            coverageQuality: sql`EXCLUDED.coverage_quality`,
-            holdingsWithKnownValue: sql`EXCLUDED.holdings_with_known_value`,
-            holdingsTotal: sql`EXCLUDED.holdings_total`,
-            holdingsUnpriceable: sql`EXCLUDED.holdings_unpriceable`,
-            holdingsStalePriced: sql`EXCLUDED.holdings_stale_priced`,
-            holdingsStaleAnchored: sql`EXCLUDED.holdings_stale_anchored`,
-            oldestAnchorAt: sql`EXCLUDED.oldest_anchor_at`,
-            holdingsBeforeRecords: sql`EXCLUDED.holdings_before_records`,
-            holdingsInterpolated: sql`EXCLUDED.holdings_interpolated`,
-            holdingsBasisUnknown: sql`EXCLUDED.holdings_basis_unknown`,
-            transfersUnreviewed: sql`EXCLUDED.transfers_unreviewed`,
-            // Without these, re-running the rollup for an already-cached
-            // day left the PnL columns stale (the rollup writes them on
-            // INSERT but the conflict path skipped them).
-            costBasis: sql`EXCLUDED.cost_basis`,
-            realizedPnl: sql`EXCLUDED.realized_pnl`,
-            unrealizedPnl: sql`EXCLUDED.unrealized_pnl`,
-            computedAt: sql`now()`,
-          },
-        })
+        .onConflictDoUpdate(ON_ROLLUP_CONFLICT)
         .returning();
-      if (!results[0]) {
-        throw new Error(
-          `Upsert of portfolio_value_daily (${row.userId}, ${String(row.snapshotDate)}, ${row.baseCurrencyId}) returned no row`
-        );
-      }
-      return results[0] as PortfolioValueDaily;
+      return (results[0] as PortfolioValueDaily | undefined) ?? null;
     } catch (error) {
       this.logger.error(
         { row, error: error instanceof Error ? error.message : error },
@@ -380,6 +487,7 @@ export class PortfolioValueDailyRepository {
     }
   }
 
+  /** Returns only the rows written; an unchanged row is skipped. */
   async bulkUpsert(
     rows: NewPortfolioValueDaily[],
     transaction?: DatabaseTransaction
@@ -391,36 +499,7 @@ export class PortfolioValueDailyRepository {
         .insert(schema.portfolioValueDaily)
         // biome-ignore lint/suspicious/noExplicitAny: Drizzle array insert type
         .values(rows as any[])
-        .onConflictDoUpdate({
-          target: [
-            schema.portfolioValueDaily.userId,
-            schema.portfolioValueDaily.scopeKind,
-            schema.portfolioValueDaily.scopeId,
-            schema.portfolioValueDaily.snapshotDate,
-            schema.portfolioValueDaily.baseCurrencyId,
-          ],
-          set: {
-            totalValue: sql`EXCLUDED.total_value`,
-            coverageQuality: sql`EXCLUDED.coverage_quality`,
-            holdingsWithKnownValue: sql`EXCLUDED.holdings_with_known_value`,
-            holdingsTotal: sql`EXCLUDED.holdings_total`,
-            holdingsUnpriceable: sql`EXCLUDED.holdings_unpriceable`,
-            holdingsStalePriced: sql`EXCLUDED.holdings_stale_priced`,
-            holdingsStaleAnchored: sql`EXCLUDED.holdings_stale_anchored`,
-            oldestAnchorAt: sql`EXCLUDED.oldest_anchor_at`,
-            holdingsBeforeRecords: sql`EXCLUDED.holdings_before_records`,
-            holdingsInterpolated: sql`EXCLUDED.holdings_interpolated`,
-            holdingsBasisUnknown: sql`EXCLUDED.holdings_basis_unknown`,
-            transfersUnreviewed: sql`EXCLUDED.transfers_unreviewed`,
-            // Without these, re-running the rollup for an already-cached
-            // day left the PnL columns stale (the rollup writes them on
-            // INSERT but the conflict path skipped them).
-            costBasis: sql`EXCLUDED.cost_basis`,
-            realizedPnl: sql`EXCLUDED.realized_pnl`,
-            unrealizedPnl: sql`EXCLUDED.unrealized_pnl`,
-            computedAt: sql`now()`,
-          },
-        })
+        .onConflictDoUpdate(ON_ROLLUP_CONFLICT)
         .returning();
       this.logger.debug({ count: results.length }, 'Bulk upserted portfolio_value_daily');
       return results as PortfolioValueDaily[];

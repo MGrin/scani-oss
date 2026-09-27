@@ -260,24 +260,26 @@ describe('checkEnvIsolatedUrl', () => {
     // be coerced into polynomial backtracking with many '//' and no '@';
     // the bounded character classes keep this fast.
     //
-    // It asserts how the cost GROWS, not what it is (SC-1220): `< 50ms` read
-    // 54.5ms on a loaded nightly, and load slows both sizes alike. Eight times
-    // the input costs 8.0x here and 63-64x with the pre-fix regex (measured
-    // 2026-09-17, best of 7 each), so 24x sits between them with margin on
-    // both sides.
-    const cost = (n: number): number => {
-      const url = `redis://localhost:6379/${'/'.repeat(n)}`;
-      let best = Number.POSITIVE_INFINITY;
-      for (let i = 0; i < 7; i++) {
-        const start = performance.now();
-        const result = checkEnvIsolatedUrl({ url, varName: 'REDIS_URL', isProduction: true });
-        best = Math.min(best, performance.now() - start);
-        expect(result.ok).toBe(false);
-      }
-      return best;
-    };
-    const small = cost(50_000);
-    expect(cost(400_000) / small).toBeLessThan(24);
+    // AN ABSOLUTE BUDGET AT ONE SIZE, CHOSEN FROM THE SEPARATION (SC-1311). The
+    // two-point growth ratio this replaced (SC-1220) divided by a 50k baseline
+    // of 0.04ms, so scheduler noise on a starved CI agent read 29.7x against
+    // its < 24 bound, and the guard reported the health of the box in the
+    // units of the health of the regex. At 40k characters the fixed regex
+    // costs ~0.04ms and the pre-fix one ~2600ms (measured 2026-09-24, best of
+    // 5, same machine): a 10ms budget leaves ~250x for starvation on one side
+    // and sits ~260x under the regression on the other. Best of up to seven,
+    // stopping at the first run under budget, so one descheduled call or a
+    // first-call JIT cannot decide it.
+    const url = `redis://localhost:6379/${'/'.repeat(40_000)}`;
+    const BUDGET_MS = 10;
+    let best = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < 7 && best >= BUDGET_MS; i++) {
+      const start = performance.now();
+      const result = checkEnvIsolatedUrl({ url, varName: 'REDIS_URL', isProduction: true });
+      best = Math.min(best, performance.now() - start);
+      expect(result.ok).toBe(false);
+    }
+    expect(best).toBeLessThan(BUDGET_MS);
   });
 
   test('allowCrossEnv opts out of the check', () => {

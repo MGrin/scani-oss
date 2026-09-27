@@ -45,6 +45,14 @@ const searchCache = new LruCache<string, unknown[]>({
   ttlMs: 60 * 60 * 1000,
 });
 
+// Catalogue rows come first and are already exact-first; this lifts an exact
+// symbol from the provider half above the catalogue's partial matches. Stable,
+// so everything else keeps the order it was given.
+function exactSymbolFirst<T extends { symbol: string }>(rows: T[], query: string): T[] {
+  const isExact = (row: T) => row.symbol.toUpperCase() === query;
+  return [...rows.filter(isExact), ...rows.filter((row) => !isExact(row))];
+}
+
 // Helper function to map provider token types to database token types
 // Note: 'stock' type covers Stock/ETF/Equity/Commodity as per seed data
 function mapProviderTypeToDbType(providerType: string): string {
@@ -151,30 +159,6 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
       return tokens;
     }),
 
-    /**
-     * FX rates from each of `currencyTokenIds` into the caller's base
-     * currency, with the moment each rate is from.
-     *
-     * This is the *only* way a frontend surface converts money. It goes
-     * through the same `CurrencyConverter` every portfolio valuation
-     * uses — so a converted total on the Money tab and a converted
-     * holding on the dashboard can never disagree about a rate.
-     *
-     * **It reads storage and never fetches (SC-222).** It used to end in a
-     * live exchangerate-api call for any pair the price graph could not
-     * answer, and that call sits behind an outflow limiter of two requests
-     * per sixty seconds whose acquire *sleeps*. Measured against production:
-     * well under a second warm, **seconds** once the converter's ten-minute
-     * memory cache expired, and **tens of seconds** for a few pairs with
-     * nothing stored — one blocked user request paying for the backfill
-     * nobody had run. A pair we cannot
-     * answer is queued for the worker to fetch and returned as `null` now.
-     *
-     * `rate: null` means the pair has no resolvable rate *right now*.
-     * Callers MUST show the un-convertible part rather than dropping it
-     * from a total: silently omitting it understates what the user owes,
-     * which is worse than the per-currency list this replaced.
-     */
     getBaseCurrencyRates: protectedProcedure
       .input(strictInput(z.object({ currencyTokenIds: z.array(z.string().uuid()).max(25) })))
       .query(async ({ ctx, input }) => {
@@ -273,7 +257,14 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
               }) LIKE ${likePattern} ESCAPE '\\')`
             )
           )
-          .orderBy(schemaObj.tokens.symbol)
+          // Exact symbol first: typing "BTC" offered "ABTC — Ameriican
+          // Bitcoin" above Bitcoin, because `A` < `B` (SC-1273). Ordering in
+          // SQL rather than after the fact also keeps the exact row inside the
+          // LIMIT when more than `limit` symbols merely contain the query.
+          .orderBy(
+            sql`CASE WHEN UPPER(${schemaObj.tokens.symbol}) = ${query} THEN 0 ELSE 1 END`,
+            schemaObj.tokens.symbol
+          )
           .limit(input.limit);
 
         const results: Array<{
@@ -312,14 +303,14 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
             const cached = searchCache.get(query);
             if (cached) {
               results.push(...(cached as typeof results).slice(0, input.limit - dbTokens.length));
-              return results;
+              return exactSymbolFirst(results, query);
             }
 
             const cloudClient = getCloudClient();
             // No SCANI_CLOUD_URL → no data-provider → DB-only search.
             // Returning early keeps the user-facing search responsive
             // instead of throwing "cloud client not configured".
-            if (!cloudClient) return results;
+            if (!cloudClient) return exactSymbolFirst(results, query);
             const externalResults = await cloudClient.tokens.search.query({
               query,
               limit: input.limit,
@@ -377,7 +368,7 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
           }
         }
 
-        return results.slice(0, input.limit);
+        return exactSymbolFirst(results, query).slice(0, input.limit);
       }),
 
     // Create token from external provider metadata (for holding creation)
@@ -431,21 +422,6 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
         return createdToken;
       }),
 
-    /**
-     * The caller's own scam verdict on a token (SC-1160): `markAsScam` says it
-     * IS one, `unmarkAsScam` says it is not. Both write
-     * `user_token_scam_verdicts` for the caller and nothing else — mgrin ruled
-     * on 2026-09-14 that one user's verdict must not change the token for
-     * anybody else, and that a global verdict is a human decision taken from
-     * those rows. Backs `HiddenHoldingActions` and the holding sheet's action.
-     *
-     * `unmarkAsScam` used to write `is_scam_probability = 0,
-     * scam_score_source = 'user'` on the SHARED row, which the rescorer never
-     * recomputes: one click un-flagged a token for every user, permanently.
-     *
-     * The rollup is re-enqueued because a verdict moves the holding into or out
-     * of the caller's totals, exactly as un-hiding it does.
-     */
     markAsScam: protectedProcedure
       .input(strictInput(z.object({ tokenId: z.string().uuid() })))
       .mutation(async ({ input, ctx }) => setOwnScamVerdict(ctx, input.tokenId, 'scam')),
@@ -454,15 +430,6 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
       .input(strictInput(z.object({ tokenId: z.string().uuid() })))
       .mutation(async ({ input, ctx }) => setOwnScamVerdict(ctx, input.tokenId, 'not_scam')),
 
-    /**
-     * Create a custom token (private-company / other) with an initial
-     * manual price in the base currency the user chose. The token is private
-     * to its creator (SC-1285, mgrin 2026-09-21): nobody else lists it, prices
-     * it, reads its history or holds it. `CONFLICT` means the CALLER already
-     * has one with this symbol — another user's never conflicts, so the answer
-     * says nothing about what anybody else has created. The initial price is
-     * recorded in both `token_prices` and `token_price_edit_history`.
-     */
     createCustom: protectedProcedure
       .input(
         strictInput(

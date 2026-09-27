@@ -25,6 +25,7 @@ import {
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService, type ProcessorContext, UserJobProcessor } from '@scani/queue';
 import { Container, Service } from 'typedi';
+import { balanceWithoutClose } from '../lib/balance-without-close';
 import { readUpload } from '../lib/read-upload';
 
 const logger = createComponentLogger('processor:file-import');
@@ -42,6 +43,11 @@ interface FileImportSummary {
     name: string;
     transactionCount: number;
     closingBalance: string | null;
+    /** Where the holding's balance came from (SC-1324). `imported-rows` and
+     *  `unknown` exist only for a holding this import created. */
+    balanceFrom: 'statement-close' | 'imported-rows' | 'unknown' | 'unchanged';
+    /** The sum the balance was set to, when `balanceFrom` is `imported-rows`. */
+    rowsBalance: string | null;
   }>;
   warnings: string[];
   // Set when the file has no Currency column and parseStatement
@@ -328,17 +334,52 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
       }
     }
 
+    // A holding this import created, from a file with no balance column, has
+    // no close to take. Its own rows are then the only evidence (SC-1324); a
+    // holding that already existed keeps whatever its balance was.
+    const balanceFromByHolding = new Map<string, 'imported-rows' | 'unknown'>();
+    const rowsBalanceByHolding = new Map<string, string>();
+    for (const holdingId of holdingsCreated) {
+      if (closingByHolding.has(holdingId)) continue;
+      const derived = balanceWithoutClose(
+        ingestResult.transactions
+          .filter((tx) => tx.holdingId === holdingId)
+          .map((tx) => tx.quantity)
+      );
+      balanceFromByHolding.set(
+        holdingId,
+        derived.kind === 'from-rows' ? 'imported-rows' : 'unknown'
+      );
+      if (derived.kind !== 'from-rows') continue;
+      try {
+        await holdingService.updateHoldingBalance(holdingId, derived.balance);
+        rowsBalanceByHolding.set(holdingId, derived.balance);
+      } catch (err) {
+        balanceFromByHolding.set(holdingId, 'unknown');
+        logger.warn(
+          { jobId: ctx.job.id, holdingId, error: err instanceof Error ? err.message : err },
+          'Failed to set a new holding balance from its imported rows (non-fatal)'
+        );
+      }
+    }
+
     const txCountByHolding = new Map<string, number>();
     for (const tx of ingestResult.transactions) {
       txCountByHolding.set(tx.holdingId, (txCountByHolding.get(tx.holdingId) ?? 0) + 1);
     }
-    const holdingsTouched = [...holdingByCurrency.entries()].map(([_sym, info]) => ({
+    const holdingsTouched: FileImportSummary['holdingsTouched'] = [
+      ...holdingByCurrency.entries(),
+    ].map(([_sym, info]) => ({
       holdingId: info.holdingId,
       tokenId: info.tokenId,
       symbol: info.symbol,
       name: info.name,
       transactionCount: txCountByHolding.get(info.holdingId) ?? 0,
       closingBalance: closingByHolding.get(info.holdingId) ?? null,
+      balanceFrom: closingByHolding.has(info.holdingId)
+        ? 'statement-close'
+        : (balanceFromByHolding.get(info.holdingId) ?? 'unchanged'),
+      rowsBalance: rowsBalanceByHolding.get(info.holdingId) ?? null,
     }));
 
     // Auto-stamp `action_taken_at` — structured CSV imports have no

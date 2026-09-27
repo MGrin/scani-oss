@@ -246,7 +246,7 @@
       }
     },
     "realizedLedger": {
-      "answerTransfers": "Répondre aux transferts en attente",
+      "answerTransfers": "Répondre aux paiements sortants en attente",
       "portion": "Partie {{index}} sur {{total}} d’un même {{noun}}",
       "noun": {
         "sale": "vente",
@@ -783,7 +783,11 @@
         "deleteConsequence": "Tout ce que contient ce compte disparaît, y compris chaque fichier que vous avez importé et sa copie stockée. Votre identifiant de connexion reste, sans rien dedans. Cette action est irréversible.",
         "deleteInFlight": "Vos données sont en cours de suppression.",
         "deleted": "Toutes vos données ont été supprimées",
-        "deleteFailed": "La suppression a échoué"
+        "deleteFailed": "La suppression a échoué",
+        "accountIntro": "Supprimer votre compte efface les données ci-dessus et l’identifiant lui-même. Vous êtes déconnecté et ne pourrez plus vous y reconnecter.",
+        "accountTrigger": "Supprimer mon compte",
+        "accountConfirm": "Supprimer mon compte",
+        "accountConsequence": "Vos données, votre identifiant et tous les appareils connectés disparaissent. Vous réinscrire avec cette adresse crée un nouveau compte vide. Action irréversible."
       },
       "export": {
         "title": "Vos données",
@@ -912,6 +916,18 @@
         "changeConfirm": "Recalculer mes plus-values avec {{method}}",
         "changeInFlight": "Vos plus-values sont en cours de recalcul.",
         "recomputing": "Recalcul de vos plus-values — les chiffres de l'application sont encore en train de se stabiliser."
+      },
+      "accountDeletion": {
+        "failed": "La suppression de votre compte n’a pas abouti : le compte est toujours là.",
+        "failedFallback": "Réessayez, ou contactez le support et nous le supprimerons.",
+        "pending": "Votre compte est en cours de suppression.",
+        "retry": "Réessayer"
+      },
+      "reauth": {
+        "title": "Confirmez que c'est vous",
+        "description": "La suppression demande une connexion récente. Nous enverrons un code à 6 chiffres à {{email}}.",
+        "send": "M'envoyer un code",
+        "sending": "Envoi…"
       }
     },
     "home": {
@@ -985,7 +1001,8 @@
       "metric": {
         "netWorth": "Patrimoine net",
         "pnl": "P&L",
-        "pnlFull": "Plus et moins-values"
+        "pnlFull": "Plus et moins-values",
+        "returns": "Rendement"
       },
       "period": {
         "label7d": "1 sem.",
@@ -1012,8 +1029,17 @@
         "noHistory": "Aucun historique pour cette période",
         "noMeasurementSince": "Aucune mesure depuis le {{date}} — le dernier point est le total en direct d’aujourd’hui, pas une journée consolidée.",
         "retry": "Réessayer",
+        "hideFigure": "Masquer le montant",
+        "showFigure": "Afficher le montant",
+        "figureHidden": "Montant masqué",
         "realized": "Réalisées",
-        "unrealized": "Latentes"
+        "unrealized": "Latentes",
+        "returnsPending": "Calcul de votre performance",
+        "returnsChartPending": "Calcul de votre performance face au Bitcoin, au S&P 500 et aux prix américains",
+        "returnsNoChart": "Pas encore assez de jours mesurés pour tracer la comparaison.",
+        "returnsOverPeriod": "Rendements · {{period}}",
+        "returnsSince": "Rendements · depuis le {{date}}",
+        "returnsNoRate": "Le rendement n'est pas encore calculé pour cette période"
       },
       "quality": {
         "allPriced_one": "La {{count}} position est valorisée",
@@ -1029,9 +1055,9 @@
         "noBasis_one": "{{count}} sans prix de revient (la plus-value est une borne supérieure)",
         "noBasis_many": "{{count}} sans prix de revient (la plus-value est une borne supérieure)",
         "noBasis_other": "{{count}} sans prix de revient (la plus-value est une borne supérieure)",
-        "unreviewedTransfers_one": "Les plus-values réalisées excluent {{count}} transfert non confirmé",
-        "unreviewedTransfers_many": "Les plus-values réalisées excluent {{count}} transferts non confirmés",
-        "unreviewedTransfers_other": "Les plus-values réalisées excluent {{count}} transferts non confirmés"
+        "unreviewedTransfers_one": "Les plus-values réalisées excluent {{count}} paiement sortant non classé",
+        "unreviewedTransfers_many": "Les plus-values réalisées excluent {{count}} paiements sortants non classés",
+        "unreviewedTransfers_other": "Les plus-values réalisées excluent {{count}} paiements sortants non classés"
       },
       "dueIn": {
         "today": "Aujourd’hui",
@@ -1101,7 +1127,35 @@
         "perYear": "<value/> par an",
         "perYearUnit": "par an",
         "since": "Depuis le {{date}}.",
-        "partial": "Certains jours n’ont pas pu être entièrement valorisés, ces chiffres peuvent donc être inexacts."
+        "partial": "Certains jours n’ont pas pu être entièrement valorisés, ces chiffres peuvent donc être inexacts.",
+        "headline": {
+          "up": "<amount/> de plus depuis le {{date}}",
+          "down": "<amount/> de moins depuis le {{date}}",
+          "flat": "Inchangé depuis le {{date}}"
+        },
+        "attribution": {
+          "label": "D’où cela vient",
+          "contributed": "Vous avez versé",
+          "withdrew": "Vous avez retiré",
+          "market": "Marché",
+          "currency": "Devises",
+          "combined": "Marché et devises",
+          "unvalued_one": "{{count}} mouvement n’a pas pu être valorisé, cette répartition peut donc être faussée.",
+          "unvalued_many": "{{count}} mouvements n’ont pas pu être valorisés, cette répartition peut donc être faussée.",
+          "unvalued_other": "{{count}} mouvements n’ont pas pu être valorisés, cette répartition peut donc être faussée."
+        },
+        "chart": {
+          "you": "Vous",
+          "label": "Votre portefeuille face au Bitcoin, au S&P 500 et aux prix américains sur la période",
+          "unavailable": "Le graphique comparatif n’a pas pu être chargé. Les chiffres ci-dessus ne sont pas affectés.",
+          "truncated": "Le graphique échantillonne la période pour rester rapide ; les chiffres ci-dessus utilisent chaque jour."
+        },
+        "gaps": {
+          "label": "En avance ou en retard",
+          "caption": "Ce que les mêmes apports et retraits auraient donné dans chacun. Le pourcentage est sa performance.",
+          "vs": "face à {{name}}"
+        },
+        "details": "Les taux derrière ce chiffre"
       }
     },
     "holdings": {
@@ -1435,11 +1489,11 @@
         },
         "statement": {
           "title": "Envoyer un fichier de relevé",
-          "description": "Un export CSV, TSV, OFX ou QIF d’une banque ou d’un courtier. Nous en extrayons les positions et vous montrons ce que nous avons trouvé avant que quoi que ce soit ne soit enregistré."
+          "description": "Un export CSV, TSV, OFX ou QIF d’une banque ou d’un courtier. Nous importons aussitôt ses positions et ses transactions, puis vous montrons ce qui a été ajouté."
         },
         "either": {
           "title": "Envoyer un fichier",
-          "description": "Une capture d’écran de solde, un relevé bancaire ou l’export d’un courtier. Nous en extrayons les positions et vous montrons ce que nous avons trouvé avant que quoi que ce soit ne soit enregistré."
+          "description": "Une capture d’écran de solde, un relevé bancaire ou l’export d’un courtier. Une capture vous est montrée avant tout enregistrement ; un fichier de relevé est importé aussitôt."
         },
         "whereItBelongs": "Où cela se range"
       },
@@ -1785,7 +1839,39 @@
         "walkUnconfirmed": "{{provider}} : le paginateur n’a pas confirmé avoir atteint la fin de l’historique de ce compte",
         "ibkrStatementWindow": "ibkr : ce relevé Flex couvre la période à partir du {{from}}, donc rien d’antérieur n’a été récupéré. La plage est un réglage de votre Flex Query enregistrée et Scani ne la choisit pas — pour remonter plus loin, modifiez la plage de dates de cette requête (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), enregistrez, puis relancez l’import.",
         "ibkrStatementWindowPeriod": "ibkr : ce relevé Flex couvre la période à partir du {{from}} (period « {{period}} »), donc rien d’antérieur n’a été récupéré. La plage est un réglage de votre Flex Query enregistrée et Scani ne la choisit pas — pour remonter plus loin, modifiez la plage de dates de cette requête (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), enregistrez, puis relancez l’import.",
-        "ibkrStatementWindowUnknown": "ibkr : ce relevé Flex n’indique pas la période qu’il couvre, il ne peut donc pas être lu comme l’historique complet du compte. La plage est un réglage de votre Flex Query enregistrée et Scani ne la choisit pas — pour remonter plus loin, modifiez la plage de dates de cette requête (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), enregistrez, puis relancez l’import."
+        "ibkrStatementWindowUnknown": "ibkr : ce relevé Flex n’indique pas la période qu’il couvre, il ne peut donc pas être lu comme l’historique complet du compte. La plage est un réglage de votre Flex Query enregistrée et Scani ne la choisit pas — pour remonter plus loin, modifiez la plage de dates de cette requête (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), enregistrez, puis relancez l’import.",
+        "pageCapRetracted": "{{provider}} : {{walks}} — le reste de l’historique de ce compte n’a jamais été récupéré",
+        "pageCapMissingTxIds": "{{provider}} : {{walks}} — certains dépôts et retraits de cette exécution n’ont pas d’identifiant de transaction on-chain",
+        "pageCapAddressHistory": "l’historique de l’adresse s’est arrêté à sa limite de {{pages}} pages après {{rows}} lignes",
+        "pageCapUserTransactionsLedger": "le registre user-transactions s’est arrêté à sa limite de {{pages}} pages après {{rows}} lignes",
+        "pageCapCryptoTransactionsLookup": "la recherche crypto-transactions s’est arrêtée à sa limite de {{pages}} pages après {{rows}} lignes",
+        "pageCapAccountList": "la liste des comptes s’est arrêtée à sa limite de {{pages}} pages après {{rows}} lignes",
+        "pageCapAccountTransactions": "les transactions du compte {{account}} se sont arrêtées à leur limite de {{pages}} pages après {{rows}} lignes",
+        "pageCapSymbolTrades": "les échanges {{symbol}} se sont arrêtés à leur limite de {{pages}} pages après {{rows}} lignes",
+        "pageCapTransfers": "les transferts se sont arrêtés à leur limite de {{pages}} pages après {{rows}} lignes",
+        "pageCapCurrencyDeposits": "les dépôts {{currency}} se sont arrêtés à leur limite de {{pages}} pages après {{rows}} lignes",
+        "pageCapCurrencyWithdrawals": "les retraits {{currency}} se sont arrêtés à leur limite de {{pages}} pages après {{rows}} lignes",
+        "pageCapFeed": "le flux {{path}} s’est arrêté à sa limite de {{pages}} pages après {{rows}} lignes",
+        "pageCapTrxTransfers": "l’historique des transferts TRX s’est arrêté à sa limite de {{pages}} pages après {{rows}} lignes",
+        "pageCapTrc20Transfers": "l’historique des transferts TRC-20 s’est arrêté à sa limite de {{pages}} pages après {{rows}} lignes",
+        "pageCapFurtherWalks_one": "{{count}} autre parcours a fait de même",
+        "pageCapFurtherWalks_many": "{{count}} autres parcours ont fait de même",
+        "pageCapFurtherWalks_other": "{{count}} autres parcours ont fait de même",
+        "ibkrMissingSections_one": "ibkr : ce relevé Flex ne contenait pas de section {{sections}}, donc {{consequences}}. Si vous en avez eu, ajoutez-la à votre Flex Query (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), enregistrez, puis relancez l’import.",
+        "ibkrMissingSections_many": "ibkr : ce relevé Flex ne contenait pas les sections {{sections}}, donc {{consequences}}. Si vous en avez eu, ajoutez-les à votre Flex Query (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), enregistrez, puis relancez l’import.",
+        "ibkrMissingSections_other": "ibkr : ce relevé Flex ne contenait pas les sections {{sections}}, donc {{consequences}}. Si vous en avez eu, ajoutez-les à votre Flex Query (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), enregistrez, puis relancez l’import.",
+        "ibkrMissingTrades": "aucun achat ni aucune vente n’a pu être importé",
+        "ibkrMissingCashTransactions": "aucun dividende, intérêt, dépôt, retrait ni frais n’a pu être importé",
+        "ibkrUnmappedCashTypes_one": "ibkr : {{count}} transaction de trésorerie de ce relevé avait un type que Scani ne reconnaît pas — {{types}} — elle n’a donc pas été importée. C’est à nous de corriger cela, pas à vous : merci de nous le signaler.",
+        "ibkrUnmappedCashTypes_many": "ibkr : {{count}} transactions de trésorerie de ce relevé avaient un type que Scani ne reconnaît pas — {{types}} — elles n’ont donc pas été importées. C’est à nous de corriger cela, pas à vous : merci de nous le signaler.",
+        "ibkrUnmappedCashTypes_other": "ibkr : {{count}} transactions de trésorerie de ce relevé avaient un type que Scani ne reconnaît pas — {{types}} — elles n’ont donc pas été importées. C’est à nous de corriger cela, pas à vous : merci de nous le signaler.",
+        "ibkrFurtherTypes_one": "{{count}} autre type",
+        "ibkrFurtherTypes_many": "{{count}} autres types",
+        "ibkrFurtherTypes_other": "{{count}} autres types",
+        "ibkrIncompleteCashRows_one": "ibkr : {{count}} transaction de trésorerie de ce relevé est arrivée avec un champ obligatoire vide — {{blanks}} — elle n’a donc pas été importée. Si ces colonnes manquent à votre Flex Query, ajoutez-les (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), enregistrez, puis relancez l’import. Si les colonnes sont présentes, les données nous sont arrivées vides et c’est à nous de corriger : merci de nous le signaler.",
+        "ibkrIncompleteCashRows_many": "ibkr : {{count}} transactions de trésorerie de ce relevé sont arrivées avec un champ obligatoire vide — {{blanks}} — elles n’ont donc pas été importées. Si ces colonnes manquent à votre Flex Query, ajoutez-les (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), enregistrez, puis relancez l’import. Si les colonnes sont présentes, les données nous sont arrivées vides et c’est à nous de corriger : merci de nous le signaler.",
+        "ibkrIncompleteCashRows_other": "ibkr : {{count}} transactions de trésorerie de ce relevé sont arrivées avec un champ obligatoire vide — {{blanks}} — elles n’ont donc pas été importées. Si ces colonnes manquent à votre Flex Query, ajoutez-les (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), enregistrez, puis relancez l’import. Si les colonnes sont présentes, les données nous sont arrivées vides et c’est à nous de corriger : merci de nous le signaler.",
+        "ibkrBlankFields": "{{rows}} sans {{fields}}"
       },
       "wallet": {
         "subject": "ce portefeuille",
@@ -1892,7 +1978,10 @@
           "transactions_many": "{{count}} transactions",
           "transactions_other": "{{count}} transactions",
           "statementClose": "Clôture du relevé",
-          "noClosingBalance": "Aucun solde de clôture"
+          "noClosingBalance": "Aucun solde de clôture",
+          "balanceUnknown": "Solde inconnu",
+          "fromRows": "D’après ces lignes. Indiquez le vrai solde s’il contenait déjà de l’argent",
+          "setBalance": "Indiquer le solde"
         },
         "warningsTitle_one": "{{count}} avertissement",
         "warningsTitle_many": "{{count}} avertissements",
@@ -1933,6 +2022,7 @@
         "unpricedNote_many": "{{count}} lignes n’ont pas encore de prix. Elles sont enregistrées quoi qu’il arrive — actualisez-les depuis Positions, ou attendez le prochain balayage horaire de valorisation.",
         "unpricedNote_other": "{{count}} lignes n’ont pas encore de prix. Elles sont enregistrées quoi qu’il arrive — actualisez-les depuis Positions, ou attendez le prochain balayage horaire de valorisation.",
         "addMore": "En ajouter d’autres",
+        "seeOnHome": "Le voir sur l’accueil",
         "unreadablePayload": "Cette exécution s’est terminée sans résultat que nous sachions lire. Rien n’a changé dans votre portefeuille."
       },
       "generic": {
@@ -1989,7 +2079,7 @@
     "review": {
       "page": {
         "title": "À vérifier",
-        "transfersTitle": "Transferts à confirmer",
+        "transfersTitle": "Paiements sortants à classer",
         "answered": "Traités",
         "balancesTitle": "Variations de solde à expliquer"
       },
@@ -1999,7 +2089,7 @@
       "item": {
         "jobFailed": "{{job}} a échoué",
         "invoiceExtracted": "Facture extraite",
-        "transfersToConfirm": "Transferts à confirmer",
+        "transfersToConfirm": "Paiements sortants à classer",
         "holdings_one": "{{count}} position",
         "holdings_many": "{{count}} positions",
         "holdings_other": "{{count}} positions",
@@ -2027,9 +2117,9 @@
         "candidatesAcross_other": "{{count}} candidats sur {{chains}}",
         "nothingFound": "rien trouvé",
         "labelled": "{{label}} · {{body}}",
-        "unpairedTransfers_one": "{{count}} transfert sortant sans dépôt correspondant",
-        "unpairedTransfers_many": "{{count}} transferts sortants sans dépôt correspondant",
-        "unpairedTransfers_other": "{{count}} transferts sortants sans dépôt correspondant",
+        "unpairedTransfers_one": "{{count}} paiement sortant à classer",
+        "unpairedTransfers_many": "{{count}} paiements sortants à classer",
+        "unpairedTransfers_other": "{{count}} paiements sortants à classer",
         "balanceChangesToExplain": "Variations de solde à expliquer",
         "unexplainedBalanceChanges_one": "{{count}} variation de solde que nous ne pouvons pas expliquer",
         "unexplainedBalanceChanges_many": "{{count}} variations de solde que nous ne pouvons pas expliquer",
@@ -2109,13 +2199,13 @@
           "leftControl": "Enregistré comme une cession",
           "untracked": "Enregistré comme toujours à vous",
           "split": "Enregistré — chaque partie selon ses propres termes",
-          "gone": "Ce transfert n’est plus en attente",
+          "gone": "Ce paiement sortant n’est plus en attente",
           "splitRejected": "Cette répartition n’a pas été acceptée",
           "fee": "Enregistré comme frais"
         },
         "ownWalletNotice": "Ceci est allé vers un portefeuille que vous avez ajouté : l’argent est donc toujours à vous. Reliez-le au dépôt correspondant, ou enregistrez où il a été déplacé — choisir qu’il est sorti de votre portefeuille le comptabilise comme une vente.",
         "withdrawnNotice": "Scani a retiré une réponse antérieure sur ce transfert. Elle avait été donnée à propos d’un rapprochement dont nous avons depuis montré qu’il n’était pas un transfert du tout : la question se pose donc à nouveau — et il se peut qu’il n’y ait ici aucun dépôt à désigner.",
-        "withdrawnRuleNotice": "Vous avez repris la réponse que votre règle avait donnée à ce transfert : il revient donc ici pour que vous y répondiez vous-même. La règle n’y répondra plus."
+        "withdrawnRuleNotice": "Vous avez repris la réponse que votre règle avait donnée à ce paiement sortant : il revient donc ici pour que vous y répondiez vous-même. La règle n’y répondra plus."
       },
       "destinationPicker": {
         "loading": "Chargement de vos comptes…",
@@ -2132,6 +2222,8 @@
         "unreviewedBehaviour": "Tant qu’ils restent sans réponse, Scani ne comptabilise aucune plus-value dessus — déplacer ses propres jetons n’est pas une vente, et supposer que si est la façon dont une plus-value inventée arrive sur votre graphique. Si l’un d’eux est vraiment sorti de votre portefeuille, sa plus-value manque à votre total réalisé tant que vous ne l’avez pas dit.",
         "unreviewedNote": "Sans réponse, ceci ne comptabilise aucune plus-value dans un sens ni dans l’autre.",
         "candidateReason": {
+          "combined": "Ensemble, ces {{count}} dépôts font le montant",
+          "matches": "Correspond au montant et à l’heure",
           "ambiguous": "Correspond — mais un autre dépôt aussi",
           "quantity": "Le montant diffère de {{pct}}",
           "time": "En dehors de la fenêtre de {{window}} sur laquelle nous rapprochons",
@@ -2233,8 +2325,8 @@
         "reopen": {
           "internal": "Le dépôt que ceci avait enregistré sur l’autre compte est supprimé avec lui — sinon votre prochaine réponse compterait cet argent deux fois. Si la réponse avait modifié le solde de ce compte, cette modification est également annulée. Le transfert rejoint la file.",
           "internalCreated": "Ce compte ne suivait aucun de ces jetons avant votre réponse : Scani avait donc créé la position en plus du dépôt. Les deux sont supprimés — sauf si quelque chose d’autre a été enregistré sur cette position depuis, auquel cas elle reste. Le transfert rejoint la file, et aucun autre solde ne change.",
-          "leftControl": "La plus-value que ceci avait comptabilisée sort de votre total réalisé jusqu’à ce que vous y répondiez à nouveau, et le transfert rejoint la file.",
-          "default": "Le transfert rejoint la file, et rien à son sujet n’est tranché tant que vous n’y avez pas répondu à nouveau.",
+          "leftControl": "La plus-value que ceci avait comptabilisée sort de votre total réalisé jusqu’à ce que vous y répondiez à nouveau, et le paiement sortant rejoint la file.",
+          "default": "Le paiement sortant rejoint la file, et rien à son sujet n’est tranché tant que vous n’y avez pas répondu à nouveau.",
           "declared": "Il s’agit d’un transfert que vous avez enregistré vous-même : l’annuler remet donc les deux soldes dans l’état où ils étaient avant — le compte d’où il est parti remonte, celui où il est arrivé redescend — et supprime les deux écritures. Il ne rejoint pas la file : il n’y a plus de question à trancher."
         },
         "gap": {
@@ -2254,16 +2346,16 @@
         "bulk": {
           "consequence": {
             "loading": "Calcul de ce que cela ferait…",
-            "none": "Aucun des transferts sélectionnés ne peut recevoir cette réponse.",
-            "leftControl_one": "Compte {{count}} transfert comme une cession — environ {{amount}} de produit de cession face à ce que vous aviez payé.",
-            "leftControl_many": "Compte {{count}} transferts comme des cessions — environ {{amount}} de produit de cession face à ce que vous aviez payé.",
-            "leftControl_other": "Compte {{count}} transferts comme des cessions — environ {{amount}} de produit de cession face à ce que vous aviez payé.",
-            "leftControlUnpriced_one": "Compte {{count}} transfert comme une cession. Scani n’a aucun prix pour lui ce jour-là : rien n’est donc comptabilisé.",
-            "leftControlUnpriced_many": "Compte {{count}} transferts comme des cessions. Scani n’a aucun prix pour eux à leur date : rien n’est donc comptabilisé.",
-            "leftControlUnpriced_other": "Compte {{count}} transferts comme des cessions. Scani n’a aucun prix pour eux à leur date : rien n’est donc comptabilisé.",
-            "untracked_one": "Enregistre {{count}} transfert comme toujours à vous, quelque part que Scani ne voit pas. Rien n’est réalisé.",
-            "untracked_many": "Enregistre {{count}} transferts comme toujours à vous, quelque part que Scani ne voit pas. Rien n’est réalisé.",
-            "untracked_other": "Enregistre {{count}} transferts comme toujours à vous, quelque part que Scani ne voit pas. Rien n’est réalisé.",
+            "none": "Aucun des paiements sortants sélectionnés ne peut recevoir cette réponse.",
+            "leftControl_one": "Compte {{count}} paiement sortant comme une cession — environ {{amount}} de produit de cession face à ce que vous aviez payé.",
+            "leftControl_many": "Compte {{count}} paiements sortants comme des cessions — environ {{amount}} de produit de cession face à ce que vous aviez payé.",
+            "leftControl_other": "Compte {{count}} paiements sortants comme des cessions — environ {{amount}} de produit de cession face à ce que vous aviez payé.",
+            "leftControlUnpriced_one": "Compte {{count}} paiement sortant comme une cession. Scani n’a aucun prix pour lui ce jour-là : rien n’est donc comptabilisé.",
+            "leftControlUnpriced_many": "Compte {{count}} paiements sortants comme des cessions. Scani n’a aucun prix pour eux à leur date : rien n’est donc comptabilisé.",
+            "leftControlUnpriced_other": "Compte {{count}} paiements sortants comme des cessions. Scani n’a aucun prix pour eux à leur date : rien n’est donc comptabilisé.",
+            "untracked_one": "Enregistre {{count}} paiement sortant comme toujours à vous, quelque part que Scani ne voit pas. Rien n’est réalisé.",
+            "untracked_many": "Enregistre {{count}} paiements sortants comme toujours à vous, quelque part que Scani ne voit pas. Rien n’est réalisé.",
+            "untracked_other": "Enregistre {{count}} paiements sortants comme toujours à vous, quelque part que Scani ne voit pas. Rien n’est réalisé.",
             "takesBack_one": "Cela retire environ {{amount}} de plus-values réalisées sur le {{count}} actuellement compté comme une cession.",
             "takesBack_many": "Cela retire environ {{amount}} de plus-values réalisées sur les {{count}} actuellement comptés comme des cessions.",
             "takesBack_other": "Cela retire environ {{amount}} de plus-values réalisées sur les {{count}} actuellement comptés comme des cessions.",
@@ -2292,25 +2384,25 @@
             "linked_one": "{{count}} est déjà relié à un dépôt : une réponse ici ne changerait rien.",
             "linked_many": "{{count}} sont déjà reliés à des dépôts : une réponse ici ne changerait rien.",
             "linked_other": "{{count}} sont déjà reliés à des dépôts : une réponse ici ne changerait rien.",
-            "gone_one": "{{count}} n’est plus un transfert auquel on peut répondre.",
-            "gone_many": "{{count}} ne sont plus des transferts auxquels on peut répondre.",
-            "gone_other": "{{count}} ne sont plus des transferts auxquels on peut répondre."
+            "gone_one": "{{count}} n’est plus un paiement sortant auquel on peut répondre.",
+            "gone_many": "{{count}} ne sont plus des paiements sortants auxquels on peut répondre.",
+            "gone_other": "{{count}} ne sont plus des paiements sortants auxquels on peut répondre."
           },
-          "deselect_one": "Désélectionner ce {{count}} transfert",
-          "deselect_many": "Désélectionner ces {{count}} transferts",
-          "deselect_other": "Désélectionner ces {{count}} transferts",
-          "overCap": "Sélectionnez au plus {{max}} transferts à la fois.",
+          "deselect_one": "Désélectionner ce {{count}} paiement sortant",
+          "deselect_many": "Désélectionner ces {{count}} paiements sortants",
+          "deselect_other": "Désélectionner ces {{count}} paiements sortants",
+          "overCap": "Sélectionnez au plus {{max}} paiements sortants à la fois.",
           "undo": "Annuler",
           "toast": {
-            "leftControl_one": "{{count}} transfert compté comme une cession",
-            "leftControl_many": "{{count}} transferts comptés comme des cessions",
-            "leftControl_other": "{{count}} transferts comptés comme des cessions",
-            "untracked_one": "{{count}} transfert enregistré comme toujours à vous",
-            "untracked_many": "{{count}} transferts enregistrés comme toujours à vous",
-            "untracked_other": "{{count}} transferts enregistrés comme toujours à vous",
-            "undone_one": "{{count}} transfert remis dans son état antérieur",
-            "undone_many": "{{count}} transferts remis dans leur état antérieur",
-            "undone_other": "{{count}} transferts remis dans leur état antérieur",
+            "leftControl_one": "{{count}} paiement sortant compté comme une cession",
+            "leftControl_many": "{{count}} paiements sortants comptés comme des cessions",
+            "leftControl_other": "{{count}} paiements sortants comptés comme des cessions",
+            "untracked_one": "{{count}} paiement sortant enregistré comme toujours à vous",
+            "untracked_many": "{{count}} paiements sortants enregistrés comme toujours à vous",
+            "untracked_other": "{{count}} paiements sortants enregistrés comme toujours à vous",
+            "undone_one": "{{count}} paiement sortant remis dans son état antérieur",
+            "undone_many": "{{count}} paiements sortants remis dans leur état antérieur",
+            "undone_other": "{{count}} paiements sortants remis dans leur état antérieur",
             "refused": "Rien n’a été modifié",
             "undoFailed": "Impossible d’annuler cela"
           }
@@ -2325,9 +2417,9 @@
         "revoke": "Reprendre cette règle",
         "revokeCommit": "Reprendre cette règle",
         "field": {
-          "counterparty": "Ce transfert est allé vers",
+          "counterparty": "Ce paiement est allé vers",
           "key": "La règle correspondra à",
-          "keyHint": "Le montant est volontairement laissé de côté, afin que le prochain transfert vers la même destination corresponde aussi.",
+          "keyHint": "Le montant est volontairement laissé de côté, afin que le prochain paiement vers la même destination corresponde aussi.",
           "note": "Qu’est-ce que cette destination ?",
           "notePlaceholder": "Mon adresse de dépôt Bybit",
           "verdict": "Ce que la règle doit faire"
@@ -2338,53 +2430,53 @@
           "alwaysADisposal": "Y répondre comme à une cession"
         },
         "consequence": {
-          "askMe": "Chaque transfert vers {{key}}, quel qu’en soit le montant, reste dans cette file et porte votre note. Rien n’est répondu et aucune plus-value n’est comptabilisée — vous décidez toujours au cas par cas.",
-          "notADisposal": "Chaque transfert vers {{key}}, quel qu’en soit le montant, quitte cette file et figure à la place sous Règles de destination. Rien n’y est écrit : un transfert sans réponse ne comptabilise aucune plus-value, et reprendre la règle les ramène tous directement ici.",
-          "mark_other": "Répond pour {{count}} transferts vers cette destination qu’ils sont sortis de votre portefeuille, en comptabilisant {{proceeds}} de produit de cession. Tout transfert ultérieur vers elle reçoit la même réponse, sans être ouvert. Chacun reste annulable pour lui-même, et en reprendre un met définitivement fin à la couverture de ce transfert par la règle.",
-          "markUnpriced_other": "{{count}} transferts vers cette destination reçoivent la réponse qu’ils sont sortis de votre portefeuille. Aucun d’eux n’a de prix à sa date : rien n’est donc comptabilisé aujourd’hui. Tout transfert ultérieur vers elle reçoit la même réponse, sans être ouvert.",
+          "askMe": "Chaque paiement sortant vers {{key}}, quel qu’en soit le montant, reste dans cette file et porte votre note. Rien n’est répondu et aucune plus-value n’est comptabilisée — vous décidez toujours au cas par cas.",
+          "notADisposal": "Chaque paiement sortant vers {{key}}, quel qu’en soit le montant, quitte cette file et figure à la place sous Règles de destination. Rien n’y est écrit : un paiement sortant sans réponse ne comptabilise aucune plus-value, et reprendre la règle les ramène tous directement ici.",
+          "mark_other": "Répond pour {{count}} paiements sortants vers cette destination qu’ils sont sortis de votre portefeuille, en comptabilisant {{proceeds}} de produit de cession. Tout paiement sortant ultérieur vers elle reçoit la même réponse, sans être ouvert. Chacun reste annulable pour lui-même, et en reprendre un met définitivement fin à la couverture de ce paiement sortant par la règle.",
+          "markUnpriced_other": "{{count}} paiements sortants vers cette destination reçoivent la réponse qu’ils sont sortis de votre portefeuille. Aucun d’eux n’a de prix à sa date : rien n’est donc comptabilisé aujourd’hui. Tout paiement sortant ultérieur vers elle reçoit la même réponse, sans être ouvert.",
           "markUnpricedTail_other": "{{count}} d’entre eux n’ont aucun prix à leur date et ne comptabilisent rien.",
-          "markFuture": "Rien n’est en attente pour cette destination en ce moment : rien n’est donc répondu aujourd’hui. Tout transfert ultérieur vers elle reçoit la réponse qu’il est sorti de votre portefeuille, sans être ouvert, et comptabilise une plus-value.",
-          "mark_one": "Répond pour {{count}} transfert vers cette destination qu’il est sorti de votre portefeuille, en comptabilisant {{proceeds}} de produit de cession. Tout transfert ultérieur vers elle reçoit la même réponse, sans être ouvert. Chacun reste annulable pour lui-même, et en reprendre un met définitivement fin à la couverture de ce transfert par la règle.",
-          "markUnpriced_one": "{{count}} transfert vers cette destination reçoit la réponse qu’il est sorti de votre portefeuille. Aucun d’eux n’a de prix à sa date : rien n’est donc comptabilisé aujourd’hui. Tout transfert ultérieur vers elle reçoit la même réponse, sans être ouvert.",
+          "markFuture": "Rien n’est en attente pour cette destination en ce moment : rien n’est donc répondu aujourd’hui. Tout paiement sortant ultérieur vers elle reçoit la réponse qu’il est sorti de votre portefeuille, sans être ouvert, et comptabilise une plus-value.",
+          "mark_one": "Répond pour {{count}} paiement sortant vers cette destination qu’il est sorti de votre portefeuille, en comptabilisant {{proceeds}} de produit de cession. Tout paiement sortant ultérieur vers elle reçoit la même réponse, sans être ouvert. Chacun reste annulable pour lui-même, et en reprendre un met définitivement fin à la couverture de ce paiement sortant par la règle.",
+          "markUnpriced_one": "{{count}} paiement sortant vers cette destination reçoit la réponse qu’il est sorti de votre portefeuille. Aucun d’eux n’a de prix à sa date : rien n’est donc comptabilisé aujourd’hui. Tout paiement sortant ultérieur vers elle reçoit la même réponse, sans être ouvert.",
           "markUnpricedTail_one": "{{count}} d’entre eux n’a aucun prix à sa date et ne comptabilise rien.",
-          "mark_many": "Répond pour {{count}} transferts vers cette destination qu’ils sont sortis de votre portefeuille, en comptabilisant {{proceeds}} de produit de cession. Tout transfert ultérieur vers elle reçoit la même réponse, sans être ouvert. Chacun reste annulable pour lui-même, et en reprendre un met définitivement fin à la couverture de ce transfert par la règle.",
-          "markUnpriced_many": "{{count}} transferts vers cette destination reçoivent la réponse qu’ils sont sortis de votre portefeuille. Aucun d’eux n’a de prix à sa date : rien n’est donc comptabilisé aujourd’hui. Tout transfert ultérieur vers elle reçoit la même réponse, sans être ouvert.",
+          "mark_many": "Répond pour {{count}} paiements sortants vers cette destination qu’ils sont sortis de votre portefeuille, en comptabilisant {{proceeds}} de produit de cession. Tout paiement sortant ultérieur vers elle reçoit la même réponse, sans être ouvert. Chacun reste annulable pour lui-même, et en reprendre un met définitivement fin à la couverture de ce paiement sortant par la règle.",
+          "markUnpriced_many": "{{count}} paiements sortants vers cette destination reçoivent la réponse qu’ils sont sortis de votre portefeuille. Aucun d’eux n’a de prix à sa date : rien n’est donc comptabilisé aujourd’hui. Tout paiement sortant ultérieur vers elle reçoit la même réponse, sans être ouvert.",
           "markUnpricedTail_many": "{{count}} d’entre eux n’ont aucun prix à leur date et ne comptabilisent rien."
         },
         "revokeConsequence": {
-          "notADisposal_one": "{{count}} transfert revient dans la file. Rien ne lui avait été écrit : il n’y a donc rien à annuler.",
-          "notADisposal_many": "{{count}} transferts reviennent dans la file. Rien ne leur avait été écrit : il n’y a donc rien à annuler.",
-          "notADisposal_other": "{{count}} transferts reviennent dans la file. Rien ne leur avait été écrit : il n’y a donc rien à annuler.",
-          "askMe": "Les transferts vers cette destination cessent de porter votre note. La règle ne leur avait jamais répondu : rien d’autre ne change.",
-          "markKeep_one": "La règle cesse de répondre aux nouveaux transferts vers cette destination. Le {{count}} transfert auquel elle a déjà répondu garde sa réponse et continue de comptabiliser sa plus-value — cochez la case ci-dessus pour la reprendre aussi.",
-          "markKeep_many": "La règle cesse de répondre aux nouveaux transferts vers cette destination. Les {{count}} transferts auxquels elle a déjà répondu gardent leur réponse et continuent de comptabiliser leurs plus-values — cochez la case ci-dessus pour les reprendre aussi.",
-          "markKeep_other": "La règle cesse de répondre aux nouveaux transferts vers cette destination. Les {{count}} transferts auxquels elle a déjà répondu gardent leur réponse et continuent de comptabiliser leurs plus-values — cochez la case ci-dessus pour les reprendre aussi.",
-          "markWithdraw_one": "La règle cesse de répondre aux nouveaux transferts, et le {{count}} transfert auquel elle avait répondu retourne dans la file sans réponse. Sa plus-value cesse d’être comptabilisée.",
-          "markWithdraw_many": "La règle cesse de répondre aux nouveaux transferts, et les {{count}} transferts auxquels elle avait répondu retournent dans la file sans réponse. Leurs plus-values cessent d’être comptabilisées.",
-          "markWithdraw_other": "La règle cesse de répondre aux nouveaux transferts, et les {{count}} transferts auxquels elle avait répondu retournent dans la file sans réponse. Leurs plus-values cessent d’être comptabilisées."
+          "notADisposal_one": "{{count}} paiement sortant revient dans la file. Rien ne lui avait été écrit : il n’y a donc rien à annuler.",
+          "notADisposal_many": "{{count}} paiements sortants reviennent dans la file. Rien ne leur avait été écrit : il n’y a donc rien à annuler.",
+          "notADisposal_other": "{{count}} paiements sortants reviennent dans la file. Rien ne leur avait été écrit : il n’y a donc rien à annuler.",
+          "askMe": "Les paiements sortants vers cette destination cessent de porter votre note. La règle ne leur avait jamais répondu : rien d’autre ne change.",
+          "markKeep_one": "La règle cesse de répondre aux nouveaux paiements sortants vers cette destination. Le {{count}} paiement sortant auquel elle a déjà répondu garde sa réponse et continue de comptabiliser sa plus-value — cochez la case ci-dessus pour la reprendre aussi.",
+          "markKeep_many": "La règle cesse de répondre aux nouveaux paiements sortants vers cette destination. Les {{count}} paiements sortants auxquels elle a déjà répondu gardent leur réponse et continuent de comptabiliser leurs plus-values — cochez la case ci-dessus pour les reprendre aussi.",
+          "markKeep_other": "La règle cesse de répondre aux nouveaux paiements sortants vers cette destination. Les {{count}} paiements sortants auxquels elle a déjà répondu gardent leur réponse et continuent de comptabiliser leurs plus-values — cochez la case ci-dessus pour les reprendre aussi.",
+          "markWithdraw_one": "La règle cesse de répondre aux nouveaux paiements sortants, et le {{count}} paiement sortant auquel elle avait répondu retourne dans la file sans réponse. Sa plus-value cesse d’être comptabilisée.",
+          "markWithdraw_many": "La règle cesse de répondre aux nouveaux paiements sortants, et les {{count}} paiements sortants auxquels elle avait répondu retournent dans la file sans réponse. Leurs plus-values cessent d’être comptabilisées.",
+          "markWithdraw_other": "La règle cesse de répondre aux nouveaux paiements sortants, et les {{count}} paiements sortants auxquels elle avait répondu retournent dans la file sans réponse. Leurs plus-values cessent d’être comptabilisées."
         },
         "row": {
-          "hiding_one": "Garde {{count}} transfert hors de la file",
-          "hiding_many": "Garde {{count}} transferts hors de la file",
-          "hiding_other": "Garde {{count}} transferts hors de la file",
-          "labelling_one": "Nomme {{count}} transfert dans la file",
-          "labelling_many": "Nomme {{count}} transferts dans la file",
-          "labelling_other": "Nomme {{count}} transferts dans la file",
-          "answering_one": "A répondu pour {{count}} transfert qu’il s’agit d’une cession",
-          "answering_many": "A répondu pour {{count}} transferts qu’il s’agit de cessions",
-          "answering_other": "A répondu pour {{count}} transferts qu’il s’agit de cessions"
+          "hiding_one": "Garde {{count}} paiement sortant hors de la file",
+          "hiding_many": "Garde {{count}} paiements sortants hors de la file",
+          "hiding_other": "Garde {{count}} paiements sortants hors de la file",
+          "labelling_one": "Nomme {{count}} paiement sortant dans la file",
+          "labelling_many": "Nomme {{count}} paiements sortants dans la file",
+          "labelling_other": "Nomme {{count}} paiements sortants dans la file",
+          "answering_one": "A répondu pour {{count}} paiement sortant qu’il s’agit d’une cession",
+          "answering_many": "A répondu pour {{count}} paiements sortants qu’il s’agit de cessions",
+          "answering_other": "A répondu pour {{count}} paiements sortants qu’il s’agit de cessions"
         },
         "hidden": {
-          "title": "Transferts que vos règles retiennent",
+          "title": "Paiements sortants que vos règles retiennent",
           "body": "Aucun d’eux n’a reçu de réponse. Ils attendent, hors de la file ; reprenez la règle pour les y ramener."
         },
         "empty": {
           "title": "Aucune règle de destination pour l’instant",
-          "body": "Ouvrez un transfert dans la file et notez où il est allé. Tout transfert ultérieur vers la même destination portera votre note, quel qu’en soit le montant — et les destinations que vous marquez reçoivent une réponse à votre place."
+          "body": "Ouvrez un paiement sortant dans la file et notez où il est allé. Tout paiement ultérieur vers la même destination portera votre note, quel qu’en soit le montant — et les destinations que vous marquez reçoivent une réponse à votre place."
         },
         "notice": {
           "label": "Votre note sur cette destination",
-          "markExempt": "Vous avez marqué cette destination comme une cession, et vous avez repris cette réponse sur ce transfert. Il ne recevra plus de réponse automatique."
+          "markExempt": "Vous avez marqué cette destination comme une cession, et vous avez repris cette réponse sur ce paiement sortant. Il ne recevra plus de réponse automatique."
         },
         "toast": {
           "created": "Règle enregistrée",
@@ -2445,6 +2537,9 @@
         "overdueTotal_one": "En retard, {{count}} facture",
         "overdueTotal_many": "En retard, {{count}} factures",
         "overdueTotal_other": "En retard, {{count}} factures",
+        "dayTotalEstimated_one": "Environ, dont {{count}} facture estimée :",
+        "dayTotalEstimated_many": "Environ, dont {{count}} factures estimées :",
+        "dayTotalEstimated_other": "Environ, dont {{count}} factures estimées :",
         "noneAhead_one": "Rien à échéance dans le prochain {{count}} jour.",
         "noneAhead_many": "Rien à échéance dans les {{count}} prochains jours.",
         "noneAhead_other": "Rien à échéance dans les {{count}} prochains jours.",

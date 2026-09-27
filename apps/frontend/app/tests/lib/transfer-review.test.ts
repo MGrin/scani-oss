@@ -48,6 +48,7 @@ const ITEM: PendingTransferReview = {
   marketValueInBase: '4000',
   baseCurrencyCode: 'USD',
   candidates: [],
+  combinations: [],
 };
 
 /** The reported destination: hand-maintained, and nothing syncs it — so

@@ -6,44 +6,18 @@ import type { PortfolioValueResult } from './PortfolioValuationService';
 
 const logger = createComponentLogger('portfolio-value-cache');
 
-// Token prices refresh hourly (the `pricing` cron), so a 45s cross-request
-// TTL adds no price staleness. It is the safety net for any mutation path
-// that fails to `bust` the key explicitly — worst case the user sees a
-// 45s-stale net worth, never longer.
-const TTL_SECONDS = 45;
+// The key carries `PortfolioValueVersion`, so a changed holding or a new price
+// for a held token is a different key and never a stale hit. The TTL bounds
+// only what that fingerprint cannot see — a price quoted against a base that
+// is neither the user's nor a hub. It was 45s while the key carried no
+// version, and that lapsed between most Home loads, recomputing 1.1–1.7s of
+// synchronous work on the api's one thread each time (SC-1322).
+const TTL_SECONDS = 60 * 60;
 
 // SCAN page size for `bust`. A user holds only a handful of cached
 // variants (per account / base currency), so one page clears them all.
 const SCAN_COUNT = 100;
 
-/**
- * How long any one command here may wait for Redis before this cache counts
- * as absent (SC-522).
- *
- * **Without a bound the `catch` blocks below never run.** The shared client is
- * built `{ maxRetriesPerRequest: null }` — once BullMQ's requirement, still
- * set now that the queue is on Postgres (SC-518) — and ioredis
- * 5.10.1 only flushes its offline queue `if (typeof maxRetriesPerRequest ===
- * "number")`, so a command issued while the connection is down is never
- * rejected. Measured 2026-08-21 against a real Redis container stopped
- * mid-flight: `getOrCompute` and `bust` each hung for the full 15s and 10s
- * budget they were given, while the api answered `GET /health` 200 in 1.4ms
- * throughout. That is the whole defect — a liveness probe passing over a
- * request path that will never return.
- *
- * **250ms, following the inflow limiter's precedent** (`inflow/redis.ts`):
- * production Redis sits on Fly's 6PN and answers in ~1ms, so this is ~250x the
- * happy path and engages on an outage, never on load.
- *
- * The bound is not Redis-specific and does not leave with Redis: whatever
- * backs this cache, a request path awaiting it with no deadline hangs when it
- * is unreachable. See `withDeadline`.
- *
- * A tight bound is cheaper here than anywhere else in the codebase, because
- * the penalty for a spurious timeout is **exactly a cache miss** — the one
- * outcome this class is built to handle, and one it already takes every time
- * the 45s TTL lapses. There is no correctness surface to trade against.
- */
 const REDIS_TIMEOUT_MS = 250;
 
 /**

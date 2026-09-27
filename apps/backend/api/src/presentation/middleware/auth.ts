@@ -11,6 +11,8 @@ export interface AuthContext {
   userId: string | null;
   email: string | null;
   isAuthenticated: boolean;
+  /** When this session was signed in; `null` when unknown or signed out. */
+  sessionCreatedAt: Date | null;
   dbUser?: typeof schema.users.$inferSelect | null;
 }
 
@@ -36,10 +38,17 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
         userId: result.user.id,
         email: result.user.email ?? null,
         isAuthenticated: true,
+        sessionCreatedAt: result.session?.createdAt ? new Date(result.session.createdAt) : null,
         dbUser: null,
       };
     }
-    return { userId: null, email: null, isAuthenticated: false, dbUser: null };
+    return {
+      userId: null,
+      email: null,
+      isAuthenticated: false,
+      sessionCreatedAt: null,
+      dbUser: null,
+    };
   } catch (error) {
     // Error (not warn): a thrown `getSession` points at infra degradation
     // (session table locked, DB slow, Better-Auth misconfigured). A spike
@@ -52,7 +61,13 @@ export async function createAuthContext(opts: CreateContextOptions): Promise<Aut
       },
       'Better-Auth getSession failed'
     );
-    return { userId: null, email: null, isAuthenticated: false, dbUser: null };
+    return {
+      userId: null,
+      email: null,
+      isAuthenticated: false,
+      sessionCreatedAt: null,
+      dbUser: null,
+    };
   }
 }
 
@@ -116,4 +131,20 @@ export async function requireAuth(ctx: AuthContext) {
     email: ctx.email,
     dbUser,
   };
+}
+
+const FRESH_SESSION_MAX_MS = 5 * 60 * 1000;
+
+/**
+ * For irreversible actions (SC-1351): the session must have been signed in
+ * within the last five minutes, the same window Better-Auth's `freshAge`
+ * applies to change-email. A stolen or left-open session is not enough to
+ * erase an account. The client answers `SESSION_NOT_FRESH` with a one-time
+ * code sign-in, which mints a new session, and retries.
+ */
+export function requireFreshSession(ctx: AuthContext): void {
+  const createdAt = ctx.sessionCreatedAt;
+  if (!createdAt || Date.now() - createdAt.getTime() > FRESH_SESSION_MAX_MS) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: 'SESSION_NOT_FRESH' });
+  }
 }

@@ -17,7 +17,7 @@ interface FakeRequest {
   mode: string;
 }
 
-type FetchStub = (request: FakeRequest) => Promise<Response>;
+type FetchStub = (request: FakeRequest, init?: RequestInit) => Promise<Response>;
 
 interface Harness {
   dispatchFetch: (request: FakeRequest) => Promise<Response> | undefined;
@@ -96,7 +96,7 @@ function loadServiceWorker(): Harness {
     self,
     cacheStorage,
     self.clients,
-    (request: FakeRequest) => fetchStub(request),
+    (request: FakeRequest, init?: RequestInit) => fetchStub(request, init),
     Response,
     URL,
     console
@@ -263,6 +263,48 @@ describe('a missing asset', () => {
     ) as Promise<Response>);
 
     expect(sw.cache.size).toBe(0);
+  });
+
+  test('a shell the HTTP cache is holding is refetched past it, and the real script wins', async () => {
+    // 2026-09-24: the shell reached the browser's HTTP cache under the chunk's
+    // name with a year-long `immutable` header, so a plain fetch kept
+    // returning it and the tab stayed broken across reloads.
+    const inits: Array<RequestInit | undefined> = [];
+    sw.setFetch(async (_request, init) => {
+      inits.push(init);
+      return init?.cache === 'reload'
+        ? new Response('export {}', {
+            status: 200,
+            headers: { 'content-type': 'application/javascript' },
+          })
+        : shell();
+    });
+
+    const response = await (sw.dispatchFetch(
+      makeRequest('https://app.scani.xyz/assets/V3App-c0ffee00.js', { destination: 'script' })
+    ) as Promise<Response>);
+
+    expect(inits.map((init) => init?.cache)).toEqual([undefined, 'reload']);
+    expect(response.headers.get('content-type')).toBe('application/javascript');
+    expect(sw.cache.has('https://app.scani.xyz/assets/V3App-c0ffee00.js')).toBe(true);
+    expect(sw.posted).toEqual([]);
+  });
+
+  test('a genuinely served script is fetched once, with no reload', async () => {
+    const inits: Array<RequestInit | undefined> = [];
+    sw.setFetch(async (_request, init) => {
+      inits.push(init);
+      return new Response('export {}', {
+        status: 200,
+        headers: { 'content-type': 'application/javascript' },
+      });
+    });
+
+    await (sw.dispatchFetch(
+      makeRequest('https://app.scani.xyz/assets/index-c0ffee01.js', { destination: 'script' })
+    ) as Promise<Response>);
+
+    expect(inits).toEqual([undefined]);
   });
 
   test('a genuinely served script is cached and reported to nobody', async () => {

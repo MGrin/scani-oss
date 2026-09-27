@@ -84,8 +84,9 @@ import { extname } from 'node:path';
 /**
  * Measured, not guessed: every NUL-bearing file tracked at HEAD on 2026-08-27
  * had one of these four extensions, 95 of them across 2700 tracked files.
+ * `.mp4` joined with the landing's walkthrough video (SC-1329).
  */
-export const BINARY_EXTENSIONS: readonly string[] = ['.avif', '.ico', '.png', '.webp'];
+export const BINARY_EXTENSIONS: readonly string[] = ['.avif', '.ico', '.mp4', '.png', '.webp'];
 
 /** A refusal, not a verdict: nothing established whether the tree is clean. */
 export const COULD_NOT_LOOK = 2;

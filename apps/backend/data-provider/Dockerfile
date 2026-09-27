@@ -4,7 +4,7 @@
 # self-contained binary via `bun build --compile`; runtime is a tiny
 # Debian image carrying the binary + curl for the healthcheck.
 
-ARG BUN_VERSION=1.3.13
+ARG BUN_VERSION=1.4.2
 
 # ---------- deps ----------
 FROM oven/bun:${BUN_VERSION} AS deps

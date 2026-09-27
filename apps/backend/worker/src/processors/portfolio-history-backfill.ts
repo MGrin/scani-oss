@@ -32,24 +32,96 @@ import { memoryStopReason, readMemory } from '../lib/memory-budget';
 export const LOCK_HELD_RETRY_REQUEST_ID = 'lock-held-retry';
 export const LOCK_HELD_RETRY_DELAY_MS = 90_000;
 
+export const MEMORY_DEFER_REQUEST_PREFIX = 'memory-deferred-';
+// Long enough for a restart to have happened, short enough that the whole
+// chain still lands inside the UTC day `resumableProgress` requires — a
+// deferral past midnight discards the progress and re-runs from day 0.
+export const MEMORY_DEFER_DELAY_MS = 300_000;
+// Bounded, because RSS on a JSC heap does not fall while the process lives: an
+// unbounded chain would defer quietly forever on a box that cannot finish.
+// Past the bound the stop throws and Sentry gets an error that is now a claim
+// about the BOX rather than about one chunk.
+export const MEMORY_DEFER_MAX = 6;
+
+// The continuation's requestId, or null at the bound. It is part of the jobId
+// (`computeJobId`), so each link must be DISTINCT: a fixed id would dedup
+// against the retained completed job that scheduled it — `removeOnComplete:
+// 100` keeps it around — and the chain would end with nothing reporting it.
+export function nextMemoryDeferRequestId(requestId: string): string | null {
+  const n = requestId.startsWith(MEMORY_DEFER_REQUEST_PREFIX)
+    ? Number(requestId.slice(MEMORY_DEFER_REQUEST_PREFIX.length))
+    : 0;
+  if (!Number.isInteger(n) || n < 0 || n >= MEMORY_DEFER_MAX) return null;
+  return `${MEMORY_DEFER_REQUEST_PREFIX}${n + 1}`;
+}
+
 interface EnqueueServiceLike {
   add: (typeof BullMqEnqueueService)['prototype']['add'];
 }
 
+// Enqueue the continuation of a memory-stopped run. False means the bound is
+// spent and the caller must let the stop surface.
+export async function scheduleMemoryDeferral(
+  data: PortfolioHistoryBackfillJob,
+  progress: PortfolioHistoryRollupProgress,
+  enqueueService: EnqueueServiceLike
+): Promise<boolean> {
+  const requestId = nextMemoryDeferRequestId(data.requestId);
+  if (requestId === null) return false;
+  await enqueueService.add(
+    PORTFOLIO_HISTORY_BACKFILL,
+    {
+      userId: data.userId,
+      requestId,
+      tokenIds: data.tokenIds,
+      lookbackDays: data.lookbackDays,
+      rollupProgress: progress,
+    },
+    { delay: MEMORY_DEFER_DELAY_MS }
+  );
+  return true;
+}
+
+// A memory stop, resolved: either the rest of the window is queued to continue
+// or the chain is spent and the stop surfaces unchanged. Separate from the
+// processor method so the branch is testable without the container.
+export async function handleMemoryStop(
+  data: PortfolioHistoryBackfillJob,
+  anchor: string,
+  stop: RollupMemoryStop,
+  enqueueService: EnqueueServiceLike
+): Promise<{ deferredAtDayOffset: number }> {
+  const progress: PortfolioHistoryRollupProgress = {
+    anchor,
+    nextDayOffset: stop.nextDayOffset,
+  };
+  if (!(await scheduleMemoryDeferral(data, progress, enqueueService))) throw stop;
+  return { deferredAtDayOffset: stop.nextDayOffset };
+}
+
 export async function scheduleLockHeldRetry(
   userId: string,
-  enqueueService: EnqueueServiceLike
+  enqueueService: EnqueueServiceLike,
+  requestedLookbackDays: number = PORTFOLIO_HISTORY_LOOKBACK_DAYS
 ): Promise<void> {
+  // A wider request keeps its width and gets its own retry id: under the
+  // shared id it would collapse into a pending default-width retry and its
+  // oldest days would never run (SC-1323).
+  const lookbackDays = Math.max(requestedLookbackDays, PORTFOLIO_HISTORY_LOOKBACK_DAYS);
+  const requestId =
+    lookbackDays > PORTFOLIO_HISTORY_LOOKBACK_DAYS
+      ? `${LOCK_HELD_RETRY_REQUEST_ID}-${lookbackDays}d`
+      : LOCK_HELD_RETRY_REQUEST_ID;
   await enqueueService.add(
     PORTFOLIO_HISTORY_BACKFILL,
     {
       userId,
-      requestId: LOCK_HELD_RETRY_REQUEST_ID,
-      // Empty tokenIds + full lookback so the retry catches everything
-      // the original triggers were meant to cover, regardless of who
-      // first hit the lock.
+      requestId,
+      // Empty tokenIds + at least the full lookback so the retry catches
+      // everything the original triggers were meant to cover, regardless of
+      // who first hit the lock.
       tokenIds: [],
-      lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
+      lookbackDays,
     },
     { delay: LOCK_HELD_RETRY_DELAY_MS }
   );
@@ -96,12 +168,25 @@ export interface ChunkedRollupDeps {
 }
 
 // Thrown between chunks when the worker is too close to the VM's limit to
-// start another. Progress is already saved at that chunk, so the job's retry,
-// or a Retry pressed the same day, starts there. Stopping here is the point:
-// on 2026-09-21 the alternative was the box at 0 MB and the watchdog unable
-// to act for four minutes (SC-1283).
+// start another. Stopping here is the point: on 2026-09-21 the alternative was
+// the box at 0 MB and the watchdog unable to act for four minutes (SC-1283).
+//
+// This used to escape the processor, and the sentence that stood here — that
+// "the job's retry, or a Retry pressed the same day, starts there" — was the
+// defect (SC-1298). BullMQ's retry is 30 seconds later IN THE SAME PROCESS, and
+// the number that stopped it is the whole worker's RSS after a full GC; it does
+// not move in 30 seconds. So the retry stopped at the same offset and the job
+// dead-lettered. `handleMemoryStop` catches it now.
 export class RollupMemoryStop extends Error {
   override readonly name = 'RollupMemoryStop';
+  // Carried rather than parsed back out of `message`: the continuation resumes
+  // here, and a resume point recovered from prose is one rewording from wrong.
+  constructor(
+    message: string,
+    readonly nextDayOffset: number
+  ) {
+    super(message);
+  }
 }
 
 // Walk the lookback window PORTFOLIO_HISTORY_CHUNK_DAYS at a time (SC-1283).
@@ -124,7 +209,8 @@ export async function runChunkedRollup(
     const stop = deps.memoryStopReason?.(from);
     if (stop) {
       throw new RollupMemoryStop(
-        `${stop}; stopped before day offset ${from} of ${lookbackDays}, progress saved`
+        `${stop}; stopped before day offset ${from} of ${lookbackDays}, progress saved`,
+        from
       );
     }
     let summary = await deps.rollup({ userId, lookbackDays, runStart, dayOffsets: { from, to } });
@@ -153,6 +239,11 @@ interface PortfolioHistoryBackfillResult {
   reconciliation: { holdingsTouched: number; openingsSynthesized: number };
   prices: { attempted: number; inserted: number; alreadyHad: number; providerMissing: number };
   rollup: { usersProcessed: number; daysComputed: number; errorCount: number };
+  // The day offset a memory stop deferred the rest of the window at, or null
+  // where the window finished. A deferred run is a SUCCESS with work queued,
+  // not a partial failure — the /jobs UI and the job result both have to be
+  // able to say which (SC-1298).
+  deferredAtDayOffset: number | null;
 }
 
 @Service()
@@ -182,13 +273,17 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     // a delayed retry (fixed requestId → at most one pending per user)
     // so the work is picked up the moment the lock clears.
     try {
-      await scheduleLockHeldRetry(data.userId, Container.get(BullMqEnqueueService));
+      await scheduleLockHeldRetry(
+        data.userId,
+        Container.get(BullMqEnqueueService),
+        data.lookbackDays
+      );
       logger.info(
         {
           jobId: ctx.job.id,
           userId: data.userId,
           retryDelayMs: LOCK_HELD_RETRY_DELAY_MS,
-          skipIsRetry: data.requestId === LOCK_HELD_RETRY_REQUEST_ID,
+          skipIsRetry: data.requestId.startsWith(LOCK_HELD_RETRY_REQUEST_ID),
         },
         'Backfill skipped (lock held) — delayed retry enqueued'
       );
@@ -208,6 +303,7 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
       reconciliation: SKIPPED_RECONCILIATION,
       prices: SKIPPED_PRICES,
       rollup: { usersProcessed: 0, daysComputed: 0, errorCount: 0 },
+      deferredAtDayOffset: null,
     };
   }
 
@@ -291,19 +387,46 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     prices: PortfolioHistoryBackfillResult['prices']
   ): Promise<PortfolioHistoryBackfillResult> {
     const rollup = Container.get(RollupPortfolioValueDailyUseCase);
-    const rollupSummary = await runChunkedRollup(data.userId, data.lookbackDays, start, {
-      rollup: (opts) => rollup.execute(opts),
-      saveProgress: (progress) => this.saveProgress(data, ctx, progress),
-      onChunk: (daysDone, total) => ctx.reportProgress(0.55 + 0.4 * (daysDone / total)),
-      memoryStopReason: (fromDayOffset) => {
-        const reading = readMemory();
-        const reason = memoryStopReason(reading);
-        const fields = { jobId: ctx.job.id, userId: data.userId, fromDayOffset, ...reading };
-        if (reason) logger.warn({ ...fields, reason }, 'Stopping history rollup before a chunk');
-        else logger.info(fields, 'Starting history rollup chunk');
-        return reason;
-      },
-    });
+    let deferredAtDayOffset: number | null = null;
+    let rollupSummary: Awaited<ReturnType<typeof runChunkedRollup>>;
+    try {
+      rollupSummary = await runChunkedRollup(data.userId, data.lookbackDays, start, {
+        rollup: (opts) => rollup.execute(opts),
+        saveProgress: (progress) => this.saveProgress(data, ctx, progress),
+        onChunk: (daysDone, total) => ctx.reportProgress(0.55 + 0.4 * (daysDone / total)),
+        memoryStopReason: (fromDayOffset) => {
+          const reading = readMemory();
+          const reason = memoryStopReason(reading);
+          const fields = { jobId: ctx.job.id, userId: data.userId, fromDayOffset, ...reading };
+          if (reason) logger.warn({ ...fields, reason }, 'Stopping history rollup before a chunk');
+          else logger.info(fields, 'Starting history rollup chunk');
+          return reason;
+        },
+      });
+    } catch (error) {
+      if (!(error instanceof RollupMemoryStop)) throw error;
+      // Not a failure: the window is saved and the rest of it is queued. The
+      // throw this replaces spent BullMQ's one retry 30 seconds later against
+      // the same process RSS, stopped at the same offset, and dead-lettered
+      // the job with ~100 days never computed (SC-1298).
+      ({ deferredAtDayOffset } = await handleMemoryStop(
+        data,
+        start.anchor,
+        error,
+        Container.get(BullMqEnqueueService)
+      ));
+      logger.warn(
+        {
+          jobId: ctx.job.id,
+          userId: data.userId,
+          deferredAtDayOffset,
+          delayMs: MEMORY_DEFER_DELAY_MS,
+          reason: error.message,
+        },
+        'History rollup deferred — continuation queued with progress'
+      );
+      rollupSummary = { usersProcessed: 0, daysComputed: 0, errors: [] };
+    }
     await ctx.reportProgress(0.95);
 
     emitEntityChange({
@@ -333,6 +456,7 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
         daysComputed: rollupSummary.daysComputed,
         errorCount: rollupSummary.errors.length,
       },
+      deferredAtDayOffset,
     };
   }
 

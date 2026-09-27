@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
+import { type NoticeInput, toJobNotice } from '../../src/core/types';
 import { IbkrProvider } from '../../src/providers/ibkr';
 import {
   describeIncompleteCashRows,
@@ -65,7 +66,7 @@ async function fetchWithXml(xml: string): Promise<{
   try {
     const events = await p.fetchTransactions({
       ...ctx,
-      noteWarning: (reason: string) => warnings.push(reason),
+      noteWarning: (reason: NoticeInput) => warnings.push(toJobNotice(reason).text),
     } as never);
     return { events, warnings };
   } finally {
@@ -146,14 +147,14 @@ describe('describeIncompleteCashRows', () => {
   });
 
   test('singular for one row', () => {
-    const message = describeIncompleteCashRows(new Map([['currency', 1]]));
+    const message = describeIncompleteCashRows(new Map([['currency', 1]]))?.text;
 
     expect(message).toContain('1 cash transaction in this statement');
     expect(message).toContain('it was not imported');
   });
 
   test('it names both possible owners, because the field is what tells them apart', () => {
-    const message = describeIncompleteCashRows(new Map([['amount', 3]]));
+    const message = describeIncompleteCashRows(new Map([['amount', 3]]))?.text;
 
     // A column missing from every row is the user's Flex Query; a field blank
     // on one row of many is IBKR's data. The warning cannot tell which from
@@ -169,11 +170,11 @@ describe('describeIncompleteCashRows', () => {
         ['amount', 2],
         ['type or currency or amount', 5],
       ])
-    );
+    )?.text;
 
     expect(message).toContain('9 cash transactions');
     expect(message).toContain(
-      '5 with no type or currency or amount, 2 with no amount, 2 with no currency'
+      '5 with no type, currency, or amount, 2 with no amount, and 2 with no currency'
     );
   });
 });

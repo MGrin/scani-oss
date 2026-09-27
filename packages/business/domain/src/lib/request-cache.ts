@@ -108,14 +108,19 @@ export function createPortfolioCacheKey(userId: string, accountId?: string): str
  *  which consumers now key their price maps on (SC-1114). A `v1` entry
  *  written by the previous release revives with that field absent, so every
  *  lookup misses and the holdings list renders "—" beside a total that is
- *  still right. Harmless and self-healing inside the 45s TTL — and avoidable
+ *  still right. Harmless and self-healing inside the TTL — and avoidable
  *  for the cost of one character, which is what the version is for. Bump it
  *  whenever the cached shape changes, and bump `bust`'s SCAN pattern with it
- *  or the two stop describing the same keyspace. */
+ *  or the two stop describing the same keyspace.
+ *
+ *  `dataVersion` is `PortfolioValueVersion.read`: it is last so the prefix
+ *  `bust` matches is unchanged, and it is what lets the TTL be an hour
+ *  (SC-1322). */
 export function createPortfolioRedisKey(
   userId: string,
   accountId: string | undefined,
-  baseCurrencyId: string
+  baseCurrencyId: string,
+  dataVersion: string
 ): string {
-  return `pv:v2:${userId}:${accountId ?? 'all'}:${baseCurrencyId}`;
+  return `pv:v2:${userId}:${accountId ?? 'all'}:${baseCurrencyId}:${dataVersion}`;
 }

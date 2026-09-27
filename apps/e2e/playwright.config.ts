@@ -24,6 +24,14 @@ export default defineConfig({
   // `bunx playwright test --project=iphone <spec>`.
   projects: VIEWPORTS.map((viewport) => ({
     name: viewport.name,
-    use: { ...devices[viewport.device] },
+    use: {
+      ...devices[viewport.device],
+      launchOptions: {
+        args:
+          devices[viewport.device]?.defaultBrowserType === 'chromium'
+            ? ['--password-store=basic', '--use-mock-keychain']
+            : [],
+      },
+    },
   })),
 });

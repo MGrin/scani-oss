@@ -20,7 +20,10 @@ const testSessionRevokeLimiter = new InMemoryInflowRateLimiter({
   namespace: 'rl:test-session-revoke',
 });
 
-export function buildAuthedContext(dbUser: typeof schema.users.$inferSelect): Context {
+export function buildAuthedContext(
+  dbUser: typeof schema.users.$inferSelect,
+  opts: { sessionCreatedAt?: Date | null } = {}
+): Context {
   return {
     requestId: `test-${dbUser.id}`,
     startTime: Date.now(),
@@ -30,6 +33,8 @@ export function buildAuthedContext(dbUser: typeof schema.users.$inferSelect): Co
     userId: dbUser.id,
     email: dbUser.email ?? null,
     isAuthenticated: true,
+    // A just-signed-in session by default, so fresh-session gates pass.
+    sessionCreatedAt: opts.sessionCreatedAt === undefined ? new Date() : opts.sessionCreatedAt,
     dbUser,
   };
 }
@@ -44,6 +49,7 @@ export function buildUnauthedContext(): Context {
     userId: null,
     email: null,
     isAuthenticated: false,
+    sessionCreatedAt: null,
     dbUser: null,
   };
 }
@@ -52,8 +58,11 @@ export function buildUnauthedContext(): Context {
  * Authenticated tRPC caller bound to `dbUser`. The caller short-circuits
  * `requireAuth` because `dbUser` is already on the context.
  */
-export function makeAuthedCaller(dbUser: typeof schema.users.$inferSelect) {
-  return appRouter.createCaller(buildAuthedContext(dbUser));
+export function makeAuthedCaller(
+  dbUser: typeof schema.users.$inferSelect,
+  opts: { sessionCreatedAt?: Date | null } = {}
+) {
+  return appRouter.createCaller(buildAuthedContext(dbUser, opts));
 }
 
 export function makeUnauthedCaller() {

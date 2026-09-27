@@ -44,6 +44,9 @@ const baseCurrencyCalls: Array<string | undefined> = [];
 /** Token id sets handed to `buildPriceLookup`, one entry per prefetch. */
 const priceLookupBuilds: string[][] = [];
 
+/** The `since` each prefetch was bounded to, in the same order (SC-1306). */
+const priceLookupSince: Array<Date | undefined> = [];
+
 /** Every `PriceGraphService.convert`, and whether it was given the prefetch. */
 const convertCalls: Array<{ fromTokenId: string; toTokenId: string; withLookup: boolean }> = [];
 
@@ -54,6 +57,8 @@ interface DayRow {
   /** Defaults to 1 — the day was priced. 0 means nothing could be priced. */
   known?: number;
   quality?: string;
+  /** Defaults to 1. 0 is a holding the day does not contain at all (SC-1323). */
+  total?: number;
 }
 
 interface TxRow {
@@ -134,12 +139,35 @@ function install(fixture: Fixture): ReturnsService {
           unrealizedPnl: null,
           coverageQuality: d.quality ?? 'full',
           holdingsWithKnownValue: d.known ?? 1,
-          holdingsTotal: 1,
+          holdingsTotal: d.total ?? 1,
           holdingsUnpriceable: 0,
           holdingsStalePriced: 0,
           holdingsBasisUnknown: 0,
           transfersUnreviewed: 0,
         }));
+    },
+    // Derived from the SAME `fixture.days` as the range read above, and
+    // filtered the same way, so the two cannot drift apart inside a test and
+    // let `hasHistory` agree with `compute` for the wrong reason (SC-1306).
+    findLatestMeasuredDays: async (
+      _userId: string,
+      baseCurrencyId: string,
+      from: Date,
+      to: Date,
+      limit: number,
+      _tx?: unknown,
+      holdingIds?: readonly string[]
+    ) => {
+      if (baseCurrencyId !== (fixture.userBaseCurrencyId ?? BASE)) return [];
+      const fromStr = from.toISOString().slice(0, 10);
+      const toStr = to.toISOString().slice(0, 10);
+      const wanted = holdingIds ? new Set(holdingIds) : null;
+      const measured = fixture.days
+        .filter((d) => d.date >= fromStr && d.date <= toStr)
+        .filter((d) => !wanted || wanted.has(d.holdingId))
+        .filter((d) => (d.known ?? 1) > 0)
+        .map((d) => d.date);
+      return [...new Set(measured)].sort().reverse().slice(0, limit);
     },
   } as never);
 
@@ -186,8 +214,15 @@ function install(fixture: Fixture): ReturnsService {
   // how MANY times the price graph is consulted, so the count and the tokens
   // it was asked to cover are what a test has to be able to see.
   Container.set(PriceGraphService, {
-    buildPriceLookup: async (tokenIds: Iterable<string>) => {
+    buildPriceLookup: async (
+      tokenIds: Iterable<string>,
+      _baseCurrencyId: string,
+      _until: Date,
+      _tx: unknown,
+      since?: Date
+    ) => {
       priceLookupBuilds.push([...tokenIds].sort());
+      priceLookupSince.push(since);
       return { covers: () => true } as never;
     },
     convert: async (
@@ -298,6 +333,7 @@ beforeEach(() => {
   Container.remove(AssetCurrencyService);
   baseCurrencyCalls.length = 0;
   priceLookupBuilds.length = 0;
+  priceLookupSince.length = 0;
   convertCalls.length = 0;
 });
 
@@ -935,12 +971,6 @@ describe('ReturnsService — it says what it could not measure', () => {
 });
 
 describe('ReturnsService — the price graph is consulted once, not once per flow (SC-471)', () => {
-  // Measured against production before this changed: 537 sequential
-  // `token_prices` lookups were 51.2 of a 53.1-second `ytd` request, 792 were
-  // 70.5 of 71.2 seconds over `all`, and the daily series query and the whole
-  // of the Decimal arithmetic were 0.5s and 0.02s of it. The count is
-  // therefore the thing worth asserting: a per-flow lookup is the defect, and
-  // a scalar timing assertion in a unit test would be a flake.
   const MANY_FLOWS = 40;
 
   function fixtureWithFlows(count: number): Fixture {
@@ -1155,6 +1185,27 @@ describe('ReturnsService — how much of it was the exchange rate (SC-458)', () 
     expect(result.attribution?.attributedPeriods).toBe(unique.length - 1);
   });
 
+  test('the FX prefetch is bounded to the first measured day (SC-1306)', async () => {
+    const service = install({
+      holdings: [{ id: 'h1', tokenId: GBP, accountId: 'acc-1' }],
+      tokens: [{ id: GBP, symbol: 'GBP', typeCode: 'fiat' }],
+      days: days('h1', [
+        ['2026-02-01', '1000'],
+        ['2026-02-02', '1100'],
+        ['2026-02-03', '1210'],
+      ]),
+      txs: [],
+      fxRates: { [GBP]: '1.0' },
+    });
+    ok(await service.compute(request()));
+
+    // The START of the first measured day, not its end: the earliest instant
+    // this prefetch will be asked to convert at is `2026-02-01T23:59:59.999Z`,
+    // and a bound must sit at or before the earliest ASK, never at it.
+    expect(priceLookupSince.length).toBe(1);
+    expect(priceLookupSince[0]?.toISOString()).toBe('2026-02-01T00:00:00.000Z');
+  });
+
   test('a rate nobody could read costs its period and is counted, not assumed away', async () => {
     const service = install({
       holdings: [{ id: 'h1', tokenId: GBP, accountId: 'acc-1' }],
@@ -1227,5 +1278,232 @@ describe('ReturnsService — how much of it was the exchange rate (SC-458)', () 
     expect(Number(result.twr?.cumulative)).toBeCloseTo(0.1, 12);
     expect(Number(result.attribution?.assetReturn)).toBeCloseTo(0, 12);
     expect(Number(result.attribution?.currencyReturn)).toBeCloseTo(0.1, 12);
+  });
+});
+
+describe('ReturnsService.hasHistory — one bit, and the SAME bit (SC-1306)', () => {
+  const CASES: Array<{ name: string; days: DayRow[]; window?: ReturnsRequest['window'] }> = [
+    { name: 'nothing measured at all', days: [] },
+    { name: 'one measured day', days: days('h1', [['2026-03-01', '1000']]) },
+    {
+      name: 'two measured days',
+      days: days('h1', [
+        ['2026-03-01', '1000'],
+        ['2026-03-02', '1100'],
+      ]),
+    },
+    {
+      name: 'one day inside the window and an anchor before it',
+      days: days('h1', [
+        ['2025-12-20', '900'],
+        ['2026-03-01', '1000'],
+      ]),
+      window: { kind: 'ytd' },
+    },
+    {
+      name: 'two days, BOTH before a YTD window',
+      days: days('h1', [
+        ['2025-11-20', '900'],
+        ['2025-12-20', '950'],
+      ]),
+      window: { kind: 'ytd' },
+    },
+    {
+      name: 'days that exist but nothing on them could be priced',
+      days: [
+        { date: '2026-03-01', holdingId: 'h1', value: '0', known: 0 },
+        { date: '2026-03-02', holdingId: 'h1', value: '0', known: 0 },
+      ],
+    },
+  ];
+
+  for (const testCase of CASES) {
+    test(`agrees with compute: ${testCase.name}`, async () => {
+      const service = install({ holdings: ONE_HOLDING, days: testCase.days, txs: [] });
+      const req = request(testCase.window ? { window: testCase.window } : {});
+      const outcome = await service.compute(req);
+      // The frontend's own rule: the card shows money when the engine produced
+      // a TWR, and `returnsView` returns null without one.
+      const computeSaysYes = outcome.status === 'ok' && outcome.returns.twr !== null;
+      expect(await service.hasHistory(req)).toBe(computeSaysYes);
+    });
+  }
+
+  test('reads the series once, not the whole engine', async () => {
+    // The control on the control: an implementation that just called `compute`
+    // would agree with it in every case above and fix nothing.
+    const service = install({
+      holdings: ONE_HOLDING,
+      days: days('h1', [
+        ['2026-03-01', '1000'],
+        ['2026-03-02', '1100'],
+      ]),
+      txs: [
+        { id: 't1', holdingId: 'h1', kind: 'deposit', quantity: '1', occurredAt: '2026-03-02' },
+      ],
+      rates: { 'token-btc': '100' },
+    });
+    baseCurrencyCalls.length = 0;
+    convertCalls.length = 0;
+    priceLookupBuilds.length = 0;
+
+    expect(await service.hasHistory(request())).toBe(true);
+    // `findIncludedHoldingScopeRange` is the read that records a base
+    // currency; the flow valuation is what builds a price lookup.
+    expect(baseCurrencyCalls).toEqual([]);
+    expect(priceLookupBuilds).toEqual([]);
+    expect(convertCalls).toEqual([]);
+  });
+
+  test('an account with no base currency is a no, not a throw', async () => {
+    const service = install({
+      holdings: ONE_HOLDING,
+      days: days('h1', [
+        ['2026-03-01', '1000'],
+        ['2026-03-02', '1100'],
+      ]),
+      txs: [],
+      userBaseCurrencyId: null,
+    });
+    expect(await service.hasHistory(request())).toBe(false);
+  });
+
+  test("a scope that is not the caller's is a no", async () => {
+    const service = install({
+      holdings: ONE_HOLDING,
+      days: days('h1', [
+        ['2026-03-01', '1000'],
+        ['2026-03-02', '1100'],
+      ]),
+      txs: [],
+    });
+    expect(await service.hasHistory(request({ scope: { kind: 'account', id: 'acc-nope' } }))).toBe(
+      false
+    );
+  });
+});
+
+/**
+ * A holding's arrival is money put in, not a return (SC-1323).
+ *
+ * The rollup counts a holding only from its first record, so a holding added
+ * mid-window steps the value series up on the day it appears. With nothing
+ * booked against that step, a 0.5 BTC added by hand read as a market gain of
+ * its whole value. The step is funding, the same as `opening_balance`.
+ */
+describe('ReturnsService — a holding that appears mid-window', () => {
+  const TWO = [
+    { id: 'h1', tokenId: 'token-btc', accountId: 'acc-1' },
+    { id: 'h2', tokenId: 'token-eth', accountId: 'acc-2' },
+  ];
+  // What the rollup writes for a holding on a day before its first record:
+  // an empty slice, so nothing counted and `unknown` (SC-1323).
+  const before = (date: string): DayRow => ({
+    date,
+    holdingId: 'h2',
+    value: '0',
+    known: 0,
+    total: 0,
+    quality: 'unknown',
+  });
+
+  test('its first value is a contribution, so a flat portfolio stays at 0%', async () => {
+    const service = install({
+      holdings: TWO,
+      days: [
+        ...days('h1', [
+          ['2026-03-01', '1000'],
+          ['2026-03-02', '1000'],
+          ['2026-03-03', '1000'],
+        ]),
+        before('2026-03-01'),
+        before('2026-03-02'),
+        ...days('h2', [['2026-03-03', '500']]),
+      ],
+      txs: [],
+    });
+
+    const result = ok(await service.compute(request()));
+    expect(result.netExternalFlow).toBe('500');
+    expect(result.endValue).toBe('1500');
+    expect(Number(result.twr?.cumulative)).toBeCloseTo(0, 12);
+    // The days before it arrived are fully covered: it was not there to price.
+    expect(result.coverage.daysNotFullyCovered).toBe(0);
+  });
+
+  test('a gain after it arrives is still a gain', async () => {
+    const service = install({
+      holdings: TWO,
+      days: [
+        ...days('h1', [
+          ['2026-03-01', '1000'],
+          ['2026-03-02', '1000'],
+          ['2026-03-03', '1000'],
+        ]),
+        before('2026-03-01'),
+        ...days('h2', [
+          ['2026-03-02', '500'],
+          ['2026-03-03', '750'],
+        ]),
+      ],
+      txs: [],
+    });
+
+    const result = ok(await service.compute(request()));
+    expect(result.netExternalFlow).toBe('500');
+    // 1000 -> 1500 is all funding; 1500 -> 1750 is +1/6.
+    expect(Number(result.twr?.cumulative)).toBeCloseTo(250 / 1500, 12);
+  });
+
+  test('a deposit already on its ledger that day is not counted twice', async () => {
+    const service = install({
+      holdings: TWO,
+      days: [
+        ...days('h1', [
+          ['2026-03-01', '1000'],
+          ['2026-03-02', '1000'],
+        ]),
+        before('2026-03-01'),
+        ...days('h2', [['2026-03-02', '500']]),
+      ],
+      txs: [
+        {
+          id: 'tx-dep',
+          holdingId: 'h2',
+          kind: 'deposit',
+          quantity: '5',
+          priceNative: '100',
+          occurredAt: '2026-03-02T10:00:00.000Z',
+          tokenId: 'token-eth',
+        },
+      ],
+    });
+
+    const result = ok(await service.compute(request()));
+    expect(result.netExternalFlow).toBe('500');
+    expect(Number(result.twr?.cumulative)).toBeCloseTo(0, 12);
+  });
+
+  // The control: a holding measured from the window's first day is part of
+  // the opening value, and nothing is booked for it.
+  test('a holding present from the first day books nothing', async () => {
+    const service = install({
+      holdings: TWO,
+      days: [
+        ...days('h1', [
+          ['2026-03-01', '1000'],
+          ['2026-03-02', '1000'],
+        ]),
+        ...days('h2', [
+          ['2026-03-01', '500'],
+          ['2026-03-02', '500'],
+        ]),
+      ],
+      txs: [],
+    });
+
+    const result = ok(await service.compute(request()));
+    expect(result.netExternalFlow).toBe('0');
+    expect(result.startValue).toBe('1500');
   });
 });

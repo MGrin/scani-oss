@@ -21,7 +21,9 @@ import { Link } from 'react-router-dom';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import type { RouterOutputs } from '@/lib/trpc';
 import {
+  dayTotals,
   directionLabel,
+  type EstimatedOccurrenceTotals,
   estimatedTotals,
   formatOverdueBy,
   groupUpcoming,
@@ -500,7 +502,20 @@ export function UpcomingFeed({
       {groups.map((group) => (
         <section key={group.key} className="flex flex-col gap-1">
           <div className="px-4">
-            <DataViewGroupHeading label={group.label} count={group.items.length} />
+            <DataViewGroupHeading
+              label={group.label}
+              count={group.items.length}
+              // The overdue group's figure is already the "Overdue" line above.
+              aside={
+                group.overdue ? undefined : (
+                  <DayTotal
+                    day={dayTotals(group.items, historyEstimates)}
+                    tokenSymbolById={tokenSymbolById}
+                    rates={rates}
+                  />
+                )
+              }
+            />
           </div>
           <DataRowList>
             {group.items.map((occurrence) => {
@@ -573,5 +588,35 @@ export function UpcomingFeed({
 
       {sheet}
     </div>
+  );
+}
+
+/**
+ * What one date of the feed adds up to, in the base currency. An "≈" in front
+ * when a row under it is estimated from history, since the sum is then no
+ * firmer than that estimate.
+ */
+function DayTotal({
+  day,
+  tokenSymbolById,
+  rates,
+}: {
+  day: EstimatedOccurrenceTotals;
+  tokenSymbolById: Map<string, string>;
+  rates: BaseCurrencyRates;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {day.count > 0 ? (
+        <>
+          <span aria-hidden="true">≈ </span>
+          <span className="sr-only">
+            {t('v3.money.upcoming.dayTotalEstimated', { count: day.count })}{' '}
+          </span>
+        </>
+      ) : null}
+      <ConvertedFigure totals={day.totals} tokenSymbolById={tokenSymbolById} rates={rates} />
+    </>
   );
 }

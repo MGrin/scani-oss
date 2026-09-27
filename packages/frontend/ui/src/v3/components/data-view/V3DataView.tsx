@@ -1,5 +1,5 @@
 import { Download, Search, Sliders, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { englishNoun, useUiTranslation } from '../../../i18n';
 import { cn } from '../../../lib/cn';
@@ -101,7 +101,16 @@ const SEARCH_DEBOUNCE_MS = 300;
  * labelling fixes a figure the eye cannot pair with anything. The dot is the
  * pairing; the `sr-only` noun is what stops it being read as a bare number.
  */
-export function DataViewGroupHeading({ label, count }: { label: string; count: number }) {
+export function DataViewGroupHeading({
+  label,
+  count,
+  aside,
+}: {
+  label: string;
+  count: number;
+  /** A figure for the whole group, right-aligned, e.g. what one date adds up to. */
+  aside?: ReactNode;
+}) {
   const { t } = useUiTranslation();
   return (
     <h3 className="flex items-baseline gap-2 border-b border-border pb-1 pt-2 text-caption font-medium uppercase tracking-wide text-muted-foreground">
@@ -111,6 +120,11 @@ export function DataViewGroupHeading({ label, count }: { label: string; count: n
         {count}
         <span className="sr-only"> {t('ui.dataView.itemCount', { count })}</span>
       </span>
+      {aside ? (
+        <span className="ms-auto shrink-0 text-end tabular-nums normal-case tracking-normal text-foreground">
+          {aside}
+        </span>
+      ) : null}
     </h3>
   );
 }

@@ -32,7 +32,7 @@
 # Usage (docker-compose.prod.yml):
 #   docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
 
-ARG BUN_VERSION=1.3.13
+ARG BUN_VERSION=1.4.2
 
 # ---------- deps ----------
 FROM oven/bun:${BUN_VERSION} AS deps

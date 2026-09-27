@@ -130,21 +130,25 @@ export function FileImportResult({ result, jobId }: { result: unknown; jobId: st
                 }
                 sublabel={t('v3.jobs.file.row.transactions', { count: holding.transactionCount })}
                 value={
-                  holding.closingBalance ? (
+                  (holding.closingBalance ?? holding.rowsBalance) ? (
                     // The symbol beside the figure, never inside `Intl` as a
                     // currency code: `AAPL` is a ticker and a closing balance
                     // is a count of units.
                     <span className="flex items-baseline gap-1">
                       <Numeric
-                        value={holding.closingBalance}
+                        value={(holding.closingBalance ?? holding.rowsBalance) as string}
                         format="plain"
-                        decimals={quantityDecimals(holding.closingBalance)}
+                        decimals={quantityDecimals(
+                          (holding.closingBalance ?? holding.rowsBalance) as string
+                        )}
                       />
                       <span className="text-caption text-muted-foreground">{holding.symbol}</span>
                     </span>
                   ) : (
                     <span className="text-caption text-muted-foreground">
-                      {t('v3.jobs.file.row.noClosingBalance')}
+                      {holding.balanceFrom === 'unknown'
+                        ? t('v3.jobs.file.row.balanceUnknown')
+                        : t('v3.jobs.file.row.noClosingBalance')}
                     </span>
                   )
                 }
@@ -153,6 +157,18 @@ export function FileImportResult({ result, jobId }: { result: unknown; jobId: st
                     <span className="text-muted-foreground">
                       {t('v3.jobs.file.row.statementClose')}
                     </span>
+                  ) : holding.balanceFrom === 'imported-rows' ||
+                    holding.balanceFrom === 'unknown' ? (
+                    // SC-1324: a balance this import had to infer, or could not,
+                    // says so and points at the one place to correct it.
+                    <Link
+                      to={`${V3_ROUTES.holdings}/${encodeURIComponent(holding.holdingId)}`}
+                      className="text-muted-foreground underline underline-offset-2"
+                    >
+                      {holding.balanceFrom === 'imported-rows'
+                        ? t('v3.jobs.file.row.fromRows')
+                        : t('v3.jobs.file.row.setBalance')}
+                    </Link>
                   ) : undefined
                 }
               />

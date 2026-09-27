@@ -55,7 +55,11 @@
     "deps:update:minor": "syncpack update --target minor",
     "dockerhub:readmes:check": "bun scripts/sync-dockerhub-readme.ts --check",
     "dockerhub:readmes:sync": "bun scripts/sync-dockerhub-readme.ts",
-    "oss:pr-ready": "bash scripts/oss-pr-ready.sh"
+    "oss:pr-ready": "bash scripts/oss-pr-ready.sh",
+    "dev:app": "bun --cwd apps/frontend/app dev",
+    "shots": "cd apps/e2e && bun run shots",
+    "perf:tti": "cd apps/e2e && bun run perf:tti",
+    "db:new": "cd packages/infra/db && bun db:new"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
@@ -76,6 +80,10 @@
   "overrides": {
     "@emnapi/core": "^1.11.3",
     "@emnapi/runtime": "^1.11.3",
-    "@emnapi/wasi-threads": "^1.2.3"
+    "@emnapi/wasi-threads": "^1.2.3",
+    "unist-util-visit": "^5.1.0",
+    "unist-util-visit-parents": "^6.0.2",
+    "postcss": "^8.5.28",
+    "ws": "^8.21.0"
   }
 }

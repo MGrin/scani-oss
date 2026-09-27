@@ -24,7 +24,7 @@ import type { ReturnsResult } from '@scani/domain/services';
  * sent them: an internal caller holds the `ReturnsResult` and has them; a
  * browser asks for them with `includePeriods`.
  */
-export type ReturnsResponse = Omit<ReturnsResult, 'twr' | 'attribution'> & {
+export type ReturnsResponse = Omit<ReturnsResult, 'twr' | 'attribution' | 'series'> & {
   twr: Omit<TwrResult, 'periods'> | null;
   attribution: Omit<ReturnAttribution, 'periods'> | null;
 };
@@ -41,8 +41,15 @@ export type ReturnsResponse = Omit<ReturnsResult, 'twr' | 'attribution'> & {
  * doubt.
  */
 export function withoutPeriodSeries(result: ReturnsResult): ReturnsResponse {
+  // `series` is dropped for the same reason `periods` is, and it is dropped
+  // here rather than never computed: the comparison chart asks for it through
+  // its own procedure (SC-1297), and this response is read by a card that
+  // shows two numbers. One entry per measured day on an `all` window would be
+  // most of the payload for a screen that never reads it.
+  const { series, ...rest } = result;
+  void series;
   return {
-    ...result,
+    ...rest,
     twr: result.twr === null ? null : omitPeriods(result.twr),
     attribution: result.attribution === null ? null : omitPeriods(result.attribution),
   };

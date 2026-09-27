@@ -203,51 +203,7 @@ export const holdingTransactions = pgTable(
     // this column's presence, and never from the timestamp beside it.
     transferReview: text('transfer_review'),
     transferReviewedAt: timestamp('transfer_reviewed_at', { withTimezone: true }),
-    // WHO decided, when the answer did not come from the person whose row it is
-    // (SC-350). `AnswerSource` in @scani/shared is the vocabulary and carries
-    // the full reasoning; the short version is that provenance had exactly two
-    // representable states — stamped meant "the user, in the queue" and
-    // unstamped meant "not through the queue at all" — and a correction Scani
-    // makes on the user's behalf is neither. Writing the stamp would forge his
-    // answer; leaving it null would file the correction alongside the raw
-    // UPDATE this vocabulary exists to tell apart.
-    //
-    // NULL is the whole of the pre-SC-350 corpus and means the database does
-    // not record who. Nothing is backfilled.
-    //
-    // THE LINE THAT WAS HERE PRESCRIBED THE DEFECT (SC-673). It read: *"read it
-    // as `transfer_reviewed_at IS NOT NULL ? 'user' : 'unattributed'`"*, and
-    // that reading was accurate for all but one row the day it was written —
-    // every write path set both columns together, and every answered row but
-    // one had no timestamp, so *stamped* and *a person answered* picked out the
-    // same rows.
-    //
-    // Rows then acquired timestamps without sources and it inverted, silently.
-    // Measured on production 2026-08-26, over the `left_control` rows feeding
-    // observed burn: **most of the value decoded as `user`, while only a
-    // fraction of the rows carried a user stamp.** The prescription outlived
-    // the data shape that
-    // made it true, and a schema comment is the worst place for that, because
-    // it is where the NEXT reader goes for the vocabulary.
-    //
-    // Decode with `answerSourceOf` in @scani/shared, which takes this column
-    // and not the timestamp. A row with a timestamp and no source is
-    // `unattributed`: something answered it at a known moment and left no name.
-    // That is not evidence a person did — and, per SC-324, not evidence one did
-    // not, which is why writers use `mayBeUserAnswer` and refuse to touch it.
     transferReviewSource: text('transfer_review_source'),
-    // WHICH standing rule answered it, when `transfer_review_source` is
-    // `'rule'` (SC-380). A database CHECK ties the two together in both
-    // directions, because the direction that gets forgotten is the undo: a
-    // per-row undo leaves the source reading `'user'`, and a rule id surviving
-    // that would let the answered list go on naming a rule for an answer that
-    // is no longer on the row.
-    //
-    // Not merely "a rule did this". The sentence this whole feature exists to
-    // preserve is mgrin's about the already-answered transfers — "I honestly
-    // can not remember that anymore anyway" — and a row that cannot name the
-    // rule cannot repeat back the note he wrote about the destination, which
-    // is the only part of it he will still understand in three years.
     transferReviewRuleId: uuid('transfer_review_rule_id').references(() => transferReviewRules.id, {
       onDelete: 'set null',
     }),
@@ -352,6 +308,15 @@ export const holdingBalanceObservations = pgTable(
     // `transfer_review_source`. NULL reads as `gap_reviewed_at IS NOT NULL ?
     // 'user' : 'unattributed'`, so nothing is backfilled.
     gapReviewSource: text('gap_review_source'),
+    // The previous row on the same holding in (observed_at, id) order, so the
+    // gap queue can find the pairs that moved without re-deriving every pair
+    // (SC-1319). Written by a trigger on every insert, delete and move, never
+    // by application code: see migration 20260925013031.
+    previousObservedAt: timestamp('previous_observed_at', { withTimezone: true }),
+    previousBalance: text('previous_balance'),
+    balanceMoved: boolean('balance_moved').generatedAlwaysAs(
+      sql`previous_balance IS NOT NULL AND balance::numeric <> previous_balance::numeric`
+    ),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
@@ -372,6 +337,11 @@ export const holdingBalanceObservations = pgTable(
       table.holdingId,
       table.observedAt
     ),
+    // The rows whose balance moved from their predecessor — the only ones the
+    // gap queue reads besides those a transaction lands in (SC-1319).
+    balanceMovedIdx: index('idx_holding_obs_balance_moved')
+      .on(table.userId)
+      .where(sql`balance_moved`),
   })
 );
 

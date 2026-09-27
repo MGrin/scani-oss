@@ -21,6 +21,7 @@ import {
   bulkTransferDecisionSchema,
   bulkTransferEntriesSchema,
   MAX_BULK_TRANSFER_ROWS,
+  TRANSFER_MAX_COMBINED_ARRIVALS,
   transferDestinationRefSchema,
   transferReviewDecisionSchema,
   transferReviewRuleNoteSchema,
@@ -40,6 +41,11 @@ const resolveInput = z
     /** Required for `paired` and meaningless otherwise — checked here rather
      *  than left to the service so a malformed call fails at the boundary. */
     matchTransactionId: z.string().uuid().optional(),
+    /** The other parts, when the deposit landed in pieces (SC-1365). */
+    alsoMatchTransactionIds: z
+      .array(z.string().uuid())
+      .max(TRANSFER_MAX_COMBINED_ARRIVALS - 1)
+      .optional(),
     /** The same, for `internal` (SC-187). */
     destination: transferDestinationRefSchema.optional(),
   })
@@ -175,43 +181,6 @@ function refuseRule(result: Exclude<CreateRuleResult, { ok: true }>): never {
   }
 }
 
-/**
- * Standing rules about a counterparty (SC-375, re-keyed by SC-381).
- *
- * A sub-router rather than three procedures alongside `resolve`, because the
- * record is a different one: those act on a `holding_transactions` row and
- * these act on a `transfer_review_rules` row. It is nested under
- * `transferReview` rather than mounted at the top level because a rule is
- * meaningless outside this queue — it has exactly one reader.
- *
- * **`create` takes a transaction id and not a key, and that is the feature's
- * containment rather than an API-shape preference.** The rule key is derived
- * from the counterparty field, which an attacker can write to — address
- * poisoning sprays zero-value transfers to plant a lookalike in a victim's
- * history. An endpoint that accepted a key would let anything reaching this
- * session install a standing rule about a counterparty the user has never
- * seen. Taking a transaction id means the key is derived by the service from a
- * row the user owns, which is the same thing as "a rule may only be authored
- * from a row on screen", enforced where it cannot be skipped. SC-381 makes
- * that key a normalization rather than a copy, so `listPending` carries
- * `counterpartyKey` — the reader confirms the string the rule will actually
- * match, not the one this payment happened to say.
- *
- * **SC-380 removes the other half of SC-375's containment and it is worth
- * being precise about what is gone.** The verdict enum used to hold only
- * `not_a_disposal` and `ask_me`, neither of which writes a `transfer_review`,
- * so the worst an adversary bought was a suppressed question. `always_a_disposal`
- * books capital gains, which mgrin authorized by name — *"only on addresses I
- * explicitly mark"* — and what still contains it is the paragraph above plus
- * `ruleWritablePredicate`: the key is never typed, so a mark can only ever be
- * placed on a destination the reader's own non-zero unanswered outflow already
- * names; the write gate refuses any row that carries a `transfer_review_source`,
- * so a `user` answer cannot be overwritten and a withdrawn one cannot be
- * re-answered; and the group-id gate rides along with `pendingPredicate`, so
- * the 29 matcher-linked rows that read as answered while booking nothing
- * (SC-382) are unreachable. Marking one of the reader's own wallets is refused
- * outright.
- */
 const rulesRouter = router({
   list: protectedProcedure.query(async ({ ctx }) =>
     Container.get(TransferReviewRuleService).list(ctx.userId)
@@ -352,6 +321,9 @@ export const transferReviewRouter = router({
       input.decision,
       {
         ...(input.matchTransactionId ? { matchTransactionId: input.matchTransactionId } : {}),
+        ...(input.alsoMatchTransactionIds?.length
+          ? { alsoMatchTransactionIds: input.alsoMatchTransactionIds }
+          : {}),
         ...(input.destination ? { destination: input.destination } : {}),
       }
     );

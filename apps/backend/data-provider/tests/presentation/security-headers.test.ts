@@ -35,6 +35,20 @@ describe('securityHeaders', () => {
     );
   });
 
+  /**
+   * SC-1353: Scalar's own font host, in `font-src` only. Fonts cannot run
+   * script, and no other directive may name it.
+   */
+  test('Scalar’s font host is allowed for fonts on the docs page, and for nothing else', () => {
+    const docs = securityHeaders('/docs', false)['Content-Security-Policy'] ?? '';
+    const directives = docs.split(';').map((d) => d.trim());
+    expect(directives.find((d) => d.startsWith('font-src'))).toContain('https://fonts.scalar.com');
+    expect(directives.filter((d) => d.includes('fonts.scalar.com'))).toHaveLength(1);
+    expect(securityHeaders('/openapi.json', false)['Content-Security-Policy']).not.toContain(
+      'fonts.scalar.com'
+    );
+  });
+
   test('HSTS ships only where TLS is guaranteed', () => {
     expect(securityHeaders('/', true)['Strict-Transport-Security']).toContain('max-age=31536000');
     expect(securityHeaders('/', false)['Strict-Transport-Security']).toBeUndefined();

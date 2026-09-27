@@ -1,3 +1,4 @@
+import { trpc } from '@/lib/trpc';
 import type { AccountTarget } from '../../hooks/useAccountTarget';
 import { FieldSet } from '../form/Field';
 import { AccountField } from './AccountField';
@@ -24,6 +25,12 @@ export function AccountTargetFields({
   title?: string;
 }) {
   const { draft } = target;
+  const institutions = trpc.institutions.getAll.useQuery();
+  const institutionTypeId =
+    draft.institutionMode === 'new'
+      ? draft.newInstitution.typeId
+      : (institutions.data?.find((institution) => institution.id === draft.institutionId)?.typeId ??
+        '');
 
   return (
     <FieldSet title={title}>
@@ -47,6 +54,7 @@ export function AccountTargetFields({
             draft={draft.newAccount}
             institutionId={draft.institutionId}
             institutionIsNew={draft.institutionMode === 'new'}
+            institutionTypeId={institutionTypeId ?? ''}
             onModeChange={(accountMode) => target.patch({ accountMode })}
             onSelect={target.selectAccount}
             onDraftChange={target.patchAccount}

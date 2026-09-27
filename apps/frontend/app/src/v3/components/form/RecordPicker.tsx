@@ -100,6 +100,36 @@ interface RecordPickerProps {
  */
 export const RECORD_PICKER_MAX_ROWS = 20;
 
+/**
+ * What Enter does in the field (SC-1273).
+ *
+ * A newcomer typed "Main" into an empty account picker, pressed Enter, and
+ * nothing happened — the `Add "Main"` row was reachable only by pointer, and
+ * the Save below it then refused with "choose an account". Enter now takes
+ * the one answer the typed text unambiguously names, and nothing else:
+ *
+ * - a listed record whose name IS the text (any case, stray spaces) → select it
+ * - nothing listed and no near-duplicate offered → create the typed name
+ * - anything else → nothing. Several matches, or a near-duplicate above the
+ *   create row, is a choice, and the create row sits last on purpose so it
+ *   costs a deliberate reach (SC-69 1.4). Enter must not bypass that.
+ */
+export function pickerEnterAction(input: {
+  query: string;
+  options: readonly PickerOption[];
+  suggestions?: readonly PickerOption[];
+  canCreate: boolean;
+}): { kind: 'select'; option: PickerOption } | { kind: 'create'; name: string } | null {
+  const typed = input.query.trim().toLowerCase();
+  if (!typed) return null;
+  const exact = input.options.find((option) => option.label.trim().toLowerCase() === typed);
+  if (exact) return { kind: 'select', option: exact };
+  if (input.canCreate && input.options.length === 0 && !input.suggestions?.length) {
+    return { kind: 'create', name: input.query.trim() };
+  }
+  return null;
+}
+
 const ROW =
   'flex w-full items-center gap-2 px-3 py-3 text-start text-body transition-colors duration-fast ease-emphasized hover:bg-surface-hover focus-visible:outline-none focus-visible:bg-surface-hover disabled:opacity-50';
 
@@ -212,6 +242,18 @@ export function RecordPicker({
         onFocus={() => onOpenChange(true)}
         onKeyDown={(event) => {
           if (event.key === 'Escape') onOpenChange(false);
+          if (event.key !== 'Enter' || isLoading || isCreating) return;
+          const action = pickerEnterAction({ query, options, suggestions, canCreate });
+          if (!action) return;
+          // Inside a form, Enter would otherwise submit it half-filled.
+          event.preventDefault();
+          if (action.kind === 'select') {
+            onSelect(action.option.id, action.option.label);
+            onQueryChange('');
+            onOpenChange(false);
+          } else {
+            onCreate?.(action.name);
+          }
         }}
         placeholder={placeholder}
         className="text-body"

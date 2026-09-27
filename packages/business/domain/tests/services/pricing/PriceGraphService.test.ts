@@ -351,20 +351,10 @@ describe('PriceGraphService.convert — staleness', () => {
   });
 });
 
-// SC-315. A hub is a `tokens` row and a symbol cannot address one:
-// `USDT` has more than one row in production, all crypto, and `findBySymbol`
-// tie-breaks `asc(isScamProbability), desc(createdAt)`. The row that
-// carries the price edges is the canonical un-segmented one (migration
-// 0007 merged the chain-spread duplicates into it); the row the tiebreak
-// prefers is whichever was created last. Picking the wrong one does not
-// fail — it takes the entire USDT lane out of service silently.
 describe('PriceGraphService hub resolution', () => {
   const AT = new Date('2024-06-01T00:00:00Z');
   const EDGE_AT = new Date('2024-05-30T00:00:00Z');
 
-  // The canonical USDT (un-segmented, older) carries both legs. The
-  // newer chain-flavoured row carries nothing — exactly the production
-  // shape, since 0007 moved every price onto the canonical row.
   const USDT_ROWS: TokenRow[] = [
     ...HUB_ROWS,
     {
@@ -561,6 +551,60 @@ describe('PriceGraphService.buildPriceLookup (SC-471, undefined)', () => {
     expect(actual?.stale).toBe(expected?.stale);
     expect(counts.prefetch).toBe(1);
     expect(counts.perCall).toBe(before);
+  });
+
+  test('`since` reaches the repository, and the answer is the unbounded one', async () => {
+    const since = new Date('2026-01-01T00:00:00Z');
+    const seen: Array<Date | undefined> = [];
+    const inner = makeTokenPriceStub(EDGES);
+    const repo = {
+      findManyForPairsUpTo: (...args: Parameters<TokenPriceRepository['findManyForPairsUpTo']>) => {
+        seen.push(args[3]);
+        return inner.findManyForPairsUpTo(...args);
+      },
+      findClosestPriceByGranularity: inner.findClosestPriceByGranularity,
+    } as unknown as TokenPriceRepository;
+
+    const svc = makePriceGraphService(repo, makeTokenStub(HUB_ROWS));
+    const priceLookup = await svc.buildPriceLookup(
+      ['token-BTC'],
+      HUB_IDS.USD,
+      AT,
+      undefined,
+      since
+    );
+    expect(seen).toEqual([since]);
+
+    // A bound that changed the number would not be a bound, it would be a
+    // second answer — the same property the first test in this file asserts.
+    const direct = makePriceGraphService(makeTokenPriceStub(EDGES), makeTokenStub(HUB_ROWS));
+    const expected = await direct.convert('2', 'token-BTC', HUB_IDS.USD, AT, {
+      preferGranularity: 'daily',
+      tx: undefined,
+    });
+    const actual = await svc.convert('2', 'token-BTC', HUB_IDS.USD, AT, {
+      preferGranularity: 'daily',
+      priceLookup,
+      tx: undefined,
+    });
+    expect(actual?.amount.toString()).toBe(expected?.amount.toString());
+  });
+
+  test('no `since` still reaches the repository unbounded', async () => {
+    // The control. Without it a forwarding test passes over a service that
+    // hard-codes a bound, which is the one change that would break the rollup.
+    const seen: Array<Date | undefined> = [];
+    const inner = makeTokenPriceStub(EDGES);
+    const repo = {
+      findManyForPairsUpTo: (...args: Parameters<TokenPriceRepository['findManyForPairsUpTo']>) => {
+        seen.push(args[3]);
+        return inner.findManyForPairsUpTo(...args);
+      },
+      findClosestPriceByGranularity: inner.findClosestPriceByGranularity,
+    } as unknown as TokenPriceRepository;
+    const svc = makePriceGraphService(repo, makeTokenStub(HUB_ROWS));
+    await svc.buildPriceLookup(['token-BTC'], HUB_IDS.USD, AT, undefined);
+    expect(seen).toEqual([undefined]);
   });
 
   test('many conversions, one query', async () => {

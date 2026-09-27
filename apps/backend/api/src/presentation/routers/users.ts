@@ -28,7 +28,7 @@ import { z } from 'zod';
 import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
 import { strictInput } from '../lib/strict-input';
 import { assertTokensVisible } from '../lib/token-visibility';
-import { requireAuth } from '../middleware/auth';
+import { requireAuth, requireFreshSession } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
 const usersLogger = createComponentLogger('router:users');
@@ -285,10 +285,52 @@ export const usersRouter = router({
     .input(strictInput(z.object({ requestId: z.string().uuid() })))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
+      requireFreshSession(ctx);
       usersLogger.warn({ userId: dbUser.id }, 'Enqueuing delete-all-data job');
       const jobId = await Container.get(BullMqEnqueueService).add(USER_DATA_DELETE, {
         userId: dbUser.id,
         requestId: input.requestId,
+      });
+      return { jobId };
+    }),
+
+  /**
+   * An account deletion this user asked for that did not finish (SC-1276).
+   * They were signed out when it was queued, so this is how the next sign-in
+   * learns it is still here. `null` is the normal case.
+   */
+  accountDeletion: protectedProcedure.query(async ({ ctx }) => {
+    const { dbUser } = await requireAuth(ctx);
+    const row = await Container.get(UserJobRepository).findUnfinishedAccountDeletion(dbUser.id);
+    if (!row) return null;
+    return {
+      jobId: row.jobId,
+      failed: row.state === 'failed',
+      message: row.userFacingError,
+    };
+  }),
+
+  /**
+   * The same job with the account in scope (SC-1276): the data goes, then the
+   * login, sessions, pending sign-in links and the `users` row
+   * (`DeleteAccountUseCase`). The session ends with the row, so the browser
+   * signs out on enqueue rather than waiting for a completion it cannot read.
+   */
+  deleteAccount: protectedProcedure
+    .input(strictInput(z.object({ requestId: z.string().uuid() })))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      requireFreshSession(ctx);
+      // A retry replaces the failure the user was just shown, so it stops
+      // being reported once they have acted on it.
+      const repo = Container.get(UserJobRepository);
+      const previous = await repo.findUnfinishedAccountDeletion(dbUser.id);
+      if (previous?.state === 'failed') await repo.dismissFailed(dbUser.id, previous.jobId);
+      usersLogger.warn({ userId: dbUser.id }, 'Enqueuing delete-account job');
+      const jobId = await Container.get(BullMqEnqueueService).add(USER_DATA_DELETE, {
+        userId: dbUser.id,
+        requestId: input.requestId,
+        deleteAccount: true,
       });
       return { jobId };
     }),

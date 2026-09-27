@@ -666,6 +666,9 @@ support a stronger claim.
 
 Shown on each suggested inflow in the review queue, in this order.
 
+- `matches` — it matched and nothing else did. The matcher left it
+  for you because it does not decide alone: the deposit was typed by
+  hand, or the two accounts are in different entities.
 - `ambiguous` — it matched, and so did something else.
 - `quantity_outside_tolerance` — right time, wrong amount; usually
   a fee larger than the ±1% allowance.

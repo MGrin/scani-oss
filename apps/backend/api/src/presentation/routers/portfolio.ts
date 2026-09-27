@@ -13,6 +13,9 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { getOrComputeFromCache } from '@scani/domain/lib/request-cache';
+import { buildComparison } from '@scani/domain/lib/returns/comparison';
+import { sampleDays } from '@scani/domain/lib/returns/sample-days';
 import { notScamFor } from '@scani/domain/lib/scam-verdict';
 import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
 import { BenchmarkReturnService, ReturnsService } from '@scani/domain/services';
@@ -25,6 +28,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { lacksCoverage } from '../../lib/data-quality-flags';
+import { cachedUserNetWorthDaily } from '../../lib/net-worth-cache';
 import {
   type AggregatedDailyPoint,
   aggregateIncludedHoldingRows,
@@ -33,8 +37,8 @@ import {
   toAggregatedDaily,
   toNetWorthHistoryRow,
   unmeasuredDates,
-  userNetWorthDaily,
 } from '../../lib/net-worth-series';
+import { sharedReturnsRun } from '../../lib/returns-cache';
 import { withoutPeriodSeries } from '../../lib/returns-response';
 import { strictInput } from '../lib/strict-input';
 import { assertTokensVisible } from '../lib/token-visibility';
@@ -217,26 +221,103 @@ async function assertScopeOwnership(
   if (!row[0]) throw new TRPCError({ code: 'NOT_FOUND', message: 'Institution not found' });
 }
 
+// Sample the rendered chart only; benchmark funding uses every measured day.
+const CHART_POINT_CAP = 120;
+
 /**
- * The windows Home's returns card offers (SC-1159). User scope only, no custom
- * range and no per-period series: those are what a later screen asks for, and
- * a parameter nothing sends is the never-called surface SC-756 deleted.
+ * The longest custom range this will answer, in days.
+ *
+ * `all` is longer than any of these and is deliberately still allowed: it is
+ * bounded by the caller's own history, which is a fact about their data rather
+ * than a number they typed. A custom range is the opposite — the client picks
+ * both ends — so it is bounded here rather than trusted. Ten years is past
+ * every range `HOME_PERIODS` offers and past any plausible widening of it;
+ * something asking for more wants `all` and should say so.
  */
-const ReturnsInput = z.object({
-  window: z.discriminatedUnion('kind', [
-    z.object({ kind: z.literal('ytd') }),
-    z.object({ kind: z.literal('1y') }),
-    z.object({ kind: z.literal('all') }),
-  ]),
-  // Omitted = user-wide, for Home. An account or institution is its detail
-  // panel asking about itself, and is checked as the chart's scope is.
-  scope: z
-    .object({
-      kind: z.enum(['account', 'institution']),
-      id: z.string().uuid(),
-    })
-    .optional(),
-});
+const MAX_CUSTOM_WINDOW_DAYS = 3660;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const ReturnsInput = z
+  .object({
+    window: z.discriminatedUnion('kind', [
+      z.object({ kind: z.literal('ytd') }),
+      z.object({ kind: z.literal('1y') }),
+      z.object({ kind: z.literal('all') }),
+      // The home chart asks for exactly the days its axis draws (SC-1305).
+      // Before it did, the three named windows were all a screen could ask
+      // for, so 1M, 3M and 6M were mapped onto `1y` and produced one identical
+      // request — the period control moved and nothing on the screen changed.
+      // The engine has carried `custom` since SC-457; only this schema refused.
+      z.object({ kind: z.literal('custom'), from: z.coerce.date(), to: z.coerce.date() }),
+    ]),
+    // Omitted = user-wide, for Home. An account or institution is its detail
+    // panel asking about itself, and is checked as the chart's scope is.
+    scope: z
+      .object({
+        kind: z.enum(['account', 'institution']),
+        id: z.string().uuid(),
+      })
+      .optional(),
+  })
+  // Bounded here rather than trusted: `from` and `to` are the only two
+  // parameters on this procedure a client chooses freely, and the engine reads
+  // one rollup row per day between them.
+  .superRefine((input, ctx) => {
+    if (input.window.kind !== 'custom') return;
+    const { from, to } = input.window;
+    if (from.getTime() > to.getTime()) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['window', 'from'],
+        message: 'A custom window starts before it ends.',
+      });
+      return;
+    }
+    const days = (to.getTime() - from.getTime()) / DAY_MS;
+    if (days > MAX_CUSTOM_WINDOW_DAYS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['window', 'to'],
+        message: `A custom window spans at most ${MAX_CUSTOM_WINDOW_DAYS} days; ask for 'all'.`,
+      });
+    }
+  });
+
+function returnsKey(request: {
+  userId: string;
+  scope: { kind: 'user' } | { kind: 'account' | 'institution'; id: string };
+  window: z.infer<typeof ReturnsInput>['window'];
+}): string {
+  return `returns:${request.userId}:${JSON.stringify(request.scope)}:${windowKey(request.window)}`;
+}
+
+function windowKey(window: z.infer<typeof ReturnsInput>['window']): string {
+  if (window.kind !== 'custom') return JSON.stringify(window);
+  return `custom:${window.from.toISOString().slice(0, 10)}:${window.to.toISOString().slice(0, 10)}`;
+}
+
+function computeReturns(
+  requestCache: Map<string, unknown>,
+  request: {
+    userId: string;
+    scope: { kind: 'user' } | { kind: 'account' | 'institution'; id: string };
+    window: z.infer<typeof ReturnsInput>['window'];
+  }
+) {
+  const key = returnsKey(request);
+  // Shared across requests too, while the user's data is unchanged: see
+  // `lib/returns-cache.ts` for the measurement and for what the key carries.
+  return getOrComputeFromCache(requestCache, key, () =>
+    sharedReturnsRun(key, request.userId, () =>
+      Container.get(ReturnsService).compute({
+        userId: request.userId,
+        scope: request.scope,
+        window: request.window,
+      })
+    )
+  );
+}
 
 export const portfolioRouter = router({
   /**
@@ -245,10 +326,22 @@ export const portfolioRouter = router({
    * returns card on Home and on account and institution detail, and only with
    * what that card reads.
    */
+  hasReturns: protectedProcedure.input(strictInput(ReturnsInput)).query(async ({ ctx, input }) => {
+    const { dbUser } = await requireAuth(ctx);
+    if (input.scope) await assertScopeOwnership(dbUser.id, input.scope);
+    return {
+      hasReturns: await Container.get(ReturnsService).hasHistory({
+        userId: dbUser.id,
+        scope: input.scope ?? { kind: 'user' },
+        window: input.window,
+      }),
+    };
+  }),
+
   getReturns: protectedProcedure.input(strictInput(ReturnsInput)).query(async ({ ctx, input }) => {
     const { dbUser } = await requireAuth(ctx);
     if (input.scope) await assertScopeOwnership(dbUser.id, input.scope);
-    const outcome = await Container.get(ReturnsService).compute({
+    const outcome = await computeReturns(ctx.requestCache, {
       userId: dbUser.id,
       scope: input.scope ?? { kind: 'user' },
       window: input.window,
@@ -264,6 +357,63 @@ export const portfolioRouter = router({
       : [];
     return { returns: withoutPeriodSeries(outcome.returns), benchmarks };
   }),
+
+  /**
+   * The same window, as money rather than as rates (SC-1297): what the change
+   * was, where it came from, and what the reader's own deposits would be
+   * worth in each benchmark instead.
+   *
+   * A SEPARATE procedure from `getReturns` on purpose. This one pays for a
+   * price per benchmark per measured day; the card's sentence and its
+   * attribution bar must not wait for that, and a chart that fails must not
+   * take the numbers down with it.
+   */
+  getReturnsComparison: protectedProcedure
+    .input(strictInput(ReturnsInput))
+    .query(async ({ ctx, input }) => {
+      const { dbUser } = await requireAuth(ctx);
+      if (input.scope) await assertScopeOwnership(dbUser.id, input.scope);
+
+      const request = {
+        userId: dbUser.id,
+        scope: input.scope ?? { kind: 'user' as const },
+        window: input.window,
+      };
+      // Prices share the run's data version; the TTL bounds a new price landing today.
+      return sharedReturnsRun(`comparison:${returnsKey(request)}`, dbUser.id, async () => {
+        const outcome = await computeReturns(ctx.requestCache, request);
+        if (outcome.status !== 'ok' || outcome.returns.series.length === 0) {
+          return { comparison: null, baseCurrencyId: null, truncated: false };
+        }
+
+        const { series, baseCurrencyId, netExternalFlow, attribution } = outcome.returns;
+        const days = sampleDays(
+          series.map((point) => point.date),
+          CHART_POINT_CAP
+        );
+        const kept = new Set(days);
+
+        const benchmarkPrices = await Container.get(BenchmarkReturnService).pricesOn(
+          series.map((point) => point.date),
+          baseCurrencyId
+        );
+        const comparison = buildComparison({
+          series,
+          netExternalFlow,
+          attribution,
+          benchmarkPrices,
+        });
+
+        return {
+          comparison: {
+            ...comparison,
+            chart: comparison.chart.filter((point) => kept.has(point.date)),
+          },
+          baseCurrencyId,
+          truncated: days.length < series.length,
+        };
+      });
+    }),
 
   getNetWorthSeries: protectedProcedure
     .input(strictInput(NetWorthSeriesInput))
@@ -319,7 +469,7 @@ export const portfolioRouter = router({
           ).map(toAggregatedDaily)
         : // One definition of user-wide net worth, shared with the account export
           // — see `lib/net-worth-series.ts` for why (SC-98).
-          await userNetWorthDaily(dbUser.id, baseId, input.from, input.to);
+          await cachedUserNetWorthDaily(dbUser.id, baseId, input.from, input.to);
 
       // LTTB on the daily points. For ranges <= 200 days the threshold
       // is a no-op and we ship every daily row; for longer ranges the
@@ -552,12 +702,6 @@ export const portfolioRouter = router({
           AND h.is_hidden = false
           AND ${notScamFor('h', 't')}
       ),
-      -- A symbol the reader holds under more than one TOKEN row. The
-      -- catalogue-wide version of this counted every duplicate symbol in
-      -- tokens, most of which the reader has never held: 11 in production
-      -- against 3 they actually hold, and no link could have reconciled the
-      -- two. A duplicate that fragments nobody's position is a catalogue
-      -- fact, and the catalogue is not this screen.
       dup AS (
         SELECT symbol FROM shown GROUP BY symbol HAVING COUNT(DISTINCT token_id) > 1
       ),

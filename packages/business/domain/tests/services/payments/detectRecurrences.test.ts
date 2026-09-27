@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  currencyClasses,
   detectMonthlyRecurrences,
   type ObservedOutflow,
 } from '../../../src/services/payments/detectRecurrences';
@@ -16,12 +17,12 @@ const out = (
 describe('detectMonthlyRecurrences', () => {
   test("SC-674's series: six monthly payments, then a settling lump, reads as ENDED", () => {
     const rows = [
-      out('2026-01-09', '3250'),
-      out('2026-02-10', '3250'),
-      out('2026-03-02', '3250'),
-      out('2026-04-10', '3250'),
-      out('2026-05-08', '3250'),
-      out('2026-06-04', '3250'),
+      out('2026-01-09', '120'),
+      out('2026-02-10', '120'),
+      out('2026-03-02', '120'),
+      out('2026-04-10', '120'),
+      out('2026-05-08', '120'),
+      out('2026-06-04', '120'),
       out('2026-06-09', '16236'),
     ];
     const [found, ...rest] = detectMonthlyRecurrences(rows, day('2026-08-26'));
@@ -29,7 +30,7 @@ describe('detectMonthlyRecurrences', () => {
     expect(found).toMatchObject({
       counterparty: 'landlord',
       currency: 'GBP',
-      amount: '3250',
+      amount: '120',
       occurrences: 6,
       status: 'ended',
     });
@@ -87,5 +88,38 @@ describe('detectMonthlyRecurrences', () => {
   test('input order does not matter', () => {
     const rows = ['2026-07-01', '2026-05-01', '2026-06-01'].map((d) => out(d, '8', 'svc'));
     expect(detectMonthlyRecurrences(rows, day('2026-07-10'))).toHaveLength(1);
+  });
+});
+
+describe('currencyClasses', () => {
+  test('coins priced within 2% of each other share one key; a coin at twice the price does not', () => {
+    const classes = currencyClasses(
+      ['usdc', 'usdt', 'usd', 'eth'],
+      new Map([
+        ['usdt', '0.995'],
+        ['usdc', '1.005'],
+        ['usd', '1'],
+        ['eth', '2'],
+      ])
+    );
+    expect(new Set([classes.get('usdt'), classes.get('usdc'), classes.get('usd')]).size).toBe(1);
+    expect(classes.get('eth')).toBe('eth');
+  });
+
+  test('a token with no usable price is its own currency', () => {
+    const classes = currencyClasses(
+      ['a', 'b', 'c'],
+      new Map([
+        ['a', '1'],
+        ['c', '0'],
+      ])
+    );
+    expect(classes).toEqual(
+      new Map([
+        ['a', 'a'],
+        ['b', 'b'],
+        ['c', 'c'],
+      ])
+    );
   });
 });

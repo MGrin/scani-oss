@@ -121,9 +121,15 @@ keyed set shows up as a change rather than as silence.
 The api serves the same record over HTTP:
 
 ```sh
-docker compose -f docker-compose.prod.yml exec api \
-  curl -fsS http://localhost:3001/health/deep | jq .providerCredentials
+docker compose -f docker-compose.prod.yml exec api sh -c \
+  'curl -fsS -H "Authorization: Bearer $DIAGNOSTICS_TOKEN" http://localhost:3001/health/deep' \
+  | jq .providerCredentials
 ```
+
+`providerCredentials` needs `DIAGNOSTICS_TOKEN` set on the api (any
+random string of 32+ characters) and sent as a bearer, as above. Without
+it the endpoint answers every caller with only `status` and each check's
+`ok`, so it does not tell the internet which keys you are missing.
 
 An unkeyed provider deliberately does **not** turn `/health/deep` red
 — it is a configuration choice, not an outage. The worker has no HTTP

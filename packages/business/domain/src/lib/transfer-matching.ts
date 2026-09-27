@@ -1,6 +1,7 @@
 import {
   ANSWERABLE_OUTFLOW_KINDS,
   TRANSFER_MATCH_WINDOW_MS,
+  TRANSFER_MAX_COMBINED_ARRIVALS,
   TRANSFER_QTY_EPSILON,
 } from '@scani/shared';
 import Decimal from 'decimal.js';
@@ -49,13 +50,21 @@ export const QTY_MATCH_EPSILON = new Decimal(TRANSFER_QTY_EPSILON);
 export const CANDIDATE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 export const CANDIDATE_QTY_EPSILON = new Decimal('0.10');
 
+/**
+ * The most deposits one withdrawal may be paired with (SC-1365). Money that
+ * lands in parts lands in two or three; a combination search past that is a
+ * search for a coincidence, and it grows with the number of subsets.
+ */
+export const MAX_COMBINED_ARRIVALS = TRANSFER_MAX_COMBINED_ARRIVALS;
+
 /** Most plausible pairs first; `both_outside` is on the list only because
  *  nothing better is. Mirrors TRANSFER_CANDIDATE_REASONS in @scani/shared. */
 export const CANDIDATE_REASON_RANK: Record<string, number> = {
-  ambiguous: 0,
-  quantity_outside_tolerance: 1,
-  time_outside_window: 2,
-  both_outside: 3,
+  matches: 0,
+  ambiguous: 1,
+  quantity_outside_tolerance: 2,
+  time_outside_window: 3,
+  both_outside: 4,
 };
 
 /**
@@ -93,145 +102,40 @@ export interface TransferLeg {
   readonly quantityAbs: Decimal;
 }
 
-/**
- * Why two legs could be one movement.
- *
- * - `same_token` — one token row, two holdings. The original case: a CEX
- *   withdrawal and the wallet deposit it became. Native assets fall in here
- *   across chains too, because ETH on Base and ETH on mainnet are ONE token
- *   row (production, 2026-08-17), which is why two of the bridges in this
- *   ledger were already paired before SC-336 existed.
- * - `bridged_asset` — two token rows that are the same asset on two chains.
- */
 export type CandidatePairClass = 'same_token' | 'bridged_asset';
 
-/**
- * Whether an outflow and an inflow can be the same money, on identity and
- * direction alone (SC-336). Quantity and time are the CALLER's to apply —
- * the matcher and the review surface deliberately use different bounds for
- * those, and only for those.
- *
- * A bridge moves an asset to another chain; the value never leaves the
- * portfolio, so nothing is realized. Ingest cannot see it — the two legs are
- * in different runs on different chains — so this is the matcher's shape, and
- * the question it has to answer is "same asset, two chains?" without letting
- * anything counterfeit that shape. Six conditions, each closing one way to
- * counterfeit it — conditions 4 and 6 applying to every pair and the other
- * four to a bridge, which the three paragraphs after the list account for:
- *
- * 1. **The asset is named by an outside authority, never by its symbol.**
- *    `coingecko.id`, the same key `TokenRepository.findPricingSiblings` uses
- *    for the same reason (SC-198): production holds nine rows whose whole
- *    purpose is to carry a symbol matching a real token's, and two honest
- *    `TRUMP`s that are different coins. Symbol equality is how a memecoin
- *    named USDC gets paired with real USDC. It also keeps WETH out of ETH —
- *    `weth` and `ethereum` are different ids, and a wrapper is a different
- *    asset with a different basis.
- * 2. **The two rows are DIFFERENT token rows.** Same row is `same_token`,
- *    which needs none of this.
- * 3. **One wallet, two chains.** The wallet entity (`accounts.metadata
- *    .userWalletId`) rather than an address string, so it holds for any chain
- *    family; the chain from the same place. A default bridge sends to the
- *    sender's own address, and requiring that is what separates a bridge from
- *    a payment that happens to be followed by an unrelated arrival. A bridge
- *    to a DIFFERENT wallet the user owns is real and is deliberately not
- *    recognised here — it needs the destination address, which no column
- *    carries yet.
- * 4. **Two holdings.** A pair that resolves to one holding describes a move
- *    from a position to itself, which is not a thing that happens (SC-347).
- * 6. **Both legs are in the same set of books.** An entity is an ownership
- *    boundary over accounts — the owner's own money and their limited
- *    company's (SC-463) — and money crossing it is a real event on both sets
- *    of books: a director's loan, a dividend, a salary. Pairing carries the
- *    lot basis across intact and realizes nothing, which is the wrong answer
- *    on both sides at once. So a cross-entity movement is never a candidate,
- *    and the outflow stays unpaired and unanswered, which is precisely what
- *    puts it in the review queue (`pendingPredicate`) for its owner to
- *    classify.
- *
- *    **It is in this function rather than in the matcher because the matcher
- *    is not the only thing that pairs.** `TransferReviewService` judges
- *    candidates through here too — its `transferLegFacts` comment calls
- *    itself "a projection three queries here share" — so a guard in
- *    `LinkTransferPairsUseCase` alone would stop the automatic pairing and
- *    leave the queue RECOMMENDING the same one with an Accept button. The
- *    carry would happen anyway and arrive wearing a reader's provenance,
- *    which every downstream consumer trusts more than a machine match.
- *    `RepairBridgedOutflowsUseCase` is the third caller and is gated by the
- *    same predicate; there it degrades to that use case's own first-class
- *    `blocked` outcome, so a cross-entity bridge is reported as unrepairable
- *    rather than silently skipped.
- *
- *    Null matches null, so this changes nothing for a portfolio whose owner
- *    has drawn no boundary — which is every portfolio until they do.
- * 5. **The arrival does not precede the departure.** Physics, not tolerance,
- *    so it belongs here and not in a window. Measured on production: the
- *    ±30min window symmetric around the departure offers pairs whose arrival
- *    lands BEFORE the money left, and every one of them is false.
- *
- * **Condition 5 is deliberately NOT applied to `same_token`, and that is not
- * an oversight.** A `same_token` pair can be one movement reported by two
- * providers with two clocks: a substantial share of the genuine cross-holding
- * groups in production are a Kraken withdrawal to the owner's own wallet where
- * Kraken stamps its ledger entry 1-2 minutes AFTER the chain block, so the arrival
- * legitimately precedes the departure. Physics constrains the money, not two
- * vendors' timestamps; a bridge is held to the stricter rule because its two
- * legs come from the same kind of source and skew is not available as an
- * excuse.
- *
- * **Condition 4 IS applied to both, and used not to be.** `same_token`
- * returned before the holding was looked at, so the rule this docblock has
- * always claimed held for bridges alone — while every same-holding group ever
- * written to production is a `same_token` pair (43 of them, SC-347). The
- * matcher carried its own copy of the guard at the call site and was therefore
- * safe; `candidatesFor` and `claimInflow` had none, which is how a reader was
- * shown, and answered `paired` on, an arrival three days older than the
- * departure on the same holding.
- */
-/**
- * Do these two accounts sit on opposite sides of an ownership boundary?
- *
- * **ONE surface reads it today, and it had three (SC-1151).** `candidatePairClass`
- * below is the whole of it: nothing is auto-linked or RECOMMENDED across the
- * boundary. The other two — `TransferReviewService.writeInflow` and the
- * destination picker that feeds it — were removed when mgrin reopened SC-929
- * and ruled that an owner-DECLARED cross-entity transfer keeps today's
- * behaviour deliberately: shared `transfer_group_id`, basis carried across
- * intact, because **entities are a reporting convenience rather than an
- * ownership change**.
- *
- * SC-859's own reasoning is what makes the split coherent rather than a
- * half-reverted guard. It existed because the three surfaces came to disagree
- * once and silently — refusing the pair while permitting the answer produced
- * the very carry it was written to stop. What differs between them is WHO
- * decides: the matcher acts unattended, nightly, on a heuristic, so a wrong
- * carry there is one nobody chose. `internal` is a sentence a human answered.
- * The declared door (`linkDeclaredPair`) has never checked this and never
- * changed; the two declared doors now agree again.
- *
- * So a NEW reader of this predicate is adding an unattended rule, not
- * restoring symmetry. Say which it is.
- *
- * **Null matches null**, so this is a no-op for a portfolio whose owner has
- * drawn no boundary — which is every portfolio until they draw one. An account
- * nobody has classified is outside every entity, so a movement between it and
- * an assigned one does cross one.
- */
 export function crossesEntityBoundary(a: string | null, b: string | null): boolean {
   return a !== b;
 }
 
+/**
+ * The UNATTENDED predicate: `reviewPairClass` plus the entity boundary.
+ *
+ * The strict one keeps the short name on purpose, so a caller that does not
+ * choose gets the safe answer. Every job that links without anybody answering
+ * — the nightly matcher and both repair passes — reads this one.
+ */
 export function candidatePairClass(
   out: TransferLeg,
   inflow: TransferLeg
 ): CandidatePairClass | null {
+  if (crossesEntityBoundary(out.entityId, inflow.entityId)) return null;
+  return reviewPairClass(out, inflow);
+}
+
+/**
+ * Could these two rows be the same money, for a pair a PERSON is choosing
+ * (SC-1364)? The review queue's candidate list and its `paired` write.
+ *
+ * No entity boundary, for the reason `crossesEntityBoundary` gives: it is a
+ * question about who decides, and here somebody does. Leaving it in made the
+ * queue refuse to link a company-to-personal transfer to the arrival its owner
+ * had already recorded, while `internal` — which writes a SECOND arrival — was
+ * allowed across the same boundary. The one answer on offer invented money.
+ */
+export function reviewPairClass(out: TransferLeg, inflow: TransferLeg): CandidatePairClass | null {
   if (out.transactionId === inflow.transactionId) return null;
   if (out.holdingId === inflow.holdingId) return null;
-  // Above the `same_token` return on purpose: that branch exits early, so a
-  // boundary check below it would guard bridges only — and the common
-  // cross-entity movement (moving cash from the company to yourself) is the
-  // same token, not a bridge.
-  if (crossesEntityBoundary(out.entityId, inflow.entityId)) return null;
   if (out.tokenId === inflow.tokenId) return 'same_token';
   if (out.canonicalAssetKey === null || out.canonicalAssetKey !== inflow.canonicalAssetKey) {
     return null;
@@ -242,4 +146,68 @@ export function candidatePairClass(
   }
   if (inflow.occurredAt.getTime() < out.occurredAt.getTime()) return null;
   return 'bridged_asset';
+}
+
+export interface ArrivalPart {
+  readonly transactionId: string;
+  readonly holdingId: string;
+  readonly quantityAbs: Decimal;
+  readonly occurredAt: Date;
+}
+
+/** How many of a holding's arrivals the search looks at, earliest first. */
+const COMBINATION_PARTS_PER_HOLDING = 12;
+
+/**
+ * Sets of arrivals on ONE holding whose total is the withdrawal, within the
+ * candidate net (SC-1365). 2 to `MAX_COMBINED_ARRIVALS` parts each, best total
+ * first, at most `limit` of them.
+ *
+ * One holding, because this is money that landed in parts in one place — a
+ * transfer recorded as it arrived. Parts spread over several accounts are a
+ * different story, and the search would be finding coincidences.
+ *
+ * Only arrivals at or after the withdrawal, and each smaller than it: a part
+ * that is the whole amount on its own is a single candidate, not a piece.
+ */
+export function arrivalCombinations(
+  outflow: { quantityAbs: Decimal; occurredAt: Date },
+  arrivals: ReadonlyArray<ArrivalPart>,
+  limit = 3
+): ArrivalPart[][] {
+  const byHolding = new Map<string, ArrivalPart[]>();
+  for (const part of arrivals) {
+    if (part.occurredAt.getTime() < outflow.occurredAt.getTime()) continue;
+    if (part.quantityAbs.lte(0) || part.quantityAbs.gte(outflow.quantityAbs)) continue;
+    const list = byHolding.get(part.holdingId);
+    if (list) list.push(part);
+    else byHolding.set(part.holdingId, [part]);
+  }
+
+  const tolerance = outflow.quantityAbs.mul(CANDIDATE_QTY_EPSILON);
+  const found: Array<{ parts: ArrivalPart[]; miss: Decimal }> = [];
+  for (const list of byHolding.values()) {
+    const pool = list
+      .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
+      .slice(0, COMBINATION_PARTS_PER_HOLDING);
+    const walk = (start: number, chosen: ArrivalPart[], total: Decimal): void => {
+      if (chosen.length >= 2) {
+        const miss = total.minus(outflow.quantityAbs).abs();
+        if (miss.lte(tolerance)) found.push({ parts: [...chosen], miss });
+      }
+      if (chosen.length === MAX_COMBINED_ARRIVALS) return;
+      for (let i = start; i < pool.length; i++) {
+        const part = pool[i] as ArrivalPart;
+        const next = total.add(part.quantityAbs);
+        if (next.gt(outflow.quantityAbs.add(tolerance))) continue;
+        walk(i + 1, [...chosen, part], next);
+      }
+    };
+    walk(0, [], new Decimal(0));
+  }
+
+  return found
+    .sort((a, b) => a.miss.comparedTo(b.miss) || a.parts.length - b.parts.length)
+    .slice(0, limit)
+    .map((f) => f.parts);
 }

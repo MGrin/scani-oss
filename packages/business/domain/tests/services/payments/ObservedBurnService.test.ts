@@ -56,7 +56,14 @@ function row(over: Partial<Row> & { occurredAt: Date }): Row {
 }
 
 /** Values every leg at 1:1 in base, so the arithmetic under test is the sum. */
-function makeService(rows: Row[], opts: { unvaluable?: Set<string>; stale?: Set<string> } = {}) {
+function makeService(
+  rows: Row[],
+  opts: {
+    unvaluable?: Set<string>;
+    stale?: Set<string>;
+    lookups?: Array<{ until: Date; since: Date | undefined }>;
+  } = {}
+) {
   Container.set(HoldingTransactionRepository, {
     findByRange: async (o: { from?: Date; to?: Date }) =>
       rows.filter((r) => (!o.from || r.occurredAt >= o.from) && (!o.to || r.occurredAt < o.to)),
@@ -67,7 +74,16 @@ function makeService(rows: Row[], opts: { unvaluable?: Set<string>; stale?: Set<
   } as unknown as HoldingRepository);
 
   Container.set(PriceGraphService, {
-    buildPriceLookup: async () => ({ covers: () => true }),
+    buildPriceLookup: async (
+      _tokens: unknown,
+      _base: string,
+      until: Date,
+      _tx: unknown,
+      since?: Date
+    ) => {
+      opts.lookups?.push({ until, since });
+      return { covers: () => true };
+    },
     convert: async (amount: unknown, from: string, _to: string) => {
       if (opts.unvaluable?.has(from)) return null;
       return { amount, stale: opts.stale?.has(from) ?? false };
@@ -261,23 +277,6 @@ describe('SC-657 — the statistic', () => {
   });
 });
 
-/**
- * SC-661/SC-673. WHO answered the rows the burn is made of, by VALUE.
- *
- * ## Why value and never count
- *
- * The figure this qualifies is money, and months derived from money, so a
- * count-weighted share describes a different quantity than the number it sits
- * under. Measured on a production book over a six-month window, fewer than
- * half the rows carry a user stamp — so by COUNT most of the burn is not the
- * user's, while by VALUE most of it is. The two answers differ by tens of
- * points, and the count is the flattering one — the unattributed rows are the
- * big ones.
- *
- * The service returns no counts at all rather than returning them with a
- * comment asking nobody to use them. This feature has erred flattering at
- * every layer examined; the caption that exists to stop that must not.
- */
 describe('SC-661 — provenance of the counted rows, by value', () => {
   const march = new Date(Date.UTC(2026, 2, 15));
   const asOf = new Date(Date.UTC(2026, 3, 2));
@@ -364,5 +363,26 @@ describe('SC-661 — provenance of the counted rows, by value', () => {
     const burn = await service.observed('u1', BASE, asOf);
 
     expect(burn.provenance).toEqual({ user: '0', automated: '0', unattributed: '0' });
+  });
+});
+
+describe('SC-1322 — the price prefetch is bounded to the instants it values', () => {
+  const asOf = new Date('2026-08-03T00:00:00Z');
+
+  test('since is the earliest valued exit, not the window start and not unbounded', async () => {
+    const lookups: Array<{ until: Date; since: Date | undefined }> = [];
+    const service = makeService(
+      [
+        row({ occurredAt: new Date('2026-02-10T00:00:00Z'), transferReview: 'untracked' }),
+        row({ occurredAt: new Date('2026-05-20T00:00:00Z') }),
+        row({ occurredAt: new Date('2026-04-02T12:00:00Z') }),
+      ],
+      { lookups }
+    );
+    const burn = await service.observed('u1', BASE, asOf, 6);
+
+    expect(burn.countedTransactions).toBe(2);
+    expect(lookups).toHaveLength(1);
+    expect(lookups[0]?.since?.toISOString()).toBe('2026-04-02T12:00:00.000Z');
   });
 });

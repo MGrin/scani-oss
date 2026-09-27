@@ -141,11 +141,6 @@ export function checkEnvIsolatedUrl(opts: {
 }): EnvIsolatedUrlCheck {
   if (opts.allowCrossEnv) return { ok: true };
   const inProd = opts.isProduction ?? isNodeEnvProduction();
-  // Host-based detection only. The previous version included `:6379` as
-  // a "looks local" signal, but real Upstash production URLs commonly
-  // use port 6379 too (e.g. `rediss://...@*.upstash.io:6379`), which
-  // false-positived the guard. Host strings cover every local-stack
-  // case we actually care about.
   const looksLocal = /localhost|127\.0\.0\.1|0\.0\.0\.0|host\.docker\.internal/i.test(opts.url);
   if (inProd && looksLocal) {
     return {
@@ -233,3 +228,5 @@ export function servedVersion(serviceVersion: string | undefined): { commit?: st
     ? { commit: serviceVersion }
     : {};
 }
+
+export { diagnosticsAuthorized, healthBodyFor, publicHealthBody } from './diagnostics';

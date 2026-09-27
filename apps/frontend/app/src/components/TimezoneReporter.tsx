@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { useIsDemo } from '@/contexts/auth-context';
 import { browserTimezone, shouldReportTimezone } from '@/lib/timezone';
 import { trpc } from '@/lib/trpc';
 
@@ -27,13 +28,14 @@ export function TimezoneReporter() {
   const storedZone = userQuery.data?.timezone;
   const isLoaded = Boolean(userQuery.data);
   const { mutate } = report;
+  const readOnly = useIsDemo();
 
   useEffect(() => {
     if (!isLoaded) return;
     const zone = browserTimezone();
-    if (!shouldReportTimezone(zone, storedZone)) return;
+    if (!shouldReportTimezone(zone, storedZone, { readOnly })) return;
     mutate({ timezone: zone as string });
-  }, [isLoaded, storedZone, mutate]);
+  }, [isLoaded, storedZone, mutate, readOnly]);
 
   return null;
 }

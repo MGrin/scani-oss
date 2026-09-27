@@ -1,55 +1,5 @@
-/**
- * Which compose projects on this machine have no checkout behind them
- * (SC-530).
- *
- * WHY. Deleting a worktree removes the DIRECTORY and leaves its compose stack
- * running. Nothing reports it, so they accumulate: six were found on
- * 2026-08-22, and one of them had already cost a `gate-db` run 63 migrations
- * applied into a dead worker's Postgres under a printed `PASS` (SC-500).
- *
- * THE ATTRIBUTION METHOD IS INVERTED FROM `port-holder.ts`, AND IT HAS TO BE.
- * That file asks who holds one port and answers from the compose
- * `working_dir` label. A compose VOLUME carries `com.docker.compose.project`
- * and NOT `working_dir` — measured on the real remnant, 2026-08-26 — so a
- * project whose containers are already gone cannot be attributed by label at
- * all, and that is precisely the state this file exists to see. So the
- * question is asked the other way round: derive the project name every LIVE
- * checkout produces, and a project outside that set is behind no checkout.
- *
- * That inversion also closes a false positive nobody aimed at, which is the
- * tell it is the right shape rather than a wider net. A checkout that once ran
- * a bare `docker compose up` adopted compose's default project name — the
- * directory leaf, `scani` in every checkout — and stamped its own
- * `working_dir` onto containers it did not own. On this machine that was
- * `scani-postgres` and `scani-redis` on 5433 and 6380: the ports CLAUDE.md
- * points at, serving the PRIMARY checkout, under a label naming a directory
- * that had been deleted. A `working_dir` test calls that an orphan. A
- * derivation test cannot: no checkout produces the name `scani`, so it is
- * UNATTRIBUTED, and unattributed is never reclaimable.
- *
- * WHAT THE INVERSION CANNOT SEE, measured rather than reasoned about. It is
- * exact for every checkout `git worktree list` reports, which on this machine
- * is all of them and for a self-hoster is the only one there is. It is NOT
- * exact across two INDEPENDENT clones: run from a second clone on 2026-08-27,
- * this census called six projects unattributed-to-a-checkout when five had
- * live worktrees, the primary checkout's own stack among them. The running
- * ones were rescued by their `working_dir` labels and the volume-only ones
- * could not be — the same gap that forces the inversion is the gap that
- * bounds it. So the report PRINTS how many checkouts it judged against, and
- * the heading says `NO CHECKOUT OF THIS REPOSITORY` rather than `ORPHANED`:
- * the reader is given the evidence and its basis, never the conclusion.
- *
- * NOTHING HERE SELECTS, STOPS OR REMOVES ANYTHING, and that is a decision
- * rather than an omission. Whether an idle stack may be killed is mgrin's
- * call; these volumes are somebody's database and a worker may not delete what
- * it did not create. The precedent is `setup/lib/container_owners.py` in the
- * dotfiles repo, which reports and never selects, with a test that fails if a
- * threshold constant ever appears in it. `stack-census.test.ts` carries the
- * same guard against a removal verb.
- */
-
 import { spawnSync } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { classifyDockerProbe, type DockerProbe, probeWithRetry } from './port-holder';
 import { composeProjectName } from './worktree';
@@ -491,8 +441,27 @@ function describeProject(p: StackProject): string {
   const where =
     p.workingDir === null
       ? 'no working_dir label — volumes carry none'
-      : `${p.workingDir}${existsSync(p.workingDir) ? '' : ' — gone'}`;
+      : `${p.workingDir}${pathSuffix(p.workingDir)}`;
   return `  ${p.project}\n    ${parts.join(' · ')}\n    ${where}`;
+}
+
+/**
+ * `existsSync` answers `false` both when a directory is gone and when it could
+ * not be read, so a read denial rendered ` — gone` about a directory that is
+ * there (SC-973). Only ENOENT and ENOTDIR say it is absent; any other errno is
+ * a look that failed, and says so. This is the RENDERING only: the verdict
+ * reads `existsSync` solely as a positive rescue in `attestedLive`, where a
+ * blind read can only fail to rescue, and that is left as it is.
+ */
+export function pathSuffix(dir: string): string {
+  try {
+    statSync(dir);
+    return '';
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? 'unknown error';
+    if (code === 'ENOENT' || code === 'ENOTDIR') return ' — gone';
+    return ` — could not look (${code}), which is not a claim it is gone`;
+  }
 }
 
 /**

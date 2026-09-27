@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { viteMissingAsset } from '@scani/ui/vite/missing-asset-plugin';
 import { viteVersion } from '@scani/ui/vite/version-plugin';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
@@ -9,6 +10,7 @@ export default defineConfig({
     react(),
     svgr(),
     viteVersion(),
+    viteMissingAsset(),
     // Note: Using custom service worker (public/sw.js) and manifest (public/manifest.json)
     // VitePWA plugin is disabled since we manage these files manually
   ],
@@ -28,8 +30,6 @@ export default defineConfig({
     },
   },
   build: {
-    // Disable source maps in production to avoid shipping full source to
-    // the browser. Dev builds keep them on via the default.
     sourcemap: false,
     // IMPORTANT: do NOT manually split React or anything that imports it at
     // module-init time (Radix, react-router, react-hook-form, recharts, ...)

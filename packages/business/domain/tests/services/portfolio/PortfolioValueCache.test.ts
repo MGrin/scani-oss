@@ -66,7 +66,7 @@ describe('PortfolioValueCache', () => {
     const redis = makeFakeRedis();
     useFakeRedis(redis);
     const cache = new PortfolioValueCache();
-    const key = createPortfolioRedisKey('u1', undefined, 'c1');
+    const key = createPortfolioRedisKey('u1', undefined, 'c1', 'v1');
     let release!: () => void;
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -203,15 +203,9 @@ describe('PortfolioValueCache', () => {
     useFakeRedis(redis);
     const cache = new PortfolioValueCache();
 
-    // Derived, never spelled. The builder and `bust`'s SCAN pattern are two
-    // statements of one keyspace, and a fixture spelling the version out is a
-    // THIRD — so bumping the version (SC-1114 bumped it to v2) reddened this
-    // test for a reason that had nothing to do with what it asserts. Deriving
-    // it also makes the test a guard that the two agree: a builder and a bust
-    // that disagree now fail here rather than leaking keys in production.
-    const mine = createPortfolioRedisKey('u1', undefined, 'c1');
-    const minePerAccount = createPortfolioRedisKey('u1', 'acc-9', 'c1');
-    const someoneElses = createPortfolioRedisKey('u2', undefined, 'c1');
+    const mine = createPortfolioRedisKey('u1', undefined, 'c1', 'v1');
+    const minePerAccount = createPortfolioRedisKey('u1', 'acc-9', 'c1', 'v1');
+    const someoneElses = createPortfolioRedisKey('u2', undefined, 'c1', 'v1');
 
     redis.store.set(mine, '{}');
     redis.store.set(minePerAccount, '{}');

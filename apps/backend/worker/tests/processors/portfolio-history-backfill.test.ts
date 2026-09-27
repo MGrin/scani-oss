@@ -8,12 +8,18 @@ import {
 import {
   CHUNK_LOCK_MAX_WAITS,
   CHUNK_LOCK_WAIT_MS,
+  handleMemoryStop,
   LOCK_HELD_RETRY_DELAY_MS,
   LOCK_HELD_RETRY_REQUEST_ID,
+  MEMORY_DEFER_DELAY_MS,
+  MEMORY_DEFER_MAX,
+  MEMORY_DEFER_REQUEST_PREFIX,
+  nextMemoryDeferRequestId,
   RollupMemoryStop,
   resumableProgress,
   runChunkedRollup,
   scheduleLockHeldRetry,
+  scheduleMemoryDeferral,
 } from '../../src/processors/portfolio-history-backfill';
 
 describe('scheduleLockHeldRetry', () => {
@@ -33,6 +39,34 @@ describe('scheduleLockHeldRetry', () => {
       lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
     });
     expect(opts).toEqual({ delay: LOCK_HELD_RETRY_DELAY_MS });
+  });
+
+  it('keeps a wider requested lookback, under its own retry id (SC-1323)', async () => {
+    // A 557-day recompute that met the lock was retried at 400 days and
+    // collapsed into a pending 400-day retry, so its oldest days never ran.
+    const add = mock(
+      async (_descriptor: unknown, _payload: unknown, _opts?: unknown) => 'job-id-stub'
+    );
+    await scheduleLockHeldRetry('user-1', { add }, 557);
+    const [, payload] = add.mock.calls[0]!;
+    expect(payload).toEqual({
+      userId: 'user-1',
+      requestId: `${LOCK_HELD_RETRY_REQUEST_ID}-557d`,
+      tokenIds: [],
+      lookbackDays: 557,
+    });
+  });
+
+  it('never narrows below the default lookback', async () => {
+    const add = mock(
+      async (_descriptor: unknown, _payload: unknown, _opts?: unknown) => 'job-id-stub'
+    );
+    await scheduleLockHeldRetry('user-1', { add }, 30);
+    const [, payload] = add.mock.calls[0]!;
+    expect(payload).toMatchObject({
+      requestId: LOCK_HELD_RETRY_REQUEST_ID,
+      lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
+    });
   });
 
   it('produces a deterministic jobId per user so concurrent skipped runs dedup', () => {
@@ -222,5 +256,129 @@ describe('resumableProgress (SC-1283)', () => {
 
   it('starts from the top when nothing was recorded', () => {
     expect(resumableProgress(undefined, new Date())).toBeNull();
+  });
+});
+
+describe('memory deferral (SC-1298)', () => {
+  it('hands the next attempt a distinct requestId so it cannot dedup away', () => {
+    const first = nextMemoryDeferRequestId('mutation-1');
+    expect(first).toBe(`${MEMORY_DEFER_REQUEST_PREFIX}1`);
+    expect(nextMemoryDeferRequestId(first!)).toBe(`${MEMORY_DEFER_REQUEST_PREFIX}2`);
+  });
+
+  it('gives up after a bounded number of deferrals rather than looping', () => {
+    let id: string | null = 'mutation-1';
+    const seen: string[] = [];
+    for (let i = 0; i < MEMORY_DEFER_MAX + 2 && id !== null; i++) {
+      id = nextMemoryDeferRequestId(id);
+      if (id) seen.push(id);
+    }
+    expect(seen).toHaveLength(MEMORY_DEFER_MAX);
+    expect(id).toBeNull();
+  });
+
+  it('carries the saved progress forward, so the continuation resumes mid-window', async () => {
+    const add = mock(async (_d: unknown, _p: unknown, _o?: unknown) => 'job-id-stub');
+    const progress = { anchor: '2026-09-23T01:00:00.000Z', nextDayOffset: 300 };
+    const scheduled = await scheduleMemoryDeferral(
+      { userId: 'user-1', requestId: 'tx-import-1', tokenIds: [], lookbackDays: 400 },
+      progress,
+      { add }
+    );
+
+    expect(scheduled).toBe(true);
+    expect(add).toHaveBeenCalledTimes(1);
+    const [descriptor, payload, opts] = add.mock.calls[0]!;
+    expect(descriptor).toBe(PORTFOLIO_HISTORY_BACKFILL);
+    expect(payload).toEqual({
+      userId: 'user-1',
+      requestId: `${MEMORY_DEFER_REQUEST_PREFIX}1`,
+      tokenIds: [],
+      lookbackDays: 400,
+      rollupProgress: progress,
+    });
+    expect(opts).toEqual({ delay: MEMORY_DEFER_DELAY_MS });
+  });
+
+  it('refuses to schedule past the bound, so an unrecoverable box reports loudly', async () => {
+    const add = mock(async (_d: unknown, _p: unknown, _o?: unknown) => 'job-id-stub');
+    const scheduled = await scheduleMemoryDeferral(
+      {
+        userId: 'user-1',
+        requestId: `${MEMORY_DEFER_REQUEST_PREFIX}${MEMORY_DEFER_MAX}`,
+        tokenIds: [],
+        lookbackDays: 400,
+      },
+      { anchor: '2026-09-23T01:00:00.000Z', nextDayOffset: 300 },
+      { add }
+    );
+
+    expect(scheduled).toBe(false);
+    expect(add).not.toHaveBeenCalled();
+  });
+
+  it('names the offset on the error, so the continuation is not parsed out of a message', async () => {
+    const rollup = async (o: { dayOffsets: { from: number; to: number } }) => ({
+      usersProcessed: 1,
+      daysComputed: o.dayOffsets.to - o.dayOffsets.from,
+      usersSkipped: 0,
+      errors: [],
+      durationMs: 0,
+    });
+    const stopAt = 2 * PORTFOLIO_HISTORY_CHUNK_DAYS;
+    const run = runChunkedRollup(
+      'user-1',
+      400,
+      { anchor: '2026-09-23T01:00:00.000Z', nextDayOffset: 0 },
+      {
+        rollup,
+        saveProgress: async () => {},
+        onChunk: async () => {},
+        memoryStopReason: (from) => (from === stopAt ? 'worker RSS 653 MB is over' : null),
+      }
+    );
+    const err = await run.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(RollupMemoryStop);
+    expect((err as RollupMemoryStop).nextDayOffset).toBe(stopAt);
+  });
+});
+
+describe('handleMemoryStop (SC-1298)', () => {
+  const stop = () => new RollupMemoryStop('worker RSS 653 MB is over the budget', 300);
+
+  it('defers the rest of the window and reports where it stopped', async () => {
+    const add = mock(async (_d: unknown, _p: unknown, _o?: unknown) => 'job-id-stub');
+    const out = await handleMemoryStop(
+      { userId: 'user-1', requestId: 'tx-import-1', tokenIds: [], lookbackDays: 400 },
+      '2026-09-23T01:00:00.000Z',
+      stop(),
+      { add }
+    );
+
+    expect(out).toEqual({ deferredAtDayOffset: 300 });
+    expect(add.mock.calls[0]![1]).toMatchObject({
+      rollupProgress: { anchor: '2026-09-23T01:00:00.000Z', nextDayOffset: 300 },
+    });
+  });
+
+  // The bound spent is the one case that IS a Sentry-worthy failure: the box,
+  // not this chunk, cannot finish the window.
+  it('rethrows the stop once the chain is spent, so it reaches Sentry', async () => {
+    const add = mock(async (_d: unknown, _p: unknown, _o?: unknown) => 'job-id-stub');
+    const thrown = stop();
+    await expect(
+      handleMemoryStop(
+        {
+          userId: 'user-1',
+          requestId: `${MEMORY_DEFER_REQUEST_PREFIX}${MEMORY_DEFER_MAX}`,
+          tokenIds: [],
+          lookbackDays: 400,
+        },
+        '2026-09-23T01:00:00.000Z',
+        thrown,
+        { add }
+      )
+    ).rejects.toBe(thrown);
+    expect(add).not.toHaveBeenCalled();
   });
 });

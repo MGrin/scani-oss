@@ -196,43 +196,27 @@ plus the cross-cutting `apps/e2e` Playwright suite.
   `packages/business/jobs/src/scheduled-jobs/` as one descriptor each,
   aggregated as `SCHEDULED_JOB_DESCRIPTORS`; the worker reconciles them with
   BullMQ at boot. There is no separate cron app.
-- `apps/backend/data-provider` — tRPC service fronting a *subset* of
-  outbound third-party calls: **object storage (R2), email (JMAP / SMTP),
-  OG-metadata fetching, and token search**. The same binary serves all
-  three deployment tiers.
+- `apps/backend/data-provider` — Shared platform-processing service for AI,
+  pricing, token lookup, public-wallet requests, metadata and authentication mail.
+  `SCANI_DEPLOYMENT_TIER` selects routing at boot:
+  - Tier 1 runs local services and calls platform providers directly, with the
+    provider keys the self-hoster chooses to configure.
+  - Tier 2 hosts UI, API, worker, database and S3 locally. Its only platform
+    credential is `SCANI_CLOUD_API_KEY`, used with `SCANI_CLOUD_URL` for Scani
+    Cloud processing. The customer owns durable storage; processing inputs
+    are sent to the cloud as needed. Local S3 access credentials and application
+    secrets are still generated/configured for the customer's own services.
+  - Tier 3 and an unset tier retain managed deployment routing.
 
-  **It is not the sole egress, and the api and worker DO call upstream
-  pricing and AI APIs directly.** All three backend apps boot
-  `buildProviderRegistry({ mode: 'direct' })` — `api/src/index.ts`,
-  `worker/src/index.ts`, `data-provider/src/index.ts` — so CoinGecko,
-  DeFiLlama, Frankfurter, Finnhub, Yahoo Finance, Etherscan, the chain
-  RPCs and OpenAI are constructed and called in each process. Google
-  Sheets is registered in the api and worker only — *not* here.
+  Personal exchange and brokerage credentials stay in the local API/worker.
+  Customer cloud keys cannot use internal storage or generic-mail routes.
+  Tier 2 uses constrained authentication-mail templates; Salt Edge through
+  Scani Cloud is future work. The cloud processing service holds platform keys.
 
-  **Credentialed calls in particular do NOT flow through this service.**
-  The user-credentialed CEX/broker/fiat providers stay in the api and
-  worker deliberately, so decrypted per-tenant credentials never cross
-  into a shared multi-tenant service.
-
-  A `mode: 'cloud'` exists (`packages/clients/providers/src/core/cloud/`
-  plus `CloudProviderClientBridge` in `@scani/cloud-client`) that would
-  make the sole-egress claim true for pricing/AI/token-identity. **No app
-  uses it**, and nothing constructs the bridge outside tests, so this
-  service's `ai.*` and `pricing.*` routers have no live caller. Do not
-  reason about egress as though it were wired up.
-
-  What makes upstream budgets coherent across those processes is **Redis,
-  not topology**: `buildProviderRegistry` calls `setSharedRedis`, and
-  `OutflowRateLimiterRegistry` keys every limiter `rl:<namespace>` with no
-  per-service discriminator, so one window is shared by every process. An
-  in-process limiter would multiply every agreed cap by the process count.
-
-  **Set every provider API key on the api and worker too**, not only here —
-  see `.env.example`. Missing keys degrade silently rather than failing at
-  boot.
+  Per-provider rate limits use shared Redis windows across local processes.
 
 **Frontend apps (`apps/frontend/`):**
-- `apps/frontend/app` — Main React + Vite SPA (code under `src/v2/`).
+- `apps/frontend/app` — Main React + Vite SPA (code under `src/v3/`).
 - `apps/frontend/docs` — Astro docs site (type-checked with `astro check`,
   the one sanctioned exception to the `tsgo --noEmit` rule).
 
@@ -280,7 +264,7 @@ Everything else in the tree is where its name says it is; these three are not.
 - **Drizzle migrations** are flat, numbered SQL under
   `packages/infra/db/src/migrations/` (`0000_clean_start.sql` onward). There is no
   `meta/_journal.json` here; do not go looking for one to register a file in.
-- **The SPA's code is under `apps/frontend/app/src/v2/`**, not `src/`.
+- **The SPA's code is under `apps/frontend/app/src/v3/`**, not `src/`.
 
 ## Dependency Injection (typedi) — class-field pattern, not constructor params
 
@@ -753,7 +737,7 @@ to the root `.env` and re-run `bun scripts/sync-env.ts`.
 ### Gotchas
 
 - **One-shot containers linger after clean exit.** `env-sync`, `deps`,
-  `migrate`, `minio-init` all `restart: "no"` and keep their names reserved
+  `migrate`, `seaweedfs-init` all `restart: "no"` and keep their names reserved
   after exiting. `bun dev:stack:down` removes them; `compose up` without
   prior `down` will hit a name-conflict error.
 - **Host-side `bun dev` needs SMTP in root `.env`.** The containerized stack

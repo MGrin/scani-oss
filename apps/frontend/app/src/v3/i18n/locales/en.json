@@ -148,7 +148,8 @@
       "metric": {
         "netWorth": "Net worth",
         "pnl": "PnL",
-        "pnlFull": "Profit and loss"
+        "pnlFull": "Profit and loss",
+        "returns": "Returns"
       },
       "period": {
         "label7d": "1W",
@@ -175,8 +176,17 @@
         "noHistory": "No history for this period yet",
         "noMeasurementSince": "No measurement since {{date}} — the last point is today's live total, not a rolled-up day.",
         "retry": "Retry",
+        "hideFigure": "Hide amount",
+        "showFigure": "Show amount",
+        "figureHidden": "Amount hidden",
         "realized": "Realized",
-        "unrealized": "Unrealized"
+        "unrealized": "Unrealized",
+        "returnsPending": "Working out how you did",
+        "returnsChartPending": "Working out how you did against Bitcoin, the S&P 500 and US prices",
+        "returnsNoChart": "Not enough measured days to draw the comparison yet.",
+        "returnsOverPeriod": "Returns · {{period}}",
+        "returnsSince": "Returns · since {{date}}",
+        "returnsNoRate": "The return is not computed for this period yet"
       },
       "quality": {
         "allPriced_one": "All {{count}} holding priced",
@@ -188,8 +198,8 @@
         "staleQuotes_other": "{{count}} stale quotes",
         "noBasis_one": "{{count}} no cost basis (gain is an upper bound)",
         "noBasis_other": "{{count}} no cost basis (gain is an upper bound)",
-        "unreviewedTransfers_one": "Realized PnL excludes {{count}} unconfirmed transfer",
-        "unreviewedTransfers_other": "Realized PnL excludes {{count}} unconfirmed transfers"
+        "unreviewedTransfers_one": "Realized PnL excludes {{count}} unclassified payment out",
+        "unreviewedTransfers_other": "Realized PnL excludes {{count}} unclassified payments out"
       },
       "dueIn": {
         "today": "Today",
@@ -254,13 +264,42 @@
         "perYear": "<value/> a year",
         "perYearUnit": "a year",
         "since": "Since {{date}}.",
-        "partial": "Some days could not be fully priced, so these figures may be off."
+        "partial": "Some days could not be fully priced, so these figures may be off.",
+        "headline": {
+          "up": "Up <amount/> since {{date}}",
+          "down": "Down <amount/> since {{date}}",
+          "flat": "Unchanged since {{date}}"
+        },
+        "attribution": {
+          "label": "Where it came from",
+          "contributed": "You put in",
+          "withdrew": "You took out",
+          "market": "Market",
+          "currency": "Currency",
+          "combined": "Market and currency",
+          "unvalued_one": "{{count}} movement could not be valued, so this split may be off.",
+          "unvalued_other": "{{count}} movements could not be valued, so this split may be off."
+        },
+        "chart": {
+          "you": "You",
+          "label": "Your portfolio against Bitcoin, the S&P 500 and US prices, over the period",
+          "unavailable": "The comparison chart could not be loaded. The figures above are unaffected.",
+          "truncated": "The chart samples the period to stay quick; the figures above use every day."
+        },
+        "gaps": {
+          "label": "Ahead or behind",
+          "caption": "What the same deposits and withdrawals would have come to in each instead. The percentage is what it returned.",
+          "vs": "vs {{name}}"
+        },
+        "details": "The rates behind this"
       }
     },
     "money": {
       "upcoming": {
         "overdueTotal_one": "Overdue, {{count}} bill",
         "overdueTotal_other": "Overdue, {{count}} bills",
+        "dayTotalEstimated_one": "Approximately, including {{count}} estimated bill:",
+        "dayTotalEstimated_other": "Approximately, including {{count}} estimated bills:",
         "noneAhead_one": "Nothing due in the next {{count}} day.",
         "noneAhead_other": "Nothing due in the next {{count}} days.",
         "seeRecurring": "See recurring payments",
@@ -802,7 +841,7 @@
       }
     },
     "realizedLedger": {
-      "answerTransfers": "Answer the waiting transfers",
+      "answerTransfers": "Answer the waiting payments out",
       "portion": "Part {{index}} of {{total}} of one {{noun}}",
       "noun": {
         "sale": "sale",
@@ -1232,7 +1271,11 @@
         "deleteConsequence": "Everything in this account goes, including every file you uploaded and its stored copy. Your login remains, with nothing in it. This cannot be undone.",
         "deleteInFlight": "Your data is being deleted.",
         "deleted": "All your data has been deleted",
-        "deleteFailed": "The delete failed"
+        "deleteFailed": "The delete failed",
+        "accountIntro": "Deleting your account removes the data above and the login itself. You are signed out and cannot sign back in to it.",
+        "accountTrigger": "Delete my account",
+        "accountConfirm": "Delete my account",
+        "accountConsequence": "Your data, your login and every signed-in device go. Signing up again with this email starts a new, empty account. This cannot be undone."
       },
       "export": {
         "title": "Your data",
@@ -1357,6 +1400,18 @@
         "changeConfirm": "Recalculate my gains on {{method}}",
         "changeInFlight": "Your gains are being recalculated.",
         "recomputing": "Recalculating your gains — figures across the app are still settling."
+      },
+      "accountDeletion": {
+        "failed": "Your account deletion did not complete, so the account is still here.",
+        "failedFallback": "Try again, or contact support and we will remove it.",
+        "pending": "Your account is being deleted.",
+        "retry": "Try again"
+      },
+      "reauth": {
+        "title": "Confirm it's you",
+        "description": "Deleting needs a recent sign-in. We'll email a 6-digit code to {{email}}.",
+        "send": "Email me a code",
+        "sending": "Sending…"
       }
     },
     "feedback": {
@@ -1368,7 +1423,7 @@
     "review": {
       "page": {
         "title": "Review",
-        "transfersTitle": "Transfers to confirm",
+        "transfersTitle": "Payments out to classify",
         "answered": "Answered",
         "balancesTitle": "Balance changes to explain"
       },
@@ -1378,7 +1433,7 @@
       "item": {
         "jobFailed": "{{job}} failed",
         "invoiceExtracted": "Invoice extracted",
-        "transfersToConfirm": "Transfers to confirm",
+        "transfersToConfirm": "Payments out to classify",
         "holdings_one": "{{count}} holding",
         "holdings_other": "{{count}} holdings",
         "holdingsWithSymbols_one": "{{count}} holding · {{symbols}}",
@@ -1398,8 +1453,8 @@
         "candidatesAcross_other": "{{count}} candidates across {{chains}}",
         "nothingFound": "nothing found",
         "labelled": "{{label}} · {{body}}",
-        "unpairedTransfers_one": "{{count}} transfer out with no matching deposit",
-        "unpairedTransfers_other": "{{count}} transfers out with no matching deposit",
+        "unpairedTransfers_one": "{{count}} payment out to classify",
+        "unpairedTransfers_other": "{{count}} payments out to classify",
         "balanceChangesToExplain": "Balance changes to explain",
         "unexplainedBalanceChanges_one": "{{count}} balance change we cannot explain",
         "unexplainedBalanceChanges_other": "{{count}} balance changes we cannot explain"
@@ -1477,13 +1532,13 @@
           "leftControl": "Recorded as a disposal",
           "untracked": "Recorded as still yours",
           "split": "Recorded — each part on its own terms",
-          "gone": "That transfer is no longer waiting",
+          "gone": "That payment out is no longer waiting",
           "splitRejected": "That division was not accepted",
           "fee": "Recorded as a fee"
         },
         "ownWalletNotice": "This went to a wallet you added, so the money is still yours. Pair it with the matching deposit, or record where it moved to — choosing that it left your portfolio books it as a sale.",
         "withdrawnNotice": "Scani withdrew an earlier answer on this transfer. It was given about a pairing we have since shown was not a transfer at all, so the question is back — and there may be no deposit here to point at.",
-        "withdrawnRuleNotice": "You took back the answer your rule gave this transfer, so it is back here for you to answer yourself. The rule will not answer it again."
+        "withdrawnRuleNotice": "You took back the answer your rule gave this payment out, so it is back here for you to answer yourself. The rule will not answer it again."
       },
       "destinationPicker": {
         "loading": "Loading your accounts…",
@@ -1500,6 +1555,8 @@
         "unreviewedBehaviour": "While these are unanswered, Scani books no gain on them — moving your own coins is not a sale, and guessing that it was is how an invented gain gets onto your chart. If one of these really did leave your portfolio, its gain is missing from your realized total until you say so.",
         "unreviewedNote": "Unanswered, this books no gain either way.",
         "candidateReason": {
+          "combined": "Together these {{count}} deposits make up the amount",
+          "matches": "Matches the amount and the time",
           "ambiguous": "Matches — but so does another deposit",
           "quantity": "Amount differs by {{pct}}",
           "time": "Outside the {{window}} window we match on",
@@ -1599,8 +1656,8 @@
         "reopen": {
           "internal": "The deposit this recorded on the other account is deleted with it — otherwise your next answer would count that money twice. If answering it moved that account's balance, that comes back off too. The transfer rejoins the queue.",
           "internalCreated": "That account tracked none of this token before you answered, so Scani created the holding as well as the deposit. Both are removed — unless something else has been recorded against that holding since, in which case it stays. The transfer rejoins the queue, and no other balance changes.",
-          "leftControl": "The gain this booked comes off your realized total until you answer it again, and the transfer rejoins the queue.",
-          "default": "The transfer rejoins the queue, and nothing about it is settled until you answer it again.",
+          "leftControl": "The gain this booked comes off your realized total until you answer it again, and the payment out rejoins the queue.",
+          "default": "The payment out rejoins the queue, and nothing about it is settled until you answer it again.",
           "declared": "This is a transfer you recorded yourself, so undoing it moves both balances back to what they were before it — the account it left goes back up, the account it arrived in goes back down — and removes both entries. It does not rejoin the queue: there is no question left to answer."
         },
         "gap": {
@@ -1617,13 +1674,13 @@
         "bulk": {
           "consequence": {
             "loading": "Working out what this would do…",
-            "none": "None of the selected transfers can be answered this way.",
-            "leftControl_one": "Counts {{count}} transfer as a disposal — about {{amount}} of proceeds against what you paid.",
-            "leftControl_other": "Counts {{count}} transfers as disposals — about {{amount}} of proceeds against what you paid.",
-            "leftControlUnpriced_one": "Counts {{count}} transfer as a disposal. Scani has no price for it that day, so nothing is booked.",
-            "leftControlUnpriced_other": "Counts {{count}} transfers as disposals. Scani has no price for any of them on their day, so nothing is booked.",
-            "untracked_one": "Records {{count}} transfer as still yours, somewhere Scani cannot see. Nothing is realized.",
-            "untracked_other": "Records {{count}} transfers as still yours, somewhere Scani cannot see. Nothing is realized.",
+            "none": "None of the selected payments out can be answered this way.",
+            "leftControl_one": "Counts {{count}} payment out as a disposal — about {{amount}} of proceeds against what you paid.",
+            "leftControl_other": "Counts {{count}} payments out as disposals — about {{amount}} of proceeds against what you paid.",
+            "leftControlUnpriced_one": "Counts {{count}} payment out as a disposal. Scani has no price for it that day, so nothing is booked.",
+            "leftControlUnpriced_other": "Counts {{count}} payments out as disposals. Scani has no price for any of them on their day, so nothing is booked.",
+            "untracked_one": "Records {{count}} payment out as still yours, somewhere Scani cannot see. Nothing is realized.",
+            "untracked_other": "Records {{count}} payments out as still yours, somewhere Scani cannot see. Nothing is realized.",
             "takesBack_one": "That takes about {{amount}} of realized gains back off the {{count}} currently counted as a disposal.",
             "takesBack_other": "That takes about {{amount}} of realized gains back off the {{count}} currently counted as disposals.",
             "takesBackUnpriced_one": "{{count}} of them is currently counted as a disposal, and Scani has no price for it, so nothing comes off.",
@@ -1644,20 +1701,20 @@
             "answered_other": "{{count}} are already answered “{{answer}}”. Reopen them from their own rows to change them.",
             "linked_one": "{{count}} is already linked to a deposit, so an answer here would change nothing.",
             "linked_other": "{{count}} are already linked to deposits, so an answer here would change nothing.",
-            "gone_one": "{{count}} is no longer a transfer that can be answered.",
-            "gone_other": "{{count}} are no longer transfers that can be answered."
+            "gone_one": "{{count}} is no longer a payment out that can be answered.",
+            "gone_other": "{{count}} are no longer payments out that can be answered."
           },
-          "deselect_one": "Deselect that {{count}} transfer",
-          "deselect_other": "Deselect those {{count}} transfers",
-          "overCap": "Select at most {{max}} transfers at a time.",
+          "deselect_one": "Deselect that {{count}} payment out",
+          "deselect_other": "Deselect those {{count}} payments out",
+          "overCap": "Select at most {{max}} payments out at a time.",
           "undo": "Undo",
           "toast": {
-            "leftControl_one": "{{count}} transfer counted as a disposal",
-            "leftControl_other": "{{count}} transfers counted as disposals",
-            "untracked_one": "{{count}} transfer recorded as still yours",
-            "untracked_other": "{{count}} transfers recorded as still yours",
-            "undone_one": "Put {{count}} transfer back the way it was",
-            "undone_other": "Put {{count}} transfers back the way they were",
+            "leftControl_one": "{{count}} payment out counted as a disposal",
+            "leftControl_other": "{{count}} payments out counted as disposals",
+            "untracked_one": "{{count}} payment out recorded as still yours",
+            "untracked_other": "{{count}} payments out recorded as still yours",
+            "undone_one": "Put {{count}} payment out back the way it was",
+            "undone_other": "Put {{count}} payments out back the way they were",
             "refused": "Nothing was changed",
             "undoFailed": "Could not undo that"
           }
@@ -1672,9 +1729,9 @@
         "revoke": "Take this rule back",
         "revokeCommit": "Take this rule back",
         "field": {
-          "counterparty": "This transfer went to",
+          "counterparty": "This payment went to",
           "key": "The rule will match",
-          "keyHint": "The amount is left out on purpose, so the next transfer to the same destination matches too.",
+          "keyHint": "The amount is left out on purpose, so the next payment to the same destination matches too.",
           "note": "What is this destination?",
           "notePlaceholder": "My Bybit deposit address",
           "verdict": "What the rule should do"
@@ -1685,44 +1742,44 @@
           "alwaysADisposal": "Answer it as a disposal"
         },
         "consequence": {
-          "askMe": "Every transfer to {{key}}, at any amount, stays in this queue and carries your note. Nothing is answered and no gain is booked — you still decide each one.",
-          "notADisposal": "Every transfer to {{key}}, at any amount, leaves this queue and is listed under Destination rules instead. Nothing is written to them: an unanswered transfer books no gain, and taking the rule back brings every one of them straight back here.",
-          "mark_other": "Answers {{count}} transfers to this destination as having left your portfolio, booking {{proceeds}} of proceeds. Every later transfer to it is answered the same way, unopened. Each one stays undoable on its own, and taking one back stops the rule covering that transfer for good.",
-          "markUnpriced_other": "{{count}} transfers to this destination are answered as having left your portfolio. None of them has a price on its day, so nothing is booked today. Every later transfer to it is answered the same way, unopened.",
+          "askMe": "Every payment out to {{key}}, at any amount, stays in this queue and carries your note. Nothing is answered and no gain is booked — you still decide each one.",
+          "notADisposal": "Every payment out to {{key}}, at any amount, leaves this queue and is listed under Destination rules instead. Nothing is written to them: an unanswered payment out books no gain, and taking the rule back brings every one of them straight back here.",
+          "mark_other": "Answers {{count}} payments out to this destination as having left your portfolio, booking {{proceeds}} of proceeds. Every later payment out to it is answered the same way, unopened. Each one stays undoable on its own, and taking one back stops the rule covering that payment out for good.",
+          "markUnpriced_other": "{{count}} payments out to this destination are answered as having left your portfolio. None of them has a price on its day, so nothing is booked today. Every later payment out to it is answered the same way, unopened.",
           "markUnpricedTail_other": "{{count}} of them have no price on their day and book nothing.",
-          "markFuture": "Nothing is waiting for this destination right now, so nothing is answered today. Every later transfer to it is answered as having left your portfolio, unopened, and books a gain.",
-          "mark_one": "Answers {{count}} transfer to this destination as having left your portfolio, booking {{proceeds}} of proceeds. Every later transfer to it is answered the same way, unopened. Each one stays undoable on its own, and taking one back stops the rule covering that transfer for good.",
-          "markUnpriced_one": "{{count}} transfer to this destination is answered as having left your portfolio. None of them has a price on its day, so nothing is booked today. Every later transfer to it is answered the same way, unopened.",
+          "markFuture": "Nothing is waiting for this destination right now, so nothing is answered today. Every later payment out to it is answered as having left your portfolio, unopened, and books a gain.",
+          "mark_one": "Answers {{count}} payment out to this destination as having left your portfolio, booking {{proceeds}} of proceeds. Every later payment out to it is answered the same way, unopened. Each one stays undoable on its own, and taking one back stops the rule covering that payment out for good.",
+          "markUnpriced_one": "{{count}} payment out to this destination is answered as having left your portfolio. None of them has a price on its day, so nothing is booked today. Every later payment out to it is answered the same way, unopened.",
           "markUnpricedTail_one": "{{count}} of them has no price on its day and books nothing."
         },
         "revokeConsequence": {
-          "notADisposal_one": "{{count}} transfer comes back into the queue. Nothing was written to it, so there is nothing to undo.",
-          "notADisposal_other": "{{count}} transfers come back into the queue. Nothing was written to them, so there is nothing to undo.",
-          "askMe": "Transfers to this destination stop carrying your note. They were never answered by the rule, so nothing else changes.",
-          "markKeep_one": "The rule stops answering new transfers to this destination. The {{count}} transfer it already answered stays answered and keeps booking its gain — tick the box above to take it back too.",
-          "markKeep_other": "The rule stops answering new transfers to this destination. The {{count}} transfers it already answered stay answered and keep booking their gains — tick the box above to take them back too.",
-          "markWithdraw_one": "The rule stops answering new transfers, and the {{count}} transfer it answered goes back into the queue unanswered. Its gain stops being booked.",
-          "markWithdraw_other": "The rule stops answering new transfers, and the {{count}} transfers it answered go back into the queue unanswered. Their gains stop being booked."
+          "notADisposal_one": "{{count}} payment out comes back into the queue. Nothing was written to it, so there is nothing to undo.",
+          "notADisposal_other": "{{count}} payments out come back into the queue. Nothing was written to them, so there is nothing to undo.",
+          "askMe": "Payments out to this destination stop carrying your note. They were never answered by the rule, so nothing else changes.",
+          "markKeep_one": "The rule stops answering new payments out to this destination. The {{count}} payment out it already answered stays answered and keeps booking its gain — tick the box above to take it back too.",
+          "markKeep_other": "The rule stops answering new payments out to this destination. The {{count}} payments out it already answered stay answered and keep booking their gains — tick the box above to take them back too.",
+          "markWithdraw_one": "The rule stops answering new payments out, and the {{count}} payment out it answered goes back into the queue unanswered. Its gain stops being booked.",
+          "markWithdraw_other": "The rule stops answering new payments out, and the {{count}} payments out it answered go back into the queue unanswered. Their gains stop being booked."
         },
         "row": {
-          "hiding_one": "Keeping {{count}} transfer out of the queue",
-          "hiding_other": "Keeping {{count}} transfers out of the queue",
-          "labelling_one": "Naming {{count}} transfer in the queue",
-          "labelling_other": "Naming {{count}} transfers in the queue",
-          "answering_one": "Answered {{count}} transfer as a disposal",
-          "answering_other": "Answered {{count}} transfers as a disposal"
+          "hiding_one": "Keeping {{count}} payment out out of the queue",
+          "hiding_other": "Keeping {{count}} payments out out of the queue",
+          "labelling_one": "Naming {{count}} payment out in the queue",
+          "labelling_other": "Naming {{count}} payments out in the queue",
+          "answering_one": "Answered {{count}} payment out as a disposal",
+          "answering_other": "Answered {{count}} payments out as a disposal"
         },
         "hidden": {
-          "title": "Transfers your rules are holding back",
+          "title": "Payments out your rules are holding back",
           "body": "None of these has been answered. They are waiting, out of the queue, and take the rule back to bring them in."
         },
         "empty": {
           "title": "No destination rules yet",
-          "body": "Open a transfer in the queue and write down where it went. Every later transfer to the same destination will carry your note, whatever the amount — and destinations you mark are answered for you."
+          "body": "Open a payment out in the queue and write down where it went. Every later payment to the same destination will carry your note, whatever the amount — and destinations you mark are answered for you."
         },
         "notice": {
           "label": "Your note about this destination",
-          "markExempt": "You marked this destination a disposal, and you took that answer back on this transfer. It will not be answered automatically again."
+          "markExempt": "You marked this destination a disposal, and you took that answer back on this payment out. It will not be answered automatically again."
         },
         "toast": {
           "created": "Rule saved",
@@ -1854,11 +1911,11 @@
         },
         "statement": {
           "title": "Upload a statement file",
-          "description": "A CSV, TSV, OFX or QIF export from a bank or a broker. We read the holdings off it and show you what we found before anything is saved."
+          "description": "A CSV, TSV, OFX or QIF export from a bank or a broker. We import its holdings and transactions straight away, then show you what was added."
         },
         "either": {
           "title": "Upload a file",
-          "description": "A balance screenshot, a bank statement or a broker's export. We read the holdings off it and show you what we found before anything is saved."
+          "description": "A balance screenshot, a bank statement or a broker's export. A screenshot is shown to you before anything is saved; a statement file is imported straight away."
         },
         "whereItBelongs": "Where it belongs"
       },
@@ -2511,7 +2568,34 @@
         "walkUnconfirmed": "{{provider}}: the paginator did not confirm it reached the end of this account's history",
         "ibkrStatementWindow": "ibkr: this Flex statement covers {{from}} onward, so anything before that was never fetched. The range is a setting on your saved Flex Query and Scani does not choose it — to reach further back, change that query’s date range (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), save, and re-run the import.",
         "ibkrStatementWindowPeriod": "ibkr: this Flex statement covers {{from}} onward (period \"{{period}}\"), so anything before that was never fetched. The range is a setting on your saved Flex Query and Scani does not choose it — to reach further back, change that query’s date range (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), save, and re-run the import.",
-        "ibkrStatementWindowUnknown": "ibkr: this Flex statement does not say which window it covers, so it cannot be read as the account’s whole history. The range is a setting on your saved Flex Query and Scani does not choose it — to reach further back, change that query’s date range (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), save, and re-run the import."
+        "ibkrStatementWindowUnknown": "ibkr: this Flex statement does not say which window it covers, so it cannot be read as the account’s whole history. The range is a setting on your saved Flex Query and Scani does not choose it — to reach further back, change that query’s date range (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), save, and re-run the import.",
+        "pageCapRetracted": "{{provider}}: {{walks}} — the rest of this account's history was never fetched",
+        "pageCapMissingTxIds": "{{provider}}: {{walks}} — some deposits and withdrawals in this run carry no on-chain transaction id",
+        "pageCapAddressHistory": "the address history stopped at its {{pages}}-page cap after {{rows}} rows",
+        "pageCapUserTransactionsLedger": "the user-transactions ledger stopped at its {{pages}}-page cap after {{rows}} rows",
+        "pageCapCryptoTransactionsLookup": "the crypto-transactions lookup stopped at its {{pages}}-page cap after {{rows}} rows",
+        "pageCapAccountList": "the account list stopped at its {{pages}}-page cap after {{rows}} rows",
+        "pageCapAccountTransactions": "transactions for account {{account}} stopped at its {{pages}}-page cap after {{rows}} rows",
+        "pageCapSymbolTrades": "{{symbol}} trades stopped at its {{pages}}-page cap after {{rows}} rows",
+        "pageCapTransfers": "transfers stopped at its {{pages}}-page cap after {{rows}} rows",
+        "pageCapCurrencyDeposits": "{{currency}} deposits stopped at its {{pages}}-page cap after {{rows}} rows",
+        "pageCapCurrencyWithdrawals": "{{currency}} withdrawals stopped at its {{pages}}-page cap after {{rows}} rows",
+        "pageCapFeed": "the {{path}} feed stopped at its {{pages}}-page cap after {{rows}} rows",
+        "pageCapTrxTransfers": "the TRX transfer history stopped at its {{pages}}-page cap after {{rows}} rows",
+        "pageCapTrc20Transfers": "the TRC-20 transfer history stopped at its {{pages}}-page cap after {{rows}} rows",
+        "pageCapFurtherWalks_one": "{{count}} further walk did the same",
+        "pageCapFurtherWalks_other": "{{count}} further walks did the same",
+        "ibkrMissingSections_one": "ibkr: this Flex statement carried no {{sections}} section, so {{consequences}}. If you have had any, add it to your Flex Query (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), save, and re-run the import.",
+        "ibkrMissingSections_other": "ibkr: this Flex statement carried no {{sections}} sections, so {{consequences}}. If you have had any, add them to your Flex Query (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), save, and re-run the import.",
+        "ibkrMissingTrades": "no buys or sells could be imported",
+        "ibkrMissingCashTransactions": "no dividends, interest, deposits, withdrawals or fees could be imported",
+        "ibkrUnmappedCashTypes_one": "ibkr: {{count}} cash transaction in this statement had a type Scani does not recognise — {{types}} — so it was not imported. This one is ours to fix, not yours: please report it.",
+        "ibkrUnmappedCashTypes_other": "ibkr: {{count}} cash transactions in this statement had a type Scani does not recognise — {{types}} — so they were not imported. This one is ours to fix, not yours: please report it.",
+        "ibkrFurtherTypes_one": "{{count}} further type",
+        "ibkrFurtherTypes_other": "{{count}} further types",
+        "ibkrIncompleteCashRows_one": "ibkr: {{count}} cash transaction in this statement arrived with a required field blank — {{blanks}} — so it was not imported. If your Flex Query is missing those columns, add them (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), save, and re-run the import. If the columns are there, the data came to us blank and this one is ours: please report it.",
+        "ibkrIncompleteCashRows_other": "ibkr: {{count}} cash transactions in this statement arrived with a required field blank — {{blanks}} — so they were not imported. If your Flex Query is missing those columns, add them (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), save, and re-run the import. If the columns are there, the data came to us blank and this one is ours: please report it.",
+        "ibkrBlankFields": "{{rows}} with no {{fields}}"
       },
       "wallet": {
         "subject": "this wallet",
@@ -2611,7 +2695,10 @@
           "transactions_one": "{{count}} transaction",
           "transactions_other": "{{count}} transactions",
           "statementClose": "Statement close",
-          "noClosingBalance": "No closing balance"
+          "noClosingBalance": "No closing balance",
+          "balanceUnknown": "Balance unknown",
+          "fromRows": "From these rows. Set the real balance if it held money before",
+          "setBalance": "Set the balance"
         },
         "warningsTitle_one": "{{count}} warning",
         "warningsTitle_other": "{{count}} warnings",
@@ -2649,6 +2736,7 @@
         "unpricedNote_one": "{{count}} row has no price yet. It is saved either way — refresh it from Holdings, or wait for the next hourly pricing sweep.",
         "unpricedNote_other": "{{count}} rows have no price yet. They are saved either way — refresh them from Holdings, or wait for the next hourly pricing sweep.",
         "addMore": "Add more",
+        "seeOnHome": "See it on Home",
         "unreadablePayload": "This run finished without a result we can read. Nothing about your portfolio changed."
       },
       "generic": {

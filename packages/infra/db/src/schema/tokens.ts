@@ -54,33 +54,6 @@ export interface TokenMetadata {
   [key: string]: unknown;
 }
 
-/**
- * Where a `tokens.decimals` came from. Two authorities and no third (SC-544).
- *
- * `chain` — the asset's own chain answered: `decimals()` on the authoritative
- * EVM contract, the mint's `getTokenSupply`, or the chain's native decimals.
- * Which identity on a multi-namespace row is allowed to answer is
- * `identityAuthority()` in `./token-identity-authority`, not a rule
- * restated here.
- *
- * `iso4217` — a currency's minor unit, which is defined rather than observed.
- *
- * `protocol` — an L1 native asset whose smallest unit is fixed by its own
- * protocol and deployed in no contract: ADA's lovelace, DOT's Planck, XRP's
- * drop. The same KIND of authority as `iso4217` rather than a weaker one, and
- * only for the entries in `PROTOCOL_NATIVE_DECIMALS`, each of which carries the
- * command that establishes it.
- *
- * `user` — a custom token its owner created. There is no chain and no standard
- * for one, so its owner is the only authority there can be; refusing their
- * value would leave the one asset class where the answer is knowable
- * permanently NULL.
- *
- * Anything else writes NULL, and an absent answer is never a default. Every
- * wrong row in production came from a writer that had no source and supplied a
- * number anyway — `typeCode === 'crypto' ? 18 : 2` and a zod `.default(2)` are
- * the same expression in different clothes, and both are gone (SC-544).
- */
 export type DecimalsSource = 'chain' | 'iso4217' | 'protocol' | 'user';
 
 /** A decimals and the authority that produced it, or neither. */
@@ -218,16 +191,6 @@ export const tokens = pgTable(
      * characters themselves and nothing re-scores it (SC-197).
      */
     lookalikeOf: text('lookalike_of'),
-    /**
-     * The owner of a CUSTOM token (`private-company` / `other`), which is
-     * private to them (SC-1285, mgrin 2026-09-21). NULL on every catalog
-     * token, which nobody owns — and NULL on a custom token means nobody may
-     * see or price it, never that everybody may. Ownership is a question about
-     * the type as well as this column: `customTokenVisibleTo` in
-     * `@scani/domain` is the one predicate that asks both. Symbol uniqueness
-     * is per owner: two partial unique indexes from the SC-1285 migration,
-     * declared below with the table's other indexes.
-     */
     // `users.base_currency_id` references this table, so the return type is
     // stated: inferring it would be circular.
     createdByUserId: uuid('created_by_user_id').references((): AnyPgColumn => users.id, {
@@ -339,9 +302,11 @@ export const tokenPriceEditHistory = pgTable(
       .references(() => tokens.id, { onDelete: 'restrict' }),
     previousPrice: text('previous_price'),
     newPrice: text('new_price').notNull(),
-    editedByUserId: uuid('edited_by_user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'restrict' }),
+    // NULL once the author's account or data is deleted (SC-1261): the edit
+    // is kept and the author is not named.
+    editedByUserId: uuid('edited_by_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     reason: text('reason'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },

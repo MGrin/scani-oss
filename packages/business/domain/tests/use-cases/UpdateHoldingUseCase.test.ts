@@ -242,13 +242,18 @@ describe('UpdateHoldingUseCase', () => {
   });
 
   /**
-   * The correction has to be dated BEFORE this edit's own observation, and
+   * The correction must not be dated AFTER this edit's own observation, and
    * the only thing that makes that true is the ordering inside `run`: the
    * synthesis happens before `recordBalanceObservation`. Reverse the two and
    * the correction supersedes itself, restating an interval one millisecond
    * long and leaving the whole delta as a step on today.
+   *
+   * Equal is allowed (SC-1367). Both stamps come from the clock a few
+   * statements apart, so under load they share a millisecond, and that is
+   * correct: the anchor walk reads `(from, to]`, so a correction stamped on
+   * its observation is still inside the interval that observation closes.
    */
-  test('a correction lands before the observation this edit appends', async () => {
+  test('a correction is not dated after the observation this edit appends', async () => {
     await withTestDb(async (tx) => {
       const { user, holding } = await scaffold(tx);
 
@@ -258,7 +263,9 @@ describe('UpdateHoldingUseCase', () => {
       const [observation] = await observationsFor(tx, holding.id);
       expect(ledger.length).toBe(1);
       expect(ledger[0]!.kind).toBe('correction');
-      expect(ledger[0]!.occurredAt.getTime()).toBeLessThan(observation!.observedAt.getTime());
+      expect(ledger[0]!.occurredAt.getTime()).toBeLessThanOrEqual(
+        observation!.observedAt.getTime()
+      );
     });
   });
 
@@ -302,20 +309,6 @@ describe('UpdateHoldingUseCase', () => {
   });
 });
 
-/**
- * SC-564 — naming a pot that already exists.
- *
- * `holdings.label` shipped with SC-330 and production still held 100 rows with
- * a NULL one, because the only writes were at CREATION time and the four RUB
- * rows the feature was designed for predate the column. These assert the write
- * path that was missing and, more importantly, the three things it must NOT do
- * on the way.
- *
- * **The negative tests are the point.** A rename that also synthesized a flow,
- * appended an observation or bumped `lastUpdated` would still store the name —
- * so a test asserting only "the label is now Savings" passes against every one
- * of those bugs. That is the same trap as the observation tests above.
- */
 describe('UpdateHoldingUseCase — pot names (SC-564)', () => {
   test('a name can be set on a holding that already exists', async () => {
     await withTestDb(async (tx) => {
@@ -527,11 +520,6 @@ describe('UpdateHoldingUseCase — a name has to tell the rows apart (SC-564)', 
   });
 
   test('a synced sibling does not block the name — that pair is two positions', async () => {
-    // `findUnsyncedByAccountAndTokens` is the population, matching the create
-    // path: an importer owns its own row and overwrites it every sync, so a
-    // hand-named pot beside a synced row is two positions rather than one
-    // duplicated. Production has exactly this at Airwallex — a manual USD pot
-    // with its own APY schedule beside the synced USD balance.
     await withTestDb(async (tx) => {
       const { user, account, token, first } = await twoRubRows(tx);
       await makeHolding(tx, {
@@ -616,22 +604,6 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
 
   const HOUR = 60 * 60 * 1000;
 
-  /**
-   * A cash holding with the observations the daily APY payout leaves behind.
-   *
-   * `sync-capture` because that is what `HoldingService.recordBalanceObservation`
-   * writes whatever the caller — which is why `BalanceGapService`'s
-   * `owner-stated` suppression has never fired on the manual path, however
-   * confidently its docblock says SC-510 already asked.
-   *
-   * Three of them, a day apart, because `ApplyApyPayoutsUseCase` runs daily
-   * and that is what mgrin's Revolut Savings row actually looks like. A
-   * freshly created holding has ONE, and with one there is no interval before
-   * the latest for a mis-dated flow to fall into — so the whole of SC-612 is
-   * invisible on a test fixture that omits the chain. `previousAgeHours` is
-   * the age of the most recent one, and it is the only variable in the control
-   * below.
-   */
   async function cashHoldingObservedToday(tx: Tx, previousAgeHours = 12) {
     const user = await makeUser(tx);
     const institution = await makeInstitution(tx);
@@ -1057,19 +1029,6 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
   });
 
   test('a declared transfer states its fee: the destination gets what ARRIVED (SC-857)', async () => {
-    // The measured case, reduced. A wire leaves 251.33 and lands 250.00; the
-    // 1.33 is the bank's. Before this, `moveDeclaredTransfer` had one
-    // `quantity` and applied it to both legs, so the owner's only two options
-    // were to overstate the destination or understate the source — and the
-    // production record shows the first, reversed 28 minutes later by a
-    // separate `correction` row.
-    //
-    // The fee is an OUTFLOW FROM THE SOURCE, not a reduction of the arrival,
-    // and the difference is the whole design. It is a `kind='fee'` sibling of
-    // the withdrawal — the pattern `StatementTransactionIngester` already
-    // writes and the Airwallex importer already produces — so the two
-    // record-keepers now describe one movement the same way, which is what
-    // SC-858 could not reconcile.
     await withTestDb(async (tx) => {
       const { user, institution, token, holding } = await cashHoldingObservedToday(tx);
       const other = await makeAccount(tx, { userId: user.id, institutionId: institution.id });

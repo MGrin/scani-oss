@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { buildOpenApiDocument } from '../../src/presentation/openapi';
+import { buildOpenApiDocument, renderScalarHtml } from '../../src/presentation/openapi';
 import { appRouter } from '../../src/presentation/router';
 
 /**
@@ -104,5 +104,26 @@ describe('OpenAPI document', () => {
     };
     const schema = components.responses.error.content['application/json']?.schema;
     expect(schema?.properties).toHaveProperty('error');
+  });
+});
+
+// SC-1353: the docs page runs on the origin that holds the scani-cloud session
+// cookie, and it loaded `@scalar/api-reference` from jsDelivr with no version
+// and no integrity. Whatever that URL served next would run with the cookie.
+describe('the API reference page loads a pinned, integrity-checked script (SC-1353)', () => {
+  const html = renderScalarHtml('/openapi.json');
+  const tags = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"[^>]*>/g)];
+
+  test('every external script names an exact version and carries an integrity hash', () => {
+    expect(tags.length).toBeGreaterThan(0);
+    for (const [tag, src] of tags) {
+      expect(src).toMatch(/@\d+\.\d+\.\d+\//);
+      expect(tag).toMatch(/\bintegrity="sha384-[A-Za-z0-9+/=]{64}"/);
+      expect(tag).toContain('crossorigin="anonymous"');
+    }
+  });
+
+  test('the spec URL is still wired (control)', () => {
+    expect(html).toContain('data-url="/openapi.json"');
   });
 });

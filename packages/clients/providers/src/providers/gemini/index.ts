@@ -277,7 +277,11 @@ export class GeminiProvider
       // Last allowed page, and the cursor was still advancing into older
       // trades. Everything before this point is missing.
       if (page === MAX_TRADE_PAGES - 1) {
-        capped.note({ walk: `${symbol} trades`, pages: MAX_TRADE_PAGES, rows: all.length });
+        capped.note({
+          walk: { kind: 'symbolTrades', symbol },
+          pages: MAX_TRADE_PAGES,
+          rows: all.length,
+        });
       }
     }
     return all;
@@ -308,7 +312,7 @@ export class GeminiProvider
       if (headerToken === continuationToken) break;
       continuationToken = headerToken;
       if (page === MAX_TRANSFER_PAGES - 1) {
-        capped.note({ walk: 'transfers', pages: MAX_TRANSFER_PAGES, rows: all.length });
+        capped.note({ walk: { kind: 'transfers' }, pages: MAX_TRANSFER_PAGES, rows: all.length });
       }
     }
     return all;

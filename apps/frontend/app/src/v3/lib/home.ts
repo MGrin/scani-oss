@@ -122,19 +122,93 @@ export function homePeriodRange(
 }
 
 /**
- * The two things the hero chart can show. A segmented control rather than two
- * stacked charts: they answer the same question — *what changed* — in two
- * currencies of meaning, and a phone that shows both at once shows neither.
- * v2 made the same call with a pair of tabs.
+ * The three things the hero chart can show. A segmented control rather than
+ * three stacked charts: they answer the same question — *what changed* — in
+ * three currencies of meaning, and a phone that shows them all at once shows
+ * none of them. v2 made the same call with a pair of tabs.
+ *
+ * Returns joined them in SC-1301. It is a third value of a control that
+ * already existed rather than a new mechanism, and the reason is where the
+ * comparison chart was: below the fold, under the hero that already owns the
+ * screen, so a reader who opens the app to look at money had to scroll past
+ * the thing they came for.
  */
-export type HomeMetric = 'net-worth' | 'pnl';
+export type HomeMetric = 'net-worth' | 'pnl' | 'returns';
 
 export const HOME_METRICS: readonly { key: HomeMetric; labelKey: string }[] = [
   { key: 'net-worth', labelKey: 'v3.home.metric.netWorth' },
   { key: 'pnl', labelKey: 'v3.home.metric.pnl' },
+  { key: 'returns', labelKey: 'v3.home.metric.returns' },
 ];
 
 export const HOME_METRIC_KEYS: readonly HomeMetric[] = HOME_METRICS.map((metric) => metric.key);
+
+export interface HomeMetricChoice {
+  /** What to render. Never `returns` while the tab is not offered. */
+  metric: HomeMetric;
+  /** Whether the Returns tab appears in the control at all. */
+  offered: boolean;
+}
+
+/**
+ * Whether the Returns tab is on offer, and what to show if it is not
+ * (SC-1301).
+ *
+ * **A tab that shows nothing teaches a newcomer that the app is broken**, so
+ * with no returns history it is not offered — and a stored `returns` from a
+ * reader who has since started over resolves to net worth.
+ * `useViewPreference`'s `allowed` list cannot do that for us: the option
+ * exists, it is the DATA behind it that does not.
+ *
+ * **The pending case is asymmetric on purpose.** A reader whose stored choice
+ * is Returns gets the tab immediately and watches the sentence arrive; anyone
+ * else gets it only once `getReturns` has answered with money. Offering it to
+ * everybody while the call is in flight makes a fresh account watch a tab
+ * appear and vanish; offering it to nobody makes a returning reader see net
+ * worth for one round trip and then be moved, which reads as the app changing
+ * its mind.
+ */
+export function resolveHomeMetric({
+  chosen,
+  hasReturns,
+  returnsPending,
+}: {
+  chosen: HomeMetric;
+  hasReturns: boolean;
+  returnsPending: boolean;
+}): HomeMetricChoice {
+  const offered = hasReturns || (chosen === 'returns' && returnsPending);
+  return { metric: chosen === 'returns' && !offered ? 'net-worth' : chosen, offered };
+}
+
+/**
+ * What the Returns tab asks `getReturns` for: exactly the days the chart draws
+ * (SC-1305).
+ *
+ * **This used to be a TABLE mapping the chart's five ranges onto the three
+ * windows the router offered**, and the widening it forced was the defect. Any
+ * range of 365 days or fewer that did not begin on 1 January became `1y`, so
+ * 1M, 3M and 6M produced the identical window, the identical query and the
+ * identical chart — the period control moved and nothing a reader could see
+ * changed. A caption saying "measured over 1Y" dutifully reported that, which
+ * made it read as an explanation rather than as a defect.
+ *
+ * The direction of accommodation is now the other way round: the screen picks
+ * the range and the API answers it. `resolveReturnWindow` has carried
+ * `kind: 'custom'` since SC-457; only the router's schema refused it.
+ *
+ * It goes through `homePeriodRange` rather than `periodRange` so the returns
+ * request and the net-worth series share one window per period per calendar
+ * day — the window IS the query key, and two keys computed milliseconds apart
+ * are two requests (SC-164).
+ */
+export function returnsWindowRequest(
+  period: HomePeriod,
+  now: Date = new Date()
+): { kind: 'custom'; from: Date; to: Date } {
+  const { from, to } = homePeriodRange(period, now);
+  return { kind: 'custom', from, to };
+}
 
 /**
  * How much of a rolled-up day we could actually price.
@@ -268,15 +342,6 @@ export function summariseQuality(
   };
 }
 
-/**
- * The fraction, in words — the half of the question mgrin asked that nothing in
- * v3 answered: *how much of this figure is real*.
- *
- * A percentage **and** the counts behind it. The percentage is what a glance
- * takes, and it is the form the question was asked in; the counts are what
- * makes it checkable — "28 of 30 holdings" can be held against the holdings
- * list and "93%" cannot.
- */
 export function qualityHeadline(quality: FigureQuality, t: TFunction): string {
   const fraction = quality.complete
     ? t('v3.home.quality.allPriced', { count: quality.priceable })
@@ -408,7 +473,7 @@ export function fromFirstRecord<T extends NetWorthPoint>(series: readonly T[]): 
   return first === -1 ? [] : series.slice(first);
 }
 
-export interface PeriodDelta {
+interface PeriodDelta {
   absolute: number;
   /** `null` when the baseline is zero — a change from nothing has no ratio. */
   percent: number | null;

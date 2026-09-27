@@ -74,7 +74,29 @@ const TRACKED: readonly string[] = (() => {
     );
     process.exit(2);
   }
-  return listed.stdout.toString().split('\0').filter(Boolean);
+  const files = listed.stdout.toString().split('\0').filter(Boolean);
+  // `git ls-files` against an index file that does not exist exits 0 with no
+  // output and no stderr, so "the tree is empty" and "the tree could not be
+  // read" are one reading. A scratch index removed under a running test
+  // produced 43 inventory errors naming every router and package, none naming
+  // the cause (SC-1234). An EMPTY index that exists is a real, empty tree and
+  // still runs every check.
+  if (files.length === 0) {
+    const where = Bun.spawnSync(['git', 'rev-parse', '--git-path', 'index'], { cwd: REPO_ROOT });
+    const index = path.resolve(REPO_ROOT, where.stdout.toString().trim());
+    if (!where.success || !existsSync(index)) {
+      console.error(
+        'docs:check COULD NOT READ the tree — no finding would be about the repository.\n' +
+          `  \`git ls-files -z\` exited ${listed.exitCode} with no output` +
+          `${listed.stderr.length > 0 ? ` and stderr: ${listed.stderr.toString().trim()}` : ' and empty stderr'},\n` +
+          `  and the index it reads is ${where.success ? `MISSING: ${index}` : 'unresolvable'}` +
+          `${process.env.GIT_INDEX_FILE ? ` (GIT_INDEX_FILE=${process.env.GIT_INDEX_FILE})` : ''}.\n` +
+          '  git answers a missing index with an empty listing at rc=0, which reads as an empty tree.'
+      );
+      process.exit(2);
+    }
+  }
+  return files;
 })();
 
 // Direct children of a tracked directory, split into files and subdirectories.
@@ -1209,44 +1231,6 @@ function checkPackageInventory(): void {
     );
   }
 }
-
-// =============================================================================
-// Check 14 — the published docs site links only to the public repository
-// =============================================================================
-//
-// SC-589. Everything under `apps/frontend/docs/` is built into the site a
-// stranger reads, so a link in it is a promise made in public. One page linked
-// a design note in the closed repository this mirror is published from: a 404
-// for every reader, and it printed that repository's name on a public page
-// beside a real hostname.
-//
-// Nothing else could have seen it. A dead link compiles as MDX; the drift scan
-// looks for private CONTENT markers and a repository URL is not one; the line
-// was byte-identical in both repositories, so a cross-repo diff had nothing to
-// compare.
-//
-// THE RULE IS POSITIVE, and that is load-bearing rather than a style choice.
-// The obvious spelling is a denylist of the closed repository's slug — which
-// would have to write that slug into a file that ships here. Stated generally,
-// because it is worth more than this one check: A GUARD AGAINST A DISCLOSURE,
-// WRITTEN AS A DENYLIST, IS THE DISCLOSURE. The denied string has to be
-// committed somewhere in order to be denied, and a guard is not exempt from
-// what it guards.
-//
-// So this asserts the ALLOWED repository instead: every
-// `github.com/MGrin/<repo>` link under the docs app must name `scani-oss`. It
-// catches a link to the closed repository without naming it, and it catches a
-// link to any other repository too — which a denylist of one slug never would.
-//
-// If you are here to simplify this to a denylist, that paragraph is the reason
-// not to, and it is not specific to repository names: the same trade appears
-// wherever a check names the bad value rather than the good one.
-//
-// Matching a WHOLE path segment is what makes the comparison safe. The slug
-// this is really guarding against is a strict prefix of the allowed one, so a
-// substring test reports every correct link as a violation; a positive and a
-// negative control for exactly that live in
-// `scripts/tests/docs-site-repo-links.test.ts`.
 
 const DOCS_APP = 'apps/frontend/docs';
 const DOCS_SITE_REPO = 'scani-oss';

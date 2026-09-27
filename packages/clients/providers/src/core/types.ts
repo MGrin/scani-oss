@@ -153,8 +153,27 @@ export interface JobNotice {
    * whatever a year-old row holds.
    */
   params?: Readonly<Record<string, string | number>>;
+  /**
+   * Variable-length lists the key interpolates, one param each (SC-1028).
+   *
+   * `params` stays flat, so a sentence naming "these three walks" or "these
+   * two sections" cannot pre-join its clauses into one string without
+   * freezing them in English. Each item is a notice of its own; the client
+   * renders every item, joins them with `Intl.ListFormat` in the reader's
+   * language, and passes the result under the list's name. One warning stays
+   * one line, so the warning count still means what it meant.
+   *
+   * If ANY key in the tree fails to resolve, the client renders the top-level
+   * `text` rather than a sentence that is part translated and part English.
+   */
+  lists?: Readonly<Record<string, JobNoticeList>>;
   /** The English sentence. ALWAYS present, whether or not there is a key. */
   text: string;
+}
+
+export interface JobNoticeList {
+  type: 'conjunction' | 'disjunction';
+  items: readonly JobNotice[];
 }
 
 /**

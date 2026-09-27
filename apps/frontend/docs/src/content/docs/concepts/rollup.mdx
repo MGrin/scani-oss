@@ -36,7 +36,7 @@ job runs at 04:00 UTC after every ingester, reconciliation, and
 | `costBasis` | Sum of remaining open lots' cost in the row's base currency (FX-converted at purchase time). Nullable for pre-C3 rows. |
 | `realizedPnl` | Cumulative gain/loss from closed positions up to `snapshotDate`. |
 | `unrealizedPnl` | `totalValue - costBasis`. |
-| `computedAt` | When the rollup last wrote this row. |
+| `computedAt` | When this row's values last changed. A re-run that reproduces them leaves the row, and this stamp, alone. |
 
 **Primary key:** `(userId, scopeKind, scopeId, snapshotDate,
 baseCurrencyId)`. Indexes on `(userId, snapshotDate desc)` and

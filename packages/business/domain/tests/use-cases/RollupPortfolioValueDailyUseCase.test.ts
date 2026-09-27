@@ -18,8 +18,9 @@ import { withAdvisoryLock } from '@scani/db';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import Decimal from 'decimal.js';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, inArray, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
+import { HoldingTransactionRepository } from '../../src/repositories/HoldingTransactionRepository';
 import { PortfolioValueDailyRepository } from '../../src/repositories/PortfolioValueDailyRepository';
 import { TokenPriceRepository } from '../../src/repositories/TokenPriceRepository';
 import {
@@ -282,6 +283,35 @@ describe('RollupPortfolioValueDailyUseCase', () => {
     expect(u1Rows[0]?.coverageQuality).toBe('full');
     // Sanity: summary.daysComputed >= our 6 (other DB users may add).
     expect(summary.daysComputed).toBeGreaterThanOrEqual(6);
+  });
+
+  // SC-1320: a history backfill re-derives hundreds of unchanged days, and the
+  // api's returns cache keys on the newest computed_at.
+  test('a second run over unchanged inputs rewrites no row in any scope', async () => {
+    const f = fixture!;
+    const userId = f.userIds[0]!;
+    const stamps = async () =>
+      (
+        await db
+          .select({
+            key: sql<string>`${schema.portfolioValueDaily.scopeKind} || ':' || ${schema.portfolioValueDaily.scopeId} || ':' || ${schema.portfolioValueDaily.snapshotDate}`,
+            computedAt: schema.portfolioValueDaily.computedAt,
+          })
+          .from(schema.portfolioValueDaily)
+          .where(eq(schema.portfolioValueDaily.userId, userId))
+      )
+        .map((r) => `${r.key}@${r.computedAt.toISOString()}`)
+        .sort();
+
+    const useCase = Container.get(RollupPortfolioValueDailyUseCase);
+    await useCase.execute({ lookbackDays: 3 });
+    const first = await stamps();
+    // The control: the fixture reaches more than the user scope, so a
+    // derivation that is not deterministic has somewhere to show it.
+    expect(first.filter((s) => !s.startsWith('user:')).length).toBeGreaterThan(0);
+
+    await useCase.execute({ lookbackDays: 3 });
+    expect(await stamps()).toEqual(first);
   });
 
   test('captures per-user errors without aborting the run', async () => {
@@ -881,9 +911,9 @@ describe('RollupPortfolioValueDailyUseCase', () => {
 
     expect(holdingRow?.coverageQuality).not.toBe('full');
     expect(holdingRow?.coverageQuality).toBe('partial');
-    // The figure survives. Bounding the claim is the fix; withholding the
-    // number would empty the chart for every newly-onboarded user, which
-    // `PortfolioValuationAtTimeService` deliberately does not do.
+    // This stubs the valuation. Since SC-1323 the real one never hands the
+    // rollup a before-records holding — it leaves it out of the day — so
+    // this pins only what `upsertScopeRow` does with such a row if one comes.
     expect(holdingRow?.totalValue).toBe('586.94');
     expect(holdingRow?.holdingsWithKnownValue).toBe(1);
     // SC-317. The grade WITH its cause. Until this column the row said
@@ -937,5 +967,50 @@ describe('RollupPortfolioValueDailyUseCase', () => {
       expect(pairs.some((p) => p.tokenId === f.assetTokenId && p.baseTokenId === hubId)).toBe(true);
       expect(pairs.some((p) => p.tokenId === hubId && p.baseTokenId === f.assetTokenId)).toBe(true);
     }
+  });
+
+  async function sinceForRun(occurredAt: Date[]): Promise<Date | undefined> {
+    const f = fixture!;
+    let since: Date | undefined;
+    const realTx = Container.get(HoldingTransactionRepository);
+    Container.set(HoldingTransactionRepository, {
+      findForHoldingsAll: async () =>
+        new Map([[f.holdingId, occurredAt.map((at) => ({ occurredAt: at, feeTokenId: null }))]]),
+    } as unknown as HoldingTransactionRepository);
+    Container.set(TokenPriceRepository, {
+      findManyForPairsUpTo: async (_p: unknown, _until: Date, _tx: unknown, s?: Date) => {
+        since = s;
+        return [];
+      },
+    } as unknown as TokenPriceRepository);
+    const graph = new PriceGraphService();
+    graph.resolveHubTokenIds = async () => [];
+    graph.convert = async () => null;
+    Container.set(PriceGraphService, graph);
+    try {
+      Container.set(RollupPortfolioValueDailyUseCase, new RollupPortfolioValueDailyUseCase());
+      await Container.get(RollupPortfolioValueDailyUseCase).execute({
+        userId: f.userIds[0]!,
+        lookbackDays: 3,
+        runStart: new Date('2026-09-26T12:00:00.000Z'),
+      });
+    } finally {
+      Container.set(HoldingTransactionRepository, realTx);
+    }
+    return since;
+  }
+
+  test('the price prefetch starts at the first transaction when that is the earliest ask', async () => {
+    const since = await sinceForRun([
+      new Date('2025-03-01T10:00:00.000Z'),
+      new Date('2024-07-15T08:30:00.000Z'),
+    ]);
+    expect(since?.toISOString()).toBe('2024-07-15T08:30:00.000Z');
+  });
+
+  test('with no earlier transaction the prefetch starts at the first day of the window', async () => {
+    const since = await sinceForRun([new Date('2026-09-26T09:00:00.000Z')]);
+    // lookbackDays 3 from 2026-09-26: the oldest day is the 24th, valued at its last instant.
+    expect(since?.toISOString()).toBe('2026-09-24T23:59:59.999Z');
   });
 });

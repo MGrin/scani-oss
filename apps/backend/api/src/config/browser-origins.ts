@@ -55,3 +55,19 @@ export function buildTrustedOrigins(
 ): string[] {
   return isProduction ? [frontendUrl] : [frontendUrl, ...LOOPBACK_TRUSTED_ORIGIN_PATTERNS];
 }
+
+/**
+ * Whether a WebSocket handshake came from a page allowed to use the api
+ * (SC-1351). The same set CORS allows. A missing Origin is not a browser, so
+ * it cannot be carrying a victim's cookie and is left to the session check.
+ */
+export function isAllowedWebSocketOrigin(
+  origin: string | undefined,
+  frontendUrl: string,
+  options: BrowserOriginOptions
+): boolean {
+  if (!origin) return true;
+  return buildCorsOrigins(frontendUrl, options).some((allowed) =>
+    typeof allowed === 'string' ? allowed === origin : allowed.test(origin)
+  );
+}

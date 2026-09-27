@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import * as schema from '@scani/db/schema';
+import { eq } from 'drizzle-orm';
 import { UserJobRepository } from '../../src/repositories/UserJobRepository';
 import { withTestDb } from '../../test/helpers/db';
 import { makeUser } from '../../test/helpers/factories';
@@ -226,6 +228,122 @@ describe('UserJobRepository.findDeadUnacknowledged', () => {
 
       expect(await repo().findDeadUnacknowledged(mine.id, 50, tx)).toHaveLength(0);
       expect(await repo().findDeadUnacknowledged(theirs.id, 50, tx)).toHaveLength(1);
+    });
+  });
+});
+
+describe('UserJobRepository.findDeadUnacknowledged — a later success retires it', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const T0 = new Date('2026-07-10T01:00:00Z');
+
+  async function run(
+    tx: Parameters<Parameters<typeof withTestDb>[0]>[0],
+    userId: string,
+    jobId: string,
+    jobName: string,
+    createdAt: Date
+  ) {
+    await repo().insertEnqueued(
+      { jobId, userId, jobName, payloadSummary: {}, attemptsAllowed: 3 },
+      tx
+    );
+    await tx.update(schema.userJobs).set({ createdAt }).where(eq(schema.userJobs.jobId, jobId));
+  }
+
+  async function deadRun(
+    tx: Parameters<Parameters<typeof withTestDb>[0]>[0],
+    userId: string,
+    jobId: string,
+    jobName: string,
+    createdAt: Date
+  ) {
+    await run(tx, userId, jobId, jobName, createdAt);
+    await repo().markDead(
+      jobId,
+      {
+        reason: 'retries_exhausted',
+        error: 'Bybit retCode=131002',
+        attemptsMade: 3,
+        attemptsAllowed: 3,
+      },
+      tx
+    );
+  }
+
+  async function completedRun(
+    tx: Parameters<Parameters<typeof withTestDb>[0]>[0],
+    userId: string,
+    jobId: string,
+    jobName: string,
+    createdAt: Date
+  ) {
+    await run(tx, userId, jobId, jobName, createdAt);
+    await repo().markCompleted(jobId, { imported: 3 }, tx);
+  }
+
+  test('a later completed run of the same job, for the same user, retires it', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      await deadRun(tx, user.id, 'ti-dead', 'transaction-import', T0);
+      await completedRun(tx, user.id, 'ti-ok', 'transaction-import', new Date(T0.getTime() + DAY));
+
+      expect(await repo().findDeadUnacknowledged(user.id, 50, tx)).toHaveLength(0);
+    });
+  });
+
+  test('a dead job with NO later success stays in the feed', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      await deadRun(tx, user.id, 'phb-dead', 'portfolio-history-backfill', T0);
+
+      const rows = await repo().findDeadUnacknowledged(user.id, 50, tx);
+      expect(rows.map((r) => r.jobId)).toEqual(['phb-dead']);
+    });
+  });
+
+  test('an EARLIER success says nothing about a failure that followed it', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      await completedRun(
+        tx,
+        user.id,
+        'ti-ok-before',
+        'transaction-import',
+        new Date(T0.getTime() - DAY)
+      );
+      await deadRun(tx, user.id, 'ti-dead-after', 'transaction-import', T0);
+
+      const rows = await repo().findDeadUnacknowledged(user.id, 50, tx);
+      expect(rows.map((r) => r.jobId)).toEqual(['ti-dead-after']);
+    });
+  });
+
+  test("another user's later success is not evidence about this user's integration", async () => {
+    await withTestDb(async (tx) => {
+      const mine = await makeUser(tx);
+      const theirs = await makeUser(tx);
+      await deadRun(tx, mine.id, 'ti-dead-mine', 'transaction-import', T0);
+      await completedRun(
+        tx,
+        theirs.id,
+        'ti-ok-theirs',
+        'transaction-import',
+        new Date(T0.getTime() + DAY)
+      );
+
+      const rows = await repo().findDeadUnacknowledged(mine.id, 50, tx);
+      expect(rows.map((r) => r.jobId)).toEqual(['ti-dead-mine']);
+    });
+  });
+
+  test('a later success of a DIFFERENT job does not retire it', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      await deadRun(tx, user.id, 'ti-dead-other', 'transaction-import', T0);
+      await completedRun(tx, user.id, 'wi-ok', 'wallet-import', new Date(T0.getTime() + DAY));
+
+      const rows = await repo().findDeadUnacknowledged(user.id, 50, tx);
+      expect(rows.map((r) => r.jobId)).toEqual(['ti-dead-other']);
     });
   });
 });

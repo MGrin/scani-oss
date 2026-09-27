@@ -77,9 +77,9 @@ if (readOnlySession) assertNoConflictingOptionsParam(finalDatabaseUrl);
 
 const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> = {
   max: poolMax, // Direct connection - can use larger pool (Render allows up to 97 connections)
-  idle_timeout: 120, // Must exceed longest operation (wallet import ~75s) to avoid postgres.js negative timeout warnings
+  idle_timeout: 1800,
   connect_timeout: 10, // Fail fast on connection issues
-  max_lifetime: 600, // 10 minutes — recycle connections regularly
+  max_lifetime: 3600,
   prepare: true, // Enable prepared statements - faster for repeated queries (direct connection supports this)
   fetch_types: true, // Fetch types on connect - enables proper type handling
   ssl: sslMode,

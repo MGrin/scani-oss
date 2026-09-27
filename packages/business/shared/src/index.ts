@@ -58,6 +58,12 @@ export {
   type ManualEditCause,
   manualEditNeedsCause,
 } from './lib/manual-balance-edit';
+export {
+  type MoneyAttributionInput,
+  type MoneyAttributionRates,
+  type MoneySplit,
+  splitChangeIntoMoney,
+} from './lib/returns-money';
 export * from './token-validatiion';
 export * from './usage/outcomes';
 export { safeExternalUrl } from './utils/safe-external-url';

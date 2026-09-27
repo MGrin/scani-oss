@@ -2,7 +2,12 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readCommit, versionPayload, viteVersion } from '@scani/ui/vite/version-plugin';
+import {
+  readCommit,
+  VERSION_PLACEHOLDER,
+  versionPayload,
+  viteVersion,
+} from '@scani/ui/vite/version-plugin';
 
 /**
  * SC-964. `version.json` names the commit a build came from, so the deploy
@@ -54,6 +59,51 @@ describe('versionPayload', () => {
   });
 });
 
+type FakeChunk = { type: 'chunk'; fileName: string; code: string };
+type FakeAsset = { type: 'asset'; fileName: string; source: string | Uint8Array };
+type FakeBundle = Record<string, FakeChunk | FakeAsset>;
+
+// The shape Vite hands `generateBundle`: an entry that reads the version, a
+// lazily loaded route, a stylesheet and the page. `define` has already put the
+// placeholder where `__SCANI_BUILD_VERSION__` was.
+function appBundle(edit: Partial<Record<string, string>> = {}): FakeBundle {
+  const files: Array<FakeChunk | FakeAsset> = [
+    {
+      type: 'chunk',
+      fileName: 'assets/index-a1.js',
+      code: `const v=${JSON.stringify(VERSION_PLACEHOLDER)};import("./route-b2.js")`,
+    },
+    { type: 'chunk', fileName: 'assets/route-b2.js', code: 'export const page="Holdings"' },
+    { type: 'asset', fileName: 'assets/index-c3.css', source: 'body{color:red}' },
+    {
+      type: 'asset',
+      fileName: 'index.html',
+      source: '<script src="/assets/index-a1.js"></script>',
+    },
+  ];
+  const bundle: FakeBundle = {};
+  for (const f of files) {
+    const changed = edit[f.fileName];
+    bundle[f.fileName] =
+      changed === undefined
+        ? f
+        : f.type === 'chunk'
+          ? { ...f, code: changed }
+          : { ...f, source: changed };
+  }
+  return bundle;
+}
+
+function runBuild(plugin: ReturnType<typeof viteVersion>, bundle: FakeBundle, dir: string): void {
+  // The hooks are plain functions here; Vite's ObjectHook union is what the
+  // casts get past, and none of them reads its `this` context.
+  (plugin.config as (c: object, e: { command: string }) => unknown)({}, { command: 'build' });
+  (plugin.buildStart as () => void)();
+  const generate = plugin.generateBundle as { handler: (o: object, b: FakeBundle) => void };
+  generate.handler({}, bundle);
+  (plugin.writeBundle as (o: { dir: string }) => void)({ dir });
+}
+
 describe('viteVersion writes what the build was given', () => {
   const saved = process.env.SCANI_COMMIT;
   let dir = '';
@@ -64,13 +114,9 @@ describe('viteVersion writes what the build was given', () => {
     if (dir !== '') rmSync(dir, { recursive: true, force: true });
   });
 
-  function build(): Record<string, unknown> {
+  function build(bundle: FakeBundle = appBundle()): Record<string, unknown> {
     dir = mkdtempSync(join(tmpdir(), 'sc964-version-'));
-    const plugin = viteVersion();
-    // The hooks are plain functions here; Vite's ObjectHook union is what the
-    // casts get past, and neither hook reads its `this` context.
-    (plugin.buildStart as () => void)();
-    (plugin.writeBundle as (o: { dir: string }) => void)({ dir });
+    runBuild(viteVersion(), bundle, dir);
     return JSON.parse(readFileSync(join(dir, 'version.json'), 'utf8'));
   }
 
@@ -79,10 +125,62 @@ describe('viteVersion writes what the build was given', () => {
     expect(build().commit).toBe(SHA);
   });
 
+  test('the bundle is told the same version version.json carries', () => {
+    const bundle = appBundle();
+    const written = build(bundle).version as string;
+    const entry = bundle['assets/index-a1.js'] as FakeChunk;
+    expect(entry.code).toContain(JSON.stringify(written));
+    expect(entry.code).not.toContain(VERSION_PLACEHOLDER);
+    expect(written).not.toBe('dev');
+  });
+
+  test('a dev server tells the bundle dev, which offers nothing', () => {
+    const config = viteVersion().config as (
+      c: object,
+      e: { command: string }
+    ) => { define: { __SCANI_BUILD_VERSION__: string } };
+    expect(JSON.parse(config({}, { command: 'serve' }).define.__SCANI_BUILD_VERSION__)).toBe('dev');
+  });
+
   test('without SCANI_COMMIT the file still carries a version, and no commit', () => {
     delete process.env.SCANI_COMMIT;
     const got = build();
     expect(typeof got.version).toBe('string');
     expect(got).not.toHaveProperty('commit');
+  });
+});
+
+// SC-1360: the version used to be `Date.now()`, so every deploy, backend-only
+// ones included, offered the update banner to an app that had not changed.
+describe('the version is the build output, not the moment of the build', () => {
+  const versionOf = (edit: Partial<Record<string, string>> = {}) => {
+    const dir = mkdtempSync(join(tmpdir(), 'sc1360-version-'));
+    try {
+      runBuild(viteVersion(), appBundle(edit), dir);
+      return JSON.parse(readFileSync(join(dir, 'version.json'), 'utf8')).version as string;
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  };
+
+  test('the same output is the same version, so an unchanged app offers no update', () => {
+    expect(versionOf()).toBe(versionOf());
+  });
+
+  test('a one-character change to a lazily loaded route is a new version', () => {
+    expect(versionOf({ 'assets/route-b2.js': 'export const page="Holding"' })).not.toBe(
+      versionOf()
+    );
+  });
+
+  test('a stylesheet or page change is a new version too', () => {
+    expect(versionOf({ 'assets/index-c3.css': 'body{color:blue}' })).not.toBe(versionOf());
+    expect(versionOf({ 'index.html': '<script src="/assets/index-a2.js"></script>' })).not.toBe(
+      versionOf()
+    );
+  });
+
+  test('the placeholder and the version it becomes are the same length, so source maps still line up', () => {
+    expect(versionOf()).toHaveLength(VERSION_PLACEHOLDER.length);
   });
 });

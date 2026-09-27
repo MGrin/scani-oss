@@ -19,6 +19,15 @@ map $request_uri $robots_tag {
     "~^/(\?.*)?$"       "${ROBOTS_DIRECTIVE}";
 }
 
+# A hashed asset is immutable; its absence is not (SC-1318). Keyed on the
+# status because `add_header … always` is the only way a 404 carries a header,
+# and one `Cache-Control` per response has to cover both.
+map $status $asset_cache_control {
+    default  "no-store";
+    200      "public, max-age=31536000, immutable";
+    304      "public, max-age=31536000, immutable";
+}
+
 server {
     listen       80 default_server;
     listen       [::]:80 default_server;
@@ -47,6 +56,16 @@ server {
     # `tests/public/security-headers.test.ts` fails the build if a
     # location grows an `add_header` without the include beside it.
     include /etc/nginx/conf.d/security-headers.inc;
+
+    # A missing hashed file is a 404, never the SPA shell (SC-1318). `^~` wins
+    # over the extension regex below, so every `/assets/` path lands here —
+    # the regex only 404'd the extensions it lists, and the shell answered the
+    # rest with a year-long header a browser keeps under the asset's name.
+    location ^~ /assets/ {
+        include /etc/nginx/conf.d/security-headers.inc;
+        add_header Cache-Control $asset_cache_control always;
+        try_files $uri =404;
+    }
 
     # SPA history routing — any path that doesn't match a real file
     # falls back to index.html so React Router takes over.

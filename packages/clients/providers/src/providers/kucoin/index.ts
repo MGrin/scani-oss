@@ -325,7 +325,7 @@ export class KucoinProvider
       if (currentPage === MAX_PAGES) truncated = true;
       currentPage += 1;
     }
-    if (truncated) capped.note({ walk: `the ${path} feed`, pages: MAX_PAGES, rows });
+    if (truncated) capped.note({ walk: { kind: 'feed', path }, pages: MAX_PAGES, rows });
   }
 
   async validateCredentials(

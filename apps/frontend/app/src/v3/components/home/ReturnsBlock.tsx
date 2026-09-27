@@ -2,148 +2,324 @@ import { formatDate } from '@scani/shared';
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
+import { ChevronDown } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
+import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
 import { useViewPreference } from '../../hooks/useViewPreference';
 import {
   BENCHMARK_LABEL_KEYS,
   RETURNS_WINDOW_KEYS,
   RETURNS_WINDOWS,
+  type ReturnsMoney,
   type ReturnsView,
   type ReturnsWindow,
+  type ReturnsWindowRequest,
   returnsView,
 } from '../../lib/returns';
+import { type ComparisonView, comparisonView } from '../../lib/returns-comparison';
 import { VIEW_PREFERENCE_KEYS } from '../../lib/view-preference';
+import { AttributionBar } from './AttributionBar';
+import { ReturnsComparisonChart } from './ReturnsComparisonChart';
+import { ReturnsHeadline } from './ReturnsHeadline';
 
-/**
- * How the portfolio, or one account or institution in it, did, two ways
- * (SC-1159) — see `lib/returns.ts` for why both. Renders nothing until there is history to measure: a card of dashes
- * above a portfolio added today tells a newcomer nothing.
- */
 /** Omitted = the whole portfolio. */
 export type ReturnsCardScope = { kind: 'account' | 'institution'; id: string };
 
-export function ReturnsBlock({ scope }: { scope?: ReturnsCardScope } = {}) {
-  const [windowKey, setWindowKey] = useViewPreference<ReturnsWindow>(
+export function ReturnsBlock({
+  scope,
+  heroWindow = null,
+}: {
+  scope?: ReturnsCardScope;
+  /**
+   * Non-null while the home chart's Returns tab is on (SC-1301): the window
+   * the hero is measuring, which this card then shares rather than picking its
+   * own. The hero also takes the figure and the chart, so what is left here is
+   * the attribution bar and the ahead/behind rows — a table, which is a
+   * different reading rhythm from a chart inside a hero.
+   *
+   * A custom RANGE since SC-1305, not one of the three named windows: the
+   * hero's period control decides which days are measured, and mapping them
+   * onto the nearest named window is what made 1M, 3M and 6M identical.
+   */
+  heroWindow?: ReturnsWindowRequest | null;
+} = {}) {
+  const [ownWindow, setOwnWindow] = useViewPreference<ReturnsWindow>(
     VIEW_PREFERENCE_KEYS.homeReturnsWindow,
     'ytd',
     RETURNS_WINDOW_KEYS
   );
-  const query = trpc.portfolio.getReturns.useQuery({ window: { kind: windowKey }, scope });
+  // One control, not two. While the tab is on, the chart's range drives both —
+  // and because the window IS the query key, the hero and this card then share
+  // one request rather than asking the same procedure two different questions.
+  const request: ReturnsWindowRequest = heroWindow ?? { kind: ownWindow };
+  const { symbol } = useBaseCurrency();
+  const historyQuery = trpc.portfolio.hasReturns.useQuery({ window: request, scope });
+  const hasHistory = historyQuery.data?.hasReturns === true;
+  const query = trpc.portfolio.getReturns.useQuery(
+    { window: request, scope },
+    { enabled: hasHistory }
+  );
   const view = returnsView(query.data?.returns, query.data?.benchmarks);
-  // Keep the card standing while another window loads, so the switch does not
-  // collapse and re-grow the row it sits in.
-  if (!view && !query.isFetching) return null;
 
-  return <ReturnsCard view={view} windowKey={windowKey} onWindowChange={setWindowKey} />;
+  const comparisonQuery = trpc.portfolio.getReturnsComparison.useQuery(
+    { window: request },
+    // The whole-portfolio card is the only one that draws it, and asking for
+    // prices behind a card that will not render them is the expensive half of
+    // this feature paid for nothing.
+    { enabled: scope === undefined && hasHistory }
+  );
+  const comparison = comparisonView(comparisonQuery.data, view?.benchmarks);
+
+  // Keep the card standing while another window loads, so the switch does not
+  // collapse and re-grow the row it sits in. The probe counts as loading too:
+  // without it a window change would collapse the card for one round trip
+  // before `getReturns` is even enabled.
+  if (!view && !query.isFetching && !historyQuery.isFetching) return null;
+
+  return (
+    <ReturnsCard
+      view={view}
+      comparison={scope ? null : comparison}
+      comparisonFailed={scope === undefined && comparisonQuery.isError}
+      currency={symbol}
+      windowKey={ownWindow}
+      onWindowChange={setOwnWindow}
+      promotedToHero={heroWindow !== null}
+    />
+  );
 }
 
 export function ReturnsCard({
   view,
+  comparison,
+  comparisonFailed,
+  currency,
   windowKey,
   onWindowChange,
+  promotedToHero = false,
 }: {
   view: ReturnsView | null;
+  comparison: ComparisonView | null;
+  comparisonFailed: boolean;
+  currency: string;
   windowKey: ReturnsWindow;
   onWindowChange: (key: string) => void;
+  /**
+   * The home chart's Returns tab is on, so the money figure, the chart and the
+   * window control are all up in the hero (SC-1301).
+   *
+   * **The money figure is the one that matters.** Chart-and-figure up top with
+   * the rows left below puts the same number within reach of two code paths on
+   * one screen; two copies of one number, updated by two paths, eventually
+   * disagree. `returnsTab.test.tsx` counts it on the assembled screen and
+   * fails at two. SC-1305 changed the hero's SHAPE from a sentence to a tile
+   * and left that hazard exactly where it was, so the guard was re-aimed at
+   * the figure rather than at the wording.
+   */
+  promotedToHero?: boolean;
 }) {
   const { t } = useTranslation();
+  const money = view?.money ?? null;
 
   return (
     <Block>
       <BlockHeader title={t('v3.home.returns.title')} />
-      <div className="px-4 pb-3">
-        <Segmented
-          value={windowKey}
-          onValueChange={onWindowChange}
-          aria-label={t('v3.home.returns.chooseWindow')}
-        >
-          {RETURNS_WINDOWS.map((option) => (
-            <SegmentedItem key={option.key} value={option.key}>
-              {t(option.labelKey)}
-            </SegmentedItem>
-          ))}
-        </Segmented>
-      </div>
+      {promotedToHero ? null : (
+        <div className="px-4 pb-3">
+          <Segmented
+            value={windowKey}
+            onValueChange={onWindowChange}
+            aria-label={t('v3.home.returns.chooseWindow')}
+          >
+            {RETURNS_WINDOWS.map((option) => (
+              <SegmentedItem key={option.key} value={option.key}>
+                {t(option.labelKey)}
+              </SegmentedItem>
+            ))}
+          </Segmented>
+        </div>
+      )}
       {view ? (
         <>
-          <dl className="divide-y divide-border border-t border-border">
-            <ReturnRow
-              label={t('v3.home.returns.twr.label')}
-              caption={t('v3.home.returns.twr.caption')}
-              value={view.twr?.cumulative ?? null}
-              note={
-                view.twr?.annualized != null ? (
-                  <Trans
-                    i18nKey="v3.home.returns.perYear"
-                    components={{
-                      value: <Numeric value={view.twr.annualized} format="percent" decimals={1} />,
-                    }}
-                  />
-                ) : null
-              }
-            />
-            {view.fx ? (
-              <ReturnRow
-                label={t('v3.home.returns.fx.label')}
-                caption={
-                  <Trans
-                    i18nKey="v3.home.returns.fx.caption"
-                    components={{
-                      value: <Numeric value={view.fx.asset} format="percent" decimals={1} delta />,
-                    }}
-                  />
-                }
-                value={view.fx.currency}
-                note={null}
-              />
-            ) : null}
-            <ReturnRow
-              label={t('v3.home.returns.xirr.label')}
-              caption={
-                view.xirr?.approximate
-                  ? t('v3.home.returns.xirr.approximate')
-                  : t('v3.home.returns.xirr.caption')
-              }
-              value={view.xirr?.rate ?? null}
-              note={view.xirr ? t('v3.home.returns.perYearUnit') : null}
-            />
-          </dl>
-          {view.benchmarks.length > 0 ? (
-            <div className="border-t border-border px-4 py-3">
-              <p className="text-label">{t('v3.home.returns.benchmarks.label')}</p>
-              <p className="text-caption text-muted-foreground">
-                {t('v3.home.returns.benchmarks.caption')}
-              </p>
-              <dl className="mt-2 flex flex-col gap-1">
-                {view.benchmarks.map((benchmark) => (
-                  <div key={benchmark.key} className="flex items-baseline justify-between gap-3">
-                    <dt className="text-caption">{t(BENCHMARK_LABEL_KEYS[benchmark.key])}</dt>
-                    <dd className="shrink-0">
-                      <Numeric
-                        value={benchmark.cumulative}
-                        format="percent"
-                        decimals={1}
-                        delta
-                        className="text-caption"
-                      />
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
+          {money && !promotedToHero ? (
+            <ReturnsHeadline money={money} currency={currency} className="px-4 pb-3" />
           ) : null}
+          {money ? <AttributionBar money={money} currency={currency} /> : null}
+
+          {promotedToHero ? null : comparison && comparison.points.length > 0 ? (
+            <ReturnsComparisonChart comparison={comparison} currency={currency} />
+          ) : comparisonFailed ? (
+            // One line of plain text, not an empty frame: the figures above it
+            // are unaffected and the reader should be told that in words.
+            <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
+              {t('v3.home.returns.chart.unavailable')}
+            </p>
+          ) : null}
+
+          {comparison && comparison.gaps.length > 0 ? (
+            <Gaps gaps={comparison.gaps} currency={currency} />
+          ) : null}
+
+          <Details view={view} money={money} />
+
           {view.since || view.partial ? (
             <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
-              {view.since ? t('v3.home.returns.since', { date: formatDate(view.since) }) : null}
-              {view.since && view.partial ? ' ' : null}
+              {view.since && !money
+                ? t('v3.home.returns.since', { date: formatDate(view.since) })
+                : null}
+              {view.since && !money && view.partial ? ' ' : null}
               {view.partial ? t('v3.home.returns.partial') : null}
             </p>
           ) : null}
         </>
       ) : null}
     </Block>
+  );
+}
+
+/**
+ * Ahead or behind each benchmark, the money first.
+ *
+ * The row's value is the GAP — what the reader has against what the same
+ * deposits and withdrawals would have come to in that benchmark — which is the
+ * comparison the card exists to make. The benchmark's own return, which used
+ * to be the whole row, is the caption: still there, no longer the headline.
+ */
+function Gaps({ gaps, currency }: { gaps: ComparisonView['gaps']; currency: string }) {
+  const { t } = useTranslation();
+  return (
+    <div className="border-t border-border px-4 py-3">
+      <p className="text-label">{t('v3.home.returns.gaps.label')}</p>
+      <p className="text-caption text-muted-foreground">{t('v3.home.returns.gaps.caption')}</p>
+      <dl className="mt-2 flex max-w-[34rem] flex-col gap-2">
+        {gaps.map((gap) => (
+          <div
+            key={gap.key}
+            data-figure-line="true"
+            className="flex items-baseline justify-between gap-3"
+          >
+            {/* "vs" is what makes the figure beside it a COMPARISON rather
+                than what the benchmark itself did — which is exactly the
+                reading the rates version left to the reader. */}
+            <dt className="min-w-0 truncate text-label">
+              {t('v3.home.returns.gaps.vs', { name: t(BENCHMARK_LABEL_KEYS[gap.key]) })}
+            </dt>
+            <dd className="shrink-0 text-end">
+              <Numeric value={gap.money} currency={currency} delta className="text-label" />
+              {gap.cumulative === null ? null : (
+                <Numeric
+                  value={gap.cumulative}
+                  format="percent"
+                  decimals={1}
+                  delta
+                  indicator="sign"
+                  className="block text-caption text-muted-foreground"
+                />
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+/**
+ * The rates, kept and demoted.
+ *
+ * `<details>` rather than an accordion, for the reason `ForecastView` gives:
+ * Radix unmounts its content, so a closed disclosure removes the numbers from
+ * the document and neither find-in-page nor a `renderToStaticMarkup` test can
+ * reach them. Closed by default — an open one has put the rates back above the
+ * money while looking as though it had not.
+ */
+function Details({ view, money }: { view: ReturnsView; money: ReturnsMoney | null }) {
+  const { t } = useTranslation();
+  return (
+    <details className="group border-t border-border px-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-3 text-caption text-muted-foreground transition-colors duration-fast ease-emphasized hover:text-foreground [&::-webkit-details-marker]:hidden">
+        {t('v3.home.returns.details')}
+        <ChevronDown
+          aria-hidden="true"
+          className="h-4 w-4 shrink-0 transition-transform duration-base ease-emphasized group-open:rotate-180"
+        />
+      </summary>
+      <dl className="flex flex-col divide-y divide-border border-t border-border">
+        <ReturnRow
+          label={t('v3.home.returns.twr.label')}
+          caption={t('v3.home.returns.twr.caption')}
+          value={view.twr?.cumulative ?? null}
+          note={
+            view.twr?.annualized != null ? (
+              <Trans
+                i18nKey="v3.home.returns.perYear"
+                components={{
+                  value: <Numeric value={view.twr.annualized} format="percent" decimals={1} />,
+                }}
+              />
+            ) : null
+          }
+        />
+        {view.fx ? (
+          <ReturnRow
+            label={t('v3.home.returns.fx.label')}
+            caption={
+              <Trans
+                i18nKey="v3.home.returns.fx.caption"
+                components={{
+                  value: <Numeric value={view.fx.asset} format="percent" decimals={1} delta />,
+                }}
+              />
+            }
+            value={view.fx.currency}
+            note={null}
+          />
+        ) : null}
+        <ReturnRow
+          label={t('v3.home.returns.xirr.label')}
+          caption={
+            view.xirr?.approximate
+              ? t('v3.home.returns.xirr.approximate')
+              : t('v3.home.returns.xirr.caption')
+          }
+          value={view.xirr?.rate ?? null}
+          note={view.xirr ? t('v3.home.returns.perYearUnit') : null}
+        />
+        {view.benchmarks.length > 0 ? (
+          <div className="py-3">
+            <p className="text-label">{t('v3.home.returns.benchmarks.label')}</p>
+            <p className="text-caption text-muted-foreground">
+              {t('v3.home.returns.benchmarks.caption')}
+            </p>
+            <dl className="mt-2 flex flex-col gap-1">
+              {view.benchmarks.map((benchmark) => (
+                <div key={benchmark.key} className="flex items-baseline justify-between gap-3">
+                  <dt className="text-caption">{t(BENCHMARK_LABEL_KEYS[benchmark.key])}</dt>
+                  <dd className="shrink-0">
+                    <Numeric
+                      value={benchmark.cumulative}
+                      format="percent"
+                      decimals={1}
+                      delta
+                      className="text-caption"
+                    />
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ) : null}
+        {/* The money sentence names the window's start, so this repeats it only
+            where there is no money sentence to have named it. */}
+        {view.since && money ? (
+          <p className="py-3 text-caption text-muted-foreground">
+            {t('v3.home.returns.since', { date: formatDate(view.since) })}
+          </p>
+        ) : null}
+      </dl>
+    </details>
   );
 }
 
@@ -159,7 +335,7 @@ function ReturnRow({
   note: ReactNode;
 }) {
   return (
-    <div className="flex items-start justify-between gap-3 px-4 py-3">
+    <div className="flex items-start justify-between gap-3 py-3">
       <dt className="min-w-0">
         <span className="block text-label">{label}</span>
         <span className="block text-caption text-muted-foreground">{caption}</span>

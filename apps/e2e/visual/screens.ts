@@ -51,6 +51,12 @@
  * `portfolio_value_daily` can produce — `fixtures/db.ts` forbids exactly that,
  * and reversing it is a bigger decision than this ticket. Filed as its own
  * task rather than left as an unstated hole.
+ *
+ * The Returns card is absent for the same reason, since SC-1300: its window is
+ * rewritten to one dated from the pinned day (`returns-window.ts`), which no
+ * rollup row reaches, so it has no history and renders nothing. Unpinned it
+ * measured the real year to date and two fresh databases photographed two
+ * different cards.
  */
 
 /** The two shells v3 has. `V3Shell` switches at the `lg:` breakpoint (1024px):

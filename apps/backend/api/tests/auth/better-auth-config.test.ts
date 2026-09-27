@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createBetterAuth } from '../../src/auth/better-auth';
+import { CLIENT_IP_HEADER, createBetterAuth } from '../../src/auth/better-auth';
 
 function build() {
   return createBetterAuth({
@@ -53,5 +53,13 @@ describe('Better-Auth config — auth hardening', () => {
     expect(attrs?.sameSite).toBe('strict');
     expect(attrs?.secure).toBe(true);
     expect(attrs?.domain).toBe('app.scani.example');
+  });
+
+  // SC-1351: Better-Auth's default reads the FIRST X-Forwarded-For entry,
+  // which the client writes. The api handler overwrites this header with the
+  // edge-derived address on every request.
+  test('client IP comes from the header the handler sets, never X-Forwarded-For', () => {
+    const headers = build().options.advanced?.ipAddress?.ipAddressHeaders;
+    expect(headers).toEqual([CLIENT_IP_HEADER]);
   });
 });

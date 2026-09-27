@@ -5,6 +5,7 @@ import type {
   BulkTransferRefusal,
   PendingTransferReview,
   TransferCandidate,
+  TransferCandidateCombination,
   TransferDestination,
   TransferReviewDecision,
   TransferReviewSplitPortion,
@@ -78,6 +79,8 @@ export const UNREVIEWED_TRANSFER_NOTE_KEY = 'v3.review.transfer.unreviewedNote';
 export function candidateReasonLabel(t: TFunction, candidate: TransferCandidate): string {
   const pct = formatPercent(candidate.quantityDeltaPct);
   switch (candidate.reason) {
+    case 'matches':
+      return t('v3.review.transfer.candidateReason.matches');
     case 'ambiguous':
       return t('v3.review.transfer.candidateReason.ambiguous');
     case 'quantity_outside_tolerance':
@@ -110,16 +113,32 @@ export function candidateSummary(t: TFunction, candidate: TransferCandidate): st
   return `${candidate.quantity} ${candidate.tokenSymbol} · ${formatSignedGap(t, candidate.timeDeltaMs)}`;
 }
 
-/**
- * Where a candidate landed, in the words the accounts list uses.
- *
- * `accountLabel` rather than a join, for the same reason `destinationLocation`
- * uses it: these three sit on ONE sheet, and fixing `Airwallex · Airwallex` in
- * the destination picker while the candidate row above it still reads that way
- * would answer the report on one line of the screen it was reported about.
- */
-export function candidateLocation(candidate: TransferCandidate): string {
+export function candidateLocation(candidate: {
+  accountName: string;
+  institutionName: string | null;
+}): string {
   return accountLabel(candidate.accountName, candidate.institutionName);
+}
+
+/**
+ * A combination's middle line (SC-1365): the parts as they landed, and how
+ * long after the withdrawal the LAST one did — that is the one a reader has to
+ * believe, since the money was not all there until it arrived.
+ */
+export function combinationSummary(
+  t: TFunction,
+  item: PendingTransferReview,
+  combination: TransferCandidateCombination
+): string {
+  const parts = combination.parts.map((p) => p.quantity).join(' + ');
+  const last = combination.parts[combination.parts.length - 1];
+  const gap = last ? Date.parse(last.occurredAt) - Date.parse(item.occurredAt) : 0;
+  return `${parts} ${combination.tokenSymbol} · ${formatSignedGap(t, gap)}`;
+}
+
+/** Stable radio value for a combination, which has no single transaction id. */
+export function combinationKey(combination: TransferCandidateCombination): string {
+  return `combination:${combination.parts.map((p) => p.transactionId).join(',')}`;
 }
 
 export function pendingLocation(item: {
@@ -153,8 +172,9 @@ export function candidateHint(t: TFunction, item: PendingTransferReview): string
   if (item.counterpartyIsOwnWallet) return t('v3.review.transfer.hint.ownWallet');
   const strict = item.candidates.filter((c) => c.withinStrictTolerance).length;
   if (strict > 1) return t('v3.review.transfer.hint.equallyGood', { count: strict });
-  if (item.candidates.length === 0) return t('v3.review.transfer.hint.none');
-  return t('v3.review.transfer.hint.possible', { count: item.candidates.length });
+  const possible = item.candidates.length + item.combinations.length;
+  if (possible === 0) return t('v3.review.transfer.hint.none');
+  return t('v3.review.transfer.hint.possible', { count: possible });
 }
 
 /**
@@ -174,7 +194,7 @@ export function decisionConsequence(
   t: TFunction,
   decision: TransferReviewDecision,
   item: PendingTransferReview,
-  chosen: TransferCandidate | null,
+  chosen: TransferCandidate | TransferCandidateCombination | null,
   destination?: TransferDestination | null
 ): string {
   switch (decision) {
@@ -227,10 +247,6 @@ export const DECISION_LABELS: Record<
     triggerKey: 'v3.review.transfer.decision.paired.trigger',
     commitKey: 'v3.review.transfer.decision.paired.commit',
   },
-  // "Scani already tracks" rather than "another account in Scani", because
-  // the destination is frequently a *second holding in the same account* —
-  // Airwallex has two USD holdings and money moved between them — and a
-  // label that says "another account" reads as nonsense on that row.
   internal: {
     triggerKey: 'v3.review.transfer.decision.internal.trigger',
     commitKey: 'v3.review.transfer.decision.internal.commit',
@@ -254,9 +270,6 @@ export const DECISION_LABELS: Record<
 
 /** Where a destination is, in the words the accounts list uses. */
 export function destinationLocation(destination: TransferDestination): string {
-  // `accountLabel`, not a join: production reads `Airwallex · Airwallex` and
-  // `Bitcoin Network · Bitcoin Network - bc1q5n…` because an importer names an
-  // account after the institution that named it (SC-850).
   return accountLabel(destination.accountName, destination.institutionName);
 }
 
@@ -277,16 +290,6 @@ export function destinationScale(destinations: readonly TransferDestination[]): 
   );
 }
 
-/**
- * The line that tells two same-token holdings in one account apart.
- *
- * The balance first, because it is what a person actually recognises the
- * holding by when the name and the symbol are identical — 1,201.50 versus
- * 6,217.15 is the whole distinction, and "manual" versus "import_airwallex" is
- * the confirmation rather than the clue. The source is shown raw, as the
- * holding stores it, because a prettified "Imported" would hide which importer
- * — and on an account with two of them that is the answer.
- */
 export function destinationDetail(
   destination: TransferDestination,
   tokenSymbol: string,
@@ -305,21 +308,6 @@ export function destinationDetail(
   return destination.source ? `${balance} · ${destination.source}` : balance;
 }
 
-/**
- * The heading a destination sits under, and the one sentence that is true of
- * everything beneath it (SC-850).
- *
- * Three bands, ranked by the server: accounts that already hold this token,
- * accounts on the chain the money is leaving, and everything else. The reader
- * is answering *where did this go*, and the bands are the app saying what it
- * already knows about each answer — which is what the flat alphabetical list
- * withheld while offering an Airwallex account above every Solana wallet for a
- * SOL transfer.
- *
- * The band never pre-selects and never hides a row: every account is still
- * offered, because "it went to an account I track that has never held SOL" is
- * a real thing that happens.
- */
 export function destinationGroup(
   t: TFunction,
   destination: TransferDestination,

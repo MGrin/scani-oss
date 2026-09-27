@@ -251,11 +251,11 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
       'The live sessions are the login. Deleting them signs the account out of every device including the browser that asked for the deletion, which turns "your login remains" into a logout. The residual is bounded and nothing else here is: each row carries its own `expires_at` and disappears on its own.',
   },
   {
-    kind: 'keep',
+    kind: 'anonymise',
     table: schema.tokenPriceEditHistory,
     userColumn: schema.tokenPriceEditHistory.editedByUserId,
     reason:
-      "An admin acting on a GLOBAL token price every user sees, not this account's own portfolio data. Its FK is ON DELETE RESTRICT — the schema treats the attribution as non-severable, because a price override with no author is an unattributable change to shared data.",
+      "A manual price on a custom token, which is private to its owner since SC-1285 — so this is the user's own data, not a change to a shared price. The edit stays, because a price that moved with no record of the move is worse than one with no author; the author is removed. The FK is ON DELETE SET NULL since SC-1261, which is what lets `DeleteAccountUseCase` delete an account that ever priced a token.",
   },
 ];
 

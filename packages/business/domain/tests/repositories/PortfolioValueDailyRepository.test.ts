@@ -37,10 +37,10 @@ describe('PortfolioValueDailyRepository', () => {
         }),
         tx
       );
-      expect(row.userId).toBe(user.id);
-      expect(row.snapshotDate).toBe('2024-06-01');
-      expect(row.totalValue).toBe('12345.67');
-      expect(row.coverageQuality).toBe('full');
+      expect(row?.userId).toBe(user.id);
+      expect(row?.snapshotDate).toBe('2024-06-01');
+      expect(row?.totalValue).toBe('12345.67');
+      expect(row?.coverageQuality).toBe('full');
     });
   });
 
@@ -72,9 +72,42 @@ describe('PortfolioValueDailyRepository', () => {
         }),
         tx
       );
-      expect(after.totalValue).toBe('200');
-      expect(after.coverageQuality).toBe('full');
-      expect(after.holdingsWithKnownValue).toBe(5);
+      expect(after?.totalValue).toBe('200');
+      expect(after?.coverageQuality).toBe('full');
+      expect(after?.holdingsWithKnownValue).toBe(5);
+    });
+  });
+
+  // SC-1320: the api's returns cache keys on the newest computed_at, and a
+  // history backfill re-derives hundreds of unchanged days per run.
+  test('a re-run that reproduces the values leaves computed_at alone; a change moves it', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const usd = await makeToken(tx);
+      const earlier = new Date('2024-06-02T04:00:00Z');
+      const base = userScopeRow({
+        userId: user.id,
+        snapshotDate: '2024-06-01',
+        baseCurrencyId: usd.id,
+        totalValue: '100',
+        coverageQuality: 'full' as const,
+        holdingsWithKnownValue: 5,
+        holdingsTotal: 5,
+        costBasis: '80',
+      });
+      await repo().upsert({ ...base, computedAt: earlier }, tx);
+
+      const unchanged = await repo().upsert(base, tx);
+      expect(unchanged).toBeNull();
+      expect((await repo().findLatest(user.id, usd.id, tx))?.computedAt).toEqual(earlier);
+
+      // The control: one derived column moves, and the row is rewritten.
+      const changed = await repo().upsert({ ...base, costBasis: '81' }, tx);
+      expect(changed?.costBasis).toBe('81');
+      expect(changed?.computedAt).not.toEqual(earlier);
+
+      const bulk = await repo().bulkUpsert([{ ...base, costBasis: '81' }], tx);
+      expect(bulk).toHaveLength(0);
     });
   });
 

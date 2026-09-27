@@ -46,12 +46,12 @@ describe('the review hub', () => {
     const html = render([]);
     expect(html).toContain('href="/review/transfers"');
     expect(html).toContain('href="/review/balances"');
-    expect(html).toContain('Transfers to confirm');
+    expect(html).toContain('Payments out to classify');
     expect(html).toContain('Balance changes to explain');
   });
 
   test('says nothing is waiting rather than showing a zero', () => {
-    // "0 transfers out with no matching deposit" is a true sentence nobody
+    // "0 payments out to classify" is a true sentence nobody
     // wants to read on a queue they have finished.
     const html = render([]);
     expect(html).toContain('Nothing waiting');
@@ -63,7 +63,7 @@ describe('the review hub', () => {
       feedRow(TRANSFER_REVIEW_KIND, { code: 'unpairedTransfers', transfers: 12 }),
       feedRow(BALANCE_GAP_REVIEW_KIND, { code: 'unexplainedBalanceChanges', changes: 3 }),
     ]);
-    expect(html).toContain('12 transfers out with no matching deposit');
+    expect(html).toContain('12 payments out to classify');
     expect(html).toContain('3 balance changes we cannot explain');
     expect(html).not.toContain('Nothing waiting');
   });
@@ -72,7 +72,7 @@ describe('the review hub', () => {
     const html = render([
       feedRow(TRANSFER_REVIEW_KIND, { code: 'unpairedTransfers', transfers: 1 }),
     ]);
-    expect(html).toContain('1 transfer out with no matching deposit');
+    expect(html).toContain('1 payment out to classify');
   });
 
   test('a queue with no row in the feed still gets its link', () => {

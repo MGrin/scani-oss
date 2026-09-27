@@ -36,49 +36,6 @@ export const portfolioValueDaily = pgTable(
     coverageQuality: text('coverage_quality').notNull(),
     holdingsWithKnownValue: integer('holdings_with_known_value').notNull(),
     holdingsTotal: integer('holdings_total').notNull(),
-    // ---------------------------------------------------------------------
-    // A ZERO IN THE FOUR QUALITY COUNTS BELOW IS NOT ALWAYS A MEASUREMENT.
-    //
-    // `holdings_unpriceable` (0029), `holdings_stale_priced` (0031),
-    // `holdings_basis_unknown` (0031) and `transfers_unreviewed` (0033) were
-    // each added `NOT NULL DEFAULT 0`, so every row written before its column
-    // existed reads `0` — a positive claim that the day was measured and
-    // nothing was wrong, where the truth is that nobody counted. SC-255.
-    //
-    // `holdings_stale_anchored` further down took the opposite route
-    // deliberately (nullable, NULL = not recorded), and the contrast is the
-    // point: it can say "unknown" and these four cannot.
-    //
-    // **This is documented rather than repaired, because no honest cutoff
-    // exists.** Measured on production 2026-08-15, read-only:
-    //
-    //   * computed_at spans 2026-05-15..2026-08-15.
-    //   * Every row computed before 2026-08-14 carries 0 in all four.
-    //   * The first non-zero value in ANY of them appears 2026-08-14 18:07.
-    //   * `transfers_unreviewed` is 0 in every row — no signal at all.
-    //   * `drizzle.__drizzle_migrations.created_at` cannot date the boundary:
-    //     the timestamps are hand-authored journal values, evenly spaced
-    //     10,000s apart, not deploy times.
-    //
-    // So a backfill would have to invent the cutoff, and would then discard
-    // genuine zeros on the recent side of it to remove false ones on the
-    // other — two unfounded assertions in place of one. Recomputing instead
-    // is the whole table and was already declined once, for a larger benefit,
-    // under SC-242.
-    //
-    // What a reader can use instead is a fact already recorded rather than
-    // guessed: `holdings_stale_anchored IS NULL` marks every row written
-    // before migration 0037, and 0037 is later than 0029/0031/0033 — so a
-    // NULL there is sufficient to say the four counts below are of unknown
-    // provenance on that row. It is not necessary: a row written after 0037
-    // has trustworthy counts, a row before it may or may not.
-    // ---------------------------------------------------------------------
-    // Of `holdings_total`, how many no provider can price *in fact* —
-    // never had a single price row and currently inside an unpriceable
-    // cooldown. `holdings_total` keeps its original meaning (every
-    // holding in scope) so old rows are not retroactively reinterpreted;
-    // coverage is `holdings_with_known_value / (holdings_total -
-    // holdings_unpriceable)`. See SC-146.
     holdingsUnpriceable: integer('holdings_unpriceable').notNull().default(0),
     // Of `holdings_with_known_value`, how many were valued from a price
     // older than the freshness window. They stay in `total_value` — an old
@@ -194,6 +151,10 @@ export const portfolioValueDaily = pgTable(
       table.scopeId,
       table.snapshotDate.desc()
     ),
+    // The returns cache's data version reads the newest `computed_at` per user
+    // on every returns request (SC-1369); without this it scans every rollup
+    // row the user has.
+    userComputedAtIdx: index('idx_pvd_user_computed_at').on(table.userId, table.computedAt.desc()),
   })
 );
 

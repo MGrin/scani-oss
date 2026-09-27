@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { ProviderError } from '../../src/core/errors';
+import { type NoticeInput, toJobNotice } from '../../src/core/types';
 import { IbkrProvider } from '../../src/providers/ibkr';
 
 function passthroughLimiter(): OutflowRateLimiter {
@@ -267,7 +268,7 @@ describe('IbkrProvider', () => {
     try {
       const events = await p.fetchTransactions({
         ...ctx,
-        noteWarning: (reason: string) => warnings.push(reason),
+        noteWarning: (reason: NoticeInput) => warnings.push(toJobNotice(reason).text),
       } as never);
 
       // Options skipped, BASE_SUMMARY deposit skipped → 2 trades + 3 cash
@@ -344,7 +345,7 @@ describe('IbkrProvider', () => {
     try {
       const events = await p.fetchTransactions({
         ...ctx,
-        noteWarning: (reason: string) => warnings.push(reason),
+        noteWarning: (reason: NoticeInput) => warnings.push(toJobNotice(reason).text),
       } as never);
 
       // The rows the statement DID carry still arrive — a missing section is
@@ -477,25 +478,6 @@ describe('IbkrProvider — Flex error classification', () => {
   });
 });
 
-/**
- * SC-443. Exhausting the poll budget is OUR clock running out, not IBKR
- * refusing us: the report was accepted and simply had not been built yet.
- * It used to fall through to `classifyFlexError`, which has never been asked
- * to rank 1001/1019, so it landed on the `unrecoverable` default — and
- * `unrecoverable` is `willRetry: false`, rendered to the user as "this failed
- * for a reason another attempt will not fix. Check the details below, correct
- * them, and start it again". There is nothing there to correct.
- *
- * The counter-argument on record (the `isUnrecoverableExchangeError` test in
- * apps/backend/worker) was that surviving ~5 minutes of polling means the Flex
- * template is structurally too heavy, so retrying only deepens IBKR's backlog.
- * That is a hypothesis about a cause the code cannot observe, and production
- * has never produced a single instance of it to weigh: measured 2026-08-19,
- * no `user_jobs` row in three months carries any of these codes and no live
- * IBKR credential carries a non-zero `sync_failure_count`. So the backlog cost is
- * speculative and the false instruction is certain, and the retry budget on
- * each descriptor already bounds the downside at 3-4 attempts.
- */
 describe('IbkrProvider — poll exhaustion', () => {
   function alwaysFlexError(code: string, message: string) {
     const originalFetch = globalThis.fetch;

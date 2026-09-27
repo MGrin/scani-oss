@@ -218,7 +218,8 @@ export class RollupPortfolioValueDailyUseCase {
               [...userHoldings.map((h) => h.tokenId), ...feeTokenIds],
               baseCurrencyId,
               runStart,
-              undefined
+              undefined,
+              earliestPriceAsk(days, txHistory)
             );
 
             // Resolved once for all `lookback` days: "never had a price
@@ -507,4 +508,16 @@ export class RollupPortfolioValueDailyUseCase {
       unrealizedPnl: totalUnrealized.toString(),
     });
   }
+}
+
+function earliestPriceAsk(
+  days: ReadonlyArray<{ at: Date }>,
+  txHistory: ReadonlyMap<string, ReadonlyArray<{ occurredAt: Date }>>
+): Date | undefined {
+  let earliest = Number.POSITIVE_INFINITY;
+  for (const { at } of days) earliest = Math.min(earliest, at.getTime());
+  for (const txs of txHistory.values()) {
+    for (const tx of txs) earliest = Math.min(earliest, tx.occurredAt.getTime());
+  }
+  return Number.isFinite(earliest) ? new Date(earliest) : undefined;
 }

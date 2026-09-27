@@ -24,6 +24,7 @@ import type {
 } from '../../core/types';
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
+import { slidingWindows } from '../../core/utils/time-windows';
 import { gateManifest } from './manifest';
 
 export { gateManifest } from './manifest';
@@ -36,13 +37,21 @@ const GATE_INSTITUTION_CODE = 'gate';
 const TX_QUOTE_ASSETS = ['USDT', 'USDC', 'BTC', 'ETH', 'USD', 'EUR', 'GBP', 'TRY', 'BUSD'] as const;
 
 const FIVE_YEARS_MS = 5 * 365 * 24 * 60 * 60 * 1000;
+
+// Gate caps the `from`/`to` range at 30 days on every history endpoint this
+// provider walks — "Record query time range cannot exceed 30 days" on
+// /spot/accounts/ledger, /wallet/deposits and /wallet/withdrawals, and "The
+// range not allowed to exceed 30 days" on /spot/my_trades. The look-back
+// above is five years, so an unsplit walk asks for sixty times the cap and
+// is refused (SC-1302).
+const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const TRADES_PAGE_LIMIT = 1000;
 const LEDGER_PAGE_LIMIT = 1000;
 const WALLET_PAGE_LIMIT = 500;
 const MAX_CANDIDATE_PAIRS = 80;
-const MAX_TRADE_PAGES = 200;
-const MAX_LEDGER_PAGES = 200;
-const MAX_WALLET_PAGES = 50;
+const MAX_TRADE_PAGES_PER_WINDOW = 200;
+const MAX_LEDGER_PAGES_PER_WINDOW = 200;
+const MAX_WALLET_PAGES_PER_WINDOW = 50;
 
 interface GateSpotBalance {
   currency: string;
@@ -287,25 +296,27 @@ export class GateProvider
     until: Date
   ): Promise<GateTrade[]> {
     const all: GateTrade[] = [];
-    let lastId: string | undefined;
-    for (let page = 0; page < MAX_TRADE_PAGES; page += 1) {
-      const params = new URLSearchParams({
-        currency_pair: pair,
-        limit: String(TRADES_PAGE_LIMIT),
-        from: String(Math.floor(since.getTime() / 1000)),
-        to: String(Math.floor(until.getTime() / 1000)),
-      });
-      if (lastId) params.set('last_id', lastId);
-      const trades = await this.signedJson<GateTrade[]>(
-        { method: 'GET', url: '/spot/my_trades', query: params.toString() },
-        creds
-      );
-      if (!Array.isArray(trades) || trades.length === 0) break;
-      all.push(...trades);
-      if (trades.length < TRADES_PAGE_LIMIT) break;
-      const next = trades[trades.length - 1]?.id;
-      if (!next || next === lastId) break;
-      lastId = next;
+    for (const window of slidingWindows(since, until, THIRTY_DAYS_MS)) {
+      let lastId: string | undefined;
+      for (let page = 0; page < MAX_TRADE_PAGES_PER_WINDOW; page += 1) {
+        const params = new URLSearchParams({
+          currency_pair: pair,
+          limit: String(TRADES_PAGE_LIMIT),
+          from: String(Math.floor(window.start.getTime() / 1000)),
+          to: String(Math.floor(window.end.getTime() / 1000)),
+        });
+        if (lastId) params.set('last_id', lastId);
+        const trades = await this.signedJson<GateTrade[]>(
+          { method: 'GET', url: '/spot/my_trades', query: params.toString() },
+          creds
+        );
+        if (!Array.isArray(trades) || trades.length === 0) break;
+        all.push(...trades);
+        if (trades.length < TRADES_PAGE_LIMIT) break;
+        const next = trades[trades.length - 1]?.id;
+        if (!next || next === lastId) break;
+        lastId = next;
+      }
     }
     return all;
   }
@@ -317,23 +328,25 @@ export class GateProvider
     until: Date
   ): Promise<GateLedgerRow[]> {
     const all: GateLedgerRow[] = [];
-    let pageNum = 1;
-    for (let page = 0; page < MAX_LEDGER_PAGES; page += 1) {
-      const params = new URLSearchParams({
-        currency,
-        limit: String(LEDGER_PAGE_LIMIT),
-        from: String(Math.floor(since.getTime() / 1000)),
-        to: String(Math.floor(until.getTime() / 1000)),
-        page: String(pageNum),
-      });
-      const rows = await this.signedJson<GateLedgerRow[]>(
-        { method: 'GET', url: '/spot/accounts/ledger', query: params.toString() },
-        creds
-      );
-      if (!Array.isArray(rows) || rows.length === 0) break;
-      all.push(...rows);
-      if (rows.length < LEDGER_PAGE_LIMIT) break;
-      pageNum += 1;
+    for (const window of slidingWindows(since, until, THIRTY_DAYS_MS)) {
+      let pageNum = 1;
+      for (let page = 0; page < MAX_LEDGER_PAGES_PER_WINDOW; page += 1) {
+        const params = new URLSearchParams({
+          currency,
+          limit: String(LEDGER_PAGE_LIMIT),
+          from: String(Math.floor(window.start.getTime() / 1000)),
+          to: String(Math.floor(window.end.getTime() / 1000)),
+          page: String(pageNum),
+        });
+        const rows = await this.signedJson<GateLedgerRow[]>(
+          { method: 'GET', url: '/spot/accounts/ledger', query: params.toString() },
+          creds
+        );
+        if (!Array.isArray(rows) || rows.length === 0) break;
+        all.push(...rows);
+        if (rows.length < LEDGER_PAGE_LIMIT) break;
+        pageNum += 1;
+      }
     }
     return all;
   }
@@ -344,22 +357,24 @@ export class GateProvider
     until: Date
   ): Promise<GateWalletDeposit[]> {
     const all: GateWalletDeposit[] = [];
-    let offset = 0;
-    for (let page = 0; page < MAX_WALLET_PAGES; page += 1) {
-      const params = new URLSearchParams({
-        limit: String(WALLET_PAGE_LIMIT),
-        offset: String(offset),
-        from: String(Math.floor(since.getTime() / 1000)),
-        to: String(Math.floor(until.getTime() / 1000)),
-      });
-      const rows = await this.signedJson<GateWalletDeposit[]>(
-        { method: 'GET', url: '/wallet/deposits', query: params.toString() },
-        creds
-      );
-      if (!Array.isArray(rows) || rows.length === 0) break;
-      all.push(...rows);
-      if (rows.length < WALLET_PAGE_LIMIT) break;
-      offset += rows.length;
+    for (const window of slidingWindows(since, until, THIRTY_DAYS_MS)) {
+      let offset = 0;
+      for (let page = 0; page < MAX_WALLET_PAGES_PER_WINDOW; page += 1) {
+        const params = new URLSearchParams({
+          limit: String(WALLET_PAGE_LIMIT),
+          offset: String(offset),
+          from: String(Math.floor(window.start.getTime() / 1000)),
+          to: String(Math.floor(window.end.getTime() / 1000)),
+        });
+        const rows = await this.signedJson<GateWalletDeposit[]>(
+          { method: 'GET', url: '/wallet/deposits', query: params.toString() },
+          creds
+        );
+        if (!Array.isArray(rows) || rows.length === 0) break;
+        all.push(...rows);
+        if (rows.length < WALLET_PAGE_LIMIT) break;
+        offset += rows.length;
+      }
     }
     return all;
   }
@@ -370,22 +385,24 @@ export class GateProvider
     until: Date
   ): Promise<GateWalletWithdrawal[]> {
     const all: GateWalletWithdrawal[] = [];
-    let offset = 0;
-    for (let page = 0; page < MAX_WALLET_PAGES; page += 1) {
-      const params = new URLSearchParams({
-        limit: String(WALLET_PAGE_LIMIT),
-        offset: String(offset),
-        from: String(Math.floor(since.getTime() / 1000)),
-        to: String(Math.floor(until.getTime() / 1000)),
-      });
-      const rows = await this.signedJson<GateWalletWithdrawal[]>(
-        { method: 'GET', url: '/wallet/withdrawals', query: params.toString() },
-        creds
-      );
-      if (!Array.isArray(rows) || rows.length === 0) break;
-      all.push(...rows);
-      if (rows.length < WALLET_PAGE_LIMIT) break;
-      offset += rows.length;
+    for (const window of slidingWindows(since, until, THIRTY_DAYS_MS)) {
+      let offset = 0;
+      for (let page = 0; page < MAX_WALLET_PAGES_PER_WINDOW; page += 1) {
+        const params = new URLSearchParams({
+          limit: String(WALLET_PAGE_LIMIT),
+          offset: String(offset),
+          from: String(Math.floor(window.start.getTime() / 1000)),
+          to: String(Math.floor(window.end.getTime() / 1000)),
+        });
+        const rows = await this.signedJson<GateWalletWithdrawal[]>(
+          { method: 'GET', url: '/wallet/withdrawals', query: params.toString() },
+          creds
+        );
+        if (!Array.isArray(rows) || rows.length === 0) break;
+        all.push(...rows);
+        if (rows.length < WALLET_PAGE_LIMIT) break;
+        offset += rows.length;
+      }
     }
     return all;
   }

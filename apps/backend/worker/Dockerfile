@@ -5,7 +5,7 @@
 # Debian image carrying the binary only (no HTTP port; no healthcheck —
 # Fly observes the machine's exit status, BullMQ liveness is the signal).
 
-ARG BUN_VERSION=1.3.13
+ARG BUN_VERSION=1.4.2
 
 FROM oven/bun:${BUN_VERSION} AS deps
 WORKDIR /app

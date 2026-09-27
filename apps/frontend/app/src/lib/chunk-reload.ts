@@ -1,5 +1,4 @@
 import { importChunk } from '@scani/ui/lib/lazy-chunk';
-import { reportClientError } from '@/lib/report-client-error';
 
 /**
  * One reload per chunk, per tab, and never two in a row (SC-890).
@@ -107,7 +106,6 @@ export function chunkReloadSpent(chunk: string, storage: Storage | null = sessio
 export interface ChunkReloadDeps {
   storage?: Storage | null;
   reload?: () => void;
-  report?: (error: Error) => void;
 }
 
 /**
@@ -127,7 +125,7 @@ export interface ChunkReloadDeps {
 export async function loadChunkWithOneReload<T>(
   chunk: string,
   load: () => Promise<T>,
-  { storage = sessionStore(), reload, report }: ChunkReloadDeps = {}
+  { storage = sessionStore(), reload }: ChunkReloadDeps = {}
 ): Promise<T> {
   try {
     const loaded = await importChunk(load, { chunk });
@@ -140,13 +138,11 @@ export async function loadChunkWithOneReload<T>(
   } catch (error) {
     if (!takeChunkReload(chunk, storage)) throw error;
 
-    // Reported before navigating, because the reload is about to destroy every
-    // trace that this happened. Without this, a chunk failing for half the
-    // readers on a bad deploy would look like nothing at all: they recover, and
-    // nothing is ever told. `reportClientError` is fire-and-forget and swallows
-    // its own failures, so it can neither delay nor block the recovery — which
-    // is why it is not awaited.
-    (report ?? ((e: Error) => void reportClientError({ error: e })))(error as Error);
+    // Not reported (SC-1380). Every deploy that catches an open tab lands here
+    // and recovers, and a report filed a Sentry issue for each one. A chunk
+    // that is really missing fails again after the reload, and that second
+    // failure is reported by `lazyRoute`'s `ChunkErrorBoundary`, so a broken
+    // deploy is still seen.
     (reload ?? (() => window.location.reload()))();
 
     return await new Promise<never>(() => {});

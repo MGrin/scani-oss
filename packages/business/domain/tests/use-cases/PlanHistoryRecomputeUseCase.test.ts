@@ -3,13 +3,14 @@ import type { DatabaseTransaction } from '@scani/db';
 import type { UserJobState } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { Container } from 'typedi';
-import { PlanTradeFeeRecomputeUseCase } from '../../src/use-cases/PlanTradeFeeRecomputeUseCase';
+import { PlanHistoryRecomputeUseCase } from '../../src/use-cases/PlanHistoryRecomputeUseCase';
 import { withTestDb } from '../../test/helpers/db';
 import { makeUser } from '../../test/helpers/factories';
 import { makeHoldingTransaction, makeToken } from '../../test/helpers/factories-extra';
 
 /**
- * Who the SC-1142 recompute reaches.
+ * Who a history recompute reaches: the SC-1142 trade-fee cohort, and the
+ * SC-1323 stored-history cohort.
  *
  * The test database is shared, so every assertion is about the users made
  * here — membership, never a count.
@@ -17,8 +18,17 @@ import { makeHoldingTransaction, makeToken } from '../../test/helpers/factories-
 
 const JOB = 'portfolio-history-backfill';
 const jobIdFor = (userId: string) => `${JOB}_${userId}_sc1142-trade-fees`;
+const SINCE = new Date('2025-08-21T00:00:00Z');
 const plan = (tx: DatabaseTransaction, userId?: string) =>
-  Container.get(PlanTradeFeeRecomputeUseCase).execute({ jobIdFor, userId }, tx);
+  Container.get(PlanHistoryRecomputeUseCase).execute(
+    { cohort: 'trade-fees', jobIdFor, since: SINCE, userId },
+    tx
+  );
+const planStored = (tx: DatabaseTransaction, userId?: string) =>
+  Container.get(PlanHistoryRecomputeUseCase).execute(
+    { cohort: 'stored-history', jobIdFor, since: SINCE, userId },
+    tx
+  );
 
 async function userWithFees(
   tx: DatabaseTransaction,
@@ -46,7 +56,7 @@ async function recordJob(tx: DatabaseTransaction, userId: string, state: UserJob
   await tx.insert(schema.userJobs).values({ jobId: jobIdFor(userId), userId, jobName: JOB, state });
 }
 
-describe('PlanTradeFeeRecomputeUseCase (SC-1142)', () => {
+describe('PlanHistoryRecomputeUseCase — trade-fees (SC-1142)', () => {
   test('selects a user with a fee, and only users with one', async () => {
     await withTestDb(async (tx) => {
       const withFee = await userWithFees(tx, [null, '-0.5']);
@@ -109,6 +119,84 @@ describe('PlanTradeFeeRecomputeUseCase (SC-1142)', () => {
       const result = await plan(tx, one);
       expect(result.toEnqueue).toEqual([one]);
       expect(result.toEnqueue).not.toContain(other);
+    });
+  });
+});
+
+async function userWithHistory(
+  tx: DatabaseTransaction,
+  days: string[],
+  opts: { baseCurrency?: boolean; scopeKind?: string } = {}
+): Promise<string> {
+  const currency = await makeToken(tx);
+  const user = await makeUser(
+    tx,
+    opts.baseCurrency === false ? {} : { baseCurrencyId: currency.id }
+  );
+  for (const snapshotDate of days) {
+    await tx.insert(schema.portfolioValueDaily).values({
+      userId: user.id,
+      scopeKind: opts.scopeKind ?? 'user',
+      scopeId: user.id,
+      snapshotDate,
+      baseCurrencyId: currency.id,
+      totalValue: '1',
+      coverageQuality: 'full',
+      holdingsWithKnownValue: 1,
+      holdingsTotal: 1,
+    });
+  }
+  return user.id;
+}
+
+describe('PlanHistoryRecomputeUseCase — stored-history (SC-1323)', () => {
+  test('selects a user with a stored day in the window, and only those', async () => {
+    await withTestDb(async (tx) => {
+      const inWindow = await userWithHistory(tx, ['2025-06-01', '2026-09-01']);
+      const onBoundary = await userWithHistory(tx, ['2025-08-21']);
+      const beforeWindow = await userWithHistory(tx, ['2025-08-20']);
+      const noHistory = await userWithHistory(tx, []);
+      const noBaseCurrency = await userWithHistory(tx, ['2026-09-01'], { baseCurrency: false });
+
+      const { toEnqueue } = await planStored(tx);
+      expect(toEnqueue).toContain(inWindow);
+      expect(toEnqueue).toContain(onBoundary);
+      expect(toEnqueue).not.toContain(beforeWindow);
+      expect(toEnqueue).not.toContain(noHistory);
+      expect(toEnqueue).not.toContain(noBaseCurrency);
+    });
+  });
+
+  test('a user-scope row is what counts; an entity-scope row alone does not select', async () => {
+    await withTestDb(async (tx) => {
+      const entityOnly = await userWithHistory(tx, ['2026-09-01'], { scopeKind: 'holding' });
+      expect((await planStored(tx)).toEnqueue).not.toContain(entityOnly);
+    });
+  });
+
+  test('a user done by the trade-fee cohort is still selected here', async () => {
+    await withTestDb(async (tx) => {
+      const user = await userWithHistory(tx, ['2026-09-01']);
+      await tx.insert(schema.userJobs).values({
+        jobId: `${JOB}_${user}_sc1142-trade-fees`,
+        userId: user,
+        jobName: JOB,
+        state: 'completed',
+      });
+      const stored = (id: string) => `${JOB}_${id}_sc1323-evidence-absent`;
+      const result = await Container.get(PlanHistoryRecomputeUseCase).execute(
+        { cohort: 'stored-history', jobIdFor: stored, since: SINCE, userId: user },
+        tx
+      );
+      expect(result.toEnqueue).toEqual([user]);
+    });
+  });
+
+  test('--user narrows the plan to that one user', async () => {
+    await withTestDb(async (tx) => {
+      const one = await userWithHistory(tx, ['2026-09-01']);
+      await userWithHistory(tx, ['2026-09-01']);
+      expect((await planStored(tx, one)).toEnqueue).toEqual([one]);
     });
   });
 });

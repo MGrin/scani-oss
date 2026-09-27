@@ -324,31 +324,6 @@ const INFLOW_OTHER_KINDS = new Set([
   'opening_balance',
 ]);
 const OUTFLOW_SELL_KINDS = new Set(['sell', 'swap_out']);
-/**
- * Does this outflow carry the answer that says it left the portfolio? (SC-150)
- *
- * Only `left_control` realizes. `untracked` is the user saying the asset is
- * still theirs in an account we cannot see — not a disposal. `paired` and
- * `internal` never reach these branches, because both write a
- * `transfer_group_id` and `walkComponent` carries the lots across instead.
- *
- * **It does not check that a person answered, and the name and this comment
- * used to say it did** (SC-324). The two are not the same question:
- * `transfer_review` is written by `TransferReviewService` with
- * `transfer_reviewed_at` beside it, and it has also been written by a raw
- * `UPDATE` that set neither. Measured in production on 2026-08-17: all but one
- * `left_control` row carries no timestamp, nearly all of them from one
- * transaction on 2026-08-14, and between them they account for more than the
- * whole of the realized total.
- *
- * Requiring the timestamp here is a one-line change that would un-realize all
- * of them at once and move that total by the full amount. Whether it *should*
- * is SC-302 — a question about what those rows are, which no query can settle
- * and which is not this function's to decide. So the predicate stays as it is,
- * deliberately, and the distinction it cannot make is carried to the reader
- * instead: every ledger row says whose answer it rests on
- * (`DisposalLotMatch.answerSource`).
- */
 function isConfirmedDisposal(tx: HoldingTransaction): boolean {
   return tx.transferReview === 'left_control';
 }
@@ -708,43 +683,6 @@ export class CostBasisService {
     );
   }
 
-  /**
-   * One holding's cost basis, walked alone.
-   *
-   * Visible for tests + the rollup loop, which already loads txs via a
-   * different pre-fetch path and can avoid the per-holding round-trip by
-   * handing them in directly. `heldTokenId` lets the FMV-at-receipt fallback
-   * price the inflow via the held token's spot rate when the tx itself lacks
-   * priceNative — null disables the fallback (zero-cost lot for
-   * INFLOW_OTHER_KINDS). `txs` must already be filtered to `<= at`; the
-   * caller that needs the filter is `getCostBasis`.
-   *
-   * **This is `walkPool` over a component of one, and that is the whole of it
-   * (SC-344).** It used to be a second, independent fold over the same events,
-   * and the two disagreed on the same inputs — 26.78 from the portfolio walk
-   * against 26.25 from the ledger for one production SOL holding, stable across
-   * three database states, so not the ordering artifact SC-342 fixed. Three
-   * separate divergences, all reachable from one row:
-   *
-   *   - a `transfer_group_id` whose legs are BOTH on this holding is a no-op
-   *     the position never felt. `walkPool` buffers the outflow's lots and the
-   *     paired inflow inherits them, cost and acquisition date intact. This
-   *     walker popped them, DISCARDED them, and minted a fresh lot at the
-   *     transfer date's market value — destroying cost basis on a move that
-   *     never happened. Most production transfer groups are that shape.
-   *   - lots were popped by array position (`lots.shift()`) rather than by
-   *     acquisition date. Equivalent while the array stays date-sorted, which
-   *     it does until an inherited lot re-enters carrying an older date — i.e.
-   *     exactly when the case above fires.
-   *   - a `carry` share whose partner never arrives was popped and dropped
-   *     here, while `walkPool` buffers it and realizes it at end-of-walk when
-   *     the row also carries `left_control`.
-   *
-   * Keeping two folds and repairing each difference would leave the property
-   * that matters unproven: a component of one holding must be indistinguishable
-   * from that holding walked alone, and the only way to make that true *by
-   * construction* rather than by inspection is for there to be one walk.
-   */
   async walkLots(
     dbTx: DatabaseTransaction | undefined,
     txs: ReadonlyArray<HoldingTransaction>,
@@ -929,6 +867,11 @@ export class CostBasisService {
     // Lots popped by a linked transfer_out, keyed by transfer_group_id,
     // waiting for the paired transfer_in to inherit them.
     const pending = new Map<string, ComponentLot[]>();
+    // Where each group's arrivals sit in the walk. A withdrawal paired with
+    // several deposits (SC-1365 — 4,000 that landed as 3,000 and 1,000) has
+    // to hand each arrival its share of the lots; giving the first one all of
+    // them left the second to open a fresh lot at market.
+    const arrivalPositions = groupArrivalPositions(ordered);
     // Parallel ledger of per-outflow exit metadata, keyed by the same
     // transfer_group_id. If the paired transfer_in never arrives by
     // end of walk, each entry is realized at FMV on its source holding.
@@ -1024,7 +967,7 @@ export class CostBasisService {
       return [...slices, ...popHolding(holdingId, wantQty.minus(claimed))];
     };
 
-    for (const tx of ordered) {
+    for (const [position, tx] of ordered.entries()) {
       const holdingId = tx.holdingId;
       const qtyAbs = new Decimal(tx.quantity).abs();
       if (qtyAbs.isZero()) continue;
@@ -1044,6 +987,17 @@ export class CostBasisService {
           // matched outflow accumulators get discarded — the lots are
           // still in the pool, so end-of-walk realization shouldn't
           // double-book PnL on them.
+          const laterArrivals = (arrivalPositions.get(tgid) ?? []).filter(
+            (p) => p > position
+          ).length;
+          if (laterArrivals > 0) {
+            const { taken, left } = shareOf(buffered, qtyAbs, holdingId);
+            if (left !== null) {
+              pending.set(tgid, left);
+              for (const lot of taken) lots.push(lot);
+              continue;
+            }
+          }
           pending.delete(tgid);
           pendingRealization.delete(tgid);
           for (const lot of rehome(buffered, qtyAbs, holdingId)) lots.push(lot);
@@ -1483,6 +1437,53 @@ function carriesAcross(
     if (sourceTokenId !== undefined && sourceTokenId !== arrivalTokenId) return false;
   }
   return true;
+}
+
+/**
+ * Where each transfer group's ARRIVALS sit in the walk order, so an arrival
+ * can tell whether it is the group's last (SC-1365).
+ */
+function groupArrivalPositions(ordered: ReadonlyArray<HoldingTransaction>): Map<string, number[]> {
+  const positions = new Map<string, number[]>();
+  for (const [position, tx] of ordered.entries()) {
+    if (!tx.transferGroupId || (tx.kind !== 'transfer_in' && tx.kind !== 'deposit')) continue;
+    const list = positions.get(tx.transferGroupId);
+    if (list) list.push(position);
+    else positions.set(tx.transferGroupId, [position]);
+  }
+  return positions;
+}
+
+/**
+ * One arrival's share of a buffer that more arrivals will draw on (SC-1365).
+ *
+ * Pro rata across every buffered lot, cost with quantity, so each arrival
+ * carries the average basis of what left and the shares sum to the whole —
+ * the conservation `rehome` holds for one arrival, held across several. The
+ * LAST arrival still goes through `rehome`, which is what lets a fee-shaped
+ * shortfall land its cost on the units that survived.
+ *
+ * `left: null` when this arrival asks for everything that is buffered or
+ * more: nothing would remain for the later ones to take, so the caller treats
+ * it as the last, exactly as before this existed.
+ */
+function shareOf(
+  buffered: ReadonlyArray<ComponentLot>,
+  arrivedQty: Decimal,
+  holdingId: string
+): { taken: ComponentLot[]; left: ComponentLot[] | null } {
+  const sent = buffered.reduce((sum, lot) => sum.add(lot.qty), new Decimal(0));
+  if (sent.lte(arrivedQty)) return { taken: [], left: null };
+  const fraction = arrivedQty.div(sent);
+  const taken: ComponentLot[] = [];
+  const left: ComponentLot[] = [];
+  for (const lot of buffered) {
+    const qty = lot.qty.mul(fraction);
+    const cost = lot.cost.mul(fraction);
+    taken.push({ ...lot, qty, cost, holdingId });
+    left.push({ ...lot, qty: lot.qty.minus(qty), cost: lot.cost.minus(cost) });
+  }
+  return { taken, left };
 }
 
 /**

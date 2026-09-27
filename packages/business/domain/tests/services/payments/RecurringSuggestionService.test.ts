@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import {
   RecurringSuggestionService,
@@ -77,7 +77,19 @@ describe('RecurringSuggestionService', () => {
     await withTestDb(async (tx) => {
       const { user, pay } = await seed(tx);
       await pay('Me Savings', MONTHS, '500', { transferReview: 'internal' });
-      await pay('Old Landlord', ['2026-01-09', '2026-02-10', '2026-03-02'], '3250');
+      await pay('Old Landlord', ['2026-01-09', '2026-02-10', '2026-03-02'], '120');
+      expect(await service().list(user.id, AS_OF, tx)).toEqual([]);
+    });
+  });
+
+  // SC-1325: statement rows now carry a payee, so a monthly move to your own
+  // savings pot that the linker already paired would otherwise read as a bill.
+  test('a payment already paired with its arrival is not suggested', async () => {
+    await withTestDb(async (tx) => {
+      const { user, pay } = await seed(tx);
+      for (const d of MONTHS) {
+        await pay('SAVINGS POT', [d], '200', { transferGroupId: crypto.randomUUID() });
+      }
       expect(await service().list(user.id, AS_OF, tx)).toEqual([]);
     });
   });
@@ -146,6 +158,92 @@ describe('RecurringSuggestionService', () => {
         .where(eq(schema.vendors.id, payment.vendorId));
       expect(vendor?.displayName).toBe('Gym Ltd');
       expect(await service().list(user.id, AS_OF, tx)).toEqual([]);
+    });
+  });
+
+  describe('a payee paid in coins worth the same is one series', () => {
+    async function coins(tx: DatabaseTransaction, userId: string, prices: string[]) {
+      const [usd] = await tx
+        .select()
+        .from(schema.tokens)
+        .innerJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+        .where(and(eq(schema.tokens.symbol, 'USD'), eq(schema.tokenTypes.code, 'fiat')));
+      const institution = await makeInstitution(tx);
+      const account = await makeAccount(tx, { userId, institutionId: institution.id });
+      return Promise.all(
+        prices.map(async (price) => {
+          const token = await makeToken(tx);
+          await tx.insert(schema.tokenPrices).values({
+            tokenId: token.id,
+            baseTokenId: usd?.tokens.id as string,
+            price,
+            timestamp: new Date('2026-08-25T00:00:00Z'),
+            granularity: 'daily',
+            source: 'test',
+          });
+          const holding = await makeHolding(tx, {
+            userId,
+            accountId: account.id,
+            tokenId: token.id,
+          });
+          return { token, holding };
+        })
+      );
+    }
+    const payIn = (tx: DatabaseTransaction, userId: string, holdingId: string, d: string) =>
+      makeHoldingTransaction(tx, {
+        userId,
+        holdingId,
+        kind: 'transfer_out',
+        transferReview: 'left_control',
+        quantity: '-120',
+        occurredAt: new Date(`${d}T12:00:00Z`),
+        counterparty: '0xabc',
+      });
+
+    test('USDT one month and USDC the next is one suggestion, in the coin paid last', async () => {
+      await withTestDb(async (tx) => {
+        const { user } = await seed(tx);
+        const [usdt, usdc] = await coins(tx, user.id, ['0.995', '1.005']);
+        for (const [i, d] of MONTHS.entries()) {
+          await payIn(tx, user.id, (i % 2 ? usdc : usdt)?.holding.id as string, d);
+        }
+
+        const [s, ...rest] = await service().list(user.id, AS_OF, tx);
+        expect(rest).toEqual([]);
+        expect(s).toMatchObject({
+          amount: '120',
+          currencyTokenId: usdc?.token.id,
+          anchorDate: '2026-08-01',
+        });
+        expect(s?.evidence.map((e) => e.currencyTokenId)).toEqual(
+          [usdt, usdc, usdt, usdc].map((c) => c?.token.id as string)
+        );
+      });
+    });
+
+    test('a coin worth twice as much is not merged, and dismissing covers both coins', async () => {
+      await withTestDb(async (tx) => {
+        const { user } = await seed(tx);
+        const [usdt, usdc, other] = await coins(tx, user.id, ['1', '1', '2']);
+        for (const [i, d] of MONTHS.entries()) {
+          await payIn(tx, user.id, (i % 2 ? other : usdt)?.holding.id as string, d);
+        }
+        expect(await service().list(user.id, AS_OF, tx)).toEqual([]);
+
+        // USDT already paid May and July above; a USDC June closes the gap.
+        await payIn(tx, user.id, usdc?.holding.id as string, '2026-06-03');
+        const [s] = await service().list(user.id, new Date('2026-07-20T00:00:00Z'), tx);
+        expect(s?.currencyTokenId).toBe(usdt?.token.id);
+        await service().dismiss(
+          user.id,
+          s?.counterpartyKey as string,
+          usdt?.token.id as string,
+          tx
+        );
+        await payIn(tx, user.id, usdc?.holding.id as string, '2026-08-02');
+        expect(await service().list(user.id, AS_OF, tx)).toEqual([]);
+      });
     });
   });
 

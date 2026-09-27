@@ -10,7 +10,7 @@ export interface SuggestionRow {
   currencyTokenId: string;
   amount: string;
   anchorDate: string;
-  evidence: { transactionId: string; date: string; amount: string }[];
+  evidence: { transactionId: string; date: string; amount: string; currencyTokenId: string }[];
 }
 
 const keyOf = (s: Pick<SuggestionRow, 'counterpartyKey' | 'currencyTokenId'>) =>
@@ -67,7 +67,10 @@ export function RecurringSuggestionsView({
               {s.evidence.map((e) => (
                 <li key={e.transactionId} data-evidence-row className="flex gap-2">
                   <span>{formatDate(e.date)}</span>
-                  <Numeric value={e.amount} currency={symbol} />
+                  <Numeric
+                    value={e.amount}
+                    currency={tokenSymbolById.get(e.currencyTokenId) ?? symbol}
+                  />
                 </li>
               ))}
             </ul>

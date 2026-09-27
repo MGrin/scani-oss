@@ -79,71 +79,6 @@ export interface ExternalFlowSeries {
   staleValuedCount: number;
 }
 
-/**
- * Every external flow into or out of a set of holdings, valued in base
- * currency at the instant it happened (SC-457).
- *
- * ## Why the signs cancel instead of a pairing lookup
- *
- * See `lib/returns/flow-classification.ts`. In short: the value series is
- * reconstructed from this same ledger, so a row on an in-scope holding has
- * already moved the scope's value; the two legs of an internal transfer are
- * both booked, carry opposite signs and equal base value, and cancel in the
- * sum. Nothing here needs to know they were a pair.
- *
- * ## Interval
- *
- * `(from, to]`, half-open at the start. A return window's sub-period runs from
- * the END of one measured day to the END of the next, and the anchor day's own
- * flows are already inside its value. Counting a transaction stamped exactly
- * on the anchor boundary would book it twice.
- *
- * ## `transfer_review` needs handling for exactly ONE of its answers
- *
- * A withdrawal answered `'untracked'` is the owner saying the asset is still
- * theirs in an account we cannot see. That is still value leaving the
- * MEASURED portfolio, so it is still an external outflow — the same as
- * `'left_control'`. Between those two the row's own quantity is the whole
- * flow, and the answer changes what is REALIZED, which is a different question
- * and a different service.
- *
- * `'fee'` is the exception, and it is not a special case so much as the
- * existing rule reaching a share instead of a row (SC-888). A `kind='fee'`
- * ROW is dropped here entirely, four lines below, because `flowRoleOf` calls
- * it `return` — value the portfolio CONSUMED rather than value that crossed
- * the boundary. A fee ANSWER says the same thing about part of an outflow the
- * importer wrote as one row, and it cannot say it by writing a row of its own:
- * `splitSumMatches` makes the portion a carve-out of a quantity that is
- * already in the ledger, so a second row would be the same money twice and
- * `OpeningBalanceReconciliationService` would synthesize a phantom
- * `opening_balance` for it. So the share is subtracted here instead, and the
- * value it removed from the series — which `BalanceAtTimeService` has already
- * walked in full — stays in the return as the cost it was.
- *
- * The whole-row answer is the same statement about all of it, so a withdrawal
- * answered `'fee'` end to end contributes no external flow at all.
- *
- * ## Cost
- *
- * One `token_prices` PREFETCH for the whole batch, not one lookup per flow.
- *
- * Per-flow was the original shape, on the reasoning that a few hundred indexed
- * reads is cheap. Measured against production it was not: on an account with
- * real history the sequential lookups were nearly the whole of a `ytd` request
- * lasting most of a minute, and the same again over `all` — almost all of the
- * call, against a fraction of a second of arithmetic and of the daily series
- * (SC-471).
- * Sequential round-trips are the entire cost, so collapsing them into one
- * query is the entire fix.
- *
- * It is the same `PriceLookup` the nightly rollup uses, built by the same
- * `PriceGraphService.buildPriceLookup`, which is what answers the objection
- * this note used to carry — that a second, differently-warmed price path lets
- * a flow's value and the same transaction's cost basis disagree invisibly.
- * There is no second path: the index holds the rows the repository would have
- * returned, and a pair it was not built to cover falls through to the
- * repository rather than answering "no price" (`PriceLookup.covers`).
- */
 @Service()
 export class ExternalFlowService {
   private readonly txRepository = Container.get(HoldingTransactionRepository);
@@ -179,11 +114,17 @@ export class ExternalFlowService {
       if (tx.tokenId) tokenIds.add(tx.tokenId);
       if (tx.priceNativeTokenId) tokenIds.add(tx.priceNativeTokenId);
     }
+    // Bounded to `from` (SC-1306). The interval is `(from, to]` and every
+    // valuation below happens at `flowValuationInstant(tx.occurredAt)`, which
+    // only ever moves an instant FORWARD to the end of its own day — so no ask
+    // can land before `from`, and the repository's carry-in row makes the
+    // bounded index answer exactly as the unbounded one did.
     const priceLookup = await this.priceGraphService.buildPriceLookup(
       tokenIds,
       baseCurrencyId,
       to,
-      undefined
+      undefined,
+      from
     );
 
     const flows: ExternalFlow[] = [];

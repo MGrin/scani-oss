@@ -15,8 +15,11 @@ import type { Redis } from 'ioredis';
 
 const HOUR_MS = 60 * 60 * 1000;
 
+// Only paths that send mail. `/sign-in/email-otp` checks a code and sends
+// nothing; counting it let ~10 IPs spend the global budget and lock everyone
+// out for an hour (SC-1351).
 const SENDING_PREFIXES = [
-  '/api/auth/sign-in',
+  '/api/auth/sign-in/magic-link',
   '/api/auth/sign-up',
   '/api/auth/email-otp/send-verification-otp',
   '/api/auth/forget-password',

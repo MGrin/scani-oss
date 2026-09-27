@@ -9,7 +9,7 @@
 
 import { cloudApiKeys } from '@scani/db';
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { generateCloudApiKey } from '../../auth/cloud-api-keys';
 import type { CloudDb } from '../../db/connection';
@@ -22,6 +22,14 @@ let cloudDbRef: CloudDb | null = null;
 export function installCloudDb(db: CloudDb | null): void {
   cloudDbRef = db;
 }
+
+/**
+ * Active keys one owner may hold (SC-1353). Every key used to carry its own
+ * hourly budget, so minting more multiplied an account's share of the
+ * upstream windows it shares with production. The budget is per owner now;
+ * the cap keeps an owner's key surface bounded too. Revoked keys do not count.
+ */
+export const MAX_ACTIVE_KEYS_PER_OWNER = 10;
 
 function requireDb(): CloudDb {
   if (!cloudDbRef) {
@@ -117,6 +125,16 @@ export const keysRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const db = requireDb();
+      const [held] = await db
+        .select({ n: count() })
+        .from(cloudApiKeys)
+        .where(and(eq(cloudApiKeys.ownerUserId, ctx.cloudUser.id), isNull(cloudApiKeys.revokedAt)));
+      if ((held?.n ?? 0) >= MAX_ACTIVE_KEYS_PER_OWNER) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `key_limit — at most ${MAX_ACTIVE_KEYS_PER_OWNER} active keys; revoke one to create another`,
+        });
+      }
       const { rawToken, hashedKey, keyPrefix } = await generateCloudApiKey();
       const [row] = await db
         .insert(cloudApiKeys)

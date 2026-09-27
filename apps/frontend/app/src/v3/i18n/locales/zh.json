@@ -133,7 +133,8 @@
       "metric": {
         "netWorth": "净资产",
         "pnl": "损益",
-        "pnlFull": "盈亏损益"
+        "pnlFull": "盈亏损益",
+        "returns": "回报"
       },
       "period": {
         "label7d": "1周",
@@ -160,8 +161,17 @@
         "noHistory": "该时间段还没有历史数据",
         "noMeasurementSince": "自 {{date}} 起没有测量数据——最后一个点是今天的实时合计，而不是汇总日数据。",
         "retry": "重试",
+        "hideFigure": "隐藏金额",
+        "showFigure": "显示金额",
+        "figureHidden": "金额已隐藏",
         "realized": "已实现",
-        "unrealized": "未实现"
+        "unrealized": "未实现",
+        "returnsPending": "正在计算你的表现",
+        "returnsChartPending": "正在计算你相对比特币、标普 500 和美国物价的表现",
+        "returnsNoChart": "已测量的天数还不足以绘制对比图。",
+        "returnsOverPeriod": "收益 · {{period}}",
+        "returnsSince": "收益 · 自 {{date}} 起",
+        "returnsNoRate": "该时间段的收益尚未计算"
       },
       "quality": {
         "allPriced_other": "全部 {{count}} 个持仓均已定价",
@@ -169,7 +179,7 @@
         "withUnpriceable_other": "{{fraction}} · {{count}} 个无法定价",
         "staleQuotes_other": "{{count}} 个过期报价",
         "noBasis_other": "{{count}} 个没有成本基础（收益为上限值）",
-        "unreviewedTransfers_other": "已实现损益未包含 {{count}} 笔未确认的转账"
+        "unreviewedTransfers_other": "已实现损益未包含 {{count}} 笔未分类的付款"
       },
       "dueIn": {
         "today": "今天",
@@ -229,12 +239,39 @@
         "perYear": "每年 <value/>",
         "perYearUnit": "每年",
         "since": "自 {{date}} 起。",
-        "partial": "部分日期无法完全估值，因此这些数字可能不准确。"
+        "partial": "部分日期无法完全估值，因此这些数字可能不准确。",
+        "headline": {
+          "up": "自 {{date}} 起增加 <amount/>",
+          "down": "自 {{date}} 起减少 <amount/>",
+          "flat": "自 {{date}} 起没有变化"
+        },
+        "attribution": {
+          "label": "钱从哪里来",
+          "contributed": "你存入",
+          "withdrew": "你取出",
+          "market": "市场",
+          "currency": "汇率",
+          "combined": "市场与汇率",
+          "unvalued_other": "有 {{count}} 笔资金变动无法估值，因此这个拆分可能不准。"
+        },
+        "chart": {
+          "you": "你",
+          "label": "同期你的投资组合与比特币、标普 500 及美国物价的对比",
+          "unavailable": "比较图表加载失败。上面的数字不受影响。",
+          "truncated": "图表对时间段做了抽样以保持流畅；上面的数字用的是每一天。"
+        },
+        "gaps": {
+          "label": "领先还是落后",
+          "caption": "同样的存入和取出如果分别投进这些，会变成多少。百分比是它们自己的涨跌。",
+          "vs": "对比 {{name}}"
+        },
+        "details": "背后的各项收益率"
       }
     },
     "money": {
       "upcoming": {
         "overdueTotal_other": "已逾期，{{count}} 笔账单",
+        "dayTotalEstimated_other": "约数（含 {{count}} 笔估算账单）：",
         "noneAhead_other": "未来 {{count}} 天内没有到期项。",
         "seeRecurring": "查看定期付款",
         "addPayment": "添加一笔付款",
@@ -714,7 +751,7 @@
       }
     },
     "realizedLedger": {
-      "answerTransfers": "答复等待中的转账",
+      "answerTransfers": "答复等待中的付款",
       "portion": "一笔{{noun}}中的第 {{index}} 部分，共 {{total}} 部分",
       "noun": {
         "sale": "卖出",
@@ -1125,7 +1162,11 @@
         "deleteConsequence": "这个账号里的所有内容都会被删除，包括你上传的每一个文件及其存储副本。你的登录账号会保留，但里面空无一物。此操作无法撤销。",
         "deleteInFlight": "你的数据正在删除中。",
         "deleted": "你的全部数据已删除",
-        "deleteFailed": "删除失败"
+        "deleteFailed": "删除失败",
+        "accountIntro": "删除账户会删除上面的数据以及登录本身。你将被登出，且无法再登录此账户。",
+        "accountTrigger": "删除我的账户",
+        "accountConfirm": "删除我的账户",
+        "accountConsequence": "你的数据、登录以及所有已登录的设备都会被删除。用此邮箱重新注册会得到一个新的空账户。此操作无法撤销。"
       },
       "export": {
         "title": "你的数据",
@@ -1246,6 +1287,18 @@
         "changeConfirm": "按{{method}}重新计算我的盈亏",
         "changeInFlight": "你的盈亏正在重新计算。",
         "recomputing": "正在重新计算你的盈亏 — 应用中的数字仍在调整。"
+      },
+      "accountDeletion": {
+        "failed": "你的账户删除未完成，因此账户仍然存在。",
+        "failedFallback": "请重试，或联系支持团队，我们会为你删除。",
+        "pending": "你的账户正在删除中。",
+        "retry": "重试"
+      },
+      "reauth": {
+        "title": "确认是你本人",
+        "description": "删除需要最近登录过。我们会向 {{email}} 发送一个 6 位验证码。",
+        "send": "给我发送验证码",
+        "sending": "正在发送…"
       }
     },
     "feedback": {
@@ -1257,7 +1310,7 @@
     "review": {
       "page": {
         "title": "核对",
-        "transfersTitle": "待确认的转账",
+        "transfersTitle": "待分类的付款",
         "answered": "已答复",
         "balancesTitle": "待说明的余额变化"
       },
@@ -1267,7 +1320,7 @@
       "item": {
         "jobFailed": "{{job}}失败",
         "invoiceExtracted": "已从发票中提取",
-        "transfersToConfirm": "待确认的转账",
+        "transfersToConfirm": "待分类的付款",
         "holdings_other": "{{count}} 个持仓",
         "holdingsWithSymbols_other": "{{count}} 个持仓 · {{symbols}}",
         "symbolsOverflow": "{{symbols}} 等 {{hidden}} 项",
@@ -1279,7 +1332,7 @@
         "candidatesAcross_other": "{{chains}} 上共 {{count}} 个候选项",
         "nothingFound": "没有找到任何内容",
         "labelled": "{{label}} · {{body}}",
-        "unpairedTransfers_other": "{{count}} 笔没有对应存入的转出",
+        "unpairedTransfers_other": "{{count}} 笔待分类的付款",
         "balanceChangesToExplain": "待说明的余额变化",
         "unexplainedBalanceChanges_other": "{{count}} 笔我们无法解释的余额变化"
       },
@@ -1355,13 +1408,13 @@
           "leftControl": "已记为一次处置",
           "untracked": "已记为仍属于你",
           "split": "已记录——每一部分按各自的方式处理",
-          "gone": "这笔转账已不在等待中",
+          "gone": "这笔付款已不在等待中",
           "splitRejected": "这次拆分未被接受",
           "fee": "已记录为手续费"
         },
         "ownWalletNotice": "这笔资金转到了你添加过的钱包，所以钱仍然是你的。请把它与对应的存入记录配对，或记录它转到了哪里——选择“已离开我的投资组合”会把它记为一次卖出。",
         "withdrawnNotice": "Scani 撤回了此前对这笔转账的答复。当时的答复是针对某个配对给出的，而我们后来证明那根本不是一笔转账，所以问题又回来了——而且这里可能没有可指向的存入记录。",
-        "withdrawnRuleNotice": "你收回了规则对这笔转账给出的答复，因此它回到这里等你亲自答复。该规则不会再答复它。"
+        "withdrawnRuleNotice": "你收回了规则对这笔付款给出的答复，因此它回到这里等你亲自答复。该规则不会再答复它。"
       },
       "destinationPicker": {
         "loading": "正在加载你的账户…",
@@ -1378,6 +1431,8 @@
         "unreviewedBehaviour": "在这些还没有答复之前，Scani 不会就它们计入任何收益——转移你自己的币不是卖出，而擅自当作卖出正是凭空造出收益的方式。如果其中确实有资金离开了你的投资组合，在你说明之前，它的收益不会计入你的已实现合计。",
         "unreviewedNote": "未答复时，这笔无论如何都不会计入收益。",
         "candidateReason": {
+          "combined": "这 {{count}} 笔存入合计即为该金额",
+          "matches": "金额和时间都匹配",
           "ambiguous": "匹配——但另一笔存入也同样匹配",
           "quantity": "金额相差 {{pct}}",
           "time": "超出我们用于匹配的 {{window}} 窗口",
@@ -1475,8 +1530,8 @@
         "reopen": {
           "internal": "这次答复在另一个账户上记录的存入会随之删除——否则你的下一个答复会把这笔钱算两遍。如果当时的答复改动过那个账户的余额，改动也会一并撤回。这笔转账会重新回到队列。",
           "internalCreated": "在你答复之前，那个账户没有追踪过这个标的，因此 Scani 连同存入一起创建了持仓。两者都会被移除——除非此后又有别的内容记在了那笔持仓上，那样它会保留。这笔转账会重新回到队列，其他余额都不会变化。",
-          "leftControl": "在你重新答复之前，这次记入的收益会从你的已实现合计中扣除，这笔转账会重新回到队列。",
-          "default": "这笔转账会重新回到队列，在你重新答复之前，关于它的一切都不算定论。",
+          "leftControl": "在你重新答复之前，这次记入的收益会从你的已实现合计中扣除，这笔付款会重新回到队列。",
+          "default": "这笔付款会重新回到队列，在你重新答复之前，关于它的一切都不算定论。",
           "declared": "这是一笔你自己记录的转账，因此撤销它会把两边的余额还原成之前的状态——转出的账户余额回升，收到的账户余额回落——并删除两条记录。它不会回到队列：已经没有需要答复的问题了。"
         },
         "gap": {
@@ -1490,10 +1545,10 @@
         "bulk": {
           "consequence": {
             "loading": "正在计算这么做的后果…",
-            "none": "所选转账中没有一笔可以这样答复。",
-            "leftControl_other": "把 {{count}} 笔转账计为处置——所得约 {{amount}}，与你支付的成本相抵。",
-            "leftControlUnpriced_other": "把 {{count}} 笔转账计为处置。Scani 没有它们当天的任何价格，因此不计入任何金额。",
-            "untracked_other": "把 {{count}} 笔转账记为仍属于你，在 Scani 看不到的地方。不产生任何已实现损益。",
+            "none": "所选付款中没有一笔可以这样答复。",
+            "leftControl_other": "把 {{count}} 笔付款计为处置——所得约 {{amount}}，与你支付的成本相抵。",
+            "leftControlUnpriced_other": "把 {{count}} 笔付款计为处置。Scani 没有它们当天的任何价格，因此不计入任何金额。",
+            "untracked_other": "把 {{count}} 笔付款记为仍属于你，在 Scani 看不到的地方。不产生任何已实现损益。",
             "takesBack_other": "这会把约 {{amount}} 的已实现收益从目前计为处置的 {{count}} 笔中扣回。",
             "takesBackUnpriced_other": "其中有 {{count}} 笔目前计为处置，而 Scani 没有它们中任何一笔的价格，因此不会扣回任何金额。",
             "unpriced_other": "另有 {{count}} 笔当天没有价格，不计入任何金额，因此这个数字是下限。"
@@ -1506,15 +1561,15 @@
             "ownWallet_other": "有 {{count}} 笔转到了你登记过的钱包，其中第一笔是 {{address}}——它们没有离开你的投资组合，因此不能计为处置。",
             "answered_other": "有 {{count}} 笔已经答复为“{{answer}}”。要修改请从它们各自的行中重新打开。",
             "linked_other": "有 {{count}} 笔已经与存入记录关联，因此在这里答复不会有任何改变。",
-            "gone_other": "有 {{count}} 笔已经不是可以答复的转账了。"
+            "gone_other": "有 {{count}} 笔已经不是可以答复的付款了。"
           },
-          "deselect_other": "取消选择那 {{count}} 笔转账",
-          "overCap": "一次最多选择 {{max}} 笔转账。",
+          "deselect_other": "取消选择那 {{count}} 笔付款",
+          "overCap": "一次最多选择 {{max}} 笔付款。",
           "undo": "撤销",
           "toast": {
-            "leftControl_other": "已把 {{count}} 笔转账计为处置",
-            "untracked_other": "已把 {{count}} 笔转账记为仍属于你",
-            "undone_other": "已把 {{count}} 笔转账还原为原样",
+            "leftControl_other": "已把 {{count}} 笔付款计为处置",
+            "untracked_other": "已把 {{count}} 笔付款记为仍属于你",
+            "undone_other": "已把 {{count}} 笔付款还原为原样",
             "refused": "没有任何内容被更改",
             "undoFailed": "无法撤销该操作"
           }
@@ -1529,9 +1584,9 @@
         "revoke": "收回这条规则",
         "revokeCommit": "收回这条规则",
         "field": {
-          "counterparty": "这笔转账转到了",
+          "counterparty": "这笔付款付给了",
           "key": "该规则将匹配",
-          "keyHint": "金额被刻意排除在外，这样下一笔转到同一去向的转账也会匹配。",
+          "keyHint": "金额被刻意排除在外，这样下一笔发往同一去向的付款也会匹配。",
           "note": "这个去向是什么？",
           "notePlaceholder": "我在 Bybit 的充值地址",
           "verdict": "这条规则要做什么"
@@ -1542,35 +1597,35 @@
           "alwaysADisposal": "直接答复为处置"
         },
         "consequence": {
-          "askMe": "每一笔转到 {{key}} 的转账，无论金额多少，都会留在这个队列中并带上你的备注。不会自动答复，也不会计入任何收益——每一笔仍由你自己决定。",
-          "notADisposal": "每一笔转到 {{key}} 的转账，无论金额多少，都会离开这个队列，改列在“去向规则”下。不会向它们写入任何内容：未答复的转账不计入收益，而收回这条规则会让它们全部立刻回到这里。",
-          "mark_other": "把 {{count}} 笔转到这个去向的转账答复为已离开你的投资组合，计入 {{proceeds}} 的所得。之后每一笔转到该去向的转账都会以同样方式答复，无需打开。每一笔仍可单独撤销，而撤销其中一笔会让该规则永久不再覆盖那笔转账。",
-          "markUnpriced_other": "{{count}} 笔转到这个去向的转账会被答复为已离开你的投资组合。它们当天都没有价格，因此今天不计入任何金额。之后每一笔转到该去向的转账都会以同样方式答复，无需打开。",
+          "askMe": "每一笔发往 {{key}} 的付款，无论金额多少，都会留在这个队列中并带上你的备注。不会自动答复，也不会计入任何收益——每一笔仍由你自己决定。",
+          "notADisposal": "每一笔发往 {{key}} 的付款，无论金额多少，都会离开这个队列，改列在“去向规则”下。不会向它们写入任何内容：未答复的付款不计入收益，而收回这条规则会让它们全部立刻回到这里。",
+          "mark_other": "把 {{count}} 笔发往这个去向的付款答复为已离开你的投资组合，计入 {{proceeds}} 的所得。之后每一笔发往该去向的付款都会以同样方式答复，无需打开。每一笔仍可单独撤销，而撤销其中一笔会让该规则永久不再覆盖那笔付款。",
+          "markUnpriced_other": "{{count}} 笔发往这个去向的付款会被答复为已离开你的投资组合。它们当天都没有价格，因此今天不计入任何金额。之后每一笔发往该去向的付款都会以同样方式答复，无需打开。",
           "markUnpricedTail_other": "其中有 {{count}} 笔当天没有价格，不计入任何金额。",
-          "markFuture": "目前没有针对这个去向的待处理项，因此今天不会答复任何内容。之后每一笔转到该去向的转账都会被答复为已离开你的投资组合，无需打开，并计入收益。"
+          "markFuture": "目前没有针对这个去向的待处理项，因此今天不会答复任何内容。之后每一笔发往该去向的付款都会被答复为已离开你的投资组合，无需打开，并计入收益。"
         },
         "revokeConsequence": {
-          "notADisposal_other": "{{count}} 笔转账会回到队列。此前没有向它们写入任何内容，因此没有需要撤销的东西。",
-          "askMe": "转到这个去向的转账将不再带上你的备注。规则从未答复过它们，因此其他一切都不会改变。",
-          "markKeep_other": "该规则将不再答复转到这个去向的新转账。它已经答复过的 {{count}} 笔仍保持已答复状态并继续计入收益——勾选上面的选项可以把它们也一并收回。",
-          "markWithdraw_other": "该规则将不再答复新的转账，它已经答复过的 {{count}} 笔会回到队列，恢复为未答复。它们的收益将不再计入。"
+          "notADisposal_other": "{{count}} 笔付款会回到队列。此前没有向它们写入任何内容，因此没有需要撤销的东西。",
+          "askMe": "发往这个去向的付款将不再带上你的备注。规则从未答复过它们，因此其他一切都不会改变。",
+          "markKeep_other": "该规则将不再答复发往这个去向的新付款。它已经答复过的 {{count}} 笔仍保持已答复状态并继续计入收益——勾选上面的选项可以把它们也一并收回。",
+          "markWithdraw_other": "该规则将不再答复新的付款，它已经答复过的 {{count}} 笔会回到队列，恢复为未答复。它们的收益将不再计入。"
         },
         "row": {
-          "hiding_other": "让 {{count}} 笔转账留在队列之外",
-          "labelling_other": "为队列中的 {{count}} 笔转账标注名称",
-          "answering_other": "已把 {{count}} 笔转账答复为处置"
+          "hiding_other": "让 {{count}} 笔付款留在队列之外",
+          "labelling_other": "为队列中的 {{count}} 笔付款标注名称",
+          "answering_other": "已把 {{count}} 笔付款答复为处置"
         },
         "hidden": {
-          "title": "被你的规则挡在队列外的转账",
+          "title": "被你的规则挡在队列外的付款",
           "body": "这些都还没有被答复。它们在队列之外等待，收回规则即可把它们放进来。"
         },
         "empty": {
           "title": "还没有去向规则",
-          "body": "在队列中打开一笔转账，写下它去了哪里。之后每一笔转到同一去向的转账都会带上你的备注，无论金额多少——而你标记过的去向会自动为你答复。"
+          "body": "在队列中打开一笔付款，写下它去了哪里。之后每一笔发往同一去向的付款都会带上你的备注，无论金额多少——而你标记过的去向会自动为你答复。"
         },
         "notice": {
           "label": "你对这个去向的备注",
-          "markExempt": "你把这个去向标记为处置，而你在这笔转账上收回了那个答复。它不会再被自动答复。"
+          "markExempt": "你把这个去向标记为处置，而你在这笔付款上收回了那个答复。它不会再被自动答复。"
         },
         "toast": {
           "created": "规则已保存",
@@ -1695,11 +1750,11 @@
         },
         "statement": {
           "title": "上传一份对账单文件",
-          "description": "来自银行或券商的 CSV、TSV、OFX 或 QIF 导出文件。我们会从中读取持仓，并在保存任何内容之前先展示读到的结果。"
+          "description": "来自银行或券商的 CSV、TSV、OFX 或 QIF 导出文件。我们会立即导入其中的持仓和交易，然后向你展示新增了哪些内容。"
         },
         "either": {
           "title": "上传一个文件",
-          "description": "一张余额截图、一份银行对账单或券商导出文件。我们会从中读取持仓，并在保存任何内容之前先展示读到的结果。"
+          "description": "一张余额截图、一份银行对账单或券商导出文件。截图会在保存任何内容之前先给你确认；对账单文件会立即导入。"
         },
         "whereItBelongs": "它属于哪里"
       },
@@ -2333,7 +2388,29 @@
         "walkUnconfirmed": "{{provider}}：分页遍历未能确认已读到该账户历史的末尾",
         "ibkrStatementWindow": "ibkr：该 Flex 报表覆盖 {{from}} 及之后，因此更早的记录从未被取回。时间范围是你保存的 Flex Query 中的设置，Scani 不会替你选择 — 若要回溯更早，请修改该查询的日期范围（IBKR Client Portal → Performance & Reports → Flex Queries → edit the query），保存后重新运行导入。",
         "ibkrStatementWindowPeriod": "ibkr：该 Flex 报表覆盖 {{from}} 及之后（period「{{period}}」），因此更早的记录从未被取回。时间范围是你保存的 Flex Query 中的设置，Scani 不会替你选择 — 若要回溯更早，请修改该查询的日期范围（IBKR Client Portal → Performance & Reports → Flex Queries → edit the query），保存后重新运行导入。",
-        "ibkrStatementWindowUnknown": "ibkr：该 Flex 报表未说明覆盖哪个时间范围，因此不能当作账户的完整历史。时间范围是你保存的 Flex Query 中的设置，Scani 不会替你选择 — 若要回溯更早，请修改该查询的日期范围（IBKR Client Portal → Performance & Reports → Flex Queries → edit the query），保存后重新运行导入。"
+        "ibkrStatementWindowUnknown": "ibkr：该 Flex 报表未说明覆盖哪个时间范围，因此不能当作账户的完整历史。时间范围是你保存的 Flex Query 中的设置，Scani 不会替你选择 — 若要回溯更早，请修改该查询的日期范围（IBKR Client Portal → Performance & Reports → Flex Queries → edit the query），保存后重新运行导入。",
+        "pageCapRetracted": "{{provider}}：{{walks}} — 该账户的其余历史从未被取回",
+        "pageCapMissingTxIds": "{{provider}}：{{walks}} — 本次运行中的部分充值和提现没有链上交易 ID",
+        "pageCapAddressHistory": "地址历史在 {{pages}} 页上限处停止（已取回 {{rows}} 行）",
+        "pageCapUserTransactionsLedger": "user-transactions 账本在 {{pages}} 页上限处停止（已取回 {{rows}} 行）",
+        "pageCapCryptoTransactionsLookup": "crypto-transactions 查询在 {{pages}} 页上限处停止（已取回 {{rows}} 行）",
+        "pageCapAccountList": "账户列表在 {{pages}} 页上限处停止（已取回 {{rows}} 行）",
+        "pageCapAccountTransactions": "账户 {{account}} 的交易在 {{pages}} 页上限处停止（已取回 {{rows}} 行）",
+        "pageCapSymbolTrades": "{{symbol}} 交易在 {{pages}} 页上限处停止（已取回 {{rows}} 行）",
+        "pageCapTransfers": "转账在 {{pages}} 页上限处停止（已取回 {{rows}} 行）",
+        "pageCapCurrencyDeposits": "{{currency}} 充值在 {{pages}} 页上限处停止（已取回 {{rows}} 行）",
+        "pageCapCurrencyWithdrawals": "{{currency}} 提现在 {{pages}} 页上限处停止（已取回 {{rows}} 行）",
+        "pageCapFeed": "{{path}} 数据流在 {{pages}} 页上限处停止（已取回 {{rows}} 行）",
+        "pageCapTrxTransfers": "TRX 转账历史在 {{pages}} 页上限处停止（已取回 {{rows}} 行）",
+        "pageCapTrc20Transfers": "TRC-20 转账历史在 {{pages}} 页上限处停止（已取回 {{rows}} 行）",
+        "pageCapFurtherWalks_other": "另有 {{count}} 项同样如此",
+        "ibkrMissingSections_other": "ibkr：该 Flex 报表未包含 {{sections}} 部分，因此{{consequences}}。如果你有过此类记录，请将其添加到你的 Flex Query（IBKR Client Portal → Performance & Reports → Flex Queries → edit the query），保存后重新运行导入。",
+        "ibkrMissingTrades": "无法导入任何买入或卖出",
+        "ibkrMissingCashTransactions": "无法导入任何股息、利息、存款、取款或费用",
+        "ibkrUnmappedCashTypes_other": "ibkr：此报表中有 {{count}} 笔现金交易的类型 Scani 无法识别 — {{types}} — 因此未被导入。这需要我们来修复，而不是你：请报告此问题。",
+        "ibkrFurtherTypes_other": "另外 {{count}} 种类型",
+        "ibkrIncompleteCashRows_other": "ibkr：此报表中有 {{count}} 笔现金交易的必填字段为空 — {{blanks}} — 因此未被导入。如果你的 Flex Query 缺少这些列，请添加（IBKR Client Portal → Performance & Reports → Flex Queries → edit the query），保存后重新运行导入。如果这些列已存在，说明数据到达时就是空的，这需要我们来修复：请报告此问题。",
+        "ibkrBlankFields": "{{rows}} 笔缺少 {{fields}}"
       },
       "wallet": {
         "subject": "这个钱包",
@@ -2426,7 +2503,10 @@
           "updated": "已更新",
           "transactions_other": "{{count}} 笔交易",
           "statementClose": "对账单期末",
-          "noClosingBalance": "没有期末余额"
+          "noClosingBalance": "没有期末余额",
+          "balanceUnknown": "余额未知",
+          "fromRows": "根据这些记录计算。如果账户之前已有资金，请设置实际余额",
+          "setBalance": "设置余额"
         },
         "warningsTitle_other": "{{count}} 条警告",
         "importAnother": "导入另一个文件",
@@ -2461,6 +2541,7 @@
         },
         "unpricedNote_other": "有 {{count}} 行还没有价格。它们无论如何都已保存——你可以在“持仓”中刷新它们，或者等待下一次每小时的定价扫描。",
         "addMore": "继续添加",
+        "seeOnHome": "在首页查看",
         "unreadablePayload": "这次运行结束时返回的结果我们无法读取。你的投资组合没有任何变化。"
       },
       "generic": {

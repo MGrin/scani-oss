@@ -63,6 +63,10 @@ export function createCloudBetterAuth(opts: {
     },
     advanced: {
       useSecureCookies: opts.baseURL.startsWith('https://'),
+      // SC-1351: Better-Auth's default is the first X-Forwarded-For entry,
+      // which the client writes. This app is Fly-direct, so Fly's header is
+      // the address a client cannot choose.
+      ipAddress: { ipAddressHeaders: ['fly-client-ip'] },
       database: {
         generateId: () => crypto.randomUUID(),
       },

@@ -30,15 +30,43 @@ const DISMISSED_VERSION_STORAGE_KEY = 'scani-dismissed-update-version';
  * none worth comparing (a dev server, or anything that is not the payload).
  *
  * Only `version` is read. The payload also names the `commit` a build came
- * from (SC-964), and that must never stand in for it: two builds of one commit
- * are still two deploys, and keying on the commit would stop a redeploy from
- * offering the update.
+ * from (SC-964), and that must never stand in for it: a commit that changed
+ * only the backend moves the commit and leaves this app byte-identical, and
+ * `version`, a hash of the app's own output, is what says so (SC-1360).
  */
 export function deployedVersion(payload: unknown): string | null {
   if (typeof payload !== 'object' || payload === null) return null;
   const version = (payload as { version?: unknown }).version;
   if (typeof version !== 'string' || version === '' || version === 'dev') return null;
   return version;
+}
+
+// Replaced at build time by `viteVersion` with the id it writes to
+// `/version.json`; undeclared in a bundle built without that plugin.
+declare const __SCANI_BUILD_VERSION__: string | undefined;
+
+/** The version this running bundle was built as, or `null` when its build did not say. */
+export function bundleVersion(): string | null {
+  return deployedVersion({
+    version: typeof __SCANI_BUILD_VERSION__ === 'string' ? __SCANI_BUILD_VERSION__ : undefined,
+  });
+}
+
+/**
+ * Whether the first `/version.json` read of a page load offers the update.
+ *
+ * With the bundle's own version the answer is exact: the page is stale only if
+ * the host serves a different build. The comparison with what the PREVIOUS
+ * visit saw is the fallback for a bundle that cannot say, because it offers
+ * the update to a page that already loaded the new build, once per deploy.
+ */
+export function offersOnFirstRead(
+  served: string,
+  bundle: string | null,
+  lastKnown: string | null
+): boolean {
+  if (bundle !== null) return served !== bundle;
+  return lastKnown !== null && lastKnown !== served;
 }
 
 /**
@@ -152,11 +180,8 @@ export function useAppUpdate(): AppUpdateState {
           // First check this session — compare with last known version from localStorage
           initialVersion.current = version;
           const lastKnown = localStorage.getItem(VERSION_STORAGE_KEY);
-          if (lastKnown && lastKnown !== version) {
-            // Version changed since last session — show update banner
-            if (active) {
-              offerUpdate(version);
-            }
+          if (active && offersOnFirstRead(version, bundleVersion(), lastKnown)) {
+            offerUpdate(version);
           }
           localStorage.setItem(VERSION_STORAGE_KEY, version);
         } else if (version !== initialVersion.current) {

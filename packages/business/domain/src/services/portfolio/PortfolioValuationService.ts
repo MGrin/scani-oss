@@ -17,6 +17,7 @@ import { TokenRepository } from '../../repositories/TokenRepository';
 import { PricingService } from '../pricing/PricingService';
 import { UserService } from '../users/UserService';
 import { PortfolioValueCache } from './PortfolioValueCache';
+import { PortfolioValueVersion } from './PortfolioValueVersion';
 
 // Type for request cache (shared with tRPC context)
 export type RequestCache = Map<string, unknown>;
@@ -35,20 +36,6 @@ export type PortfolioValueResult = {
   baseCurrency: string;
   holdings: Array<{
     accountId: string;
-    /**
-     * The identity every consumer must key a per-holding price on.
-     *
-     * This service prices per token id and is correct at every step; the row
-     * shape used to carry only `tokenSymbol`, so a consumer building a price
-     * map off it had nothing unique to key on. Two tokens can share a symbol
-     * — a `private-company` token and a crypto token, one of several such
-     * pairs in production — and `new Map()` over an array of pairs keeps the
-     * LAST duplicate, so both holdings rendered the survivor's price, source
-     * and staleness while the total computed here stayed right (SC-1114).
-     *
-     * `tokenSymbol` stays for display. It is not an identity and must not be
-     * used as one.
-     */
     tokenId: string;
     tokenSymbol: string;
     balance: string;
@@ -113,6 +100,7 @@ export class PortfolioValuationService {
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly portfolioValueCache = Container.get(PortfolioValueCache);
+  private readonly portfolioValueVersion = Container.get(PortfolioValueVersion);
 
   /**
    * Get user portfolio value with request-scoped caching
@@ -134,17 +122,20 @@ export class PortfolioValuationService {
     // Two cache layers wrap the (expensive) computation:
     //   1. `requestCache` — dedupes sibling tRPC procedures within one
     //      batch (e.g. dashboard.getOverview + getAssetAllocation).
-    //   2. `portfolioValueCache` — a short-TTL Redis cache shared across
-    //      requests and machines, so a burst of holdings/vault activity
-    //      reuses one computation instead of saturating the CPU.
+    //   2. `portfolioValueCache` — a Redis cache shared across requests and
+    //      machines, keyed on a fingerprint of the holdings and prices the
+    //      computation reads, so a reload reuses one computation instead of
+    //      blocking the single thread for a second or more (SC-1322).
     return getOrComputeFromCache(
       requestCache,
       createPortfolioCacheKey(userId, accountId),
       async () => {
-        const baseCurrencyId =
-          userBaseCurrencyId ?? (await this.userService.getBaseCurrency(userId)).id;
+        const [baseCurrencyId, dataVersion] = await Promise.all([
+          userBaseCurrencyId ?? this.userService.getBaseCurrency(userId).then((c) => c.id),
+          this.portfolioValueVersion.read(userId),
+        ]);
         return this.portfolioValueCache.getOrCompute(
-          createPortfolioRedisKey(userId, accountId, baseCurrencyId),
+          createPortfolioRedisKey(userId, accountId, baseCurrencyId, dataVersion),
           () => this.computePortfolioValue(userId, userBaseCurrencyId, accountId)
         );
       }

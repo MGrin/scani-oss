@@ -39,6 +39,8 @@ interface Fixture {
   balance?: number;
   /** `at` precedes every record we hold for this holding — see SC-252. */
   beforeRecords?: boolean;
+  /** `holdings.is_active`; defaults to true. */
+  isActive?: boolean;
 }
 
 function makeService(
@@ -47,7 +49,12 @@ function makeService(
 ): PortfolioValuationAtTimeService {
   Container.set(HoldingRepository, {
     findByUser: async () =>
-      holdings.map((h) => ({ id: h.holdingId, accountId: 'acc', tokenId: h.tokenId })),
+      holdings.map((h) => ({
+        id: h.holdingId,
+        accountId: 'acc',
+        tokenId: h.tokenId,
+        isActive: h.isActive ?? true,
+      })),
   } as unknown as HoldingRepository);
   Container.set(AccountRepository, {
     findByUser: async () => [{ id: 'acc', institutionId: 'inst' }],
@@ -185,59 +192,87 @@ describe('PortfolioValuationAtTimeService — unpriceable holdings', () => {
   });
 });
 
-/**
- * Balances that predate every record we hold (SC-252).
- *
- * Production wrote `total_value = 586.94, coverage_quality = 'full'` for
- * 2025-06-21 on a holding whose first transaction is 2026-06-22 — a
- * confident assertion about a period more than a year before the holding
- * existed. The value is left alone here on purpose: propagating a balance
- * backward is the history chart's intended behaviour, and the ticket's
- * complaint was never that a number was drawn, it was that the number was
- * stamped 'full'. So the number survives and the confidence does not.
- */
 describe('PortfolioValuationAtTimeService — balances predating our records', () => {
   const AIRWALLEX: Fixture[] = [
     { holdingId: 'h-awx', tokenId: 't-usd', price: 1, balance: 586.94, beforeRecords: true },
   ];
+  const BTC: Fixture = { holdingId: 'h-btc', tokenId: 't-btc', price: 60000, balance: 1 };
 
-  test('a pre-existence date is never stamped full', async () => {
-    const svc = makeService(AIRWALLEX, []);
+  test('a holding before its first record contributes no value', async () => {
+    const svc = makeService([...AIRWALLEX, BTC], []);
 
     const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
-    expect(r.coverageQuality).not.toBe('full');
-    expect(r.coverageQuality).toBe('partial');
+    expect(r.totalValueInBase.toString()).toBe('60000');
+    expect(r.perHolding.map((p) => p.holdingId)).toEqual(['h-btc']);
   });
 
-  test('the value is kept, so the chart keeps its line', async () => {
-    const svc = makeService(AIRWALLEX, []);
+  test('and is not counted, so the day that remains reads full', async () => {
+    const svc = makeService([...AIRWALLEX, BTC], []);
 
     const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
-    expect(r.totalValueInBase.toString()).toBe('586.94');
+    expect(r.holdingsTotal).toBe(1);
     expect(r.holdingsWithKnownValue).toBe(1);
+    expect(r.holdingsBeforeRecords).toBe(0);
+    expect(r.coverageQuality).toBe('full');
   });
 
-  test('the count travels with the figure', async () => {
+  test('a day before every record is a day with nothing measured, not a zero', async () => {
+    const svc = makeService(AIRWALLEX, []);
+
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
+
+    expect(r.holdingsTotal).toBe(0);
+    expect(r.holdingsWithKnownValue).toBe(0);
+    expect(r.coverageQuality).toBe('unknown');
+  });
+
+  // The control: the same holding inside its records is valued as before.
+  test('the same holding inside its records is valued', async () => {
+    const svc = makeService([{ ...AIRWALLEX[0], beforeRecords: false } as Fixture, BTC], []);
+
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
+
+    expect(r.totalValueInBase.toString()).toBe('60586.94');
+    expect(r.holdingsTotal).toBe(2);
+  });
+});
+
+describe('PortfolioValuationAtTimeService — inactive holdings (SC-1328)', () => {
+  // `HoldingRepository.findByUser` returns inactive holdings on purpose —
+  // "visible but excluded from totals" — and Home honours that. The history
+  // did not: a deactivated 444-share position at a manual 2000 read as
+  // $888K on every day of the chart while Home showed ~$117K.
+  test('an inactive holding is absent from the day, not valued on it', async () => {
     const svc = makeService(
-      [...AIRWALLEX, { holdingId: 'h-btc', tokenId: 't-btc', price: 60000 }],
+      [
+        { holdingId: 'h-btc', tokenId: 't-btc', price: 60000, balance: 1 },
+        { holdingId: 'h-revo', tokenId: 't-revo', price: 2000, balance: 444, isActive: false },
+      ],
       []
     );
 
     const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
-    expect(r.holdingsBeforeRecords).toBe(1);
-    expect(r.perHolding.find((p) => p.holdingId === 'h-awx')?.balanceBeforeRecords).toBe(true);
-    expect(r.perHolding.find((p) => p.holdingId === 'h-btc')?.balanceBeforeRecords).toBe(false);
+    expect(r.totalValueInBase.toString()).toBe('60000');
+    expect(r.holdingsTotal).toBe(1);
+    expect(r.perHolding.map((p) => p.holdingId)).toEqual(['h-btc']);
+    expect(r.coverageQuality).toBe('full');
   });
 
-  test('a portfolio inside its own records still reads full', async () => {
-    const svc = makeService([{ holdingId: 'h-btc', tokenId: 't-btc', price: 60000 }], []);
+  test('control: the same holding, active, is counted', async () => {
+    const svc = makeService(
+      [
+        { holdingId: 'h-btc', tokenId: 't-btc', price: 60000, balance: 1 },
+        { holdingId: 'h-revo', tokenId: 't-revo', price: 2000, balance: 444 },
+      ],
+      []
+    );
 
     const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
 
-    expect(r.holdingsBeforeRecords).toBe(0);
-    expect(r.coverageQuality).toBe('full');
+    expect(r.totalValueInBase.toString()).toBe('948000');
+    expect(r.holdingsTotal).toBe(2);
   });
 });

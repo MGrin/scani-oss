@@ -271,31 +271,6 @@ export class HoldingBalanceObservationRepository extends BaseRepository<
     }
   }
 
-  /**
-   * Every interval on this user's holdings whose balance change the ledger
-   * does not fully explain (SC-501).
-   *
-   * One row per consecutive observation pair, carrying both balances, the
-   * transactions found in `(previous, this]` and this observation's own
-   * review state. The arithmetic that decides what is unexplained lives in
-   * `unexplainedDrift`, in TypeScript, and is applied by `BalanceGapService`;
-   * the `<> 0` here is a PRE-FILTER over the same numbers, not a second
-   * definition — Postgres `numeric` and the project's 28-digit `Decimal` are
-   * both exact decimal, so it can only ever agree with the authority.
-   *
-   * ## Answered rows are returned too, and that is not an oversight
-   *
-   * The reversal suppression asks whether the NEXT interval on the same
-   * holding carries the exact opposite drift, and the next interval may
-   * already have been answered. Filtering answered rows out here would make
-   * a gap's suppression depend on whether its neighbour had been dealt with
-   * yet, which is a queue whose contents change when you answer something
-   * else. The caller filters; this returns the sequence.
-   *
-   * Ordered by `(holding_id, observed_at)` so the caller can read neighbours
-   * without a second pass. That is also the order of the covering index the
-   * SC-501 migration adds, so the window neither sorts nor touches the heap.
-   */
   async findGapCandidatesForUser(
     userId: string,
     transaction?: DatabaseTransaction
@@ -311,11 +286,31 @@ export class HoldingBalanceObservationRepository extends BaseRepository<
             o.balance,
             o.source,
             o.gap_review,
-            LAG(o.observed_at) OVER w AS previous_observed_at,
-            LAG(o.balance)     OVER w AS previous_balance
+            o.previous_observed_at,
+            o.previous_balance
           FROM holding_balance_observations o
           WHERE o.user_id = ${userId}
-          WINDOW w AS (PARTITION BY o.holding_id ORDER BY o.observed_at)
+            AND o.balance_moved
+          UNION
+          SELECT first_after.*
+          FROM holding_transactions tx
+          CROSS JOIN LATERAL (
+            SELECT
+              o.id,
+              o.holding_id,
+              o.observed_at,
+              o.balance,
+              o.source,
+              o.gap_review,
+              o.previous_observed_at,
+              o.previous_balance
+            FROM holding_balance_observations o
+            WHERE o.holding_id = tx.holding_id
+              AND o.observed_at >= tx.occurred_at
+            ORDER BY o.observed_at, o.id
+            LIMIT 1
+          ) AS first_after
+          WHERE tx.user_id = ${userId}
         )
         SELECT
           paired.id                    AS observation_id,

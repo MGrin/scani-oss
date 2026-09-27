@@ -11,8 +11,8 @@ const env = loadEnv();
 
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
-import { getNodeEnv, isNodeEnvProduction, servedVersion } from '@scani/config';
-import { TURNSTILE_HEADER, turnstileRefusal } from '@scani/http-fetch';
+import { getNodeEnv, healthBodyFor, isNodeEnvProduction, servedVersion } from '@scani/config';
+import { isBlockedAuthPath, TURNSTILE_HEADER, turnstileRefusal } from '@scani/http-fetch';
 import { createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
@@ -336,6 +336,13 @@ const app = new Elysia()
   .onRequest(async ({ request }) => {
     const url = new URL(request.url);
     if (!url.pathname.startsWith('/api/auth')) return;
+    // Routes Better-Auth mounts that nothing of ours uses (SC-1351).
+    if (isBlockedAuthPath(url.pathname)) {
+      return new Response(JSON.stringify({ error: 'Not Found' }), {
+        status: 404,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
     const auth = bootState.betterAuth;
     if (!auth) {
       // Either CLOUD_MANAGEMENT_ENABLED=false (legitimate) or boot
@@ -430,8 +437,11 @@ const app = new Elysia()
   // `/health` cannot be that probe either, and deliberately so: `fly.toml`
   // gates traffic on it, so it must keep answering while a dependency is
   // down. Two questions, two endpoints — this is the one allowed to fail.
-  .get('/health/deep', async ({ set }: { set: { status: number } }) => {
-    const checks: Record<string, { ok: boolean; latencyMs?: number; error?: string }> = {};
+  .get('/health/deep', async ({ request, set }: { request: Request; set: { status: number } }) => {
+    const checks: Record<
+      string,
+      { ok: boolean; latencyMs?: number; error?: string; nameResolutionFailure?: boolean }
+    > = {};
 
     const tRedis = performance.now();
     try {
@@ -468,6 +478,7 @@ const app = new Elysia()
     if (reachability.state === 'unreachable' && checks.redis?.ok !== true) {
       checks.redisReachability = {
         ok: false,
+        nameResolutionFailure: reachability.nameResolutionFailure,
         error: reachability.nameResolutionFailure
           ? `host does not resolve from this machine for ${reachability.unreachableForMs}ms (${reachability.consecutiveErrors} attempts) — will not self-heal`
           : `unreachable for ${reachability.unreachableForMs}ms (${reachability.consecutiveErrors} attempts): ${reachability.lastError}`,
@@ -509,10 +520,9 @@ const app = new Elysia()
     //
     // SC-582 adds `costControls` on that same contract, for the same
     // reason: a bound that is off is a configuration state, not an
-    // outage. It answers the question no other surface can — an absent
-    // variable and one set to 0 are the same disabled state reached two
-    // different ways, and neither leaves a trace anywhere else.
-    return {
+    // outage. An absent variable and one explicitly set to zero are
+    // different configuration decisions even when both disable the cap.
+    return healthBodyFor(request, env.DIAGNOSTICS_TOKEN, {
       status: ok ? 'ok' : 'degraded',
       timestamp: new Date().toISOString(),
       checks,
@@ -524,20 +534,26 @@ const app = new Elysia()
           .map((c) => ({ envVar: c.envVar, state: c.state, unbounded: c.unboundedWhenOff })),
         exposed: costControls.exposed,
       },
-    };
+    });
   })
   // Probe of the R2 bucket the data-provider holds credentials for.
   // Backend's /health proxies through this so a storage outage shows up
   // as `r2.ok=false` on the consumer side instead of being silently
-  // masked by a hard-coded "ok" in cloud mode. Auth is intentionally
-  // skipped: this endpoint reveals no secrets and is called from
-  // load-balancer + sibling-service liveness probes.
+  // masked by a hard-coded "ok" in cloud mode. Anyone gets `ok`; the
+  // latency and the storage error need the diagnostics bearer (SC-1357),
+  // which the api sends when it holds one.
   .get(
     '/health/r2',
-    async ({ set }: { set: { status: number; headers: Record<string, string> } }) => {
+    async ({
+      request,
+      set,
+    }: {
+      request: Request;
+      set: { status: number; headers: Record<string, string> };
+    }) => {
       const result = await Container.get(StorageService).healthCheck();
       if (!result.ok) set.status = 503;
-      return result;
+      return healthBodyFor(request, env.DIAGNOSTICS_TOKEN, result);
     }
   );
 
@@ -587,15 +603,6 @@ void (async () => {
           // (RUB, KZT, GEL, AED, …).
           yahooFinanceFactory,
           krakenFactory,
-          // Chain providers — public-endpoint balance + address-validator
-          // dispatch. ENV vars (ETHERSCAN_API_KEY, HELIUS_API_KEY,
-          // TRON_API_URL, TON_API_URL) are read inside each factory.
-          // STUB_CHAIN_DATA=1 registers a fixture chain provider FIRST so
-          // wallet-import detection + balance fetch resolve locally instead
-          // of calling blockchain.info / Etherscan / a Solana RPC. The env
-          // schemas refuse STUB_CHAIN_DATA=1 in production, so a misconfigured
-          // prod deploy crashes at boot rather than serving fixture balances
-          // (SC-490).
           ...(process.env.STUB_CHAIN_DATA === '1' ? [chainStubFactory] : []),
           etherscanFactory,
           bitcoinFactory,

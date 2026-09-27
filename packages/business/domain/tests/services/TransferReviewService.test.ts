@@ -30,6 +30,7 @@ import {
   MalformedCursorError,
   TransferReviewService,
 } from '../../src/services/TransferReviewService';
+import { LinkTransferPairsUseCase } from '../../src/use-cases/LinkTransferPairsUseCase';
 import { RecordHoldingMovementUseCase } from '../../src/use-cases/RecordHoldingMovementUseCase';
 import { UpdateHoldingUseCase } from '../../src/use-cases/UpdateHoldingUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
@@ -43,9 +44,6 @@ interface Fixture {
   tokenId: string;
   outHoldingId: string;
   inHoldingId: string;
-  /** A SECOND holding of the same token in the same account as the outflow —
-   *  the production Airwallex shape, where money moved between two USD
-   *  holdings of one account (SC-187). */
   sameAccountHoldingId: string;
   outAccountId: string;
   inAccountId: string;
@@ -462,11 +460,11 @@ describe('TransferReviewService — candidates', () => {
 
     const [item] = await service().listPending(f.userId);
     expect(item?.candidates).toHaveLength(1);
-    // One viable candidate. The matcher would have taken it — which is why it
-    // is marked `withinStrictTolerance` — and the only reason this row is in
-    // the queue at all in a real system is that the matcher had not yet run.
+    // One viable candidate, inside the matcher's tolerance, and nothing else
+    // matched — so `matches`, not `ambiguous` (SC-1364). The two-deposit case
+    // is under "the entity boundary" below.
     expect(item?.candidates[0]?.withinStrictTolerance).toBe(true);
-    expect(item?.candidates[0]?.reason).toBe('ambiguous');
+    expect(item?.candidates[0]?.reason).toBe('matches');
   });
 
   test('explains a deposit that is the right amount but hours late', async () => {
@@ -548,18 +546,127 @@ describe('TransferReviewService — candidates', () => {
     });
 
     const [item] = await service().listPending(f.userId);
-    expect(item?.candidates[0]?.reason).toBe('ambiguous');
+    expect(item?.candidates[0]?.reason).toBe('matches');
     expect(item?.candidates[1]?.reason).toBe('time_outside_window');
   });
 });
 
-/**
- * SC-336. The queue's job is to explain what the matcher refused, so it has to
- * be able to SHOW the other leg of a bridge — and until it could, the only
- * answers available for a bridged outflow were wrong ones. Production has four
- * bridges answered `left_control` with a timestamp on 2026-08-17, i.e. answered
- * by someone who was shown no arrival to pair them with.
- */
+describe('TransferReviewService — a withdrawal that landed in parts', () => {
+  async function landed(f: Fixture, parts: Array<[minutes: number, quantity: string]>) {
+    const at = anchor();
+    const outId = await insertOutflow(f, { at, quantity: '-200', externalId: 'parts-out' });
+    const ids: string[] = [];
+    for (const [i, [minutes, quantity]] of parts.entries()) {
+      ids.push(
+        await insertInflow(f, {
+          at: new Date(at.getTime() + minutes * 60_000),
+          quantity,
+          externalId: `parts-in-${i}`,
+        })
+      );
+    }
+    return { outId, ids };
+  }
+
+  async function groupsOf(ids: string[]) {
+    const rows = await db
+      .select({ groupId: schema.holdingTransactions.transferGroupId })
+      .from(schema.holdingTransactions)
+      .where(inArray(schema.holdingTransactions.id, ids));
+    return rows.map((r) => r.groupId);
+  }
+
+  test('offers the parts together when no single deposit is near', async () => {
+    const f = fixture!;
+    const { ids } = await landed(f, [
+      [11, '150'],
+      [800, '50'],
+    ]);
+
+    const [item] = await service().listPending(f.userId);
+    expect(item?.candidates).toEqual([]);
+    expect(item?.combinations).toHaveLength(1);
+    expect(item?.combinations[0]?.parts.map((p) => p.transactionId)).toEqual(ids);
+    expect(item?.combinations[0]?.quantity).toBe('200');
+  });
+
+  test('`paired` with the parts links all three rows into one group', async () => {
+    const f = fixture!;
+    const { outId, ids } = await landed(f, [
+      [11, '150'],
+      [800, '50'],
+    ]);
+
+    const result = await service().resolve(f.userId, outId, 'paired', {
+      matchTransactionId: ids[0],
+      alsoMatchTransactionIds: ids.slice(1),
+    });
+    expect(result.ok).toBe(true);
+    const groups = await groupsOf([outId, ...ids]);
+    expect(new Set(groups).size).toBe(1);
+    expect(groups[0]).not.toBeNull();
+    expect((await service().listPending(f.userId)).length).toBe(0);
+
+    // Undoing it releases every part, not only the first.
+    expect(await service().reopen(f.userId, outId)).toBe(true);
+    expect(await groupsOf([outId, ...ids])).toEqual([null, null, null]);
+  });
+
+  /**
+   * The refusal is RETURNED and the transaction commits, so a part claimed
+   * before the failing one has to be released by hand. The sum case fails
+   * before any claim; the control is a part that fails AFTER the first claim.
+   */
+  test('a total that is not the withdrawal is refused, and nothing stays linked', async () => {
+    const f = fixture!;
+    const { outId, ids } = await landed(f, [
+      [11, '150'],
+      [800, '25'],
+    ]);
+    const result = await service().resolve(f.userId, outId, 'paired', {
+      matchTransactionId: ids[0],
+      alsoMatchTransactionIds: ids.slice(1),
+    });
+    expect(result).toEqual({ ok: false, reason: 'sum', expected: '200' });
+    expect(await groupsOf([outId, ...ids])).toEqual([null, null, null]);
+  });
+
+  test('a part already linked elsewhere releases the parts claimed before it', async () => {
+    const f = fixture!;
+    const { outId, ids } = await landed(f, [
+      [11, '150'],
+      [800, '50'],
+    ]);
+    const elsewhere = randomUUID();
+    await db
+      .update(schema.holdingTransactions)
+      .set({ transferGroupId: elsewhere })
+      .where(eq(schema.holdingTransactions.id, ids[1] as string));
+
+    const result = await service().resolve(f.userId, outId, 'paired', {
+      matchTransactionId: ids[0],
+      alsoMatchTransactionIds: ids.slice(1),
+    });
+    expect(result).toEqual({ ok: false, reason: 'partner_gone' });
+    expect(await groupsOf([outId, ids[0] as string])).toEqual([null, null]);
+    expect(await groupsOf([ids[1] as string])).toEqual([elsewhere]);
+  });
+
+  test('a part that landed BEFORE the withdrawal is refused', async () => {
+    const f = fixture!;
+    const { outId, ids } = await landed(f, [
+      [-5, '150'],
+      [800, '50'],
+    ]);
+    const result = await service().resolve(f.userId, outId, 'paired', {
+      matchTransactionId: ids[0],
+      alsoMatchTransactionIds: ids.slice(1),
+    });
+    expect(result.ok).toBe(false);
+    expect(await groupsOf([outId, ...ids])).toEqual([null, null, null]);
+  });
+});
+
 describe('TransferReviewService — a bridge', () => {
   test('offers the arrival on the other chain as a candidate', async () => {
     const f = fixture!;
@@ -669,18 +776,6 @@ describe('TransferReviewService — a bridge', () => {
   });
 });
 
-/**
- * SC-354. Reopening an answer is only a repair if the queue can then answer it;
- * otherwise the reader is asked the same unanswerable question and gives the
- * same wrong answer, having done the work twice. `listAnswered` carries no
- * candidates by design, so before this there was no way to ask in advance.
- *
- * The second test is the one that stopped a bad repair. Four production bridges
- * answered `left_control` at 08:31 on 2026-08-17 have an arrival held inside a
- * SAME-HOLDING transfer group (SC-347, open), and both this preview and the
- * matcher exclude an already-grouped inflow — so reopening those four would put
- * them in a queue with nothing to pair them to. They were left answered.
- */
 describe('TransferReviewService — previewing a reopen', () => {
   test('offers the cross-chain arrival for a bridge already answered left_control', async () => {
     const f = fixture!;
@@ -888,15 +983,6 @@ describe('TransferReviewService — answers', () => {
   });
 });
 
-/**
- * Answering PART of a transfer (SC-181).
- *
- * The reported case is the first test verbatim: a 4,000 USD Airwallex
- * withdrawal of which 3,500 moved to an untracked account and 500 genuinely
- * left. Every SC-150 answer is about the whole row, so before this the only
- * options were to overstate the realized gain by 3,500 or understate it by
- * 500 — wrong in a direction either way.
- */
 describe('TransferReviewService — a divided answer', () => {
   test('records the reported 3,500 untracked / 500 disposed division', async () => {
     const f = fixture!;
@@ -1233,16 +1319,6 @@ describe('TransferReviewService — answered transfers', () => {
   });
 });
 
-/**
- * The ordering and the paging (SC-241).
- *
- * Every fixture here has rows with **no** `transfer_reviewed_at`, because that
- * is the whole defect and it is invisible to a fixture where each row is
- * stamped: ordering by a stamped column is correct right up until the column is
- * NULL, and then Postgres sorts NULLS FIRST under DESC and the limit cuts the
- * list before a single real answer. In production the undated rows buried
- * every dated one, on the one surface built to reach them.
- */
 describe('TransferReviewService — the answered list is reachable', () => {
   /** The bulk-pass shape: answered, with nothing recording who answered. */
   async function insertBulkPassed(f: Fixture, externalId: string, at: Date): Promise<string> {
@@ -1448,31 +1524,6 @@ describe('TransferReviewService — the answered list is reachable', () => {
   });
 });
 
-/**
- * The fourth answer: it moved to a holding Scani tracks (SC-187).
- *
- * The reported case, with the production rows behind it. An Airwallex
- * withdrawal, most of which moved to a savings account the user keeps up to
- * date **by hand** while the remainder genuinely left. There is no deposit on
- * Revolut to pair with, and there never was: the account has no importer, so
- * the matcher was not failing to find a counterpart — there was nothing to
- * find. `paired` is unwritable, `untracked` is false, and `left_control` books
- * a gain nobody made.
- *
- * **The double-count risk is real and is now answered by WHO OWNS THE
- * DESTINATION'S BALANCE, not by never moving it** (SC-856). `holdings.balance`
- * is an independent anchor rather than a sum of transactions, so writing the
- * arrival buys cost-basis continuity on its own — and on a destination a sync
- * owns, that sync has already put the money in the balance, so moving it would
- * count it twice. On one nobody syncs there is no such observer: leaving the
- * anchor still recorded the arrival and moved no money, the owner raised the
- * figure by hand, and THAT edit wrote a second arrival. One hand-maintained
- * savings holding was left carrying three arrival rows for one movement.
- *
- * So every test below that writes an inflow asserts the anchor, and which way
- * it asserts is the discriminator: unsynced destinations move, sync-owned ones
- * do not.
- */
 describe('TransferReviewService — moved to a holding Scani tracks', () => {
   /** The rows this answer wrote, if any. */
   async function createdInflows(f: Fixture, outflowId: string) {
@@ -1572,9 +1623,6 @@ describe('TransferReviewService — moved to a holding Scani tracks', () => {
   });
 
   test('sends money to a second holding of the same token in the SAME account', async () => {
-    // Airwallex has two USD holdings — imported at 1,201.50 and manual at
-    // 6,217.15 — and a withdrawal moved between them. An account-level
-    // destination could not have expressed this.
     const f = fixture!;
     const outId = await insertOutflow(f, { at: anchor(), quantity: '-700', externalId: 'i-3' });
 
@@ -1620,13 +1668,6 @@ describe('TransferReviewService — moved to a holding Scani tracks', () => {
     // holding at zero holding a 250 deposit would read as 250 short from the
     // day it was made.
     expect(created?.balance).toBe('250');
-    // THE SC-187 INVARIANT, and the one SC-356 must not spend to buy its own
-    // fix: nothing syncs this account, so the row stays the user's. It is
-    // `source = 'manual'` that makes `HoldingsSyncHelper` refuse to touch the
-    // balance, and this account is exactly the Revolut-savings destination
-    // that protection exists for. Remove the sync-ownership test in
-    // `openingOf` and this fails: the row arrives at 0 under a sync's source,
-    // handing a hand-maintained balance to a sync that will never fetch it.
     expect(created?.source).toBe('manual');
 
     const [inflow] = await createdInflows(f, outId);
@@ -2058,20 +2099,6 @@ describe('TransferReviewService — reopening an answer that had to create its d
   });
 });
 
-/**
- * SC-856. `writeInflow` never moved an existing destination's balance, on the
- * premise that the destination's own sync had already observed the arrival.
- * That premise is a claim about the DESTINATION, and it is false wherever
- * nothing syncs it: the answer recorded the arrival, moved no money, the owner
- * raised the balance by hand, and THAT edit wrote a second arrival. Measured on
- * production 2026-08-28/29 — one movement out of an imported account left THREE
- * arrival rows on a hand-maintained savings holding at `source = 'manual'`.
- *
- * The fix is not "move every anchor", which is the double-count SC-614 split
- * the callers to avoid. It is the discriminator `openingOf` already uses, plus
- * the half `openingOf` never needed: a holding at `source = 'manual'` is one
- * `HoldingsSyncHelper` refuses to touch whatever its account looks like.
- */
 describe('TransferReviewService — an arrival nobody else will observe (SC-856)', () => {
   async function balanceOf(holdingId: string): Promise<string | undefined> {
     const [row] = await db
@@ -2295,10 +2322,6 @@ describe('TransferReviewService — an arrival nobody else will observe (SC-856)
     await service().resolve(f.userId, outId, 'internal', {
       destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
     });
-    // Every arrival row in production today looks like this: no marker at all.
-    // Those answers moved no anchor, so there is nothing to put back — and
-    // `unrecorded` is refused rather than read as `not_moved`, so a writer
-    // that stopped setting the key cannot quietly start reversing money.
     await db
       .update(schema.holdingTransactions)
       .set({ sourceMetadata: { outflowTransactionId: outId } })
@@ -2441,17 +2464,6 @@ describe('TransferReviewService — where a transfer can go', () => {
     expect(await service().listDestinations(randomUUID(), outId)).toEqual([]);
   });
 
-  /**
-   * The ordering is the half of SC-850 that changes the ANSWER (mgrin,
-   * 2026-08-29). Production offered a SOL transfer an Airwallex fiat account
-   * and a Bitcoin wallet above every Solana wallet, every row reading "No SOL
-   * tracked here yet", because the list was sorted by account name.
-   *
-   * Alphabetical was never neutral — it was a ranking too, by a fact about the
-   * name. Ranking by what the app already knows about each destination is not
-   * a guess and does not pre-select: every account is still offered, nothing
-   * is checked, and the reader can scroll past the whole first band.
-   */
   test('ranks accounts that already hold the token above the rest', async () => {
     const f = fixture!;
     const outId = await insertOutflow(f, { at: anchor(), quantity: '-100', externalId: 'd-5' });
@@ -2481,25 +2493,6 @@ describe('TransferReviewService — where a transfer can go', () => {
     expect(destinations.indexOf(synced!)).toBeLessThan(destinations.indexOf(empty!));
   });
 
-  /**
-   * The account the money LEFT is never a place to CREATE a holding of the
-   * token that just left it (SC-1151).
-   *
-   * `destinationsFor` excludes the source HOLDING and has never excluded the
-   * source ACCOUNT — deliberately, because SC-187's production shape is one
-   * Airwallex account carrying two USD holdings and a withdrawal that moved
-   * between them. What it also has to do, and did not, is skip the
-   * `holdingId: null` band for that account: when the source holding is the
-   * account's only position in the token, the account falls through to
-   * "tracks none of this token yet" and is offered as somewhere to open a new
-   * one. That row says the money left a USD position and arrived in a second
-   * USD position of the same account — the one destination that cannot be
-   * right, and the only one mgrin was offered on production.
-   *
-   * The control is the assertion above it, and it is not decoration: the
-   * claim is an ABSENCE from a list, and a picker that returned nothing at
-   * all would satisfy it while proving nothing.
-   */
   test('does not offer the source ACCOUNT as somewhere to create a holding of the token that left it', async () => {
     const f = fixture!;
     // Asked for `inHoldingId`, whose account holds exactly one position in
@@ -2540,15 +2533,6 @@ describe('TransferReviewService — where a transfer can go', () => {
   });
 });
 
-/**
- * The ten answers that booked disposals on mgrin's own wallets (SC-350), as
- * properties rather than as ten rows.
- *
- * Three separate claims, and the middle one is the one the ticket did not know
- * it needed: an inflow the MATCHER has already claimed cannot be paired, and
- * before `unlinkPair` there was no way to free it — `reopen` refuses a row with
- * no `transfer_review`, which is every pairing the matcher has ever made.
- */
 describe('TransferReviewService — own-wallet corrections (SC-350)', () => {
   /** Registers `address` as a wallet this user controls. */
   async function addOwnWallet(f: Fixture, address: string): Promise<void> {
@@ -2932,17 +2916,6 @@ describe('TransferReviewService — own-wallet corrections (SC-350)', () => {
   });
 });
 
-/**
- * The review surface must not offer an arrival on the outflow's OWN holding
- * (SC-347).
- *
- * The matcher has refused this shape since SC-350, with its own copy of the
- * guard at the call site. These two tests are the ones that were missing: the
- * QUEUE kept offering it and the manual `paired` path kept accepting it, so the
- * defect survived the fix that was supposed to close it. Production shows what
- * that costs — a reader answered `paired` on a 617.5 USDT arrival three days
- * OLDER than the 567.501 departure it was offered against, both on one holding.
- */
 describe('TransferReviewService — same-holding candidates (SC-347)', () => {
   /** An arrival on the very holding the outflow left, which is what the 43
    *  production groups are made of. */
@@ -3228,8 +3201,6 @@ describe('TransferReviewService — the own-wallet invariant (SC-365)', () => {
   describe('resolve refuses a disposal onto an own wallet', () => {
     test('left_control is refused, and the row stays in the queue', async () => {
       const f = fixture!;
-      // `counterpartyIsOwnWallet` already told mgrin this, on the row, and he
-      // answered left_control ten times anyway. Showing is not preventing.
       await addOwnWallet(f, OWN);
       const id = await insertOutflow(f, {
         at: anchor(),
@@ -3496,21 +3467,6 @@ describe('TransferReviewService — address rules', () => {
 
   test('the destination a rule matches on is the one the queue shows — column, payload or neither', async () => {
     const f = fixture!;
-    // Where the destination is READ from — column first, payload second —
-    // asserted to agree row for row between the TypeScript the surface renders
-    // with and the SQL a rule is applied with. They exist separately so that
-    // the count and the 200-row limit can be computed in the database, and
-    // SC-329 is why it matters: an expression that read only the column would
-    // match nothing in production, succeed, and be indistinguishable from a
-    // user with no rules.
-    //
-    // Only the READ is compared, not the whole key. SC-381 moved the
-    // normalization itself into one SQL function that the authoring path,
-    // the join and the count all call, so there is no second implementation of
-    // it left to drift — which is why every shape here is an address, for
-    // which normalization is the identity beyond lowercasing. What a payment
-    // description normalizes to is asserted in
-    // `TransferReviewRuleService.test.ts`, against the same function.
     const shapes: Array<{
       externalId: string;
       payload?: Record<string, unknown>;
@@ -3840,15 +3796,6 @@ describe('TransferReviewService — withdrawing a false pairing (SC-378)', () =>
   });
 });
 
-/**
- * Bulk apply (SC-382).
- *
- * mgrin asked for it directly, and the reason it needs this much test is not
- * the selection: it is that `left_control` is the only answer that books a
- * disposal, so a bulk apply of it books N capital gains on one tap. Every test
- * below pins one of the four gates that stand between a tap and that, or the
- * attribution that the 2026-08-14 raw UPDATE left out of 555 rows.
- */
 describe('TransferReviewService — bulk apply (SC-382)', () => {
   const OWN_BULK = '0xc0ffee11223344556677889900aabbccddeeff01';
 
@@ -4114,34 +4061,40 @@ describe('TransferReviewService — the entity boundary', () => {
     expect(item?.candidates).toHaveLength(1);
   });
 
-  test('offers NO candidate across the boundary — the queue cannot recommend what the matcher refuses', async () => {
+  test('offers the candidate across the boundary, and `paired` takes it', async () => {
     const f = fixture!;
     const at = anchor();
-    await putAccountInEntity(f.outAccountId, await makeEntity(f.userId, 'personal'));
-    await putAccountInEntity(f.inAccountId, await makeEntity(f.userId, 'company'));
+    await putAccountInEntity(f.outAccountId, await makeEntity(f.userId, 'company'));
+    await putAccountInEntity(f.inAccountId, await makeEntity(f.userId, 'personal'));
 
-    await insertOutflow(f, { at, externalId: 'ent-1' });
-    await insertInflow(f, {
+    const outId = await insertOutflow(f, { at, externalId: 'ent-1' });
+    const inId = await insertInflow(f, {
       at: new Date(at.getTime() + 5 * 60_000),
       quantity: '0.999',
       externalId: 'ent-in-1',
     });
 
     const [item] = await service().listPending(f.userId);
-    // The outflow is still a QUESTION — it stays in the queue for its owner to
-    // classify. What it must not have is a recommended answer.
-    expect(item).toBeDefined();
-    expect(item?.candidates).toEqual([]);
+    expect(item?.candidates.map((c) => c.transactionId)).toEqual([inId]);
+    // One strict match is not "ambiguous": nothing else matched.
+    expect(item?.candidates[0]?.reason).toBe('matches');
+
+    const result = await service().resolve(f.userId, outId, 'paired', { matchTransactionId: inId });
+    expect(result.ok).toBe(true);
+    const legs = await db
+      .select({ groupId: schema.holdingTransactions.transferGroupId })
+      .from(schema.holdingTransactions)
+      .where(inArray(schema.holdingTransactions.id, [outId, inId]));
+    expect(new Set(legs.map((l) => l.groupId)).size).toBe(1);
+    expect(legs[0]?.groupId).not.toBeNull();
   });
 
   /**
-   * An account nobody has classified is outside every boundary, so a movement
-   * between it and an assigned one crosses one. The second assertion is the
-   * one that matters most: null matches null, so nothing changes for a
-   * portfolio whose owner has drawn no boundary — which is every portfolio
-   * until they draw one.
+   * The half that must NOT move. Nobody answers the nightly matcher, so it
+   * still refuses to pair across the boundary on its own — and the control is
+   * the same fixture inside one entity, which it does pair.
    */
-  test('assigned-to-unassigned is refused; unassigned-to-unassigned is untouched', async () => {
+  test('the unattended matcher still refuses across the boundary', async () => {
     const f = fixture!;
     const at = anchor();
     await putAccountInEntity(f.outAccountId, await makeEntity(f.userId, 'company'));
@@ -4153,22 +4106,38 @@ describe('TransferReviewService — the entity boundary', () => {
       quantity: '0.999',
       externalId: 'ent-in-2',
     });
-    expect((await service().listPending(f.userId))[0]?.candidates).toEqual([]);
+    expect((await new LinkTransferPairsUseCase().execute({ userId: f.userId })).linked).toBe(0);
 
-    // Both unassigned — the state every existing portfolio is in today.
     await putAccountInEntity(f.outAccountId, null);
-    expect((await service().listPending(f.userId))[0]?.candidates).toHaveLength(1);
+    expect((await new LinkTransferPairsUseCase().execute({ userId: f.userId })).linked).toBe(1);
+  });
+
+  /**
+   * `ambiguous` survives where it is true: two deposits both inside the
+   * matcher's tolerance.
+   */
+  test('two strict matches are both `ambiguous`', async () => {
+    const f = fixture!;
+    const at = anchor();
+    await insertOutflow(f, { at, externalId: 'amb-1' });
+    for (const n of [1, 2]) {
+      await insertInflow(f, {
+        at: new Date(at.getTime() + n * 60_000),
+        quantity: '0.999',
+        externalId: `amb-in-${n}`,
+      });
+    }
+    const [item] = await service().listPending(f.userId);
+    expect(item?.candidates.map((c) => c.reason)).toEqual(['ambiguous', 'ambiguous']);
   });
 
   /**
    * The `internal` answer is the OTHER door onto the same outcome (SC-859).
    *
-   * `candidatePairClass` refuses a cross-entity pair, so `paired` is
-   * unreachable across the boundary — which leaves `internal` as the only
-   * linking answer a reader is offered there. It writes the same shared
-   * `transfer_group_id` and `walkComponent` inherits the lots through it
-   * identically, so a guard on one door and not the other refuses the answer
-   * and permits the outcome.
+   * It writes the same shared `transfer_group_id` as `paired`, and
+   * `walkComponent` inherits the lots through it identically, so a guard on
+   * one door and not the other refuses the answer and permits the outcome —
+   * which is what SC-1364 found in the other direction.
    *
    * The control below is not the one three tests up: those run with every
    * account unassigned, so a writer that refused every `internal` answer
@@ -4206,18 +4175,6 @@ describe('TransferReviewService — the entity boundary', () => {
     expect(await createdInflows(f, outId)).toHaveLength(1);
   });
 
-  /**
-   * mgrin, 2026-09-12, reopening SC-929: **entities are a reporting
-   * convenience, not an ownership change.** A cross-entity movement keeps the
-   * shared `transfer_group_id` and carries the basis across intact,
-   * deliberately — which is what the OWNER-DECLARED door has always done, and
-   * SC-859 never changed.
-   *
-   * This test asserted the opposite refusal for ten days. It is inverted
-   * rather than deleted, because the refusal was real, shipped and reasoned
-   * about at length: the record that matters is that the behaviour was chosen
-   * TWICE, in opposite directions, and the second choice is the product's.
-   */
   test('writes the arrival for an `internal` answer ACROSS the boundary', async () => {
     const f = fixture!;
     await putAccountInEntity(f.outAccountId, await makeEntity(f.userId, 'personal'));
@@ -4249,14 +4206,6 @@ describe('TransferReviewService — the entity boundary', () => {
     expect((await service().pendingSummary(f.userId)).count).toBe(0);
   });
 
-  /**
-   * The split is a third entry point onto `writeInflow`, and it reaches it
-   * with a portion's quantity rather than the row's — so it is asserted
-   * separately in BOTH directions. It was the case a guard in `resolve` alone
-   * would have missed; it is now the case a relaxation in `resolve` alone
-   * would miss, and it is mgrin's actual shape: part of a withdrawal to an
-   * account he tracks, the rest outside.
-   */
   test('writes the `internal` PORTION of a split across the boundary', async () => {
     const f = fixture!;
     await putAccountInEntity(f.outAccountId, await makeEntity(f.userId, 'personal'));
@@ -4282,17 +4231,6 @@ describe('TransferReviewService — the entity boundary', () => {
     expect((await service().pendingSummary(f.userId)).count).toBe(0);
   });
 
-  /**
-   * And the PICKER follows the WRITER — which is the same rule it has always
-   * been, now pointing the other way.
-   *
-   * SC-859 put the boundary in three places at once so the surfaces could not
-   * disagree: the matcher, the writer, and this list. mgrin's SC-929 ruling
-   * moves the writer, so this has to move with it. A picker narrower than its
-   * writer is not a safe half-measure here — it is the same defect SC-859 was
-   * filed about, mirrored: the reader is refused an answer the ledger would
-   * have accepted, and the screen says nothing about why.
-   */
   test('OFFERS a destination across the boundary', async () => {
     const f = fixture!;
     const personal = await makeEntity(f.userId, 'personal');
@@ -4317,17 +4255,6 @@ describe('TransferReviewService — the entity boundary', () => {
     expect(after.map((d) => d.accountId)).toContain(f.emptyAccountId);
   });
 
-  /**
-   * The production shape, and the whole of why SC-1151 was filed: ONE account
-   * assigned to an entity and every other account NULL (21 and 1, measured).
-   *
-   * Under SC-859 an outflow from that one assigned account was offered NO
-   * linking destination whatsoever — every other account is unassigned, and
-   * unassigned is outside every entity rather than inside all of them. That
-   * was called the intended outcome. mgrin's ruling says it is not: entities
-   * are a reporting convenience, so a movement between them is still a
-   * movement between two accounts he owns.
-   */
   test('an assigned source offers the UNASSIGNED destinations too', async () => {
     const f = fixture!;
     await putAccountInEntity(f.outAccountId, await makeEntity(f.userId, 'company'));
@@ -4352,20 +4279,6 @@ describe('TransferReviewService — the entity boundary', () => {
     );
   });
 
-  /**
-   * mgrin's screen, 2026-09-12 (SC-1151), and it needed BOTH halves of this
-   * ticket.
-   *
-   * The boundary removed every unassigned account and the source holding was
-   * excluded by id, so what was left was the source ACCOUNT itself — offered
-   * as somewhere to open a second holding of the token it had just sent away.
-   * One row, and it was the account the money came out of.
-   *
-   * Relaxing the boundary alone would have buried that row in a long list
-   * rather than removed it, and excluding the source alone would have left the
-   * list EMPTY. So this asserts both at once: the source is gone AND there is
-   * something to pick.
-   */
   test('an assigned source whose only position is the one leaving offers the others, never itself', async () => {
     const f = fixture!;
     await putAccountInEntity(f.inAccountId, await makeEntity(f.userId, 'company'));

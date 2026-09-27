@@ -29,7 +29,7 @@ import { TRPCError } from '@trpc/server';
 import { eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
-import { toTRPCError } from '../../utils/error-mapping';
+import { toCredentialCheckError, toTRPCError } from '../../utils/error-mapping';
 import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
 
@@ -251,14 +251,12 @@ export const integrationsRouter = router({
             });
           }
         } catch (error) {
-          if (error instanceof TRPCError) throw error;
-          // Preserve upstream provider's message (e.g. Kraken's
-          // "EAPI:Invalid signature") so the UI surfaces the actual cause.
-          const upstream = error instanceof Error && error.message ? error.message : String(error);
-          throw toTRPCError(error, {
-            fallbackCode: 'BAD_REQUEST',
-            fallbackMessage: `${manifest.institutionName}: ${upstream}`,
-          });
+          // `toCredentialCheckError`, not `toTRPCError`: this call site is the
+          // one place a 5xx and a rejected key have to reach the reader as
+          // different sentences, and the generic mapper's fallback is
+          // BAD_REQUEST — "your details were rejected" — for everything it
+          // does not recognise (SC-445).
+          throw toCredentialCheckError(error, manifest.institutionName);
         }
       }
 

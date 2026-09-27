@@ -5,6 +5,7 @@ import i18n from 'i18next';
 import {
   countByVendorId,
   DEFAULT_MONEY_SEGMENT,
+  dayTotals,
   directionLabel,
   endConsequence,
   filterMergeCandidates,
@@ -628,5 +629,49 @@ describe('vendorDeleteConsequence', () => {
     );
     expect(sentence).toContain('Nothing is paid to or by it');
     expect(sentence).not.toMatch(/\d/);
+  });
+});
+
+/**
+ * The figure beside each date on the Money tab's upcoming feed. It must be the
+ * sum of the rows under that date, so an estimated row counts at its estimate,
+ * not as zero the way the committed headline scores it.
+ */
+describe('dayTotals', () => {
+  const row = (
+    id: string,
+    currencyTokenId: string,
+    expected: string | null,
+    actual: string | null = null
+  ) => ({
+    id,
+    dueDate: '2026-10-01',
+    expectedAmount: expected,
+    actualAmount: actual,
+    payment: { id: `payment-${id}`, direction: 'outflow', currencyTokenId },
+  });
+  const amounts = (totals: ReadonlyMap<string, { toString(): string }>) =>
+    Object.fromEntries(Array.from(totals, ([token, total]) => [token, total.toString()]));
+  const estimates = new Map([['payment-est', { amount: '84.2', sourceDueDate: '2026-02-01' }]]);
+
+  test('adds up every row of the day, per currency', () => {
+    const day = dayTotals(
+      [row('a', 'token-gbp', '1675'), row('b', 'token-gbp', '42'), row('c', 'token-usd', '118.4')],
+      new Map()
+    );
+    expect(amounts(day.totals)).toEqual({ 'token-gbp': '1717', 'token-usd': '118.4' });
+    expect(day.count).toBe(0);
+  });
+
+  test('an estimated row counts at its estimate, and is counted as one', () => {
+    const day = dayTotals([row('a', 'token-eur', '100'), row('est', 'token-eur', null)], estimates);
+    expect(amounts(day.totals)).toEqual({ 'token-eur': '184.2' });
+    expect(day.count).toBe(1);
+  });
+
+  test('a settled amount wins over the estimate, and is not approximate', () => {
+    const day = dayTotals([row('est', 'token-eur', null, '90')], estimates);
+    expect(amounts(day.totals)).toEqual({ 'token-eur': '90' });
+    expect(day.count).toBe(0);
   });
 });

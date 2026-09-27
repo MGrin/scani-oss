@@ -61,7 +61,6 @@ describe('loadChunkWithOneReload', () => {
       reload: () => {
         reloads += 1;
       },
-      report: () => {},
     });
 
     expect(value).toBe('the module');
@@ -76,7 +75,6 @@ describe('loadChunkWithOneReload', () => {
       reload: () => {
         reloads += 1;
       },
-      report: () => {},
     });
 
     expect(await settledWithin(pending)).toBe('pending');
@@ -86,19 +84,31 @@ describe('loadChunkWithOneReload', () => {
     expect(storage.getItem('scani.chunk-reload:interface')).toBe('1');
   });
 
-  test('the failure is reported before the reload destroys the evidence', async () => {
-    const reported: string[] = [];
-    const pending = loadChunkWithOneReload('interface', failing, {
-      storage: tabStorage(),
-      reload: () => {},
-      report: (error) => reported.push(error.message),
-    });
-
-    await settledWithin(pending);
-    // The readable sentence, not the native one — `importChunk` has already
-    // wrapped it, so this is what a reader would have been shown.
-    expect(reported).toHaveLength(1);
-    expect(reported[0]).toContain('interface');
+  test('a miss the reload will recover is not reported (SC-1380)', async () => {
+    // Every deploy that catches an open tab lands here, and each report used
+    // to file a Sentry issue. A chunk that is really gone fails again after
+    // the reload, and `lazyRoute`'s boundary reports that one.
+    const sent: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string | URL | Request) => {
+      sent.push(String(url));
+      return new Response('{}');
+    }) as typeof fetch;
+    try {
+      let reloads = 0;
+      const pending = loadChunkWithOneReload('interface', failing, {
+        storage: tabStorage(),
+        reload: () => {
+          reloads += 1;
+        },
+      });
+      expect(await settledWithin(pending)).toBe('pending');
+      await Bun.sleep(20);
+      expect(reloads).toBe(1);
+      expect(sent).toEqual([]);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 
   test('THE GUARD: a failure that survives its own reload does not reload again', async () => {
@@ -112,7 +122,6 @@ describe('loadChunkWithOneReload', () => {
       reload: () => {
         reloads += 1;
       },
-      report: () => {},
     };
 
     await settledWithin(loadChunkWithOneReload('interface', failing, deps));
@@ -137,7 +146,6 @@ describe('loadChunkWithOneReload', () => {
       reload: () => {
         reloads += 1;
       },
-      report: () => {},
     };
 
     await settledWithin(loadChunkWithOneReload('interface', failing, deps));
@@ -153,7 +161,7 @@ describe('loadChunkWithOneReload', () => {
   test('two different chunks do not spend each other’s reload', async () => {
     const storage = tabStorage();
     const reloaded: number[] = [];
-    const deps = { storage, reload: () => reloaded.push(1), report: () => {} };
+    const deps = { storage, reload: () => reloaded.push(1) };
 
     await settledWithin(loadChunkWithOneReload('interface', failing, deps));
     await settledWithin(loadChunkWithOneReload('component gallery', failing, deps));
@@ -170,7 +178,6 @@ describe('loadChunkWithOneReload', () => {
         reload: () => {
           reloads += 1;
         },
-        report: () => {},
       })
     ).rejects.toThrow(/Could not load the interface/);
     expect(reloads).toBe(0);
@@ -197,7 +204,6 @@ describe('loadChunkWithOneReload', () => {
         reload: () => {
           reloads += 1;
         },
-        report: () => {},
       })
     ).rejects.toThrow(/Could not load the interface/);
     expect(reloads).toBe(0);
@@ -218,7 +224,7 @@ describe('chunkReloadSpent — what the route spinner reads', () => {
   test('after a failure it reads spent, so the spinner can say retrying', async () => {
     const storage = tabStorage();
     await settledWithin(
-      loadChunkWithOneReload('interface', failing, { storage, reload: () => {}, report: () => {} })
+      loadChunkWithOneReload('interface', failing, { storage, reload: () => {} })
     );
     expect(chunkReloadSpent('interface', storage)).toBe(true);
     // Per-chunk, not per-tab: a second route's spinner must not inherit it.
@@ -227,7 +233,7 @@ describe('chunkReloadSpent — what the route spinner reads', () => {
 
   test('it reads false again once the chunk arrives', async () => {
     const storage = tabStorage();
-    const deps = { storage, reload: () => {}, report: () => {} };
+    const deps = { storage, reload: () => {} };
     await settledWithin(loadChunkWithOneReload('interface', failing, deps));
     await loadChunkWithOneReload('interface', async () => 'recovered', deps);
     expect(chunkReloadSpent('interface', storage)).toBe(false);

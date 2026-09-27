@@ -1,6 +1,7 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { setSharedRedis } from '@scani/rate-limiter';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
 import type { BalanceGapCandidate } from '../../../src/repositories/HoldingBalanceObservationRepository';
@@ -57,6 +58,14 @@ interface Stamped {
   source: string | null;
 }
 
+const LOOKUP = { prefetched: true };
+let lookups: unknown[][] = [];
+let conversions: unknown[] = [];
+// What the price rows look like to the stubbed graph: the fingerprint the
+// cache keys on, and the rate every conversion applies.
+let priceVersion = 'prices-v1';
+let rate = new Decimal(1);
+
 function seed(candidates: BalanceGapCandidate[]): {
   service: BalanceGapService;
   recorded: Recorded[];
@@ -64,6 +73,10 @@ function seed(candidates: BalanceGapCandidate[]): {
 } {
   const recorded: Recorded[] = [];
   const stamped: Stamped[] = [];
+  lookups = [];
+  conversions = [];
+  priceVersion = 'prices-v1';
+  rate = new Decimal(1);
 
   Container.set(HoldingBalanceObservationRepository, {
     findGapCandidatesForUser: async () => candidates,
@@ -98,13 +111,21 @@ function seed(candidates: BalanceGapCandidate[]): {
   // is the quantity — which keeps every fixture below readable while still
   // going through the real conversion call.
   Container.set(PriceGraphService, {
-    convert: async (amount: Decimal) => ({
-      amount: new Decimal(amount),
-      rate: new Decimal(1),
-      effectiveAt: new Date(),
-      path: 'identity',
-      stale: false,
-    }),
+    buildPriceLookup: async (...args: unknown[]) => {
+      lookups.push(args);
+      return LOOKUP;
+    },
+    priceLookupFingerprint: async () => priceVersion,
+    convert: async (amount: Decimal, ...rest: unknown[]) => {
+      conversions.push(rest[3]);
+      return {
+        amount: new Decimal(amount).mul(rate),
+        rate,
+        effectiveAt: new Date(),
+        path: 'identity',
+        stale: false,
+      };
+    },
   } as unknown as PriceGraphService);
 
   Container.set(ManualBalanceEditService, {
@@ -158,9 +179,6 @@ describe('BalanceGapService.listPending', () => {
   });
 
   test('a drift the next interval takes straight back is suppressed on BOTH sides', async () => {
-    // The production FXI shape: 47.85 -> 54.13 -> 234.13 -> 65.45, no
-    // transactions. Suppressing only the second would leave the first sitting
-    // at the top of the queue as the largest thing in it.
     const first = candidate({
       observationId: 'obs-a',
       to: new Date('2026-07-21T00:00:00Z'),
@@ -238,7 +256,11 @@ describe('BalanceGapService.listPending', () => {
     // Re-stubbed AFTER `seed`, then a fresh instance so the class-field DI
     // picks the refusing converter up — the pattern the DI note in CLAUDE.md
     // describes, applied to a stub that has to differ from the default.
-    Container.set(PriceGraphService, { convert: async () => null } as unknown as PriceGraphService);
+    Container.set(PriceGraphService, {
+      buildPriceLookup: async () => LOOKUP,
+      priceLookupFingerprint: async () => priceVersion,
+      convert: async () => null,
+    } as unknown as PriceGraphService);
     const listing = await new BalanceGapService().listPending(USER);
     expect(listing.items).toHaveLength(0);
     // "We could not find out" resolves to its own name, never to the
@@ -248,11 +270,36 @@ describe('BalanceGapService.listPending', () => {
     expect(listing.suppressed['below-threshold']).toBe(0);
   });
 
+  test('every conversion shares ONE price prefetch spanning the candidates', async () => {
+    const early = new Date('2026-03-01T00:00:00Z');
+    const late = new Date('2026-06-10T00:00:00Z');
+    const { service } = seed([
+      candidate({ observationId: 'a', holdingId: 'h1', tokenId: 'btc', to: early }),
+      candidate({ observationId: 'b', holdingId: 'h2', tokenId: 'eth', to: late }),
+      candidate({ observationId: 'c', holdingId: 'h3', tokenId: 'btc', to: late }),
+    ]);
+    await service.listPending(USER);
+
+    expect(lookups).toHaveLength(1);
+    const [tokenIds, base, until, , since] = lookups[0] as [string[], string, Date, unknown, Date];
+    expect(new Set(tokenIds)).toEqual(new Set(['btc', 'eth']));
+    expect(base).toBe(BASE);
+    expect(since).toEqual(early);
+    expect(until).toEqual(late);
+    expect(conversions).toHaveLength(3);
+    for (const options of conversions) {
+      expect((options as { priceLookup?: unknown }).priceLookup).toBe(LOOKUP);
+    }
+  });
+
+  test('no prefetch when nothing reaches the pricing step', async () => {
+    const { service } = seed([candidate({ source: 'manual' })]);
+    await service.listPending(USER);
+    expect(lookups).toHaveLength(0);
+    expect(conversions).toHaveLength(0);
+  });
+
   test('there is no age gate — a change observed one second ago is still asked about', async () => {
-    // SC-501's first design held recent gaps back on the theory that a feed
-    // was about to explain them. Measured on production 2026-08-22 that
-    // theory was false forty-seven minutes on, over a real USDC transfer.
-    // This is the test that stops it being re-added.
     const now = new Date();
     const { service } = seed([candidate({ from: new Date(now.getTime() - HOUR), to: now })]);
     const listing = await service.listPending(USER);
@@ -291,6 +338,139 @@ describe('BalanceGapService.listPending', () => {
   });
 });
 
+describe('BalanceGapService.listPending cache (SC-1369)', () => {
+  function fakeRedis(failGet = false) {
+    const store = new Map<string, string>();
+    setSharedRedis({
+      get: async (key: string) => {
+        if (failGet) throw new Error('redis down');
+        return store.get(key) ?? null;
+      },
+      set: async (key: string, value: string) => {
+        store.set(key, value);
+        return 'OK';
+      },
+    } as unknown as Parameters<typeof setSharedRedis>[0]);
+    return store;
+  }
+  const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  afterEach(() => setSharedRedis(null));
+
+  test('an unchanged candidate set is served without pricing, byte-identical', async () => {
+    fakeRedis();
+    const { service } = seed([
+      candidate({ observationId: 'a', holdingId: 'h1', balance: '11000' }),
+      candidate({ observationId: 'b', holdingId: 'h2', balance: '10001' }),
+    ]);
+    const first = await service.listPending(USER);
+    await flush();
+    lookups = [];
+    conversions = [];
+
+    const second = await service.listPending(USER);
+
+    expect(lookups).toHaveLength(0);
+    expect(conversions).toHaveLength(0);
+    expect(JSON.stringify(second)).toBe(JSON.stringify(first));
+  });
+
+  test('an answered gap changes the key, so the listing is priced again', async () => {
+    fakeRedis();
+    const candidates = [candidate({ observationId: 'a' })];
+    const { service } = seed(candidates);
+    expect((await service.listPending(USER)).items).toHaveLength(1);
+    await flush();
+
+    candidates[0] = candidate({ observationId: 'a', gapReview: 'growth' });
+    lookups = [];
+    conversions = [];
+
+    expect((await service.listPending(USER)).items).toHaveLength(0);
+    expect(conversions).toHaveLength(0);
+    expect(lookups).toHaveLength(0);
+  });
+
+  test('a new observation changes the key, so the listing is priced again', async () => {
+    fakeRedis();
+    const candidates = [candidate({ observationId: 'a' })];
+    const { service } = seed(candidates);
+    await service.listPending(USER);
+    await flush();
+
+    candidates.push(candidate({ observationId: 'b', holdingId: 'h2' }));
+    lookups = [];
+
+    expect((await service.listPending(USER)).items).toHaveLength(2);
+    expect(lookups).toHaveLength(1);
+  });
+
+  test('a failing Redis read degrades to computing, never to an error', async () => {
+    fakeRedis(true);
+    const { service } = seed([candidate()]);
+    expect((await service.listPending(USER)).items).toHaveLength(1);
+    expect(lookups).toHaveLength(1);
+  });
+
+  const ids = async (service: BalanceGapService) =>
+    (await service.listPending(USER)).items.map((item) => item.observationId);
+
+  test('a gap answered and then reopened is served gone, then back', async () => {
+    fakeRedis();
+    const candidates = [candidate({ observationId: 'a' })];
+    const { service } = seed(candidates);
+    expect(await ids(service)).toEqual(['a']);
+    await flush();
+
+    candidates[0] = candidate({ observationId: 'a', gapReview: 'growth' });
+    expect(await ids(service)).toEqual([]);
+    await flush();
+
+    candidates[0] = candidate({ observationId: 'a', gapReview: null });
+    expect(await ids(service)).toEqual(['a']);
+  });
+
+  test('a transaction that explains the gap is served as no gap', async () => {
+    fakeRedis();
+    const candidates = [candidate({ observationId: 'a' })];
+    const { service } = seed(candidates);
+    expect(await ids(service)).toEqual(['a']);
+    await flush();
+
+    candidates[0] = candidate({ observationId: 'a', explained: '1000', transactionsApplied: 1 });
+    expect(await ids(service)).toEqual([]);
+  });
+
+  test('a price that lands is served at the new value', async () => {
+    fakeRedis();
+    const { service } = seed([candidate({ observationId: 'a' })]);
+    const first = await service.listPending(USER);
+    expect(first.items.map((i) => i.baseValue)).toEqual(['1000']);
+    await flush();
+
+    rate = new Decimal(3);
+    priceVersion = 'prices-v2';
+    const second = await service.listPending(USER);
+    expect(second.items.map((i) => i.baseValue)).toEqual(['3000']);
+    await flush();
+
+    // And one that drops it under the threshold takes it off the queue.
+    rate = new Decimal('0.000001');
+    priceVersion = 'prices-v3';
+    expect(await ids(service)).toEqual([]);
+  });
+
+  test('the price fingerprint is what carries a price change — the control', async () => {
+    fakeRedis();
+    const { service } = seed([candidate({ observationId: 'a' })]);
+    await service.listPending(USER);
+    await flush();
+    rate = new Decimal(3);
+    // Same fingerprint: the cache has no way to know, so it serves the old value.
+    expect((await service.listPending(USER)).items.map((i) => i.baseValue)).toEqual(['1000']);
+  });
+});
+
 describe('BalanceGapService.answer', () => {
   test('flow writes a deposit for the DRIFT, not for the whole balance change', async () => {
     // A transaction the ledger already holds explains its own part of the
@@ -317,10 +497,6 @@ describe('BalanceGapService.answer', () => {
   });
 
   test('a date before the interval is CLAMPED into it, not refused', async () => {
-    // The production shape, measured 2026-08-22: an owner in UTC+8 answering
-    // with a date lands at local midnight, which is 16:00 UTC the previous
-    // day — fourteen hours before the hour it explains. Refusing it would
-    // refuse nearly every honest answer.
     const from = new Date('2026-06-09T13:01:00Z');
     const to = new Date('2026-06-09T14:01:00Z');
     const { service, recorded } = seed([candidate({ from, to })]);

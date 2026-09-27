@@ -336,7 +336,7 @@ export class HuobiProvider
     }
     // Every early exit above `return`s, so reaching here means the `pages`
     // bound is what stopped the walk — not the end of the feed.
-    capped.note({ walk: `${symbol} trades`, pages: MAX_PAGES, rows });
+    capped.note({ walk: { kind: 'symbolTrades', symbol }, pages: MAX_PAGES, rows });
   }
 
   private async *iterateDepositWithdraw(
@@ -380,7 +380,14 @@ export class HuobiProvider
       if (lastId === undefined) return;
       from = String(lastId);
     }
-    capped.note({ walk: `${currency} ${type}s`, pages: MAX_PAGES, rows });
+    capped.note({
+      walk: {
+        kind: type === 'deposit' ? 'currencyDeposits' : 'currencyWithdrawals',
+        currency,
+      },
+      pages: MAX_PAGES,
+      rows,
+    });
   }
 }
 

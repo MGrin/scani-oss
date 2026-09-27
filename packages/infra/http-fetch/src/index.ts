@@ -1,3 +1,4 @@
+export { isBlockedAuthPath } from './blocked-auth-paths';
 export {
   assertHostIsPublic,
   BoundedFetchError,

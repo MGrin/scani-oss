@@ -55,7 +55,12 @@ interface Fixture {
 function makeService(holdings: Fixture[]): PortfolioValuationAtTimeService {
   Container.set(HoldingRepository, {
     findByUser: async () =>
-      holdings.map((h) => ({ id: h.holdingId, accountId: 'acc', tokenId: h.tokenId })),
+      holdings.map((h) => ({
+        id: h.holdingId,
+        accountId: 'acc',
+        tokenId: h.tokenId,
+        isActive: true,
+      })),
   } as unknown as HoldingRepository);
   Container.set(AccountRepository, {
     findByUser: async () => [{ id: 'acc', institutionId: 'inst' }],

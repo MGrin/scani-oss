@@ -1,56 +1,3 @@
-/**
- * `SolanaProvider` — balances + transactions for Solana mainnet via
- * Helius RPC (preferred when `HELIUS_API_KEY` is set) or the public
- * `mainnet-beta.solana.com` endpoint.
- *
- * Capabilities:
- *  - `current-balances`: native SOL via `getBalance`, SPL tokens via
- *    `getTokenAccountsByOwner`. Both fetched in parallel.
- *  - `transactions`: Helius enhanced `/v0/addresses/:addr/transactions`
- *    only. The public Solana RPC has no equivalent parsed-tx endpoint,
- *    so when no Helius URL is configured we warn-once and return [].
- *  - `address-validator`: base58, 32–44 chars.
- *
- * TRANSFER LEGS ARE NOT A SOURCE OF EVENTS (SC-357). Helius reports
- * every account-level movement a transaction makes, and several of
- * them are the same money seen from different sides. A wrap/unwrap
- * round trip moves lamports into the wallet's own WSOL account and
- * then moves WSOL out of it; WSOL resolves to the same token identity
- * as native SOL, so replaying both legs booked the same 0.5 SOL twice.
- * `events.swap` restated it a third time, which is what SC-339
- * removed. Measured over the full history of the affected wallets,
- * the leg replay put several times more SOL in the ledger than the
- * chain actually holds.
- *
- * The primitive that cannot double count is `accountData[]`:
- * `nativeBalanceChange` on the wallet's own account plus
- * `tokenBalanceChanges` on the accounts it owns is the transaction's
- * NET effect per token, stated once. This provider projects that and
- * nothing else — one event per token per transaction, keyed
- * `<signature>-net-<mint|native>`. Summed over the same history it
- * lands within a rounding error of the balance `getBalance` reports,
- * where the leg replay was several times over.
- *
- * Three consequences worth stating, because each looks like a bug
- * until you know it is the point:
- *
- *  - WSOL folds into native SOL rather than being netted separately.
- *    They are the same asset and the same token identity, so a wrap
- *    that stays wrapped is a movement of nothing and emits no event.
- *  - The transaction FEE is inside `nativeBalanceChange` and stays
- *    there. It is a real disposal of SOL, and `feeQuantity` is written
- *    by the router but read by no cost-basis walk, so a separate fee
- *    leg would silently vanish from the ledger's total.
- *  - A transaction Helius returns without `accountData` emits nothing.
- *    None of the 312 lacked it; if one ever does, saying nothing is
- *    the only honest option left, because every other field on the
- *    payload is a leg and legs are what this stopped trusting.
- *
- * The public Solana RPC throttles aggressively; in production we
- * STRONGLY recommend Helius. The boot-time log emits a warning when
- * the public path is selected so ops sees it once per process.
- */
-
 import type { NewToken } from '@scani/db/schema';
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
 import { createOutflowLimiter, type OutflowRateLimiter } from '@scani/rate-limiter';
@@ -221,23 +168,6 @@ export class SolanaProvider
     return out;
   }
 
-  /**
-   * Transactions for a Solana wallet. Helius enhanced API only — public
-   * RPC has no equivalent parsed-transaction endpoint, so when the
-   * configured `rpcUrl` is the public Solana RPC we warn-once and
-   * return []. Pagination uses Helius's `before=<signature>` cursor on
-   * the last item of each page; we stop when a page comes back short.
-   *
-   * `since` also stops the walk. Helius returns an address's transactions
-   * newest-first — which is the whole reason `before` pages BACKWARDS — so
-   * once a page ends older than the cutoff, every later page is older
-   * still and every event on it would be filtered out below. Without this
-   * the nightly sync re-walked a wallet's entire history to keep a 30-day
-   * window: 4 Helius calls per wallet per night for mgrin's larger wallet,
-   * against 1 (SC-360). The filter below stays — it is what makes the
-   * boundary page correct, since a page straddling the cutoff carries
-   * events on both sides of it.
-   */
   async fetchTransactions(
     ctx: WithUserCreds<ProviderContext> & {
       institutionCode: string;
@@ -285,7 +215,7 @@ export class SolanaProvider
       if (!last?.signature || page.length < HELIUS_PAGE_LIMIT) break;
       // The address is the requester's choice, so its size is too (SC-1271).
       if (events.length >= WALLET_HISTORY_ROW_CAP) {
-        capped.note({ walk: 'the address history', pages, rows: events.length });
+        capped.note({ walk: { kind: 'addressHistory' }, pages, rows: events.length });
         break;
       }
       if (ctx.since && new Date(last.timestamp * 1000) < ctx.since) break;

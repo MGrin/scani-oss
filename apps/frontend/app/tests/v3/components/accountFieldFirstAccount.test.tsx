@@ -44,6 +44,7 @@ function render(mode: PickMode, accounts: { id: string; name: string }[] | undef
           draft={{ name: '', typeId: '' }}
           institutionId=""
           institutionIsNew={false}
+          institutionTypeId=""
           onModeChange={() => {}}
           onSelect={() => {}}
           onDraftChange={() => {}}

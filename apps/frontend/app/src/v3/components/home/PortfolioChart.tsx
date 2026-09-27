@@ -7,6 +7,7 @@ import { useId } from 'react';
 import { Area, AreaChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts';
 import { axisFormat } from '../../lib/axis-format';
 import type { PnLChartPoint, TrendPoint } from '../../lib/home';
+import { MaskedFigure } from './FigureVisibility';
 
 /**
  * The home screen's real chart — net worth or PnL over the selected period.
@@ -80,6 +81,19 @@ interface ChartTooltipProps {
   payload?: readonly TooltipEntry[];
   currency: string;
   granularity: string;
+  amountsHidden: boolean;
+}
+
+/** What an axis tick reads while the hero's amounts are hidden (SC-1375). SVG
+ *  text cannot be blurred reliably across browsers, so it is replaced. */
+export const HIDDEN_TICK = '•••';
+
+export function amountTick(
+  value: number,
+  options: { currency: string; hidden: boolean } & ReturnType<typeof axisFormat>
+): string {
+  const { hidden, ...format } = options;
+  return hidden ? HIDDEN_TICK : resolveNumeric(value, format).text;
 }
 
 /**
@@ -87,7 +101,14 @@ interface ChartTooltipProps {
  * `<Numeric>` — otherwise the one place a reader looks for an exact value is
  * the one place in v3 that formats money its own way.
  */
-function ChartTooltip({ active, label, payload, currency, granularity }: ChartTooltipProps) {
+function ChartTooltip({
+  active,
+  label,
+  payload,
+  currency,
+  granularity,
+  amountsHidden,
+}: ChartTooltipProps) {
   if (!active || !payload || payload.length === 0) return null;
   const point = payload[0];
   if (!point) return null;
@@ -97,7 +118,9 @@ function ChartTooltip({ active, label, payload, currency, granularity }: ChartTo
       <p className="text-caption text-muted-foreground">
         {formatChartDate(String(label ?? ''), granularity)}
       </p>
-      <Numeric value={point.value ?? null} currency={currency} className="text-label" />
+      <MaskedFigure hidden={amountsHidden}>
+        <Numeric value={point.value ?? null} currency={currency} className="text-label" />
+      </MaskedFigure>
     </div>
   );
 }
@@ -111,6 +134,8 @@ interface PortfolioChartProps {
   /** Reads as a sentence — see `ChartFrame`. */
   label: string;
   height?: number;
+  /** The hero's eye is closed: the axis and tooltip must not give the figure away. */
+  amountsHidden?: boolean;
 }
 
 /** First-to-last for net worth, sign-of-latest for PnL: in both cases the
@@ -153,6 +178,7 @@ export function PortfolioChart({
   granularity,
   label,
   height = 200,
+  amountsHidden = false,
 }: PortfolioChartProps) {
   // One gradient per instance: two charts on one page sharing an id would make
   // the second one paint with the first one's colour.
@@ -201,7 +227,9 @@ export function PortfolioChart({
           tick={AXIS_TICK}
           // Compact through `<Numeric>`'s own formatter, so an axis tick and
           // the figure above the chart round the same way.
-          tickFormatter={(value: number) => resolveNumeric(value, { currency, ...axis }).text}
+          tickFormatter={(value: number) =>
+            amountTick(value, { currency, hidden: amountsHidden, ...axis })
+          }
           // Grown with the tick size above: a compact figure set at the type
           // floor no longer fits the 56px this gutter used to be.
           width={64}
@@ -218,9 +246,10 @@ export function PortfolioChart({
           cursor={{ stroke: 'hsl(var(--border-strong))' }}
           content={(props) => (
             <ChartTooltip
-              {...(props as Omit<ChartTooltipProps, 'currency' | 'granularity'>)}
+              {...(props as Omit<ChartTooltipProps, 'currency' | 'granularity' | 'amountsHidden'>)}
               currency={currency}
               granularity={granularity}
+              amountsHidden={amountsHidden}
             />
           )}
         />

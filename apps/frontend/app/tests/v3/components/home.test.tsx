@@ -2,9 +2,13 @@ import '../../i18n-preload';
 
 import { describe, expect, test } from 'bun:test';
 import { TRANSFER_REVIEW_KIND } from '@scani/shared';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { httpBatchLink } from '@trpc/client';
+import { getQueryKey } from '@trpc/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom';
 import type { BaseCurrencyRates } from '../../../src/hooks/useBaseCurrencyRates';
+import { trpc } from '../../../src/lib/trpc';
 import { CoverageNote } from '../../../src/v3/components/home/CoverageNote';
 import { DisclosureButton } from '../../../src/v3/components/home/DisclosureButton';
 import {
@@ -12,12 +16,16 @@ import {
   FirstRunPanel,
   resolveFirstRunState,
 } from '../../../src/v3/components/home/FirstRunPanel';
+import { HeroBlock } from '../../../src/v3/components/home/HeroBlock';
 import { formatChartDate } from '../../../src/v3/components/home/PortfolioChart';
 import { UpcomingFootLine } from '../../../src/v3/components/home/UpcomingBlock';
 import { VaultProgressRow } from '../../../src/v3/components/home/VaultsBlock';
+import type { HomeChart } from '../../../src/v3/hooks/useHomeChart';
 import {
   type FigureQuality,
+  HOME_METRICS,
   heroFigureQuality,
+  homePeriodByKey,
   type PnLPoint,
   type VaultRow,
 } from '../../../src/v3/lib/home';
@@ -255,14 +263,14 @@ describe('CoverageNote', () => {
   test('the unreviewed-transfer clause is a link to the queue that clears it', () => {
     const html = renderNote({ ...FULL, transfersUnreviewed: 3 });
     expect(html).toInclude('href="/review/transfers"');
-    expect(html).toInclude('Realized PnL excludes 3 unconfirmed transfers');
+    expect(html).toInclude('Realized PnL excludes 3 unclassified payments out');
   });
 
   test('the whole sentence is the tap target, not a word inside it', () => {
     // At 390px a two-word target inside a caption is the one thing in this
     // block a thumb misses, and the sentence already names where it goes.
     const anchor = /<a [^>]*>([^<]*)<\/a>/.exec(renderNote({ ...FULL, transfersUnreviewed: 2 }));
-    expect(anchor?.[1]).toBe('Realized PnL excludes 2 unconfirmed transfers');
+    expect(anchor?.[1]).toBe('Realized PnL excludes 2 unclassified payments out');
   });
 
   test('the upward-biased omissions stay prose, with nothing to tap', () => {
@@ -340,7 +348,7 @@ describe('the PnL caption against the live review queue', () => {
     // reasons — "the live count won" and "the count was hard-zeroed" are the
     // same observation at zero — and only one of them is the fix.
     const html = renderCaption([transferQueueRow(2)]);
-    expect(html).toInclude('Realized PnL excludes 2 unconfirmed transfers');
+    expect(html).toInclude('Realized PnL excludes 2 unclassified payments out');
     expect(html).not.toInclude('4 unconfirmed');
   });
 
@@ -348,7 +356,7 @@ describe('the PnL caption against the live review queue', () => {
     // The other direction, and the one that says this is not a fix pointed
     // downward: six waiting against a stored four must read six.
     expect(renderCaption([transferQueueRow(6)])).toInclude(
-      'Realized PnL excludes 6 unconfirmed transfers'
+      'Realized PnL excludes 6 unclassified payments out'
     );
   });
 
@@ -439,8 +447,6 @@ describe('FirstRunPanel', () => {
     const html = render({ kind: 'invite' });
     expect(html).toInclude('href="/import"');
     expect(html).toInclude('Upload a screenshot or file');
-    // The screenshot is named before the file: `screenshot-parse` has run 12
-    // times in production and `file-import` has never run at all.
     expect(html.indexOf('screenshot')).toBeLessThan(html.indexOf('CSV'));
     // And it says outright that no credential is wanted — the ask this route
     // exists to avoid.
@@ -596,4 +602,75 @@ describe('UpcomingFootLine', () => {
     expect(html).toInclude('€84.20');
     expect(html).not.toInclude('€126.20');
   });
+});
+
+describe('Home net-worth change', () => {
+  const range = { from: new Date('2026-08-01'), to: new Date('2026-08-31') };
+  const chart: HomeChart = {
+    metric: 'net-worth',
+    chooseMetric: () => {},
+    metrics: HOME_METRICS,
+    periodKey: '30d',
+    choosePeriod: () => {},
+    period: homePeriodByKey('30d'),
+    range,
+    returns: { request: { kind: 'custom', ...range }, view: null, pending: false },
+  };
+
+  test.each([
+    ['130', '+$30.00', '+30.0%'],
+    ['80', '−$20.00', '−20.0%'],
+  ])(
+    'shows the full change to %s without waiting for a contribution calculation',
+    (total, amount, percent) => {
+      const client = new QueryClient({
+        defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+      });
+      client.setQueryData(
+        getQueryKey(trpc.portfolio.getNetWorthSeries, { ...range, granularity: 'auto' }, 'query'),
+        {
+          series: [
+            {
+              date: '2026-08-01',
+              totalValue: '100',
+              holdingsTotal: 1,
+              holdingsWithKnownValue: 1,
+              holdingsUnpriceable: 0,
+              holdingsStalePriced: 0,
+              holdingsBasisUnknown: 0,
+            },
+            {
+              date: '2026-08-30',
+              totalValue: '110',
+              holdingsTotal: 1,
+              holdingsWithKnownValue: 1,
+              holdingsUnpriceable: 0,
+              holdingsStalePriced: 0,
+              holdingsBasisUnknown: 0,
+            },
+          ],
+          baseCurrencyId: 'USD',
+          granularity: 'daily',
+          unmeasuredDates: [],
+        }
+      );
+      const trpcClient = trpc.createClient({
+        links: [httpBatchLink({ url: 'http://localhost/trpc' })],
+      });
+      const html = renderToStaticMarkup(
+        <trpc.Provider client={trpcClient} queryClient={client}>
+          <QueryClientProvider client={client}>
+            <StaticRouter location="/">
+              <HeroBlock total={total} currency="USD" chart={chart} />
+            </StaticRouter>
+          </QueryClientProvider>
+        </trpc.Provider>
+      );
+      client.clear();
+      expect(html).toInclude(amount);
+      expect(html).toInclude(percent);
+      expect(html).toInclude('vs 30d');
+      expect(html).not.toInclude('excluding');
+    }
+  );
 });

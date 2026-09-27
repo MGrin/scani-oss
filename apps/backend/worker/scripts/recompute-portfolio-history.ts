@@ -1,22 +1,23 @@
 #!/usr/bin/env bun
 
 //
-// One-shot for SC-1142: re-roll the stored portfolio history of every user
-// whose ledger carries a trade fee, now that fees reach cost basis.
+// One-shot re-roll of stored portfolio history for one cohort of users, after
+// a change to how a past day is valued. See PlanHistoryRecomputeUseCase for
+// the cohorts.
 //
-//   bun scripts/recompute-trade-fee-history.ts                  # dry run, enqueues nothing
-//   bun scripts/recompute-trade-fee-history.ts --user <uuid>    # dry run, one user
-//   bun scripts/recompute-trade-fee-history.ts --apply          # enqueue
+//   bun scripts/recompute-portfolio-history.ts --cohort stored-history                 # dry run
+//   bun scripts/recompute-portfolio-history.ts --cohort stored-history --user <uuid>   # dry run, one user
+//   bun scripts/recompute-portfolio-history.ts --cohort stored-history --apply         # enqueue
 //
 // Enqueues one PORTFOLIO_HISTORY_BACKFILL per selected user, over the full
 // 400-day window and with no price backfill (`tokenIds: []`), which the worker
 // runs under its per-user lock. Every `portfolio_value_daily` row in that
 // window is recomputed for every selected user — against production that is a
-// production data rewrite, and it is confirmed with mgrin before `--apply`.
+// production data rewrite.
 //
-// Running it twice is safe: one request id for the whole recompute fixes each
+// Running it twice is safe: each cohort has one request id, which fixes each
 // user's job id, and a user whose job completed or is still in flight is
-// skipped. See PlanTradeFeeRecomputeUseCase.
+// skipped.
 //
 // Lives here rather than at the repo root because it needs `@scani/domain`'s
 // DI container and a queue client, which the worker already boots.
@@ -25,17 +26,32 @@
 import 'reflect-metadata';
 import '@scani/domain/repositories';
 import '@scani/domain/services';
-import { PlanTradeFeeRecomputeUseCase } from '@scani/domain/use-cases';
+import { type HistoryRecomputeCohort, PlanHistoryRecomputeUseCase } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { assertQueueBindings, BullMqEnqueueService, QueueClient } from '@scani/queue';
 import { Container } from 'typedi';
 
-const REQUEST_ID = 'sc1142-trade-fees';
+// One request id per cohort, never reused across cohorts: a user completed
+// under one must still be selected by the next.
+const REQUEST_IDS: Record<HistoryRecomputeCohort, string> = {
+  'trade-fees': 'sc1142-trade-fees',
+  'stored-history': 'sc1323-evidence-absent',
+};
 
 const args = process.argv.slice(2);
 const apply = args.includes('--apply');
-const userIndex = args.indexOf('--user');
-const userId = userIndex >= 0 ? args[userIndex + 1] : undefined;
+const flagValue = (flag: string) => {
+  const i = args.indexOf(flag);
+  return i >= 0 ? args[i + 1] : undefined;
+};
+const userId = flagValue('--user');
+const cohortArg = flagValue('--cohort');
+if (!cohortArg || !(cohortArg in REQUEST_IDS)) {
+  console.error(`--cohort is required: one of ${Object.keys(REQUEST_IDS).join(', ')}`);
+  process.exit(1);
+}
+const cohort = cohortArg as HistoryRecomputeCohort;
+const requestId = REQUEST_IDS[cohort];
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) {
@@ -45,19 +61,23 @@ if (!databaseUrl) {
 
 const payloadFor = (id: string) => ({
   userId: id,
-  requestId: REQUEST_ID,
+  requestId,
   tokenIds: [],
   lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
 });
 
-const plan = await Container.get(PlanTradeFeeRecomputeUseCase).execute({
+const since = new Date(Date.now() - PORTFOLIO_HISTORY_LOOKBACK_DAYS * 86_400_000);
+const plan = await Container.get(PlanHistoryRecomputeUseCase).execute({
+  cohort,
   jobIdFor: (id) => PORTFOLIO_HISTORY_BACKFILL.computeJobId(payloadFor(id)),
+  since,
   userId,
 });
 
 console.log(apply ? '--- applying ---' : '--- dry run, nothing enqueued ---');
+console.log(`cohort                               ${cohort} (request id ${requestId})`);
 console.log(
-  `users with a trade fee               ${plan.completed.length + plan.inFlight.length + plan.toEnqueue.length}`
+  `users selected                       ${plan.completed.length + plan.inFlight.length + plan.toEnqueue.length}`
 );
 console.log(`  already recomputed (skipped)       ${plan.completed.length}`);
 console.log(`  recompute in flight (skipped)      ${plan.inFlight.length}`);

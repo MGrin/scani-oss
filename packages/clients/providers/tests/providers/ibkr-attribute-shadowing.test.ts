@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
+import { type NoticeInput, toJobNotice } from '../../src/core/types';
 import { IbkrProvider } from '../../src/providers/ibkr';
 
 function passthroughLimiter(): OutflowRateLimiter {
@@ -17,17 +18,6 @@ const ctx = {
   resolveCredentials: async () => ({ flexQueryToken: 't', flexQueryId: 'q' }),
 };
 
-/**
- * The attribute ORDER here is the whole point, so do not tidy it (SC-855).
- *
- * The rows in `ibkr.test.ts` were hand-written with `type=` first, which is
- * the one ordering the bug cannot reach. A real Flex statement emits IBKR's
- * own column order, where `securityIDType` sits eleven attributes ahead of
- * `type` — and an unanchored, case-insensitive `/type="([^"]*)"/i` finds
- * `Type="ISIN"` inside it first. Every cash row in production read
- * `type = "ISIN"`, was refused by `classifyCashType`, and was dropped, on
- * every one of three consecutive runs.
- */
 const REAL_ORDER_XML = `
   <FlexQueryResponse>
     <Trades>
@@ -62,7 +52,7 @@ async function fetchWithXml(xml: string): Promise<{
   try {
     const events = await p.fetchTransactions({
       ...ctx,
-      noteWarning: (reason: string) => warnings.push(reason),
+      noteWarning: (reason: NoticeInput) => warnings.push(toJobNotice(reason).text),
     } as never);
     return { events, warnings };
   } finally {
