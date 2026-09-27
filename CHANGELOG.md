@@ -19,6 +19,18 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.49.0](https://github.com/MGrin/scani-oss/compare/v0.48.0...v0.49.0) (2026-09-27)
+
+
+### Features
+
+* **app:** update self-hosted portfolio, security and processing ([238c3b1](https://github.com/MGrin/scani-oss/commit/238c3b167465b39a6fa4fb75762d2e047c7227c7))
+
+
+### Bug Fixes
+
+* **returns:** preserve benchmark funding before chart sampling ([b251beb](https://github.com/MGrin/scani-oss/commit/b251beba83662e4306c3cc52825c6485881cd865))
+
 ## [0.48.0](https://github.com/MGrin/scani-oss/compare/v0.47.1...v0.48.0) (2026-09-27)
 
 
