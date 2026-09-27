@@ -63,7 +63,9 @@ describe('self-host.sh generates what docker-compose.prod.yml demands', () => {
     // `openssl rand` call produces two valid-looking secrets and an api that
     // 401s against its own data-provider.
     expect(SCRIPT).toContain('DATA_PROVIDER_API_KEY=${DATA_PROVIDER_KEY}');
-    expect(SCRIPT).toContain('SCANI_CLOUD_API_KEY=${DATA_PROVIDER_KEY}');
+    expect(SCRIPT).toContain('INSTALL_CLOUD_KEY="$DATA_PROVIDER_KEY"');
+    expect(SCRIPT).toContain('SCANI_CLOUD_API_KEY=${INSTALL_CLOUD_KEY}');
+    expect(SCRIPT).toContain('INSTALL_CLOUD_KEY="$SCANI_CLOUD_API_KEY"');
   });
 
   test('BACKEND_URL is generated without a path', () => {
@@ -72,7 +74,8 @@ describe('self-host.sh generates what docker-compose.prod.yml demands', () => {
     // at boot; sign-in just stops working (SC-453).
     const line = SCRIPT.split('\n').find((l) => l.startsWith('BACKEND_URL='));
     expect(line).toBeDefined();
-    expect(line).toBe('BACKEND_URL=http://localhost:${SCANI_PORT}');
+    expect(line).toBe('BACKEND_URL=${INSTALL_PUBLIC_URL}');
+    expect(SCRIPT).toContain('INSTALL_PUBLIC_URL="http://localhost:${SCANI_PORT}"');
   });
 });
 
@@ -132,7 +135,7 @@ describe('self-host.sh refuses a re-run over a previous install (SC-479)', () =>
   });
 
   test('the guard checks every volume the compose file creates', () => {
-    expect(guardedVolumes(SCRIPT)).toEqual(composeVolumes(COMPOSE));
+    expect(guardedVolumes(SCRIPT)).toEqual([...composeVolumes(COMPOSE), 'minio-data'].sort());
   });
 
   test('the guard runs before .env is generated', () => {

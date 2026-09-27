@@ -6,21 +6,16 @@ The shared-service tRPC gateway for **[Scani](https://github.com/MGrin/scani-oss
 the self-hostable, open-source portfolio tracker for crypto and traditional
 assets.
 
-[`scani/api`](https://hub.docker.com/r/scani/api) and
-[`scani/worker`](https://hub.docker.com/r/scani/worker) call this service over
-tRPC for four capabilities — this is the seam between self-hosting tiers: in
-Tier 1 it runs on `localhost:8082`, in Tier 2/3 it's a hosted endpoint.
+The local Tier 1 stack uses this service for token lookup and metadata. Scani
+runs the hosted service for Tier 2: versioned `processing.v1` endpoints provide
+AI, pricing and supported public-wallet requests using Scani's provider keys.
+Customer API keys also reach token lookup and constrained authentication email.
 
-- **Object storage** — presigned upload/download, read/write/copy/delete
-- **Mail** — Fastmail JMAP, or any SMTP server
-- **Open Graph** — SSRF-hardened metadata fetch for institution logos
-- **Token search** — symbol → identity lookup across the pricing providers
-
-It also serves `pricing.*`, `ai.*` and `chains.*` routers (CoinGecko, Finnhub,
-DeFiLlama, Yahoo Finance, Etherscan V2, Helius, OpenAI), which a caller may use
-directly. The api and worker do **not**: they boot the provider registry in
-`direct` mode and reach those upstreams themselves, so their own provider API
-keys are required on every tier.
+Tier 2 customers run their UI, API, worker, database, Redis and S3 themselves.
+They supply one Scani Cloud key and do not run a local data-provider. Durable
+files stay in customer-owned S3; processing inputs travel to Scani Cloud.
+`storage.*` and arbitrary `email.send` are restricted to Scani's internal keys.
+Personal exchange and broker credentials remain on the customer's instance.
 
 ## Tags
 
@@ -36,8 +31,7 @@ in the OSS repo:
 ```bash
 git clone https://github.com/MGrin/scani-oss.git
 cd scani-oss
-cp .env.example .env                              # set provider keys
-docker compose -f docker-compose.prod.yml up -d
+./scripts/self-host.sh
 ```
 
 ## Environment variables
@@ -47,11 +41,11 @@ docker compose -f docker-compose.prod.yml up -d
 | `DATA_PROVIDER_API_KEY` | Bearer token the api + worker present to reach this service (must match `SCANI_CLOUD_API_KEY` on api/worker) |
 | `DATABASE_URL` | Postgres — used for upstream-call audit log + cache |
 
-Provider keys (all optional — each one unlocks a specific integration; calls
-return `PRECONDITION_FAILED` at runtime if unset):
+Platform keys belong on Tier 1 services or on the Scani-managed cloud service,
+not on a Tier 2 customer installation:
 
 - `COINGECKO_API_KEY`, `FINNHUB_API_KEY` — pricing
-- `OPENAI_API_KEY`, `PERPLEXITY_API_KEY`, `DEEPSEEK_API_KEY` — AI
+- `OPENAI_API_KEY` — AI
 - `ETHERSCAN_API_KEY` — EVM wallet balances (one key covers all EVM chains)
 - `HELIUS_API_KEY` — Solana
 - `FASTMAIL_API_TOKEN`, or `SMTP_URL` / `SMTP_FROM` — magic-link email delivery

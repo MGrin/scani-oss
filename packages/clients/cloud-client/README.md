@@ -1,8 +1,8 @@
 ## `@scani/cloud-client`
 
 Typed tRPC client for `apps/backend/data-provider` plus the dispatch layer
-that backend + worker use to call into it. Routes every Scani-managed
-third-party hop (storage, email, OG fetch) through a single HTTP boundary.
+that backend + worker use to call into it. Tier 2 routes platform processing through `processing.v1` and retains local S3.
+Tier 1 uses direct providers. Legacy/managed deployments retain internal cloud storage.
 
 ## What's inside
 
@@ -28,40 +28,14 @@ src/
 
 ## cloud-services vs facades
 
-The two folders sit on either side of one decision: *should this call go
-to the data-provider, or stay in-process?*
+`providers/` adapts the existing pricing, AI and public-wallet capability interfaces
+into versioned cloud calls. Application composition roots select these only for
+`SCANI_DEPLOYMENT_TIER=2`; personal exchange/broker providers remain local.
 
-```
-backend / worker code
-        │
-        ▼
-   ┌────────────────────────────┐
-   │  Facade (@Service())       │  ── reads getCloudClient() once, caches
-   │  e.g. StorageFacade        │
-   └─────────┬──────────────────┘
-             │
-   ┌─────────▼─────────────┐         ┌──────────────────────┐
-   │ cloud client present? │ ──yes──▶│ CloudStorage         │ ── tRPC ─▶ data-provider
-   └─────────┬─────────────┘         │ (cloud-services/)    │
-             │                       └──────────────────────┘
-             no
-             │
-             ▼
-   ┌──────────────────────┐
-   │ StorageService       │ ── direct ─▶ local S3 / R2
-   │ (@scani/storage)     │
-   └──────────────────────┘
-```
-
-- **`cloud-services/<name>.ts`** — typed clients that *always* hit the
-  data-provider. They translate "method call → tRPC call". One per
-  data-provider tRPC router (storage, email, og). They know nothing
-  about local fallbacks.
-- **`facades/<name>-facade.ts`** — `@Service()`-decorated dispatchers
-  resolved via typedi. On first call they ask `getCloudClient()`; if it
-  returns a client, they construct (and cache) the matching cloud-service;
-  otherwise they delegate to the in-process service from the relevant
-  package (`@scani/storage`, `@scani/email`).
+`StorageFacade` always selects local S3 in Tier 1 and Tier 2. `EmailFacade`
+selects local mail in Tier 1, fixed cloud auth templates in Tier 2, and the
+internal email relay for legacy/managed deployments. Generic mail is refused
+in Tier 2. Merely configuring a cloud key does not select a deployment tier.
 
 OG has only a cloud-service (no facade) because there's no local OG
 implementation in the codebase — the data-provider owns it even in the
@@ -76,12 +50,13 @@ loads them lazily.
 
 | Env var | Required | Purpose |
 |---|---|---|
-| `SCANI_CLOUD_URL` | yes in production (https) | Data-provider endpoint. Tier 1 OSS: `http://data-provider:8082`; Tier 2/3: `https://api.cloud.scani.xyz`. Unset in dev = local-fallback mode. |
-| `SCANI_CLOUD_API_KEY` | yes in production (≥ 16 chars) | Bearer token sent on every outbound request. The data-provider validates it against its own `DATA_PROVIDER_API_KEY` (env) or the `cloud_api_keys` table. |
+| `SCANI_DEPLOYMENT_TIER` | explicit for self-hosting | `1`: local providers/storage/mail; `2`: cloud providers/auth mail and local storage; `3` or unset: legacy managed routing. |
+| `SCANI_CLOUD_URL` | Tier 2 in every environment; otherwise production | Data-provider endpoint. Tier 1 OSS: `http://data-provider:8082`; Tier 2/3: `https://api.cloud.scani.xyz`. Unset in dev = local-fallback mode. |
+| `SCANI_CLOUD_API_KEY` | Tier 2 in every environment; otherwise production (≥ 16 chars) | Bearer token sent on every outbound request. The data-provider validates it against its own `DATA_PROVIDER_API_KEY` (env) or the `cloud_api_keys` table. |
 
-In production the schema fails to load without these vars. Outside
-production both stay optional so contributors can run backend / worker
-without booting the data-provider sidecar.
+Tier 2 fails to load without both cloud settings in every environment. Other
+tiers require them in production (except the isolated demo); development can
+omit them to use local services. Public production endpoints require HTTPS.
 
 ## Usage
 
@@ -93,7 +68,7 @@ import { probeDataProvider } from '@scani/cloud-client/health-probe';
 const probe = await probeDataProvider();
 if (!probe.ok) {
   console.error(`Data-provider unreachable at ${probe.url}: ${probe.error}`);
-  process.exit(1);
+  // Report degraded processing without taking local data access offline.
 }
 ```
 
@@ -168,10 +143,9 @@ try {
 bun test packages/clients/cloud-client --timeout 30000
 ```
 
-The two facade tests cover both modes by toggling `setCloudClient(stub)`
-or `setCloudClient(null)` between cases — no env var mutation needed.
-The same hooks are available to consumers: any test that needs to force
-local-mode dispatch can call `setCloudClient(null)`.
+Facade and provider tests cover explicit tier selection, local S3 with a cloud
+client configured, cloud processing, and managed routing. Test fixtures reset
+both `resetCloudClientConfig()` and `resetCloudClient()` between cases.
 
 ## Why this package exists
 

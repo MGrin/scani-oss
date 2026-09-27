@@ -6,6 +6,7 @@ import {
 } from '@scani/storage';
 import { Container, Service } from 'typedi';
 import { CloudStorage } from '../cloud-services/cloud-storage';
+import { loadCloudClientConfig } from '../config';
 import { getCloudClient } from '../runtime';
 
 // Re-exported here rather than made a direct `@scani/storage` dependency of
@@ -13,9 +14,8 @@ import { getCloudClient } from '../runtime';
 // predicate that classifies its errors belongs on the same boundary.
 export { isMissingObjectError, isObjectTooLargeError } from '@scani/storage';
 
-// Cloud-or-local dispatcher resolved via typedi. When SCANI_CLOUD_URL is set
-// the call routes through the data-provider; otherwise it falls through to
-// the in-process StorageService.
+// Self-hosted tiers always use customer S3. Legacy/managed deployments retain
+// their internal cloud storage transport independently of provider routing.
 @Service()
 export class StorageFacade {
   // undefined = haven't checked; null = checked and no cloud client.
@@ -71,6 +71,11 @@ export class StorageFacade {
 
   private cloud(): CloudStorage | null {
     if (this.cachedCloud !== undefined) return this.cachedCloud;
+    const tier = loadCloudClientConfig().SCANI_DEPLOYMENT_TIER;
+    if (tier === '1' || tier === '2') {
+      this.cachedCloud = null;
+      return null;
+    }
     const client = getCloudClient();
     this.cachedCloud = client ? new CloudStorage(client) : null;
     return this.cachedCloud;

@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "version": "1.0.0",
-  "description": "S3-compatible object-storage service. Uses Bun's native S3Client; works against any S3-compatible backend (Cloudflare R2, MinIO, AWS S3).",
+  "description": "S3-compatible object-storage service. Uses Bun's native S3Client; works against any S3-compatible backend (Cloudflare R2, SeaweedFS, AWS S3).",
   "exports": {
     ".": "./src/index.ts"
   },

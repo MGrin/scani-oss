@@ -9,7 +9,7 @@
 #   workspace that is never bundled into the production images
 #   (the Dockerfiles only COPY `apps/backend/*` and
 #   `apps/frontend/app`). The suite intentionally reads committed
-#   fixture files and uploads them to the local MinIO bucket
+#   fixture files and uploads them to the local SeaweedFS bucket
 #   through presigned URLs; CodeQL's
 #   `js/file-system/sensitive-info-in-http-request` query flags this
 #   as data exfiltration, but the fixtures are trusted test inputs,

@@ -41,3 +41,35 @@ describe('SmtpEmailService', () => {
     );
   });
 });
+
+test('aborting an SMTP send closes its real socket before a delayed greeting', async () => {
+  const connected = Promise.withResolvers<void>();
+  const closed = Promise.withResolvers<void>();
+  const server = Bun.listen({
+    hostname: '127.0.0.1',
+    port: 0,
+    socket: {
+      open() {
+        connected.resolve();
+      },
+      data() {},
+      close() {
+        closed.resolve();
+      },
+    },
+  });
+  const controller = new AbortController();
+  const service = new SmtpEmailService({ url: `smtp://127.0.0.1:${server.port}` });
+  try {
+    const pending = service.send(
+      { from: 'sender@example.com', to: 'receiver@example.com', subject: 'bounded', text: 'test' },
+      controller.signal
+    );
+    await connected.promise;
+    controller.abort(new Error('deadline'));
+    await expect(pending).rejects.toThrow();
+    await closed.promise;
+  } finally {
+    server.stop(true);
+  }
+});

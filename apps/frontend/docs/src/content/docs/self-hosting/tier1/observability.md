@@ -120,7 +120,7 @@ Production-grade alerts to consider:
 - DLQ depth > 100 → jobs failing systematically.
 - Postgres connection saturation → exhausted pool (often the
   `POSTGRES_POOL_MAX` vs pooler mismatch).
-- Disk usage on the `postgres-data` and `minio-data` volumes.
+- Disk usage on the `postgres-data` and `seaweedfs-data` volumes.
 - Sustained job heartbeat misses (the
   [`job-heartbeat-probe`](/reference/jobs/) reports these).
 - `unpriceableUntil` cooldowns piling up on many tokens at once →

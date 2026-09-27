@@ -8,7 +8,8 @@
  * deleted one it had never written, obtained a presigned URL usable
  * outside the API with no auth, and sent mail as `security@scani.xyz`.
  *
- * The assertion is EVERY procedure in those two routers, enumerated from
+ * The assertion covers every procedure except the constrained Tier 2 email.auth
+ * product endpoint, enumerated from
  * the routers themselves rather than listed by hand. A hand-written list
  * of nine is a list that a tenth procedure is added beside — and the tenth
  * would be written by someone who had no reason to read this file. It
@@ -47,7 +48,9 @@ const INTERNAL_ROUTERS: [string, AnyRouter][] = [
 // The denominator, asserted rather than assumed: a run that enumerated
 // nothing would report zero refusals and read exactly like a clean pass.
 const INTERNAL_PROCEDURES = INTERNAL_ROUTERS.flatMap(([ns, r]) =>
-  procedureNames(r).map((name) => [`${ns}.${name}`, r, name] as const)
+  procedureNames(r)
+    .filter((name) => !(ns === 'email' && name === 'auth'))
+    .map((name) => [`${ns}.${name}`, r, name] as const)
 );
 
 describe('the internal facades refuse a customer key (SC-585)', () => {
@@ -82,6 +85,12 @@ describe('the internal facades refuse a customer key (SC-585)', () => {
       await expect(caller[name]?.({})).rejects.toMatchObject({ code: 'BAD_REQUEST' });
     });
   }
+
+  test('constrained auth mail reaches validation for customer keys', async () => {
+    await expect(
+      emailRouter.createCaller(buildCustomerContext()).auth({} as never)
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
 
   // must-be-ABSENT: the gate must not have swallowed the product surface.
   test('a product procedure stays open to the same customer key', async () => {

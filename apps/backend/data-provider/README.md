@@ -1,17 +1,18 @@
 # @scani/data-provider
 
-The one process that talks to the outside world.
+Scani's shared platform-processing service. Tier 2 API and worker instances
+call it with one Scani Cloud key for AI, pricing, token lookup, supported public
+wallet requests and fixed authentication email templates. Their database and
+S3 remain customer-owned; the bundled S3 engine is SeaweedFS.
 
-The api and worker reach four capabilities through this service over tRPC
-with `Authorization: Bearer <SCANI_CLOUD_API_KEY>` — object storage, email,
-Open Graph metadata and token search. That lets the same api+worker binaries
-run across all three deployment tiers:
+| Tier | Processing | Storage and credentials |
+|------|------------|-------------------------|
+| 1 — Self-hosted | Direct providers in the local API/worker; local data-provider for token search and metadata | Local S3/mail; own platform keys where required; installer-generated sidecar bearer |
+| 2 — Cloud processing | Scani-hosted data-provider, selected by `SCANI_DEPLOYMENT_TIER=2` | Local S3/database; one Scani Cloud key; personal exchange/broker credentials stay local |
+| 3 — Managed | Existing managed routing | Scani-owned infrastructure and internal service credentials |
 
-| Tier | Data-provider runs on | `SCANI_CLOUD_URL` | `SCANI_CLOUD_API_KEY` |
-|------|----------------------|-------------------|-----------------------|
-| 1 — Self-hosted | the user's own box (docker-compose) | `http://data-provider:8082` | user-picked shared secret |
-| 2 — Semi-managed | a hosted data-provider | the hosted endpoint | issued paid key |
-| 3 — SaaS | a hosted data-provider | the hosted endpoint | issued key |
+Tier 2 sends the inputs needed for processing to Scani Cloud. It does not send
+its durable database or S3 bucket there. Salt Edge through the cloud is future work.
 
 ## Scope
 
@@ -20,41 +21,36 @@ brokerage calls that need per-user credentials (Binance, Kraken, Bybit,
 OKX, Coinbase, IBKR, Wise, …) stay in the api + worker so user creds
 never leave the tenant boundary.
 
-| Domain | tRPC router | Upstream |
-|--------|-------------|----------|
-| Token search | `tokens.*` | CoinGecko, DeFiLlama, Finnhub |
-| Public chains | `chains.*` | Etherscan V2, Solana (Helius / public), Bitcoin, Tron, TON, ENS |
-| Email | `email.send` | Fastmail JMAP (falls back to SMTP) |
-| Object storage | `storage.*` | S3-compatible storage (presign + read + delete) |
-| Open Graph | `og.fetchMetadata` | SSRF-hardened HTML fetch + `open-graph-scraper` |
+| Domain | tRPC router | Availability |
+|--------|-------------|--------------|
+| AI, prices and public-wallet operations | `processing.v1.*` | Customer and internal keys; Scani-owned upstream accounts |
+| Token search | `tokens.*` | Customer and internal keys; CoinGecko, DeFiLlama, Finnhub |
+| Legacy public-chain operations | `chains.*` | Existing public-chain API |
+| Authentication mail | `email.auth` | Fixed templates, same-origin links, owner/recipient limits |
+| Generic mail and object storage | `email.send`, `storage.*` | Internal keys only; never Tier 2 customer storage |
+| Open Graph | `og.fetchMetadata` | SSRF-hardened metadata fetch |
 
-`storage.*`, `email.send`, `og.fetchMetadata` and `tokens.search` each have a
-matching `Cloud*` adapter in
-[`packages/clients/cloud-client`](../../../packages/clients/cloud-client/) so the
-domain services in `packages/business/domain` can swap the real implementation
-for a cloud-backed one without code-site churn.
+The adapters in [`@scani/cloud-client`](../../../packages/clients/cloud-client/)
+select cloud platform providers only for Tier 2. Personal exchange and brokerage
+operations remain local. Tier 1 uses direct providers, and unset/Tier 3 preserves
+managed routing. Provider keys belong on the Scani processing service for Tier 2,
+not on customer API or worker instances.
 
-**`chains.*` has no live caller, and `pricing.*` / `ai.*` no longer exist.**
-The api and worker construct the real providers in-process — as does this
-service — so each calls CoinGecko, Finnhub, DeFiLlama, OpenAI, Etherscan and
-Helius itself. The `CloudProviderClientBridge` that would have routed those
-calls here was constructed nowhere outside tests (SC-521) and was deleted
-with the two routers in SC-587. `tokens.search` is the exception and IS live:
-the api holds zero upstream API keys, so its user-facing token search calls
-this service for every external result. The practical consequence:
-**provider API keys are required on the api and worker on every tier**, not
-only here, and a missing one degrades silently rather than failing at boot. `buildProviderRegistry`
-logs one `provider credentials:` summary line per service at boot, and
-`/health/deep` reports the same record under `providerCredentials`.
+`processing.v1.capabilities` reports the active pricing and AI providers. A
+successful `/health` response alone does not establish processing availability.
+AI requests have bounded inputs, a cancellation deadline and owner-scoped replay
+protection; replayed results do not count as additional upstream spend. Small AI
+results are cached briefly in Redis, as disclosed in the self-hosting guide.
 
 ## Boot
 
 Env schema lives in [`src/config/env.ts`](src/config/env.ts). The key you'll
 care about first:
 
-- `DATA_PROVIDER_API_KEY` — the bearer this service validates on every
-  incoming request. It must match `SCANI_CLOUD_API_KEY` on the api +
-  worker.
+- `DATA_PROVIDER_API_KEY` — internal/sidecar bearer. Tier 1's generated value
+  matches `SCANI_CLOUD_API_KEY` on its local API and worker. Managed customer
+  keys are validated separately against `cloud_api_keys`; customers never
+  receive the internal bearer.
 - `REDIS_URL` — backs the per-provider rate-limiter buckets so horizontal
   replicas share the upstream API budget.
 - Provider keys (`OPENAI_API_KEY`, `ETHERSCAN_API_KEY`, …) — optional at
@@ -75,9 +71,8 @@ HTTP health: `curl http://localhost:8082/health`.
 
 The service ships as a multi-stage Bun Docker image (see
 [`Dockerfile`](./Dockerfile)) and runs on any container host. Because
-every api + worker call now hops through this service, run at least two
-replicas so a single-machine cutover during deploy doesn't 5xx every
-outbound request. Per-provider rate-limiter buckets live in Redis, so
+cloud processing depends on this service, run multiple replicas when
+availability requires rolling deployments without processing downtime. Per-provider rate-limiter buckets live in Redis, so
 replicas share fairness without coordination — to raise capacity, add
 replicas and ensure each provider's per-key budget can absorb the
 larger fan-out. Prefer a rolling deploy strategy.

@@ -23,7 +23,8 @@ export class FastmailEmailService extends EmailService {
     this.authHeader = { Authorization: `Bearer ${opts.apiToken}` };
   }
 
-  protected async sendMessage(input: EmailMessage): Promise<void> {
+  protected async sendMessage(input: EmailMessage, signal?: AbortSignal): Promise<void> {
+    signal?.throwIfAborted();
     const session = await this.getSession();
     const parsed = parseAddress(input.from);
     const identity = pickIdentity(session.identities, parsed.email);
@@ -75,7 +76,9 @@ export class FastmailEmailService extends EmailService {
       ],
     };
 
+    signal?.throwIfAborted();
     const res = await this.fetchWithTimeout(session.apiUrl, {
+      signal,
       method: 'POST',
       headers: { ...this.authHeader, 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -177,17 +180,13 @@ export class FastmailEmailService extends EmailService {
     init: RequestInit,
     timeoutMs = 10_000
   ): Promise<Response> {
-    const ctrl = new AbortController();
-    const timer = setTimeout(
-      () => ctrl.abort(new Error(`Fastmail fetch timeout after ${timeoutMs}ms`)),
-      timeoutMs
-    );
-    try {
-      const fetcher = this.opts.fetcher ?? fetch;
-      return await fetcher(url, { ...init, signal: ctrl.signal });
-    } finally {
-      clearTimeout(timer);
-    }
+    const fetcher = this.opts.fetcher ?? fetch;
+    return fetcher(url, {
+      ...init,
+      signal: init.signal
+        ? AbortSignal.any([init.signal, AbortSignal.timeout(timeoutMs)])
+        : AbortSignal.timeout(timeoutMs),
+    });
   }
 }
 

@@ -195,12 +195,15 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
     return Boolean(this.config.apiKey);
   }
 
-  async parseScreenshot(input: {
-    imageBase64: string;
-    mimeType: string;
-    hint?: string;
-    systemPrompt?: string;
-  }): Promise<AIResult<unknown>> {
+  async parseScreenshot(
+    input: {
+      imageBase64: string;
+      mimeType: string;
+      hint?: string;
+      systemPrompt?: string;
+    },
+    signal?: AbortSignal
+  ): Promise<AIResult<unknown>> {
     if (!this.isConfigured()) {
       throw new Error(`${this.config.providerKey}: apiKey not configured`);
     }
@@ -235,13 +238,14 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
       ...tuning(this.config, this.config.maxTokens ?? 4000, this.config.temperature ?? 0.1),
       response_format: { type: 'json_object' },
     };
-    return this.callJson(body);
+    return this.callJson(body, signal);
   }
 
   async parseDocumentText(
     text: string,
     hint?: string,
-    systemPrompt?: string
+    systemPrompt?: string,
+    signal?: AbortSignal
   ): Promise<AIResult<unknown>> {
     if (!this.isConfigured()) {
       throw new Error(`${this.config.providerKey}: apiKey not configured`);
@@ -263,12 +267,13 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
       ...tuning(this.config, this.config.maxTokens ?? 4000, this.config.temperature ?? 0.1),
       response_format: { type: 'json_object' },
     };
-    return this.callJson(body);
+    return this.callJson(body, signal);
   }
 
   async completeText(
     prompt: string,
-    opts?: { temperature?: number; maxTokens?: number }
+    opts?: { temperature?: number; maxTokens?: number },
+    signal?: AbortSignal
   ): Promise<AIResult<string>> {
     if (!this.isConfigured()) {
       throw new Error(`${this.config.providerKey}: apiKey not configured`);
@@ -282,7 +287,7 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
         opts?.temperature ?? this.config.temperature ?? 0.7
       ),
     };
-    const { data, usage } = await this.callRaw(body);
+    const { data, usage } = await this.callRaw(body, signal);
     return {
       data: data.choices?.[0]?.message?.content ?? '',
       usage,
@@ -294,8 +299,8 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
   // ============================================================
 
   /** Returns the parsed JSON content of the assistant's first choice. */
-  private async callJson(body: unknown): Promise<AIResult<unknown>> {
-    const { data, usage } = await this.callRaw(body);
+  private async callJson(body: unknown, signal?: AbortSignal): Promise<AIResult<unknown>> {
+    const { data, usage } = await this.callRaw(body, signal);
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
       throw new Error(`${this.config.providerKey}: no content in response`);
@@ -311,30 +316,38 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
 
   /** Returns the raw `ChatCompletionsResponse` and parsed token usage. */
   private async callRaw(
-    body: unknown
+    body: unknown,
+    signal?: AbortSignal
   ): Promise<{ data: ChatCompletionsResponse; usage?: AIUsage }> {
-    const data = await this.limiter.execute(async () => {
-      const response = await fetchWithTimeout(
-        `${this.config.baseUrl}/chat/completions`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${this.config.apiKey}`,
-            'Content-Type': 'application/json',
+    const data = await this.limiter.execute(
+      async () => {
+        const response = await fetchWithTimeout(
+          `${this.config.baseUrl}/chat/completions`,
+          {
+            method: 'POST',
+            signal: signal
+              ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+              : AbortSignal.timeout(30_000),
+            headers: {
+              Authorization: `Bearer ${this.config.apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
           },
-          body: JSON.stringify(body),
-        },
-        30000,
-        0
-      );
-      if (!response.ok) {
-        const errorBody = await response.text().catch(() => '');
-        throw new Error(
-          `${this.config.providerKey} HTTP ${response.status}: ${errorBody.slice(0, 300)}`
+          30000,
+          0
         );
-      }
-      return (await response.json()) as ChatCompletionsResponse;
-    });
+        if (!response.ok) {
+          const errorBody = await response.text().catch(() => '');
+          throw new Error(
+            `${this.config.providerKey} HTTP ${response.status}: ${errorBody.slice(0, 300)}`
+          );
+        }
+        return (await response.json()) as ChatCompletionsResponse;
+      },
+      undefined,
+      signal
+    );
     return { data, usage: this.extractUsage(data) };
   }
 

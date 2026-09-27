@@ -45,6 +45,13 @@ SCANI_REF="${SCANI_REF:-main}"
 SCANI_IMAGE_TAG="${SCANI_IMAGE_TAG:-latest}"
 SCANI_PORT="${SCANI_PORT:-8080}"
 SCANI_MAIL_PORT="${SCANI_MAIL_PORT:-8026}"
+SCANI_DEPLOYMENT_TIER="${SCANI_DEPLOYMENT_TIER:-1}"
+case "$SCANI_DEPLOYMENT_TIER" in 1|2) ;; *) printf 'SCANI_DEPLOYMENT_TIER must be 1 or 2\n' >&2; exit 1 ;; esac
+if [ "$SCANI_DEPLOYMENT_TIER" = 2 ] && [ ! -f .env ]; then
+  [[ "${SCANI_CLOUD_API_KEY:-}" =~ ^[A-Za-z0-9_-]{16,}$ ]] || { printf 'Tier 2 requires SCANI_CLOUD_API_KEY\n' >&2; exit 1; }
+  [[ "${SCANI_PUBLIC_URL:-}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || { printf 'Tier 2 requires SCANI_PUBLIC_URL=https://your-hostname (no path) for auth email\n' >&2; exit 1; }
+  [[ "${SCANI_S3_PUBLIC_URL:-}" =~ ^https://[A-Za-z0-9.-]+(:[0-9]+)?$ ]] || { printf 'Tier 2 requires SCANI_S3_PUBLIC_URL=https://your-storage-hostname (no path) for browser uploads\n' >&2; exit 1; }
+fi
 RAW_BASE="https://raw.githubusercontent.com/MGrin/scani-oss/${SCANI_REF}"
 COMPOSE_FILE="docker-compose.prod.yml"
 
@@ -93,12 +100,12 @@ compose_project() {
   # file, it interpolates with no .env present.
   printf 'services:\n  noop:\n    image: alpine\n' \
     | docker compose -f - config 2>/dev/null \
-    | sed -n 's/^name: *//p' | head -1 | tr -d '"'
+    | sed -n 's/^name: *//p' | sed -n 1p | tr -d '"'
 }
 
 PROJECT="$(compose_project)"
 EXISTING_VOLUMES=""
-for volume in postgres-data redis-data minio-data; do
+for volume in postgres-data redis-data seaweedfs-data minio-data; do
   if [ -n "$PROJECT" ] && docker volume inspect "${PROJECT}_${volume}" >/dev/null 2>&1; then
     EXISTING_VOLUMES="${EXISTING_VOLUMES}${EXISTING_VOLUMES:+ }${PROJECT}_${volume}"
   fi
@@ -157,6 +164,15 @@ else
   ok "$COMPOSE_FILE"
 fi
 
+# A new SeaweedFS volume is not a migration of an existing MinIO bucket.
+if [ -n "$PROJECT" ] && docker volume inspect "${PROJECT}_minio-data" >/dev/null 2>&1 \
+  && grep -q '^  seaweedfs:' "$COMPOSE_FILE"; then
+  STORAGE_MIGRATED="${SCANI_STORAGE_MIGRATED:-$(sed -n 's/^SCANI_STORAGE_MIGRATED=//p' .env 2>/dev/null | sed -n 1p)}"
+  [ "$STORAGE_MIGRATED" = 1 ] || die "MinIO data exists. Copy and verify your objects before switching to SeaweedFS.
+  Follow https://docs.scani.xyz/self-hosting/storage-migration/ and set SCANI_STORAGE_MIGRATED=1 only after verification.
+  Your old volume has not been changed."
+fi
+
 # --------------------------------------------------------------------- .env
 #
 # Generated once and never again. Regenerating ENCRYPTION_KEY over a
@@ -173,6 +189,16 @@ if [ -f .env ]; then
 else
   log "generating .env with fresh secrets"
   DATA_PROVIDER_KEY="$(gen)"
+  INSTALL_CLOUD_KEY="$DATA_PROVIDER_KEY"
+  INSTALL_CLOUD_URL=http://data-provider:8082
+  INSTALL_COMPOSE_FILES=docker-compose.prod.yml
+  INSTALL_PUBLIC_URL="http://localhost:${SCANI_PORT}"
+  if [ "$SCANI_DEPLOYMENT_TIER" = 2 ]; then
+    INSTALL_CLOUD_KEY="$SCANI_CLOUD_API_KEY"
+    INSTALL_CLOUD_URL=https://api.cloud.scani.xyz
+    INSTALL_COMPOSE_FILES=docker-compose.prod.yml:docker-compose.tier2.yml
+    INSTALL_PUBLIC_URL="$SCANI_PUBLIC_URL"
+  fi
   # Narrow the umask only while the file is being created, so there is no
   # window in which .env is world-readable, and put it back afterwards.
   PRIOR_UMASK="$(umask)"
@@ -182,6 +208,9 @@ else
 # Back this file up with your database — the two are useless apart.
 
 SCANI_IMAGE_TAG=${SCANI_IMAGE_TAG}
+SCANI_DEPLOYMENT_TIER=${SCANI_DEPLOYMENT_TIER}
+COMPOSE_FILE=${INSTALL_COMPOSE_FILES}
+SCANI_CLOUD_URL=${INSTALL_CLOUD_URL}
 FRONTEND_PORT=${SCANI_PORT}
 MAILPIT_UI_PORT=${SCANI_MAIL_PORT}
 
@@ -194,8 +223,8 @@ MAILPIT_UI_PORT=${SCANI_MAIL_PORT}
 # URL's path, so a trailing /api moves every auth route to somewhere the
 # api never serves: /api/auth/ok answers 404, and the only symptom a
 # self-hoster sees is that signing in does nothing (SC-453).
-FRONTEND_URL=http://localhost:${SCANI_PORT}
-BACKEND_URL=http://localhost:${SCANI_PORT}
+FRONTEND_URL=${INSTALL_PUBLIC_URL}
+BACKEND_URL=${INSTALL_PUBLIC_URL}
 
 # Session cookie signing. Rotating this logs everyone out.
 BETTER_AUTH_SECRET=$(gen)
@@ -212,19 +241,19 @@ JOBS_HMAC_SECRET=$(gen)
 LOG_ID_PEPPER=$(gen)
 
 # Shared bearer between api/worker and the bundled data-provider.
-# These two MUST stay equal.
+# Tier 1 uses the generated local bearer; Tier 2 uses the supplied cloud key.
 DATA_PROVIDER_API_KEY=${DATA_PROVIDER_KEY}
-SCANI_CLOUD_API_KEY=${DATA_PROVIDER_KEY}
+SCANI_CLOUD_API_KEY=${INSTALL_CLOUD_KEY}
 
-# Bundled Postgres / MinIO. Change these before exposing either port.
+# Bundled Postgres / SeaweedFS. Infrastructure credentials are generated locally.
 POSTGRES_PASSWORD=$(gen)
 DATABASE_URL=postgres://scani:__PG_PASSWORD__@postgres:5432/scani?sslmode=disable
-MINIO_ROOT_USER=scani
-MINIO_ROOT_PASSWORD=$(gen)
+SEAWEEDFS_S3_HOST_PORT=${SEAWEEDFS_S3_HOST_PORT:-9000}
 S3_ACCESS_KEY_ID=scani
-S3_SECRET_ACCESS_KEY=__MINIO_PASSWORD__
+S3_SECRET_ACCESS_KEY=$(gen)
+S3_PUBLIC_ENDPOINT=${SCANI_S3_PUBLIC_URL:-${S3_ENDPOINT:-http://localhost:${SEAWEEDFS_S3_HOST_PORT:-9000}}}
 
-# Optional provider keys — Scani runs without them, with less data.
+# Tier 1 only: optional provider keys. Tier 2 uses Scani Cloud instead.
 # https://docs.scani.xyz/self-hosting/tier1/optional-keys/
 OPENAI_API_KEY=
 COINGECKO_API_KEY=
@@ -244,15 +273,14 @@ LOG_LEVEL=info
 ENV
 
   # DATABASE_URL and S3_SECRET_ACCESS_KEY have to carry the same values the
-  # postgres/minio services are started with. Writing the placeholders above
+  # postgres/SeaweedFS services are started with. Writing the placeholders above
   # and substituting here keeps each secret generated exactly once, so the
   # file cannot ship a connection string that disagrees with the service it
   # points at.
   PG_PASSWORD="$(grep -m1 '^POSTGRES_PASSWORD=' .env | cut -d= -f2)"
-  MINIO_PASSWORD="$(grep -m1 '^MINIO_ROOT_PASSWORD=' .env | cut -d= -f2)"
   # `sed -i` is not portable (BSD wants an argument, GNU does not).
   TMP_ENV="$(mktemp)"
-  sed -e "s/__PG_PASSWORD__/${PG_PASSWORD}/" -e "s/__MINIO_PASSWORD__/${MINIO_PASSWORD}/" .env > "$TMP_ENV"
+  sed -e "s/__PG_PASSWORD__/${PG_PASSWORD}/" .env > "$TMP_ENV"
   cat "$TMP_ENV" > .env
   rm -f "$TMP_ENV"
   chmod 600 .env
@@ -260,14 +288,24 @@ ENV
   ok ".env written (mode 600, $(grep -c '^[A-Z]' .env) variables)"
 fi
 
+# Read only this literal field; never execute an existing .env as shell code.
+INSTALL_TIER="$(sed -n 's/^SCANI_DEPLOYMENT_TIER=//p' .env | sed -n 1p)"
+COMPOSE_ARGS=(-f "$COMPOSE_FILE")
+if [ "$INSTALL_TIER" = 2 ]; then
+  if [ ! -f docker-compose.tier2.yml ]; then
+    curl -fsSL -o docker-compose.tier2.yml "${RAW_BASE}/docker-compose.tier2.yml" || die "could not fetch Tier 2 compose overlay"
+  fi
+  COMPOSE_ARGS+=(-f docker-compose.tier2.yml)
+fi
+
 if [ "${SCANI_SKIP_UP:-0}" = "1" ]; then
-  ok "SCANI_SKIP_UP=1 — stopping before boot. Review .env, then: docker compose -f $COMPOSE_FILE up -d"
+  ok "SCANI_SKIP_UP=1 — stopping before boot. Review .env, then: docker compose up -d"
   exit 0
 fi
 
 # --------------------------------------------------------------------- boot
 
-compose() { docker compose -f "$COMPOSE_FILE" "$@"; }
+compose() { docker compose "${COMPOSE_ARGS[@]}" "$@"; }
 
 log "pulling images (tag: ${SCANI_IMAGE_TAG})"
 compose pull --quiet </dev/null
@@ -308,9 +346,13 @@ done
 ok "Scani is running at http://localhost:${SCANI_PORT}"
 echo
 echo "  Sign up:   http://localhost:${SCANI_PORT}"
-echo "  Your code: http://localhost:${SCANI_MAIL_PORT}   (sign-in is passwordless — read the code here)"
-echo "  Logs:      docker compose -f $COMPOSE_FILE logs -f api worker"
-echo "  Stop:      docker compose -f $COMPOSE_FILE down"
+if [ "$INSTALL_TIER" = 2 ]; then
+  echo "  Your code: delivered by Scani Cloud to your email inbox"
+else
+  echo "  Your code: http://localhost:${SCANI_MAIL_PORT}   (sign-in is passwordless — read the code here)"
+fi
+echo "  Logs:      docker compose logs -f api worker"
+echo "  Stop:      docker compose down"
 echo "  Upgrade:   see https://docs.scani.xyz/self-hosting/tier1/upgrades/"
 echo
 echo "  Your secrets are in ./.env — back it up with your database."

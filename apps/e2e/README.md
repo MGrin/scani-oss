@@ -208,7 +208,7 @@ proxy). It works. This is the recipe.
 #    everywhere — so it adopts whatever stack is already running under that
 #    name. Start this checkout's own stack the way the root README documents,
 #    and read the ports it prints rather than assuming the ones below.
-docker compose up -d postgres redis mailpit minio
+docker compose up -d postgres redis mailpit seaweedfs
 
 # 2. Env. `.env` is not committed; sync-env.ts writes it from .env.example
 #    on a fresh checkout and leaves an existing one alone.

@@ -11,15 +11,9 @@ const envSchema = z.object({
   // on first encrypt/decrypt call. Both sides MUST share the same key —
   // else stored credentials become unreadable on the worker side.
 
-  // Per-provider API keys (OPENAI / COINGECKO /
-  // FINNHUB / ETHERSCAN / HELIUS / GOOGLE_*) are owned by @scani/providers'
-  // env schema. They are required HERE, in every deployment: the worker
-  // boots `buildProviderRegistry(...)` unconditionally (see src/index.ts)
-  // and calls these upstreams itself. Screenshot and document parsing go
-  // through AIRouter -> the LOCAL ProviderRegistry, so a worker without
-  // OPENAI_API_KEY throws on every parse. There is no fallback to fall
-  // back to: nothing ever routed there (SC-521), and the data-provider's
-  // `ai.*` routes were deleted unadopted in SC-587.
+  // @scani/cloud-client selects platform providers by SCANI_DEPLOYMENT_TIER.
+  // Tier 1/managed deployments read provider keys locally; Tier 2 routes
+  // platform processing through Scani Cloud and keeps S3 local.
 
   // SCANI_CLOUD_URL + SCANI_CLOUD_API_KEY are owned by @scani/cloud-client's
   // own env schema. Required in prod; optional in dev (local fallback).

@@ -1,6 +1,6 @@
 ---
 title: Quickstart
-description: A self-contained Scani stack in one command. Postgres, Redis, MinIO, Mailpit, and every Scani service in Docker — no external API keys required.
+description: A self-contained Scani stack in one command. Postgres, Redis, SeaweedFS, Mailpit, and every Scani service in Docker — no external API keys required.
 sidebar:
   order: 2
 ---
@@ -16,7 +16,7 @@ provider API keys.
 - [Bun](https://bun.sh) ≥ 1.3
 - Docker (Docker Desktop, OrbStack, or any compatible runtime)
 - A free port at: 5173 (SPA), 3011 (api), 8082 (data-provider), 5433
-  (Postgres), 6380 (Redis), 9000/9001 (MinIO), 1026/8026 (Mailpit).
+  (Postgres), 6380 (Redis), 9000 (SeaweedFS S3), 1026/8026 (Mailpit).
 
 ## The five-minute path
 
@@ -63,7 +63,7 @@ provider API keys.
    bun run dev:stack:down
    ```
 
-   Containers go away; named volumes (your Postgres data, your MinIO
+   Containers go away; named volumes (your Postgres data, your SeaweedFS
    bucket) persist until you run `bun run dev:stack:down -- --volumes`.
 
 </Steps>
@@ -83,15 +83,14 @@ apps on the host instead changes one of them — see
 | Redis | `localhost:6380` |
 | Mailpit SMTP | `localhost:1026` |
 | Mailpit UI | `http://localhost:8026` |
-| MinIO S3 API | `http://localhost:9000` |
-| MinIO console | `http://localhost:9001` (`minioadmin` / `minioadmin`) |
+| SeaweedFS S3 API | `http://localhost:9000` |
 
 ## What works out of the box
 
 - Magic-link sign-in (emails land in Mailpit).
 - Manual holdings with manual prices.
 - FX conversion (the Frankfurter provider needs no key).
-- Screenshot uploads (stored in the local MinIO bucket).
+- Screenshot uploads (stored in the local SeaweedFS bucket).
 - The full SPA, dashboard, vaults, groups.
 
 ## What needs a key
@@ -132,7 +131,7 @@ HMR, easier debugger attach) and only run infra in Docker:
 <Tabs>
   <TabItem label="Infra in compose, apps on host">
     ```sh
-    bun run dev:stack:infra # Postgres, Redis, MinIO, Mailpit — nothing else
+    bun run dev:stack:infra # Postgres, Redis, SeaweedFS, Mailpit — nothing else
     bun install
     bun dev               # api + frontend/app concurrently
     bun dev:worker        # separate terminal — the BullMQ consumer
@@ -165,7 +164,7 @@ HMR, easier debugger attach) and only run infra in Docker:
 ## Common gotchas
 
 - **The stack fails to start with a container-name conflict.** One-shot
-  init containers (`env-sync`, `deps`, `minio-init`, `migrate`) exit
+  init containers (`env-sync`, `deps`, `migrate`) exit
   cleanly but linger with their container names reserved.
   `bun run dev:stack:down` removes them; bringing the stack up again
   without a prior `down` will hit the conflict.
@@ -186,7 +185,7 @@ HMR, easier debugger attach) and only run infra in Docker:
   nothing, which reads exactly like success.
 - **Persistent data lives in named volumes.** `bun run dev:stack:down`
   preserves them; `bun run dev:stack:down -- --volumes` wipes them. The
-  Postgres data, the MinIO bucket, and the Redis AOF all live there.
+  Postgres data, the SeaweedFS bucket, and the Redis AOF all live there.
 - **Two scani checkouts run side by side and share nothing.** Each
   derives its own project name, its own volumes and its own host ports,
   so one checkout's `bun run dev:stack:down -- --volumes` cannot reach

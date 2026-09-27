@@ -48,3 +48,28 @@ describe('ChatCompletionsProvider — providers without PDF support', () => {
     }
   });
 });
+
+test('cloud AI deadlines cancel every operation before upstream dispatch', async () => {
+  const provider = new PerplexityProvider('test-key');
+  const signal = AbortSignal.abort(new Error('processing deadline'));
+  const originalFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = (async () => {
+    calls++;
+    return new Response('{}');
+  }) as unknown as typeof fetch;
+  try {
+    await expect(
+      provider.parseScreenshot({ imageBase64: 'aGVsbG8=', mimeType: 'image/png' }, signal)
+    ).rejects.toThrow('processing deadline');
+    await expect(provider.parseDocumentText('text', undefined, undefined, signal)).rejects.toThrow(
+      'processing deadline'
+    );
+    await expect(provider.completeText('hello', undefined, signal)).rejects.toThrow(
+      'processing deadline'
+    );
+    expect(calls).toBe(0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

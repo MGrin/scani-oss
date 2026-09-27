@@ -1,0 +1,22 @@
+# Use with docker-compose.prod.yml. Postgres, Redis, worker and SeaweedFS stay local.
+services:
+  data-provider:
+    profiles: [local-providers]
+  mailpit:
+    profiles: [local-mail]
+  api:
+    depends_on:
+      data-provider:
+        condition: service_healthy
+        required: false
+    environment:
+      SCANI_DEPLOYMENT_TIER: "2"
+      SCANI_CLOUD_URL: ${SCANI_CLOUD_URL:-https://api.cloud.scani.xyz}
+  worker:
+    depends_on:
+      data-provider:
+        condition: service_healthy
+        required: false
+    environment:
+      SCANI_DEPLOYMENT_TIER: "2"
+      SCANI_CLOUD_URL: ${SCANI_CLOUD_URL:-https://api.cloud.scani.xyz}

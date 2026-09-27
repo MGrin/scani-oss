@@ -1,107 +1,43 @@
 ---
 title: Tier model
-description: Same binaries, three deployment shapes. Two env vars decide which tier you're on.
+description: Choose who hosts your data and who manages upstream provider credentials.
 sidebar:
   order: 1
 ---
 
-## Summary
+| Responsibility | Tier 1 — fully self-hosted | Tier 2 — cloud processing | Tier 3 — managed |
+|---|---|---|---|
+| UI, API and worker | You | You | Scani |
+| Database and S3 | You | You | Scani |
+| AI, prices and supported chain queries | Local providers | Scani Cloud | Scani |
+| Platform API keys | You obtain provider keys | One Scani Cloud key | Scani |
+| Authentication email | Your SMTP/Fastmail | Scani Cloud templates | Scani |
 
-The same set of binaries (`api`, `worker`, `data-provider`,
-`frontend-app`) runs three ways. You decide by setting two
-environment variables — there are no per-tier feature flags and no
-per-tier code paths.
+Tier 2 keeps durable financial records, uploaded files, users and personal
+integration credentials on your infrastructure. Scani Cloud performs requested
+provider-backed processing using Scani's upstream accounts. You do not need
+OpenAI, CoinGecko, Finnhub, Etherscan, Helius or Google provider credentials.
 
-| Tier | `SCANI_CLOUD_URL` points at | Who runs it |
-|---|---|---|
-| **1 — fully self-hosted** | `http://data-provider:8082` on your own compose network. | You. |
-| **2 — semi-managed** | A hosted `data-provider` endpoint. | You run api + worker + frontend; someone else runs the data-provider. |
-| **3 — fully managed** | A hosted `data-provider` endpoint. | Someone else runs everything. |
+Set `SCANI_DEPLOYMENT_TIER=1` or `2` explicitly on both API and worker. A cloud
+URL alone does not select Tier 2. Managed deployments use `3`; leaving the tier
+unset preserves legacy routing for existing managed installations.
 
-The full design rationale is in
-[Why the three-tier deployment model](/decisions/three-tier-model/).
+Tier 1 uses `SCANI_CLOUD_URL=http://data-provider:8082` and a generated local
+bearer matching `DATA_PROVIDER_API_KEY`. This is an internal secret, not a paid
+Scani Cloud subscription key. Tier 2 uses `https://api.cloud.scani.xyz` and a key
+from [Scani Cloud](https://cloud.scani.xyz).
 
-## Choosing your tier
+Both self-hosted tiers still require local database/S3 credentials, a session
+secret and an encryption key. The installer generates those. Personal exchange
+keys and brokerage tokens are separate: enter them in your local Scani instance.
+Those integrations continue to connect directly using your own credentials.
 
-| Pick Tier 1 if… | Pick Tier 2 if… | Pick Tier 3 if… |
-|---|---|---|
-| You want full control of every byte. | You'd rather not run an S3 bucket and a mail transport. | You want zero operational burden. |
-| You don't want any traffic leaving your network. | You're fine with an operator holding your uploads and sending your mail. | You're fine outsourcing the whole stack. |
-| You enjoy ops work, or your environment requires it. | You're an operator running Scani for a small group of users. | You're a single user who wants the easy mode. |
+Self-hosting does not mean offline operation. Tier 1 contacts upstream services
+directly. Tier 2 sends the inputs needed for processing to Scani Cloud and the
+relevant upstream provider. For example, document extraction sends document
+content; wallet queries send the public wallet address. Cloud processing does
+not require access to your database or S3 credentials.
 
-Tier 2 is **not** a way to skip managing provider API keys.
-`COINGECKO_API_KEY`, `FINNHUB_API_KEY`, `ETHERSCAN_API_KEY`,
-`HELIUS_API_KEY` and `OPENAI_API_KEY` are read by your api and worker
-on every tier — see
-[What changes](#what-changes).
-
-## The two env vars
-
-```sh
-# Tier 1 — defaults from .env.example
-SCANI_CLOUD_URL=http://localhost:8082
-SCANI_CLOUD_API_KEY=dev_data_provider_key_change_me_not_prod_safe
-DATA_PROVIDER_API_KEY=dev_data_provider_key_change_me_not_prod_safe
-
-# Tier 2 — point api + worker at a hosted endpoint
-SCANI_CLOUD_URL=https://data-provider.your-host.example.com
-SCANI_CLOUD_API_KEY=<issued by the operator>
-# DATA_PROVIDER_API_KEY is not used on the user side in Tier 2 — it
-# lives on the hosted data-provider.
-```
-
-The data-provider validates incoming bearers against its own
-`DATA_PROVIDER_API_KEY`. In Tier 1, single-tenant mode, it's the
-same string as `SCANI_CLOUD_API_KEY`. In Tier 2+, the hosted
-data-provider mints per-user / per-deployment keys via its
-cloud-management surface (gated behind `CLOUD_MANAGEMENT_ENABLED=true`).
-
-A minted key reaches pricing, AI, chain reads, OG metadata and token
-search. It does **not** reach object storage or email: those are internal
-facades over the operator's own bucket and mail account, and a minted key
-gets `403 FORBIDDEN` (SC-585). See
-[Tier 2 wiring](/self-hosting/tier2/wiring/) for the two ways to handle
-that — the row above claiming Tier 2 means not running an S3 bucket holds
-only where the operator has granted your key.
-
-## What does NOT change between tiers
-
-- **User integration credentials** (exchange API keys, brokerage
-  tokens) always live on **your** `api`. Tier-2 operators do not
-  see them.
-- **The schema.** Same Postgres tables, same indexes, same
-  migrations. Applied explicitly by you on every Tier 1 deploy
-  ([Apply migrations](/self-hosting/tier1/production/#apply-migrations));
-  the same `scani/migrate` image works against a managed
-  Postgres too.
-- **The wire contract.** tRPC routes, payload shapes, return types
-  are identical across tiers.
-- **The product behaviour.** No feature is gated by tier.
-
-## What changes
-
-| Concern | Tier 1 | Tier 2 / 3 |
-|---|---|---|
-| Object storage, email, OG-metadata fetching, token search | Served by **your** data-provider. | Served by the **hosted** data-provider. |
-| Outbound calls to CoinGecko / DeFiLlama / Frankfurter / Finnhub / OpenAI / Etherscan / Helius | Made by **your api and worker**. | Made by **your api and worker** — unchanged. |
-| Provider API keys (CoinGecko, OpenAI, Etherscan, …) | You set them in your `.env`. | **You set them in your `.env` — unchanged.** |
-| `S3_*`, `SMTP_URL` / `FASTMAIL_API_TOKEN` | You set them on your data-provider. | Operator sets them on theirs. |
-| Public-internet attack surface | `frontend-app` only (api/worker/data-provider are internal). | `frontend-app` only on your side. Hosted data-provider has its own. |
-| `SCANI_CLOUD_API_KEY` rotation | You rotate it; you also bump `DATA_PROVIDER_API_KEY` to match. | Operator rotates and ships you the new value. |
-
-## Where to go next
-
-- [Tier 1 — Local dev stack](/self-hosting/tier1/local-dev/) — the
-  one-command path.
-- [Tier 1 — Production with docker-compose](/self-hosting/tier1/production/)
-  — the production-shaped compose file.
-- [Tier 1 — Required environment variables](/self-hosting/tier1/required-env/)
-  — the must-set list.
-- [Tier 2 — Overview](/self-hosting/tier2/overview/) — what a hosted
-  data-provider does and does not take off your hands.
-- [Tier 3 — Fully managed](/self-hosting/tier3/) — the pointer page.
-
-## See also
-
-- [Why the three-tier deployment model](/decisions/three-tier-model/)
-- [Environment variables reference](/reference/environment/)
+- [Tier 1 setup](/self-hosting/tier1/production/)
+- [Tier 2 setup](/self-hosting/tier2/wiring/)
+- [Tier 3](/self-hosting/tier3/)

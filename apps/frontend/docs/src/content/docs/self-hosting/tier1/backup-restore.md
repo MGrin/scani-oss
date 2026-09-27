@@ -12,7 +12,7 @@ sidebar:
 | Holdings, transactions, observations, prices, vaults, groups, accounts, users, sessions, encrypted integration creds | Postgres | **Yes. The whole truth lives here.** |
 | BullMQ job state, scheduled-job state | Postgres, in the `bullmq` schema | **Covered by the Postgres backup below** — `pg_dump` of the database takes every schema, so you get it whether or not you meant to. |
 | Rate-limiter buckets, realtime pub/sub, job-lifecycle events, portfolio-value cache, admin HMAC nonces | Redis | No. All of it regenerates from "now". |
-| Screenshot uploads, CSV imports, file-import payloads | S3 / MinIO | If your retention model needs them. The application can run without them; only the audit trail / re-parse flow is impacted. |
+| Screenshot uploads, CSV imports, file-import payloads | S3 / SeaweedFS | If your retention model needs them. The application can run without them; only the audit trail / re-parse flow is impacted. |
 | Code, schema, env config | Git + your secret store | **Yes.** |
 
 ## Postgres
@@ -80,28 +80,24 @@ backup above. Copying a Redis AOF file preserves no jobs — if you
 are following an older runbook that told you to, it is copying
 nothing that matters.
 
-## S3 / MinIO
+## S3 / SeaweedFS
 
-Cloud providers handle durability. For self-hosted MinIO, the
-data lives in the `minio-data` named volume:
-
-```sh
-# Snapshot the volume
-docker run --rm \
-  -v scani_minio-data:/data:ro \
-  -v "$PWD":/backup \
-  alpine \
-  tar -czf "/backup/minio-$(date +%F).tar.gz" -C /data .
-```
-
-For real backups, use `mc mirror`:
+Back up objects through S3 using your authenticated endpoint. With `rclone`
+remotes configured for your Scani bucket and backup destination:
 
 ```sh
-docker run --rm --network scani_default --entrypoint sh \
-  pgsty/mc:RELEASE.2026-09-16T00-00-00Z \
-  -c "mc alias set local http://minio:9000 minioadmin minioadmin && \
-         mc mirror --overwrite local/job-uploads-dev s3://your-backup-bucket/scani"
+rclone copy scani:job-uploads backup:scani-uploads --metadata
+rclone check scani:job-uploads backup:scani-uploads --download --one-way
 ```
+
+Keep remote credentials in your secret manager or a protected rclone config.
+Use the actual bucket names from your installation. Avoid `sync` for backups:
+source deletions should not immediately delete your only recovery copy.
+
+For a filesystem snapshot, stop writers and SeaweedFS first, then snapshot the
+**whole** `seaweedfs-data` volume, including its metadata store. A live tar of
+that volume is not a consistent backup. Keep `.env` and the encryption key
+with your protected recovery materials. Test restoration into an isolated stack.
 
 ## What a full DR drill looks like
 

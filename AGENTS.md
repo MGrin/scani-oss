@@ -498,7 +498,7 @@ Choice of provider for each layer is up to the operator:
 
 - **Postgres** — any 16+ instance (Neon, Render, RDS, self-hosted, …).
 - **Redis** — any 7+ instance (Upstash, Redis Cloud, self-hosted, …).
-- **Object storage** — any S3-compatible store (MinIO locally, Cloudflare
+- **Object storage** — any S3-compatible store (SeaweedFS locally, Cloudflare
   R2, AWS S3, Backblaze B2, …).
 - **Email** — SMTP or Fastmail JMAP via `FASTMAIL_API_TOKEN`.
 - **Auth** — Better-Auth (no external auth provider required).
@@ -607,8 +607,7 @@ Operator tooling can call HMAC-gated job endpoints on the api
 | Redis | `localhost:6380` | `redis` container |
 | Mailpit SMTP | `localhost:1026` | Submit mail here |
 | Mailpit UI | `http://localhost:8026` | Inspect dev emails |
-| MinIO (S3) | `localhost:9000` | Local S3-compatible store |
-| MinIO console | `http://localhost:9001` | `minioadmin` / `minioadmin` |
+| SeaweedFS (S3) | `localhost:9000` | Local S3-compatible store |
 | data-provider | `localhost:8082` | Tier-1 sidecar (incl. email.send tRPC) |
 | api | `localhost:3011` | Elysia tRPC API (`API_HOST_PORT`; 3001 is the in-container port) |
 | frontend/app | `http://localhost:5173` | Main SPA |
@@ -622,7 +621,7 @@ bun dev:stack          # runs scripts/sync-env.ts, then `docker compose --profil
 bun dev:stack:down     # stops and removes compose containers (volumes preserved)
 ```
 
-Infra only — Postgres, Redis, MinIO and Mailpit and nothing else. This is
+Infra only — Postgres, Redis, SeaweedFS and Mailpit and nothing else. This is
 the right stack for **running the test suite**, and for `bun dev` against
 containerized services:
 
@@ -714,7 +713,7 @@ bun run dev:stacks:reap -- --project <name> --apply    # one project, same guard
 ```
 
 **Dry run is the default and `--apply` is the only way past it.** What it removes
-are per-checkout dev volumes — a Postgres, a Redis, a MinIO — which a later
+are per-checkout dev volumes — a Postgres, a Redis, a SeaweedFS — which a later
 `bun dev:stack` recreates and migrates from scratch. But "recreatable" is a claim
 about the SCHEMA, not about whatever somebody put in one, and the person who
 would know went with the checkout.

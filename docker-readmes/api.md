@@ -21,7 +21,7 @@ Pin `SCANI_IMAGE_TAG=1.2.3` in your `.env` for reproducible deploys.
 
 The recommended way to run this image is via the reference
 [`docker-compose.prod.yml`](https://github.com/MGrin/scani-oss/blob/main/docker-compose.prod.yml)
-in the OSS repo — it wires this image up with Postgres, Redis, MinIO,
+in the OSS repo — it wires this image up with Postgres, Redis, SeaweedFS,
 [`scani/worker`](https://hub.docker.com/r/scani/worker),
 [`scani/data-provider`](https://hub.docker.com/r/scani/data-provider), and
 [`scani/frontend-app`](https://hub.docker.com/r/scani/frontend-app):
@@ -29,7 +29,7 @@ in the OSS repo — it wires this image up with Postgres, Redis, MinIO,
 ```bash
 git clone https://github.com/MGrin/scani-oss.git
 cd scani-oss
-cp .env.example .env                                                            # set real values
+SCANI_SKIP_UP=1 ./scripts/self-host.sh
 
 # Apply schema migrations (do this on first install AND on every upgrade)
 docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate

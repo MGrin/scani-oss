@@ -166,3 +166,41 @@ describe('FastmailEmailService', () => {
     expect(sendBody.methodCalls[1][1].create.s1.identityId).toBe('id-wild');
   });
 });
+
+test('aborting a Fastmail send cancels a response body after headers arrived', async () => {
+  let calls = 0;
+  const sending = Promise.withResolvers<void>();
+  const responses = [sessionResponse, identitiesResponse, draftsResponse];
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch() {
+      const response = responses[calls++];
+      if (response) return response();
+      sending.resolve();
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(new TextEncoder().encode('{'));
+          },
+        })
+      );
+    },
+  });
+  const controller = new AbortController();
+  const fetcher = ((_url: unknown, init: RequestInit) =>
+    fetch(`http://127.0.0.1:${server.port}`, init)) as unknown as typeof fetch;
+  try {
+    const service = new FastmailEmailService({ apiToken: 'synthetic', fetcher });
+    const pending = service.send(
+      { from: 'welcome@scani.xyz', to: 'receiver@example.com', subject: 'bounded', text: 'test' },
+      controller.signal
+    );
+    await sending.promise;
+    controller.abort(new Error('deadline'));
+    await expect(pending).rejects.toThrow();
+    expect(calls).toBe(4);
+  } finally {
+    server.stop(true);
+  }
+});

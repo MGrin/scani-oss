@@ -1,6 +1,6 @@
 ---
 title: Optional integration keys
-description: Provider API keys that unlock specific functionality. Read by the api and worker on every tier. Most degrade silently rather than failing, so check the boot line.
+description: Optional platform provider credentials for Tier 1. Tier 2 uses a Scani Cloud key instead.
 sidebar:
   order: 4
 ---
@@ -9,12 +9,10 @@ Scani's integrations are **independently unlockable**. You can
 enable them one at a time as you obtain keys; nothing else breaks
 while a key is missing.
 
-These are read by the **api and the worker**, on every tier. All
-three backend services boot the provider registry in `direct` mode
-and call these upstreams themselves, so pointing `SCANI_CLOUD_URL` at
-a hosted data-provider does **not** move them — see
-[Tier 2: you still need your provider API
-keys](/self-hosting/tier2/overview/#you-still-need-your-provider-api-keys).
+Tier 1 reads these on the **API and worker**. Tier 2 replaces platform providers
+with cloud adapters and needs only a Scani Cloud key. Setting a cloud URL alone
+is not a tier switch: set `SCANI_DEPLOYMENT_TIER=2` on both services.
+See the [Tier 2 setup guide](/self-hosting/tier2/wiring/).
 
 :::caution[Most of these degrade silently]
 Only the OpenAI path fails loudly. CoinGecko, Finnhub, Etherscan and

@@ -55,11 +55,11 @@ Browser request → Elysia `.onRequest()` bridges to Better-Auth's WinterCG hand
 ## Local dev
 
 ```bash
-# from repo root — full stack (Postgres, Redis, MinIO, Mailpit, plus the worker + frontend)
+# from repo root — full stack (Postgres, Redis, SeaweedFS, Mailpit, plus the worker + frontend)
 bun run dev:stack
 
 # OR host-side: infra in Docker, api in process
-docker compose up -d postgres redis mailpit minio
+docker compose up -d postgres redis mailpit seaweedfs
 bun dev:api          # http://localhost:3001
 ```
 

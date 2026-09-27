@@ -76,18 +76,17 @@ advisory lock for it when the descriptor sets `lockName`; see
 
 ### `apps/backend/data-provider`
 
-tRPC service fronting the Scani-owned third-party calls that a
-hosted deployment can serve on your behalf: object storage, the
-email transport, Open Graph metadata and token search. **This is
-the seam between [tiers](/self-hosting/tier-model/)** — in Tier 1
-it's a sidecar on `localhost:8082`; in Tier 2/3 it's a hosted
-endpoint.
+tRPC service for Scani-managed platform processing. In Tier 1 it runs locally
+for token search and metadata while API/worker call direct providers. In Tier 2,
+API/worker call Scani's hosted `processing.v1` routes for AI, prices and supported
+public-wallet operations, plus token lookup and fixed `email.auth` templates.
+They supply one Scani Cloud key; Scani supplies upstream platform accounts.
 
-It also exposes `pricing.*`, `ai.*` and `chains.*` routers, but the
-api and worker do not call them: all three services boot the
-provider registry in `direct` mode and reach CoinGecko, Finnhub,
-DeFiLlama, OpenAI, Etherscan and Helius themselves, with keys from
-their own environment.
+Tier 2 keeps its UI, API, worker, database and S3 on customer infrastructure.
+Personal exchange and brokerage credentials remain local. The internal
+`storage.*` and `email.send` routes remain restricted to internal keys and are
+not used for Tier 2 customer storage or arbitrary mail. See the
+[tier model](/self-hosting/tier-model/) for the data boundary.
 
 Routers live in `apps/backend/data-provider/src/presentation/`.
 

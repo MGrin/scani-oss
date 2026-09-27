@@ -88,3 +88,21 @@ describe('InMemoryOutflowRateLimiter', () => {
     expect(b.ok).toBe(true);
   });
 });
+
+test('aborted queued work never dispatches after a slot becomes available', async () => {
+  const limiter = new InMemoryOutflowRateLimiter(1, 60);
+  await limiter.execute(async () => undefined);
+  const controller = new AbortController();
+  let dispatched = false;
+  const pending = limiter.execute(
+    async () => {
+      dispatched = true;
+    },
+    undefined,
+    controller.signal
+  );
+  controller.abort(new Error('deadline'));
+  await expect(pending).rejects.toThrow('deadline');
+  await Bun.sleep(90);
+  expect(dispatched).toBe(false);
+});
