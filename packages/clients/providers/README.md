@@ -62,38 +62,24 @@ capability — `assertImplementsCapability(provider, 'transactions')`
 in tests catches that before it becomes a "no transactions provider for
 institutionCode='kraken'" runtime surprise.
 
-## One mode — every process runs the real providers
+## Provider selection by deployment tier
 
-`buildProviderRegistry()` constructs real provider instances that talk to
-upstream APIs (CoinGecko, Binance, OpenAI, …) directly, in every process
-that calls it. Every app therefore needs every per-provider API key set in
-its env; none of them has a fallback.
+`buildProviderRegistry()` constructs the factories selected by each app's
+composition root. Tier 1 uses direct platform providers. Tier 2 wraps platform
+factories with `platformProviderFactories` from `@scani/cloud-client`, replacing
+AI, market-data, token-identity and public-wallet capabilities with cloud
+adapters. Those adapters call the Scani-hosted data-provider using one cloud key.
 
-**There used to be a second mode.** `mode: 'cloud'` filled every capability
-slot with a proxy from `core/cloud/` that forwarded to
-`apps/backend/data-provider` over tRPC via a `CloudProviderClientBridge`.
-It was complete and it was never adopted — all three backend apps passed
-`mode: 'direct'` as a string literal and `mode` was never derived from
-`env`, so no environment variable or Fly secret could reach it (SC-521).
-**It was deleted in SC-587 on mgrin's decision**, together with the
-data-provider's `pricing.*` and `ai.*` routers, whose only caller was the
-bridge.
+`personalProviderFactories` keeps credentialed exchange and brokerage operations
+local while routing their public pricing methods through the cloud. Decrypted
+personal credentials never cross that boundary. Tier 2 S3 also stays local;
+cloud processing receives only its required inputs. Unset/Tier 3 retains the
+existing managed provider selection.
 
-Two things that were true of it and remain true without it:
-
-- **Do not reason about egress as though there were a single hop.** The
-  api and worker call CoinGecko, DeFiLlama, Frankfurter, Finnhub, Yahoo
-  Finance, Etherscan, the chain RPCs and OpenAI themselves.
-- **What keeps upstream budgets coherent across the four processes is
-  Redis, not topology**: `buildProviderRegistry` calls `setSharedRedis`,
-  and `OutflowRateLimiterRegistry` keys every limiter `rl:<namespace>`
-  with no per-service discriminator. Moving a limiter in-process would
-  multiply every agreed cap by the process count.
-
-Adopting it would never have moved the 15 user-credentialed
-CEX/broker/fiat providers anyway: those stay in the api and worker so
-decrypted per-tenant credentials never cross into a shared multi-tenant
-service. **That boundary is unchanged by the deletion.**
+The cloud service constructs the direct upstream providers with Scani-owned
+keys. Redis-backed provider rate limits remain shared across its replicas;
+adding a process must not multiply an upstream budget. Customer API/worker
+instances do not need those platform keys in Tier 2.
 
 ## Boot
 

@@ -204,7 +204,7 @@ All exposed by `apps/backend/api` (and surfaced via nginx as
 | `/readyz` | Readiness. 200 only if **DB + Redis + schema** are all healthy. Returns 503 (with a per-check breakdown) if migrations haven't been applied. | k8s readiness probe; load-balancer upstream check; `docker-compose.prod.yml` api healthcheck. |
 | `/health/db` | DB ping + pool stats. | Operator debugging. |
 | `/health/ws` | WebSocket stats. | Operator debugging. |
-| `/health/deep` | DB + schema-drift + Redis + R2 + AI. 200 `ok` / 503 `degraded` with a per-check breakdown. Also reports `providerCredentials` — which platform provider keys are absent — and `costControls` — which of the two spend bounds are enforcing, distinguishing a bound set to `0` (`off`) from one that was never set (`unset`). Both are **reported, never gated**, so neither can 503 a deployment that simply has not bought a key or has no external callers to bound. | Deploy-time smoke test. NOT for traffic routing — slow. |
+| `/health/deep` | DB + schema-drift + Redis + S3 + AI. 200 `ok` / 503 `degraded` with a per-check breakdown. Storage is local in Tier 1/2 and follows managed routing otherwise. Also reports `providerCredentials` — which platform provider keys are absent — and `costControls` — which of the two spend bounds are enforcing, distinguishing a bound set to `0` (`off`) from one that was never set (`unset`). Both are **reported, never gated**, so neither can 503 a deployment that simply has not bought a key or has no external callers to bound. | Deploy-time smoke test. NOT for traffic routing — slow. |
 
 The `data-provider` exposes `/health` (process liveness) on its bind
 port. The prod `frontend-app` image exposes `/healthz` (nginx alive),
