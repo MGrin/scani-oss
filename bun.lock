@@ -32,6 +32,7 @@
         "@scani/config": "workspace:*",
         "@scani/db": "workspace:*",
         "@scani/domain": "workspace:*",
+        "@scani/email": "workspace:*",
         "@scani/http-fetch": "workspace:*",
         "@scani/jobs": "workspace:*",
         "@scani/logging": "workspace:*",
@@ -281,8 +282,10 @@
       "version": "1.0.0",
       "dependencies": {
         "@scani/config": "workspace:*",
+        "@scani/db": "workspace:*",
         "@scani/email": "workspace:*",
         "@scani/logging": "workspace:*",
+        "@scani/providers": "workspace:*",
         "@scani/rate-limiter": "workspace:*",
         "@scani/storage": "workspace:*",
         "@trpc/client": "^10.45.4",

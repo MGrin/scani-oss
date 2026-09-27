@@ -1,3 +1,7 @@
+import {
+  personalProviderFactories,
+  platformProviderFactories,
+} from '@scani/cloud-client/providers';
 import 'reflect-metadata';
 // CRITICAL: Validate env vars BEFORE importing anything that reads them.
 // loadEnv() will process.exit(1) with a clear error list on misconfiguration.
@@ -161,49 +165,53 @@ try {
     redis: providerRedis,
     env: process.env,
     providers: [
-      // Pricing — public APIs.
-      defillamaFactory,
-      frankfurterFactory,
-      coingeckoFactory,
-      finnhubFactory,
-      // Chain providers — public-endpoint balance + address-validator
-      // dispatch for wallet imports.
-      // STUB_CHAIN_DATA=1 registers a fixture chain provider FIRST so
-      // wallet-import detection + balance fetch resolve locally instead
-      // of calling blockchain.info / Etherscan / a Solana RPC. The env
-      // schemas refuse STUB_CHAIN_DATA=1 in production, so a misconfigured
-      // prod deploy crashes at boot rather than serving fixture balances
-      // (SC-490).
-      ...(process.env.STUB_CHAIN_DATA === '1' ? [chainStubFactory] : []),
-      etherscanFactory,
-      bitcoinFactory,
-      solanaFactory,
-      tronFactory,
-      tonFactory,
-      // CEX — user-credentialed balance fetch + credential validation.
-      binanceFactory,
-      coinbaseFactory,
-      krakenFactory,
-      bybitFactory,
-      okxFactory,
-      kucoinFactory,
-      gateFactory,
-      bitgetFactory,
-      bitstampFactory,
-      huobiFactory,
-      mexcFactory,
-      geminiFactory,
-      // Brokers + fiat.
-      ibkrFactory,
-      wiseFactory,
-      airwallexFactory,
-      // AI: STUB_AI=1 registers a fixed-payload provider FIRST so the
-      // e2e suite gets deterministic AI results without an OpenAI key.
-      // The data-provider config schema refuses STUB_AI=1 in production,
-      // so a misconfigured prod deploy crashes the data-provider at boot
-      // before this branch ever fires.
-      ...(process.env.STUB_AI === '1' ? [aiStubFactory] : []),
-      aiOpenAIFactory,
+      ...platformProviderFactories([
+        // Pricing — public APIs.
+        defillamaFactory,
+        frankfurterFactory,
+        coingeckoFactory,
+        finnhubFactory,
+        // Chain providers — public-endpoint balance + address-validator
+        // dispatch for wallet imports.
+        // STUB_CHAIN_DATA=1 registers a fixture chain provider FIRST so
+        // wallet-import detection + balance fetch resolve locally instead
+        // of calling blockchain.info / Etherscan / a Solana RPC. The env
+        // schemas refuse STUB_CHAIN_DATA=1 in production, so a misconfigured
+        // prod deploy crashes at boot rather than serving fixture balances
+        // (SC-490).
+        ...(process.env.STUB_CHAIN_DATA === '1' ? [chainStubFactory] : []),
+        etherscanFactory,
+        bitcoinFactory,
+        solanaFactory,
+        tronFactory,
+        tonFactory,
+        // AI: STUB_AI=1 registers a fixed-payload provider FIRST so the
+        // e2e suite gets deterministic AI results without an OpenAI key.
+        // The data-provider config schema refuses STUB_AI=1 in production,
+        // so a misconfigured prod deploy crashes the data-provider at boot
+        // before this branch ever fires.
+        ...(process.env.STUB_AI === '1' ? [aiStubFactory] : []),
+        aiOpenAIFactory,
+      ]),
+      ...personalProviderFactories([
+        // CEX — user-credentialed balance fetch + credential validation.
+        binanceFactory,
+        coinbaseFactory,
+        krakenFactory,
+        bybitFactory,
+        okxFactory,
+        kucoinFactory,
+        gateFactory,
+        bitgetFactory,
+        bitstampFactory,
+        huobiFactory,
+        mexcFactory,
+        geminiFactory,
+        // Brokers + fiat.
+        ibkrFactory,
+        wiseFactory,
+        airwallexFactory,
+      ]),
     ],
   });
   // GoogleSheets lives in its own workspace (`@scani/providers-google-sheets`)
@@ -211,12 +219,14 @@ try {
   // `@scani/providers` means data-provider's image doesn't carry the dep.
   // The factory needs the postgres connection (per-user sheet config), so
   // we register it here rather than in the standard providers array.
-  const googleSheetsProvider = googleSheetsFactory({
-    db,
-    redis: providerRedis,
-    rateLimiterRegistry: built.rateLimiterRegistry,
-  });
-  built.registry.register(googleSheetsProvider);
+  if (loadCloudClientConfig().SCANI_DEPLOYMENT_TIER !== '2') {
+    const googleSheetsProvider = googleSheetsFactory({
+      db,
+      redis: providerRedis,
+      rateLimiterRegistry: built.rateLimiterRegistry,
+    });
+    built.registry.register(googleSheetsProvider);
+  }
   logger.info({}, '✅ @scani/providers registry initialized');
 } catch (error) {
   logger.error(
@@ -342,6 +352,7 @@ if (!env.BETTER_AUTH_SECRET) {
 const browserOriginOptions = { isProduction: isNodeEnvProduction() };
 const trustedOrigins = buildTrustedOrigins(env.FRONTEND_URL, browserOriginOptions);
 const betterAuthInstance = createBetterAuth({
+  appUrl: env.FRONTEND_URL,
   baseURL: env.BACKEND_URL,
   secret: env.BETTER_AUTH_SECRET,
   cookieDomain: env.COOKIE_DOMAIN,
@@ -1017,7 +1028,10 @@ app
       // Proxy the check through `${SCANI_CLOUD_URL}/health/r2` so a real
       // storage outage shows up as `r2.ok=false` instead of being masked
       // by a hard-coded ok. Otherwise run the in-process HEAD probe.
-      const cloudUrl = loadCloudClientConfig().SCANI_CLOUD_URL;
+      const storageConfig = loadCloudClientConfig();
+      const cloudUrl = ['1', '2'].includes(storageConfig.SCANI_DEPLOYMENT_TIER ?? '')
+        ? undefined
+        : storageConfig.SCANI_CLOUD_URL;
       if (cloudUrl) {
         const t0 = performance.now();
         const ctrl = new AbortController();

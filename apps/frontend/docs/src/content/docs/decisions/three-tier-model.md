@@ -1,121 +1,32 @@
 ---
 title: Why the three-tier deployment model
-description: One binary set, three deployment shapes. Two env vars switch tiers. The seam is the data-provider, so user credentials never have to cross a tenant boundary.
-sidebar:
-  order: 6
+description: Separate data ownership from the burden of managing provider accounts.
 ---
 
-## The decision
+Scani supports three operational models with the same application schema.
 
-Scani ships **one** set of binaries (`api`, `worker`, `data-provider`,
-`frontend-app`) that runs in three shapes:
+- **Tier 1:** operate the complete stack and manage upstream provider credentials.
+- **Tier 2:** operate UI, API, worker, database and S3; use one Scani Cloud key
+  for platform processing and data-provider requests.
+- **Tier 3:** use Scani's fully managed application.
 
-- **Tier 1 — fully self-hosted.** Everything on your hardware,
-  including the `data-provider`.
-- **Tier 2 — semi-managed.** `api` + `worker` + `frontend-app` on your
-  side; `data-provider` provided by a hosted endpoint.
-- **Tier 3 — fully managed.** Someone else runs the whole stack.
+Tier 2 separates durable data ownership from provider operations. The customer
+owns records, uploads and personal exchange/broker credentials. Scani Cloud
+manages AI and supported market/blockchain providers, processes the necessary
+inputs and returns results to the customer's worker for local persistence.
 
-Two environment variables switch tiers:
+Deployment selection is explicit through `SCANI_DEPLOYMENT_TIER`. Storage does
+not follow the presence of a cloud key. Both self-hosted tiers retain local S3;
+customer cloud keys cannot call internal storage or arbitrary-email endpoints.
+Authentication email uses constrained templates instead.
 
-- `SCANI_CLOUD_URL` — where to send object storage, email,
-  OG-metadata and token-search calls.
-- `SCANI_CLOUD_API_KEY` — the bearer the api + worker present.
+The provider capability interfaces keep application logic independent of local
+versus remote processing. The versioned `processing.v1` contract sends minimal
+asset identifiers, public wallet addresses and requested document content. It
+preserves decimal strings, timestamps and incomplete-history warnings.
 
-:::caution[The seam is narrower than this decision anticipated]
-The design below assumes *every* third-party call crosses the
-data-provider seam. As implemented, four do — object storage, email,
-Open Graph metadata and token search. Pricing, AI and chain calls do
-not: all three backend services construct the real providers in-process
-and reach CoinGecko, DeFiLlama, Frankfurter, Finnhub, Etherscan, Helius
-and OpenAI themselves, on every tier.
+Tier 2 involves processing data outside the customer's network. It offers
+control over durable storage, not an offline or zero-egress deployment.
 
-A `mode: 'cloud'` registry that would have closed the gap was built,
-never adopted by any app, and **deleted in 2026-09**. So this is the
-shape now rather than an unfinished migration: **provider API keys are
-required on the api and worker whatever tier you run** — see
-[Tier 2 overview](/self-hosting/tier2/overview/#you-still-need-your-provider-api-keys).
-:::
-
-## The alternative we rejected
-
-Per-tier forks of the codebase: a self-host build, a managed-service
-build, a SaaS build. Each with its own auth model, its own deployment
-shape, its own feature set.
-
-## Why we rejected it
-
-**Forks rot.** Three codebases means three places to land every
-feature, three places to fix every bug, three CI matrices, three
-chances for security findings to apply to two of three forks. The
-team is small. The fork tax is unaffordable.
-
-**The natural seam already existed.** Every third-party call (pricing,
-AI, blockchain RPC, email) was already centralised on the
-`data-provider` service for testability and rate-limit isolation.
-Once the seam is named, the tier choice is just "which endpoint do
-api + worker call?". No fork required.
-
-**User credentials must stay on the user's side.** Exchange API keys,
-brokerage tokens, screenshot blobs — these are sensitive. They live
-on the `api`, which the user controls (Tier 1) or which their
-operator runs (Tier 2). The `data-provider` only sees requests that
-don't carry user secrets: an object-storage read or write, a rendered
-email, a URL to fetch OG metadata for, a symbol to search. The tier
-seam is *also* the credential boundary — no decrypted integration
-credential ever crosses it.
-
-## What the three tiers look like
-
-| Aspect | Tier 1 | Tier 2 | Tier 3 |
-|---|---|---|---|
-| `api` runs… | On your hardware. | On your hardware. | Hosted. |
-| `worker` runs… | On your hardware. | On your hardware. | Hosted. |
-| `data-provider` runs… | On your hardware. | Hosted endpoint. | Hosted endpoint. |
-| User integration creds (exchange keys, brokerage tokens) | On your `api`. | On your `api`. | Hosted. |
-| Provider keys (CoinGecko, OpenAI, Etherscan) | You set them, read by your api + worker. | You set them, read by your api + worker. | Operator sets them. |
-| Object storage, email, OG metadata, token search | Your `data-provider`. | Hosted `data-provider`. | Hosted `data-provider`. |
-| What's reachable from the public internet | Just `frontend-app`. | Just `frontend-app`. | All hosted. |
-
-## What this design unlocks
-
-- **One codebase, three deployment shapes.** Every PR ships to all
-  three tiers simultaneously.
-- **The Tier-1→Tier-2 migration is a config change.** Re-point
-  `SCANI_CLOUD_URL` at the hosted endpoint; provide the issued
-  `SCANI_CLOUD_API_KEY`; restart api + worker. Your data stays on
-  your side.
-- **Provider keys are centralised for the calls that cross the
-  seam.** A small operator running 50 users provides one bucket and
-  one mail transport for all of them. The intent was for pricing and
-  AI keys to work the same way; the caution above is why they do not
-  yet.
-- **Tier 1 keeps every credential on one host.** No hosted service is
-  involved at all, and the OSS distribution sends no telemetry. Note
-  this is not an air gap: pricing, chain and AI calls still go out to
-  their providers, from your own api and worker.
-
-## What the design costs
-
-- **The `data-provider` is a separate service to run.** In Tier 1 it
-  is a sidecar on the same compose network; the operational cost is
-  trivial.
-- **Two env vars have to match.** `SCANI_CLOUD_API_KEY` on api +
-  worker must equal `DATA_PROVIDER_API_KEY` on the data-provider.
-  In Tier 1 single-tenant, both are seeded with the same value in
-  `.env.example`.
-
-## What this rules out
-
-- A "merge the api and the data-provider for Tier 1 only" shortcut.
-  The whole point of the seam is that *it doesn't go away in any
-  tier* — that's what makes the contract testable end-to-end.
-- Per-tier feature flags that change product behaviour. The product
-  is the same; only the deployment shape differs.
-
-## See also
-
-- [Tier model](/self-hosting/tier-model/)
-- [Tier 2 overview](/self-hosting/tier2/overview/)
-- [Privacy & telemetry](/start/what-is-scani/#license--telemetry)
-- [Glossary: tier](/reference/glossary/#tier)
+See the [tier model](/self-hosting/tier-model/) and
+[Tier 2 overview](/self-hosting/tier2/overview/) for current requirements.

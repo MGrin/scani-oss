@@ -5,6 +5,7 @@ import { Container } from 'typedi';
 import { z } from 'zod';
 import { okOutput } from '../schemas';
 import { internalProcedure, router } from '../trpc';
+import { authMailProcedure } from './auth-mail';
 
 // Outbound transactional email only — the backend's Better-Auth setup
 // talks to this via cloud-client's EmailFacade when SCANI_CLOUD_URL is
@@ -21,6 +22,7 @@ const sendInput = z.object({
 });
 
 export const emailRouter = router({
+  auth: authMailProcedure,
   send: internalProcedure
     .meta({
       openapi: {

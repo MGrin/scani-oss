@@ -38,12 +38,12 @@ password nobody has any more.
   this is the ordinary recovery, and it works from any partly-failed run as
   long as the `.env` survived.
 - **Throw the data away.** Re-run with `SCANI_RESET=1`, which deletes this
-  project's containers and its `postgres-data`, `redis-data` and `minio-data`
+  project's containers and its `postgres-data`, `redis-data` and `seaweedfs-data`
   volumes before installing. By hand, the same thing:
 
   ```sh
   docker rm -f $(docker ps -aq --filter label=com.docker.compose.project=<project>)
-  docker volume rm <project>_postgres-data <project>_redis-data <project>_minio-data
+  docker volume rm <project>_postgres-data <project>_redis-data <project>_seaweedfs-data
   ```
 
 `<project>` is the install directory's name unless you set
@@ -105,7 +105,7 @@ is already in use by container "..."
 ```
 
 **Cause.** One-shot containers (`env-sync`, `deps`, `migrate`,
-`minio-init`) exit cleanly but keep their names reserved.
+`migrate`) exit cleanly but keep their names reserved.
 
 **Fix.**
 
@@ -304,14 +304,14 @@ hand-write rows into `drizzle.__scani_migrations` instead — the
 `sha256` column is what detects an applied migration being edited,
 and a made-up value turns the next deploy into a refusal.
 
-## MinIO bucket is empty after `down -v`
+## SeaweedFS bucket is empty after `down -v`
 
 **Cause.** `down -v` wipes named volumes. Screenshot blobs and
 file imports are gone.
 
 **Fix.** This is expected. Use a managed S3 provider in production
 so your bucket isn't tied to a local volume; or back the
-`minio-data` volume up before `down -v`.
+`seaweedfs-data` volume up before `down -v`.
 
 ## See also
 

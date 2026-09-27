@@ -449,15 +449,14 @@ export type StackMode = 'full' | 'infra';
  * already there.
  *
  * `infra` STARTS WHAT A GATE USES AND NOTHING ELSE (SC-706). `bun run test`
- * reaches Postgres, Redis, MinIO and Mailpit; it never touches a vite dev
+ * reaches Postgres, Redis, SeaweedFS and Mailpit; it never touches a vite dev
  * server, an api or the worker. Every gate in this fleet nevertheless started
  * eleven containers, and measured during a live gate the three largest
  * consumers on a 10-core box were the frontend dev servers this mode omits —
  * `cloud-frontend` 152%, `frontend` 126%, `admin` 84%.
  *
  * The mechanism is one flag, because docker-compose.yml already draws the line
- * exactly here: the four services a gate needs — and the `env-sync`, `deps`
- * and `minio-init` one-shots that prepare them — declare no `profiles:` key,
+ * exactly here: the four services a gate needs declare no `profiles:` key,
  * while all seven a gate does not need sit in `full`. So the infra set is not
  * a list maintained beside the compose file, which would drift from it. It is
  * the compose file's own default, and `--profile full` is the only difference.
@@ -699,8 +698,8 @@ export function upVerdict(
  * Running-only, and that is the deliberate difference from
  * `remainingContainers`. `down` uses `-a` because a stopped leftover holds its
  * name and fails the next `up`; here an exited container is `env-sync`,
- * `deps`, `migrate` or `minio-init` having finished, which is success. Listing
- * them would report four permanent failures on every healthy stack.
+ * `deps` or `migrate` having finished, which is success. Listing them would
+ * report permanent failures on every healthy stack.
  *
  * Returns `null` when docker could not be asked — see `upVerdict`.
  */

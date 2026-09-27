@@ -1,208 +1,82 @@
 ---
-title: Pointing api + worker at a hosted endpoint
-description: The two env vars that switch the api and worker from a local data-provider to a hosted one — and the keys that stay put when you do.
+title: Set up Tier 2
+description: Configure cloud processing while keeping your database and S3 local.
 sidebar:
   order: 2
 ---
 
-## Two env vars
+## Fresh installation
+
+Use a release containing the versioned cloud-processing client and a matching
+cloud service. An older server will reject `processing.v1` calls; a successful
+`/health` response alone does not prove compatibility.
+
+Set `SCANI_DEPLOYMENT_TIER=2`, `SCANI_PUBLIC_URL=https://your-scani-hostname` and
+`SCANI_S3_PUBLIC_URL=https://your-storage-hostname` and `SCANI_CLOUD_API_KEY` in your shell, then run `scripts/self-host.sh`. Supply the
+key through your normal secret manager or a hidden shell prompt; do not paste
+it into a committed file. Configure your HTTPS reverse proxy for the public URL.
+
+The installer generates local infrastructure secrets, keeps SeaweedFS, and writes
+`COMPOSE_FILE=docker-compose.prod.yml:docker-compose.tier2.yml` into `.env`.
+The overlay excludes the local data-provider and mail catcher. Use Docker
+Compose 2.20 or later, which supports optional service dependencies.
+
+## Manual configuration
+
+Set these on **both API and worker**:
 
 ```ini
+SCANI_DEPLOYMENT_TIER=2
 SCANI_CLOUD_URL=https://api.cloud.scani.xyz
-SCANI_CLOUD_API_KEY=<bearer issued by the operator>
+SCANI_CLOUD_API_KEY=<your Scani Cloud key>
 ```
 
-`SCANI_CLOUD_URL` replaces the Tier-1 default
-`http://data-provider:8082` (the compose-network hostname). The
-official Scani Cloud endpoint is `https://api.cloud.scani.xyz`;
-operators running their own hosted data-provider use their own URL.
+Keep your `DATABASE_URL`, `REDIS_URL`, all `S3_*` values, `ENCRYPTION_KEY`,
+`BETTER_AUTH_SECRET`, `JOBS_HMAC_SECRET` and `LOG_ID_PEPPER`. API and worker
+must use the same bucket and encryption key. Set `FRONTEND_URL` and
+`BACKEND_URL` to the same HTTPS origin, with no path. The bundled nginx proxies
+`/api` to the API service. Tier 2 auth links must stay on that same origin so an
+email cannot claim one instance while linking to another.
 
-`SCANI_CLOUD_API_KEY` is the bearer the api and worker present in
-the `Authorization` header on every tRPC call to the data-provider.
-Mint one for `api.cloud.scani.xyz` at
-[cloud.scani.xyz](https://cloud.scani.xyz); on a self-operated
-endpoint the operator gives you one.
+SeaweedFS exposes only its authenticated S3 endpoint on loopback port 9000.
+Set `S3_PUBLIC_ENDPOINT` to your browser-reachable HTTPS S3 origin (the installer
+uses `SCANI_S3_PUBLIC_URL`). Route that origin to `127.0.0.1:9000`, preserving
+the original Host header and request path for S3 signatures. Do not expose the
+filer, master or administration ports. The compose default includes your S3
+endpoint in `CSP_CONNECT_SRC`. If you override that variable, include the S3
+origin alongside `'self'` or the browser will block uploads before they reach S3. This does not make the bucket public.
 
-:::caution[A minted Cloud API key does not reach storage or email]
-Object storage and email on a hosted data-provider are internal facades
-over that operator's own bucket and mail account, not a product surface:
-object keys carry no tenant prefix, so a key that can read one object can
-read every deployment's. They answer `403 FORBIDDEN` to any bearer that is
-not the operator's own (SC-585).
+For example, Caddy on the Docker host:
 
-A key minted through the cloud console is therefore **not** enough for
-Tier 2 storage and email. Two ways forward, and the operator picks:
-
-- Keep your own `S3_*` and `SMTP_*`, and use the hosted data-provider for
-  pricing, AI, chain reads, OG metadata and token search.
-- Have the operator grant your key explicitly, by setting its
-  `cloud_api_keys.tier` to `internal`. No endpoint can do this — it is a
-  direct write, deliberately — and it should only be done for a key that
-  is trusted with **every object in that bucket**.
-
-`scani_sk_…` keys minted at [cloud.scani.xyz](https://cloud.scani.xyz)
-are not granted, and Scani does not grant them.
-:::
-
-## Working `.env` snippet
-
-A minimal Tier 2 `.env` adds these two vars and drops the ones that
-belonged specifically to running your own data-provider container —
-`DATA_PROVIDER_API_KEY`, the SMTP creds, the Fastmail token and
-`S3_*`:
-
-```ini
-NODE_ENV=production
-SCANI_CLOUD_URL=https://api.cloud.scani.xyz
-SCANI_CLOUD_API_KEY=scani_sk_…   # from cloud.scani.xyz
-
-# KEEP these. They are read by the api and worker on EVERY tier —
-# see /self-hosting/tier2/overview/#you-still-need-your-provider-api-keys
-COINGECKO_API_KEY=…
-FINNHUB_API_KEY=…
-ETHERSCAN_API_KEY=…
-HELIUS_API_KEY=…
-OPENAI_API_KEY=…
-
-# Plus everything Tier 1 already required: DATABASE_URL, REDIS_URL,
-# FRONTEND_URL, BACKEND_URL, ENCRYPTION_KEY, BETTER_AUTH_SECRET,
-# JOBS_HMAC_SECRET. See /self-hosting/tier1/required-env/.
+```caddyfile
+scani.example.com {
+  reverse_proxy 127.0.0.1:8080
+}
+files.example.com {
+  reverse_proxy 127.0.0.1:9000
+}
 ```
 
-The provider keys are the ones people get wrong. `SCANI_CLOUD_URL`
-moves object storage, email, OG-metadata fetching and token search to
-the hosted data-provider. Pricing, AI and chain calls are still made
-by your api and worker, which boot the provider registry in `direct`
-mode on every tier — so removing those keys degrades your stack
-silently.
+Set the app and S3 URLs to those two origins. Ensure the browser can send
+OPTIONS, PUT and GET requests to the S3 origin; SeaweedFS handles S3 CORS.
+An existing MinIO installation needs the [storage migration](/self-hosting/storage-migration/)
+before switching its bucket endpoint.
 
-Smoke-test the endpoint is reachable before bringing the stack up:
+Do not supply upstream provider keys or an SMTP/Fastmail account. Tier 2 uses
+the cloud for these operations. The local `DATA_PROVIDER_API_KEY` generated by
+the installer is unused while the local data-provider is disabled.
+
+For explicit compose commands, include both files:
 
 ```sh
-curl -fsS https://api.cloud.scani.xyz/health
-# {"status":"ok","timestamp":"…","version":"1.0.0"}
+docker compose -f docker-compose.prod.yml -f docker-compose.tier2.yml config --services
+docker compose -f docker-compose.prod.yml -f docker-compose.tier2.yml --profile migrate run --rm migrate
+docker compose -f docker-compose.prod.yml -f docker-compose.tier2.yml up -d
 ```
 
-The hosted data-provider validates the bearer against its own
-`DATA_PROVIDER_API_KEY` (the variable the operator sets on their
-side). You don't need `DATA_PROVIDER_API_KEY` on your side in Tier
-2 — it lives on the operator's deployment.
+`config --services` should include SeaweedFS, Postgres, Redis, API, worker and
+frontend, and exclude `data-provider` and `mailpit`.
 
-## What changes
-
-| Component | Tier 1 | Tier 2 |
-|---|---|---|
-| `data-provider` container | Yours, on the compose network. | Operator's, reachable via HTTPS. |
-| `SCANI_CLOUD_URL` | `http://data-provider:8082` | `https://...` (operator-provided). |
-| `SCANI_CLOUD_API_KEY` | Matches `DATA_PROVIDER_API_KEY` you set yourself. | Issued by operator. |
-| `DATA_PROVIDER_API_KEY` | Set on your data-provider. | Not used on your side. |
-| Provider keys (`COINGECKO_API_KEY`, `OPENAI_API_KEY`, …) | **On your api + worker.** | **On your api + worker — unchanged.** |
-| `SMTP_URL` / `FASTMAIL_API_TOKEN` | On your data-provider. | On operator's data-provider. |
-| `S3_*` | On your data-provider. | On operator's data-provider. |
-| Pricing / AI / chain calls | Made by your api + worker. | Made by your api + worker — unchanged. |
-| Object storage, email, OG metadata, token search | Served by your data-provider. | Served by operator's data-provider. |
-
-## Updated compose file
-
-In `docker-compose.prod.yml`, comment out the `data-provider`
-service entirely:
-
-```yaml
-# data-provider:
-#   image: scani/data-provider:${SCANI_IMAGE_TAG:-latest}
-#   ...
-```
-
-And remove `data-provider` from the `depends_on` of api and worker:
-
-```yaml
-api:
-  depends_on:
-    postgres:
-      condition: service_healthy
-    redis:
-      condition: service_healthy
-    # data-provider:
-    #   condition: service_healthy
-
-worker:
-  depends_on:
-    postgres:
-      condition: service_healthy
-    redis:
-      condition: service_healthy
-    # data-provider:
-    #   condition: service_healthy
-```
-
-## Bring it up
-
-```sh
-# Step 1 — apply migrations (same as Tier 1)
-docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
-
-# Step 2 — bring the long-running services up
-docker compose -f docker-compose.prod.yml up -d
-docker compose -f docker-compose.prod.yml logs -f api worker
-```
-
-## Confirm the wiring
-
-The api and worker each log a `scaniCloudUrl` field at boot. Grep for
-it to confirm they're pointed at the hosted endpoint:
-
-```sh
-docker compose -f docker-compose.prod.yml logs api worker \
-  | grep -E '"scaniCloudUrl"'
-```
-
-Expected (Tier 2):
-
-```
-api:    {... "msg":"☁️  Data-provider reachable", "scaniCloudUrl":"https://api.cloud.scani.xyz" ...}
-worker: {... "scaniCloudUrl":"https://api.cloud.scani.xyz" ...}
-```
-
-If you see `"scaniCloudUrl":"(local fallback)"`, the env vars didn't
-take effect — most often because `.env` was edited after `up -d`
-without a `down + up -d` to recreate the containers.
-
-## Smoke-test the hosted data-provider
-
-A single tRPC call from your api confirms the bearer is accepted and
-the upstream is reachable. The simplest one is a token search (no DB
-side-effects, no credentials) — and it is also the call your api makes
-for real on every token lookup:
-
-```sh
-# From a shell on the api host (or `docker compose exec api`):
-curl -s "$SCANI_CLOUD_URL/trpc/tokens.search?input=%7B%22query%22%3A%22BTC%22%2C%22limit%22%3A1%7D" \
-  -H "Authorization: Bearer $SCANI_CLOUD_API_KEY"
-```
-
-Expected: `{"result":{"data":{"json":[{"symbol":"BTC","name":"Bitcoin",...}]}}}`.
-
-A `401 Unauthorized` means the bearer doesn't match the operator's
-`DATA_PROVIDER_API_KEY`. An empty or partial result — a 200 with
-nothing useful in it — is what an unconfigured provider key on their
-side looks like (`COINGECKO_API_KEY` in this example); nothing in the
-response says so, so ask them.
-
-## Rolling back to Tier 1
-
-Same two vars, reverted:
-
-```ini
-SCANI_CLOUD_URL=http://data-provider:8082
-SCANI_CLOUD_API_KEY=<your local key>
-DATA_PROVIDER_API_KEY=<same as above>
-```
-
-Uncomment the `data-provider` service block. Recreate everything.
-
-## See also
-
-- [Tier 2 overview](/self-hosting/tier2/overview/)
-- [What stays on your side](/self-hosting/tier2/user-creds/)
-- [Migrating Tier 1 → Tier 2](/self-hosting/tier2/migration/)
-- [Required environment variables](/self-hosting/tier1/required-env/)
+Verify sign-in email, upload/import of a small document, a price refresh and a
+wallet query. Confirm the uploaded object is in your bucket. A health check
+alone does not exercise these boundaries.

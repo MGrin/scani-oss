@@ -1,192 +1,30 @@
 ---
-title: Migrating Tier 1 → Tier 2
-description: A working migration plan, with a rollback strategy if the hosted data-provider doesn't pan out.
+title: Migrate to Tier 2
+description: Switch provider processing without moving your database or uploaded files.
 sidebar:
-  order: 4
+  order: 3
 ---
 
-:::caution[A minted Cloud API key does not reach storage or email]
-Object storage and email on a hosted data-provider are internal facades
-over that operator's own bucket and mail account, not a product surface:
-object keys carry no tenant prefix, so a key that can read one object can
-read every deployment's. They answer `403 FORBIDDEN` to any bearer that is
-not the operator's own (SC-585).
+1. Back up your database, S3 bucket and existing `.env`. Keep the same
+   `ENCRYPTION_KEY`; rotating it makes stored credentials unreadable.
+2. Upgrade the cloud service first, then API and worker to a release supporting
+   `processing.v1`. Apply the release's database migrations as usual.
+3. Keep your existing database and S3 configuration. If a previous configuration
+   stored files on a remote operator's bucket, copy those objects to your own
+   bucket while preserving keys before switching storage routing. Changing an
+   endpoint does not copy files.
+4. Set `SCANI_DEPLOYMENT_TIER=2`, the cloud URL and your customer cloud key on
+   API and worker. Remove local platform-provider keys and SMTP credentials.
+5. Add `docker-compose.tier2.yml` to your compose invocation or set
+   `COMPOSE_FILE=docker-compose.prod.yml:docker-compose.tier2.yml` in `.env`.
+   Recreate the API and worker. The overlay does not delete old containers;
+   stop your own unused local data-provider and mail catcher explicitly.
+6. Exercise email sign-in, document import, pricing and wallet sync. Check that
+   uploads remain in your bucket and queued work completes.
 
-A key minted through the cloud console is therefore **not** enough for
-Tier 2 storage and email. Two ways forward, and the operator picks:
+The installer preserves an existing `.env`; rerunning it does not select a new
+tier or replace stored secrets. Edit the routing values yourself when migrating.
 
-- Keep your own `S3_*` and `SMTP_*`, and use the hosted data-provider for
-  pricing, AI, chain reads, OG metadata and token search.
-- Have the operator grant your key explicitly, by setting its
-  `cloud_api_keys.tier` to `internal`. No endpoint can do this — it is a
-  direct write, deliberately — and it should only be done for a key that
-  is trusted with **every object in that bucket**.
-
-`scani_sk_…` keys minted at [cloud.scani.xyz](https://cloud.scani.xyz)
-are not granted, and Scani does not grant them.
-:::
-
-
-The migration is **two env-var changes and a compose-file edit**. No
-data migration, no downtime if you do it right.
-
-## Pre-migration checklist
-
-- You have an issued `SCANI_CLOUD_URL` and `SCANI_CLOUD_API_KEY`
-  from the data-provider operator.
-- You have a recent Postgres backup (this should be true regardless;
-  see [Backup & restore](/self-hosting/tier1/backup-restore/)).
-- You've noted which provider keys you currently have set
-  (`COINGECKO_API_KEY`, `OPENAI_API_KEY`, etc.). **These stay.** They
-  are read by your api and worker on every tier, not by the
-  data-provider — see
-  [You still need your provider API keys](/self-hosting/tier2/overview/#you-still-need-your-provider-api-keys).
-
-## The migration
-
-1. **Edit `.env`:**
-
-   ```diff
-   - SCANI_CLOUD_URL=http://data-provider:8082
-   - SCANI_CLOUD_API_KEY=dev_data_provider_key_change_me_not_prod_safe
-   + SCANI_CLOUD_URL=https://data-provider.your-host.example.com
-   + SCANI_CLOUD_API_KEY=<issued key>
-   ```
-
-2. **Edit `docker-compose.prod.yml`:** comment out the
-   `data-provider` service and remove `data-provider` from the
-   `depends_on` of `api` and `worker` (see
-   [Pointing api + worker at a hosted endpoint](/self-hosting/tier2/wiring/)).
-
-3. **Recreate api + worker.** The data-provider container stops
-   automatically when you `docker compose up -d` against a compose
-   file that no longer defines it.
-
-   ```sh
-   docker compose -f docker-compose.prod.yml up -d
-   ```
-
-4. **Watch the logs:**
-
-   ```sh
-   docker compose -f docker-compose.prod.yml logs -f api worker
-   ```
-
-   The api and worker each log a `scaniCloudUrl` field on boot —
-   there is no `tier` field. Confirm it reads your hosted endpoint
-   and not `(local fallback)`:
-
-   ```sh
-   docker compose -f docker-compose.prod.yml logs api worker \
-     | grep -E '"scaniCloudUrl"'
-   ```
-
-   While you are in the logs, check the provider-credentials line too
-   (see [Do not remove your provider API
-   keys](#do-not-remove-your-provider-api-keys)) — it should read the
-   same before and after the migration.
-
-5. **Verify with a synthetic call:**
-   - Open the SPA, navigate to the dashboard, check that prices are
-     fresh.
-   - Trigger a manual sync on one integration.
-   - Trigger a screenshot import (if you use it).
-
-## What you didn't have to do
-
-- **No data migration.** All your data is in your Postgres. It
-  stays. Sync history, transaction ledger, observations, vaults —
-  all intact.
-- **No re-authentication for users.** Sessions live in your
-  Postgres; the tier change is invisible to users.
-- **No re-encryption of integration credentials.** They stay
-  encrypted with your `ENCRYPTION_KEY` on your machine.
-
-## Rolling back
-
-If something is wrong with the hosted endpoint and you need to fall
-back:
-
-1. Revert the `.env` change:
-
-   ```ini
-   SCANI_CLOUD_URL=http://data-provider:8082
-   SCANI_CLOUD_API_KEY=<your local key>
-   DATA_PROVIDER_API_KEY=<same as above>
-   ```
-
-2. Uncomment the `data-provider` service in
-   `docker-compose.prod.yml`.
-
-3. `docker compose -f docker-compose.prod.yml up -d`.
-
-Your provider keys never left, so pricing, AI and chain syncs are
-unaffected by the round trip in either direction — they were never
-routed through the data-provider at all.
-
-Email, OG-metadata fetching and token search fall straight back to
-their local implementations as soon as `SCANI_CLOUD_URL` points at
-your own container again.
-
-:::caution[Object storage does not roll back]
-Uploads made while you were on Tier 2 live in the **operator's**
-bucket. Pointing `SCANI_CLOUD_URL` back at your own container points
-`StorageFacade` back at your `S3_*` bucket, where those objects are
-not. Screenshots and imported statement files from the Tier-2 period
-will fail to load until you copy them across. The extracted holdings
-and transactions are unaffected — those are rows in your Postgres.
-:::
-
-## After the migration settles
-
-Once you're confident in the hosted endpoint:
-
-- Permanently remove the `data-provider` service block from your
-  compose file.
-- Remove `DATA_PROVIDER_API_KEY` and the `S3_*` block from your
-  `.env` — the first was only ever the bearer your own container
-  validated, and object storage is now the operator's bucket.
-
-### Do not remove your provider API keys
-
-:::danger
-`COINGECKO_API_KEY`, `FINNHUB_API_KEY`, `ETHERSCAN_API_KEY`,
-`HELIUS_API_KEY` and `OPENAI_API_KEY` are read by **your api and
-worker**, on every tier. Pointing `SCANI_CLOUD_URL` at a hosted
-data-provider does not move pricing, AI or chain calls off your
-machine — all three backend services boot the provider registry in
-`direct` mode and call those upstreams themselves.
-
-Deleting them does not fail at boot. Your stack comes up green and
-then quietly serves bad data: Finnhub returns null for every equity
-price, CoinGecko drops to the public rate-limited tier, Etherscan
-goes out unauthenticated, Helius falls back to the throttled public
-Solana RPC, and OpenAI throws on every screenshot parse.
-
-Confirm what your stack actually resolved with
-`docker compose -f docker-compose.prod.yml logs api worker | grep 'provider credentials:'` —
-[the full check is on the overview page](/self-hosting/tier2/overview/#how-to-check-rather-than-guess).
-:::
-
-## What actually moves
-
-Four things, and only four — they are the only adapters
-`packages/clients/cloud-client/src/` has:
-
-| Moves to the hosted data-provider | Stays on your api + worker |
-|---|---|
-| Object storage (screenshots, file imports) | Pricing (CoinGecko, DeFiLlama, Frankfurter, Finnhub) |
-| Email transport (Fastmail JMAP / SMTP) | AI inference (OpenAI) |
-| Open Graph metadata (institution logos) | Chain calls (Etherscan, Helius, Bitcoin, Tron, TON) |
-| Token search (symbol → identity) | Every user-credentialed exchange and brokerage integration |
-
-So `SMTP_URL`, `FASTMAIL_API_TOKEN` and `S3_*` can come out of your
-`.env` — magic-link emails go through the operator's transport and
-uploads land in their bucket. The provider API keys cannot.
-
-## See also
-
-- [Tier 2 overview](/self-hosting/tier2/overview/)
-- [Pointing api + worker at a hosted endpoint](/self-hosting/tier2/wiring/)
-- [What stays on your side](/self-hosting/tier2/user-creds/)
-- [Backup & restore](/self-hosting/tier1/backup-restore/)
+To return to Tier 1, set `SCANI_DEPLOYMENT_TIER=1`, restore the local
+`SCANI_CLOUD_URL` and matching local bearer, provide the provider credentials
+you need, and use the base compose file. Your database and S3 stay where they are.

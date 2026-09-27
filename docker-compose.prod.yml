@@ -80,42 +80,25 @@ services:
       retries: 6
 
   # Comment out if pointing S3_* at a managed bucket (R2 / S3 / B2 / …).
-  minio:
-    # MinIO no longer publishes images anywhere: `minio/*` left Docker Hub
-    # (SC-1156) and `quay.io/minio/*` answers 401 since 2026-09-24 (SC-1321), so
-    # a machine without cached layers cannot start this stack. `pgsty/*` is the
-    # maintained community build of the same server, same on-disk format, so an
-    # existing `minio-data` volume carries over. Tag AND digest are pinned,
-    # because an upstream tag disappearing is the failure this line repairs.
-    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.47@sha256:ce9e796f1fe6f06968f4c04bdaf8f678dad9c8acdfef3d244133d71bfa6bf882
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    command: ["mini", "-dir=/data", "-ip=seaweedfs", "-ip.bind=0.0.0.0", "-admin.ui=false", "-webdav=false"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      AWS_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID is required}
+      AWS_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}
+      S3_BUCKET: ${S3_BUCKET:-job-uploads}
+    ports:
+      - "127.0.0.1:${SEAWEEDFS_S3_HOST_PORT:-9000}:8333"
     volumes:
-      - minio-data:/data
+      # SeaweedFS cannot read MinIO's on-disk format. Migrate via S3 first.
+      - seaweedfs-data:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
-      interval: 15s
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9333/cluster/status && nc -z 127.0.0.1 8333"]
+      interval: 5s
       timeout: 5s
-      retries: 6
-
-  # One-shot to create the S3 bucket on first boot (idempotent).
-  minio-init:
-    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z@sha256:cfc83108c3abb371f8fb84d99c1fdc88f8c237e022409b0081fb7c0a3be634dd
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint:
-      - sh
-      - -c
-      - |
-        set -e
-        mc alias set local http://minio:9000 ${MINIO_ROOT_USER:-minioadmin} ${MINIO_ROOT_PASSWORD:-minioadmin}
-        mc mb --ignore-existing local/${S3_BUCKET:-job-uploads}
-        echo "bucket ${S3_BUCKET:-job-uploads} ready"
-    restart: "no"
+      retries: 20
+      start_period: 10s
 
   # ---- Schema migrator (opt-in, profile-gated) ----
   #
@@ -171,10 +154,10 @@ services:
       ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY:-}
       HELIUS_API_KEY: ${HELIUS_API_KEY:-}
       # S3
-      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
-      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-}
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://seaweedfs:8333}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-${S3_ENDPOINT:-http://localhost:${SEAWEEDFS_S3_HOST_PORT:-9000}}}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID is required}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}
       S3_BUCKET: ${S3_BUCKET:-job-uploads}
       # Email (SMTP or Fastmail). Set ONE of these.
       SMTP_URL: ${SMTP_URL:-}
@@ -214,8 +197,24 @@ services:
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET is required}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required (must match the worker)}
       JOBS_HMAC_SECRET: ${JOBS_HMAC_SECRET:?JOBS_HMAC_SECRET is required}
+      SCANI_DEPLOYMENT_TIER: ${SCANI_DEPLOYMENT_TIER:-1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      COINGECKO_API_KEY: ${COINGECKO_API_KEY:-}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY:-}
+      HELIUS_API_KEY: ${HELIUS_API_KEY:-}
+      GOOGLE_SERVICE_ACCOUNT_KEY: ${GOOGLE_SERVICE_ACCOUNT_KEY:-}
+      GOOGLE_SHEETS_ID: ${GOOGLE_SHEETS_ID:-}
+      SMTP_URL: ${SMTP_URL:-}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@example.com}
+      FASTMAIL_API_TOKEN: ${FASTMAIL_API_TOKEN:-}
       SCANI_CLOUD_URL: ${SCANI_CLOUD_URL:-http://data-provider:8082}
-      SCANI_CLOUD_API_KEY: ${SCANI_CLOUD_API_KEY:?SCANI_CLOUD_API_KEY is required (must match DATA_PROVIDER_API_KEY)}
+      SCANI_CLOUD_API_KEY: ${SCANI_CLOUD_API_KEY:?SCANI_CLOUD_API_KEY is required (local bearer for Tier 1 or Scani Cloud key for Tier 2)}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://seaweedfs:8333}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-${S3_ENDPOINT:-http://localhost:${SEAWEEDFS_S3_HOST_PORT:-9000}}}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID is required}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}
+      S3_BUCKET: ${S3_BUCKET:-job-uploads}
       COOKIE_DOMAIN: ${COOKIE_DOMAIN:-}
       # Logging
       # Must match the SERVICE_NAME the image you are running was built to
@@ -261,13 +260,24 @@ services:
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required (must match the api)}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-4}
+      SCANI_DEPLOYMENT_TIER: ${SCANI_DEPLOYMENT_TIER:-1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      COINGECKO_API_KEY: ${COINGECKO_API_KEY:-}
+      FINNHUB_API_KEY: ${FINNHUB_API_KEY:-}
+      ETHERSCAN_API_KEY: ${ETHERSCAN_API_KEY:-}
+      HELIUS_API_KEY: ${HELIUS_API_KEY:-}
+      GOOGLE_SERVICE_ACCOUNT_KEY: ${GOOGLE_SERVICE_ACCOUNT_KEY:-}
+      GOOGLE_SHEETS_ID: ${GOOGLE_SHEETS_ID:-}
+      SMTP_URL: ${SMTP_URL:-}
+      SMTP_FROM: ${SMTP_FROM:-no-reply@example.com}
+      FASTMAIL_API_TOKEN: ${FASTMAIL_API_TOKEN:-}
       SCANI_CLOUD_URL: ${SCANI_CLOUD_URL:-http://data-provider:8082}
-      SCANI_CLOUD_API_KEY: ${SCANI_CLOUD_API_KEY:?SCANI_CLOUD_API_KEY is required (must match DATA_PROVIDER_API_KEY)}
+      SCANI_CLOUD_API_KEY: ${SCANI_CLOUD_API_KEY:?SCANI_CLOUD_API_KEY is required (local bearer for Tier 1 or Scani Cloud key for Tier 2)}
       # S3 (worker writes screenshot / import uploads here)
-      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
-      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-}
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://seaweedfs:8333}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-${S3_ENDPOINT:-http://localhost:${SEAWEEDFS_S3_HOST_PORT:-9000}}}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?S3_ACCESS_KEY_ID is required}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?S3_SECRET_ACCESS_KEY is required}
       S3_BUCKET: ${S3_BUCKET:-job-uploads}
       # Logging
       SERVICE_NAME: worker
@@ -289,7 +299,7 @@ services:
       # `connect-src` for the CSP nginx sends. `'self'` covers the proxy
       # above. Widen it only if the browser calls the api on a different
       # origin — see self-hosting → TLS & reverse proxy.
-      CSP_CONNECT_SRC: "${CSP_CONNECT_SRC:-'self'}"
+      CSP_CONNECT_SRC: "${CSP_CONNECT_SRC:-'self' ${S3_PUBLIC_ENDPOINT:-${S3_ENDPOINT:-http://localhost:${SEAWEEDFS_S3_HOST_PORT:-9000}}}}"
       # Whether a search engine may index this origin. `noindex` (default)
       # keeps the SPA out of search results the way it always has;
       # `index-root` offers the root document and nothing below it, which
@@ -309,4 +319,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
-  minio-data:
+  seaweedfs-data:

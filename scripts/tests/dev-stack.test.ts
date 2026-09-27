@@ -669,7 +669,7 @@ describe('--infra-only starts what a gate uses and nothing else (SC-706)', () =>
     // "this exits", so the split is derived rather than listed — and these are
     // the three names that turned a green stack into exit 1.
     const argv = upArgs([], 'infra');
-    for (const oneShot of ['minio-init', 'env-sync', 'deps']) {
+    for (const oneShot of ['env-sync', 'deps']) {
       expect(argv).not.toContain(oneShot);
     }
   });

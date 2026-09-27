@@ -10,7 +10,7 @@ import { Steps, Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 `docker-compose.prod.yml` is the production-shaped compose file. It
 pulls pre-built multi-arch images from Docker Hub
 (`scani/api`, `scani/worker`, `scani/data-provider`,
-`scani/frontend-app`) and wires them up with Postgres, Redis, MinIO
+`scani/frontend-app`) and wires them up with Postgres, Redis, SeaweedFS
 and a mail catcher. Run it as-is for a one-box deploy, or comment out the
 data-plane services and point at managed Postgres / Redis / S3
 endpoints (see [Managed services](/self-hosting/tier1/managed-services/)).
@@ -115,7 +115,7 @@ another orchestrator:
 |---|---|---|---|
 | `postgres` | `postgres:16-alpine` | (internal) | Other compose services. |
 | `redis` | `redis:7-alpine` | (internal) | Other compose services. |
-| `minio` + `minio-init` | `pgsty/minio`, `pgsty/mc` (pinned in the compose file) | (internal) | Other compose services. |
+| `seaweedfs` | `chrislusf/seaweedfs:4.47` (digest pinned) | `127.0.0.1:9000` | Authenticated S3; reverse proxy for browser uploads. |
 | `mailpit` | `axllent/mailpit:latest` | `127.0.0.1:8026` | You, to read your own sign-in code. Replace with real SMTP before anyone else signs in. |
 | `migrate` (profile-gated) | `scani/migrate:${SCANI_IMAGE_TAG:-latest}` | (none) | One-shot; exits after applying migrations. |
 | `data-provider` | `scani/data-provider:${SCANI_IMAGE_TAG:-latest}` | (internal) | `api`, `worker`. |
@@ -136,7 +136,7 @@ Healthchecks gate startup so services come up in the right order:
 postgres ─┐
 redis ────┤        ┌── api ──┐
           ├─→ data-provider ─┼─→ frontend-app
-minio ────┘        └─ worker ┘
+seaweedfs ─┘        └─ worker ┘
 ```
 
 - `data-provider` waits for `postgres:healthy` and `redis:healthy`.
@@ -259,7 +259,7 @@ Internet ─→ Your reverse proxy (TLS) ─→ frontend-app:8080
 ```
 
 - Public TLS lives on **your** reverse proxy.
-- `api`, `worker`, `data-provider`, `postgres`, `redis`, `minio` all
+- `api`, `worker`, `data-provider`, `postgres`, `redis`, `seaweedfs` all
   live on the compose internal network. None of them are exposed to
   the host (`ports:` are omitted in `docker-compose.prod.yml`).
 

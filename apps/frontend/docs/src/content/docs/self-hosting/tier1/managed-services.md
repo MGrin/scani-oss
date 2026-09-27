@@ -5,7 +5,7 @@ sidebar:
   order: 6
 ---
 
-The in-compose Postgres / Redis / MinIO are fine for a one-box deploy
+The in-compose Postgres / Redis / SeaweedFS are fine for a one-box deploy
 or a small operator. When you outgrow them (or want managed backups,
 HA failover, regional replication), Scani makes no assumption about
 where its dependencies live. Comment out the compose service and
@@ -154,7 +154,7 @@ Any S3-compatible store works.
 | [Cloudflare R2](https://www.cloudflare.com/products/r2/) | No egress fees. `S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com`. |
 | AWS S3 | Region-specific endpoint. |
 | [Backblaze B2](https://www.backblaze.com/cloud-storage) | `S3_ENDPOINT=https://s3.<region>.backblazeb2.com`. |
-| MinIO (self-hosted, scaled out) | Same as compose-managed, just point at a remote instance. |
+| SeaweedFS (self-hosted, scaled out) | Same as compose-managed, just point at a remote instance. |
 
 ```ini
 S3_ENDPOINT=https://<endpoint>
@@ -164,7 +164,7 @@ S3_SECRET_ACCESS_KEY=<secret>
 S3_BUCKET=scani-uploads
 ```
 
-Then comment out `minio` and `minio-init`. **Create the bucket
+Then comment out `seaweedfs`. **Create the bucket
 yourself** before first boot — there's no init container for managed
 providers.
 
@@ -176,16 +176,16 @@ providers.
 | [Fastmail](https://www.fastmail.com/) | `FASTMAIL_API_TOKEN` (JMAP). Takes precedence over SMTP. |
 | Postmark / SendGrid / Mailgun | Use their SMTP relay or set up a transactional API. SMTP is the simplest path. |
 
-The `data-provider` is the only service that sends email. In Tier 1
-that's your container; in Tier 2/3 the hosted data-provider handles
-it (the user-side `.env` doesn't need email config).
+Tier 1 sends authentication email locally using your SMTP or Fastmail configuration.
+Tier 2 sends fixed authentication templates through Scani Cloud, with no local mail-provider key.
+Arbitrary email sending and cloud storage are not available to customer cloud keys.
 
 ## Object storage public endpoint quirk
 
 `S3_PUBLIC_ENDPOINT` is what gets baked into presigned URLs the
-browser uses. For compose-managed MinIO, `S3_ENDPOINT` is
-`http://minio:9000` (server-to-server) and `S3_PUBLIC_ENDPOINT` is
-`http://localhost:9000` (the browser can't resolve `minio`). For
+browser uses. For compose-managed SeaweedFS, `S3_ENDPOINT` is
+`http://seaweedfs:8333` (server-to-server) and `S3_PUBLIC_ENDPOINT` is
+`http://localhost:9000` (the browser can't resolve `seaweedfs`). For
 most cloud providers both URLs are the same.
 
 ## Code does not change

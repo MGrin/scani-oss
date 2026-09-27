@@ -55,7 +55,8 @@
     "postgres": "^3.4.9",
     "reflect-metadata": "^0.2.2",
     "typedi": "^0.10.0",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "@scani/email": "workspace:*"
   },
   "devDependencies": {
     "@types/fontkit": "^2.0.9",

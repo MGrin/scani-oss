@@ -12,79 +12,104 @@ import {
 const log = createComponentLogger('email');
 
 export abstract class EmailService {
-  protected abstract sendMessage(message: EmailMessage): Promise<void>;
+  protected abstract sendMessage(message: EmailMessage, signal?: AbortSignal): Promise<void>;
 
-  async sendMagicLink(input: {
-    to: string;
-    url: string;
-    brand?: EmailBrand;
-    /**
-     * The reader's interface language (SC-412), as reported by the surface
-     * that asked for the link. Absent is the ordinary case, not an error — a
-     * surface with no language picker sends nothing and gets the English
-     * letter, whole.
-     */
-    language?: string | null;
-  }): Promise<void> {
+  async sendMagicLink(
+    input: {
+      to: string;
+      url: string;
+      brand?: EmailBrand;
+      /**
+       * The reader's interface language (SC-412), as reported by the surface
+       * that asked for the link. Absent is the ordinary case, not an error — a
+       * surface with no language picker sends nothing and gets the English
+       * letter, whole.
+       */
+      language?: string | null;
+    },
+    signal?: AbortSignal
+  ): Promise<void> {
+    signal?.throwIfAborted();
     const brand = input.brand ?? SCANI_BRAND;
-    await this.deliver({
-      to: input.to,
-      brand,
-      content: renderMagicLinkEmail({ brand, url: input.url, language: input.language }),
-    });
-  }
-
-  async sendVerificationEmail(input: {
-    to: string;
-    url: string;
-    brand?: EmailBrand;
-    language?: string | null;
-  }): Promise<void> {
-    const brand = input.brand ?? SCANI_BRAND;
-    await this.deliver({
-      to: input.to,
-      brand,
-      content: renderVerificationEmail({ brand, url: input.url, language: input.language }),
-    });
-  }
-
-  async sendOtp(input: {
-    to: string;
-    code: string;
-    type: OtpType;
-    brand?: EmailBrand;
-    language?: string | null;
-  }): Promise<void> {
-    const brand = input.brand ?? SCANI_BRAND;
-    await this.deliver({
-      to: input.to,
-      brand,
-      content: renderOtpEmail({
+    await this.deliver(
+      {
+        to: input.to,
         brand,
-        code: input.code,
-        type: input.type,
-        language: input.language,
-      }),
-    });
+        content: renderMagicLinkEmail({ brand, url: input.url, language: input.language }),
+      },
+      signal
+    );
+  }
+
+  async sendVerificationEmail(
+    input: {
+      to: string;
+      url: string;
+      brand?: EmailBrand;
+      language?: string | null;
+    },
+    signal?: AbortSignal
+  ): Promise<void> {
+    signal?.throwIfAborted();
+    const brand = input.brand ?? SCANI_BRAND;
+    await this.deliver(
+      {
+        to: input.to,
+        brand,
+        content: renderVerificationEmail({ brand, url: input.url, language: input.language }),
+      },
+      signal
+    );
+  }
+
+  async sendOtp(
+    input: {
+      to: string;
+      code: string;
+      type: OtpType;
+      brand?: EmailBrand;
+      language?: string | null;
+    },
+    signal?: AbortSignal
+  ): Promise<void> {
+    signal?.throwIfAborted();
+    const brand = input.brand ?? SCANI_BRAND;
+    await this.deliver(
+      {
+        to: input.to,
+        brand,
+        content: renderOtpEmail({
+          brand,
+          code: input.code,
+          type: input.type,
+          language: input.language,
+        }),
+      },
+      signal
+    );
   }
 
   // Sends a caller-rendered branded email — for transactional mail (e.g.
   // the contact-form receipt) that renders its own content rather than
   // using the auth-template helpers above.
-  async sendBranded(input: {
-    to: string;
-    brand: EmailBrand;
-    content: EmailContent;
-  }): Promise<void> {
-    await this.deliver(input);
+  async sendBranded(
+    input: {
+      to: string;
+      brand: EmailBrand;
+      content: EmailContent;
+    },
+    signal?: AbortSignal
+  ): Promise<void> {
+    await this.deliver(input, signal);
   }
 
   // Direct send for callers that already hold a rendered EmailMessage —
   // the data-provider's `email.send` tRPC relay, which receives an
   // already-rendered payload from a remote api in cloud mode.
-  async send(message: EmailMessage): Promise<void> {
+  async send(message: EmailMessage, signal?: AbortSignal): Promise<void> {
     if (this.refuses(message.to)) return;
-    await this.sendMessage(message);
+    signal?.throwIfAborted();
+    await this.sendMessage(message, signal);
   }
 
   // SC-1260. Resolves rather than throws, so every caller — an auth endpoint
@@ -97,18 +122,24 @@ export abstract class EmailService {
 
   // Single delivery path: applies the brand's `from` address, then hands
   // the message to the concrete transport.
-  private async deliver(input: {
-    to: string;
-    brand: EmailBrand;
-    content: EmailContent;
-  }): Promise<void> {
+  private async deliver(
+    input: {
+      to: string;
+      brand: EmailBrand;
+      content: EmailContent;
+    },
+    signal?: AbortSignal
+  ): Promise<void> {
     if (this.refuses(input.to)) return;
-    await this.sendMessage({
-      from: input.brand.from,
-      to: input.to,
-      subject: input.content.subject,
-      text: input.content.text,
-      html: input.content.html,
-    });
+    await this.sendMessage(
+      {
+        from: input.brand.from,
+        to: input.to,
+        subject: input.content.subject,
+        text: input.content.text,
+        html: input.content.html,
+      },
+      signal
+    );
   }
 }

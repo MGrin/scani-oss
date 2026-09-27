@@ -86,11 +86,19 @@ function isProductionSafeCloudUrl(value: string): boolean {
 // NODE_ENV is `test`. The old file said in a comment that it was not.
 const envSchema = z
   .object({
+    SCANI_DEPLOYMENT_TIER: z.enum(['1', '2', '3']).optional(),
     SCANI_CLOUD_URL: urlSchema.optional(),
     SCANI_CLOUD_API_KEY: z.string().min(16).optional(),
     SCANI_DEMO_MODE: z.string().optional(),
   })
   .superRefine((env, ctx) => {
+    if (env.SCANI_DEPLOYMENT_TIER === '2' && (!env.SCANI_CLOUD_URL || !env.SCANI_CLOUD_API_KEY)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['SCANI_CLOUD_API_KEY'],
+        message: 'Tier 2 requires SCANI_CLOUD_URL and SCANI_CLOUD_API_KEY',
+      });
+    }
     if (!isNodeEnvProduction()) return; // dev/test: anything goes (including unset)
 
     const demo = isDemoModeRequested(env);
@@ -121,7 +129,8 @@ const envSchema = z
       });
     }
   })
-  .transform(({ SCANI_CLOUD_URL, SCANI_CLOUD_API_KEY }) => ({
+  .transform(({ SCANI_CLOUD_URL, SCANI_CLOUD_API_KEY, SCANI_DEPLOYMENT_TIER }) => ({
+    SCANI_DEPLOYMENT_TIER,
     SCANI_CLOUD_URL,
     SCANI_CLOUD_API_KEY,
   }));

@@ -22,8 +22,9 @@ export abstract class OutflowRateLimiter {
   // sliding windows. Used for per-credential limits (hashed API key) so
   // one user's traffic doesn't starve another's, and so provider-side
   // per-token limits stay accurate.
-  async execute<T>(fn: () => Promise<T>, subKey?: string): Promise<T> {
-    await this.waitForSlot(subKey);
+  async execute<T>(fn: () => Promise<T>, subKey?: string, signal?: AbortSignal): Promise<T> {
+    await this.waitForSlot(subKey, signal);
+    signal?.throwIfAborted();
     return fn();
   }
 
@@ -36,13 +37,15 @@ export abstract class OutflowRateLimiter {
     return { ok: false, retryAfterMs: waitMs };
   }
 
-  protected async waitForSlot(subKey?: string): Promise<void> {
+  protected async waitForSlot(subKey?: string, signal?: AbortSignal): Promise<void> {
     while (true) {
+      signal?.throwIfAborted();
       const waitMs = await this.tryAcquire(subKey);
+      signal?.throwIfAborted();
       if (waitMs === 0) return;
       // Add a tiny jitter so colliding callers don't all wake up at the
       // exact same millisecond and re-race.
-      await sleep(waitMs + Math.floor(Math.random() * ACQUIRE_JITTER_MAX_MS));
+      await sleep(waitMs + Math.floor(Math.random() * ACQUIRE_JITTER_MAX_MS), signal);
     }
   }
 
@@ -53,6 +56,17 @@ export abstract class OutflowRateLimiter {
   protected abstract tryAcquire(subKey?: string): Promise<number>;
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  signal?.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', abort);
+      resolve();
+    }, ms);
+    signal?.addEventListener('abort', abort, { once: true });
+  });
 }

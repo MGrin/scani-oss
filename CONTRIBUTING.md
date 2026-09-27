@@ -27,7 +27,7 @@ The short version:
 git clone git@github.com:MGrin/scani-oss.git
 cd scani-oss
 bun install
-bun run dev:stack      # boots Postgres, Redis, MinIO, Mailpit, api, worker, data-provider, frontend
+bun run dev:stack      # boots Postgres, Redis, SeaweedFS, Mailpit, api, worker, data-provider, frontend
 open http://localhost:5173
 ```
 

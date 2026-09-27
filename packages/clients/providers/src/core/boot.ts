@@ -27,11 +27,8 @@
  * functions rather than hard-coding the import list, so the apps'
  * composition roots choose which providers they stand up.
  *
- * Every app runs the real provider classes in-process. A second boot
- * mode that proxied pricing / AI / token-identity through the
- * data-provider over tRPC was built and never adopted; it was deleted
- * in SC-587 on mgrin's decision, so there is no `mode` parameter and
- * no alternative egress path to reason about.
+ * Apps select direct or cloud platform factories at their composition roots.
+ * The registry itself does not own deployment configuration.
  */
 
 import { createComponentLogger } from '@scani/logging';

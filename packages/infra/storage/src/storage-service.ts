@@ -108,7 +108,7 @@ interface ResolvedConfig {
 export class StorageService {
   private cached: ResolvedConfig | null = null;
   // Two clients because the server uses a private endpoint (e.g.
-  // `http://minio:9000` on the docker network) while presigned URLs need
+  // `http://seaweedfs:8333` on the docker network) while presigned URLs need
   // the public endpoint the browser can reach (e.g. `http://localhost:9000`).
   private serverSdk: S3Client | null = null;
   private publicSdk: S3Client | null = null;

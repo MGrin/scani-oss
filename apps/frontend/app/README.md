@@ -13,7 +13,7 @@ assets. tRPC end-to-end with `@scani/backend`; Better-Auth for sessions;
 bun run dev:stack            # http://localhost:5173
 
 # Or just this app on the host (infra still in compose):
-docker compose up -d postgres redis mailpit minio
+docker compose up -d postgres redis mailpit seaweedfs
 bun install
 bun dev                      # this app on :5173 + api on :3001 concurrently
 ```

@@ -58,7 +58,8 @@ ownership rule.
 
 | Variable | Owner | What it does |
 |---|---|---|
-| `SCANI_CLOUD_URL` | app (api, worker) | Where object storage, email, OG-metadata fetching and token search go. Tier 1: `http://data-provider:8082`. Tier 2/3: hosted endpoint. Pricing, AI and chain calls do **not** travel here — see the provider-keys table below. |
+| `SCANI_DEPLOYMENT_TIER` | cloud-client | `1`: direct providers and local storage/mail. `2`: cloud processing, local S3, cloud auth mail. `3` or unset preserves managed routing. |
+| `SCANI_CLOUD_URL` | app (api, worker) | Tier 1: local token search and metadata service at `http://data-provider:8082`. Tier 2: Scani Cloud for AI, prices, token lookup, supported wallet requests and constrained authentication email. Tier 2 S3 stays local. |
 | `SCANI_CLOUD_API_KEY` | app (api, worker) | Bearer presented to the data-provider. |
 | `DATA_PROVIDER_API_KEY` | app (data-provider) | Bearer the data-provider validates against. |
 | `CLOUD_MANAGEMENT_ENABLED` | app (data-provider) | Tier 2/3 only. Enables cloud-management surface. |
@@ -98,7 +99,7 @@ a self-host deployment can skip it entirely.
 | `S3_ACCESS_KEY_ID` | package | |
 | `S3_SECRET_ACCESS_KEY` | package | |
 | `S3_BUCKET` | package | Bucket name. |
-| `S3_REGION` | package | Optional. Defaults to `auto` (works for R2 + MinIO). Set explicitly for AWS S3 (e.g. `us-east-1`). |
+| `S3_REGION` | package | Optional. Defaults to `auto` (works for R2 + SeaweedFS). Set explicitly for AWS S3 (e.g. `us-east-1`). |
 | `BACKUP_BUCKET` | app (`worker`) | Archive bucket for the nightly `db-backup` job. Deliberately not `S3_BUCKET`: that one is the temp job-payload store, and the only offsite copy of the database should not share a bucket with a lifecycle rule. Unset means the job refuses on every fire and writes nothing. |
 
 ## Email
@@ -134,13 +135,13 @@ Both optional; unset, sign-in and the contact form work with no check. Set the s
 | `SERVICE_VERSION` | app | Set automatically by the build; surfaces in log records. When it is a full 40-character commit sha, the api, the worker's wake port and the data-provider also answer `GET /version.json` with `{"commit": "<sha>"}`; anything else answers `{}`. |
 | `AI_DEFAULT_PROVIDER` | app (worker) | Optional. Which AI provider the worker picks first. Defaults to `openai`, which is also the only AI provider any backend service registers. |
 
-## Provider keys (read by the api and worker)
+## Provider keys (Tier 1 API/worker and Scani-managed processing service)
 
-**These are required on every tier**, including Tier 2/3. All three
-backend services boot `buildProviderRegistry({ mode: 'direct' })` and
-call these upstreams themselves; `mode` is a string literal that no
-environment variable can change. Pointing `SCANI_CLOUD_URL` at a
-hosted data-provider does not move them.
+Tier 1 API and worker use these credentials for enabled integrations. In Tier 2,
+set `SCANI_DEPLOYMENT_TIER=2` on both services: platform calls use Scani Cloud
+and none of the keys below are needed locally. Scani manages the provider
+accounts on the processing service. Personal exchange and brokerage credentials
+remain local and are separate from these platform keys.
 
 Missing keys degrade silently rather than failing at boot. Check what
 your stack resolved with the `provider credentials:` boot line —

@@ -195,12 +195,15 @@ export interface AIInferenceProvider extends ProviderBase {
    * MUST throw rather than send it upstream anyway, so the AIRouter can
    * fall through to a provider that can.
    */
-  parseScreenshot(input: {
-    imageBase64: string;
-    mimeType: string;
-    hint?: string;
-    systemPrompt?: string;
-  }): Promise<AIResult<unknown>>;
+  parseScreenshot(
+    input: {
+      imageBase64: string;
+      mimeType: string;
+      hint?: string;
+      systemPrompt?: string;
+    },
+    signal?: AbortSignal
+  ): Promise<AIResult<unknown>>;
   /** Text: parse a CSV header / OFX free-text field for column
       detection. */
   /**
@@ -213,13 +216,15 @@ export interface AIInferenceProvider extends ProviderBase {
   parseDocumentText?(
     text: string,
     hint?: string,
-    systemPrompt?: string
+    systemPrompt?: string,
+    signal?: AbortSignal
   ): Promise<AIResult<unknown>>;
   /** Generic completion. Used by smaller helpers (token-name
       cleanup, etc.). */
   completeText?(
     prompt: string,
-    opts?: { temperature?: number; maxTokens?: number }
+    opts?: { temperature?: number; maxTokens?: number },
+    signal?: AbortSignal
   ): Promise<AIResult<string>>;
 }
 

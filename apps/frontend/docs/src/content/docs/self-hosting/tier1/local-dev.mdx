@@ -1,6 +1,6 @@
 ---
 title: Local development stack
-description: A full local Scani stack — Postgres, Redis, MinIO, Mailpit, and every Scani service — in one command.
+description: A full local Scani stack — Postgres, Redis, SeaweedFS, Mailpit, and every Scani service — in one command.
 sidebar:
   order: 1
 ---
@@ -20,12 +20,11 @@ infra (always-on)
   postgres        :5433  → 5432 inside the container
   redis           :6380  → 6379
   mailpit         :1026 SMTP, :8026 UI
-  minio           :9000 S3 API, :9001 console (minioadmin / minioadmin)
+  seaweedfs       :9000 S3 API (scani-dev / scani-dev-secret)
 
 init (one-shot, exit cleanly)
   env-sync        — materialises per-app .env files from root .env
   deps            — bun install on the shared workspace volume
-  minio-init      — creates the dev bucket
   migrate         — applies the application and queue schemas to postgres
 
 services (profile: full)
@@ -100,7 +99,7 @@ services (profile: full)
 bun run dev:stack:down   # remove containers; volumes preserved
 ```
 
-To also wipe Postgres / MinIO / Redis data:
+To also wipe Postgres / SeaweedFS / Redis data:
 
 ```sh
 bun run dev:stack:down -- --volumes
@@ -114,7 +113,7 @@ when iterating on the api or worker:
 <Tabs>
   <TabItem label="Infra in compose, apps on host">
     ```sh
-    bun run dev:stack:infra # Postgres, Redis, MinIO, Mailpit — nothing else
+    bun run dev:stack:infra # Postgres, Redis, SeaweedFS, Mailpit — nothing else
     bun install
     bun dev               # api + frontend/app
     bun dev:worker        # separate terminal
@@ -163,7 +162,7 @@ automatically.
 ## Service-to-service URLs in compose
 
 The compose file overrides URLs that need a container-network
-hostname (`postgres`, `redis`, `minio`, `mailpit`, `data-provider`)
+hostname (`postgres`, `redis`, `seaweedfs`, `mailpit`, `data-provider`)
 on the relevant service's `environment:` block. The root `.env`
 versions are for host-side `bun dev`; the compose overrides take
 precedence inside containers.
@@ -181,8 +180,7 @@ gets.
 | Redis | `localhost:6380` |
 | Mailpit SMTP | `localhost:1026` |
 | Mailpit UI | `http://localhost:8026` |
-| MinIO S3 API | `http://localhost:9000` |
-| MinIO console | `http://localhost:9001` (`minioadmin` / `minioadmin`) |
+| SeaweedFS S3 API | `http://localhost:9000` |
 | Data-provider | `http://localhost:8082` |
 | API | `http://localhost:3011` |
 | Frontend | `http://localhost:5173` |

@@ -50,11 +50,11 @@ and is enumerated in the [Environment variables reference](/reference/environmen
 
 | Variable | What it does |
 |---|---|
-| `S3_ENDPOINT` | S3-compatible endpoint URL. Tier 1 in compose: `http://minio:9000`. Cloud providers: their endpoint. |
-| `S3_PUBLIC_ENDPOINT` | What gets baked into presigned URLs the browser uses. Often the same as `S3_ENDPOINT` but differs for compose-internal MinIO (`http://localhost:9000` for the browser). |
+| `S3_ENDPOINT` | S3-compatible endpoint URL. Tier 1 in compose: `http://seaweedfs:8333`. Cloud providers: their endpoint. |
+| `S3_PUBLIC_ENDPOINT` | What gets baked into presigned URLs the browser uses. Often the same as `S3_ENDPOINT` but differs for compose-internal SeaweedFS (`http://localhost:9000` for the browser). |
 | `S3_ACCESS_KEY_ID` | Provider-issued. |
 | `S3_SECRET_ACCESS_KEY` | Provider-issued. |
-| `S3_BUCKET` | Bucket name. Must exist; the `minio-init` service creates it for compose-managed MinIO. |
+| `S3_BUCKET` | Bucket name. Must exist; SeaweedFS creates it on startup from `S3_BUCKET`. |
 
 ## Email
 

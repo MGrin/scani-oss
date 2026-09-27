@@ -1,3 +1,4 @@
+import { krakenFactory } from '@scani/providers/providers/kraken';
 // reflect-metadata must load before any @Service() class, since
 // typedi reads decorator metadata at class-init time. Without it,
 // `Reflect.getMetadata is undefined` blows up the provider registry.
@@ -585,6 +586,7 @@ void (async () => {
           // .NE/.NEO, .L, .DE, …) and Frankfurter-unsupported fiat
           // (RUB, KZT, GEL, AED, …).
           yahooFinanceFactory,
+          krakenFactory,
           // Chain providers — public-endpoint balance + address-validator
           // dispatch. ENV vars (ETHERSCAN_API_KEY, HELIUS_API_KEY,
           // TRON_API_URL, TON_API_URL) are read inside each factory.

@@ -406,7 +406,7 @@ jobs:
   e2e:
     # Full Playwright suite against the real docker-compose stack
     # (api + worker + data-provider + frontend + Postgres + Redis +
-    # Mailpit + MinIO). Bypasses the `scripts/run.ts` orchestrator and
+    # Mailpit + SeaweedFS). Bypasses the `scripts/run.ts` orchestrator and
     # invokes `bunx playwright test` directly so the cache + artifact
     # steps can sit between stack-up and the test run — the orchestrator
     # would otherwise try to tear down a stack CI already owns.
@@ -538,7 +538,7 @@ jobs:
       # when the stack fails to come up.
       - name: Stack logs (on failure)
         if: failure()
-        run: docker compose --profile full logs --no-color migrate deps env-sync minio-init || true
+        run: docker compose --profile full logs --no-color migrate deps env-sync seaweedfs || true
 
       - name: Wait for stack health
         run: bun apps/e2e/scripts/wait-for-stack.ts

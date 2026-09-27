@@ -24,14 +24,14 @@ traditional assets. One database, one ledger, one dashboard across:
 ## What "self-hostable" means here
 
 The whole stack is a few Bun services and a Postgres database. The default
-local stack — `bun run dev:stack` — boots Postgres, Redis, MinIO, Mailpit,
+local stack — `bun run dev:stack` — boots Postgres, Redis, SeaweedFS, Mailpit,
 and every Scani service in Docker. **No external account, no API key, no
 credit card is required to log in and start using it.**
 
 Provider API keys (CoinGecko, OpenAI, Etherscan, …) unlock specific
 integrations when you want them. Without them, manual holdings still work,
 FX pricing still works (the FX provider has no key requirement), and the
-screenshot store still works (local MinIO container).
+screenshot store still works (local SeaweedFS container).
 
 ## The shape of the product
 
@@ -87,7 +87,7 @@ A four-service Bun monorepo plus a database:
 |---|---|
 | `apps/backend/api` | tRPC + Elysia HTTP server. Owns per-user credentialed integrations (exchange keys, brokerage tokens) so user creds never leave the tenant boundary. Acts as the BullMQ producer. |
 | `apps/backend/worker` | BullMQ consumer. Every scheduled job (pricing, balance syncs, historical backfill, transfer linking) and every user-initiated job (screenshot parse, import, delete) runs here. |
-| `apps/backend/data-provider` | tRPC service fronting object storage, the email transport, Open Graph metadata and token search. The seam between Tier 1 and Tier 2/3 lives here. Pricing, AI and chain calls are made by the api and worker directly, on every tier. |
+| `apps/backend/data-provider` | tRPC service for token lookup and metadata in Tier 1. Scani runs it for Tier 2 AI, prices, token identity, supported wallet queries and constrained authentication email. Tier 2 API/worker keep S3 local and need only the Scani Cloud key. |
 | `apps/frontend/app` | React + Vite SPA. End-to-end type-safe with the api via tRPC. |
 | Postgres + Redis + S3 | Postgres for everything durable, including the BullMQ job queue (`bullmq` schema). Redis for rate-limiter buckets and realtime fan-out — nothing that has to survive a restart. S3 (or compatible) for binary uploads. <!-- queue-store-ok: the point of the row is the contrast --> |
 

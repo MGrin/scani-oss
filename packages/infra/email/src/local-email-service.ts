@@ -20,10 +20,10 @@ import type { EmailMessage } from './types';
 export class LocalEmailService extends EmailService {
   private readonly delegate: EmailService = this.pickDelegate();
 
-  protected async sendMessage(message: EmailMessage): Promise<void> {
+  protected async sendMessage(message: EmailMessage, signal?: AbortSignal): Promise<void> {
     const env = loadEmailConfig();
     const from = env.SMTP_FROM ?? message.from;
-    await this.delegate.send({ ...message, from });
+    await this.delegate.send({ ...message, from }, signal);
   }
 
   protected pickDelegate(): EmailService {

@@ -1,3 +1,7 @@
+import {
+  personalProviderFactories,
+  platformProviderFactories,
+} from '@scani/cloud-client/providers';
 import 'reflect-metadata';
 // CRITICAL: Validate env before importing modules that read process.env.
 import { loadEnv } from './config/env';
@@ -215,67 +219,73 @@ async function main(): Promise<void> {
       redis: providerRedis,
       env: process.env,
       providers: [
-        // Pricing — public APIs.
-        defillamaFactory,
-        frankfurterFactory,
-        coingeckoFactory,
-        finnhubFactory,
-        // Yahoo runs *after* Finnhub by registration order so US-listed
-        // equities still go to Finnhub first; Yahoo fills the gap for
-        // non-US listings (.TO/.NE/.L/.DE/…) and Frankfurter-unsupported
-        // fiat (RUB after 2022, KZT, GEL, AED, …) where Frankfurter
-        // returns null on historical lookups.
-        yahooFinanceFactory,
-        // Chain providers — public-endpoint balance + address-validator
-        // dispatch for wallet sync flows.
-        // STUB_CHAIN_DATA=1 registers a fixture chain provider FIRST so
-        // wallet-import detection + balance fetch resolve locally instead
-        // of calling blockchain.info / Etherscan / a Solana RPC. The env
-        // schemas refuse STUB_CHAIN_DATA=1 in production, so a misconfigured
-        // prod deploy crashes at boot rather than serving fixture balances
-        // (SC-490).
-        ...(process.env.STUB_CHAIN_DATA === '1' ? [chainStubFactory] : []),
-        etherscanFactory,
-        bitcoinFactory,
-        solanaFactory,
-        tronFactory,
-        tonFactory,
-        // CEX — user-credentialed balance sync + credential validation.
-        // Kraken's HistoricalPriceProvider also covers CEX-native asset
-        // codes (XXBT, ZUSD, …) that DeFiLlama / CoinGecko miss.
-        binanceFactory,
-        coinbaseFactory,
-        krakenFactory,
-        bybitFactory,
-        okxFactory,
-        kucoinFactory,
-        gateFactory,
-        bitgetFactory,
-        bitstampFactory,
-        huobiFactory,
-        mexcFactory,
-        geminiFactory,
-        // Brokers + fiat.
-        ibkrFactory,
-        wiseFactory,
-        airwallexFactory,
-        // AI: STUB_AI=1 registers a fixed-payload provider FIRST so the
-        // e2e suite gets deterministic screenshot-parse results without
-        // an OpenAI key. The data-provider config schema refuses
-        // STUB_AI=1 in production, so a misconfigured prod deploy would
-        // crash at boot before this branch ever fires.
-        ...(process.env.STUB_AI === '1' ? [aiStubFactory] : []),
-        aiOpenAIFactory,
+        ...platformProviderFactories([
+          // Pricing — public APIs.
+          defillamaFactory,
+          frankfurterFactory,
+          coingeckoFactory,
+          finnhubFactory,
+          // Yahoo runs *after* Finnhub by registration order so US-listed
+          // equities still go to Finnhub first; Yahoo fills the gap for
+          // non-US listings (.TO/.NE/.L/.DE/…) and Frankfurter-unsupported
+          // fiat (RUB after 2022, KZT, GEL, AED, …) where Frankfurter
+          // returns null on historical lookups.
+          yahooFinanceFactory,
+          // Chain providers — public-endpoint balance + address-validator
+          // dispatch for wallet sync flows.
+          // STUB_CHAIN_DATA=1 registers a fixture chain provider FIRST so
+          // wallet-import detection + balance fetch resolve locally instead
+          // of calling blockchain.info / Etherscan / a Solana RPC. The env
+          // schemas refuse STUB_CHAIN_DATA=1 in production, so a misconfigured
+          // prod deploy crashes at boot rather than serving fixture balances
+          // (SC-490).
+          ...(process.env.STUB_CHAIN_DATA === '1' ? [chainStubFactory] : []),
+          etherscanFactory,
+          bitcoinFactory,
+          solanaFactory,
+          tronFactory,
+          tonFactory,
+          // AI: STUB_AI=1 registers a fixed-payload provider FIRST so the
+          // e2e suite gets deterministic screenshot-parse results without
+          // an OpenAI key. The data-provider config schema refuses
+          // STUB_AI=1 in production, so a misconfigured prod deploy would
+          // crash at boot before this branch ever fires.
+          ...(process.env.STUB_AI === '1' ? [aiStubFactory] : []),
+          aiOpenAIFactory,
+        ]),
+        ...personalProviderFactories([
+          // CEX — user-credentialed balance sync + credential validation.
+          // Kraken's HistoricalPriceProvider also covers CEX-native asset
+          // codes (XXBT, ZUSD, …) that DeFiLlama / CoinGecko miss.
+          binanceFactory,
+          coinbaseFactory,
+          krakenFactory,
+          bybitFactory,
+          okxFactory,
+          kucoinFactory,
+          gateFactory,
+          bitgetFactory,
+          bitstampFactory,
+          huobiFactory,
+          mexcFactory,
+          geminiFactory,
+          // Brokers + fiat.
+          ibkrFactory,
+          wiseFactory,
+          airwallexFactory,
+        ]),
       ],
     });
     // GoogleSheets — see comment in apps/backend/api/src/index.ts for
     // why it lives in its own workspace and is registered separately.
-    const googleSheetsProvider = googleSheetsFactory({
-      db,
-      redis: providerRedis,
-      rateLimiterRegistry: built.rateLimiterRegistry,
-    });
-    built.registry.register(googleSheetsProvider);
+    if (loadCloudClientConfig().SCANI_DEPLOYMENT_TIER !== '2') {
+      const googleSheetsProvider = googleSheetsFactory({
+        db,
+        redis: providerRedis,
+        rateLimiterRegistry: built.rateLimiterRegistry,
+      });
+      built.registry.register(googleSheetsProvider);
+    }
     logger.info({}, '✅ @scani/providers registry initialized');
   }
 

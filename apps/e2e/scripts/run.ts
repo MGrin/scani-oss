@@ -94,7 +94,7 @@ const FORWARDED = process.argv.slice(2).filter((arg) => !OWN_FLAGS.has(arg));
  * The services the spec suite actually exercises. `--profile full` also boots
  * landing, cloud and admin, none of which any spec visits — three extra Vite
  * servers is tolerable on a laptop and is minutes of a CI job. Compose pulls
- * in each of these services' `depends_on` (postgres, redis, minio, env-sync,
+ * in each of these services' `depends_on` (postgres, redis, seaweedfs, env-sync,
  * deps, migrate) on its own, so the list stays this short.
  *
  * `mailpit` is named explicitly because nothing depends on it: the api sends
@@ -144,7 +144,7 @@ export const API_SERVICE_ALIASES = ['api', 'backend'];
 
 /** The `depends_on` gates above — they run to completion, so `up` reports only
  *  their exit code and their own output is where a boot failure explains itself. */
-export const ONE_SHOT_SERVICES = ['migrate', 'deps', 'env-sync', 'minio-init'];
+export const ONE_SHOT_SERVICES = ['migrate', 'deps', 'env-sync'];
 
 /**
  * Which of `API_SERVICE_ALIASES` this repo's compose file declares — the pure
@@ -276,7 +276,7 @@ function toContainerState(row: unknown): ComposeContainerState | null {
 
 /**
  * A one-shot that finished its work is `exited` with code 0, and is not a
- * failure — `env-sync`, `deps`, `migrate` and `minio-init` all end there on a
+ * failure — `env-sync`, `deps` and `migrate` all end there on a
  * healthy boot. Everything else that is not `running` never reached a good
  * state, and a `running` container whose healthcheck says `unhealthy` is worse
  * than one that died, because compose waited on it.

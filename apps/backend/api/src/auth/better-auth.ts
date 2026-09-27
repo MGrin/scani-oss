@@ -1,3 +1,4 @@
+import { loadCloudClientConfig } from '@scani/cloud-client';
 import { EmailFacade } from '@scani/cloud-client/facades/email-facade';
 import { isNodeEnvProduction } from '@scani/config';
 import { db } from '@scani/db';
@@ -9,6 +10,7 @@ import {
   users,
   userVerifications,
 } from '@scani/db/schema';
+import { SCANI_BRAND } from '@scani/email';
 import { createComponentLogger } from '@scani/logging';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
@@ -58,12 +60,22 @@ async function getDefaultBaseCurrencyId(): Promise<string | null> {
 
 export function createBetterAuth(opts: {
   baseURL: string;
+  appUrl?: string;
   secret: string;
   cookieDomain?: string;
   trustedOrigins?: string[];
   screenshotBotSecret?: string;
 }) {
+  if (
+    loadCloudClientConfig().SCANI_DEPLOYMENT_TIER === '2' &&
+    new URL(opts.appUrl ?? opts.baseURL).origin !== new URL(opts.baseURL).origin
+  ) {
+    throw new Error(
+      'Tier 2 requires UI and API behind the same HTTPS public origin for authentication email'
+    );
+  }
   const email = Container.get(EmailFacade);
+  const brand = { ...SCANI_BRAND, appUrl: opts.appUrl ?? opts.baseURL };
 
   // Fire-and-forget wrapper for emails that should *not* block the HTTP
   // response. Used on sign-up: `requireEmailVerification: false` means the
@@ -176,7 +188,7 @@ export function createBetterAuth(opts: {
     },
     emailVerification: {
       sendVerificationEmail: ({ user, url }) => {
-        sendInBackground(() => email.sendVerificationEmail({ to: user.email, url }), {
+        sendInBackground(() => email.sendVerificationEmail({ to: user.email, url, brand }), {
           userId: user.id,
           kind: 'verification',
         });
@@ -281,7 +293,7 @@ export function createBetterAuth(opts: {
         sendMagicLink: async ({ email: to, url }) => {
           authLogger.info({ email: to }, '🪄 Magic-link callback fired');
           try {
-            await email.sendMagicLink({ to, url });
+            await email.sendMagicLink({ to, url, brand });
             authLogger.info({ email: to }, '✅ Magic link sent');
           } catch (err) {
             authLogger.error(
@@ -311,7 +323,7 @@ export function createBetterAuth(opts: {
         storeOTP: 'hashed',
         sendVerificationOTP: async ({ email: to, otp, type }) => {
           try {
-            await email.sendOtp({ to, code: otp, type });
+            await email.sendOtp({ to, code: otp, type, brand });
             authLogger.info({ email: to, type }, '✅ OTP sent');
           } catch (err) {
             authLogger.error(
