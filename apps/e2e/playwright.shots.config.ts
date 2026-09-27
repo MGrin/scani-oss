@@ -21,7 +21,6 @@ export default defineConfig({
   reporter: [['list']],
   globalSetup: './fixtures/shots-setup',
   use: {
-    launchOptions: { args: ['--password-store=basic', '--use-mock-keychain'] },
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://localhost:5173',
     trace: 'off',
     video: 'off',
@@ -31,6 +30,14 @@ export default defineConfig({
   },
   projects: VIEWPORTS.map((viewport) => ({
     name: viewport.name,
-    use: { ...devices[viewport.device] },
+    use: {
+      ...devices[viewport.device],
+      launchOptions: {
+        args:
+          devices[viewport.device]?.defaultBrowserType === 'chromium'
+            ? ['--password-store=basic', '--use-mock-keychain']
+            : [],
+      },
+    },
   })),
 });

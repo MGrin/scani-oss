@@ -11,13 +11,23 @@ const CONFIGS = [
 // it is how this file reads the config's own launch options at all.
 process.env.PW_VISUAL_WS ??= 'ws://127.0.0.1:0/keychain-free-launch-test';
 
-describe('every Playwright config launches Chromium without a keychain', () => {
+describe('Playwright launch options match each browser engine', () => {
   for (const file of CONFIGS) {
-    test(`${file} passes --password-store=basic and --use-mock-keychain`, async () => {
+    test(`${file} keeps Chromium flags out of WebKit launches`, async () => {
       const config = (await import(`../${file}`)).default;
-      const args: string[] = config.use?.launchOptions?.args ?? [];
-      expect(args).toContain('--password-store=basic');
-      expect(args).toContain('--use-mock-keychain');
+      expect(config.projects?.length).toBeGreaterThan(0);
+      for (const project of config.projects ?? []) {
+        const use = { ...config.use, ...project.use };
+        const browser = use.browserName ?? use.defaultBrowserType ?? 'chromium';
+        const args: string[] = use.launchOptions?.args ?? [];
+        if (browser === 'chromium') {
+          expect(args).toContain('--password-store=basic');
+          expect(args).toContain('--use-mock-keychain');
+        } else {
+          expect(args).not.toContain('--password-store=basic');
+          expect(args).not.toContain('--use-mock-keychain');
+        }
+      }
     });
   }
 });
