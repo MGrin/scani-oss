@@ -34,8 +34,8 @@ export function counterfactualSeries(input: CounterfactualInput): Map<string, De
       continue;
     }
 
-    if (waiting.gt(0)) {
-      units = units.plus(waiting.div(price));
+    if (!waiting.isZero()) {
+      units = Decimal.max(new Decimal(0), units.plus(waiting.div(price)));
       waiting = new Decimal(0);
     }
 

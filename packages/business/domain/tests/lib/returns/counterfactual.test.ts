@@ -119,6 +119,28 @@ describe('counterfactualSeries', () => {
     expect(series.get('2026-01-03')?.toString()).toBe('200');
   });
 
+  test.each([
+    { withdrawal: -50, expected: '50' },
+    { withdrawal: -150, expected: '0' },
+  ])(
+    'applies an unpriced withdrawal of $withdrawal when prices return',
+    ({ withdrawal, expected }) => {
+      const days = ['2026-01-01', '2026-01-02', '2026-01-03', '2026-01-04'];
+      const series = counterfactualSeries({
+        days,
+        prices: flatPrices([days[0]!, days[2]!, days[3]!]),
+        openingValue: d(100),
+        flowsByDay: new Map([
+          [days[1]!, d(withdrawal)],
+          [days[3]!, d(25)],
+        ]),
+      });
+      expect(series.has(days[1]!)).toBe(false);
+      expect(series.get(days[2]!)?.toString()).toBe(expected);
+      expect(series.get(days[3]!)?.toString()).toBe(expected === '50' ? '75' : '25');
+    }
+  );
+
   test('with one opening position and no flows it matches a plain price ratio', () => {
     const days = ['2026-01-01', '2026-06-30'];
     const prices = new Map([

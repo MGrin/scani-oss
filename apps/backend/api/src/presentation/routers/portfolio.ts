@@ -221,11 +221,7 @@ async function assertScopeOwnership(
   if (!row[0]) throw new TRPCError({ code: 'NOT_FOUND', message: 'Institution not found' });
 }
 
-/**
- * How many days the comparison chart asks prices for. A line on a phone is
- * ~400 pixels wide, and each point costs one conversion per benchmark, so a
- * ten-year window is sampled to cost what one year costs (SC-1297).
- */
+// Sample the rendered chart only; benchmark funding uses every measured day.
 const CHART_POINT_CAP = 120;
 
 /**
@@ -237,10 +233,6 @@ const CHART_POINT_CAP = 120;
  * both ends — so it is bounded here rather than trusted. Ten years is past
  * every range `HOME_PERIODS` offers and past any plausible widening of it;
  * something asking for more wants `all` and should say so.
- *
- * The comparison's per-day cost is capped separately by `sampleDays`, which
- * this does not replace: that bounds how many benchmark prices a range buys,
- * this bounds how many rollup days the engine reads to begin with.
  */
 const MAX_CUSTOM_WINDOW_DAYS = 3660;
 
@@ -372,7 +364,7 @@ export const portfolioRouter = router({
    * worth in each benchmark instead.
    *
    * A SEPARATE procedure from `getReturns` on purpose. This one pays for a
-   * price per benchmark per sampled day; the card's sentence and its
+   * price per benchmark per measured day; the card's sentence and its
    * attribution bar must not wait for that, and a chart that fails must not
    * take the numbers down with it.
    */
@@ -387,11 +379,7 @@ export const portfolioRouter = router({
         scope: input.scope ?? { kind: 'user' as const },
         window: input.window,
       };
-      // The benchmark prices were ~0.6s of every call once the returns run
-      // itself was shared (SC-1320). They follow from the run's sampled days
-      // and base currency, so the whole card shares the run's data version:
-      // anything that changes the run changes this key too, and the TTL bounds
-      // a price landing for today.
+      // Prices share the run's data version; the TTL bounds a new price landing today.
       return sharedReturnsRun(`comparison:${returnsKey(request)}`, dbUser.id, async () => {
         const outcome = await computeReturns(ctx.requestCache, request);
         if (outcome.status !== 'ok' || outcome.returns.series.length === 0) {
@@ -404,20 +392,23 @@ export const portfolioRouter = router({
           CHART_POINT_CAP
         );
         const kept = new Set(days);
-        const sampled = series.filter((point) => kept.has(point.date));
 
         const benchmarkPrices = await Container.get(BenchmarkReturnService).pricesOn(
-          days,
+          series.map((point) => point.date),
           baseCurrencyId
         );
+        const comparison = buildComparison({
+          series,
+          netExternalFlow,
+          attribution,
+          benchmarkPrices,
+        });
 
         return {
-          comparison: buildComparison({
-            series: sampled,
-            netExternalFlow,
-            attribution,
-            benchmarkPrices,
-          }),
+          comparison: {
+            ...comparison,
+            chart: comparison.chart.filter((point) => kept.has(point.date)),
+          },
           baseCurrencyId,
           truncated: days.length < series.length,
         };

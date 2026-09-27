@@ -30,15 +30,7 @@ export function measuredDayInstant(day: string, now: Date = new Date()): Date {
   return endOfDay.getTime() > now.getTime() ? now : endOfDay;
 }
 
-/**
- * How many of a benchmark's days convert at once (SC-1306).
- *
- * Eight rather than "all of them": the router caps a chart at 120 points and
- * two benchmarks run in parallel, so an unbounded map is 240 concurrent
- * database round trips from one request. Eight per benchmark keeps the whole
- * card inside a small, predictable share of the pool while removing the
- * serial cost that made this the slowest thing on the dashboard.
- */
+// Bound database concurrency independently of the history length.
 const DAY_CONVERSION_CONCURRENCY = 8;
 
 /**
@@ -90,7 +82,8 @@ export class BenchmarkReturnService {
    * round trips — the slowest thing on the dashboard once the returns engine
    * itself was fixed. The days now go out `DAY_CONVERSION_CONCURRENCY` at a
    * time through the same call with the same arguments, so the numbers are
-   * unchanged. `sampleDays` bounds how many there are.
+   * unchanged. Every measured day is needed to fund and value the benchmark
+   * before the chart is sampled.
    */
   async pricesOn(
     days: string[],

@@ -275,6 +275,24 @@ describe('portfolio.getReturnsComparison (SC-1297)', () => {
     expect(pricedDays).toHaveLength(2);
   });
 
+  test.each([50, -50])('retains funding on days omitted from the chart: %s', async (flow) => {
+    const series = Array.from({ length: 121 }, (_, index) => ({
+      date: new Date(Date.UTC(2026, 0, index + 1)).toISOString().slice(0, 10),
+      value: String(index === 0 ? 100 : 100 + flow),
+      netExternalFlow: String(index === 1 ? flow : 0),
+    }));
+    stub({ status: 'ok', returns: { ...RESULT, series, netExternalFlow: String(flow) } });
+    const { comparison, truncated } = await makeAuthedCaller(USER).portfolio.getReturnsComparison({
+      window: { kind: 'all' },
+    });
+    expect(truncated).toBe(true);
+    expect(comparison?.chart.some((point) => point.date === '2026-01-02')).toBe(false);
+    expect(comparison?.gaps).toEqual([
+      { key: 'btc', money: '0', benchmarkValue: String(100 + flow) },
+    ]);
+    expect(comparison?.attribution.contributions).toBe(String(flow));
+  });
+
   test('a window that measured nothing is an absence, not an empty chart', async () => {
     stub({ status: 'ok', returns: { ...RESULT, series: [] } });
     expect(
