@@ -7,10 +7,13 @@ name: Sync Docker Hub READMEs
 #
 # Required repo secrets (same as docker-publish.yml):
 #   - DOCKERHUB_USERNAME — typically `scani` (the org account)
-#   - DOCKERHUB_TOKEN    — a Docker Hub access token with read/write
-#                          on the four `scani/*` repos
+#   - DOCKERHUB_TOKEN    — a Docker Hub access token with Read, Write &
+#                          Delete: Docker Hub refuses a repository description
+#                          edit to a Read & Write token (403 "insufficient
+#                          scope").
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
