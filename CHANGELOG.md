@@ -19,6 +19,23 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.50.0](https://github.com/MGrin/scani-oss/compare/v0.49.0...v0.50.0) (2026-09-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* **app:** the Forecast view and Home's runway line are removed. The upgrade drops the six saved spending-estimate columns on users, and merges Cloud console users into app users. Back up before upgrading.
+
+### Features
+
+* **app:** returns for real portfolios, bill groups and one account ([34dfdde](https://github.com/MGrin/scani-oss/commit/34dfddef80d283dfe6bc747b3b0762463395a561))
+
+
+### Bug Fixes
+
+* **data-provider:** wire the console session to the api, keep the image CSP telemetry-free ([fa5bcae](https://github.com/MGrin/scani-oss/commit/fa5bcae62b64eb218e3dbaf24593fd5f289c5304))
+* **e2e:** measure tap targets after animations settle, within one layout unit ([ff077ef](https://github.com/MGrin/scani-oss/commit/ff077efe499ae8089daf89016365bb67ed90090d))
+
 ## [0.49.0](https://github.com/MGrin/scani-oss/compare/v0.48.0...v0.49.0) (2026-09-27)
 
 
