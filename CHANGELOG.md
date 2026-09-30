@@ -34,8 +34,7 @@ comment is deliberately in that position; explanatory prose should not be.
 ### Bug Fixes
 
 * **data-provider:** wire the console session to the api, keep the image CSP telemetry-free ([fa5bcae](https://github.com/MGrin/scani-oss/commit/fa5bcae62b64eb218e3dbaf24593fd5f289c5304))
-* **e2e:** measure tap targets after animations settle, within one layout unit (SC-1431) ([ff077ef](https://github.com/MGrin/scani-oss/commit/ff077efe499ae8089daf89016365bb67ed90090d))
-* **v3:** a DateField keeps its 44px floor inside a flex parent ([2e881f0](https://github.com/MGrin/scani-oss/commit/2e881f02b8dc3becf1d05e63e338c97f7b2d356a))
+* **e2e:** measure tap targets after animations settle, within one layout unit ([ff077ef](https://github.com/MGrin/scani-oss/commit/ff077efe499ae8089daf89016365bb67ed90090d))
 
 ## [0.49.0](https://github.com/MGrin/scani-oss/compare/v0.48.0...v0.49.0) (2026-09-27)
 
