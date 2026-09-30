@@ -88,7 +88,7 @@ interface CurrencyPickerProps {
  * that does not already hold the token list, and everything else — the
  * ranking, the picker, the labels — is shared rather than copied.
  */
-export function CurrencyPicker({
+function CurrencyPicker({
   value,
   onSelect,
   onClear,

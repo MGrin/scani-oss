@@ -33,10 +33,12 @@ describe('shouldTransitionRoute — which navigations are worth animating', () =
     expect(shouldTransitionRoute('/payments', '/payments')).toBe(false);
   });
 
-  /** Money's segments are separate nav destinations — the sidebar lists both —
-   *  so moving between them is a screen change and reads as one. */
-  test('Money’s segments are separate destinations', () => {
-    expect(shouldTransitionRoute('/payments', '/payments/recurring')).toBe(true);
+  /** Bills is one nav destination since SC-1396: the schedule list is a view of
+   *  it, not a separate screen, so switching views does not animate. Holdings
+   *  is its own destination and does. */
+  test('Bills’ views are one destination; Holdings is another', () => {
+    expect(shouldTransitionRoute('/payments', '/payments/recurring')).toBe(false);
+    expect(shouldTransitionRoute('/payments', '/holdings')).toBe(true);
   });
 });
 

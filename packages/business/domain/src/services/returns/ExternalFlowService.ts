@@ -77,7 +77,16 @@ export interface ExternalFlowSeries {
   unvaluedCount: number;
   /** Of `flows`, how many rest on a price beyond the staleness cap. */
   staleValuedCount: number;
+  unresolvedCount: number;
+  /**
+   * The same three counts, by the holding they belong to, so a scope can
+   * leave out the holdings it cannot measure instead of withholding every
+   * holding's return for one of them (SC-1421).
+   */
+  problemsByHolding: Map<string, Set<FlowProblem>>;
 }
+
+export type FlowProblem = 'unvalued' | 'stale' | 'unresolved';
 
 @Service()
 export class ExternalFlowService {
@@ -91,7 +100,14 @@ export class ExternalFlowService {
     from: Date,
     to: Date
   ): Promise<ExternalFlowSeries> {
-    if (holdings.length === 0) return { flows: [], unvaluedCount: 0, staleValuedCount: 0 };
+    if (holdings.length === 0)
+      return {
+        flows: [],
+        unvaluedCount: 0,
+        staleValuedCount: 0,
+        unresolvedCount: 0,
+        problemsByHolding: new Map(),
+      };
 
     const weights = new Map(holdings.map((h) => [h.holdingId, h.weight]));
     const holdingIds = [...weights.keys()];
@@ -101,7 +117,14 @@ export class ExternalFlowService {
     ]);
     // Nothing crossed the boundary, so there is nothing to value and no
     // reason to pay for a prefetch. Most accounts in the product are here.
-    if (transactions.length === 0) return { flows: [], unvaluedCount: 0, staleValuedCount: 0 };
+    if (transactions.length === 0)
+      return {
+        flows: [],
+        unvaluedCount: 0,
+        staleValuedCount: 0,
+        unresolvedCount: 0,
+        problemsByHolding: new Map(),
+      };
 
     const heldTokenByHolding = new Map(holdingRows.map((row) => [row.id, row.tokenId]));
 
@@ -130,6 +153,21 @@ export class ExternalFlowService {
     const flows: ExternalFlow[] = [];
     let unvaluedCount = 0;
     let staleValuedCount = 0;
+    const problemsByHolding = new Map<string, Set<FlowProblem>>();
+    const flag = (holdingId: string, problem: FlowProblem) => {
+      const set = problemsByHolding.get(holdingId) ?? new Set<FlowProblem>();
+      set.add(problem);
+      problemsByHolding.set(holdingId, set);
+    };
+    const unresolved = transactions.filter(
+      (tx) =>
+        tx.kind === 'unknown' ||
+        ((tx.kind === 'withdraw' || tx.kind === 'transfer_out') &&
+          !tx.transferGroupId &&
+          (!tx.transferReview || tx.transferReview === 'unknown'))
+    );
+    for (const tx of unresolved) flag(tx.holdingId, 'unresolved');
+    const unresolvedCount = unresolved.length;
 
     for (const tx of transactions) {
       // `return` rows are the portfolio earning or spending its own value and
@@ -163,8 +201,13 @@ export class ExternalFlowService {
         heldTokenByHolding,
         priceLookup
       );
-      if (!valuation) unvaluedCount += 1;
-      else if (valuation.stale) staleValuedCount += 1;
+      if (!valuation) {
+        unvaluedCount += 1;
+        flag(tx.holdingId, 'unvalued');
+      } else if (valuation.stale) {
+        staleValuedCount += 1;
+        flag(tx.holdingId, 'stale');
+      }
 
       // The ledger's own sign is the direction: negative quantity is value
       // leaving the holding. `valueTransactionInBase` works on magnitudes, so
@@ -186,7 +229,7 @@ export class ExternalFlowService {
       });
     }
 
-    return { flows, unvaluedCount, staleValuedCount };
+    return { flows, unvaluedCount, staleValuedCount, unresolvedCount, problemsByHolding };
   }
 
   private async valueOf(
@@ -201,15 +244,56 @@ export class ExternalFlowService {
     // ingester lets the two drift. Fall back to the row's own token rather
     // than refusing to value it.
     const heldTokenId = heldTokenByHolding.get(tx.holdingId) ?? tx.tokenId ?? null;
+    const at = flowValuationInstant(tx.occurredAt);
+    const arrival = this.arrivalOf(tx, qtyAbs, heldTokenId);
+    if (arrival) {
+      const valued = await valueTransactionInBase(
+        this.priceGraphService,
+        undefined,
+        { priceNative: null, priceNativeTokenId: null, occurredAt: at },
+        arrival.quantity,
+        baseCurrencyId,
+        arrival.tokenId,
+        priceLookup
+      );
+      if (valued) return valued;
+    }
     return valueTransactionInBase(
       this.priceGraphService,
       undefined,
-      { ...tx, occurredAt: flowValuationInstant(tx.occurredAt) },
+      { ...tx, occurredAt: at },
       qtyAbs,
       baseCurrencyId,
       heldTokenId,
       priceLookup
     );
+  }
+
+  /**
+   * What ARRIVED in a swap, which both legs are valued at (SC-1438).
+   *
+   * Each leg's execution rate is quoted in the other token, so valued that way
+   * the swap-in reads what was given up and the swap-out what arrived: the two
+   * legs of one swap disagree by the slippage, and a swap-in beside a same-day
+   * transfer of the same token books the slippage as money moving. Valued at
+   * the arrival, both legs take one number, a swap inside the scope cancels,
+   * and the slippage stays in the value series of the side that paid it.
+   * Cost basis keeps the execution rate: what was paid IS the cost.
+   */
+  private arrivalOf(
+    tx: HoldingTransaction,
+    qtyAbs: Decimal,
+    heldTokenId: string | null
+  ): { tokenId: string; quantity: Decimal } | null {
+    if (tx.kind === 'swap_in' && heldTokenId) return { tokenId: heldTokenId, quantity: qtyAbs };
+    if (tx.kind !== 'swap_out' || !tx.counterTokenId || !tx.counterQuantity) return null;
+    const own = new Decimal(tx.quantity).abs();
+    if (own.isZero()) return null;
+    // A fee share taken off this leg takes the same share of what it bought.
+    return {
+      tokenId: tx.counterTokenId,
+      quantity: new Decimal(tx.counterQuantity).abs().mul(qtyAbs).div(own),
+    };
   }
 }
 

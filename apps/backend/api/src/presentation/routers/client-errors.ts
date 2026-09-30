@@ -3,7 +3,7 @@ import { captureReportedError } from '@scani/logging/sentry';
 import { defaultInflowKey } from '@scani/rate-limiter';
 import { z } from 'zod';
 import { CLIENT_ERROR_LIMITS, USER_BUDGETS } from '../../config/limits';
-import { clientErrorEvent } from '../lib/client-error-event';
+import { clientErrorEvent, withoutQuery } from '../lib/client-error-event';
 import { strictInput } from '../lib/strict-input';
 import { UserBudget } from '../lib/user-budget';
 import { publicProcedure, router } from '../trpc';
@@ -55,10 +55,11 @@ export const clientErrorsRouter = router({
   report: publicProcedure.input(strictInput(reportInput)).mutation(async ({ ctx, input }) => {
     const budget = await reportBudget.spend(reporterKey(ctx.userId, ctx.headers));
     if (!budget.ok) return { ok: true, recorded: false };
+    const report = { ...input, route: withoutQuery(input.route) };
     logger.error(
       {
         userId: ctx.userId ?? null,
-        route: input.route,
+        route: report.route,
         message: input.message,
         stack: input.stack,
         componentStack: input.componentStack,
@@ -67,7 +68,7 @@ export const clientErrorsRouter = router({
       },
       'Client error reported'
     );
-    captureReportedError(clientErrorEvent(input, ctx.userId ?? null));
+    captureReportedError(clientErrorEvent(report, ctx.userId ?? null));
     return { ok: true, recorded: true };
   }),
 });

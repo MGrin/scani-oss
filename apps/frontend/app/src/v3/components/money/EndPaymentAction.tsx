@@ -1,4 +1,5 @@
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
+import { CircleStop } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
@@ -52,9 +53,15 @@ export function EndPaymentAction({ paymentId, vendorName, status }: EndPaymentAc
 
   return (
     <ConfirmAction
-      label={t('v3.money.endPayment.trigger')}
+      label={
+        <>
+          <CircleStop className="me-2 size-4" aria-hidden="true" />
+          {t('v3.money.endPayment.trigger')}
+        </>
+      }
       confirmLabel={t('v3.money.endPayment.confirm')}
       destructive
+      triggerClassName="text-destructive hover:text-destructive"
       open={open}
       onOpenChange={setOpen}
       // The count is what makes the sentence worth reading, so the commit

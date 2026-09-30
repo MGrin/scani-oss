@@ -12,6 +12,13 @@ import { z } from 'zod';
  */
 export const REVIEWABLE_JOB_NAMES = ['screenshot-parse', 'file-import', 'wallet-import'] as const;
 
+/**
+ * The user job that recomputes a user's portfolio history. Returns reads one
+ * queued or running as "history is being rebuilt", so the name lives here
+ * where the domain can reach it; `JOB_NAMES` takes it from here too.
+ */
+export const HISTORY_REBUILD_JOB_NAME = 'portfolio-history-backfill';
+
 export function isReviewableJobName(name: string): boolean {
   return (REVIEWABLE_JOB_NAMES as readonly string[]).includes(name);
 }
@@ -127,6 +134,7 @@ export const reviewDetailSchema = z.discriminatedUnion('code', [
     /** As the worker recorded it (`csv`, `ofx`); the client cases it. */
     fileType: z.string().min(1).optional(),
   }),
+  z.object({ code: z.literal('columnsNeedMapping') }),
   z.object({
     code: z.literal('datesNeedOrder'),
     transactions: z.number().int().nonnegative(),

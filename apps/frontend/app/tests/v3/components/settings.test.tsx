@@ -1,6 +1,8 @@
 import '../../i18n-preload';
 
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import i18n from 'i18next';
 
 /**
@@ -64,5 +66,41 @@ describe('the destructive account copy says what goes and what stays', () => {
     expect(copy).toInclude('Safari on iPhone');
     expect(copy).toInclude('203.0.113.4');
     expect(copy).toInclude('Your data is untouched');
+  });
+});
+
+/**
+ * SC-1419's last pass measured Settings in a browser at 1366. Two blocks broke
+ * the page's rhythm, and both are layout, which markup rendered on a server
+ * cannot measure, so they are pinned at the source they come from.
+ *
+ * 1. Profile's save-status line is always in the DOM (it is an `aria-live`
+ *    region, and one that mounts with its message is not announced). Empty, it
+ *    was 0px tall and still took a 16px flex gap: the space under Preferences
+ *    read 32px against 16px everywhere else. `empty:absolute` takes it out of
+ *    the flow while keeping it in the accessibility tree.
+ * 2. The cost-basis trigger is a direct child of a `flex-col` block, so it
+ *    stretched to the block's full width. Every other Settings button is
+ *    `self-start`.
+ */
+describe('Settings keeps one rhythm (SC-1419)', () => {
+  const src = (name: string) =>
+    readFileSync(
+      resolve(import.meta.dir, `../../../src/v3/components/settings/${name}.tsx`),
+      'utf8'
+    );
+
+  test('the empty save-status line takes no gap, and stays a live region', () => {
+    const line = src('ProfileSettings').match(/<p aria-live="polite" className="([^"]*)"/);
+    expect(line).not.toBeNull();
+    expect(line?.[1]).toInclude('empty:absolute');
+    expect(line?.[1]).not.toInclude('hidden');
+  });
+
+  test('the cost-basis trigger is as wide as its label, like every other Settings button', () => {
+    const trigger = src('CostBasisSettings').match(
+      /<ConfirmAction[\s\S]*?triggerClassName="([^"]*)"/
+    );
+    expect(trigger?.[1]).toInclude('self-start');
   });
 });

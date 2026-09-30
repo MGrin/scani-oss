@@ -58,11 +58,62 @@ function makeQueue(name: string): PgQueue {
   return q;
 }
 
+/**
+ * One stalled-job check, as the worker issued it (SC-1403). `suspended` is the
+ * state the guard in `stalledChecker` reads: an idle wait with the LISTEN
+ * connection gone. A check in that state is exactly what the silent window
+ * forbids; a check after the wait ended is the worker being awake.
+ */
+type StalledCheck = { at: number; waiting: boolean; suspended: boolean };
+/**
+ * One idle wait, as the worker's own loop saw it (SC-1403). `endedAt` is taken
+ * when the backend's wait resolves and before the worker continues, so every
+ * query of the wake — the fetch, the reconnect, the re-LISTEN, a stalled tick —
+ * is sent after it, on whichever connection.
+ */
+type IdleWait = { startedAt: number; endedAt?: number };
+/**
+ * Every time the worker reached for Postgres, by what it called (SC-1403): a
+ * pooled query, a pooled checkout, or a LISTEN client asked for while the old
+ * one is lost (a reconnect). Recorded in-process at the call, so a query is
+ * counted however many more its connection issues afterwards —
+ * `pg_stat_activity` keeps only each backend's LAST query, and with BullMQ's
+ * guard removed a suspended stalled check was overwritten there by the wake's
+ * own queries and read as silence.
+ */
+type DbTouch = { at: number; via: 'query' | 'connect' | 'reconnect'; text?: string };
+type PgConnectionInternals = {
+  listenClientLost: boolean;
+  getListenClient(): Promise<unknown>;
+  pool: {
+    query(...args: unknown[]): unknown;
+    connect(...args: unknown[]): unknown;
+  };
+};
+type StalledInternals = {
+  moveStalledJobsToWait(): Promise<void>;
+  waiting: unknown;
+  backend: {
+    blockingConnectionLost: boolean;
+    waitForJob(blockTimeout: number): Promise<unknown>;
+    connection: PgConnectionInternals;
+  };
+};
+
 function makeWorker(
   name: string,
   opts: Record<string, unknown>
-): { worker: PgWorker; started: Map<string, number> } {
+): {
+  worker: PgWorker;
+  started: Map<string, number>;
+  stalledChecks: StalledCheck[];
+  waits: IdleWait[];
+  touches: DbTouch[];
+} {
   const started = new Map<string, number>();
+  const stalledChecks: StalledCheck[] = [];
+  const waits: IdleWait[] = [];
+  const touches: DbTouch[] = [];
   const worker = new Worker(
     name,
     async () => undefined,
@@ -75,8 +126,73 @@ function makeWorker(
   ) as unknown as PgWorker;
   worker.on('active', (job) => started.set(job.name, Date.now()));
   worker.on('error', () => undefined);
+  const internals = worker as unknown as StalledInternals;
+  const check = internals.moveStalledJobsToWait.bind(worker);
+  internals.moveStalledJobsToWait = () => {
+    stalledChecks.push({
+      at: Date.now(),
+      waiting: Boolean(internals.waiting),
+      suspended: Boolean(internals.waiting && internals.backend.blockingConnectionLost),
+    });
+    return check();
+  };
+  const backend = internals.backend;
+  const wait = backend.waitForJob.bind(backend);
+  backend.waitForJob = (blockTimeout) => {
+    const record: IdleWait = { startedAt: Date.now() };
+    waits.push(record);
+    return wait(blockTimeout).then((value) => {
+      record.endedAt = Date.now();
+      return value;
+    });
+  };
+  const connection = backend.connection;
+  const pool = connection.pool;
+  const query = pool.query.bind(pool);
+  pool.query = (...args) => {
+    const [text] = args;
+    const sql = typeof text === 'string' ? text : String((text as { text?: unknown })?.text);
+    touches.push({ at: Date.now(), via: 'query', text: sql.slice(0, 80) });
+    return query(...args);
+  };
+  const checkout = pool.connect.bind(pool);
+  pool.connect = (...args) => {
+    touches.push({ at: Date.now(), via: 'connect' });
+    return checkout(...args);
+  };
+  const listenClient = connection.getListenClient.bind(connection);
+  connection.getListenClient = () => {
+    if (connection.listenClientLost) touches.push({ at: Date.now(), via: 'reconnect' });
+    return listenClient();
+  };
   open.push(worker);
-  return { worker, started };
+  return { worker, started, stalledChecks, waits, touches };
+}
+
+function touchesBetween(touches: DbTouch[], fromMs: number, toMs: number): DbTouch[] {
+  return touches.filter((t) => t.at > fromMs && t.at < toMs);
+}
+
+/**
+ * Returns once the worker is back in an idle wait after `sinceMs` (SC-1403).
+ * The cut must land inside a wait: a worker cut while still awake reconnects
+ * at once, which is not the suspended wait these arms are about. A 300ms sleep
+ * stood in for this, and at load 50-130 it cut before the wait in 2 of 256 runs.
+ */
+async function idleAgain(waits: IdleWait[], sinceMs: number): Promise<void> {
+  await waitFor(
+    () => (waits.some((w) => w.startedAt >= sinceMs && w.endedAt === undefined) ? true : undefined),
+    5_000
+  );
+}
+
+/** The idle wait that was in flight when the listener was cut. */
+function waitSpanning(waits: IdleWait[], at: number): IdleWait {
+  const found = waits.find(
+    (w) => w.startedAt <= at && (w.endedAt === undefined || w.endedAt >= at)
+  );
+  if (!found) throw new Error(`no idle wait was in flight at ${at}`);
+  return found;
 }
 
 async function waitFor<T>(read: () => T | undefined, withinMs: number): Promise<T> {
@@ -217,10 +333,10 @@ describe('an idle worker with a far-future delayed job still starts new work pro
     const name = uniqueQueue();
     const queue = makeQueue(name);
     await queue.add('far-future', {}, { delay: 3_600_000 });
-    const { worker, started } = makeWorker(name, opts);
+    const { worker, started, stalledChecks, waits, touches } = makeWorker(name, opts);
     await worker.waitUntilReady();
     await Bun.sleep(500);
-    return { name, queue, worker, started };
+    return { name, queue, worker, started, stalledChecks, waits, touches };
   }
 
   // The bounds are loose for a loaded gate; anything under a few seconds
@@ -250,7 +366,7 @@ describe('an idle worker with a far-future delayed job still starts new work pro
 
   test('after the LISTEN connection dies, the worker waits for its timer without touching the database, then listens again', async () => {
     const CAP_S = 4;
-    const { name, queue, started } = await idleWorker({
+    const { name, queue, started, stalledChecks, waits, touches } = await idleWorker({
       maximumBlockTimeout: CAP_S,
       drainDelay: CAP_S,
       // Short on purpose: an unguarded stalled check would query inside the
@@ -260,8 +376,8 @@ describe('an idle worker with a far-future delayed job still starts new work pro
 
     // Put the worker into a FRESH wait, so its timer fires CAP_S from here.
     await queue.add('prime', {});
-    await waitFor(() => started.get('prime'), 5_000);
-    await Bun.sleep(300);
+    const primedAt = await waitFor(() => started.get('prime'), 5_000);
+    await idleAgain(waits, primedAt);
 
     const killedAt = await cutListener(name);
     // The control: the NOTIFY for this job really had nobody to reach.
@@ -280,16 +396,40 @@ describe('an idle worker with a far-future delayed job still starts new work pro
     // The bound: no later than the timer that was already running.
     expect(startedAt - killedAt).toBeLessThan((CAP_S + 2) * 1_000); // [wall-clock]
 
-    // Lazy: between the kill and that re-LISTEN the worker issued nothing at
-    // all — no reconnect, no stalled check, no probe.
-    expect(await queriesBetween(name, killedAt, silentUntil)).toBe(0);
+    // The guard held: no stalled check ran while the wait was suspended.
+    const afterCut = stalledChecks.filter((c) => c.at >= killedAt);
+    expect(afterCut.filter((c) => c.suspended)).toEqual([]);
 
-    // And it listens again: the next job arrives on a NOTIFY, not a timer.
-    await Bun.sleep(500);
-    const againAt = Date.now();
+    // It waited for its TIMER: the wait in flight at the cut ran its full cap.
+    // A lower bound, so load can only make it longer. Without it, a worker that
+    // ended its wait at the cut and reconnected at once would pass the count
+    // below with an empty window.
+    const suspendedWait = waitSpanning(waits, killedAt);
+    const wokeAt = suspendedWait.endedAt ?? Number.NaN;
+    expect(wokeAt - suspendedWait.startedAt).toBeGreaterThanOrEqual(CAP_S * 1_000 - 50);
+    expect(wokeAt).toBeLessThanOrEqual(silentUntil);
+
+    // Lazy: until its wait ended, it issued nothing at all — no reconnect, no
+    // stalled check, no probe. The window closes when the worker's own wait
+    // resolves (SC-1403), recorded in-process before it continues. It used to
+    // close at the re-LISTEN, and that was one EVENT too late: after the timer
+    // the loop fetches (`moveToActive`) and a 1s stalled tick may run, on other
+    // connections, before the reconnect's LISTEN. Under CI contention one of
+    // them reached Postgres first and read as "touched the database while
+    // waiting" (main #759, #853). Everything after `wokeAt` is the wake.
+    // Counted twice: in-process, which sees every call; and by Postgres, which
+    // also sees a connection this worker opened some other way.
+    expect(touchesBetween(touches, killedAt, wokeAt)).toEqual([]);
+    expect(await queriesBetween(name, killedAt, wokeAt)).toBe(0);
+
+    // And it listens again, so the next job's NOTIFY has somebody to reach.
+    // Counted at the enqueue like the lost-LISTEN arms (SC-1220), not timed: a
+    // 3s bound on the pickup told NOTIFY from the 4s timer only on a quiet box,
+    // and at load ~100 it read 4.3s in the fixed and the unfixed copy alike
+    // (SC-1403). The `toBe(0)` after the cut is this probe's control.
+    expect(await listeners(name)).toBe(1);
     await queue.add('after-reconnect', {});
-    const againStartedAt = await waitFor(() => started.get('after-reconnect'), (CAP_S + 3) * 1_000);
-    expect(againStartedAt - againAt).toBeLessThan(3_000); // [wall-clock]
+    await waitFor(() => started.get('after-reconnect'), (CAP_S + 3) * 1_000);
   });
 
   /**
@@ -305,14 +445,14 @@ describe('an idle worker with a far-future delayed job still starts new work pro
    */
   test('CONTROL: a query inside the silent window is counted', async () => {
     const CAP_S = 4;
-    const { name, queue, started } = await idleWorker({
+    const { name, queue, started, waits } = await idleWorker({
       maximumBlockTimeout: CAP_S,
       drainDelay: CAP_S,
       stalledInterval: 1_000,
     });
     await queue.add('prime', {});
-    await waitFor(() => started.get('prime'), 5_000);
-    await Bun.sleep(300);
+    const primedAt = await waitFor(() => started.get('prime'), 5_000);
+    await idleAgain(waits, primedAt);
 
     const killedAt = await cutListener(name);
     await queue.add('while-suspended', {});
@@ -323,11 +463,37 @@ describe('an idle worker with a far-future delayed job still starts new work pro
     const impostor = new Pool({ connectionString: withAppName(databaseUrl!, name), max: 1 });
     try {
       await impostor.query('select 1');
-      const silentUntil = await reListenedAt(name, (CAP_S + 4) * 1_000);
-      expect(await queriesBetween(name, killedAt, silentUntil)).toBeGreaterThanOrEqual(1);
+      await reListenedAt(name, (CAP_S + 4) * 1_000);
+      const wokeAt = waitSpanning(waits, killedAt).endedAt ?? Number.NaN;
+      expect(await queriesBetween(name, killedAt, wokeAt)).toBeGreaterThanOrEqual(1);
     } finally {
       await impostor.end();
     }
+  });
+
+  /**
+   * CONTROL for "it waited for its timer" (SC-1403). The silent window now ends
+   * when the worker's wait resolves, so a worker that ended its wait at the cut
+   * and reconnected straight away would leave an empty window and pass the
+   * count. The arm above refuses that with a lower bound on the wait; this ends
+   * the wait at the cut, as such a worker would, and shows the bound fails.
+   */
+  test('CONTROL: a wait ended at the cut reads as shorter than its timer', async () => {
+    const CAP_S = 4;
+    const { name, queue, worker, started, waits } = await idleWorker({
+      maximumBlockTimeout: CAP_S,
+      drainDelay: CAP_S,
+      stalledInterval: 1_000,
+    });
+    await queue.add('prime', {});
+    const primedAt = await waitFor(() => started.get('prime'), 5_000);
+    await idleAgain(waits, primedAt);
+
+    const killedAt = await cutListener(name);
+    interruptIdleWait(worker);
+    const cut = waitSpanning(waits, killedAt);
+    const endedAt = await waitFor(() => cut.endedAt, 2_000);
+    expect(endedAt - cut.startedAt).toBeLessThan(CAP_S * 1_000 - 50);
   });
 });
 

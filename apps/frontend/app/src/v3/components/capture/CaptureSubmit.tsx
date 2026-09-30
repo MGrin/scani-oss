@@ -1,5 +1,6 @@
 import { Button } from '@scani/ui/ui/button';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import type { CaptureStage } from '../../lib/capture-forms';
 import { CaptureProgress } from './CaptureProgress';
 
@@ -30,6 +31,8 @@ interface CaptureSubmitProps {
   /** Lowercase noun phrase for the ramp's screen-reader line — "the upload". */
   busyLabel: string;
   error: string | null;
+  /** Where Cancel leaves to: the same place as the header's back link. */
+  cancelTo: string;
 }
 
 export function CaptureSubmit({
@@ -39,6 +42,7 @@ export function CaptureSubmit({
   stage,
   busyLabel,
   error,
+  cancelTo,
 }: CaptureSubmitProps) {
   const { t } = useTranslation();
 
@@ -54,15 +58,22 @@ export function CaptureSubmit({
 
   return (
     <div className="flex min-h-10 flex-col gap-2">
-      <Button onClick={onSubmit} disabled={blockers.length > 0} className="w-full">
-        {label}
-      </Button>
       {blockers.length > 0 ? (
         <p className="text-center text-caption text-muted-foreground">
           {t('v3.form.blockers', { blockers: blockers.join(', ') })}
         </p>
       ) : null}
       {error ? <p className="text-center text-caption text-destructive">{error}</p> : null}
+      {/* Cancel then the primary (UI standard rule 9), stacked on a phone with
+          the primary on top, as `FormActions` lays them out. */}
+      <div className="flex flex-col-reverse gap-2 lg:flex-row lg:justify-end">
+        <Button variant="ghost" asChild>
+          <Link to={cancelTo}>{t('v3.form.cancel')}</Link>
+        </Button>
+        <Button onClick={onSubmit} disabled={blockers.length > 0} className="w-full lg:w-auto">
+          {label}
+        </Button>
+      </div>
     </div>
   );
 }

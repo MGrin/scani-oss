@@ -77,10 +77,10 @@
   },
   "nav": {
     "sections": {
-      "portfolio": "Portfolio",
+      "portfolio": "Wealth",
       "organization": "Organization",
       "activity": "Activity",
-      "payments": "Payments"
+      "payments": "Bills"
     },
     "home": "Home",
     "holdings": "Holdings",
@@ -103,7 +103,7 @@
     "review": "Review",
     "files": "Files",
     "payments": "Payments",
-    "money": "Money"
+    "money": "Bills"
   },
   "settings": {
     "title": "Settings",
@@ -113,7 +113,7 @@
     "namePlaceholder": "Your name",
     "email": "Email",
     "preferences": "Preferences",
-    "baseCurrency": "Base Currency",
+    "baseCurrency": "Base currency",
     "language": "Language",
     "languageHint": "Translations are community-contributed. Missing strings fall back to English.",
     "region": "Region",
@@ -135,10 +135,10 @@
         "payments_other": "payments",
         "payments_counted_one": "{{count}} payment",
         "payments_counted_other": "{{count}} payments",
-        "vendors_one": "vendor",
-        "vendors_other": "vendors",
-        "vendors_counted_one": "{{count}} vendor",
-        "vendors_counted_other": "{{count}} vendors",
+        "vendors_one": "payee",
+        "vendors_other": "payees",
+        "vendors_counted_one": "{{count}} payee",
+        "vendors_counted_other": "{{count}} payees",
         "accounts_one": "account",
         "accounts_other": "accounts",
         "accounts_counted_one": "{{count}} account",
@@ -182,7 +182,11 @@
         "customTokens_one": "custom token",
         "customTokens_other": "custom tokens",
         "customTokens_counted_one": "{{count}} custom token",
-        "customTokens_counted_other": "{{count}} custom tokens"
+        "customTokens_counted_other": "{{count}} custom tokens",
+        "balanceChanges_one": "balance change",
+        "balanceChanges_counted_one": "{{count}} balance change",
+        "balanceChanges_other": "balance changes",
+        "balanceChanges_counted_other": "{{count}} balance changes"
       },
       "accounts": {
         "col": {
@@ -305,11 +309,12 @@
           "accounts": "Accounts",
           "group": "Group",
           "holdings": "Holdings",
-          "value": "Value"
+          "value": "Value",
+          "bills": "Bills",
+          "payees": "Payees"
         },
         "config": {
-          "searchGroups": "Search groups",
-          "value": "Value"
+          "searchGroups": "Search groups"
         },
         "empty": {
           "aGroupIsYourOwnLabel": "A group is your own label across holdings and accounts — \"retirement\", \"taxable\", \"the joint one\".",
@@ -361,6 +366,7 @@
       "holdings": {
         "col": {
           "account": "Account",
+          "actions": "Actions",
           "amount": "Amount",
           "gainLoss": "Gain / loss",
           "holding": "Holding",
@@ -525,10 +531,11 @@
           "cadence": "Cadence",
           "direction": "Direction",
           "status": "Status",
-          "vendor": "Vendor"
+          "groups": "Groups",
+          "vendor": "Payee"
         },
         "config": {
-          "searchByVendor": "Search by vendor"
+          "searchByVendor": "Search by payee"
         },
         "empty": {
           "addABillOrRecurringIncomeAndScaniTracksEveryDateItFallsDue": "Add a bill or recurring income and Scani tracks every date it falls due.",
@@ -537,7 +544,7 @@
         "filter": {
           "direction": "Direction",
           "status": "Status",
-          "vendor": "Vendor"
+          "vendor": "Payee"
         },
         "group": {
           "direction": "Direction",
@@ -546,7 +553,7 @@
         "sort": {
           "amount": "Amount",
           "status": "Status",
-          "vendor": "Vendor"
+          "vendor": "Payee"
         },
         "option": {
           "active": "Active",
@@ -554,6 +561,32 @@
           "ended": "Ended",
           "bill": "Bill",
           "income": "Income"
+        }
+      },
+      "bills": {
+        "config": {
+          "searchByPayee": "Search by payee"
+        },
+        "filter": {
+          "group": "Group",
+          "payee": "Payee",
+          "status": "Status",
+          "period": "Period"
+        },
+        "status": {
+          "upcoming": "Upcoming",
+          "matched": "Paid",
+          "missed": "Missed",
+          "skipped": "Skipped",
+          "all": "All"
+        },
+        "period": {
+          "next30": "Next 30 days",
+          "next90": "Next 90 days",
+          "next365": "Next 12 months",
+          "last30": "Last 30 days",
+          "last90": "Last 90 days",
+          "last365": "Last 12 months"
         }
       },
       "review": {
@@ -568,7 +601,9 @@
         },
         "empty": {
           "importsLandHereWhenTheyFinish": "Imports land here when they finish and want a confirmation before their holdings count.",
-          "nothingNeedsYourReview": "Nothing needs your review"
+          "nothingNeedsYourReview": "Nothing needs your review",
+          "nothingElse": "Nothing else needs your review",
+          "theQueuesAboveHoldTheRest": "The queues above hold what is left."
         },
         "filter": {
           "type": "Type"
@@ -637,16 +672,16 @@
         "col": {
           "category": "Category",
           "kind": "Kind",
-          "payments": "Payments",
-          "vendor": "Vendor",
+          "payments": "Recurring",
+          "vendor": "Payee",
           "perMonth": "Per month"
         },
         "config": {
-          "searchVendors": "Search vendors"
+          "searchVendors": "Search payees"
         },
         "empty": {
-          "aVendorIsCreatedForYou": "A vendor is created for you the first time you point a payment at one. You can also add one here.",
-          "noVendorsYet": "No vendors yet"
+          "aVendorIsCreatedForYou": "A payee is created for you the first time you point a payment at one. You can also add one here.",
+          "noVendorsYet": "No payees yet"
         },
         "group": {
           "billsIncome": "Bills / income",
@@ -654,7 +689,7 @@
         },
         "sort": {
           "name": "Name",
-          "payments": "Payments"
+          "payments": "Recurring"
         }
       },
       "upcoming": {
@@ -666,12 +701,53 @@
           "addOne": "Add a bill or recurring income and its next dates show up here."
         }
       },
-      "forecast": {
+      "members": {
+        "filter": {
+          "kind": "Kind"
+        },
+        "col": {
+          "membership": "Membership",
+          "member": "Member"
+        }
+      },
+      "groupMembers": {
         "empty": {
-          "nothingToProject": "Nothing to project",
-          "noPayments": "No recurring payments yet",
-          "allPausedOrUnpriced": "Every payment on record is paused, ended, or has no amount to project.",
-          "addOne": "Add a bill or recurring income and a forecast appears here."
+          "title": "Nothing in this group yet",
+          "description": "Add accounts, holdings, bills or payees to see what this group is worth."
+        }
+      },
+      "vaultMembers": {
+        "empty": {
+          "title": "Nothing counts toward this vault yet",
+          "description": "Attach holdings and choose how much of each counts."
+        }
+      },
+      "transferRules": {
+        "empty": {
+          "noDestinationRulesYet": "No destination rules yet",
+          "openAPaymentOutInTheQueue": "Open a payment out in the queue and write down where it went. Every later payment to the same destination will carry your note, whatever the amount — and destinations you mark are answered for you."
+        }
+      },
+      "balanceGaps": {
+        "col": {
+          "answer": "Answer",
+          "answered": "Answered",
+          "change": "Change",
+          "drift": "Amount",
+          "when": "When"
+        },
+        "config": {
+          "search": "Search balance changes"
+        },
+        "empty": {
+          "everyChangeIsAccountedFor": "Every balance change is accounted for.",
+          "nothingToExplain": "Nothing to explain"
+        }
+      },
+      "answeredBalanceGaps": {
+        "empty": {
+          "answersLandHere": "Answers you give in the balance queue land here, so you can undo one.",
+          "nothingAnsweredYet": "No balance changes answered yet"
         }
       }
     }

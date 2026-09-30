@@ -35,12 +35,12 @@ async function pageSource(file: string): Promise<string> {
 }
 
 /**
- * The ways a v3 page legitimately reaches a top-level heading. Four of them
+ * The ways a v3 page legitimately reaches a top-level heading. Five of them
  * are shared headers that render the `h1` themselves, which is why a scan for
  * `<h1` alone reports pages that are perfectly correct.
  */
 const REACHES_A_HEADING =
-  /<h1|PageHeader|CaptureHeader|HomeHeading|PeekHeader|JobDetailHeader|DocumentDetailHeader/;
+  /<h1|PageHeader|CaptureHeader|HomeHeading|PeekHeader|JobDetailHeader|DocumentDetailHeader|ReviewQueueHeader/;
 
 /**
  * Enumerated rather than pattern-matched, because an exception needs a reason

@@ -23,7 +23,7 @@ export interface InclusionToken {
 // holdings, inactive holdings, and scam tokens never count.
 //
 // NOTE: the historical-chart read path
-// (PortfolioValueDailyRepository.findIncludedHoldingScopeRange) applies
+// (PortfolioValueDailyRepository.includedHoldingRows) applies
 // the SAME three conditions in SQL — keep the two in sync.
 export function isIncludedInTotal(holding: InclusionHolding, token: InclusionToken): boolean {
   if (holding.isHidden) return false;

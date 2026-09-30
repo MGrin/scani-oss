@@ -23,6 +23,7 @@ const NOT_A_PAGE: Record<string, string> = {
   Navigate: 'a redirect — the route it lands on sets the title',
   LegacyV2PathRedirect: 'a redirect — strips `/v2` and lands on a titled route',
   LegacyV3PathRedirect: 'a redirect — strips `/v3` and lands on a titled route',
+  LegacyPaymentFormRedirect: 'a redirect — the bill form is a sheet over Bills (SC-1414)',
   ProtectedRoute: 'the pathless auth layout; its children are the pages',
   V3Shell: 'the layout route; its children are the pages',
   V3App: 'a nested route table, checked below as a table of its own',

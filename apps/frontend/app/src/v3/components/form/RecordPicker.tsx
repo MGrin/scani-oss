@@ -1,7 +1,7 @@
 import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
 import { useDelayedLoading } from '@scani/ui/v3/hooks/useDelayedLoading';
-import { Loader2, Plus, X } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
@@ -184,7 +184,8 @@ export function RecordPicker({
           onClick={onClear}
           aria-label={t('v3.form.recordPicker.change', { label: ariaLabel })}
         >
-          <X className="me-1.5 h-4 w-4" aria-hidden="true" />
+          {/* No icon: an × beside the value reads as "clear", and this opens
+              the search to pick another (SC-1436 review). */}
           {t('v3.form.recordPicker.changeAction')}
         </Button>
       </div>

@@ -43,3 +43,12 @@ export function clientErrorEvent(
     userId,
   };
 }
+
+/**
+ * A route without its query string or fragment (SC-1350). The app sends the
+ * path alone now; a tab loaded before that still sends `?…`, which can carry a
+ * magic-link token, so the server strips it too.
+ */
+export function withoutQuery(route: string | undefined): string | undefined {
+  return route?.split(/[?#]/, 1)[0];
+}

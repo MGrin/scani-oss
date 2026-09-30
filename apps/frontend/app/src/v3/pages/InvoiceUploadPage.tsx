@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { uploadToR2 } from '@/v3/lib/r2-upload';
+import { AIAvailabilityNote } from '../components/capture/AIAvailabilityNote';
 import { CaptureHeader } from '../components/capture/CaptureHeader';
 import { CaptureSubmit } from '../components/capture/CaptureSubmit';
 import { FileDropField } from '../components/capture/FileDropField';
@@ -19,7 +20,7 @@ import {
   INVOICE_FORMATS_KEY,
   planInvoiceFile,
 } from '../lib/capture-forms';
-import { jobDetailPath } from '../lib/routes';
+import { jobDetailPath, V3_ROUTES } from '../lib/routes';
 
 /**
  * An invoice — a PDF, or a photograph of one.
@@ -43,12 +44,17 @@ export function InvoiceUploadPage() {
   const [stage, setStage] = useState<CaptureStage | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const capabilities = trpc.screenshots.capabilities.useQuery(undefined, { staleTime: 15_000 });
+  const usable =
+    file && planInvoiceFile(file)?.contentType === 'application/pdf'
+      ? capabilities.data?.pdf || capabilities.data?.text
+      : capabilities.data?.image;
   const getUploadUrl = trpc.storage.getUploadUrl.useMutation();
   const enqueueParse = trpc.documents.enqueueParse.useMutation();
 
   const submit = async () => {
     const plan = file ? planInvoiceFile(file) : null;
-    if (!file || !plan || stage) return;
+    if (!file || !plan || stage || !usable) return;
 
     setError(null);
     setStage('upload');
@@ -77,6 +83,7 @@ export function InvoiceUploadPage() {
       const copy = describeQueryError(err, t('v3.documents.parse.thisInvoice'), 'save');
       setError(`${copy.title}. ${copy.detail}`);
       setStage(null);
+      void capabilities.refetch();
     }
   };
 
@@ -85,6 +92,8 @@ export function InvoiceUploadPage() {
       <CaptureHeader
         title={t('v3.capture.page.invoice.title')}
         description={t('v3.capture.page.invoice.description')}
+        backTo={V3_ROUTES.files}
+        backLabel={t('v3.documents.detail.backToFiles')}
       />
 
       <Block>
@@ -102,12 +111,22 @@ export function InvoiceUploadPage() {
         </FieldSet>
       </Block>
 
+      <AIAvailabilityNote
+        state={capabilities.isLoading ? 'loading' : (capabilities.data?.state ?? 'transient')}
+        invoice
+      />
       <CaptureSubmit
         label={t('v3.capture.page.uploadAndRead')}
-        blockers={describeInvoiceBlockers(t, file)}
+        blockers={[
+          ...describeInvoiceBlockers(t, file),
+          ...(!usable
+            ? [t(capabilities.isLoading ? 'v3.capture.ai.blockerLoading' : 'v3.capture.ai.blocker')]
+            : []),
+        ]}
         onSubmit={submit}
         stage={stage}
-        busyLabel="the upload"
+        busyLabel={t('v3.capture.busy.upload')}
+        cancelTo={V3_ROUTES.files}
         error={error}
       />
     </PageLayout>

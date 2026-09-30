@@ -36,8 +36,12 @@ const OWN = 'scani_env_own00000_11111111';
 const LIVE = 'scani_env_live0000_22222222';
 const GONE = 'scani_env_gone0000_33333333';
 const GONE_TWO = 'scani_env_gone0001_44444444';
+/** A derived name with volumes only: nothing records where its checkout is. */
+const UNPLACED = 'scani_scani_oss_55555555';
 /** Not a derivation at all — what a bare `docker compose up` produces. */
 const BARE = 'scani';
+/** A checkout path that does not exist — the only evidence of death (SC-1417). */
+const GONE_DIR = '/definitely/absent/sc1417-reaper-fixture';
 
 function container(over: Partial<CensusContainer> = {}): CensusContainer {
   return { name: 'x-postgres-1', project: GONE, workingDir: '', running: false, ...over };
@@ -52,15 +56,24 @@ function census(over: Partial<MachineCensus> = {}): MachineCensus {
   const live = new Set([OWN, LIVE]);
   return {
     blind: null,
+    sizesUnmeasured: null,
     checkouts: live.size,
     enumeration: { kind: 'enumerated', projects: live },
     projects: censusProjects({
       containers: [
         container({ project: OWN, workingDir: '/does/not/matter', running: true }),
         container({ project: LIVE, running: false }),
-        container({ project: GONE, running: true }),
+        container({ project: GONE, workingDir: GONE_DIR, running: true }),
+        container({ project: GONE_TWO, workingDir: GONE_DIR }),
       ],
-      volumes: [volume(OWN), volume(LIVE), volume(GONE), volume(GONE_TWO), volume(BARE)],
+      volumes: [
+        volume(OWN),
+        volume(LIVE),
+        volume(GONE),
+        volume(GONE_TWO),
+        volume(BARE),
+        volume(UNPLACED),
+      ],
       liveProjects: live,
     }),
     ...over,
@@ -86,6 +99,7 @@ describe('blindness never reads as death', () => {
       {
         projects: [],
         blind: { kind: 'unavailable', reason: 'no socket' },
+        sizesUnmeasured: null,
         checkouts: null,
         enumeration: null,
       },
@@ -99,7 +113,13 @@ describe('blindness never reads as death', () => {
 
   test('a timed-out docker refuses on the same arm — not a slower clean machine', () => {
     const plan = planReap(
-      { projects: [], blind: { kind: 'timedOut' }, checkouts: null, enumeration: null },
+      {
+        projects: [],
+        blind: { kind: 'timedOut' },
+        sizesUnmeasured: null,
+        checkouts: null,
+        enumeration: null,
+      },
       OWN
     );
     expect(plan.kind).toBe('refused');
@@ -166,10 +186,23 @@ describe('what a plan refuses to touch', () => {
     expect(plan.keep.find((k) => k.project === BARE)?.reason).toContain('never reclaimable');
   });
 
+  /**
+   * SC-1417: `scani_scani_oss_f4ef8653` was offered for --apply. It was the
+   * volumes of a separate, LIVE clone that this repository's worktree list
+   * cannot see, and volumes record no checkout path to check instead.
+   */
+  test('a derived name with volumes only is kept, and says why', () => {
+    const plan = planned();
+    expect(plan.reap.some((t) => t.project === UNPLACED)).toBe(false);
+    expect(plan.keep.find((k) => k.project === UNPLACED)?.reason).toContain(
+      'no container records where its checkout is'
+    );
+  });
+
   test('every project on the machine is either reaped or accounted for', () => {
     const plan = planned();
     const seen = [...plan.reap.map((t) => t.project), ...plan.keep.map((k) => k.project)].sort();
-    expect(seen).toEqual([BARE, GONE, GONE_TWO, LIVE, OWN].sort());
+    expect(seen).toEqual([BARE, GONE, GONE_TWO, LIVE, OWN, UNPLACED].sort());
   });
 });
 

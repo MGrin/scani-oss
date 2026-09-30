@@ -13,7 +13,6 @@ class CapturingSink implements UsageSink {
 
 interface TestCtx {
   auth: { apiKeyId: string; tenantId: string; ownerUserId: string | null } | null;
-  cloudUser: { id: string } | null;
   requestId: string;
   usage: ReturnType<typeof createUsageContext>;
 }
@@ -21,7 +20,6 @@ interface TestCtx {
 function makeCtx(): TestCtx {
   return {
     auth: { apiKeyId: 'k1', tenantId: 't1', ownerUserId: 'u1' },
-    cloudUser: null,
     requestId: 'req-1',
     usage: createUsageContext(),
   };
@@ -112,23 +110,6 @@ describe('buildUsageMiddleware', () => {
     expect(firstEvent(sink).provider).toBe('custom-llm');
     expect(firstEvent(sink).tokensIn).toBe(1024);
     expect(firstEvent(sink).tokensOut).toBe(256);
-  });
-
-  it('falls back to cloudUser.id for subject when ctx.auth is null (cookie session)', async () => {
-    const sink = new CapturingSink();
-    const mw = buildUsageMiddleware({ sink });
-    const ctx = makeCtx();
-    ctx.auth = null;
-    ctx.cloudUser = { id: 'cloud-user-1' };
-    await mw({
-      ctx,
-      path: 'usage.summary',
-      type: 'query',
-      next: async () => ({ ok: true }),
-    });
-    expect(firstEvent(sink).subject).toBe('cloud-user-1');
-    expect(firstEvent(sink).apiKeyId).toBeNull();
-    expect(firstEvent(sink).tenantId).toBeNull();
   });
 
   it('drops apiKeyId/tenantId for OSS env-key (apiKeyId="oss-shared-key", tenantId="oss"|"dev")', async () => {

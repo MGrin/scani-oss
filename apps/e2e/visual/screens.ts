@@ -81,20 +81,8 @@ type VisualViewport = 'desktop' | 'phone';
  * the seeded portfolio instead would have rewritten all three home baselines
  * plus any holdings shot that gained a row, to buy coverage on one block —
  * which is the trade the "what stays out" rule above exists to refuse.
- *
- * `forecast` is a fourth user holding a book of recurring payments, for the
- * cashflow forecast (SC-623). Same reason again: recurring payments on the
- * seeded user would rewrite both of its home baselines, because home's
- * "What's due" block lists them.
- *
- * `burn` is a fifth user whose money has LEFT the tracked perimeter, one
- * payment of it valued from a stale quote (SC-1219). Not `forecast`: an
- * observed drain flips home's runway line from the committed book to the
- * observed branch, which would take the book's own photograph away. It is
- * reseeded on EVERY run, because its dates are relative to now — see
- * `BURN_AS_OF`.
  */
-export type VisualSession = 'seeded' | 'empty' | 'allocation' | 'forecast' | 'burn';
+export type VisualSession = 'seeded' | 'empty' | 'allocation';
 
 /**
  * Every screen renders at this instant. A form that defaults a date field to
@@ -106,45 +94,14 @@ export type VisualSession = 'seeded' | 'empty' | 'allocation' | 'forecast' | 'bu
  * Past the seeded data on purpose: the session this runs under was created
  * whenever the seed last ran, and a clock set before that would put the
  * screens in front of a session the client considers unissued.
- *
- * Exported because the forecast seed is dated from it (SC-623): its payments
- * must fall due AFTER this day, or the forecast would count them overdue.
  */
 export const FIXED_NOW = new Date('2027-03-04T09:15:00Z');
 
 /**
- * `FIXED_NOW` as the `YYYY-MM-DD` the api's forecast is pinned to.
- *
- * This is the other clock. `FIXED_NOW` pins the BROWSER's, and the forecast is
- * dated by the API's (`PaymentForecastService` starts from its own "today"),
- * so without this the runway month and the chart's axis move with the real
- * date. The spec rewrites every `payments.forecast` request on a screen that
- * declares `forecastAsOf` to carry this day, and the api honours it only on a
- * stack with `ALLOW_FORECAST_AS_OF=1` — the compose default.
+ * `FIXED_NOW` as a `YYYY-MM-DD`: the day every returns window is dated from
+ * (SC-1300).
  */
-export const FORECAST_AS_OF = FIXED_NOW.toISOString().slice(0, 10);
-
-/**
- * The api's "today" for a screen declaring `burnAsOf`: the first of the month
- * four months after the REAL one (SC-1219).
- *
- * Relative rather than pinned, because a stale quote cannot be pinned. The api
- * stamps every price it writes with its own "now", so the only way to have a
- * rate more than the 45-day cap older than a payment is to put the payment in
- * the future: the burn session's payments fall in the months just before this
- * day, and the custom token's one price row was written at seeding time, months
- * earlier. A fixed date instead goes fresh on the day the real calendar reaches
- * it — a red build on a date, caused by nobody.
- *
- * The first of a month so it holds still for the whole month, and the setup and
- * the spec — two processes — agree on it.
- */
-export const BURN_AS_OF = (() => {
-  const now = new Date();
-  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 4, 1))
-    .toISOString()
-    .slice(0, 10);
-})();
+export const PINNED_DAY = FIXED_NOW.toISOString().slice(0, 10);
 
 /**
  * Which way the document reads (SC-760).
@@ -279,39 +236,6 @@ export interface VisualScreen {
    * where it does not fails rather than passing quietly.
    */
   foldedAllocation?: true;
-  /**
-   * This screen reads `payments.forecast`, so the api's clock has to be pinned
-   * as well as the browser's — see `FORECAST_AS_OF` (SC-623).
-   *
-   * And checked, for the reason `institutionMark` is: a rewrite that silently
-   * stopped matching, or a stack with the flag off, still renders a forecast —
-   * one dated from the real day. `--update` would write it and every run that
-   * month would agree. So the spec reads the `today` of every forecast the page
-   * received and fails unless each is `FORECAST_AS_OF`.
-   */
-  forecastAsOf?: true;
-  /**
-   * The observed drain on this screen must count at least one stale-valued
-   * payment (SC-1219). The caption it gates renders only then, so a seed that
-   * stopped reaching the component would still photograph a clean line and
-   * `--update` would write it. Read from every `payments.forecast` response.
-   */
-  staleValued?: true;
-  /**
-   * Pins the api's clock to `BURN_AS_OF` rather than `FORECAST_AS_OF`, and is
-   * checked the same way. For the `burn` session only (SC-1219).
-   */
-  burnAsOf?: true;
-  /**
-   * Photograph this one element rather than the page.
-   *
-   * For a component whose neighbours are not a function of the seed. Home's
-   * runway line sits under "What's due", whose rows come from
-   * `payments.upcoming` — dated by the api's clock, which `asOf` does not move.
-   * Photographing the page would hold those rows too, and they change every
-   * month. The width is the element's, not the viewport's.
-   */
-  element?: string;
   /** Why a break on this screen would cost something. */
   why: string;
 }
@@ -445,69 +369,13 @@ export const VISUAL_SCREENS: readonly VisualScreen[] = [
   },
   {
     name: 'payment-form-phone',
-    route: '/payments/recurring/new',
+    route: '/payments?sheet=payment%3Anew',
     viewport: 'phone',
     height: 1800,
     why:
       'The only twelve-field form in the product, and forms are where duplicated or misplaced ' +
       'actions show up — a second Cancel 80px from the first is a form defect. Label-to-field ' +
       'alignment, control sizing and the disabled-submit affordance are decided here too.',
-  },
-  // --- the cashflow forecast (SC-623) ------------------------------------------
-  //
-  // SC-461's whole constraint is that a projection never looks like a measured
-  // figure: dashed `<Block>` borders, `<ProjectedTile>` rather than
-  // `<StatTile>`, a dashed neutral chart line with no fill. That claim is all
-  // presentation, so a type-check and a unit test cannot see it. The seed runs
-  // out of money inside the window, so the runway is a DATE — the exhausted
-  // branch, the only one with the zero reference line and `--loss`.
-  {
-    name: 'forecast-phone',
-    route: '/payments/forecast',
-    session: 'forecast',
-    viewport: 'phone',
-    height: 1700,
-    forecastAsOf: true,
-    why:
-      'The one screen whose every figure is a projection, at the width where a dashed border ' +
-      'and a solid one are two pixels apart. A stylesheet change that makes the two look ' +
-      'alike passes `forecast.test.tsx`, which asserts the class name, and is plain here.',
-  },
-  {
-    name: 'forecast-desktop',
-    route: '/payments/forecast',
-    session: 'forecast',
-    viewport: 'desktop',
-    height: 1300,
-    forecastAsOf: true,
-    why:
-      'The same screen with room for the chart: the month axis, the dashed projection line and ' +
-      'the zero reference line it crosses are drawn at full width only here.',
-  },
-  {
-    name: 'home-runway-phone',
-    route: '/',
-    session: 'forecast',
-    viewport: 'phone',
-    element: '[data-ui="runway-line"]',
-    forecastAsOf: true,
-    why:
-      "Home's one projected line: a dashed rule and a Projected mark under two solid foot-lines, " +
-      'on the screen a reader scans rather than reads. Photographed as an element because the ' +
-      "rows above it are dated by the api's clock, which this gate cannot pin.",
-  },
-  {
-    name: 'home-runway-stale-phone',
-    route: '/',
-    session: 'burn',
-    viewport: 'phone',
-    element: '[data-ui="runway-line"]',
-    burnAsOf: true,
-    staleValued: true,
-    why:
-      'The runway at recent spending with its stale-quote caption, which takes a line of its own ' +
-      '(`basis-full`) and is the only thing on the line that reflows it. No other session drains ' +
-      'money out of the tracked perimeter, so nothing else reaches the branch.',
   },
   // --- the RTL pass (SC-760) -------------------------------------------------
   //
@@ -590,7 +458,7 @@ export const VISUAL_SCREENS: readonly VisualScreen[] = [
   },
   {
     name: 'payment-form-phone-rtl',
-    route: '/payments/recurring/new',
+    route: '/payments?sheet=payment%3Anew',
     viewport: 'phone',
     height: 1800,
     dir: 'rtl',

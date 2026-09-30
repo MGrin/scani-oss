@@ -6,7 +6,7 @@ import { AmountInput } from '@scani/ui/v3/components/AmountInput';
 import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { describeQueryError } from '@scani/ui/v3/lib/errors';
-import { Check, CheckCircle2, Circle, Loader2, Pencil, RotateCcw, Trash2 } from 'lucide-react';
+import { Check, CheckCircle2, Circle, Loader2, RotateCcw, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
@@ -228,14 +228,15 @@ export function ReviewHoldingsCard({
                       </Badge>
                     ) : null}
                     {!row.removed ? (
+                      // A labelled "Change", as `RecordPicker` swaps a picked
+                      // record — never an icon-only pencil (rule 13, SC-1433).
                       <Button
                         variant="ghost"
-                        size="icon"
                         onClick={() => setEditingRowId(row.rowId)}
                         aria-label={t('v3.jobs.review.row.changeToken', { symbol: row.symbol })}
                         disabled={isSaving}
                       >
-                        <Pencil className="size-4" aria-hidden="true" />
+                        {t('v3.form.recordPicker.changeAction')}
                       </Button>
                     ) : null}
                   </div>

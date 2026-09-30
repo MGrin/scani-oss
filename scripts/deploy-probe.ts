@@ -245,6 +245,12 @@ interface Stale {
 interface Attempt {
   readonly exact: boolean;
   stale: Stale | null;
+  /**
+   * SC-1402. Every artefact came back as the host's fallback. On Cloudflare
+   * Pages that is also what an edge mid-publish returns: scani-deploy #187 read
+   * it and went red over a deploy that was serving on every host a minute later.
+   */
+  unpublished: boolean;
 }
 
 /**
@@ -275,20 +281,23 @@ export async function run(argv: readonly string[], io: ProbeIo = REAL_IO): Promi
   const started = io.now();
   for (let reads = 1; ; reads += 1) {
     const lines: string[] = [];
-    const attempt: Attempt = { exact: argv.includes('--exact'), stale: null };
+    const attempt: Attempt = { exact: argv.includes('--exact'), stale: null, unpublished: false };
     const code = await main(argv, (l) => lines.push(l), attempt);
     const elapsed = io.now() - started;
     // A non-zero wait always buys a second read: under load one read can take
     // longer than a short wait, which would otherwise report "no second read"
     // for a wait that was asked for. The overshoot is one poll, at most 10s.
     const budget = elapsed + pollMs <= wait * 1000 || (reads === 1 && wait > 0);
-    if (code === EXIT_REFUSED && attempt.stale !== null && budget) {
+    const waitable =
+      (code === EXIT_REFUSED && attempt.stale !== null) ||
+      (code === EXIT_UNKNOWN && attempt.unpublished);
+    if (waitable && budget) {
       await io.sleep(pollMs);
       continue;
     }
     const verdict = lines.pop();
     for (const l of lines) io.print(l);
-    const note = waitNote(reads, Math.round(elapsed / 1000), wait, code, attempt.stale);
+    const note = waitNote(reads, Math.round(elapsed / 1000), wait, code, attempt);
     if (note !== null) io.print(note);
     if (verdict !== undefined) io.print(verdict);
     return code;
@@ -300,8 +309,14 @@ function waitNote(
   seconds: number,
   wait: number,
   code: number,
-  stale: Stale | null
+  attempt: Attempt
 ): string | null {
+  const stale = attempt.stale;
+  if (attempt.unpublished) {
+    return reads === 1
+      ? `  wait: every artefact was the host's fallback, and --wait ${wait} allowed no second read — an edge mid-publish reads this way; re-run with a wait before reading it as a failed deploy`
+      : `  wait: ${reads} reads over ${seconds}s (--wait ${wait}) and every artefact was still the host's fallback — the publish did not land, or propagation is slower than ${wait}s`;
+  }
   if (stale !== null) {
     const serves = `${stale.sha.slice(0, 12)}, ${stale.relation === 'ANCESTOR' ? 'an ANCESTOR' : 'a DESCENDANT'} of your commit`;
     return reads === 1
@@ -491,6 +506,7 @@ async function main(argv: readonly string[], log: Log, attempt: Attempt): Promis
 
   const readable = chunks.flatMap((c) => (c.shape.kind === 'real' ? [c] : []));
   if (readable.length === 0) {
+    attempt.unpublished = !simulated;
     log(
       `deploy-probe: UNVERIFIED · exit ${EXIT_UNKNOWN} · every artefact came back as the host's fallback, so every count over them would read 0 for a reason that has nothing to do with your change${tail}`
     );

@@ -68,6 +68,26 @@ interface EtherscanResponse<T> {
 }
 
 /**
+ * The rows of one history page, or a THROW.
+ *
+ * Etherscan answers a refused page (rate limit, a chain the key's plan does
+ * not cover, an invalid key) with HTTP 200 and `status: '0'`, and this used
+ * to read every one of them as an empty tail: the walk stopped, the import
+ * reported success, and the wallet's history silently ended there (SC-1443).
+ * `No transactions found` is the only `status: '0'` that means empty.
+ */
+function historyPageRows<T>(
+  data: EtherscanResponse<T[]> | null,
+  stream: string,
+  chainId: number
+): T[] {
+  if (data?.status === '1') return data.result ?? [];
+  if (data?.status === '0' && /^No transactions found/i.test(data.message ?? '')) return [];
+  const detail = data ? `${data.message}: ${String(data.result).slice(0, 120)}` : 'no response';
+  throw new Error(`etherscan: ${stream} history page refused for chain ${chainId} (${detail})`);
+}
+
+/**
  * Raw `tokentx` row used both for ERC-20 discovery on the balances
  * path and for transaction-history normalization on the EVM base.
  * Same shape as `EvmTokenTxRow` — re-used here so the discovery code
@@ -516,10 +536,7 @@ export class EtherscanProvider
       apikey: apiKey,
     });
     const data = await this.callJson<EtherscanResponse<EvmNativeTxRow[]>>(url);
-    if (!data || data.status !== '1') {
-      return { rows: [], hitPageCap: false };
-    }
-    const rows = data.result ?? [];
+    const rows = historyPageRows(data, 'native', chain.chainId);
     return { rows, hitPageCap: rows.length >= 10000 };
   }
 
@@ -542,10 +559,7 @@ export class EtherscanProvider
       apikey: apiKey,
     });
     const data = await this.callJson<EtherscanResponse<EvmTokenTxRow[]>>(url);
-    if (!data || data.status !== '1') {
-      return { rows: [], hitPageCap: false };
-    }
-    const rows = data.result ?? [];
+    const rows = historyPageRows(data, 'token', chain.chainId);
     return { rows, hitPageCap: rows.length >= 10000 };
   }
 
@@ -568,10 +582,7 @@ export class EtherscanProvider
       apikey: apiKey,
     });
     const data = await this.callJson<EtherscanResponse<EvmInternalTxRow[]>>(url);
-    if (!data || data.status !== '1') {
-      return { rows: [], hitPageCap: false };
-    }
-    const rows = data.result ?? [];
+    const rows = historyPageRows(data, 'internal', chain.chainId);
     return { rows, hitPageCap: rows.length >= 10000 };
   }
 
@@ -583,8 +594,13 @@ export class EtherscanProvider
       apikey: apiKey,
     });
     const data = await this.callJson<{ jsonrpc: string; id: number; result: string }>(url);
-    if (!data?.result) return 0;
-    return Number.parseInt(data.result, 16);
+    // A 0 here walked no blocks and imported an empty history that looked
+    // complete (SC-1443).
+    const block = data?.result ? Number.parseInt(data.result, 16) : Number.NaN;
+    if (!Number.isFinite(block) || block <= 0) {
+      throw new Error(`etherscan: latest block unreadable for chain ${chain.chainId}`);
+    }
+    return block;
   }
 
   // ============================================================

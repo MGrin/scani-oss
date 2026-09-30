@@ -558,6 +558,51 @@ export function splitIsCommittable(
   });
 }
 
+/**
+ * What still stands between a draft and `splitIsCommittable`, as the short
+ * phrases `FormActions` lists beside a disabled Save (UI standard rule 13).
+ * Empty exactly when the draft is committable.
+ */
+export function splitBlockers(
+  t: TFunction,
+  rows: readonly SplitDraftRow[],
+  item: PendingTransferReview
+): string[] {
+  const filled = filledRows(rows);
+  const blockers: string[] = [];
+  if (filled.length < 2) blockers.push(t('v3.review.transfer.split.blocker.twoParts'));
+  if (filled.filter((r) => isLinkingDecision(r.decision)).length > 1) {
+    blockers.push(t('v3.review.transfer.split.blocker.oneLink'));
+  }
+  if (filled.some((r) => r.decision === 'paired' && !r.matchTransactionId)) {
+    blockers.push(
+      t('v3.review.transfer.split.blocker.deposit', {
+        paired: t(DECISION_LABELS.paired.triggerKey),
+      })
+    );
+  }
+  if (filled.some((r) => r.decision === 'internal' && !r.destination)) {
+    blockers.push(t('v3.review.transfer.split.blocker.destination'));
+  }
+  const positive = filled.every((r) => {
+    try {
+      return new Decimal(r.amount).gt(0);
+    } catch {
+      return false;
+    }
+  });
+  if (!positive) blockers.push(t('v3.review.transfer.split.blocker.positive'));
+  else if (filled.length >= 2 && allocationOf(filled, item.quantity).status !== 'exact') {
+    blockers.push(
+      t('v3.review.transfer.split.blocker.sum', {
+        amount: qty(new Decimal(item.quantity).abs()),
+        symbol: item.tokenSymbol,
+      })
+    );
+  }
+  return blockers;
+}
+
 /** Draft rows as the wire shape, once `splitIsCommittable` says they are one. */
 export function toSplitPortions(rows: readonly SplitDraftRow[]): TransferReviewSplitPortion[] {
   return filledRows(rows).map((row) => ({
@@ -876,6 +921,11 @@ const ANSWER_SHORT_KEYS: Record<TransferReviewDecision, string> = {
   untracked: 'v3.review.transfer.answeredShort.untracked',
   fee: 'v3.review.transfer.answeredShort.fee',
 };
+
+/** What left, as a row names it: `1,200 GBP`, never the raw `1200 GBP`. */
+export function transferAmountLabel(item: { quantity: string; tokenSymbol: string }): string {
+  return `${formatNumber(item.quantity, { decimals: quantityDecimals(item.quantity) })} ${item.tokenSymbol}`;
+}
 
 /** A quantity at the precision it actually carries, never a raw Decimal. */
 function qty(value: Decimal | null | undefined): string {

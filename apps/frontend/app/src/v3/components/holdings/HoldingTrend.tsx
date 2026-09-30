@@ -33,7 +33,6 @@ interface HoldingTrendProps {
 }
 
 export function HoldingTrend({ holdingId, value, symbol }: HoldingTrendProps) {
-  const { t } = useTranslation();
   // Pinned on mount rather than recomputed per render, so a refetch cannot
   // shift the window under the shape already on screen.
   const range = useMemo(() => periodRange(DEFAULT_HOME_PERIOD, new Date()), []);
@@ -51,14 +50,28 @@ export function HoldingTrend({ holdingId, value, symbol }: HoldingTrendProps) {
   // appear pushes the facts below the fold to say nothing.
   if (points.length < 2) return null;
 
+  return <HoldingTrendView points={points} symbol={symbol} />;
+}
+
+/**
+ * The line and the window it covers. The header's pill above it is measured
+ * since the holding was bought, and the line is coloured by its own
+ * first-to-last, so a green pill over a red line is a real disagreement the
+ * reader can only settle if each figure names its period (SC-1422).
+ */
+export function HoldingTrendView({ points, symbol }: { points: number[]; symbol: string }) {
+  const { t } = useTranslation();
+  const period = t(DEFAULT_HOME_PERIOD.suffixKey);
   return (
-    <Sparkline
-      data={points}
-      height={40}
-      label={t('v3.holdings.trendLabel', {
-        symbol,
-        period: t(DEFAULT_HOME_PERIOD.suffixKey),
-      })}
-    />
+    <div className="flex flex-col gap-1">
+      <Sparkline
+        data={points}
+        height={40}
+        label={t('v3.holdings.trendLabel', { symbol, period })}
+      />
+      <span className="text-caption text-muted-foreground">
+        {t('v3.holdings.trendCaption', { period })}
+      </span>
+    </div>
   );
 }

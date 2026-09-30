@@ -1,5 +1,6 @@
 import { withDeadline } from '@scani/deadline';
 import { createComponentLogger } from '@scani/logging';
+import { AIUnavailableError } from '@scani/providers/core/errors';
 import { createOutflowLimiter } from '@scani/rate-limiter';
 import { TRPCError } from '@trpc/server';
 import type { Redis } from 'ioredis';
@@ -10,6 +11,13 @@ const REDIS_TIMEOUT_MS = 250;
 const CACHE_RESULT = `
 if redis.call('GET', KEYS[1]) == ARGV[1] then
   return redis.call('SET', KEYS[1], ARGV[2], 'EX', 300)
+end
+return nil
+`;
+
+const RELEASE_PENDING = `
+if redis.call('GET', KEYS[1]) == ARGV[1] then
+  return redis.call('DEL', KEYS[1])
 end
 return nil
 `;
@@ -84,7 +92,19 @@ export class ProcessingGuard {
         }
       }
       return { result, replayed: false };
-    } catch {
+    } catch (error) {
+      if (error instanceof AIUnavailableError) {
+        // Missing or rejected means no provider did any work, so the same input
+        // may run again now. A transient failure can be a timeout that did.
+        if (error.state !== 'transient') {
+          try {
+            await bounded(redis.eval(RELEASE_PENDING, 1, key, marker));
+          } catch {
+            log.warn({ operation }, 'Could not release an unused processing marker');
+          }
+        }
+        throw error;
+      }
       // Keep the marker: a timeout does not establish that the upstream did no paid work.
       throw new TRPCError({
         code: 'INTERNAL_SERVER_ERROR',

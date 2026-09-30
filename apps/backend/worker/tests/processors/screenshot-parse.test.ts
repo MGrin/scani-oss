@@ -5,6 +5,7 @@ import { DocumentRetentionService, UploadedFileService } from '@scani/domain/ser
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { ParseScreenshotUseCase } from '@scani/domain/use-cases/ParseScreenshotUseCase';
 import { type ScreenshotParseJob, UPLOADED_FILE_MAX_BYTES } from '@scani/jobs';
+import { AIUnavailableError } from '@scani/providers/core/errors';
 import type { ProcessorContext } from '@scani/queue';
 import { Container } from 'typedi';
 import { ScreenshotParseProcessor } from '../../src/processors/screenshot-parse';
@@ -153,4 +154,22 @@ describe('ScreenshotParseProcessor file retention', () => {
 
     expect(del).not.toHaveBeenCalled();
   });
+});
+
+test('failed promotion preserves the original and AI unavailability remains actionable', async () => {
+  const { processor, write, del } = makeProcessor({
+    parse: async () => {
+      throw new AIUnavailableError('rejected');
+    },
+  });
+  write.mockImplementation(async () => {
+    throw new Error('storage unavailable');
+  });
+  const result = (await processor.run(job(), makeCtx())) as {
+    results: Array<{ retained: boolean; aiUnavailable: boolean; error: string }>;
+  };
+  expect(del).not.toHaveBeenCalled();
+  expect(result.results[0]?.retained).toBe(false);
+  expect(result.results[0]?.aiUnavailable).toBe(true);
+  expect(result.results[0]?.error).toContain('manually');
 });

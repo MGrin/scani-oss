@@ -144,11 +144,16 @@ export function ConfirmAction({
   // is about to report what happened.
   useDismissOnHide(open && !isPending, () => onOpenChange(false));
 
+  // The peek's action grid keys on these: a destructive action takes the
+  // last row, an open confirm the whole row (SC-1415).
+  const marker = destructive ? { 'data-destructive': '' } : {};
+
   if (!open) {
     return (
       <Button
         variant="outline"
         className={triggerClassName}
+        {...marker}
         disabled={Boolean(disabledReason)}
         title={disabledReason}
         onClick={() => onOpenChange(true)}
@@ -161,7 +166,7 @@ export function ConfirmAction({
   return (
     // `w-full` so the block claims its own line inside the peek's wrapping
     // action row, instead of squeezing the sentence between two buttons.
-    <div className="w-full space-y-2">
+    <div data-confirm-open="" {...marker} className="w-full space-y-2">
       {chooser}
       <p className="text-caption text-muted-foreground">{consequence}</p>
       <div className="flex gap-2">

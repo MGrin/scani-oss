@@ -1,4 +1,4 @@
-import { formatDate, quantityDecimals } from '@scani/shared';
+import { balanceDecimals, formatDate } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { Trans, useTranslation } from 'react-i18next';
@@ -70,6 +70,9 @@ interface RealizedLedgerProps {
   currency: string;
   /** Ticker, used in the unit counts. */
   symbol: string;
+  /** So a money token's units read as money: `1,425.39 USD`, never eight
+   *  decimals of float residue (SC-1433). */
+  tokenTypeCode: string | null | undefined;
 }
 
 /**
@@ -84,7 +87,12 @@ function lotSentenceKey(acquiredAt: string | null | undefined, held: string | nu
   return held ? 'v3.holdings.realized.lotHeld' : 'v3.holdings.realized.lotAcquired';
 }
 
-export function RealizedLedger({ holdingId, currency, symbol }: RealizedLedgerProps) {
+export function RealizedLedger({
+  holdingId,
+  currency,
+  symbol,
+  tokenTypeCode,
+}: RealizedLedgerProps) {
   const { t } = useTranslation();
   const ledger = trpc.holdings.realizedLedger.useQuery({ holdingId });
 
@@ -138,7 +146,7 @@ export function RealizedLedger({ holdingId, currency, symbol }: RealizedLedgerPr
                   <Numeric
                     value={group.quantity}
                     format="plain"
-                    decimals={quantityDecimals(group.quantity)}
+                    decimals={balanceDecimals(group.quantity, tokenTypeCode)}
                   />{' '}
                   {symbol}
                 </span>
@@ -185,8 +193,11 @@ export function RealizedLedger({ holdingId, currency, symbol }: RealizedLedgerPr
                       key={`${lot.transactionId}-${index}`}
                       className="flex flex-col gap-0.5"
                     >
+                      {/* The sentence wraps in the width left over; the cost
+                          stays on one line at the edge, so the costs read
+                          down one column (SC-1433). */}
                       <div className="flex items-baseline justify-between gap-3">
-                        <span className="text-caption text-muted-foreground">
+                        <span className="min-w-0 text-caption text-muted-foreground">
                           {/* One key per sentence, the quantity as a slot
                               (SC-235). The three cases were built by
                               concatenating " acquired {date}", " · held
@@ -205,13 +216,13 @@ export function RealizedLedger({ holdingId, currency, symbol }: RealizedLedgerPr
                                 <Numeric
                                   value={lot.quantity}
                                   format="plain"
-                                  decimals={quantityDecimals(lot.quantity)}
+                                  decimals={balanceDecimals(lot.quantity, tokenTypeCode)}
                                 />
                               ),
                             }}
                           />
                         </span>
-                        <span className="text-caption text-muted-foreground">
+                        <span className="shrink-0 whitespace-nowrap text-caption text-muted-foreground">
                           <Trans
                             i18nKey="v3.holdings.realized.costOf"
                             components={{

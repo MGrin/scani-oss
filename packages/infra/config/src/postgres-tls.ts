@@ -76,3 +76,17 @@ export function verifiedLibpqConnectionString(
   }
   return url.toString();
 }
+
+/**
+ * Whether a URL reaches Postgres through a connection pooler (SC-1442), which
+ * cannot hold a session advisory lock: the unlock lands on another server
+ * connection, the lock stays held, and every later caller skips in silence.
+ * Only Neon's pooler is recognisable from the URL (`ep-…-pooler.` hosts).
+ */
+export function isConnectionPoolerUrl(databaseUrl: string): boolean {
+  try {
+    return new URL(databaseUrl).hostname.includes('-pooler.');
+  } catch {
+    return false;
+  }
+}

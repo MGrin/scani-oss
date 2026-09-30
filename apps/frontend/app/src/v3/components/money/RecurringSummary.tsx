@@ -68,7 +68,7 @@ interface RecurringSummaryProps {
   payments: readonly PaymentRow[];
   tokenSymbolById: Map<string, string>;
   rates: BaseCurrencyRates;
-  /** From `payments.forecast`. Empty when it has not arrived — see the doc. */
+  /** From `payments.scheduled`. Empty when it has not arrived — see the doc. */
   historyEstimates: ReadonlyMap<string, HistoryEstimate>;
 }
 

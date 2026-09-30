@@ -109,3 +109,69 @@ describe('EtherscanProvider', () => {
     expect(out).toEqual([]);
   });
 });
+
+describe('EtherscanProvider history pages (SC-1443)', () => {
+  const ctx = {
+    institutionCode: 'ethereum',
+    baseCurrency: { id: 'usd', symbol: 'USD' } as never,
+    credentialsRef: { userId: 'u', institutionId: 'i' },
+    resolveCredentials: async () => ({ walletAddress: VALID_EVM }),
+  };
+
+  async function withFetch<T>(answer: (url: string) => unknown, run: () => Promise<T>): Promise<T> {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string) =>
+      new Response(JSON.stringify(answer(url)), { status: 200 })) as unknown as typeof fetch;
+    try {
+      return await run();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  const latestBlock = { jsonrpc: '2.0', id: 1, result: '0x100' };
+  const empty = { status: '0', message: 'No transactions found', result: [] };
+
+  test('an empty history is not an error', async () => {
+    const p = new EtherscanProvider(ETHERSCAN_CHAINS, passthroughLimiter(), 'k');
+    const out = await withFetch(
+      (url) => (url.includes('eth_blockNumber') ? latestBlock : empty),
+      () => p.fetchTransactions(ctx as never)
+    );
+    expect(out).toEqual([]);
+  });
+
+  // Rate-limit and auth refusals already threw in callJson; these are the
+  // refusals that did not, and were read as the end of the history.
+  test('a refused page throws instead of ending the history', async () => {
+    const p = new EtherscanProvider(ETHERSCAN_CHAINS, passthroughLimiter(), 'k');
+    await expect(
+      withFetch(
+        (url) =>
+          url.includes('eth_blockNumber')
+            ? latestBlock
+            : url.includes('action=txlist&')
+              ? {
+                  status: '0',
+                  message: 'NOTOK',
+                  result: 'Free API access is not supported for this chain',
+                }
+              : empty,
+        () => p.fetchTransactions(ctx as never)
+      )
+    ).rejects.toThrow(/native history page refused .*not supported for this chain/);
+  });
+
+  test('an unreadable latest block throws instead of walking no blocks', async () => {
+    const p = new EtherscanProvider(ETHERSCAN_CHAINS, passthroughLimiter(), 'k');
+    await expect(
+      withFetch(
+        (url) =>
+          url.includes('eth_blockNumber')
+            ? { jsonrpc: '2.0', id: 1, error: { code: -32000, message: 'Query Timeout occured' } }
+            : empty,
+        () => p.fetchTransactions(ctx as never)
+      )
+    ).rejects.toThrow(/latest block unreadable/);
+  });
+});

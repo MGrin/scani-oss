@@ -74,10 +74,10 @@
   },
   "nav": {
     "sections": {
-      "portfolio": "投资组合",
+      "portfolio": "资产",
       "organization": "组织",
       "activity": "活动",
-      "payments": "支付"
+      "payments": "账单"
     },
     "home": "首页",
     "holdings": "持仓",
@@ -100,7 +100,7 @@
     "review": "核对",
     "files": "文件",
     "payments": "支付",
-    "money": "资金"
+    "money": "账单"
   },
   "settings": {
     "title": "设置",
@@ -151,7 +151,9 @@
         "hiddenHoldings_other": "已隐藏持仓",
         "hiddenHoldings_counted_other": "{{count}} 个已隐藏持仓",
         "customTokens_other": "自定义标的",
-        "customTokens_counted_other": "{{count}} 个自定义标的"
+        "customTokens_counted_other": "{{count}} 个自定义标的",
+        "balanceChanges_other": "余额变动",
+        "balanceChanges_counted_other": "{{count}} 项余额变动"
       },
       "accounts": {
         "col": {
@@ -274,11 +276,12 @@
           "accounts": "账户",
           "group": "分组",
           "holdings": "持仓",
-          "value": "价值"
+          "value": "价值",
+          "bills": "账单",
+          "payees": "收付方"
         },
         "config": {
-          "searchGroups": "搜索分组",
-          "value": "价值"
+          "searchGroups": "搜索分组"
         },
         "empty": {
           "aGroupIsYourOwnLabel": "分组是你自己给持仓和账户贴的标签——“退休”“应税”“共同账户”。",
@@ -330,6 +333,7 @@
       "holdings": {
         "col": {
           "account": "账户",
+          "actions": "操作",
           "amount": "数量",
           "gainLoss": "盈亏",
           "holding": "持仓",
@@ -487,6 +491,7 @@
           "cadence": "频率",
           "direction": "方向",
           "status": "状态",
+          "groups": "分组",
           "vendor": "收付方"
         },
         "config": {
@@ -518,6 +523,32 @@
           "income": "收入"
         }
       },
+      "bills": {
+        "config": {
+          "searchByPayee": "按收付方搜索"
+        },
+        "filter": {
+          "group": "分组",
+          "payee": "收付方",
+          "status": "状态",
+          "period": "期间"
+        },
+        "status": {
+          "upcoming": "即将到期",
+          "matched": "已支付",
+          "missed": "已错过",
+          "skipped": "已跳过",
+          "all": "全部"
+        },
+        "period": {
+          "next30": "未来 30 天",
+          "next90": "未来 90 天",
+          "next365": "未来 12 个月",
+          "last30": "过去 30 天",
+          "last90": "过去 90 天",
+          "last365": "过去 12 个月"
+        }
+      },
       "review": {
         "col": {
           "amount": "金额",
@@ -530,7 +561,9 @@
         },
         "empty": {
           "importsLandHereWhenTheyFinish": "导入完成后如果需要你确认才能计入持仓，就会出现在这里。",
-          "nothingNeedsYourReview": "没有需要你核对的内容"
+          "nothingNeedsYourReview": "没有需要你核对的内容",
+          "nothingElse": "没有其他需要你核对的内容",
+          "theQueuesAboveHoldTheRest": "其余内容在上方的队列中。"
         },
         "filter": {
           "type": "类型"
@@ -596,7 +629,7 @@
         "col": {
           "category": "类别",
           "kind": "种类",
-          "payments": "付款",
+          "payments": "定期",
           "vendor": "收付方",
           "perMonth": "每月"
         },
@@ -613,7 +646,7 @@
         },
         "sort": {
           "name": "名称",
-          "payments": "付款"
+          "payments": "定期"
         }
       },
       "upcoming": {
@@ -622,14 +655,6 @@
           "noPayments": "还没有定期付款",
           "outsideWindow": "你的长期付款到期日都不在这个时间范围内。",
           "addOne": "添加一笔账单或定期收入，它接下来的到期日就会显示在这里。"
-        }
-      },
-      "forecast": {
-        "empty": {
-          "nothingToProject": "没有可预测的内容",
-          "noPayments": "还没有定期付款",
-          "allPausedOrUnpriced": "记录在案的付款都已暂停、已结束，或没有可用于预测的金额。",
-          "addOne": "添加一笔账单或定期收入，预测就会出现在这里。"
         }
       },
       "itemCount_other": "{{count}} 个条目",
@@ -734,6 +759,55 @@
         "sortedAscending": "{{label}}，从低到高",
         "sortedDescending": "{{label}}，从高到低",
         "subjectDescription": "把你的{{subject}}下载为一份属于你自己的文件。"
+      },
+      "members": {
+        "filter": {
+          "kind": "种类"
+        },
+        "col": {
+          "membership": "成员身份",
+          "member": "成员"
+        }
+      },
+      "groupMembers": {
+        "empty": {
+          "title": "此分组暂无内容",
+          "description": "添加账户、持仓、账单或收付方，即可查看此分组的价值。"
+        }
+      },
+      "vaultMembers": {
+        "empty": {
+          "title": "此储蓄目标尚未计入任何内容",
+          "description": "关联持仓，并选择每项计入多少。"
+        }
+      },
+      "transferRules": {
+        "empty": {
+          "noDestinationRulesYet": "还没有去向规则",
+          "openAPaymentOutInTheQueue": "在队列中打开一笔付款，写下它去了哪里。之后每一笔发往同一去向的付款都会带上你的备注，无论金额多少——而你标记过的去向会自动为你答复。"
+        }
+      },
+      "balanceGaps": {
+        "col": {
+          "answer": "答复",
+          "answered": "已答复",
+          "change": "变动",
+          "drift": "金额",
+          "when": "时间"
+        },
+        "config": {
+          "search": "搜索余额变动"
+        },
+        "empty": {
+          "everyChangeIsAccountedFor": "每一笔余额变动都有说明。",
+          "nothingToExplain": "没有需要说明的"
+        }
+      },
+      "answeredBalanceGaps": {
+        "empty": {
+          "answersLandHere": "你在余额队列中的回答会显示在这里，方便撤销。",
+          "nothingAnsweredYet": "还没有已说明的余额变动"
+        }
       }
     },
     "brand": {

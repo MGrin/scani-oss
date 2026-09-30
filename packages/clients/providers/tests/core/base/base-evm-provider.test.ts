@@ -300,6 +300,182 @@ describe('BaseEvmProvider — native tx normalization', () => {
   });
 });
 
+describe('BaseEvmProvider — gas is a fee row (SC-1443)', () => {
+  // 21000 gas at 10 gwei = 0.00021 ETH.
+  const GAS = { gasUsed: '21000', gasPrice: '10000000000' };
+
+  test('a sent tx gets a fee row beside its value leg, keyed <hash>:fee', async () => {
+    const provider = new TestEvmProvider([ETHEREUM], {
+      native: [{ rows: [nativeRow({ from: WALLET, to: '0xother', ...GAS })], hitPageCap: false }],
+      token: [],
+    });
+    const events = await provider.runFetchTransactions(ctx('ethereum'));
+    const fee = events.find((e) => e.kind === 'fee');
+    expect(events).toHaveLength(2);
+    expect(fee?.externalId).toBe('0xtx:fee');
+    expect(fee?.primary.quantity).toBe('-0.00021');
+    expect(fee?.primary.tokenIdentity.symbol).toBe('ETH');
+  });
+
+  test('a received tx carries no fee: the sender paid it', async () => {
+    const provider = new TestEvmProvider([ETHEREUM], {
+      native: [{ rows: [nativeRow({ ...GAS })], hitPageCap: false }],
+      token: [],
+    });
+    const events = await provider.runFetchTransactions(ctx('ethereum'));
+    expect(events.map((e) => e.kind)).toEqual(['transfer_in']);
+  });
+
+  test('a failed tx is its fee and nothing else', async () => {
+    const provider = new TestEvmProvider([ETHEREUM], {
+      native: [
+        {
+          rows: [nativeRow({ from: WALLET, to: '0xother', isError: '1', ...GAS })],
+          hitPageCap: false,
+        },
+      ],
+      token: [],
+    });
+    const events = await provider.runFetchTransactions(ctx('ethereum'));
+    expect(events.map((e) => [e.kind, e.primary.quantity])).toEqual([['fee', '-0.00021']]);
+  });
+
+  test('a zero-value send (an approval) still pays gas', async () => {
+    const provider = new TestEvmProvider([ETHEREUM], {
+      native: [
+        {
+          rows: [nativeRow({ from: WALLET, to: '0xtoken', value: '0', ...GAS })],
+          hitPageCap: false,
+        },
+      ],
+      token: [],
+    });
+    const events = await provider.runFetchTransactions(ctx('ethereum'));
+    expect(events.map((e) => e.kind)).toEqual(['fee']);
+  });
+
+  test('a send to itself nets to the gas alone, not an inflow of its value', async () => {
+    const provider = new TestEvmProvider([ETHEREUM], {
+      native: [{ rows: [nativeRow({ from: WALLET, to: WALLET, ...GAS })], hitPageCap: false }],
+      token: [],
+    });
+    const events = await provider.runFetchTransactions(ctx('ethereum'));
+    expect(events.map((e) => [e.kind, e.primary.quantity])).toEqual([['fee', '-0.00021']]);
+  });
+
+  test('the fee stays out of swap linking, so a swap keeps both legs linked', async () => {
+    const provider = new TestEvmProvider([ETHEREUM], {
+      native: [
+        {
+          rows: [nativeRow({ hash: '0xswap', from: WALLET, to: '0xrouter', ...GAS })],
+          hitPageCap: false,
+        },
+      ],
+      token: [
+        {
+          rows: [tokenRow({ hash: '0xswap', from: '0xrouter', to: WALLET, value: '2000000000' })],
+          hitPageCap: false,
+        },
+      ],
+    });
+    const events = await provider.runFetchTransactions(ctx('ethereum'));
+    expect(events.map((e) => e.kind).sort()).toEqual(['fee', 'swap_in', 'swap_out']);
+    expect(events.find((e) => e.kind === 'fee')?.swapGroupKey).toBeUndefined();
+  });
+
+  test("value legs plus fee legs sum to the wallet's net ETH movement", async () => {
+    const provider = new TestEvmProvider([ETHEREUM], {
+      native: [
+        {
+          rows: [
+            nativeRow({ hash: '0xa' }), // +1 in
+            nativeRow({
+              hash: '0xb',
+              from: WALLET,
+              to: '0xo',
+              value: '400000000000000000',
+              ...GAS,
+            }),
+            nativeRow({ hash: '0xc', from: WALLET, to: '0xo', value: '0', ...GAS }),
+            nativeRow({ hash: '0xd', from: WALLET, to: '0xo', isError: '1', ...GAS }),
+          ],
+          hitPageCap: false,
+        },
+      ],
+      token: [],
+    });
+    const events = await provider.runFetchTransactions(ctx('ethereum'));
+    const net = events.reduce((sum, e) => sum + Number(e.primary.quantity), 0);
+    // 1 - 0.4 - 3 x 0.00021
+    expect(net).toBeCloseTo(0.59937, 12);
+  });
+});
+
+// OP-stack chains (Optimism, Base, …) also charge an L1 data fee, which
+// Etherscan's txlist reports as `L1FeesPaid` beside the L2 gas. On the
+// Optimism wallet that found it, it was nearly all of the ledger gap (SC-1445).
+describe('BaseEvmProvider — the OP-stack L1 fee is part of the gas (SC-1445)', () => {
+  // 0.00021 ETH of L2 gas, as above.
+  const GAS = { gasUsed: '21000', gasPrice: '10000000000' };
+
+  test('L1FeesPaid is added to the fee row', async () => {
+    const provider = new TestEvmProvider([ETHEREUM], {
+      native: [
+        {
+          rows: [
+            nativeRow({
+              from: WALLET,
+              to: '0xother',
+              ...GAS,
+              L1FeesPaid: '400000000000000', // 0.0004 ETH
+            }),
+          ],
+          hitPageCap: false,
+        },
+      ],
+      token: [],
+    });
+    const events = await provider.runFetchTransactions(ctx('ethereum'));
+    expect(events.find((e) => e.kind === 'fee')?.primary.quantity).toBe('-0.00061');
+  });
+
+  test('a row with no L1 fee field is priced as before', async () => {
+    const provider = new TestEvmProvider([ETHEREUM], {
+      native: [
+        {
+          rows: [nativeRow({ from: WALLET, to: '0xother', ...GAS, L1FeesPaid: '' })],
+          hitPageCap: false,
+        },
+      ],
+      token: [],
+    });
+    const events = await provider.runFetchTransactions(ctx('ethereum'));
+    expect(events.find((e) => e.kind === 'fee')?.primary.quantity).toBe('-0.00021');
+  });
+
+  test('an L1 fee alone still makes a fee row', async () => {
+    const provider = new TestEvmProvider([ETHEREUM], {
+      native: [
+        {
+          rows: [
+            nativeRow({
+              from: WALLET,
+              to: '0xother',
+              gasUsed: '21000',
+              gasPrice: '0',
+              L1FeesPaid: '400000000000000',
+            }),
+          ],
+          hitPageCap: false,
+        },
+      ],
+      token: [],
+    });
+    const events = await provider.runFetchTransactions(ctx('ethereum'));
+    expect(events.find((e) => e.kind === 'fee')?.primary.quantity).toBe('-0.0004');
+  });
+});
+
 describe('BaseEvmProvider — token tx normalization', () => {
   test('contract address is lowercased and symbol is uppercased', async () => {
     const provider = new TestEvmProvider([ETHEREUM], {

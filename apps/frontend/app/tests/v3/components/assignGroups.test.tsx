@@ -7,6 +7,7 @@ import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { GroupChecklist } from '@/v3/components/groups/AssignGroupsSheet';
 import {
+  commonPayeeGroups,
   createAndAssignBlockers,
   describeAssignment,
   groupAssignmentDiff,
@@ -54,6 +55,26 @@ describe('the save is a diff, never a replace', () => {
     const diff = groupAssignmentDiff(shown, new Set(['g1', 'g2']));
     expect(diff.removedGroupIds).not.toContain('g9');
     expect(diff.addedGroupIds).not.toContain('g9');
+  });
+});
+
+// SC-1408: a payee's groups are its payee rules, and the sheet pre-ticks only
+// the ones every selected payee shares — the same promise `getCommonGroups`
+// keeps for holdings, so the diff above never removes a rule nobody was shown.
+describe('commonPayeeGroups', () => {
+  const rules = { p1: ['g1', 'g2'], p2: ['g2', 'g3'] };
+
+  test('one payee: its own rules', () => {
+    expect(commonPayeeGroups(rules, ['p1'])).toEqual(['g1', 'g2']);
+  });
+
+  test('several payees: only what all of them share', () => {
+    expect(commonPayeeGroups(rules, ['p1', 'p2'])).toEqual(['g2']);
+  });
+
+  test('a payee with no rule shares nothing with the rest', () => {
+    expect(commonPayeeGroups(rules, ['p1', 'p9'])).toEqual([]);
+    expect(commonPayeeGroups(rules, [])).toEqual([]);
   });
 });
 
@@ -153,7 +174,10 @@ describe('the sheet source', () => {
    * type-check was clean and every test above was green.
    */
   test('the sheet actions are hidden while the create sub-form is open', () => {
-    expect(source).toContain('{creating ? null : (');
+    // The actions live in the pinned footer (SC-1418), so that is where the
+    // switch has to be — one hidden in the body would leave the footer's row.
+    const footer = source.slice(source.lastIndexOf('footer={'), source.indexOf('{creating ? ('));
+    expect(footer).toContain('creating ? null : (');
   });
 
   /**
@@ -161,10 +185,8 @@ describe('the sheet source', () => {
    * `groups.create` would otherwise fail silently — v3 forms do not toast.
    */
   test('the create sub-form carries its own failure line', () => {
-    const subForm = source.slice(
-      source.indexOf('{creating ? ('),
-      source.indexOf('{creating ? null')
-    );
+    const start = source.indexOf('{creating ? (');
+    const subForm = source.slice(start, source.indexOf(') : (', start));
     expect(subForm).toContain('role="alert"');
   });
 });

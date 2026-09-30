@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
-import { cloudApiKeys, cloudUsers } from '@scani/db';
+import { cloudApiKeys, users } from '@scani/db';
 import { eq, inArray } from 'drizzle-orm';
 import { getCloudDb } from '../../../src/db/connection';
 import {
@@ -8,7 +8,7 @@ import {
   keysRouter,
   MAX_ACTIVE_KEYS_PER_OWNER,
 } from '../../../src/presentation/routers/keys';
-import { buildAuthedContext } from '../../helpers/test-context';
+import { buildAuthedContext, withCloudUser } from '../../helpers/test-context';
 
 // SC-1353: the hourly quota is per owner now, and minting keys is capped too,
 // so an account cannot multiply its budget or its attack surface by keys.
@@ -22,26 +22,25 @@ let ownerB: string;
 const callerFor = (id: string) =>
   keysRouter.createCaller({
     ...buildAuthedContext(),
-    cloudUser: { id, email: `${id}@example.com`, name: null },
+    ...withCloudUser({ id, email: `${id}@example.com`, name: null }),
   });
 
 beforeAll(async () => {
   installCloudDb(db);
   const [a] = await db
-    .insert(cloudUsers)
-    .values({ email: `sc1353-a-${suffix}@example.com` })
+    .insert(users)
+    .values({ email: `sc1353-a-${suffix}@example.com`, name: 'a' })
     .returning();
   const [b] = await db
-    .insert(cloudUsers)
-    .values({ email: `sc1353-b-${suffix}@example.com` })
+    .insert(users)
+    .values({ email: `sc1353-b-${suffix}@example.com`, name: 'b' })
     .returning();
   ownerA = a!.id;
   ownerB = b!.id;
 });
 
 afterAll(async () => {
-  await db.delete(cloudApiKeys).where(inArray(cloudApiKeys.ownerUserId, [ownerA, ownerB]));
-  await db.delete(cloudUsers).where(inArray(cloudUsers.id, [ownerA, ownerB]));
+  await db.delete(users).where(inArray(users.id, [ownerA, ownerB]));
   installCloudDb(null);
 });
 

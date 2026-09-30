@@ -84,6 +84,7 @@ export function IntegrationsList({
       {
         key: 'name',
         headerKey: 'ui.dataView.integrations.col.service',
+        width: 'w-[28%]',
         sortable: true,
         render: (integration) => (
           <span className="flex min-w-0 items-center gap-2">

@@ -70,7 +70,7 @@ Pick one. Booting with neither configured fails on the first email send.
 
 | Variable | What it does |
 |---|---|
-| `LOG_LEVEL` | `debug`, `info`, `warn`, `error`. Default `info` in production. |
+| `LOG_LEVEL` | `debug`, `info`, `warn`, `error`. Default `info` in production. In production `debug` and `trace` refuse to start, because they log request inputs. |
 | `LOG_PRETTY` | Pretty-print logs. Default `false` in production. |
 | `LOG_SQL_QUERIES` | Default `false`. Turn on briefly for debugging. |
 

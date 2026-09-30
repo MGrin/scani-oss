@@ -1,6 +1,8 @@
+// @ci-reads packages/infra/db/src/migrations/20260928065733_settled_occurrences_keep_their_payee_currency_and_direction.sql
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import * as schema from '@scani/db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { normalizeVendorName } from '../../src/lib/normalize-vendor-name';
 import { vendorMatchKey } from '../../src/lib/vendor-match-key';
@@ -970,6 +972,161 @@ describe('VendorRepository near-duplicate resolution', () => {
         );
         expect(await repo().findById(vendor.id, tx)).not.toBeNull();
       });
+    });
+  });
+});
+
+// SC-1401. A settled occurrence keeps the payee, currency and direction it
+// settled under; editing the bill afterwards must not rewrite that history.
+describe('settled history survives an edit to its bill (SC-1401)', () => {
+  async function settledThenEdited(tx: Parameters<Parameters<typeof withTestDb>[0]>[0]) {
+    const user = await makeUser(tx);
+    const oldVendor = await makeVendor(tx, { userId: user.id, displayName: 'Old landlord' });
+    const newVendor = await makeVendor(tx, { userId: user.id, displayName: 'New landlord' });
+    const eur = await makeToken(tx);
+    const gbp = await makeToken(tx);
+    const bill = await makePayment(tx, {
+      userId: user.id,
+      vendorId: oldVendor.id,
+      currencyTokenId: eur.id,
+      expectedAmount: '1000',
+    });
+    const settled = await makePaymentOccurrence(tx, {
+      paymentId: bill.id,
+      dueDate: '2026-08-01',
+      status: 'scheduled',
+    });
+    await tx
+      .update(schema.paymentOccurrences)
+      .set({ status: 'matched', actualAmount: '1000' })
+      .where(eq(schema.paymentOccurrences.id, settled.id));
+    await tx
+      .update(schema.payments)
+      .set({ vendorId: newVendor.id, currencyTokenId: gbp.id, direction: 'inflow' })
+      .where(eq(schema.payments.id, bill.id));
+    return { user, oldVendor, newVendor, eur, gbp, bill, settled };
+  }
+
+  test('paid totals and recent settlements stay with the old payee, currency and direction', async () => {
+    await withTestDb(async (tx) => {
+      const { user, oldVendor, eur } = await settledThenEdited(tx);
+      const totals = await repo().settledSpendByUser(user.id, '2025-01-01', tx);
+      expect(totals).toHaveLength(1);
+      expect(totals[0]).toMatchObject({
+        vendorId: oldVendor.id,
+        currencyTokenId: eur.id,
+        direction: 'outflow',
+        allTime: '1000',
+      });
+      const recent = await repo().recentSettledByUser(user.id, 5, tx);
+      expect(recent[0]).toMatchObject({
+        vendorId: oldVendor.id,
+        currencyTokenId: eur.id,
+        direction: 'outflow',
+      });
+    });
+  });
+
+  test('CONTROL: a reopened occurrence follows the bill again', async () => {
+    await withTestDb(async (tx) => {
+      const { settled, newVendor } = await settledThenEdited(tx);
+      const [reopened] = await tx
+        .update(schema.paymentOccurrences)
+        .set({ status: 'scheduled' })
+        .where(eq(schema.paymentOccurrences.id, settled.id))
+        .returning();
+      expect(reopened!.settledVendorId).toBeNull();
+      const [again] = await tx
+        .update(schema.paymentOccurrences)
+        .set({ status: 'matched' })
+        .where(eq(schema.paymentOccurrences.id, settled.id))
+        .returning();
+      expect(again!.settledVendorId).toBe(newVendor.id);
+    });
+  });
+
+  test('a vendor only settled history names cannot be deleted, and a merge carries that history', async () => {
+    await withTestDb(async (tx) => {
+      const { user, oldVendor, newVendor } = await settledThenEdited(tx);
+      await expect(repo().deleteForUser(user.id, oldVendor.id, tx)).rejects.toThrow(
+        VendorHasPaymentsError
+      );
+      await repo().merge(user.id, newVendor.id, oldVendor.id, tx);
+      const totals = await repo().settledSpendByUser(user.id, '2025-01-01', tx);
+      expect(totals[0]!.vendorId).toBe(newVendor.id);
+    });
+  });
+
+  // The recorded payee's key is checked at COMMIT, and a test transaction never
+  // commits, so each test forces the check with SET CONSTRAINTS ALL IMMEDIATE.
+  test('deleting the user still removes a settled occurrence and the vendor only it names', async () => {
+    await withTestDb(async (tx) => {
+      const { user, oldVendor, settled } = await settledThenEdited(tx);
+      await tx.delete(schema.users).where(eq(schema.users.id, user.id));
+      await tx.execute(sql`SET CONSTRAINTS ALL IMMEDIATE`);
+      expect(await repo().findById(oldVendor.id, tx)).toBeNull();
+      const left = await tx
+        .select()
+        .from(schema.paymentOccurrences)
+        .where(eq(schema.paymentOccurrences.id, settled.id));
+      expect(left).toHaveLength(0);
+    });
+  });
+
+  // The backfill statement is read from the migration itself, so this runs the
+  // SQL that ships rather than a copy of it.
+  test('the migration backfill fills a pre-existing settled row once, and a second run touches nothing', async () => {
+    const migration = readFileSync(
+      new URL(
+        '../../../../infra/db/src/migrations/20260928065733_settled_occurrences_keep_their_payee_currency_and_direction.sql',
+        import.meta.url
+      ),
+      'utf8'
+    );
+    const backfill = migration.slice(migration.indexOf('UPDATE payment_occurrences o'));
+    expect(backfill.startsWith('UPDATE payment_occurrences o')).toBe(true);
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const vendor = await makeVendor(tx, { userId: user.id, displayName: 'Landlord' });
+      const bill = await makePayment(tx, { userId: user.id, vendorId: vendor.id });
+      const row = await makePaymentOccurrence(tx, {
+        paymentId: bill.id,
+        dueDate: '2026-08-01',
+        status: 'scheduled',
+      });
+      await tx
+        .update(schema.paymentOccurrences)
+        .set({ status: 'matched', actualAmount: '10' })
+        .where(eq(schema.paymentOccurrences.id, row.id));
+      // A row settled before the migration: the columns exist but are empty.
+      // The trigger fires only on a status change, so this leaves them empty.
+      await tx
+        .update(schema.paymentOccurrences)
+        .set({ settledVendorId: null, settledCurrencyTokenId: null, settledDirection: null })
+        .where(eq(schema.paymentOccurrences.id, row.id));
+
+      const first = await tx.execute(sql.raw(backfill));
+      const second = await tx.execute(sql.raw(backfill));
+      expect((first as unknown as { count: number }).count).toBe(1);
+      expect((second as unknown as { count: number }).count).toBe(0);
+      const [filled] = await tx
+        .select()
+        .from(schema.paymentOccurrences)
+        .where(eq(schema.paymentOccurrences.id, row.id));
+      expect(filled!.settledVendorId).toBe(vendor.id);
+    });
+  });
+
+  test('CONTROL: deleting only the vendor that settled history names is still refused', async () => {
+    await withTestDb(async (tx) => {
+      const { oldVendor } = await settledThenEdited(tx);
+      await tx.delete(schema.vendors).where(eq(schema.vendors.id, oldVendor.id));
+      const refused: unknown = await tx.execute(sql`SET CONSTRAINTS ALL IMMEDIATE`).then(
+        () => null,
+        (e: unknown) => e
+      );
+      const cause = (refused as { cause?: { constraint_name?: string } } | null)?.cause;
+      expect(cause?.constraint_name).toBe('payment_occurrences_settled_vendor_id_fkey');
     });
   });
 });

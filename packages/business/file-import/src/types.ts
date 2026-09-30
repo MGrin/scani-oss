@@ -48,6 +48,7 @@ export interface ParseResult {
    * caller asks and re-parses with a `dateOrder` (SC-1291).
    */
   ambiguousDateOrder?: AmbiguousDateOrder;
+  needsColumnMapping?: { headers: string[]; rowCount: number };
 }
 
 export type StatementFormat = 'csv' | 'ofx' | 'mt940' | 'ib-csv' | 'pdf' | 'qif';

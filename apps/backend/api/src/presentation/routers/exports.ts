@@ -110,6 +110,7 @@ export const exportsRouter = router({
       db
         .select({
           id: schema.accounts.id,
+          archivedEntityId: schema.accounts.entityId,
           name: schema.accounts.name,
           institutionId: schema.accounts.institutionId,
           institutionName: schema.institutions.name,
@@ -261,6 +262,9 @@ export const exportsRouter = router({
                 status: schema.paymentOccurrences.status,
                 expectedAmount: schema.paymentOccurrences.expectedAmount,
                 actualAmount: schema.paymentOccurrences.actualAmount,
+                settledVendorId: schema.paymentOccurrences.settledVendorId,
+                settledCurrencyTokenId: schema.paymentOccurrences.settledCurrencyTokenId,
+                settledDirection: schema.paymentOccurrences.settledDirection,
               })
               .from(schema.paymentOccurrences)
               .where(inArray(schema.paymentOccurrences.paymentId, paymentIds)),
@@ -316,6 +320,7 @@ export const exportsRouter = router({
     const groupName = new Map(groups.map((group) => [group.id, group.name]));
     const vaultName = new Map(vaults.map((vault) => [vault.id, vault.name]));
     const paymentVendor = new Map(payments.map((payment) => [payment.id, payment.vendorName]));
+    const vendorName = new Map(vendors.map((vendor) => [vendor.id, vendor.displayName]));
 
     // Funnel step 6 (SC-450). After the payload is assembled, so a query that
     // threw halfway is not recorded as a file someone received. It is a query
@@ -324,7 +329,13 @@ export const exportsRouter = router({
     // once per real export, not once per page view.
     await Container.get(UserRepository).markFirstExport(userId);
 
+    const archivedOwnership = await db
+      .select()
+      .from(schema.entities)
+      .where(eq(schema.entities.userId, userId));
+
     return {
+      archivedOwnership,
       profile: {
         email: dbUser.email,
         name: dbUser.name,
@@ -352,7 +363,11 @@ export const exportsRouter = router({
         percentage: row.percentage,
       })),
       paymentOccurrences: occurrences.map((row) => ({
-        vendor: paymentVendor.get(row.paymentId) ?? row.paymentId,
+        // A settled row names the payee it settled with (SC-1401).
+        vendor:
+          (row.settledVendorId ? vendorName.get(row.settledVendorId) : undefined) ??
+          paymentVendor.get(row.paymentId) ??
+          row.paymentId,
         dueDate: row.dueDate,
         status: row.status,
         expectedAmount: row.expectedAmount,

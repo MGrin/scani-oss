@@ -4,7 +4,7 @@ import { loadingOnly } from '@scani/ui/v3/lib/query-state';
 import { useTranslation } from 'react-i18next';
 import { useReviewFeed } from '@/v3/hooks/useReviewFeed';
 import { ReviewList } from '../components/review/ReviewList';
-import { ReviewQueues } from '../components/review/ReviewQueues';
+import { isQueueRow, ReviewQueues } from '../components/review/ReviewQueues';
 
 /**
  * Everything waiting on the user, and the way into the queues that hold the
@@ -33,7 +33,11 @@ export function ReviewPage() {
     <PageLayout measure="wide">
       <PageHeader title={t('v3.review.page.title')} />
       <ReviewQueues items={items} />
-      <ReviewList items={items} query={loadingOnly(isLoading)} />
+      <ReviewList
+        items={items.filter((item) => !isQueueRow(item))}
+        queueHasWork={items.some(isQueueRow)}
+        query={loadingOnly(isLoading)}
+      />
     </PageLayout>
   );
 }

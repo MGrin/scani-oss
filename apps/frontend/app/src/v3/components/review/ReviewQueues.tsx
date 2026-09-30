@@ -33,11 +33,19 @@ import { BALANCE_GAP_REVIEW_PATH, TRANSFER_REVIEW_PATH } from '../../lib/routes'
  * page have one source — which is the disagreement `useReviewFeed` exists to
  * prevent.
  *
- * The feed below still carries those aggregate rows. Dropping them would make
- * a reader whose only pending work is a queue open a badged `/review` and
- * read "Nothing needs your review", which is the failure this ticket is
- * about wearing a different costume.
+ * The feed below no longer carries those aggregate rows: each queue was on
+ * screen twice, as its card and as a row under it (SC-1419). What the drop
+ * must not do is let a reader whose only pending work is a queue open a
+ * badged `/review` and read "Nothing needs your review", so the list's empty
+ * state says "Nothing else" whenever a queue still holds work.
  */
+
+const QUEUE_KINDS: ReadonlySet<string> = new Set([TRANSFER_REVIEW_KIND, BALANCE_GAP_REVIEW_KIND]);
+
+/** A queue's aggregate row: its card carries it, so the feed does not. */
+export function isQueueRow(item: ReviewWireRow): boolean {
+  return QUEUE_KINDS.has(item.kind);
+}
 
 interface ReviewQueuesProps {
   items: ReviewWireRow[];
@@ -95,7 +103,7 @@ export function ReviewQueues({ items }: ReviewQueuesProps) {
         detail={
           transfers === 0
             ? t('v3.review.queues.clear')
-            : t('v3.review.item.unpairedTransfers', { count: transfers })
+            : t('v3.review.queues.waiting', { count: transfers })
         }
       />
       <Queue
@@ -103,9 +111,7 @@ export function ReviewQueues({ items }: ReviewQueuesProps) {
         icon={Scale}
         title={t('v3.review.page.balancesTitle')}
         detail={
-          gaps === 0
-            ? t('v3.review.queues.clear')
-            : t('v3.review.item.unexplainedBalanceChanges', { count: gaps })
+          gaps === 0 ? t('v3.review.queues.clear') : t('v3.review.queues.waiting', { count: gaps })
         }
       />
     </div>

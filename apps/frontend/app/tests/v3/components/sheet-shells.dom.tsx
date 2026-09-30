@@ -36,6 +36,7 @@ const CASES: Record<string, { node: () => ReactElement; content: () => string }>
         onOpenChange={() => {}}
         title="Rename vault"
         description="Changes the name everywhere it is shown."
+        footer={null}
       >
         <input aria-label="Name" />
       </FormSheet>

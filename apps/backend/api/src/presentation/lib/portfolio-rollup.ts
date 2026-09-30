@@ -1,6 +1,8 @@
+import { db } from '@scani/db/connection';
 import { PortfolioValueCache } from '@scani/domain/services';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
+import { sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 
 // Coalesce window for mutation-triggered rollups. A user mass-deleting
@@ -28,14 +30,22 @@ export async function enqueuePortfolioRollup(userId: string): Promise<void> {
   // against current holdings instead of serving a pre-mutation total.
   await Container.get(PortfolioValueCache).bust(userId);
 
-  const bucket = Math.floor(Date.now() / ROLLUP_COALESCE_WINDOW_MS);
-  const requestId = `mutation-${bucket}`;
   try {
+    const [history] = await db.execute<{ days: number }>(sql`
+      SELECT greatest(${PORTFOLIO_HISTORY_LOOKBACK_DAYS}, coalesce(current_date - min(day)::date + 2, 0))::integer AS days FROM (
+        SELECT occurred_at::date AS day FROM holding_transactions WHERE user_id = ${userId}
+        UNION ALL SELECT observed_at::date FROM holding_balance_observations WHERE user_id = ${userId}
+        UNION ALL SELECT snapshot_date FROM portfolio_value_daily WHERE user_id = ${userId}
+      ) history
+    `);
+    const lookbackDays = Number(history?.days ?? PORTFOLIO_HISTORY_LOOKBACK_DAYS);
+    const bucket = Math.floor(Date.now() / ROLLUP_COALESCE_WINDOW_MS);
+    const requestId = `mutation-${bucket}-${lookbackDays}`;
     await Container.get(BullMqEnqueueService).add(PORTFOLIO_HISTORY_BACKFILL, {
       userId,
       requestId,
       tokenIds: [],
-      lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
+      lookbackDays,
     });
   } catch {
     // swallow — nightly cron + next mutation will catch up.

@@ -1,12 +1,10 @@
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
-import { Button } from '@scani/ui/ui/button';
-import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
+import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { ReviewQueueHeader } from '../components/review/ReviewQueueHeader';
 import { TransferReviewList } from '../components/review/TransferReviewList';
-import { TRANSFER_ANSWERED_PATH, TRANSFER_RULES_PATH } from '../lib/routes';
 
 /**
  * Transfers Scani could not match to the other half of themselves (SC-150).
@@ -28,26 +26,7 @@ export function TransfersReviewPage() {
 
   return (
     <PageLayout measure="wide">
-      {/* The route back to an answer already given (SC-181) — an action rather
-          than a tab, because this page's count reaching zero is the feedback
-          that working through it is finishing, and a view that also holds
-          every answered row can never reach zero. */}
-      <PageHeader
-        title={t('v3.review.page.transfersTitle')}
-        action={
-          <div className="flex gap-2">
-            {/* The rules page is reachable from the queue rather than from
-                settings (SC-375): a rule is written from a row here, so the
-                place to take one back is one tap from the same screen. */}
-            <Button asChild variant="outline">
-              <Link to={TRANSFER_RULES_PATH}>{t('v3.review.rules.title')}</Link>
-            </Button>
-            <Button asChild variant="outline">
-              <Link to={TRANSFER_ANSWERED_PATH}>{t('v3.review.page.answered')}</Link>
-            </Button>
-          </div>
-        }
-      />
+      <ReviewQueueHeader queue="transfers" view="pending" />
       <TransferReviewList items={query.data ?? []} query={mergeQueries(query)} />
     </PageLayout>
   );

@@ -1,6 +1,6 @@
 import type { PortfolioValueDaily } from '@scani/db/schema';
 import {
-  type IncludedHoldingScopeRow,
+  type IncludedDailyTotalsRow,
   PortfolioValueDailyRepository,
 } from '@scani/domain/repositories';
 import Decimal from 'decimal.js';
@@ -147,97 +147,23 @@ export function toAggregatedDaily(row: PortfolioValueDaily): AggregatedDailyPoin
   };
 }
 
-// Group inclusion-filtered per-holding rollup rows into one user-wide
-// point per date. coverage_quality is re-derived from the known/total
-// ratio with the rollup's thresholds; a fully-priced day stays
-// 'partial' when any holding used a stale anchor/price. The day's PnL
-// is null unless every holding row carries cost columns (pre-rebuild
-// rows may not), since a partial sum would be misleading.
-export function aggregateIncludedHoldingRows(
-  rows: IncludedHoldingScopeRow[]
-): AggregatedDailyPoint[] {
-  const byDate = new Map<string, IncludedHoldingScopeRow[]>();
-  for (const row of rows) {
-    const key = String(row.snapshotDate).slice(0, 10);
-    const list = byDate.get(key);
-    if (list) list.push(row);
-    else byDate.set(key, [row]);
-  }
-  const out: AggregatedDailyPoint[] = [];
-  for (const [date, dayRows] of byDate) {
-    let totalValue = new Decimal(0);
-    let costBasis = new Decimal(0);
-    let realizedPnl = new Decimal(0);
-    let unrealizedPnl = new Decimal(0);
-    let known = 0;
-    let total = 0;
-    let unpriceable = 0;
-    let stalePriced = 0;
-    // `null` propagates: if ANY holding row on this day predates the column,
-    // the day's count is not knowable, and summing the ones that do have it
-    // would report a confident undercount. That is the mistake
-    // `holdings_stale_priced` made by taking NOT NULL DEFAULT 0.
-    let staleAnchored: number | null = 0;
-    // Same null propagation, same reason (SC-317): a day one of whose holding
-    // rows predates the column has no knowable count, and summing the rest
-    // would report a confident undercount.
-    let beforeRecords: number | null = 0;
-    let oldestAnchorAt: Date | null = null;
-    let basisUnknown = 0;
-    let transfersUnreviewed = 0;
-    let anyPartial = false;
-    let pnlComplete = true;
-    for (const r of dayRows) {
-      totalValue = totalValue.add(new Decimal(r.totalValue));
-      known += r.holdingsWithKnownValue;
-      total += r.holdingsTotal;
-      unpriceable += r.holdingsUnpriceable;
-      stalePriced += r.holdingsStalePriced;
-      basisUnknown += r.holdingsBasisUnknown;
-      transfersUnreviewed += r.transfersUnreviewed;
-      if (r.holdingsStaleAnchored == null) staleAnchored = null;
-      else if (staleAnchored !== null) staleAnchored += r.holdingsStaleAnchored;
-      if (r.holdingsBeforeRecords == null) beforeRecords = null;
-      else if (beforeRecords !== null) beforeRecords += r.holdingsBeforeRecords;
-      if (r.oldestAnchorAt && (!oldestAnchorAt || r.oldestAnchorAt < oldestAnchorAt)) {
-        oldestAnchorAt = r.oldestAnchorAt;
-      }
-      // Rows written before SC-151 carry a 0 count and never 'partial', so
-      // both readings agree on them; a rebuilt row sets both together.
-      //
-      // Worth being exact about what that agreement is worth (SC-255): it is
-      // two readings of the same DEFAULT, not two measurements that concur.
-      // `holdings_stale_priced` is `NOT NULL DEFAULT 0`, so a row predating
-      // the column reports a confident zero nobody computed, and this `||`
-      // then reads it as "nothing was stale". The day aggregates cleaner than
-      // the evidence supports.
-      //
-      // Left as-is on purpose. The fix is not here — it is the column, and
-      // repairing the column needs a cutoff that does not exist: on
-      // production every row computed before 2026-08-14 carries 0 in
-      // every quality count, and the migration timestamps are hand-authored
-      // journal values rather than deploy times. See the block comment above
-      // these columns in `schema/portfolio.ts`.
-      //
-      // `holdingsStaleAnchored` below is nullable for exactly this reason and
-      // propagates NULL rather than summing around it, which is the shape
-      // these four would need and cannot retroactively get.
-      if (
-        r.coverageQuality === 'partial' ||
-        r.holdingsStalePriced > 0 ||
-        (r.holdingsStaleAnchored ?? 0) > 0 ||
-        (r.holdingsBeforeRecords ?? 0) > 0
-      )
-        anyPartial = true;
-      if (r.costBasis == null || r.realizedPnl == null || r.unrealizedPnl == null) {
-        pnlComplete = false;
-      } else {
-        costBasis = costBasis.add(new Decimal(r.costBasis));
-        realizedPnl = realizedPnl.add(new Decimal(r.realizedPnl));
-        unrealizedPnl = unrealizedPnl.add(new Decimal(r.unrealizedPnl));
-      }
-    }
-    const priceable = total - unpriceable;
+// Finish one day of included per-holding rows, summed in SQL
+// (`findIncludedHoldingDailyTotals`, SC-1369), into the shared daily-point
+// shape. coverage_quality is re-derived from the known/total ratio with the
+// rollup's thresholds; a fully-priced day stays 'partial' when any holding
+// used a stale anchor/price. The day's PnL arrives null unless every holding
+// row carried cost columns (pre-rebuild rows may not), since a partial sum
+// would be misleading.
+//
+// `anyPartial` reads `holdings_stale_priced > 0`, and that column is
+// `NOT NULL DEFAULT 0`: a row predating it reports a confident zero nobody
+// computed, so the day aggregates cleaner than the evidence supports (SC-255).
+// Left as-is on purpose — the fix is the column, and it needs a cutoff that
+// does not exist. `holdingsStaleAnchored` is nullable for exactly this reason
+// and propagates NULL rather than summing around it.
+export function aggregateDailyTotals(rows: IncludedDailyTotalsRow[]): AggregatedDailyPoint[] {
+  return rows.map((r) => {
+    const priceable = r.holdingsTotal - r.holdingsUnpriceable;
     let coverageQuality: string;
     if (priceable === 0) {
       // No holding contributed anything priceable to this day, so the
@@ -246,31 +172,35 @@ export function aggregateIncludedHoldingRows(
       // only holdings are unpriceable dust says the same thing.
       coverageQuality = 'unknown';
     } else {
-      const ratio = known / priceable;
-      if (ratio >= 0.95) coverageQuality = anyPartial ? 'partial' : 'full';
+      const ratio = r.holdingsWithKnownValue / priceable;
+      if (ratio >= 0.95) coverageQuality = r.anyPartial ? 'partial' : 'full';
       else if (ratio >= 0.5) coverageQuality = 'estimated';
       else coverageQuality = 'unknown';
     }
-    out.push({
-      snapshotDate: date,
-      totalValue: totalValue.toString(),
-      costBasis: pnlComplete ? costBasis.toString() : null,
-      realizedPnl: pnlComplete ? realizedPnl.toString() : null,
-      unrealizedPnl: pnlComplete ? unrealizedPnl.toString() : null,
+    // The SQL sum is exact; the JS fold it replaced kept Decimal's precision
+    // (28 significant digits). Rounding once to that precision keeps the
+    // printed figure, which the history export writes as-is, the same length
+    // and scale it always had.
+    const money = (value: string | null) =>
+      value === null ? null : new Decimal(value).toSignificantDigits(Decimal.precision).toString();
+    return {
+      snapshotDate: String(r.snapshotDate).slice(0, 10),
+      totalValue: money(r.totalValue) as string,
+      costBasis: money(r.costBasis),
+      realizedPnl: money(r.realizedPnl),
+      unrealizedPnl: money(r.unrealizedPnl),
       coverageQuality,
-      holdingsWithKnownValue: known,
-      holdingsTotal: total,
-      holdingsUnpriceable: unpriceable,
-      holdingsStalePriced: stalePriced,
-      holdingsStaleAnchored: staleAnchored,
-      oldestAnchorAt: oldestAnchorAt ? (oldestAnchorAt as Date).toISOString() : null,
-      holdingsBeforeRecords: beforeRecords,
-      holdingsBasisUnknown: basisUnknown,
-      transfersUnreviewed,
-    });
-  }
-  out.sort((a, b) => a.snapshotDate.localeCompare(b.snapshotDate));
-  return out;
+      holdingsWithKnownValue: r.holdingsWithKnownValue,
+      holdingsTotal: r.holdingsTotal,
+      holdingsUnpriceable: r.holdingsUnpriceable,
+      holdingsStalePriced: r.holdingsStalePriced,
+      holdingsStaleAnchored: r.holdingsStaleAnchored,
+      oldestAnchorAt: r.oldestAnchorAt ? r.oldestAnchorAt.toISOString() : null,
+      holdingsBeforeRecords: r.holdingsBeforeRecords,
+      holdingsBasisUnknown: r.holdingsBasisUnknown,
+      transfersUnreviewed: r.transfersUnreviewed,
+    };
+  });
 }
 
 /**
@@ -302,8 +232,8 @@ export async function userNetWorthDaily(
   to: Date
 ): Promise<AggregatedDailyPoint[]> {
   const repo = Container.get(PortfolioValueDailyRepository);
-  const rows = await repo.findIncludedHoldingScopeRange(userId, baseCurrencyId, from, to);
-  return aggregateIncludedHoldingRows(rows).filter(hasKnownCoverage);
+  const rows = await repo.findIncludedHoldingDailyTotals(userId, baseCurrencyId, from, to);
+  return aggregateDailyTotals(rows).filter(hasKnownCoverage);
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;

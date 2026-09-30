@@ -9,7 +9,6 @@ import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { Repeat } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import type { RouterOutputs } from '@/lib/trpc';
 import { exportMoneyInBase } from '../../lib/export-money';
@@ -20,11 +19,14 @@ import {
   type HistoryEstimate,
   monthlyEquivalent,
 } from '../../lib/paymentTotals';
-import { V3_PAYMENT_ROUTES, V3_ROUTES } from '../../lib/routes';
+import { PAYMENT_SHEET, V3_ROUTES } from '../../lib/routes';
 import { BaseEquivalent } from '../BaseEquivalent';
 import { DeletePaymentAction } from './DeletePaymentAction';
 import { EndPaymentAction } from './EndPaymentAction';
 import { EstimatedFromHistory } from './EstimatedFromHistory';
+import { type GroupTag, WithGroupTags } from './GroupTags';
+import { PayeeMark } from './PayeeMark';
+import { PaymentSheetLink } from './PaymentSheetLink';
 import { PaymentStatusToggle } from './PaymentStatusToggle';
 import { RecurringSummary } from './RecurringSummary';
 
@@ -79,16 +81,24 @@ interface RecurringListProps {
   rates: BaseCurrencyRates;
   query: V3QueryState;
   /**
-   * From `payments.forecast` (SC-625): which payments the projection priced
+   * From `payments.scheduled` (SC-625): which payments the projection priced
    * from their own settled history, and from when.
    *
    * Read rather than recomputed. `payments.list` carries no occurrence data,
    * so this list could not derive an estimate even if it wanted to — and
    * taking the projection's answer is what stops the monthly figure here and
-   * the one on the forecast from being two implementations of one rule.
+   * the one on the schedule from being two implementations of one rule.
    */
   historyEstimates: ReadonlyMap<string, HistoryEstimate>;
+  /** The user's groups and which of them each payment is in. The group filter
+   *  lives in this list's Refine sheet like its other filters (SC-1405). */
+  groupOptions?: { value: string; label: string }[];
+  groupIdsByPayment?: Readonly<Record<string, readonly string[]>>;
+  /** Names and colours for the group tags after each row's cadence (SC-1408). */
+  groupById?: ReadonlyMap<string, GroupTag>;
 }
+
+const NO_GROUPS: ReadonlyMap<string, GroupTag> = new Map();
 
 export function RecurringList({
   payments,
@@ -97,6 +107,9 @@ export function RecurringList({
   rates,
   query,
   historyEstimates,
+  groupOptions,
+  groupIdsByPayment,
+  groupById = NO_GROUPS,
 }: RecurringListProps) {
   const { t } = useTranslation();
   const vendorName = (payment: PaymentRow) =>
@@ -156,6 +169,17 @@ export function RecurringList({
         options: STATUS_OPTIONS,
         fn: (payment: PaymentRow, value: string) => payment.status === value,
       },
+      ...(groupOptions && groupOptions.length > 0
+        ? [
+            {
+              key: 'group',
+              labelKey: 'ui.dataView.bills.filter.group' as const,
+              options: groupOptions,
+              fn: (payment: PaymentRow, value: string) =>
+                (groupIdsByPayment?.[payment.id] ?? []).includes(value),
+            },
+          ]
+        : []),
     ],
     sortDefs: [
       { key: 'vendor', labelKey: 'ui.dataView.payments.sort.vendor' },
@@ -219,6 +243,7 @@ export function RecurringList({
       // the two layouts and true-looking in every test that rendered both.
       const estimate = payment.expectedAmount === null ? historyEstimates.get(payment.id) : null;
       return {
+        leading: <PayeeMark name={vendorName(payment)} />,
         label: vendorName(payment),
         sublabel: `${formatPaymentInterval(t, payment.intervalUnit, payment.intervalCount)} · ${directionLabel(payment.direction, t)}${payment.status === 'active' ? '' : ` · ${payment.status}`}`,
         value: (
@@ -227,14 +252,18 @@ export function RecurringList({
             currency={symbolFor(payment)}
           />
         ),
-        delta: estimate ? (
-          <EstimatedFromHistory sourceDueDate={estimate.sourceDueDate} />
-        ) : (
-          <BaseEquivalent
-            amount={payment.expectedAmount}
-            currencyTokenId={payment.currencyTokenId}
-            rates={rates}
-          />
+        delta: (
+          <WithGroupTags groupIds={groupIdsByPayment?.[payment.id]} groupById={groupById}>
+            {estimate ? (
+              <EstimatedFromHistory sourceDueDate={estimate.sourceDueDate} />
+            ) : (
+              <BaseEquivalent
+                amount={payment.expectedAmount}
+                currencyTokenId={payment.currencyTokenId}
+                rates={rates}
+              />
+            )}
+          </WithGroupTags>
         ),
       };
     },
@@ -242,12 +271,14 @@ export function RecurringList({
       {
         key: 'vendor',
         headerKey: 'ui.dataView.payments.col.vendor',
+        width: 'w-[30%]',
         sortable: true,
         render: vendorName,
       },
       {
         key: 'direction',
         headerKey: 'ui.dataView.payments.col.direction',
+        hideBelow: 'xl',
         width: 'w-28',
         render: (payment) => directionLabel(payment.direction, t),
       },
@@ -260,10 +291,30 @@ export function RecurringList({
       {
         key: 'status',
         headerKey: 'ui.dataView.payments.col.status',
+        hideBelow: 'xl',
         sortable: true,
         width: 'w-28',
         render: (payment) => <StatusCell status={payment.status} />,
         exportValue: (payment) => exportText(payment.status),
+      },
+      {
+        key: 'groups',
+        headerKey: 'ui.dataView.payments.col.groups',
+        hideBelow: 'xl',
+        width: 'w-40',
+        render: (payment) => (
+          <WithGroupTags
+            groupIds={groupIdsByPayment?.[payment.id]}
+            groupById={groupById}
+            align="items-start"
+          />
+        ),
+        exportValue: (payment) =>
+          exportText(
+            (groupIdsByPayment?.[payment.id] ?? [])
+              .flatMap((id) => groupById.get(id)?.name ?? [])
+              .join(', ')
+          ),
       },
       {
         key: 'amount',
@@ -324,7 +375,9 @@ export function RecurringList({
         'ui.dataView.payments.empty.addABillOrRecurringIncomeAndScaniTracksEveryDateItFallsDue',
       action: (
         <Button asChild>
-          <Link to={V3_PAYMENT_ROUTES.create}>{t('v3.money.recurringList.addPayment')}</Link>
+          <PaymentSheetLink sheet={PAYMENT_SHEET.create}>
+            {t('v3.money.recurringList.addPayment')}
+          </PaymentSheetLink>
         </Button>
       ),
     },
@@ -364,15 +417,17 @@ export function RecurringList({
           ),
           // `delta` shares the figure's own line and wraps under it — the
           // same slot the row uses, so the mark sits beside the number in both
-          // places. `<ProjectedTile>`'s rule applies here too: a caveat that
-          // scrolls away from the figure it qualifies is not a caveat.
+          // places: a caveat that scrolls away from the figure it qualifies is
+          // not a caveat.
           delta: estimate ? (
             <EstimatedFromHistory sourceDueDate={estimate.sourceDueDate} />
           ) : undefined,
           actions: (
             <>
               <Button asChild>
-                <Link to={V3_PAYMENT_ROUTES.edit(payment.id)}>{t('v3.money.peek.edit')}</Link>
+                <PaymentSheetLink sheet={PAYMENT_SHEET.edit(payment.id)}>
+                  {t('v3.money.peek.edit')}
+                </PaymentSheetLink>
               </Button>
               <PaymentStatusToggle
                 paymentId={payment.id}

@@ -1,7 +1,6 @@
 import type { AnsweredTransferReview, AnswerSource } from '@scani/shared';
 import { formatDate } from '@scani/shared';
 import { userFacingMessage } from '@scani/ui/lib/user-facing-error';
-import { Button } from '@scani/ui/ui/button';
 import { useToast } from '@scani/ui/ui/use-toast';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
@@ -12,11 +11,16 @@ import type { TFunction } from 'i18next';
 import { Inbox } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { formatRelative } from '../../lib/relative-time';
 import { TRANSFER_ANSWERED_PATH, TRANSFER_REVIEW_PATH } from '../../lib/routes';
-import { answeredSummary, pendingLocation, reopenConsequence } from '../../lib/transfer-review';
+import {
+  answeredSummary,
+  pendingLocation,
+  reopenConsequence,
+  transferAmountLabel,
+} from '../../lib/transfer-review';
 import { TransferBulkAction } from './TransferBulkAction';
 
 /**
@@ -122,7 +126,7 @@ export function AnsweredTransferList({ items, query, onSearch }: AnsweredTransfe
     // this line the answered rows landed at the very bottom of page one.
     defaultSort: { field: 'answered', direction: 'desc' },
     renderRow: (item) => ({
-      label: `${item.quantity} ${item.tokenSymbol}`,
+      label: transferAmountLabel(item),
       // The marker belongs here and not only in the desktop column: the phone
       // list renders `renderRow` and nothing else, and on an installed PWA that
       // is the surface. A distinction that exists only in the table is a
@@ -150,11 +154,22 @@ export function AnsweredTransferList({ items, query, onSearch }: AnsweredTransfe
         key: 'asset',
         headerKey: 'ui.dataView.answeredTransfers.col.left',
         sortable: true,
-        render: (item) => `${item.quantity} ${item.tokenSymbol}`,
+        render: (item) => (
+          // The source is this cell's second line only below 1280px, where
+          // the From column is hidden, so it is on screen once at every width.
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-label">{transferAmountLabel(item)}</span>
+            <span className="truncate text-caption text-muted-foreground xl:hidden">
+              {pendingLocation(item)}
+            </span>
+          </span>
+        ),
+        exportValue: (item) => exportText(transferAmountLabel(item)),
       },
       {
         key: 'from',
         headerKey: 'ui.dataView.answeredTransfers.col.from',
+        hideBelow: 'xl',
         render: (item) => pendingLocation(item),
       },
       {
@@ -199,11 +214,9 @@ export function AnsweredTransferList({ items, query, onSearch }: AnsweredTransfe
       icon: Inbox,
       titleKey: 'ui.dataView.answeredTransfers.empty.noTransfersAnsweredYet',
       descriptionKey: 'ui.dataView.answeredTransfers.empty.answersYouGiveInTheTransfer',
-      action: (
-        <Button asChild variant="outline">
-          <Link to={TRANSFER_REVIEW_PATH}>{t('v3.review.answered.backToQueue')}</Link>
-        </Button>
-      ),
+      // Nothing to create from here, and the way back is the page's back
+      // link or view switch, not a second button (rule 8, SC-1433).
+      action: null,
     },
     /*
       RE-answer in bulk, which is the operation SC-186 asked for and SC-382
@@ -257,7 +270,8 @@ export function AnsweredTransferList({ items, query, onSearch }: AnsweredTransfe
             ? [{ label: t('v3.review.answered.field.to'), value: item.counterparty }]
             : []),
         ],
-        content: <ReopenAction item={item} />,
+        // In the header with every other peek's actions (rule 4, SC-1433).
+        actions: <ReopenAction item={item} />,
       }),
     },
   };

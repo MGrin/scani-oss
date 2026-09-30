@@ -1,3 +1,4 @@
+import { isConnectionPoolerUrl } from '@scani/config';
 import { advisoryLockKey } from './advisory-lock-key';
 import { client } from './connection';
 
@@ -23,7 +24,7 @@ export async function withAdvisoryLock<T>(
   fn: () => Promise<T>
 ): Promise<{ ran: true; result: T } | { ran: false }> {
   const lockKey = advisoryLockKey(key).toString();
-  const reserved = await client.reserve();
+  const reserved = await reserveForSessionLock();
 
   try {
     const rows = (await reserved.unsafe('SELECT pg_try_advisory_lock($1::bigint) AS locked', [
@@ -45,4 +46,19 @@ export async function withAdvisoryLock<T>(
   } finally {
     reserved.release();
   }
+}
+
+/**
+ * A reserved connection a session advisory lock can live on, refused through a
+ * connection pooler (SC-1442). A skipped lock is silent by design, so a lock
+ * the pooler can never release would read as a quiet user whose history
+ * stopped moving; failing here is what makes it visible.
+ */
+export async function reserveForSessionLock() {
+  if (isConnectionPoolerUrl(process.env.DATABASE_URL ?? '')) {
+    throw new Error(
+      'Session advisory lock refused: DATABASE_URL goes through a connection pooler, which cannot release it. Use the direct host (SC-1442).'
+    );
+  }
+  return client.reserve();
 }

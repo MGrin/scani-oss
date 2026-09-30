@@ -6,10 +6,12 @@ import { TURNSTILE_HEADER } from '@scani/http-fetch';
  * header, so the browser preflights the POST and blocks it unless the server's
  * CORS `allowedHeaders` names it. #1859 shipped the widget to app.scani.xyz
  * with the api's list missing it, and every sign-in failed as "We couldn't
- * reach Scani". Both servers that take the token are read here.
+ * reach Scani". The api is the only server that takes the token on a header:
+ * the data-provider's `/api/auth` surface, which did too, is gone, and its
+ * contact form carries the token in the tRPC input.
  */
 
-const SERVERS = ['apps/backend/api/src/index.ts', 'apps/backend/data-provider/src/index.ts'];
+const SERVERS = ['apps/backend/api/src/index.ts'];
 const ROOT = new URL('../../../../../', import.meta.url).pathname;
 
 describe('CORS lets the Turnstile token through the preflight', () => {

@@ -160,6 +160,7 @@ export function ExtractionRecord({
               label={t('v3.documents.extraction.reject')}
               confirmLabel={t('v3.documents.extraction.rejectCommit')}
               destructive
+              triggerClassName="text-destructive hover:text-destructive"
               open={confirmingReject}
               onOpenChange={setConfirmingReject}
               isPending={isRejecting}

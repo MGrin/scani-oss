@@ -16,7 +16,7 @@ single-line JSON in production, pretty-printed in dev.
 
 | Env var | Effect |
 |---|---|
-| `LOG_LEVEL` | `debug`, `info`, `warn`, `error`. Default `info`. |
+| `LOG_LEVEL` | `debug`, `info`, `warn`, `error`. Default `info`. In production `debug` and `trace` refuse to start, because they log request inputs. |
 | `LOG_PRETTY` | Pretty-print. Default `false` in production. |
 | `LOG_SQL_QUERIES` | Log every Drizzle query. Default `false`. Useful for short debug sessions; very chatty otherwise. |
 | `LOG_ID_PEPPER` | **Required in production.** 16+ chars. Pepper used to one-way hash user / tenant / account IDs before they appear in logs. Missing pepper is a hard boot failure in prod. |

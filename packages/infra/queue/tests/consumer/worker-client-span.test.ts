@@ -1,3 +1,4 @@
+// @ci-reads packages/infra/queue/tests/fixtures/span-over-job-dispatch.fixture.ts
 import { describe, expect, test } from 'bun:test';
 
 /**

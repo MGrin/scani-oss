@@ -18,6 +18,7 @@ import {
   emptyWalletImportDraft,
 } from '../lib/capture-forms';
 import { jobDetailPath } from '../lib/routes';
+import { V3_BASE } from '../lib/ui-version';
 
 /**
  * A wallet address, watched rather than connected — no key ever leaves the
@@ -142,7 +143,8 @@ export function WalletImportPage() {
         blockers={describeWalletImportBlockers(t, draft)}
         onSubmit={submit}
         stage={stage}
-        busyLabel="the import"
+        busyLabel={t('v3.capture.busy.import')}
+        cancelTo={V3_BASE}
         error={error}
       />
     </PageLayout>

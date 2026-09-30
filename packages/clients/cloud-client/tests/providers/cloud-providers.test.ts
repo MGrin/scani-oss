@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
 import { fromCloudAsset } from '@scani/providers/core/cloud-contract';
+import { AIUnavailableError } from '@scani/providers/core/errors';
 import { getSharedRedis, setSharedRedis } from '@scani/rate-limiter';
 import { fetchRequestHandler } from '@trpc/server/adapters/fetch';
 import type { Redis } from 'ioredis';
@@ -183,4 +184,95 @@ test('wallet position probes batch more than twenty IDs without dropping positio
   );
   expect(result).toHaveLength(21);
   expect(batchSizes).toEqual([20, 1]);
+});
+
+test('missing and rejected upstream AI stay separate from the customer Cloud credential over HTTP', async () => {
+  const missing = new CloudAIProvider(client);
+  expect(await missing.getAvailability()).toMatchObject({
+    state: 'missing',
+    image: false,
+    text: false,
+  });
+  let rejected = false;
+  let calls = 0;
+  state.registry.register({
+    providerKey: 'ai-stub',
+    capabilities: ['ai-inference'],
+    getAvailability: async () => ({
+      state: rejected ? 'rejected' : 'unverified',
+      image: !rejected,
+      pdf: false,
+      text: false,
+      completion: false,
+    }),
+    parseScreenshot: async () => {
+      calls++;
+      rejected = true;
+      throw new AIUnavailableError('rejected');
+    },
+  });
+  const cloud = new CloudAIProvider(client);
+  expect((await cloud.getAvailability()).state).toBe('unverified');
+  await expect(
+    cloud.parseScreenshot({ imageBase64: 'aGVsbG8=', mimeType: 'image/png' })
+  ).rejects.toMatchObject({ state: 'rejected', kind: 'unrecoverable' });
+  expect(await cloud.getAvailability()).toMatchObject({ state: 'rejected', image: false });
+  await expect(
+    cloud.parseScreenshot({ imageBase64: 'aGVsbG8=', mimeType: 'image/png' })
+  ).rejects.toMatchObject({ state: 'rejected' });
+  expect(calls).toBe(1);
+});
+
+test('transient upstream processing remains retryable and is not called while unavailable', async () => {
+  let calls = 0;
+  state.registry.register({
+    providerKey: 'ai-stub',
+    capabilities: ['ai-inference'],
+    getAvailability: async () => ({
+      state: 'transient',
+      image: false,
+      pdf: false,
+      text: false,
+      completion: false,
+    }),
+    parseScreenshot: async () => {
+      calls++;
+      return { data: {} };
+    },
+  });
+  const cloud = new CloudAIProvider(client);
+  expect(await cloud.getAvailability()).toMatchObject({ state: 'transient', image: false });
+  await expect(
+    cloud.parseScreenshot({ imageBase64: 'aGVsbG8=', mimeType: 'image/png' })
+  ).rejects.toMatchObject({ state: 'transient', kind: 'retryable' });
+  expect(calls).toBe(0);
+});
+
+test('an input held after an uncertain attempt reaches the worker as transient, not as an error', async () => {
+  let calls = 0;
+  state.registry.register({
+    providerKey: 'ai-stub',
+    capabilities: ['ai-inference'],
+    getAvailability: async () => ({
+      state: 'unverified',
+      image: true,
+      pdf: false,
+      text: false,
+      completion: false,
+    }),
+    parseScreenshot: async () => {
+      calls++;
+      throw new AIUnavailableError('transient');
+    },
+  });
+  const input = { imageBase64: 'aGVsbG8=', mimeType: 'image/png' as const };
+  await expect(new CloudAIProvider(client).parseScreenshot(input)).rejects.toMatchObject({
+    state: 'transient',
+    kind: 'retryable',
+  });
+  await expect(new CloudAIProvider(client).parseScreenshot(input)).rejects.toMatchObject({
+    state: 'transient',
+    kind: 'retryable',
+  });
+  expect(calls).toBe(1);
 });

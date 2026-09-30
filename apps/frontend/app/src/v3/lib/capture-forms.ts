@@ -81,8 +81,6 @@ const INVOICE_MIME_TYPES: Record<string, string> = {
   jpg: 'image/jpeg',
   jpeg: 'image/jpeg',
   webp: 'image/webp',
-  heic: 'image/heic',
-  heif: 'image/heif',
 };
 
 export const INVOICE_ACCEPT = Object.keys(INVOICE_MIME_TYPES)

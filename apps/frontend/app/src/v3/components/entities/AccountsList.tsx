@@ -284,11 +284,13 @@ export function AccountsList({
       {
         key: 'type',
         headerKey: 'ui.dataView.accounts.col.type',
+        hideBelow: 'xl',
         render: (account) => <span className="truncate">{typeName(account)}</span>,
       },
       {
         key: 'lastSync',
         headerKey: 'ui.dataView.accounts.col.lastSynced',
+        hideBelow: 'xl',
         render: (account) => (
           <span className="truncate text-muted-foreground">{lastSyncCell(account)}</span>
         ),
@@ -301,7 +303,7 @@ export function AccountsList({
         headerKey: 'ui.dataView.accounts.col.holdings',
         sortable: true,
         numeric: true,
-        width: 'w-24',
+        width: 'w-28',
         render: (account) => (
           <Numeric value={account.summary.holdingsCount} format="plain" decimals={0} />
         ),

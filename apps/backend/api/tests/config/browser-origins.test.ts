@@ -39,6 +39,33 @@ describe('LOOPBACK_ORIGIN', () => {
   });
 });
 
+const CONSOLE = 'https://cloud.scani.xyz';
+const PROD_WITH_CONSOLE = { isProduction: true, extraOrigins: [CONSOLE, CONSOLE] };
+
+describe('extra origins (Cloud console)', () => {
+  test('production CORS is the app and the console, deduped, and nothing else', () => {
+    expect(buildCorsOrigins(PROD_FRONTEND, PROD_WITH_CONSOLE)).toEqual([PROD_FRONTEND, CONSOLE]);
+  });
+
+  test('production trusted origins are the app and the console, and nothing else', () => {
+    expect(buildTrustedOrigins(PROD_FRONTEND, PROD_WITH_CONSOLE)).toEqual([PROD_FRONTEND, CONSOLE]);
+  });
+
+  test('omitting extraOrigins leaves the output unchanged', () => {
+    expect(buildCorsOrigins(PROD_FRONTEND, { isProduction: true, extraOrigins: [] })).toEqual([
+      PROD_FRONTEND,
+    ]);
+  });
+
+  test('development keeps loopback alongside the console', () => {
+    expect(buildCorsOrigins(FRONTEND, { isProduction: false, extraOrigins: [CONSOLE] })).toEqual([
+      FRONTEND,
+      CONSOLE,
+      LOOPBACK_ORIGIN,
+    ]);
+  });
+});
+
 describe('buildCorsOrigins', () => {
   test('production is exactly FRONTEND_URL and nothing else', () => {
     expect(buildCorsOrigins(PROD_FRONTEND, PROD)).toEqual([PROD_FRONTEND]);

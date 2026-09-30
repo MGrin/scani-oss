@@ -227,8 +227,10 @@ export function ProfileSettings() {
 
       {/* `aria-live`, because this is the only feedback either block gives: a
           form with no Save button has to say out loud that it saved, and a
-          screen reader user gets no visual cue at all. */}
-      <p aria-live="polite" className="text-caption text-muted-foreground">
+          screen reader user gets no visual cue at all. Empty, it still took a
+          flex gap under Preferences; `empty:absolute` drops it from the flow
+          without dropping it from the accessibility tree (SC-1419). */}
+      <p aria-live="polite" className="text-caption text-muted-foreground empty:absolute">
         {update.isPending ? t('settings.saving') : isDirty ? t('settings.autoSave') : ''}
       </p>
     </>

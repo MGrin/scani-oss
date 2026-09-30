@@ -425,7 +425,9 @@ export function insertCreatedGroup(
 ): void {
   utils.groups.getAll.setData(undefined, (old) => (old ? [...old, group] : old));
   utils.groups.getAllWithCounts.setData(undefined, (old) =>
-    old ? [...old, { ...group, holdingsCount: 0, accountsCount: 0 }] : old
+    old
+      ? [...old, { ...group, holdingsCount: 0, accountsCount: 0, billsCount: 0, payeesCount: 0 }]
+      : old
   );
 }
 

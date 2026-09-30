@@ -1,4 +1,3 @@
-import { safeRedirectPath } from '@scani/shared/utils/safe-redirect';
 import { emailErrorReason } from '@scani/shared/validators/email';
 import { MagicCodeInput } from '@scani/ui/components/MagicCodeInput';
 import { ScaniLogo } from '@scani/ui/components/ScaniLogo';
@@ -17,6 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
+import { goToReturnTarget, safeReturnTo } from '@/lib/return-origins';
 import { AuthPageExits } from '../components/AuthPageExits';
 
 interface AuthFormData {
@@ -85,17 +85,16 @@ export function Auth() {
    *  fires on connectivity *changing*, and nothing else. */
   const pendingRetryEmail = useRef<string | null>(null);
 
-  // Get return URL from query params, validated against open-redirect
-  // chains: must be a same-origin path, never an absolute or
-  // protocol-relative URL.
-  const returnTo = safeRedirectPath(searchParams.get('returnTo'), '/');
+  // Validated against open-redirect chains: a same-origin path, or an
+  // absolute URL on an allow-listed origin (the Cloud console).
+  const returnTo = safeReturnTo(searchParams.get('returnTo'), '/');
 
   // Leave /auth as soon as the session resolves. Covers two cases the
   // static "check your email" screen otherwise strands the user in:
   // refreshing this tab after signing in via the magic link in another
   // tab, and AuthContext's window-focus re-check flipping us to signed-in.
   useEffect(() => {
-    if (!loading && user) navigate(returnTo, { replace: true });
+    if (!loading && user) goToReturnTarget(returnTo, navigate);
   }, [loading, user, navigate, returnTo]);
 
   // Detect if running in PWA
@@ -155,7 +154,7 @@ export function Auth() {
       throw new Error(result.error);
     } else {
       // Successfully authenticated, redirect to return URL or dashboard
-      navigate(returnTo, { replace: true });
+      goToReturnTarget(returnTo, navigate);
     }
   };
 

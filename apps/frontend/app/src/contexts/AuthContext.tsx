@@ -14,6 +14,7 @@ import {
   isOnline,
   withDeadline,
 } from '@/lib/auth-network';
+import { safeReturnTo } from '@/lib/return-origins';
 import {
   type CachedAuthUser,
   clearCachedUser,
@@ -246,7 +247,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // and comes back on the request that creates the account (SC-515). It is
     // the only part of this sign-in the server still holds after the email
     // round trip — see `lib/signup-source.ts`.
-    const callbackURL = withSignupSource(`${window.location.origin}/auth/callback`);
+    // A `returnTo` the console asked for survives the email round trip on the
+    // callback URL; only one that passes the allow-list is carried.
+    const callback = new URL('/auth/callback', window.location.origin);
+    const requested = new URLSearchParams(window.location.search).get('returnTo');
+    const returnTo = requested ? safeReturnTo(requested, '') : '';
+    if (returnTo) callback.searchParams.set('returnTo', returnTo);
+    const callbackURL = withSignupSource(callback.toString());
     return attempt(() => authClient.signIn.magicLink({ email, callbackURL, fetchOptions }));
   };
 

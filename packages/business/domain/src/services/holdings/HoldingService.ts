@@ -46,6 +46,8 @@ export interface CreateHoldingWithEventInput {
    * to tell that observation from one a person caused (SC-641).
    */
   observationSource?: string;
+  /** When the source says this balance was true; see `recordBalanceObservation`. */
+  observedAt?: Date;
 }
 
 /**
@@ -82,6 +84,8 @@ export interface UpdateHoldingBalanceInput {
     baseCurrencyId: string;
     price?: string;
   };
+  /** When the source says this balance was true; see `recordBalanceObservation`. */
+  observedAt?: Date;
 }
 
 /**
@@ -182,16 +186,26 @@ export class HoldingService extends BaseService {
     /** Defaults to `sync-capture`, which is what every caller before SC-641
      *  meant. Pass `HOLDING_OPEN_OBSERVATION_SOURCE` when the figure is a
      *  row's opening rather than a balance somebody observed. */
-    source: string = 'sync-capture'
+    source: string = 'sync-capture',
+    /** When the SOURCE says the balance was true (SC-1427). A reporting
+     *  interface such as IBKR's Flex answers with a close one or two
+     *  business days old; stamped at fetch time, a trade in between sits
+     *  before an observation that does not include it and reads as drift.
+     *  A future or unreadable value is a source clock error and becomes
+     *  now, since a future observation would outrank every real one. */
+    observedAt?: Date
   ): Promise<void> {
     try {
       const now = new Date();
+      const asOf = observedAt ? new Date(observedAt) : undefined;
+      const stampedAt =
+        asOf && !Number.isNaN(asOf.getTime()) && asOf.getTime() < now.getTime() ? asOf : now;
       await this.observationRepository.append(
         {
           userId: holding.userId,
           holdingId: holding.id,
           balance: holding.balance,
-          observedAt: now,
+          observedAt: stampedAt,
           source,
           sourceMetadata: meta ?? {},
           ...(attestation
@@ -314,7 +328,8 @@ export class HoldingService extends BaseService {
           transaction,
           { origin: 'createHoldingWithEvent', source: input.source ?? 'manual' },
           undefined,
-          input.observationSource
+          input.observationSource,
+          input.observedAt
         );
       }
       this.logDebug('Holding created', { holdingId: holding.id });
@@ -440,7 +455,10 @@ export class HoldingService extends BaseService {
           balance: input.balance,
         },
         transaction,
-        { origin: 'updateHoldingBalanceWithEvent' }
+        { origin: 'updateHoldingBalanceWithEvent' },
+        undefined,
+        undefined,
+        input.observedAt
       );
     } catch (error) {
       throw this.handleError(error, 'updateHoldingBalanceWithEvent');

@@ -1,7 +1,6 @@
 /**
  * Thin Postgres bootstrap for data-provider's own tables
- * (`cloud_users`, `cloud_sessions`, `cloud_accounts`, `cloud_verifications`,
- * `cloud_api_keys`, `cloud_usage_events`). Per-request usage rows are
+ * (`cloud_api_keys`, `cloud_usage_events`). Per-request usage rows are
  * written to `cloud_usage_events` in the same database.
  *
  * We intentionally do NOT reuse `@scani/db`'s singleton `db` export here:
@@ -13,6 +12,7 @@
  */
 
 import { postgresJsSsl } from '@scani/config';
+import { postgresJsTls } from '@scani/config/postgres-direct-tls';
 import * as schema from '@scani/db';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
@@ -25,13 +25,11 @@ let dbClient: CloudDb | null = null;
 export function getCloudDb(databaseUrl: string): CloudDb {
   if (dbClient) return dbClient;
 
-  const sslMode = postgresJsSsl(databaseUrl);
-
   sql = postgres(databaseUrl, {
     max: 5,
     idle_timeout: 20,
     connect_timeout: 10,
-    ssl: sslMode,
+    ...postgresJsTls(databaseUrl, postgresJsSsl(databaseUrl), 10_000),
     connection: { application_name: 'data-provider' },
   });
   dbClient = drizzle(sql, { schema });

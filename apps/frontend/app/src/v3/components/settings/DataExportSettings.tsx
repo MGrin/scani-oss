@@ -114,6 +114,9 @@ export function DataExportSettings() {
       <div className="flex flex-col gap-1">
         <h2 className="text-label text-muted-foreground">{t('v3.settings.export.title')}</h2>
         <p className="text-body text-muted-foreground">{t('v3.settings.export.intro')}</p>
+        <p className="text-caption text-muted-foreground">
+          {t('v3.settings.export.ownershipArchive')}
+        </p>
       </div>
       <Button
         variant="outline"

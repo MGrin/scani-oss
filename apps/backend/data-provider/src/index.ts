@@ -12,7 +12,6 @@ const env = loadEnv();
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
 import { getNodeEnv, healthBodyFor, isNodeEnvProduction, servedVersion } from '@scani/config';
-import { isBlockedAuthPath, TURNSTILE_HEADER, turnstileRefusal } from '@scani/http-fetch';
 import { createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
@@ -54,8 +53,7 @@ initSentry({
 });
 
 import { scrubSentryBreadcrumb, scrubSentryEvent } from '@scani/shared';
-import { type CloudBetterAuthInstance, createCloudBetterAuth } from './auth/better-auth';
-import { createCloudAuthGate } from './auth/cloud-auth-limit';
+import { AppSessionClient } from './auth/app-session';
 import { type CloudDb, closeCloudDb, getCloudDb } from './db/connection';
 import { buildOpenApiDocument, renderScalarHtml } from './presentation/openapi';
 import { appRouter, installCloudDb, installUsageDeps } from './presentation/router';
@@ -88,7 +86,6 @@ logger.info({ port: PORT, host: HOST, nodeEnv: env.NODE_ENV }, '🚀 Starting Sc
 // buckets live in Redis where every data-provider replica shares fairness.
 const redisConnection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
 setSharedRedis(redisConnection);
-const cloudAuthGate = createCloudAuthGate(redisConnection);
 
 /**
  * How long `/health/deep` waits for a Redis PING before calling it
@@ -153,13 +150,17 @@ startRedisStrandWatchdog({
 interface DataProviderBootState {
   ready: boolean;
   cloudDb: CloudDb | null;
-  betterAuth: CloudBetterAuthInstance | null;
 }
 const bootState: DataProviderBootState = {
   ready: false,
   cloudDb: null,
-  betterAuth: null,
 };
+
+// The console's cookie is the app's; the api is the only session issuer.
+const appSession =
+  env.CLOUD_MANAGEMENT_ENABLED && env.APP_AUTH_URL
+    ? new AppSessionClient({ baseUrl: env.APP_AUTH_URL })
+    : null;
 
 // Derived once from env so the boot line and `/health/deep` cannot
 // disagree about which bounds are enforcing (SC-582). Both are pure
@@ -286,21 +287,17 @@ const app = new Elysia()
       // request Origin verbatim and paired with `credentials: true` —
       // that combo lets any third-party page initiate authenticated
       // cross-origin requests against this service (including the
-      // cookie-session surface mounted under /api/auth and the cloud
-      // tRPC routers). Bearer-auth (M2M) calls don't need CORS at all
-      // since they're server-to-server. The browser origins that
-      // legitimately reach this service are the cloud frontend and the
-      // marketing site (the latter for its public contact
-      // forms).
+      // cookie-session cloud tRPC routers). Bearer-auth (M2M) calls don't
+      // need CORS at all since they're server-to-server. The browser
+      // origins that legitimately reach this service are the cloud frontend
+      // and the marketing site (the latter for its public contact form).
       origin: env.CLOUD_FRONTEND_ORIGIN
         ? [env.CLOUD_FRONTEND_ORIGIN, MARKETING_ORIGIN]
         : env.NODE_ENV === 'production'
           ? [MARKETING_ORIGIN]
           : true,
       credentials: true,
-      // `TURNSTILE_HEADER` carries the cloud sign-in widget's token (SC-1266);
-      // unlisted, the browser's preflight fails the sign-in outright.
-      allowedHeaders: ['Authorization', 'Content-Type', 'x-request-id', TURNSTILE_HEADER],
+      allowedHeaders: ['Authorization', 'Content-Type', 'x-request-id'],
       // Default `*` makes @elysiajs/cors echo every inbound request
       // header (incl. `via`, `host`, `fly-client-ip`, `x-forwarded-*`).
       // Browser callers only need `x-request-id` for tracing.
@@ -312,58 +309,12 @@ const app = new Elysia()
       createContext: buildCreateContext({
         env,
         getCloudDb: () => bootState.cloudDb,
-        getBetterAuth: () => bootState.betterAuth,
+        appSession,
         // biome-ignore lint/suspicious/noExplicitAny: elysia trpc types
       }) as any,
       endpoint: '/trpc',
     })
   )
-  // Better-Auth for cloud-frontend cookie sessions.
-  //
-  // Bridging Elysia → WinterCG-style handler is surprisingly subtle:
-  //   * Elysia's default body parser consumes the request stream, so
-  //     Better-Auth's `.json()` call inside `handler()` hits
-  //     ERR_BODY_ALREADY_USED.
-  //   * Elysia's `.mount()` helper strips the mount prefix before
-  //     calling the handler, which breaks Better-Auth's internal
-  //     router (it matches on `/api/auth/...` literally).
-  //   * `.mount()` without a path registers at `/*` and changes
-  //     request lifecycle semantics.
-  //
-  // The working pattern: intercept early in `onRequest` (which runs
-  // before body parsing), forward the raw `Request` to Better-Auth,
-  // and short-circuit the Elysia lifecycle by returning a Response.
-  .onRequest(async ({ request }) => {
-    const url = new URL(request.url);
-    if (!url.pathname.startsWith('/api/auth')) return;
-    // Routes Better-Auth mounts that nothing of ours uses (SC-1351).
-    if (isBlockedAuthPath(url.pathname)) {
-      return new Response(JSON.stringify({ error: 'Not Found' }), {
-        status: 404,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-    const auth = bootState.betterAuth;
-    if (!auth) {
-      // Either CLOUD_MANAGEMENT_ENABLED=false (legitimate) or boot
-      // hasn't finished yet (transient). Same response either way —
-      // /ready will tell the caller which case applies.
-      return new Response(JSON.stringify({ error: 'cloud_management_unavailable' }), {
-        status: 503,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-    const limited = await cloudAuthGate(request);
-    if (limited) return limited;
-    const humanCheck = await turnstileRefusal(request, env.TURNSTILE_SECRET);
-    if (humanCheck) {
-      return new Response(JSON.stringify({ error: 'Forbidden', message: humanCheck.message }), {
-        status: humanCheck.status,
-        headers: { 'content-type': 'application/json' },
-      });
-    }
-    return auth.handler(request);
-  })
   .get('/', () => ({ status: 'ok', service: 'data-provider' }))
   // OpenAPI 3.0 spec for the bearer-auth tRPC surface. Generated once
   // at boot from `appRouter`'s .meta() annotations and post-processed
@@ -405,8 +356,7 @@ const app = new Elysia()
   // (SC-1182). Only the sha: nothing else from the environment.
   .get('/version.json', () => servedVersion(Bun.env.SERVICE_VERSION))
   // Readiness — only 200 once boot is fully complete (provider registry
-  // built, cloud DB pool open if enabled, Better-Auth wired if enabled).
-  // Fly's machine check probes this so traffic isn't routed to a freshly
+  // built, cloud DB pool open if enabled). Fly's machine check probes this so traffic isn't routed to a freshly
   // started replica that's still constructing its registry. Returns 503
   // with `{ status: 'starting' }` until the boot IIFE flips the flag.
   .get('/ready', ({ set }: { set: { status: number } }) => {
@@ -564,9 +514,9 @@ const server = app.listen({ port: PORT, hostname: HOST }, () => {
   );
 });
 
-// Deferred boot: heavy work (provider registry, cloud DB pool, Better-Auth
-// instance) runs AFTER the HTTP listener is up so Fly's health probe can
-// reach the process while init is still in flight. /ready returns 503
+// Deferred boot: heavy work (provider registry, cloud DB pool) runs AFTER
+// the HTTP listener is up so Fly's health probe can reach the process
+// while init is still in flight. /ready returns 503
 // throughout this phase, then 200 once `bootState.ready` flips.
 //
 // On boot failure we exit hard — there's no partial-success state where
@@ -615,29 +565,15 @@ void (async () => {
       });
       logger.info({ attempt }, '✅ @scani/providers registry initialized');
 
-      // Tier 2/3 only: open the Postgres pool for `cloud_*` (api keys
-      // + users) + `cloud_usage_events`, enable Postgres-backed
-      // per-request metering, and bootstrap Better-Auth for
-      // cloud-frontend cookie sessions. Tier 1 OSS boots with no DB
-      // and a NoopUsageSink.
+      // Tier 2/3 only: open the Postgres pool for `cloud_*` (api keys)
+      // + `cloud_usage_events` and enable Postgres-backed per-request
+      // metering. Tier 1 OSS boots with no DB and a NoopUsageSink.
       let usageSink: UsageSink = new NoopUsageSink();
       if (env.CLOUD_MANAGEMENT_ENABLED && env.DATABASE_URL) {
         const cloudDb = getCloudDb(env.DATABASE_URL);
         bootState.cloudDb = cloudDb;
         usageSink = new PostgresUsageSink({ db: cloudDb });
         logger.info({}, 'usage-sink: Postgres enabled for per-request metering');
-        if (env.BETTER_AUTH_SECRET && env.BETTER_AUTH_URL) {
-          bootState.betterAuth = createCloudBetterAuth({
-            db: cloudDb,
-            baseURL: env.BETTER_AUTH_URL,
-            secret: env.BETTER_AUTH_SECRET,
-            trustedOrigins: env.CLOUD_FRONTEND_ORIGIN ? [env.CLOUD_FRONTEND_ORIGIN] : [],
-          });
-          logger.info(
-            { cloudFrontendOrigin: env.CLOUD_FRONTEND_ORIGIN },
-            'cloud-auth: Better-Auth enabled for cloud-frontend sessions'
-          );
-        }
         installCloudDb(cloudDb);
         installUsageDeps({ db: cloudDb });
         logger.info({}, 'cloud management enabled: DB-backed api keys + usage log');

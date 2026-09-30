@@ -48,7 +48,7 @@ const uploadBudget = new UserBudget({
 // and explicit — broaden only with a security review.
 const ALLOWED_CONTENT_TYPES: Record<'screenshot' | 'file-import' | 'document', readonly string[]> =
   {
-    screenshot: ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/heic', 'image/heif'],
+    screenshot: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
     'file-import': [
       'text/csv',
       'text/plain',
@@ -61,15 +61,9 @@ const ALLOWED_CONTENT_TYPES: Record<'screenshot' | 'file-import' | 'document', r
     ],
     // Mirrors `InvoiceExtractionService`'s two extraction paths: PDF
     // (text or scanned) plus the same image set `screenshot` accepts,
-    // for a photographed receipt/invoice.
-    document: [
-      'application/pdf',
-      'image/png',
-      'image/jpeg',
-      'image/webp',
-      'image/heic',
-      'image/heif',
-    ],
+    // for a photographed receipt/invoice. No HEIC: no AI provider reads it
+    // (SC-1399), and iOS converts a photo to JPEG when HEIC is not offered.
+    document: ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'],
   };
 
 // Per-purpose filename extension allowlist. Belt-and-braces with the
@@ -78,9 +72,9 @@ const ALLOWED_CONTENT_TYPES: Record<'screenshot' | 'file-import' | 'document', r
 // from ever landing on R2 even if the bucket's object metadata is
 // later mishandled.
 const ALLOWED_EXTENSIONS: Record<'screenshot' | 'file-import' | 'document', readonly string[]> = {
-  screenshot: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'heic', 'heif'],
+  screenshot: ['png', 'jpg', 'jpeg', 'webp', 'gif'],
   'file-import': ['csv', 'txt', 'ofx', 'qfx', 'qif', 'xls'],
-  document: ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'heic', 'heif'],
+  document: ['pdf', 'png', 'jpg', 'jpeg', 'webp'],
 };
 
 export const storageRouter = router({

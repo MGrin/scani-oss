@@ -19,7 +19,7 @@ export class CsvColumnDetectionService extends BaseService {
     headers: string[],
     sampleRows: Record<string, string>[]
   ): Promise<Record<string, string> | null> {
-    if (!this.aiRouter.hasAvailableProvider()) {
+    if (!(await this.aiRouter.hasAvailableProvider())) {
       this.logWarning('No AI provider available for CSV column detection');
       return null;
     }

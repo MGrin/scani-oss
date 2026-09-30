@@ -76,7 +76,9 @@ export type XirrResult =
     }
   | {
       status: 'undefined';
-      reason: 'too-few-flows' | 'no-sign-change' | 'zero-span';
+      /** `ineligible`: withheld by `ReturnsService`, never computed; its
+       *  `eligibility.reasons` say why. */
+      reason: 'too-few-flows' | 'no-sign-change' | 'zero-span' | 'ineligible';
     }
   | {
       /**

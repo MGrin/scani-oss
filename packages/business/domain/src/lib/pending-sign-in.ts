@@ -4,9 +4,7 @@ import { and, sql } from 'drizzle-orm';
 
 /**
  * The pending sign-in rows (OTPs and magic links) Better Auth holds for one
- * email address. The app and the cloud console use the same two plugins, so
- * their verification tables hold the same shapes, and neither carries a user
- * id: email-OTP keys a row `<type>-otp-<email>`; magic-link keys it on a
+ * email address. The table carries no user id: email-OTP keys a row `<type>-otp-<email>`; magic-link keys it on a
  * token and stores `{"email":…}` as the value.
  *
  * Both are compared as exact strings, never with LIKE: an underscore is
@@ -15,7 +13,7 @@ import { and, sql } from 'drizzle-orm';
  */
 export function pendingSignInIds(
   tx: DatabaseTransaction,
-  table: typeof schema.userVerifications | typeof schema.cloudVerifications,
+  table: typeof schema.userVerifications,
   email: string
 ) {
   const otpSuffix = `-otp-${email}`;

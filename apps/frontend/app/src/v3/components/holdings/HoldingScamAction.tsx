@@ -1,6 +1,7 @@
 import type { HoldingWithDetails } from '@scani/shared';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
+import { ShieldAlert } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
@@ -38,7 +39,12 @@ export function HoldingScamAction({
 
   return (
     <ConfirmAction
-      label={t('v3.holdings.scam.markAction')}
+      label={
+        <>
+          <ShieldAlert className="me-2 size-4" aria-hidden="true" />
+          {t('v3.holdings.scam.markAction')}
+        </>
+      }
       confirmLabel={t('v3.holdings.scam.confirm', { symbol: holding.token.symbol })}
       open={open}
       onOpenChange={setOpen}

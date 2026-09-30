@@ -1,4 +1,5 @@
 import { db } from '@scani/db/connection';
+import { HISTORY_REBUILD_JOB_NAME } from '@scani/shared';
 import { sql } from 'drizzle-orm';
 import { LruCache } from './lru-cache';
 
@@ -14,8 +15,11 @@ async function readReturnsDataVersion(userId: string): Promise<string> {
     SELECT concat_ws('|',
       (SELECT count(*) || ':' || coalesce(max(updated_at)::text, '') FROM holding_transactions WHERE user_id = ${userId}),
       (SELECT coalesce(max(computed_at)::text, '') FROM portfolio_value_daily WHERE user_id = ${userId}),
-      (SELECT count(*) FROM holdings WHERE user_id = ${userId}),
-      (SELECT base_currency_id::text FROM users WHERE id = ${userId})
+      (SELECT count(*) || ':' || coalesce(max(last_updated)::text, '') FROM holdings WHERE user_id = ${userId}),
+      (SELECT coalesce(max(c.updated_at)::text, '') FROM holding_coverage c JOIN holdings h ON h.id = c.holding_id WHERE h.user_id = ${userId}),
+      (SELECT count(*) || ':' || coalesce(max(created_at)::text, '') || ':' || coalesce(max(gap_reviewed_at)::text, '') FROM holding_balance_observations WHERE user_id = ${userId}),
+      (SELECT base_currency_id::text FROM users WHERE id = ${userId}),
+      (SELECT coalesce(string_agg(job_id, ',' ORDER BY job_id), '') FROM user_jobs WHERE user_id = ${userId} AND job_name = ${HISTORY_REBUILD_JOB_NAME} AND state IN ('queued', 'active', 'progress'))
     ) AS v
   `)) as unknown as Array<{ v: string }>;
   return row?.v ?? '';

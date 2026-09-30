@@ -3,6 +3,7 @@ import { StatTile } from '@scani/ui/v3/components/charts/StatTile';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { useTranslation } from 'react-i18next';
 import type { ReturnsView } from '../../lib/returns';
+import { ReturnsSubsetNote } from './ReturnsSubsetNote';
 
 export function ReturnsHeroTile({
   view,
@@ -26,9 +27,15 @@ export function ReturnsHeroTile({
           ? t('v3.home.hero.returnsSince', { date: formatDate(view.since) })
           : t('v3.home.hero.returnsOverPeriod', { period: t(periodSuffixKey) })
       }
-      value={<Numeric value={money?.change ?? null} currency={currency} delta indicator="sign" />}
+      value={<Numeric value={money?.gain ?? null} currency={currency} delta indicator="sign" />}
       delta={
-        rate === null ? (
+        // A withheld figure keeps the tab and says why in it (SC-1406), rather
+        // than a dash and "no rate" that read as the tab being broken.
+        money === null && view.unavailableReasons?.length ? (
+          <span className="text-caption text-muted-foreground">
+            {t(`v3.home.returns.eligibility.${view.unavailableReasons[0]}`)}
+          </span>
+        ) : rate === null ? (
           <span className="text-caption text-muted-foreground">
             {t('v3.home.hero.returnsNoRate')}
           </span>
@@ -45,6 +52,14 @@ export function ReturnsHeroTile({
               indicator="sign"
               className="text-caption"
             />
+            {view.subset ? (
+              <ReturnsSubsetNote
+                subset={view.subset}
+                currency={currency}
+                brief
+                className="text-caption text-muted-foreground"
+              />
+            ) : null}
           </span>
         )
       }

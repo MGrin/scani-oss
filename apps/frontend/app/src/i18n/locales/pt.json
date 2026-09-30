@@ -69,7 +69,7 @@
     "home": "Início",
     "institutions": "Instituições",
     "jobs": "Tarefas",
-    "money": "Dinheiro",
+    "money": "Contas",
     "more": "Mais",
     "payments": "Pagamentos",
     "paymentsOverview": "Resumo",
@@ -78,8 +78,8 @@
     "sections": {
       "activity": "Atividade",
       "organization": "Organização",
-      "payments": "Pagamentos",
-      "portfolio": "Portefólio"
+      "payments": "Contas",
+      "portfolio": "Patrimônio"
     },
     "settings": "Definições",
     "signOut": "Terminar sessão",
@@ -312,24 +312,17 @@
           "uploaded": "Carregado"
         }
       },
-      "forecast": {
-        "empty": {
-          "addOne": "Adicione uma fatura ou uma receita recorrente e aparece aqui uma previsão.",
-          "allPausedOrUnpriced": "Todos os pagamentos registados estão em pausa, terminados, ou não têm montante para projetar.",
-          "noPayments": "Ainda sem pagamentos recorrentes",
-          "nothingToProject": "Nada para projetar"
-        }
-      },
       "groups": {
         "col": {
           "accounts": "Contas",
           "group": "Grupo",
           "holdings": "Posições",
-          "value": "Valor"
+          "value": "Valor",
+          "bills": "Faturas",
+          "payees": "Beneficiários"
         },
         "config": {
-          "searchGroups": "Pesquisar grupos",
-          "value": "Valor"
+          "searchGroups": "Pesquisar grupos"
         },
         "empty": {
           "aGroupIsYourOwnLabel": "Um grupo é a sua própria etiqueta sobre posições e contas — \"reforma\", \"tributável\", \"a conjunta\".",
@@ -381,6 +374,7 @@
       "holdings": {
         "col": {
           "account": "Conta",
+          "actions": "Ações",
           "amount": "Quantidade",
           "gainLoss": "Ganho / perda",
           "holding": "Posição",
@@ -618,12 +612,18 @@
         "vaults_many": "objetivos",
         "vaults_one": "objetivo",
         "vaults_other": "objetivos",
-        "vendors_counted_many": "{{count}} fornecedores",
-        "vendors_counted_one": "{{count}} fornecedor",
-        "vendors_counted_other": "{{count}} fornecedores",
-        "vendors_many": "fornecedores",
-        "vendors_one": "fornecedor",
-        "vendors_other": "fornecedores"
+        "vendors_counted_many": "{{count}} beneficiários",
+        "vendors_counted_one": "{{count}} beneficiário",
+        "vendors_counted_other": "{{count}} beneficiários",
+        "vendors_many": "beneficiários",
+        "vendors_one": "beneficiário",
+        "vendors_other": "beneficiários",
+        "balanceChanges_many": "alterações de saldo",
+        "balanceChanges_counted_many": "{{count}} alterações de saldo",
+        "balanceChanges_one": "alteração de saldo",
+        "balanceChanges_counted_one": "{{count}} alteração de saldo",
+        "balanceChanges_other": "alterações de saldo",
+        "balanceChanges_counted_other": "{{count}} alterações de saldo"
       },
       "payments": {
         "col": {
@@ -631,10 +631,11 @@
           "cadence": "Periodicidade",
           "direction": "Sentido",
           "status": "Estado",
-          "vendor": "Fornecedor"
+          "groups": "Grupos",
+          "vendor": "Beneficiário"
         },
         "config": {
-          "searchByVendor": "Pesquisar por fornecedor"
+          "searchByVendor": "Pesquisar por beneficiário"
         },
         "empty": {
           "addABillOrRecurringIncomeAndScaniTracksEveryDateItFallsDue": "Adicione uma fatura ou uma receita recorrente e o Scani acompanha todas as datas de vencimento.",
@@ -643,7 +644,7 @@
         "filter": {
           "direction": "Sentido",
           "status": "Estado",
-          "vendor": "Fornecedor"
+          "vendor": "Beneficiário"
         },
         "group": {
           "direction": "Sentido",
@@ -659,7 +660,33 @@
         "sort": {
           "amount": "Montante",
           "status": "Estado",
-          "vendor": "Fornecedor"
+          "vendor": "Beneficiário"
+        }
+      },
+      "bills": {
+        "config": {
+          "searchByPayee": "Pesquisar por beneficiário"
+        },
+        "filter": {
+          "group": "Grupo",
+          "payee": "Beneficiário",
+          "status": "Estado",
+          "period": "Período"
+        },
+        "status": {
+          "upcoming": "Próximos",
+          "matched": "Pagos",
+          "missed": "Em falta",
+          "skipped": "Ignorados",
+          "all": "Todos"
+        },
+        "period": {
+          "next30": "Próximos 30 dias",
+          "next90": "Próximos 90 dias",
+          "next365": "Próximos 12 meses",
+          "last30": "Últimos 30 dias",
+          "last90": "Últimos 90 dias",
+          "last365": "Últimos 12 meses"
         }
       },
       "refine": {
@@ -690,7 +717,9 @@
         },
         "empty": {
           "importsLandHereWhenTheyFinish": "As importações chegam aqui quando terminam e pedem uma confirmação antes de as suas posições contarem.",
-          "nothingNeedsYourReview": "Nada precisa da sua revisão"
+          "nothingNeedsYourReview": "Nada precisa da sua revisão",
+          "nothingElse": "Nada mais precisa da sua revisão",
+          "theQueuesAboveHoldTheRest": "As filas acima têm o que falta."
         },
         "filter": {
           "type": "Tipo"
@@ -791,16 +820,16 @@
         "col": {
           "category": "Categoria",
           "kind": "Género",
-          "payments": "Pagamentos",
+          "payments": "Recorrentes",
           "perMonth": "Por mês",
-          "vendor": "Fornecedor"
+          "vendor": "Beneficiário"
         },
         "config": {
-          "searchVendors": "Pesquisar fornecedores"
+          "searchVendors": "Pesquisar beneficiários"
         },
         "empty": {
-          "aVendorIsCreatedForYou": "É criado um fornecedor para si na primeira vez que aponta um pagamento a um. Também pode adicionar um aqui.",
-          "noVendorsYet": "Ainda sem fornecedores"
+          "aVendorIsCreatedForYou": "É criado um beneficiário para si na primeira vez que aponta um pagamento a um. Também pode adicionar um aqui.",
+          "noVendorsYet": "Ainda sem beneficiários"
         },
         "group": {
           "billsIncome": "Faturas / receitas",
@@ -808,7 +837,56 @@
         },
         "sort": {
           "name": "Nome",
-          "payments": "Pagamentos"
+          "payments": "Recorrentes"
+        }
+      },
+      "members": {
+        "filter": {
+          "kind": "Género"
+        },
+        "col": {
+          "membership": "Pertença",
+          "member": "Membro"
+        }
+      },
+      "groupMembers": {
+        "empty": {
+          "title": "Este grupo ainda está vazio",
+          "description": "Adicione contas, posições, faturas ou beneficiários para ver quanto vale este grupo."
+        }
+      },
+      "vaultMembers": {
+        "empty": {
+          "title": "Ainda nada conta para este objetivo",
+          "description": "Vincule posições e escolha quanto de cada uma conta."
+        }
+      },
+      "transferRules": {
+        "empty": {
+          "noDestinationRulesYet": "Ainda não há regras de destino",
+          "openAPaymentOutInTheQueue": "Abra um pagamento de saída na fila e escreva para onde foi. Todos os pagamentos posteriores para o mesmo destino levarão a sua nota, seja qual for o montante — e os destinos que marcar são respondidos por si."
+        }
+      },
+      "balanceGaps": {
+        "col": {
+          "answer": "Resposta",
+          "answered": "Respondida",
+          "change": "Alteração",
+          "drift": "Valor",
+          "when": "Quando"
+        },
+        "config": {
+          "search": "Pesquisar alterações de saldo"
+        },
+        "empty": {
+          "everyChangeIsAccountedFor": "Todas as alterações de saldo estão justificadas.",
+          "nothingToExplain": "Nada a explicar"
+        }
+      },
+      "answeredBalanceGaps": {
+        "empty": {
+          "answersLandHere": "As respostas que você der na fila de saldos aparecem aqui, para poder desfazer alguma.",
+          "nothingAnsweredYet": "Nenhuma alteração de saldo explicada ainda"
         }
       }
     },

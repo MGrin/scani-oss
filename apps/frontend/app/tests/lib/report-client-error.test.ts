@@ -38,3 +38,30 @@ describe('reportClientError', () => {
     expect(await levelSentFor(new TypeError('x is undefined'))).toBeUndefined();
   });
 });
+
+/**
+ * SC-1350: the route goes to the logs and Sentry, and a query string can carry
+ * a magic-link token, so only the path is sent.
+ */
+describe('reportClientError route', () => {
+  const realWindow = (globalThis as { window?: unknown }).window;
+  afterEach(() => {
+    // Assigning undefined would leave the key on globalThis, and `'window' in
+    // globalThis` is how other suites in this process detect a DOM (SC-1350).
+    if (realWindow === undefined) delete (globalThis as { window?: unknown }).window;
+    else (globalThis as { window?: unknown }).window = realWindow;
+  });
+
+  test('sends the path without its query string', async () => {
+    (globalThis as { window?: unknown }).window = {
+      location: { pathname: '/auth/verify', search: '?token=abc123' },
+    };
+    const bodies: Record<string, unknown>[] = [];
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response('{}');
+    }) as typeof fetch;
+    await reportClientError({ error: new Error('boom') });
+    expect(bodies[0]?.route).toBe('/auth/verify');
+  });
+});

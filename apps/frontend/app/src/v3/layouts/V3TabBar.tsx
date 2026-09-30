@@ -11,6 +11,8 @@ interface V3TabBarProps {
   /** Result of `resolveActiveTabPath` — null on a screen that belongs to no
    * tab, which correctly leaves the whole bar unlit. */
   activeTabPath: string | null;
+  /** The screen is a destination only More leads to. */
+  moreActive?: boolean;
   onCapturePress: () => void;
   onMorePress: () => void;
   /** When > 0, marks More with a dot: something behind it needs the user. */
@@ -47,6 +49,7 @@ const SLOT = 'flex flex-1 flex-col items-center justify-center gap-1 focus-visib
  */
 export function V3TabBar({
   activeTabPath,
+  moreActive = false,
   onCapturePress,
   onMorePress,
   actionRequiredCount = 0,
@@ -137,11 +140,12 @@ export function V3TabBar({
         }
         className={cn(
           SLOT,
-          'text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
+          moreActive ? 'text-interactive' : 'text-muted-foreground',
+          'focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset'
         )}
       >
         <span className={cn(GLYPH_BAND, 'relative inline-flex items-center')}>
-          <Menu className="h-5 w-5" aria-hidden="true" />
+          <Menu className="h-5 w-5" aria-hidden="true" strokeWidth={moreActive ? 2.4 : 2} />
           {hasActionRequired && (
             // The accent, not `--loss`: an item waiting to be reviewed is
             // something to look at, not something that has gone wrong. The

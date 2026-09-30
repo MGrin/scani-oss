@@ -7,6 +7,7 @@ import { useId } from 'react';
 import { Area, AreaChart, CartesianGrid, ReferenceLine, Tooltip, XAxis, YAxis } from 'recharts';
 import { axisFormat } from '../../lib/axis-format';
 import type { PnLChartPoint, TrendPoint } from '../../lib/home';
+import { niceAxis } from '../../lib/nice-axis';
 import { MaskedFigure } from './FigureVisibility';
 
 /**
@@ -197,7 +198,11 @@ export function PortfolioChart({
   const values = isPnl ? pnl.map((point) => point.total) : netWorth.map((point) => point.value);
   const color = resolveTone(metric, values);
   const isolated = isolatedIndices(values);
-  const axis = axisFormat(values);
+  // PnL crosses zero and recharts' `auto` already rounds it; net worth does
+  // not, so it gets round bounds of its own (SC-1424). The format then reads
+  // the ticks that are actually printed, not the raw series.
+  const nice = isPnl ? null : niceAxis(values);
+  const axis = axisFormat(nice ? nice.ticks : values);
 
   return (
     <ChartFrame label={label} height={height}>
@@ -219,6 +224,9 @@ export function PortfolioChart({
           tick={AXIS_TICK}
           tickFormatter={(value: string) => formatChartDate(value, granularity)}
           minTickGap={28}
+          // Clear of the lowest Y tick, which the first date label touched at
+          // the corner on a phone (SC-1433).
+          tickMargin={8}
           axisLine={AXIS_LINE}
           tickLine={false}
         />
@@ -237,7 +245,8 @@ export function PortfolioChart({
           tickLine={false}
           // Without an explicit domain recharts anchors at zero, which flattens
           // a net worth moving 120k → 124k into a straight line.
-          domain={isPnl ? ['auto', 'auto'] : ['dataMin', 'dataMax']}
+          domain={isPnl ? ['auto', 'auto'] : (nice?.domain ?? ['dataMin', 'dataMax'])}
+          ticks={nice?.ticks}
         />
         {/* PnL crosses zero and net worth does not, so only PnL earns the
             win/loss boundary. */}

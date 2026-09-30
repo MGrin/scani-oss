@@ -251,7 +251,7 @@ describe('movementBlockerKeys', () => {
  * Held here rather than by a rendered assertion for the reason this module's
  * docblock gives, and for a second one this ticket measured: `RecordMovementSheet`
  * is a Radix sheet and Radix renders nothing under `renderToStaticMarkup`, so
- * the same gap that left `HoldingEditCauseDialog`'s fee field covered by
+ * the same gap that left `useHoldingEditCause`'s fee field covered by
  * type-check alone would apply here. The rules are pure, so they are testable;
  * the rendering was exercised in a real browser instead.
  */

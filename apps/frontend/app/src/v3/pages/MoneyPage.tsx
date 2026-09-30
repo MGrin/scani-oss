@@ -1,150 +1,103 @@
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Button } from '@scani/ui/ui/button';
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
+import { DataViewToolbar } from '@scani/ui/v3/components/data-view/DataViewToolbar';
+import { RefineSheet } from '@scani/ui/v3/components/data-view/RefineSheet';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
+import { useDataView } from '@scani/ui/v3/hooks/useDataView';
+import { useDataViewUrlState } from '@scani/ui/v3/hooks/useDataViewUrlState';
+import { useSheetRoute } from '@scani/ui/v3/hooks/useSheetRoute';
+import { resolveActiveFilters, type V3FilterDef } from '@scani/ui/v3/lib/data-view';
+import { readDataViewUrl } from '@scani/ui/v3/lib/data-view-url';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
+import { refineSheet } from '@scani/ui/v3/lib/sheet';
 import { Plus } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
-import { trpc } from '@/lib/trpc';
-import { ForecastView } from '../components/money/ForecastView';
+import { useLocation, useNavigate } from 'react-router-dom';
+import { type BaseCurrencyRates, useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
+import { type RouterOutputs, trpc } from '@/lib/trpc';
+import { CreateVendorSheet } from '../components/money/CreateVendorSheet';
+import type { GroupTag } from '../components/money/GroupTags';
+import { PaymentSheetLink } from '../components/money/PaymentSheetLink';
 import { RecurringList } from '../components/money/RecurringList';
 import { RecurringSuggestions } from '../components/money/RecurringSuggestions';
+import { SettledFeed } from '../components/money/SettledFeed';
 import { UpcomingFeed } from '../components/money/UpcomingFeed';
 import { VendorList } from '../components/money/VendorList';
-import { historyEstimatesByPaymentId } from '../lib/forecast';
 import {
-  INCOME_HORIZON_DAYS,
+  billPeriodDays,
   MONEY_SEGMENTS,
   type MoneySegment,
   moneySegmentPath,
   resolveMoneySegment,
+  settledWithin,
+  upcomingBills,
 } from '../lib/money';
-import { V3_PAYMENT_ROUTES } from '../lib/routes';
+import {
+  type HistoryEstimate,
+  historyEstimatesByPaymentId,
+  todayDateString,
+} from '../lib/paymentTotals';
+import { PAYMENT_SHEET } from '../lib/routes';
 
-/**
- * The Money tab — §2.1's fourth slot, and four views of one question.
- *
- * **Upcoming leads** because a bill has a deadline and a standing list does
- * not. v2 opened the same section on a due-date feed too, but reached the other
- * two through separate sidebar entries; here they are a segmented control, so
- * the reader can see that the other two views exist without having to open a
- * drawer to find out.
- *
- * The segments are routes, not state (see `lib/money.ts`): the drawer and the
- * sidebar already point at `/v3/payments/recurring` and `/v3/vendors`, and each
- * view's peek sheet needs a URL of its own underneath it anyway.
- *
- * SC-461 added the fourth, Forecast, which reads the same book FORWARD. It
- * sits after Recurring because it is derived from it: the standing
- * commitments are the input, the projection is what they come to.
- *
- * All six queries are issued on every segment. They are small, already shared
- * with the home screen's own upcoming block, and react-query dedupes them — so
- * moving between segments is instant rather than a fresh skeleton each time,
- * which is the whole reason to make this one surface instead of three pages.
- */
+type Occurrence = RouterOutputs['payments']['upcoming'][number];
+
+/** `pageKey` with no `:`, so each filter's URL parameter is its own name:
+ *  `/payments?vendor=<id>` and `?group=<id>`, the links a payee's and a group's
+ *  pages emit, seed the list directly. */
+const BILLS_PAGE_KEY = 'bills';
+
+const STATUS_VALUES = ['matched', 'missed', 'skipped', 'all'] as const;
+type StatusFilter = '' | (typeof STATUS_VALUES)[number];
+
+function isStatusFilter(value: string | undefined): value is StatusFilter {
+  return value === '' || STATUS_VALUES.includes(value as (typeof STATUS_VALUES)[number]);
+}
 
 export function MoneyPage() {
   const { t } = useTranslation();
+  useDocumentTitle(t('v3.money.page.title'));
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const segment = resolveMoneySegment(pathname);
-  // Money is the heading on every view; the other three name themselves.
-  const segmentLabelKey = MONEY_SEGMENTS.find((entry) => entry.key === segment)?.labelKey;
-  useDocumentTitle(
-    segment === 'upcoming' || !segmentLabelKey ? t('v3.money.page.title') : t(segmentLabelKey)
-  );
   const [creatingVendor, setCreatingVendor] = useState(false);
 
-  // The longer of the two windows (V3-47): bills are read from the first thirty
-  // days of it and income from all ninety, so one cache entry serves both this
-  // surface and the home screen's block.
-  const upcoming = trpc.payments.upcoming.useQuery({ days: INCOME_HORIZON_DAYS });
   const payments = trpc.payments.list.useQuery();
   const vendors = trpc.vendors.list.useQuery();
   const tokens = trpc.tokens.getAll.useQuery();
-  const vendorSpend = trpc.vendors.spend.useQuery();
-  // One payload for twelve months, sliced client-side by the horizon control —
-  // see `PaymentForecastService` for why the window is not an input. `enabled`
-  // is deliberately absent: the query is small and the home screen's runway
-  // line shares this exact cache entry, so by the time the reader reaches this
-  // segment it is usually already answered.
-  const forecast = trpc.payments.forecast.useQuery();
-
-  // One state per view, collapsed from the queries that view actually reads.
-  // Before V3-16 each of these was an `||` chain over `isLoading` and the
-  // error halves went nowhere: a 500 from `vendors.list` rendered `?? []` and
-  // the surface invited the user to create the vendors they already had.
-  const upcomingState = mergeQueries(upcoming, vendors, tokens);
-  const recurringState = mergeQueries(payments, vendors, tokens);
-  const vendorsState = mergeQueries(vendors, payments, tokens, vendorSpend);
-  const forecastState = mergeQueries(forecast, tokens);
-
-  /**
-   * SC-625, and the reason it is derived HERE rather than inside each view.
-   *
-   * The recurring list, the vendor list and the projection all state what the
-   * book commits the reader to each month, and until this map existed the
-   * first two answered a strictly smaller question — they skipped every
-   * variable payment with no estimate, silently. Handing all three the SAME
-   * map, computed from the projection's own answer, is what makes them agree
-   * by construction rather than by three implementations being kept in step.
-   *
-   * SC-798 made it four. The upcoming feed lists OCCURRENCES rather than
-   * payments, so it was left out of SC-625 as a separate design question — and
-   * answered it by rendering `— No value` beside three surfaces quoting a
-   * figure. It reads the same map for the same reason the other three do.
-   *
-   * It costs no query. `payments.forecast` is already issued on every segment,
-   * for the horizon control's sake, and the home screen's runway line shares
-   * the cache entry.
-   */
-  const historyEstimates = useMemo(
-    () => historyEstimatesByPaymentId(forecast.data?.estimatedFromHistory ?? []),
-    [forecast.data?.estimatedFromHistory]
-  );
-
-  const utils = trpc.useUtils();
-  const setEstimateFromHistory = trpc.payments.setEstimateFromHistory.useMutation({
-    // Both, and neither is optional. The flag changes what the PROJECTION
-    // prices, and it changes what `payments.list` says about each payment —
-    // invalidating one leaves the recurring list showing a figure the
-    // projection has stopped using, or the reverse.
-    onSuccess: () => {
-      void utils.payments.forecast.invalidate();
-      void utils.payments.list.invalidate();
-    },
+  const groups = trpc.groups.getAll.useQuery(undefined, { enabled: segment !== 'vendors' });
+  const assignments = trpc.payments.groupAssignments.useQuery(undefined, {
+    enabled: segment !== 'vendors',
   });
-
-  const onEstimateFromHistory = useCallback(
-    (paymentIds: string[], enabled: boolean) => {
-      setEstimateFromHistory.mutate({ paymentIds, enabled });
-    },
-    [setEstimateFromHistory]
+  const vendorSpend = trpc.vendors.spend.useQuery(undefined, { enabled: segment === 'vendors' });
+  const scheduled = trpc.payments.scheduled.useQuery();
+  const historyEstimates = useMemo(
+    () => historyEstimatesByPaymentId(scheduled.data?.estimatedFromHistory ?? []),
+    [scheduled.data]
   );
-
-  const vendorNameById = new Map(
-    (vendors.data ?? []).map((vendor) => [vendor.id, vendor.displayName])
+  const vendorNameById = useMemo(
+    () => new Map((vendors.data ?? []).map((entry) => [entry.id, entry.displayName])),
+    [vendors.data]
   );
-  const tokenSymbolById = new Map((tokens.data ?? []).map((token) => [token.id, token.symbol]));
-  // One rate query for the whole tab: the totals and the per-row equivalents on
-  // both views draw on the same currencies, and the three view components stay
-  // free of tRPC so they remain renderable — and assertable — on their own.
-  const rates = useBaseCurrencyRates([
-    ...(upcoming.data ?? []).map((occurrence) => occurrence.payment.currencyTokenId),
-    ...(payments.data ?? []).map((payment) => payment.currencyTokenId),
-    // Settled history can name a currency no *active* payment does any more —
-    // an ended GBP subscription still has to convert in the paid totals.
-    ...(vendorSpend.data?.totals ?? []).map((total) => total.currencyTokenId),
-    // A projected movement can name a currency no upcoming occurrence does —
-    // a payment materialised past the 90-day window, or one expanded from the
-    // rule alone — and a currency missing from this list converts through no
-    // rate at all.
-    ...(forecast.data?.movements ?? []).map((movement) => movement.currencyTokenId),
-  ]);
+  const tokenSymbolById = useMemo(
+    () => new Map((tokens.data ?? []).map((entry) => [entry.id, entry.symbol])),
+    [tokens.data]
+  );
+  const rates = useBaseCurrencyRates(
+    (payments.data ?? []).map((payment) => payment.currencyTokenId)
+  );
+  const groupOptions = useMemo(
+    () => (groups.data ?? []).map((entry) => ({ value: entry.id, label: entry.name })),
+    [groups.data]
+  );
+  const groupById = useMemo(
+    () =>
+      new Map(
+        (groups.data ?? []).map((entry) => [entry.id, { name: entry.name, color: entry.color }])
+      ),
+    [groups.data]
+  );
 
   const changeSegment = (next: string) => {
     setCreatingVendor(false);
@@ -152,24 +105,21 @@ export function MoneyPage() {
   };
 
   return (
-    // `wide`, because two of the four views render a table above `lg` and a
-    // five-column table inside a phone-width column is the horizontal scroll v3
-    // exists to delete. On a phone the measure never binds.
     <PageLayout measure="wide">
       <PageHeader
         title={t('v3.money.page.title')}
         action={
           segment === 'vendors' ? (
-            <Button variant="outline" onClick={() => setCreatingVendor(true)}>
+            <Button onClick={() => setCreatingVendor(true)}>
               <Plus className="me-1.5 h-4 w-4" aria-hidden="true" />
               {t('v3.money.page.newVendor')}
             </Button>
           ) : (
             <Button asChild>
-              <Link to={V3_PAYMENT_ROUTES.create}>
+              <PaymentSheetLink sheet={PAYMENT_SHEET.create}>
                 <Plus className="me-1.5 h-4 w-4" aria-hidden="true" />
                 {t('v3.money.page.addPayment')}
-              </Link>
+              </PaymentSheetLink>
             </Button>
           )
         }
@@ -188,41 +138,33 @@ export function MoneyPage() {
       </Segmented>
 
       {segment === 'upcoming' ? (
-        <UpcomingFeed
-          occurrences={upcoming.data ?? []}
-          paymentCount={(payments.data ?? []).length}
+        <BillsList
+          paymentCount={payments.data?.length ?? 0}
           vendorNameById={vendorNameById}
           tokenSymbolById={tokenSymbolById}
           rates={rates}
-          query={upcomingState}
           historyEstimates={historyEstimates}
+          groupOptions={groupOptions}
+          occurrenceGroups={assignments.data?.occurrences ?? {}}
+          groupById={groupById}
         />
       ) : null}
-
-      {segment === 'recurring' ? <RecurringSuggestions tokenSymbolById={tokenSymbolById} /> : null}
 
       {segment === 'recurring' ? (
-        <RecurringList
-          payments={payments.data ?? []}
-          vendorNameById={vendorNameById}
-          tokenSymbolById={tokenSymbolById}
-          rates={rates}
-          query={recurringState}
-          historyEstimates={historyEstimates}
-        />
-      ) : null}
-
-      {segment === 'forecast' ? (
-        <ForecastView
-          forecast={forecast.data ?? null}
-          tokenSymbolById={tokenSymbolById}
-          rates={rates}
-          query={forecastState}
-          paymentCount={(payments.data ?? []).length}
-          tokens={tokens.data ?? []}
-          onEstimateFromHistory={onEstimateFromHistory}
-          estimateFromHistoryPending={setEstimateFromHistory.isPending}
-        />
+        <>
+          <RecurringSuggestions tokenSymbolById={tokenSymbolById} />
+          <RecurringList
+            payments={payments.data ?? []}
+            vendorNameById={vendorNameById}
+            tokenSymbolById={tokenSymbolById}
+            rates={rates}
+            query={mergeQueries(payments, vendors, tokens, assignments)}
+            historyEstimates={historyEstimates}
+            groupOptions={groupOptions}
+            groupIdsByPayment={assignments.data?.payments}
+            groupById={groupById}
+          />
+        </>
       ) : null}
 
       {segment === 'vendors' ? (
@@ -232,12 +174,220 @@ export function MoneyPage() {
           spend={vendorSpend.data ?? null}
           tokenSymbolById={tokenSymbolById}
           rates={rates}
-          query={vendorsState}
+          query={mergeQueries(vendors, payments, tokens, vendorSpend)}
           historyEstimates={historyEstimates}
-          creating={creatingVendor}
           onCreatingChange={setCreatingVendor}
         />
       ) : null}
+      <CreateVendorSheet open={creatingVendor} onOpenChange={setCreatingVendor} />
     </PageLayout>
+  );
+}
+
+interface BillsListProps {
+  paymentCount: number;
+  vendorNameById: Map<string, string>;
+  tokenSymbolById: Map<string, string>;
+  rates: BaseCurrencyRates;
+  historyEstimates: ReadonlyMap<string, HistoryEstimate>;
+  groupOptions: { value: string; label: string }[];
+  occurrenceGroups: Readonly<Record<string, readonly string[]>>;
+  groupById: ReadonlyMap<string, GroupTag>;
+}
+
+/**
+ * The Bills list (SC-1405): one toolbar, the app's own, above a list that
+ * needs no settings to read. Search finds a payee; everything else is behind
+ * Refine, and the two filters that change what the list IS, status and
+ * period, default to "what is due in the next 30 days" without showing a chip.
+ */
+function BillsList({
+  paymentCount,
+  vendorNameById,
+  tokenSymbolById,
+  rates,
+  historyEstimates,
+  groupOptions,
+  occurrenceGroups,
+  groupById,
+}: BillsListProps) {
+  const { t } = useTranslation();
+  const location = useLocation();
+
+  // Status decides what the server returns, so it is read from the URL before
+  // the query is issued rather than from the list state the query feeds.
+  const statusParam = readDataViewUrl(location.search, BILLS_PAGE_KEY, [
+    { key: 'status', options: [] },
+  ]).filters.status;
+  const status: StatusFilter = isStatusFilter(statusParam) ? statusParam : '';
+  const upcoming = trpc.payments.upcoming.useQuery({
+    days: 365,
+    status: status === '' ? 'scheduled' : status,
+  });
+
+  const vendorOptions = useMemo(
+    () =>
+      [...vendorNameById.entries()]
+        .map(([value, label]) => ({ value, label }))
+        .sort((a, b) => a.label.localeCompare(b.label)),
+    [vendorNameById]
+  );
+
+  const settledView = status !== '';
+  const filterDefs = useMemo<V3FilterDef[]>(
+    () => [
+      {
+        key: 'status',
+        labelKey: 'ui.dataView.bills.filter.status',
+        anyLabelKey: 'ui.dataView.bills.status.upcoming',
+        options: STATUS_VALUES.map((value) => ({
+          value,
+          labelKey: `ui.dataView.bills.status.${value}` as const,
+        })),
+      },
+      {
+        key: 'period',
+        labelKey: 'ui.dataView.bills.filter.period',
+        anyLabelKey: settledView
+          ? 'ui.dataView.bills.period.last30'
+          : 'ui.dataView.bills.period.next30',
+        options: settledView
+          ? [
+              { value: '90', labelKey: 'ui.dataView.bills.period.last90' },
+              { value: '365', labelKey: 'ui.dataView.bills.period.last365' },
+            ]
+          : [
+              { value: '90', labelKey: 'ui.dataView.bills.period.next90' },
+              { value: '365', labelKey: 'ui.dataView.bills.period.next365' },
+            ],
+      },
+      ...(groupOptions.length > 0
+        ? [
+            {
+              key: 'group',
+              labelKey: 'ui.dataView.bills.filter.group' as const,
+              options: groupOptions,
+              fn: (row: Occurrence, value: string) =>
+                (occurrenceGroups[row.id] ?? []).includes(value),
+            },
+          ]
+        : []),
+      {
+        key: 'vendor',
+        labelKey: 'ui.dataView.bills.filter.payee',
+        options: vendorOptions,
+        fn: (row: Occurrence, value: string) => row.payment.vendorId === value,
+      },
+    ],
+    [settledView, groupOptions, occurrenceGroups, vendorOptions]
+  );
+
+  // Seeded on the first render only, the way `V3DataView` seeds: later URL
+  // changes reach the list through `useDataViewUrlState`.
+  const seeded = useRef<Record<string, string> | null>(null);
+  if (seeded.current === null) {
+    seeded.current = readDataViewUrl(location.search, BILLS_PAGE_KEY, filterDefs).filters;
+  }
+  const dv = useDataView(
+    {
+      pageKey: `v3:${BILLS_PAGE_KEY}`,
+      data: upcoming.data ?? [],
+      filterDefs,
+      defaultFilters: seeded.current,
+      searchFn: (row: Occurrence, query: string) =>
+        (vendorNameById.get(row.payment.vendorId) ?? '').toLowerCase().includes(query),
+    },
+    (row) => row.id
+  );
+  const url = useDataViewUrlState(BILLS_PAGE_KEY, filterDefs, dv);
+  const refine = useSheetRoute(refineSheet(BILLS_PAGE_KEY));
+  const [search, setSearch] = useState(dv.searchTerm);
+  const { setSearchTerm } = dv;
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(search), 150);
+    return () => clearTimeout(timer);
+  }, [search, setSearchTerm]);
+
+  const activeFilters = resolveActiveFilters(dv.filters, filterDefs);
+  const days = billPeriodDays(dv.filters.period);
+  const today = todayDateString();
+  // The same queries the page issued; tRPC shares them, so this costs nothing
+  // and lets the list's loading and error state cover every input it reads.
+  const vendors = trpc.vendors.list.useQuery();
+  const tokens = trpc.tokens.getAll.useQuery();
+  const assignments = trpc.payments.groupAssignments.useQuery();
+  const query = mergeQueries(upcoming, vendors, tokens, assignments);
+
+  const settled = useMemo(
+    () => (settledView ? settledWithin(dv.filteredData, today, days) : []),
+    [settledView, dv.filteredData, today, days]
+  );
+
+  const toolbar = (
+    <div className="sticky top-0 z-10 flex flex-col gap-2 bg-background pb-2 pt-1">
+      <DataViewToolbar
+        search={search}
+        onSearchChange={setSearch}
+        searchPlaceholder={t('ui.dataView.bills.config.searchByPayee')}
+        searchLabel={t('ui.dataView.bills.config.searchByPayee')}
+        onRefine={refine.open}
+        activeFilters={activeFilters}
+        onRemoveFilter={(key) => url.setFilter(key, '')}
+      />
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-3">
+      {settledView ? toolbar : null}
+      {settledView ? (
+        <SettledFeed
+          occurrences={settled}
+          vendorNameById={vendorNameById}
+          tokenSymbolById={tokenSymbolById}
+          rates={rates}
+          query={query}
+          historyEstimates={historyEstimates}
+          occurrenceGroups={occurrenceGroups}
+          groupById={groupById}
+        />
+      ) : (
+        <UpcomingFeed
+          toolbar={toolbar}
+          occurrences={dv.filteredData}
+          paymentCount={paymentCount}
+          vendorNameById={vendorNameById}
+          tokenSymbolById={tokenSymbolById}
+          rates={rates}
+          query={query}
+          historyEstimates={historyEstimates}
+          horizonDays={days}
+          occurrenceGroups={occurrenceGroups}
+          groupById={groupById}
+        />
+      )}
+
+      <RefineSheet
+        open={refine.isOpen}
+        onOpenChange={refine.setOpen}
+        nounKey="ui.dataView.noun.payments"
+        filters={dv.filters}
+        filterDefs={filterDefs}
+        onSetFilter={url.setFilter}
+        sortField={dv.sortField}
+        sortDirection={dv.sortDirection}
+        onSetSort={dv.setSort}
+        groupBy={dv.groupBy}
+        onSetGroupBy={url.setGroupBy}
+        hasActiveFilters={dv.hasActiveFilters}
+        onClearFilters={() => {
+          setSearch('');
+          url.clearFilters();
+        }}
+        filteredCount={
+          settledView ? settled.length : upcomingBills(dv.filteredData, today, days).length
+        }
+      />
+    </div>
   );
 }

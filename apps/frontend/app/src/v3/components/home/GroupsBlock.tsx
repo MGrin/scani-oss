@@ -3,11 +3,13 @@ import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { useState } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { groupRows } from '../../lib/home';
+import { PAYMENTS_HORIZON_DAYS } from '../../lib/money';
 import { groupDetailPath } from '../../lib/routes';
 import { DisclosureButton } from './DisclosureButton';
+import { GroupBillsFigure } from './GroupBillsFigure';
 
 /**
  * Groups, with what each one is worth.
@@ -78,8 +80,15 @@ export function GroupsBlock() {
             }
             label={row.name}
             sublabel={row.sublabel}
+            // A count line naming four kinds wraps rather than ending in "…" (SC-1437).
+            wrapIdentity
             value={
-              row.inactiveValue === null ? (
+              row.billsOnly ? (
+                // Bills carry no value, so a bills group leads with what its
+                // bills commit, in the Bills page's figure and words — as the
+                // group's own page does (SC-1408, SC-1437).
+                <GroupBillsFigure groupId={row.id} />
+              ) : row.inactiveValue === null ? (
                 <Numeric value={row.value} currency={currency} compact />
               ) : (
                 // Every holding in the group is inactive (SC-1128): what they
@@ -93,6 +102,21 @@ export function GroupsBlock() {
                   </span>
                 </span>
               )
+            }
+            delta={
+              row.billsOnly ? (
+                <span className="text-caption text-muted-foreground">
+                  {t('v3.money.upcoming.billsCommitted', { count: PAYMENTS_HORIZON_DAYS })}
+                </span>
+              ) : row.hasBills ? (
+                <span className="text-caption text-muted-foreground">
+                  <Trans
+                    i18nKey="v3.home.groups.billsNext"
+                    count={PAYMENTS_HORIZON_DAYS}
+                    components={{ amount: <GroupBillsFigure groupId={row.id} /> }}
+                  />
+                </span>
+              ) : undefined
             }
             href={groupDetailPath(row.id)}
             aria-label={t('v3.home.groups.openGroup', { name: row.name })}

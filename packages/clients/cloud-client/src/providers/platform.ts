@@ -1,5 +1,6 @@
 import type { NewToken, Token, TokenMetadata } from '@scani/db/schema';
 import type {
+  AIAvailability,
   AIInferenceProvider,
   AIResult,
   Capability,
@@ -11,6 +12,7 @@ import {
   type cloudPricingProviderSchema,
   toCloudAsset,
 } from '@scani/providers/core/cloud-contract';
+import { AIUnavailableError } from '@scani/providers/core/errors';
 import type { PriceQuote, ProviderContext } from '@scani/providers/core/types';
 import type { CloudClient } from '../client';
 
@@ -116,19 +118,63 @@ export class CloudAIProvider implements AIInferenceProvider {
   readonly capabilities: readonly Capability[] = ['ai-inference'];
   readonly supportsPdfFileInput = true;
   constructor(private readonly client: CloudClient) {}
+  private status?: { value: AIAvailability; expires: number };
+  async getAvailability(): Promise<AIAvailability> {
+    if (this.status && this.status.expires > Date.now()) return this.status.value;
+    try {
+      const result = await this.client.processing.v1.capabilities.query();
+      const value: AIAvailability = result.aiAvailability ?? {
+        state: 'transient',
+        image: false,
+        pdf: false,
+        text: false,
+        completion: false,
+      };
+      this.status = { value, expires: Date.now() + 15_000 };
+      return value;
+    } catch {
+      const value: AIAvailability = {
+        state: 'transient',
+        image: false,
+        pdf: false,
+        text: false,
+        completion: false,
+      };
+      this.status = { value, expires: Date.now() + 15_000 };
+      return value;
+    }
+  }
+  private fail(error: unknown): never {
+    this.status = undefined;
+    const code = (error as { data?: { code?: string } })?.data?.code;
+    if (code === 'PRECONDITION_FAILED' && (error as Error).message === 'AI processing unavailable')
+      throw new AIUnavailableError('rejected');
+    const message = (error as Error).message ?? '';
+    // Only the processing endpoint's own outcomes are AI availability. A held
+    // input (CONFLICT) is released within ten minutes, so it is retried later.
+    if (
+      code === 'CONFLICT' ||
+      (code === 'INTERNAL_SERVER_ERROR' &&
+        (message === 'AI processing unavailable' || message.startsWith('Cloud processing failed')))
+    )
+      throw new AIUnavailableError('transient');
+    throw error;
+  }
   async parseScreenshot(
     input: Parameters<AIInferenceProvider['parseScreenshot']>[0]
   ): Promise<AIResult<unknown>> {
-    const result = await this.client.processing.v1.ai.mutate({
-      operation: 'screenshot',
-      ...input,
-      mimeType: input.mimeType as
-        | 'image/png'
-        | 'image/jpeg'
-        | 'image/webp'
-        | 'image/gif'
-        | 'application/pdf',
-    });
+    const result = await this.client.processing.v1.ai
+      .mutate({
+        operation: 'screenshot',
+        ...input,
+        mimeType: input.mimeType as
+          | 'image/png'
+          | 'image/jpeg'
+          | 'image/webp'
+          | 'image/gif'
+          | 'application/pdf',
+      })
+      .catch((error: unknown) => this.fail(error));
     return { data: result.data, usage: result.usage };
   }
   async parseDocumentText(
@@ -136,23 +182,27 @@ export class CloudAIProvider implements AIInferenceProvider {
     hint?: string,
     systemPrompt?: string
   ): Promise<AIResult<unknown>> {
-    const result = await this.client.processing.v1.ai.mutate({
-      operation: 'document',
-      text,
-      hint,
-      systemPrompt,
-    });
+    const result = await this.client.processing.v1.ai
+      .mutate({
+        operation: 'document',
+        text,
+        hint,
+        systemPrompt,
+      })
+      .catch((error: unknown) => this.fail(error));
     return { data: result.data, usage: result.usage };
   }
   async completeText(
     prompt: string,
     opts?: { temperature?: number; maxTokens?: number }
   ): Promise<AIResult<string>> {
-    const result = await this.client.processing.v1.ai.mutate({
-      operation: 'complete',
-      prompt,
-      ...opts,
-    });
+    const result = await this.client.processing.v1.ai
+      .mutate({
+        operation: 'complete',
+        prompt,
+        ...opts,
+      })
+      .catch((error: unknown) => this.fail(error));
     if (typeof result.data !== 'string') throw new Error('Invalid cloud completion response');
     return { ...result, data: result.data };
   }

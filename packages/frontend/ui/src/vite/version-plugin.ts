@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { type CoreBuild, readCoreBuild } from '@scani/config/core-build';
 import type { Plugin, Rollup } from 'vite';
 
 /**
@@ -17,6 +18,8 @@ export interface VersionPayload {
   readonly version: string;
   readonly buildTime: string;
   readonly commit?: string;
+  readonly productVersion?: string;
+  readonly coreBuild?: CoreBuild;
 }
 
 /**
@@ -39,10 +42,12 @@ export function readCommit(raw: string | undefined): string | undefined {
 export function versionPayload(
   buildHash: string,
   buildTime: Date,
-  commit: string | undefined
+  commit: string | undefined,
+  coreBuild?: CoreBuild
 ): VersionPayload {
   return {
     version: buildHash,
+    ...(coreBuild ? { productVersion: coreBuild.productVersion, coreBuild } : {}),
     buildTime: buildTime.toISOString(),
     ...(commit === undefined ? {} : { commit }),
   };
@@ -83,13 +88,22 @@ function contentVersion(bundle: Rollup.OutputBundle): string {
 export function viteVersion(): Plugin {
   let buildHash = '';
   let commit: string | undefined;
+  let coreBuild: CoreBuild | undefined;
 
   return {
     name: 'vite-version',
     config(_config, { command }) {
       buildHash = command === 'build' ? '' : 'dev';
       const told = command === 'build' ? VERSION_PLACEHOLDER : 'dev';
-      return { define: { __SCANI_BUILD_VERSION__: JSON.stringify(told) } };
+      commit = readCommit(process.env.SCANI_COMMIT);
+      coreBuild = readCoreBuild(process.env.SCANI_CORE_BUILD, commit);
+      return {
+        define: {
+          __SCANI_BUILD_VERSION__: JSON.stringify(told),
+          __SCANI_CORE_BUILD__: JSON.stringify(coreBuild ?? null),
+          __SCANI_BUILD_COMMIT__: JSON.stringify(commit ?? null),
+        },
+      };
     },
     buildStart() {
       commit = readCommit(process.env.SCANI_COMMIT);
@@ -110,7 +124,7 @@ export function viteVersion(): Plugin {
       const outDir = options.dir || resolve(process.cwd(), 'dist');
       writeFileSync(
         resolve(outDir, 'version.json'),
-        JSON.stringify(versionPayload(buildHash, new Date(), commit))
+        JSON.stringify(versionPayload(buildHash, new Date(), commit, coreBuild))
       );
     },
     configureServer(server) {

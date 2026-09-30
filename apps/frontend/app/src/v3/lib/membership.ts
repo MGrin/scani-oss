@@ -1,24 +1,11 @@
-/**
- * The vocabulary shared by every v3 surface that edits *who belongs to what*
- * — a group's holdings and accounts, a vault's holdings (SC-70).
- *
- * v2 modelled membership as a wizard: walk three steps, tick boxes against a
- * flat list, commit the whole set on Save. That is the shape of *creating*
- * something. Editing a group is almost always one small change — add this
- * holding, drop that account — and a wizard makes you re-answer every question
- * you did not come to change. It also cannot show the one thing an editor
- * needs: what is in the group *now*, as distinct from what is merely available.
- *
- * So the model here is two lists, not one checkbox set. `members` is the
- * record's current contents and reads first; `candidates` is everything else
- * and is only reached deliberately. A row carries its own action, and the
- * action applies immediately — there is no pending state to commit, and
- * therefore no Save button to lose off the edge of a phone.
- */
-
 import type { TFunction } from 'i18next';
 
-export type MemberKind = 'holding' | 'account';
+/** Holdings and accounts; bills and payees since SC-1408. A payee is the
+ *  bills' account: a standing rule over every bill it sends, now and later. */
+export type MemberKind = 'holding' | 'account' | 'bill' | 'payee';
+
+/** The order runs of kinds appear in, and the filter offers them in. */
+export const MEMBER_KINDS: readonly MemberKind[] = ['holding', 'account', 'bill', 'payee'];
 
 export interface MemberEntry {
   id: string;
@@ -38,12 +25,26 @@ export interface MemberEntry {
    * read the same field (SC-388).
    */
   inactive?: boolean;
+  /** The row's figure, which its badge sits under (UI standard rule 5): a
+   *  holding's or an account's value in base currency, a bill's amount in its
+   *  own. A payee has none; it stands for bills that each carry their own. */
+  figure?: { value: number | string | null; currency: string };
+  account?: string;
+  accountId?: string;
+  /** A bill's payee: ticking the payee brings the bill (SC-1408). */
+  payeeId?: string;
+  available?: number;
+  inherited?: boolean;
+  /** How this row is in the group: its own row, an account's rule, a payee's
+   *  rule, or explicitly out despite one. */
+  membership?: 'direct' | 'inherited' | 'payee' | 'excluded';
 }
 
-/** Holdings before accounts, then alphabetical. Two kinds in one list need a
- *  stable order or a row moves under the finger when a sibling is removed. */
+/** Kinds in `MEMBER_KINDS` order, then alphabetical. Several kinds in one
+ *  list need a stable order or a row moves under the finger when a sibling is
+ *  removed. */
 export function compareMembers(a: MemberEntry, b: MemberEntry): number {
-  if (a.kind !== b.kind) return a.kind === 'holding' ? -1 : 1;
+  if (a.kind !== b.kind) return MEMBER_KINDS.indexOf(a.kind) - MEMBER_KINDS.indexOf(b.kind);
   return a.label.localeCompare(b.label);
 }
 
@@ -65,10 +66,23 @@ export function memberMatches(entry: MemberEntry, query: string): boolean {
  * `_one`/`_other` is a rule each language states for itself.
  */
 export function memberCountLine(members: readonly MemberEntry[], t: TFunction): string {
-  return [
-    t('v3.membership.count.holding', { count: countOfKind(members, 'holding') }),
-    t('v3.membership.count.account', { count: countOfKind(members, 'account') }),
-  ].join(' · ');
+  return memberCountsLine((kind) => countOfKind(members, kind), t);
+}
+
+/**
+ * The same line from counts alone, for the groups list, which has no member
+ * rows to count — so the list row and the group's own header read one rule.
+ *
+ * A kind is named only when present: "0 holdings · 0 accounts · 1 bill" on a
+ * bills group, or "0 bills" on a portfolio one, is noise (SC-1408). An empty
+ * group says so in words rather than as a row of zeros (SC-1419).
+ */
+export function memberCountsLine(count: (kind: MemberKind) => number, t: TFunction): string {
+  const present = MEMBER_KINDS.filter((kind) => count(kind) > 0);
+  if (present.length === 0) return t('v3.membership.noMembersYet');
+  return present
+    .map((kind) => t(`v3.membership.count.${kind}`, { count: count(kind) }))
+    .join(' · ');
 }
 
 /**

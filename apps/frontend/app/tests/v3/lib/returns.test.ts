@@ -1,12 +1,17 @@
 import '../../i18n-preload';
 
 import { describe, expect, test } from 'bun:test';
-import { returnsView } from '../../../src/v3/lib/returns';
+import {
+  offeredReturnsWindows,
+  RETURNS_WINDOW_KEYS,
+  returnsView,
+} from '../../../src/v3/lib/returns';
 
 type Input = Parameters<typeof returnsView>[0];
 
 function returns(overrides: Record<string, unknown> = {}): Input {
   return {
+    scope: { kind: 'user' },
     requestedWindow: { kind: 'ytd', from: '2026-01-01', to: '2026-09-19' },
     effectiveWindow: { from: '2026-01-01', to: '2026-09-19' },
     baseCurrencyId: 'usd',
@@ -186,5 +191,85 @@ describe('the money half of the view (SC-1297)', () => {
     expect(money?.unvalued).toBe(3);
     // Control: a clean window reports none.
     expect(returnsView(base)?.money?.unvalued).toBe(0);
+  });
+});
+
+describe('returnsView carries the subset a return was taken over (SC-1421)', () => {
+  test('counts, reasons and the left-out value reach the view', () => {
+    const view = returnsView(
+      returns({
+        subset: {
+          includedHoldings: 17,
+          measuredHoldings: 116,
+          excluded: [{ reason: 'incomplete-flow-coverage', holdings: 91 }],
+          excludedValue: '110407.5',
+          enteredLate: 13,
+          unpricedAtZero: 58,
+        },
+      })
+    );
+    expect(view?.subset).toEqual({
+      included: 17,
+      measured: 116,
+      excluded: [{ reason: 'incomplete-flow-coverage', holdings: 91 }],
+      excludedValue: 110407.5,
+      valueShare: expect.any(Number),
+      valueBase: 'netWorth',
+      enteredLate: 13,
+      unpricedAtZero: 58,
+    });
+  });
+
+  // SC-1439: 85 of 141 holdings read as most of the portfolio when they were
+  // about an eighth of its value. The view says what share of the value that is.
+  test('the share of the value covered reaches the view', () => {
+    const view = returnsView(
+      returns({
+        endValue: '28500',
+        subset: {
+          includedHoldings: 85,
+          measuredHoldings: 141,
+          excluded: [{ reason: 'incomplete-flow-coverage', holdings: 23 }],
+          excludedValue: '184500',
+          enteredLate: 0,
+          unpricedAtZero: 0,
+        },
+      })
+    );
+    expect(view?.subset?.valueShare).toBeCloseTo(28500 / 213000, 12);
+    expect(view?.subset?.valueBase).toBe('netWorth');
+  });
+
+  test('a whole-scope return has no subset', () => {
+    expect(returnsView(returns({ subset: null }))?.subset).toBeNull();
+  });
+});
+
+// All is offered only when it measures a longer window than 1Y (SC-1439). Once
+// a window starts where its capital is material, All and 1Y can resolve to the
+// same start, and two identical figures read as two different results.
+describe('the Returns picker offers All only when it covers more than 1Y (SC-1439)', () => {
+  test('every window is a valid saved choice', () => {
+    expect(RETURNS_WINDOW_KEYS).toEqual(['ytd', '1y', 'all']);
+  });
+
+  test('All starting earlier than 1Y is offered', () => {
+    expect(offeredReturnsWindows('2021-09-05', '2025-09-29').map((w) => w.key)).toEqual([
+      'ytd',
+      '1y',
+      'all',
+    ]);
+  });
+
+  test('All resolving to the same start as 1Y is not offered', () => {
+    expect(offeredReturnsWindows('2025-10-31', '2025-10-31').map((w) => w.key)).toEqual([
+      'ytd',
+      '1y',
+    ]);
+  });
+
+  test('an unknown start withholds All rather than guessing', () => {
+    expect(offeredReturnsWindows(null, '2025-09-29').map((w) => w.key)).toEqual(['ytd', '1y']);
+    expect(offeredReturnsWindows('2021-09-05', null).map((w) => w.key)).toEqual(['ytd', '1y']);
   });
 });

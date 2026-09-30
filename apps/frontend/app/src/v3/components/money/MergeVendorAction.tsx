@@ -1,5 +1,6 @@
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
+import { Merge } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
@@ -68,13 +69,19 @@ export function MergeVendorAction({ vendorId, vendorName, candidates }: MergeVen
 
   return (
     <ConfirmAction
-      label={t('v3.money.mergeVendor.trigger')}
+      label={
+        <>
+          <Merge className="me-2 size-4" aria-hidden="true" />
+          {t('v3.money.mergeVendor.trigger')}
+        </>
+      }
       confirmLabel={
         duplicate
           ? t('v3.money.mergeVendor.confirmNamed', { vendor: duplicate.displayName })
           : t('v3.money.mergeVendor.confirm')
       }
       destructive
+      triggerClassName="text-destructive hover:text-destructive"
       open={open}
       onOpenChange={(next) => {
         setOpen(next);

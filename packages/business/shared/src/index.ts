@@ -67,7 +67,7 @@ export {
 export * from './token-validatiion';
 export * from './usage/outcomes';
 export { safeExternalUrl } from './utils/safe-external-url';
-export { safeRedirectPath } from './utils/safe-redirect';
+export { safeRedirectPath, safeReturnTarget } from './utils/safe-redirect';
 export {
   isIgnoredSentryMessage,
   isThirdPartyOnlyStack,

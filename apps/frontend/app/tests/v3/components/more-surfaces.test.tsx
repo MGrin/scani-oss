@@ -176,7 +176,9 @@ const noop = () => {};
 
 describe('ReviewList', () => {
   test('renders each waiting item with what it is and how long it has waited', () => {
-    const html = render(<ReviewList items={REVIEW_ITEMS} query={SETTLED_QUERY_STATE} />);
+    const html = render(
+      <ReviewList items={REVIEW_ITEMS} queueHasWork={false} query={SETTLED_QUERY_STATE} />
+    );
     // Named here rather than on the server, from the operands the feed sends
     // (SC-371): the job's own label table, and a count with its symbols.
     expect(html).toContain('Document parse');
@@ -184,7 +186,7 @@ describe('ReviewList', () => {
   });
 
   test('the empty state is an all-clear, not "no items found"', () => {
-    const html = render(<ReviewList items={[]} query={SETTLED_QUERY_STATE} />);
+    const html = render(<ReviewList items={[]} queueHasWork={false} query={SETTLED_QUERY_STATE} />);
     expect(html).toContain('Nothing needs your review');
     // No toolbar over an empty surface: a search box that cannot do anything,
     // sitting above the sentence saying there is nothing to search.
@@ -361,7 +363,35 @@ describe('GroupsList', () => {
   test('reads out both member counts, singular where it should be', () => {
     const html = renderGroups();
     expect(html).toContain('12 holdings · 1 account');
-    expect(html).toContain('0 holdings · 0 accounts');
+    // An empty group says so in words, as its own page does (SC-1419).
+    expect(html).toContain('No members yet');
+    expect(html).not.toContain('0 holdings · 0 accounts');
+  });
+
+  /** "4 holdings · 0 accounts" spent half the line on a zero, and a group's
+   *  bills never showed at all on a phone (SC-1419). */
+  test('names each kind only when present, bills and payees included', () => {
+    const html = render(
+      <GroupsList
+        groups={[
+          {
+            id: 'g4',
+            name: 'Household',
+            color: '#eab308',
+            holdingsCount: 4,
+            accountsCount: 0,
+            billsCount: 2,
+            payeesCount: 1,
+          },
+        ]}
+        values={[]}
+        baseCurrency="EUR"
+        query={SETTLED_QUERY_STATE}
+        onCreate={noop}
+      />
+    );
+    expect(html).toContain('4 holdings · 2 bills · 1 payee');
+    expect(html).not.toContain('0 accounts');
   });
 
   /** "1 holdings" is what this row printed until SC-88. The sentence is now
@@ -390,10 +420,12 @@ describe('GroupsList', () => {
     expect(html).toContain('1 holding · 1 account');
   });
 
-  test('the value zone carries the figure, under a named header', () => {
+  test('the value zone carries the figure, with no caption over an obvious one', () => {
+    // A group's value is what its row obviously is, so the phone list heads it
+    // with nothing, as Accounts and Holdings do (SC-1433).
     const html = renderGroups();
     expect(html).toContain('48,250.50');
-    expect(html).toContain('Value');
+    expect(html).not.toContain('>Value<');
   });
 
   /** An empty group is worth zero; one whose every position is unpriceable is
@@ -652,7 +684,7 @@ describe('HiddenHoldingsList', () => {
 describe('the query state reaches the list', () => {
   test('a surface still waiting does not claim the account is empty', () => {
     const waiting = { ...SETTLED_QUERY_STATE, isLoading: true };
-    expect(render(<ReviewList items={[]} query={waiting} />)).not.toContain(
+    expect(render(<ReviewList items={[]} queueHasWork={false} query={waiting} />)).not.toContain(
       'Nothing needs your review'
     );
     expect(render(<VaultsList vaults={[]} query={waiting} onCreate={noop} />)).not.toContain(

@@ -434,3 +434,51 @@ describe('BalanceAtTimeService.getBalance — interpolation across sparse observ
     expect(r.interpolated).toBe(false);
   });
 });
+
+// The ETH wallet whose ledger has no gas fees: today's balance minus its
+// recorded net inflow is negative, so the walk back is floored. Until
+// SC-1444 the floor was silent and read as an empty wallet.
+describe('BalanceAtTimeService.getBalance — a negative walk is marked (SC-1444)', () => {
+  const holding = {
+    id: HOLD,
+    userId: 'u1',
+    accountId: 'acc-1',
+    tokenId: 'tok-1',
+    balance: '0.003',
+    lastUpdated: new Date('2026-09-01T00:00:00Z'),
+    createdAt: new Date('2021-09-01T00:00:00Z'),
+  };
+
+  test('flags the floored balance on the holdings anchor', async () => {
+    const svc = makeService(
+      [],
+      [{ holdingId: HOLD, quantity: '2.83', occurredAt: new Date('2021-12-01T00:00:00Z') }],
+      holding
+    );
+    const r = await svc.getBalance(HOLD, new Date('2021-11-01T00:00:00Z'), undefined);
+    expect(r.balance?.toString()).toBe('0');
+    expect(r.floored).toBe(true);
+  });
+
+  test('flags the floored balance on the observation-after anchor', async () => {
+    const svc = makeService(
+      [{ holdingId: HOLD, balance: '1', observedAt: new Date('2022-06-01T00:00:00Z') }],
+      [{ holdingId: HOLD, quantity: '3', occurredAt: new Date('2022-01-01T00:00:00Z') }],
+      holding
+    );
+    const r = await svc.getBalance(HOLD, new Date('2021-11-01T00:00:00Z'), undefined);
+    expect(r.balance?.toString()).toBe('0');
+    expect(r.floored).toBe(true);
+  });
+
+  test('a walk that reaches exactly zero is not floored', async () => {
+    const svc = makeService(
+      [],
+      [{ holdingId: HOLD, quantity: '0.003', occurredAt: new Date('2021-12-01T00:00:00Z') }],
+      holding
+    );
+    const r = await svc.getBalance(HOLD, new Date('2021-11-01T00:00:00Z'), undefined);
+    expect(r.balance?.toString()).toBe('0');
+    expect(r.floored).toBe(false);
+  });
+});

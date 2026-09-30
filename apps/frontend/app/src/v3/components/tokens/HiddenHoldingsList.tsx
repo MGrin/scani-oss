@@ -1,5 +1,4 @@
 import { Badge } from '@scani/ui/ui/badge';
-import { Button } from '@scani/ui/ui/button';
 import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import type { V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
@@ -7,10 +6,8 @@ import { exportNumber, exportText } from '@scani/ui/v3/lib/export/cell';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { EyeOff, ShieldAlert } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
 import { tokenDisplayName } from '@/lib/utils';
 import { amountDecimals } from '../../lib/holdings';
-import { V3_ROUTES } from '../../lib/routes';
 import {
   type HiddenHoldingRow,
   hiddenReasonLabel,
@@ -163,11 +160,9 @@ export function HiddenHoldingsList({ holdings, query }: HiddenHoldingsListProps)
       icon: EyeOff,
       titleKey: 'ui.dataView.hiddenHoldings.empty.nothingIsHidden',
       descriptionKey: 'ui.dataView.hiddenHoldings.empty.everythingYouOwnIsCountedOnYourDashboard',
-      action: (
-        <Button asChild variant="outline">
-          <Link to={V3_ROUTES.holdings}>{t('v3.tokens.hidden.backToHoldings')}</Link>
-        </Button>
-      ),
+      // Nothing to create from here, and the way back is the page's back
+      // link or view switch, not a second button (rule 8, SC-1433).
+      action: null,
     },
     peek: {
       basePath: TOKENS_HIDDEN_PATH,

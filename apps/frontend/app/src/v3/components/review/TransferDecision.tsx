@@ -6,6 +6,7 @@ import type {
   TransferReviewDecision,
 } from '@scani/shared';
 import { userFacingMessage } from '@scani/ui/lib/user-facing-error';
+import { Button } from '@scani/ui/ui/button';
 import { useToast } from '@scani/ui/ui/use-toast';
 import { ChoiceRow } from '@scani/ui/v3/components/ChoiceRow';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
@@ -24,13 +25,11 @@ import {
   SPLIT_LABELS,
   SPLIT_NOTE_KEY,
   type SplitDraftRow,
-  splitConsequence,
-  splitIsCommittable,
   toSplitPortions,
   UNREVIEWED_TRANSFER_NOTE_KEY,
 } from '../../lib/transfer-review';
 import { TransferDestinationPicker } from './TransferDestinationPicker';
-import { emptySplitRows, TransferSplitEditor } from './TransferSplitEditor';
+import { emptySplitRows, TransferSplitSheet } from './TransferSplitEditor';
 
 /**
  * The answers, and the picker the first one needs (SC-150, SC-181).
@@ -154,16 +153,14 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
       // expected total rather than a generic refusal, and the sheet stays
       // open with the reader's numbers in it. Only a NOT_FOUND takes the
       // question away, and only then is a refetch the honest response.
-      const gone = error.data?.code === 'NOT_FOUND';
-      if (gone) await utils.transferReview.listPending.invalidate();
+      if (error.data?.code !== 'NOT_FOUND') return;
+      await utils.transferReview.listPending.invalidate();
       toast({
-        title: gone
-          ? t('v3.review.decision.toast.gone')
-          : t('v3.review.decision.toast.splitRejected'),
+        title: t('v3.review.decision.toast.gone'),
         description: userFacingMessage(error) ?? undefined,
         variant: 'destructive',
       });
-      if (gone) setOpenDecision(null);
+      setOpenDecision(null);
     },
   });
 
@@ -200,6 +197,11 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
         : {}),
     });
   };
+
+  const splitError =
+    resolveSplit.error && resolveSplit.error.data?.code !== 'NOT_FOUND'
+      ? (userFacingMessage(resolveSplit.error) ?? t('v3.review.decision.toast.splitRejected'))
+      : null;
 
   const commitSplit = () => {
     resolveSplit.mutate({
@@ -362,40 +364,41 @@ export function TransferDecision({ item, onResolved }: TransferDecisionProps) {
             Last because it is the least common and the most work: three of
             four transfers are one thing, and putting the amount fields above
             the one-tap answers would charge every reader for the case that
-            needs them. It is a peer of the other three rather than a mode
-            switch on them — the same trigger-then-confirm shape, the same
-            consequence sentence, and the same rule that an open answer hides
-            its siblings so a misaimed tap cannot commit a different one.
+            needs them. Its trigger is a peer of the others; its fields open in
+            a `FormSheet` (UI standard rule 13, SC-1433) rather than growing a
+            form inside the peek, and the sheet carries the same consequence
+            sentence. The candidate picked above still reaches its `Same money`
+            row, because this component owns both.
           */}
-          {(openDecision === null || openDecision === 'split') && (
-            <ConfirmAction
-              label={t(SPLIT_LABELS.triggerKey)}
-              confirmLabel={t(SPLIT_LABELS.commitKey)}
-              chooser={
-                <TransferSplitEditor
-                  item={item}
-                  rows={rowsWithMatch}
-                  onChange={setSplitRows}
-                  hasMatch={Boolean(chosen)}
-                  destinations={destinations.data ?? []}
-                  destinationsLoading={destinations.isLoading}
-                />
-              }
-              consequence={splitConsequence(t, rowsWithMatch, item, (id) =>
-                id ? (item.candidates.find((c) => c.transactionId === id) ?? null) : null
-              )}
-              canConfirm={splitIsCommittable(rowsWithMatch, item)}
-              isPending={isPending}
-              open={openDecision === 'split'}
-              onOpenChange={(open) => setOpenDecision(open ? 'split' : null)}
-              onConfirm={commitSplit}
-            />
+          {openDecision === null && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                resolveSplit.reset();
+                setOpenDecision('split');
+              }}
+            >
+              {t(SPLIT_LABELS.triggerKey)}
+            </Button>
           )}
         </div>
         {openDecision === null ? (
           <p className="text-caption text-muted-foreground">{t(SPLIT_NOTE_KEY)}</p>
         ) : null}
       </section>
+      <TransferSplitSheet
+        open={openDecision === 'split'}
+        onOpenChange={(open) => setOpenDecision(open ? 'split' : null)}
+        item={item}
+        rows={rowsWithMatch}
+        onChange={setSplitRows}
+        hasMatch={Boolean(chosen)}
+        destinations={destinations.data ?? []}
+        destinationsLoading={destinations.isLoading}
+        onSubmit={commitSplit}
+        pending={resolveSplit.isPending}
+        error={splitError}
+      />
     </div>
   );
 }

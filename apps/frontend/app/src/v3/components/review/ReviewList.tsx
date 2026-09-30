@@ -1,14 +1,21 @@
-import { Button } from '@scani/ui/ui/button';
 import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { rowName, type V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
 import { BLANK_CELL, exportDateTime, exportMoney } from '@scani/ui/v3/lib/export/cell';
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
-import { CheckCircle2 } from 'lucide-react';
+import {
+  AlertCircle,
+  ArrowLeftRight,
+  CheckCircle2,
+  FileText,
+  ListChecks,
+  type LucideIcon,
+  Scale,
+} from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { formatRelative } from '../../lib/relative-time';
 import {
   compareReviewItems,
@@ -17,7 +24,6 @@ import {
   reviewMatches,
 } from '../../lib/review';
 import { type ReviewWireRow, toReviewRow, v3ReviewTexts } from '../../lib/review-text';
-import { V3_ROUTES } from '../../lib/routes';
 
 /**
  * Everything waiting on the user, from every producer.
@@ -34,10 +40,20 @@ import { V3_ROUTES } from '../../lib/routes';
 
 interface ReviewListProps {
   items: ReviewWireRow[];
+  /** A queue above still holds work, so an empty list means "nothing else". */
+  queueHasWork: boolean;
   query: V3QueryState;
 }
 
-export function ReviewList({ items, query }: ReviewListProps) {
+const REVIEW_ICONS: Record<ReviewRow['labelCode'], LucideIcon> = {
+  invoiceExtracted: FileText,
+  job: ListChecks,
+  jobFailed: AlertCircle,
+  transfersToConfirm: ArrowLeftRight,
+  balanceChangesToExplain: Scale,
+};
+
+export function ReviewList({ items, queueHasWork, query }: ReviewListProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   // The feed arrives as operands and is named here (SC-371) — once per render
@@ -88,6 +104,12 @@ export function ReviewList({ items, query }: ReviewListProps) {
     // v3 right-aligns a `<Numeric>`. The time moves to the delta zone, which
     // is where the jobs list — the nearest sibling surface — already puts it.
     renderRow: (item) => ({
+      // Every other list leads with a mark, so the text starts at one x down
+      // the page (SC-1433). The icons are the ones those surfaces already use.
+      leading: (() => {
+        const Icon = REVIEW_ICONS[item.labelCode];
+        return <Icon className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />;
+      })(),
       label: item.title,
       sublabel: item.detail ?? undefined,
       value: item.amount ? (
@@ -146,13 +168,14 @@ export function ReviewList({ items, query }: ReviewListProps) {
     ],
     empty: {
       icon: CheckCircle2,
-      titleKey: 'ui.dataView.review.empty.nothingNeedsYourReview',
-      descriptionKey: 'ui.dataView.review.empty.importsLandHereWhenTheyFinish',
-      action: (
-        <Button asChild variant="outline">
-          <Link to={V3_ROUTES.jobs}>{t('v3.review.list.seeAllJobs')}</Link>
-        </Button>
-      ),
+      titleKey: queueHasWork
+        ? 'ui.dataView.review.empty.nothingElse'
+        : 'ui.dataView.review.empty.nothingNeedsYourReview',
+      descriptionKey: queueHasWork
+        ? 'ui.dataView.review.empty.theQueuesAboveHoldTheRest'
+        : 'ui.dataView.review.empty.importsLandHereWhenTheyFinish',
+      // Nothing to create from Review; Jobs is in the navigation (rule 8, SC-1433).
+      action: null,
     },
     onRowClick: (item) => navigate(item.href),
     rowHref: (item) => item.href,

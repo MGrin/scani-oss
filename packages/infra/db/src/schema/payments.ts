@@ -12,6 +12,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { accounts } from './accounts';
 import { documentExtractions } from './documents';
+import { groups } from './groups';
 import { holdingTransactions } from './holdings';
 import { tokens } from './tokens';
 import { users } from './users';
@@ -56,6 +57,7 @@ export const payments = pgTable(
     // null, and `resume` then skips nothing.
     pausedAt: timestamp('paused_at', { withTimezone: true }),
     endDate: date('end_date', { mode: 'string' }),
+    scheduleEffectiveFrom: date('schedule_effective_from', { mode: 'string' }),
     accountId: uuid('account_id').references(() => accounts.id, { onDelete: 'set null' }),
     // 'detected' is kept even though nothing writes it — detection was
     // dropped from this iteration; leaving the value means it can come
@@ -91,6 +93,21 @@ export const paymentOccurrences = pgTable(
       onDelete: 'set null',
     }),
     actualAmount: text('actual_amount'),
+    groupsOverridden: boolean('groups_overridden').notNull().default(false),
+    amountOverridden: boolean('amount_overridden').notNull().default(false),
+    // SC-1401. The bill's payee, currency and direction as they were when this
+    // occurrence settled, so editing the bill cannot rewrite history. Written
+    // by the `payment_occurrences_keep_settled_terms` trigger, never by the
+    // app, and null while the occurrence is scheduled.
+    // The migration declares both keys DEFERRABLE INITIALLY DEFERRED, which
+    // drizzle cannot express: an immediate check refused deleting a whole user.
+    settledVendorId: uuid('settled_vendor_id').references(() => vendors.id, {
+      onDelete: 'no action',
+    }),
+    settledCurrencyTokenId: uuid('settled_currency_token_id').references(() => tokens.id, {
+      onDelete: 'no action',
+    }),
+    settledDirection: text('settled_direction'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -150,3 +167,73 @@ export type Payment = typeof payments.$inferSelect;
 export type NewPayment = typeof payments.$inferInsert;
 export type PaymentOccurrence = typeof paymentOccurrences.$inferSelect;
 export type NewPaymentOccurrence = typeof paymentOccurrences.$inferInsert;
+
+export const paymentGroups = pgTable(
+  'payment_groups',
+  {
+    paymentId: uuid('payment_id')
+      .notNull()
+      .references(() => payments.id, { onDelete: 'cascade' }),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+  },
+  (table) => ({ key: unique('payment_groups_unique').on(table.paymentId, table.groupId) })
+);
+
+export const paymentOccurrenceGroups = pgTable(
+  'payment_occurrence_groups',
+  {
+    occurrenceId: uuid('occurrence_id')
+      .notNull()
+      .references(() => paymentOccurrences.id, { onDelete: 'cascade' }),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+  },
+  (table) => ({
+    key: unique('payment_occurrence_groups_unique').on(table.occurrenceId, table.groupId),
+  })
+);
+
+// A standing rule, not a cache: every bill with this payee is in the group,
+// including bills added later (SC-1408). The payee side of `account_groups`
+// (SC-386); `PaymentGroupService.resolve` is the one reader.
+export const vendorGroups = pgTable(
+  'vendor_groups',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    vendorId: uuid('vendor_id')
+      .notNull()
+      .references(() => vendors.id, { onDelete: 'cascade' }),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    key: unique('vendor_groups_unique').on(table.vendorId, table.groupId),
+    groupIdIdx: index('idx_vendor_groups_group_id').on(table.groupId),
+  })
+);
+
+// This bill is NOT in this group, even though its payee is. Beats both
+// positive paths, the payee side of `holding_group_exclusions`, and means
+// something only while the payee's rule exists (SC-1408).
+export const paymentGroupExclusions = pgTable(
+  'payment_group_exclusions',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    paymentId: uuid('payment_id')
+      .notNull()
+      .references(() => payments.id, { onDelete: 'cascade' }),
+    groupId: uuid('group_id')
+      .notNull()
+      .references(() => groups.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    key: unique('payment_group_exclusions_unique').on(table.paymentId, table.groupId),
+    groupIdIdx: index('idx_payment_group_exclusions_group_id').on(table.groupId),
+  })
+);

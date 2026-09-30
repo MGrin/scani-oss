@@ -24,6 +24,7 @@ import {
   resolveMoneySegment,
   splitByDirection,
   splitByDueness,
+  upcomingBills,
   vendorDeleteConsequence,
   withinDays,
 } from '../../../src/v3/lib/money';
@@ -47,22 +48,7 @@ describe('resolveMoneySegment', () => {
 
   test('each segment is a place a link can point at', () => {
     expect(resolveMoneySegment('/payments/recurring')).toBe('recurring');
-    expect(resolveMoneySegment('/payments/forecast')).toBe('forecast');
     expect(resolveMoneySegment('/vendors')).toBe('vendors');
-  });
-
-  /**
-   * `forecast` is the second reserved word in the occurrence-id space (SC-461)
-   * and inherits `recurring`'s hazard exactly: claimed after the fall-through
-   * it parses as an occurrence id and the Forecast view is a not-found sheet
-   * over the upcoming feed. It type-checks and lints either way.
-   */
-  test('“forecast” is claimed before the fall-through, not read as an id', () => {
-    expect(resolveMoneySegment('/payments/forecast')).toBe('forecast');
-    expect(resolveMoneySegment('/payments/forecast/')).toBe('forecast');
-    // The control on the other axis: an id that merely CONTAINS the word is
-    // still an id, so the reservation is on the segment and not on a substring.
-    expect(resolveMoneySegment('/payments/forecast-abc-123')).toBe('upcoming');
   });
 
   /**
@@ -673,5 +659,33 @@ describe('dayTotals', () => {
     const day = dayTotals([row('est', 'token-eur', null, '90')], estimates);
     expect(amounts(day.totals)).toEqual({ 'token-eur': '90' });
     expect(day.count).toBe(0);
+  });
+});
+
+/**
+ * The Refine sheet counts what the Upcoming list shows. It counted the whole
+ * 365-day fetch and read "101 payments" over a list of nine (SC-1405).
+ */
+describe('upcomingBills', () => {
+  const at = (id: string, dueDate: string, direction = 'outflow', status = 'scheduled') => ({
+    id,
+    dueDate,
+    status,
+    payment: { direction },
+  });
+
+  test('scheduled bills in the period, overdue included', () => {
+    const rows = [
+      at('overdue', '2026-09-22'),
+      at('soon', '2026-10-01'),
+      at('later', '2027-01-05'),
+      at('income', '2026-10-03', 'inflow'),
+      at('paid', '2026-10-02', 'outflow', 'matched'),
+    ];
+    expect(upcomingBills(rows, '2026-09-28', 30).map((row) => row.id)).toEqual(['overdue', 'soon']);
+  });
+
+  test('the control: a wider period takes the later bill too', () => {
+    expect(upcomingBills([at('later', '2027-01-05')], '2026-09-28', 365)).toHaveLength(1);
   });
 });

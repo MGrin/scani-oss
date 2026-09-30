@@ -1,3 +1,4 @@
+import { Trash2 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useState } from 'react';
 import { uiT, useUiTranslation } from '../../../i18n';
@@ -77,9 +78,15 @@ export function BulkDeleteAction({
 
   return (
     <ConfirmAction
-      label={t('ui.dataView.bulk.delete')}
+      label={
+        <>
+          <Trash2 className="me-2 size-4" aria-hidden="true" />
+          {t('ui.dataView.bulk.delete')}
+        </>
+      }
       confirmLabel={bulkDeleteCommitLabel(nounKey, count)}
       destructive
+      triggerClassName="text-destructive hover:text-destructive"
       open={open}
       onOpenChange={setOpen}
       isPending={isPending}

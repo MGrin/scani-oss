@@ -12,8 +12,9 @@ portfolio total lives in **two** places:
 
 - TypeScript, in `packages/business/domain/src/lib/holding-inclusion.ts`,
   consumed by `PortfolioValuationService` for the dashboard headline.
-- SQL, inline in `PortfolioValueDailyRepository.findIncludedHoldingScopeRange`,
-  for the historical chart read path.
+- SQL, in `PortfolioValueDailyRepository`'s `includedHoldingRows` clause,
+  which every per-holding reader filters through, the historical chart's
+  per-day totals included.
 
 Both express the same predicate: a holding is included if and only if
 `isHidden = false`, `isActive = true`, and
@@ -64,7 +65,7 @@ both implementations agreed on.
   }
   ```
 
-- The SQL inside `PortfolioValueDailyRepository.findIncludedHoldingScopeRange`
+- The SQL clause `includedHoldingRows` in `PortfolioValueDailyRepository`
   has a `// NOTE` comment pointing at the TypeScript file and
   stating that the two must stay aligned.
 

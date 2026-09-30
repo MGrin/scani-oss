@@ -22,7 +22,7 @@ import type { ReturnsMoney } from '../../lib/returns';
  * time. SC-1305 took the hero's, which is now `ReturnsHeroTile`, a stat tile
  * matching the other two tabs; this is the card's sentence and nothing else.
  *
- * **The hazard did not go away with the wording.** The same money change is
+ * **The hazard did not go away with the wording.** The same investment gain is
  * still reachable by two code paths on one screen — this sentence and the
  * hero's figure — and two copies of one number updated by two paths eventually
  * disagree. `returnsTab.test.tsx` counts the FIGURE on the assembled screen
@@ -37,7 +37,7 @@ export function ReturnsHeadline({
   currency: string;
   className?: string;
 }) {
-  const direction = money.change > 0 ? 'up' : money.change < 0 ? 'down' : 'flat';
+  const direction = money.gain > 0 ? 'up' : money.gain < 0 ? 'down' : 'flat';
   return (
     // `text-balance` rather than a default wrap: at 393px the sentence takes
     // two lines and the greedy break put "since 31" on the first and
@@ -49,7 +49,7 @@ export function ReturnsHeadline({
         components={{
           amount: (
             <Numeric
-              value={Math.abs(money.change)}
+              value={Math.abs(money.gain)}
               currency={currency}
               // No pence. At display size they are two thirds of a character
               // cell each and they answer nothing: the exact figure is the

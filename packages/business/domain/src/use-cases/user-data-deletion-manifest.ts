@@ -257,6 +257,13 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
     reason:
       "A manual price on a custom token, which is private to its owner since SC-1285 — so this is the user's own data, not a change to a shared price. The edit stays, because a price that moved with no record of the move is worse than one with no author; the author is removed. The FK is ON DELETE SET NULL since SC-1261, which is what lets `DeleteAccountUseCase` delete an account that ever priced a token.",
   },
+  {
+    kind: 'keep',
+    table: schema.cloudApiKeys,
+    userColumn: schema.cloudApiKeys.ownerUserId,
+    reason:
+      "The account's Scani Cloud keys, owned by `users.id` since the one-account merge. They are credentials for a separate service the account may be paying for, not portfolio content: each row is a name, a prefix and a hash. Deleting them here would silently cut off a self-hosted deployment that authenticates with them, which is revocation — something the Cloud console does per key, and a different decision from emptying the app. Deleting the account itself still takes them, through the FK's ON DELETE CASCADE.",
+  },
 ];
 
 /** What happens to a column of the `users` row, which this flow keeps. */
@@ -268,9 +275,11 @@ export type UserColumnDisposition =
  * The FK enumeration above can only see OTHER tables. The user's own row
  * survives by design and holds columns of its own, so it needs the same
  * treatment or the promise is still false with every table empty: the observed
- * burn figures are amounts the user typed about their own spending, and they
- * were surviving a delete-everything for exactly the reason the twelve tables
- * were — nothing enumerated them.
+ * burn figures were amounts the user typed about their own spending, and they
+ * survived a delete-everything for exactly the reason the twelve tables did —
+ * nothing enumerated them. Those columns went with the Planning page (SC-1409),
+ * so nothing is `clear` today; a new column holding content the user entered is
+ * classified `clear`, and the classification test refuses an unclassified one.
  */
 export const USER_ROW_COLUMN_DISPOSITIONS: readonly UserColumnDisposition[] = [
   { kind: 'keep', column: schema.users.id, reason: 'The account itself; the flow keeps the row.' },
@@ -319,21 +328,6 @@ export const USER_ROW_COLUMN_DISPOSITIONS: readonly UserColumnDisposition[] = [
     reason:
       'A preference, NOT NULL with a default. Resetting it would change how a rebuilt portfolio is computed without the user asking.',
   },
-
-  // The one class of user-entered CONTENT on this row: figures about their own
-  // spending. Both triples move together or the row violates
-  // `users_observed_burn_override_complete` / `users_observed_burn_one_answer`;
-  // all six NULL is "no answer", which every account starts at.
-  { kind: 'clear', column: schema.users.observedBurnOverride, note: 'An amount the user typed.' },
-  { kind: 'clear', column: schema.users.observedBurnOverrideCurrencyId },
-  { kind: 'clear', column: schema.users.observedBurnOverrideAt },
-  {
-    kind: 'clear',
-    column: schema.users.observedBurnConfirmedValue,
-    note: 'An amount the user agreed with.',
-  },
-  { kind: 'clear', column: schema.users.observedBurnConfirmedCurrencyId },
-  { kind: 'clear', column: schema.users.observedBurnConfirmedAt },
 
   {
     kind: 'keep',

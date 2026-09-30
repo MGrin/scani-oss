@@ -1,0 +1,11 @@
+-- SC-1409, second half — drop `wealth_planning`. PR #2021 removed the
+-- Planning page, its router, its service and its schema module, and that code
+-- is deployed, so nothing running names this table any more. The drop ships
+-- one deploy later on purpose: the SC-1097 guard refuses a removal while the
+-- deployed code still declares what it removes.
+--
+-- Production held 0 rows when this was written (read-only count,
+-- 2026-09-28), so nothing is lost. The `observed_burn_*` columns on `users`
+-- are not touched: one account holds a value there, and dropping them is a
+-- separate decision.
+DROP TABLE IF EXISTS wealth_planning;

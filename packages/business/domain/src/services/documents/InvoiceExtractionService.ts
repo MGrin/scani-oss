@@ -26,7 +26,13 @@
  */
 
 import type { ExtractionBillingPeriod, ExtractionPaymentStatus } from '@scani/db/schema';
-import type { AIInferenceProvider, AIResult, AIUsage } from '@scani/providers/core/capabilities';
+import {
+  type AIInferenceProvider,
+  type AIResult,
+  type AIUsage,
+  aiAvailability,
+} from '@scani/providers/core/capabilities';
+import { AIUnavailableError } from '@scani/providers/core/errors';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { isValidDecimalString } from '@scani/shared';
 import { Container, Service } from 'typedi';
@@ -82,8 +88,6 @@ const PDF_MIME_TYPE = 'application/pdf';
  */
 const MIN_TEXT_CHARS_FOR_LLM = 200;
 
-const EMPTY_RESULT: InvoiceExtractionResult = { invoices: [], usage: { upstreamCostUsd: 0 } };
-
 @Service()
 export class InvoiceExtractionService {
   private readonly budget = Container.get(AiSpendBudget);
@@ -93,8 +97,11 @@ export class InvoiceExtractionService {
     bytes: Uint8Array,
     mimeType: string
   ): Promise<InvoiceExtractionResult> {
-    const provider = this.getProvider();
-    if (!provider) return EMPTY_RESULT;
+    const markdown = mimeType === PDF_MIME_TYPE ? extractText(bytes).trim() : '';
+    const textReady = markdown.length >= MIN_TEXT_CHARS_FOR_LLM;
+    const provider = await this.getProvider(
+      textReady ? ['text', 'pdf'] : [mimeType === PDF_MIME_TYPE ? 'pdf' : 'image']
+    );
     // Either path below is one model call; the budget refuses before it (SC-1265).
     await this.budget.reserve(userId, 1);
 
@@ -108,7 +115,7 @@ export class InvoiceExtractionService {
       // a vision endpoint that rejects PDFs outright. Judging the
       // extracted markdown directly also sidesteps having to align
       // `pagesNeedingOcr`'s indexing with `extractPagesMarkdown`'s.
-      const markdown = extractText(bytes).trim();
+
       if (markdown.length >= MIN_TEXT_CHARS_FOR_LLM) {
         // Passed as the SYSTEM prompt, not a hint. As a hint it sat
         // underneath the provider's default prompt, which hardcodes the
@@ -144,13 +151,27 @@ export class InvoiceExtractionService {
    * half-parsed the document would be worse than a clean empty result
    * the caller can retry.
    */
-  private getProvider(): AIInferenceProvider | null {
+  private async getProvider(
+    operations: readonly ('pdf' | 'text' | 'image')[]
+  ): Promise<AIInferenceProvider> {
+    let providers: readonly AIInferenceProvider[];
     try {
-      const providers = Container.get(ProviderRegistry).getAIProviders();
-      return providers[0] ?? null;
+      providers = Container.get(ProviderRegistry).getAIProviders();
     } catch {
-      return null;
+      throw new AIUnavailableError('missing');
     }
+    const states = await Promise.all(providers.map(aiAvailability));
+    const provider = operations.flatMap((operation) =>
+      providers.filter((_, index) => states[index]![operation])
+    )[0];
+    if (provider) return provider;
+    throw new AIUnavailableError(
+      states.some((state) => state.state === 'transient')
+        ? 'transient'
+        : states.some((state) => state.state === 'rejected')
+          ? 'rejected'
+          : 'missing'
+    );
   }
 }
 

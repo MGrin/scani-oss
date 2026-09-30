@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { HISTORY_REBUILD_JOB_NAME } from '@scani/shared';
 import { eq, sql } from 'drizzle-orm';
 import { _resetReturnsCache, sharedReturnsRun } from '../../src/lib/returns-cache';
 
@@ -106,5 +107,26 @@ describe('sharedReturnsRun with the real data version (SC-1369)', () => {
     await rollupRow('2026-03-02', new Date('2026-03-04T04:00:00Z'));
     await sharedReturnsRun('k', userId, c.compute);
     expect(c.runs()).toBe(2);
+  });
+
+  // SC-1396: returns reads a queued history recompute as "rebuilding". A
+  // result cached before it must not be served while it waits, and the
+  // "rebuilding" result must not be served once it has finished.
+  test('a pending history recompute is its own version, in both directions', async () => {
+    const c = counter();
+    expect(await sharedReturnsRun('k', userId, c.compute)).toBe(1);
+    const jobId = `rebuild-${suffix}`;
+    await db.insert(schema.userJobs).values({
+      jobId,
+      userId,
+      jobName: HISTORY_REBUILD_JOB_NAME,
+      state: 'queued',
+    });
+    expect(await sharedReturnsRun('k', userId, c.compute)).toBe(2);
+    await db
+      .update(schema.userJobs)
+      .set({ state: 'completed' })
+      .where(eq(schema.userJobs.jobId, jobId));
+    expect(await sharedReturnsRun('k', userId, c.compute)).not.toBe(2);
   });
 });

@@ -4,12 +4,13 @@ import { Skeleton } from '@scani/ui/ui/skeleton';
 import { showSuccess } from '@scani/ui/ui/use-toast';
 import { describeQueryError, type ErrorVerb } from '@scani/ui/v3/lib/errors';
 import { Check, Plus } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
 import {
+  commonPayeeGroups,
   createAndAssignBlockers,
   describeAssignment,
   groupAssignmentDiff,
@@ -52,7 +53,8 @@ import { GROUP_COLORS, GroupColorChoice } from './GroupColorChoice';
 interface AssignGroupsSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  entityType: 'holdings' | 'accounts';
+  /** A payee's groups are its payee rule (SC-1408): every bill it sends, now and later. */
+  entityType: 'holdings' | 'accounts' | 'payees';
   entityIds: string[];
 }
 
@@ -130,6 +132,7 @@ export function AssignGroupsSheet({
   const { t } = useTranslation();
   const utils = trpc.useUtils();
   const isHoldings = entityType === 'holdings';
+  const isPayees = entityType === 'payees';
 
   const allGroupsQuery = trpc.groups.getAll.useQuery();
 
@@ -139,9 +142,24 @@ export function AssignGroupsSheet({
   );
   const accountCommon = trpc.accounts.getCommonGroups.useQuery(
     { accountIds: entityIds },
-    { enabled: open && !isHoldings && entityIds.length > 0 }
+    { enabled: open && entityType === 'accounts' && entityIds.length > 0 }
   );
-  const commonGroups = isHoldings ? holdingCommon.data : accountCommon.data;
+  const payeeAssignments = trpc.payments.groupAssignments.useQuery(undefined, {
+    enabled: open && isPayees,
+  });
+  const commonGroupIds = useMemo((): string[] | undefined => {
+    if (isHoldings) return holdingCommon.data?.map((group) => group.id);
+    if (!isPayees) return accountCommon.data?.map((group) => group.id);
+    const payees = payeeAssignments.data?.payees;
+    return payees ? commonPayeeGroups(payees, entityIds) : undefined;
+  }, [
+    isHoldings,
+    isPayees,
+    holdingCommon.data,
+    accountCommon.data,
+    payeeAssignments.data,
+    entityIds,
+  ]);
 
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
@@ -150,8 +168,8 @@ export function AssignGroupsSheet({
   const [failure, setFailure] = useState<string | null>(null);
 
   useEffect(() => {
-    if (commonGroups) setSelectedIds(new Set(commonGroups.map((group) => group.id)));
-  }, [commonGroups]);
+    if (commonGroupIds) setSelectedIds(new Set(commonGroupIds));
+  }, [commonGroupIds]);
 
   const fail = (error: unknown, subject: string, verb: ErrorVerb) => {
     const copy = describeQueryError(error, subject, verb);
@@ -164,30 +182,55 @@ export function AssignGroupsSheet({
   const accountAssign = trpc.accounts.bulkAssignGroups.useMutation({
     onError: (error) => fail(error, t('v3.groups.assign.subject'), 'save'),
   });
+  const payeeAssign = trpc.groups.changeBillMembership.useMutation({
+    onError: (error) => fail(error, t('v3.groups.assign.subject'), 'save'),
+  });
   const createGroup = trpc.groups.create.useMutation({
     onError: (error) => fail(error, t('v3.groups.assign.groupSubject'), 'create'),
   });
 
-  const pending = holdingAssign.isPending || accountAssign.isPending || createGroup.isPending;
+  const pending =
+    holdingAssign.isPending ||
+    accountAssign.isPending ||
+    payeeAssign.isPending ||
+    createGroup.isPending;
   const allGroups = allGroupsQuery.data;
   // The list is only honest once BOTH have answered: the names come from one
   // query and which of them are already ticked from another, and a list drawn
   // from the first alone claims every group is unticked.
-  const loading = allGroups === undefined || (entityIds.length > 0 && commonGroups === undefined);
+  const loading = allGroups === undefined || (entityIds.length > 0 && commonGroupIds === undefined);
 
   const applyDiff = async (addedGroupIds: string[], removedGroupIds: string[]) => {
     if (isHoldings) {
       await holdingAssign.mutateAsync({ holdingIds: entityIds, addedGroupIds, removedGroupIds });
+    } else if (isPayees) {
+      for (const [groupIds, direction] of [
+        [addedGroupIds, 'add'],
+        [removedGroupIds, 'remove'],
+      ] as const)
+        for (const groupId of groupIds)
+          await payeeAssign.mutateAsync({
+            groupId,
+            vendorIds: entityIds,
+            paymentIds: [],
+            direction,
+          });
     } else {
       await accountAssign.mutateAsync({ accountIds: entityIds, addedGroupIds, removedGroupIds });
     }
   };
 
+  /** What a save changed, refetched behind the closed sheet. */
+  const refresh = () => {
+    if (isPayees) {
+      void utils.payments.groupAssignments.invalidate();
+      void utils.groups.bills.invalidate();
+    }
+    void invalidatePortfolioQueries(utils);
+  };
+
   const handleSave = async () => {
-    const diff = groupAssignmentDiff(
-      new Set((commonGroups ?? []).map((group) => group.id)),
-      selectedIds
-    );
+    const diff = groupAssignmentDiff(new Set(commonGroupIds ?? []), selectedIds);
     if (isEmptyDiff(diff)) {
       onOpenChange(false);
       return;
@@ -199,7 +242,7 @@ export function AssignGroupsSheet({
       onOpenChange(false);
       // In the background: the sheet is already gone, and holding it open while
       // every portfolio query refetches would be a spinner over a finished job.
-      void invalidatePortfolioQueries(utils);
+      refresh();
     } catch {
       // `onError` has already written the line under the button.
     }
@@ -217,7 +260,7 @@ export function AssignGroupsSheet({
       await applyDiff([created.id], []);
       showSuccess(t('v3.groups.assign.toast.createdAndAssigned', { name: created.name }));
       onOpenChange(false);
-      void invalidatePortfolioQueries(utils);
+      refresh();
     } catch {
       // `onError` has already written the line under the button.
     }
@@ -254,7 +297,9 @@ export function AssignGroupsSheet({
   const count = entityIds.length;
   const countLabel = isHoldings
     ? t('v3.groups.assign.holdingCount', { count })
-    : t('v3.groups.assign.accountCount', { count });
+    : isPayees
+      ? t('v3.membership.count.payee', { count })
+      : t('v3.groups.assign.accountCount', { count });
   // Keyed on the group list alone, never on `loading`: with no groups there is
   // nothing `getCommonGroups` could pre-tick, and waiting for it would title the
   // sheet "Assign groups" over a skeleton and then rename it mid-flight.
@@ -268,6 +313,17 @@ export function AssignGroupsSheet({
         }}
         title={t('v3.groups.assign.firstTitle')}
         description={t('v3.groups.assign.firstDescription', { entities: countLabel })}
+        footer={
+          <FormActions
+            submitLabel={t('v3.groups.assign.createAndAssign')}
+            pendingLabel={t('v3.groups.assign.creating')}
+            onSubmit={() => void handleCreateAndAssign()}
+            onCancel={() => onOpenChange(false)}
+            blockers={createAndAssignBlockers(newName, t)}
+            pending={pending}
+            error={failure}
+          />
+        }
       >
         <div className="flex flex-col gap-4">
           <Field label={t('v3.groups.page.name')} htmlFor="v3-assign-first-group-name">
@@ -284,15 +340,6 @@ export function AssignGroupsSheet({
           <Field label={t('v3.groups.page.colour')}>
             <GroupColorChoice value={newColor} onChange={setNewColor} disabled={pending} />
           </Field>
-          <FormActions
-            submitLabel={t('v3.groups.assign.createAndAssign')}
-            pendingLabel={t('v3.groups.assign.creating')}
-            onSubmit={() => void handleCreateAndAssign()}
-            onCancel={() => onOpenChange(false)}
-            blockers={createAndAssignBlockers(newName, t)}
-            pending={pending}
-            error={failure}
-          />
         </div>
       </FormSheet>
     );
@@ -306,7 +353,27 @@ export function AssignGroupsSheet({
         onOpenChange(next);
       }}
       title={t('v3.groups.assign.title')}
-      description={t('v3.groups.assign.description', { entities: countLabel })}
+      description={
+        isPayees
+          ? t('v3.money.vendorPeek.groupsHint')
+          : t('v3.groups.assign.description', { entities: countLabel })
+      }
+      footer={
+        // One action row at a time. Both on screen at once put two "Cancel"
+        // buttons 80px apart, cancelling different things — the sub-form and
+        // the whole sheet — and nothing on either says which.
+        creating ? null : (
+          <FormActions
+            submitLabel={t('v3.groups.assign.save')}
+            pendingLabel={t('v3.groups.assign.saving')}
+            onSubmit={() => void handleSave()}
+            onCancel={() => onOpenChange(false)}
+            blockers={loading ? [t('v3.groups.assign.stillLoading')] : []}
+            pending={pending}
+            error={failure}
+          />
+        )
+      }
     >
       <div className="flex flex-col gap-4">
         {loading ? (
@@ -396,21 +463,6 @@ export function AssignGroupsSheet({
             <Plus className="size-4" aria-hidden="true" />
             {t('v3.groups.assign.newGroup')}
           </button>
-        )}
-
-        {/* One action row at a time. Both on screen at once put two "Cancel"
-            buttons 80px apart, cancelling different things — the sub-form and
-            the whole sheet — and nothing on either says which. */}
-        {creating ? null : (
-          <FormActions
-            submitLabel={t('v3.groups.assign.save')}
-            pendingLabel={t('v3.groups.assign.saving')}
-            onSubmit={() => void handleSave()}
-            onCancel={() => onOpenChange(false)}
-            blockers={loading ? [t('v3.groups.assign.stillLoading')] : []}
-            pending={pending}
-            error={failure}
-          />
         )}
       </div>
     </FormSheet>

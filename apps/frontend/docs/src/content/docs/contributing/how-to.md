@@ -99,9 +99,9 @@ watches `main` and cuts versions off these.
 
 ## Contributor benefits
 
-Every contributor with at least one merged, non-trivial pull request on
-`scani-oss` gets free, permanent access to every paid tier of the hosted
-Scani service at <https://app.scani.xyz>.
+A major merged contribution to `scani-oss` earns a free year of the $10
+plan on the hosted Scani service at <https://app.scani.xyz>. Anyone who
+claimed under the earlier "free forever" offer keeps it.
 
 What this means in practice:
 
@@ -112,11 +112,11 @@ What this means in practice:
   typo, a non-trivial refactor agreed in an issue first. Cosmetic-only
   changes (a single-line README typo, a whitespace reflow) don't
   qualify on their own — bundle them with substantive work.
-- **What "paid tiers" means today**: the hosted service is currently in
-  beta with no billing live. When paid tiers ship, your account is
-  flagged as a contributor account on the same day and retains every
-  paid tier indefinitely, with no further conditions. You do not have
-  to keep contributing to keep access.
+- **What the reward means today**: the hosted service is currently in
+  beta with no billing live. When paid plans ship, your account is
+  flagged as a contributor account on the same day and the free year of
+  the $10 plan applies to it. Accounts that claimed under the earlier
+  "free forever" offer keep permanent access to every paid tier.
 - **How to claim**: after your PR merges, email
   contributors@scani.xyz from the address on your GitHub account, or
   open an account at <https://app.scani.xyz> with that same email and

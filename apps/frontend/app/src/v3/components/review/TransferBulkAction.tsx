@@ -161,6 +161,7 @@ function BulkDecisionAction({
       label={t(BULK_LABELS[decision].triggerKey)}
       confirmLabel={t(BULK_LABELS[decision].commitKey, { count: eligible.length })}
       destructive={destructive}
+      triggerClassName={destructive ? 'text-destructive hover:text-destructive' : undefined}
       {...(overCap
         ? {
             disabledReason: t('v3.review.transfer.bulk.overCap', {

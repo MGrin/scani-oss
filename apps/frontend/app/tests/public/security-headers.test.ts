@@ -100,8 +100,11 @@ function parseAddHeaders(source: string): Map<string, string> {
   return out;
 }
 
-/** `a 'x'; b y; c` → Map(a → "'x'", b → 'y', c → ''). */
 const TURNSTILE_ORIGIN = 'https://challenges.cloudflare.com';
+const BEACON_ORIGIN = 'https://static.cloudflareinsights.com';
+const BEACON_REPORT_ORIGIN = 'https://cloudflareinsights.com';
+
+/** `a 'x'; b y; c` → Map(a → "'x'", b → 'y', c → ''). */
 
 function parseCsp(value: string): Map<string, string> {
   const out = new Map<string, string>();
@@ -246,13 +249,19 @@ describe('_headers and the nginx include declare one policy', () => {
   test('the CSP still constrains the directives an XSS payload would use', () => {
     const fromNginx = parseCsp(nginx.get('Content-Security-Policy') ?? '');
     expect(fromNginx.get('default-src')).toBe("'self'");
-    // Exactly one third-party origin, Cloudflare Turnstile's (SC-1266): no
-    // wildcard, no 'unsafe-*', and any other host turns this red.
-    expect(fromNginx.get('script-src')).toBe(`'self' ${TURNSTILE_ORIGIN}`);
+    // Exactly two third-party script origins, Cloudflare Turnstile's (SC-1266)
+    // and the Web Analytics beacon Cloudflare injects into a proxied zone
+    // (SC-1326): no wildcard, no 'unsafe-*', and any other host turns this red.
+    expect(fromNginx.get('script-src')).toBe(`'self' ${TURNSTILE_ORIGIN} ${BEACON_ORIGIN}`);
     expect(fromNginx.get('frame-src')).toBe(TURNSTILE_ORIGIN);
     expect(fromNginx.get('object-src')).toBe("'none'");
     expect(fromNginx.get('frame-ancestors')).toBe("'none'");
     expect(fromNginx.get('base-uri')).toBe("'self'");
+  });
+
+  test('the hosted app lets the beacon report back', () => {
+    const fromFile = parseCsp(declared.get('Content-Security-Policy') ?? '');
+    expect(fromFile.get(CONNECT_SRC)?.split(' ')).toContain(BEACON_REPORT_ORIGIN);
   });
 });
 

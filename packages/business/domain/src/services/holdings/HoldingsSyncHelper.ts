@@ -195,7 +195,12 @@ export class HoldingsSyncHelper extends BaseService {
           if (skipUnchangedUpdates && existing.balance === balance) continue;
 
           await this.holdingService.updateHoldingBalanceWithEvent(
-            { holdingId: existing.id, balance, eventContext },
+            {
+              holdingId: existing.id,
+              balance,
+              eventContext,
+              observedAt: integrationHolding.capturedAt,
+            },
             tx
           );
 
@@ -212,6 +217,7 @@ export class HoldingsSyncHelper extends BaseService {
               source: sourceTag,
               arrival,
               externalId: dedupStrategy === 'externalId' ? lookupExternalId : undefined,
+              observedAt: integrationHolding.capturedAt,
               eventContext: eventContext
                 ? { baseCurrencyId: eventContext.baseCurrencyId }
                 : undefined,

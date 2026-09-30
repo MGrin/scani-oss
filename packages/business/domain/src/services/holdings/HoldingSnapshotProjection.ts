@@ -47,6 +47,9 @@ export interface IntegrationHolding {
   contractAddress?: string;
   iconUrl?: string;
   metadata?: Record<string, unknown>;
+  /** When the provider says this balance was true, which a reporting
+   *  interface dates to its own close rather than to our fetch (SC-1427). */
+  capturedAt?: Date;
 }
 
 export interface FetchHoldingsResult {
@@ -159,6 +162,7 @@ export function projectSnapshotsToHoldings(
     // 'crypto' and the price router sends it to CoinGecko (which
     // returns the "Unstable States Dollar" scam token instead of $1).
     if (typeof s.tokenType === 'string') out.tokenType = s.tokenType;
+    if (s.capturedAt) out.capturedAt = s.capturedAt;
     return out;
   });
 

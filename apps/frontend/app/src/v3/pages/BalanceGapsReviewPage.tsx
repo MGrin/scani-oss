@@ -1,17 +1,20 @@
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
-import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
+import { PageLayout } from '@scani/ui/v3/components/PageLayout';
+import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { BalanceGapList } from '../components/review/BalanceGapList';
+import { ReviewQueueHeader } from '../components/review/ReviewQueueHeader';
 
 /**
  * "We think money moved here — tell us" (SC-501).
  *
  * Reached from the Review feed, which carries one row for the whole queue,
  * and sitting beside `/review/transfers` so somebody who already knows how
- * this product asks a question finds it where the other one is. `/review`
- * covers this path by the same path-segment rule, so the nav stays lit while
- * a reader works through it.
+ * this product asks a question finds it where the other one is — with the
+ * same header, the same list and the question in the same peek (SC-1433).
+ * `/review` covers this path by the same path-segment rule, so the nav stays
+ * lit while a reader works through it.
  *
  * What is at stake, and the reason the page exists at all: until somebody
  * answers, an untracked departure is booked as a loss and an untracked
@@ -27,9 +30,8 @@ export function BalanceGapsReviewPage() {
 
   return (
     <PageLayout measure="wide">
-      <PageHeader title={t('v3.review.page.balancesTitle')} />
-      <p className="text-body text-muted-foreground">{t('v3.review.balances.intro')}</p>
-      <BalanceGapList data={query.data} isLoading={query.isLoading} />
+      <ReviewQueueHeader queue="balances" view="pending" />
+      <BalanceGapList data={query.data} query={mergeQueries(query)} />
     </PageLayout>
   );
 }

@@ -74,7 +74,9 @@ describe('bottom drawer — the ways out', () => {
     // caller has to say `style={{ height }}` out loud to override it.
     expect(CONTENT_CLASSES).not.toContain('h-dvh');
     expect(CONTENT_CLASSES).not.toMatch(/\bh-/);
-    expect(SOURCE).toContain('height: DRAWER_HEIGHT,');
+    // With the keyboard up the inline height is capped to the band above it
+    // (SC-1434); at rest it is still exactly DRAWER_HEIGHT.
+    expect(SOURCE).toMatch(/height: keyboard\s*\?[\s\S]*?:\s*DRAWER_HEIGHT,/);
   });
 
   test('the close button is real, not screen-reader-only', () => {
@@ -142,5 +144,54 @@ describe('bottom drawer — the ways out', () => {
   test('the close button is absent when the drawer is not dismissible, not disabled', () => {
     // A × that renders and does nothing reads as a broken app.
     expect(SOURCE).toContain('{dismissible ? (');
+  });
+});
+
+describe('a drawer opened over another (SC-1433)', () => {
+  test('only an attached drawer counts, because a closed one still renders', () => {
+    // Registering on render hid every open peek: each closed drawer on the page
+    // had joined the stack above it.
+    expect(SOURCE).toContain('useCoveredByAnotherDrawer(attached)');
+    expect(SOURCE).toContain('setAttached(node !== null)');
+    expect(SOURCE).toMatch(/if \(!open\) return;\s*\n\s*setDrawerStack/);
+  });
+
+  test('the covered drawer hides its overlay and its content, and keeps its height', () => {
+    expect(SOURCE).toContain(
+      "<BottomDrawerOverlay style={covered ? { visibility: 'hidden' } : undefined} />"
+    );
+    expect(SOURCE).toMatch(/\.\.\.style,\s*\n(\s*\/\/[^\n]*\n)*\s*\.\.\.\(covered \?/);
+    expect(SOURCE).not.toContain('covered ? [1]');
+  });
+});
+
+describe('drawer footers and the keyboard (SC-1433)', () => {
+  test('the drawer zeroes its footer clearance while it stands on the keyboard', () => {
+    expect(SOURCE).toContain("keyboard ? { '--drawer-safe-bottom': '0px' } : {}");
+  });
+
+  test('no drawer pads for the home indicator with the raw inset', async () => {
+    // A raw `env(safe-area-inset-bottom)` in a drawer keeps its ~34pt of
+    // padding with the keyboard up, which left an empty band above the
+    // keyboard while the fields were clipped. `DRAWER_SAFE_BOTTOM` drops it.
+    const root = join(import.meta.dir, '../../../../..');
+    const found: string[] = [];
+    let scanned = 0;
+    const paths = [
+      ...new Bun.Glob('apps/frontend/app/src/v3/**/*.tsx').scanSync({ cwd: root }),
+      ...new Bun.Glob('packages/frontend/ui/src/v3/**/*.tsx').scanSync({ cwd: root }),
+    ];
+    for (const path of paths) {
+      scanned++;
+      const text = await Bun.file(join(root, path)).text();
+      if (
+        /BottomDrawerContent|BottomDrawerFooter|from '[^']*bottom-drawer'/.test(text) &&
+        /env\(safe-area-inset-bottom/.test(text)
+      ) {
+        found.push(path);
+      }
+    }
+    expect(scanned).toBeGreaterThan(5);
+    expect(found).toEqual([]);
   });
 });

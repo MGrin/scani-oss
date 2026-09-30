@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { goToReturnTarget, safeReturnTo } from '@/lib/return-origins';
 
 /**
  * Better-Auth magic-link callback.
@@ -40,7 +41,15 @@ export function AuthCallback() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const returnTo = (location.state as { from?: { pathname: string } })?.from?.pathname || '/';
+  const returnTo = safeReturnTo(
+    searchParams.get('returnTo'),
+    (location.state as { from?: { pathname: string } })?.from?.pathname || '/'
+  );
+
+  const retryPath =
+    searchParams.get('returnTo') === returnTo
+      ? `/auth?returnTo=${encodeURIComponent(returnTo)}`
+      : '/auth';
 
   const linkError = searchParams.get('error');
   const linkErrorDescription = searchParams.get('error_description');
@@ -55,7 +64,7 @@ export function AuthCallback() {
 
     if (authStatus === 'authenticated') {
       setStatus('success');
-      navigate(returnTo, { replace: true });
+      goToReturnTarget(returnTo, navigate);
       return;
     }
 
@@ -156,7 +165,7 @@ export function AuthCallback() {
 
           <div className="space-y-2">
             <Button asChild className="w-full">
-              <Link to="/auth">{t('auth.callback.tryAgain')}</Link>
+              <Link to={retryPath}>{t('auth.callback.tryAgain')}</Link>
             </Button>
           </div>
 

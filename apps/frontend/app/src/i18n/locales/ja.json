@@ -74,10 +74,10 @@
   },
   "nav": {
     "sections": {
-      "portfolio": "ポートフォリオ",
+      "portfolio": "資産",
       "organization": "整理",
       "activity": "アクティビティ",
-      "payments": "支払"
+      "payments": "請求"
     },
     "home": "ホーム",
     "holdings": "保有資産",
@@ -100,7 +100,7 @@
     "review": "確認",
     "files": "ファイル",
     "payments": "支払",
-    "money": "収支"
+    "money": "請求"
   },
   "settings": {
     "title": "設定",
@@ -151,7 +151,9 @@
         "hiddenHoldings_other": "非表示の保有資産",
         "hiddenHoldings_counted_other": "{{count}}件の非表示の保有資産",
         "customTokens_other": "カスタムトークン",
-        "customTokens_counted_other": "{{count}}件のカスタムトークン"
+        "customTokens_counted_other": "{{count}}件のカスタムトークン",
+        "balanceChanges_other": "残高の変動",
+        "balanceChanges_counted_other": "{{count}}件の残高変動"
       },
       "accounts": {
         "col": {
@@ -274,11 +276,12 @@
           "accounts": "口座",
           "group": "グループ",
           "holdings": "保有資産",
-          "value": "評価額"
+          "value": "評価額",
+          "bills": "請求",
+          "payees": "取引先"
         },
         "config": {
-          "searchGroups": "グループを検索",
-          "value": "評価額"
+          "searchGroups": "グループを検索"
         },
         "empty": {
           "aGroupIsYourOwnLabel": "グループは、保有資産や口座に付ける自分用のラベルです。「老後資金」「課税対象」「共同名義」など。",
@@ -330,6 +333,7 @@
       "holdings": {
         "col": {
           "account": "口座",
+          "actions": "操作",
           "amount": "数量",
           "gainLoss": "損益",
           "holding": "保有資産",
@@ -487,6 +491,7 @@
           "cadence": "頻度",
           "direction": "区分",
           "status": "状態",
+          "groups": "グループ",
           "vendor": "取引先"
         },
         "config": {
@@ -518,6 +523,32 @@
           "income": "収入"
         }
       },
+      "bills": {
+        "config": {
+          "searchByPayee": "取引先で検索"
+        },
+        "filter": {
+          "group": "グループ",
+          "payee": "取引先",
+          "status": "ステータス",
+          "period": "期間"
+        },
+        "status": {
+          "upcoming": "今後の予定",
+          "matched": "支払済み",
+          "missed": "未払い",
+          "skipped": "スキップ",
+          "all": "すべて"
+        },
+        "period": {
+          "next30": "今後30日",
+          "next90": "今後90日",
+          "next365": "今後12か月",
+          "last30": "過去30日",
+          "last90": "過去90日",
+          "last365": "過去12か月"
+        }
+      },
       "review": {
         "col": {
           "amount": "金額",
@@ -530,7 +561,9 @@
         },
         "empty": {
           "importsLandHereWhenTheyFinish": "取り込みが完了し、保有資産に反映する前に確認が必要なものがここに表示されます。",
-          "nothingNeedsYourReview": "確認が必要なものはありません"
+          "nothingNeedsYourReview": "確認が必要なものはありません",
+          "nothingElse": "ほかに確認が必要なものはありません",
+          "theQueuesAboveHoldTheRest": "残りは上のキューにあります。"
         },
         "filter": {
           "type": "種類"
@@ -596,7 +629,7 @@
         "col": {
           "category": "カテゴリ",
           "kind": "区分",
-          "payments": "支払",
+          "payments": "定期",
           "vendor": "取引先",
           "perMonth": "月あたり"
         },
@@ -613,7 +646,7 @@
         },
         "sort": {
           "name": "名前",
-          "payments": "支払"
+          "payments": "定期"
         }
       },
       "upcoming": {
@@ -622,14 +655,6 @@
           "noPayments": "定期支払はまだありません",
           "outsideWindow": "登録済みの支払は、この期間の外に期日があります。",
           "addOne": "支払や定期的な収入を追加すると、次回以降の期日がここに表示されます。"
-        }
-      },
-      "forecast": {
-        "empty": {
-          "nothingToProject": "予測できるものがありません",
-          "noPayments": "定期支払はまだありません",
-          "allPausedOrUnpriced": "登録されている支払はすべて一時停止・終了しているか、予測に使える金額がありません。",
-          "addOne": "支払や定期的な収入を追加すると、予測がここに表示されます。"
         }
       },
       "itemCount_other": "{{count}}件",
@@ -734,6 +759,55 @@
         "sortedAscending": "{{label}}（昇順）",
         "sortedDescending": "{{label}}（降順）",
         "subjectDescription": "{{subject}}を自分のものとして保存できるファイルでダウンロードします。"
+      },
+      "members": {
+        "filter": {
+          "kind": "種類"
+        },
+        "col": {
+          "membership": "所属",
+          "member": "メンバー"
+        }
+      },
+      "groupMembers": {
+        "empty": {
+          "title": "このグループはまだ空です",
+          "description": "口座、保有資産、請求、取引先を追加すると、このグループの価値が表示されます。"
+        }
+      },
+      "vaultMembers": {
+        "empty": {
+          "title": "この貯蓄目標に計上されているものはまだありません",
+          "description": "保有資産を紐づけ、それぞれどれだけ計上するかを選びます。"
+        }
+      },
+      "transferRules": {
+        "empty": {
+          "noDestinationRulesYet": "宛先ルールはまだありません",
+          "openAPaymentOutInTheQueue": "キューで出金を開き、その行き先を記録してください。同じ宛先への以降の支払いには、金額にかかわらずそのメモが付きます。譲渡として指定した宛先は、自動で回答されます。"
+        }
+      },
+      "balanceGaps": {
+        "col": {
+          "answer": "回答",
+          "answered": "回答日時",
+          "change": "変動",
+          "drift": "金額",
+          "when": "期間"
+        },
+        "config": {
+          "search": "残高の変動を検索"
+        },
+        "empty": {
+          "everyChangeIsAccountedFor": "すべての残高変動に説明がついています。",
+          "nothingToExplain": "説明が必要なものはありません"
+        }
+      },
+      "answeredBalanceGaps": {
+        "empty": {
+          "answersLandHere": "残高のキューで答えた内容はここに表示され、取り消すことができます。",
+          "nothingAnsweredYet": "まだ説明済みの残高変動はありません"
+        }
       }
     },
     "brand": {

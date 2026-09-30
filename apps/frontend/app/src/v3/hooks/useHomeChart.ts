@@ -86,6 +86,7 @@ export function useHomeChart(): HomeChart {
     // it is the only safe way to render one.
     hasReturns: answered ?? remembered ?? false,
     returnsPending: historyQuery.isLoading,
+    shown: false,
   });
 
   const returnsQuery = trpc.portfolio.getReturns.useQuery(
@@ -96,20 +97,27 @@ export function useHomeChart(): HomeChart {
   );
   const view = returnsView(returnsQuery.data?.returns, returnsQuery.data?.benchmarks);
 
-  // The engine outranks the probe the moment it answers. They agree by
-  // construction — `ReturnsService.test.ts` asserts it case by case — and this
-  // is what makes that assertion the only thing keeping them together.
+  // The engine may WITHHOLD the figure (rebuilding, too little history —
+  // SC-1396) while the probe says history exists. It cannot withdraw a tab the
+  // probe confirmed: that took the tab away the moment it was tapped (SC-1406).
+  // The tab stays and the returns view explains why there is no figure.
+  const confirmed = answered === true;
   const { metric, offered } =
     returnsQuery.data === undefined
       ? offer
-      : resolveHomeMetric({ chosen, hasReturns: view?.money != null, returnsPending: false });
+      : resolveHomeMetric({
+          chosen,
+          hasReturns: view?.money != null,
+          returnsPending: false,
+          shown: confirmed,
+        });
 
   // Remember what the strip SETTLED on, not what the probe first said. The
   // engine outranks the probe above, so recording the probe's answer would
   // store `true` for a reader the engine then withdrew the tab from — turning
   // this load's withdrawal into next load's pop-OUT, which is the same defect
   // in the other direction.
-  const settled = returnsQuery.data !== undefined ? view?.money != null : answered;
+  const settled = returnsQuery.data !== undefined ? view?.money != null || confirmed : answered;
   useEffect(() => {
     if (settled !== undefined) writeReturnsAvailability(settled);
   }, [settled]);

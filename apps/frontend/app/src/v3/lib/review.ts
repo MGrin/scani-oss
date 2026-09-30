@@ -1,3 +1,4 @@
+import type { ReviewLabel } from '@scani/shared';
 /**
  * The review feed's pure half — how the feed is sliced.
  *
@@ -31,6 +32,8 @@ export interface ReviewRow {
    *  two producers can hand out the same underlying row id. */
   id: string;
   kind: string;
+  /** What the row is, as a code, so the list can lead it with its mark. */
+  labelCode: ReviewLabel['code'];
   title: string;
   detail: string | null;
   amount: { value: number; currency: string } | null;

@@ -60,7 +60,7 @@ const VIEW: ReturnsView = {
 /**
  * No value here may CONTAIN the money figure as a substring.
  *
- * `countFigures` splits on `76,296`, so a portfolio point of `176,296` — which
+ * `countFigures` splits on `71,296`, so a portfolio point of `171,296` — which
  * is what this fixture carried until SC-1305 — would be counted as a second
  * copy of the hero's figure the moment anything rendered an axis tick. The
  * count is the guard; a fixture that can inflate it is the guard reporting a
@@ -84,8 +84,8 @@ function esc(text: string): string {
   return text.replace(/&/g, '&amp;');
 }
 
-/** The money change as it is printed, whichever path printed it. */
-const FIGURE = '76,296';
+/** The investment gain as it is printed, whichever path printed it. */
+const FIGURE = '71,296';
 
 function countFigures(html: string): number {
   return html.split(FIGURE).length - 1;
@@ -154,7 +154,7 @@ describe('the money figure appears exactly once, whichever tab is on', () => {
   test('the bar and the ahead/behind rows stay below in both states', () => {
     for (const returnsTab of [true, false]) {
       const html = renderScreen({ returnsTab });
-      expect(html).toContain(copy.attribution.contributed);
+      expect(html).toContain(copy.attribution.label);
       expect(html).toContain(copy.gaps.label);
       expect(html).toContain('vs Bitcoin');
     }
@@ -236,5 +236,31 @@ describe('the hero renders its figure before the chart can', () => {
 describe('nothing is widened, so nothing says it was', () => {
   test('the hero carries no widened-window caption', () => {
     expect(renderScreen({ returnsTab: true })).not.toContain('Measured over');
+  });
+});
+
+/**
+ * SC-1406: a figure the engine withholds keeps the tab, so the tile has to say
+ * why rather than show a dash.
+ */
+describe('a withheld figure says why in the tile', () => {
+  test('the first reason is shown in place of the figure', () => {
+    const html = renderToStaticMarkup(
+      <ReturnsHeroTile
+        view={{ ...VIEW, money: null, twr: null, unavailableReasons: ['rebuilding-history'] }}
+        currency="GBP"
+        periodSuffixKey="v3.home.period.suffix30d"
+      />
+    );
+    expect(html).toContain(copy.eligibility['rebuilding-history']);
+    expect(html).not.toContain(FIGURE);
+  });
+
+  test('the control: an eligible figure shows no reason', () => {
+    const html = renderToStaticMarkup(
+      <ReturnsHeroTile view={VIEW} currency="GBP" periodSuffixKey="v3.home.period.suffix30d" />
+    );
+    expect(html).not.toContain(copy.eligibility['rebuilding-history']);
+    expect(html).toContain(FIGURE);
   });
 });

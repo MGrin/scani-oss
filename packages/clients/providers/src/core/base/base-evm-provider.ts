@@ -107,6 +107,11 @@ export interface EvmNativeTxRow {
   gasUsed: string;
   isError: string;
   txreceipt_status: string;
+  /**
+   * The L1 data fee an OP-stack chain charges on top of the L2 gas, in wei
+   * (SC-1445). Absent or empty on chains without one.
+   */
+  L1FeesPaid?: string;
 }
 
 /**
@@ -286,6 +291,10 @@ export abstract class BaseEvmProvider implements ProviderBase {
     const endBlock = await this.fetchLatestBlock(chain, apiKey);
 
     const legs: EvmLeg[] = [];
+    // Gas, one per transaction the wallet sent. Kept out of `legs` so swap
+    // linking never sees it: a native fee leg in a token-to-token swap would
+    // be a third moved token and un-link the pair (SC-1443).
+    const feeLegs: EvmLeg[] = [];
     // Only consulted when a row arrives without a `traceId`. Ordinal WITHIN a
     // hash rather than within the run, because it lands in an `externalId`
     // that has to mean the same thing on the next import.
@@ -304,6 +313,8 @@ export abstract class BaseEvmProvider implements ProviderBase {
         (row) => {
           const leg = this.normalizeNativeTx(row, chain, walletAddress);
           if (leg) legs.push(leg);
+          const fee = this.gasFeeLeg(row, chain, walletAddress);
+          if (fee) feeLegs.push(fee);
         }
       )
     ) {
@@ -394,7 +405,13 @@ export abstract class BaseEvmProvider implements ProviderBase {
     // pair together — this only fixes where the invariant is stated.
     this.linkSwapLegs(filtered, chain);
 
-    return filtered.map((l) => l.event);
+    const fees = feeLegs.filter((l) => {
+      if (ctx.since && l.event.occurredAt < ctx.since) return false;
+      if (ctx.until && l.event.occurredAt > ctx.until) return false;
+      return true;
+    });
+
+    return [...filtered, ...fees].map((l) => l.event);
   }
 
   /**
@@ -584,18 +601,57 @@ export abstract class BaseEvmProvider implements ProviderBase {
   // Normalization
   // ============================================================
 
+  /**
+   * The gas a transaction cost the wallet, as its own `kind: 'fee'` row.
+   *
+   * Only the sender pays, so only a row whose `from` is the wallet has one,
+   * and it is counted once per hash from `txlist`: token and internal legs of
+   * the same transaction carry no gas of their own. A failed transaction and a
+   * zero-value one (an approval, a token transfer, a swap) still paid, which
+   * is why this does not share `normalizeNativeTx`'s early returns. A fee row
+   * rather than `fee_quantity`, because nothing sums the sidecar: an ETH
+   * ledger read several ETH above a nearly empty balance, and gas was all of the gap
+   * (SC-1443). On OP-stack chains the L1 data fee is charged on top of
+   * `gasUsed * gasPrice` and is added here (SC-1445).
+   */
+  private gasFeeLeg(
+    row: EvmNativeTxRow,
+    chain: EvmChainConfig,
+    walletAddress: string
+  ): EvmLeg | null {
+    if (row.from.toLowerCase() !== walletAddress.toLowerCase()) return null;
+    const gasWei = new Decimal(row.gasUsed || '0')
+      .times(row.gasPrice || '0')
+      .plus(row.L1FeesPaid || '0');
+    if (gasWei.isZero()) return null;
+    const gas = gasWei.div(new Decimal(10).pow(chain.nativeDecimals));
+    return {
+      hash: row.hash,
+      tokenKey: NATIVE_TOKEN_KEY,
+      event: {
+        externalId: `${row.hash}:fee`,
+        occurredAt: new Date(Number(row.timeStamp) * 1000),
+        kind: 'fee',
+        primary: {
+          tokenIdentity: this.nativeIdentity(chain),
+          quantity: gas.neg().toString(),
+        },
+        rawPayload: row,
+      },
+    };
+  }
+
   private normalizeNativeTx(
     row: EvmNativeTxRow,
     chain: EvmChainConfig,
     walletAddress: string
   ): EvmLeg | null {
-    if (row.isError === '1' || row.txreceipt_status === '0') {
-      // Failed tx — gas was burned but no value moved. We skip them
-      // here; if we later want to track failed-tx gas as a `fee`, it
-      // can be added without changing the contract.
-      return null;
-    }
+    // A failed transaction moved no value; its gas is `gasFeeLeg`'s.
+    if (row.isError === '1' || row.txreceipt_status === '0') return null;
     const wallet = walletAddress.toLowerCase();
+    // Sent to itself, the wallet's net is only the gas. Booked as an inflow
+    // this used to add the whole value to the ledger (SC-1443).
+    if (row.from.toLowerCase() === wallet && row.to.toLowerCase() === wallet) return null;
     const isInflow = row.to.toLowerCase() === wallet;
     const valueWei = new Decimal(row.value);
     const valueEth = valueWei.div(new Decimal(10).pow(chain.nativeDecimals));

@@ -75,6 +75,7 @@ import {
   createStrictLimiter,
   defaultInflowKey,
   edgeLockRefusal,
+  loadRateLimiterConfig,
   observeRedisReachability,
   pingWithin,
   type StrandReport,
@@ -146,8 +147,10 @@ import {
   isAllowedWebSocketOrigin,
 } from './config/browser-origins';
 import { initializeContainer } from './config/container';
+import { aiHealthCheck } from './lib/ai-health';
 import { monitorEventLoopStalls } from './lib/event-loop-stalls';
 import { isLivenessProbe } from './lib/liveness';
+import { isPrivateSessionRead } from './lib/private-session-read';
 import { registerAdminDataRoutes } from './presentation/http/admin-data';
 import { registerAdminJobsRoutes } from './presentation/http/admin-jobs';
 import { registerInstitutionIconRoutes } from './presentation/http/institution-icons';
@@ -334,7 +337,12 @@ if (!env.BETTER_AUTH_SECRET) {
   throw new Error('BETTER_AUTH_SECRET is required');
 }
 const browserOriginOptions = { isProduction: isNodeEnvProduction() };
-const trustedOrigins = buildTrustedOrigins(env.FRONTEND_URL, browserOriginOptions);
+// The WebSocket check keeps the bare options: the console has no socket use.
+const httpOriginOptions = {
+  ...browserOriginOptions,
+  extraOrigins: env.CLOUD_FRONTEND_URL ? [new URL(env.CLOUD_FRONTEND_URL).origin] : [],
+};
+const trustedOrigins = buildTrustedOrigins(env.FRONTEND_URL, httpOriginOptions);
 const betterAuthInstance = createBetterAuth({
   appUrl: env.FRONTEND_URL,
   baseURL: env.BACKEND_URL,
@@ -381,6 +389,7 @@ setInflowDegradedHandler(({ namespace, timeoutMs, error, count }) => {
 // Rate limiters. Bucket state lives in Redis so horizontally-scaled
 // backend instances share fairness.
 const globalLimiter = createStandardLimiter(redisConnection, 300);
+const onFly = Boolean(loadRateLimiterConfig().FLY_APP_NAME);
 const strictLimiter = createStrictLimiter(redisConnection, 60);
 // Per-IP signup attempt cap. Better-Auth's signup response still
 // reveals "email exists" vs "new", so this limiter is the primary
@@ -479,7 +488,7 @@ const app = new Elysia()
     // I/O, and Fly's own per-machine concurrency ceiling (soft 80 / hard 120)
     // still applies, so the exposure is a cheap 200 rather than an
     // amplification.
-    if (isLivenessProbe(request)) return;
+    if (isLivenessProbe(request) || isPrivateSessionRead(request, onFly)) return;
     const res = await globalLimiter.tryConsume(request);
     if ('ok' in res && res.ok) return;
     set.status = 429;
@@ -595,7 +604,9 @@ const app = new Elysia()
   })
   .use(
     cors({
-      origin: buildCorsOrigins(env.FRONTEND_URL, browserOriginOptions),
+      // env.FRONTEND_URL is validated at startup: required + https in production.
+      // In dev this also allows loopback on any port — see browser-origins.ts.
+      origin: buildCorsOrigins(env.FRONTEND_URL, httpOriginOptions),
       credentials: true,
       // `LANGUAGE_HEADER` is what the auth client puts the reader's interface
       // language on (SC-412). A custom header makes the sign-in POST
@@ -1056,11 +1067,7 @@ app
     }
 
     try {
-      const status = Container.get(AIRouter).getStatus();
-      checks.ai = {
-        ok: status.hasAvailableProvider,
-        ...(status.hasAvailableProvider ? {} : { error: 'no AI provider configured' }),
-      };
+      checks.ai = aiHealthCheck(await Container.get(AIRouter).getAvailability());
     } catch (err) {
       checks.ai = { ok: false, error: err instanceof Error ? err.message : String(err) };
     }

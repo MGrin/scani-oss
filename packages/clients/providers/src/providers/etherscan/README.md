@@ -55,10 +55,14 @@ The `BaseEvmProvider` doesn't HMAC-sign so it doesn't use the
   `BaseEvmProvider.fetchTransactionsByBlockRange`. New L2s without
   this restriction would still work but waste calls; not worth
   detecting.
-- **Failed txs** (`isError === '1'` or `txreceipt_status === '0'`)
-  are skipped. They burn gas but move no value, so the ledger
-  ignores them. If we ever surface "gas spent on failed tx" as a
-  separate `fee` event, that's a follow-up.
+- **Gas is its own `kind: 'fee'` row** (`<hash>:fee`) on every
+  transaction the wallet SENT, failed and zero-value ones included,
+  priced as `gasUsed * gasPrice` (SC-1443). A failed tx moves no
+  value, so it has only the fee row. OP-stack L1 data fees are not in
+  that product and are not recorded yet (SC-1445).
+- **A refused page throws.** Etherscan answers a rate limit, an
+  unsupported chain or a bad key with HTTP 200 and `status: '0'`; only
+  `No transactions found` is read as an empty page.
 - **ERC-20 spam tokens** (airdrop dust, fake USDC variants) flood
   `tokentx` for any active wallet. `spam-filter.ts` drops contracts
   whose names match airdrop patterns (`*.fi`, `*.io`, "claim",

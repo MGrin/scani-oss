@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import { countsFromTheOpen, subPeriodFactor } from './twr';
 
 /**
  * Splitting a base-currency return into what the ASSETS did and what the
@@ -264,8 +265,18 @@ function attributePeriod(prev: AttributionPoint, curr: AttributionPoint): Period
     flowAtPriorRates = flowAtPriorRates.add(amount.mul(ratio));
   }
 
-  const assetLeg = closingAtPriorRates.minus(flowAtPriorRates).div(openingValue);
-  const baseLeg = closingValue.minus(flow).div(openingValue);
+  // Re-based exactly as the TWR chain re-bases the same period (SC-1432), and
+  // decided once on the base flow: were each leg to decide on its own figure,
+  // a rate move near the boundary could re-base one leg and not the other, and
+  // the two would stop composing.
+  const fromTheOpen = countsFromTheOpen(prev.date, curr.date, openingValue, flow);
+  const assetLeg = subPeriodFactor(
+    openingValue,
+    closingAtPriorRates,
+    flowAtPriorRates,
+    fromTheOpen
+  );
+  const baseLeg = subPeriodFactor(openingValue, closingValue, flow, fromTheOpen);
   // A non-positive asset leg cannot carry a ratio, and flooring it at zero the
   // way the TWR chain floors its own factor would make the currency leg
   // infinite rather than wrong-but-bounded. Both legs are dropped instead.

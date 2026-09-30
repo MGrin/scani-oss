@@ -10,8 +10,8 @@ import { trpc } from '@/lib/trpc';
 import { useViewPreference } from '../../hooks/useViewPreference';
 import {
   BENCHMARK_LABEL_KEYS,
+  offeredReturnsWindows,
   RETURNS_WINDOW_KEYS,
-  RETURNS_WINDOWS,
   type ReturnsMoney,
   type ReturnsView,
   type ReturnsWindow,
@@ -23,6 +23,7 @@ import { VIEW_PREFERENCE_KEYS } from '../../lib/view-preference';
 import { AttributionBar } from './AttributionBar';
 import { ReturnsComparisonChart } from './ReturnsComparisonChart';
 import { ReturnsHeadline } from './ReturnsHeadline';
+import { ReturnsSubsetNote } from './ReturnsSubsetNote';
 
 /** Omitted = the whole portfolio. */
 export type ReturnsCardScope = { kind: 'account' | 'institution'; id: string };
@@ -53,7 +54,28 @@ export function ReturnsBlock({
   // One control, not two. While the tab is on, the chart's range drives both —
   // and because the window IS the query key, the hero and this card then share
   // one request rather than asking the same procedure two different questions.
-  const request: ReturnsWindowRequest = heroWindow ?? { kind: ownWindow };
+  // All is offered only when it starts earlier than 1Y (SC-1439), which takes
+  // both windows' resolved starts. The query for the chosen window is the same
+  // key, so choosing either of them costs no second request.
+  const ownProbe = trpc.portfolio.hasReturns.useQuery({ window: { kind: ownWindow }, scope });
+  const canCompare = heroWindow === null && ownProbe.data?.hasReturns === true;
+  const allStart = trpc.portfolio.getReturns.useQuery(
+    { window: { kind: 'all' }, scope },
+    { enabled: canCompare }
+  );
+  const yearStart = trpc.portfolio.getReturns.useQuery(
+    { window: { kind: '1y' }, scope },
+    { enabled: canCompare }
+  );
+  const windows = offeredReturnsWindows(
+    allStart.data?.returns?.effectiveWindow?.from,
+    yearStart.data?.returns?.effectiveWindow?.from
+  );
+  const allWithheld =
+    allStart.isSuccess && yearStart.isSuccess && !windows.some((w) => w.key === 'all');
+  // A saved All that is not offered reads as 1Y, which is the same window.
+  const shownWindow: ReturnsWindow = ownWindow === 'all' && allWithheld ? '1y' : ownWindow;
+  const request: ReturnsWindowRequest = heroWindow ?? { kind: shownWindow };
   const { symbol } = useBaseCurrency();
   const historyQuery = trpc.portfolio.hasReturns.useQuery({ window: request, scope });
   const hasHistory = historyQuery.data?.hasReturns === true;
@@ -68,7 +90,10 @@ export function ReturnsBlock({
     // The whole-portfolio card is the only one that draws it, and asking for
     // prices behind a card that will not render them is the expensive half of
     // this feature paid for nothing.
-    { enabled: scope === undefined && hasHistory }
+    {
+      enabled:
+        scope === undefined && hasHistory && query.data?.returns?.eligibility?.eligible === true,
+    }
   );
   const comparison = comparisonView(comparisonQuery.data, view?.benchmarks);
 
@@ -84,7 +109,8 @@ export function ReturnsBlock({
       comparison={scope ? null : comparison}
       comparisonFailed={scope === undefined && comparisonQuery.isError}
       currency={symbol}
-      windowKey={ownWindow}
+      windowKey={shownWindow}
+      windows={windows}
       onWindowChange={setOwnWindow}
       promotedToHero={heroWindow !== null}
     />
@@ -97,6 +123,7 @@ export function ReturnsCard({
   comparisonFailed,
   currency,
   windowKey,
+  windows = offeredReturnsWindows(null, null),
   onWindowChange,
   promotedToHero = false,
 }: {
@@ -105,6 +132,8 @@ export function ReturnsCard({
   comparisonFailed: boolean;
   currency: string;
   windowKey: ReturnsWindow;
+  /** The periods the picker offers; All only when it covers more than 1Y. */
+  windows?: readonly { key: ReturnsWindow; labelKey: string }[];
   onWindowChange: (key: string) => void;
   /**
    * The home chart's Returns tab is on, so the money figure, the chart and the
@@ -133,7 +162,7 @@ export function ReturnsCard({
             onValueChange={onWindowChange}
             aria-label={t('v3.home.returns.chooseWindow')}
           >
-            {RETURNS_WINDOWS.map((option) => (
+            {windows.map((option) => (
               <SegmentedItem key={option.key} value={option.key}>
                 {t(option.labelKey)}
               </SegmentedItem>
@@ -143,8 +172,34 @@ export function ReturnsCard({
       )}
       {view ? (
         <>
+          {view.unavailableReasons ? (
+            <div className="px-4 pb-3 text-caption text-muted-foreground">
+              <p>{t('v3.home.returns.unavailable')}</p>
+              <ul>
+                {view.unavailableReasons.map((reason) => (
+                  <li key={reason}>{t(`v3.home.returns.eligibility.${reason}`)}</li>
+                ))}
+              </ul>
+              {view.recordedChange != null ? (
+                <p>
+                  {t('v3.home.returns.recordedChange')}{' '}
+                  <Numeric value={view.recordedChange} currency={currency} delta />
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           {money && !promotedToHero ? (
             <ReturnsHeadline money={money} currency={currency} className="px-4 pb-3" />
+          ) : null}
+          {/* Directly under the figure it qualifies: a caveat at the foot of
+              the card is one nobody reads (SC-1439). */}
+          {view.subset && view.subset.excluded.length > 0 ? (
+            <ReturnsSubsetNote
+              subset={view.subset}
+              currency={currency}
+              brief
+              className="block px-4 pb-3 text-caption text-muted-foreground"
+            />
           ) : null}
           {money ? <AttributionBar money={money} currency={currency} /> : null}
 
@@ -163,6 +218,15 @@ export function ReturnsCard({
           ) : null}
 
           <Details view={view} money={money} />
+
+          {view.subset ? (
+            <ReturnsSubsetNote
+              subset={view.subset}
+              currency={currency}
+              coveredAbove
+              className="border-t border-border px-4 py-3 text-caption text-muted-foreground"
+            />
+          ) : null}
 
           {view.since || view.partial ? (
             <p className="border-t border-border px-4 py-3 text-caption text-muted-foreground">
@@ -200,23 +264,38 @@ function Gaps({ gaps, currency }: { gaps: ComparisonView['gaps']; currency: stri
             data-figure-line="true"
             className="flex items-baseline justify-between gap-3"
           >
-            {/* "vs" is what makes the figure beside it a COMPARISON rather
-                than what the benchmark itself did — which is exactly the
-                reading the rates version left to the reader. */}
-            <dt className="min-w-0 truncate text-label">
+            <dt className="min-w-0 flex-1 text-label">
               {t('v3.home.returns.gaps.vs', { name: t(BENCHMARK_LABEL_KEYS[gap.key]) })}
             </dt>
-            <dd className="shrink-0 text-end">
-              <Numeric value={gap.money} currency={currency} delta className="text-label" />
-              {gap.cumulative === null ? null : (
-                <Numeric
-                  value={gap.cumulative}
-                  format="percent"
-                  decimals={1}
-                  delta
-                  indicator="sign"
-                  className="block text-caption text-muted-foreground"
+            {/* Each figure names what it measures (SC-1430). A signed gap
+                beside the benchmark's own signed return read as one
+                contradiction: "↑ +£5,000" over "−5.0%". */}
+            <dd className="max-w-[60%] shrink-0 text-end">
+              <span className="block text-label">
+                <Trans
+                  i18nKey={
+                    gap.money >= 0 ? 'v3.home.returns.gaps.ahead' : 'v3.home.returns.gaps.behind'
+                  }
+                  components={{
+                    amount: (
+                      <Numeric
+                        value={Math.abs(gap.money)}
+                        currency={currency}
+                        className={gap.money >= 0 ? 'text-gain' : 'text-loss'}
+                      />
+                    ),
+                  }}
                 />
+              </span>
+              {gap.cumulative === null ? null : (
+                <span className="block text-caption text-muted-foreground">
+                  <Trans
+                    i18nKey="v3.home.returns.gaps.returned"
+                    components={{
+                      value: <Numeric value={gap.cumulative} format="percent" decimals={1} />,
+                    }}
+                  />
+                </span>
               )}
             </dd>
           </div>
@@ -229,7 +308,7 @@ function Gaps({ gaps, currency }: { gaps: ComparisonView['gaps']; currency: stri
 /**
  * The rates, kept and demoted.
  *
- * `<details>` rather than an accordion, for the reason `ForecastView` gives:
+ * `<details>` rather than an accordion, because
  * Radix unmounts its content, so a closed disclosure removes the numbers from
  * the document and neither find-in-page nor a `renderToStaticMarkup` test can
  * reach them. Closed by default — an open one has put the rates back above the

@@ -8,6 +8,7 @@ import { Container } from 'typedi';
 // shared helper is reached the same way the shared test preload is: by path.
 import { snapshotContainer } from '../../../../../packages/business/domain/test/helpers/container';
 import { OSS_KEY_ID } from '../../src/auth/api-key';
+import type { AppSessionResult } from '../../src/auth/app-session';
 import type { DataProviderContext } from '../../src/presentation/trpc';
 import { createUsageContext } from '../../src/usage/middleware';
 
@@ -24,6 +25,7 @@ export function buildAuthedContext(
     },
     authFailure: null,
     cloudUser: null,
+    cloudSession: async () => ({ kind: 'none' }),
     requestId: 'test-request',
     usage: createUsageContext(),
     clientIp: null,
@@ -32,6 +34,7 @@ export function buildAuthedContext(
     // enforcing case rather than the off one.
     hourlyRequestLimit: 1000,
     checkHuman: async () => ({ ok: true, checked: false }),
+    initialKeyStatus: 'active',
     ...overrides,
   };
 }
@@ -58,6 +61,22 @@ export function buildCustomerContext(
   };
 }
 
+/** A context whose cookie session resolves to `result`, as the app would answer. */
+export function withAppSession(
+  result: AppSessionResult
+): Pick<DataProviderContext, 'cloudSession'> {
+  return { cloudSession: async () => result };
+}
+
+/** A context signed in to the app as this user. */
+export function withCloudUser(user: {
+  id: string;
+  email: string;
+  name: string | null;
+}): Pick<DataProviderContext, 'cloudSession'> {
+  return withAppSession({ kind: 'user', user });
+}
+
 export function buildUnauthedContext(
   overrides: Partial<DataProviderContext> = {}
 ): DataProviderContext {
@@ -65,11 +84,13 @@ export function buildUnauthedContext(
     auth: null,
     authFailure: null,
     cloudUser: null,
+    cloudSession: async () => ({ kind: 'none' }),
     requestId: 'test-request',
     usage: createUsageContext(),
     clientIp: null,
     hourlyRequestLimit: 1000,
     checkHuman: async () => ({ ok: true, checked: false }),
+    initialKeyStatus: 'active',
     ...overrides,
   };
 }

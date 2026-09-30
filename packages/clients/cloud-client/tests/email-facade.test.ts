@@ -48,8 +48,10 @@ function stubCloudClient(): { client: CloudClient; calls: CloudCall[] } {
   return { client: client as unknown as CloudClient, calls };
 }
 
+const originalTier = process.env.SCANI_DEPLOYMENT_TIER;
 let stubLocal: StubLocalEmailService;
 beforeEach(() => {
+  delete process.env.SCANI_DEPLOYMENT_TIER;
   stubLocal = new StubLocalEmailService();
   Container.set(LocalEmailService, stubLocal);
   // Default to local-only mode; cloud-mode tests override below.
@@ -58,6 +60,8 @@ beforeEach(() => {
   setCloudClient(null);
 });
 afterEach(() => {
+  if (originalTier === undefined) delete process.env.SCANI_DEPLOYMENT_TIER;
+  else process.env.SCANI_DEPLOYMENT_TIER = originalTier;
   resetCloudClient();
 });
 

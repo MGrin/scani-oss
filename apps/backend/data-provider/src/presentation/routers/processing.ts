@@ -1,5 +1,9 @@
 import type { NewToken } from '@scani/db/schema';
-import type { AIResult } from '@scani/providers/core/capabilities';
+import {
+  type AIResult,
+  aiAvailability,
+  combinedAIAvailability,
+} from '@scani/providers/core/capabilities';
 import {
   cloudAiInput,
   cloudPricesInput,
@@ -7,6 +11,7 @@ import {
   cloudWalletInput,
   fromCloudAsset,
 } from '@scani/providers/core/cloud-contract';
+import { AIUnavailableError } from '@scani/providers/core/errors';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import type {
   ExitedPosition,
@@ -44,15 +49,23 @@ const quote = (row: PriceQuote) => ({ ...row, timestamp: row.timestamp.toISOStri
 
 export const processingRouter = router({
   v1: router({
-    capabilities: bearerProcedure.query(() => ({
-      version: 1,
-      pricing: registry()
-        .getAllCurrentPricers()
-        .map((p) => p.providerKey),
-      ai: registry()
-        .getAIProviders()
-        .map((p) => ({ provider: p.providerKey, pdf: p.supportsPdfFileInput === true })),
-    })),
+    capabilities: bearerProcedure.query(async () => {
+      const providers = registry().getAIProviders();
+      const states = await Promise.all(providers.map(aiAvailability));
+      return {
+        version: 1,
+        pricing: registry()
+          .getAllCurrentPricers()
+          .map((p) => p.providerKey),
+        aiAvailability: await combinedAIAvailability(providers),
+        ai: providers.flatMap((p, index) => {
+          const state = states[index]!;
+          return state.image || state.pdf || state.text || state.completion
+            ? [{ provider: p.providerKey, pdf: state.pdf }]
+            : [];
+        }),
+      };
+    }),
     prices: bearerProcedure.input(cloudPricesInput).mutation(async ({ input }) => {
       const provider = registry()
         .getAllCurrentPricers()
@@ -115,45 +128,70 @@ export const processingRouter = router({
       throw unavailable();
     }),
     ai: bearerProcedure.input(cloudAiInput).mutation(async ({ input, ctx }) => {
-      const provider = registry()
-        .getAIProviders()
-        .find((p) =>
-          input.operation === 'screenshot'
+      const candidates = registry().getAIProviders();
+      const statuses = await Promise.all(candidates.map(aiAvailability));
+      const provider = candidates.find(
+        (p, index) =>
+          statuses[index]?.[
+            input.operation === 'screenshot'
+              ? input.mimeType === 'application/pdf'
+                ? 'pdf'
+                : 'image'
+              : input.operation === 'document'
+                ? 'text'
+                : 'completion'
+          ] &&
+          (input.operation === 'screenshot'
             ? input.mimeType !== 'application/pdf' || p.supportsPdfFileInput
             : input.operation === 'document'
               ? Boolean(p.parseDocumentText)
-              : Boolean(p.completeText)
-        );
-      if (!provider) throw unavailable();
-      const outcome = await Container.get(ProcessingGuard).run(
-        getSharedRedis(),
-        ctx.auth.ownerUserId ?? ctx.auth.tenantId,
-        'ai',
-        input,
-        async (signal) => {
-          let result: AIResult<unknown>;
-          if (input.operation === 'screenshot')
-            result = await provider.parseScreenshot(input, signal);
-          else if (input.operation === 'document' && provider.parseDocumentText)
-            result = await provider.parseDocumentText(
-              input.text,
-              input.hint,
-              input.systemPrompt,
-              signal
-            );
-          else if (input.operation === 'complete' && provider.completeText)
-            result = await provider.completeText(
-              input.prompt,
-              {
-                maxTokens: input.maxTokens,
-                temperature: input.temperature,
-              },
-              signal
-            );
-          else throw unavailable();
-          return result;
-        }
+              : Boolean(p.completeText))
       );
+      if (!provider)
+        throw new TRPCError({
+          code: statuses.some((status) => status.state === 'transient')
+            ? 'INTERNAL_SERVER_ERROR'
+            : 'PRECONDITION_FAILED',
+          message: 'AI processing unavailable',
+        });
+      const outcome = await Container.get(ProcessingGuard)
+        .run(
+          getSharedRedis(),
+          ctx.auth.ownerUserId ?? ctx.auth.tenantId,
+          'ai',
+          input,
+          async (signal) => {
+            let result: AIResult<unknown>;
+            if (input.operation === 'screenshot')
+              result = await provider.parseScreenshot(input, signal);
+            else if (input.operation === 'document' && provider.parseDocumentText)
+              result = await provider.parseDocumentText(
+                input.text,
+                input.hint,
+                input.systemPrompt,
+                signal
+              );
+            else if (input.operation === 'complete' && provider.completeText)
+              result = await provider.completeText(
+                input.prompt,
+                {
+                  maxTokens: input.maxTokens,
+                  temperature: input.temperature,
+                },
+                signal
+              );
+            else throw unavailable();
+            return result;
+          }
+        )
+        .catch((error: unknown) => {
+          if (error instanceof AIUnavailableError)
+            throw new TRPCError({
+              code: error.state === 'transient' ? 'INTERNAL_SERVER_ERROR' : 'PRECONDITION_FAILED',
+              message: 'AI processing unavailable',
+            });
+          throw error;
+        });
       ctx.usage.annotate({
         provider: provider.providerKey,
         ...(!outcome.replayed ? outcome.result.usage : { upstreamCostUsd: 0 }),

@@ -90,8 +90,9 @@ function makeService(rows: Row[]): HoldingQueryService {
         // The base-currency row is the one case with no `token_prices` row of
         // its own — the valuation carries no metadata for it, which is what
         // sends `HoldingQueryService` down its own fallback.
-        priceTimestamp: row.price && !row.isBase ? new Date('2026-08-14T00:00:00Z') : null,
-        priceSource: row.price && !row.isBase ? 'coingecko' : null,
+        priceTimestamp: row.price ? new Date('2026-08-14T00:00:00Z') : null,
+        // The valuation dates the base currency itself (SC-1447).
+        priceSource: row.isBase ? 'Base Currency' : row.price ? 'coingecko' : null,
         priceStale: row.stale,
       })),
     }),
@@ -154,7 +155,7 @@ describe('HoldingQueryService — the stale-price flag', () => {
    * not unknown either.
    */
   test('the base currency is never stale and never unknown', async () => {
-    const service = makeService([{ symbol: 'EUR', price: null, stale: undefined, isBase: true }]);
+    const service = makeService([{ symbol: 'EUR', price: '1', stale: false, isBase: true }]);
     const [holding] = await service.getHoldingsByAccountIdWithDetails(user);
     expect(holding?.price?.source).toBe('Base Currency');
     expect(holding?.priceStale).toBe(false);

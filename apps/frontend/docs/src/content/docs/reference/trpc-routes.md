@@ -27,7 +27,7 @@ Located in `apps/backend/api/src/presentation/routers/`.
 | `transactions` | Read the ledger. Filter by date range, kind, account, holding, transfer group. |
 | `vaults` | CRUD on vaults, attach/detach holdings with percentage splits. |
 | `groups` | CRUD on groups, attach holdings. |
-| `entities` | Read and create ownership boundaries, assign accounts, per-entity totals plus the combined view. |
+| `entities` | Read-only archival ownership records and totals. Creation and assignment are retired; account exports preserve historical ownership links. |
 | `portfolio` | Dashboard headline + chart series (reads `portfolio_value_daily`). |
 | `dashboard` | Aggregate dashboard data — composes calls to `portfolio` + per-scope rollups. |
 | `integrations` | Connect / disconnect provider integrations (Binance OAuth, exchange API keys, brokerage tokens, wallets). Owns encrypt/decrypt of credentials. |
@@ -98,11 +98,13 @@ Two gates fire in order:
    upstream's quota is hit. The api retries via BullMQ's retry
    policy.
 
-**A missing provider key is not a gate.** A call whose provider has no
-key is not refused: the provider degrades and the call succeeds with
-less in it, or — for `screenshots.parseScreenshots`, which needs
-`OPENAI_API_KEY` — the upload is accepted and the queued parse job is
-what fails. See [Optional integration
+**A missing pricing or chain key is not a gate.** A call whose provider
+has no key is not refused: the provider degrades and the call succeeds
+with less in it. **AI parsing is the exception.**
+`screenshots.parseScreenshots`, `documents.enqueueParse` and
+`documents.reparse` refuse with `PRECONDITION_FAILED` when no AI
+provider can take the file, before anything is queued. Statement files
+and manual entry keep working. See [Optional integration
 keys](/self-hosting/tier1/optional-keys/).
 
 ## Adding a new router

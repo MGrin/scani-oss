@@ -9,6 +9,7 @@ import {
   groupAmount,
   groupValuesById,
 } from './groups';
+import { type MemberKind, memberCountsLine } from './membership';
 import { V3_ROUTES } from './routes';
 import { tokenTypeLabel } from './tokens';
 
@@ -172,12 +173,19 @@ export function resolveHomeMetric({
   chosen,
   hasReturns,
   returnsPending,
+  shown,
 }: {
   chosen: HomeMetric;
   hasReturns: boolean;
   returnsPending: boolean;
+  /**
+   * The history probe has answered yes. A tab it confirmed stays when the
+   * engine later withholds the figure (SC-1406): the reader tapped it, and the
+   * tab says why inside it rather than vanishing under the finger.
+   */
+  shown: boolean;
 }): HomeMetricChoice {
-  const offered = hasReturns || (chosen === 'returns' && returnsPending);
+  const offered = shown || hasReturns || (chosen === 'returns' && returnsPending);
   return { metric: chosen === 'returns' && !offered ? 'net-worth' : chosen, offered };
 }
 
@@ -1000,6 +1008,8 @@ export interface GroupItem {
   color: string | null;
   holdingsCount: number;
   accountsCount: number;
+  billsCount?: number | null;
+  payeesCount?: number | null;
 }
 
 export interface GroupRow {
@@ -1007,8 +1017,12 @@ export interface GroupRow {
   name: string;
   /** The user's own colour for the group. `null` renders no swatch. */
   color: string | null;
-  /** "6 holdings · 2 accounts". Never "0 holdings · 0 accounts" — see below. */
+  /** "6 holdings · 2 accounts", in the groups list's own words: only the kinds present. */
   sublabel: string;
+  /** Some bill or payee is in the group, so its bills commit money (SC-1437). */
+  hasBills: boolean;
+  /** Bills and payees only: nothing in it carries a value, so it leads with its bills. */
+  billsOnly: boolean;
   /** Base-currency value of everything in the group, or `null` if unpriced. */
   value: number | null;
   /**
@@ -1019,13 +1033,14 @@ export interface GroupRow {
   inactiveValue: number | null;
 }
 
-/**
- * `1 holding`, `2 holdings`, nothing at zero — the groups block drops an empty
- * half of the line rather than printing "0 accounts" next to a real count.
- */
-function countPhrase(count: number, nounKey: string, t: TFunction): string | null {
-  if (!Number.isFinite(count) || count <= 0) return null;
-  return t(nounKey, { count });
+function groupKindCount(group: GroupItem, kind: MemberKind): number {
+  const count = {
+    holding: group.holdingsCount,
+    account: group.accountsCount,
+    bill: group.billsCount,
+    payee: group.payeesCount,
+  }[kind];
+  return count != null && Number.isFinite(count) ? count : 0;
 }
 
 /**
@@ -1054,13 +1069,11 @@ export function groupRows(
       id: group.id,
       name: group.name,
       color: group.color,
-      sublabel:
-        [
-          countPhrase(group.holdingsCount, 'v3.membership.count.holding', t),
-          countPhrase(group.accountsCount, 'v3.membership.count.account', t),
-        ]
-          .filter(Boolean)
-          .join(' · ') || t('v3.home.groups.empty'),
+      sublabel: memberCountsLine((kind) => groupKindCount(group, kind), t),
+      hasBills: groupKindCount(group, 'bill') + groupKindCount(group, 'payee') > 0,
+      billsOnly:
+        groupKindCount(group, 'bill') + groupKindCount(group, 'payee') > 0 &&
+        groupKindCount(group, 'holding') + groupKindCount(group, 'account') === 0,
       value: groupAmount(valueById.get(group.id)),
       inactiveValue: allInactiveGroupAmount(valueById.get(group.id)),
     }))

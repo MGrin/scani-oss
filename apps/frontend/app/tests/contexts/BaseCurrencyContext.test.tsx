@@ -39,7 +39,7 @@ describe('provider placement', () => {
   });
 
   test('the v3 tree reads the base currency through the hook, never the query', () => {
-    for (const file of ['v3/pages/MoneyPage.tsx', 'v3/pages/PaymentFormPage.tsx']) {
+    for (const file of ['v3/pages/MoneyPage.tsx', 'v3/components/money/PaymentFormSheet.tsx']) {
       expect(read(file)).not.toInclude('users.getBaseCurrency');
     }
   });

@@ -796,7 +796,7 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
    *
    * SC-606 stamps `gap_review` on the edit's OWN observation, so the interval
    * the edit closes leaves the queue however the flow is dated. What it cannot
-   * do is put the flow in that interval: `HoldingEditCauseDialog` sent local
+   * do is put the flow in that interval: `useHoldingEditCause` sent local
    * midnight of the current day, and on a UTC+12 box that instant is the
    * previous UTC day — earlier than the observation the daily APY payout wrote
    * this morning. The row then lands in the interval BEFORE the one it

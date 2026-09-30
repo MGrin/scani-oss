@@ -79,15 +79,17 @@ larger fan-out. Prefer a rolling deploy strategy.
 
 ## Cloud management (Tier 2/3)
 
-Set `CLOUD_MANAGEMENT_ENABLED=true` plus `DATABASE_URL`, `BETTER_AUTH_URL`,
-`BETTER_AUTH_SECRET`, and `CLOUD_FRONTEND_ORIGIN` to turn on:
+Set `CLOUD_MANAGEMENT_ENABLED=true` plus `DATABASE_URL`, `APP_AUTH_URL`,
+and `CLOUD_FRONTEND_ORIGIN` to turn on:
 
 - **DB-backed `cloud_api_keys`** for per-tenant auth (with env-key fallback
   for self-hosters).
-- **Better-Auth cookie sessions** at `/api/auth/*` for the management
-  console.
+- **Console cookie sessions** for the management console: the app's session
+  cookie, resolved per request at the api's
+  `${APP_AUTH_URL}/api/auth/get-session`. The data-provider issues no
+  sessions of its own.
 - **Postgres per-request metering** — every tRPC call is written to
-  `cloud_usage_events` with `subject=<cloud_user.id>`, buffered in memory
+  `cloud_usage_events` with `subject=<users.id>`, buffered in memory
   and flushed in batches. The `/usage` dashboard aggregates in SQL
   (`usage.*` routers).
 

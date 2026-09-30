@@ -42,7 +42,8 @@ import { ConvertedFigure } from '../ConvertedFigure';
 import { DeleteVendorAction } from './DeleteVendorAction';
 import { EditVendorAction } from './EditVendorAction';
 import { MergeVendorAction } from './MergeVendorAction';
-import { VendorCreateRow } from './VendorCreateRow';
+import { AssignPayeeGroupsAction, PayeeGroupBadges } from './PayeeGroups';
+import { PayeeMark } from './PayeeMark';
 import { VendorSpendSummary } from './VendorSpendSummary';
 
 /**
@@ -88,14 +89,13 @@ interface VendorListProps {
   rates: BaseCurrencyRates;
   query: V3QueryState;
   /**
-   * From `payments.forecast` (SC-625). A vendor's committed figure and the
+   * From `payments.scheduled` (SC-625). A vendor's committed figure and the
    * recurring list's are the same claim about the same book two segments
    * apart, so they read the projection's estimates rather than each deciding
    * for themselves whether a variable payment counts.
    */
   historyEstimates: ReadonlyMap<string, HistoryEstimate>;
-  /** Owned by the page, so the header's "New vendor" button can open it. */
-  creating: boolean;
+  /** The page owns the create sheet; the empty state opens it too. */
   onCreatingChange: (creating: boolean) => void;
 }
 
@@ -107,7 +107,6 @@ export function VendorList({
   rates,
   query,
   historyEstimates,
-  creating,
   onCreatingChange,
 }: VendorListProps) {
   const { t } = useTranslation();
@@ -250,6 +249,7 @@ export function VendorList({
       />
     ),
     renderRow: (vendor) => ({
+      leading: <PayeeMark name={vendor.displayName} />,
       label: vendor.displayName,
       sublabel: sublabelFor(vendor),
       value: rowFigure(vendor),
@@ -270,6 +270,7 @@ export function VendorList({
       {
         key: 'name',
         headerKey: 'ui.dataView.vendors.col.vendor',
+        width: 'w-[36%]',
         sortable: true,
         render: (vendor) => vendor.displayName,
       },
@@ -359,7 +360,8 @@ export function VendorList({
 
         return {
           title: vendor.displayName,
-          subtitle: vendor.category ?? 'Uncategorised',
+          subtitle: vendor.category ?? t('v3.money.vendorList.uncategorised'),
+          leading: <PayeeMark name={vendor.displayName} size="size-8" />,
           value: rowFigure(vendor),
           actions: (
             <>
@@ -371,6 +373,7 @@ export function VendorList({
                 category={vendor.category}
                 website={vendor.website}
               />
+              <AssignPayeeGroupsAction vendorId={vendor.id} />
               {/* The peek stated "Payments N" and offered no way to reach any
                   of them, so the only route from a vendor to a payment's Edit
                   was typing a URL (SC-83 2). Hidden at zero: a link to an
@@ -438,6 +441,18 @@ export function VendorList({
                   { label: t('v3.money.vendorPeek.payments'), value: countFor(vendor) },
                 ],
           sections: [
+            // Always shown, including when the answer is "none" — the holding
+            // peek's reasoning (SC-70): a section that vanishes on "nothing"
+            // cannot be told apart from one that failed to load.
+            {
+              title: t('v3.holdings.peek.groups'),
+              facts: [
+                {
+                  label: t('v3.holdings.peek.in'),
+                  value: <PayeeGroupBadges vendorId={vendor.id} />,
+                },
+              ],
+            },
             // A vendor in both directions gets its income in a section of its
             // own — beside the bills, never folded into them.
             ...(alsoIncome
@@ -501,10 +516,5 @@ export function VendorList({
     },
   };
 
-  return (
-    <div className="flex flex-col gap-4">
-      {creating ? <VendorCreateRow onDone={() => onCreatingChange(false)} /> : null}
-      <V3DataView config={config} getId={(vendor) => vendor.id} query={query} />
-    </div>
-  );
+  return <V3DataView config={config} getId={(vendor) => vendor.id} query={query} />;
 }

@@ -79,6 +79,7 @@ const RESULT = {
   attribution: null,
   xirr: { status: 'ok', rate: 0.4, method: 'bisection', iterations: 9, uniqueRoot: true },
   coverage: {},
+  eligibility: { eligible: true, reasons: [] },
 };
 
 describe('portfolio.getReturns (SC-1159)', () => {

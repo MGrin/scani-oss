@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { DatabaseTransaction } from '@scani/db';
+import { groups as groupSchema } from '@scani/db/schema';
 import { Container } from 'typedi';
 import { PaymentOccurrenceRepository } from '../../../src/repositories/PaymentOccurrenceRepository';
 import { PaymentRepository } from '../../../src/repositories/PaymentRepository';
@@ -274,7 +275,7 @@ describe('PaymentService', () => {
   // occurrence on a date the new rule no longer generates, while
   // re-materialisation inserted a fresh unpaid row for the same period
   // — one ghost plus one duplicate ask-to-pay.
-  describe('update — settled occurrences follow a schedule-shape change', () => {
+  describe('update — schedule changes preserve settled history', () => {
     // A monthly payment anchored three months back on the 10th, with
     // the occurrence from two months ago already paid off an invoice.
     async function makeSettledMonthlyPayment(tx: DatabaseTransaction, anchorDay = 10) {
@@ -305,7 +306,7 @@ describe('PaymentService', () => {
       return { user, payment, extraction, settled };
     }
 
-    test('moving the anchor back two days moves the settled occurrence with it, leaving one settled row', async () => {
+    test('moving the anchor back two days preserves the settled occurrence', async () => {
       await withTestDb(async (tx) => {
         const { user, payment, extraction, settled } = await makeSettledMonthlyPayment(tx);
 
@@ -316,18 +317,18 @@ describe('PaymentService', () => {
 
         expect(settledRows.length).toBe(1);
         expect(settledRows[0]?.id).toBe(settled.id);
-        expect(settledRows[0]?.dueDate).toBe(monthsFromNowOnDay(-2, 8));
+        expect(settledRows[0]?.dueDate).toBe(settled.dueDate);
         expect(settledRows[0]?.matchedExtractionId).toBe(extraction.id);
         expect(settledRows[0]?.actualAmount).toBe('13.50');
 
         // The ghost is gone: nothing is left on the date the old rule
         // produced, and the period it covers has no unpaid twin.
-        expect(rows.filter((r) => r.dueDate === settled.dueDate)).toEqual([]);
-        expect(rows.filter((r) => r.dueDate === monthsFromNowOnDay(-2, 8)).length).toBe(1);
+        expect(rows.filter((r) => r.dueDate === settled.dueDate)).toEqual([settled]);
+        expect(rows.filter((r) => r.dueDate === monthsFromNowOnDay(-2, 8)).length).toBe(0);
       });
     });
 
-    test('moving the anchor forward two days moves the settled occurrence with it, leaving one settled row', async () => {
+    test('moving the anchor forward two days preserves the settled occurrence', async () => {
       await withTestDb(async (tx) => {
         const { user, payment, extraction, settled } = await makeSettledMonthlyPayment(tx);
 
@@ -338,16 +339,16 @@ describe('PaymentService', () => {
 
         expect(settledRows.length).toBe(1);
         expect(settledRows[0]?.id).toBe(settled.id);
-        expect(settledRows[0]?.dueDate).toBe(monthsFromNowOnDay(-2, 12));
+        expect(settledRows[0]?.dueDate).toBe(settled.dueDate);
         expect(settledRows[0]?.matchedExtractionId).toBe(extraction.id);
         expect(settledRows[0]?.actualAmount).toBe('13.50');
 
-        expect(rows.filter((r) => r.dueDate === settled.dueDate)).toEqual([]);
-        expect(rows.filter((r) => r.dueDate === monthsFromNowOnDay(-2, 12)).length).toBe(1);
+        expect(rows.filter((r) => r.dueDate === settled.dueDate)).toEqual([settled]);
+        expect(rows.filter((r) => r.dueDate === monthsFromNowOnDay(-2, 12)).length).toBe(0);
       });
     });
 
-    test('an unpaid row already sitting on the settled occurrence’s new date is displaced, not duplicated', async () => {
+    test('historical unpaid and settled rows keep their identities when the future rule changes', async () => {
       await withTestDb(async (tx) => {
         const { user, payment, settled } = await makeSettledMonthlyPayment(tx);
 
@@ -365,9 +366,10 @@ describe('PaymentService', () => {
         const landed = rows.filter((r) => r.dueDate === monthsFromNowOnDay(-2, 8));
 
         expect(landed.length).toBe(1);
-        expect(landed[0]?.id).toBe(settled.id);
-        expect(landed[0]?.status).toBe('matched');
-        expect(rows.some((r) => r.id === twin.id)).toBe(false);
+        expect(landed[0]?.id).toBe(twin.id);
+        expect(rows.find((row) => row.id === settled.id)).toEqual(settled);
+        expect(landed[0]?.status).toBe('scheduled');
+        expect(rows.some((r) => r.id === twin.id)).toBe(true);
       });
     });
 
@@ -408,7 +410,7 @@ describe('PaymentService', () => {
       });
     });
 
-    test('a quarterly payment pairs by ordinal, not by day offset, when the anchor moves', async () => {
+    test('a quarterly payment keeps its settled date when the future anchor moves', async () => {
       await withTestDb(async (tx) => {
         const user = await makeUser(tx);
         const payment = await makePayment(tx, {
@@ -443,7 +445,7 @@ describe('PaymentService', () => {
         // One quarter after the new anchor — not "the old date minus
         // two days" by coincidence of arithmetic, but the second slot
         // the new rule generates.
-        expect(settledRows[0]?.dueDate).toBe(monthsFromNowOnDay(-3, 8));
+        expect(settledRows[0]?.dueDate).toBe(settled.dueDate);
       });
     });
   });
@@ -490,7 +492,9 @@ describe('PaymentService', () => {
         // same either way.
         expect(activeDates.length).toBeGreaterThan(1);
         expect(pausedDates).toEqual(activeDates);
-        expect(pausedDates.every((d) => d.endsWith('-12'))).toBe(true);
+        expect(
+          pausedDates.filter((d) => d >= todayUtcString()).every((d) => d.endsWith('-12'))
+        ).toBe(true);
       });
     });
 
@@ -546,9 +550,9 @@ describe('PaymentService', () => {
         // remap exists to prevent.
         expect(settledRows.length).toBe(1);
         expect(settledRows[0]?.id).toBe(settled.id);
-        expect(settledRows[0]?.dueDate).toBe(monthsFromNowOnDay(-2, 8));
+        expect(settledRows[0]?.dueDate).toBe(settled.dueDate);
         expect(settledRows[0]?.actualAmount).toBe('13.50');
-        expect(rows.filter((r) => r.dueDate === monthsFromNowOnDay(-2, 10))).toEqual([]);
+        expect(rows.filter((r) => r.dueDate === monthsFromNowOnDay(-2, 10))).toEqual([settled]);
       });
     });
 
@@ -1199,7 +1203,7 @@ describe('PaymentService', () => {
         // the 12th moves one date across "today" on some days of the
         // month, which is correct and not what this regression is about.
         expect(pastDates.length).toBeGreaterThan(0);
-        expect(pastDates.every((d) => d.endsWith('-12'))).toBe(true);
+        expect(pastDates).toEqual(pastBefore.map((row) => row.dueDate));
         expect(new Set(pastDates).size).toBe(pastDates.length);
       });
     });
@@ -1331,5 +1335,228 @@ describe('PaymentService', () => {
         expect(await occurrences().findByPaymentId(payment.id, tx)).toHaveLength(1);
       });
     });
+  });
+});
+
+describe('Bills group assignments', () => {
+  test('schedule defaults preserve settled history and explicit empty occurrence overrides', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const payment = await makePayment(tx, { userId: user.id, anchorDate: todayUtcString() });
+      const [a, b] = await tx
+        .insert(groupSchema)
+        .values([
+          { userId: user.id, name: 'Home', color: '#123456' },
+          { userId: user.id, name: 'Family', color: '#234567' },
+        ])
+        .returning();
+      await service().materialise(payment, tx);
+      const rows = await occurrences().findByPaymentId(payment.id, tx);
+      await service().assignGroups(
+        user.id,
+        { paymentId: payment.id, groupIds: [a!.id, a!.id] },
+        tx
+      );
+      await service().settleOccurrence(user.id, rows[0]!.id, { status: 'matched' }, tx);
+      await service().assignGroups(
+        user.id,
+        { paymentId: payment.id, occurrenceId: rows[1]!.id, groupIds: [] },
+        tx
+      );
+      await service().assignGroups(user.id, { paymentId: payment.id, groupIds: [b!.id] }, tx);
+      const assignments = await service().groupAssignments(user.id, tx);
+      expect(assignments.occurrences[rows[0]!.id]).toEqual([a!.id]);
+      expect(assignments.occurrences[rows[1]!.id] ?? []).toEqual([]);
+      expect(assignments.occurrences[rows[2]!.id]).toEqual([b!.id]);
+      expect(assignments.payments[payment.id]).toEqual([b!.id]);
+      await service().materialise(payment, tx);
+      expect((await service().groupAssignments(user.id, tx)).occurrences[rows[0]!.id]).toEqual([
+        a!.id,
+      ]);
+    });
+  });
+
+  test('foreign groups are refused before any existing assignment changes', async () => {
+    await withTestDb(async (tx) => {
+      const owner = await makeUser(tx);
+      const stranger = await makeUser(tx);
+      const payment = await makePayment(tx, { userId: owner.id });
+      const [foreign] = await tx
+        .insert(groupSchema)
+        .values({ userId: stranger.id, name: 'Private', color: '#123456' })
+        .returning();
+      await expect(
+        service().assignGroups(owner.id, { paymentId: payment.id, groupIds: [foreign!.id] }, tx)
+      ).rejects.toThrow('Group not found');
+      expect((await service().groupAssignments(owner.id, tx)).payments).toEqual({});
+    });
+  });
+});
+
+describe('atomic occurrence editing', () => {
+  test('a rejected group rolls the amount and overrides back', async () => {
+    await withTestDb(async (tx) => {
+      const owner = await makeUser(tx);
+      const stranger = await makeUser(tx);
+      const payment = await makePayment(tx, { userId: owner.id });
+      const occurrence = await makePaymentOccurrence(tx, {
+        paymentId: payment.id,
+        dueDate: todayUtcString(),
+        expectedAmount: '50',
+      });
+      const [foreign] = await tx
+        .insert(groupSchema)
+        .values({ userId: stranger.id, name: 'Private', color: '#123456' })
+        .returning();
+      await expect(
+        tx.transaction((nested) =>
+          service().editOccurrence(
+            owner.id,
+            occurrence.id,
+            { expectedAmount: '75', groupIds: [foreign!.id] },
+            nested
+          )
+        )
+      ).rejects.toThrow('Group not found');
+      const unchanged = (await occurrences().findByPaymentId(payment.id, tx)).find(
+        (row) => row.id === occurrence.id
+      )!;
+      expect(unchanged.expectedAmount).toBe('50');
+      expect(unchanged.amountOverridden).toBe(false);
+      expect(unchanged.groupsOverridden).toBe(false);
+    });
+  });
+});
+
+test('future schedule edits never backfill new historical dates on the next materialisation', async () => {
+  await withTestDb(async (tx) => {
+    const user = await makeUser(tx);
+    const payment = await makePayment(tx, {
+      userId: user.id,
+      anchorDate: monthsFromNowOnDay(-3, 10),
+    });
+    await service().materialise(payment, tx);
+    const history = (await occurrences().findByPaymentId(payment.id, tx)).filter(
+      (row) => row.dueDate < todayUtcString()
+    );
+    const updated = await service().update(
+      user.id,
+      payment.id,
+      { anchorDate: monthsFromNowOnDay(-3, 12) },
+      tx
+    );
+    await service().materialise(updated, tx);
+    expect(
+      (await occurrences().findByPaymentId(payment.id, tx)).filter(
+        (row) => row.dueDate < todayUtcString()
+      )
+    ).toEqual(history);
+  });
+});
+
+describe('a schedule edit reconciles occurrence overrides (SC-1396)', () => {
+  test('an edited occurrence moves to the nearest new date instead of staying beside it', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const payment = await makePayment(tx, {
+        userId: user.id,
+        anchorDate: monthsFromNowOnDay(-2, 15),
+        expectedAmount: '50',
+      });
+      await service().materialise(payment, tx);
+      const edited = (await occurrences().findByPaymentId(payment.id, tx))
+        .filter((row) => row.dueDate > todayUtcString())
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]!;
+      await service().editOccurrence(user.id, edited.id, { expectedAmount: '75' }, tx);
+
+      await service().update(user.id, payment.id, { anchorDate: monthsFromNowOnDay(-2, 20) }, tx);
+
+      const future = (await occurrences().findByPaymentId(payment.id, tx)).filter(
+        (row) => row.status === 'scheduled' && row.dueDate >= todayUtcString()
+      );
+      expect(future.filter((row) => row.dueDate.endsWith('-15'))).toEqual([]);
+      const months = future.map((row) => row.dueDate.slice(0, 7));
+      expect(new Set(months).size).toBe(months.length);
+      const moved = future.find((row) => row.id === edited.id)!;
+      expect(moved.dueDate).toBe(`${edited.dueDate.slice(0, 8)}20`);
+      expect(moved.expectedAmount).toBe('75');
+      expect(moved.amountOverridden).toBe(true);
+    });
+  });
+
+  test('an edited occurrence after a shortened end date is removed, not left due', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const payment = await makePayment(tx, {
+        userId: user.id,
+        anchorDate: monthsFromNowOnDay(-2, 15),
+        expectedAmount: '50',
+      });
+      await service().materialise(payment, tx);
+      const later = (await occurrences().findByPaymentId(payment.id, tx))
+        .filter((row) => row.dueDate > todayUtcString())
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[2]!;
+      await service().editOccurrence(user.id, later.id, { expectedAmount: '75' }, tx);
+
+      const endDate = todayUtcString();
+      await service().update(user.id, payment.id, { endDate }, tx);
+
+      const rows = await occurrences().findByPaymentId(payment.id, tx);
+      expect(rows.find((row) => row.id === later.id)).toBeUndefined();
+      expect(rows.filter((row) => row.status === 'scheduled' && row.dueDate > endDate)).toEqual([]);
+    });
+  });
+
+  test('CONTROL: an edited occurrence still on the new schedule keeps its date and amount', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const payment = await makePayment(tx, {
+        userId: user.id,
+        anchorDate: monthsFromNowOnDay(-2, 15),
+        expectedAmount: '50',
+      });
+      await service().materialise(payment, tx);
+      const edited = (await occurrences().findByPaymentId(payment.id, tx))
+        .filter((row) => row.dueDate > todayUtcString())
+        .sort((a, b) => a.dueDate.localeCompare(b.dueDate))[0]!;
+      await service().editOccurrence(user.id, edited.id, { expectedAmount: '75' }, tx);
+
+      await service().update(user.id, payment.id, { endDate: monthsFromNowOnDay(24, 28) }, tx);
+
+      const kept = (await occurrences().findByPaymentId(payment.id, tx)).find(
+        (row) => row.id === edited.id
+      )!;
+      expect(kept.dueDate).toBe(edited.dueDate);
+      expect(kept.expectedAmount).toBe('75');
+    });
+  });
+});
+
+test('a new bill with past dates puts its groups on every occurrence it creates (SC-1396)', async () => {
+  await withTestDb(async (tx) => {
+    const user = await makeUser(tx);
+    const template = await makePayment(tx, { userId: user.id });
+    const [group] = await tx
+      .insert(groupSchema)
+      .values({ userId: user.id, name: 'Home', color: '#123456' })
+      .returning();
+    const created = await service().create(
+      user.id,
+      {
+        vendorId: template.vendorId,
+        direction: 'outflow',
+        kind: 'fixed',
+        currencyTokenId: template.currencyTokenId,
+        intervalUnit: 'month',
+        intervalCount: 1,
+        anchorDate: monthsFromNowOnDay(-3, 10),
+        groupIds: [group!.id],
+      },
+      tx
+    );
+    const rows = await occurrences().findByPaymentId(created.id, tx);
+    expect(rows.some((row) => row.dueDate < todayUtcString())).toBe(true);
+    const assignments = await service().groupAssignments(user.id, tx);
+    for (const row of rows) expect(assignments.occurrences[row.id]).toEqual([group!.id]);
   });
 });

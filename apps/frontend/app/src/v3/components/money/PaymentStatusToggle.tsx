@@ -2,6 +2,7 @@ import { formatDate } from '@scani/shared';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import type { TFunction } from 'i18next';
+import { Pause, Play } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
@@ -95,7 +96,16 @@ export function PaymentStatusToggle({ paymentId, status, pausedAt }: PaymentStat
 
   return (
     <ConfirmAction
-      label={label}
+      label={
+        <>
+          {paused ? (
+            <Play className="me-2 size-4" aria-hidden="true" />
+          ) : (
+            <Pause className="me-2 size-4" aria-hidden="true" />
+          )}
+          {label}
+        </>
+      }
       confirmLabel={paused ? t('v3.money.status.resumeConfirm') : t('v3.money.status.pauseConfirm')}
       open={confirming}
       onOpenChange={setConfirming}

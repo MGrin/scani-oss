@@ -397,6 +397,14 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
         tokenId: fresh.id,
         balance: '1',
       },
+      // Cash in the base currency, which also has an old quote of its own
+      // against another currency (SC-1447).
+      {
+        userId: user.id,
+        accountId: account!.id,
+        tokenId: base.id,
+        balance: '100',
+      },
     ]);
 
     // The provider row: priced in the QUOTE currency, not the user's base.
@@ -420,6 +428,13 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
         price: '3000',
         timestamp: new Date(),
         source: 'coingecko',
+      },
+      {
+        tokenId: base.id,
+        baseTokenId: quote.id,
+        price: '1.08',
+        timestamp: new Date('2026-08-13T06:00:00Z'),
+        source: 'frankfurter',
       },
     ]);
 
@@ -498,5 +513,24 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
     const current = portfolio.holdings.find((h) => h.value === '2760');
     expect(stale?.priceStale).toBe(true);
     expect(current?.priceStale).toBe(false);
+  });
+
+  /**
+   * SC-1447. A holding in the user's own base currency is 1 at every instant,
+   * so no quote can make it stale — not even a stored row pricing that
+   * currency against another one, which is what the metadata lookup finds and
+   * dated. Beside the stale arm above, so a rule that flags nothing cannot
+   * pass both.
+   */
+  test('a holding in the base currency is priced 1 and never stale, whatever rows exist for it', async () => {
+    const portfolio = await Container.get(PortfolioValuationService).getUserPortfolioValue(
+      fixture.userId
+    );
+
+    const cash = portfolio.holdings.find((h) => h.value === '100');
+    expect(cash?.currentPrice).toBe('1');
+    expect(cash?.priceStale).toBe(false);
+    expect(cash?.priceSource).toBe('Base Currency');
+    expect(portfolio.holdings.find((h) => h.value === '110400')?.priceStale).toBe(true);
   });
 });

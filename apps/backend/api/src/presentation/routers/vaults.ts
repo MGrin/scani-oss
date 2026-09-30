@@ -32,6 +32,35 @@ async function deleteVault(vaultId: string, userId: string): Promise<{ success: 
 }
 
 export const vaultsRouter = router({
+  allocations: protectedProcedure.query(async ({ ctx }) => {
+    const { dbUser } = await requireAuth(ctx);
+    return Container.get(VaultRepository).allocationsForUser(dbUser.id);
+  }),
+  setAllocations: protectedProcedure
+    .input(
+      strictInput(
+        z.object({
+          vaultId: z.string().uuid(),
+          entries: z
+            .array(
+              z.object({ holdingId: z.string().uuid(), percentage: z.number().min(0).max(100) })
+            )
+            .max(500),
+        })
+      )
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { dbUser } = await requireAuth(ctx);
+      await Container.get(VaultRepository).setAllocations(dbUser.id, input.vaultId, input.entries);
+      await Container.get(VaultService).recalculateVaultAmount(input.vaultId);
+      emitEntityChange({
+        entityType: 'vault',
+        operationType: 'update',
+        entityId: input.vaultId,
+        userId: dbUser.id,
+      });
+      return { success: true };
+    }),
   // Get all vaults for the user with progress
   getAll: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);

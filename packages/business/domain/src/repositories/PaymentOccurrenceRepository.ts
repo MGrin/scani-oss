@@ -183,6 +183,7 @@ export class PaymentOccurrenceRepository extends BaseRepository<
           and(
             eq(schema.paymentOccurrences.paymentId, paymentId),
             eq(schema.paymentOccurrences.status, 'scheduled'),
+            eq(schema.paymentOccurrences.amountOverridden, false),
             gte(schema.paymentOccurrences.dueDate, fromDate)
           )
         )
@@ -272,7 +273,9 @@ export class PaymentOccurrenceRepository extends BaseRepository<
         .where(
           and(
             eq(schema.paymentOccurrences.paymentId, paymentId),
-            eq(schema.paymentOccurrences.status, 'scheduled')
+            eq(schema.paymentOccurrences.status, 'scheduled'),
+            eq(schema.paymentOccurrences.amountOverridden, false),
+            eq(schema.paymentOccurrences.groupsOverridden, false)
           )
         )
         .returning();

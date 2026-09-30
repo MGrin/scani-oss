@@ -18,9 +18,9 @@ import { documentDetailPath, V3_PAYMENT_ROUTES } from '../../lib/routes';
  * one action the whole flow exists for, turning the invoice into a recurring
  * payment, was two screens further on and reachable only by crossing into v2.
  *
- * So the extraction row *is* the action here. `PaymentFormPage` has read
- * `?fromExtraction=` since V3-13 and nothing in v3 had ever written it; this is
- * that producer. Approving does not write a payment — one invoice cannot prove
+ * So the extraction row *is* the action here. The payment form has read the
+ * extraction since V3-13 and nothing in v3 had ever written the link; this is
+ * that producer (the sheet value since SC-1414). Approving does not write a payment — one invoice cannot prove
  * a cadence — it opens the form with the vendor, amount, currency and dates
  * already filled, which is the confirmation step the bridge was designed around.
  *

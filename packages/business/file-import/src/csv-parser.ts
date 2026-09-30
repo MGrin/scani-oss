@@ -67,6 +67,20 @@ export function parseCsvStatement(
     }
   }
 
+  const hasColumn = (name: string | undefined) => !!name && headerMap.has(name.toLowerCase());
+  if (
+    !hasColumn(mapping.date) ||
+    !(hasColumn(mapping.amount) || hasColumn(mapping.credit) || hasColumn(mapping.debit))
+  ) {
+    return {
+      transactions: [],
+      holdings: [],
+      format: 'csv',
+      warnings,
+      needsColumnMapping: { headers: headers.slice(0, 200), rowCount: rows.length },
+    };
+  }
+
   const dates = rows
     .map((row) => getColumn(row, mapping.date)?.trim())
     .filter((date): date is string => !!date);

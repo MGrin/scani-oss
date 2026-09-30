@@ -25,6 +25,7 @@ import {
   type HoldingDraft,
 } from '../lib/manual-entry';
 import { jobDetailPath } from '../lib/routes';
+import { V3_BASE } from '../lib/ui-version';
 
 /**
  * Typing holdings in by hand — the fallback the capture sheet offers when
@@ -208,7 +209,8 @@ export function ManualEntryPage() {
         blockers={describeManualEntryBlockers(t, draft)}
         onSubmit={handleSubmit}
         stage={isSaving ? 'enqueue' : null}
-        busyLabel="the save"
+        busyLabel={t('v3.capture.busy.save')}
+        cancelTo={V3_BASE}
         error={error}
       />
     </PageLayout>

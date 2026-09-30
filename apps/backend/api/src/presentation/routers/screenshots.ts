@@ -1,10 +1,12 @@
 import { AccountRepository } from '@scani/domain/repositories';
+import { AIRouter } from '@scani/domain/services';
 import { SCREENSHOT_PARSE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { requireAI } from '../ai-required';
 import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
 
@@ -29,6 +31,13 @@ function assertOwnedKey(key: string, userId: string, purpose: 'screenshot' | 'fi
 }
 
 export const screenshotsRouter = router({
+  capabilities: protectedProcedure.query(async () => {
+    const { state, ...operations } = await Container.get(AIRouter).getAvailability();
+    return {
+      ...operations,
+      state: state === 'missing' || state === 'rejected' ? ('unavailable' as const) : state,
+    };
+  }),
   /**
    * Parse N screenshots asynchronously via BullMQ.
    *
@@ -61,6 +70,12 @@ export const screenshotsRouter = router({
       )
     )
     .mutation(async ({ input, ctx }) => {
+      for (const key of input.r2Keys)
+        await requireAI(() =>
+          Container.get(AIRouter).requireOperation(
+            key.toLowerCase().endsWith('.pdf') ? 'text' : 'image'
+          )
+        );
       for (const key of input.r2Keys) {
         assertOwnedKey(key, ctx.userId, 'screenshot');
       }

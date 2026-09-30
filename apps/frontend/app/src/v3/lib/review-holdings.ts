@@ -190,6 +190,8 @@ export function buildBatchPayload(
 type ParsedFileKind = 'image' | 'pdf' | 'mixed';
 
 export interface ScreenshotParseSummary {
+  aiUnavailable: boolean;
+  filesRetained: boolean;
   accountId: string | null;
   totalFiles: number;
   succeeded: number;
@@ -257,6 +259,8 @@ export function readScreenshotParse(result: unknown): ScreenshotParseSummary {
     totalFiles: Math.max(declaredTotal, files.length),
     succeeded: successes.length,
     failed: files.length - successes.length,
+    aiUnavailable: files.some((file) => file.aiUnavailable === true),
+    filesRetained: files.length > 0 && files.every((file) => file.retained === true),
     kind,
     holdings,
     overallConfidence:

@@ -1,3 +1,5 @@
+import { HISTORY_REBUILD_JOB_NAME } from '@scani/shared';
+
 // Single source of truth for the per-job string names used in BullMQ
 // dispatch keys. Both producer and consumer import from here so a typo
 // is caught at the type level.
@@ -29,7 +31,7 @@ export const JOB_NAMES = {
   walletImport: 'wallet-import',
   fileImport: 'file-import',
   manualHoldingsCreate: 'manual-holdings-create',
-  portfolioHistoryBackfill: 'portfolio-history-backfill',
+  portfolioHistoryBackfill: HISTORY_REBUILD_JOB_NAME,
   holdingPriceUpdate: 'holding-price-update',
   refreshAccountBalance: 'refresh-account-balance',
   userDataDelete: 'user-data-delete',

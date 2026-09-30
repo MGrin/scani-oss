@@ -48,10 +48,24 @@ let revokedTokens: string[] = [];
 // session cookie Better-Auth resolves.
 const callerOf = (headers: Headers) => headers.get('x-test-user');
 
+let activeOnlyRequested: boolean[] = [];
+
 setBetterAuthForContext({
+  // The real endpoint refuses any session signed in more than `freshAge` ago,
+  // which is nearly every session a user has (SC-1407); the fake does the same,
+  // so a router that still called it fails every test here.
+  $context: Promise.resolve({
+    internalAdapter: {
+      listSessions: async (userId: string, options?: { onlyActiveSessions?: boolean }) => {
+        activeOnlyRequested.push(options?.onlyActiveSessions === true);
+        return sessions.filter((s) => s.userId === userId);
+      },
+    },
+  }),
   api: {
-    listSessions: async ({ headers }: { headers: Headers }) =>
-      sessions.filter((s) => s.userId === callerOf(headers)),
+    listSessions: async () => {
+      throw new Error('SESSION_NOT_FRESH');
+    },
     getSession: async ({ headers }: { headers: Headers }) => ({
       session: sessions.find((s) => s.userId === callerOf(headers)),
     }),
@@ -73,6 +87,7 @@ beforeEach(() => {
     session('b-phone', USER_B),
   ];
   revokedTokens = [];
+  activeOnlyRequested = [];
 });
 
 function callerFor(userId: string) {
@@ -83,6 +98,14 @@ function callerFor(userId: string) {
   const headers = new Headers({ 'x-test-user': userId });
   return appRouter.createCaller({ ...context, headers });
 }
+
+describe('sessions router — a session older than freshAge can list its devices (SC-1407)', () => {
+  test('list succeeds without the fresh-session endpoint, and asks for active sessions only', async () => {
+    const listed = await callerFor(USER_A).sessions.list();
+    expect(listed).toHaveLength(2);
+    expect(activeOnlyRequested).toEqual([true]);
+  });
+});
 
 describe('sessions router — no bearer token leaves the server (SC-1288)', () => {
   test('list carries no session token', async () => {

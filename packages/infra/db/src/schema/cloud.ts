@@ -10,6 +10,7 @@ import {
   timestamp,
   uuid,
 } from 'drizzle-orm/pg-core';
+import { users } from './users';
 
 // =============================================================================
 // CLOUD (data-provider service) — Better-Auth user store + API key registry
@@ -97,7 +98,7 @@ export const cloudApiKeys = pgTable(
     id: uuid('id').defaultRandom().primaryKey(),
     ownerUserId: uuid('owner_user_id')
       .notNull()
-      .references(() => cloudUsers.id, { onDelete: 'cascade' }),
+      .references(() => users.id, { onDelete: 'cascade' }),
     tenantId: uuid('tenant_id').notNull(),
     name: text('name').notNull(),
     keyPrefix: text('key_prefix').notNull(),
@@ -122,7 +123,7 @@ export const cloudApiKeys = pgTable(
 // Append-only per-request usage log for the cloud-frontend /usage
 // dashboard. The data-provider inserts rows and aggregates in SQL (no
 // third-party meter SaaS). `subject` is the billable id (e.g.
-// cloud_users.id). Migration: 0051_cloud_usage_events.sql
+// users.id). Migration: 0051_cloud_usage_events.sql
 export const cloudUsageEvents = pgTable(
   'cloud_usage_events',
   {

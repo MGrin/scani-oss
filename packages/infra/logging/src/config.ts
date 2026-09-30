@@ -41,6 +41,16 @@ const envSchema = z
         });
       }
     }
+    // Debug and trace log every tRPC input and output (`trpc.ts`), credential
+    // imports included, so they are the same leak as the body flags (SC-1350).
+    const level = env.LOG_LEVEL?.toLowerCase();
+    if (level === 'debug' || level === 'trace') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['LOG_LEVEL'],
+        message: `LOG_LEVEL=${level} logs request inputs and must not be used in production. Refusing to start.`,
+      });
+    }
     // Without a pepper, pseudonymizeId would forward raw tenant UUIDs to the
     // shared log aggregator. Fail boot rather than leak silently.
     if (!env.LOG_ID_PEPPER || env.LOG_ID_PEPPER.length < 16) {

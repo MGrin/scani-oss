@@ -1,6 +1,7 @@
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { usePeekRoute } from '@scani/ui/v3/hooks/usePeekRoute';
+import { Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
@@ -58,10 +59,15 @@ export function DeleteVendorAction({ vendorId, vendorName }: DeleteVendorActionP
 
   return (
     <ConfirmAction
-      label={t('v3.money.deleteVendor.trigger')}
+      label={
+        <>
+          <Trash2 className="me-2 size-4" aria-hidden="true" />
+          {t('v3.money.deleteVendor.trigger')}
+        </>
+      }
       confirmLabel={t('v3.money.deleteVendor.confirm')}
       destructive
-      triggerClassName="text-destructive"
+      triggerClassName="text-destructive hover:text-destructive"
       open={open}
       onOpenChange={setOpen}
       canConfirm={counts !== null && counts.payments === 0}

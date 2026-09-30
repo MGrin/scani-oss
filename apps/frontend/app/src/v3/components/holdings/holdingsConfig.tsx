@@ -521,6 +521,7 @@ export function holdingsDataViewConfig({
       {
         key: 'institution',
         headerKey: 'ui.dataView.holdings.col.institution',
+        hideBelow: 'xl',
         width: 'w-[16%]',
         render: (item) => <InstitutionCell holding={item} />,
         exportValue: (item) => exportText(item.institution.name),
@@ -530,6 +531,7 @@ export function holdingsDataViewConfig({
         headerKey: 'ui.dataView.holdings.col.amount',
         sortable: true,
         numeric: true,
+        width: 'w-28',
         render: (item) => holdingAmount(item, t),
         // The raw unit count, not the rounded display figure: a balance is the
         // one column where the digits the row hides are the ones an accountant
@@ -567,7 +569,7 @@ export function holdingsDataViewConfig({
         headerKey: 'ui.dataView.holdings.col.gainLoss',
         sortable: true,
         numeric: true,
-        width: 'w-[12%]',
+        width: 'w-32',
         render: (item) => holdingRowDelta(item) ?? <span className="text-muted-foreground">—</span>,
         exportValue: (item) => exportPercent(holdingGainLoss(item)?.percent),
       },

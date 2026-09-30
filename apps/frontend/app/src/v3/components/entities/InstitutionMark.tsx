@@ -28,9 +28,12 @@ export function InstitutionMark({ name, institution, size }: InstitutionMarkProp
       src={institutionIconUrl(institution)}
       name={name}
       className={cn(size, 'shrink-0 rounded-sm object-contain')}
+      // The hairline is dark-only: there `--surface-hover` equals the sheet's
+      // `--surface-2`, so on a peek the tile vanished and a bare letter
+      // floated beside the title (SC-1433).
       fallbackClassName={cn(
         size,
-        'flex shrink-0 items-center justify-center rounded-sm bg-surface-hover text-caption font-medium leading-none text-muted-foreground'
+        'flex shrink-0 items-center justify-center rounded-sm bg-surface-hover text-caption font-medium leading-none text-muted-foreground dark:ring-1 dark:ring-inset dark:ring-border'
       )}
     />
   );

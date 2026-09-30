@@ -68,7 +68,12 @@ function render(rows: DisposalLotMatchDto[]): string {
     <StaticRouter location="/holdings">
       <trpc.Provider client={trpcClient} queryClient={queryClient}>
         <QueryClientProvider client={queryClient}>
-          <RealizedLedger holdingId={HOLDING_ID} currency="USD" symbol="ETH" />
+          <RealizedLedger
+            holdingId={HOLDING_ID}
+            currency="USD"
+            symbol="ETH"
+            tokenTypeCode="crypto"
+          />
         </QueryClientProvider>
       </trpc.Provider>
     </StaticRouter>

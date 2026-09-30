@@ -39,8 +39,6 @@ interface DeclaredScreen {
   name: string;
   viewport: keyof typeof VIEWPORT_WIDTH;
   height?: number;
-  /** An element capture (SC-623): its size is the element's, not the viewport's. */
-  element: boolean;
 }
 
 async function declaredScreens(): Promise<DeclaredScreen[]> {
@@ -56,7 +54,6 @@ async function declaredScreens(): Promise<DeclaredScreen[]> {
       name: name as string,
       viewport: viewport as keyof typeof VIEWPORT_WIDTH,
       height: height ? Number(height[1]?.replace(/_/g, '')) : undefined,
-      element: /\belement:\s*'/.test(entry),
     };
   });
 }
@@ -86,16 +83,6 @@ describe('v3 visual-regression baselines', () => {
     for (const screen of await declaredScreens()) {
       const size = await pngSize(join(BASELINE_DIR, `${screen.name}.png`));
       const width = VIEWPORT_WIDTH[screen.viewport];
-      if (screen.element) {
-        // Narrower than the viewport is the element; wider is not possible
-        // from the renderer this harness starts.
-        if (size.width > width) {
-          wrong.push(
-            `${screen.name}: ${size.width}px wide, wider than ${width} (${screen.viewport})`
-          );
-        }
-        continue;
-      }
       if (size.width !== width) {
         wrong.push(`${screen.name}: ${size.width}px wide, expected ${width} (${screen.viewport})`);
       }

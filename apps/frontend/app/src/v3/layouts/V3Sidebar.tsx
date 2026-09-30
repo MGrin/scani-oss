@@ -6,6 +6,7 @@ import { Link } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { navIcon } from '../lib/nav-icons';
 import { V3_ROUTES, V3_SIDEBAR_SECTIONS } from '../lib/routes';
+import { ScaniBrand } from './ScaniBrand';
 import { V3NavBadge } from './V3NavBadge';
 
 interface V3SidebarProps {
@@ -37,11 +38,8 @@ export function V3Sidebar({ activePath, actionRequiredCount = 0, onCapturePress 
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col border-e border-border bg-surface-1 lg:flex">
-      {/* No "v3" chip beside the wordmark since V3-19: this is the interface
-          the app serves, and a version badge on the default reads as a beta the
-          reader has been opted into. The way out is the switch in the footer. */}
       <div className="flex h-14 shrink-0 items-center px-4">
-        <span className="text-title">Scani</span>
+        <ScaniBrand />
       </div>
 
       {/* Above the sections rather than inside one: the phone gives capture a

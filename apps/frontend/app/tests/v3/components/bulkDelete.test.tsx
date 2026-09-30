@@ -112,7 +112,7 @@ const HOLDINGS = [
 const PEEK = {
   t,
   currency: '$',
-  onSetAmount: () => undefined,
+  onEdit: () => undefined,
   onRecordMovement: () => undefined,
   onToggleActive: () => undefined,
   onMarkScam: () => undefined,
@@ -121,9 +121,7 @@ const PEEK = {
   refreshingPriceId: null,
   refreshingBalanceId: null,
   onEditPrice: () => undefined,
-  onSetLabel: () => undefined,
   onConfigureApy: () => undefined,
-  onRemoveApy: () => undefined,
   onDelete: () => undefined,
 };
 

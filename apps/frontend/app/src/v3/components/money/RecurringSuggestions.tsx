@@ -1,8 +1,10 @@
 import { formatDate } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
+import { Repeat } from 'lucide-react';
 import { Trans, useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
+import { Callout } from '../Callout';
 
 export interface SuggestionRow {
   counterparty: string;
@@ -51,43 +53,60 @@ export function RecurringSuggestionsView({
         const symbol = tokenSymbolById.get(s.currencyTokenId) ?? '';
         const busy = pendingKey === keyOf(s);
         return (
-          <article
-            key={keyOf(s)}
-            className="flex flex-col gap-2 rounded-md border border-dashed border-muted-foreground/60 p-3"
-          >
-            <p className="text-body">
-              <Trans
-                i18nKey="v3.money.suggestions.claim"
-                values={{ payee: s.counterparty }}
-                components={{ value: <Numeric value={s.amount} currency={symbol} /> }}
-              />
-            </p>
-            <ul className="flex flex-col gap-0.5 text-caption text-muted-foreground">
-              <li>{t('v3.money.suggestions.evidence', { count: s.evidence.length })}</li>
-              {s.evidence.map((e) => (
-                <li key={e.transactionId} data-evidence-row className="flex gap-2">
-                  <span>{formatDate(e.date)}</span>
-                  <Numeric
-                    value={e.amount}
-                    currency={tokenSymbolById.get(e.currencyTokenId) ?? symbol}
-                  />
-                </li>
-              ))}
-            </ul>
-            <div className="flex flex-wrap gap-2">
-              <Button size="sm" data-action="accept" disabled={busy} onClick={() => onAccept(s)}>
-                {t('v3.money.suggestions.accept')}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                data-action="dismiss"
-                disabled={busy}
-                onClick={() => onDismiss(s)}
-              >
-                {t('v3.money.suggestions.dismiss')}
-              </Button>
-            </div>
+          // The shared note card (UI standard rule 10, SC-1433), not a dashed
+          // box of body text. `article` is kept for the tests' and screen
+          // readers' grouping of one suggestion.
+          <article key={keyOf(s)}>
+            <Callout
+              icon={Repeat}
+              action={
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    data-action="accept"
+                    disabled={busy}
+                    onClick={() => onAccept(s)}
+                  >
+                    {t('v3.money.suggestions.accept')}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    data-action="dismiss"
+                    disabled={busy}
+                    onClick={() => onDismiss(s)}
+                  >
+                    {t('v3.money.suggestions.dismiss')}
+                  </Button>
+                </div>
+              }
+            >
+              <p>
+                <Trans
+                  i18nKey="v3.money.suggestions.claim"
+                  values={{ payee: s.counterparty }}
+                  components={{ value: <Numeric value={s.amount} currency={symbol} /> }}
+                />
+              </p>
+              <p className="text-muted-foreground">
+                {t('v3.money.suggestions.evidence', { count: s.evidence.length })}
+              </p>
+              {/* Two columns, amounts right-aligned: dates in the body face
+                  beside mono figures shifted every amount by its month. */}
+              <ul className="grid grid-cols-[auto_auto] gap-x-4 gap-y-0.5 text-muted-foreground">
+                {s.evidence.map((e) => (
+                  <li key={e.transactionId} data-evidence-row className="contents">
+                    <span>{formatDate(e.date)}</span>
+                    <span className="text-end">
+                      <Numeric
+                        value={e.amount}
+                        currency={tokenSymbolById.get(e.currencyTokenId) ?? symbol}
+                      />
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Callout>
           </article>
         );
       })}
@@ -110,7 +129,7 @@ export function RecurringSuggestions({
     void utils.payments.suggestions.invalidate();
     if (!all) return;
     void utils.payments.list.invalidate();
-    void utils.payments.forecast.invalidate();
+    void utils.payments.scheduled.invalidate();
     void utils.payments.upcoming.invalidate();
     void utils.vendors.list.invalidate();
     void utils.vendors.spend.invalidate();

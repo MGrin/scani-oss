@@ -1,15 +1,13 @@
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
-import { cn } from '@scani/ui/lib/cn';
-import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
-import { Button } from '@scani/ui/ui/button';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { QueryError } from '@scani/ui/v3/components/feedback/QueryError';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
-import { ArrowLeft, FileText } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { BackLink } from '../components/BackLink';
 import { DocumentDetailHeader } from '../components/documents/DocumentDetailHeader';
 import { ExtractionRecord } from '../components/documents/ExtractionRecord';
 import { V3_PAYMENT_ROUTES, V3_ROUTES } from '../lib/routes';
@@ -53,7 +51,7 @@ export function DocumentDetailPage() {
   if (documentQuery.isLoading) {
     return (
       <PageLayout>
-        <BackLink />
+        <BackLink to={V3_ROUTES.files} label={t('v3.documents.detail.backToFiles')} />
         <Skeleton className="h-40 w-full" aria-hidden="true" />
       </PageLayout>
     );
@@ -62,7 +60,7 @@ export function DocumentDetailPage() {
   if (documentQuery.isError || !documentQuery.data) {
     return (
       <PageLayout>
-        <BackLink />
+        <BackLink to={V3_ROUTES.files} label={t('v3.documents.detail.backToFiles')} />
         <QueryError
           error={documentQuery.error}
           subject={t('v3.documents.thisFile')}
@@ -76,7 +74,7 @@ export function DocumentDetailPage() {
 
   return (
     <PageLayout>
-      <BackLink />
+      <BackLink to={V3_ROUTES.files} label={t('v3.documents.detail.backToFiles')} />
 
       <DocumentDetailHeader
         file={{
@@ -116,17 +114,5 @@ export function DocumentDetailPage() {
         />
       ))}
     </PageLayout>
-  );
-}
-
-function BackLink() {
-  const { t } = useTranslation();
-  return (
-    <Button variant="ghost" size="sm" asChild className="-ms-2 self-start">
-      <Link to={V3_ROUTES.files}>
-        <ArrowLeft className={cn(MIRROR_IN_RTL, 'me-2 size-4')} aria-hidden="true" />
-        {t('v3.documents.detail.backToFiles')}
-      </Link>
-    </Button>
   );
 }

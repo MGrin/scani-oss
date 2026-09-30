@@ -1,10 +1,7 @@
-import { cn } from '@scani/ui/lib/cn';
-import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
-import { Button } from '@scani/ui/ui/button';
-import { ArrowLeft } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { V3_BASE } from '../../lib/ui-version';
+import { BackLink } from '../BackLink';
 import { DemoCaptureNote } from './DemoCaptureNote';
 
 /**
@@ -19,21 +16,17 @@ export function CaptureHeader({
   title,
   description,
   backTo = V3_BASE,
-  backLabel = 'Home',
+  backLabel,
 }: {
   title: string;
   description: ReactNode;
   backTo?: string;
   backLabel?: string;
 }) {
+  const { t } = useTranslation();
   return (
     <div className="flex flex-col gap-2">
-      <Button variant="ghost" asChild className="-ms-2 self-start">
-        <Link to={backTo}>
-          <ArrowLeft className={cn(MIRROR_IN_RTL, 'me-1 size-4')} aria-hidden="true" />
-          {backLabel}
-        </Link>
-      </Button>
+      <BackLink to={backTo} label={backLabel ?? t('v3.capture.backHome')} />
       <h1 className="text-title">{title}</h1>
       <p className="text-body text-muted-foreground">{description}</p>
       {/* SC-1207. Here rather than on each page: every capture screen takes

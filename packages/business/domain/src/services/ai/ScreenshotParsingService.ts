@@ -43,12 +43,6 @@ export class ScreenshotParsingService extends BaseService {
         mimeType: options?.mimeType,
       });
 
-      if (!this.aiRouter.hasAvailableProvider()) {
-        throw new Error(
-          'No AI providers are configured. Please set up API keys for OpenAI, Perplexity, or DeepSeek.'
-        );
-      }
-
       const aiResponse = await this.aiRouter.parseScreenshot(imageBase64, {
         userId: options.userId,
         provider: options?.provider,
@@ -107,12 +101,6 @@ export class ScreenshotParsingService extends BaseService {
         expectedCurrency: options?.expectedCurrency,
         textLength: text.length,
       });
-
-      if (!this.aiRouter.hasAvailableProvider()) {
-        throw new Error(
-          'No AI providers are configured. Please set up API keys for OpenAI, Perplexity, or DeepSeek.'
-        );
-      }
 
       const aiResponse = await this.aiRouter.parseDocumentText(text, {
         userId: options.userId,

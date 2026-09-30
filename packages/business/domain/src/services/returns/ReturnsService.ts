@@ -1,12 +1,15 @@
+import { HISTORY_REBUILD_JOB_NAME } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { flowRoleOf } from '../../lib/returns/flow-classification';
+import { type CoverageFacts, flowCoverageOf } from '../../lib/returns/flow-coverage';
 import {
   type AttributionPoint,
   attributeCurrencyEffect,
   type CurrencyBucket,
   type ReturnAttribution,
 } from '../../lib/returns/fx-attribution';
+import { materialStartIndex } from '../../lib/returns/material-start';
 import { computeTimeWeightedReturn, type TwrResult } from '../../lib/returns/twr';
 import {
   type ResolvedReturnWindow,
@@ -14,13 +17,24 @@ import {
   resolveReturnWindow,
 } from '../../lib/returns/window';
 import { type Cashflow, type XirrResult, xirr } from '../../lib/returns/xirr';
+import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { PortfolioValueDailyRepository } from '../../repositories/PortfolioValueDailyRepository';
+import { UserJobRepository } from '../../repositories/UserJobRepository';
 import { UserRepository } from '../../repositories/UserRepository';
 import { PriceGraphService } from '../pricing/PriceGraphService';
 import { AssetCurrencyService } from './AssetCurrencyService';
-import { type ExternalFlow, ExternalFlowService, netFlowByDate } from './ExternalFlowService';
-import { type ReturnsScope, ReturnsScopeResolver } from './ReturnsScopeResolver';
+import {
+  type ExternalFlow,
+  ExternalFlowService,
+  type FlowProblem,
+  netFlowByDate,
+} from './ExternalFlowService';
+import {
+  type ReturnsScope,
+  ReturnsScopeResolver,
+  type WeightedHolding,
+} from './ReturnsScopeResolver';
 
 /**
  * How a portfolio PERFORMED, as opposed to what it is worth (SC-457).
@@ -189,13 +203,45 @@ export interface ReturnsResult {
   attribution: ReturnAttribution | null;
   xirr: XirrResult;
   coverage: ReturnsCoverage;
+  eligibility: { eligible: boolean; reasons: string[] };
+  /**
+   * Set when the figures cover only part of the scope: the holdings whose
+   * data could not support a return are left out and named, rather than
+   * withholding every other holding's return for them (SC-1421). `null` when
+   * the whole scope is measured, or when nothing is shown.
+   */
+  subset: ReturnsSubset | null;
+}
+
+export interface ReturnsSubset {
+  /** Holdings the figures are computed over. */
+  includedHoldings: number;
+  /** Holdings with a measured value in the window, included or not. */
+  measuredHoldings: number;
+  /** One entry per reason; a holding with two reasons counts under both. */
+  excluded: { reason: string; holdings: number }[];
+  /** The left-out holdings' value on the last measured day, base currency. */
+  excludedValue: string;
+  /**
+   * Counted holdings that were held before their statement starts, so they
+   * enter the figure on its first day as money put in (SC-1427). A reader
+   * should know a position's earlier gain is not in the return.
+   */
+  enteredLate: number;
+  /**
+   * Counted holdings no source priced on any day of the window, counted at
+   * zero: zero value and zero flows, so they move no figure (SC-1428).
+   */
+  unpricedAtZero: number;
 }
 
 @Service()
 export class ReturnsService {
+  private readonly holdingCoverage = Container.get(HoldingCoverageRepository);
   private readonly scopeResolver = Container.get(ReturnsScopeResolver);
   private readonly flowService = Container.get(ExternalFlowService);
   private readonly dailyRepository = Container.get(PortfolioValueDailyRepository);
+  private readonly userJobs = Container.get(UserJobRepository);
   private readonly userRepository = Container.get(UserRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly assetCurrencyService = Container.get(AssetCurrencyService);
@@ -229,12 +275,11 @@ export class ReturnsService {
     // arithmetic stays right and only the reported `effectiveWindow` widens.
     const anchorFrom = new Date(window.from.getTime() - ANCHOR_LOOKBACK_DAYS * DAY_MS);
     const [rows, currencyByHolding] = await Promise.all([
-      this.dailyRepository.findIncludedHoldingScopeRange(
+      this.dailyRepository.findIncludedHoldingValueRange(
         request.userId,
         baseCurrencyId,
         anchorFrom,
         window.to,
-        undefined,
         request.scope.kind === 'user' ? undefined : holdings.map((h) => h.holdingId)
       ),
       // Which currency each holding's own price is set in, so the value series
@@ -243,8 +288,7 @@ export class ReturnsService {
     ]);
 
     const weights = new Map(holdings.map((h) => [h.holdingId, h.weight]));
-    const series = buildSeries(rows, weights, currencyByHolding);
-    const points = selectWindowPoints(series, window);
+    const fullPoints = selectWindowPoints(buildSeries(rows, weights, currencyByHolding), window);
 
     const requestedWindow = {
       kind: window.kind,
@@ -252,7 +296,7 @@ export class ReturnsService {
       to: window.to.toISOString().slice(0, 10),
     };
 
-    if (points.length === 0) {
+    if (fullPoints.length === 0) {
       return {
         status: 'ok',
         returns: {
@@ -268,47 +312,138 @@ export class ReturnsService {
           attribution: null,
           xirr: { status: 'undefined', reason: 'too-few-flows' },
           coverage: emptyCoverage(window),
+          eligibility: { eligible: false, reasons: ['insufficient-history'] },
+          subset: null,
         },
       };
     }
 
-    const first = points[0] as SeriesPoint;
-    const last = points[points.length - 1] as SeriesPoint;
+    const fullFirst = fullPoints[0] as SeriesPoint;
+    const fullLast = fullPoints[fullPoints.length - 1] as SeriesPoint;
 
     // Only holdings that actually appear in the value series can contribute
     // flows. A holding with transactions but no rollup row is absent from the
     // value side too, and booking its flows against a value that never moved
     // would be a pure fabrication.
     const measuredHoldingIds = new Set(rows.map((row) => row.holdingId));
-    const flowHoldings = holdings.filter((h) => measuredHoldingIds.has(h.holdingId));
+    const measured = holdings.filter((h) => measuredHoldingIds.has(h.holdingId));
 
-    const flowWindowFrom = new Date(`${first.date}T23:59:59.999Z`);
-    const flowWindowTo = new Date(`${last.date}T23:59:59.999Z`);
-    const { flows, unvaluedCount, staleValuedCount } = await this.flowService.forHoldings(
-      flowHoldings,
-      baseCurrencyId,
-      flowWindowFrom,
-      flowWindowTo
+    const [scan, coverageByHolding, rebuilding, rebuildNegative, unchangedSince] =
+      await Promise.all([
+        this.flowService.forHoldings(
+          measured,
+          baseCurrencyId,
+          endOfDay(fullFirst.date),
+          endOfDay(fullLast.date)
+        ),
+        this.holdingCoverage.findManyByHoldingIds(measured.map((h) => h.holdingId)),
+        // An edit queues a full-history recompute; until it has run, the rollup
+        // rows still describe the ledger before the edit. Reading the job rather
+        // than comparing timestamps is what lets this clear: the post-import
+        // rollup only rewrites recent days, so a timestamp check stayed on for
+        // most accounts (SC-1396, measured on production).
+        this.userJobs.findInFlightByName(request.userId, HISTORY_REBUILD_JOB_NAME),
+        this.holdingCoverage.findRebuildGoesNegative(measured.map((h) => h.holdingId)),
+        this.holdingCoverage.findUnchangedSinceFirstReading(measured.map((h) => h.holdingId)),
+      ]);
+
+    // Eligibility is decided per HOLDING and the scope's figure is taken over
+    // the holdings that pass (SC-1421). Deciding it for the scope as a whole
+    // withheld mgrin's entire portfolio on production: 115 of 122 holdings
+    // carried at least one reason, most of them holdings with no value in the
+    // window at all, so any real portfolio read as unmeasurable.
+    // Only the days the series measured: a day nothing could be priced on is
+    // dropped from it, so a holding's row on that day never reaches a figure.
+    const measuredDays = new Set(fullPoints.map((point) => point.date));
+    const windowRows = rows.filter((row) =>
+      measuredDays.has(String(row.snapshotDate).slice(0, 10))
     );
-
-    const measuredDates = points.map((point) => point.date);
-    const allFlows = [
-      ...flows,
-      ...arrivalFlows(rows, weights, flows, measuredDates.slice(1), first.date),
-    ];
-    const { byDate, byDateAndCurrency, unattributed } = netFlowByDate(
-      allFlows,
-      measuredDates.slice(1),
-      currencyByHolding
+    const zeroed = neverPriced(windowRows);
+    const reasonsByHolding = holdingReasons(
+      measured,
+      windowRows,
+      coverageByHolding,
+      scan.problemsByHolding,
+      zeroed,
+      rebuildNegative,
+      unchangedSince
     );
+    const included = measured.filter((h) => !reasonsByHolding.has(h.holdingId));
+    const partial = included.length > 0 && included.length < measured.length;
+    const unpricedAtZero = included.filter((h) => zeroed.has(h.holdingId)).length;
 
-    const valuationPoints = points.map((point, index) => ({
-      date: point.date,
-      value: point.value,
-      netExternalFlow: index === 0 ? new Decimal(0) : (byDate.get(point.date) ?? new Decimal(0)),
-    }));
+    let points = fullPoints;
+    let measuredRows = rows;
+    let flowScan = scan;
+    if (partial || unpricedAtZero > 0) {
+      const keep = new Set(included.map((h) => h.holdingId));
+      // Counted at zero, so its unpriced days are not a gap in the figure.
+      measuredRows = rows
+        .filter((row) => keep.has(row.holdingId))
+        .map((row) =>
+          zeroed.has(row.holdingId) ? { ...row, totalValue: '0', coverageQuality: 'full' } : row
+        );
+      points = selectWindowPoints(buildSeries(measuredRows, weights, currencyByHolding), window);
+      const narrowed = points[0]?.date !== fullFirst.date || points.at(-1)?.date !== fullLast.date;
+      flowScan =
+        points.length > 0 && narrowed
+          ? await this.flowService.forHoldings(
+              included,
+              baseCurrencyId,
+              endOfDay((points[0] as SeriesPoint).date),
+              endOfDay((points[points.length - 1] as SeriesPoint).date)
+            )
+          : { ...scan, flows: scan.flows.filter((flow) => keep.has(flow.holdingId)) };
+    }
+    if (points.length === 0) points = fullPoints;
 
-    const twr = computeTimeWeightedReturn(valuationPoints);
+    const measure = (series: readonly SeriesPoint[], scanned: readonly ExternalFlow[]) => {
+      const first = series[0] as SeriesPoint;
+      const measuredDates = series.map((point) => point.date);
+      const allFlows = [
+        ...scanned,
+        ...arrivalFlows(measuredRows, weights, scanned, measuredDates.slice(1), first.date),
+      ];
+      const folded = netFlowByDate(allFlows, measuredDates.slice(1), currencyByHolding);
+      const valuationPoints = series.map((point, index) => ({
+        date: point.date,
+        value: point.value,
+        netExternalFlow:
+          index === 0 ? new Decimal(0) : (folded.byDate.get(point.date) ?? new Decimal(0)),
+      }));
+      return {
+        allFlows,
+        ...folded,
+        valuationPoints,
+        twr: computeTimeWeightedReturn(valuationPoints),
+      };
+    };
+
+    let flows = flowScan.flows;
+    let measurement = measure(points, flows);
+    // A window whose opening capital is a sliver of today's value is decided
+    // by that sliver, so it starts where the capital becomes material, and
+    // `effectiveWindow` says since when (SC-1439).
+    const materialFrom = measurement.twr
+      ? materialStartIndex(measurement.valuationPoints, measurement.twr.periods)
+      : 0;
+    if (materialFrom > 0) {
+      points = points.slice(materialFrom);
+      const opensAt = endOfDay((points[0] as SeriesPoint).date);
+      flows = flows.filter((flow) => flow.occurredAt > opensAt);
+      measurement = measure(points, flows);
+    }
+    const { allFlows, byDateAndCurrency, unattributed, valuationPoints, twr } = measurement;
+
+    const first = points[0] as SeriesPoint;
+    const last = points[points.length - 1] as SeriesPoint;
+    const rebuilt = partial || unpricedAtZero > 0 || materialFrom > 0;
+    const unvaluedCount = rebuilt
+      ? flows.filter((flow) => flow.valuationBasis === null && !zeroed.has(flow.holdingId)).length
+      : flowScan.unvaluedCount;
+    const staleValuedCount = rebuilt
+      ? flows.filter((flow) => flow.stale).length
+      : flowScan.staleValuedCount;
     const attribution = attributeCurrencyEffect(
       await this.attributionPoints(points, byDateAndCurrency, baseCurrencyId, window.to)
     );
@@ -316,6 +451,37 @@ export class ReturnsService {
       (sum, point) => sum.add(point.netExternalFlow),
       new Decimal(0)
     );
+
+    // What is left after the per-holding split is about the scope's own
+    // series, and only one thing about it withholds: no sub-period that could
+    // be measured, where there is no return to take. Three things that used to are
+    // reported instead (SC-1421). A window that starts before the history
+    // does is measured from where it starts (`effectiveWindow`, which is what
+    // `since` says). A sub-period that opened at zero is skipped by the chain
+    // and counted in `coverage.skippedPeriods`, which is how an account that
+    // started empty begins. A flow after the last measured day is a cashflow
+    // to XIRR and outside every TWR sub-period; `flowsAfterLastMeasuredDay`
+    // carries it.
+    // Held before a statement that starts inside the window: its first value is
+    // booked as money put in by `arrivalFlows`, like any mid-window purchase,
+    // and the reader is told its earlier gain is not in the figure (SC-1427).
+    const enteredLate = included.filter(({ holdingId }) => {
+      const coverage = flowCoverageOf(
+        coverageByHolding.get(holdingId),
+        unchangedSince.get(holdingId)
+      );
+      return coverage.kind === 'from' && coverage.heldBefore && coverage.from > first.date;
+    }).length;
+
+    const reasons: string[] = [];
+    if (rebuilding) reasons.push('rebuilding-history');
+    if (included.length === 0) {
+      for (const set of reasonsByHolding.values()) reasons.push(...set);
+    }
+    if (points.length < 2 || (twr?.measuredPeriods ?? 0) === 0) {
+      reasons.push('insufficient-history');
+    }
+    const eligibility = { eligible: reasons.length === 0, reasons: [...new Set(reasons)] };
 
     return {
       status: 'ok',
@@ -332,9 +498,12 @@ export class ReturnsService {
           value: point.value.toString(),
           netExternalFlow: point.netExternalFlow.toString(),
         })),
-        twr,
-        attribution,
-        xirr: xirr(toCashflows(first, last, allFlows, unattributed)),
+        eligibility,
+        twr: eligibility.eligible ? twr : null,
+        attribution: eligibility.eligible ? attribution : null,
+        xirr: eligibility.eligible
+          ? xirr(toCashflows(first, last, allFlows, unattributed))
+          : { status: 'undefined', reason: 'ineligible' },
         coverage: {
           measuredDays: points.length,
           windowDays:
@@ -348,6 +517,21 @@ export class ReturnsService {
           staleValuedFlows: staleValuedCount,
           flowsAfterLastMeasuredDay: unattributed.length,
         },
+        subset:
+          eligibility.eligible && (partial || enteredLate > 0 || unpricedAtZero > 0)
+            ? {
+                ...subsetOf(
+                  included.length,
+                  measured,
+                  reasonsByHolding,
+                  rows,
+                  weights,
+                  fullLast.date
+                ),
+                enteredLate,
+                unpricedAtZero,
+              }
+            : null,
       },
     };
   }
@@ -539,6 +723,151 @@ export class ReturnsService {
 
 const ONE = new Decimal(1);
 const ZERO = new Decimal(0);
+
+function endOfDay(date: string): Date {
+  return new Date(`${date}T23:59:59.999Z`);
+}
+
+type HoldingRow = {
+  holdingId: string;
+  snapshotDate: string;
+  coverageQuality: string;
+  holdingsTotal: number;
+  holdingsStalePriced: number;
+  holdingsStaleAnchored?: number | null;
+  holdingsBeforeRecords?: number | null;
+  holdingsInterpolated?: number | null;
+  transfersUnreviewed: number;
+};
+
+/**
+ * Holdings no source priced on any day of the window (SC-1428). Unpriced on
+ * every day it held something, and on at least one such day: a holding priced
+ * even once is a gap in known data, which zero would misstate.
+ */
+function neverPriced(
+  windowRows: ReadonlyArray<{
+    holdingId: string;
+    holdingsTotal: number;
+    holdingsWithKnownValue: number;
+  }>
+): Set<string> {
+  const priced = new Set<string>();
+  const held = new Set<string>();
+  for (const row of windowRows) {
+    if (row.holdingsTotal === 0) continue;
+    held.add(row.holdingId);
+    if (row.holdingsWithKnownValue > 0) priced.add(row.holdingId);
+  }
+  return new Set([...held].filter((id) => !priced.has(id)));
+}
+
+/**
+ * Why each holding cannot support a return, for the holdings that cannot.
+ * A holding absent from the result is measurable. Every reason here is a fact
+ * about ONE holding's data; the reasons about the scope's own series are
+ * decided after the measurable ones are summed (SC-1421).
+ */
+function holdingReasons(
+  measured: readonly WeightedHolding[],
+  windowRows: readonly HoldingRow[],
+  coverageByHolding: ReadonlyMap<string, CoverageFacts>,
+  problemsByHolding: ReadonlyMap<string, ReadonlySet<FlowProblem>>,
+  zeroed: ReadonlySet<string>,
+  rebuildNegative: ReadonlySet<string>,
+  unchangedSince: ReadonlyMap<string, string>
+): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  const add = (holdingId: string, reason: string) => {
+    const set = out.get(holdingId) ?? new Set<string>();
+    set.add(reason);
+    out.set(holdingId, set);
+  };
+  for (const { holdingId } of measured) {
+    const coverage = coverageByHolding.get(holdingId);
+    if (flowCoverageOf(coverage, unchangedSince.get(holdingId)).kind === 'incomplete') {
+      add(holdingId, 'incomplete-flow-coverage');
+    }
+    // A ledger that cannot reach its own earliest balance is missing outflows,
+    // whatever its coverage claims (SC-1444).
+    if (rebuildNegative.has(holdingId)) add(holdingId, 'incomplete-flow-coverage');
+    const residual = coverage?.unexplainedResidual;
+    if (residual != null && !new Decimal(residual).isZero()) add(holdingId, 'unresolved-change');
+    const problems = problemsByHolding.get(holdingId);
+    if (problems?.has('unresolved')) add(holdingId, 'unresolved-change');
+    if (problems?.has('unvalued') && !zeroed.has(holdingId)) add(holdingId, 'missing-valuation');
+    if (problems?.has('stale')) add(holdingId, 'stale-valuation');
+  }
+  const interpolatedDates = new Map<string, string[]>();
+  for (const row of windowRows) {
+    // A day before the holding's first record counts nothing for it (SC-1323).
+    if (row.holdingsTotal === 0) continue;
+    if (row.coverageQuality !== 'full' && !zeroed.has(row.holdingId))
+      add(row.holdingId, 'missing-valuation');
+    if (row.holdingsStalePriced > 0 || (row.holdingsStaleAnchored ?? 0) > 0)
+      add(row.holdingId, 'stale-valuation');
+    if ((row.holdingsBeforeRecords ?? 0) > 0) add(row.holdingId, 'insufficient-history');
+    if ((row.holdingsInterpolated ?? 0) > 0) {
+      const dates = interpolatedDates.get(row.holdingId) ?? [];
+      dates.push(String(row.snapshotDate).slice(0, 10));
+      interpolatedDates.set(row.holdingId, dates);
+    }
+    if (row.transfersUnreviewed > 0) add(row.holdingId, 'unresolved-change');
+  }
+  // A short run of interpolated days is a gap between two observations, not
+  // missing history: tolerated up to three consecutive days. Longer, the line
+  // between the observations IS the data, and it excludes (SC-1427).
+  for (const [holdingId, dates] of interpolatedDates) {
+    if (longestConsecutiveRun(dates) > MAX_INTERPOLATED_RUN_DAYS)
+      add(holdingId, 'insufficient-history');
+  }
+  return out;
+}
+
+const MAX_INTERPOLATED_RUN_DAYS = 3;
+
+function longestConsecutiveRun(dates: readonly string[]): number {
+  const days = [...new Set(dates)]
+    .map((d) => Date.parse(`${d}T00:00:00Z`) / DAY_MS)
+    .sort((a, b) => a - b);
+  let longest = 0;
+  let run = 0;
+  for (let i = 0; i < days.length; i++) {
+    run = i > 0 && days[i] === (days[i - 1] as number) + 1 ? run + 1 : 1;
+    longest = Math.max(longest, run);
+  }
+  return longest;
+}
+
+function subsetOf(
+  includedHoldings: number,
+  measured: readonly WeightedHolding[],
+  reasonsByHolding: ReadonlyMap<string, ReadonlySet<string>>,
+  rows: ReadonlyArray<{ snapshotDate: string; holdingId: string; totalValue: string }>,
+  weights: ReadonlyMap<string, Decimal>,
+  lastDate: string
+): Omit<ReturnsSubset, 'enteredLate' | 'unpricedAtZero'> {
+  const counts = new Map<string, number>();
+  for (const set of reasonsByHolding.values()) {
+    for (const reason of set) counts.set(reason, (counts.get(reason) ?? 0) + 1);
+  }
+  let excludedValue = new Decimal(0);
+  for (const row of rows) {
+    if (String(row.snapshotDate).slice(0, 10) !== lastDate) continue;
+    if (!reasonsByHolding.has(row.holdingId)) continue;
+    excludedValue = excludedValue.add(
+      new Decimal(row.totalValue).mul(weights.get(row.holdingId) ?? 0)
+    );
+  }
+  return {
+    includedHoldings,
+    measuredHoldings: measured.length,
+    excluded: [...counts]
+      .sort((a, b) => b[1] - a[1])
+      .map(([reason, holdings]) => ({ reason, holdings })),
+    excludedValue: excludedValue.toString(),
+  };
+}
 
 interface SeriesPoint {
   date: string;

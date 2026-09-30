@@ -1,9 +1,14 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
 import { DocumentRepository } from '@scani/domain/repositories';
-import { DocumentIngestionService, DocumentRetentionService } from '@scani/domain/services';
+import {
+  DocumentIngestionService,
+  DocumentRetentionService,
+  UploadedFileService,
+} from '@scani/domain/services';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { type DocumentParseJob, UPLOADED_FILE_MAX_BYTES } from '@scani/jobs';
+import { AIUnavailableError } from '@scani/providers/core/errors';
 import { type ProcessorContext, UnrecoverableError, userFacingMessage } from '@scani/queue';
 import { Container } from 'typedi';
 import { DocumentParseProcessor } from '../../src/processors/document-parse';
@@ -40,9 +45,9 @@ function makeDocument(r2Key: string) {
   };
 }
 
-function makeCtx(): ProcessorContext {
+function makeCtx(attempt = { made: 0, allowed: 1 }): ProcessorContext {
   return {
-    job: { id: 'job-1' },
+    job: { id: 'job-1', attemptsMade: attempt.made, opts: { attempts: attempt.allowed } },
     reportProgress: async () => undefined,
     reportStatus: async () => undefined,
   } as unknown as ProcessorContext;
@@ -63,6 +68,7 @@ function makeProcessor(opts: {
   read?: () => Promise<Buffer>;
   write?: () => Promise<void>;
   ingestFails?: boolean;
+  aiUnavailable?: AIUnavailableError['state'];
 }) {
   const read = mock(opts.read ?? (async () => Buffer.from('pdf-bytes')));
   const write = mock(opts.write ?? (async () => undefined));
@@ -77,6 +83,7 @@ function makeProcessor(opts: {
 
   const ingest = mock(async () => {
     if (opts.ingestFails) throw new Error('AI provider exploded');
+    if (opts.aiUnavailable) throw new AIUnavailableError(opts.aiUnavailable);
     return {
       document: opts.document,
       extractions: [],
@@ -90,7 +97,10 @@ function makeProcessor(opts: {
   // exactly the predicate under test, so stubbing it would test nothing.
   Container.set(DocumentRetentionService, new DocumentRetentionService());
 
-  return { processor: new TestableProcessor(), read, write, del, update, ingest };
+  const record = mock(async () => makeDocument(RETAINED_KEY));
+  Container.set(UploadedFileService, { record } as unknown as UploadedFileService);
+
+  return { processor: new TestableProcessor(), read, write, del, update, ingest, record };
 }
 
 function job(overrides: Partial<DocumentParseJob> = {}): DocumentParseJob {
@@ -285,5 +295,44 @@ describe('DocumentParseProcessor failure cleanup', () => {
     await expect(processor.run(job(), makeCtx())).rejects.toThrow('AI provider exploded');
 
     expect(del).not.toHaveBeenCalled();
+  });
+});
+
+describe('DocumentParseProcessor with AI unavailable (SC-1397)', () => {
+  test('a missing provider saves the file and fails once, telling the user what to do', async () => {
+    const { processor, record } = makeProcessor({
+      document: makeDocument(TEMP_KEY),
+      aiUnavailable: 'missing',
+    });
+    const err = await processor.run(job(), makeCtx()).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect(userFacingMessage(err)).toContain('Your file is saved in Files');
+    expect(record).toHaveBeenCalledTimes(1);
+  });
+
+  test('a transient outage before the last attempt is left to retry', async () => {
+    const { processor, record } = makeProcessor({
+      document: makeDocument(TEMP_KEY),
+      aiUnavailable: 'transient',
+    });
+    const err = await processor
+      .run(job(), makeCtx({ made: 0, allowed: 3 }))
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AIUnavailableError);
+    expect(err).not.toBeInstanceOf(UnrecoverableError);
+    expect(record).not.toHaveBeenCalled();
+  });
+
+  test('a transient outage on the last attempt saves the file and tells the user', async () => {
+    const { processor, record } = makeProcessor({
+      document: makeDocument(TEMP_KEY),
+      aiUnavailable: 'transient',
+    });
+    const err = await processor
+      .run(job(), makeCtx({ made: 2, allowed: 3 }))
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect(userFacingMessage(err)).toContain('Your file is saved in Files');
+    expect(record).toHaveBeenCalledTimes(1);
   });
 });

@@ -62,6 +62,8 @@ function result(
   attribution: ReturnsResult['attribution'] = ATTRIBUTION
 ): ReturnsResult {
   return {
+    eligibility: { eligible: true, reasons: [] },
+    subset: null,
     scope: { kind: 'user' },
     baseCurrencyId: 'token-usd',
     requestedWindow: { kind: 'all', from: '2026-01-01', to: '2026-03-01' },

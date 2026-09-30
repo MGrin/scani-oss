@@ -7,8 +7,10 @@ import {
   BottomDrawerBody,
   BottomDrawerContent,
   BottomDrawerHeader,
+  DRAWER_SAFE_BOTTOM,
 } from '../../../ui/bottom-drawer';
 import { Button } from '../../../ui/button';
+import { ScrollBody } from '../../../ui/scroll-body';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '../../../ui/sheet';
 import { Switch } from '../../../ui/switch';
 import { useIsDesktop } from '../../hooks/useMediaQuery';
@@ -427,7 +429,7 @@ export function ExportSheet({
   const footer = (
     <div
       className="flex shrink-0 gap-2 border-t border-border px-4 py-3"
-      style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
+      style={{ paddingBottom: `calc(0.75rem + ${DRAWER_SAFE_BOTTOM})` }}
     >
       <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={running}>
         {t('ui.dataView.export.cancel')}
@@ -454,7 +456,7 @@ export function ExportSheet({
           style={{ backgroundColor: 'hsl(var(--surface-2))' }}
         >
           <div className="shrink-0 border-b border-border px-4 pb-4 pe-12 pt-4">{header}</div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-2">{sections}</div>
+          <ScrollBody className="px-1 py-2">{sections}</ScrollBody>
           {footer}
         </SheetContent>
       </Sheet>

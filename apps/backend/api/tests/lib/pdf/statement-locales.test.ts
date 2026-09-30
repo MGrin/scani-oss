@@ -1,3 +1,5 @@
+// @ci-reads apps/frontend/app/src/i18n/locales/** apps/frontend/app/tests/v3/lib/pdf-export.test.ts
+// @ci-reads packages/frontend/ui/src/i18n/locales/en.json
 import { describe, expect, it } from 'bun:test';
 import { readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';

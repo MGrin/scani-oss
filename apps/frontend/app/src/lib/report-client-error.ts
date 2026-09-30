@@ -36,10 +36,8 @@ export async function reportClientError(input: ReportClientErrorInput): Promise<
       message: truncate(input.error.message, MAX_MESSAGE_LEN) ?? 'Unknown error',
       stack: truncate(input.error.stack, MAX_STACK_LEN),
       componentStack: truncate(input.componentStack, MAX_COMPONENT_STACK_LEN),
-      route:
-        typeof window !== 'undefined'
-          ? `${window.location.pathname}${window.location.search}`
-          : undefined,
+      // The path only: a query string can carry a magic-link token (SC-1350).
+      route: typeof window !== 'undefined' ? window.location.pathname : undefined,
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
       appVersion: import.meta.env.VITE_APP_VERSION as string | undefined,
       // A chunk that would not load is the network or a deploy, not a bug in

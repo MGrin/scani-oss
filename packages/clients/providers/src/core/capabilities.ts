@@ -170,7 +170,52 @@ export interface AIResult<T> {
   usage?: AIUsage;
 }
 
+export type AIAvailabilityState = 'missing' | 'unverified' | 'ready' | 'rejected' | 'transient';
+
+export interface AIAvailability {
+  state: AIAvailabilityState;
+  image: boolean;
+  pdf: boolean;
+  text: boolean;
+  completion: boolean;
+}
+
+export async function aiAvailability(provider: AIInferenceProvider): Promise<AIAvailability> {
+  if (provider.getAvailability) {
+    try {
+      return await provider.getAvailability();
+    } catch {
+      return { state: 'transient', image: false, pdf: false, text: false, completion: false };
+    }
+  }
+  return {
+    state: 'unverified',
+    image: true,
+    pdf: provider.supportsPdfFileInput === true,
+    text: Boolean(provider.parseDocumentText),
+    completion: Boolean(provider.completeText),
+  };
+}
+
+export async function combinedAIAvailability(
+  providers: readonly AIInferenceProvider[]
+): Promise<AIAvailability> {
+  const states = await Promise.all(providers.map(aiAvailability));
+  const state =
+    (['ready', 'unverified', 'transient', 'rejected', 'missing'] as const).find((value) =>
+      states.some((status) => status.state === value)
+    ) ?? 'missing';
+  return {
+    state,
+    image: states.some((s) => s.image),
+    pdf: states.some((s) => s.pdf),
+    text: states.some((s) => s.text),
+    completion: states.some((s) => s.completion),
+  };
+}
+
 export interface AIInferenceProvider extends ProviderBase {
+  getAvailability?(): Promise<AIAvailability>;
   /**
    * Whether `parseScreenshot` accepts `application/pdf`. Declared rather
    * than discovered so a caller can route around a provider that can't

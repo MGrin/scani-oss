@@ -160,36 +160,31 @@ export function MovementWhereFields({
 
   return (
     <div className="flex flex-col gap-4">
-      <fieldset className="flex flex-col gap-2">
-        <legend className="pb-2 text-label text-muted-foreground">
-          {t('v3.holdings.movement.whereLabel')}
-        </legend>
-        {MOVEMENT_OUTFLOW_OPTIONS.map((option) => (
-          <label
-            key={option}
-            className={`flex min-h-11 cursor-pointer items-start gap-3 rounded-lg border p-3 ${
-              form.destination === option
-                ? 'border-primary bg-primary/5'
-                : 'border-border bg-surface-1 hover:bg-surface-hover'
-            }`}
-          >
-            <input
-              type="radio"
-              name="movement-destination"
-              className="mt-1"
-              checked={form.destination === option}
-              disabled={disabled}
-              onChange={() => form.chooseDestination(option)}
-            />
-            <span className="flex flex-col gap-0.5">
-              <span className="text-body">{t(`v3.holdings.movement.where.${option}.title`)}</span>
-              <span className="text-caption text-muted-foreground">
-                {t(`v3.holdings.movement.where.${option}.detail`)}
-              </span>
-            </span>
-          </label>
-        ))}
-      </fieldset>
+      {/* The same control Edit holding asks this question with: a vertical
+          Segmented, the chosen answer's consequence under it (rule 9,
+          SC-1433). Radio cards set each title larger than the field labels. */}
+      <Field
+        label={t('v3.holdings.movement.whereLabel')}
+        hint={
+          form.destination ? t(`v3.holdings.movement.where.${form.destination}.detail`) : undefined
+        }
+      >
+        <Segmented
+          orientation="vertical"
+          value={form.destination ?? ''}
+          disabled={disabled}
+          onValueChange={(next) => {
+            if (next) form.chooseDestination(next as (typeof MOVEMENT_OUTFLOW_OPTIONS)[number]);
+          }}
+          aria-label={t('v3.holdings.movement.whereLabel')}
+        >
+          {MOVEMENT_OUTFLOW_OPTIONS.map((option) => (
+            <SegmentedItem key={option} value={option}>
+              {t(`v3.holdings.movement.where.${option}.title`)}
+            </SegmentedItem>
+          ))}
+        </Segmented>
+      </Field>
 
       {form.direction === 'transfer' ? (
         <AccountTargetFields

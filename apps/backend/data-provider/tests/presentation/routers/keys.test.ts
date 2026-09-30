@@ -15,12 +15,12 @@ import { describe, expect, test } from 'bun:test';
 import { keysRouter } from '../../../src/presentation/routers/keys';
 import type { DataProviderContext } from '../../../src/presentation/trpc';
 import { effectiveHourlyRequestLimit } from '../../../src/presentation/trpc';
-import { buildAuthedContext } from '../../helpers/test-context';
+import { buildAuthedContext, withAppSession, withCloudUser } from '../../helpers/test-context';
 
 function caller(overrides: Partial<DataProviderContext> = {}) {
   return keysRouter.createCaller({
     ...buildAuthedContext(),
-    cloudUser: { id: 'user-1', email: 'someone@example.com', name: null },
+    ...withCloudUser({ id: 'user-1', email: 'someone@example.com', name: null }),
     ...overrides,
     // biome-ignore lint/suspicious/noExplicitAny: `tier` is not in the input type — that is the point
   }) as any;
@@ -98,11 +98,7 @@ describe('keys.limits', () => {
   });
 
   test('needs a session, like every other procedure on this router', async () => {
-    const anon = keysRouter.createCaller({
-      ...buildAuthedContext(),
-      cloudUser: null,
-      // biome-ignore lint/suspicious/noExplicitAny: exercising the unauthenticated path
-    } as any);
+    const anon = keysRouter.createCaller(buildAuthedContext());
     await expect(anon.limits()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
   });
 
@@ -152,5 +148,48 @@ describe('effectiveHourlyRequestLimit', () => {
    */
   test('the two off states are indistinguishable on the wire, deliberately', () => {
     expect(effectiveHourlyRequestLimit(0)).toBe(effectiveHourlyRequestLimit(null));
+  });
+});
+
+/**
+ * The console's session comes from the app's login, read over the network.
+ * The two ways that read can fail to produce a user are different facts for
+ * the browser: nobody signed in is "sign in", the app not answering is "try
+ * again" — and telling a signed-in user to sign in again sends them round a
+ * loop that cannot succeed while the api is down.
+ */
+describe('keys.list session outcomes', () => {
+  test('no app session is UNAUTHORIZED', async () => {
+    const anon = keysRouter.createCaller({
+      ...buildAuthedContext(),
+      ...withAppSession({ kind: 'none' }),
+    });
+    await expect(anon.list()).rejects.toMatchObject({
+      code: 'UNAUTHORIZED',
+      message: 'Cloud session required',
+    });
+  });
+
+  test('an unreachable app is TIMEOUT, not UNAUTHORIZED', async () => {
+    const stranded = keysRouter.createCaller({
+      ...buildAuthedContext(),
+      ...withAppSession({ kind: 'unavailable', reason: 'app get-session timed out after 3000ms' }),
+    });
+    await expect(stranded.list()).rejects.toMatchObject({
+      code: 'TIMEOUT',
+      message: 'Sign-in service unavailable, try again',
+    });
+  });
+
+  test('an app user gets past the session gate', async () => {
+    const signedIn = keysRouter.createCaller({
+      ...buildAuthedContext(),
+      ...withAppSession({
+        kind: 'user',
+        user: { id: 'user-1', email: 'someone@example.com', name: null },
+      }),
+    });
+    // No cloud DB is installed here, so PRECONDITION_FAILED is the gate opening.
+    await expect(signedIn.list()).rejects.toMatchObject({ code: 'PRECONDITION_FAILED' });
   });
 });

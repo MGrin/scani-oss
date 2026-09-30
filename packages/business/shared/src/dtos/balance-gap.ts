@@ -1,9 +1,11 @@
 import { z } from 'zod';
+import { Decimal } from '../decimal';
 import {
   BALANCE_GAP_ANSWERS,
   BALANCE_GAP_SUPPRESSIONS,
   type BalanceGapSuppression,
 } from '../lib/balance-gap';
+import { manualOutflowAnswerSchema } from './transfer-review';
 
 /**
  * The wire shape of one unexplained balance change (SC-501).
@@ -143,6 +145,18 @@ export type BalanceGapList = z.infer<typeof balanceGapListSchema>;
 export const answerBalanceGapSchema = z.object({
   observationId: z.string().uuid(),
   answer: balanceGapAnswerSchema,
+  editOutflow: manualOutflowAnswerSchema.optional(),
+  receivedQuantity: z
+    .string()
+    .refine((value) => {
+      try {
+        const amount = new Decimal(value);
+        return amount.isFinite() && amount.gt(0);
+      } catch {
+        return false;
+      }
+    }, 'Enter the received quantity')
+    .optional(),
   /**
    * Optional even for `flow`. A short interval is not asked about at all, and
    * the server falls back to the closing observation — which is a better

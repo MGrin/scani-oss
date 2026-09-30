@@ -1,11 +1,9 @@
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
-import { Button } from '@scani/ui/ui/button';
-import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
+import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { ReviewQueueHeader } from '../components/review/ReviewQueueHeader';
 import { TransferRuleList } from '../components/review/TransferRuleList';
-import { TRANSFER_REVIEW_PATH } from '../lib/routes';
 
 /**
  * The standing rules about counterparty addresses, and the undo (SC-375).
@@ -24,14 +22,7 @@ export function TransferRulesPage() {
 
   return (
     <PageLayout measure="wide">
-      <PageHeader
-        title={t('v3.review.rules.title')}
-        action={
-          <Button asChild variant="outline">
-            <Link to={TRANSFER_REVIEW_PATH}>{t('v3.review.answered.backToQueue')}</Link>
-          </Button>
-        }
-      />
+      <ReviewQueueHeader queue="transfers" view="rules" />
       <TransferRuleList rules={rules.data ?? []} hidden={hidden.data ?? []} />
     </PageLayout>
   );

@@ -55,8 +55,9 @@ describe('memberCountLine', () => {
     );
   });
 
-  test('says zero of both rather than going blank', () => {
-    expect(memberCountLine([], t)).toBe('0 holdings · 0 accounts');
+  // SC-1419: an empty group said "0 holdings · 0 accounts"; it says so in words.
+  test('an empty group reads as empty, not as a row of zeros', () => {
+    expect(memberCountLine([], t)).toBe('No members yet');
   });
 
   test('counts each kind independently', () => {
@@ -116,5 +117,48 @@ describe('candidatesFor', () => {
   test('comes back in the member list order, not the source order', () => {
     const candidates = candidatesFor([account('a1', 'Main'), holding('h1', 'BTC')], []);
     expect(candidates.map((entry) => entry.kind)).toEqual(['holding', 'account']);
+  });
+});
+
+describe('bills and payees (SC-1408)', () => {
+  const bill = (id: string, label: string): MemberEntry => ({
+    id,
+    kind: 'bill',
+    label,
+    sublabel: 'Monthly · Outgoing',
+  });
+  const payee = (id: string, label: string): MemberEntry => ({
+    id,
+    kind: 'payee',
+    label,
+    sublabel: 'All 2 bills',
+  });
+
+  test('come after holdings and accounts, bills before the payees that cover them', () => {
+    const sorted = [
+      payee('p1', 'AAA'),
+      bill('b1', 'AAA'),
+      account('a1', 'ZZZ'),
+      holding('h1', 'ZZZ'),
+    ]
+      .sort(compareMembers)
+      .map((entry) => entry.kind);
+    expect(sorted).toEqual(['holding', 'account', 'bill', 'payee']);
+  });
+
+  test('are counted by kind in the same line, and only when there are any', () => {
+    expect(
+      memberCountLine(
+        [holding('h1', 'BTC'), bill('b1', 'Rent'), bill('b2', 'Gym'), payee('p1', 'Landlord')],
+        t
+      )
+    ).toBe('1 holding · 2 bills · 1 payee');
+    expect(memberCountLine([holding('h1', 'BTC')], t)).toBe('1 holding');
+  });
+
+  test('a bills group names only its bills and payees (SC-1408)', () => {
+    expect(memberCountLine([bill('b1', 'Power'), payee('p1', 'City Power')], t)).toBe(
+      '1 bill · 1 payee'
+    );
   });
 });

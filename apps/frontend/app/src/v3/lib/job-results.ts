@@ -1,3 +1,5 @@
+import { type CsvMapping, CsvMappingDto } from '@scani/shared';
+
 /**
  * The four remaining job results, read before they are rendered.
  *
@@ -252,6 +254,7 @@ const BALANCE_FROM: readonly FileImportBalanceFrom[] = [
 export type FileImportDateOrder = 'day-first' | 'month-first';
 
 export interface FileImportCurrencyPrompt {
+  customMapping?: CsvMapping;
   r2Key: string;
   fileType: string;
   transactionCount: number;
@@ -261,6 +264,7 @@ export interface FileImportCurrencyPrompt {
 }
 
 export interface FileImportDateOrderPrompt {
+  customMapping?: CsvMapping;
   r2Key: string;
   fileType: string;
   rowCount: number;
@@ -273,7 +277,21 @@ function asDateOrder(value: unknown): FileImportDateOrder | undefined {
   return value === 'day-first' || value === 'month-first' ? value : undefined;
 }
 
+export interface FileImportColumnPrompt {
+  r2Key: string;
+  fileType: string;
+  headers: string[];
+  defaultCurrency?: string;
+  dateOrder?: FileImportDateOrder;
+}
+
+function readMapping(value: unknown): CsvMapping | undefined {
+  const result = CsvMappingDto.safeParse(value);
+  return result.success ? result.data : undefined;
+}
+
 export interface FileImportView {
+  needsColumnMapping: FileImportColumnPrompt | null;
   format: string;
   accountId: string;
   transactionCount: number;
@@ -297,8 +315,20 @@ export function readFileImport(result: unknown): FileImportView | null {
   const needsCurrencyRaw = asRecord(record.needsCurrency);
   const hasCurrencyPrompt = typeof needsCurrencyRaw.r2Key === 'string';
   const needsDateOrderRaw = asRecord(record.needsDateOrder);
+  const columns = asRecord(record.needsColumnMapping);
 
   return {
+    needsColumnMapping:
+      typeof columns.r2Key === 'string'
+        ? {
+            r2Key: columns.r2Key,
+            fileType: typeof columns.fileType === 'string' ? columns.fileType : 'csv',
+            headers: asStringList(columns.headers),
+            defaultCurrency:
+              typeof columns.defaultCurrency === 'string' ? columns.defaultCurrency : undefined,
+            dateOrder: asDateOrder(columns.dateOrder),
+          }
+        : null,
     format: typeof record.format === 'string' ? record.format : '',
     accountId: record.accountId,
     transactionCount: record.transactionCount,
@@ -329,6 +359,7 @@ export function readFileImport(result: unknown): FileImportView | null {
     warnings: asStringList(record.warnings),
     needsCurrency: hasCurrencyPrompt
       ? {
+          customMapping: readMapping(needsCurrencyRaw.customMapping),
           r2Key: needsCurrencyRaw.r2Key as string,
           fileType: typeof needsCurrencyRaw.fileType === 'string' ? needsCurrencyRaw.fileType : '',
           transactionCount: asFiniteNumber(needsCurrencyRaw.transactionCount),
@@ -349,6 +380,7 @@ export function readFileImport(result: unknown): FileImportView | null {
     needsDateOrder:
       typeof needsDateOrderRaw.r2Key === 'string'
         ? {
+            customMapping: readMapping(needsDateOrderRaw.customMapping),
             r2Key: needsDateOrderRaw.r2Key,
             fileType:
               typeof needsDateOrderRaw.fileType === 'string' ? needsDateOrderRaw.fileType : '',

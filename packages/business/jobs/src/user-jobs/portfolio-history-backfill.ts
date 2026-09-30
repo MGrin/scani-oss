@@ -44,7 +44,7 @@ export const portfolioHistoryBackfillSchema: z.ZodType<PortfolioHistoryBackfillJ
     .number()
     .int()
     .min(1)
-    .max(365 * 10),
+    .max(365 * 100),
   rollupProgress: z
     .object({
       anchor: z.string().datetime(),

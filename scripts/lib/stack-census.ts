@@ -23,6 +23,11 @@ export const PROJECT_PREFIX = 'scani';
  */
 const DERIVED_SHAPE = new RegExp(`^${PROJECT_PREFIX}_.+_[0-9a-f]{8}$`);
 
+/** Whether a name is one `composeProjectName` produces. */
+export function isDerivedName(project: string): boolean {
+  return DERIVED_SHAPE.test(project);
+}
+
 /** In scope for this census: the bare default project, or a derived one. */
 export function inScope(project: string): boolean {
   return project === PROJECT_PREFIX || project.startsWith(`${PROJECT_PREFIX}_`);
@@ -220,6 +225,14 @@ export function censusProjects(input: CensusInput): StackProject[] {
     const labelled = containers.find((c) => c.workingDir !== '');
     const workingDir = labelled?.workingDir ?? null;
     const attestedLive = containers.some((c) => c.workingDir !== '' && existsSync(c.workingDir));
+    // Death needs a POSITIVE reading too (SC-1417): a labelled container whose
+    // checkout is confirmed absent. Volumes carry no working_dir, and missing
+    // from this repository's worktree list only means "not a checkout we can
+    // see". That read offered the live scani-oss clone's volumes for --apply.
+    const attestedGone =
+      !attestedLive &&
+      containers.some((c) => c.workingDir !== '') &&
+      containers.every((c) => c.workingDir === '' || pathPresence(c.workingDir) === 'absent');
 
     const derivedLive = input.liveProjects?.has(project) ?? false;
     const running = containers.some((c) => c.running);
@@ -227,7 +240,7 @@ export function censusProjects(input: CensusInput): StackProject[] {
     let state: StackState;
     if (attestedLive || derivedLive) {
       state = running ? 'live-running' : 'live-idle';
-    } else if (input.liveProjects !== null && DERIVED_SHAPE.test(project)) {
+    } else if (input.liveProjects !== null && DERIVED_SHAPE.test(project) && attestedGone) {
       state = running ? 'gone-running' : 'gone-idle';
     } else {
       state = 'unattributed';
@@ -322,6 +335,11 @@ export interface MachineCensus {
   /** Why docker could not be asked, or `null` when it answered. */
   blind: DockerProbe | null;
   /**
+   * The size probe that was asked for and did not answer, or `null`. Sizes
+   * then read `size unknown`; nothing else about the census changes.
+   */
+  sizesUnmeasured: DockerProbe | null;
+  /**
    * How many checkouts the attribution was judged against, or `null` when git
    * could not be asked.
    *
@@ -355,33 +373,75 @@ export interface MachineCensus {
 }
 
 /**
- * Ask this machine. `withSizes` buys the 4s `docker system df -v` probe; the
+ * Ask this machine. `withSizes` adds the `docker system df -v` probe; the
  * cheap path is ~0.13s and is what the `down` clause uses.
  */
 export function censusFromMachine(repoRoot: string, withSizes: boolean): MachineCensus {
   const ps = probe(['docker', 'ps', '-a', '--no-trunc', '--format', DOCKER_PS_FORMAT]);
-  if (ps.kind !== 'ok') return { projects: [], blind: ps, checkouts: null, enumeration: null };
+  if (ps.kind !== 'ok') return blindCensus(ps);
+  return censusFromProbes(
+    {
+      ps,
+      volumes: probe(['docker', 'volume', 'ls', '--format', DOCKER_VOLUME_FORMAT]),
+      sizes: withSizes
+        ? probe(['docker', 'system', 'df', '-v', '--format', '{{json .Volumes}}'])
+        : null,
+    },
+    () => liveCheckoutProjects(repoRoot)
+  );
+}
 
-  const volumeProbe = withSizes
-    ? probe(['docker', 'system', 'df', '-v', '--format', '{{json .Volumes}}'])
-    : probe(['docker', 'volume', 'ls', '--format', DOCKER_VOLUME_FORMAT]);
-  if (volumeProbe.kind !== 'ok')
-    return { projects: [], blind: volumeProbe, checkouts: null, enumeration: null };
+interface CensusProbes {
+  ps: DockerProbe;
+  volumes: DockerProbe;
+  /** `null` when sizes were not asked for. */
+  sizes: DockerProbe | null;
+}
 
-  const enumeration = liveCheckoutProjects(repoRoot);
+/**
+ * The census from what docker answered.
+ *
+ * THE VOLUME LIST IS REQUIRED AND ITS SIZES ARE NOT (SC-1417). `docker system
+ * df -v` walks every volume and got slower as dead ones piled up: 12s on 71
+ * volumes standalone, and a timeout on both attempts inside the census. When it
+ * alone was the volume source, that made the whole census blind, so the reaper
+ * refused to reclaim the very pile that was slowing it down. Sizes now come
+ * from it only as an overlay on the cheap list, and a size probe that did not
+ * answer leaves sizes unknown, reported in `sizesUnmeasured`, never blindness.
+ */
+export function censusFromProbes(
+  probes: CensusProbes,
+  enumerate: () => CheckoutEnumeration
+): MachineCensus {
+  if (probes.ps.kind !== 'ok') return blindCensus(probes.ps);
+  if (probes.volumes.kind !== 'ok') return blindCensus(probes.volumes);
+
+  const sized =
+    probes.sizes?.kind === 'ok'
+      ? new Map(parseVolumeSizes(probes.sizes.output).map((v) => [v.name, v.sizeBytes]))
+      : null;
+  const volumes = parseVolumeList(probes.volumes.output).map((v) => ({
+    ...v,
+    sizeBytes: sized?.get(v.name) ?? null,
+  }));
+
+  const enumeration = enumerate();
   const liveProjects = enumeratedProjects(enumeration);
   return {
     projects: censusProjects({
-      containers: parseComposeContainers(ps.output),
-      volumes: withSizes
-        ? parseVolumeSizes(volumeProbe.output)
-        : parseVolumeList(volumeProbe.output),
+      containers: parseComposeContainers(probes.ps.output),
+      volumes,
       liveProjects,
     }),
     blind: null,
+    sizesUnmeasured: probes.sizes && probes.sizes.kind !== 'ok' ? probes.sizes : null,
     checkouts: liveProjects?.size ?? null,
     enumeration,
   };
+}
+
+function blindCensus(blind: DockerProbe): MachineCensus {
+  return { projects: [], blind, sizesUnmeasured: null, checkouts: null, enumeration: null };
 }
 
 /**
@@ -449,19 +509,24 @@ function describeProject(p: StackProject): string {
  * `existsSync` answers `false` both when a directory is gone and when it could
  * not be read, so a read denial rendered ` — gone` about a directory that is
  * there (SC-973). Only ENOENT and ENOTDIR say it is absent; any other errno is
- * a look that failed, and says so. This is the RENDERING only: the verdict
- * reads `existsSync` solely as a positive rescue in `attestedLive`, where a
- * blind read can only fail to rescue, and that is left as it is.
+ * a look that failed. The verdict reads this too since SC-1417, where a failed
+ * look can only keep a project out of `gone-*`.
  */
-export function pathSuffix(dir: string): string {
+function pathPresence(dir: string): 'present' | 'absent' | { unknown: string } {
   try {
     statSync(dir);
-    return '';
+    return 'present';
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code ?? 'unknown error';
-    if (code === 'ENOENT' || code === 'ENOTDIR') return ' — gone';
-    return ` — could not look (${code}), which is not a claim it is gone`;
+    return code === 'ENOENT' || code === 'ENOTDIR' ? 'absent' : { unknown: code };
   }
+}
+
+export function pathSuffix(dir: string): string {
+  const presence = pathPresence(dir);
+  if (presence === 'present') return '';
+  if (presence === 'absent') return ' — gone';
+  return ` — could not look (${presence.unknown}), which is not a claim it is gone`;
 }
 
 /**
@@ -469,6 +534,26 @@ export function pathSuffix(dir: string): string {
  * number a reader would take from it is the one that must not exist: idle and
  * orphaned summed together is a reap list.
  */
+/**
+ * Why every size reads `size unknown`, or `null` when they were measured or
+ * never asked for. Printed rather than left to the per-project text, which
+ * cannot tell "docker did not say" from "docker was not asked".
+ */
+export function sizesClause(census: MachineCensus): string | null {
+  const probe = census.sizesUnmeasured;
+  if (probe === null) return null;
+  const why =
+    probe.kind === 'timedOut'
+      ? 'did not answer in time'
+      : probe.kind === 'unavailable'
+        ? `failed: ${probe.reason}`
+        : 'answered';
+  return (
+    `sizes were not measured: \`docker system df -v\` ${why}. The volume list ` +
+    'came from `docker volume ls` and is complete; only the sizes are unknown (SC-1417).'
+  );
+}
+
 export function formatCensus(census: MachineCensus): string {
   if (census.blind !== null) {
     return `stacks: docker could not be asked — ${describeBlind(census.blind)}\n`;
@@ -485,6 +570,8 @@ export function formatCensus(census: MachineCensus): string {
     for (const p of group) lines.push(describeProject(p));
     lines.push('');
   }
+  const sizes = sizesClause(census);
+  if (sizes !== null) lines.push(sizes);
   lines.push(
     `Attributed against the ${census.checkouts ?? 'unknown number of'} checkout(s) ` +
       "`git worktree list` reports for THIS repository. A separate clone's stack " +

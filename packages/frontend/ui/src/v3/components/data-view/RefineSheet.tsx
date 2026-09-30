@@ -13,8 +13,10 @@ import {
   BottomDrawerBody,
   BottomDrawerContent,
   BottomDrawerHeader,
+  DRAWER_SAFE_BOTTOM,
 } from '../../../ui/bottom-drawer';
 import { Button } from '../../../ui/button';
+import { ScrollBody } from '../../../ui/scroll-body';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '../../../ui/sheet';
 import { useIsDesktop } from '../../hooks/useMediaQuery';
 import {
@@ -220,12 +222,12 @@ export function RefineSections({
                   <AccordionTrigger>
                     <span className="truncate">{t(def.labelKey)}</span>
                     <span className="ms-auto shrink-0 truncate text-caption text-muted-foreground">
-                      {activeLabel ?? t('ui.dataView.refine.any')}
+                      {activeLabel ?? t(def.anyLabelKey ?? 'ui.dataView.refine.any')}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="flex flex-col gap-1 pb-3">
                     <OptionRow
-                      label={t('ui.dataView.refine.any')}
+                      label={t(def.anyLabelKey ?? 'ui.dataView.refine.any')}
                       active={!value}
                       onSelect={() => onSetFilter(def.key, '')}
                     />
@@ -313,7 +315,7 @@ export function RefineFooter({
   return (
     <div
       className="flex shrink-0 gap-2 border-t border-border px-4 py-3"
-      style={{ paddingBottom: 'calc(0.75rem + env(safe-area-inset-bottom, 0px))' }}
+      style={{ paddingBottom: `calc(0.75rem + ${DRAWER_SAFE_BOTTOM})` }}
     >
       <Button variant="ghost" onClick={onClearFilters} disabled={!hasActiveFilters}>
         {t('ui.dataView.refine.clearAll')}
@@ -350,7 +352,7 @@ export function RefineSheet(props: RefineSheetProps) {
           {/* `pr-12` clears the shell's own close button, which on a side panel
               is correctly placed level with the title. */}
           <div className="shrink-0 border-b border-border px-4 pb-4 pe-12 pt-4">{header}</div>
-          <div className="min-h-0 flex-1 overflow-y-auto px-1 py-2">{sections}</div>
+          <ScrollBody className="px-1 py-2">{sections}</ScrollBody>
           {footer}
         </SheetContent>
       </Sheet>

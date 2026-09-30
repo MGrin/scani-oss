@@ -1,4 +1,5 @@
 import { getNodeEnv, postgresJsSsl } from '@scani/config';
+import { postgresJsTls } from '@scani/config/postgres-direct-tls';
 import { createComponentLogger, logConfig } from '@scani/logging';
 import { sql } from 'drizzle-orm';
 import { drizzle as drizzlePostgres } from 'drizzle-orm/postgres-js';
@@ -51,8 +52,10 @@ if (IS_CRON_JOB) {
 // - Prepared statements (faster repeated queries)
 // - Type caching (fetch_types: true)
 // - Larger connection pools (server-side limit, not pooler-limited)
-// verify-full for every hosted database; see `postgresJsSsl` (SC-784).
-const sslMode = postgresJsSsl(finalDatabaseUrl);
+// verify-full for every hosted database (SC-784), opened directly rather than
+// upgraded in-band where the server allows it, because Bun keeps every byte an
+// upgraded connection reads (SC-1440).
+const tlsOptions = postgresJsTls(finalDatabaseUrl, postgresJsSsl(finalDatabaseUrl), 10_000);
 
 // Pool size — override via `POSTGRES_POOL_MAX` if you're on a pooled
 // endpoint (Neon pgBouncer caps far below direct). Default 20 matches
@@ -82,7 +85,7 @@ const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> 
   max_lifetime: 3600,
   prepare: true, // Enable prepared statements - faster for repeated queries (direct connection supports this)
   fetch_types: true, // Fetch types on connect - enables proper type handling
-  ssl: sslMode,
+  ...tlsOptions,
   connection: {
     application_name: `scani-${NODE_ENV}`, // Helps identify connections in pg_stat_activity
     // Cap per-query wall-time so a runaway query can't pin a pool slot

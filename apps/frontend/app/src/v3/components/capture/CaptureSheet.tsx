@@ -6,10 +6,14 @@ import {
   BottomDrawerDescription,
   BottomDrawerHeader,
   BottomDrawerTitle,
+  DRAWER_SAFE_BOTTOM,
 } from '@scani/ui/ui/bottom-drawer';
+import { Button } from '@scani/ui/ui/button';
+import { ScrollBody } from '@scani/ui/ui/scroll-body';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@scani/ui/ui/sheet';
 import { useIsDesktop } from '@scani/ui/v3/hooks/useMediaQuery';
 import {
+  ArrowLeft,
   ArrowLeftRight,
   ChevronRight,
   FileText,
@@ -21,36 +25,14 @@ import {
   Repeat,
   Wallet,
 } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import {
-  CAPTURE_GROUPS,
-  type CaptureRoute,
-  captureContextQuery,
-  captureHref,
-} from '../../lib/capture';
+import { CAPTURE_GROUPS, captureContextQuery, captureHref } from '../../lib/capture';
+import { V3_CAPTURE_ROUTES } from '../../lib/routes';
+import { useFitSnapPoints } from '../form/FormSheet';
 import { DemoCaptureNote } from './DemoCaptureNote';
-
-/**
- * How data gets in — the centre tab, and a menu rather than a page.
- *
- * The two-shell split is `PeekSheet`'s, unchanged and for the same reason: a
- * half-height drawer is a thumb idiom, and on a 1440px screen the same content
- * belongs in a right-side panel. Both are Radix dialogs, so one list serves
- * both and only the frame differs.
- *
- * It rests at 85% rather than the drawer default of 40%, which was measured
- * rather than picked: the More drawer holds a six-cell icon grid that fits in
- * 40%, this holds seven rows of a title and a line of prose, and at 60% the
- * whole "Type it in" group — the fallback for a person holding nothing to
- * upload — sat below the fold. A chooser that hides an option has failed at
- * the one thing it does. At 85% on a 393×852 phone the last row peeks, which
- * is what says the list can be dragged further.
- *
- * Portalling comes from `V3TokenScope`'s `PortalContainerProvider` (V3-22);
- * without it the sheet lands on `<body>` and renders against v2's tokens.
- */
 
 const ICONS: Record<string, LucideIcon> = {
   ArrowLeftRight,
@@ -63,16 +45,26 @@ const ICONS: Record<string, LucideIcon> = {
   Wallet,
 };
 
-/** ~85% — see the note above. Full height on a drag, like every other v3
- *  drawer, so nothing is ever unreachable. */
-const CAPTURE_SNAP_POINTS = [0.85, 1] as const;
+/** Full height remains available for connection/manual submenus. */
+/** The ceiling; the drawer rests lower when the list is shorter (SC-1433). */
+const CAPTURE_REST = 0.85;
 
 const TITLE_KEY = 'v3.capture.sheet.title';
 const DESCRIPTION_KEY = 'v3.capture.sheet.subtitle';
 
+const ROW_CLASS = cn(
+  'flex w-full items-start gap-3 rounded-md px-3 py-3 text-start',
+  'transition-colors duration-fast ease-emphasized hover:bg-surface-hover',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+);
+
 interface CaptureRowProps {
-  route: CaptureRoute;
-  contextQuery: string;
+  icon: string;
+  titleKey: string;
+  descriptionKey?: string;
+  /** A link out of the sheet, or a step inside it — the row looks the same. */
+  to?: string;
+  onClick?: () => void;
 }
 
 /**
@@ -86,34 +78,48 @@ interface CaptureRowProps {
  * Replacing it also closes the sheet — its `?sheet=` goes with the entry — so
  * there is nothing else for the row to do on the way out.
  */
-function CaptureRow({ route, contextQuery }: CaptureRowProps) {
+function CaptureRow({ icon, titleKey, descriptionKey, to, onClick }: CaptureRowProps) {
   const { t } = useTranslation();
-  const Icon = ICONS[route.icon] ?? Keyboard;
+  const Icon = ICONS[icon] ?? Keyboard;
+  const body = (
+    <>
+      <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface-1 text-muted-foreground">
+        <Icon className="h-5 w-5" aria-hidden="true" />
+      </span>
+      <span className="flex min-h-9 min-w-0 flex-1 flex-col justify-center gap-0.5">
+        <span className="text-label">{t(titleKey)}</span>
+        {descriptionKey && (
+          <span className="text-caption text-muted-foreground">{t(descriptionKey)}</span>
+        )}
+      </span>
+      <ChevronRight
+        className={cn(MIRROR_IN_RTL, 'mt-2 h-4 w-4 shrink-0 text-muted-foreground')}
+        aria-hidden="true"
+      />
+    </>
+  );
 
   return (
     <li>
-      <Link
-        to={captureHref(route, contextQuery)}
-        replace
-        className={cn(
-          'flex w-full items-start gap-3 rounded-md px-3 py-3 text-start',
-          'transition-colors duration-fast ease-emphasized hover:bg-surface-hover',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-        )}
-        style={{ transitionDuration: 'var(--motion-fast)' }}
-      >
-        <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-border bg-surface-1 text-muted-foreground">
-          <Icon className="h-5 w-5" aria-hidden="true" />
-        </span>
-        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-label">{t(route.titleKey)}</span>
-          <span className="text-caption text-muted-foreground">{t(route.descriptionKey)}</span>
-        </span>
-        <ChevronRight
-          className={cn(MIRROR_IN_RTL, 'mt-2 h-4 w-4 shrink-0 text-muted-foreground')}
-          aria-hidden="true"
-        />
-      </Link>
+      {to ? (
+        <Link
+          to={to}
+          replace
+          className={ROW_CLASS}
+          style={{ transitionDuration: 'var(--motion-fast)' }}
+        >
+          {body}
+        </Link>
+      ) : (
+        <button
+          type="button"
+          onClick={onClick}
+          className={ROW_CLASS}
+          style={{ transitionDuration: 'var(--motion-fast)' }}
+        >
+          {body}
+        </button>
+      )}
     </li>
   );
 }
@@ -125,20 +131,49 @@ function CaptureRow({ route, contextQuery }: CaptureRowProps) {
  */
 export function CaptureList({ contextQuery }: { contextQuery: string }) {
   const { t } = useTranslation();
+  const [group, setGroup] = useState<'connect' | 'manual' | null>(null);
+  if (group)
+    return (
+      <div className="flex flex-col gap-3">
+        {/* The in-place back the capture forms use (InstitutionField,
+            AccountField): start-aligned, with the arrow. */}
+        <Button variant="ghost" className="-ms-2 self-start" onClick={() => setGroup(null)}>
+          <ArrowLeft className={cn(MIRROR_IN_RTL, 'me-1 h-4 w-4')} aria-hidden="true" />
+          {t('v3.capture.backChoices')}
+        </Button>
+        <ul>
+          {CAPTURE_GROUPS.find((entry) => entry.key === group)?.routes.map((route) => (
+            <CaptureRow
+              key={route.id}
+              icon={route.icon}
+              titleKey={route.titleKey}
+              descriptionKey={route.descriptionKey}
+              to={captureHref(route, contextQuery)}
+            />
+          ))}
+        </ul>
+      </div>
+    );
   return (
-    <div className="flex flex-col gap-4">
-      {CAPTURE_GROUPS.map((group) => (
-        <section key={group.key} className="flex flex-col gap-1">
-          <h3 className="px-3 text-caption font-medium uppercase tracking-wide text-muted-foreground">
-            {t(group.titleKey)}
-          </h3>
-          <ul className="flex flex-col divide-y divide-border">
-            {group.routes.map((route) => (
-              <CaptureRow key={route.id} route={route} contextQuery={contextQuery} />
-            ))}
-          </ul>
-        </section>
-      ))}
+    <div className="flex flex-col gap-3">
+      <ul>
+        <CaptureRow
+          icon="FileUp"
+          titleKey="v3.capture.choice.upload"
+          to={`${V3_CAPTURE_ROUTES.fileImport}${contextQuery}`}
+        />
+        <CaptureRow
+          icon="Plug"
+          titleKey="v3.capture.choice.connect"
+          onClick={() => setGroup('connect')}
+        />
+        <CaptureRow
+          icon="Keyboard"
+          titleKey="v3.capture.choice.manual"
+          onClick={() => setGroup('manual')}
+        />
+      </ul>
+      <p className="px-3 text-caption text-muted-foreground">{t('v3.capture.availabilityNote')}</p>
     </div>
   );
 }
@@ -155,28 +190,38 @@ export function CaptureSheet({ open, onOpenChange }: CaptureSheetProps) {
   // Read off the URL the sheet was opened over, so reaching capture from an
   // account's own screen does not make the user pick that account again.
   const contextQuery = captureContextQuery(searchParams);
+  const fit = useFitSnapPoints(open && !isDesktop, CAPTURE_REST);
 
   if (isDesktop) {
     return (
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
           side="end"
-          className="w-full gap-0 overflow-y-auto sm:max-w-md"
+          className="w-full gap-0 p-0 focus:outline-none sm:max-w-md"
+          // Focus the panel, not its first option, so nothing reads as already
+          // chosen when the sheet opens (SC-1433; FormSheet does the same).
+          onOpenAutoFocus={(event) => {
+            event.preventDefault();
+            (event.currentTarget as HTMLElement | null)?.focus();
+          }}
           // `SheetContent` sets `backgroundColor` inline against an unset
           // `--background`, and an inline style beats any utility.
           // `--surface-2` is the sheet rung of the ramp (§5.1).
           style={{ backgroundColor: 'hsl(var(--surface-2))' }}
         >
-          <SheetHeader className="pe-8 text-start">
+          {/* The shell every other sheet has (rule 3, SC-1433): a fixed header
+              over a body that scrolls on its own. It used to scroll whole,
+              title and all. */}
+          <SheetHeader className="shrink-0 border-b border-border px-4 pt-4 pb-4 pe-12 text-start">
             <SheetTitle className="text-title">{t(TITLE_KEY)}</SheetTitle>
             <SheetDescription className="text-caption">{t(DESCRIPTION_KEY)}</SheetDescription>
             {/* SC-1207. The sheet is where a visitor chooses which write to
                 attempt, so it is where the demo has to say what a write does. */}
             <DemoCaptureNote />
           </SheetHeader>
-          <div className="pt-4">
+          <ScrollBody className="px-4 py-3">
             <CaptureList contextQuery={contextQuery} />
-          </div>
+          </ScrollBody>
         </SheetContent>
       </Sheet>
     );
@@ -185,7 +230,8 @@ export function CaptureSheet({ open, onOpenChange }: CaptureSheetProps) {
   return (
     <BottomDrawer open={open} onOpenChange={onOpenChange}>
       <BottomDrawerContent
-        snapPoints={CAPTURE_SNAP_POINTS}
+        ref={fit.contentRef}
+        snapPoints={fit.snapPoints}
         expandLabel={t('v3.capture.sheet.trigger')}
         collapseLabel={t('v3.capture.sheet.collapse')}
         style={{ backgroundColor: 'hsl(var(--surface-2))' }}
@@ -197,10 +243,12 @@ export function CaptureSheet({ open, onOpenChange }: CaptureSheetProps) {
               most likely to be met from a link, not less. */}
           <DemoCaptureNote />
         </BottomDrawerHeader>
-        <BottomDrawerBody>
-          <CaptureList contextQuery={contextQuery} />
-          {/* The home indicator sits over the last row otherwise. */}
-          <div style={{ height: 'env(safe-area-inset-bottom, 0px)' }} />
+        <BottomDrawerBody className="py-3">
+          <div ref={fit.innerRef}>
+            <CaptureList contextQuery={contextQuery} />
+            {/* The home indicator sits over the last row otherwise. */}
+            <div style={{ height: DRAWER_SAFE_BOTTOM }} />
+          </div>
         </BottomDrawerBody>
       </BottomDrawerContent>
     </BottomDrawer>

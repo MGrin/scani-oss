@@ -1,17 +1,15 @@
 import type { PendingTransferReview } from '@scani/shared';
-import { Button } from '@scani/ui/ui/button';
-import { Block } from '@scani/ui/v3/components/Block';
 import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { rowName, type V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
-import { BLANK_CELL, exportDateTime, exportMoney } from '@scani/ui/v3/lib/export/cell';
+import { BLANK_CELL, exportDateTime, exportMoney, exportText } from '@scani/ui/v3/lib/export/cell';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Trans, useTranslation } from 'react-i18next';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { formatRelative } from '../../lib/relative-time';
-import { TRANSFER_REVIEW_PATH, V3_ROUTES } from '../../lib/routes';
+import { TRANSFER_REVIEW_PATH } from '../../lib/routes';
 import {
   candidateHint,
   comparePendingTransfers,
@@ -19,12 +17,14 @@ import {
   occurredLabel,
   pendingLocation,
   pendingTransferMatches,
+  transferAmountLabel,
   UNREVIEWED_TRANSFER_BEHAVIOUR_KEY,
 } from '../../lib/transfer-review';
+import { Callout } from '../Callout';
 import { ExternalRef } from './ExternalRef';
 import { TransferBulkAction } from './TransferBulkAction';
 import { TransferDecision } from './TransferDecision';
-import { TransferRuleAction } from './TransferRuleAction';
+import { transferRuleEndAction } from './TransferRuleAction';
 
 /**
  * Transfers out with no matching deposit (SC-150).
@@ -79,7 +79,7 @@ export function TransferReviewList({ items, query }: TransferReviewListProps) {
     sortFn: comparePendingTransfers,
     defaultSort: { field: 'occurred', direction: 'desc' },
     renderRow: (item) => ({
-      label: `${item.quantity} ${item.tokenSymbol}`,
+      label: transferAmountLabel(item),
       sublabel: `${pendingLocation(item)} · ${candidateHint(t, item)}`,
       value: item.marketValueInBase ? (
         <Numeric value={Number(item.marketValueInBase)} currency={item.baseCurrencyCode} />
@@ -97,11 +97,22 @@ export function TransferReviewList({ items, query }: TransferReviewListProps) {
         key: 'asset',
         headerKey: 'ui.dataView.transferReview.col.left',
         sortable: true,
-        render: (item) => `${item.quantity} ${item.tokenSymbol}`,
+        render: (item) => (
+          // The source is this cell's second line only below 1280px, where
+          // the From column is hidden, so it is on screen once at every width.
+          <span className="flex min-w-0 flex-col">
+            <span className="truncate text-label">{transferAmountLabel(item)}</span>
+            <span className="truncate text-caption text-muted-foreground xl:hidden">
+              {pendingLocation(item)}
+            </span>
+          </span>
+        ),
+        exportValue: (item) => exportText(transferAmountLabel(item)),
       },
       {
         key: 'from',
         headerKey: 'ui.dataView.transferReview.col.from',
+        hideBelow: 'xl',
         render: (item) => pendingLocation(item),
       },
       {
@@ -156,54 +167,44 @@ export function TransferReviewList({ items, query }: TransferReviewListProps) {
       const exposure = visible.reduce((sum, item) => sum + Number(item.marketValueInBase ?? 0), 0);
       const unpriced = visible.filter((item) => !item.marketValueInBase).length;
       return (
-        <Block className="flex gap-3 p-4">
-          <AlertTriangle
-            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-            aria-hidden="true"
-          />
-          <div className="flex min-w-0 flex-col gap-1">
-            <p className="text-caption text-muted-foreground">
-              {t(UNREVIEWED_TRANSFER_BEHAVIOUR_KEY)}
-            </p>
-            {exposure > 0 ? (
-              <p className="text-caption">
-                {/* Not "booked as gains" any more — since SC-150's second
+        <Callout icon={AlertTriangle}>
+          {/* What the list is first, as the balance queue says it (SC-1433). */}
+          <p>{t('v3.review.transfer.queue', { count: visible.length })}</p>
+          <p className="text-muted-foreground">{t(UNREVIEWED_TRANSFER_BEHAVIOUR_KEY)}</p>
+          {exposure > 0 ? (
+            <p>
+              {/* Not "booked as gains" any more — since SC-150's second
                     half nothing here is booked at all. What the figure now
                     means is how much value is sitting on an unanswered
                     question, which is the reason to answer it. */}
-                {/* One key per sentence, the figure as a slot (SC-235). The
+              {/* One key per sentence, the figure as a slot (SC-235). The
                     label, the amount and the unpriced clause were three
                     siblings, so the only order a translator could produce was
                     this one. */}
-                <Trans
-                  i18nKey={
-                    unpriced > 0
-                      ? 'v3.review.list.valueAwaitingUnpriced'
-                      : 'v3.review.list.valueAwaiting'
-                  }
-                  count={unpriced}
-                  components={{
-                    label: <span className="text-muted-foreground" />,
-                    value: (
-                      <Numeric value={exposure} currency={visible[0]?.baseCurrencyCode ?? ''} />
-                    ),
-                  }}
-                />
-              </p>
-            ) : null}
-          </div>
-        </Block>
+              <Trans
+                i18nKey={
+                  unpriced > 0
+                    ? 'v3.review.list.valueAwaitingUnpriced'
+                    : 'v3.review.list.valueAwaiting'
+                }
+                count={unpriced}
+                components={{
+                  label: <span className="text-muted-foreground" />,
+                  value: <Numeric value={exposure} currency={visible[0]?.baseCurrencyCode ?? ''} />,
+                }}
+              />
+            </p>
+          ) : null}
+        </Callout>
       );
     },
     empty: {
       icon: CheckCircle2,
       titleKey: 'ui.dataView.transferReview.empty.everyTransferIsAccountedFor',
       descriptionKey: 'ui.dataView.transferReview.empty.moneyMovingBetweenYourOwnAccounts',
-      action: (
-        <Button asChild variant="outline">
-          <Link to={V3_ROUTES.review}>{t('v3.review.list.backToReview')}</Link>
-        </Button>
-      ),
+      // Nothing to create from here, and the way back is the page's back
+      // link or view switch, not a second button (rule 8, SC-1433).
+      action: null,
     },
     /*
       Answer many at once (SC-382) — mgrin's own request, and the shape 65 of
@@ -299,16 +300,12 @@ export function TransferReviewList({ items, query }: TransferReviewListProps) {
             ? [{ label: t('v3.review.list.field.description'), value: item.description }]
             : []),
         ],
-        /* The answers, and then the sentence about the address they are all
-           about (SC-375). The rule action sits BELOW them because it answers
-           nothing: this transfer still needs one of the four, and a control
-           that looks like a fifth answer would be read as one. */
-        content: (
-          <div className="flex flex-col gap-4">
-            <TransferDecision item={item} onResolved={() => navigate(TRANSFER_REVIEW_PATH)} />
-            <TransferRuleAction item={item} onHidden={() => navigate(TRANSFER_REVIEW_PATH)} />
-          </div>
-        ),
+        content: <TransferDecision item={item} onResolved={() => navigate(TRANSFER_REVIEW_PATH)} />,
+        /* The rule about the address sits BELOW the answers, as the body's end
+           row (SC-375, SC-1433): it answers nothing — this transfer still needs
+           one of the four — and a control that looked like a fifth answer
+           would be read as one. */
+        endAction: transferRuleEndAction(t, item, () => navigate(TRANSFER_REVIEW_PATH)),
       }),
     },
   };

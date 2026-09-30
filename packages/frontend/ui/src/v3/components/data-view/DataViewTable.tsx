@@ -194,7 +194,8 @@ export function DataViewTable<T>({
               className={cn(
                 'px-3 py-2 align-middle font-medium text-muted-foreground',
                 col.width,
-                col.numeric ? 'text-end' : 'text-start'
+                col.numeric ? 'text-end' : 'text-start',
+                col.hideBelow === 'xl' && 'hidden xl:table-cell'
               )}
             >
               {col.sortable ? (
@@ -206,7 +207,10 @@ export function DataViewTable<T>({
                   onClick={() => onSetSort(col.key)}
                   aria-label={t('ui.dataView.table.sortBy', { header: t(col.headerKey) })}
                   className={cn(
-                    'inline-flex items-center gap-1.5 text-label',
+                    // `max-w-full`: a label wider than its column truncates
+                    // inside it rather than running under the next header
+                    // (a 1024px iPad, SC-1433).
+                    'inline-flex max-w-full items-center gap-1.5 text-label',
                     'transition-colors duration-fast ease-emphasized hover:text-foreground',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                     col.numeric && 'flex-row-reverse'
@@ -363,7 +367,8 @@ export function DataViewTable<T>({
                       className={cn(
                         'px-3 align-middle',
                         col.width,
-                        col.numeric ? 'whitespace-nowrap text-end' : 'truncate'
+                        col.numeric ? 'whitespace-nowrap text-end' : 'truncate',
+                        col.hideBelow === 'xl' && 'hidden xl:table-cell'
                       )}
                     >
                       {/* The identity cell carries the link, so the row leads

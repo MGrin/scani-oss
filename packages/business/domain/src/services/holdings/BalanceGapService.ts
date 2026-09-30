@@ -1,4 +1,6 @@
-import type { AnswerBalanceGapResult, BalanceGap, BalanceGapAnswer } from '@scani/shared';
+import { type DatabaseTransaction, getDb } from '@scani/db';
+import * as schema from '@scani/db/schema';
+import type { AnswerBalanceGapInput, AnswerBalanceGapResult, BalanceGap } from '@scani/shared';
 import {
   BALANCE_GAP_DATE_PROMPT_MIN_SPAN_MS,
   BALANCE_GAP_MIN_BASE_VALUE,
@@ -8,6 +10,7 @@ import {
   isLedgerWritingAnswer,
 } from '@scani/shared';
 import Decimal from 'decimal.js';
+import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { isExactReversal, unexplainedDrift } from '../../lib/balances/unexplained-drift';
 import type { BalanceGapCandidate } from '../../repositories/HoldingBalanceObservationRepository';
@@ -16,6 +19,7 @@ import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { UserRepository } from '../../repositories/UserRepository';
 import { PriceGraphService } from '../pricing/PriceGraphService';
+import { type TransferResolveResult, TransferReviewService } from '../TransferReviewService';
 import { BalanceGapListingCache, balanceGapListingKey } from './BalanceGapListingCache';
 import { ManualBalanceEditService } from './ManualBalanceEditService';
 
@@ -32,8 +36,30 @@ export type BalanceGapAnswerRefusal = 'gone' | 'already-answered' | 'no-longer-a
 
 const SYNC_OBSERVATION_SOURCE = 'sync-capture';
 
+/**
+ * An answer the service refuses on its own terms, after it may already have
+ * written inside the transaction. It is thrown rather than returned so that
+ * the transaction rolls back; the router turns it into a 400 with this
+ * message, where a plain `Error` became a 500 the reader could do nothing with.
+ */
+export class BalanceGapAnswerRejected extends Error {
+  override readonly name = 'BalanceGapAnswerRejected';
+}
+
+function destinationRefusal(refusal: Extract<TransferResolveResult, { ok: false }>): string {
+  switch (refusal.reason) {
+    case 'own_wallet_destination':
+      return 'That account is on the other side of a wallet boundary, so it cannot receive this transfer';
+    case 'sum':
+      return `The amounts do not add up to the ${refusal.expected} that left`;
+    default:
+      return 'That destination is no longer there — choose it again';
+  }
+}
+
 @Service()
 export class BalanceGapService {
+  private readonly transfers = Container.get(TransferReviewService);
   private readonly observations = Container.get(HoldingBalanceObservationRepository);
   private readonly holdings = Container.get(HoldingRepository);
   private readonly users = Container.get(UserRepository);
@@ -205,65 +231,239 @@ export class BalanceGapService {
    */
   async answer(
     userId: string,
-    input: { observationId: string; answer: BalanceGapAnswer; occurredAt?: Date },
-    now: Date = new Date()
+    input: AnswerBalanceGapInput,
+    now: Date = new Date(),
+    transaction?: DatabaseTransaction
   ): Promise<{ result: AnswerBalanceGapResult } | { refusal: BalanceGapAnswerRefusal }> {
-    const candidates = await this.observations.findGapCandidatesForUser(userId);
-    const index = candidates.findIndex((row) => row.observationId === input.observationId);
-    const candidate = index >= 0 ? candidates[index] : undefined;
+    if (!transaction) return getDb().transaction((tx) => this.answer(userId, input, now, tx));
+    const observation = await this.observations.lockForGapAnswer(
+      input.observationId,
+      userId,
+      transaction
+    );
+    if (!observation) return { refusal: 'no-longer-a-gap' };
+    const metadata = (observation.sourceMetadata ?? {}) as Record<string, unknown>;
+    const receipt = metadata.gapAnswer as
+      | { request: string; result: AnswerBalanceGapResult }
+      | undefined;
+    const request = JSON.stringify({
+      answer: input.answer,
+      occurredAt: input.occurredAt?.toISOString() ?? null,
+      editOutflow: input.editOutflow ?? null,
+      receivedQuantity: input.receivedQuantity ?? null,
+    });
+    if (observation.gapReview !== null) {
+      if (receipt?.request === request) return { result: receipt.result };
+      return { refusal: 'already-answered' };
+    }
+    const candidates = await this.observations.findGapCandidatesForUser(userId, transaction);
+    const candidate = candidates.find((row) => row.observationId === input.observationId);
     if (!candidate) return { refusal: 'no-longer-a-gap' };
-    if (candidate.gapReview !== null) return { refusal: 'already-answered' };
-
     const drift = driftOf(candidate);
     if (drift.isZero()) return { refusal: 'no-longer-a-gap' };
-
-    const holding = await this.holdings.findById(candidate.holdingId);
+    const holding = await this.holdings.findById(candidate.holdingId, transaction);
     if (!holding || holding.userId !== userId) return { refusal: 'gone' };
-
+    if (input.receivedQuantity && input.editOutflow?.decision !== 'internal')
+      throw new BalanceGapAnswerRejected(
+        'A received amount only applies when the money moved to one of your own accounts'
+      );
+    if (input.editOutflow && (input.answer !== 'flow' || !drift.isNegative()))
+      throw new BalanceGapAnswerRejected('A destination can only be given for money that left');
     const occurredAt = clampToInterval(input.occurredAt ?? candidate.to, candidate);
-
-    let wroteKind: AnswerBalanceGapResult['wroteKind'] = null;
-    if (isLedgerWritingAnswer(input.answer)) {
-      // `previousBalance` → `previousBalance + drift` is the delta the owner
-      // is answering for, and it is NOT `previousBalance` → `balance`: the
-      // transactions the ledger already holds for this interval explain their
-      // own part of the move, and re-stating that part would double it.
-      const written = await this.manualBalanceEdits.record({
-        holding,
-        previousBalance: candidate.previousBalance,
-        newBalance: new Decimal(candidate.previousBalance).add(drift).toString(),
-        cause: input.answer,
-        // Only read for `flow`; `correction` is dated by the writer itself.
-        occurredAt,
-        // The dedup key is `manual-edit:<editedAt>`, so the CLOSING
-        // observation's instant is what makes answering the same gap twice
-        // collapse onto one row while two genuine gaps on one holding stay
-        // two. `now` would make a retried mutation write a second deposit.
-        editedAt: candidate.to,
-      });
-      wroteKind = written.kind;
+    const written = isLedgerWritingAnswer(input.answer)
+      ? await this.manualBalanceEdits.record(
+          {
+            holding,
+            previousBalance: candidate.previousBalance,
+            newBalance: new Decimal(candidate.previousBalance).add(drift).toString(),
+            cause: input.answer,
+            occurredAt,
+            editedAt: candidate.to,
+            ...(input.editOutflow?.feeQuantity
+              ? { fee: new Decimal(input.editOutflow.feeQuantity) }
+              : {}),
+          },
+          transaction
+        )
+      : null;
+    if (input.editOutflow) {
+      if (!written?.transactionId) throw new Error('Withdrawal was not recorded');
+      const resolved = await this.transfers.resolve(
+        userId,
+        written.transactionId,
+        input.editOutflow.decision,
+        {
+          destination: input.editOutflow.destination,
+          transaction,
+          observedEvent: true,
+          receivedQuantity: input.receivedQuantity,
+        }
+      );
+      if (!resolved.ok) throw new BalanceGapAnswerRejected(destinationRefusal(resolved));
     }
-
-    const stamped = await this.observations.setGapReview({
+    const result: AnswerBalanceGapResult = {
       observationId: candidate.observationId,
-      userId,
       answer: input.answer,
-      source: 'user',
-      reviewedAt: now,
-    });
-    if (!stamped) return { refusal: 'gone' };
-
-    return {
-      result: {
-        observationId: candidate.observationId,
-        answer: input.answer,
-        wroteKind,
-        // What the row was actually stamped with, so a clamp is visible to
-        // the caller rather than a silent rewrite of somebody's answer.
-        occurredAt:
-          wroteKind === 'deposit' || wroteKind === 'withdraw' ? occurredAt.toISOString() : null,
-      },
+      wroteKind: written?.kind ?? null,
+      occurredAt:
+        written?.kind === 'deposit' || written?.kind === 'withdraw'
+          ? occurredAt.toISOString()
+          : null,
     };
+    const stamped = await this.observations.setGapReview(
+      {
+        observationId: candidate.observationId,
+        userId,
+        answer: input.answer,
+        source: 'user',
+        reviewedAt: now,
+      },
+      transaction
+    );
+    if (!stamped) throw new Error('Observation disappeared');
+    await transaction
+      .update(schema.holdingBalanceObservations)
+      .set({
+        sourceMetadata: {
+          ...metadata,
+          gapAnswer: {
+            request,
+            result,
+            transactionId: written?.transactionId ?? null,
+            feeTransactionId: written?.fee?.transactionId ?? null,
+            answeredAt: now.toISOString(),
+          },
+        },
+      })
+      .where(eq(schema.holdingBalanceObservations.id, candidate.observationId));
+    if (written?.transactionId) {
+      await transaction
+        .update(schema.holdingTransactions)
+        .set({
+          sourceMetadata: {
+            gapObservationId: candidate.observationId,
+            gapFrom: candidate.from.toISOString(),
+            gapTo: candidate.to.toISOString(),
+            cause: input.answer,
+            editedAt: candidate.to.toISOString(),
+            previousBalance: candidate.previousBalance,
+            newBalance: new Decimal(candidate.previousBalance).add(drift).toString(),
+          },
+        })
+        .where(eq(schema.holdingTransactions.id, written.transactionId));
+    }
+    // The fee needs the same window, or a later import of the real fee can
+    // never replace it and the charge is counted twice.
+    if (written?.fee?.transactionId) {
+      await transaction
+        .update(schema.holdingTransactions)
+        .set({
+          sourceMetadata: sql`${schema.holdingTransactions.sourceMetadata} || ${JSON.stringify({
+            gapObservationId: candidate.observationId,
+            gapFrom: candidate.from.toISOString(),
+            gapTo: candidate.to.toISOString(),
+          })}::jsonb`,
+        })
+        .where(eq(schema.holdingTransactions.id, written.fee.transactionId));
+    }
+    return { result };
+  }
+
+  async crossCurrencyDestinations(userId: string, holdingId: string) {
+    const holding = await this.holdings.findById(holdingId);
+    if (!holding || holding.userId !== userId) return [];
+    return getDb()
+      .select({
+        holdingId: schema.holdings.id,
+        accountId: schema.holdings.accountId,
+        accountName: schema.accounts.name,
+        tokenSymbol: schema.tokens.symbol,
+      })
+      .from(schema.holdings)
+      .innerJoin(schema.accounts, eq(schema.accounts.id, schema.holdings.accountId))
+      .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
+      .where(
+        and(
+          eq(schema.holdings.userId, userId),
+          eq(schema.accounts.userId, userId),
+          eq(schema.holdings.isActive, true),
+          ne(schema.holdings.tokenId, holding.tokenId)
+        )
+      );
+  }
+
+  async listAnswered(userId: string) {
+    return getDb()
+      .select({
+        observationId: schema.holdingBalanceObservations.id,
+        answer: schema.holdingBalanceObservations.gapReview,
+        reviewedAt: schema.holdingBalanceObservations.gapReviewedAt,
+        tokenSymbol: schema.tokens.symbol,
+        accountName: schema.accounts.name,
+      })
+      .from(schema.holdingBalanceObservations)
+      .innerJoin(
+        schema.holdings,
+        eq(schema.holdings.id, schema.holdingBalanceObservations.holdingId)
+      )
+      .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
+      .innerJoin(schema.accounts, eq(schema.accounts.id, schema.holdings.accountId))
+      .where(
+        and(
+          eq(schema.holdingBalanceObservations.userId, userId),
+          isNotNull(schema.holdingBalanceObservations.gapReview)
+        )
+      );
+  }
+
+  async undo(
+    userId: string,
+    observationId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<boolean> {
+    if (!transaction) return getDb().transaction((tx) => this.undo(userId, observationId, tx));
+    const observation = await this.observations.lockForGapAnswer(
+      observationId,
+      userId,
+      transaction
+    );
+    if (!observation?.gapReview) return false;
+    const metadata = (observation.sourceMetadata ?? {}) as Record<string, unknown>;
+    const receipt = metadata.gapAnswer as
+      | { transactionId?: string; feeTransactionId?: string }
+      | undefined;
+    if (receipt?.transactionId)
+      await this.transfers.reopen(userId, receipt.transactionId, transaction);
+    const ids = [receipt?.transactionId, receipt?.feeTransactionId].filter(
+      (id): id is string => !!id
+    );
+    if (ids.length)
+      await transaction
+        .delete(schema.holdingTransactions)
+        .where(
+          and(
+            eq(schema.holdingTransactions.userId, userId),
+            inArray(schema.holdingTransactions.id, ids),
+            inArray(schema.holdingTransactions.source, [
+              'user-balance-edit',
+              'user-balance-correction',
+            ])
+          )
+        );
+    const { gapAnswer: priorAnswer, ...rest } = metadata;
+    await transaction
+      .update(schema.holdingBalanceObservations)
+      .set({
+        gapReview: null,
+        gapReviewedAt: null,
+        gapReviewSource: null,
+        sourceMetadata: {
+          ...rest,
+          previousGapAnswer: priorAnswer ?? { answer: observation.gapReview },
+        },
+      })
+      .where(eq(schema.holdingBalanceObservations.id, observationId));
+    return true;
   }
 
   /**

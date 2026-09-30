@@ -1,13 +1,20 @@
 import { Numeric } from '@scani/ui/v3/components/Numeric';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import type { ReturnsMoney } from '../../lib/returns';
 
 /**
  * Where the window's money change came from (SC-1297).
  *
- * Three parts, in the base currency: what the reader put in, what the market
- * did, and what exchange rates did. The card above it says how much changed;
- * this says why, which is the question "up 12%" leaves a reader holding.
+ * The headline above it says what the portfolio earned (`money.gain`); this
+ * splits that figure into what the market did and what exchange rates did,
+ * which is the question "up 12%" leaves a reader holding.
+ *
+ * ## The parts sum to the headline, and deposits are not a part (SC-1425)
+ *
+ * This bar used to carry a third segment, "You put in". The headline is a
+ * gain and a deposit is not one, so the list summed to nearly twice the
+ * "Up" figure above it and the reader could not reconcile the two. What the reader moved
+ * is a caption under the list instead: said, and visibly outside the figure.
  *
  * ## Proportion is by MAGNITUDE, and the sign is in the label
  *
@@ -22,9 +29,8 @@ import type { ReturnsMoney } from '../../lib/returns';
  *
  * ## Colour
  *
- * Contributions are `--neutral` because they are not performance: money the
- * reader moved is not something the portfolio did. The two performance legs
- * take chart-ramp slots, and deliberately NOT the slots the comparison chart
+ * The two performance legs take chart-ramp slots, and deliberately NOT the
+ * slots the comparison chart
  * below uses — the same hue meaning "Bitcoin" in one block and "currency" in
  * the next, on one card, is the identity failure the ramp exists to prevent.
  *
@@ -38,7 +44,6 @@ import type { ReturnsMoney } from '../../lib/returns';
  * shown for the second.
  */
 
-const CONTRIBUTED_COLOR = 'hsl(var(--neutral))';
 const MARKET_COLOR = 'hsl(var(--chart-1))';
 const CURRENCY_COLOR = 'hsl(var(--chart-5))';
 
@@ -53,41 +58,29 @@ export function AttributionBar({ money, currency }: { money: ReturnsMoney; curre
   const { t } = useTranslation();
 
   const split = money.market !== null && money.currency !== null;
-  const parts: Part[] = [
-    {
-      key: 'contributed',
-      label: t(
-        money.contributed < 0
-          ? 'v3.home.returns.attribution.withdrew'
-          : 'v3.home.returns.attribution.contributed'
-      ),
-      value: money.contributed,
-      color: CONTRIBUTED_COLOR,
-    },
-    ...(split
-      ? [
-          {
-            key: 'market',
-            label: t('v3.home.returns.attribution.market'),
-            value: money.market as number,
-            color: MARKET_COLOR,
-          },
-          {
-            key: 'currency',
-            label: t('v3.home.returns.attribution.currency'),
-            value: money.currency as number,
-            color: CURRENCY_COLOR,
-          },
-        ]
-      : [
-          {
-            key: 'combined',
-            label: t('v3.home.returns.attribution.combined'),
-            value: money.gain,
-            color: MARKET_COLOR,
-          },
-        ]),
-  ];
+  const parts: Part[] = split
+    ? [
+        {
+          key: 'market',
+          label: t('v3.home.returns.attribution.market'),
+          value: money.market as number,
+          color: MARKET_COLOR,
+        },
+        {
+          key: 'currency',
+          label: t('v3.home.returns.attribution.currency'),
+          value: money.currency as number,
+          color: CURRENCY_COLOR,
+        },
+      ]
+    : [
+        {
+          key: 'combined',
+          label: t('v3.home.returns.attribution.combined'),
+          value: money.gain,
+          color: MARKET_COLOR,
+        },
+      ];
 
   const total = parts.reduce((sum, part) => sum + Math.abs(part.value), 0);
   const shown = parts.filter((part) => part.value !== 0);
@@ -137,6 +130,21 @@ export function AttributionBar({ money, currency }: { money: ReturnsMoney; curre
           </div>
         ))}
       </dl>
+
+      {money.contributed !== 0 ? (
+        <p data-ui="attribution-moved" className="text-caption text-muted-foreground">
+          <Trans
+            i18nKey={
+              money.contributed < 0
+                ? 'v3.home.returns.attribution.outsideWithdrew'
+                : 'v3.home.returns.attribution.outsideContributed'
+            }
+            components={{
+              amount: <Numeric value={Math.abs(money.contributed)} currency={currency} />,
+            }}
+          />
+        </p>
+      ) : null}
 
       {money.unvalued > 0 ? (
         <p className="text-caption text-muted-foreground">

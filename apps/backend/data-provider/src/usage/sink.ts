@@ -19,7 +19,7 @@ export interface UsageEvent {
   /** Tenant the key belongs to (null for OSS / dev). */
   tenantId: string | null;
   /**
-   * Billable subject — for Tier 2 this is the `cloud_users.id`. For OSS
+   * Billable subject — for Tier 2 this is the `users.id` that owns the key. For OSS
    * this is null and the event is not recorded.
    */
   subject: string | null;

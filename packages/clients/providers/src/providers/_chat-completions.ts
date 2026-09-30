@@ -24,7 +24,15 @@
 
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
 import { createOutflowLimiter, getSharedRedis, type OutflowRateLimiter } from '@scani/rate-limiter';
-import type { AIInferenceProvider, AIResult, AIUsage, Capability } from '../core/capabilities';
+import type {
+  AIAvailability,
+  AIAvailabilityState,
+  AIInferenceProvider,
+  AIResult,
+  AIUsage,
+  Capability,
+} from '../core/capabilities';
+import { AIUnavailableError } from '../core/errors';
 import type { RateLimiterRegistry } from '../core/rate-limiter-registry';
 import { fetchWithTimeout } from '../core/utils/fetch';
 
@@ -191,8 +199,67 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
       }) ?? limiter;
   }
 
+  private availabilityState: AIAvailabilityState = 'unverified';
+  private retryAt = 0;
+
+  private get availabilityKey(): string {
+    const fingerprint = new Bun.CryptoHasher('sha256').update(this.config.apiKey).digest('hex');
+    return `ai-availability:${this.providerKey}:${fingerprint}`;
+  }
+
+  async getAvailability(): Promise<AIAvailability> {
+    if (!this.isConfigured())
+      return { state: 'missing', image: false, pdf: false, text: false, completion: false };
+    const redis = getSharedRedis();
+    if (redis) {
+      try {
+        const rejected = await Promise.race([
+          redis.get(this.availabilityKey),
+          Bun.sleep(1000).then(() => null),
+        ]);
+        if (rejected === 'rejected') this.availabilityState = 'rejected';
+      } catch {
+        /* Local observations still apply when shared status is unreachable. */
+      }
+    }
+    if (this.availabilityState === 'transient' && Date.now() >= this.retryAt)
+      this.availabilityState = 'unverified';
+    const usable = this.availabilityState === 'unverified' || this.availabilityState === 'ready';
+    return {
+      state: this.availabilityState,
+      image: usable && Boolean(this.config.visionModel),
+      pdf: usable && this.supportsPdfFileInput,
+      text: usable,
+      completion: usable,
+    };
+  }
+
+  /**
+   * A 401 is a revoked or wrong key. A 403 can equally be a region or model
+   * restriction, so it is believed for less time. Neither is permanent: a
+   * misread status must heal on its own rather than by hand in Redis.
+   */
+  private async unavailable(
+    state: 'rejected' | 'transient',
+    rejectedForSeconds = 86_400
+  ): Promise<never> {
+    this.availabilityState = state;
+    this.retryAt = Date.now() + 30_000;
+    if (state === 'rejected') {
+      try {
+        await Promise.race([
+          getSharedRedis()?.set(this.availabilityKey, 'rejected', 'EX', rejectedForSeconds),
+          Bun.sleep(1000),
+        ]);
+      } catch {
+        /* Retain the local rejection. */
+      }
+    }
+    throw new AIUnavailableError(state);
+  }
+
   isConfigured(): boolean {
-    return Boolean(this.config.apiKey);
+    return Boolean(this.config.apiKey.trim());
   }
 
   async parseScreenshot(
@@ -205,7 +272,7 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
     signal?: AbortSignal
   ): Promise<AIResult<unknown>> {
     if (!this.isConfigured()) {
-      throw new Error(`${this.config.providerKey}: apiKey not configured`);
+      throw new AIUnavailableError('missing');
     }
     if (!this.config.visionModel) {
       throw new Error(`${this.config.providerKey}: vision not supported by configured model`);
@@ -248,7 +315,7 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
     signal?: AbortSignal
   ): Promise<AIResult<unknown>> {
     if (!this.isConfigured()) {
-      throw new Error(`${this.config.providerKey}: apiKey not configured`);
+      throw new AIUnavailableError('missing');
     }
     // A caller-supplied system prompt REPLACES the holdings schema rather
     // than sitting under it. `buildUserPrompt`'s "Extract every visible
@@ -276,7 +343,7 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
     signal?: AbortSignal
   ): Promise<AIResult<string>> {
     if (!this.isConfigured()) {
-      throw new Error(`${this.config.providerKey}: apiKey not configured`);
+      throw new AIUnavailableError('missing');
     }
     const body = {
       model: this.config.model,
@@ -319,8 +386,20 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
     body: unknown,
     signal?: AbortSignal
   ): Promise<{ data: ChatCompletionsResponse; usage?: AIUsage }> {
+    const status = await this.getAvailability();
+    if (status.state === 'missing' || status.state === 'rejected' || status.state === 'transient') {
+      throw new AIUnavailableError(status.state);
+    }
     const data = await this.limiter.execute(
       async () => {
+        const current = await this.getAvailability();
+        if (
+          current.state === 'missing' ||
+          current.state === 'rejected' ||
+          current.state === 'transient'
+        ) {
+          throw new AIUnavailableError(current.state);
+        }
         const response = await fetchWithTimeout(
           `${this.config.baseUrl}/chat/completions`,
           {
@@ -336,18 +415,27 @@ export class ChatCompletionsProvider implements AIInferenceProvider {
           },
           30000,
           0
-        );
+        ).catch((error: unknown) => {
+          // Only a failure to reach the provider backs every caller off. A
+          // caller's own cancellation and one slow answer fail this call alone.
+          if (signal?.aborted) throw error;
+          if (error instanceof Error && error.name === 'TimeoutError')
+            throw new AIUnavailableError('transient');
+          return this.unavailable('transient');
+        });
         if (!response.ok) {
-          const errorBody = await response.text().catch(() => '');
-          throw new Error(
-            `${this.config.providerKey} HTTP ${response.status}: ${errorBody.slice(0, 300)}`
-          );
+          if (response.status === 401) return this.unavailable('rejected');
+          if (response.status === 403) return this.unavailable('rejected', 3_600);
+          if (response.status === 429 || response.status >= 500)
+            return this.unavailable('transient');
+          throw new Error(`AI processing request failed (HTTP ${response.status})`);
         }
         return (await response.json()) as ChatCompletionsResponse;
       },
       undefined,
       signal
     );
+    this.availabilityState = 'ready';
     return { data, usage: this.extractUsage(data) };
   }
 

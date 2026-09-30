@@ -60,6 +60,7 @@ export {
 } from './documents/UploadedFileService';
 export {
   type BalanceGapAnswerRefusal,
+  BalanceGapAnswerRejected,
   type BalanceGapListing,
   BalanceGapService,
 } from './holdings/BalanceGapService';
@@ -139,21 +140,11 @@ export {
   type PaymentMatchDirection,
 } from './payments/matchOccurrences';
 export {
-  CONFIRMATION_TOLERANCE,
-  completeMonthWindow,
-  OBSERVED_BURN_WINDOW_MONTHS,
-  type ObservedBurn,
-  type ObservedBurnAnswer,
-  type ObservedBurnExcluded,
-  type ObservedBurnMonth,
-  ObservedBurnService,
-  observedBurnAnswerOf,
-} from './payments/ObservedBurnService';
-export {
   FORECAST_HORIZON_MONTHS,
   type PaymentForecast,
   PaymentForecastService,
 } from './payments/PaymentForecastService';
+export { type BillGroupSource, PaymentGroupService } from './payments/PaymentGroupService';
 export {
   type DueOccurrence,
   localDate,
@@ -186,6 +177,17 @@ export {
   type RecurrenceSchedule,
   type RecurrenceStatus,
 } from './payments/recurrence';
+// plan/
+export {
+  getPlanResolver,
+  PLAN_RESOLVER,
+  type PlanAccess,
+  type PlanGate,
+  type PlanResolver,
+  type PlanTier,
+  registerPlanResolver,
+  UNLIMITED_ACCESS,
+} from './plan/plan-resolver';
 // portfolio/
 export { AssetAllocationService } from './portfolio/AssetAllocationService';
 export { DashboardService } from './portfolio/DashboardService';
@@ -326,7 +328,6 @@ export {
   COST_BASIS_METHOD_CHANGE_SOURCE,
   type CostBasisMethodChange,
   InvalidBaseCurrencyError,
-  ObservedBurnAnswerCurrencyMismatch,
   type UpdateUserResult,
   UserService,
 } from './users/UserService';
