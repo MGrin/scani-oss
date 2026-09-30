@@ -339,3 +339,51 @@ describe('HoldingsSyncHelper — an empty snapshot never zeroes anything', () =>
     expect(result.removed).toBe(0);
   });
 });
+
+// SC-1427: a reporting interface's balance is true as of its own date, not
+// when we fetched it. IBKR's Flex positions are a close 1-2 business days
+// earlier; stamped at fetch time, a trade in between sat before an
+// observation that did not include it and read as unexplained drift.
+describe('HoldingsSyncHelper — the observation is stamped at the source as-of', () => {
+  test('passes each snapshot capturedAt to the update and the create', async () => {
+    const seen: Array<{ kind: string; observedAt?: Date }> = [];
+    Container.set(TokenService, {
+      // The resolver receives a token mapping; USD is the one naming 'USD'.
+      findOrCreateTokenFromIntegration: async (mapping: unknown) => ({
+        token: { id: JSON.stringify(mapping).includes('"USD"') ? USD_TOKEN_ID : 'eur-token' },
+      }),
+    } as unknown as TokenService);
+    Container.set(HoldingService, {
+      updateHoldingBalanceWithEvent: async (input: { observedAt?: Date }) => {
+        seen.push({ kind: 'update', observedAt: input.observedAt });
+      },
+      createHoldingWithEvent: async (input: { observedAt?: Date }) => {
+        seen.push({ kind: 'create', observedAt: input.observedAt });
+      },
+    } as unknown as HoldingService);
+    const helper = new HoldingsSyncHelper();
+
+    const asOf = new Date('2026-08-14T20:00:00.000Z');
+    await helper.processSnapshotsForAccount({
+      ...BASE_INPUT,
+      skipUnchangedUpdates: false,
+      snapshots: [
+        { ...usdSnapshot('10'), capturedAt: asOf },
+        {
+          ...usdSnapshot('5'),
+          externalId: 'EUR',
+          tokenIdentity: { symbol: 'EUR', name: 'Euro' },
+          capturedAt: asOf,
+        } as HoldingSnapshot,
+      ],
+      existingHoldings: [
+        usdHolding({ id: 'usd-id', source: BASE_INPUT.sourceTag, externalId: 'USD' }),
+      ],
+    });
+
+    expect(seen).toEqual([
+      { kind: 'update', observedAt: asOf },
+      { kind: 'create', observedAt: asOf },
+    ]);
+  });
+});

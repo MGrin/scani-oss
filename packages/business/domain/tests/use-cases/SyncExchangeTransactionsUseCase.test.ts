@@ -1,10 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { Container } from 'typedi';
 import { AccountRepository } from '../../src/repositories/AccountRepository';
+import { HoldingCoverageRepository } from '../../src/repositories/HoldingCoverageRepository';
 import { HoldingTransactionRepository } from '../../src/repositories/HoldingTransactionRepository';
 import { InstitutionRepository } from '../../src/repositories/InstitutionRepository';
 import { UserIntegrationCredentialsRepository } from '../../src/repositories/UserIntegrationCredentialsRepository';
-import { SyncExchangeTransactionsUseCase } from '../../src/use-cases/SyncExchangeTransactionsUseCase';
+import { UserJobRepository } from '../../src/repositories/UserJobRepository';
+import {
+  MAX_REWALKS_PER_RUN,
+  SyncExchangeTransactionsUseCase,
+} from '../../src/use-cases/SyncExchangeTransactionsUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -12,6 +17,7 @@ import { restoreContainerAfterAll } from '../../test/helpers/container';
 restoreContainerAfterAll();
 
 type Inst = { id: string; name: string };
+type History = { claimed: boolean; lastFullAttemptAt: string; lastWindowFailureAt?: string };
 type Acc = { id: string; institutionId: string; isActive: boolean; metadata?: unknown };
 
 function makeUseCase(opts: {
@@ -20,7 +26,34 @@ function makeUseCase(opts: {
   accountsByUser: Record<string, Acc[]>;
   /** Account ids whose ledger already holds rows, keyed by source. */
   warmBySource?: Record<string, string[]>;
+  /** When each account's newest unclaimed holding was created, keyed by source. */
+  unclaimedBySource?: Record<string, Record<string, string>>;
+  /** Each account's full-import history, keyed by source. */
+  historyBySource?: Record<string, Record<string, History>>;
 }) {
+  const pick = <T, U>(
+    by: Record<string, Record<string, T>> | undefined,
+    ids: readonly string[],
+    source: string,
+    map: (value: T) => U
+  ) =>
+    new Map(
+      Object.entries(by?.[source] ?? {})
+        .filter(([id]) => ids.includes(id))
+        .map(([id, value]) => [id, map(value)] as const)
+    );
+  Container.set(HoldingCoverageRepository, {
+    findNewestUnclaimedHolding: async (ids: readonly string[], source: string) =>
+      pick(opts.unclaimedBySource, ids, source, (at) => new Date(at)),
+  } as unknown as HoldingCoverageRepository);
+  Container.set(UserJobRepository, {
+    findFullImportHistory: async (ids: readonly string[], source: string) =>
+      pick(opts.historyBySource, ids, source, (h) => ({
+        claimed: h.claimed,
+        lastFullAttemptAt: new Date(h.lastFullAttemptAt),
+        lastWindowFailureAt: h.lastWindowFailureAt ? new Date(h.lastWindowFailureAt) : null,
+      })),
+  } as unknown as UserJobRepository);
   Container.set(InstitutionRepository, {
     findTransactionSyncableInstitutions: async () => opts.institutions,
   } as unknown as InstitutionRepository);
@@ -37,6 +70,7 @@ function makeUseCase(opts: {
   return new SyncExchangeTransactionsUseCase();
 }
 
+const DAY = 24 * 60 * 60 * 1000;
 const ageDays = (iso: string | undefined) =>
   (Date.now() - new Date(iso ?? 0).getTime()) / (24 * 60 * 60 * 1000);
 
@@ -61,6 +95,89 @@ describe('SyncExchangeTransactionsUseCase', () => {
     expect(ageDays(res.targets[0]?.since)).toBeGreaterThan(29);
     expect(ageDays(res.targets[0]?.since)).toBeLessThan(31);
     expect(res.accountsFound).toBe(1);
+  });
+
+  // SC-1427: a window never claims completeness, so a holding the window
+  // found first (57 Base airdrops), or every holding of a wallet whose failed
+  // window retracted, stayed unclaimed on production with no way back.
+  describe('walking a ledger again to earn back a lost claim', () => {
+    const FULL = '2026-09-01T00:00:00.000Z';
+    const BEFORE = '2026-08-20T00:00:00.000Z';
+    const AFTER = '2026-09-10T00:00:00.000Z';
+    const run = async (
+      unclaimed: Record<string, string>,
+      history: Record<string, History>
+    ): Promise<Map<string, string | undefined>> => {
+      const ids = [...new Set([...Object.keys(unclaimed), ...Object.keys(history)])];
+      const useCase = makeUseCase({
+        institutions: [{ id: 'inst-ibkr', name: 'Interactive Brokers' }],
+        credsByInstitution: { 'inst-ibkr': [{ userId: 'u1' }] },
+        accountsByUser: {
+          u1: ids.map((id) => ({ id, institutionId: 'inst-ibkr', isActive: true })),
+        },
+        warmBySource: { 'ibkr-api': ids },
+        unclaimedBySource: { 'ibkr-api': unclaimed },
+        historyBySource: { 'ibkr-api': history },
+      });
+      const res = await useCase.execute();
+      return new Map(res.targets.map((t) => [t.accountId, t.since]));
+    };
+
+    test('a holding found after the last full walk gets one', async () => {
+      const since = await run({ a: AFTER }, { a: { claimed: true, lastFullAttemptAt: FULL } });
+      expect(since.get('a')).toBeUndefined();
+    });
+
+    test('a failed window after the last full walk gets one', async () => {
+      const since = await run(
+        { a: BEFORE },
+        { a: { claimed: true, lastFullAttemptAt: FULL, lastWindowFailureAt: AFTER } }
+      );
+      expect(since.get('a')).toBeUndefined();
+    });
+
+    // The loop the operator asked to rule out: IBKR's positions opened before
+    // the Flex window stay unclaimed after a full walk that claimed. If that
+    // re-prompted, every night would walk the whole ledger forever.
+    test('does NOT loop: a holding the last full walk left unclaimed prompts nothing', async () => {
+      const since = await run({ a: BEFORE }, { a: { claimed: true, lastFullAttemptAt: FULL } });
+      expect(ageDays(since.get('a'))).toBeLessThan(31);
+    });
+
+    test('a full attempt after the failure spends it, even one that failed', async () => {
+      const since = await run(
+        { a: BEFORE },
+        { a: { claimed: true, lastFullAttemptAt: AFTER, lastWindowFailureAt: FULL } }
+      );
+      expect(ageDays(since.get('a'))).toBeLessThan(31);
+    });
+
+    test('a source whose last full walk did not claim is never walked again for it', async () => {
+      const since = await run({ a: AFTER }, { a: { claimed: false, lastFullAttemptAt: FULL } });
+      expect(ageDays(since.get('a'))).toBeLessThan(31);
+    });
+
+    test(`walks at most ${MAX_REWALKS_PER_RUN} per run, oldest last attempt first`, async () => {
+      const n = MAX_REWALKS_PER_RUN + 2;
+      const ids = Array.from({ length: n }, (_, k) => `acc${String(k).padStart(2, '0')}`);
+      const since = await run(
+        Object.fromEntries(ids.map((id) => [id, AFTER])),
+        Object.fromEntries(
+          ids.map((id, k) => [
+            id,
+            {
+              claimed: true,
+              lastFullAttemptAt: new Date(Date.parse(FULL) - k * DAY).toISOString(),
+            },
+          ])
+        )
+      );
+      const walked = ids.filter((id) => since.get(id) === undefined);
+      expect(walked).toHaveLength(MAX_REWALKS_PER_RUN);
+      // The two most recently attempted wait a night.
+      expect(walked).not.toContain('acc00');
+      expect(walked).not.toContain('acc01');
+    });
   });
 
   test('skips accounts whose provider has no ingester source', async () => {
@@ -273,6 +390,12 @@ describe('SyncExchangeTransactionsUseCase — cold ledgers get full history', ()
         { id: 'a3', institutionId: 'inst-eth', isActive: true, metadata: { chainId: 1 } },
       ],
     } as unknown as AccountRepository);
+    Container.set(HoldingCoverageRepository, {
+      findNewestUnclaimedHolding: async () => new Map<string, Date>(),
+    } as unknown as HoldingCoverageRepository);
+    Container.set(UserJobRepository, {
+      findFullImportHistory: async () => new Map(),
+    } as unknown as UserJobRepository);
     Container.set(HoldingTransactionRepository, {
       findAccountsWithLedgerFor: async (ids: readonly string[], source: string) => {
         calls.push({ source, ids: [...ids] });

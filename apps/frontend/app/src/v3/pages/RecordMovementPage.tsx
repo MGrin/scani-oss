@@ -11,6 +11,7 @@ import { MovementWhatFields, MovementWhereFields } from '../components/holdings/
 import { useMovementForm } from '../hooks/useMovementForm';
 import { useRecordMovement } from '../hooks/useRecordMovement';
 import { V3_ROUTES } from '../lib/routes';
+import { V3_BASE } from '../lib/ui-version';
 
 /**
  * The global "record a movement" action (SC-607) — the second way into the
@@ -90,6 +91,7 @@ export function RecordMovementPage() {
         onSubmit={submit}
         stage={movement.isSaving ? 'enqueue' : null}
         busyLabel={t('v3.holdings.movement.busyLabel')}
+        cancelTo={V3_BASE}
         error={null}
       />
     </PageLayout>

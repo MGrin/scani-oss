@@ -10,7 +10,6 @@ import { Trans, useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { type BaseCurrencyRates, useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import { trpc } from '@/lib/trpc';
-import { historyEstimatesByPaymentId } from '../../lib/forecast';
 import { formatDueIn, nextPayments } from '../../lib/home';
 import {
   type EstimatedOccurrenceTotals,
@@ -22,11 +21,10 @@ import {
   splitByDueness,
   withinDays,
 } from '../../lib/money';
-import { todayDateString } from '../../lib/paymentTotals';
+import { historyEstimatesByPaymentId, todayDateString } from '../../lib/paymentTotals';
 import { V3_ROUTES } from '../../lib/routes';
 import { BaseEquivalent } from '../BaseEquivalent';
 import { ConvertedFigure } from '../ConvertedFigure';
-import { RunwayLine } from './RunwayLine';
 
 /**
  * What is due — V3-09's fifth block, moved out of `HomePage` unchanged so every
@@ -149,12 +147,10 @@ export function UpcomingBlock({ currency }: UpcomingBlockProps) {
   const payments = trpc.payments.upcoming.useQuery({ days: INCOME_HORIZON_DAYS });
   const vendors = trpc.vendors.list.useQuery();
   const tokens = trpc.tokens.getAll.useQuery();
-  // SC-818, and it costs no round trip: `<RunwayLine>` at the foot of this same
-  // block already issues `payments.forecast`, and react-query dedupes the two
-  // onto one cache entry — the same entry the Money tab reads. That is also
-  // what makes the exclusion figure here and the one on the Money tab the same
-  // number by construction rather than by two derivations agreeing.
-  const forecast = trpc.payments.forecast.useQuery();
+  // SC-818: the same `payments.scheduled` cache entry the Bills page reads,
+  // which is what makes the exclusion figure here and the one on Bills the
+  // same number by construction rather than by two derivations agreeing.
+  const forecast = trpc.payments.scheduled.useQuery();
   const historyEstimates = useMemo(
     () => historyEstimatesByPaymentId(forecast.data?.estimatedFromHistory ?? []),
     [forecast.data?.estimatedFromHistory]
@@ -297,11 +293,6 @@ export function UpcomingBlock({ currency }: UpcomingBlockProps) {
           rates={rates}
         />
       ) : null}
-
-      {/* Last, and below both measured foot-lines: the two above are sums of
-          dated instances, this is a claim about the future. Its own rule is
-          dashed for that reason — see `RunwayLine` (SC-461). */}
-      <RunwayLine />
     </Block>
   );
 }

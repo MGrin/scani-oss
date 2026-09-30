@@ -65,7 +65,10 @@ const V3APP_FILE = join(V3_SRC, 'V3App.tsx');
 const UNTABLED_ROUTES: Record<string, string> = {
   'kitchen-sink/:peekId?':
     'the primitive gallery (V3-06) — deliberately unlinked, and not in the bundle either',
+  entities: 'retired ownership controls redirect to Accounts; archival records remain in exports',
   files: 'a redirect to /documents kept for links minted before V3-43 renamed it',
+  'payments/forecast': 'a redirect to Bills kept for links to the Forecast view SC-1396 retired',
+  'wealth/planning': 'a redirect to Bills kept for links to the Planning page SC-1409 removed',
   '*': 'the terminal 404 (SC-423), which is every path that matched nothing',
 };
 

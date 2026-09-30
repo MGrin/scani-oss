@@ -314,3 +314,27 @@ describe('attributeCurrencyEffect — what the scope was exposed to', () => {
     expect(result?.currencies).toEqual([{ currencyTokenId: USD, endWeight: '1' }]);
   });
 });
+
+// SC-1432: attribution chains the same periods as the TWR, so it must re-base
+// a large flow the same way, or its base leg stops matching the figure above.
+describe('attributeCurrencyEffect — a flow larger than the opening (SC-1432)', () => {
+  test('over ONE day it counts from the open: the deposit felt the move, the asset leg is still zero', () => {
+    const result = attributeCurrencyEffect([
+      point('2026-01-01', [bucket(USD, '1000', '1.0')]),
+      point('2026-01-02', [bucket(USD, '2200', '1.1')], [[USD, '1100']]),
+    ]);
+    expect(Number(result?.assetReturn)).toBeCloseTo(0, 12);
+    expect(Number(result?.currencyReturn)).toBeCloseTo(2200 / 2100 - 1, 12);
+    expect(result && composes(result)).toBe(true);
+  });
+
+  test('the base leg matches the TWR period and the legs still compose', () => {
+    const result = attributeCurrencyEffect([
+      point('2025-10-23', [bucket(USD, '291', '1.0')]),
+      point('2025-10-24', [bucket(USD, String(291 + 1417 - 21), '1.0')], [[USD, '1417']]),
+    ]);
+    expect(Number(result?.baseReturn)).toBeCloseTo(-21 / (291 + 1417), 12);
+    expect(Number(result?.currencyReturn)).toBeCloseTo(0, 12);
+    expect(result && composes(result)).toBe(true);
+  });
+});

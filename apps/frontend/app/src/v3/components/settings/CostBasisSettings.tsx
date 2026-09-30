@@ -159,6 +159,7 @@ export function CostBasisSettings() {
       ) : null}
 
       <ConfirmAction
+        triggerClassName="self-start"
         label={
           <>
             <Scale className="me-2 size-4" aria-hidden="true" />

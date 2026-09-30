@@ -1,4 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import { getDb } from '@scani/db';
+import * as schema from '@scani/db/schema';
+import { eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { GroupRepository } from '../../src/repositories/GroupRepository';
 import { withTestDb } from '../../test/helpers/db';
@@ -390,4 +393,84 @@ describe('GroupRepository', () => {
       expect(map.get(h.id)).toEqual([]);
     });
   });
+});
+
+test('mixed membership selection is atomic, scoped, and keeps account inheritance and exclusions', async () => {
+  const db = getDb();
+  const fixture = await db.transaction(async (tx) => {
+    const { user, institution, account } = await scaffold(tx);
+    const token = await makeToken(tx);
+    const holding = await makeHolding(tx, {
+      userId: user.id,
+      accountId: account.id,
+      tokenId: token.id,
+    });
+    const group = await repo().create({ userId: user.id, name: 'batch', color: '#123' }, tx);
+    return { user, institution, account, token, holding, group };
+  });
+  const { user, account, holding, group } = fixture;
+  try {
+    await expect(
+      repo().changeMembership(user.id, group.id, [account.id], [crypto.randomUUID()], 'add')
+    ).rejects.toThrow('Holding not found');
+    expect((await repo().findGroupsForAccounts([account.id])).get(account.id) ?? []).toEqual([]);
+    await repo().changeMembership(user.id, group.id, [account.id], [holding.id], 'add');
+    expect(
+      (await repo().findGroupsForHoldings([{ id: holding.id, accountId: account.id }]))
+        .get(holding.id)
+        ?.map((row) => row.id)
+    ).toEqual([group.id]);
+    await repo().changeMembership(user.id, group.id, [], [holding.id], 'remove');
+    expect((await repo().membershipDetails(user.id, group.id)).excluded).toContain(holding.id);
+    await repo().changeMembership(user.id, group.id, [account.id], [], 'add');
+    expect((await repo().membershipDetails(user.id, group.id)).excluded).toEqual([]);
+  } finally {
+    await db.delete(schema.users).where(eq(schema.users.id, user.id));
+    await db.delete(schema.tokens).where(eq(schema.tokens.id, fixture.token.id));
+    await db.delete(schema.institutions).where(eq(schema.institutions.id, fixture.institution.id));
+  }
+});
+
+// changeMembership commits in its own transaction, so these fixtures are
+// committed and removed afterwards rather than rolled back (SC-1397).
+test("changeMembership refuses another user's group and another user's account, changing nothing", async () => {
+  const db = getDb();
+  const fixture = await db.transaction(async (tx) => {
+    const mine = await scaffold(tx);
+    const theirs = await scaffold(tx);
+    const myGroup = await repo().create({ userId: mine.user.id, name: 'mine', color: '#aaa' }, tx);
+    const theirGroup = await repo().create(
+      { userId: theirs.user.id, name: 'theirs', color: '#bbb' },
+      tx
+    );
+    return { mine, theirs, myGroup, theirGroup };
+  });
+  const { mine, theirs, myGroup, theirGroup } = fixture;
+  try {
+    await expect(
+      repo().changeMembership(mine.user.id, theirGroup.id, [mine.account.id], [], 'add')
+    ).rejects.toThrow('Group not found');
+    await expect(
+      repo().changeMembership(
+        mine.user.id,
+        myGroup.id,
+        [mine.account.id, theirs.account.id],
+        [],
+        'add'
+      )
+    ).rejects.toThrow('Account not found');
+    expect(await repo().findGroupsByAccountId(mine.account.id)).toEqual([]);
+    expect(await repo().findGroupsByAccountId(theirs.account.id)).toEqual([]);
+
+    await repo().changeMembership(mine.user.id, myGroup.id, [mine.account.id], [], 'add');
+    expect((await repo().findGroupsByAccountId(mine.account.id)).map((g) => g.id)).toEqual([
+      myGroup.id,
+    ]);
+  } finally {
+    await db.delete(schema.groups).where(inArray(schema.groups.id, [myGroup.id, theirGroup.id]));
+    await db.delete(schema.users).where(inArray(schema.users.id, [mine.user.id, theirs.user.id]));
+    await db
+      .delete(schema.institutions)
+      .where(inArray(schema.institutions.id, [mine.institution.id, theirs.institution.id]));
+  }
 });

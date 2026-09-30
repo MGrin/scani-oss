@@ -15,7 +15,7 @@ is not a tier switch: set `SCANI_DEPLOYMENT_TIER=2` on both services.
 See the [Tier 2 setup guide](/self-hosting/tier2/wiring/).
 
 :::caution[Most of these degrade silently]
-Only the OpenAI path fails loudly. CoinGecko, Finnhub, Etherscan and
+Only the AI path fails loudly. CoinGecko, Finnhub, Etherscan and
 Helius each have a keyless branch that keeps working at reduced
 capability, so a stack with none of them set comes up green on every
 health check and then serves worse data. [How to tell what's
@@ -36,7 +36,7 @@ which requires no key.
 
 | Variable | Provider | What it unlocks |
 |---|---|---|
-| `OPENAI_API_KEY` | [OpenAI](https://platform.openai.com/) | Screenshot and document parsing via Vision. Without a key the provider throws on every call, so the parse job fails — the upload itself still succeeds. |
+| `OPENAI_API_KEY` | [OpenAI](https://platform.openai.com/) | Screenshot and document parsing via Vision. Without a key, starting a parse is refused with `PRECONDITION_FAILED` and nothing is queued. Statement files and manual entry still work. |
 
 `PERPLEXITY_API_KEY` and `DEEPSEEK_API_KEY` are read by provider
 implementations that **no backend service registers**
@@ -88,8 +88,8 @@ Ignored in Tier 1 single-tenant mode.
 
 | Variable | What it does |
 |---|---|
-| `CLOUD_MANAGEMENT_ENABLED` | Turns on the cloud-management surface on the data-provider — DB-backed API keys, Better-Auth cookie sessions for a management console, per-request metering. |
-| `BETTER_AUTH_URL` | Public URL of the data-provider (used for cookie scope on the management console). |
+| `CLOUD_MANAGEMENT_ENABLED` | Turns on the cloud-management surface on the data-provider — DB-backed API keys, management-console cookie sessions read from the app api, per-request metering. |
+| `APP_AUTH_URL` | Base URL of the app api; the data-provider asks its `/api/auth/get-session` who the console user is. Required when `CLOUD_MANAGEMENT_ENABLED` is on. |
 | `CLOUD_FRONTEND_ORIGIN` | Origin of the cloud-management console (for CORS). |
 
 ## How to tell what's enabled
@@ -135,13 +135,11 @@ An unkeyed provider deliberately does **not** turn `/health/deep` red
 — it is a configuration choice, not an outage. The worker has no HTTP
 health endpoint; its boot line is the only signal.
 
-**No route refuses a call because a provider key is missing**, so do
-not wait for one. A keyless provider degrades, and the OpenAI path
-throws inside the queued screenshot-parse job rather than in the route
-that accepted the upload — the upload returns 200 either way.
-`PRECONDITION_FAILED` is returned elsewhere in the API (a manual
-holding has nothing to refresh; an upload never landed), never to
-report an unset key.
+**Only AI parsing refuses a call because a key is missing**, so do not
+wait for any other route to tell you. A keyless pricing or chain
+provider degrades silently. Starting a screenshot or document parse
+with no usable AI provider returns `PRECONDITION_FAILED`, and nothing is
+queued.
 
 ## See also
 

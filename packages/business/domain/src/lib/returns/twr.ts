@@ -25,7 +25,8 @@ import Decimal from 'decimal.js';
  * the flow is subtracted from the closing value, so it earns nothing during
  * the day it arrived. The alternative — `V_i / (V_{i-1} + F_i) - 1` — treats
  * it as invested from the open. Both are approximations of an intraday
- * truth we do not have, they differ by one day of return on one day's flows,
+ * truth we do not have, they differ by one day of return on one day's flows
+ * (except when the flow dwarfs the opening; see `subPeriodFactor`),
  * and end-of-day is chosen because `portfolio_value_daily` holds an
  * END-of-day value (`RollupPortfolioValueDailyUseCase` stamps each day at
  * 23:59:59.999 UTC), so subtracting the flow from it is the arithmetic that
@@ -98,6 +99,42 @@ export interface TwrResult {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DAYS_PER_YEAR = 365;
 
+/**
+ * One sub-period's growth factor, `startValue > 0`.
+ *
+ * End-of-day, `(end − flow) / start`, while the flow is no larger than the
+ * opening. An inflow LARGER than the opening counts from the open instead,
+ * `end / (start + flow)` (SC-1432): end-of-day divides the day's whole gap by
+ * the opening, so a £1,500 transfer into a £300 scope whose close sat £20 under
+ * the flow's value read −6.7% for one day, where the money actually at work
+ * that day moved −1.1%. An outflow is never re-based. Floored at zero for the
+ * reason the header gives. Whether to re-base is `countsFromTheOpen`'s call.
+ */
+export function subPeriodFactor(
+  startValue: Decimal,
+  endValue: Decimal,
+  flow: Decimal,
+  fromTheOpen: boolean
+): Decimal {
+  if (fromTheOpen) return Decimal.max(endValue, 0).div(startValue.plus(flow));
+  return Decimal.max(endValue.minus(flow), 0).div(startValue);
+}
+
+/**
+ * Whether a sub-period's flow counts from the open (SC-1432): an inflow larger
+ * than the opening, over ONE day. Across a gap the flow landed somewhere inside
+ * a longer period, after part of its move, so counting it from the open would
+ * expose it to a move it never felt; those keep end-of-day.
+ */
+export function countsFromTheOpen(
+  fromDate: string,
+  toDate: string,
+  startValue: Decimal,
+  flow: Decimal
+): boolean {
+  return flow.gt(startValue) && endOfDayUtc(toDate) - endOfDayUtc(fromDate) === DAY_MS;
+}
+
 function endOfDayUtc(date: string): number {
   return Date.parse(`${date}T23:59:59.999Z`);
 }
@@ -137,8 +174,12 @@ export function computeTimeWeightedReturn(points: readonly ValuationPoint[]): Tw
       continue;
     }
 
-    const adjustedEnd = Decimal.max(curr.value.minus(flow), 0);
-    const periodFactor = adjustedEnd.div(startValue);
+    const periodFactor = subPeriodFactor(
+      startValue,
+      curr.value,
+      flow,
+      countsFromTheOpen(prev.date, curr.date, startValue, flow)
+    );
     factor = factor.mul(periodFactor);
     measuredPeriods += 1;
     periods.push({

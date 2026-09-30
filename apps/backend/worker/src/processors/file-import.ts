@@ -24,6 +24,7 @@ import {
 } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService, type ProcessorContext, UserJobProcessor } from '@scani/queue';
+import type { CsvMapping } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { balanceWithoutClose } from '../lib/balance-without-close';
 import { readUpload } from '../lib/read-upload';
@@ -56,7 +57,16 @@ interface FileImportSummary {
   // this branch is skipped because every row resolves through the
   // user's choice. Mutually exclusive with the populated-summary
   // fields above (counts are 0, lists empty when this is true).
+  needsColumnMapping?: {
+    r2Key: string;
+    fileType: string;
+    headers: string[];
+    rowCount: number;
+    defaultCurrency?: string;
+    dateOrder?: FileImportJob['dateOrder'];
+  };
   needsCurrency?: {
+    customMapping?: CsvMapping;
     r2Key: string;
     fileType: string;
     // Carried so the currency re-parse keeps an order the user already chose.
@@ -73,6 +83,7 @@ interface FileImportSummary {
   // (SC-1291). The job-detail UI asks and re-enqueues with `dateOrder`; like
   // `needsCurrency`, nothing has been ingested.
   needsDateOrder?: {
+    customMapping?: CsvMapping;
     r2Key: string;
     fileType: string;
     rowCount: number;
@@ -122,6 +133,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
       aiColumnDetector: (headers, sampleRows) =>
         csvColumnDetection.detectColumns(data.userId, headers, sampleRows),
       dateOrder: data.dateOrder,
+      customMapping: data.customMapping,
     });
 
     logger.info(
@@ -135,6 +147,25 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
       'Statement parsed'
     );
 
+    if (parsed.needsColumnMapping) {
+      return {
+        format: parsed.format,
+        accountId: data.accountId,
+        transactionCount: 0,
+        observationCount: 0,
+        holdingsCreated: [],
+        holdingsTouched: [],
+        warnings: parsed.warnings,
+        needsColumnMapping: {
+          ...parsed.needsColumnMapping,
+          r2Key: data.r2Key,
+          fileType: data.fileType,
+          defaultCurrency: data.defaultCurrency,
+          dateOrder: data.dateOrder,
+        },
+      };
+    }
+
     // Date-order gate, ahead of the currency one: the preview that gate
     // shows is dates, and it cannot show them before their order is known.
     if (parsed.ambiguousDateOrder) {
@@ -147,6 +178,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
         holdingsTouched: [],
         warnings: parsed.warnings,
         needsDateOrder: {
+          customMapping: data.customMapping,
           r2Key: data.r2Key,
           fileType: data.fileType,
           rowCount: parsed.ambiguousDateOrder.rowCount,
@@ -179,6 +211,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
           r2Key: data.r2Key,
           fileType: data.fileType,
           dateOrder: data.dateOrder,
+          customMapping: data.customMapping,
           transactionCount: parsed.transactions.length,
           transactionPreview: parsed.transactions.slice(0, 5).map((tx) => ({
             date: tx.date.toISOString(),

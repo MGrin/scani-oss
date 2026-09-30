@@ -104,7 +104,7 @@
       "groups": {
         "title": "グループ",
         "openGroup": "{{name}} — グループを開く",
-        "empty": "空"
+        "billsNext_other": "支払 <amount/>（今後{{count}}日間）"
       },
       "vaults": {
         "title": "貯蓄目標",
@@ -247,8 +247,8 @@
         },
         "attribution": {
           "label": "その内訳",
-          "contributed": "入金額",
-          "withdrew": "出金額",
+          "outsideContributed": "上の金額には含まれません：入金額 <amount/>。",
+          "outsideWithdrew": "上の金額には含まれません：出金額 <amount/>。",
           "market": "市場",
           "currency": "為替",
           "combined": "市場と為替",
@@ -262,10 +262,29 @@
         },
         "gaps": {
           "label": "勝っているか、負けているか",
-          "caption": "同じ入出金をそれぞれに回していたら、いくらになっていたか。パーセントはそれ自体の騰落率です。",
-          "vs": "{{name}} と比べて"
+          "caption": "同じ入出金をそれぞれに回していたら、いくらになっていたか。",
+          "vs": "{{name}} と比べて",
+          "ahead": "<amount/> 上回る",
+          "behind": "<amount/> 下回る",
+          "returned": "騰落率: <value/>"
         },
-        "details": "この数字の裏にある利率"
+        "details": "この数字の裏にある利率",
+        "unavailable": "投資パフォーマンスを表示できません",
+        "recordedChange": "記録済み純資産の変化",
+        "eligibility": {
+          "incomplete-flow-coverage": "資金移動の履歴が不完全",
+          "unresolved-change": "未解決の残高変化",
+          "missing-valuation": "評価が不足",
+          "stale-valuation": "評価が古い",
+          "insufficient-history": "この期間の履歴が不足",
+          "rebuilding-history": "変更後の履歴を再計算中"
+        },
+        "subset": "{{holdings}}のうち{{included}}件が対象です。",
+        "coversNetWorth": "純資産の{{share}}、{{holdings}}のうち{{included}}件が対象です。",
+        "coversValue": "金額の{{share}}、{{holdings}}のうち{{included}}件が対象です。",
+        "leftOut": "対象外:",
+        "enteredLate": "明細書の初日から計上: {{holdings}}",
+        "unpricedAtZero_other": "価格のないトークン{{count}}件はゼロとして計上"
       }
     },
     "money": {
@@ -273,7 +292,6 @@
         "overdueTotal_other": "支払期日超過（{{count}}件）",
         "dayTotalEstimated_other": "概算（見積もり{{count}}件を含む）：",
         "noneAhead_other": "今後{{count}}日間に期日の予定はありません。",
-        "seeRecurring": "定期支払を見る",
         "addPayment": "支払を追加",
         "billsCommitted_other": "確定した支払（今後{{count}}日間）",
         "estimatedExcluded_other": "未算入: <amounts></amounts> — 支払{{count}}件は最後に決済した金額からの概算であり、概算は確定額ではありません。",
@@ -284,8 +302,7 @@
       "segments": {
         "upcoming": "今後の予定",
         "recurring": "定期",
-        "vendors": "取引先",
-        "forecast": "予測"
+        "vendors": "取引先"
       },
       "overdue": {
         "unknown": "期日超過",
@@ -355,7 +372,7 @@
       },
       "page": {
         "viewSwitcher": "収支の表示",
-        "title": "収支",
+        "title": "請求",
         "newVendor": "取引先を追加",
         "addPayment": "支払を追加"
       },
@@ -363,7 +380,6 @@
         "direction": "区分"
       },
       "paymentForm": {
-        "backToPayment": "支払に戻る",
         "allRecurring": "すべての定期支払",
         "titleEdit": "支払を編集",
         "titleNew": "新しい定期支払",
@@ -420,7 +436,6 @@
         "repeatMonth_other": "{{count}}か月ごとに、期日の日を起算日として繰り返します。",
         "repeatQuarter_other": "{{count}}四半期ごとに、期日の日を起算日として繰り返します。",
         "repeatYear_other": "{{count}}年ごとに、期日の日を起算日として繰り返します。",
-        "blockers": "続けるには：{{blockers}}。",
         "estimateFromHistory": "前回の実績から概算する",
         "estimateFromHistoryHint": "既定ではオフです。オンにすると、この支払で最後に決済した金額を予測に使い、どの月の実績かも表示します。"
       },
@@ -442,12 +457,14 @@
         "markedPaid": "支払済みにしました",
         "skipped": "この回をスキップしました",
         "amountSettled": "決済した金額",
-        "confirm": "確定",
-        "cancel": "キャンセル",
-        "skip": "スキップ"
+        "skip": "スキップ",
+        "descriptionPaid": "実際に出ていった金額で、この支払いを支払済みとして記録します。「今後の予定」から外れます。",
+        "descriptionReceived": "実際に入ってきた金額で、この支払いを受取済みとして記録します。「今後の予定」から外れます。",
+        "blockerAmount": "金額"
       },
       "vendorSpend": {
-        "notSubtracted": "未払額から差し引かれてはいません。これらは別々の数値です。"
+        "notSubtracted": "未払額から差し引かれてはいません。これらは別々の数値です。",
+        "details": "支払額と受取額"
       },
       "vendorEdit": {
         "name": "名前",
@@ -455,14 +472,16 @@
         "categoryPlaceholder": "未分類",
         "website": "ウェブサイト",
         "websitePlaceholder": "登録なし",
-        "edit": "編集",
-        "cancel": "キャンセル",
-        "save": "取引先を保存"
+        "title": "支払先を編集",
+        "description": "この支払先のすべての請求に表示される名前と詳細を変更します。"
       },
       "vendorCreate": {
         "placeholder": "取引先名",
         "label": "取引先名",
-        "cancel": "キャンセル"
+        "subject": "この取引先",
+        "blocker": "取引先名を入力",
+        "description": "支払う相手、または支払ってくれる相手です。支払いは取引先に紐付きます。",
+        "submit": "取引先を作成"
       },
       "vendorField": {
         "label": "取引先",
@@ -481,7 +500,7 @@
         "uncategorised": "未分類",
         "billsGroup": "支払",
         "billKind": "支払",
-        "paymentCount_other": "{{count}}件の支払"
+        "paymentCount_other": "{{count}}件の定期支払"
       },
       "vendor": {
         "saved": "{{name}} を保存しました",
@@ -545,7 +564,7 @@
       "vendorPeek": {
         "newVendor": "取引先を追加",
         "seePayments_other": "支払を見る",
-        "payments": "支払",
+        "payments": "定期",
         "incomeFromThisVendor": "この取引先からの収入",
         "recentIncome": "最近の収入",
         "recentPayments": "最近の支払",
@@ -554,12 +573,11 @@
         "noWebsite": "登録なし",
         "direction": "区分",
         "unclassified": "この取引先の支払には出金か入金かの記録がないため、月額は表示していません。",
-        "notCounted": "未算入"
+        "notCounted": "未算入",
+        "groupsHint": "この取引先の請求はすべて、チェックしたグループに入ります。後から追加する請求も含みます。"
       },
       "pending": {
         "creatingVendor": "取引先を作成しています",
-        "creatingPayment": "支払を作成しています",
-        "updatingPayment": "支払を更新しています",
         "deletingPayment": "支払を削除しています",
         "deletingVendor": "取引先を削除しています",
         "savingVendor": "取引先を保存しています",
@@ -583,80 +601,9 @@
         "setRepeatCount": "有効な繰り返し回数を設定"
       },
       "forecast": {
-        "projectedMark": "予測",
-        "label": "キャッシュフロー予測",
-        "working": "計算しています…",
-        "runwayLabel": "持続期間",
-        "runsOutIn": "{{month}} に尽きます",
-        "lastsBeyond_other": "{{count}}か月以上もちます",
-        "netPerMonth": "収支は月あたり <value></value> です。",
-        "basis_other": "保有資産{{count}}件、<value></value> を対象としています。",
-        "basisIlliquid_other": "不動産・非公開資産の{{count}}件、<value></value> は流動性がないため除外しています。",
-        "basisUnpriceable_other": "保有資産{{count}}件は価格がないため算入していません。",
-        "horizonSwitcher": "予測期間",
-        "horizonOption_other": "{{count}}か月",
-        "balanceAt": "{{month}} 時点の残高",
-        "chartLabel_other": "今後{{count}}か月の予測残高",
-        "goingOut_other": "支出（今後{{count}}か月）",
-        "comingIn_other": "収入（今後{{count}}か月）",
-        "notCounted": "この予測に含まれないもの",
-        "unprojectable_other": "金額が変動する支払{{count}}件には概算がないため、予測に反映していません。",
-        "overdueExcluded_other": "{{count}}件はすでに期日を超過しており、この推移には含まれていません。",
-        "seeRecurring": "定期支払を見る",
-        "addPayment": "支払を追加",
-        "affordTitle": "これは買えますか？",
-        "affordAmount": "金額",
-        "affordWhen": "時期",
-        "affordAsk": "確認する",
-        "affordClear": "クリア",
-        "affordLowest": "残高の最低点",
-        "affordLowestIn": "{{month}}",
-        "affordLowestNow": "本日、何も動く前",
-        "affordStaysPositive": "この期間を通じて残高はゼロを下回りません。",
-        "affordGoesNegative": "その時点で残高がゼロを下回ります。",
-        "affordCostsMonths_other": "持続期間が{{count}}か月短くなります。",
-        "affordRunwayAfter": "その後、資金は {{month}} に尽きます。",
-        "affordRunwayStillBeyond_other": "それでも{{count}}か月以上もちます。",
-        "observedRunway_other": "最近の支出ペースで約{{count}}か月",
-        "ofWhichProjected": "その支出の約{{percent}}%は予測分です",
-        "projectedTitle": "予測している分",
-        "projectedNote": "定期支払の一覧だけを見たものです。何がいつ予定されているかであって、実際の支出額を表すものではありません。",
-        "observedBasis": "{{from}} から {{to}} までの完了した{{count}}か月の平均: 月あたり <value></value>。",
-        "observedSpread": "その各月は <min></min> から <max></max> の幅があり、中央の月は <median></median> でした。",
-        "observedNotCounted_other": "{{count}}件の出金は算入していません。未回答か、Scaniが把握できない先へ動いたものです。",
-        "observedStaleValued_other": "計上済みの支出{{count}}件は古い相場で評価しています。",
-        "affordRemaining": "その後に残る額",
-        "affordRunwayAfterObserved_other": "最近の支出ペースで約{{count}}か月です。",
-        "affordCannot": "流動性のある残高を超えています。",
-        "affordNoSchedule": "平均ペースに対する計算のため、今買う場合と年内の後で買う場合を区別できません。",
-        "provenanceTitle": "算入した資金を誰が分類したか",
-        "provenanceUser": "その金額の{{percent}}%は、あなたが答えた内容に基づいています。",
-        "provenanceAutomated": "{{percent}}%は、内容を確認できる名前の付いたルールが判断しました。",
-        "provenanceUnattributed": "{{percent}}%は、誰が何を判断したかの記録がありません。",
-        "answerTitle": "実際の支出はこの額ですか？",
-        "answerConfirm": "はい、その通りです",
-        "answerOverride": "自分の数値を使う",
-        "answerCancel": "キャンセル",
-        "answerSave": "保存",
-        "answerAmountLabel": "実際の月あたりの支出額",
-        "answerConfirmed": "{{date}} に確認済みです。",
-        "answerConfirmedMoved": "{{date}} に <was/> で確認しました。現在は <now/> です。",
-        "answerOverrideActive": "{{date}} に設定した月あたり <amount/> を使用しています。計測値は <measured/> です。",
-        "answerRevert": "計測値に戻す",
-        "answerCurrencyChanged": "{{date}} の回答は別の通貨で入力されたため、現在は適用されません。",
-        "answerFailed": "保存できませんでした。",
         "estimatedMark": "概算",
         "estimatedFrom": "{{month}} の実績から",
-        "estimatedFromAmount": "{{month}} の実績から · <value></value>",
-        "estimatedTitle": "実績からの概算",
-        "estimatedCount_other": "金額が変動する支払{{count}}件は、誰かが入力した概算ではなく、最後に決済した金額で計算しています。",
-        "couldEstimate_other": "そのうち{{count}}件は過去に決済があるため、その金額を代わりに使えます。",
-        "useLastSettled_other": "最後に決済した金額を使う",
-        "stopEstimating_other": "概算をやめる",
-        "verdictOk": "大丈夫なのは",
-        "verdictRunsOut": "資金が尽きるのは",
-        "declineLabel": "最近の支出ペースでの残高、{{month}}まで",
-        "methodTitle": "この計算の内訳"
+        "estimatedFromAmount": "{{month}} の実績から · <value></value>"
       },
       "suggestions": {
         "title": "定期的な支払いのようです",
@@ -664,6 +611,32 @@
         "accept": "定期支払いとして追加",
         "dismiss": "定期ではない",
         "evidence_other": "{{count}} 件の支払いに基づく："
+      },
+      "groups": {
+        "label": "グループ",
+        "hint": "グループは請求を整理し、資産を配分しません。",
+        "payeeDetails": "取引先の詳細",
+        "oneOff": "一回限りの支払い",
+        "statuses": {
+          "scheduled": "予定",
+          "matched": "支払済み",
+          "skipped": "スキップ",
+          "missed": "未払い",
+          "all": "すべての状態"
+        },
+        "newGroup": "新しいグループ",
+        "newGroupName": "グループ名",
+        "create": "作成",
+        "createFailed": "グループを作成できませんでした。もう一度お試しください。"
+      },
+      "occurrence": {
+        "title": "この支払いを編集",
+        "description": "この日付だけを変更します。請求の他の日付の金額とグループはそのままです。",
+        "blockerGroups": "グループの読み込みを待つ"
+      },
+      "settled": {
+        "none": "この期間には何もありません。",
+        "rowMeta": "{{direction}} · {{status}}"
       }
     },
     "groups": {
@@ -716,26 +689,22 @@
           "deleted": "グループを削除しました",
           "deleting": "グループを削除しています"
         },
-        "backToGroups": "グループ",
+        "backToGroups": "グループに戻る",
         "removeMember": "{{label}} を {{group}} から外す",
         "notFound": "このグループは一覧にありません。削除されたか、リンクが古い可能性があります。",
         "value": "評価額",
         "inThisGroup": "このグループの中身",
-        "noun": "保有資産と口座",
-        "note": "口座ごと追加すると、後から入ってくるものも含めてグループに残ります。個別の保有資産は上の一覧から外してください。",
-        "empty": "このグループにはまだ何もありません。保有資産か口座を追加すると、ここに表示されます。",
-        "addMembers": "保有資産や口座を追加",
-        "details": "詳細",
+        "addMembers": "メンバーを追加",
         "name": "名前",
         "description": "説明",
         "colour": "色",
         "saveChanges": "変更を保存",
-        "discard": "破棄",
-        "needName": "保存するには：グループ名を入力してください。",
         "dangerZone": "取り扱い注意",
         "deleteConsequence": "「{{name}}」がすべての一覧とフィルターから消えます。中の{{members}}は削除されず、このラベルが外れるだけです。",
         "deleteTrigger": "グループを削除",
-        "deleteCommit": "このグループを削除する"
+        "deleteCommit": "このグループを削除する",
+        "editTitle": "グループを編集",
+        "editDescription": "グループの名前、説明、色を、表示されるすべての場所で変更します。"
       },
       "page": {
         "title": "グループ",
@@ -747,7 +716,9 @@
         "cancel": "キャンセル",
         "namePlaceholder": "老後資金、課税対象、共同名義…",
         "colour": "色",
-        "needName": "続けるには：グループ名を入力してください。"
+        "needName": "続けるには：グループ名を入力してください。",
+        "subject": "このグループ",
+        "sheetDescription": "自由に付けるラベルです。保有資産・口座・支払い・取引先は次のページで追加します。"
       }
     },
     "realizedLedger": {
@@ -798,17 +769,13 @@
     },
     "holdings": {
       "amountFact": {
-        "edit": "数量を編集",
         "amount": "数量",
-        "save": "保存",
         "belowZero": "ゼロ未満です。入力してこうなることはありません。取り消した送金が、その後に変わった残高をまたいだときに起こります。正しい数値を設定してください。"
       },
       "labelFact": {
         "unnamed": "名前なし",
-        "edit": "この {{symbol}} の保有資産に名前を付ける",
         "name": "用途名",
-        "placeholder": "貯蓄、頭金、結婚祝い…",
-        "save": "保存"
+        "placeholder": "貯蓄、頭金、結婚祝い…"
       },
       "deleteAction": {
         "trigger": "削除",
@@ -830,7 +797,6 @@
         "interest": "利息",
         "apy": "年利（APY）",
         "apyEdit": "編集",
-        "apyRemove": "削除",
         "configure": "設定",
         "payout": "支払日",
         "lastPayout": "前回の支払",
@@ -863,7 +829,8 @@
         "syncBalance": "残高を同期",
         "amount": "数量",
         "account": "口座",
-        "type": "種類"
+        "type": "種類",
+        "sinceBought": "購入以降"
       },
       "badge": {
         "noPrice": "価格なし",
@@ -964,7 +931,9 @@
         "confirm": "{{symbol}} を詐欺として報告",
         "consequence": "{{symbol}} がポートフォリオの合計に算入されなくなり（<value/> が減ります）、非表示の保有資産に移動します。これはあなただけに適用され、他の人のポートフォリオは変わりません。元に戻すには、そこで「詐欺ではない」を選んでください。",
         "marked": "{{symbol}} をあなたの詐欺として報告しました",
-        "markingContext": "トークンを詐欺として報告"
+        "markingContext": "トークンを詐欺として報告",
+        "rowTitle": "本物の保有資産ではない?",
+        "rowHint": "詐欺のエアドロップは、あなただけの合計から外せます。"
       },
       "toast": {
         "deleted": "保有資産を削除しました",
@@ -999,9 +968,7 @@
           "internal": "記録している別の保有資産へ移りました。移動先を選ぶと、Scaniが両側を紐づけるため、ここで実現して向こうで取得し直す形にはならず、取得原価がそのまま引き継がれます。",
           "left_control": "使った、贈った、あるいはScaniが把握できない場所で売却した場合です。出ていった分について損益が実現します。",
           "untracked": "Scaniがアクセスできないウォレットや口座にある、あなた自身の資産です。何も実現しません。"
-        },
-        "cancel": "キャンセル",
-        "save": "保存"
+        }
       },
       "fee": {
         "label": "手数料（送金に費用がかかった場合）",
@@ -1040,7 +1007,6 @@
         },
         "destinationTitle": "移動先",
         "noteLabel": "メモ（任意）",
-        "cancel": "キャンセル",
         "save": "記録する",
         "saving": "記録しています…",
         "recorded": "移動を記録しました",
@@ -1056,6 +1022,11 @@
           "where": "資金の行き先を指定",
           "fee": "手数料は動いた金額より小さくしてください"
         }
+      },
+      "trendCaption": "直近{{period}}",
+      "edit": {
+        "title": "保有資産を編集",
+        "description": "保有量と、複数を管理している場合はこのポットの名前を変更します。"
       }
     },
     "export": {
@@ -1072,7 +1043,8 @@
         "vaultHoldings": "貯蓄目標の保有資産",
         "documents": "書類",
         "history": "純資産の推移",
-        "netWorth": "純資産"
+        "netWorth": "純資産",
+        "archivedOwnership": "所有履歴アーカイブ"
       },
       "column": {
         "account": "口座",
@@ -1131,7 +1103,9 @@
         "holdingsPriced": "価格のある保有資産",
         "holdingsTotal": "保有資産の総数",
         "holdingsUnpriceable": "価格を付けられない保有資産",
-        "holdingsStalePriced": "古い価格で評価した保有資産"
+        "holdingsStalePriced": "古い価格で評価した保有資産",
+        "archivedOwnerId": "アーカイブ所有者ID",
+        "name": "名前"
       },
       "value": {
         "yes": "はい",
@@ -1179,7 +1153,8 @@
         "exportWorkbook": "ブックをエクスポート",
         "json": "JSON",
         "intro": "このアカウントのすべての記録を1つのファイルにまとめます。保有資産、取引履歴全体、支払、グループ、貯蓄目標、純資産の推移が含まれます。取引所・証券会社の鍵は記録ではなく認証情報のため、含まれません。",
-        "trigger": "すべてエクスポート"
+        "trigger": "すべてエクスポート",
+        "ownershipArchive": "過去の所有者名と口座の関連付けはエクスポートに保持されます。編集はできなくなりました。"
       },
       "maintenance": {
         "title": "ポートフォリオの履歴",
@@ -1298,7 +1273,8 @@
         "title": "ご本人確認",
         "description": "削除するには最近のサインインが必要です。{{email}} に6桁のコードをお送りします。",
         "send": "コードを送信",
-        "sending": "送信中…"
+        "sending": "送信中…",
+        "humanCheck": "セキュリティチェックの完了"
       }
     },
     "feedback": {
@@ -1312,10 +1288,16 @@
         "title": "確認",
         "transfersTitle": "分類が必要な出金",
         "answered": "回答済み",
-        "balancesTitle": "説明が必要な残高の変動"
+        "balancesTitle": "説明が必要な残高の変動",
+        "toClassify": "未分類",
+        "transferViewLabel": "送金確認の表示",
+        "toExplain": "未説明",
+        "balanceViewLabel": "残高確認の表示",
+        "rulesView": "ルール"
       },
       "queues": {
-        "clear": "待機中の項目はありません"
+        "clear": "待機中の項目はありません",
+        "waiting_other": "{{count}}件待ち"
       },
       "item": {
         "jobFailed": "{{job}} が失敗しました",
@@ -1344,7 +1326,6 @@
         "valueAwaiting": "<label>回答待ちの金額:</label> <value/>",
         "valueAwaitingUnpriced_other": "<label>回答待ちの金額:</label> <value/><label>、ほかにその日の価格がないもの{{count}}件</label>",
         "backToReview": "確認に戻る",
-        "seeAllJobs": "すべての処理を見る",
         "field": {
           "when": "日時",
           "to": "宛先",
@@ -1356,7 +1337,6 @@
       },
       "answered": {
         "title": "回答済みの送金",
-        "backToQueue": "キューに戻る",
         "field": {
           "answered": "回答日時",
           "to": "宛先"
@@ -1393,7 +1373,7 @@
         "movingTo": "{{location}} へ移動",
         "wherePrompt": "この分はどこへ行きましたか？",
         "amountLabel": "{{outcome}} — {{symbol}} の数量",
-        "pickDepositFirst": "先に上の入金を選んでください",
+        "pickDepositFirst": "先に送金画面で入金を選んでください",
         "addsUp": "合計が一致しています"
       },
       "decision": {
@@ -1429,6 +1409,7 @@
       },
       "transfer": {
         "unreviewedBehaviour": "これらが未回答のあいだ、Scaniは損益を計上しません。自分のコインを移すことは売却ではなく、売却だったと決めつけることが、架空の利益がチャートに載る原因になるからです。これらのうち実際にポートフォリオから出たものがあれば、そう指定するまで、その損益は実現損益の合計に含まれません。",
+        "queue_other": "分類が必要な出金が{{count}}件あります。",
         "unreviewedNote": "未回答のあいだ、どちらとしても損益は計上されません。",
         "candidateReason": {
           "combined": "この{{count}}件の入金を合わせると金額になります",
@@ -1510,7 +1491,16 @@
           "summary": "{{clauses}}。損益が計上されるのは譲渡の分だけです。",
           "balanceNew": "移動先に {{symbol}} の保有資産が新たに作成され、その入金が残高になります。",
           "balanceUnchanged": "残高は変わりません。",
-          "balanceMoves": "その口座の残高は、そこに届いた金額のぶん増えます。"
+          "balanceMoves": "その口座の残高は、そこに届いた金額のぶん増えます。",
+          "sheetTitle": "この送金を内訳に分ける",
+          "blocker": {
+            "twoParts": "2つ以上の内訳の金額",
+            "oneLink": "Scaniが記録している先への内訳は1つだけ",
+            "deposit": "「{{paired}}」の入金の選択",
+            "destination": "記録対象の内訳の移動先",
+            "positive": "0より大きい金額",
+            "sum": "合計 {{amount}} {{symbol}} になる金額"
+          }
         },
         "answered": {
           "paired": "入金と紐づけ済み — 何も実現していません",
@@ -1579,8 +1569,6 @@
         "title": "宛先ルール",
         "trigger": "この宛先についてルールを作る",
         "commit": "このルールを作成する",
-        "manage": "宛先ルールを見る",
-        "alreadyRuled": "この宛先のルールはすでにあります",
         "revoke": "このルールを取り下げる",
         "revokeCommit": "このルールを取り下げる",
         "field": {
@@ -1619,10 +1607,6 @@
           "title": "ルールによってキューから外されている出金",
           "body": "いずれも回答されていません。キューの外で待機しており、ルールを取り下げると戻ってきます。"
         },
-        "empty": {
-          "title": "宛先ルールはまだありません",
-          "body": "キューで出金を開き、その行き先を記録してください。同じ宛先への以降の支払いには、金額にかかわらずそのメモが付きます。譲渡として指定した宛先は、自動で回答されます。"
-        },
         "notice": {
           "label": "この宛先についてのあなたのメモ",
           "markExempt": "この宛先を譲渡として指定し、そのうえでこの出金についてはその回答を取り下げました。今後この出金が自動で回答されることはありません。"
@@ -1638,12 +1622,17 @@
         "refusal": {
           "ownWallet": "{{key}} はあなた自身のウォレットです。そこへ移った資金はポートフォリオから出ていないため、譲渡として指定できません。"
         },
-        "withdrawAnswers_other": "ルールによる{{count}}件の回答も取り下げる"
+        "withdrawAnswers_other": "ルールによる{{count}}件の回答も取り下げる",
+        "rowTitle": "宛先ルール",
+        "rowHint": "よく支払う宛先に：一度名前を付けるか、質問されないようにします。",
+        "sheetTitle": "新しい宛先ルール",
+        "sheetDescription": "ルールは、この宛先への以降の出金すべてに金額を問わず名前を付け、代わりに回答することもできます。",
+        "blocker": {
+          "note": "この宛先が何かを入力してください"
+        }
       },
       "balances": {
         "intro": "この残高を動かした何かがあり、それを説明する取引がありません。何が起きたかを教えていただければ、運用成果として数えられなくなります。",
-        "loading": "説明のつかない残高の変動を探しています…",
-        "empty": "説明が必要なものはありません。すべての残高の変動に説明が付いています。",
         "queue_other": "説明が必要な残高の変動が{{count}}件あります。金額の大きい順です。",
         "examined": "全体で{{examined}}件を確認し、{{suppressed}}件を除外しました。金額が小さい、あなた自身が設定した残高、次の読み取りで打ち消された、または価格を付けられなかったものです。",
         "examinedWithAnswered": "全体で{{examined}}件を確認し、{{suppressed}}件を除外しました。金額が小さい、あなた自身が設定した残高、次の読み取りで打ち消された、または価格を付けられなかったものです。さらに{{answered}}件はすでに回答済みです。",
@@ -1654,7 +1643,6 @@
         "answerLabel": "この変動は何でしたか？",
         "dateLabel": "お金が動いたのはいつですか？",
         "record": "記録",
-        "answerFailed": "記録できませんでした",
         "answerFailedBody": "何も保存されていません。もう一度お試しください。",
         "option": {
           "flow": "お金が動いた",
@@ -1668,7 +1656,26 @@
           "growth": "何も記録されません。このような残高の増加そのものがリターンであり、すでにそう数えられています。",
           "unknown": "何も記録されず、この件について再び確認されることもありません。運用成果として数えられたままになります。誰にも分からない場合は、それが正直な答えです。",
           "flowNoDate": "2回の読み取りのあいだの日付で、入金または出金として記録します。日付で表せるより正確に、いつ起きたかが分かっているためです。"
-        }
+        },
+        "answeredTitle": "説明済みの残高変化",
+        "undo": "説明を取り消す",
+        "crossCurrency": "異なる通貨または資産",
+        "chooseArrival": "入金先を選択",
+        "received": "受取数量",
+        "balanceLabel": "残高",
+        "answeredOn": "回答日時",
+        "undoCommit": "はい、取り消す",
+        "undoConsequence": "この変動はキューに戻って再び回答待ちになり、回答で記録された入金・出金・手数料は削除されます。",
+        "explainAction": "説明する",
+        "answerTitle": "この変動を説明",
+        "answerDescription": "回答によって、この変動が運用成績として数えられるか、入出金として扱われるかが決まります。",
+        "blocker": {
+          "answer": "何が起きたかを選んでください",
+          "date": "期間内の日付を選んでください",
+          "destination": "お金の行き先を選んでください",
+          "received": "受け取った数量を入力してください"
+        },
+        "undoFailed": "取り消せませんでした"
       }
     },
     "form": {
@@ -1696,7 +1703,10 @@
         "expand": "フォーム全体を表示",
         "collapse": "フォームを縮小",
         "close": "フォームを閉じる"
-      }
+      },
+      "edit": "編集",
+      "saveChanges": "変更を保存",
+      "saving": "保存中…"
     },
     "capture": {
       "form": {
@@ -1760,7 +1770,7 @@
       },
       "formats": {
         "import": "PNG、JPG、WEBP、PDF、CSV、TSV、OFX、QIF",
-        "invoice": "PDF、PNG、JPG、WEBP、HEIC"
+        "invoice": "PDF、PNG、JPG、WEBP"
       },
       "stage": {
         "account": "口座を準備しています…",
@@ -1915,7 +1925,34 @@
         "unverifiedTitle": "{{name}} のキーを確認できませんでした",
         "unverifiedDetail": "{{name}} から応答がなかったため、キーが正しいかどうか判断できません。何も保存していません。1分ほど待って再試行してください。"
       },
-      "demoNote": "ここで入力した内容は保存されません。これはデモです。"
+      "demoNote": "ここで入力した内容は保存されません。これはデモです。",
+      "backChoices": "選択肢に戻る",
+      "choice": {
+        "upload": "ファイルをアップロード",
+        "connect": "データソースに接続",
+        "manual": "手動で入力"
+      },
+      "availabilityNote": "構造化された明細と手動入力はAIなしで利用できます。画像とPDFの抽出は処理の利用状況に依存します。",
+      "chooseIntent": "ファイルの内容は何ですか？",
+      "intent": {
+        "statement": "明細または保有資産",
+        "invoice": "請求書"
+      },
+      "ai": {
+        "loading": "処理の利用状況を確認中…",
+        "unavailable": "AI処理は利用できません。構造化インポートと手動入力は引き続き利用できます。",
+        "transient": "AI処理は一時的に利用できません。ファイルを保存して後で再試行するか、手動で入力してください。",
+        "unverified": "AI認証情報はまだ成功したリクエストで確認されていません。失効した認証情報は最初の処理時に判明する場合があります。",
+        "blocker": "AI処理が利用可能になるまで待つ",
+        "blockerLoading": "処理の可否を確認中のため待つ"
+      },
+      "backHome": "ホームに戻る",
+      "busy": {
+        "upload": "アップロード",
+        "save": "保存",
+        "import": "インポート",
+        "connection": "接続"
+      }
     },
     "tokens": {
       "custom": {
@@ -1933,7 +1970,6 @@
         "editPrice": "価格を編集"
       },
       "hidden": {
-        "backToHoldings": "保有資産に戻る",
         "unhide": "再表示",
         "likelyScam": "詐欺の可能性",
         "hidden": "非表示",
@@ -2097,7 +2133,7 @@
         "rejectConsequenceNumbered": "{{vendor}} の請求書 {{number}} が却下済みになり、このファイルからは確認を求められなくなります。支払は作成されません。元に戻すには、ファイルを読み取り直すしかありません。"
       },
       "detail": {
-        "backToFiles": "すべてのファイル",
+        "backToFiles": "ファイルに戻る",
         "copyGone": "このファイルの保存されていた複製がなくなっているため、ダウンロードも読み取り直しもできません。この記録を削除すると、同じファイルを改めてアップロードできるようになります。",
         "reparsing": "書類を読み取り直しています",
         "deleted": "ファイルを削除しました。改めてアップロードできます",
@@ -2154,19 +2190,52 @@
         "attaching": "保有資産を紐づけています",
         "fullyClaimed": "{{label}} はすでに全額が他の貯蓄目標に充当されています。先にそちらの割合を下げてください。",
         "attachedWhole": "{{label}} をこの貯蓄目標に充当しました",
-        "attachedPartial": "{{label}} を {{available}}% で紐づけました。残りは他の貯蓄目標に充当されています"
+        "attachedPartial": "{{label}} を {{available}}% で紐づけました。残りは他の貯蓄目標に充当されています",
+        "title": "{{vault}}に保有資産を紐づける",
+        "choose": {
+          "description": "ステップ1/3 · この貯蓄目標に充当する保有資産を選んでください。"
+        },
+        "shares": {
+          "description": "ステップ2/3 · 各保有資産のうち、この貯蓄目標に充当する割合を設定します。"
+        },
+        "review": {
+          "description": "ステップ3/3 · 割合を確認してから紐づけます。"
+        },
+        "search": "保有資産を検索",
+        "allAccounts": "すべての口座",
+        "empty": "一致する保有資産がありません。すべてこの貯蓄目標に入っている可能性があります。",
+        "free": "{{percent}}%空き",
+        "fullyAllocated": "割り当て済み",
+        "next": "次へ：割合を設定",
+        "toReview": "確認",
+        "back": "戻る",
+        "submit": "紐づける",
+        "freeAll": "すべて空いています：最大{{percent}}%。",
+        "freeElsewhere": "最大{{percent}}%が空いています。残りは{{elsewhere}}に充当されています。",
+        "allFree": "空き分すべて",
+        "brings": "約",
+        "shareFor": "{{label}}の割合",
+        "total": "{{vault}}の増加額（約）",
+        "issue": {
+          "missing": "0%より大きい割合を入力してください。",
+          "tooPrecise": "小数点以下は2桁までにしてください。",
+          "overAvailable": "この保有資産の空きは{{percent}}%のみです。"
+        }
       },
       "createFirst": "最初の貯蓄目標を作成",
       "holding": {
         "thisHolding": "この保有資産",
         "unknownToken": "トークン不明",
-        "shareLabel": "この貯蓄目標に充当する {{symbol}} の割合",
-        "cancel": "キャンセル",
-        "saveShare": "割合を保存",
-        "changeShare": "この貯蓄目標に充当する {{symbol}} の割合（{{percent}}%）を変更",
+        "shareRange": "0%より大きく100%以下の割合を入力してください。",
         "remove": "外す",
         "removeCommit": "この貯蓄目標から {{symbol}} を外す",
-        "detachConsequence": "{{symbol}} がこの貯蓄目標に充当されなくなり、貯蓄額から <value/> が減ります。保有資産自体、その {{percent}}% の割合、履歴はすべて残るため、改めて紐づけることもできます。"
+        "detachConsequence": "{{symbol}} がこの貯蓄目標に充当されなくなり、貯蓄額から <value/> が減ります。保有資産自体、その {{percent}}% の割合、履歴はすべて残るため、改めて紐づけることもできます。",
+        "editTitle": "割合を編集",
+        "editDescription": "この保有資産のうち、この貯蓄目標に計上する割合。",
+        "saveFailed": "割合を保存できませんでした。もう一度お試しください。",
+        "shareBlocker": "0%より大きく100%以下の割合を入力してください",
+        "shareField": "割合",
+        "inVault": "この貯蓄目標"
       },
       "detail": {
         "toast": {
@@ -2180,26 +2249,23 @@
           "updatingShare": "割合を更新しています"
         },
         "deleteConsequence_other": "「{{name}}」とその目標額が消えます。紐づいている保有資産{{count}}件は削除されず、目標に充当されなくなるだけです。",
-        "backToVaults": "貯蓄目標",
+        "backToVaults": "貯蓄目標に戻る",
         "notFound": "この貯蓄目標は一覧にありません。削除されたか、リンクが古い可能性があります。",
         "saved": "貯蓄額",
         "targetReached": "目標達成 — 目標の{{percent}}%",
         "stillToGo": "目標 <target/> に対して、あと <remaining/>",
-        "countingToward_other": "この貯蓄目標に充当中（{{count}}件）",
-        "empty": "この貯蓄目標に充当されているものはまだありません。保有資産を紐づけると、目標に反映されはじめます。",
-        "attachHolding": "保有資産を紐づける",
-        "details": "詳細",
         "name": "名前",
         "target": "目標額",
         "targetHint": "{{symbol}} 建て",
         "colour": "色",
         "saveChanges": "変更を保存",
-        "discard": "破棄",
-        "needName": "保存するには：貯蓄目標の名前を入力してください。",
-        "needTarget": "保存するには：0より大きい目標額を設定してください。",
         "dangerZone": "取り扱い注意",
         "deleteTrigger": "貯蓄目標を削除",
-        "deleteCommit": "この貯蓄目標を削除する"
+        "deleteCommit": "この貯蓄目標を削除する",
+        "attachHoldings": "保有資産を紐づける",
+        "editTitle": "ボールトを編集",
+        "editDescription": "ボールトの名前、目標額、色を変更します。通貨は変わりません。",
+        "inThisVault": "この貯蓄目標"
       },
       "page": {
         "title": "貯蓄目標",
@@ -2208,9 +2274,7 @@
         "name": "名前",
         "newVault": "新しい貯蓄目標",
         "createVault": "貯蓄目標を作成",
-        "cancel": "キャンセル",
         "namePlaceholder": "住宅の頭金、緊急用資金…",
-        "toContinue": "続けるには：{{missing}}。",
         "target": "目標額",
         "currency": "通貨",
         "colour": "色",
@@ -2218,7 +2282,9 @@
           "name": "貯蓄目標の名前を入力",
           "target": "0より大きい目標額を設定",
           "currency": "通貨を選択"
-        }
+        },
+        "subject": "この貯蓄目標",
+        "sheetDescription": "目標額のある貯蓄目標です。保有資産は次のページで紐付けます。"
       }
     },
     "jobs": {
@@ -2256,7 +2322,7 @@
         "notFailed": "再試行するものはありません。"
       },
       "detail": {
-        "backToJobs": "すべての処理",
+        "backToJobs": "処理に戻る",
         "notFound": "この処理は一覧にありません。削除されたか、リンクが古い可能性があります。",
         "attempt": "{{allowed}}回中{{attempt}}回目の試行",
         "cancel": "キャンセル",
@@ -2528,6 +2594,20 @@
           "samples": "ファイルの記載どおり",
           "dayFirst": "日が先 — 31/12",
           "monthFirst": "月が先 — 12/31"
+        },
+        "columns": {
+          "title": "CSV列を対応付け",
+          "body": "ファイルの列を選択してください。まだ何もインポートされていません。符号付き金額、または入金と出金の別々の列を選びます。",
+          "date": "日付",
+          "description": "説明",
+          "amount": "符号付き金額",
+          "credit": "入金",
+          "debit": "出金",
+          "currency": "通貨",
+          "balance": "取引後残高",
+          "fee": "別途請求の手数料",
+          "none": "未設定",
+          "apply": "適用してインポート"
         }
       },
       "manual": {
@@ -2590,9 +2670,6 @@
       }
     },
     "membership": {
-      "picker": {
-        "done": "完了"
-      },
       "holdings_other": "保有資産（{{count}}）",
       "wholeAccounts_other": "口座全体（{{count}}）",
       "wholeAccountsNote": "口座全体がグループに入っています。現在の保有分と、後から入ってくるものが対象です。外すと、そのすべてがグループから出ます。",
@@ -2605,35 +2682,60 @@
       "removing": "グループから外しています",
       "addAction": "追加",
       "addPending": "追加しています",
-      "removeAction": "外す",
+      "removeAction": "解除",
       "removePending": "外しています",
       "noMatch": "「{{query}}」に一致する、追加できるものはありません。",
       "allAdded": "お持ちのものはすべてここにあります。追加できる{{noun}}は他にありません。",
       "allOfCount_other": "保有資産{{count}}件すべて",
       "count": {
         "holding_other": "保有資産{{count}}件",
-        "account_other": "口座{{count}}件"
-      }
+        "account_other": "口座{{count}}件",
+        "bill_other": "請求{{count}}件",
+        "payee_other": "取引先{{count}}件"
+      },
+      "direct": "直接追加",
+      "inherited": "口座ルールによる追加",
+      "excluded": "明示的に除外",
+      "allocationFor": "{{label}}の割り当て",
+      "removeSelection": "選択した{{count}}件の所属を解除しますか？保有資産と財務記録は保持されます。",
+      "payee": "取引先ルールによる追加",
+      "bills_other": "請求（{{count}}）",
+      "payees_other": "取引先（{{count}}）",
+      "payeeNote": "この取引先の請求はすべてグループに入ります。現在の請求も、後から追加する請求も対象です。外すと、そのすべてがグループから出ます。",
+      "allBillsOfCount_other": "取引先・請求{{count}}件すべて",
+      "confirmRemove": "はい、解除します",
+      "addSheet": {
+        "title": "{{group}}に追加",
+        "description": "口座、保有資産、取引先、請求から選んでください。追加するとすぐにグループの合計が更新されます。",
+        "search": "名前で検索",
+        "kind": "追加するものを選択",
+        "accounts": "口座",
+        "holdings": "保有資産",
+        "payees": "取引先",
+        "bills": "請求",
+        "accountsHint": "口座を追加すると、後から加わるものも含めてその保有資産がすべて入ります。",
+        "holdingsHint": "保有資産は、口座の状態にかかわらず単独で追加されます。",
+        "payeesHint": "取引先を追加すると、後から追加する請求も含めてその請求がすべて入ります。",
+        "billsHint": "請求は、取引先の状態にかかわらず単独で追加されます。",
+        "includedVia": "{{account}}経由で追加済み",
+        "empty": "一致するものがありません。すべてこのグループに入っている可能性があります。",
+        "none": "まだ何も選択されていません",
+        "summary": "{{items}}を選択中",
+        "submit": "追加"
+      },
+      "directAndInherited": "直接 · 口座ルール",
+      "noHoldingsYet": "保有資産はまだありません",
+      "noMembersYet": "メンバーはまだいません"
     },
-    "ownership": {
-      "title": "名義",
-      "description": "自分の資産と会社の資産を分けて管理します。純資産は引き続き1つの数値です。",
-      "newEntity": "新しい名義",
-      "name": "名前",
-      "namePlaceholder": "例: 株式会社マイカンパニー",
-      "create": "作成",
-      "cancel": "キャンセル",
-      "created": "{{name}} を作成しました",
-      "creating": "名義を作成しています",
-      "assigning": "口座を移しています",
-      "loading": "それぞれの帳簿の金額を計算しています…",
-      "empty": "まだ金額がありません。",
-      "unassigned": "未割り当て",
-      "combined": "合計",
-      "holdingsCounted_other": "保有資産{{count}}件",
-      "unpriced": "{{symbols}} は本日価格を付けられませんでした",
-      "accountsHeading": "各口座がどの名義に属するか",
-      "accountEntityLabel": "{{name}} の名義"
+    "brand": {
+      "details": "ビルドの詳細",
+      "development": "開発版",
+      "baselineNote": "Coreラベルは最後に公開されたリリースを示します。この非公開ビルドには以下の未公開の変更が含まれる場合があります。",
+      "coreRelease": "公開済みCoreリリース",
+      "build": "読み込んだビルドのコミット",
+      "pending": "変更待ちの共有ファイル",
+      "pendingSection": "未公開の変更",
+      "fingerprint": "Coreフィンガープリント"
     }
   }
 }

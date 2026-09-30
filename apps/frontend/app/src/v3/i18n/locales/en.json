@@ -56,7 +56,7 @@
       "action": {
         "seeAll": "See all"
       },
-      "unknownVendor": "Unknown vendor",
+      "unknownVendor": "Unknown payee",
       "openRecord": "{{name}} — open",
       "listAnd": "{{first}} and {{second}}",
       "listSemicolon": "{{first}}; {{second}}",
@@ -117,7 +117,8 @@
       "groups": {
         "title": "Groups",
         "openGroup": "{{name}} — open the group",
-        "empty": "Empty"
+        "billsNext_one": "<amount/> bills, next {{count}} day",
+        "billsNext_other": "<amount/> bills, next {{count}} days"
       },
       "vaults": {
         "title": "Vaults",
@@ -272,8 +273,8 @@
         },
         "attribution": {
           "label": "Where it came from",
-          "contributed": "You put in",
-          "withdrew": "You took out",
+          "outsideContributed": "Not in the figure above: you put in <amount/>.",
+          "outsideWithdrew": "Not in the figure above: you took out <amount/>.",
           "market": "Market",
           "currency": "Currency",
           "combined": "Market and currency",
@@ -288,10 +289,30 @@
         },
         "gaps": {
           "label": "Ahead or behind",
-          "caption": "What the same deposits and withdrawals would have come to in each instead. The percentage is what it returned.",
-          "vs": "vs {{name}}"
+          "caption": "What the same deposits and withdrawals would have come to in each instead.",
+          "vs": "vs {{name}}",
+          "ahead": "<amount/> ahead",
+          "behind": "<amount/> behind",
+          "returned": "Returned <value/>"
         },
-        "details": "The rates behind this"
+        "details": "The rates behind this",
+        "unavailable": "Investment performance unavailable",
+        "recordedChange": "Recorded net-worth change",
+        "eligibility": {
+          "incomplete-flow-coverage": "Incomplete flow history",
+          "unresolved-change": "Unresolved balance change",
+          "missing-valuation": "Missing valuation",
+          "stale-valuation": "Stale valuation",
+          "insufficient-history": "Insufficient history for this period",
+          "rebuilding-history": "Rebuilding history after changes"
+        },
+        "subset": "Covers {{included}} of {{holdings}}.",
+        "coversNetWorth": "Covers {{share}} of your net worth, {{included}} of {{holdings}}.",
+        "coversValue": "Covers {{share}} of the value, {{included}} of {{holdings}}.",
+        "leftOut": "Left out:",
+        "enteredLate": "Counted from their first statement date: {{holdings}}.",
+        "unpricedAtZero_one": "{{count}} unpriced token counted at zero.",
+        "unpricedAtZero_other": "{{count}} unpriced tokens counted at zero."
       }
     },
     "money": {
@@ -302,7 +323,6 @@
         "dayTotalEstimated_other": "Approximately, including {{count}} estimated bills:",
         "noneAhead_one": "Nothing due in the next {{count}} day.",
         "noneAhead_other": "Nothing due in the next {{count}} days.",
-        "seeRecurring": "See recurring payments",
         "addPayment": "Add a payment",
         "billsCommitted_one": "Bills committed, next {{count}} day",
         "billsCommitted_other": "Bills committed, next {{count}} days",
@@ -316,8 +336,7 @@
       "segments": {
         "upcoming": "Upcoming",
         "recurring": "Recurring",
-        "vendors": "Vendors",
-        "forecast": "Forecast"
+        "vendors": "Payees"
       },
       "overdue": {
         "unknown": "Overdue",
@@ -372,16 +391,16 @@
       },
       "deleteVendor": {
         "checking": "Deletes \"{{vendor}}\". Checking what points at it…",
-        "blocked_one": "\"{{vendor}}\" still has {{count}} payment pointing at it, and deleting it would take that payment and everything settled against it. End or delete it first, or merge \"{{vendor}}\" into the vendor you meant.",
-        "blocked_other": "\"{{vendor}}\" still has {{count}} payments pointing at it, and deleting it would take those payments and everything settled against them. End or delete them first, or merge \"{{vendor}}\" into the vendor you meant.",
+        "blocked_one": "\"{{vendor}}\" still has {{count}} payment pointing at it, and deleting it would take that payment and everything settled against it. End or delete it first, or merge \"{{vendor}}\" into the payee you meant.",
+        "blocked_other": "\"{{vendor}}\" still has {{count}} payments pointing at it, and deleting it would take those payments and everything settled against them. End or delete them first, or merge \"{{vendor}}\" into the payee you meant.",
         "lead": "Deletes \"{{vendor}}\". Nothing is paid to or by it.",
         "alsoAliases_one": "{{count}} alias it has been seen under goes with it",
         "alsoAliases_other": "{{count}} aliases it has been seen under go with it",
-        "alsoExtractions_one": "{{count}} parsed invoice keeps its own record but loses its link to this vendor",
-        "alsoExtractions_other": "{{count}} parsed invoices keep their own records but lose their link to this vendor",
+        "alsoExtractions_one": "{{count}} parsed invoice keeps its own record but loses its link to this payee",
+        "alsoExtractions_other": "{{count}} parsed invoices keep their own records but lose their link to this payee",
         "alsoFrame": "{{clauses}}.",
         "trigger": "Delete",
-        "confirm": "Delete this vendor",
+        "confirm": "Delete this payee",
         "deleted": "{{vendor}} deleted"
       },
       "mergeVendor": {
@@ -398,20 +417,19 @@
         "trigger": "Merge duplicate",
         "confirmNamed": "Merge {{vendor}} in",
         "confirm": "Merge",
-        "merged": "Vendors merged",
-        "noCandidates": "There is no other vendor to merge in"
+        "merged": "Payees merged",
+        "noCandidates": "There is no other payee to merge in"
       },
       "page": {
         "viewSwitcher": "Money view",
-        "title": "Money",
-        "newVendor": "New vendor",
+        "title": "Bills",
+        "newVendor": "New payee",
         "addPayment": "Add payment"
       },
       "field": {
         "direction": "Direction"
       },
       "paymentForm": {
-        "backToPayment": "Back to payment",
         "allRecurring": "All recurring payments",
         "titleEdit": "Edit payment",
         "titleNew": "New recurring payment",
@@ -472,7 +490,6 @@
         "repeatQuarter_other": "Repeats every {{count}} quarters, anchored on the day it's due.",
         "repeatYear_one": "Repeats every year, anchored on the day it's due.",
         "repeatYear_other": "Repeats every {{count}} years, anchored on the day it's due.",
-        "blockers": "To continue: {{blockers}}.",
         "estimateFromHistory": "Estimate from what it last cost",
         "estimateFromHistoryHint": "Off by default. When on, forecasts use the amount you last settled for this payment, and say which month it came from."
       },
@@ -494,12 +511,14 @@
         "markedPaid": "Marked as paid",
         "skipped": "Occurrence skipped",
         "amountSettled": "Amount settled",
-        "confirm": "Confirm",
-        "cancel": "Cancel",
-        "skip": "Skip"
+        "skip": "Skip",
+        "descriptionPaid": "Records this payment as paid, with the amount that actually went out. It leaves Upcoming.",
+        "descriptionReceived": "Records this payment as received, with the amount that actually came in. It leaves Upcoming.",
+        "blockerAmount": "an amount"
       },
       "vendorSpend": {
-        "notSubtracted": "Not subtracted from what you owe — these are two separate figures."
+        "notSubtracted": "Not subtracted from what you owe — these are two separate figures.",
+        "details": "what was paid and received"
       },
       "vendorEdit": {
         "name": "Name",
@@ -507,35 +526,37 @@
         "categoryPlaceholder": "Uncategorised",
         "website": "Website",
         "websitePlaceholder": "None on file",
-        "edit": "Edit",
-        "cancel": "Cancel",
-        "save": "Save vendor"
+        "title": "Edit payee",
+        "description": "Changes the name and details shown on every bill from this payee."
       },
       "vendorCreate": {
-        "placeholder": "Vendor name",
-        "label": "Vendor name",
-        "cancel": "Cancel"
+        "placeholder": "Payee name",
+        "label": "Payee name",
+        "subject": "the payee",
+        "blocker": "name the payee",
+        "description": "Someone you pay or who pays you. Bills are linked to their payee.",
+        "submit": "Create payee"
       },
       "vendorField": {
-        "label": "Vendor",
-        "pendingHint": "Read from the invoice. We'll create this vendor when you save if it doesn't exist yet.",
-        "searchPlaceholder": "Search or create a vendor",
-        "empty": "No vendor by that name yet.",
+        "label": "Payee",
+        "pendingHint": "Read from the invoice. We'll create this payee when you save if it doesn't exist yet.",
+        "searchPlaceholder": "Search or create a payee",
+        "empty": "No payee by that name yet.",
         "didYouMean": "Did you mean",
-        "typeToCreate": "Type a name to create a vendor",
-        "sameVendor": "Same vendor",
+        "typeToCreate": "Type a name to create a payee",
+        "sameVendor": "Same payee",
         "similar": "Similar",
         "createNamed": "Create “{{term}}”",
-        "similarNames_one": "Already have a vendor with a similar name:",
-        "similarNames_other": "Already have vendors with a similar name:",
+        "similarNames_one": "Already have a payee with a similar name:",
+        "similarNames_other": "Already have payees with a similar name:",
         "use": "Use {{name}}"
       },
       "vendorList": {
         "uncategorised": "Uncategorised",
         "billsGroup": "Bills",
         "billKind": "Bill",
-        "paymentCount_one": "{{count}} payment",
-        "paymentCount_other": "{{count}} payments"
+        "paymentCount_one": "{{count}} recurring payment",
+        "paymentCount_other": "{{count}} recurring payments"
       },
       "vendor": {
         "saved": "{{name}} saved",
@@ -547,9 +568,9 @@
         "empty": "Nothing in your token list matches that."
       },
       "duplicatePicker": {
-        "noMatch": "No other vendor matches “{{query}}”.",
-        "searchPlaceholder": "Search vendors",
-        "searchLabel": "Search for the duplicate vendor",
+        "noMatch": "No other payee matches “{{query}}”.",
+        "searchPlaceholder": "Search payees",
+        "searchLabel": "Search for the duplicate payee",
         "optionLabel": "Duplicate to fold into {{vendor}}",
         "intro": "Pick the duplicate to delete. It is folded into <survivor>{{vendor}}</survivor>, which is kept."
       },
@@ -602,28 +623,27 @@
         "notCounted_other": "{{count}} variable payments have no estimate and are not counted."
       },
       "vendorPeek": {
-        "newVendor": "New vendor",
+        "newVendor": "New payee",
         "seePayments_one": "See payment",
         "seePayments_other": "See payments",
-        "payments": "Payments",
-        "incomeFromThisVendor": "Income from this vendor",
+        "payments": "Recurring",
+        "incomeFromThisVendor": "Income from this payee",
         "recentIncome": "Recent income",
         "recentPayments": "Recent payments",
         "details": "Details",
         "website": "Website",
         "noWebsite": "None on file",
         "direction": "Direction",
-        "unclassified": "This vendor’s payments do not say whether the money goes out or comes in, so no monthly figure is shown.",
-        "notCounted": "Not counted"
+        "unclassified": "This payee’s payments do not say whether the money goes out or comes in, so no monthly figure is shown.",
+        "notCounted": "Not counted",
+        "groupsHint": "Every bill from this payee joins the groups you tick, including bills you add later."
       },
       "pending": {
-        "creatingVendor": "Creating vendor",
-        "creatingPayment": "Creating payment",
-        "updatingPayment": "Updating payment",
+        "creatingVendor": "Creating payee",
         "deletingPayment": "Deleting payment",
-        "deletingVendor": "Deleting vendor",
-        "savingVendor": "Saving vendor",
-        "mergingVendors": "Merging vendors",
+        "deletingVendor": "Deleting payee",
+        "savingVendor": "Saving payee",
+        "mergingVendors": "Merging payees",
         "pausingPayment": "Pausing payment",
         "resumingPayment": "Resuming payment",
         "updatingOccurrence": "Updating payment occurrence"
@@ -635,7 +655,7 @@
       "blocker": {
         "enterAmount": "enter the amount",
         "estimateAboveZero": "make the estimate more than zero, or clear it",
-        "chooseVendor": "choose a vendor",
+        "chooseVendor": "choose a payee",
         "pickCurrency": "pick a currency from the list",
         "setAnchorDate": "set an anchor date",
         "chooseDate": "choose a date",
@@ -643,100 +663,9 @@
         "setRepeatCount": "set a valid repeat count"
       },
       "forecast": {
-        "projectedMark": "Projected",
-        "label": "cashflow forecast",
-        "working": "Working it out…",
-        "runwayLabel": "Runway",
-        "runsOutIn": "Runs out in {{month}}",
-        "lastsBeyond_one": "Lasts beyond {{count}} month",
-        "lastsBeyond_other": "Lasts beyond {{count}} months",
-        "netPerMonth": "The book nets <value></value> a month.",
-        "basis_one": "Counting <value></value> across {{count}} holding.",
-        "basis_other": "Counting <value></value> across {{count}} holdings.",
-        "basisIlliquid_one": "<value></value> in {{count}} property or private position is left out as illiquid.",
-        "basisIlliquid_other": "<value></value> across {{count}} property and private positions is left out as illiquid.",
-        "basisUnpriceable_one": "{{count}} holding has no price and is not counted.",
-        "basisUnpriceable_other": "{{count}} holdings have no price and are not counted.",
-        "horizonSwitcher": "Forecast window",
-        "horizonOption_one": "{{count}} month",
-        "horizonOption_other": "{{count}} months",
-        "balanceAt": "Balance at {{month}}",
-        "chartLabel_one": "Projected balance over the next {{count}} month",
-        "chartLabel_other": "Projected balance over the next {{count}} months",
-        "goingOut_one": "Going out, next {{count}} month",
-        "goingOut_other": "Going out, next {{count}} months",
-        "comingIn_one": "Coming in, next {{count}} month",
-        "comingIn_other": "Coming in, next {{count}} months",
-        "notCounted": "Not in this projection",
-        "unprojectable_one": "{{count}} variable payment has no estimate, so nothing was projected for it.",
-        "unprojectable_other": "{{count}} variable payments have no estimate, so nothing was projected for them.",
-        "overdueExcluded_one": "{{count}} bill is already overdue and is not in the series.",
-        "overdueExcluded_other": "{{count}} bills are already overdue and are not in the series.",
-        "seeRecurring": "See recurring payments",
-        "addPayment": "Add a payment",
-        "affordTitle": "Can I afford it?",
-        "affordAmount": "Amount",
-        "affordWhen": "When",
-        "affordAsk": "Check it",
-        "affordClear": "Clear",
-        "affordLowest": "Lowest the balance gets",
-        "affordLowestIn": "In {{month}}",
-        "affordLowestNow": "Today, before anything moves",
-        "affordStaysPositive": "The balance stays above zero for the whole window.",
-        "affordGoesNegative": "The balance goes below zero at that point.",
-        "affordCostsMonths_one": "It costs {{count}} month of runway.",
-        "affordCostsMonths_other": "It costs {{count}} months of runway.",
-        "affordRunwayAfter": "After it, the money runs out in {{month}}.",
-        "affordRunwayStillBeyond_one": "Runway still runs beyond {{count}} month.",
-        "affordRunwayStillBeyond_other": "Runway still runs beyond {{count}} months.",
-        "observedRunway_one": "About {{count}} month at recent spending",
-        "observedRunway_other": "About {{count}} months at recent spending",
-        "ofWhichProjected": "~{{percent}}% of that spending is projected",
-        "projectedTitle": "What's projected",
-        "projectedNote": "Your recurring book alone — what is scheduled, and when. It does not describe what you spend.",
-        "observedBasis": "Mean of {{count}} complete months, {{from}} to {{to}}: <value></value> a month.",
-        "observedSpread": "Those months ranged <min></min> to <max></max>; the middle month was <median></median>.",
-        "observedNotCounted_one": "{{count}} outflow is not counted — unanswered, or moved somewhere Scani cannot see.",
-        "observedNotCounted_other": "{{count}} outflows are not counted — unanswered, or moved somewhere Scani cannot see.",
-        "observedStaleValued_one": "{{count}} counted outflow was valued from a stale quote.",
-        "observedStaleValued_other": "{{count}} counted outflows were valued from stale quotes.",
-        "affordRemaining": "What's left afterwards",
-        "affordRunwayAfterObserved_one": "About {{count}} month at recent spending.",
-        "affordRunwayAfterObserved_other": "About {{count}} months at recent spending.",
-        "affordCannot": "That is more than the liquid balance.",
-        "affordNoSchedule": "Measured against your average rate, so it cannot tell a purchase now from one later in the year.",
-        "provenanceTitle": "Who classified the money that IS counted",
-        "provenanceUser": "{{percent}}% of that value rests on answers you gave.",
-        "provenanceAutomated": "{{percent}}% was decided by a named rule you can go and read.",
-        "provenanceUnattributed": "{{percent}}% carries no record of who or what decided.",
-        "answerTitle": "Is this what you spend?",
-        "answerConfirm": "Yes, that's right",
-        "answerOverride": "Use my own figure",
-        "answerCancel": "Cancel",
-        "answerSave": "Save",
-        "answerAmountLabel": "What you actually spend a month",
-        "answerConfirmed": "You confirmed this on {{date}}.",
-        "answerConfirmedMoved": "You confirmed <was/> on {{date}}. It is now <now/>.",
-        "answerOverrideActive": "Using your figure of <amount/> a month, set on {{date}}. Measured: <measured/>.",
-        "answerRevert": "Go back to the measured figure",
-        "answerCurrencyChanged": "Your answer from {{date}} was given in a different currency, so it no longer applies.",
-        "answerFailed": "That did not save.",
         "estimatedMark": "Estimated",
         "estimatedFrom": "from {{month}}",
-        "estimatedFromAmount": "from {{month}} · <value></value>",
-        "estimatedTitle": "Estimated from history",
-        "estimatedCount_one": "{{count}} variable payment is priced from its last settled amount, not from an estimate anybody entered.",
-        "estimatedCount_other": "{{count}} variable payments are priced from their last settled amount, not from an estimate anybody entered.",
-        "couldEstimate_one": "{{count}} of those variable payments has settled before, so its last amount could stand in.",
-        "couldEstimate_other": "{{count}} of those variable payments have settled before, so their last amounts could stand in.",
-        "useLastSettled_one": "Use its last settled amount",
-        "useLastSettled_other": "Use their last settled amounts",
-        "stopEstimating_one": "Stop estimating it",
-        "stopEstimating_other": "Stop estimating them",
-        "verdictOk": "You're OK until",
-        "verdictRunsOut": "Money runs out",
-        "declineLabel": "Balance at recent spending, to {{month}}",
-        "methodTitle": "How this is worked out"
+        "estimatedFromAmount": "from {{month}} · <value></value>"
       },
       "suggestions": {
         "title": "Looks recurring",
@@ -745,6 +674,32 @@
         "dismiss": "Not recurring",
         "evidence_one": "Based on {{count}} payment:",
         "evidence_other": "Based on {{count}} payments:"
+      },
+      "groups": {
+        "label": "Groups",
+        "hint": "Groups organise bills; they do not allocate wealth.",
+        "payeeDetails": "Payee details",
+        "oneOff": "One-off payment",
+        "statuses": {
+          "scheduled": "Scheduled",
+          "matched": "Paid",
+          "skipped": "Skipped",
+          "missed": "Missed",
+          "all": "All statuses"
+        },
+        "newGroup": "New group",
+        "newGroupName": "Group name",
+        "create": "Create",
+        "createFailed": "Couldn’t create the group. Try again."
+      },
+      "occurrence": {
+        "title": "Edit this payment",
+        "description": "Changes this one date only. The bill's other dates keep their amount and groups.",
+        "blockerGroups": "wait for the groups to load"
+      },
+      "settled": {
+        "none": "Nothing in this period.",
+        "rowMeta": "{{direction}} · {{status}}"
       }
     },
     "groups": {
@@ -806,26 +761,22 @@
           "deleted": "Group deleted",
           "deleting": "Deleting the group"
         },
-        "backToGroups": "Groups",
+        "backToGroups": "Back to groups",
         "removeMember": "Remove {{label}} from {{group}}",
         "notFound": "This group is not on your list. It may have been deleted, or the link may be out of date.",
         "value": "Value",
         "inThisGroup": "In this group",
-        "noun": "holdings and accounts",
-        "note": "Adding a whole account keeps it in the group — including whatever it receives later. Take single holdings out from the list above.",
-        "empty": "Nothing is in this group yet. Add a holding or an account and it will show up here.",
-        "addMembers": "Add holdings or accounts",
-        "details": "Details",
+        "addMembers": "Add members",
         "name": "Name",
         "description": "Description",
         "colour": "Colour",
         "saveChanges": "Save changes",
-        "discard": "Discard",
-        "needName": "To save: give the group a name.",
         "dangerZone": "Danger zone",
         "deleteConsequence": "“{{name}}” disappears from every list and filter. The {{members}} in it are not deleted — they simply stop carrying this label.",
         "deleteTrigger": "Delete group",
-        "deleteCommit": "Delete this group"
+        "deleteCommit": "Delete this group",
+        "editTitle": "Edit group",
+        "editDescription": "Changes the group's name, description and colour everywhere it appears."
       },
       "page": {
         "title": "Groups",
@@ -837,7 +788,9 @@
         "cancel": "Cancel",
         "namePlaceholder": "Retirement, taxable, the joint one…",
         "colour": "Colour",
-        "needName": "To continue: name the group."
+        "needName": "To continue: name the group.",
+        "subject": "the group",
+        "sheetDescription": "A label you choose. Add holdings, accounts, bills and payees on the next page."
       }
     },
     "realizedLedger": {
@@ -890,17 +843,13 @@
     },
     "holdings": {
       "amountFact": {
-        "edit": "Edit amount",
         "amount": "Amount",
-        "save": "Save",
         "belowZero": "Below zero — nothing you can enter produces this. It happens when an undone transfer crosses a balance that changed after it. Set it to the right figure."
       },
       "labelFact": {
         "unnamed": "Not named",
-        "edit": "Name this {{symbol}} position",
         "name": "Pot name",
-        "placeholder": "Savings, Deposit, Wedding gift…",
-        "save": "Save"
+        "placeholder": "Savings, Deposit, Wedding gift…"
       },
       "deleteAction": {
         "trigger": "Delete",
@@ -922,7 +871,6 @@
         "interest": "Interest",
         "apy": "APY",
         "apyEdit": "Edit",
-        "apyRemove": "Remove",
         "configure": "Configure",
         "payout": "Payout",
         "lastPayout": "Last payout",
@@ -955,7 +903,8 @@
         "syncBalance": "Sync balance",
         "amount": "Amount",
         "account": "Account",
-        "type": "Type"
+        "type": "Type",
+        "sinceBought": "since bought"
       },
       "badge": {
         "noPrice": "No price",
@@ -1064,7 +1013,9 @@
         "confirm": "Mark {{symbol}} as a scam",
         "consequence": "{{symbol}} stops counting toward your portfolio total — <value/> comes off it — and moves to your hidden holdings. Only you see this: nobody else's portfolio changes. Choose Not a scam there to undo it.",
         "marked": "{{symbol}} marked as a scam for you",
-        "markingContext": "Marking the token as a scam"
+        "markingContext": "Marking the token as a scam",
+        "rowTitle": "Not a real holding?",
+        "rowHint": "Scam airdrops can be taken out of your total, for you only."
       },
       "toast": {
         "deleted": "Holding deleted",
@@ -1101,9 +1052,7 @@
           "internal": "It moved to another holding you track. Pick where, and Scani links the two sides so the cost basis carries across instead of being realized here and reopened there.",
           "left_control": "Spent, gifted, or sold somewhere Scani cannot see. This realizes a gain or a loss on the amount that left.",
           "untracked": "Still your money, in a wallet or an account Scani has no access to. Nothing is realized."
-        },
-        "cancel": "Cancel",
-        "save": "Save"
+        }
       },
       "fee": {
         "label": "Fee, if the transfer cost anything",
@@ -1142,7 +1091,6 @@
         },
         "destinationTitle": "Where it went",
         "noteLabel": "Note (optional)",
-        "cancel": "Cancel",
         "save": "Record it",
         "saving": "Recording…",
         "recorded": "Movement recorded",
@@ -1158,6 +1106,11 @@
           "where": "say where the money went",
           "fee": "the fee has to be smaller than the amount that moved"
         }
+      },
+      "trendCaption": "Last {{period}}",
+      "edit": {
+        "title": "Edit holding",
+        "description": "Changes how much you hold and, where you track more than one, which pot this is."
       }
     },
     "export": {
@@ -1165,7 +1118,7 @@
         "accounts": "Accounts",
         "holdings": "Holdings",
         "transactions": "Transactions",
-        "vendors": "Vendors",
+        "vendors": "Payees",
         "payments": "Payments",
         "occurrences": "Payment occurrences",
         "groups": "Groups",
@@ -1174,7 +1127,8 @@
         "vaultHoldings": "Vault holdings",
         "documents": "Documents",
         "history": "Net worth history",
-        "netWorth": "Net worth"
+        "netWorth": "Net worth",
+        "archivedOwnership": "Archived ownership"
       },
       "column": {
         "account": "Account",
@@ -1198,7 +1152,7 @@
         "fee": "Fee",
         "counterparty": "Counterparty",
         "externalId": "External id",
-        "vendor": "Vendor",
+        "vendor": "Payee",
         "category": "Category",
         "website": "Website",
         "direction": "Direction",
@@ -1233,7 +1187,9 @@
         "holdingsPriced": "Holdings priced",
         "holdingsTotal": "Holdings total",
         "holdingsUnpriceable": "Holdings unpriceable",
-        "holdingsStalePriced": "Holdings priced from a stale quote"
+        "holdingsStalePriced": "Holdings priced from a stale quote",
+        "archivedOwnerId": "Archived owner ID",
+        "name": "Name"
       },
       "value": {
         "yes": "yes",
@@ -1288,7 +1244,8 @@
         "exportWorkbook": "Export workbook",
         "json": "JSON",
         "intro": "Every record on this account in one file — holdings, the whole transaction ledger, payments, groups, vaults and your net-worth history. Exchange and brokerage keys are left out: they are credentials, not records.",
-        "trigger": "Export everything"
+        "trigger": "Export everything",
+        "ownershipArchive": "Historical ownership names and account links are preserved in your export. They no longer have editing controls."
       },
       "maintenance": {
         "title": "Portfolio history",
@@ -1411,7 +1368,8 @@
         "title": "Confirm it's you",
         "description": "Deleting needs a recent sign-in. We'll email a 6-digit code to {{email}}.",
         "send": "Email me a code",
-        "sending": "Sending…"
+        "sending": "Sending…",
+        "humanCheck": "finish the security check"
       }
     },
     "feedback": {
@@ -1425,10 +1383,17 @@
         "title": "Review",
         "transfersTitle": "Payments out to classify",
         "answered": "Answered",
-        "balancesTitle": "Balance changes to explain"
+        "balancesTitle": "Balance changes to explain",
+        "toClassify": "To classify",
+        "transferViewLabel": "Transfer review view",
+        "toExplain": "To explain",
+        "balanceViewLabel": "Balance review view",
+        "rulesView": "Rules"
       },
       "queues": {
-        "clear": "Nothing waiting"
+        "clear": "Nothing waiting",
+        "waiting_one": "{{count}} waiting",
+        "waiting_other": "{{count}} waiting"
       },
       "item": {
         "jobFailed": "{{job}} failed",
@@ -1468,7 +1433,6 @@
         "valueAwaitingUnpriced_one": "<label>Value awaiting an answer:</label> <value/><label>, and {{count}} more with no price that day</label>",
         "valueAwaitingUnpriced_other": "<label>Value awaiting an answer:</label> <value/><label>, and {{count}} more with no price that day</label>",
         "backToReview": "Back to review",
-        "seeAllJobs": "See all jobs",
         "field": {
           "when": "When",
           "to": "To",
@@ -1480,7 +1444,6 @@
       },
       "answered": {
         "title": "Answered transfers",
-        "backToQueue": "Back to the queue",
         "field": {
           "answered": "Answered",
           "to": "To"
@@ -1517,7 +1480,7 @@
         "movingTo": "Moving to {{location}}",
         "wherePrompt": "Where did this part go?",
         "amountLabel": "{{outcome}} — amount in {{symbol}}",
-        "pickDepositFirst": "Pick the deposit above first",
+        "pickDepositFirst": "Pick the deposit on the transfer first",
         "addsUp": "Adds up"
       },
       "decision": {
@@ -1553,6 +1516,8 @@
       },
       "transfer": {
         "unreviewedBehaviour": "While these are unanswered, Scani books no gain on them — moving your own coins is not a sale, and guessing that it was is how an invented gain gets onto your chart. If one of these really did leave your portfolio, its gain is missing from your realized total until you say so.",
+        "queue_one": "{{count}} payment out to classify.",
+        "queue_other": "{{count}} payments out to classify.",
         "unreviewedNote": "Unanswered, this books no gain either way.",
         "candidateReason": {
           "combined": "Together these {{count}} deposits make up the amount",
@@ -1636,7 +1601,16 @@
           "summary": "{{clauses}}. Only the disposal books a gain.",
           "balanceNew": "A new {{symbol}} holding is created there, with that deposit as its balance.",
           "balanceUnchanged": "No balance is changed.",
-          "balanceMoves": "That account’s balance goes up by the amount that arrived there."
+          "balanceMoves": "That account’s balance goes up by the amount that arrived there.",
+          "sheetTitle": "Divide this transfer",
+          "blocker": {
+            "twoParts": "an amount on at least two outcomes",
+            "oneLink": "only one part moving somewhere Scani tracks",
+            "deposit": "a deposit picked for “{{paired}}”",
+            "destination": "where the tracked part moved",
+            "positive": "amounts above zero",
+            "sum": "amounts adding up to {{amount}} {{symbol}}"
+          }
         },
         "answered": {
           "paired": "Linked to a deposit — nothing realized",
@@ -1724,8 +1698,6 @@
         "title": "Destination rules",
         "trigger": "Make a rule about this destination",
         "commit": "Create this rule",
-        "manage": "See your destination rules",
-        "alreadyRuled": "You already have a rule for this destination",
         "revoke": "Take this rule back",
         "revokeCommit": "Take this rule back",
         "field": {
@@ -1773,10 +1745,6 @@
           "title": "Payments out your rules are holding back",
           "body": "None of these has been answered. They are waiting, out of the queue, and take the rule back to bring them in."
         },
-        "empty": {
-          "title": "No destination rules yet",
-          "body": "Open a payment out in the queue and write down where it went. Every later payment to the same destination will carry your note, whatever the amount — and destinations you mark are answered for you."
-        },
         "notice": {
           "label": "Your note about this destination",
           "markExempt": "You marked this destination a disposal, and you took that answer back on this payment out. It will not be answered automatically again."
@@ -1795,12 +1763,17 @@
           "ownWallet": "{{key}} is one of your own wallets. Money moving to it has not left your portfolio, so it cannot be marked a disposal."
         },
         "withdrawAnswers_one": "Also take back the {{count}} answer it gave",
-        "withdrawAnswers_other": "Also take back the {{count}} answers it gave"
+        "withdrawAnswers_other": "Also take back the {{count}} answers it gave",
+        "rowTitle": "Destination rule",
+        "rowHint": "For a destination you pay often: name it once, or stop being asked about it.",
+        "sheetTitle": "New destination rule",
+        "sheetDescription": "A rule names every later payment out to this destination, whatever the amount, and can answer it for you.",
+        "blocker": {
+          "note": "Say what this destination is"
+        }
       },
       "balances": {
         "intro": "Something moved this balance and no transaction says what. Tell us what happened and it stops counting as performance.",
-        "loading": "Looking for balance changes we cannot explain…",
-        "empty": "Nothing to explain — every balance change is accounted for.",
         "queue_one": "{{count}} balance change to explain, largest first.",
         "queue_other": "{{count}} balance changes to explain, largest first.",
         "examined": "Checked {{examined}} in all; {{suppressed}} were left out: too small, a balance you set yourself, reversed by the next reading, or nothing could price them.",
@@ -1813,7 +1786,6 @@
         "answerLabel": "What was this change?",
         "dateLabel": "When did the money move?",
         "record": "Record",
-        "answerFailed": "Could not record that",
         "answerFailedBody": "Nothing was saved. Try again.",
         "option": {
           "flow": "Money moved",
@@ -1827,7 +1799,26 @@
           "growth": "Nothing is written. Growth on a balance like this IS the return, and it is already counted as one.",
           "unknown": "Nothing is written and you will not be asked about this one again. It stays counted as performance, which is the honest answer when nobody knows.",
           "flowNoDate": "Recorded as a deposit or withdrawal, dated between the two readings — we know when it happened more precisely than a date could say."
-        }
+        },
+        "answeredTitle": "Answered balance changes",
+        "undo": "Undo explanation",
+        "crossCurrency": "Different currency or asset",
+        "chooseArrival": "Choose the arrival holding",
+        "received": "Quantity received",
+        "balanceLabel": "Balance",
+        "answeredOn": "Answered",
+        "undoCommit": "Yes, undo it",
+        "undoConsequence": "The change goes back into the queue to be answered again, and any deposit, withdrawal or fee your answer recorded is removed.",
+        "explainAction": "Explain",
+        "answerTitle": "Explain this change",
+        "answerDescription": "Your answer decides whether the change counts as performance or as money in or out.",
+        "blocker": {
+          "answer": "Choose what happened",
+          "date": "Choose a date inside the interval",
+          "destination": "Choose where the money went",
+          "received": "Enter the quantity received"
+        },
+        "undoFailed": "Could not undo that"
       }
     },
     "form": {
@@ -1857,7 +1848,10 @@
         "expand": "Show the whole form",
         "collapse": "Shrink the form",
         "close": "Close the form"
-      }
+      },
+      "edit": "Edit",
+      "saveChanges": "Save changes",
+      "saving": "Saving…"
     },
     "capture": {
       "form": {
@@ -1881,7 +1875,7 @@
         },
         "invoice": {
           "title": "An invoice",
-          "description": "A PDF or a photo. We read the vendor and the amount."
+          "description": "A PDF or a photo. We read the payee and the amount."
         },
         "wallet": {
           "title": "A wallet address",
@@ -1921,7 +1915,7 @@
       },
       "formats": {
         "import": "PNG, JPG, WEBP, PDF, CSV, TSV, OFX or QIF",
-        "invoice": "PDF, PNG, JPG, WEBP or HEIC"
+        "invoice": "PDF, PNG, JPG or WEBP"
       },
       "stage": {
         "account": "Setting up the account…",
@@ -2028,7 +2022,7 @@
         },
         "invoice": {
           "title": "Upload an invoice",
-          "description": "A PDF or a photo of one. We read the vendor, the amount and the line items, and put them on Review for you to accept or reject.",
+          "description": "A PDF or a photo of one. We read the payee, the amount and the line items, and put them on Review for you to accept or reject.",
           "fieldset": "The invoice",
           "prompt": "Choose an invoice, or drop one here"
         },
@@ -2077,7 +2071,34 @@
         "unverifiedTitle": "Couldn't check your {{name}} keys",
         "unverifiedDetail": "{{name}} didn't answer, so we can't say whether the keys are right. Nothing was saved — try again in a minute."
       },
-      "demoNote": "Nothing you enter here is saved — this is the demo."
+      "demoNote": "Nothing you enter here is saved — this is the demo.",
+      "backChoices": "Back to choices",
+      "choice": {
+        "upload": "Upload a file",
+        "connect": "Connect a source",
+        "manual": "Enter manually"
+      },
+      "availabilityNote": "Structured statements and manual entry remain available without AI. Image and PDF extraction depends on processing availability.",
+      "chooseIntent": "What does this file contain?",
+      "intent": {
+        "statement": "Statement or holdings",
+        "invoice": "Invoice or bill"
+      },
+      "ai": {
+        "loading": "Checking processing availability…",
+        "unavailable": "AI processing is unavailable. Structured imports and manual entry still work.",
+        "transient": "AI processing is temporarily unavailable. Keep your file and try later, or enter the details manually.",
+        "unverified": "AI credentials have not been verified by a successful request. A revoked credential may only be detected on the first processing attempt.",
+        "blocker": "wait until AI processing is available",
+        "blockerLoading": "wait while we check processing"
+      },
+      "backHome": "Back to home",
+      "busy": {
+        "upload": "the upload",
+        "save": "the save",
+        "import": "the import",
+        "connection": "the connection"
+      }
     },
     "tokens": {
       "custom": {
@@ -2095,7 +2116,6 @@
         "editPrice": "Edit price"
       },
       "hidden": {
-        "backToHoldings": "Back to holdings",
         "unhide": "Unhide",
         "likelyScam": "Likely scam",
         "hidden": "Hidden",
@@ -2265,7 +2285,7 @@
         "rejectConsequenceNumbered": "The invoice {{number}} from {{vendor}} is marked rejected and this file stops offering it for review. No payment is created. Re-parsing the file is the only way to get it back."
       },
       "detail": {
-        "backToFiles": "All files",
+        "backToFiles": "Back to files",
         "copyGone": "The stored copy of this file is gone, so it cannot be downloaded or read again. Deleting this record frees the file to be uploaded fresh.",
         "reparsing": "Re-parsing the document",
         "deleted": "File deleted — you can upload it again",
@@ -2307,7 +2327,7 @@
         "openFile": "Open the file",
         "found_one": "{{count}} invoice found",
         "found_other": "{{count}} invoices found",
-        "unknownVendor": "Unknown vendor",
+        "unknownVendor": "Unknown payee",
         "turnIntoPayment": "Turn this into a recurring payment",
         "setUpNamed": "Set up {{name}}",
         "thisInvoice": "this invoice"
@@ -2325,19 +2345,52 @@
         "attaching": "Attaching the holding",
         "fullyClaimed": "{{label}} is already fully counted toward other vaults. Lower its share there first.",
         "attachedWhole": "{{label}} now counts toward this vault",
-        "attachedPartial": "{{label}} attached at {{available}}% — the rest counts toward another vault"
+        "attachedPartial": "{{label}} attached at {{available}}% — the rest counts toward another vault",
+        "title": "Attach holdings to {{vault}}",
+        "choose": {
+          "description": "Step 1 of 3 · Choose the holdings this vault counts."
+        },
+        "shares": {
+          "description": "Step 2 of 3 · Set how much of each holding counts toward this vault."
+        },
+        "review": {
+          "description": "Step 3 of 3 · Check the shares, then attach."
+        },
+        "search": "Search holdings",
+        "allAccounts": "All accounts",
+        "empty": "No holdings match. Every holding may already be in this vault.",
+        "free": "{{percent}}% free",
+        "fullyAllocated": "Fully allocated",
+        "next": "Next: set shares",
+        "toReview": "Review",
+        "back": "Back",
+        "submit": "Attach",
+        "freeAll": "All of it is free: up to {{percent}}%.",
+        "freeElsewhere": "Up to {{percent}}% is free. The rest counts toward {{elsewhere}}.",
+        "allFree": "All free",
+        "brings": "Brings about",
+        "shareFor": "a share for {{label}}",
+        "total": "{{vault}} gains about",
+        "issue": {
+          "missing": "Enter a share above 0%.",
+          "tooPrecise": "Use at most two decimal places.",
+          "overAvailable": "Only {{percent}}% of this holding is free."
+        }
       },
       "createFirst": "Create your first vault",
       "holding": {
         "thisHolding": "This holding",
         "unknownToken": "Unknown token",
-        "shareLabel": "Share of {{symbol}} counted toward this vault",
-        "cancel": "Cancel",
-        "saveShare": "Save share",
-        "changeShare": "Change the {{percent}}% share of {{symbol}} counted toward this vault",
+        "shareRange": "Enter a share above 0% and up to 100%.",
         "remove": "Remove",
         "removeCommit": "Remove {{symbol}} from this vault",
-        "detachConsequence": "{{symbol}} stops counting toward this vault — <value/> comes off the saved figure. The holding itself, its {{percent}}% share and its history all stay; you can attach it again."
+        "detachConsequence": "{{symbol}} stops counting toward this vault — <value/> comes off the saved figure. The holding itself, its {{percent}}% share and its history all stay; you can attach it again.",
+        "editTitle": "Edit share",
+        "editDescription": "How much of this holding counts toward the vault.",
+        "saveFailed": "Couldn't save the share. Try again.",
+        "shareBlocker": "Enter a share above 0% and up to 100%",
+        "shareField": "Share",
+        "inVault": "In this vault"
       },
       "detail": {
         "toast": {
@@ -2352,27 +2405,23 @@
         },
         "deleteConsequence_one": "“{{name}}” and its target disappear. The {{count}} holding attached to it are not deleted — they simply stop counting toward a goal.",
         "deleteConsequence_other": "“{{name}}” and its target disappear. The {{count}} holdings attached to it are not deleted — they simply stop counting toward a goal.",
-        "backToVaults": "Vaults",
+        "backToVaults": "Back to vaults",
         "notFound": "This vault is not on your list. It may have been deleted, or the link may be out of date.",
         "saved": "Saved",
         "targetReached": "Target reached — {{percent}}% of the goal",
         "stillToGo": "<remaining/> still to go, of a <target/> target",
-        "countingToward_one": "Counting toward this vault ({{count}})",
-        "countingToward_other": "Counting toward this vault ({{count}})",
-        "empty": "Nothing counts toward this vault yet. Attach a holding and it will start contributing to the goal.",
-        "attachHolding": "Attach a holding",
-        "details": "Details",
         "name": "Name",
         "target": "Target",
         "targetHint": "In {{symbol}}",
         "colour": "Colour",
         "saveChanges": "Save changes",
-        "discard": "Discard",
-        "needName": "To save: give the vault a name.",
-        "needTarget": "To save: set a target above zero.",
         "dangerZone": "Danger zone",
         "deleteTrigger": "Delete vault",
-        "deleteCommit": "Delete this vault"
+        "deleteCommit": "Delete this vault",
+        "attachHoldings": "Attach holdings",
+        "editTitle": "Edit vault",
+        "editDescription": "Changes the vault's name, target and colour. Its currency stays the same.",
+        "inThisVault": "In this vault"
       },
       "page": {
         "title": "Vaults",
@@ -2381,9 +2430,7 @@
         "name": "Name",
         "newVault": "New vault",
         "createVault": "Create vault",
-        "cancel": "Cancel",
         "namePlaceholder": "House deposit, emergency fund…",
-        "toContinue": "To continue: {{missing}}.",
         "target": "Target",
         "currency": "Currency",
         "colour": "Colour",
@@ -2391,7 +2438,9 @@
           "name": "name the vault",
           "target": "set a target above zero",
           "currency": "pick a currency"
-        }
+        },
+        "subject": "the vault",
+        "sheetDescription": "A savings goal with a target. Attach holdings on the next page."
       }
     },
     "jobs": {
@@ -2430,7 +2479,7 @@
         "notFailed": "Nothing to retry."
       },
       "detail": {
-        "backToJobs": "All jobs",
+        "backToJobs": "Back to jobs",
         "notFound": "This job is not on your list. It may have been removed, or the link may be out of date.",
         "attempt": "Attempt {{attempt}} of {{allowed}}",
         "cancel": "Cancel",
@@ -2722,6 +2771,20 @@
           "samples": "As written in the file",
           "dayFirst": "Day first — 31/12",
           "monthFirst": "Month first — 12/31"
+        },
+        "columns": {
+          "title": "Match CSV columns",
+          "body": "Choose the columns in your file. Nothing has been imported. Select either a signed amount or separate credit and debit columns.",
+          "date": "Date",
+          "description": "Description",
+          "amount": "Signed amount",
+          "credit": "Credit (money in)",
+          "debit": "Debit (money out)",
+          "currency": "Currency",
+          "balance": "Running balance",
+          "fee": "Fee charged separately",
+          "none": "Not mapped",
+          "apply": "Apply mapping and import"
         }
       },
       "manual": {
@@ -2788,9 +2851,6 @@
       }
     },
     "membership": {
-      "picker": {
-        "done": "Done"
-      },
       "holdings_one": "Holdings ({{count}})",
       "holdings_other": "Holdings ({{count}})",
       "wholeAccounts_one": "Whole accounts ({{count}})",
@@ -2815,29 +2875,58 @@
         "holding_one": "{{count}} holding",
         "holding_other": "{{count}} holdings",
         "account_one": "{{count}} account",
-        "account_other": "{{count}} accounts"
-      }
+        "account_other": "{{count}} accounts",
+        "bill_one": "{{count}} bill",
+        "bill_other": "{{count}} bills",
+        "payee_one": "{{count}} payee",
+        "payee_other": "{{count}} payees"
+      },
+      "direct": "Direct member",
+      "inherited": "From account rule",
+      "excluded": "Explicitly excluded",
+      "allocationFor": "Allocation for {{label}}",
+      "removeSelection": "Remove {{count}} selected members? The holdings and their financial records remain.",
+      "payee": "From payee rule",
+      "bills_one": "Bills ({{count}})",
+      "bills_other": "Bills ({{count}})",
+      "payees_one": "Payees ({{count}})",
+      "payees_other": "Payees ({{count}})",
+      "payeeNote": "Every bill from this payee is in the group — the ones you have now and any you add later. Removing the payee takes all of them out.",
+      "allBillsOfCount_one": "Payee · its {{count}} bill",
+      "allBillsOfCount_other": "Payee · all {{count}} bills",
+      "confirmRemove": "Yes, remove",
+      "addSheet": {
+        "title": "Add to {{group}}",
+        "description": "Choose accounts, holdings, payees or bills. The group total updates as soon as you add them.",
+        "search": "Search by name",
+        "kind": "Choose what to add",
+        "accounts": "Accounts",
+        "holdings": "Holdings",
+        "payees": "Payees",
+        "bills": "Bills",
+        "accountsHint": "An account brings all its holdings, including ones added later.",
+        "holdingsHint": "A holding is added on its own, whatever its account does.",
+        "payeesHint": "A payee brings all its bills, including ones you add later.",
+        "billsHint": "A bill is added on its own, whatever its payee does.",
+        "includedVia": "Included via {{account}}",
+        "empty": "Nothing here matches. Everything may already be in this group.",
+        "none": "Nothing selected yet",
+        "summary": "{{items}} selected",
+        "submit": "Add"
+      },
+      "directAndInherited": "Direct · account rule",
+      "noHoldingsYet": "No holdings yet",
+      "noMembersYet": "No members yet"
     },
-    "ownership": {
-      "title": "Entities",
-      "description": "Keep your own money and your company's apart. Net worth is still one number.",
-      "newEntity": "New entity",
-      "name": "Name",
-      "namePlaceholder": "e.g. My Company Ltd",
-      "create": "Create",
-      "cancel": "Cancel",
-      "created": "{{name}} created",
-      "creating": "creating the entity",
-      "assigning": "moving the account",
-      "loading": "Working out what each set of books is worth…",
-      "empty": "No values yet.",
-      "unassigned": "Unassigned",
-      "combined": "Combined",
-      "holdingsCounted_one": "{{count}} holding",
-      "holdingsCounted_other": "{{count}} holdings",
-      "unpriced": "{{symbols}} could not be priced today",
-      "accountsHeading": "Which entity each account belongs to",
-      "accountEntityLabel": "Entity for {{name}}"
+    "brand": {
+      "details": "Build details",
+      "development": "Development",
+      "baselineNote": "The Core label names the last published release. This private build may contain pending changes shown below.",
+      "coreRelease": "Published Core release",
+      "build": "Loaded build commit",
+      "pending": "Pending shared files",
+      "pendingSection": "Pending changes",
+      "fingerprint": "Core fingerprint"
     }
   }
 }

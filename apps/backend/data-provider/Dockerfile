@@ -24,10 +24,12 @@ COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.js
 # Google Sheets — per-user sheet config is backend-side DB state), so
 # this filter drops `googleapis` (~180MB) from the image entirely.
 #
-# `--omit=peer` keeps Next.js out, as in apps/backend/api/Dockerfile (SC-804):
+# `--omit=peer` as in apps/backend/api/Dockerfile (SC-804), where
 # `better-auth`'s optional `next` peer is otherwise installed because bun.lock
-# resolves it for the frontends. elysia's required `file-type` peer is declared
-# in this app's package.json so the flag cannot drop it.
+# resolves it for the frontends. This graph no longer carries better-auth; the
+# flag stays so no optional peer bun.lock resolves elsewhere lands here.
+# elysia's required `file-type` peer is declared in this app's package.json so
+# the flag cannot drop it.
 RUN bun install --frozen-lockfile --filter @scani/data-provider --linker=hoisted --omit=peer
 
 # ---------- build ----------
@@ -51,6 +53,10 @@ RUN cd apps/backend/data-provider && bun run build
 # ---------- runtime ----------
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
+
+ARG SCANI_COMMIT=
+ARG SCANI_CORE_BUILD=
+ENV SERVICE_VERSION=${SCANI_COMMIT} SCANI_CORE_BUILD=${SCANI_CORE_BUILD}
 
 ENV NODE_ENV=production \
     PORT=8082 \

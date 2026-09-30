@@ -33,8 +33,8 @@ const envSchema = z.object({
   REDIS_URL: z.string().url(),
 
   // Postgres is optional for Tier 1 OSS (env-based bearer key + no usage
-  // log). Required for Tier 2/3 managed, where it backs `cloud_api_keys`,
-  // `cloud_users`, and Better-Auth session tables.
+  // log). Required for Tier 2/3 managed, where it backs `cloud_api_keys`
+  // and `cloud_usage_events`.
   DATABASE_URL: z.string().optional(),
 
   // OSS / Tier-1 auth: a single shared bearer token. Managed tier swaps
@@ -55,8 +55,8 @@ const envSchema = z.object({
     .optional(),
 
   // Feature flag: when true (and DATABASE_URL is set) the data-provider
-  // runs in Tier 2/3 mode — DB-backed api keys, Better-Auth cookie
-  // sessions for cloud-frontend, and per-request usage logging.
+  // runs in Tier 2/3 mode — DB-backed api keys, cloud-frontend cookie
+  // sessions read from the app api, and per-request usage logging.
   CLOUD_MANAGEMENT_ENABLED: z
     .string()
     .optional()
@@ -99,14 +99,19 @@ const envSchema = z.object({
       message: 'GLOBAL_HOURLY_USD_CAP must be a non-negative number',
     }),
 
-  // Better-Auth config (only consumed when CLOUD_MANAGEMENT_ENABLED).
-  // Secret signs session tokens; trusted origins scope CORS+cookies.
-  BETTER_AUTH_SECRET: z.string().optional(),
-  // Cloudflare Turnstile secret (SC-1266), checked on cloud sign-in and the
-  // contact form. Unset, both send mail without a human check; set it only once
-  // cloud and landing ship the widget, or both refuse everyone.
+  // The status a key created through the console starts in. A self-hoster
+  // leaves it unset and gets a key that works at once; a deployment that
+  // decides elsewhere who may use a key starts it `suspended` and lets that
+  // decision open it.
+  CLOUD_KEY_INITIAL_STATUS: z.enum(['active', 'suspended']).default('active'),
+
+  // The api whose Better-Auth issues the console's session; asked per request
+  // at `/api/auth/get-session`. Required when CLOUD_MANAGEMENT_ENABLED.
+  APP_AUTH_URL: optionalUrl,
+  // Cloudflare Turnstile secret (SC-1266), checked on the landing contact
+  // form. Unset, it sends mail without a human check; set it only once landing
+  // ships the widget, or the form refuses everyone.
   TURNSTILE_SECRET: z.string().optional(),
-  BETTER_AUTH_URL: optionalUrl,
   CLOUD_FRONTEND_ORIGIN: optionalUrl,
 
   // Sentry — fully optional. Empty string is treated as unset (see
@@ -159,15 +164,15 @@ export function loadEnv(): DataProviderEnv {
     );
     process.exit(1);
   }
-  if (cached.CLOUD_MANAGEMENT_ENABLED && !cached.BETTER_AUTH_SECRET) {
+  if (cached.CLOUD_MANAGEMENT_ENABLED && !cached.APP_AUTH_URL) {
     console.error(
-      '❌ env: CLOUD_MANAGEMENT_ENABLED=true but BETTER_AUTH_SECRET is not set. Cookie sessions require a signing secret.'
+      '❌ env: CLOUD_MANAGEMENT_ENABLED=true but APP_AUTH_URL is not set. Console sessions are read from the app api.'
     );
     process.exit(1);
   }
   if (cached.CLOUD_MANAGEMENT_ENABLED && isNodeEnvProduction() && !process.env.FASTMAIL_API_TOKEN) {
     console.error(
-      '❌ env: CLOUD_MANAGEMENT_ENABLED=true but FASTMAIL_API_TOKEN is not set. Cloud-frontend sign-in requires an email sender.'
+      '❌ env: CLOUD_MANAGEMENT_ENABLED=true but FASTMAIL_API_TOKEN is not set. The data-provider sends auth, transactional and contact-form mail.'
     );
     process.exit(1);
   }

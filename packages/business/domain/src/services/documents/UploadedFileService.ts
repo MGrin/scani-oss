@@ -36,7 +36,7 @@ const logger = createComponentLogger('service:uploaded-file');
 
 export interface RecordUploadedFileInput {
   userId: string;
-  purpose: Exclude<DocumentPurpose, 'invoice'>;
+  purpose: DocumentPurpose;
   /** The bytes the job just read — hashed here so callers never re-read the object. */
   bytes: Uint8Array;
   mimeType: string;

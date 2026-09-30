@@ -823,9 +823,9 @@ payment is to happen.
   from a payment's own settled history. A payment with no amount
   at all is in neither figure and is counted separately.
 
-**Where:** committed — the upcoming-bills headline on Money.
-Projected — the recurring list's monthly figure, the vendor list
-and its summary, and the forecast's own block.
+**Where:** committed — the upcoming-bills headline on Bills.
+Projected — the recurring list's monthly figure, and the vendor list
+and its summary.
 **Careful:** do not translate the two with one word. They *were*
 one word until SC-817, and the two figures then disagreed by
 exactly the estimated amount, one segmented control apart, with

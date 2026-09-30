@@ -43,6 +43,7 @@ ownership rule.
 | `HOST` | app | HTTP bind host. |
 | `ALERT_STALE_SYNC_HOURS` | worker | How long an integration must have gone without syncing before its OWNER is emailed by `alert-sweep` (SC-459). Default 24. Deliberately far above `STALE_SYNC_THRESHOLD_HOURS`, which is the same measurement aimed at Sentry: 3h is two missed hourly cycles, the right moment to page us and the wrong moment to mail a user about a blip that clears itself. |
 | `FRONTEND_URL` | app (api), worker | Browser-facing SPA URL. CORS + cookie scope on the api; where the weekly digest's "Open Scani" button goes, and where the integration alert's "Reconnect" button goes, on the worker (SC-460, SC-459). Optional on the worker — absent, both jobs log a refusal and send nothing. |
+| `CLOUD_FRONTEND_URL` | app (api) | Origin of the Cloud console (`https://cloud.scani.xyz`). Added to the api's CORS allow-list and Better-Auth trusted origins so the console can read the session. Optional; https in production. |
 | `BACKEND_URL` | app (api), worker | Browser-facing api URL. Embedded in magic-link emails, and in the one-click unsubscribe links (`/e/u/:token` for the digest, `/e/a/:token` for alerts — SC-460, SC-459). Optional on the worker — absent, both jobs log a refusal and send nothing. |
 | `COOKIE_DOMAIN` | app (api) | Cross-subdomain cookie scope. Leave unset for same-origin. |
 | `BETTER_AUTH_SECRET` | app (api) | 32+ chars. Better-Auth session signing key. |
@@ -63,8 +64,9 @@ ownership rule.
 | `SCANI_CLOUD_API_KEY` | app (api, worker) | Bearer presented to the data-provider. |
 | `DATA_PROVIDER_API_KEY` | app (data-provider) | Bearer the data-provider validates against. |
 | `CLOUD_MANAGEMENT_ENABLED` | app (data-provider) | Tier 2/3 only. Enables cloud-management surface. |
-| `BETTER_AUTH_URL` | app (data-provider) | Public URL of the data-provider for cloud-management cookies. |
+| `APP_AUTH_URL` | app (data-provider) | Base URL of the app api; the data-provider resolves console sessions at its `/api/auth/get-session`. Required when `CLOUD_MANAGEMENT_ENABLED`. |
 | `CLOUD_FRONTEND_ORIGIN` | app (data-provider) | CORS origin for cloud-management console. |
+| `CLOUD_KEY_INITIAL_STATUS` | app (data-provider) | Status a key created in the cloud console starts in: `active` (default) or `suspended`. A suspended key is refused until something with access to the database sets it `active`, so leave it unset on a self-hosted deployment. |
 | `CLOUD_QUOTA_HOURLY_DEFAULT` | app (data-provider) | Requests allowed per API key per rolling hour. Enforced per key (the limiter is keyed by apiKeyId); the value is one global default — `cloud_api_keys.quota_monthly_requests` is not read on the request path. **`0` or absent = no quota**, so every key gets an unbounded budget on *your* provider accounts. |
 | `GLOBAL_HOURLY_USD_CAP` | app (data-provider) | Cumulative upstream USD per hour across all tenants. Trips a circuit breaker; further requests get 503 until the next hour-bucket. Decimals allowed. **`0` or absent = no cap.** |
 | `VITE_DATA_PROVIDER_URL` | cloud + landing (frontend) | Where those SPAs send tRPC calls. Baked at build time. Empty is legal and means same-origin, which is how dev works through the Vite proxy. |
@@ -116,7 +118,7 @@ Both optional; unset, sign-in and the contact form work with no check. Set the s
 
 | Variable | Owner | What it does |
 |---|---|---|
-| `VITE_TURNSTILE_SITE_KEY` | app, cloud, landing (frontend) | Public site key for the Turnstile widget on sign-in and the contact form. Baked at build time. |
+| `VITE_TURNSTILE_SITE_KEY` | app, landing (frontend) | Public site key for the Turnstile widget on sign-in and the contact form. Baked at build time. |
 | `TURNSTILE_SECRET` | api, data-provider | Verifies the widget's token before an unauthenticated request sends mail. A missing or rejected token is refused (403); Cloudflare unreachable is refused (503). |
 | `DIAGNOSTICS_TOKEN` | api, data-provider | 32+ chars. **Optional.** Bearer that unlocks the detailed bodies of `/readyz`, `/health/db`, `/health/ws`, `/health/deep` and the data-provider's `/health/r2`. Unset, every caller gets status and per-check `ok` only. Use one value on both. |
 
@@ -124,7 +126,7 @@ Both optional; unset, sign-in and the contact form work with no check. Set the s
 
 | Variable | Owner | What it does |
 |---|---|---|
-| `LOG_LEVEL` | package (`@scani/logging`) | `debug`, `info`, `warn`, `error`. Default `info`. |
+| `LOG_LEVEL` | package (`@scani/logging`) | `debug`, `info`, `warn`, `error`. Default `info`. In production `debug` and `trace` refuse to start, because they log request inputs. |
 | `LOG_PRETTY` | package | Pretty-print. Default `false` in production. |
 | `LOG_COLORIZE` | package | Colourise pretty-printed logs. Default on in dev, off in prod. |
 | `LOG_TIMESTAMP` | package | Include timestamps. Default on. Set `false` to defer to the log aggregator. |
@@ -153,7 +155,7 @@ enabled](/self-hosting/tier1/optional-keys/#how-to-tell-whats-enabled).
 |---|---|---|
 | `COINGECKO_API_KEY` | CoinGecko | Paid-tier crypto prices. |
 | `FINNHUB_API_KEY` | Finnhub | Public-equity prices. |
-| `OPENAI_API_KEY` | OpenAI | Screenshot and document parsing. Unset → throws on every call. |
+| `OPENAI_API_KEY` | OpenAI | Screenshot and document parsing. Unset → starting a parse is refused with `PRECONDITION_FAILED`. |
 | `PERPLEXITY_API_KEY` | Perplexity | Read by `aiPerplexityFactory`, which **no backend service registers**. No effect today. |
 | `DEEPSEEK_API_KEY` | DeepSeek | Read by `aiDeepseekFactory`, which **no backend service registers**. No effect today. |
 | `ETHERSCAN_API_KEY` | Etherscan V2 | All EVM wallet balances + transactions. |
@@ -170,7 +172,9 @@ enabled](/self-hosting/tier1/optional-keys/#how-to-tell-whats-enabled).
 | `SENTRY_RELEASE` | app | Release identifier. |
 | `VITE_SENTRY_DSN` | app (frontend) | Browser-side Sentry. Baked at build time. |
 | `VITE_SENTRY_ENABLED` | app (frontend) | Enable client-side reporting. |
-| `VITE_API_URL` | app (frontend) | URL the SPA calls for `/api`. Bun-bundled image bakes `/api`. |
+| `VITE_API_URL` | app, cloud (frontend) | URL the SPA calls for `/api`. Bun-bundled image bakes `/api`. |
+| `VITE_APP_URL` | cloud (frontend) | Scani app origin the console sends signed-out visitors to (`/auth?returnTo=`). Required in production. Baked at build time. |
+| `VITE_CLOUD_URL` | app (frontend) | Cloud console origin the app may return to after sign-in (`/auth?returnTo=`). Unset = no cross-origin return. Baked at build time. |
 | `SCANI_COMMIT` | docs site (build) | Full 40-hex commit the docs are built from, written into every page as `<meta name="scani-commit">` so a probe can tell which commit a host serves. Unset = no marker; anything else that is not a full sha fails the build. |
 | `API_UPSTREAM` | app (frontend-app nginx) | Inside the prod `frontend-app` image, nginx reverse-proxies `/api/*` → `${API_UPSTREAM}`. Default `http://api:3001` (compose network). Override when running `frontend-app` outside compose. |
 | `FRONTEND_PORT` | docker-compose.prod.yml | Host port for the `frontend-app` container. Default 8080. |
@@ -277,7 +281,6 @@ production deployment — operators can ignore this section.
 |---|---|---|
 | `STUB_AI` | api, worker, data-provider | When `1`, registers a fixed-payload AI provider instead of calling a real one. Refused in production by each app's env schema. |
 | `STUB_CHAIN_DATA` | api, worker, data-provider | When `1`, registers a fixture chain provider ahead of the real ones, so wallet-address activity probes and balance fetches resolve locally instead of calling blockchain.info / Etherscan / a Solana RPC / TronGrid / Toncenter. Only fixture addresses report activity. Refused in production by all three env schemas. |
-| `ALLOW_FORECAST_AS_OF` | api | When `1`, `payments.forecast` honours an `asOf` date instead of the api's own clock, so the visual gate can photograph a forecast that does not move with the real date. On by default in `docker-compose.yml`. Refused in production by the api env schema, and anywhere it is off the router refuses `asOf` rather than ignoring it. |
 | `ALLOW_REMOTE_TEST_DB` | `packages/business/domain/test-preload.ts` | Escape hatch for the guard that refuses to run the suite against a non-local `DATABASE_URL`. Repository tests truncate and roll back real tables, so pointing them at a remote branch is destructive — set to `1` only when you have deliberately provisioned a throwaway database. |
 | `SCANI_ALLOW_SHARED_TEST_DB` | `packages/business/domain/test-preload.ts` | Escape hatch for the one-suite-per-database lock. The preload takes a Postgres advisory lock on the test database and refuses to start when another suite already holds it: two suites on one database interfere in ways the output attributes to neither run (SC-370, SC-372). Set to `1` only to share a database deliberately — the supported way to run two suites at once is to give each its own database: `docker compose exec -T postgres createdb -U scani scani_test_$$`, then `bun run db:migrate` and `bun run test` with `DATABASE_URL` pointed at it. |
 | `API_BASE_URL` | e2e (Playwright fixtures) | Base URL the e2e suite hits for tRPC requests. Defaults to the dev-compose api at `http://localhost:3011`. |

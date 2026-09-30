@@ -126,8 +126,10 @@ class StubStorageService extends StorageService {
   }
 }
 
+const originalTier = process.env.SCANI_DEPLOYMENT_TIER;
 let stubLocal: StubStorageService;
 beforeEach(() => {
+  delete process.env.SCANI_DEPLOYMENT_TIER;
   stubLocal = new StubStorageService();
   // Standard stubbed-DI pattern: seed Container before constructing facade.
   Container.set(StorageService, stubLocal);
@@ -137,6 +139,8 @@ beforeEach(() => {
   setCloudClient(null);
 });
 afterEach(() => {
+  if (originalTier === undefined) delete process.env.SCANI_DEPLOYMENT_TIER;
+  else process.env.SCANI_DEPLOYMENT_TIER = originalTier;
   resetCloudClient();
 });
 

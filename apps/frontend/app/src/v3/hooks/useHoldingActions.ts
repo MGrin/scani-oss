@@ -121,7 +121,7 @@ export function useHoldingActions() {
      * `editCause` / `editOccurredAt` say what a balance change MEANT (SC-510).
      * Omitted for an `isActive` toggle and for a holding whose price we fetch
      * — the server derives the cause there. Required for the ambiguous set;
-     * `HoldingsPage` asks through `HoldingEditCauseDialog` and the API refuses
+     * `EditHoldingSheet` asks through `useHoldingEditCause` and the API refuses
      * rather than guessing if it arrives without one.
      */
     updateHolding: (

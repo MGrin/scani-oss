@@ -43,8 +43,7 @@ export function SettingsPage() {
 
   return (
     <PageLayout>
-      <PageHeader title={t('settings.title')} />
-      <p className="text-body text-muted-foreground">{t('settings.subtitle')}</p>
+      <PageHeader title={t('settings.title')} description={t('settings.subtitle')} />
 
       <ProfileSettings />
       <CostBasisSettings />

@@ -19,10 +19,9 @@
  */
 
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { appendAuditRow } from '@scani/db/audit-chain';
 import { db } from '@scani/db/connection';
-import { adminAuditLog } from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
-import { desc } from 'drizzle-orm';
 import type { Redis } from 'ioredis';
 import { loadEnv } from '../../config/env';
 
@@ -265,66 +264,6 @@ export function createAdminGate(component: string, redis?: Redis | null): AdminG
   };
 }
 
-// Cap audit-log detail payloads so a misbehaving caller can't inflate
-// the jsonb column (every write tries to log; an OOM here would take
-// down the admin surface entirely). Strings are truncated, nested
-// objects are stringified-and-truncated, everything else passes
-// through. Single-level walk only — deeper hostile payloads are
-// flattened rather than fully sanitised.
-const AUDIT_DETAIL_MAX_KEYS = 20;
-const AUDIT_DETAIL_VALUE_MAX_CHARS = 1024;
-
-function sanitizeAuditDetails(input: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  let keys = 0;
-  for (const [k, v] of Object.entries(input)) {
-    if (keys >= AUDIT_DETAIL_MAX_KEYS) break;
-    if (v == null) {
-      out[k] = v;
-    } else if (typeof v === 'string') {
-      out[k] =
-        v.length > AUDIT_DETAIL_VALUE_MAX_CHARS
-          ? `${v.slice(0, AUDIT_DETAIL_VALUE_MAX_CHARS)}…`
-          : v;
-    } else if (typeof v === 'number' || typeof v === 'boolean') {
-      out[k] = v;
-    } else {
-      const stringified = JSON.stringify(v);
-      out[k] =
-        stringified.length > AUDIT_DETAIL_VALUE_MAX_CHARS
-          ? `${stringified.slice(0, AUDIT_DETAIL_VALUE_MAX_CHARS)}…`
-          : stringified;
-    }
-    keys++;
-  }
-  return out;
-}
-
-// Canonical serialization for the HMAC chain. Order is fixed and
-// independent of insertion order so a verifier can recompute the
-// signature without seeing the schema. JSON.stringify of `details` is
-// already canonicalized by sanitizeAuditDetails (it walks keys in
-// insertion order); we accept that as the "as-stored" payload.
-function canonicalAuditPayload(row: {
-  actor: string;
-  action: string;
-  resource: string;
-  result: string;
-  details: Record<string, unknown>;
-  createdAtIso: string;
-  prevSignature: string;
-}): string {
-  return [
-    `actor=${row.actor}`,
-    `action=${row.action}`,
-    `resource=${row.resource}`,
-    `result=${row.result}`,
-    `details=${JSON.stringify(row.details)}`,
-    `created_at=${row.createdAtIso}`,
-    `prev=${row.prevSignature}`,
-  ].join('\n');
-}
-
 export async function audit(
   actor: string,
   action: string,
@@ -334,53 +273,7 @@ export async function audit(
   hmacSecret: string | undefined
 ): Promise<void> {
   try {
-    const sanitized = sanitizeAuditDetails(details);
-    // Use the same `created_at` value in both the signature and the
-    // INSERT so the canonical payload exactly matches what's stored.
-    const createdAt = new Date();
-    let prevSignature = '';
-    let signature: string | null = null;
-    if (hmacSecret) {
-      // Fetch the previous row's signature. SELECT … ORDER BY created_at
-      // DESC LIMIT 1 — the table has an index on created_at so this is
-      // cheap. Race: two concurrent writers might both read the same
-      // prev row and produce sibling rows that share `prev_signature`.
-      // That's still detectable by the verifier (the chain forks) but
-      // would make a clean linear chain harder to rebuild. The admin
-      // surface is single-actor in practice (one operator triggers
-      // writes from the dashboard), so concurrent writes are rare; if
-      // that changes, switch this to a SERIALIZABLE transaction or use
-      // a Postgres advisory lock keyed on the table name.
-      const [prev] = await db
-        .select({ signature: adminAuditLog.signature })
-        .from(adminAuditLog)
-        .orderBy(desc(adminAuditLog.createdAt))
-        .limit(1);
-      prevSignature = prev?.signature ?? '';
-      signature = createHmac('sha256', hmacSecret)
-        .update(
-          canonicalAuditPayload({
-            actor,
-            action,
-            resource,
-            result,
-            details: sanitized,
-            createdAtIso: createdAt.toISOString(),
-            prevSignature,
-          })
-        )
-        .digest('hex');
-    }
-    await db.insert(adminAuditLog).values({
-      actor,
-      action,
-      resource,
-      result,
-      details: sanitized,
-      createdAt,
-      prevSignature: hmacSecret ? prevSignature : null,
-      signature,
-    });
+    await appendAuditRow(db, { actor, action, resource, result, details }, hmacSecret);
   } catch (err) {
     logger.warn(
       { error: err instanceof Error ? err.message : String(err), actor, action, resource },

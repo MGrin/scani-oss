@@ -67,14 +67,7 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
   const baseToken = await makeToken(tx);
   seededTokenIds = [token.id, baseToken.id];
 
-  // All three of the override triple in one insert: `users_observed_burn_
-  // override_complete` refuses an amount with no currency, so a fixture that
-  // filled them one statement at a time would fail on the first.
-  const user = await makeUser(tx, {
-    observedBurnOverride: '1234.56',
-    observedBurnOverrideCurrencyId: token.id,
-    observedBurnOverrideAt: new Date(),
-  });
+  const user = await makeUser(tx);
   userId = user.id;
   // An institution the user typed in is theirs and goes with them (SC-1354).
   await makeInstitution(tx, { createdByUserId: userId });
@@ -185,6 +178,13 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
     expiresAt: new Date(Date.now() + 86_400_000),
     userId,
   });
+  await tx.insert(schema.cloudApiKeys).values({
+    ownerUserId: userId,
+    tenantId: userId,
+    name: 'fixture',
+    keyPrefix: 'sk_fixture',
+    hashedKey: randomUUID(),
+  });
   await tx.insert(schema.tokenPriceEditHistory).values({
     tokenId: token.id,
     baseTokenId: baseToken.id,
@@ -289,15 +289,10 @@ test('the stored object behind the deleted document is removed', async () => {
   expect(deletedObjectKeys).toEqual([seededR2Key]);
 });
 
-test('the surviving user row keeps its login and loses the figures on it', async () => {
+test('the surviving user row keeps its login', async () => {
   const [user] = await getDb().select().from(schema.users).where(eq(schema.users.id, userId));
   expect(user).toBeDefined();
   expect(user?.email).toBeTruthy();
-  expect({
-    override: user?.observedBurnOverride,
-    currency: user?.observedBurnOverrideCurrencyId,
-    at: user?.observedBurnOverrideAt,
-  }).toEqual({ override: null, currency: null, at: null });
 });
 
 test('the seed covered every table the manifest classifies', async () => {

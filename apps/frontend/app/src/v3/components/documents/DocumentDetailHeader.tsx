@@ -1,9 +1,9 @@
 import { formatBytes, formatDateTime } from '@scani/shared';
-import { ConfirmDialog } from '@scani/ui/components/ConfirmDialog';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { Block } from '@scani/ui/v3/components/Block';
+import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { Download, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -95,7 +95,6 @@ export function DocumentDetailHeader({ file, extractionCount }: DocumentDetailHe
 
   const Icon = documentIcon(file.mimeType);
   const isInvoice = file.purpose === 'invoice';
-  const busy = reparse.isPending || remove.isPending;
 
   return (
     <Block className="flex flex-col gap-3 p-4">
@@ -151,7 +150,6 @@ export function DocumentDetailHeader({ file, extractionCount }: DocumentDetailHe
         {file.downloadable ? (
           <Button
             variant="outline"
-            size="sm"
             disabled={pendingId === file.id}
             onClick={() => void download(file.id)}
           >
@@ -164,54 +162,45 @@ export function DocumentDetailHeader({ file, extractionCount }: DocumentDetailHe
           </Button>
         ) : null}
 
+        {/* Confirmed inline, in the row that offers them (UI standard rule 6);
+            they were centred dialogs (SC-1413). The confirm step reads as a
+            different sentence from the resting button. */}
         {isInvoice && file.downloadable ? (
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={busy}
-            onClick={() => setConfirmReparse(true)}
-          >
-            <RefreshCw className="me-2 size-4" aria-hidden="true" />
-            {reparse.isPending
-              ? t('v3.documents.detail.reparsePending')
-              : t('v3.documents.detail.reparseCommit')}
-          </Button>
+          <ConfirmAction
+            label={
+              <>
+                <RefreshCw className="me-2 size-4" aria-hidden="true" />
+                {t('v3.documents.detail.reparseCommit')}
+              </>
+            }
+            confirmLabel={t('v3.documents.detail.reparseTrigger')}
+            consequence={t('v3.documents.detail.reparseConsequence')}
+            open={confirmReparse}
+            onOpenChange={setConfirmReparse}
+            isPending={reparse.isPending}
+            disabledReason={remove.isPending ? t('v3.documents.detail.deletePending') : undefined}
+            onConfirm={() => reparse.mutate({ documentId: file.id })}
+          />
         ) : null}
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="text-destructive hover:text-destructive"
-          disabled={busy}
-          onClick={() => setConfirmDelete(true)}
-        >
-          <Trash2 className="me-2 size-4" aria-hidden="true" />
-          {remove.isPending
-            ? t('v3.documents.detail.deletePending')
-            : t('v3.documents.detail.deleteCommit')}
-        </Button>
+        <ConfirmAction
+          label={
+            <>
+              <Trash2 className="me-2 size-4" aria-hidden="true" />
+              {t('v3.documents.detail.deleteCommit')}
+            </>
+          }
+          triggerClassName="text-destructive hover:text-destructive"
+          confirmLabel={t('v3.documents.detail.deleteTrigger')}
+          consequence={t('v3.documents.detail.deleteConsequence')}
+          destructive
+          open={confirmDelete}
+          onOpenChange={setConfirmDelete}
+          isPending={remove.isPending}
+          disabledReason={reparse.isPending ? t('v3.documents.detail.reparsePending') : undefined}
+          onConfirm={() => remove.mutate({ documentId: file.id })}
+        />
       </div>
-
-      <ConfirmDialog
-        open={confirmReparse}
-        onOpenChange={setConfirmReparse}
-        title={t('v3.documents.detail.reparseTrigger')}
-        description={t('v3.documents.detail.reparseConsequence')}
-        confirmLabel={t('v3.documents.detail.reparseCommit')}
-        isPending={reparse.isPending}
-        onConfirm={() => reparse.mutate({ documentId: file.id })}
-      />
-
-      <ConfirmDialog
-        open={confirmDelete}
-        onOpenChange={setConfirmDelete}
-        title={t('v3.documents.detail.deleteTrigger')}
-        description={t('v3.documents.detail.deleteConsequence')}
-        confirmLabel={t('v3.documents.detail.deleteCommit')}
-        variant="destructive"
-        isPending={remove.isPending}
-        onConfirm={() => remove.mutate({ documentId: file.id })}
-      />
     </Block>
   );
 }

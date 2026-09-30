@@ -757,8 +757,49 @@ describe('groupRows', () => {
     expect(rows.map((row) => row.sublabel)).toEqual([
       '6 holdings',
       '1 holding · 2 accounts',
-      'Empty',
+      // The groups list's own words for an empty group (SC-1437).
+      'No members yet',
     ]);
+  });
+
+  test('bills are named, and a bills-only group is flagged to lead with them (SC-1437)', () => {
+    const [billsOnly, mixed, plain] = groupRows(
+      [
+        {
+          id: 'b',
+          name: 'Household',
+          color: null,
+          holdingsCount: 0,
+          accountsCount: 0,
+          billsCount: 1,
+          payeesCount: 1,
+        },
+        {
+          id: 'm',
+          name: 'Subscriptions',
+          color: null,
+          holdingsCount: 0,
+          accountsCount: 1,
+          billsCount: 2,
+          payeesCount: 0,
+        },
+        { id: 'p', name: 'Crypto', color: null, holdingsCount: 3, accountsCount: 0 },
+      ],
+      [],
+      t
+    );
+    expect(billsOnly).toMatchObject({
+      sublabel: '1 bill · 1 payee',
+      hasBills: true,
+      billsOnly: true,
+    });
+    expect(mixed).toMatchObject({
+      sublabel: '1 account · 2 bills',
+      hasBills: true,
+      billsOnly: false,
+    });
+    // Control: a group with no bills is neither, and its line names no bills.
+    expect(plain).toMatchObject({ sublabel: '3 holdings', hasBills: false, billsOnly: false });
   });
 
   /**
@@ -1254,13 +1295,23 @@ describe('returnsWindowRequest', () => {
 describe('resolveHomeMetric', () => {
   test('with no returns history the tab is not offered at all', () => {
     expect(
-      resolveHomeMetric({ chosen: 'net-worth', hasReturns: false, returnsPending: false })
+      resolveHomeMetric({
+        chosen: 'net-worth',
+        hasReturns: false,
+        returnsPending: false,
+        shown: false,
+      })
     ).toEqual({ metric: 'net-worth', offered: false });
   });
 
   test('a stored Returns over an account with no history falls back to net worth', () => {
     expect(
-      resolveHomeMetric({ chosen: 'returns', hasReturns: false, returnsPending: false })
+      resolveHomeMetric({
+        chosen: 'returns',
+        hasReturns: false,
+        returnsPending: false,
+        shown: false,
+      })
     ).toEqual({ metric: 'net-worth', offered: false });
   });
 
@@ -1268,23 +1319,78 @@ describe('resolveHomeMetric', () => {
     // The alternative is net worth for one round trip and then a jump, which
     // reads as the app changing its mind about what the reader asked for.
     expect(
-      resolveHomeMetric({ chosen: 'returns', hasReturns: false, returnsPending: true })
+      resolveHomeMetric({
+        chosen: 'returns',
+        hasReturns: false,
+        returnsPending: true,
+        shown: false,
+      })
     ).toEqual({ metric: 'returns', offered: true });
   });
 
   test('a reader on another tab is not shown one that may be about to vanish', () => {
     expect(
-      resolveHomeMetric({ chosen: 'net-worth', hasReturns: false, returnsPending: true })
+      resolveHomeMetric({
+        chosen: 'net-worth',
+        hasReturns: false,
+        returnsPending: true,
+        shown: false,
+      })
     ).toEqual({ metric: 'net-worth', offered: false });
   });
 
   test('with history it is offered whichever tab is on', () => {
     for (const chosen of ['net-worth', 'pnl', 'returns'] as const) {
-      expect(resolveHomeMetric({ chosen, hasReturns: true, returnsPending: false })).toEqual({
+      expect(
+        resolveHomeMetric({ chosen, hasReturns: true, returnsPending: false, shown: false })
+      ).toEqual({
         metric: chosen,
         offered: true,
       });
     }
+  });
+
+  /**
+   * SC-1406, mgrin on production: "when on dashboard I click on returns the
+   * tab disappears". The tap turned `getReturns` on; SC-1396 lets it withhold
+   * the figure (rebuilding, too little history), and that answer went back
+   * through this resolver as "no returns" and took the tab away under the
+   * finger. Once the strip has shown the tab, no later answer removes it: the
+   * tab stays and says why inside it.
+   */
+  describe('a tab the reader has seen never vanishes (SC-1406)', () => {
+    test('a later "no returns" answer leaves the tapped tab on', () => {
+      expect(
+        resolveHomeMetric({
+          chosen: 'returns',
+          hasReturns: false,
+          returnsPending: false,
+          shown: true,
+        })
+      ).toEqual({ metric: 'returns', offered: true });
+    });
+
+    test('nor does it take the tab from a reader who has moved to another one', () => {
+      expect(
+        resolveHomeMetric({
+          chosen: 'net-worth',
+          hasReturns: false,
+          returnsPending: false,
+          shown: true,
+        })
+      ).toEqual({ metric: 'net-worth', offered: true });
+    });
+
+    test('the control: a tab never shown is still absent from first paint', () => {
+      expect(
+        resolveHomeMetric({
+          chosen: 'net-worth',
+          hasReturns: false,
+          returnsPending: false,
+          shown: false,
+        })
+      ).toEqual({ metric: 'net-worth', offered: false });
+    });
   });
 });
 

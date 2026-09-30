@@ -1,10 +1,11 @@
 import { type TurnstileVerdict, verifyTurnstile } from '@scani/http-fetch';
+import { logger } from '@scani/logging';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { OpenApiMeta } from 'trpc-openapi';
 import type { ApiKeyContext } from '../auth/api-key';
 import { AUTH_MESSAGES, validateBearerToken } from '../auth/api-key';
-import type { CloudBetterAuthInstance } from '../auth/better-auth';
+import type { AppSessionClient, AppSessionResult } from '../auth/app-session';
 import type { DataProviderEnv } from '../config/env';
 import type { CloudDb } from '../db/connection';
 import type { GlobalCostBreaker } from '../usage/global-cost-breaker';
@@ -27,7 +28,14 @@ export interface DataProviderContext {
    * Null when auth succeeded or when no bearer was attempted.
    */
   authFailure: TRPCError | null;
+  /** Null until `cookieProcedure` resolves the session and narrows it. */
   cloudUser: CloudSessionUser | null;
+  /**
+   * Asks the app who this browser is, at most once per request. Lazy so only
+   * `cookieProcedure` pays for the round trip — the public contact form and
+   * every bearer call never make it.
+   */
+  cloudSession: () => Promise<AppSessionResult>;
   requestId: string;
   usage: UsageContext;
   // Best-effort client IP, read from `x-forwarded-for` (Fly's edge sets
@@ -55,6 +63,8 @@ export interface DataProviderContext {
    * unset.
    */
   checkHuman: (token: string | undefined) => Promise<TurnstileVerdict>;
+  /** `CLOUD_KEY_INITIAL_STATUS`, on the context for `hourlyRequestLimit`'s reason. */
+  initialKeyStatus: 'active' | 'suspended';
 }
 
 /**
@@ -86,12 +96,12 @@ export function effectiveHourlyRequestLimit(quotaHourlyDefault: number | null): 
 export interface BuildContextDeps {
   env: DataProviderEnv;
   // Getter-based so the Elysia app can be constructed (and the server
-  // can start listening) before cloud init has populated cloudDb /
-  // betterAuth. Without this, the trpc plugin captures `null`s at
-  // construct-time and never sees the post-init values. Each request
-  // re-reads the current value via these getters.
+  // can start listening) before cloud init has populated cloudDb.
+  // Without this, the trpc plugin captures `null` at construct-time and
+  // never sees the post-init value.
   getCloudDb: () => CloudDb | null;
-  getBetterAuth: () => CloudBetterAuthInstance | null;
+  // Null when cloud management is off: no cookie session exists to resolve.
+  appSession: AppSessionClient | null;
 }
 
 /**
@@ -101,14 +111,15 @@ export interface BuildContextDeps {
  *
  *   - Bearer (M2M): `authorization: Bearer <token>` — backend/worker +
  *     `keys`/`usage` routes accessed directly via the raw api key.
- *   - Cookie (browser): Better-Auth session cookie from cloud-frontend;
- *     only consulted when CLOUD_MANAGEMENT_ENABLED=true.
+ *   - Cookie (browser): the app's session cookie, resolved by asking the
+ *     api (`AppSessionClient`); only consulted when
+ *     CLOUD_MANAGEMENT_ENABLED=true.
  *
- * If the bearer token is missing or invalid we still resolve the cookie
- * session. `bearerProcedure` / `cookieProcedure` choose which gate they
- * want.
+ * If the bearer token is missing or invalid the cookie session is still
+ * available to resolve. `bearerProcedure` / `cookieProcedure` choose which
+ * gate they want.
  */
-export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildContextDeps) {
+export function buildCreateContext({ env, getCloudDb, appSession }: BuildContextDeps) {
   // Out here rather than inside the per-request closure: env is frozen for
   // the process lifetime, so this is one read at wiring time instead of one
   // per request.
@@ -147,22 +158,11 @@ export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildCont
             });
     }
 
-    let cloudUser: CloudSessionUser | null = null;
-    const betterAuth = getBetterAuth();
-    if (betterAuth) {
-      try {
-        const session = await betterAuth.api.getSession({ headers: req.headers });
-        if (session?.user) {
-          cloudUser = {
-            id: session.user.id,
-            email: session.user.email,
-            name: session.user.name ?? null,
-          };
-        }
-      } catch {
-        /* anonymous */
-      }
-    }
+    let pendingSession: Promise<AppSessionResult> | null = null;
+    const cloudSession = () => {
+      pendingSession ??= resolveCloudSession(appSession, req.headers, requestId);
+      return pendingSession;
+    };
 
     // Fly's `fly-client-ip` is a single value, set at the edge, and is
     // the most reliable source. `x-forwarded-for` is a comma-delimited
@@ -184,14 +184,29 @@ export function buildCreateContext({ env, getCloudDb, getBetterAuth }: BuildCont
     return {
       auth,
       authFailure,
-      cloudUser,
+      cloudUser: null,
+      cloudSession,
       requestId,
       usage: createUsageContext(),
       clientIp,
       hourlyRequestLimit,
       checkHuman,
+      initialKeyStatus: env.CLOUD_KEY_INITIAL_STATUS,
     };
   };
+}
+
+async function resolveCloudSession(
+  appSession: AppSessionClient | null,
+  headers: Headers,
+  requestId: string
+): Promise<AppSessionResult> {
+  if (!appSession) return { kind: 'none' };
+  const session = await appSession.getSession(headers);
+  if (session.kind === 'unavailable') {
+    logger.warn({ requestId, reason: session.reason }, 'cloud-session: app session unavailable');
+  }
+  return session;
 }
 
 const t = initTRPC.context<DataProviderContext>().meta<OpenApiMeta>().create();
@@ -296,21 +311,22 @@ export const internalProcedure = bearerProcedure.use(({ ctx, next }) => {
 
 /**
  * Cookie-session procedure for cloud-frontend routes (keys.*, usage.*).
- * Requires a Better-Auth session. Intentionally NOT wrapped in
+ * Requires an app session. Intentionally NOT wrapped in
  * `usageMiddleware`: dashboard browsing (listing keys, viewing usage)
  * is not billable API consumption — only bearer-authenticated calls
  * from backend/worker/external customers count toward
  * `cloud_usage_events`. Mixing the two pollutes the usage chart with
  * the user's own page reloads.
  */
-export const cookieProcedure = t.procedure.use(({ ctx, next }) => {
-  if (!ctx.cloudUser) {
+export const cookieProcedure = t.procedure.use(async ({ ctx, next }) => {
+  const session = await ctx.cloudSession();
+  // "Try again", not "sign in": a signed-in user sent to sign in while the api
+  // is unreachable loops without end.
+  if (session.kind === 'unavailable') {
+    throw new TRPCError({ code: 'TIMEOUT', message: 'Sign-in service unavailable, try again' });
+  }
+  if (session.kind === 'none') {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Cloud session required' });
   }
-  return next({
-    ctx: {
-      ...ctx,
-      cloudUser: ctx.cloudUser,
-    },
-  });
+  return next({ ctx: { ...ctx, cloudUser: session.user } });
 });

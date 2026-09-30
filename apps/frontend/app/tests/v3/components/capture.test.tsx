@@ -5,7 +5,7 @@ import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom';
 import { CaptureList } from '../../../src/v3/components/capture/CaptureSheet';
-import { CAPTURE_GROUPS, CAPTURE_ROUTES } from '../../../src/v3/lib/capture';
+import { CAPTURE_ROUTES } from '../../../src/v3/lib/capture';
 
 /**
  * `CaptureSheet` itself renders nothing under `renderToStaticMarkup` — both of
@@ -32,17 +32,28 @@ function render(contextQuery = ''): string {
 const t = i18n.t.bind(i18n);
 
 describe('the capture list', () => {
-  test('offers every route, once', () => {
+  test('starts with exactly three choices while retaining every ingestion route in the catalog', () => {
     const markup = render();
-    for (const route of CAPTURE_ROUTES) {
-      expect(markup.split(t(route.titleKey)).length - 1).toBe(1);
-    }
+    for (const choice of ['upload', 'connect', 'manual'])
+      expect(markup).toContain(t(`v3.capture.choice.${choice}`));
+    expect(markup.split('<button').length - 1).toBe(2);
+    expect(markup.split('<a ').length - 1).toBe(1);
   });
 
-  test('heads each group with what the person has, not with a subsystem', () => {
+  // SC-1404: "Upload a file" was a bare bordered link beside two outline
+  // buttons, so it read as the selected one. All three are the sheet's own row.
+  test('the three choices are the same row as the routes inside them', () => {
     const markup = render();
-    for (const group of CAPTURE_GROUPS) expect(markup).toContain(t(group.titleKey));
-    expect(markup).not.toContain('Portfolio');
+    const rows = markup.match(/<li[^>]*>[\s\S]*?<\/li>/g) ?? [];
+    expect(rows).toHaveLength(3);
+    const shape = (row: string) =>
+      [...row.matchAll(/class="([^"]*)"/g)]
+        .map((m) => (m[1] ?? '').replace(/lucide-[\w-]+/g, 'lucide-icon'))
+        .join('|');
+    expect(new Set(rows.map(shape)).size).toBe(1);
+    expect(CAPTURE_ROUTES.map((route) => route.id)).toEqual(
+      expect.arrayContaining(['screenshot', 'statement', 'invoice', 'wallet', 'exchange'])
+    );
   });
 
   test('no row warns about an older screen, because there is no older screen', () => {
@@ -55,12 +66,7 @@ describe('the capture list', () => {
   test('forwards context only to the routes that read it', () => {
     const markup = render('?accountId=acc-1');
     // Manual entry prefills from it; the exchange list has nowhere to put it.
-    expect(markup).toContain('/manual-entry?accountId=acc-1');
+    expect(markup).toContain('/import?accountId=acc-1');
     expect(markup).not.toContain('/integrations?accountId=acc-1');
-  });
-
-  test('every row is a link, so it can be opened in a new tab and read by a screen reader as one', () => {
-    const markup = render();
-    expect(markup.split('<a ').length - 1).toBe(CAPTURE_ROUTES.length);
   });
 });

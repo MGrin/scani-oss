@@ -58,8 +58,11 @@ describe('the debt V3-14 took on', () => {
 
   test('every row leads to a capture route', () => {
     const known = new Set<string>([...Object.values(V3_CAPTURE_ROUTES), V3_PAYMENT_ROUTES.create]);
+    // The bill form is a sheet over Bills (SC-1414), so its row is a full URL
+    // and matches whole; every other row matches on its path alone.
     for (const route of CAPTURE_ROUTES) {
-      expect({ id: route.id, known: known.has(route.path.split('?')[0] as string) }).toEqual({
+      const bare = route.path.split('?')[0] as string;
+      expect({ id: route.id, known: known.has(route.path) || known.has(bare) }).toEqual({
         id: route.id,
         known: true,
       });

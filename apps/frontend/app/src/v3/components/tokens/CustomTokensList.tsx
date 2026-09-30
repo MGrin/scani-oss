@@ -6,7 +6,7 @@ import type { V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
 import { exportDateTime, exportMoney, exportText } from '@scani/ui/v3/lib/export/cell';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import type { TFunction } from 'i18next';
-import { Coins, Pencil } from 'lucide-react';
+import { Coins, Pencil, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { amountDecimals } from '../../lib/holdings';
 import { formatRelative } from '../../lib/relative-time';
@@ -194,7 +194,12 @@ export function CustomTokensList({ tokens, query, onCreate, onEditPrice }: Custo
       icon: Coins,
       titleKey: 'ui.dataView.customTokens.empty.noCustomTokensYet',
       descriptionKey: 'ui.dataView.customTokens.empty.createOneForAnAssetNo',
-      action: <Button onClick={onCreate}>{t('v3.tokens.custom.newToken')}</Button>,
+      action: (
+        <Button onClick={onCreate}>
+          <Plus className="me-1.5 size-4" aria-hidden="true" />
+          {t('v3.tokens.custom.newToken')}
+        </Button>
+      ),
     },
     peek: {
       basePath: V3_ROUTES.tokens,

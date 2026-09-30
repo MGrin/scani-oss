@@ -103,8 +103,9 @@ working. On a stack with no `FINNHUB_API_KEY`, searching for a US equity
 returns HTTP 200 with the crypto matches and no equities — nothing
 anywhere says a key is missing.
 
-The exception is OpenAI: with no `OPENAI_API_KEY` the provider throws on
-every call, so a screenshot still uploads but its parse job fails.
+The exception is OpenAI: with no `OPENAI_API_KEY`, starting a screenshot
+or document parse is refused with `PRECONDITION_FAILED`, and nothing is
+queued. Statement files and manual entry still work.
 
 Because the rest degrade silently, check what is configured rather than
 waiting for an error — every backend prints a `provider credentials:`

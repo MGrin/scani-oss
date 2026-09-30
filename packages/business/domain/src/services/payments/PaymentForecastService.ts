@@ -5,32 +5,24 @@ import { BaseService } from '../BaseService';
 import { buildForecast, type Forecast, type ForecastPaymentInput } from './forecast';
 
 /**
- * The cashflow forecast (SC-461): what the book of recurring payments says
- * will move over the next year, and what there is to move it out of.
+ * The book of recurring payments projected forward (SC-461), as facts: which
+ * payment falls due when, for how much, and which amounts come from history
+ * rather than from what the user declared. It is what `payments.scheduled`
+ * answers.
  *
- * ## Why one procedure answers both halves
+ * It no longer carries a runway, a liquid balance or an observed drain. SC-1396
+ * retired the cashflow forecast and its affordability verdict, because a
+ * whole-wealth projection built on incomplete recorded spending read missing
+ * months as zero. The Planning page that replaced it was removed too (SC-1409),
+ * so nothing projects future wealth.
  *
- * Runway is `liquid ÷ burn`, so a surface that shows one without the other
- * shows nothing. Splitting them into two procedures would put the home
- * screen's one-line runway behind two round trips and — worse — let the two
- * halves be as-of different moments.
+ * ## Why the window is twelve months
  *
- * ## Why the window is always twelve months
- *
- * The reader picks 3, 6 or 12 (SC-461, mgrin: 6 by default), but the RUNWAY
- * is not a property of that choice: "how long does this last" must not get a
- * different answer because somebody tapped a different tab. So the server
- * always answers for twelve and the horizon control is a client-side slice of
- * one cached payload. It also makes the toggle instant, which is the whole
- * reason `MoneyPage` issues its five queries on every segment.
- *
- * Twelve is also where honesty runs out: past it every date comes from the
- * recurrence rule alone, and a projection built only on "the rule says so" is
- * an extrapolation rather than a forecast. A book that is still solvent at
- * twelve months is reported as "more than twelve", never as a bigger number.
+ * Past twelve every date comes from the recurrence rule alone, and a schedule
+ * built only on "the rule says so" is an extrapolation rather than a fact.
  */
 
-/** The window the forecast answers for, in months. See the class doc. */
+/** The window the schedule answers for, in months. See the class doc. */
 export const FORECAST_HORIZON_MONTHS = 12;
 
 export interface PaymentForecast extends Forecast {
@@ -58,9 +50,8 @@ export class PaymentForecastService extends BaseService {
     super('PaymentForecastService');
   }
 
-  /** `asOf` is the day the series starts; the router decides who may move it. */
-  async forecast(userId: string, asOf: Date = new Date()): Promise<PaymentForecast> {
-    const start = startOfUtcDay(asOf);
+  async forecast(userId: string): Promise<PaymentForecast> {
+    const start = startOfUtcDay(new Date());
     const today = toDateString(start);
     const horizonEnd = toDateString(
       new Date(
@@ -93,6 +84,8 @@ export class PaymentForecastService extends BaseService {
         status: occurrence.status,
         expectedAmount: occurrence.expectedAmount,
         actualAmount: occurrence.actualAmount,
+        settledCurrencyTokenId: occurrence.settledCurrencyTokenId,
+        settledDirection: occurrence.settledDirection,
       };
       if (list) list.push(row);
       else byPaymentId.set(occurrence.paymentId, [row]);

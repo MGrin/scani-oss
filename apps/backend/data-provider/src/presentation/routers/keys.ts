@@ -1,8 +1,8 @@
 /**
  * Cloud API key management for cloud-frontend users.
  *
- * All procedures are `cookieProcedure` (Better-Auth session required). Keys
- * are scoped to the authenticated cloud_user via `ownerUserId`. The raw
+ * All procedures are `cookieProcedure` (app session required). Keys
+ * are scoped to the signed-in app user via `ownerUserId`. The raw
  * token is returned on `create` exactly once (display-copy-once pattern);
  * subsequent `list` calls only return the non-sensitive `keyPrefix`.
  */
@@ -147,6 +147,7 @@ export const keysRouter = router({
           keyPrefix,
           hashedKey,
           tier: SELF_SERVICE_TIER,
+          billingStatus: ctx.initialKeyStatus,
           quotaMonthlyRequests: input.quotaMonthlyRequests ?? null,
         })
         .returning();

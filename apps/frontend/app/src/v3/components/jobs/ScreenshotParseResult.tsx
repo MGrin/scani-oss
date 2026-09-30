@@ -6,7 +6,7 @@ import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { readScreenshotParse } from '../../lib/review-holdings';
-import { V3_CAPTURE_ROUTES } from '../../lib/routes';
+import { V3_CAPTURE_ROUTES, V3_ROUTES } from '../../lib/routes';
 import { DiscardedReviewCard } from './DiscardedReviewCard';
 import { ReviewHoldingsCard } from './ReviewHoldingsCard';
 
@@ -97,8 +97,26 @@ export function ScreenshotParseResult({
               out: it is implementation detail, not something a reader can act
               on. It is in the worker logs and on the raw job payload. */}
           <p className="text-body text-muted-foreground">
-            {t(`v3.jobs.screenshot.failedAdvice.${parse.kind}`)}
+            {t(
+              parse.aiUnavailable
+                ? 'v3.capture.ai.unavailable'
+                : `v3.jobs.screenshot.failedAdvice.${parse.kind}`
+            )}
           </p>
+          {parse.aiUnavailable && (
+            <Button asChild variant="outline">
+              <Link
+                to={`${V3_CAPTURE_ROUTES.manualEntry}${parse.accountId ? `?accountId=${encodeURIComponent(parse.accountId)}` : ''}`}
+              >
+                {t('v3.capture.choice.manual')}
+              </Link>
+            </Button>
+          )}
+          {parse.filesRetained && (
+            <Button asChild variant="ghost">
+              <Link to={V3_ROUTES.files}>{t('v3.documents.detail.backToFiles')}</Link>
+            </Button>
+          )}
         </Block>
       ) : null}
 

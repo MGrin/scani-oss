@@ -130,6 +130,13 @@ export function filterOptionLabel(option: V3FilterOption): string {
 export interface V3FilterDef extends FilterDefBase {
   labelKey: UiTranslationKey;
   /**
+   * What the empty value means, when it is not "any" (SC-1405). The bills
+   * list's status is "Upcoming" until narrowed and its period "Next 30 days":
+   * a default that shows as "Any" misstates what the list is showing, and a
+   * default stored as a value would show as a chip nobody applied.
+   */
+  anyLabelKey?: UiTranslationKey;
+  /**
    * The OPTION labels stay text, and deliberately (SC-262).
    *
    * Most of them are data, not copy: an institution's name, a group's name, a
@@ -199,6 +206,15 @@ export interface V3ColumnDef<T> {
    * will check.
    */
   exportTotal?: boolean;
+  /**
+   * `'xl'`: hidden below 1280px, the narrow desktops a landscape iPad and a
+   * small laptop give the table once the sidebar has taken its share (UI
+   * standard rule 4, SC-1433). For a secondary identity column only — an
+   * institution beside the account, a type — never a figure: the figures are
+   * what the table is for, and on an iPad landscape Holdings' figures printed
+   * into each other because seven columns shared ~800px.
+   */
+  hideBelow?: 'xl';
 }
 
 /** What a surface says when it has nothing to show *and nothing is filtered*.

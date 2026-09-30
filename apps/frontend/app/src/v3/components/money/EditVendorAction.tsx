@@ -1,36 +1,29 @@
-import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
-import { showError, showSuccess } from '@scani/ui/ui/use-toast';
-import { useId, useState } from 'react';
+import { showSuccess } from '@scani/ui/ui/use-toast';
+import { describeQueryError } from '@scani/ui/v3/lib/errors';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { Field } from '../form/Field';
+import { EditAction, FormActions, FormSheet } from '../form/FormSheet';
 
 /**
- * Rename a vendor, and set the two other things a person chose about it —
- * from its peek sheet, in place.
+ * Rename a vendor, and set the two other things a person chose about it — an
+ * Edit action in its peek that opens a `FormSheet` (UI standard rule 13).
  *
  * SC-83's first half: the API had `create`, `addAlias` and `merge` and no
  * `update` at all, so a display name could never be changed once written and a
  * vendor the extractor named off an invoice was stuck with that name forever.
  *
- * INLINE, in the action row, for the reason `ConfirmAction` is inline (V3-31):
- * the sheet rests at half the viewport and a dialog opened from inside it puts
- * the reader two dismiss gestures deep. Not `ConfirmAction` itself — that
- * component asks a yes/no about a stated consequence, and this asks for three
- * values — but it keeps that component's geometry rules, because they are what
- * make an action row safe: the open block claims the full row, and **Cancel
- * sits where the trigger was**, so a double-tap on a stale target cancels
- * rather than committing.
- *
- * Not a page either. A vendor is three fields; the payment form is a page
- * because it is twelve.
+ * It was an inline block in the action row until SC-1436, which made a payee
+ * the one record whose edit looked unlike a bill's, a group's or a vault's.
+ * The sheet opens over the peek from inside it, the way `AssignPayeeGroupsAction`
+ * does, so closing it returns to the record.
  *
  * The rename is not silently a merge. `vendors.update` refuses a name the user
- * already has and says which vendor holds it — the error surfaces through the
- * house toast, and `Merge duplicate` is the next button along.
+ * already has and says which vendor holds it — shown above the buttons, and
+ * `Merge duplicate` is the next action along.
  */
-
 interface EditVendorActionProps {
   vendorId: string;
   displayName: string;
@@ -38,33 +31,34 @@ interface EditVendorActionProps {
   website: string | null;
 }
 
-export function EditVendorAction({
+export function EditVendorAction(props: EditVendorActionProps) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <EditAction onClick={() => setOpen(true)} />
+      {/* Mounted only while open, so each opening seeds from the record on file. */}
+      {open ? <EditVendorSheet {...props} onOpenChange={setOpen} /> : null}
+    </>
+  );
+}
+
+function EditVendorSheet({
   vendorId,
   displayName,
   category,
   website,
-}: EditVendorActionProps) {
+  onOpenChange,
+}: EditVendorActionProps & { onOpenChange: (open: boolean) => void }) {
   const { t } = useTranslation();
   const utils = trpc.useUtils();
-  const fieldId = useId();
-  const [open, setOpen] = useState(false);
   const [name, setName] = useState(displayName);
   const [categoryValue, setCategoryValue] = useState(category ?? '');
   const [websiteValue, setWebsiteValue] = useState(website ?? '');
-
-  const close = () => {
-    setOpen(false);
-    // Reopening must not sit on edits the reader backed out of — the record
-    // beside the form still shows the values on file, and a form disagreeing
-    // with the facts under it is the record contradicting itself.
-    setName(displayName);
-    setCategoryValue(category ?? '');
-    setWebsiteValue(website ?? '');
-  };
+  const [failure, setFailure] = useState<string | null>(null);
 
   const updateMutation = trpc.vendors.update.useMutation({
     onSuccess: (vendor) => {
-      setOpen(false);
+      onOpenChange(false);
       showSuccess(t('v3.money.vendor.saved', { name: vendor.displayName }));
       void utils.vendors.invalidate();
       // The name appears on every payment row, on the upcoming feed and on
@@ -72,7 +66,10 @@ export function EditVendorAction({
       void utils.payments.invalidate();
       void utils.documents.invalidate();
     },
-    onError: (error) => showError(error, t('v3.money.pending.savingVendor')),
+    onError: (error) => {
+      const copy = describeQueryError(error, t('v3.money.vendorCreate.subject'), 'save');
+      setFailure(`${copy.title}. ${copy.detail}`);
+    },
   });
 
   const trimmed = name.trim();
@@ -80,9 +77,14 @@ export function EditVendorAction({
     trimmed === displayName &&
     categoryValue.trim() === (category ?? '') &&
     websiteValue.trim() === (website ?? '');
+  const blockers = trimmed ? [] : [t('v3.money.vendorCreate.blocker')];
 
   const save = () => {
-    if (!trimmed || unchanged || updateMutation.isPending) return;
+    if (blockers.length > 0 || updateMutation.isPending) return;
+    if (unchanged) {
+      onOpenChange(false);
+      return;
+    }
     updateMutation.mutate({
       vendorId,
       displayName: trimmed,
@@ -93,60 +95,50 @@ export function EditVendorAction({
     });
   };
 
-  if (!open) {
-    return (
-      <Button variant="outline" onClick={() => setOpen(true)}>
-        {t('v3.money.vendorEdit.edit')}
-      </Button>
-    );
-  }
-
   return (
-    <div className="w-full space-y-3">
-      <Field label={t('v3.money.vendorEdit.name')} htmlFor={`${fieldId}-name`}>
+    <FormSheet
+      open
+      onOpenChange={onOpenChange}
+      title={t('v3.money.vendorEdit.title')}
+      description={t('v3.money.vendorEdit.description')}
+      footer={
+        <FormActions
+          submitLabel={t('v3.form.saveChanges')}
+          pendingLabel={t('v3.form.saving')}
+          onSubmit={save}
+          onCancel={() => onOpenChange(false)}
+          blockers={blockers}
+          pending={updateMutation.isPending}
+          error={failure}
+        />
+      }
+    >
+      <Field label={t('v3.money.vendorEdit.name')} htmlFor="vendor-edit-name">
         <Input
-          autoFocus
-          id={`${fieldId}-name`}
+          id="vendor-edit-name"
           value={name}
           onChange={(event) => setName(event.target.value)}
-          className="text-body"
           disabled={updateMutation.isPending}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') save();
-            if (event.key === 'Escape') close();
-          }}
         />
       </Field>
-      <Field label={t('v3.money.vendorEdit.category')} htmlFor={`${fieldId}-category`}>
+      <Field label={t('v3.money.vendorEdit.category')} htmlFor="vendor-edit-category">
         <Input
-          id={`${fieldId}-category`}
+          id="vendor-edit-category"
           value={categoryValue}
           onChange={(event) => setCategoryValue(event.target.value)}
           placeholder={t('v3.money.vendorEdit.categoryPlaceholder')}
-          className="text-body"
           disabled={updateMutation.isPending}
         />
       </Field>
-      <Field label={t('v3.money.vendorEdit.website')} htmlFor={`${fieldId}-website`}>
+      <Field label={t('v3.money.vendorEdit.website')} htmlFor="vendor-edit-website">
         <Input
-          id={`${fieldId}-website`}
+          id="vendor-edit-website"
           value={websiteValue}
           onChange={(event) => setWebsiteValue(event.target.value)}
           placeholder={t('v3.money.vendorEdit.websitePlaceholder')}
-          className="text-body"
           disabled={updateMutation.isPending}
         />
       </Field>
-      <div className="flex gap-2">
-        {/* Cancel first — the same rule `ConfirmAction` enforces, and for the
-            same reason: the trigger was here a moment ago. */}
-        <Button variant="ghost" disabled={updateMutation.isPending} onClick={close}>
-          {t('v3.money.vendorEdit.cancel')}
-        </Button>
-        <Button disabled={!trimmed || unchanged || updateMutation.isPending} onClick={save}>
-          {t('v3.money.vendorEdit.save')}
-        </Button>
-      </div>
-    </div>
+    </FormSheet>
   );
 }

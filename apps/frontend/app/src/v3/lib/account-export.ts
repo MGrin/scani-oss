@@ -67,6 +67,10 @@ const yesNo = (t: TFunction, value: boolean) =>
   exportText(value ? t('v3.export.value.yes') : t('v3.export.value.no'));
 
 const accounts = (t: TFunction): ExportField<Row<'accounts'>>[] => [
+  {
+    header: t('v3.export.column.archivedOwnerId'),
+    value: (row) => exportText(row.archivedEntityId),
+  },
   { header: t('v3.export.column.account'), value: (row) => exportText(row.name) },
   { header: t('v3.export.column.institution'), value: (row) => exportText(row.institutionName) },
   { header: t('v3.export.column.accountType'), value: (row) => exportText(row.type) },
@@ -234,6 +238,18 @@ export function accountExportSheets(
   return {
     sheets: [
       sheet(t('v3.export.sheet.accounts'), accounts(t), data.accounts),
+      sheet(
+        t('v3.export.sheet.archivedOwnership'),
+        [
+          { header: t('v3.export.column.id'), value: (row) => exportText(row.id) },
+          { header: t('v3.export.column.name'), value: (row) => exportText(row.name) },
+          {
+            header: t('v3.export.column.description'),
+            value: (row) => exportText(row.description),
+          },
+        ],
+        data.archivedOwnership ?? []
+      ),
       sheet(t('v3.export.sheet.holdings'), holdings(t), data.holdings),
       sheet(t('v3.export.sheet.transactions'), transactions(t), data.transactions),
       sheet(t('v3.export.sheet.vendors'), vendors(t), data.vendors),

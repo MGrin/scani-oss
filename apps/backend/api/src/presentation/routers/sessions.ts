@@ -20,15 +20,27 @@ import { getBetterAuth, protectedProcedure, router } from '../trpc';
  * in the page — one XSS — every device the user is signed in on (SC-1288).
  * Rows are identified by the session's id, and `revoke` resolves the token
  * from the caller's own session list.
+ *
+ * The list is read through Better-Auth's internal adapter, not
+ * `auth.api.listSessions`: that endpoint sits behind `freshSessionMiddleware`,
+ * so with `freshAge` at 5 minutes it refused every session signed in longer
+ * ago than that, and the Devices card failed for everyone (SC-1407).
  */
+async function activeSessionsOf(userId: string) {
+  const authContext = await getBetterAuth().$context;
+  return authContext.internalAdapter.listSessions(userId, { onlyActiveSessions: true });
+}
+
 export const sessionsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
     if (!ctx.headers) {
       throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Missing request headers' });
     }
+    if (!ctx.userId) {
+      throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Authentication required' });
+    }
     const auth = getBetterAuth();
-    // Returns every active session for the cookie-authenticated user.
-    const sessions = await auth.api.listSessions({ headers: ctx.headers });
+    const sessions = await activeSessionsOf(ctx.userId);
     // The current session's token comes back via getSession; mark it so
     // the UI can render "(this device)" and skip the revoke button.
     const current = await auth.api.getSession({ headers: ctx.headers });
@@ -69,7 +81,7 @@ export const sessionsRouter = router({
       // The caller's own session list is both the lookup and the ownership
       // check: an id that is not in it is someone else's or nobody's, and
       // Better-Auth's revokeSession is then never asked.
-      const sessions = await auth.api.listSessions({ headers: ctx.headers });
+      const sessions = await activeSessionsOf(ctx.userId);
       const owned = sessions.find((s) => s.id === input.id);
       if (!owned) {
         // NOT_FOUND rather than FORBIDDEN — don't tell a probing caller

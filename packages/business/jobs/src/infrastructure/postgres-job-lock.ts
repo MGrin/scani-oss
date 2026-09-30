@@ -1,4 +1,4 @@
-import { client } from '@scani/db/connection';
+import { reserveForSessionLock } from '@scani/db';
 import { createComponentLogger } from '@scani/logging';
 import { JOB_LOCK, JobLock, type JobLockAcquired, type JobLockSkipped } from '@scani/queue';
 import { Service } from 'typedi';
@@ -25,7 +25,7 @@ export class PostgresJobLock extends JobLock {
     fn: () => Promise<T>
   ): Promise<JobLockAcquired<T> | JobLockSkipped> {
     const key = hashJobName(lockName);
-    const reserved = await client.reserve();
+    const reserved = await reserveForSessionLock();
     const keyStr = key.toString();
 
     try {

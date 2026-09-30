@@ -729,6 +729,9 @@ export class TransferReviewService {
        */
       alsoMatchTransactionIds?: string[];
       destination?: TransferDestinationRef;
+      /** Explains an observed historical event; existing destination balances already stand. */
+      observedEvent?: boolean;
+      receivedQuantity?: string;
       answerSource?: AnswerAttribution;
       /**
        * Settle the answer inside a transaction the CALLER owns (SC-606).
@@ -789,6 +792,8 @@ export class TransferReviewService {
         groupId = crypto.randomUUID();
         const written = await writeInflow(tx, userId, outflow, {
           destination: opts.destination,
+          observedEvent: opts.observedEvent,
+          receivedQuantity: opts.receivedQuantity,
           quantity: new Decimal(outflow.quantity).abs(),
           groupId,
         });
@@ -1258,8 +1263,12 @@ export class TransferReviewService {
     });
   }
 
-  async reopen(userId: string, transactionId: string): Promise<boolean> {
-    const reopened = await db.transaction(async (tx) => {
+  async reopen(
+    userId: string,
+    transactionId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<boolean> {
+    const run = async (tx: DatabaseTransaction) => {
       const [row] = await tx
         .select()
         .from(schema.holdingTransactions)
@@ -1313,11 +1322,12 @@ export class TransferReviewService {
       }
 
       return true;
-    });
+    };
+    const reopened = transaction ? await run(transaction) : await db.transaction(run);
     // An answer taken off a row is one of the writers that can bring it under a
     // destination rule, so it applies them here rather than leaving it to the
     // next read of the queue (SC-1071).
-    if (reopened) await this.applyDisposalMarks(userId);
+    if (reopened && !transaction) await this.applyDisposalMarks(userId);
     return reopened;
   }
 
@@ -2606,9 +2616,19 @@ async function writeInflow(
   tx: DatabaseTransaction,
   userId: string,
   outflow: HoldingTransaction,
-  opts: { destination: TransferDestinationRef; quantity: Decimal; groupId: string }
+  opts: {
+    destination: TransferDestinationRef;
+    quantity: Decimal;
+    groupId: string;
+    observedEvent?: boolean;
+    receivedQuantity?: string;
+  }
 ): Promise<InflowWriteResult> {
-  const { destination, quantity, groupId } = opts;
+  const { destination, groupId } = opts;
+  let quantity = opts.quantity;
+  let arrivalTokenId = outflow.tokenId;
+  if (opts.receivedQuantity && (!opts.observedEvent || !destination.holdingId))
+    return { ok: false, reason: 'destination_gone' };
 
   const [account] = await tx
     .select({
@@ -2638,6 +2658,7 @@ async function writeInflow(
     const [holding] = await tx
       .select({
         id: schema.holdings.id,
+        tokenId: schema.holdings.tokenId,
         source: schema.holdings.source,
         balance: schema.holdings.balance,
       })
@@ -2647,7 +2668,7 @@ async function writeInflow(
           eq(schema.holdings.id, holdingId),
           eq(schema.holdings.userId, userId),
           eq(schema.holdings.accountId, destination.accountId),
-          eq(schema.holdings.tokenId, outflow.tokenId),
+          opts.receivedQuantity ? undefined : eq(schema.holdings.tokenId, outflow.tokenId),
           // Sending a transfer to the holding it left is not a destination,
           // it is a no-op that would leave the lots parked in a group with
           // both legs on one holding.
@@ -2656,6 +2677,13 @@ async function writeInflow(
       )
       .limit(1);
     if (!holding) return { ok: false, reason: 'destination_gone' };
+    if (opts.receivedQuantity) {
+      const received = new Decimal(opts.receivedQuantity);
+      if (!received.isFinite() || !received.gt(0) || holding.tokenId === outflow.tokenId)
+        return { ok: false, reason: 'destination_gone' };
+      quantity = received;
+      arrivalTokenId = holding.tokenId;
+    }
     reused = holding;
   } else {
     // "This account tracks no position in that token yet." Between the picker
@@ -2721,16 +2749,17 @@ async function writeInflow(
     }
   }
 
-  const movedAnchor = reused
-    ? await moveUnobservedAnchor(tx, userId, account, reused, quantity)
-    : false;
+  const movedAnchor =
+    reused && !opts.observedEvent
+      ? await moveUnobservedAnchor(tx, userId, account, reused, quantity)
+      : false;
 
   await tx
     .insert(schema.holdingTransactions)
     .values({
       userId,
       holdingId,
-      tokenId: outflow.tokenId,
+      tokenId: arrivalTokenId,
       kind: CREATED_INFLOW_KIND,
       quantity: quantity.toString(),
       occurredAt: outflow.occurredAt,
@@ -2743,6 +2772,7 @@ async function writeInflow(
         outflowTransactionId: outflow.id,
         createdDestination,
         movedDestinationAnchor: movedAnchor,
+        outflowAt: outflow.occurredAt,
       }),
     })
     // Re-answering after a reopen deletes the previous row first, so a

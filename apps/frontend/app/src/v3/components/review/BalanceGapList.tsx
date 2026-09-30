@@ -1,19 +1,25 @@
-import type { BalanceGapList as BalanceGapListDto } from '@scani/shared';
+import type { BalanceGap, BalanceGapList as BalanceGapListDto } from '@scani/shared';
 import { balanceDecimals, formatDate } from '@scani/shared';
-import { Block } from '@scani/ui/v3/components/Block';
+import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
+import type { V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
+import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
+import { Scale } from 'lucide-react';
 import { Trans, useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
-import { BalanceGapAnswer } from './BalanceGapAnswer';
+import { BALANCE_GAP_REVIEW_PATH } from '../../lib/routes';
+import { Callout } from '../Callout';
+import { ExplainGapAction } from './BalanceGapAnswer';
 
 /**
  * Balance changes the ledger cannot explain (SC-501).
  *
- * A card per gap rather than a `V3DataView`, and the reason is the answer
- * control: this list is not something you sort and filter, it is a short
- * sequence of questions each carrying its own three-way control and a date
- * field. The queue is a few dozen rows on the heaviest production account and
- * it shrinks as it is worked.
+ * A `V3DataView` like every other queue (SC-1433): a row per gap, its peek,
+ * and an Explain action there that opens the answer as a `FormSheet`.
+ * Until SC-1433 it was a card per gap with the whole answer form open inside
+ * each card, which made the page the one list in the app that edited its rows
+ * in place.
  *
  * ## The line that says what was left out
  *
@@ -34,161 +40,182 @@ import { BalanceGapAnswer } from './BalanceGapAnswer';
  * for. Nothing about the threshold had moved. Before proposing a number here, check which population the
  * number you are comparing against was drawn from.
  */
-
 interface BalanceGapListProps {
   data: BalanceGapListDto | undefined;
-  isLoading: boolean;
+  query: V3QueryState;
 }
 
-export function BalanceGapList({ data, isLoading }: BalanceGapListProps) {
+export function BalanceGapList({ data, query }: BalanceGapListProps) {
   const { t } = useTranslation();
   const utils = trpc.useUtils();
+  const navigate = useNavigate();
 
   // The two reads an answer moves, invalidated together: the queue itself and
   // the review feed whose badge counts it. A badge that still says 37 over a
   // queue of 12 is the disagreement `useReviewFeed` exists to prevent.
   const onAnswered = async () => {
     await Promise.all([
-      utils.balanceGaps.listPending.invalidate(),
+      utils.balanceGaps.invalidate(),
+      utils.transferReview.invalidate(),
+      utils.portfolio.invalidate(),
       utils.review.listPending.invalidate(),
     ]);
+    navigate(BALANCE_GAP_REVIEW_PATH);
   };
 
-  if (isLoading) return <p className="text-body">{t('v3.review.balances.loading')}</p>;
-  if (!data) return null;
+  const items = data?.items ?? [];
+  const subject = (gap: BalanceGap) =>
+    gap.accountName
+      ? t('v3.review.balances.subject', { account: gap.accountName, symbol: gap.tokenSymbol })
+      : gap.tokenSymbol;
+  // `formatDate`, never a bare `toLocaleDateString()`. The argument-less form
+  // takes the RUNTIME's locale, so this sentence printed `5/17/2026` beside
+  // figures already formatted for the chosen language (SC-762).
+  const between = (gap: BalanceGap) =>
+    t('v3.review.balances.between', { from: formatDate(gap.from), to: formatDate(gap.to) });
+  // Signed and toned, at the token's own precision. `balanceDecimals` keeps a
+  // crypto delta from rendering `−0.00` (SC-567) and agrees with the two
+  // readings in the peek, so one movement is never shown at two precisions.
+  const drift = (gap: BalanceGap) => (
+    <Numeric
+      value={gap.drift}
+      format="plain"
+      delta
+      decimals={balanceDecimals(gap.drift, gap.tokenTypeCode)}
+    />
+  );
 
-  const suppressedTotal = Object.values(data.suppressed).reduce((sum, n) => sum + n, 0);
-  // `listPending` partitions every examined interval into exactly one of three
-  // outcomes — shown, suppressed under a counted reason, or already answered —
-  // and only the first two cross the wire. So this subtraction is exact, and
-  // printing it is what keeps the line's arithmetic closed: `examined` counts
-  // an answered `growth` or `unknown` (neither writes a ledger row, so the
-  // interval still drifts and still arrives) while no suppression counter
-  // does. Production reads 0 today because nobody has answered one yet, which
-  // is exactly why the shortfall would have appeared later and looked like the
-  // missed-rows bug the counts exist to rule out.
-  const answered = Math.max(0, data.examined - data.items.length - suppressedTotal);
+  const config: V3DataViewConfig<BalanceGap> = {
+    pageKey: 'balance-gaps',
+    data: items,
+    nounKey: 'ui.dataView.noun.balanceChanges',
+    searchPlaceholderKey: 'ui.dataView.balanceGaps.config.search',
+    searchFn: (gap, term) =>
+      `${gap.accountName ?? ''} ${gap.tokenSymbol}`
+        .toLocaleLowerCase()
+        .includes(term.toLocaleLowerCase()),
+    renderRow: (gap) => ({
+      label: subject(gap),
+      sublabel: between(gap),
+      value: drift(gap),
+      ariaLabel: `${subject(gap)}, ${between(gap)}`,
+    }),
+    columns: [
+      {
+        key: 'subject',
+        headerKey: 'ui.dataView.balanceGaps.col.change',
+        render: (gap) => <span className="truncate text-label">{subject(gap)}</span>,
+      },
+      {
+        key: 'between',
+        headerKey: 'ui.dataView.balanceGaps.col.when',
+        render: (gap) => <span className="truncate text-muted-foreground">{between(gap)}</span>,
+      },
+      {
+        key: 'drift',
+        headerKey: 'ui.dataView.balanceGaps.col.drift',
+        numeric: true,
+        render: drift,
+      },
+    ],
+    // What the list IS, then how it was drawn (SC-576): the largest number in
+    // the block is the queue, not the material the reader cannot see.
+    summary: () => (
+      <Callout icon={Scale}>
+        <p>{t('v3.review.balances.queue', { count: items.length })}</p>
+        <p className="text-muted-foreground">{t('v3.review.balances.intro')}</p>
+        {data ? <p className="text-muted-foreground">{examinedLine(t, data)}</p> : null}
+      </Callout>
+    ),
+    empty: {
+      icon: Scale,
+      titleKey: 'ui.dataView.balanceGaps.empty.nothingToExplain',
+      descriptionKey: 'ui.dataView.balanceGaps.empty.everyChangeIsAccountedFor',
+      // Nothing to create from a queue (rule 8, SC-1433).
+      action: null,
+    },
+    peek: {
+      basePath: BALANCE_GAP_REVIEW_PATH,
+      render: (gap) => ({
+        title: subject(gap),
+        subtitle: between(gap),
+        value: drift(gap),
+        primary: [
+          {
+            label: t('v3.review.balances.balanceLabel'),
+            // `<Trans>` because the two readings are RENDERED FIGURES inside
+            // the sentence (SC-576), each at the precision the holding needs.
+            value: <BalanceGapReadings gap={gap} />,
+          },
+        ],
+        // Answering is what the reader opened the row to do, so it is the
+        // peek's first action and opens the answer sheet (rules 4 and 13).
+        actions: <ExplainGapAction gap={gap} onAnswered={onAnswered} />,
+      }),
+    },
+  };
 
+  return <V3DataView config={config} getId={(gap) => gap.observationId} query={query} />;
+}
+
+/**
+ * The two readings either side of the change, and how much of it transactions
+ * already explain — the peek's one fact.
+ *
+ * `<Trans>` because the readings are RENDERED FIGURES inside the sentence
+ * (SC-576), each at the precision the holding needs: `balanceDecimals` asks
+ * what the holding IS, so a currency reads `10,906.07 → 232.33` beside a
+ * `−10,673.74` delta and a coin keeps its digits. Neither branch can render a
+ * non-zero balance as `0` (SC-567).
+ */
+export function BalanceGapReadings({ gap }: { gap: BalanceGap }) {
+  const { t } = useTranslation();
   return (
-    <div className="flex flex-col gap-4">
-      {/* Says what the list IS before what it is not (SC-576). The line led
-          with "Showing 33 of 258 changes. 225 were left out", which puts the
-          largest number in the sentence on the material the reader cannot see
-          and reads as an admission — the counts are here to make the queue
-          checkable, not to apologise for it. The provenance stays, one
-          sentence down and in that order. */}
-      {data.items.length > 0 ? (
-        <p className="text-body">{t('v3.review.balances.queue', { count: data.items.length })}</p>
-      ) : (
-        <p className="text-body">{t('v3.review.balances.empty')}</p>
-      )}
+    <span className="flex flex-col gap-0.5">
+      <span>
+        <Trans
+          i18nKey="v3.review.balances.balances"
+          values={{ symbol: gap.tokenSymbol }}
+          components={{
+            previous: (
+              <Numeric
+                value={gap.previousBalance}
+                format="plain"
+                decimals={balanceDecimals(gap.previousBalance, gap.tokenTypeCode)}
+              />
+            ),
+            current: (
+              <Numeric
+                value={gap.balance}
+                format="plain"
+                decimals={balanceDecimals(gap.balance, gap.tokenTypeCode)}
+              />
+            ),
+          }}
+        />
+      </span>
+      {gap.transactionsApplied > 0 ? (
+        <span className="text-caption text-muted-foreground">
+          {t('v3.review.balances.partlyExplained', { count: gap.transactionsApplied })}
+        </span>
+      ) : null}
+    </span>
+  );
+}
 
-      <p className="text-label text-muted-foreground">
-        {t(
-          answered > 0 ? 'v3.review.balances.examinedWithAnswered' : 'v3.review.balances.examined',
-          { examined: data.examined, suppressed: suppressedTotal, answered }
-        )}
-      </p>
-
-      {data.items.map((gap) => (
-        <Block key={gap.observationId} className="flex flex-col gap-3 p-4">
-          <div className="flex items-baseline justify-between gap-4">
-            <div className="flex flex-col">
-              <span className="text-body font-medium">
-                {gap.accountName
-                  ? t('v3.review.balances.subject', {
-                      account: gap.accountName,
-                      symbol: gap.tokenSymbol,
-                    })
-                  : gap.tokenSymbol}
-              </span>
-              <span className="text-label text-muted-foreground">
-                {/* `formatDate`, never a bare `toLocaleDateString()`. The
-                    argument-less form takes the RUNTIME's locale, so this
-                    sentence printed `5/17/2026` — American order — beside
-                    figures the same card had already formatted for the chosen
-                    language, and with Russian selected it read `Between
-                    5/17/2026 and 6/27/2026 · 10 906,07`. That is SC-175 inside
-                    one sentence: a translated frame with a device-formatted
-                    date in it (SC-762). */}
-                {t('v3.review.balances.between', {
-                  from: formatDate(gap.from),
-                  to: formatDate(gap.to),
-                })}
-              </span>
-            </div>
-            {/* Signed and toned: money arriving and money leaving are
-                different questions and the reader should not have to read the
-                two balances to tell which one they are being asked.
-
-                Same `balanceDecimals` as the two readings below, and the
-                agreement is the point — a delta of `−10,673.74` over a pair
-                reading `232.33010646` is one movement described at two
-                precisions, and a reader concludes one of them is lying.
-
-                This is the one place the card overrides `<Numeric>`'s "a
-                delta keeps its fixed two" rule, so the tension is worth
-                naming: that rule exists so a change of `-0.004` is not
-                reported as a loss with a red arrow, and it is stated for the
-                DEFAULT of a currency delta. Here the caller chooses per token
-                — and holding a crypto delta to two decimals is how `0.00021
-                BTC` renders `−0.00`, which is the same claim-of-zero SC-567
-                spent three commits removing. `moneyDecimals` still answers 2
-                for every ordinary fiat figure, so nothing about the USD case
-                moves. */}
-            <Numeric
-              value={gap.drift}
-              format="plain"
-              delta
-              decimals={balanceDecimals(gap.drift, gap.tokenTypeCode)}
-              className="text-figure"
-            />
-          </div>
-
-          {/* `<Trans>` rather than `t()`, because the two readings are RENDERED
-              FIGURES inside the sentence and not text (SC-576, same reasoning
-              as `ConvertedTotal`). Interpolating them made the card print
-              `10906.066301185 → 232.330106461 USD` beside a delta the same
-              card had already formatted to `−10,673.74`.
-
-              `balanceDecimals` and not one rule for every holding. The first
-              fix used `quantityDecimals` throughout and printed
-              `232.33010646 USD` under a delta of `−10,673.74` — correct for a
-              coin count and wrong for currency, and three figures describing
-              one movement at two precisions read as one of them lying. The
-              rule now asks what the holding IS; `@scani/shared` owns it,
-              because a second copy would be free to disagree. Neither branch
-              can render a non-zero balance as `0`, which is what keeps SC-567
-              closed at the render site as well as on the wire. */}
-          <p className="text-label text-muted-foreground">
-            <Trans
-              i18nKey="v3.review.balances.balances"
-              values={{ symbol: gap.tokenSymbol }}
-              components={{
-                previous: (
-                  <Numeric
-                    value={gap.previousBalance}
-                    format="plain"
-                    decimals={balanceDecimals(gap.previousBalance, gap.tokenTypeCode)}
-                  />
-                ),
-                current: (
-                  <Numeric
-                    value={gap.balance}
-                    format="plain"
-                    decimals={balanceDecimals(gap.balance, gap.tokenTypeCode)}
-                  />
-                ),
-              }}
-            />
-            {gap.transactionsApplied > 0
-              ? ` ${t('v3.review.balances.partlyExplained', { count: gap.transactionsApplied })}`
-              : ''}
-          </p>
-
-          <BalanceGapAnswer gap={gap} onAnswered={onAnswered} />
-        </Block>
-      ))}
-    </div>
+/**
+ * `listPending` partitions every examined interval into exactly one of three
+ * outcomes — shown, suppressed under a counted reason, or already answered —
+ * and only the first two cross the wire. So this subtraction is exact, and
+ * printing it is what keeps the line's arithmetic closed: `examined` counts an
+ * answered `growth` or `unknown` (neither writes a ledger row, so the interval
+ * still drifts and still arrives) while no suppression counter does.
+ */
+function examinedLine(t: ReturnType<typeof useTranslation>['t'], data: BalanceGapListDto): string {
+  const suppressed = Object.values(data.suppressed).reduce((sum, n) => sum + n, 0);
+  const answered = Math.max(0, data.examined - data.items.length - suppressed);
+  return t(
+    answered > 0 ? 'v3.review.balances.examinedWithAnswered' : 'v3.review.balances.examined',
+    { examined: data.examined, suppressed, answered }
   );
 }

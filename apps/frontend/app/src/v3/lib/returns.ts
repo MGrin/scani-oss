@@ -35,11 +35,25 @@ export type ReturnsWindowRequest =
   | { kind: ReturnsWindow }
   | { kind: 'custom'; from: Date; to: Date };
 
-export const RETURNS_WINDOWS: readonly { key: ReturnsWindow; labelKey: string }[] = [
+const RETURNS_WINDOWS: readonly { key: ReturnsWindow; labelKey: string }[] = [
   { key: 'ytd', labelKey: 'v3.home.returns.window.ytd' },
   { key: '1y', labelKey: 'v3.home.returns.window.1y' },
   { key: 'all', labelKey: 'v3.home.returns.window.all' },
 ];
+
+/**
+ * All is offered only when it starts earlier than 1Y (SC-1439). A window starts
+ * where its capital is material, so for a portfolio funded within the last year
+ * All and 1Y resolve to the same start, and offering both shows one figure
+ * twice as if they were different results. An unknown start withholds All.
+ */
+export function offeredReturnsWindows(
+  allFrom: string | null | undefined,
+  oneYearFrom: string | null | undefined
+): readonly { key: ReturnsWindow; labelKey: string }[] {
+  const allIsLonger = allFrom != null && oneYearFrom != null && allFrom < oneYearFrom;
+  return allIsLonger ? RETURNS_WINDOWS : RETURNS_WINDOWS.filter((w) => w.key !== 'all');
+}
 
 export const RETURNS_WINDOW_KEYS: readonly ReturnsWindow[] = RETURNS_WINDOWS.map((w) => w.key);
 
@@ -93,6 +107,8 @@ export interface ReturnsMoney {
 }
 
 export interface ReturnsView {
+  unavailableReasons?: string[];
+  recordedChange?: number | null;
   /** Percent, not a fraction. `annualized` is null under a year. */
   twr: { cumulative: number; annualized: number | null } | null;
   /** Percent per year. `approximate` when more than one rate fits the flows. */
@@ -116,6 +132,40 @@ export interface ReturnsView {
   partial: boolean;
   /** Null when the window has no value at one of its ends. */
   money: ReturnsMoney | null;
+  /**
+   * Set when the figures cover only the holdings that could be measured:
+   * how many, of how many, and what was left out (SC-1421). A reader must
+   * never take a subset's return for the whole portfolio's.
+   */
+  subset?: ReturnsSubsetView | null;
+}
+
+export interface ReturnsSubsetView {
+  included: number;
+  measured: number;
+  excluded: { reason: string; holdings: number }[];
+  excludedValue: number;
+  /**
+   * Share of the scope's value on the last day that the figure covers, 0 to
+   * 1. Counting holdings says 85 of 141; this says whether they are the bulk
+   * of the money or a corner of it (SC-1439). Null when nothing was valued.
+   */
+  valueShare: number | null;
+  /**
+   * What `valueShare` is a share of. The whole portfolio's value is the net
+   * worth, and saying so stops a reader taking it for a slice of something
+   * larger; any narrower scope is its own holdings' value.
+   */
+  valueBase: 'netWorth' | 'scope';
+  /** Held before their statement starts, so they enter on its first day (SC-1427). */
+  enteredLate: number;
+  /** Never priced in the window, so counted at zero (SC-1428). */
+  unpricedAtZero: number;
+}
+
+function valueShareOf(included: number, excluded: number): number | null {
+  const total = included + excluded;
+  return total > 0 ? included / total : null;
 }
 
 function percent(fraction: string | null | undefined): number | null {
@@ -133,6 +183,22 @@ export function returnsView(
   benchmarks: Benchmarks = []
 ): ReturnsView | null {
   if (!returns) return null;
+  if (returns.eligibility && !returns.eligibility.eligible) {
+    return {
+      twr: null,
+      xirr: null,
+      fx: null,
+      benchmarks: [],
+      since: returns.effectiveWindow?.from ?? null,
+      partial: true,
+      money: null,
+      unavailableReasons: returns.eligibility.reasons,
+      recordedChange:
+        returns.startValue !== null && returns.endValue !== null
+          ? new Decimal(returns.endValue).minus(returns.startValue).toNumber()
+          : null,
+    };
+  }
 
   const cumulative = percent(returns.twr?.cumulative);
   const twr =
@@ -170,7 +236,30 @@ export function returnsView(
     return cumulative === null ? [] : [{ key: b.key, cumulative }];
   });
 
-  return { twr, xirr, fx, benchmarks: compared, since, partial, money: moneyOf(returns) };
+  const endValue = toFiniteNumber(returns.endValue) ?? 0;
+  const subset = returns.subset
+    ? {
+        included: returns.subset.includedHoldings,
+        measured: returns.subset.measuredHoldings,
+        excluded: returns.subset.excluded,
+        excludedValue: toFiniteNumber(returns.subset.excludedValue) ?? 0,
+        valueShare: valueShareOf(endValue, toFiniteNumber(returns.subset.excludedValue) ?? 0),
+        valueBase: returns.scope.kind === 'user' ? ('netWorth' as const) : ('scope' as const),
+        enteredLate: returns.subset.enteredLate,
+        unpricedAtZero: returns.subset.unpricedAtZero,
+      }
+    : null;
+
+  return {
+    twr,
+    xirr,
+    fx,
+    benchmarks: compared,
+    since,
+    partial,
+    money: moneyOf(returns),
+    subset,
+  };
 }
 
 function moneyOf(returns: Returns): ReturnsMoney | null {

@@ -30,10 +30,21 @@ import {
 const t = i18n.t.bind(i18n);
 
 const DATA = {
+  archivedOwnership: [
+    {
+      id: 'owner-1',
+      userId: 'u1',
+      name: 'Historical Company',
+      description: 'Archived record',
+      createdAt: new Date(0),
+      updatedAt: new Date(0),
+    },
+  ],
   profile: { email: 'a@b.c', name: 'A', baseCurrency: 'eur-id', createdAt: new Date(0) },
   accounts: [
     {
       id: 'a1',
+      archivedEntityId: 'owner-1',
       name: 'Girokonto',
       institutionId: 'i1',
       institutionName: 'JPMorgan Chase',
@@ -117,9 +128,10 @@ describe('accountExportSheets', () => {
     const { sheets } = accountExportSheets(DATA, AT, t);
     expect(sheets.map((s) => s.name)).toEqual([
       'Accounts',
+      'Archived ownership',
       'Holdings',
       'Transactions',
-      'Vendors',
+      'Payees',
       'Payments',
       'Payment occurrences',
       'Groups',
@@ -240,4 +252,13 @@ describe('SC-235 — the Every column agrees with its number', () => {
     // would be a guess at a noun we have never seen.
     expect(formatInterval(t, 'fortnight', 2)).toBe('2 × fortnight');
   });
+});
+
+it('exports archival ownership and account links without dropping financial records', () => {
+  const workbook = accountExportSheets(DATA as AccountExport, new Date(0), t);
+  const encoded = JSON.stringify(workbook);
+  expect(encoded).toContain('Historical Company');
+  expect(encoded).toContain('owner-1');
+  expect(encoded).toContain('0.62');
+  expect(encoded).toContain('Archived ownership');
 });

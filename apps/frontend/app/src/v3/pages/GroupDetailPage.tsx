@@ -1,27 +1,25 @@
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
-import { cn } from '@scani/ui/lib/cn';
-import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { Button } from '@scani/ui/ui/button';
-import { Input } from '@scani/ui/ui/input';
 import { Skeleton } from '@scani/ui/ui/skeleton';
-import { Textarea } from '@scani/ui/ui/textarea';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { StatTile } from '@scani/ui/v3/components/charts/StatTile';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { Plus, Trash2, Users } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
-import { optimisticPatchGroup, optimisticRemoveGroups } from '@/v3/hooks/optimisticUpdates';
-import { Field } from '../components/form/Field';
-import { GroupColorChoice } from '../components/groups/GroupColorChoice';
+import { optimisticRemoveGroups } from '@/v3/hooks/optimisticUpdates';
+import { BackLink } from '../components/BackLink';
+import { EditAction } from '../components/form/FormSheet';
+import { EditGroupSheet } from '../components/groups/EditGroupSheet';
+import { GroupAddSheet } from '../components/membership/GroupAddSheet';
 import { MemberList } from '../components/membership/MemberList';
-import { MemberPicker } from '../components/membership/MemberPicker';
+import { GroupBillsTotal } from '../components/money/GroupBillsTotal';
 import { useGroupMembership } from '../hooks/useGroupMembership';
 import {
   allInactiveGroupAmount,
@@ -33,7 +31,7 @@ import {
   unpricedGroupNote,
 } from '../lib/groups';
 import { countOfKind, inactiveMemberCount, memberCountLine } from '../lib/membership';
-import { V3_ROUTES } from '../lib/routes';
+import { groupDetailPath, V3_ROUTES } from '../lib/routes';
 
 /**
  * One group: what is in it, and how to change that.
@@ -90,28 +88,7 @@ export function GroupDetailPage() {
   const membership = useGroupMembership(id);
   const [adding, setAdding] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [draft, setDraft] = useState<{ name: string; description: string; color: string } | null>(
-    null
-  );
-
-  const updateGroup = trpc.groups.update.useMutation({
-    onMutate: ({ id: groupId, data }) =>
-      optimisticPatchGroup(utils, groupId, {
-        name: data.name,
-        color: data.color,
-        description: data.description,
-      }),
-    onSuccess: () => {
-      setDraft(null);
-      showSuccess(t('v3.groups.detail.toast.updated'));
-    },
-    onError: (error, _vars, ctx) => {
-      ctx?.restore();
-      showError(error, t('v3.groups.detail.toast.updating'));
-    },
-    onSettled: () => void invalidatePortfolioQueries(utils),
-  });
-
+  const [editingDetails, setEditingDetails] = useState(false);
   const deleteGroup = trpc.groups.delete.useMutation({
     onMutate: ({ id: groupId }) => optimisticRemoveGroups(utils, [groupId]),
     onSuccess: () => {
@@ -130,7 +107,7 @@ export function GroupDetailPage() {
   if (groupsQuery.isLoading) {
     return (
       <PageLayout measure="wide">
-        <BackLink />
+        <BackLink to={V3_ROUTES.groups} label={t('v3.groups.detail.backToGroups')} />
         <Skeleton className="h-40 w-full" aria-hidden="true" />
       </PageLayout>
     );
@@ -139,26 +116,11 @@ export function GroupDetailPage() {
   if (!group) {
     return (
       <PageLayout measure="wide">
-        <BackLink />
+        <BackLink to={V3_ROUTES.groups} label={t('v3.groups.detail.backToGroups')} />
         <p className="text-body text-muted-foreground">{t('v3.groups.detail.notFound')}</p>
       </PageLayout>
     );
   }
-
-  // The draft only exists once something has been typed, so the form shows the
-  // record until then and "dirty" needs no separate flag.
-  const current = draft ?? {
-    name: group.name,
-    description: group.description ?? '',
-    color: group.color,
-  };
-  const dirty =
-    current.name !== group.name ||
-    current.description !== (group.description ?? '') ||
-    current.color !== group.color;
-  const nameIsEmpty = current.name.trim().length === 0;
-
-  const patch = (change: Partial<typeof current>) => setDraft({ ...current, ...change });
 
   const hasAccountMembers = membership.members.some((member) => member.kind === 'account');
   const unpriced = unpricedGroupNote(groupValue?.unpricedSymbols ?? [], t);
@@ -171,10 +133,18 @@ export function GroupDetailPage() {
   // sentence would then restate the whole group, so it gives way to one line.
   const allInactiveAmount = allInactiveGroupAmount(groupValue);
   const allInactive = allInactiveAmount !== null;
+  // Bills carry no value, so a group of only bills headlined "$0.00 · nothing
+  // in this group carries a value" read as broken (SC-1408). It leads with what
+  // its bills commit instead, in the Bills page's own figure and words.
+  const hasValued =
+    countOfKind(membership.members, 'holding') + countOfKind(membership.members, 'account') > 0;
+  const hasBills =
+    countOfKind(membership.members, 'bill') + countOfKind(membership.members, 'payee') > 0;
+  const billsOnly = !membership.isLoading && hasBills && !hasValued;
 
   return (
     <PageLayout measure="wide">
-      <BackLink />
+      <BackLink to={V3_ROUTES.groups} label={t('v3.groups.detail.backToGroups')} />
 
       <Block className="flex flex-col gap-3 p-4">
         <div className="flex flex-col gap-1">
@@ -182,7 +152,7 @@ export function GroupDetailPage() {
             <span
               aria-hidden="true"
               className="size-3 shrink-0 rounded-full"
-              style={{ backgroundColor: current.color }}
+              style={{ backgroundColor: group.color }}
             />
             <h1 className="min-w-0 truncate text-title">{group.name}</h1>
           </div>
@@ -191,144 +161,123 @@ export function GroupDetailPage() {
           </p>
         </div>
 
-        {valuesQuery.isLoading ? (
-          <Skeleton className="h-12 w-48" aria-hidden="true" />
+        {billsOnly ? (
+          <GroupBillsTotal groupId={id} emphasis="hero" />
         ) : (
-          <StatTile
-            emphasis="hero"
-            label={t(allInactive ? 'v3.holdings.summary.inactiveValue' : 'v3.groups.detail.value')}
-            value={
-              <Numeric
-                value={allInactive ? allInactiveAmount : groupAmount(groupValue)}
-                currency={valuesQuery.data?.baseCurrency ?? 'USD'}
+          <>
+            {valuesQuery.isLoading ? (
+              <Skeleton className="h-12 w-48" aria-hidden="true" />
+            ) : (
+              <StatTile
+                emphasis="hero"
+                label={t(
+                  allInactive ? 'v3.holdings.summary.inactiveValue' : 'v3.groups.detail.value'
+                )}
+                value={
+                  <Numeric
+                    value={allInactive ? allInactiveAmount : groupAmount(groupValue)}
+                    currency={valuesQuery.data?.baseCurrency ?? 'USD'}
+                  />
+                }
               />
-            }
-          />
-        )}
+            )}
 
-        <div className="flex flex-col gap-1 text-caption text-muted-foreground">
-          <p>
-            {allInactive
-              ? t('v3.holdings.summary.allInactive')
-              : groupCoverageLine(groupValue, listedHoldings, t)}
-          </p>
-          {/* The two reasons the figure covers fewer rows than the list shows,
-           *  together and directly under the sentence that states the gap. */}
-          {inactive && !allInactive ? <p>{inactive}</p> : null}
-          {unpriced ? <p>{unpriced}</p> : null}
-          {/* Said only where it can bite: on a group with no account in it the
-           *  sentence explains a mechanism the reader cannot see. */}
-          {hasAccountMembers ? <p>{t(GROUP_ACCOUNT_NOTE_KEY)}</p> : null}
+            <div className="flex flex-col gap-1 text-caption text-muted-foreground">
+              <p>
+                {allInactive
+                  ? t('v3.holdings.summary.allInactive')
+                  : groupCoverageLine(groupValue, listedHoldings, t)}
+              </p>
+              {/* The two reasons the figure covers fewer rows than the list shows,
+               *  together and directly under the sentence that states the gap. */}
+              {inactive && !allInactive ? <p>{inactive}</p> : null}
+              {unpriced ? <p>{unpriced}</p> : null}
+              {/* Said only where it can bite: on a group with no account in it the
+               *  sentence explains a mechanism the reader cannot see. */}
+              {hasAccountMembers ? <p>{t(GROUP_ACCOUNT_NOTE_KEY)}</p> : null}
+            </div>
+          </>
+        )}
+        {hasBills && !billsOnly ? <GroupBillsTotal groupId={id} emphasis="default" /> : null}
+
+        <div className="self-start">
+          <EditAction onClick={() => setEditingDetails(true)} />
         </div>
       </Block>
 
-      <Block>
-        <BlockHeader title={t('v3.groups.detail.inThisGroup')} />
+      {/* The list sits on the page like every other list, not inside a card:
+       *  its toolbar is page-coloured and read as a band inside one (SC-1404). */}
+      <section className="flex flex-col gap-3" aria-labelledby="group-members-heading">
+        {/* The section's action sits beside its heading, never in the list
+         *  toolbar (UI standard rule 1–2, SC-1411). */}
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="group-members-heading" className="text-title">
+            {t('v3.groups.detail.inThisGroup')}
+          </h2>
+          {membership.members.length > 0 ? (
+            // The short label keeps the section heading readable at 390px; the
+            // full sentence stays the accessible name.
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label={t('v3.groups.detail.addMembers')}
+              onClick={() => setAdding(true)}
+            >
+              <Plus className="me-1.5 size-4" aria-hidden="true" />
+              {t('v3.membership.addAction')}
+            </Button>
+          ) : null}
+        </div>
+
         {membership.isLoading ? (
-          <Skeleton className="mx-4 mb-4 h-24" aria-hidden="true" />
-        ) : membership.members.length > 0 ? (
+          <Skeleton className="h-24" aria-hidden="true" />
+        ) : (
           <MemberList
             members={membership.members}
+            basePath={groupDetailPath(group.id)}
             pendingIds={membership.pendingIds}
             onRemove={membership.remove}
+            onRemoveMany={membership.removeMany}
             removeLabel={(entry) =>
               t('v3.groups.detail.removeMember', { label: entry.label, group: group.name })
             }
+            empty={{
+              icon: Users,
+              titleKey: 'ui.dataView.groupMembers.empty.title',
+              descriptionKey: 'ui.dataView.groupMembers.empty.description',
+              action: (
+                <Button onClick={() => setAdding(true)}>
+                  <Plus className="me-1.5 size-4" aria-hidden="true" />
+                  {t('v3.groups.detail.addMembers')}
+                </Button>
+              ),
+            }}
           />
-        ) : (
-          <p className="px-4 pb-4 text-body text-muted-foreground">{t('v3.groups.detail.empty')}</p>
         )}
+      </section>
 
-        {adding ? (
-          <div className="border-border border-t">
-            <MemberPicker
-              candidates={membership.candidates}
-              pendingIds={membership.pendingIds}
-              onAdd={membership.add}
-              onDone={() => setAdding(false)}
-              noun={t('v3.groups.detail.noun')}
-              note={t('v3.groups.detail.note')}
-            />
-          </div>
-        ) : (
-          <div className="px-4 pt-3 pb-4">
-            <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
-              <Plus className="me-2 size-4" aria-hidden="true" />
-              {t('v3.groups.detail.addMembers')}
-            </Button>
-          </div>
-        )}
-      </Block>
+      <GroupAddSheet
+        open={adding}
+        onOpenChange={setAdding}
+        groupName={group.name}
+        candidates={membership.candidates}
+        pending={membership.pendingIds.size > 0}
+        onAdd={membership.add}
+      />
 
-      <Block>
-        <BlockHeader title={t('v3.groups.detail.details')} />
-        <div className="flex flex-col gap-3 border-border border-t p-4">
-          <Field label={t('v3.groups.detail.name')} htmlFor="group-name">
-            <Input
-              id="group-name"
-              value={current.name}
-              onChange={(event) => patch({ name: event.target.value })}
-              disabled={updateGroup.isPending}
-            />
-          </Field>
-          <Field label={t('v3.groups.detail.description')} htmlFor="group-description">
-            <Textarea
-              id="group-description"
-              value={current.description}
-              onChange={(event) => patch({ description: event.target.value })}
-              maxLength={200}
-              rows={2}
-              disabled={updateGroup.isPending}
-            />
-          </Field>
-          <Field label={t('v3.groups.detail.colour')}>
-            <GroupColorChoice
-              value={current.color}
-              onChange={(color) => patch({ color })}
-              disabled={updateGroup.isPending}
-            />
-          </Field>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              disabled={!dirty || nameIsEmpty || updateGroup.isPending}
-              onClick={() =>
-                updateGroup.mutate({
-                  id,
-                  data: {
-                    name: current.name.trim(),
-                    color: current.color,
-                    description: current.description.trim() || null,
-                  },
-                })
-              }
-            >
-              {t('v3.groups.detail.saveChanges')}
-            </Button>
-            {dirty ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={updateGroup.isPending}
-                onClick={() => setDraft(null)}
-              >
-                {t('v3.groups.detail.discard')}
-              </Button>
-            ) : null}
-            {/* §7: say what is missing rather than leaving a pale button to be
-             *  interpreted — the gap QA 10.1 flagged on the wizard's Next. */}
-            {nameIsEmpty ? (
-              <p className="text-caption text-muted-foreground">{t('v3.groups.detail.needName')}</p>
-            ) : null}
-          </div>
-        </div>
-      </Block>
+      <EditGroupSheet group={group} open={editingDetails} onOpenChange={setEditingDetails} />
 
       <Block>
         <BlockHeader title={t('v3.groups.detail.dangerZone')} />
         <div className="p-4">
           <ConfirmAction
-            label={t('v3.groups.detail.deleteTrigger')}
+            label={
+              <>
+                <Trash2 className="me-2 size-4" aria-hidden="true" />
+                {t('v3.groups.detail.deleteTrigger')}
+              </>
+            }
+            triggerClassName="text-destructive hover:text-destructive"
             confirmLabel={t('v3.groups.detail.deleteCommit')}
             destructive
             open={confirmingDelete}
@@ -343,17 +292,5 @@ export function GroupDetailPage() {
         </div>
       </Block>
     </PageLayout>
-  );
-}
-
-function BackLink() {
-  const { t } = useTranslation();
-  return (
-    <Button variant="ghost" size="sm" asChild className="-ms-2 self-start">
-      <Link to={V3_ROUTES.groups}>
-        <ArrowLeft className={cn(MIRROR_IN_RTL, 'me-2 size-4')} aria-hidden="true" />
-        {t('v3.groups.detail.backToGroups')}
-      </Link>
-    </Button>
   );
 }

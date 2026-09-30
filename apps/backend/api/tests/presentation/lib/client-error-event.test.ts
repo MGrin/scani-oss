@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { clientErrorEvent } from '../../../src/presentation/lib/client-error-event';
+import { clientErrorEvent, withoutQuery } from '../../../src/presentation/lib/client-error-event';
 
 /**
  * SC-1333: a browser's error report reached only the api's stdout, which Fly
@@ -49,5 +49,23 @@ describe('clientErrorEvent', () => {
     );
     expect(event.level).toBe('warning');
     expect(event.message).toBe('[client] Could not load the interface. Check your connection…');
+  });
+});
+
+/**
+ * SC-1350: a query string can carry a magic-link token, and the route goes to
+ * the logs and Sentry. A tab loaded before the app stopped sending it still
+ * does, so the api strips it too. The plain path is the control.
+ */
+describe('withoutQuery', () => {
+  test('drops the query string and the fragment', () => {
+    expect(withoutQuery('/auth/verify?token=abc123')).toBe('/auth/verify');
+    expect(withoutQuery('/holdings#top')).toBe('/holdings');
+    expect(withoutQuery('/x?a=1#b')).toBe('/x');
+  });
+
+  test('CONTROL: a plain path and a missing route pass through unchanged', () => {
+    expect(withoutQuery('/holdings')).toBe('/holdings');
+    expect(withoutQuery(undefined)).toBeUndefined();
   });
 });

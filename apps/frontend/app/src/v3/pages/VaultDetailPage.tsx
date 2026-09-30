@@ -1,37 +1,41 @@
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
-import { cn } from '@scani/ui/lib/cn';
-import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
 import { Button } from '@scani/ui/ui/button';
-import { Input } from '@scani/ui/ui/input';
 import { Progress } from '@scani/ui/ui/progress';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
-import { AmountInput } from '@scani/ui/v3/components/AmountInput';
 import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { StatTile } from '@scani/ui/v3/components/charts/StatTile';
-import { DataRowList } from '@scani/ui/v3/components/DataRow';
+import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
-import { ArrowLeft, Plus } from 'lucide-react';
+import { CircleMinus, Plus, Trash2, Vault } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { invalidateVaultQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
 import {
   optimisticDetachVaultHolding,
-  optimisticPatchVault,
   optimisticRemoveVaults,
   optimisticSetVaultHoldingPercentage,
 } from '@/v3/hooks/optimisticUpdates';
-import { Field } from '../components/form/Field';
-import { GroupColorChoice } from '../components/groups/GroupColorChoice';
-import { MemberPicker } from '../components/membership/MemberPicker';
-import { VaultHoldingRow } from '../components/vaults/VaultHoldingRow';
+import { BackLink } from '../components/BackLink';
+import { EditAction } from '../components/form/FormSheet';
+import { VaultAttachSheet } from '../components/membership/VaultAttachSheet';
+import { EditVaultShareAction } from '../components/vaults/EditVaultShareAction';
+import { EditVaultSheet } from '../components/vaults/EditVaultSheet';
+import { RemoveFromVaultAction } from '../components/vaults/RemoveFromVaultAction';
 import { useVaultAttach } from '../hooks/useVaultAttach';
-import { V3_ROUTES } from '../lib/routes';
-import { compareVaultHoldings, vaultIsMet, vaultProgress, vaultRemaining } from '../lib/vaults';
+import { V3_ROUTES, vaultDetailPath } from '../lib/routes';
+import {
+  attributedValue,
+  compareVaultHoldings,
+  type VaultHoldingRow as VaultHoldingRowData,
+  vaultIsMet,
+  vaultProgress,
+  vaultRemaining,
+} from '../lib/vaults';
 
 /**
  * One vault: how far along it is, and which holdings count toward it.
@@ -63,35 +67,29 @@ export function VaultDetailPage() {
   const vaultQuery = trpc.vaults.getById.useQuery({ id }, { enabled: Boolean(id) });
   useDocumentTitle(vaultQuery.data?.name ?? t('v3.vaults.page.title'));
 
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
+  const removeMany = trpc.vaults.setAllocations.useMutation({
+    onSuccess: async () => {
+      setConfirmingRemove(false);
+      await Promise.all([invalidateVaultQueries(utils), utils.vaults.allocations.invalidate()]);
+    },
+    onError: (error) => showError(error, t('v3.vaults.detail.toast.removingHolding')),
+  });
   const [attaching, setAttaching] = useState(false);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
-  const [draft, setDraft] = useState<{ name: string; targetAmount: string; color: string } | null>(
-    null
-  );
 
   const attachedIds = useMemo(
     () => new Set((vaultQuery.data?.holdings ?? []).map((holding) => holding.holdingId)),
     [vaultQuery.data]
   );
   const attach = useVaultAttach(id, attachedIds);
-
-  const updateVault = trpc.vaults.update.useMutation({
-    onMutate: ({ id: vaultId, data }) =>
-      optimisticPatchVault(utils, vaultId, {
-        name: data.name,
-        color: data.color,
-        targetAmount: data.targetAmount,
-      }),
-    onSuccess: () => {
-      setDraft(null);
-      showSuccess(t('v3.vaults.detail.toast.updated'));
-    },
-    onError: (error, _vars, ctx) => {
-      ctx?.restore();
-      showError(error, t('v3.vaults.detail.toast.updating'));
-    },
-    onSettled: () => void invalidateVaultQueries(utils),
-  });
+  const baseCurrencyQuery = trpc.users.getBaseCurrency.useQuery();
+  const vaultsQuery = trpc.vaults.getAll.useQuery();
+  const vaultNames = useMemo(
+    () => new Map((vaultsQuery.data ?? []).map((v) => [v.id, v.name] as const)),
+    [vaultsQuery.data]
+  );
 
   const deleteVault = trpc.vaults.delete.useMutation({
     onMutate: ({ id: vaultId }) => optimisticRemoveVaults(utils, [vaultId]),
@@ -134,7 +132,7 @@ export function VaultDetailPage() {
   if (vaultQuery.isLoading) {
     return (
       <PageLayout measure="wide">
-        <BackLink />
+        <BackLink to={V3_ROUTES.vaults} label={t('v3.vaults.detail.backToVaults')} />
         <Skeleton className="h-40 w-full" aria-hidden="true" />
       </PageLayout>
     );
@@ -144,7 +142,7 @@ export function VaultDetailPage() {
   if (!vault) {
     return (
       <PageLayout measure="wide">
-        <BackLink />
+        <BackLink to={V3_ROUTES.vaults} label={t('v3.vaults.detail.backToVaults')} />
         <p className="text-body text-muted-foreground">{t('v3.vaults.detail.notFound')}</p>
       </PageLayout>
     );
@@ -153,33 +151,20 @@ export function VaultDetailPage() {
   const progress = vaultProgress(vault);
   const holdings = [...vault.holdings].sort(compareVaultHoldings);
 
-  const current = draft ?? {
-    name: vault.name,
-    targetAmount: String(vault.targetAmount),
-    color: vault.color,
-  };
-  const dirty =
-    current.name !== vault.name ||
-    current.targetAmount !== String(vault.targetAmount) ||
-    current.color !== vault.color;
-  const nameIsEmpty = current.name.trim().length === 0;
-  const targetIsInvalid = !(Number(current.targetAmount) > 0);
-  const patch = (change: Partial<typeof current>) => setDraft({ ...current, ...change });
-
   return (
     <PageLayout measure="wide">
-      <BackLink />
+      <BackLink to={V3_ROUTES.vaults} label={t('v3.vaults.detail.backToVaults')} />
 
-      <div className="flex items-center gap-2">
-        <span
-          aria-hidden="true"
-          className="size-3 shrink-0 rounded-full"
-          style={{ backgroundColor: current.color }}
-        />
-        <h1 className="min-w-0 truncate text-title">{vault.name}</h1>
-      </div>
-
+      {/* The title sits inside the summary card, as on a group's page (SC-1433). */}
       <Block className="flex flex-col gap-3 p-4">
+        <div className="flex items-center gap-2">
+          <span
+            aria-hidden="true"
+            className="size-3 shrink-0 rounded-full"
+            style={{ backgroundColor: vault.color }}
+          />
+          <h1 className="min-w-0 truncate text-title">{vault.name}</h1>
+        </div>
         <StatTile
           emphasis="hero"
           label={t('v3.vaults.detail.saved')}
@@ -204,129 +189,199 @@ export function VaultDetailPage() {
             />
           )}
         </p>
-      </Block>
-
-      <Block>
-        <BlockHeader
-          title={t('v3.vaults.detail.countingToward', { count: vault.holdingsCount || 0 })}
-        />
-        {holdings.length > 0 ? (
-          <DataRowList className="border-border border-t">
-            {holdings.map((holding) => (
-              <VaultHoldingRow
-                key={holding.holdingId}
-                holding={holding}
-                currencySymbol={vault.currencySymbol}
-                isSaving={setPercentage.isPending}
-                onSavePercentage={(holdingId, percentage) =>
-                  setPercentage.mutate({ vaultId: id, holdingId, percentage })
-                }
-                onDetach={(holdingId) => detach.mutate({ vaultId: id, holdingId })}
-              />
-            ))}
-          </DataRowList>
-        ) : (
-          <p className="px-4 pb-4 text-body text-muted-foreground">{t('v3.vaults.detail.empty')}</p>
-        )}
-
-        {attaching ? (
-          <div className="border-border border-t">
-            <MemberPicker
-              candidates={attach.candidates}
-              pendingIds={attach.pendingIds}
-              onAdd={attach.add}
-              onDone={() => setAttaching(false)}
-              noun="holdings"
-            />
-          </div>
-        ) : (
-          <div className="px-4 pt-3 pb-4">
-            <Button variant="outline" size="sm" onClick={() => setAttaching(true)}>
-              <Plus className="me-2 size-4" aria-hidden="true" />
-              {t('v3.vaults.detail.attachHolding')}
-            </Button>
-          </div>
-        )}
-      </Block>
-
-      <Block>
-        <BlockHeader title={t('v3.vaults.detail.details')} />
-        <div className="flex flex-col gap-3 border-border border-t p-4">
-          <Field label={t('v3.vaults.detail.name')} htmlFor="vault-name">
-            <Input
-              id="vault-name"
-              value={current.name}
-              onChange={(event) => patch({ name: event.target.value })}
-              disabled={updateVault.isPending}
-            />
-          </Field>
-          {/* The currency is not editable here, and deliberately so: it is the
-           *  unit every stored figure on this vault is already denominated in,
-           *  so changing it would silently reinterpret the target and the
-           *  saved amount rather than convert them. */}
-          <Field
-            label={t('v3.vaults.detail.target')}
-            htmlFor="vault-target"
-            hint={t('v3.vaults.detail.targetHint', { symbol: vault.currencySymbol })}
-          >
-            <AmountInput
-              id="vault-target"
-              value={current.targetAmount}
-              onValueChange={(targetAmount) => patch({ targetAmount })}
-              decimalScale={2}
-              disabled={updateVault.isPending}
-            />
-          </Field>
-          <Field label={t('v3.vaults.detail.colour')}>
-            <GroupColorChoice
-              value={current.color}
-              onChange={(color) => patch({ color })}
-              disabled={updateVault.isPending}
-            />
-          </Field>
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              disabled={!dirty || nameIsEmpty || targetIsInvalid || updateVault.isPending}
-              onClick={() =>
-                updateVault.mutate({
-                  id,
-                  data: {
-                    name: current.name.trim(),
-                    color: current.color,
-                    targetAmount: current.targetAmount,
-                  },
-                })
-              }
-            >
-              {t('v3.vaults.detail.saveChanges')}
-            </Button>
-            {dirty ? (
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={updateVault.isPending}
-                onClick={() => setDraft(null)}
-              >
-                {t('v3.vaults.detail.discard')}
-              </Button>
-            ) : null}
-            {nameIsEmpty ? (
-              <p className="text-caption text-muted-foreground">{t('v3.vaults.detail.needName')}</p>
-            ) : targetIsInvalid ? (
-              <p className="text-caption text-muted-foreground">
-                {t('v3.vaults.detail.needTarget')}
-              </p>
-            ) : null}
-          </div>
+        <div className="self-start">
+          <EditAction onClick={() => setEditingDetails(true)} />
         </div>
       </Block>
+
+      {/* On the page, not in a card — the same reason as the group page (SC-1404). */}
+      <section className="flex flex-col gap-3" aria-labelledby="vault-members-heading">
+        <div className="flex items-center justify-between gap-3">
+          <h2 id="vault-members-heading" className="text-title">
+            {t('v3.vaults.detail.inThisVault')}
+          </h2>
+          {holdings.length > 0 ? (
+            // The short label keeps the section heading readable at 390px; the
+            // full sentence stays the accessible name.
+            <Button
+              variant="outline"
+              size="sm"
+              aria-label={t('v3.vaults.detail.attachHoldings')}
+              onClick={() => setAttaching(true)}
+            >
+              <Plus className="me-1.5 size-4" aria-hidden="true" />
+              {t('v3.membership.addAction')}
+            </Button>
+          ) : null}
+        </div>
+
+        <V3DataView
+          getId={(holding) => holding.holdingId}
+          config={{
+            pageKey: 'vault-members',
+            data: holdings,
+            nounKey: 'ui.dataView.noun.holdings',
+            searchPlaceholderKey: 'ui.dataView.accounts.config.search',
+            searchFn: (holding, query) =>
+              [
+                holding.tokenSymbol,
+                holding.tokenName,
+                holding.holdingLabel,
+                holding.accountName,
+                holding.institutionName,
+              ]
+                .filter(Boolean)
+                .join(' ')
+                .toLocaleLowerCase()
+                .includes(query.toLocaleLowerCase()),
+            sortDefs: [
+              { key: 'name', labelKey: 'ui.dataView.holdings.col.holding' },
+              { key: 'value', labelKey: 'ui.dataView.holdings.col.amount' },
+            ],
+            defaultSort: { field: 'name', direction: 'asc' },
+            sortFn: (a, b, field, direction) =>
+              (field === 'value'
+                ? -compareVaultHoldings(a, b)
+                : a.tokenSymbol.localeCompare(b.tokenSymbol)) * (direction === 'asc' ? 1 : -1),
+            renderRow: (holding) => ({
+              label: [holding.tokenSymbol, holding.holdingLabel].filter(Boolean).join(' · '),
+              sublabel: [holding.tokenName, holding.accountName, holding.institutionName].join(
+                ' · '
+              ),
+              value: <VaultShareFigure holding={holding} currencySymbol={vault.currencySymbol} />,
+            }),
+            columns: [
+              {
+                key: 'holding',
+                headerKey: 'ui.dataView.holdings.col.holding',
+                render: (holding) => (
+                  <span className="flex min-w-0 flex-col">
+                    <span className="truncate text-label">
+                      {[holding.tokenSymbol, holding.holdingLabel].filter(Boolean).join(' · ')}
+                    </span>
+                    <span className="truncate text-caption text-muted-foreground">
+                      {[holding.tokenName, holding.accountName, holding.institutionName].join(
+                        ' · '
+                      )}
+                    </span>
+                  </span>
+                ),
+              },
+              {
+                key: 'allocation',
+                headerKey: 'ui.dataView.holdings.col.amount',
+                numeric: true,
+                render: (holding) => (
+                  <VaultShareFigure holding={holding} currencySymbol={vault.currencySymbol} />
+                ),
+              },
+            ],
+            // The row carries the figure only; the share and Remove are the
+            // peek's facts and header actions, like every other record's
+            // (UI standard rules 4 and 13, SC-1433).
+            peek: {
+              basePath: vaultDetailPath(id),
+              render: (holding) => ({
+                title: [holding.tokenSymbol, holding.holdingLabel].filter(Boolean).join(' · '),
+                subtitle: [holding.accountName, holding.institutionName]
+                  .filter(Boolean)
+                  .join(' · '),
+                primary: [
+                  {
+                    label: t('v3.vaults.holding.inVault'),
+                    value: (
+                      <Numeric value={attributedValue(holding)} currency={vault.currencySymbol} />
+                    ),
+                  },
+                  { label: t('v3.vaults.holding.shareField'), value: `${holding.percentage}%` },
+                ],
+                actions: (
+                  <>
+                    <EditVaultShareAction
+                      holding={holding}
+                      onSave={(holdingId, percentage) =>
+                        setPercentage
+                          .mutateAsync({ vaultId: id, holdingId, percentage })
+                          .then(() => {})
+                      }
+                    />
+                    <RemoveFromVaultAction
+                      holding={holding}
+                      currencySymbol={vault.currencySymbol}
+                      onDetach={(holdingId) => detach.mutate({ vaultId: id, holdingId })}
+                    />
+                  </>
+                ),
+              }),
+            },
+            empty: {
+              icon: Vault,
+              titleKey: 'ui.dataView.vaultMembers.empty.title',
+              descriptionKey: 'ui.dataView.vaultMembers.empty.description',
+              action: (
+                <Button onClick={() => setAttaching(true)}>
+                  <Plus className="me-1.5 size-4" aria-hidden="true" />
+                  {t('v3.vaults.detail.attachHoldings')}
+                </Button>
+              ),
+            },
+            renderBulkActions: (ids, clear) => (
+              <ConfirmAction
+                label={
+                  <>
+                    <CircleMinus className="me-2 size-4" aria-hidden="true" />
+                    {`${t('v3.membership.removeAction')} (${ids.size})`}
+                  </>
+                }
+                triggerClassName="text-destructive hover:text-destructive"
+                confirmLabel={t('v3.membership.confirmRemove')}
+                destructive
+                open={confirmingRemove}
+                onOpenChange={setConfirmingRemove}
+                isPending={removeMany.isPending}
+                consequence={t('v3.membership.removeSelection', { count: ids.size })}
+                onConfirm={() =>
+                  removeMany.mutate(
+                    {
+                      vaultId: id,
+                      entries: [...ids].map((holdingId) => ({ holdingId, percentage: 0 })),
+                    },
+                    { onSuccess: clear }
+                  )
+                }
+              />
+            ),
+          }}
+        />
+      </section>
+
+      <VaultAttachSheet
+        open={attaching}
+        onOpenChange={setAttaching}
+        vaultId={id}
+        vaultName={vault.name}
+        currency={baseCurrencyQuery.data?.symbol || 'USD'}
+        candidates={attach.candidates}
+        values={attach.values}
+        allocations={attach.allocations}
+        vaultNames={vaultNames}
+        pending={attach.pending}
+        onAttach={attach.add}
+      />
+
+      <EditVaultSheet vault={vault} open={editingDetails} onOpenChange={setEditingDetails} />
 
       <Block>
         <BlockHeader title={t('v3.vaults.detail.dangerZone')} />
         <div className="p-4">
           <ConfirmAction
-            label={t('v3.vaults.detail.deleteTrigger')}
+            label={
+              <>
+                <Trash2 className="me-2 size-4" aria-hidden="true" />
+                {t('v3.vaults.detail.deleteTrigger')}
+              </>
+            }
+            triggerClassName="text-destructive hover:text-destructive"
             confirmLabel={t('v3.vaults.detail.deleteCommit')}
             destructive
             open={confirmingDelete}
@@ -344,14 +399,20 @@ export function VaultDetailPage() {
   );
 }
 
-function BackLink() {
-  const { t } = useTranslation();
+/** The row's figure: what this vault counts from the holding, and its share. */
+function VaultShareFigure({
+  holding,
+  currencySymbol,
+}: {
+  holding: VaultHoldingRowData;
+  currencySymbol: string;
+}) {
   return (
-    <Button variant="ghost" size="sm" asChild className="-ms-2 self-start">
-      <Link to={V3_ROUTES.vaults}>
-        <ArrowLeft className={cn(MIRROR_IN_RTL, 'me-2 size-4')} aria-hidden="true" />
-        {t('v3.vaults.detail.backToVaults')}
-      </Link>
-    </Button>
+    <span className="flex flex-col items-end">
+      <Numeric value={attributedValue(holding)} currency={currencySymbol} className="text-label" />
+      <span className="font-mono text-caption text-muted-foreground tabular-nums tracking-numeric">
+        {`${holding.percentage}%`}
+      </span>
+    </span>
   );
 }

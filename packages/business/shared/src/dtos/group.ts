@@ -132,6 +132,8 @@ export const GroupWithCountsDto = z.object({
   updatedAt: wireTimestamp,
   holdingsCount: wireCount,
   accountsCount: wireCount,
+  billsCount: wireCount,
+  payeesCount: wireCount,
 });
 
 export type GroupWithCounts = z.infer<typeof GroupWithCountsDto>;

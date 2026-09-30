@@ -31,7 +31,7 @@ import { lacksCoverage } from '../../lib/data-quality-flags';
 import { cachedUserNetWorthDaily } from '../../lib/net-worth-cache';
 import {
   type AggregatedDailyPoint,
-  aggregateIncludedHoldingRows,
+  aggregateDailyTotals,
   hasKnownCoverage,
   type NetWorthHistoryRow,
   toAggregatedDaily,
@@ -352,9 +352,10 @@ export const portfolioRouter = router({
     const window = outcome.returns.effectiveWindow;
     // Over exactly the days the portfolio was measured on, so the comparison
     // starts and ends where the return does (SC-464).
-    const benchmarks = window
-      ? await Container.get(BenchmarkReturnService).over(window, outcome.returns.baseCurrencyId)
-      : [];
+    const benchmarks =
+      window && outcome.returns.eligibility.eligible
+        ? await Container.get(BenchmarkReturnService).over(window, outcome.returns.baseCurrencyId)
+        : [];
     return { returns: withoutPeriodSeries(outcome.returns), benchmarks };
   }),
 
@@ -382,7 +383,11 @@ export const portfolioRouter = router({
       // Prices share the run's data version; the TTL bounds a new price landing today.
       return sharedReturnsRun(`comparison:${returnsKey(request)}`, dbUser.id, async () => {
         const outcome = await computeReturns(ctx.requestCache, request);
-        if (outcome.status !== 'ok' || outcome.returns.series.length === 0) {
+        if (
+          outcome.status !== 'ok' ||
+          !outcome.returns.eligibility.eligible ||
+          outcome.returns.series.length === 0
+        ) {
           return { comparison: null, baseCurrencyId: null, truncated: false };
         }
 
@@ -536,8 +541,8 @@ export const portfolioRouter = router({
               input.scope
             )
           ).map(toAggregatedDaily)
-        : aggregateIncludedHoldingRows(
-            await dailyRepo.findIncludedHoldingScopeRange(dbUser.id, baseId, input.from, input.to)
+        : aggregateDailyTotals(
+            await dailyRepo.findIncludedHoldingDailyTotals(dbUser.id, baseId, input.from, input.to)
           );
       type PnLPoint = {
         date: string;

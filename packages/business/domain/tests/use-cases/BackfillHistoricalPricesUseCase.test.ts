@@ -1,3 +1,6 @@
+// @ci-reads docs/technical/2026-08-15_absence-and-refusal.md
+// @ci-reads packages/business/domain/tests/use-cases/LinkTransferPairsUseCase.test.ts
+// @ci-reads scripts/clear-unpriceable-cooldowns.ts scripts/run-historical-price-backfill.ts
 /**
  * `BackfillHistoricalPricesUseCase` integration tests.
  *

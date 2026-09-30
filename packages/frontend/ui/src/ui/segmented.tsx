@@ -111,6 +111,10 @@ const SegmentedItem = React.forwardRef<
       'ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
       'disabled:pointer-events-none disabled:opacity-50',
       'data-[state=checked]:bg-muted data-[state=checked]:text-foreground data-[state=checked]:shadow-sm',
+      // Dark's thumb is only five lightness points above its track, and a
+      // shadow does not read on a dark surface, so the selected segment was
+      // hard to find (SC-1433). The strong border clears 3:1 on both.
+      'dark:data-[state=checked]:ring-1 dark:data-[state=checked]:ring-input',
       className
     )}
     {...props}

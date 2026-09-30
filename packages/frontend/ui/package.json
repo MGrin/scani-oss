@@ -2,7 +2,7 @@
   "name": "@scani/ui",
   "private": true,
   "version": "0.0.0",
-  "description": "Design system + shared client plumbing for the Scani SPAs (frontend/app, frontend/cloud). Ships the Tailwind preset + CSS tokens, the full shadcn primitive set, ThemeContext, ErrorBoundary, UpdateBanner, MagicCodeInput, PWA helpers, and auth/tRPC client factories. apps/frontend/app is the canonical source of truth — promote primitives from there.",
+  "description": "Design system + shared client plumbing for the Scani SPAs (frontend/app, frontend/cloud). Ships the Tailwind preset + CSS tokens, the full shadcn primitive set, ThemeContext, ErrorBoundary, UpdateBanner, MagicCodeInput, PWA helpers, and auth/tRPC client factories. apps/frontend/app is the canonical source of truth \u2014 promote primitives from there.",
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
@@ -58,6 +58,7 @@
     "./ui/popover": "./src/ui/popover.tsx",
     "./ui/progress": "./src/ui/progress.tsx",
     "./ui/scroll-area": "./src/ui/scroll-area.tsx",
+    "./ui/scroll-body": "./src/ui/scroll-body.tsx",
     "./ui/segmented": "./src/ui/segmented.tsx",
     "./ui/select": "./src/ui/select.tsx",
     "./ui/separator": "./src/ui/separator.tsx",
@@ -90,6 +91,7 @@
     "./v3/components/data-view/DataViewRows": "./src/v3/components/data-view/DataViewRows.tsx",
     "./v3/components/data-view/DataViewSkeleton": "./src/v3/components/data-view/DataViewSkeleton.tsx",
     "./v3/components/data-view/DataViewTable": "./src/v3/components/data-view/DataViewTable.tsx",
+    "./v3/components/data-view/DataViewToolbar": "./src/v3/components/data-view/DataViewToolbar.tsx",
     "./v3/components/data-view/RefineSheet": "./src/v3/components/data-view/RefineSheet.tsx",
     "./v3/components/data-view/V3DataView": "./src/v3/components/data-view/V3DataView.tsx",
     "./v3/components/feedback/LoadingRamp": "./src/v3/components/feedback/LoadingRamp.tsx",
@@ -166,7 +168,8 @@
     "lucide-react": "^0.577.0",
     "react-i18next": "^17.0.15",
     "tailwind-merge": "^3.7.0",
-    "write-excel-file": "^4.1.1"
+    "write-excel-file": "^4.1.1",
+    "@scani/config": "workspace:*"
   },
   "devDependencies": {
     "@happy-dom/global-registrator": "^20.14.5",

@@ -14,8 +14,13 @@ import {
   DECISION_LABELS,
   destinationLocation,
   remainderFor,
+  SPLIT_LABELS,
+  SPLIT_NOTE_KEY,
   type SplitDraftRow,
+  splitBlockers,
+  splitConsequence,
 } from '../../lib/transfer-review';
+import { FormActions, FormSheet } from '../form/FormSheet';
 import { TransferDestinationPicker } from './TransferDestinationPicker';
 
 /**
@@ -63,7 +68,57 @@ interface TransferSplitEditorProps {
   destinationsLoading: boolean;
 }
 
-export function TransferSplitEditor({
+/**
+ * The split answer's sheet (UI standard rule 13, SC-1433): the editor, the
+ * consequence it would commit, and Save disabled on `splitBlockers`. The
+ * draft and the chosen deposit stay with `TransferDecision`, which owns the
+ * candidate picker the `Same money` row depends on.
+ */
+export function TransferSplitSheet({
+  open,
+  onOpenChange,
+  onSubmit,
+  pending,
+  error,
+  ...editor
+}: TransferSplitEditorProps & {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSubmit: () => void;
+  pending: boolean;
+  error: string | null;
+}) {
+  const { t } = useTranslation();
+  const { item, rows } = editor;
+  return (
+    <FormSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('v3.review.transfer.split.sheetTitle')}
+      description={t(SPLIT_NOTE_KEY)}
+      footer={
+        <FormActions
+          submitLabel={t(SPLIT_LABELS.commitKey)}
+          pendingLabel={t('v3.form.saving')}
+          onSubmit={onSubmit}
+          onCancel={() => onOpenChange(false)}
+          blockers={splitBlockers(t, rows, item)}
+          pending={pending}
+          error={error}
+        />
+      }
+    >
+      <TransferSplitEditor {...editor} />
+      <p className="text-caption text-muted-foreground">
+        {splitConsequence(t, rows, item, (id) =>
+          id ? (item.candidates.find((c) => c.transactionId === id) ?? null) : null
+        )}
+      </p>
+    </FormSheet>
+  );
+}
+
+function TransferSplitEditor({
   item,
   rows,
   onChange,

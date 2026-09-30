@@ -7,6 +7,7 @@ import { AccountRepository } from '@scani/domain/repositories';
 import { FILE_IMPORT } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService } from '@scani/queue';
+import { CsvMappingDto } from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
@@ -29,6 +30,7 @@ export const fileImportRouter = router({
     .input(
       strictInput(
         z.object({
+          customMapping: CsvMappingDto.optional(),
           r2Key: z.string().min(1),
           // The presigned key is a uuid; without the real name the Files
           // list can only show `a1b2c3.csv`.
@@ -94,6 +96,7 @@ export const fileImportRouter = router({
         enrich: true,
         defaultCurrency: input.defaultCurrency,
         dateOrder: input.dateOrder,
+        customMapping: input.customMapping,
       });
       return { jobId };
     }),

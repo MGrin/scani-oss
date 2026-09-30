@@ -59,6 +59,7 @@ export {
 } from './PaymentOccurrenceRepository';
 export { PaymentRepository } from './PaymentRepository';
 export {
+  type IncludedDailyTotalsRow,
   type IncludedHoldingScopeRow,
   PortfolioValueDailyRepository,
   type PortfolioValueDailyRow,

@@ -91,7 +91,7 @@ function configFor(holdings: HoldingWithDetails[]) {
     peek: {
       t,
       currency: '$',
-      onSetAmount: () => undefined,
+      onEdit: () => undefined,
       onRecordMovement: () => undefined,
       onToggleActive: () => undefined,
       onMarkScam: () => undefined,
@@ -100,9 +100,7 @@ function configFor(holdings: HoldingWithDetails[]) {
       refreshingPriceId: null,
       refreshingBalanceId: null,
       onEditPrice: () => undefined,
-      onSetLabel: () => undefined,
       onConfigureApy: () => undefined,
-      onRemoveApy: () => undefined,
       onDelete: () => undefined,
     },
   });

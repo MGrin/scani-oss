@@ -52,7 +52,7 @@
       "action": {
         "seeAll": "Lihat semua"
       },
-      "unknownVendor": "Vendor tidak dikenal",
+      "unknownVendor": "Penerima tidak dikenal",
       "openRecord": "{{name}} — buka",
       "listAnd": "{{first}} dan {{second}}",
       "listSemicolon": "{{first}}; {{second}}",
@@ -104,7 +104,7 @@
       "groups": {
         "title": "Grup",
         "openGroup": "{{name}} — buka grupnya",
-        "empty": "Kosong"
+        "billsNext_other": "<amount/> tagihan, {{count}} hari ke depan"
       },
       "vaults": {
         "title": "Target Tabungan",
@@ -247,8 +247,8 @@
         },
         "attribution": {
           "label": "Dari mana asalnya",
-          "contributed": "Anda setor",
-          "withdrew": "Anda tarik",
+          "outsideContributed": "Di luar angka di atas: Anda setor <amount/>.",
+          "outsideWithdrew": "Di luar angka di atas: Anda tarik <amount/>.",
           "market": "Pasar",
           "currency": "Mata uang",
           "combined": "Pasar dan mata uang",
@@ -262,10 +262,29 @@
         },
         "gaps": {
           "label": "Unggul atau tertinggal",
-          "caption": "Berapa jadinya setoran dan penarikan yang sama di masing-masing. Persentasenya adalah imbal hasilnya sendiri.",
-          "vs": "vs {{name}}"
+          "caption": "Berapa jadinya setoran dan penarikan yang sama di masing-masing.",
+          "vs": "vs {{name}}",
+          "ahead": "unggul <amount/>",
+          "behind": "tertinggal <amount/>",
+          "returned": "Menghasilkan <value/>"
         },
-        "details": "Tingkat imbal hasil di baliknya"
+        "details": "Tingkat imbal hasil di baliknya",
+        "unavailable": "Kinerja investasi tidak tersedia",
+        "recordedChange": "Perubahan kekayaan tercatat",
+        "eligibility": {
+          "incomplete-flow-coverage": "Riwayat arus dana tidak lengkap",
+          "unresolved-change": "Perubahan saldo belum dijelaskan",
+          "missing-valuation": "Penilaian tidak tersedia",
+          "stale-valuation": "Penilaian kedaluwarsa",
+          "insufficient-history": "Riwayat periode ini tidak cukup",
+          "rebuilding-history": "Menghitung ulang riwayat setelah perubahan"
+        },
+        "subset": "Mencakup {{included}} dari {{holdings}}.",
+        "coversNetWorth": "Mencakup {{share}} dari kekayaan bersih Anda, {{included}} dari {{holdings}}.",
+        "coversValue": "Mencakup {{share}} dari nilainya, {{included}} dari {{holdings}}.",
+        "leftOut": "Dikecualikan:",
+        "enteredLate": "Sejak tanggal pertama laporannya: {{holdings}}.",
+        "unpricedAtZero_other": "{{count}} token tanpa harga dihitung nol."
       }
     },
     "money": {
@@ -273,7 +292,6 @@
         "overdueTotal_other": "Terlambat, {{count}} tagihan",
         "dayTotalEstimated_other": "Kira-kira, termasuk {{count}} tagihan perkiraan:",
         "noneAhead_other": "Tidak ada yang jatuh tempo dalam {{count}} hari ke depan.",
-        "seeRecurring": "Lihat pembayaran berulang",
         "addPayment": "Tambahkan pembayaran",
         "billsCommitted_other": "Tagihan yang dikomitmenkan, {{count}} hari ke depan",
         "estimatedExcluded_other": "Tidak termasuk: <amounts></amounts> — {{count}} tagihan diperkirakan dari jumlah terakhir yang diselesaikan, dan perkiraan bukanlah komitmen.",
@@ -284,8 +302,7 @@
       "segments": {
         "upcoming": "Mendatang",
         "recurring": "Berulang",
-        "vendors": "Vendor",
-        "forecast": "Proyeksi"
+        "vendors": "Penerima"
       },
       "overdue": {
         "unknown": "Terlambat",
@@ -330,13 +347,13 @@
       },
       "deleteVendor": {
         "checking": "Menghapus \"{{vendor}}\". Memeriksa apa saja yang mengarah kepadanya…",
-        "blocked_other": "\"{{vendor}}\" masih memiliki {{count}} pembayaran yang mengarah kepadanya, dan menghapusnya akan ikut menghapus pembayaran itu beserta semua yang telah diselesaikan atasnya. Akhiri atau hapus pembayaran itu dulu, atau gabungkan \"{{vendor}}\" ke vendor yang Anda maksud.",
+        "blocked_other": "\"{{vendor}}\" masih memiliki {{count}} pembayaran yang mengarah kepadanya, dan menghapusnya akan ikut menghapus pembayaran itu beserta semua yang telah diselesaikan atasnya. Akhiri atau hapus pembayaran itu dulu, atau gabungkan \"{{vendor}}\" ke penerima yang Anda maksud.",
         "lead": "Menghapus \"{{vendor}}\". Tidak ada yang dibayarkan kepadanya maupun olehnya.",
         "alsoAliases_other": "{{count}} alias yang pernah tercatat untuknya ikut terhapus",
-        "alsoExtractions_other": "{{count}} faktur yang sudah dibaca tetap menyimpan catatannya sendiri tetapi kehilangan kaitannya dengan vendor ini",
+        "alsoExtractions_other": "{{count}} faktur yang sudah dibaca tetap menyimpan catatannya sendiri tetapi kehilangan kaitannya dengan penerima ini",
         "alsoFrame": "{{clauses}}.",
         "trigger": "Hapus",
-        "confirm": "Hapus vendor ini",
+        "confirm": "Hapus penerima ini",
         "deleted": "{{vendor}} dihapus"
       },
       "mergeVendor": {
@@ -350,20 +367,19 @@
         "trigger": "Gabungkan duplikat",
         "confirmNamed": "Gabungkan {{vendor}}",
         "confirm": "Gabungkan",
-        "merged": "Vendor digabungkan",
-        "noCandidates": "Tidak ada vendor lain untuk digabungkan"
+        "merged": "Penerima digabungkan",
+        "noCandidates": "Tidak ada penerima lain untuk digabungkan"
       },
       "page": {
         "viewSwitcher": "Tampilan Uang",
-        "title": "Uang",
-        "newVendor": "Vendor baru",
+        "title": "Tagihan",
+        "newVendor": "Penerima baru",
         "addPayment": "Tambah pembayaran"
       },
       "field": {
         "direction": "Arah"
       },
       "paymentForm": {
-        "backToPayment": "Kembali ke pembayaran",
         "allRecurring": "Semua pembayaran berulang",
         "titleEdit": "Ubah pembayaran",
         "titleNew": "Pembayaran berulang baru",
@@ -420,7 +436,6 @@
         "repeatMonth_other": "Berulang setiap {{count}} bulan, berpatokan pada hari jatuh temponya.",
         "repeatQuarter_other": "Berulang setiap {{count}} kuartal, berpatokan pada hari jatuh temponya.",
         "repeatYear_other": "Berulang setiap {{count}} tahun, berpatokan pada hari jatuh temponya.",
-        "blockers": "Untuk melanjutkan: {{blockers}}.",
         "estimateFromHistory": "Perkirakan dari biaya terakhirnya",
         "estimateFromHistoryHint": "Mati secara bawaan. Jika dinyalakan, proyeksi memakai jumlah yang terakhir Anda selesaikan untuk pembayaran ini, dan menyebutkan dari bulan mana angka itu berasal."
       },
@@ -442,12 +457,14 @@
         "markedPaid": "Ditandai sudah dibayar",
         "skipped": "Kejadian dilewati",
         "amountSettled": "Jumlah yang diselesaikan",
-        "confirm": "Konfirmasi",
-        "cancel": "Batal",
-        "skip": "Lewati"
+        "skip": "Lewati",
+        "descriptionPaid": "Mencatat pembayaran ini sebagai sudah dibayar, dengan jumlah yang benar-benar keluar. Pembayaran ini keluar dari “Mendatang”.",
+        "descriptionReceived": "Mencatat pembayaran ini sebagai sudah diterima, dengan jumlah yang benar-benar masuk. Pembayaran ini keluar dari “Mendatang”.",
+        "blockerAmount": "jumlah"
       },
       "vendorSpend": {
-        "notSubtracted": "Tidak dikurangkan dari yang Anda tanggung — ini dua angka yang terpisah."
+        "notSubtracted": "Tidak dikurangkan dari yang Anda tanggung — ini dua angka yang terpisah.",
+        "details": "yang dibayar dan diterima"
       },
       "vendorEdit": {
         "name": "Nama",
@@ -455,33 +472,35 @@
         "categoryPlaceholder": "Tanpa kategori",
         "website": "Situs web",
         "websitePlaceholder": "Tidak ada dalam catatan",
-        "edit": "Ubah",
-        "cancel": "Batal",
-        "save": "Simpan vendor"
+        "title": "Edit penerima",
+        "description": "Mengubah nama dan detail yang tampil di setiap tagihan dari penerima ini."
       },
       "vendorCreate": {
-        "placeholder": "Nama vendor",
-        "label": "Nama vendor",
-        "cancel": "Batal"
+        "placeholder": "Nama penerima",
+        "label": "Nama penerima",
+        "subject": "penerima itu",
+        "blocker": "beri nama penerimanya",
+        "description": "Pihak yang Anda bayar atau yang membayar Anda. Tagihan ditautkan ke penerimanya.",
+        "submit": "Buat penerima"
       },
       "vendorField": {
-        "label": "Vendor",
-        "pendingHint": "Dibaca dari faktur. Kami akan membuat vendor ini saat Anda menyimpan jika belum ada.",
-        "searchPlaceholder": "Cari atau buat vendor",
-        "empty": "Belum ada vendor dengan nama itu.",
+        "label": "Penerima",
+        "pendingHint": "Dibaca dari faktur. Kami akan membuat penerima ini saat Anda menyimpan jika belum ada.",
+        "searchPlaceholder": "Cari atau buat penerima",
+        "empty": "Belum ada penerima dengan nama itu.",
         "didYouMean": "Apakah maksud Anda",
-        "typeToCreate": "Ketik sebuah nama untuk membuat vendor",
-        "sameVendor": "Vendor yang sama",
+        "typeToCreate": "Ketik sebuah nama untuk membuat penerima",
+        "sameVendor": "Penerima yang sama",
         "similar": "Mirip",
         "createNamed": "Buat “{{term}}”",
-        "similarNames_other": "Sudah ada vendor dengan nama yang mirip:",
+        "similarNames_other": "Sudah ada penerima dengan nama yang mirip:",
         "use": "Gunakan {{name}}"
       },
       "vendorList": {
         "uncategorised": "Tanpa kategori",
         "billsGroup": "Tagihan",
         "billKind": "Tagihan",
-        "paymentCount_other": "{{count}} pembayaran"
+        "paymentCount_other": "{{count}} pembayaran berulang"
       },
       "vendor": {
         "saved": "{{name}} disimpan",
@@ -493,9 +512,9 @@
         "empty": "Tidak ada di daftar token Anda yang cocok dengan itu."
       },
       "duplicatePicker": {
-        "noMatch": "Tidak ada vendor lain yang cocok dengan “{{query}}”.",
-        "searchPlaceholder": "Cari vendor",
-        "searchLabel": "Cari vendor duplikat",
+        "noMatch": "Tidak ada penerima lain yang cocok dengan “{{query}}”.",
+        "searchPlaceholder": "Cari penerima",
+        "searchLabel": "Cari penerima duplikat",
         "optionLabel": "Duplikat untuk digabungkan ke {{vendor}}",
         "intro": "Pilih duplikat yang akan dihapus. Duplikat itu digabungkan ke <survivor>{{vendor}}</survivor>, yang dipertahankan."
       },
@@ -543,27 +562,26 @@
         "notCounted_other": "{{count}} pembayaran berubah-ubah tidak memiliki perkiraan dan tidak dihitung."
       },
       "vendorPeek": {
-        "newVendor": "Vendor baru",
+        "newVendor": "Penerima baru",
         "seePayments_other": "Lihat pembayaran",
-        "payments": "Pembayaran",
-        "incomeFromThisVendor": "Pemasukan dari vendor ini",
+        "payments": "Berulang",
+        "incomeFromThisVendor": "Pemasukan dari penerima ini",
         "recentIncome": "Pemasukan terbaru",
         "recentPayments": "Pembayaran terbaru",
         "details": "Detail",
         "website": "Situs web",
         "noWebsite": "Tidak ada dalam catatan",
         "direction": "Arah",
-        "unclassified": "Pembayaran vendor ini tidak menyatakan apakah uangnya keluar atau masuk, jadi tidak ada angka bulanan yang ditampilkan.",
-        "notCounted": "Tidak dihitung"
+        "unclassified": "Pembayaran penerima ini tidak menyatakan apakah uangnya keluar atau masuk, jadi tidak ada angka bulanan yang ditampilkan.",
+        "notCounted": "Tidak dihitung",
+        "groupsHint": "Semua tagihan dari penerima ini masuk ke grup yang Anda centang, termasuk tagihan yang ditambahkan nanti."
       },
       "pending": {
-        "creatingVendor": "Membuat vendor",
-        "creatingPayment": "Membuat pembayaran",
-        "updatingPayment": "Memperbarui pembayaran",
+        "creatingVendor": "Membuat penerima",
         "deletingPayment": "Menghapus pembayaran",
-        "deletingVendor": "Menghapus vendor",
-        "savingVendor": "Menyimpan vendor",
-        "mergingVendors": "Menggabungkan vendor",
+        "deletingVendor": "Menghapus penerima",
+        "savingVendor": "Menyimpan penerima",
+        "mergingVendors": "Menggabungkan penerima",
         "pausingPayment": "Menjeda pembayaran",
         "resumingPayment": "Melanjutkan pembayaran",
         "updatingOccurrence": "Memperbarui kejadian pembayaran"
@@ -575,7 +593,7 @@
       "blocker": {
         "enterAmount": "masukkan jumlahnya",
         "estimateAboveZero": "buat perkiraannya lebih dari nol, atau kosongkan",
-        "chooseVendor": "pilih vendor",
+        "chooseVendor": "pilih penerima",
         "pickCurrency": "pilih mata uang dari daftar",
         "setAnchorDate": "tetapkan tanggal patokan",
         "chooseDate": "pilih tanggal",
@@ -583,80 +601,9 @@
         "setRepeatCount": "tetapkan jumlah pengulangan yang valid"
       },
       "forecast": {
-        "projectedMark": "Proyeksi",
-        "label": "proyeksi arus kas",
-        "working": "Sedang menghitung…",
-        "runwayLabel": "Ketahanan dana",
-        "runsOutIn": "Habis pada {{month}}",
-        "lastsBeyond_other": "Bertahan lebih dari {{count}} bulan",
-        "netPerMonth": "Buku ini bersih <value></value> sebulan.",
-        "basis_other": "Menghitung <value></value> dari {{count}} kepemilikan.",
-        "basisIlliquid_other": "<value></value> pada {{count}} properti dan posisi perusahaan tertutup dikecualikan karena tidak likuid.",
-        "basisUnpriceable_other": "{{count}} kepemilikan tidak memiliki harga dan tidak dihitung.",
-        "horizonSwitcher": "Rentang proyeksi",
-        "horizonOption_other": "{{count}} bulan",
-        "balanceAt": "Saldo pada {{month}}",
-        "chartLabel_other": "Proyeksi saldo untuk {{count}} bulan ke depan",
-        "goingOut_other": "Keluar, {{count}} bulan ke depan",
-        "comingIn_other": "Masuk, {{count}} bulan ke depan",
-        "notCounted": "Tidak ada dalam proyeksi ini",
-        "unprojectable_other": "{{count}} pembayaran berubah-ubah tidak memiliki perkiraan, jadi tidak ada yang diproyeksikan untuknya.",
-        "overdueExcluded_other": "{{count}} tagihan sudah terlambat dan tidak masuk dalam rangkaian ini.",
-        "seeRecurring": "Lihat pembayaran berulang",
-        "addPayment": "Tambahkan pembayaran",
-        "affordTitle": "Apakah saya mampu?",
-        "affordAmount": "Jumlah",
-        "affordWhen": "Kapan",
-        "affordAsk": "Periksa",
-        "affordClear": "Bersihkan",
-        "affordLowest": "Titik terendah saldo",
-        "affordLowestIn": "Pada {{month}}",
-        "affordLowestNow": "Hari ini, sebelum ada yang bergerak",
-        "affordStaysPositive": "Saldo tetap di atas nol sepanjang rentang ini.",
-        "affordGoesNegative": "Saldo turun di bawah nol pada titik itu.",
-        "affordCostsMonths_other": "Ini menghabiskan {{count}} bulan ketahanan dana.",
-        "affordRunwayAfter": "Setelah itu, uangnya habis pada {{month}}.",
-        "affordRunwayStillBeyond_other": "Ketahanan dana tetap melebihi {{count}} bulan.",
-        "observedRunway_other": "Sekitar {{count}} bulan dengan pengeluaran belakangan ini",
-        "ofWhichProjected": "~{{percent}}% dari pengeluaran itu diproyeksikan",
-        "projectedTitle": "Yang diproyeksikan",
-        "projectedNote": "Hanya buku pembayaran berulang Anda — apa yang terjadwal, dan kapan. Ini tidak menggambarkan berapa yang Anda belanjakan.",
-        "observedBasis": "Rata-rata dari {{count}} bulan penuh, {{from}} sampai {{to}}: <value></value> sebulan.",
-        "observedSpread": "Bulan-bulan itu berkisar <min></min> sampai <max></max>; bulan tengahnya <median></median>.",
-        "observedNotCounted_other": "{{count}} arus keluar tidak dihitung — belum dijawab, atau berpindah ke tempat yang tidak bisa dilihat Scani.",
-        "observedStaleValued_other": "{{count}} pengeluaran yang dihitung dinilai dari kutipan harga usang.",
-        "affordRemaining": "Yang tersisa setelahnya",
-        "affordRunwayAfterObserved_other": "Sekitar {{count}} bulan dengan pengeluaran belakangan ini.",
-        "affordCannot": "Itu lebih besar daripada saldo likuid.",
-        "affordNoSchedule": "Diukur terhadap laju rata-rata Anda, jadi ini tidak bisa membedakan pembelian sekarang dengan pembelian di kemudian hari dalam tahun ini.",
-        "provenanceTitle": "Siapa yang mengklasifikasikan uang yang DIHITUNG",
-        "provenanceUser": "{{percent}}% dari nilai itu bersandar pada jawaban yang Anda berikan.",
-        "provenanceAutomated": "{{percent}}% ditentukan oleh aturan bernama yang bisa Anda baca sendiri.",
-        "provenanceUnattributed": "{{percent}}% tidak membawa catatan siapa atau apa yang menentukannya.",
-        "answerTitle": "Apakah ini yang Anda belanjakan?",
-        "answerConfirm": "Ya, benar",
-        "answerOverride": "Pakai angka saya sendiri",
-        "answerCancel": "Batal",
-        "answerSave": "Simpan",
-        "answerAmountLabel": "Berapa yang sebenarnya Anda belanjakan sebulan",
-        "answerConfirmed": "Anda mengonfirmasi ini pada {{date}}.",
-        "answerConfirmedMoved": "Anda mengonfirmasi <was/> pada {{date}}. Sekarang angkanya <now/>.",
-        "answerOverrideActive": "Memakai angka Anda sebesar <amount/> sebulan, ditetapkan pada {{date}}. Hasil pengukuran: <measured/>.",
-        "answerRevert": "Kembali ke angka hasil pengukuran",
-        "answerCurrencyChanged": "Jawaban Anda dari {{date}} diberikan dalam mata uang yang berbeda, jadi jawaban itu tidak berlaku lagi.",
-        "answerFailed": "Itu gagal disimpan.",
         "estimatedMark": "Perkiraan",
         "estimatedFrom": "dari {{month}}",
-        "estimatedFromAmount": "dari {{month}} · <value></value>",
-        "estimatedTitle": "Diperkirakan dari riwayat",
-        "estimatedCount_other": "{{count}} pembayaran berubah-ubah dihargai dari jumlah terakhir yang diselesaikan, bukan dari perkiraan yang dimasukkan siapa pun.",
-        "couldEstimate_other": "{{count}} dari pembayaran berubah-ubah itu pernah diselesaikan sebelumnya, jadi jumlah terakhirnya bisa dipakai sebagai pengganti.",
-        "useLastSettled_other": "Pakai jumlah terakhir yang diselesaikan",
-        "stopEstimating_other": "Berhenti memperkirakannya",
-        "verdictOk": "Aman sampai",
-        "verdictRunsOut": "Uang habis",
-        "declineLabel": "Saldo pada laju pengeluaran terakhir, sampai {{month}}",
-        "methodTitle": "Bagaimana ini dihitung"
+        "estimatedFromAmount": "dari {{month}} · <value></value>"
       },
       "suggestions": {
         "title": "Tampak berulang",
@@ -664,6 +611,32 @@
         "accept": "Tambahkan sebagai berulang",
         "dismiss": "Bukan berulang",
         "evidence_other": "Berdasarkan {{count}} pembayaran:"
+      },
+      "groups": {
+        "label": "Grup",
+        "hint": "Grup mengatur tagihan tanpa mengalokasikan kekayaan.",
+        "payeeDetails": "Detail penerima",
+        "oneOff": "Pembayaran satu kali",
+        "statuses": {
+          "scheduled": "Terjadwal",
+          "matched": "Dibayar",
+          "skipped": "Dilewati",
+          "missed": "Terlewat",
+          "all": "Semua status"
+        },
+        "newGroup": "Grup baru",
+        "newGroupName": "Nama grup",
+        "create": "Buat",
+        "createFailed": "Grup tidak dapat dibuat. Coba lagi."
+      },
+      "occurrence": {
+        "title": "Edit pembayaran ini",
+        "description": "Hanya mengubah tanggal ini. Tanggal lain dari tagihan ini tetap dengan jumlah dan grupnya.",
+        "blockerGroups": "tunggu grup selesai dimuat"
+      },
+      "settled": {
+        "none": "Tidak ada apa pun pada periode ini.",
+        "rowMeta": "{{direction}} · {{status}}"
       }
     },
     "groups": {
@@ -716,26 +689,22 @@
           "deleted": "Grup dihapus",
           "deleting": "Menghapus grup"
         },
-        "backToGroups": "Grup",
+        "backToGroups": "Kembali ke grup",
         "removeMember": "Hapus {{label}} dari {{group}}",
         "notFound": "Grup ini tidak ada di daftar Anda. Mungkin sudah dihapus, atau tautannya sudah tidak berlaku.",
         "value": "Nilai",
         "inThisGroup": "Di grup ini",
-        "noun": "kepemilikan dan akun",
-        "note": "Menambahkan satu akun utuh membuatnya tetap berada di grup — termasuk apa pun yang diterimanya nanti. Keluarkan kepemilikan satuan dari daftar di atas.",
-        "empty": "Belum ada apa pun di grup ini. Tambahkan kepemilikan atau akun dan akan muncul di sini.",
-        "addMembers": "Tambahkan kepemilikan atau akun",
-        "details": "Detail",
+        "addMembers": "Tambah anggota",
         "name": "Nama",
         "description": "Deskripsi",
         "colour": "Warna",
         "saveChanges": "Simpan perubahan",
-        "discard": "Buang",
-        "needName": "Untuk menyimpan: beri nama grupnya.",
         "dangerZone": "Zona berbahaya",
         "deleteConsequence": "“{{name}}” hilang dari setiap daftar dan filter. {{members}} di dalamnya tidak dihapus — mereka hanya berhenti membawa label ini.",
         "deleteTrigger": "Hapus grup",
-        "deleteCommit": "Hapus grup ini"
+        "deleteCommit": "Hapus grup ini",
+        "editTitle": "Edit grup",
+        "editDescription": "Mengubah nama, deskripsi, dan warna grup di mana pun grup itu muncul."
       },
       "page": {
         "title": "Grup",
@@ -747,7 +716,9 @@
         "cancel": "Batal",
         "namePlaceholder": "Dana pensiun, kena pajak, yang bersama…",
         "colour": "Warna",
-        "needName": "Untuk melanjutkan: beri nama grupnya."
+        "needName": "Untuk melanjutkan: beri nama grupnya.",
+        "subject": "grup itu",
+        "sheetDescription": "Label pilihan Anda. Tambahkan kepemilikan, akun, tagihan, dan penerima di halaman berikutnya."
       }
     },
     "realizedLedger": {
@@ -798,17 +769,13 @@
     },
     "holdings": {
       "amountFact": {
-        "edit": "Ubah jumlah",
         "amount": "Jumlah",
-        "save": "Simpan",
         "belowZero": "Di bawah nol — tidak ada yang bisa Anda masukkan yang menghasilkan ini. Hal ini terjadi ketika transfer yang dibatalkan melintasi saldo yang berubah setelahnya. Tetapkan ke angka yang benar."
       },
       "labelFact": {
         "unnamed": "Belum dinamai",
-        "edit": "Beri nama posisi {{symbol}} ini",
         "name": "Nama kantong",
-        "placeholder": "Tabungan, Deposito, Hadiah pernikahan…",
-        "save": "Simpan"
+        "placeholder": "Tabungan, Deposito, Hadiah pernikahan…"
       },
       "deleteAction": {
         "trigger": "Hapus",
@@ -830,7 +797,6 @@
         "interest": "Bunga",
         "apy": "APY",
         "apyEdit": "Ubah",
-        "apyRemove": "Hapus",
         "configure": "Atur",
         "payout": "Imbal hasil",
         "lastPayout": "Imbal hasil terakhir",
@@ -863,7 +829,8 @@
         "syncBalance": "Sinkronkan saldo",
         "amount": "Jumlah",
         "account": "Akun",
-        "type": "Tipe"
+        "type": "Tipe",
+        "sinceBought": "sejak dibeli"
       },
       "badge": {
         "noPrice": "Tanpa harga",
@@ -964,7 +931,9 @@
         "confirm": "Tandai {{symbol}} sebagai penipuan",
         "consequence": "{{symbol}} berhenti dihitung dalam total portofolio Anda — <value/> berkurang darinya — dan pindah ke kepemilikan tersembunyi Anda. Hanya Anda yang melihat ini: portofolio orang lain tidak berubah. Pilih Bukan penipuan di sana untuk membatalkannya.",
         "marked": "{{symbol}} ditandai sebagai penipuan untuk Anda",
-        "markingContext": "Menandai token sebagai penipuan"
+        "markingContext": "Menandai token sebagai penipuan",
+        "rowTitle": "Bukan aset sungguhan?",
+        "rowHint": "Airdrop penipuan bisa dikeluarkan dari total Anda, hanya untuk Anda."
       },
       "toast": {
         "deleted": "Kepemilikan dihapus",
@@ -999,9 +968,7 @@
           "internal": "Uangnya berpindah ke kepemilikan lain yang Anda lacak. Pilih ke mana, dan Scani akan mengaitkan kedua sisinya sehingga basis biayanya ikut berpindah, bukan direalisasikan di sini lalu dibuka lagi di sana.",
           "left_control": "Dibelanjakan, dihadiahkan, atau dijual di tempat yang tidak bisa dilihat Scani. Ini merealisasikan keuntungan atau kerugian atas jumlah yang keluar.",
           "untracked": "Tetap uang Anda, di dompet atau akun yang tidak bisa diakses Scani. Tidak ada yang direalisasikan."
-        },
-        "cancel": "Batal",
-        "save": "Simpan"
+        }
       },
       "fee": {
         "label": "Biaya, jika transfernya dikenai biaya",
@@ -1040,7 +1007,6 @@
         },
         "destinationTitle": "Ke mana perginya",
         "noteLabel": "Catatan (opsional)",
-        "cancel": "Batal",
         "save": "Catat",
         "saving": "Mencatat…",
         "recorded": "Perpindahan dicatat",
@@ -1056,6 +1022,11 @@
           "where": "sebutkan ke mana uangnya pergi",
           "fee": "biayanya harus lebih kecil daripada jumlah yang berpindah"
         }
+      },
+      "trendCaption": "{{period}} terakhir",
+      "edit": {
+        "title": "Edit aset",
+        "description": "Mengubah jumlah yang Anda miliki dan, jika Anda melacak lebih dari satu, nama kantong ini."
       }
     },
     "export": {
@@ -1063,7 +1034,7 @@
         "accounts": "Akun",
         "holdings": "Kepemilikan",
         "transactions": "Transaksi",
-        "vendors": "Vendor",
+        "vendors": "Penerima",
         "payments": "Pembayaran",
         "occurrences": "Kejadian pembayaran",
         "groups": "Grup",
@@ -1072,7 +1043,8 @@
         "vaultHoldings": "Kepemilikan target tabungan",
         "documents": "Dokumen",
         "history": "Riwayat kekayaan bersih",
-        "netWorth": "Kekayaan bersih"
+        "netWorth": "Kekayaan bersih",
+        "archivedOwnership": "Arsip kepemilikan"
       },
       "column": {
         "account": "Akun",
@@ -1096,7 +1068,7 @@
         "fee": "Biaya",
         "counterparty": "Pihak lawan",
         "externalId": "Id eksternal",
-        "vendor": "Vendor",
+        "vendor": "Penerima",
         "category": "Kategori",
         "website": "Situs web",
         "direction": "Arah",
@@ -1131,7 +1103,9 @@
         "holdingsPriced": "Kepemilikan yang dihargai",
         "holdingsTotal": "Total kepemilikan",
         "holdingsUnpriceable": "Kepemilikan yang tidak dapat dihargai",
-        "holdingsStalePriced": "Kepemilikan yang dihargai dari harga usang"
+        "holdingsStalePriced": "Kepemilikan yang dihargai dari harga usang",
+        "archivedOwnerId": "ID pemilik arsip",
+        "name": "Nama"
       },
       "value": {
         "yes": "ya",
@@ -1179,7 +1153,8 @@
         "exportWorkbook": "Ekspor buku kerja",
         "json": "JSON",
         "intro": "Setiap catatan di akun ini dalam satu berkas — kepemilikan, seluruh buku besar transaksi, pembayaran, grup, target tabungan, dan riwayat kekayaan bersih Anda. Kunci bursa dan pialang tidak disertakan: itu kredensial, bukan catatan.",
-        "trigger": "Ekspor semuanya"
+        "trigger": "Ekspor semuanya",
+        "ownershipArchive": "Nama pemilik historis dan tautan akun dipertahankan dalam ekspor. Keduanya tidak lagi dapat diedit."
       },
       "maintenance": {
         "title": "Riwayat portofolio",
@@ -1298,7 +1273,8 @@
         "title": "Konfirmasi bahwa ini Anda",
         "description": "Penghapusan memerlukan masuk baru-baru ini. Kami akan mengirim kode 6 digit ke {{email}}.",
         "send": "Kirimi saya kode",
-        "sending": "Mengirim…"
+        "sending": "Mengirim…",
+        "humanCheck": "selesaikan pemeriksaan keamanan"
       }
     },
     "feedback": {
@@ -1312,10 +1288,16 @@
         "title": "Tinjauan",
         "transfersTitle": "Pembayaran keluar untuk diklasifikasikan",
         "answered": "Dijawab",
-        "balancesTitle": "Perubahan saldo yang perlu dijelaskan"
+        "balancesTitle": "Perubahan saldo yang perlu dijelaskan",
+        "toClassify": "Untuk diklasifikasikan",
+        "transferViewLabel": "Tampilan tinjauan transfer",
+        "toExplain": "Untuk dijelaskan",
+        "balanceViewLabel": "Tampilan tinjauan saldo",
+        "rulesView": "Aturan"
       },
       "queues": {
-        "clear": "Tidak ada yang menunggu"
+        "clear": "Tidak ada yang menunggu",
+        "waiting_other": "{{count}} menunggu"
       },
       "item": {
         "jobFailed": "{{job}} gagal",
@@ -1344,7 +1326,6 @@
         "valueAwaiting": "<label>Nilai yang menunggu jawaban:</label> <value/>",
         "valueAwaitingUnpriced_other": "<label>Nilai yang menunggu jawaban:</label> <value/><label>, dan {{count}} lagi yang tidak berharga pada hari itu</label>",
         "backToReview": "Kembali ke tinjauan",
-        "seeAllJobs": "Lihat semua proses",
         "field": {
           "when": "Kapan",
           "to": "Ke",
@@ -1356,7 +1337,6 @@
       },
       "answered": {
         "title": "Transfer yang sudah dijawab",
-        "backToQueue": "Kembali ke antrean",
         "field": {
           "answered": "Dijawab",
           "to": "Ke"
@@ -1393,7 +1373,7 @@
         "movingTo": "Berpindah ke {{location}}",
         "wherePrompt": "Ke mana bagian ini pergi?",
         "amountLabel": "{{outcome}} — jumlah dalam {{symbol}}",
-        "pickDepositFirst": "Pilih setoran di atas terlebih dahulu",
+        "pickDepositFirst": "Pilih setoran di transfer terlebih dahulu",
         "addsUp": "Jumlahnya pas"
       },
       "decision": {
@@ -1429,6 +1409,7 @@
       },
       "transfer": {
         "unreviewedBehaviour": "Selama ini belum dijawab, Scani tidak membukukan keuntungan apa pun atasnya — memindahkan koin Anda sendiri bukanlah penjualan, dan menebak bahwa itu penjualan adalah cara keuntungan fiktif masuk ke grafik Anda. Jika salah satu dari ini memang keluar dari portofolio Anda, keuntungannya belum masuk ke total terealisasi Anda sampai Anda menyatakannya.",
+        "queue_other": "{{count}} pembayaran keluar untuk diklasifikasikan.",
         "unreviewedNote": "Selama belum dijawab, ini tidak membukukan keuntungan ke arah mana pun.",
         "candidateReason": {
           "combined": "Bersama-sama, {{count}} setoran ini membentuk jumlahnya",
@@ -1510,7 +1491,16 @@
           "summary": "{{clauses}}. Hanya pelepasan yang membukukan keuntungan.",
           "balanceNew": "Sebuah kepemilikan {{symbol}} baru dibuat di sana, dengan setoran itu sebagai saldonya.",
           "balanceUnchanged": "Tidak ada saldo yang berubah.",
-          "balanceMoves": "Saldo akun itu naik sebesar jumlah yang tiba di sana."
+          "balanceMoves": "Saldo akun itu naik sebesar jumlah yang tiba di sana.",
+          "sheetTitle": "Bagi transfer ini",
+          "blocker": {
+            "twoParts": "jumlah pada setidaknya dua pilihan",
+            "oneLink": "hanya satu bagian ke tempat yang dilacak Scani",
+            "deposit": "setoran yang dipilih untuk “{{paired}}”",
+            "destination": "tujuan bagian yang dilacak",
+            "positive": "jumlah di atas nol",
+            "sum": "jumlah yang totalnya {{amount}} {{symbol}}"
+          }
         },
         "answered": {
           "paired": "Dikaitkan dengan sebuah setoran — tidak ada yang direalisasikan",
@@ -1579,8 +1569,6 @@
         "title": "Aturan tujuan",
         "trigger": "Buat aturan tentang tujuan ini",
         "commit": "Buat aturan ini",
-        "manage": "Lihat aturan tujuan Anda",
-        "alreadyRuled": "Anda sudah punya aturan untuk tujuan ini",
         "revoke": "Tarik kembali aturan ini",
         "revokeCommit": "Tarik kembali aturan ini",
         "field": {
@@ -1619,10 +1607,6 @@
           "title": "Pembayaran keluar yang ditahan oleh aturan Anda",
           "body": "Tidak satu pun dari ini yang sudah dijawab. Semuanya menunggu, di luar antrean, dan tarik kembali aturannya untuk memasukkannya."
         },
-        "empty": {
-          "title": "Belum ada aturan tujuan",
-          "body": "Buka sebuah pembayaran keluar di antrean dan catat ke mana perginya. Setiap pembayaran berikutnya ke tujuan yang sama akan membawa catatan Anda, berapa pun jumlahnya — dan tujuan yang Anda tandai akan dijawab untuk Anda."
-        },
         "notice": {
           "label": "Catatan Anda tentang tujuan ini",
           "markExempt": "Anda menandai tujuan ini sebagai pelepasan, dan Anda menarik kembali jawaban itu pada pembayaran keluar ini. Pembayaran keluar ini tidak akan dijawab otomatis lagi."
@@ -1638,12 +1622,17 @@
         "refusal": {
           "ownWallet": "{{key}} adalah salah satu dompet Anda sendiri. Uang yang berpindah ke sana belum keluar dari portofolio Anda, jadi tidak bisa ditandai sebagai pelepasan."
         },
-        "withdrawAnswers_other": "Tarik kembali juga {{count}} jawaban yang diberikannya"
+        "withdrawAnswers_other": "Tarik kembali juga {{count}} jawaban yang diberikannya",
+        "rowTitle": "Aturan tujuan",
+        "rowHint": "Untuk tujuan yang sering Anda bayar: beri nama sekali, atau berhenti ditanya tentangnya.",
+        "sheetTitle": "Aturan tujuan baru",
+        "sheetDescription": "Aturan memberi nama setiap pembayaran keluar berikutnya ke tujuan ini, berapa pun jumlahnya, dan dapat menjawabnya untuk Anda.",
+        "blocker": {
+          "note": "Sebutkan apa tujuan ini"
+        }
       },
       "balances": {
         "intro": "Sesuatu menggerakkan saldo ini dan tidak ada transaksi yang menjelaskan apa. Beri tahu kami apa yang terjadi, dan ini berhenti dihitung sebagai kinerja.",
-        "loading": "Mencari perubahan saldo yang tidak dapat kami jelaskan…",
-        "empty": "Tidak ada yang perlu dijelaskan — setiap perubahan saldo sudah terjelaskan.",
         "queue_other": "{{count}} perubahan saldo yang perlu dijelaskan, dari yang terbesar.",
         "examined": "Diperiksa {{examined}} seluruhnya; {{suppressed}} dikecualikan: terlalu kecil, saldo yang Anda tetapkan sendiri, dibalik oleh pembacaan berikutnya, atau tidak ada yang bisa menghargainya.",
         "examinedWithAnswered": "Diperiksa {{examined}} seluruhnya; {{suppressed}} dikecualikan — terlalu kecil, saldo yang Anda tetapkan sendiri, dibalik oleh pembacaan berikutnya, atau tidak ada yang bisa menghargainya — dan {{answered}} sudah Anda jawab.",
@@ -1654,7 +1643,6 @@
         "answerLabel": "Perubahan ini apa?",
         "dateLabel": "Kapan uang itu berpindah?",
         "record": "Catat",
-        "answerFailed": "Tidak dapat mencatat itu",
         "answerFailedBody": "Tidak ada yang tersimpan. Coba lagi.",
         "option": {
           "flow": "Uang berpindah",
@@ -1668,7 +1656,26 @@
           "growth": "Tidak ada yang ditulis. Pertumbuhan pada saldo seperti ini MEMANG imbal baliknya, dan sudah dihitung sebagai imbal balik.",
           "unknown": "Tidak ada yang ditulis dan Anda tidak akan ditanya lagi tentang yang satu ini. Ini tetap dihitung sebagai kinerja, yang merupakan jawaban paling jujur ketika tidak ada yang tahu.",
           "flowNoDate": "Dicatat sebagai setoran atau penarikan, bertanggal di antara kedua pembacaan — kami tahu kapan hal itu terjadi dengan lebih tepat daripada yang bisa dinyatakan sebuah tanggal."
-        }
+        },
+        "answeredTitle": "Perubahan saldo yang dijelaskan",
+        "undo": "Batalkan penjelasan",
+        "crossCurrency": "Mata uang atau aset berbeda",
+        "chooseArrival": "Pilih aset tujuan",
+        "received": "Jumlah diterima",
+        "balanceLabel": "Saldo",
+        "answeredOn": "Dijawab",
+        "undoCommit": "Ya, batalkan",
+        "undoConsequence": "Perubahan kembali ke antrean untuk dijawab lagi, dan setoran, penarikan, atau biaya yang dicatat oleh jawaban Anda dihapus.",
+        "explainAction": "Jelaskan",
+        "answerTitle": "Jelaskan perubahan ini",
+        "answerDescription": "Jawaban Anda menentukan apakah perubahan dihitung sebagai kinerja atau sebagai uang masuk atau keluar.",
+        "blocker": {
+          "answer": "Pilih apa yang terjadi",
+          "date": "Pilih tanggal di dalam rentang",
+          "destination": "Pilih ke mana uangnya pergi",
+          "received": "Masukkan jumlah yang diterima"
+        },
+        "undoFailed": "Tidak dapat dibatalkan"
       }
     },
     "form": {
@@ -1696,7 +1703,10 @@
         "expand": "Tampilkan seluruh formulir",
         "collapse": "Perkecil formulir",
         "close": "Tutup formulir"
-      }
+      },
+      "edit": "Edit",
+      "saveChanges": "Simpan perubahan",
+      "saving": "Menyimpan…"
     },
     "capture": {
       "form": {
@@ -1720,7 +1730,7 @@
         },
         "invoice": {
           "title": "Sebuah faktur",
-          "description": "PDF atau foto. Kami membaca vendor dan jumlahnya."
+          "description": "PDF atau foto. Kami membaca penerima dan jumlahnya."
         },
         "wallet": {
           "title": "Alamat dompet",
@@ -1760,7 +1770,7 @@
       },
       "formats": {
         "import": "PNG, JPG, WEBP, PDF, CSV, TSV, OFX, atau QIF",
-        "invoice": "PDF, PNG, JPG, WEBP, atau HEIC"
+        "invoice": "PDF, PNG, JPG, atau WEBP"
       },
       "stage": {
         "account": "Menyiapkan akun…",
@@ -1866,7 +1876,7 @@
         },
         "invoice": {
           "title": "Unggah sebuah faktur",
-          "description": "PDF atau fotonya. Kami membaca vendor, jumlah, dan rincian barisnya, lalu menaruhnya di Tinjauan untuk Anda terima atau tolak.",
+          "description": "PDF atau fotonya. Kami membaca penerima, jumlah, dan rincian barisnya, lalu menaruhnya di Tinjauan untuk Anda terima atau tolak.",
           "fieldset": "Fakturnya",
           "prompt": "Pilih sebuah faktur, atau letakkan di sini"
         },
@@ -1915,7 +1925,34 @@
         "unverifiedTitle": "Tidak dapat memeriksa kunci {{name}} Anda",
         "unverifiedDetail": "{{name}} tidak menjawab, jadi kami tidak bisa memastikan apakah kuncinya benar. Tidak ada yang tersimpan — coba lagi sebentar lagi."
       },
-      "demoNote": "Apa pun yang Anda masukkan di sini tidak disimpan — ini demo."
+      "demoNote": "Apa pun yang Anda masukkan di sini tidak disimpan — ini demo.",
+      "backChoices": "Kembali ke pilihan",
+      "choice": {
+        "upload": "Unggah berkas",
+        "connect": "Hubungkan sumber",
+        "manual": "Masukkan manual"
+      },
+      "availabilityNote": "Laporan terstruktur dan entri manual tetap tersedia tanpa AI. Ekstraksi gambar dan PDF bergantung pada ketersediaan pemrosesan.",
+      "chooseIntent": "Apa isi berkas ini?",
+      "intent": {
+        "statement": "Laporan atau aset",
+        "invoice": "Faktur atau tagihan"
+      },
+      "ai": {
+        "loading": "Memeriksa ketersediaan pemrosesan…",
+        "unavailable": "Pemrosesan AI tidak tersedia. Impor terstruktur dan entri manual tetap berfungsi.",
+        "transient": "Pemrosesan AI sementara tidak tersedia. Simpan berkas dan coba lagi nanti, atau masukkan detail secara manual.",
+        "unverified": "Kredensial AI belum diverifikasi dengan permintaan yang berhasil. Kredensial yang dicabut mungkin baru terdeteksi pada upaya pemrosesan pertama.",
+        "blocker": "tunggu hingga pemrosesan AI tersedia",
+        "blockerLoading": "tunggu selagi kami memeriksa pemrosesan"
+      },
+      "backHome": "Kembali ke beranda",
+      "busy": {
+        "upload": "pengunggahan",
+        "save": "penyimpanan",
+        "import": "impor",
+        "connection": "koneksi"
+      }
     },
     "tokens": {
       "custom": {
@@ -1933,7 +1970,6 @@
         "editPrice": "Ubah harga"
       },
       "hidden": {
-        "backToHoldings": "Kembali ke kepemilikan",
         "unhide": "Tampilkan lagi",
         "likelyScam": "Kemungkinan penipuan",
         "hidden": "Tersembunyi",
@@ -2097,7 +2133,7 @@
         "rejectConsequenceNumbered": "Faktur {{number}} dari {{vendor}} ditandai ditolak dan berkas ini berhenti menawarkannya untuk ditinjau. Tidak ada pembayaran yang dibuat. Membaca ulang berkasnya adalah satu-satunya cara mengembalikannya."
       },
       "detail": {
-        "backToFiles": "Semua berkas",
+        "backToFiles": "Kembali ke berkas",
         "copyGone": "Salinan tersimpan dari berkas ini sudah hilang, jadi tidak bisa diunduh atau dibaca lagi. Menghapus catatan ini membebaskan berkasnya untuk diunggah ulang.",
         "reparsing": "Membaca ulang dokumen",
         "deleted": "Berkas dihapus — Anda bisa mengunggahnya lagi",
@@ -2136,7 +2172,7 @@
         "noInvoices": "Tidak ada faktur di berkas ini",
         "openFile": "Buka berkasnya",
         "found_other": "{{count}} faktur ditemukan",
-        "unknownVendor": "Vendor tidak dikenal",
+        "unknownVendor": "Penerima tidak dikenal",
         "turnIntoPayment": "Ubah ini menjadi pembayaran berulang",
         "setUpNamed": "Siapkan {{name}}",
         "thisInvoice": "faktur ini"
@@ -2154,19 +2190,52 @@
         "attaching": "Melampirkan kepemilikan",
         "fullyClaimed": "{{label}} sudah sepenuhnya dihitung untuk target tabungan lain. Turunkan dulu porsinya di sana.",
         "attachedWhole": "{{label}} kini dihitung untuk target tabungan ini",
-        "attachedPartial": "{{label}} dilampirkan sebesar {{available}}% — sisanya dihitung untuk target tabungan lain"
+        "attachedPartial": "{{label}} dilampirkan sebesar {{available}}% — sisanya dihitung untuk target tabungan lain",
+        "title": "Lampirkan kepemilikan ke {{vault}}",
+        "choose": {
+          "description": "Langkah 1 dari 3 · Pilih kepemilikan yang dihitung untuk target tabungan ini."
+        },
+        "shares": {
+          "description": "Langkah 2 dari 3 · Atur porsi tiap kepemilikan yang dihitung untuk target tabungan ini."
+        },
+        "review": {
+          "description": "Langkah 3 dari 3 · Periksa porsinya, lalu lampirkan."
+        },
+        "search": "Cari kepemilikan",
+        "allAccounts": "Semua akun",
+        "empty": "Tidak ada kepemilikan yang cocok. Mungkin semuanya sudah ada di target tabungan ini.",
+        "free": "{{percent}}% bebas",
+        "fullyAllocated": "Teralokasi penuh",
+        "next": "Lanjut: atur porsi",
+        "toReview": "Tinjau",
+        "back": "Kembali",
+        "submit": "Lampirkan",
+        "freeAll": "Semuanya bebas: hingga {{percent}}%.",
+        "freeElsewhere": "Hingga {{percent}}% bebas. Sisanya dihitung untuk {{elsewhere}}.",
+        "allFree": "Semua bebas",
+        "brings": "Menambah sekitar",
+        "shareFor": "porsi untuk {{label}}",
+        "total": "{{vault}} bertambah sekitar",
+        "issue": {
+          "missing": "Masukkan porsi di atas 0%.",
+          "tooPrecise": "Gunakan paling banyak dua angka desimal.",
+          "overAvailable": "Hanya {{percent}}% dari kepemilikan ini yang bebas."
+        }
       },
       "createFirst": "Buat target tabungan pertama Anda",
       "holding": {
         "thisHolding": "Kepemilikan ini",
         "unknownToken": "Token tidak dikenal",
-        "shareLabel": "Porsi {{symbol}} yang dihitung untuk target tabungan ini",
-        "cancel": "Batal",
-        "saveShare": "Simpan porsi",
-        "changeShare": "Ubah porsi {{percent}}% dari {{symbol}} yang dihitung untuk target tabungan ini",
+        "shareRange": "Masukkan porsi di atas 0% dan paling banyak 100%.",
         "remove": "Hapus",
         "removeCommit": "Hapus {{symbol}} dari target tabungan ini",
-        "detachConsequence": "{{symbol}} berhenti dihitung untuk target tabungan ini — <value/> berkurang dari angka yang terkumpul. Kepemilikannya sendiri, porsi {{percent}}%-nya, dan riwayatnya tetap ada; Anda bisa melampirkannya lagi."
+        "detachConsequence": "{{symbol}} berhenti dihitung untuk target tabungan ini — <value/> berkurang dari angka yang terkumpul. Kepemilikannya sendiri, porsi {{percent}}%-nya, dan riwayatnya tetap ada; Anda bisa melampirkannya lagi.",
+        "editTitle": "Ubah porsi",
+        "editDescription": "Seberapa banyak kepemilikan ini yang dihitung untuk target tabungan.",
+        "saveFailed": "Gagal menyimpan porsi. Coba lagi.",
+        "shareBlocker": "Masukkan porsi di atas 0% hingga 100%",
+        "shareField": "Porsi",
+        "inVault": "Di target tabungan ini"
       },
       "detail": {
         "toast": {
@@ -2180,26 +2249,23 @@
           "updatingShare": "Memperbarui porsi"
         },
         "deleteConsequence_other": "“{{name}}” dan targetnya hilang. {{count}} kepemilikan yang dilampirkan padanya tidak dihapus — mereka hanya berhenti dihitung untuk sebuah sasaran.",
-        "backToVaults": "Target Tabungan",
+        "backToVaults": "Kembali ke target tabungan",
         "notFound": "Target tabungan ini tidak ada di daftar Anda. Mungkin sudah dihapus, atau tautannya sudah tidak berlaku.",
         "saved": "Terkumpul",
         "targetReached": "Target tercapai — {{percent}}% dari sasaran",
         "stillToGo": "<remaining/> lagi menuju target <target/>",
-        "countingToward_other": "Dihitung untuk target tabungan ini ({{count}})",
-        "empty": "Belum ada yang dihitung untuk target tabungan ini. Lampirkan sebuah kepemilikan dan ia akan mulai menyumbang ke sasarannya.",
-        "attachHolding": "Lampirkan sebuah kepemilikan",
-        "details": "Detail",
         "name": "Nama",
         "target": "Target",
         "targetHint": "Dalam {{symbol}}",
         "colour": "Warna",
         "saveChanges": "Simpan perubahan",
-        "discard": "Buang",
-        "needName": "Untuk menyimpan: beri nama target tabungannya.",
-        "needTarget": "Untuk menyimpan: tetapkan target di atas nol.",
         "dangerZone": "Zona berbahaya",
         "deleteTrigger": "Hapus target tabungan",
-        "deleteCommit": "Hapus target tabungan ini"
+        "deleteCommit": "Hapus target tabungan ini",
+        "attachHoldings": "Lampirkan kepemilikan",
+        "editTitle": "Edit target tabungan",
+        "editDescription": "Mengubah nama, target, dan warna target tabungan. Mata uangnya tetap sama.",
+        "inThisVault": "Di target tabungan ini"
       },
       "page": {
         "title": "Target Tabungan",
@@ -2208,9 +2274,7 @@
         "name": "Nama",
         "newVault": "Target tabungan baru",
         "createVault": "Buat target tabungan",
-        "cancel": "Batal",
         "namePlaceholder": "Uang muka rumah, dana darurat…",
-        "toContinue": "Untuk melanjutkan: {{missing}}.",
         "target": "Target",
         "currency": "Mata uang",
         "colour": "Warna",
@@ -2218,7 +2282,9 @@
           "name": "beri nama target tabungannya",
           "target": "tetapkan target di atas nol",
           "currency": "pilih sebuah mata uang"
-        }
+        },
+        "subject": "target tabungan itu",
+        "sheetDescription": "Target tabungan dengan sasaran. Lampirkan kepemilikan di halaman berikutnya."
       }
     },
     "jobs": {
@@ -2256,7 +2322,7 @@
         "notFailed": "Tidak ada yang perlu diulang."
       },
       "detail": {
-        "backToJobs": "Semua proses",
+        "backToJobs": "Kembali ke proses",
         "notFound": "Proses ini tidak ada di daftar Anda. Mungkin sudah dihapus, atau tautannya sudah tidak berlaku.",
         "attempt": "Percobaan {{attempt}} dari {{allowed}}",
         "cancel": "Batal",
@@ -2528,6 +2594,20 @@
           "samples": "Seperti tertulis di berkas",
           "dayFirst": "Hari dulu — 31/12",
           "monthFirst": "Bulan dulu — 12/31"
+        },
+        "columns": {
+          "title": "Cocokkan kolom CSV",
+          "body": "Pilih kolom dalam berkas. Belum ada data yang diimpor. Pilih jumlah bertanda atau kolom kredit dan debit terpisah.",
+          "date": "Tanggal",
+          "description": "Deskripsi",
+          "amount": "Jumlah bertanda",
+          "credit": "Kredit (masuk)",
+          "debit": "Debit (keluar)",
+          "currency": "Mata uang",
+          "balance": "Saldo berjalan",
+          "fee": "Biaya terpisah",
+          "none": "Tidak dipetakan",
+          "apply": "Terapkan dan impor"
         }
       },
       "manual": {
@@ -2590,9 +2670,6 @@
       }
     },
     "membership": {
-      "picker": {
-        "done": "Selesai"
-      },
       "holdings_other": "Kepemilikan ({{count}})",
       "wholeAccounts_other": "Akun utuh ({{count}})",
       "wholeAccountsNote": "Seluruh akun berada di dalam grup — isinya sekarang dan apa pun yang diterimanya nanti. Mengeluarkannya akan mengeluarkan semua itu.",
@@ -2605,35 +2682,60 @@
       "removing": "Menghapus dari grup",
       "addAction": "Tambah",
       "addPending": "Menambahkan",
-      "removeAction": "Hapus",
+      "removeAction": "Hapus keanggotaan",
       "removePending": "Menghapus",
       "noMatch": "Tidak ada sisa yang bisa ditambahkan yang cocok dengan “{{query}}”.",
       "allAdded": "Semua yang Anda punya sudah ada di sini — tidak ada {{noun}} lain untuk ditambahkan.",
       "allOfCount_other": "Semua {{count}} kepemilikan",
       "count": {
         "holding_other": "{{count}} kepemilikan",
-        "account_other": "{{count}} akun"
-      }
+        "account_other": "{{count}} akun",
+        "bill_other": "{{count}} tagihan",
+        "payee_other": "{{count}} penerima"
+      },
+      "direct": "Anggota langsung",
+      "inherited": "Dari aturan akun",
+      "excluded": "Dikecualikan secara eksplisit",
+      "allocationFor": "Alokasi untuk {{label}}",
+      "removeSelection": "Hapus {{count}} anggota terpilih? Aset dan catatan keuangannya tetap tersimpan.",
+      "payee": "Dari aturan penerima",
+      "bills_other": "Tagihan ({{count}})",
+      "payees_other": "Penerima ({{count}})",
+      "payeeNote": "Semua tagihan dari penerima ini ada di grup — yang ada sekarang dan yang Anda tambahkan nanti. Menghapus penerima mengeluarkan semuanya.",
+      "allBillsOfCount_other": "Penerima · semua {{count}} tagihan",
+      "confirmRemove": "Ya, hapus",
+      "addSheet": {
+        "title": "Tambahkan ke {{group}}",
+        "description": "Pilih akun, kepemilikan, penerima, atau tagihan. Total grup diperbarui begitu Anda menambahkannya.",
+        "search": "Cari berdasarkan nama",
+        "kind": "Pilih yang akan ditambahkan",
+        "accounts": "Akun",
+        "holdings": "Kepemilikan",
+        "payees": "Penerima",
+        "bills": "Tagihan",
+        "accountsHint": "Akun membawa semua kepemilikannya, termasuk yang ditambahkan nanti.",
+        "holdingsHint": "Kepemilikan ditambahkan sendiri, apa pun yang terjadi pada akunnya.",
+        "payeesHint": "Penerima membawa semua tagihannya, termasuk yang ditambahkan nanti.",
+        "billsHint": "Tagihan ditambahkan sendiri, apa pun yang terjadi pada penerimanya.",
+        "includedVia": "Termasuk lewat {{account}}",
+        "empty": "Tidak ada yang cocok. Mungkin semuanya sudah ada di grup ini.",
+        "none": "Belum ada yang dipilih",
+        "summary": "{{items}} dipilih",
+        "submit": "Tambah"
+      },
+      "directAndInherited": "Langsung · aturan akun",
+      "noHoldingsYet": "Belum ada kepemilikan",
+      "noMembersYet": "Belum ada anggota"
     },
-    "ownership": {
-      "title": "Entitas",
-      "description": "Pisahkan uang Anda sendiri dan uang perusahaan Anda. Kekayaan bersih tetap satu angka.",
-      "newEntity": "Entitas baru",
-      "name": "Nama",
-      "namePlaceholder": "mis. PT Perusahaan Saya",
-      "create": "Buat",
-      "cancel": "Batal",
-      "created": "{{name}} dibuat",
-      "creating": "membuat entitas",
-      "assigning": "memindahkan akun",
-      "loading": "Menghitung nilai masing-masing pembukuan…",
-      "empty": "Belum ada nilai.",
-      "unassigned": "Belum ditetapkan",
-      "combined": "Gabungan",
-      "holdingsCounted_other": "{{count}} kepemilikan",
-      "unpriced": "{{symbols}} tidak dapat dihargai hari ini",
-      "accountsHeading": "Entitas pemilik setiap akun",
-      "accountEntityLabel": "Entitas untuk {{name}}"
+    "brand": {
+      "details": "Detail build",
+      "development": "Pengembangan",
+      "baselineNote": "Label Core menunjukkan rilis terakhir yang diterbitkan. Build privat ini mungkin berisi perubahan tertunda di bawah.",
+      "coreRelease": "Rilis Core yang diterbitkan",
+      "build": "Commit build yang dimuat",
+      "pending": "Berkas bersama yang tertunda",
+      "pendingSection": "Perubahan tertunda",
+      "fingerprint": "Sidik jari Core"
     }
   }
 }

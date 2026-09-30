@@ -45,3 +45,25 @@ export function safeRedirectPath(input: string | null | undefined, fallback: str
   if (input.startsWith('/\\')) return fallback;
   return input;
 }
+
+export function safeReturnTarget(
+  input: string | null | undefined,
+  fallback: string,
+  allowedOrigins: readonly string[]
+): string {
+  if (safeRedirectPath(input, fallback) === input) return input;
+
+  if (typeof input !== 'string' || input !== input.trim()) return fallback;
+
+  try {
+    const url = new URL(input);
+
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return fallback;
+
+    if (!allowedOrigins.includes(url.origin)) return fallback;
+
+    return input;
+  } catch {
+    return fallback;
+  }
+}

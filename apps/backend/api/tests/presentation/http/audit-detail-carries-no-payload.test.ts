@@ -445,11 +445,16 @@ describe('backend audit details carry no payload (SC-1094)', () => {
   });
 
   test('audit() is the only writer, so no site can bypass the sweep above', () => {
-    // If a handler inserted into `adminAuditLog` directly, its details would
-    // never reach `detailSites()` and this file would report clean over it.
-    const writers = tsFilesUnder(API_SRC)
-      .filter((f) => /\.insert\(\s*adminAuditLog\s*\)/.test(readFileSync(f, 'utf8')))
-      .map((f) => f.slice(REPO.length + 1));
-    expect(writers).toEqual(['apps/backend/api/src/presentation/http/admin-common.ts']);
+    // If a handler inserted into `adminAuditLog` directly, or called the
+    // shared appender itself, its details would never reach `detailSites()`
+    // and this file would report clean over it. The insert lives in
+    // `@scani/db/audit-chain` since SC-1394; `audit()` is its one api caller.
+    const files = tsFilesUnder(API_SRC).map((f) => ({ f, src: readFileSync(f, 'utf8') }));
+    const direct = files.filter(({ src }) => /\.insert\(\s*adminAuditLog\s*\)/.test(src));
+    const appenders = files
+      .filter(({ src }) => /(?<![A-Za-z0-9_$.])appendAuditRow\s*\(/.test(src))
+      .map(({ f }) => f.slice(REPO.length + 1));
+    expect(direct).toEqual([]);
+    expect(appenders).toEqual(['apps/backend/api/src/presentation/http/admin-common.ts']);
   });
 });

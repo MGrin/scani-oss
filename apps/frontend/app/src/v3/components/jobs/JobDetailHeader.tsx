@@ -236,6 +236,7 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
             label={t('v3.jobs.discard.trigger')}
             confirmLabel={t('v3.jobs.discard.commit')}
             destructive
+            triggerClassName="text-destructive hover:text-destructive"
             open={confirmingDiscard}
             onOpenChange={setConfirmingDiscard}
             isPending={discard.isPending}
@@ -328,6 +329,7 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
               label={t('v3.jobs.remove.trigger')}
               confirmLabel={t('v3.jobs.remove.commit')}
               destructive
+              triggerClassName="text-destructive hover:text-destructive"
               open={confirmingRemove}
               onOpenChange={setConfirmingRemove}
               isPending={remove.isPending}

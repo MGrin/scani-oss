@@ -50,7 +50,10 @@ describe('v3 safe-area insets', () => {
     const missing: string[] = [];
     for (const file of BOTTOM_EDGE) {
       const code = await readV3Source(file);
-      if (!code.includes('safe-area-inset-bottom')) missing.push(file);
+      // A drawer pads through `DRAWER_SAFE_BOTTOM`, which is the inset at rest
+      // and 0 while it stands on the keyboard (SC-1433); the tab bar uses the
+      // inset directly.
+      if (!/safe-area-inset-bottom|DRAWER_SAFE_BOTTOM/.test(code)) missing.push(file);
     }
     expect(missing).toEqual([]);
   });

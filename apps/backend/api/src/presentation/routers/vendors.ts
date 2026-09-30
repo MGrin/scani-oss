@@ -32,6 +32,7 @@ import {
   VendorNotFoundError,
   VendorRepository,
 } from '@scani/domain/repositories';
+import { PaymentGroupService } from '@scani/domain/services';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
@@ -346,7 +347,10 @@ export const vendorsRouter = router({
       }
       try {
         await withTransaction(
-          (tx) => Container.get(VendorRepository).merge(ctx.userId, input.intoId, input.fromId, tx),
+          async (tx) => {
+            await Container.get(VendorRepository).merge(ctx.userId, input.intoId, input.fromId, tx);
+            await Container.get(PaymentGroupService).retagPayee(ctx.userId, input.intoId, tx);
+          },
           { name: 'vendors.merge' }
         );
       } catch (error) {

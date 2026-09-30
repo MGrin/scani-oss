@@ -1,3 +1,10 @@
+// @ci-reads CLAUDE.md apps/backend/api/src/lib/pdf/assets.d.ts
+// @ci-reads apps/backend/api/src/lib/pdf/bidi-js.d.ts apps/backend/api/src/lib/pdf/bidi.ts
+// @ci-reads apps/backend/api/src/lib/pdf/fonts.ts apps/backend/api/src/lib/pdf/statement.ts
+// @ci-reads apps/backend/api/tests/lib/pdf/bidi.test.ts
+// @ci-reads apps/backend/api/tests/lib/pdf/fonts.test.ts
+// @ci-reads apps/backend/api/tests/lib/pdf/layout.test.ts apps/backend/api/tsconfig.json
+// @ci-reads docs/features/2026-08-14_exports.md scripts/tsconfig.json
 import { describe, expect, it } from 'bun:test';
 import type { ExportValueDtoType } from '@scani/shared';
 import { loadTypesetter, UNSUPPORTED_MARK } from '../../../src/lib/pdf/fonts';

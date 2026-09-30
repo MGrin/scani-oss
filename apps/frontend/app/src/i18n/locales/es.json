@@ -69,7 +69,7 @@
     "home": "Inicio",
     "institutions": "Instituciones",
     "jobs": "Tareas",
-    "money": "Dinero",
+    "money": "Facturas",
     "more": "Más",
     "payments": "Pagos",
     "paymentsOverview": "Resumen",
@@ -78,8 +78,8 @@
     "sections": {
       "activity": "Actividad",
       "organization": "Organización",
-      "payments": "Pagos",
-      "portfolio": "Cartera"
+      "payments": "Facturas",
+      "portfolio": "Patrimonio"
     },
     "settings": "Ajustes",
     "signOut": "Cerrar sesión",
@@ -312,24 +312,17 @@
           "uploaded": "Subido"
         }
       },
-      "forecast": {
-        "empty": {
-          "addOne": "Añade una factura o un ingreso recurrente y aquí aparecerá una previsión.",
-          "allPausedOrUnpriced": "Todos los pagos registrados están en pausa, finalizados o sin importe que proyectar.",
-          "noPayments": "Aún no hay pagos recurrentes",
-          "nothingToProject": "Nada que proyectar"
-        }
-      },
       "groups": {
         "col": {
           "accounts": "Cuentas",
           "group": "Grupo",
           "holdings": "Posiciones",
-          "value": "Valor"
+          "value": "Valor",
+          "bills": "Facturas",
+          "payees": "Beneficiarios"
         },
         "config": {
-          "searchGroups": "Buscar grupos",
-          "value": "Valor"
+          "searchGroups": "Buscar grupos"
         },
         "empty": {
           "aGroupIsYourOwnLabel": "Un grupo es tu propia etiqueta sobre posiciones y cuentas — «jubilación», «tributable», «la cuenta conjunta».",
@@ -381,6 +374,7 @@
       "holdings": {
         "col": {
           "account": "Cuenta",
+          "actions": "Acciones",
           "amount": "Cantidad",
           "gainLoss": "Ganancia / pérdida",
           "holding": "Posición",
@@ -618,12 +612,18 @@
         "vaults_many": "objetivos",
         "vaults_one": "objetivo",
         "vaults_other": "objetivos",
-        "vendors_counted_many": "{{count}} proveedores",
-        "vendors_counted_one": "{{count}} proveedor",
-        "vendors_counted_other": "{{count}} proveedores",
-        "vendors_many": "proveedores",
-        "vendors_one": "proveedor",
-        "vendors_other": "proveedores"
+        "vendors_counted_many": "{{count}} beneficiarios",
+        "vendors_counted_one": "{{count}} beneficiario",
+        "vendors_counted_other": "{{count}} beneficiarios",
+        "vendors_many": "beneficiarios",
+        "vendors_one": "beneficiario",
+        "vendors_other": "beneficiarios",
+        "balanceChanges_many": "cambios de saldo",
+        "balanceChanges_counted_many": "{{count}} cambios de saldo",
+        "balanceChanges_one": "cambio de saldo",
+        "balanceChanges_counted_one": "{{count}} cambio de saldo",
+        "balanceChanges_other": "cambios de saldo",
+        "balanceChanges_counted_other": "{{count}} cambios de saldo"
       },
       "payments": {
         "col": {
@@ -631,10 +631,11 @@
           "cadence": "Frecuencia",
           "direction": "Sentido",
           "status": "Estado",
-          "vendor": "Proveedor"
+          "groups": "Grupos",
+          "vendor": "Beneficiario"
         },
         "config": {
-          "searchByVendor": "Buscar por proveedor"
+          "searchByVendor": "Buscar por beneficiario"
         },
         "empty": {
           "addABillOrRecurringIncomeAndScaniTracksEveryDateItFallsDue": "Añade una factura o un ingreso recurrente y Scani seguirá cada fecha de vencimiento.",
@@ -643,7 +644,7 @@
         "filter": {
           "direction": "Sentido",
           "status": "Estado",
-          "vendor": "Proveedor"
+          "vendor": "Beneficiario"
         },
         "group": {
           "direction": "Sentido",
@@ -659,7 +660,33 @@
         "sort": {
           "amount": "Importe",
           "status": "Estado",
-          "vendor": "Proveedor"
+          "vendor": "Beneficiario"
+        }
+      },
+      "bills": {
+        "config": {
+          "searchByPayee": "Buscar por beneficiario"
+        },
+        "filter": {
+          "group": "Grupo",
+          "payee": "Beneficiario",
+          "status": "Estado",
+          "period": "Periodo"
+        },
+        "status": {
+          "upcoming": "Próximos",
+          "matched": "Pagados",
+          "missed": "No pagados",
+          "skipped": "Saltados",
+          "all": "Todos"
+        },
+        "period": {
+          "next30": "Próximos 30 días",
+          "next90": "Próximos 90 días",
+          "next365": "Próximos 12 meses",
+          "last30": "Últimos 30 días",
+          "last90": "Últimos 90 días",
+          "last365": "Últimos 12 meses"
         }
       },
       "refine": {
@@ -690,7 +717,9 @@
         },
         "empty": {
           "importsLandHereWhenTheyFinish": "Las importaciones llegan aquí cuando terminan y piden una confirmación antes de que sus posiciones cuenten.",
-          "nothingNeedsYourReview": "No hay nada que necesite tu revisión"
+          "nothingNeedsYourReview": "No hay nada que necesite tu revisión",
+          "nothingElse": "No hay nada más que necesite tu revisión",
+          "theQueuesAboveHoldTheRest": "Las colas de arriba tienen lo que queda."
         },
         "filter": {
           "type": "Tipo"
@@ -791,16 +820,16 @@
         "col": {
           "category": "Categoría",
           "kind": "Clase",
-          "payments": "Pagos",
+          "payments": "Recurrentes",
           "perMonth": "Al mes",
-          "vendor": "Proveedor"
+          "vendor": "Beneficiario"
         },
         "config": {
-          "searchVendors": "Buscar proveedores"
+          "searchVendors": "Buscar beneficiarios"
         },
         "empty": {
-          "aVendorIsCreatedForYou": "Un proveedor se crea automáticamente la primera vez que vinculas un pago a uno. También puedes añadir uno aquí.",
-          "noVendorsYet": "Aún no hay proveedores"
+          "aVendorIsCreatedForYou": "Un beneficiario se crea automáticamente la primera vez que vinculas un pago a uno. También puedes añadir uno aquí.",
+          "noVendorsYet": "Aún no hay beneficiarios"
         },
         "group": {
           "billsIncome": "Facturas / ingresos",
@@ -808,7 +837,56 @@
         },
         "sort": {
           "name": "Nombre",
-          "payments": "Pagos"
+          "payments": "Recurrentes"
+        }
+      },
+      "members": {
+        "filter": {
+          "kind": "Clase"
+        },
+        "col": {
+          "membership": "Pertenencia",
+          "member": "Miembro"
+        }
+      },
+      "groupMembers": {
+        "empty": {
+          "title": "Este grupo aún está vacío",
+          "description": "Añade cuentas, posiciones, facturas o beneficiarios para ver cuánto vale este grupo."
+        }
+      },
+      "vaultMembers": {
+        "empty": {
+          "title": "Aún no cuenta nada para este objetivo",
+          "description": "Vincula posiciones y elige cuánto cuenta de cada una."
+        }
+      },
+      "transferRules": {
+        "empty": {
+          "noDestinationRulesYet": "Todavía no hay reglas de destino",
+          "openAPaymentOutInTheQueue": "Abre un pago saliente de la cola y anota adónde fue. Todo pago posterior al mismo destino llevará tu nota, sea cual sea el importe — y los destinos que marques se responden por ti."
+        }
+      },
+      "balanceGaps": {
+        "col": {
+          "answer": "Respuesta",
+          "answered": "Respondida",
+          "change": "Cambio",
+          "drift": "Importe",
+          "when": "Cuándo"
+        },
+        "config": {
+          "search": "Buscar cambios de saldo"
+        },
+        "empty": {
+          "everyChangeIsAccountedFor": "Todos los cambios de saldo están justificados.",
+          "nothingToExplain": "Nada que explicar"
+        }
+      },
+      "answeredBalanceGaps": {
+        "empty": {
+          "answersLandHere": "Las respuestas que des en la cola de saldos aparecen aquí para que puedas deshacer alguna.",
+          "nothingAnsweredYet": "Aún no has explicado ningún cambio de saldo"
         }
       }
     },

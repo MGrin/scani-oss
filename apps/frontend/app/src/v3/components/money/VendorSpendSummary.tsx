@@ -1,7 +1,9 @@
 import type { Decimal } from '@scani/shared';
 import { Block } from '@scani/ui/v3/components/Block';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
+import { cn } from '@/lib/utils';
 import {
   incomeCommitmentLabel,
   mergeCurrencyTotals,
@@ -9,6 +11,7 @@ import {
   unpricedNote,
 } from '@/lib/vendorSpend';
 import { ConvertedTotal } from '../ConvertedTotal';
+import { DisclosureButton } from '../home/DisclosureButton';
 
 /**
  * What the vendors on screen cost, over the rows actually shown.
@@ -49,9 +52,14 @@ export function VendorSpendSummary({
   const { t } = useTranslation();
   const unpriced = unpricedNote(t, unpricedCount);
   const income = mergeCurrencyTotals(expectedIncome);
+  // On a phone only the projected figure rests on screen: the full card filled
+  // the first screen of the Payees tab and pushed every payee below it
+  // (SC-1433). The rest sits one tap away, and from `sm` up it is always shown.
+  const [expanded, setExpanded] = useState(false);
+  const rest = cn(!expanded && 'max-sm:hidden');
 
   return (
-    <Block className="flex flex-col gap-4 p-4">
+    <Block className="flex flex-col gap-1 p-4 sm:gap-4">
       <div className="grid gap-4 sm:grid-cols-2">
         <div className="flex flex-col gap-2">
           <ConvertedTotal
@@ -61,7 +69,7 @@ export function VendorSpendSummary({
             rates={rates}
           />
         </div>
-        <div className="flex flex-col gap-2">
+        <div className={cn('flex flex-col gap-2', rest)}>
           <ConvertedTotal
             emphasis="default"
             label={paidWindowLabel(t, windowMonths)}
@@ -80,7 +88,7 @@ export function VendorSpendSummary({
           an empty "Projected income per month" would be the €0.00 this ticket
           is about, one level up. */}
       {income.size > 0 ? (
-        <div className="flex flex-col gap-2 border-t border-border pt-4">
+        <div className={cn('flex flex-col gap-2 border-t border-border pt-4', rest)}>
           <ConvertedTotal
             emphasis="default"
             delta
@@ -94,6 +102,12 @@ export function VendorSpendSummary({
           </p>
         </div>
       ) : null}
+      <DisclosureButton
+        className="sm:hidden"
+        expanded={expanded}
+        onToggle={() => setExpanded((open) => !open)}
+        label={t('v3.money.vendorSpend.details')}
+      />
     </Block>
   );
 }

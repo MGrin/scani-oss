@@ -87,6 +87,8 @@ export function reviewDetailText(
         hidden > 0 ? texts.t('v3.review.item.symbolsOverflow', { symbols: shown, hidden }) : shown;
       return texts.t('v3.review.item.holdingsWithSymbols', { count: detail.holdings, symbols });
     }
+    case 'columnsNeedMapping':
+      return texts.t('v3.jobs.file.columns.title');
     case 'transactionsNeedCurrency':
       return detail.fileType
         ? texts.t('v3.review.item.needsCurrencyWithType', {
@@ -145,6 +147,7 @@ export function toReviewRow(texts: ReviewTexts, item: ReviewWireRow): ReviewRow 
   return {
     id: item.id,
     kind: item.kind,
+    labelCode: item.label.code,
     title,
     detail,
     amount:

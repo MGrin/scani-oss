@@ -99,6 +99,17 @@ export function ApyConfigSheet({ open, onOpenChange, holding }: ApyConfigSheetPr
       onOpenChange={onOpenChange}
       title={isEdit ? t('v3.holdings.apy.editTitle') : t('v3.holdings.apy.createTitle')}
       description={t('v3.holdings.apy.description')}
+      footer={
+        <FormActions
+          submitLabel={isEdit ? t('v3.holdings.apy.saveEdit') : t('v3.holdings.apy.saveCreate')}
+          pendingLabel={t('v3.holdings.apy.saving')}
+          onSubmit={handleSubmit}
+          onCancel={() => onOpenChange(false)}
+          blockers={blockers}
+          pending={upsert.isPending}
+          error={failure}
+        />
+      }
     >
       <div className="flex flex-col gap-4">
         <FieldRow>
@@ -197,16 +208,6 @@ export function ApyConfigSheet({ open, onOpenChange, holding }: ApyConfigSheetPr
         {isEdit ? (
           <p className="text-caption text-muted-foreground">{t('v3.holdings.apy.editRestarts')}</p>
         ) : null}
-
-        <FormActions
-          submitLabel={isEdit ? t('v3.holdings.apy.saveEdit') : t('v3.holdings.apy.saveCreate')}
-          pendingLabel={t('v3.holdings.apy.saving')}
-          onSubmit={handleSubmit}
-          onCancel={() => onOpenChange(false)}
-          blockers={blockers}
-          pending={upsert.isPending}
-          error={failure}
-        />
       </div>
     </FormSheet>
   );

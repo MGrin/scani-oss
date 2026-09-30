@@ -81,6 +81,7 @@ export type DetachHoldingFromVaultInput = z.infer<typeof DetachHoldingFromVaultD
 // Types for vault display with progress
 
 export type VaultHoldingDetail = {
+  holdingLabel?: string | null;
   holdingId: string;
   percentage: number;
   tokenSymbol: string;

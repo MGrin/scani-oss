@@ -81,15 +81,29 @@ export type MovedDestinationAnchor = 'moved' | 'not_moved' | 'unrecorded';
 /** The `source_metadata` an arrival row carries. Both markers are required, so
  *  a create path that forgets one does not compile — there is no default
  *  anywhere that would let the omission read as a valid answer. */
+/**
+ * How long after the outflow a real deposit on the destination can still be
+ * the same money (SC-1400). The synthetic arrival is dated at the OUTFLOW's
+ * instant, and a bank credits the other side hours or days later, so an import
+ * matched only on the exact instant never replaced it and the destination
+ * counted the money twice.
+ */
+const ARRIVAL_WINDOW_DAYS = 7;
+
 export function arrivalMetadata(opts: {
   outflowTransactionId: string;
   createdDestination: boolean;
   movedDestinationAnchor: boolean;
+  outflowAt: Date;
 }): Record<string, unknown> {
   return {
     outflowTransactionId: opts.outflowTransactionId,
     [CREATED_DESTINATION_KEY]: opts.createdDestination,
     [MOVED_ANCHOR_KEY]: opts.movedDestinationAnchor,
+    arrivalFrom: opts.outflowAt.toISOString(),
+    arrivalTo: new Date(
+      opts.outflowAt.getTime() + ARRIVAL_WINDOW_DAYS * 24 * 60 * 60 * 1000
+    ).toISOString(),
   };
 }
 

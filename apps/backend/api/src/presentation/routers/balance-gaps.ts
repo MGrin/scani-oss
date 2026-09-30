@@ -8,14 +8,31 @@
  * difference the ledger cannot explain — and this is its surface.
  */
 
-import { BalanceGapService } from '@scani/domain/services';
+import { BalanceGapAnswerRejected, BalanceGapService } from '@scani/domain/services';
 import { answerBalanceGapSchema } from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import Container from 'typedi';
+import { z } from 'zod';
+import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
 import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
 
 export const balanceGapsRouter = router({
+  crossCurrencyDestinations: protectedProcedure
+    .input(strictInput(z.object({ holdingId: z.string().uuid() })))
+    .query(({ ctx, input }) =>
+      Container.get(BalanceGapService).crossCurrencyDestinations(ctx.userId, input.holdingId)
+    ),
+  listAnswered: protectedProcedure.query(({ ctx }) =>
+    Container.get(BalanceGapService).listAnswered(ctx.userId)
+  ),
+  undo: protectedProcedure
+    .input(strictInput(z.object({ observationId: z.string().uuid() })))
+    .mutation(async ({ ctx, input }) => {
+      const undone = await Container.get(BalanceGapService).undo(ctx.userId, input.observationId);
+      if (undone) await enqueuePortfolioRollup(ctx.userId);
+      return { undone };
+    }),
   /**
    * The queue, with its own accounting attached.
    *
@@ -43,11 +60,19 @@ export const balanceGapsRouter = router({
   answer: protectedProcedure
     .input(strictInput(answerBalanceGapSchema))
     .mutation(async ({ ctx, input }) => {
-      const outcome = await Container.get(BalanceGapService).answer(ctx.userId, {
-        observationId: input.observationId,
-        answer: input.answer,
-        ...(input.occurredAt ? { occurredAt: input.occurredAt } : {}),
-      });
+      const outcome = await Container.get(BalanceGapService)
+        .answer(ctx.userId, {
+          observationId: input.observationId,
+          answer: input.answer,
+          editOutflow: input.editOutflow,
+          receivedQuantity: input.receivedQuantity,
+          ...(input.occurredAt ? { occurredAt: input.occurredAt } : {}),
+        })
+        .catch((error: unknown) => {
+          if (error instanceof BalanceGapAnswerRejected)
+            throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
+          throw error;
+        });
 
       if ('refusal' in outcome) {
         switch (outcome.refusal) {
@@ -67,6 +92,7 @@ export const balanceGapsRouter = router({
         }
       }
 
+      await enqueuePortfolioRollup(ctx.userId);
       return outcome.result;
     }),
 });

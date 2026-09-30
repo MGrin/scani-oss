@@ -37,7 +37,6 @@ on:
       - '**/package.json'
       - 'bun.lock'
       - 'patches/**'
-  workflow_dispatch:
 
 permissions:
   contents: read

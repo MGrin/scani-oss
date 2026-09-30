@@ -10,46 +10,6 @@ import { z } from 'zod';
  * field, not a heading, not a route.
  */
 
-export type Entity = {
-  id: string;
-  userId: string;
-  name: string;
-  description: string | null;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export const CreateEntityDto = z.object({
-  name: z.string().min(1).max(50),
-  description: z.string().max(200).optional().nullable(),
-});
-
-export type CreateEntityInput = z.infer<typeof CreateEntityDto>;
-
-export const UpdateEntityDto = z.object({
-  id: z.string().uuid(),
-  name: z.string().min(1).max(50).optional(),
-  description: z.string().max(200).optional().nullable(),
-});
-
-export type UpdateEntityInput = z.infer<typeof UpdateEntityDto>;
-
-/**
- * Move accounts into a boundary, or out of every boundary with a null
- * `entityId`.
- *
- * Accounts rather than holdings, and that is the model rather than a
- * convenience: `holdings.account_id` is NOT NULL, so assigning the account
- * partitions its holdings for free and no holding can be in two boundaries or
- * in none.
- */
-export const AssignAccountsToEntityDto = z.object({
-  accountIds: z.array(z.string().uuid()).min(1),
-  entityId: z.string().uuid().nullable(),
-});
-
-export type AssignAccountsToEntityInput = z.infer<typeof AssignAccountsToEntityDto>;
-
 /** The literal id of the bucket holding every account nobody has classified. */
 export const UNASSIGNED_ENTITY = 'unassigned';
 

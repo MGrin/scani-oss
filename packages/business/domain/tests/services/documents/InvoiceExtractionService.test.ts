@@ -93,6 +93,7 @@ function makeFullProvider(
 ): { provider: AIInferenceProvider; calls: Calls } {
   const calls: Calls = { parseDocumentText: [], parseScreenshot: [] };
   const provider: AIInferenceProvider = {
+    supportsPdfFileInput: true,
     providerKey: 'ai-stub',
     capabilities: ['ai-inference'],
     parseScreenshot: async (input): Promise<AIResult<unknown>> => {
@@ -116,6 +117,7 @@ function makeVisionOnlyProvider(
 ): { provider: AIInferenceProvider; calls: Calls } {
   const calls: Calls = { parseDocumentText: [], parseScreenshot: [] };
   const provider: AIInferenceProvider = {
+    supportsPdfFileInput: true,
     providerKey: 'ai-vision-only',
     capabilities: ['ai-inference'],
     parseScreenshot: async (input): Promise<AIResult<unknown>> => {
@@ -237,7 +239,7 @@ describe('InvoiceExtractionService — scanned path', () => {
     stubRegistry(provider);
 
     expect(service().extract('u1', SCANNED_PDF, 'application/pdf')).rejects.toThrow(
-      'PDF input not supported'
+      'AI processing unavailable (missing)'
     );
   });
 });
@@ -345,13 +347,12 @@ describe('InvoiceExtractionService — malformed responses', () => {
     expect(result.invoices[0]?.invoiceNumber).toBeNull();
   });
 
-  test('no AI provider available yields an empty array, not a throw', async () => {
+  test('no AI provider refuses explicitly instead of reporting an empty successful extraction', async () => {
     Container.set(ProviderRegistry, { getAIProviders: () => [] } as unknown as ProviderRegistry);
 
-    const result = await service().extract('u1', TEXT_PDF, 'application/pdf');
-
-    expect(result.invoices).toEqual([]);
-    expect(result.usage.upstreamCostUsd).toBe(0);
+    await expect(service().extract('u1', TEXT_PDF, 'application/pdf')).rejects.toThrow(
+      'AI processing unavailable'
+    );
   });
 
   test('a non-decimal totalAmount string never leaks into the result', async () => {

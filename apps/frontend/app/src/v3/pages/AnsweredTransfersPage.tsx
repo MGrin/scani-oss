@@ -1,13 +1,11 @@
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
-import { Button } from '@scani/ui/ui/button';
-import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
+import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { AnsweredTransferList } from '../components/review/AnsweredTransferList';
-import { TRANSFER_REVIEW_PATH } from '../lib/routes';
+import { ReviewQueueHeader } from '../components/review/ReviewQueueHeader';
 
 /**
  * 100 rather than 25 (SC-244). The page size is not the fix — the honest empty
@@ -56,14 +54,7 @@ export function AnsweredTransfersPage() {
 
   return (
     <PageLayout measure="wide">
-      <PageHeader
-        title={t('v3.review.answered.title')}
-        action={
-          <Button asChild variant="outline">
-            <Link to={TRANSFER_REVIEW_PATH}>{t('v3.review.answered.backToQueue')}</Link>
-          </Button>
-        }
-      />
+      <ReviewQueueHeader queue="transfers" view="answered" />
       <AnsweredTransferList items={items} query={mergeQueries(query)} onSearch={setSearch} />
     </PageLayout>
   );

@@ -318,6 +318,17 @@ export class PortfolioValuationService {
       }
     }
 
+    // A holding in the base currency is 1 at every instant, so it is dated now
+    // and can never be stale. Set last, over whatever the lookups found: a
+    // stored row pricing this currency against ANOTHER one is not its price
+    // here, and dating it from that row flagged the user's own cash as an
+    // outdated quote (SC-1447).
+    priceMetadata.set(baseCurrency.id, {
+      timestamp: now,
+      source: 'Base Currency',
+      granularity: null,
+    });
+
     // Process holdings as a pure map() transformation. `priceResults`
     // is keyed only by tokens that actually resolved to a price — an
     // absent key means the token is unpriceable in the user's base

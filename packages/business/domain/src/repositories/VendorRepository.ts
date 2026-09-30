@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewVendor, Vendor, VendorAlias } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, or, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import { normalizeVendorName } from '../lib/normalize-vendor-name';
 import {
@@ -349,10 +349,18 @@ export class VendorRepository extends BaseRepository<Vendor, NewVendor> {
       throw new VendorNotFoundError(vendorId);
     }
 
+    // A bill whose settled history names this vendor counts as pointing at it
+    // (SC-1401): `settled_vendor_id` is ON DELETE RESTRICT for the same reason
+    // `payments.vendor_id` is.
     const [payments] = await database
       .select({ count: sql<number>`count(*)::int` })
       .from(schema.payments)
-      .where(eq(schema.payments.vendorId, vendorId));
+      .where(
+        or(
+          eq(schema.payments.vendorId, vendorId),
+          sql`EXISTS (SELECT 1 FROM payment_occurrences o WHERE o.payment_id = ${schema.payments.id} AND o.settled_vendor_id = ${vendorId})`
+        )
+      );
 
     const [aliases] = await database
       .select({ count: sql<number>`count(*)::int` })
@@ -688,10 +696,23 @@ export class VendorRepository extends BaseRepository<Vendor, NewVendor> {
         .set({ vendorId: intoId })
         .where(eq(schema.vendorAliases.vendorId, fromId));
 
+      // The merged payee's group rules become the survivor's, so its bills
+      // stay where the reader put them (SC-1408). The caller re-tags them.
+      await database.execute(sql`
+        INSERT INTO vendor_groups (vendor_id, group_id)
+        SELECT ${intoId}, group_id FROM vendor_groups WHERE vendor_id = ${fromId}
+        ON CONFLICT (vendor_id, group_id) DO NOTHING
+      `);
+
       await database
         .update(schema.payments)
         .set({ vendorId: intoId })
         .where(eq(schema.payments.vendorId, fromId));
+
+      await database
+        .update(schema.paymentOccurrences)
+        .set({ settledVendorId: intoId })
+        .where(eq(schema.paymentOccurrences.settledVendorId, fromId));
 
       await database
         .update(schema.documentExtractions)
@@ -732,9 +753,9 @@ export class VendorRepository extends BaseRepository<Vendor, NewVendor> {
     try {
       const rows = (await database.execute(sql`
         SELECT
-          p.vendor_id AS "vendorId",
-          p.currency_token_id AS "currencyTokenId",
-          p.direction AS "direction",
+          COALESCE(o.settled_vendor_id, p.vendor_id) AS "vendorId",
+          COALESCE(o.settled_currency_token_id, p.currency_token_id) AS "currencyTokenId",
+          COALESCE(o.settled_direction, p.direction) AS "direction",
           COALESCE(SUM(COALESCE(o.actual_amount, o.expected_amount, p.expected_amount)::numeric), 0)::text
             AS "allTime",
           COALESCE(SUM(COALESCE(o.actual_amount, o.expected_amount, p.expected_amount)::numeric)
@@ -746,7 +767,7 @@ export class VendorRepository extends BaseRepository<Vendor, NewVendor> {
         FROM payment_occurrences o
         JOIN payments p ON p.id = o.payment_id
         WHERE p.user_id = ${userId} AND o.status = 'matched'
-        GROUP BY p.vendor_id, p.currency_token_id, p.direction
+        GROUP BY 1, 2, 3
       `)) as unknown as VendorSettledSpend[];
       return rows;
     } catch (error) {
@@ -774,14 +795,14 @@ export class VendorRepository extends BaseRepository<Vendor, NewVendor> {
         FROM (
           SELECT
             o.id AS "id",
-            p.vendor_id AS "vendorId",
+            COALESCE(o.settled_vendor_id, p.vendor_id) AS "vendorId",
             p.id AS "paymentId",
             o.due_date::text AS "dueDate",
             COALESCE(o.actual_amount, o.expected_amount, p.expected_amount) AS "amount",
-            p.currency_token_id AS "currencyTokenId",
-            p.direction AS "direction",
+            COALESCE(o.settled_currency_token_id, p.currency_token_id) AS "currencyTokenId",
+            COALESCE(o.settled_direction, p.direction) AS "direction",
             ROW_NUMBER() OVER (
-              PARTITION BY p.vendor_id ORDER BY o.due_date DESC, o.id DESC
+              PARTITION BY COALESCE(o.settled_vendor_id, p.vendor_id) ORDER BY o.due_date DESC, o.id DESC
             ) AS rank
           FROM payment_occurrences o
           JOIN payments p ON p.id = o.payment_id

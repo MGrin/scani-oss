@@ -3,12 +3,12 @@ import { PortfolioValueDailyRepository } from '@scani/domain/repositories';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { Container } from 'typedi';
 import {
-  aggregateIncludedHoldingRows,
   hasKnownCoverage,
   toNetWorthHistoryRow,
   unmeasuredDates,
   userNetWorthDaily,
 } from '../../src/lib/net-worth-series';
+import { sumByDay, viaDayTotals } from './helpers/day-totals';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -44,9 +44,9 @@ function seedRepository(overrides: {
 }) {
   const calls = { included: 0, range: 0 };
   Container.set(PortfolioValueDailyRepository, {
-    findIncludedHoldingScopeRange: async () => {
+    findIncludedHoldingDailyTotals: async () => {
       calls.included += 1;
-      return overrides.perHolding;
+      return sumByDay(overrides.perHolding as never);
     },
     findRange: async () => {
       calls.range += 1;
@@ -300,7 +300,7 @@ describe('unmeasuredDates', () => {
   });
 });
 
-describe('aggregateIncludedHoldingRows — unpriceable holdings (SC-146)', () => {
+describe('aggregateDailyTotals — unpriceable holdings (SC-146)', () => {
   test('dust leaves the denominator, so a fully-priced day reads as full', async () => {
     // The production shape: several assets priced, a couple of airdrop tokens
     // that no provider indexes. Before the fix this day counted the airdrops in
@@ -378,18 +378,18 @@ describe('aggregateIncludedHoldingRows — unpriceable holdings (SC-146)', () =>
 /**
  * SC-151 / SC-149 — the two quality counts survive aggregation and reach the file.
  *
- * The first test here is the one that mattered: `aggregateIncludedHoldingRows`
+ * The first test here is the one that mattered: the day aggregation
  * has always had an `anyPartial` branch, and no writer had ever produced a
  * per-holding row saying `'partial'` — the rollup's `upsertScopeRow` computed
  * the stale flag and dropped it. So the branch was unreachable, and every
  * stale price arrived at the chart and both exports looking like a quote taken
  * that morning.
  */
-describe('aggregateIncludedHoldingRows — quality counts (SC-151, SC-149)', () => {
+describe('aggregateDailyTotals — quality counts (SC-151, SC-149)', () => {
   test('a stale-priced holding downgrades an otherwise fully-priced day', async () => {
     const fresh = perHoldingRow('2026-08-01', 'h1', '1000');
     const stale = { ...perHoldingRow('2026-08-01', 'h2', '500'), holdingsStalePriced: 1 };
-    const series = aggregateIncludedHoldingRows([fresh, stale] as never);
+    const series = viaDayTotals([fresh, stale] as never);
 
     // 100% priced, and still not 'full': half the figure is old.
     expect(series[0]?.coverageQuality).toBe('partial');
@@ -398,7 +398,7 @@ describe('aggregateIncludedHoldingRows — quality counts (SC-151, SC-149)', () 
   });
 
   test('a day priced entirely from fresh quotes stays full', async () => {
-    const series = aggregateIncludedHoldingRows([
+    const series = viaDayTotals([
       perHoldingRow('2026-08-01', 'h1', '1000'),
       perHoldingRow('2026-08-01', 'h2', '500'),
     ] as never);
@@ -409,7 +409,7 @@ describe('aggregateIncludedHoldingRows — quality counts (SC-151, SC-149)', () 
   test('basis-unknown counts sum across holdings and reach the export row', async () => {
     const truncated = { ...perHoldingRow('2026-08-01', 'h1', '1000'), holdingsBasisUnknown: 1 };
     const complete = perHoldingRow('2026-08-01', 'h2', '500');
-    const series = aggregateIncludedHoldingRows([truncated, complete] as never);
+    const series = viaDayTotals([truncated, complete] as never);
     expect(series[0]?.holdingsBasisUnknown).toBe(1);
 
     // The file is the artifact people forward, so the count has to be in it —
@@ -437,7 +437,7 @@ describe('aggregateIncludedHoldingRows — quality counts (SC-151, SC-149)', () 
   test('unreviewed-transfer counts sum, and stay off the net-worth export row', async () => {
     const withExits = { ...perHoldingRow('2026-08-01', 'h1', '1000'), transfersUnreviewed: 2 };
     const other = { ...perHoldingRow('2026-08-01', 'h2', '500'), transfersUnreviewed: 1 };
-    const series = aggregateIncludedHoldingRows([withExits, other] as never);
+    const series = viaDayTotals([withExits, other] as never);
     expect(series[0]?.transfersUnreviewed).toBe(3);
 
     const row = toNetWorthHistoryRow(series[0]!);
@@ -448,7 +448,7 @@ describe('aggregateIncludedHoldingRows — quality counts (SC-151, SC-149)', () 
     // DEFAULT 0 on both columns: a pre-rebuild row says nothing new and is
     // graded by coverage_quality alone, which is what it has always carried.
     const legacy = { ...perHoldingRow('2026-08-01', 'h1', '1000'), coverageQuality: 'partial' };
-    const series = aggregateIncludedHoldingRows([legacy] as never);
+    const series = viaDayTotals([legacy] as never);
     expect(series[0]?.coverageQuality).toBe('partial');
     expect(series[0]?.holdingsStalePriced).toBe(0);
   });

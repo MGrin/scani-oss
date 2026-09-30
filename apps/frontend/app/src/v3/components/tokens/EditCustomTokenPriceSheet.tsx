@@ -194,6 +194,17 @@ export function EditCustomTokenPriceSheet({
       onOpenChange={onOpenChange}
       title={t('v3.tokens.price.title', { symbol: tokenSymbol })}
       description={t('v3.tokens.price.description')}
+      footer={
+        <FormActions
+          submitLabel={t('v3.tokens.price.submit')}
+          pendingLabel={t('v3.tokens.price.submitting')}
+          onSubmit={handleSubmit}
+          onCancel={() => onOpenChange(false)}
+          blockers={blockers}
+          pending={updateMutation.isPending}
+          error={failure}
+        />
+      }
     >
       <div className="flex flex-col gap-4">
         <p className="text-caption text-muted-foreground">
@@ -240,16 +251,6 @@ export function EditCustomTokenPriceSheet({
             maxLength={500}
           />
         </Field>
-
-        <FormActions
-          submitLabel={t('v3.tokens.price.submit')}
-          pendingLabel={t('v3.tokens.price.submitting')}
-          onSubmit={handleSubmit}
-          onCancel={() => onOpenChange(false)}
-          blockers={blockers}
-          pending={updateMutation.isPending}
-          error={failure}
-        />
 
         <section className="flex flex-col gap-2">
           <h3 className="text-label text-muted-foreground">{t('v3.tokens.price.historyTitle')}</h3>

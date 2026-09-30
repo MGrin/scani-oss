@@ -87,6 +87,7 @@ export class VaultService extends BaseService {
             vaultId,
             tokenSymbol: token.symbol,
             holdingId: holding.id,
+            holdingLabel: holding.label,
           });
           continue;
         }
@@ -224,6 +225,7 @@ export class VaultService extends BaseService {
 
       holdingDetails.push({
         holdingId: holding.id,
+        holdingLabel: holding.label,
         percentage: vaultHolding.percentage,
         tokenSymbol: token.symbol,
         tokenName: token.name,

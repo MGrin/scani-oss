@@ -1,10 +1,5 @@
 import { UserJobRepository } from '@scani/domain/repositories';
-import {
-  InvalidBaseCurrencyError,
-  ObservedBurnAnswerCurrencyMismatch,
-  TokenService,
-  UserService,
-} from '@scani/domain/services';
+import { InvalidBaseCurrencyError, TokenService, UserService } from '@scani/domain/services';
 import {
   PORTFOLIO_HISTORY_BACKFILL,
   PORTFOLIO_HISTORY_LOOKBACK_DAYS,
@@ -17,7 +12,6 @@ import type { CostBasisMethodState } from '@scani/shared';
 import {
   CurrentUserDto,
   costBasisMethodStateSchema,
-  ObservedBurnAnswerDto,
   parseCostBasisMethod,
   ReportTimezoneDto,
   UpdateUserDto,
@@ -194,53 +188,6 @@ export const usersRouter = router({
         usersLogger.info({ userId: dbUser.id, timezone: input.timezone }, 'Recorded user timezone');
       }
       return result;
-    }),
-
-  /**
-   * Override the measured monthly drain, confirm it, or withdraw either
-   * (SC-661).
-   *
-   * Emits `user:update` for the same reason a base-currency change does: this
-   * governs the runway on Home and the affordability answer in Money, so every
-   * open tab is showing a stale conclusion the instant it lands. Unlike
-   * `reportTimezone` this is one deliberate act by a person, not a report fired
-   * on every page load, so the cost of the broadcast is not a concern.
-   *
-   * `confirm` echoes back the figure the surface DISPLAYED rather than letting
-   * the server re-derive it. The user agreed with what they were shown, and the
-   * server recomputing at write time could store agreement with a number nobody
-   * ever saw.
-   */
-  setObservedBurnAnswer: protectedProcedure
-    .input(strictInput(ObservedBurnAnswerDto))
-    .output(CurrentUserDto)
-    .mutation(async ({ input, ctx }) => {
-      const { dbUser } = await requireAuth(ctx);
-      let updated: Awaited<ReturnType<UserService['setObservedBurnAnswer']>>;
-      try {
-        updated = await Container.get(UserService).setObservedBurnAnswer(dbUser.id, input);
-      } catch (error) {
-        // The client sends the currency because it is what gets STORED, and a
-        // client reading a cached profile can send the one the account has just
-        // left. A 400 telling it to re-read beats a stored answer that decodes
-        // as `currencyChanged` the first time anybody looks at it.
-        if (error instanceof ObservedBurnAnswerCurrencyMismatch) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message:
-              'That figure was given in a currency this account no longer uses. Reload and try again.',
-          });
-        }
-        throw error;
-      }
-      emitEntityChange({
-        entityType: 'user',
-        operationType: 'update',
-        entityId: dbUser.id,
-        userId: dbUser.id,
-        metadata: { source: 'observed-burn-answer', kind: input.kind },
-      });
-      return updated;
     }),
 
   // Get supported fiat currencies (tokens) for base currency selection

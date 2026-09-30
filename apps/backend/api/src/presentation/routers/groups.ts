@@ -1,6 +1,6 @@
 import type { Group } from '@scani/db/schema';
 import { GroupRepository, HoldingRepository } from '@scani/domain/repositories';
-import { GroupValuationService } from '@scani/domain/services';
+import { GroupValuationService, PaymentGroupService } from '@scani/domain/services';
 import { AssignHoldingGroupsUseCase } from '@scani/domain/use-cases';
 import { emitEntityChange } from '@scani/realtime';
 import {
@@ -27,6 +27,75 @@ async function deleteGroup(id: string, userId: string): Promise<{ success: true 
 }
 
 export const groupsRouter = router({
+  changeMembership: protectedProcedure
+    .input(
+      strictInput(
+        z
+          .object({
+            groupId: z.string().uuid(),
+            accountIds: z.array(z.string().uuid()).max(500),
+            holdingIds: z.array(z.string().uuid()).max(500),
+            direction: z.enum(['add', 'remove']),
+          })
+          .refine((v) => v.accountIds.length + v.holdingIds.length <= 500)
+      )
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { dbUser } = await requireAuth(ctx);
+      await Container.get(GroupRepository).changeMembership(
+        dbUser.id,
+        input.groupId,
+        input.accountIds,
+        input.holdingIds,
+        input.direction
+      );
+      emitEntityChange({
+        entityType: 'group',
+        operationType: 'update',
+        entityId: input.groupId,
+        userId: dbUser.id,
+      });
+      return { success: true };
+    }),
+  /** Payees (as standing rules) and single bills, in or out of one group
+   *  (SC-1408). Separate from `changeMembership` so each is one transaction. */
+  changeBillMembership: protectedProcedure
+    .input(
+      strictInput(
+        z
+          .object({
+            groupId: z.string().uuid(),
+            vendorIds: z.array(z.string().uuid()).max(500),
+            paymentIds: z.array(z.string().uuid()).max(500),
+            direction: z.enum(['add', 'remove']),
+          })
+          .refine((v) => v.vendorIds.length + v.paymentIds.length <= 500)
+      )
+    )
+    .mutation(async ({ ctx, input }) => {
+      const { dbUser } = await requireAuth(ctx);
+      await Container.get(PaymentGroupService).changeMembership(
+        dbUser.id,
+        input.groupId,
+        { vendorIds: input.vendorIds, paymentIds: input.paymentIds },
+        input.direction
+      );
+      emitEntityChange({
+        entityType: 'group',
+        operationType: 'update',
+        entityId: input.groupId,
+        userId: dbUser.id,
+      });
+      return { success: true };
+    }),
+  bills: protectedProcedure.input(strictInput(IdInputDto)).query(async ({ ctx, input }) => {
+    const { dbUser } = await requireAuth(ctx);
+    return Container.get(PaymentGroupService).groupBills(dbUser.id, input.id);
+  }),
+  membership: protectedProcedure.input(strictInput(IdInputDto)).query(async ({ ctx, input }) => {
+    const { dbUser } = await requireAuth(ctx);
+    return Container.get(GroupRepository).membershipDetails(dbUser.id, input.id);
+  }),
   // Get all groups for the user
   getAll: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);

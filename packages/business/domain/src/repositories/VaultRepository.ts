@@ -1,13 +1,132 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewVault, Vault, VaultHolding } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 @Service()
 export class VaultRepository extends BaseRepository<Vault, NewVault> {
   protected readonly table = schema.vaults;
   protected readonly tableName = 'vaults';
+
+  private async validateAllocation(
+    vaultId: string,
+    holdingId: string,
+    percentage: number,
+    tx: DatabaseTransaction
+  ): Promise<void> {
+    if (
+      !Number.isFinite(percentage) ||
+      percentage <= 0 ||
+      percentage > 100 ||
+      Math.abs(percentage * 100 - Math.round(percentage * 100)) > 0.000001
+    )
+      throw new Error('Allocation must be between 0 and 100%');
+    // Preserve legacy precision. 0.00001% bounds float32 representation error at a 100% total.
+    // Every writer locks the holding, including when it has no allocations yet.
+    const [holding] = await tx
+      .select()
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, holdingId))
+      .for('update');
+    const vault = await this.findById(vaultId, tx);
+    if (!holding || !vault || holding.userId !== vault.userId) throw new Error('Holding not found');
+    const [other] = await tx
+      .select({
+        total: sql<number>`coalesce(sum(${schema.vaultHoldings.percentage}::double precision), 0)`,
+      })
+      .from(schema.vaultHoldings)
+      .where(
+        and(
+          eq(schema.vaultHoldings.holdingId, holdingId),
+          ne(schema.vaultHoldings.vaultId, vaultId)
+        )
+      );
+    if (Number(other?.total ?? 0) + percentage > 100.00001)
+      throw new Error('Total vault allocation cannot exceed 100%');
+  }
+
+  async allocationsForUser(userId: string) {
+    return this.getDb()
+      .select({
+        holdingId: schema.vaultHoldings.holdingId,
+        vaultId: schema.vaultHoldings.vaultId,
+        percentage: schema.vaultHoldings.percentage,
+      })
+      .from(schema.vaultHoldings)
+      .innerJoin(schema.holdings, eq(schema.vaultHoldings.holdingId, schema.holdings.id))
+      .where(eq(schema.holdings.userId, userId));
+  }
+
+  async setAllocations(
+    userId: string,
+    vaultId: string,
+    entries: { holdingId: string; percentage: number }[]
+  ) {
+    return this.getDb().transaction(async (tx) => {
+      const vault = await this.findById(vaultId, tx);
+      if (!vault || vault.userId !== userId) throw new Error('Vault not found');
+      const ids = entries.map((e) => e.holdingId).sort();
+      if (new Set(ids).size !== ids.length || ids.length > 500)
+        throw new Error('Invalid allocation selection');
+      if (!ids.length) return;
+      const owned = await tx
+        .select({ id: schema.holdings.id })
+        .from(schema.holdings)
+        .where(and(eq(schema.holdings.userId, userId), inArray(schema.holdings.id, ids)))
+        .orderBy(schema.holdings.id)
+        .for('update');
+      if (owned.length !== ids.length) throw new Error('Holding not found');
+      const totals = await tx
+        .select({
+          holdingId: schema.vaultHoldings.holdingId,
+          total: sql<number>`coalesce(sum(${schema.vaultHoldings.percentage}::double precision), 0)`,
+        })
+        .from(schema.vaultHoldings)
+        .where(
+          and(
+            inArray(schema.vaultHoldings.holdingId, ids),
+            ne(schema.vaultHoldings.vaultId, vaultId)
+          )
+        )
+        .groupBy(schema.vaultHoldings.holdingId);
+      const allocated = new Map(totals.map((row) => [row.holdingId, Number(row.total)]));
+      for (const { holdingId, percentage } of entries) {
+        if (
+          !Number.isFinite(percentage) ||
+          percentage < 0 ||
+          percentage > 100 ||
+          Math.abs(percentage * 100 - Math.round(percentage * 100)) > 0.000001
+        )
+          throw new Error('Allocation requires at most two decimal places between 0 and 100%');
+        if ((allocated.get(holdingId) ?? 0) + percentage > 100.00001)
+          throw new Error('Total vault allocation cannot exceed 100%');
+      }
+      const removals = entries
+        .filter((entry) => entry.percentage === 0)
+        .map((entry) => entry.holdingId);
+      if (removals.length)
+        await tx
+          .delete(schema.vaultHoldings)
+          .where(
+            and(
+              eq(schema.vaultHoldings.vaultId, vaultId),
+              inArray(schema.vaultHoldings.holdingId, removals)
+            )
+          );
+      const additions = entries
+        .filter((entry) => entry.percentage > 0)
+        .map((entry) => ({ vaultId, ...entry }));
+      if (additions.length)
+        await tx
+          .insert(schema.vaultHoldings)
+          .values(additions)
+          .onConflictDoUpdate({
+            target: [schema.vaultHoldings.vaultId, schema.vaultHoldings.holdingId],
+            set: { percentage: sql`excluded.percentage` },
+          });
+    });
+  }
 
   async findByUser(userId: string, transaction?: DatabaseTransaction): Promise<Vault[]> {
     try {
@@ -115,6 +234,11 @@ export class VaultRepository extends BaseRepository<Vault, NewVault> {
     percentage: number,
     transaction?: DatabaseTransaction
   ): Promise<VaultHolding> {
+    if (!transaction)
+      return this.getDb().transaction((tx) =>
+        this.attachHolding(vaultId, holdingId, percentage, tx)
+      );
+    await this.validateAllocation(vaultId, holdingId, percentage, transaction);
     try {
       const database = this.getDb(transaction);
       const [result] = await database
@@ -141,6 +265,13 @@ export class VaultRepository extends BaseRepository<Vault, NewVault> {
     holdingId: string,
     transaction?: DatabaseTransaction
   ): Promise<void> {
+    if (!transaction)
+      return this.getDb().transaction((tx) => this.detachHolding(vaultId, holdingId, tx));
+    await transaction
+      .select({ id: schema.holdings.id })
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, holdingId))
+      .for('update');
     try {
       const database = this.getDb(transaction);
       await database
@@ -161,6 +292,13 @@ export class VaultRepository extends BaseRepository<Vault, NewVault> {
     holdingId: string,
     transaction?: DatabaseTransaction
   ): Promise<string[]> {
+    if (!transaction)
+      return this.getDb().transaction((tx) => this.detachAllHoldingsForHolding(holdingId, tx));
+    await transaction
+      .select({ id: schema.holdings.id })
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, holdingId))
+      .for('update');
     try {
       const database = this.getDb(transaction);
       // Find affected vault IDs before deleting
@@ -188,6 +326,11 @@ export class VaultRepository extends BaseRepository<Vault, NewVault> {
     percentage: number,
     transaction?: DatabaseTransaction
   ): Promise<VaultHolding | null> {
+    if (!transaction)
+      return this.getDb().transaction((tx) =>
+        this.updateHoldingPercentage(vaultId, holdingId, percentage, tx)
+      );
+    await this.validateAllocation(vaultId, holdingId, percentage, transaction);
     try {
       const database = this.getDb(transaction);
       const [result] = await database

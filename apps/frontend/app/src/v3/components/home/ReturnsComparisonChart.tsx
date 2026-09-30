@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { CartesianGrid, Line, LineChart, Tooltip, XAxis, YAxis } from 'recharts';
 import { cn } from '@/lib/utils';
 import { axisFormat } from '../../lib/axis-format';
+import { niceAxis } from '../../lib/nice-axis';
 import {
   COMPARISON_SERIES,
   type ComparisonPoint,
@@ -127,7 +128,10 @@ export function ReturnsComparisonChart({
   const values = comparison.points.flatMap((point) =>
     drawn.map((key) => point[key]).filter((value): value is number => value !== null)
   );
-  const axis = axisFormat(values);
+  // Round ticks at an even step (SC-1430), and the label precision follows
+  // the ticks that are printed, not the raw series — as in `PortfolioChart`.
+  const nice = niceAxis(values);
+  const axis = axisFormat(nice ? nice.ticks : values);
 
   return (
     <div className={cn('flex flex-col gap-3', framed && 'border-t border-border px-4 py-3')}>
@@ -154,7 +158,8 @@ export function ReturnsComparisonChart({
             tickLine={false}
             // Anchoring at zero would flatten four lines that start from the
             // same opening value into one band at the top of the plot.
-            domain={['dataMin', 'dataMax']}
+            domain={nice?.domain ?? ['dataMin', 'dataMax']}
+            ticks={nice?.ticks}
           />
           <Tooltip
             cursor={{ stroke: 'hsl(var(--border-strong))' }}

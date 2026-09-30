@@ -94,6 +94,12 @@ export interface ForecastOccurrenceRow {
   expectedAmount: string | null;
   /** What actually moved. Non-null only on a settled row — see `lastSettled`. */
   actualAmount: string | null;
+  /**
+   * The bill's currency and direction when this row settled (SC-1401). Null on
+   * a scheduled row, which follows the bill.
+   */
+  settledCurrencyTokenId?: string | null;
+  settledDirection?: string | null;
 }
 
 export interface ForecastPaymentInput {
@@ -234,11 +240,18 @@ function isProjectableCadence(payment: ForecastPayment): boolean {
  * a better guide to September than July's.
  */
 function lastSettled(
-  occurrences: readonly ForecastOccurrenceRow[]
+  occurrences: readonly ForecastOccurrenceRow[],
+  terms: { currencyTokenId: string; direction: string }
 ): { amount: string; dueDate: string } | null {
   let best: { amount: string; dueDate: string } | null = null;
   for (const occurrence of occurrences) {
     if (occurrence.status !== 'matched' || occurrence.actualAmount === null) continue;
+    // A figure settled in another currency or direction is not a guide to this
+    // bill as it now stands: 1,200 paid in EUR says nothing about the next
+    // payment once the bill is in GBP (SC-1401).
+    if ((occurrence.settledCurrencyTokenId ?? terms.currencyTokenId) !== terms.currencyTokenId)
+      continue;
+    if ((occurrence.settledDirection ?? terms.direction) !== terms.direction) continue;
     if (best === null || occurrence.dueDate > best.dueDate) {
       best = { amount: occurrence.actualAmount, dueDate: occurrence.dueDate };
     }
@@ -294,7 +307,7 @@ export function buildForecast(
     // the option only where it would do something. What the flag gates is the
     // USE of it below, so a payment with the option off still projects exactly
     // as it did before SC-625.
-    const settled = lastSettled(occurrences);
+    const settled = lastSettled(occurrences, payment);
     const useHistory = payment.estimateFromHistory ? settled : null;
 
     const add = (dueDate: string, amount: string | null, origin: ForecastMovement['origin']) => {

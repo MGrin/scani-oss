@@ -69,6 +69,7 @@ function readScreenshotParse(result: unknown): ReviewDetail | undefined {
  */
 function readFileImport(result: unknown): ReviewDetail | undefined {
   const root = asRecord(result);
+  if (asRecord(root?.needsColumnMapping)) return { code: 'columnsNeedMapping' };
   const dates = asRecord(root?.needsDateOrder);
   if (dates) {
     const count = asPositiveInt(dates.rowCount);

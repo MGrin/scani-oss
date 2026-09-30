@@ -4,6 +4,7 @@ import { DocumentRetentionService, UploadedFileService } from '@scani/domain/ser
 import { ParseScreenshotUseCase } from '@scani/domain/use-cases/ParseScreenshotUseCase';
 import { SCREENSHOT_PARSE, type ScreenshotParseJob } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
+import { AIUnavailableError } from '@scani/providers/core/errors';
 import { type ProcessorContext, UserJobProcessor } from '@scani/queue';
 import { Container, Service } from 'typedi';
 import { readUpload } from '../lib/read-upload';
@@ -24,6 +25,8 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
       success: boolean;
       data?: Awaited<ReturnType<typeof useCase.execute>>;
       error?: string;
+      aiUnavailable?: boolean;
+      retained?: boolean;
     }> = [];
 
     const total = data.r2Keys.length;
@@ -31,6 +34,7 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
       const key = data.r2Keys[i];
       if (!key) continue;
       const fileLabel = total > 1 ? ` (${i + 1}/${total})` : '';
+      let retained = retention.isRetained(key);
       try {
         await ctx.reportStatus(`Reading file${fileLabel}…`);
         const buf = await readUpload(storage, key);
@@ -39,7 +43,7 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
         // file whether or not the extractor can read it, and a screenshot
         // that failed to parse is exactly the one they want to look at
         // again.
-        await this.record(
+        retained = await this.record(
           uploadedFiles,
           data.userId,
           key,
@@ -61,12 +65,19 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
           userId: data.userId,
           onStatus: (msg) => ctx.reportStatus(msg),
         });
-        results.push({ r2Key: key, success: true, data: parsed });
+        results.push({ r2Key: key, success: true, data: parsed, retained });
       } catch (err) {
         results.push({
           r2Key: key,
           success: false,
-          error: err instanceof Error ? err.message : String(err),
+          error:
+            err instanceof AIUnavailableError
+              ? 'AI processing is unavailable. Enter the details manually, or try again when processing is available.'
+              : err instanceof Error
+                ? err.message
+                : String(err),
+          aiUnavailable: err instanceof AIUnavailableError,
+          retained,
         });
         logger.error(
           { jobId: ctx.job.id, r2Key: key, error: err instanceof Error ? err.message : err },
@@ -80,7 +91,7 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
         // `document-parse`: a future caller handed a stored key must not be
         // able to destroy the file we promised to keep.
         // R2 lifecycle rule will clean up if this fails.
-        if (!retention.isRetained(key)) {
+        if (retained && !retention.isRetained(key)) {
           void storage.delete(key).catch(() => undefined);
         }
       }
@@ -145,9 +156,9 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
     bytes: Buffer,
     jobId: string | undefined,
     originalFilename: string | undefined
-  ): Promise<void> {
+  ): Promise<boolean> {
     try {
-      await uploadedFiles.record({
+      const document = await uploadedFiles.record({
         userId,
         purpose: 'screenshot',
         bytes: new Uint8Array(bytes),
@@ -158,11 +169,13 @@ export class ScreenshotParseProcessor extends UserJobProcessor<ScreenshotParseJo
         // didn't send one.
         originalFilename: originalFilename ?? filenameFromKey(r2Key),
       });
+      return Container.get(DocumentRetentionService).isRetained(document.r2Key);
     } catch (err) {
       logger.warn(
         { jobId, r2Key, error: err instanceof Error ? err.message : err },
         'Screenshot upload could not be recorded (non-fatal)'
       );
+      return false;
     }
   }
 }

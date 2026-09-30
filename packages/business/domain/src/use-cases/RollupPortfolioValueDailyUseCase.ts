@@ -378,7 +378,7 @@ export class RollupPortfolioValueDailyUseCase {
   // Including the stale-price downgrade to 'partial', which this method
   // used to omit (SC-151). That omission was not cosmetic: the home chart
   // and both exports are built from the **per-holding** scope rows written
-  // here, not from the user-scope row above, and `aggregateIncludedHoldingRows`
+  // here, not from the user-scope row above, and `findIncludedHoldingDailyTotals`
   // decides a day is 'partial' by looking for a 'partial' among them. No
   // writer ever produced one, so its `anyPartial` branch was unreachable
   // and every stale price arrived at the reader indistinguishable from a

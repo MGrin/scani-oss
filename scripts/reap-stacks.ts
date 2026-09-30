@@ -20,7 +20,7 @@
 import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { classifyDockerProbe, type DockerProbe, probeWithRetry } from './lib/port-holder';
-import { censusFromMachine } from './lib/stack-census';
+import { censusFromMachine, sizesClause } from './lib/stack-census';
 import {
   type ActionResult,
   describeKeptProjects,
@@ -158,6 +158,8 @@ async function main(): Promise<never> {
   // the four seconds.
   const census = censusFromMachine(REPO_ROOT, true);
   const plan = planReap(census, composeProjectName(REPO_ROOT), parsed.project);
+  const sizes = sizesClause(census);
+  if (sizes !== null) process.stderr.write(`reap-stacks: ${sizes}\n`);
 
   if (plan.kind === 'refused') {
     process.stderr.write(`reap-stacks: REFUSED · exit ${plan.exit} · ${plan.reason}\n`);

@@ -47,6 +47,7 @@ ENV VITE_API_URL=${VITE_API_URL} \
 # have since SC-964, and the demo, which runs this image, could not (SC-1187,
 # SC-1208). An ARG reaches the RUN below as its environment; empty means a
 # local build, which names no commit rather than guessing one.
+ARG SCANI_CORE_BUILD=
 ARG SCANI_COMMIT=
 
 WORKDIR /app/apps/frontend/app

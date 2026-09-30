@@ -83,10 +83,10 @@
   },
   "nav": {
     "sections": {
-      "portfolio": "Портфель",
+      "portfolio": "Состояние",
       "organization": "Структура",
       "activity": "Активность",
-      "payments": "Платежи"
+      "payments": "Счета"
     },
     "home": "Главная",
     "holdings": "Позиции",
@@ -109,7 +109,7 @@
     "review": "Разбор",
     "files": "Файлы",
     "payments": "Платежи",
-    "money": "Деньги"
+    "money": "Счета"
   },
   "settings": {
     "title": "Настройки",
@@ -244,7 +244,15 @@
         "customTokens_counted_one": "{{count}} пользовательский токен",
         "customTokens_counted_few": "{{count}} пользовательских токена",
         "customTokens_counted_many": "{{count}} пользовательских токенов",
-        "customTokens_counted_other": "{{count}} пользовательского токена"
+        "customTokens_counted_other": "{{count}} пользовательского токена",
+        "balanceChanges_one": "изменение баланса",
+        "balanceChanges_counted_one": "{{count}} изменение баланса",
+        "balanceChanges_few": "изменения баланса",
+        "balanceChanges_counted_few": "{{count}} изменения баланса",
+        "balanceChanges_many": "изменений баланса",
+        "balanceChanges_counted_many": "{{count}} изменений баланса",
+        "balanceChanges_other": "изменения баланса",
+        "balanceChanges_counted_other": "{{count}} изменения баланса"
       },
       "accounts": {
         "col": {
@@ -367,11 +375,12 @@
           "accounts": "Счета",
           "group": "Группа",
           "holdings": "Позиции",
-          "value": "Стоимость"
+          "value": "Стоимость",
+          "bills": "Счета к оплате",
+          "payees": "Контрагенты"
         },
         "config": {
-          "searchGroups": "Поиск по группам",
-          "value": "Стоимость"
+          "searchGroups": "Поиск по группам"
         },
         "empty": {
           "aGroupIsYourOwnLabel": "Группа — это ваша собственная метка на позициях и счетах: «пенсия», «облагаемое налогом», «совместное».",
@@ -423,6 +432,7 @@
       "holdings": {
         "col": {
           "account": "Счёт",
+          "actions": "Действия",
           "amount": "Количество",
           "gainLoss": "Прибыль / убыток",
           "holding": "Позиция",
@@ -580,6 +590,7 @@
           "cadence": "Периодичность",
           "direction": "Направление",
           "status": "Статус",
+          "groups": "Группы",
           "vendor": "Контрагент"
         },
         "config": {
@@ -611,6 +622,32 @@
           "income": "Поступление"
         }
       },
+      "bills": {
+        "config": {
+          "searchByPayee": "Поиск по контрагенту"
+        },
+        "filter": {
+          "group": "Группа",
+          "payee": "Контрагент",
+          "status": "Статус",
+          "period": "Период"
+        },
+        "status": {
+          "upcoming": "Предстоящие",
+          "matched": "Оплачено",
+          "missed": "Не оплачено",
+          "skipped": "Пропущено",
+          "all": "Все"
+        },
+        "period": {
+          "next30": "Ближайшие 30 дней",
+          "next90": "Ближайшие 90 дней",
+          "next365": "Ближайшие 12 месяцев",
+          "last30": "Последние 30 дней",
+          "last90": "Последние 90 дней",
+          "last365": "Последние 12 месяцев"
+        }
+      },
       "review": {
         "col": {
           "amount": "Сумма",
@@ -623,7 +660,9 @@
         },
         "empty": {
           "importsLandHereWhenTheyFinish": "Импорт попадает сюда, когда он закончен и ждёт вашего подтверждения, прежде чем его позиции пойдут в счёт.",
-          "nothingNeedsYourReview": "Ничего не ждёт вашего разбора"
+          "nothingNeedsYourReview": "Ничего не ждёт вашего разбора",
+          "nothingElse": "Больше ничего не ждёт вашего разбора",
+          "theQueuesAboveHoldTheRest": "Остальное — в очередях выше."
         },
         "filter": {
           "type": "Тип"
@@ -689,7 +728,7 @@
         "col": {
           "category": "Категория",
           "kind": "Вид",
-          "payments": "Платежи",
+          "payments": "Регулярные",
           "vendor": "Контрагент",
           "perMonth": "В месяц"
         },
@@ -706,7 +745,7 @@
         },
         "sort": {
           "name": "Название",
-          "payments": "Платежи"
+          "payments": "Регулярные"
         }
       },
       "upcoming": {
@@ -829,12 +868,53 @@
         "sortedDescending": "{{label}}, от большего к меньшему",
         "subjectDescription": "Скачайте файлом, который принадлежит вам: {{subject}}."
       },
-      "forecast": {
+      "members": {
+        "filter": {
+          "kind": "Вид"
+        },
+        "col": {
+          "membership": "Участие",
+          "member": "Участник"
+        }
+      },
+      "groupMembers": {
         "empty": {
-          "nothingToProject": "Нечего прогнозировать",
-          "noPayments": "Пока нет регулярных платежей",
-          "allPausedOrUnpriced": "Все записанные платежи на паузе, завершены или без суммы для прогноза.",
-          "addOne": "Добавьте счёт или регулярный доход — и здесь появится прогноз."
+          "title": "В этой группе пока ничего нет",
+          "description": "Добавьте счета, позиции, счета к оплате или контрагентов, чтобы увидеть стоимость группы."
+        }
+      },
+      "vaultMembers": {
+        "empty": {
+          "title": "В эту копилку пока ничего не засчитано",
+          "description": "Привяжите позиции и укажите, какая доля каждой засчитывается."
+        }
+      },
+      "transferRules": {
+        "empty": {
+          "noDestinationRulesYet": "Правил по назначениям пока нет",
+          "openAPaymentOutInTheQueue": "Откройте исходящий платёж в очереди и запишите, куда он ушёл. Каждый следующий платёж на то же назначение будет нести вашу подпись, на любую сумму, — а назначения, которые вы пометите, будут отвечаться за вас."
+        }
+      },
+      "balanceGaps": {
+        "col": {
+          "answer": "Ответ",
+          "answered": "Отвечено",
+          "change": "Изменение",
+          "drift": "Сумма",
+          "when": "Когда"
+        },
+        "config": {
+          "search": "Поиск изменений баланса"
+        },
+        "empty": {
+          "everyChangeIsAccountedFor": "Все изменения баланса объяснены.",
+          "nothingToExplain": "Нечего объяснять"
+        }
+      },
+      "answeredBalanceGaps": {
+        "empty": {
+          "answersLandHere": "Ответы из очереди балансов появляются здесь — любой из них можно отменить.",
+          "nothingAnsweredYet": "Пока нет объяснённых изменений баланса"
         }
       }
     },

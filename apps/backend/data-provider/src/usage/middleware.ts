@@ -71,12 +71,7 @@ interface BuildDeps {
 }
 
 interface BaseCtx {
-  // `auth` is null for cookie-session requests from cloud-frontend —
-  // the inner cookie procedure synthesises a marker after this
-  // middleware runs, so we tolerate null here and fall back to the
-  // cloud-user id for the subject.
   auth: { apiKeyId: string; tenantId: string; ownerUserId: string | null } | null;
-  cloudUser: { id: string } | null;
   requestId: string;
   usage: UsageContext;
 }
@@ -195,12 +190,9 @@ export function buildUsageMiddleware({ sink, quotaLimiter, globalCostBreaker }: 
         !ctx.auth || ctx.auth.tenantId === 'oss' || ctx.auth.tenantId === 'dev'
           ? null
           : ctx.auth.tenantId;
-      // Subject = owning cloud_user (Tier 2) or tenant (future multi-user
-      // workspaces). Cookie-session requests don't flow through the
-      // bearer-auth path so `ctx.auth` is null here — fall back to the
-      // authenticated cloud-frontend user. OSS env-key auth has no owner
-      // and the sink drops the event.
-      const subject = ctx.auth?.ownerUserId ?? ctx.cloudUser?.id ?? tenantId;
+      // Subject = the key's owning user (Tier 2) or tenant (future multi-user
+      // workspaces). OSS env-key auth has no owner and the sink drops the event.
+      const subject = ctx.auth?.ownerUserId ?? tenantId;
       sink.record({
         apiKeyId,
         tenantId,

@@ -7,13 +7,21 @@ import {
   resetFormatLocale,
   setFormatLocale,
 } from '@scani/shared';
+import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { httpBatchLink } from '@trpc/client';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom';
 import { trpc } from '../../../src/lib/trpc';
-import { BalanceGapList } from '../../../src/v3/components/review/BalanceGapList';
+import {
+  BalanceGapAnswerFields,
+  useBalanceGapAnswer,
+} from '../../../src/v3/components/review/BalanceGapAnswerFields';
+import {
+  BalanceGapList,
+  BalanceGapReadings,
+} from '../../../src/v3/components/review/BalanceGapList';
 
 /**
  * The balance-review card, at the width it is read on (SC-576).
@@ -84,13 +92,27 @@ function Harness({ children, client }: { children: ReactNode; client: QueryClien
   );
 }
 
+const READY: V3QueryState = {
+  isLoading: false,
+  isError: false,
+  error: null,
+  retry: () => {},
+  more: null,
+};
+
 function render(data: BalanceGapListDto = listing()): string {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
   });
   return renderToStaticMarkup(
     <Harness client={client}>
-      <BalanceGapList data={data} isLoading={false} />
+      <BalanceGapList data={data} query={READY} />
+      {/* The readings are the peek's fact, and a peek is a portal that renders
+          nothing under SSR, so the harness renders them beside the rows: the
+          same text a reader sees on opening each row (SC-1433). */}
+      {data.items.map((item) => (
+        <BalanceGapReadings key={item.observationId} gap={item} />
+      ))}
     </Harness>
   );
 }
@@ -256,6 +278,23 @@ describe('BalanceGapList — the summary line', () => {
   });
 });
 
+/** The answer's fields alone: they render inside a `FormSheet`, and a sheet is a
+ *  portal that renders nothing under SSR (SC-1433). */
+function AnswerFields() {
+  return <BalanceGapAnswerFields form={useBalanceGapAnswer(gap(), () => {})} />;
+}
+
+function renderAnswer(): string {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Number.POSITIVE_INFINITY } },
+  });
+  return renderToStaticMarkup(
+    <Harness client={client}>
+      <AnswerFields />
+    </Harness>
+  );
+}
+
 describe('BalanceGapAnswer — the axis of the answer control', () => {
   test('the four answers stack, at every width', () => {
     // The fix for the collision, asserted where a diff can see it. A row
@@ -269,13 +308,13 @@ describe('BalanceGapAnswer — the axis of the answer control', () => {
     // from colliding again. A column has no share to overflow. Anyone
     // reverting this needs a reason that survives a longer language, not a
     // wider screen.
-    expect(render()).toContain('data-segmented="vertical"');
+    expect(renderAnswer()).toContain('data-segmented="vertical"');
   });
 
   test('every answer is still one option of a radio group', () => {
     // The column must not become four independent buttons: a radio group is
     // what announces "1 of 4" and gives arrow-key roving focus.
-    const html = render();
+    const html = renderAnswer();
     expect(html).toContain('role="radiogroup"');
     expect((html.match(/role="radio"/g) ?? []).length).toBe(4);
   });

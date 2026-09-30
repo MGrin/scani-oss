@@ -22,7 +22,7 @@ import { V3_ROUTES } from './routes';
  * own anyway (V3-11).
  */
 
-export type MoneySegment = 'upcoming' | 'recurring' | 'forecast' | 'vendors';
+export type MoneySegment = 'upcoming' | 'recurring' | 'vendors';
 
 export interface MoneySegmentDef {
   key: MoneySegment;
@@ -35,7 +35,6 @@ export interface MoneySegmentDef {
 export const MONEY_SEGMENTS: readonly MoneySegmentDef[] = [
   { key: 'upcoming', labelKey: 'v3.money.segments.upcoming', path: V3_ROUTES.money },
   { key: 'recurring', labelKey: 'v3.money.segments.recurring', path: V3_ROUTES.recurring },
-  { key: 'forecast', labelKey: 'v3.money.segments.forecast', path: V3_ROUTES.forecast },
   { key: 'vendors', labelKey: 'v3.money.segments.vendors', path: V3_ROUTES.vendors },
 ];
 
@@ -60,11 +59,6 @@ export function resolveMoneySegment(pathname: string): MoneySegment {
   const path = stripTrailingSlash(pathname);
   if (covers(V3_ROUTES.vendors, path)) return 'vendors';
   if (covers(V3_ROUTES.recurring, path)) return 'recurring';
-  // `forecast` joins `recurring` as a reserved word in the occurrence-id space
-  // (SC-461), and for the same reason: claimed before the fall-through, so
-  // `/v3/payments/forecast` is a view rather than a peek at an occurrence
-  // called "forecast". Occurrence ids are uuids, so nothing can collide.
-  if (covers(V3_ROUTES.forecast, path)) return 'forecast';
   return DEFAULT_MONEY_SEGMENT;
 }
 
@@ -223,6 +217,35 @@ export function splitByDirection<T extends { payment: { direction: string } }>(
  * the other end. Dates are `YYYY-MM-DD` and the horizon is computed in UTC,
  * matching `payments.upcoming`'s own server-side comparison.
  */
+/**
+ * The Bills list's period filter (SC-1405). The empty value is the default, so
+ * a list nobody has touched carries no chip: thirty days, the bill window.
+ * Upcoming looks that far ahead; paid, missed and skipped look that far back.
+ */
+const BILL_PERIOD_DAYS: Readonly<Record<string, number>> = {
+  '': PAYMENTS_HORIZON_DAYS,
+  '90': 90,
+  '365': 365,
+};
+
+export function billPeriodDays(period: string | undefined): number {
+  return BILL_PERIOD_DAYS[period ?? ''] ?? PAYMENTS_HORIZON_DAYS;
+}
+
+/** Settled occurrences inside the last `days` days, newest first. */
+export function settledWithin<T extends DatedOccurrence>(
+  occurrences: readonly T[],
+  today: string,
+  days: number
+): T[] {
+  const to = Date.parse(`${today}T00:00:00Z`);
+  if (!Number.isFinite(to)) return [...occurrences];
+  const from = new Date(to - days * DAY_MS).toISOString().slice(0, 10);
+  return occurrences
+    .filter((occurrence) => occurrence.dueDate >= from && occurrence.dueDate <= today)
+    .sort((a, b) => b.dueDate.localeCompare(a.dueDate));
+}
+
 export function withinDays<T extends DatedOccurrence>(
   occurrences: readonly T[],
   today: string,
@@ -232,6 +255,18 @@ export function withinDays<T extends DatedOccurrence>(
   if (!Number.isFinite(from)) return [...occurrences];
   const horizon = new Date(from + days * DAY_MS).toISOString().slice(0, 10);
   return occurrences.filter((occurrence) => occurrence.dueDate <= horizon);
+}
+
+/**
+ * The rows the Upcoming list shows: scheduled bills (never income) due within
+ * the period, overdue ones included. The Refine sheet counts this same set, so
+ * its "N payments" can never describe more than the list below it (SC-1405).
+ */
+export function upcomingBills<
+  T extends DatedOccurrence & { status: string; payment: { direction: string } },
+>(occurrences: readonly T[], today: string, days: number): T[] {
+  const { bills } = splitByDirection(occurrences.filter((row) => row.status === 'scheduled'));
+  return withinDays(bills, today, days);
 }
 
 /**

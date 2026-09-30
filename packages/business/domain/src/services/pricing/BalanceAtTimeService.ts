@@ -1,5 +1,6 @@
 import type { DatabaseTransaction } from '@scani/db';
 import type { Holding, HoldingBalanceObservation, HoldingTransaction } from '@scani/db/schema';
+import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { unexplainedDrift } from '../../lib/balances/unexplained-drift';
@@ -43,6 +44,11 @@ export interface BalanceAtTimeResult {
   // needed no interpolation, which includes every densely-observed holding
   // and every date at or before the first observation.
   interpolated: boolean;
+  // The walk came out negative and was floored at zero, so the ledger is
+  // missing outflows (gas, fees, an unimported source) and this balance is
+  // not a reconstruction at all (SC-1444). Consumers that compound values
+  // over time must treat the holding as not covered rather than as empty.
+  floored: boolean;
 }
 
 // Reconstructs a holding's balance at an arbitrary past time by walking
@@ -64,14 +70,17 @@ export interface BalanceAtTimeResult {
 // zero keeps the chart sensible (you can't have negatively held an
 // asset you can't short) without rewriting the underlying ledger,
 // which still preserves signed quantities for cost-basis math.
-function clampNonNegative(d: Decimal): Decimal {
-  return d.lt(0) ? new Decimal(0) : d;
+const balanceLogger = createComponentLogger('pricing:balance-at-time');
+
+function clampNonNegative(d: Decimal): { value: Decimal; floored: boolean } {
+  return d.lt(0) ? { value: new Decimal(0), floored: true } : { value: d, floored: false };
 }
 @Service()
 export class BalanceAtTimeService {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly observationRepository = Container.get(HoldingBalanceObservationRepository);
   private readonly transactionRepository = Container.get(HoldingTransactionRepository);
+  private readonly flooredHoldings = new Set<string>();
 
   async getBalance(
     holdingId: string,
@@ -94,8 +103,10 @@ export class BalanceAtTimeService {
       const sumInRange = txs.reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
       const walked = new Decimal(after.balance).sub(sumInRange);
       const spread = await this.driftAhead(holdingId, at, after, caches, tx);
+      const clamped = this.noteFloor(holdingId, clampNonNegative(walked.sub(spread.share)));
       return {
-        balance: clampNonNegative(walked.sub(spread.share)),
+        balance: clamped.value,
+        floored: clamped.floored,
         anchor: 'observation-after',
         anchorAt: after.observedAt,
         txApplied: txs.length,
@@ -109,9 +120,13 @@ export class BalanceAtTimeService {
     if (holding) {
       const txs = await this.findTxsInRange(holdingId, at, holding.lastUpdated, caches, tx);
       const sumInRange = txs.reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
-      const balance = clampNonNegative(new Decimal(holding.balance).sub(sumInRange));
+      const clamped = this.noteFloor(
+        holdingId,
+        clampNonNegative(new Decimal(holding.balance).sub(sumInRange))
+      );
       return {
-        balance,
+        balance: clamped.value,
+        floored: clamped.floored,
         anchor: 'holdings',
         anchorAt: holding.lastUpdated,
         txApplied: txs.length,
@@ -127,9 +142,13 @@ export class BalanceAtTimeService {
     if (before) {
       const txs = await this.findTxsInRange(holdingId, before.observedAt, at, caches, tx);
       const sumInRange = txs.reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
-      const balance = clampNonNegative(new Decimal(before.balance).add(sumInRange));
+      const clamped = this.noteFloor(
+        holdingId,
+        clampNonNegative(new Decimal(before.balance).add(sumInRange))
+      );
       return {
-        balance,
+        balance: clamped.value,
+        floored: clamped.floored,
         anchor: 'observation-before',
         anchorAt: before.observedAt,
         txApplied: txs.length,
@@ -150,7 +169,22 @@ export class BalanceAtTimeService {
       txApplied: 0,
       beforeRecords: false,
       interpolated: false,
+      floored: false,
     };
+  }
+
+  // The floor used to be silent, so a ledger missing every gas fee read as a
+  // wallet that was simply empty (SC-1444). Once per holding per process: a
+  // rollup walks the same holding for every day of its history.
+  private noteFloor<T extends { floored: boolean }>(holdingId: string, result: T): T {
+    if (result.floored && !this.flooredHoldings.has(holdingId)) {
+      this.flooredHoldings.add(holdingId);
+      balanceLogger.warn(
+        { holdingId },
+        'Reconstructed balance went negative and was floored at zero; the ledger is missing outflows'
+      );
+    }
+    return result;
   }
 
   // How much of the gap's UNEXPLAINED drift still lies ahead of `at`.

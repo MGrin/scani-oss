@@ -1,9 +1,11 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
+import { type CsvMapping, CsvMappingDto } from '@scani/shared';
 import { z } from 'zod';
 import { JOB_NAMES } from '../job-names';
 import { RETRY_HEAVY } from '../retry-policies';
 
 export interface FileImportJob extends UserJobBase {
+  customMapping?: CsvMapping;
   r2Key: string;
   /** What the user called the file. Optional so already-queued jobs still
    *  validate; without it the `documents` row falls back to the
@@ -22,6 +24,7 @@ export interface FileImportJob extends UserJobBase {
 }
 
 export const fileImportSchema: z.ZodType<FileImportJob> = z.object({
+  customMapping: CsvMappingDto.optional(),
   userId: z.string().min(1),
   requestId: z.string().min(1),
   r2Key: z.string().min(1),

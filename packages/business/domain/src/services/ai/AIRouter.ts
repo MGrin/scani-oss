@@ -9,9 +9,9 @@
  *    result wins; others are tried on throw.
  *  - `completeText()` does the same for free-form completions.
  *  - `hasAvailableProvider()` returns true if any registered provider
- *    is configured.
- *  - `getAvailableProviders()` returns the provider keys in order so
- *    the liveness endpoint can show what's wired.
+ *    can currently be used.
+ *  - `getAvailability()` combines what every provider last observed, which
+ *    the deep health check reports.
  *
  * The registry is queried lazily on every call so providers wired up
  * after the router was constructed are visible (matches the
@@ -19,7 +19,12 @@
  */
 
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
-import type { AIInferenceProvider } from '@scani/providers/core/capabilities';
+import {
+  type AIInferenceProvider,
+  aiAvailability,
+  combinedAIAvailability,
+} from '@scani/providers/core/capabilities';
+import { AIUnavailableError } from '@scani/providers/core/errors';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { Container, Service } from 'typedi';
 import { AiSpendBudget } from './AiSpendBudget';
@@ -121,22 +126,25 @@ export class AIRouter {
     }
   }
 
-  hasAvailableProvider(): boolean {
-    return this.getProviders().length > 0;
+  async getAvailability() {
+    return combinedAIAvailability(this.getProviders());
   }
 
-  getAvailableProviders(): Array<{ providerKey: string }> {
-    return this.getProviders().map((p) => ({ providerKey: p.providerKey }));
+  async requireOperation(operation: 'image' | 'pdf' | 'text' | 'completion'): Promise<void> {
+    const status = await this.getAvailability();
+    if (!status[operation])
+      throw new AIUnavailableError(
+        status.state === 'rejected'
+          ? 'rejected'
+          : status.state === 'transient'
+            ? 'transient'
+            : 'missing'
+      );
   }
 
-  getStatus(): {
-    availableProviders: Array<{ providerKey: string }>;
-    hasAvailableProvider: boolean;
-  } {
-    return {
-      availableProviders: this.getAvailableProviders(),
-      hasAvailableProvider: this.hasAvailableProvider(),
-    };
+  async hasAvailableProvider(): Promise<boolean> {
+    const status = await this.getAvailability();
+    return status.image || status.pdf || status.text || status.completion;
   }
 
   /**
@@ -152,6 +160,7 @@ export class AIRouter {
     imageBase64: string,
     opts: ParseScreenshotOptions
   ): Promise<AIProviderResponse> {
+    await this.requireOperation(opts.mimeType === 'application/pdf' ? 'pdf' : 'image');
     const providers = this.selectProviders(opts.provider);
     if (providers.length === 0) {
       throw new Error('AIRouter: no AI providers available for screenshot parsing');
@@ -161,6 +170,8 @@ export class AIRouter {
 
     let lastError: Error | null = null;
     for (const provider of providers) {
+      if (!(await aiAvailability(provider))[mimeType === 'application/pdf' ? 'pdf' : 'image'])
+        continue;
       await this.budget.reserve(opts.userId, 1);
       const start = Date.now();
       try {
@@ -193,6 +204,7 @@ export class AIRouter {
     text: string,
     opts: ParseDocumentTextOptions
   ): Promise<AIProviderResponse> {
+    await this.requireOperation('text');
     const providers = this.selectProviders(opts.provider);
     if (providers.length === 0) {
       throw new Error('AIRouter: no AI providers available for document parsing');
@@ -201,7 +213,7 @@ export class AIRouter {
 
     let lastError: Error | null = null;
     for (const provider of providers) {
-      if (!provider.parseDocumentText) continue;
+      if (!provider.parseDocumentText || !(await aiAvailability(provider)).text) continue;
       await this.budget.reserve(opts.userId, 1);
       const start = Date.now();
       try {
@@ -234,13 +246,14 @@ export class AIRouter {
    * should use `parseDocumentText` instead.
    */
   async completeText(prompt: string, opts: CompleteTextOptions): Promise<CompleteTextResult> {
+    await this.requireOperation('completion');
     const providers = this.getProviders();
     if (providers.length === 0) {
       throw new Error('AIRouter: no AI providers available for text completion');
     }
     let lastError: Error | null = null;
     for (const provider of providers) {
-      if (!provider.completeText) continue;
+      if (!provider.completeText || !(await aiAvailability(provider)).completion) continue;
       await this.budget.reserve(opts.userId, 1);
       try {
         const result = await provider.completeText(prompt, {

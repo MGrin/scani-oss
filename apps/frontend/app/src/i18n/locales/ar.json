@@ -89,10 +89,10 @@
   },
   "nav": {
     "sections": {
-      "portfolio": "المحفظة الاستثمارية",
+      "portfolio": "الثروة",
       "organization": "الهيكل",
       "activity": "النشاط",
-      "payments": "المدفوعات"
+      "payments": "الفواتير"
     },
     "home": "الرئيسية",
     "holdings": "الحيازات",
@@ -115,7 +115,7 @@
     "review": "المراجعة",
     "files": "الملفات",
     "payments": "المدفوعات",
-    "money": "المال"
+    "money": "الفواتير"
   },
   "settings": {
     "title": "الإعدادات",
@@ -306,7 +306,19 @@
         "customTokens_counted_two": "{{count}} توكنان مخصصان",
         "customTokens_counted_few": "{{count}} توكنات مخصصة",
         "customTokens_counted_many": "{{count}} توكنًا مخصصًا",
-        "customTokens_counted_other": "{{count}} توكن مخصص"
+        "customTokens_counted_other": "{{count}} توكن مخصص",
+        "balanceChanges_zero": "تغييرات الرصيد",
+        "balanceChanges_counted_zero": "{{count}} تغيير في الرصيد",
+        "balanceChanges_one": "تغيير الرصيد",
+        "balanceChanges_counted_one": "{{count}} تغيير في الرصيد",
+        "balanceChanges_two": "تغييرات الرصيد",
+        "balanceChanges_counted_two": "{{count}} تغييران في الرصيد",
+        "balanceChanges_few": "تغييرات الرصيد",
+        "balanceChanges_counted_few": "{{count}} تغييرات في الرصيد",
+        "balanceChanges_many": "تغييرات الرصيد",
+        "balanceChanges_counted_many": "{{count}} تغييرًا في الرصيد",
+        "balanceChanges_other": "تغييرات الرصيد",
+        "balanceChanges_counted_other": "{{count}} تغيير في الرصيد"
       },
       "accounts": {
         "col": {
@@ -429,11 +441,12 @@
           "accounts": "الحسابات",
           "group": "المجموعة",
           "holdings": "الحيازات",
-          "value": "القيمة"
+          "value": "القيمة",
+          "bills": "الفواتير",
+          "payees": "الأطراف المقابلة"
         },
         "config": {
-          "searchGroups": "البحث في المجموعات",
-          "value": "القيمة"
+          "searchGroups": "البحث في المجموعات"
         },
         "empty": {
           "aGroupIsYourOwnLabel": "المجموعة تسمية خاصة بك تجمع بها حيازات وحسابات — «التقاعد»، «الخاضع للضريبة»، «الحساب المشترك».",
@@ -485,6 +498,7 @@
       "holdings": {
         "col": {
           "account": "الحساب",
+          "actions": "الإجراءات",
           "amount": "الكمية",
           "gainLoss": "الربح / الخسارة",
           "holding": "الحيازة",
@@ -642,6 +656,7 @@
           "cadence": "التكرار",
           "direction": "الاتجاه",
           "status": "الحالة",
+          "groups": "المجموعات",
           "vendor": "الطرف المقابل"
         },
         "config": {
@@ -673,6 +688,32 @@
           "income": "دخل"
         }
       },
+      "bills": {
+        "config": {
+          "searchByPayee": "البحث حسب الطرف المقابل"
+        },
+        "filter": {
+          "group": "المجموعة",
+          "payee": "الطرف المقابل",
+          "status": "الحالة",
+          "period": "الفترة"
+        },
+        "status": {
+          "upcoming": "القادمة",
+          "matched": "مدفوعة",
+          "missed": "فائتة",
+          "skipped": "متخطاة",
+          "all": "الكل"
+        },
+        "period": {
+          "next30": "الأيام الثلاثون القادمة",
+          "next90": "الأيام التسعون القادمة",
+          "next365": "الأشهر الاثنا عشر القادمة",
+          "last30": "آخر 30 يومًا",
+          "last90": "آخر 90 يومًا",
+          "last365": "آخر 12 شهرًا"
+        }
+      },
       "review": {
         "col": {
           "amount": "المبلغ",
@@ -685,7 +726,9 @@
         },
         "empty": {
           "importsLandHereWhenTheyFinish": "يصل كل استيراد إلى هنا عند اكتماله، بانتظار تأكيد قبل احتساب حيازاته.",
-          "nothingNeedsYourReview": "لا شيء بانتظار مراجعتك"
+          "nothingNeedsYourReview": "لا شيء بانتظار مراجعتك",
+          "nothingElse": "لا شيء آخر بانتظار مراجعتك",
+          "theQueuesAboveHoldTheRest": "القوائم أعلاه تحتوي على ما تبقى."
         },
         "filter": {
           "type": "النوع"
@@ -751,7 +794,7 @@
         "col": {
           "category": "الفئة",
           "kind": "الصنف",
-          "payments": "المدفوعات",
+          "payments": "المتكررة",
           "vendor": "الطرف المقابل",
           "perMonth": "شهريًا"
         },
@@ -768,7 +811,7 @@
         },
         "sort": {
           "name": "الاسم",
-          "payments": "المدفوعات"
+          "payments": "المتكررة"
         }
       },
       "upcoming": {
@@ -897,12 +940,53 @@
         "sortedDescending": "{{label}}، من الأعلى إلى الأدنى",
         "subjectDescription": "يمكن تنزيل {{subject}} في ملف خاص بك."
       },
-      "forecast": {
+      "members": {
+        "filter": {
+          "kind": "الصنف"
+        },
+        "col": {
+          "membership": "العضوية",
+          "member": "العضو"
+        }
+      },
+      "groupMembers": {
         "empty": {
-          "nothingToProject": "لا شيء لتوقّعه",
-          "noPayments": "لا توجد دفعات متكررة بعد",
-          "allPausedOrUnpriced": "كل الدفعات المُسجَّلة متوقفة مؤقتًا أو منتهية، أو ليس لها مبلغ يمكن توقّعه.",
-          "addOne": "يُرجى إضافة مصروف أو دخل متكرر، وستظهر التوقعات هنا."
+          "title": "لا شيء في هذه المجموعة بعد",
+          "description": "أضف حسابات أو حيازات أو فواتير أو أطرافًا مقابلة لترى قيمة هذه المجموعة."
+        }
+      },
+      "vaultMembers": {
+        "empty": {
+          "title": "لا شيء يُحتسب لهذه الحصّالة بعد",
+          "description": "اربط حيازات واختر النسبة التي تُحتسب من كل منها."
+        }
+      },
+      "transferRules": {
+        "empty": {
+          "noDestinationRulesYet": "لا توجد قواعد وجهات بعد",
+          "openAPaymentOutInTheQueue": "يُرجى فتح دفعة صادرة في قائمة الانتظار وتدوين المكان الذي ذهبت إليه. ستحمل كل دفعة لاحقة إلى الوجهة نفسها ملاحظتك، أيًّا كان المبلغ — والوجهات التي وسمتها يُجاب عن دفعاتها نيابةً عنك."
+        }
+      },
+      "balanceGaps": {
+        "col": {
+          "answer": "الإجابة",
+          "answered": "مُجاب عنه",
+          "change": "التغيير",
+          "drift": "المبلغ",
+          "when": "متى"
+        },
+        "config": {
+          "search": "ابحث في تغييرات الرصيد"
+        },
+        "empty": {
+          "everyChangeIsAccountedFor": "كل تغيير في الرصيد له تفسير.",
+          "nothingToExplain": "لا شيء لتوضيحه"
+        }
+      },
+      "answeredBalanceGaps": {
+        "empty": {
+          "answersLandHere": "تظهر هنا الإجابات التي تقدّمها في قائمة الأرصدة، لتتمكّن من التراجع عن أيّ منها.",
+          "nothingAnsweredYet": "لم تُفسَّر أي تغييرات في الرصيد بعد"
         }
       }
     },

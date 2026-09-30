@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { IncludedHoldingScopeRow } from '@scani/domain/repositories';
-import { aggregateIncludedHoldingRows, toNetWorthHistoryRow } from '../../src/lib/net-worth-series';
+import { toNetWorthHistoryRow } from '../../src/lib/net-worth-series';
+import { viaDayTotals } from './helpers/day-totals';
 
 /**
  * SC-249 at the boundary. `BalanceAtTimeService` computed anchor provenance
@@ -47,7 +48,7 @@ function row(over: Partial<IncludedHoldingScopeRow> = {}): IncludedHoldingScopeR
 
 describe('anchor provenance survives to the wire', () => {
   test('the day reports the OLDEST anchor across its holdings', () => {
-    const [day] = aggregateIncludedHoldingRows([
+    const [day] = viaDayTotals([
       row({ holdingId: 'h-recent', holdingsStaleAnchored: 1, oldestAnchorAt: SECONDS_BACK }),
       row({ holdingId: 'h-old', holdingsStaleAnchored: 1, oldestAnchorAt: DAYS_BACK }),
     ]);
@@ -60,7 +61,7 @@ describe('anchor provenance survives to the wire', () => {
     // Summing the rows that DO carry a count would report a confident number
     // that is too low — worse than admitting the day cannot be counted,
     // because a reader cannot tell a real 1 from a 1-of-unknown.
-    const [day] = aggregateIncludedHoldingRows([
+    const [day] = viaDayTotals([
       row({ holdingId: 'h-known', holdingsStaleAnchored: 1, oldestAnchorAt: DAYS_BACK }),
       row({ holdingId: 'h-legacy', holdingsStaleAnchored: null }),
     ]);
@@ -69,7 +70,7 @@ describe('anchor provenance survives to the wire', () => {
   });
 
   test('a day where every holding counted and none was backward-anchored reports 0', () => {
-    const [day] = aggregateIncludedHoldingRows([row(), row({ holdingId: 'h2' })]);
+    const [day] = viaDayTotals([row(), row({ holdingId: 'h2' })]);
 
     expect(day?.holdingsStaleAnchored).toBe(0);
     expect(day?.oldestAnchorAt).toBeNull();
@@ -81,7 +82,7 @@ describe('anchor provenance survives to the wire', () => {
     // re-derives coverage from the per-holding rows and used to look only at
     // `holdingsStalePriced`. A row whose quantity is a projection and whose
     // prices are all current would have read 'full' here.
-    const [day] = aggregateIncludedHoldingRows([
+    const [day] = viaDayTotals([
       row({
         coverageQuality: 'full',
         holdingsStalePriced: 0,
@@ -98,9 +99,7 @@ describe('anchor provenance survives to the wire', () => {
     // workbook both write. A spreadsheet the reader lays beside the chart is
     // the surface where an unqualified figure does the most damage, because
     // it outlives the screen it came from.
-    const [day] = aggregateIncludedHoldingRows([
-      row({ holdingsStaleAnchored: 1, oldestAnchorAt: DAYS_BACK }),
-    ]);
+    const [day] = viaDayTotals([row({ holdingsStaleAnchored: 1, oldestAnchorAt: DAYS_BACK })]);
     const exported = toNetWorthHistoryRow(day!);
 
     expect(exported.holdingsStaleAnchored).toBe(1);
@@ -108,7 +107,7 @@ describe('anchor provenance survives to the wire', () => {
   });
 
   test('an unrecorded day exports null rather than zero', () => {
-    const [day] = aggregateIncludedHoldingRows([row({ holdingsStaleAnchored: null })]);
+    const [day] = viaDayTotals([row({ holdingsStaleAnchored: null })]);
     const exported = toNetWorthHistoryRow(day!);
 
     expect(exported.holdingsStaleAnchored).toBeNull();
@@ -127,7 +126,7 @@ describe('anchor provenance survives to the wire', () => {
  */
 describe('pre-evidence provenance survives to the wire', () => {
   test('the day sums the counts across its holdings', () => {
-    const [day] = aggregateIncludedHoldingRows([
+    const [day] = viaDayTotals([
       row({ holdingId: 'h-a', holdingsBeforeRecords: 1 }),
       row({ holdingId: 'h-b', holdingsBeforeRecords: 1 }),
     ]);
@@ -136,7 +135,7 @@ describe('pre-evidence provenance survives to the wire', () => {
   });
 
   test('one unrecorded holding makes the whole day unrecorded, not an undercount', () => {
-    const [day] = aggregateIncludedHoldingRows([
+    const [day] = viaDayTotals([
       row({ holdingId: 'h-known', holdingsBeforeRecords: 1 }),
       row({ holdingId: 'h-legacy', holdingsBeforeRecords: null }),
     ]);
@@ -151,7 +150,7 @@ describe('pre-evidence provenance survives to the wire', () => {
     // The exact row SC-317 was filed about: 'partial' with both existing
     // counts at zero. Without this column the aggregator re-derives the day
     // from per-holding rows whose own quality columns all read clean.
-    const [day] = aggregateIncludedHoldingRows([
+    const [day] = viaDayTotals([
       row({
         coverageQuality: 'full',
         holdingsStalePriced: 0,
@@ -165,10 +164,10 @@ describe('pre-evidence provenance survives to the wire', () => {
   });
 
   test('the count reaches the exported row, and null stays null', () => {
-    const [counted] = aggregateIncludedHoldingRows([row({ holdingsBeforeRecords: 2 })]);
+    const [counted] = viaDayTotals([row({ holdingsBeforeRecords: 2 })]);
     expect(toNetWorthHistoryRow(counted!).holdingsBeforeRecords).toBe(2);
 
-    const [legacy] = aggregateIncludedHoldingRows([row({ holdingsBeforeRecords: null })]);
+    const [legacy] = viaDayTotals([row({ holdingsBeforeRecords: null })]);
     expect(toNetWorthHistoryRow(legacy!).holdingsBeforeRecords).toBeNull();
   });
 });

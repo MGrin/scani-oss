@@ -7,7 +7,9 @@ import type {
   PaymentOccurrence,
   PaymentOrigin,
 } from '@scani/db/schema';
+import * as schema from '@scani/db/schema';
 import { Decimal } from '@scani/shared';
+import { and, asc, eq, gte, inArray, or } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { AccountRepository } from '../../repositories/AccountRepository';
 import { DocumentExtractionRepository } from '../../repositories/DocumentExtractionRepository';
@@ -15,13 +17,13 @@ import { HoldingTransactionRepository } from '../../repositories/HoldingTransact
 import { PaymentOccurrenceRepository } from '../../repositories/PaymentOccurrenceRepository';
 import { PaymentRepository } from '../../repositories/PaymentRepository';
 import { VendorRepository } from '../../repositories/VendorRepository';
+import { PaymentGroupService } from './PaymentGroupService';
 import {
   generateOccurrences,
   type RecurrenceIntervalUnit,
   type RecurrenceSchedule,
   type RecurrenceStatus,
 } from './recurrence';
-import { planSettledRemap } from './remapSettledOccurrences';
 
 // How far past "now" `materialise` fills the FORWARD edge of the window.
 // Only the forward edge is rolling — see `materialiseSchedule` for why
@@ -42,6 +44,7 @@ const MATERIALISATION_HORIZON_MONTHS = 12;
 const SCHEDULE_SHAPE_FIELDS = ['intervalUnit', 'intervalCount', 'anchorDate', 'endDate'] as const;
 
 export interface CreatePaymentInput {
+  groupIds?: string[];
   vendorId: string;
   direction: PaymentDirection;
   kind: PaymentKind;
@@ -121,6 +124,7 @@ export class PaymentHasSettledOccurrencesError extends Error {
 }
 
 export interface UpdatePaymentInput {
+  groupIds?: string[];
   vendorId?: string;
   direction?: PaymentDirection;
   kind?: PaymentKind;
@@ -193,6 +197,113 @@ export class PaymentService {
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly holdingTransactionRepository = Container.get(HoldingTransactionRepository);
   private readonly extractionRepository = Container.get(DocumentExtractionRepository);
+  private readonly paymentGroups = Container.get(PaymentGroupService);
+
+  async groupAssignments(userId: string, transaction?: DatabaseTransaction) {
+    const database = transaction ?? getDb();
+    const membership = await this.paymentGroups.resolve(userId, transaction);
+    const overrides = await database
+      .select({
+        id: schema.paymentOccurrenceGroups.occurrenceId,
+        groupId: schema.paymentOccurrenceGroups.groupId,
+      })
+      .from(schema.paymentOccurrenceGroups)
+      .innerJoin(
+        schema.paymentOccurrences,
+        eq(schema.paymentOccurrences.id, schema.paymentOccurrenceGroups.occurrenceId)
+      )
+      .innerJoin(schema.payments, eq(schema.payments.id, schema.paymentOccurrences.paymentId))
+      .where(eq(schema.payments.userId, userId));
+    const collect = (rows: { id: string; groupId: string }[]) => {
+      const result: Record<string, string[]> = {};
+      for (const row of rows) {
+        const assigned = result[row.id] ?? [];
+        assigned.push(row.groupId);
+        result[row.id] = assigned;
+      }
+      return result;
+    };
+    // `payments` is every group a bill is in; `viaPayee` says which of them
+    // only its payee's rule puts it in (SC-1408).
+    const payments: Record<string, string[]> = {};
+    const viaPayee: Record<string, string[]> = {};
+    for (const [paymentId, groups] of membership) {
+      payments[paymentId] = [...groups.keys()];
+      const ruled = [...groups].filter(([, source]) => source === 'payee').map(([id]) => id);
+      if (ruled.length) viaPayee[paymentId] = ruled;
+    }
+    return {
+      payments,
+      viaPayee,
+      payees: await this.paymentGroups.payeeRules(userId, transaction),
+      occurrences: collect(overrides),
+    };
+  }
+
+  async assignGroups(
+    userId: string,
+    input: { paymentId: string; occurrenceId?: string; groupIds: string[] },
+    transaction?: DatabaseTransaction
+  ): Promise<void> {
+    if (!transaction) return getDb().transaction((tx) => this.assignGroups(userId, input, tx));
+    const [payment] = await transaction
+      .select()
+      .from(schema.payments)
+      .where(and(eq(schema.payments.id, input.paymentId), eq(schema.payments.userId, userId)))
+      .for('update');
+    if (!payment) throw new Error('Payment not found');
+    const ids = [...new Set(input.groupIds)];
+    if (ids.length) {
+      const owned = await transaction
+        .select({ id: schema.groups.id })
+        .from(schema.groups)
+        .where(and(inArray(schema.groups.id, ids), eq(schema.groups.userId, userId)))
+        .for('key share');
+      if (owned.length !== ids.length) throw new Error('Group not found');
+    }
+    if (!input.occurrenceId) {
+      await this.paymentGroups.setBillGroups(payment, ids, transaction);
+      return;
+    }
+    const occurrence = await this.requireOwnedOccurrence(userId, input.occurrenceId, transaction);
+    if (occurrence.paymentId !== payment.id) throw new Error('Occurrence not found');
+    await this.occurrenceRepository.update(occurrence.id, { groupsOverridden: true }, transaction);
+    await transaction
+      .delete(schema.paymentOccurrenceGroups)
+      .where(eq(schema.paymentOccurrenceGroups.occurrenceId, occurrence.id));
+    if (ids.length)
+      await transaction
+        .insert(schema.paymentOccurrenceGroups)
+        .values(ids.map((groupId) => ({ occurrenceId: occurrence.id, groupId })));
+  }
+
+  async editOccurrence(
+    userId: string,
+    occurrenceId: string,
+    input: { expectedAmount: string | null; groupIds?: string[] },
+    transaction?: DatabaseTransaction
+  ): Promise<PaymentOccurrence> {
+    if (!transaction)
+      return getDb().transaction((tx) => this.editOccurrence(userId, occurrenceId, input, tx));
+    const occurrence = await this.requireOwnedOccurrence(userId, occurrenceId, transaction);
+    if (
+      input.expectedAmount !== null &&
+      (!new Decimal(input.expectedAmount).isFinite() || new Decimal(input.expectedAmount).lt(0))
+    )
+      throw new Error('Invalid amount');
+    await this.occurrenceRepository.update(
+      occurrenceId,
+      { expectedAmount: input.expectedAmount, amountOverridden: true },
+      transaction
+    );
+    if (input.groupIds !== undefined)
+      await this.assignGroups(
+        userId,
+        { paymentId: occurrence.paymentId, occurrenceId, groupIds: input.groupIds },
+        transaction
+      );
+    return this.requireOwnedOccurrence(userId, occurrenceId, transaction);
+  }
 
   async create(
     userId: string,
@@ -223,6 +334,15 @@ export class PaymentService {
       transaction
     );
 
+    // Groups first: `assignGroups` only tags occurrences from today on, and
+    // `materialiseSchedule` gives every row it inserts the payment's groups —
+    // so a bill created with past dates gets its groups on those too.
+    if (input.groupIds)
+      await this.assignGroups(
+        userId,
+        { paymentId: payment.id, groupIds: input.groupIds },
+        transaction
+      );
     await this.materialiseSchedule(payment, transaction);
     return payment;
   }
@@ -233,6 +353,7 @@ export class PaymentService {
     input: UpdatePaymentInput,
     transaction?: DatabaseTransaction
   ): Promise<Payment> {
+    if (!transaction) return getDb().transaction((tx) => this.update(userId, paymentId, input, tx));
     const existing = await this.requireOwned(userId, paymentId, transaction);
     if (input.vendorId !== undefined) {
       await this.assertVendorOwnership(userId, input.vendorId, transaction);
@@ -248,36 +369,50 @@ export class PaymentService {
       (field) => input[field] !== undefined && input[field] !== existing[field]
     );
 
-    const updated = await this.paymentRepository.update(paymentId, { ...input }, transaction);
+    const { groupIds, ...columns } = input;
+    const updated = await this.paymentRepository.update(
+      paymentId,
+      {
+        ...columns,
+        ...(scheduleShapeChanged ? { scheduleEffectiveFrom: toDateString(startOfUtcToday()) } : {}),
+      },
+      transaction
+    );
     if (!updated) {
       throw new Error(`Payment ${paymentId} disappeared during update`);
     }
 
     const today = toDateString(startOfUtcToday());
     if (scheduleShapeChanged) {
-      const before = await this.occurrenceRepository.findByPaymentId(paymentId, transaction);
-      // ALL scheduled rows, not just future ones. A `scheduled` row is
-      // derived purely from the rule and carries no decision, so it is
-      // lossless to regenerate; bounding the delete at `today` left the
-      // old rule's PAST rows in place while `materialiseSchedule` — which
-      // starts at the payment's anchor, not today — inserted the new
-      // rule's past dates beside them, showing two overdue rows per
-      // period. Rows carrying a decision are spared here and remapped
-      // below.
-      //
-      // The delete is unconditional, so the regenerate has to be too —
-      // `evenIfPaused` is what keeps the pair balanced for a paused
-      // payment, which otherwise came out of this branch with an empty
-      // schedule and a success response.
-      const removed = await this.occurrenceRepository.deleteAllScheduled(paymentId, transaction);
-      const removedIds = new Set(removed.map((row) => row.id));
-      await this.remapSettledOccurrences(
-        existing,
-        updated,
-        before.filter((row) => !removedIds.has(row.id)),
-        transaction
+      const futureScheduled = and(
+        eq(schema.paymentOccurrences.paymentId, paymentId),
+        eq(schema.paymentOccurrences.status, 'scheduled'),
+        gte(schema.paymentOccurrences.dueDate, today)
       );
+      const overridden = await transaction
+        .select()
+        .from(schema.paymentOccurrences)
+        .where(
+          and(
+            futureScheduled,
+            or(
+              eq(schema.paymentOccurrences.amountOverridden, true),
+              eq(schema.paymentOccurrences.groupsOverridden, true)
+            )
+          )
+        )
+        .orderBy(asc(schema.paymentOccurrences.dueDate));
+      await transaction
+        .delete(schema.paymentOccurrences)
+        .where(
+          and(
+            futureScheduled,
+            eq(schema.paymentOccurrences.amountOverridden, false),
+            eq(schema.paymentOccurrences.groupsOverridden, false)
+          )
+        );
       await this.materialiseSchedule(updated, transaction, { evenIfPaused: true });
+      await this.moveOverridesOntoSchedule(updated, overridden, today, transaction);
     } else if (amountChanged) {
       await this.occurrenceRepository.updateFutureScheduledAmount(
         paymentId,
@@ -287,6 +422,15 @@ export class PaymentService {
       );
     }
 
+    if (groupIds) await this.assignGroups(userId, { paymentId, groupIds }, transaction);
+    else if (input.vendorId !== undefined && input.vendorId !== existing.vendorId) {
+      // An exclusion opts out of the OLD payee's rule, so it says nothing
+      // about the new one (SC-1408).
+      await transaction
+        .delete(schema.paymentGroupExclusions)
+        .where(eq(schema.paymentGroupExclusions.paymentId, paymentId));
+      await this.paymentGroups.retagFuture(userId, [paymentId], transaction);
+    }
     return updated;
   }
 
@@ -611,61 +755,6 @@ export class PaymentService {
   }
 
   /**
-   * Keep settlements attached to the schedule across a shape change.
-   *
-   * The nth occurrence of the OLD rule and the nth occurrence of the
-   * NEW one are the same real-world period, so a settled row is moved
-   * to its ordinal twin's date rather than left on a date the rule no
-   * longer generates (which is what stranded it AND let
-   * `materialiseSchedule` insert an unpaid duplicate beside it).
-   *
-   * Runs after the future `scheduled` rows are deleted and before
-   * re-materialisation, so the moves land in slots the upsert would
-   * otherwise fill, and `onConflictDoNothing` then skips them.
-   */
-  private async remapSettledOccurrences(
-    previous: Payment,
-    updated: Payment,
-    survivors: PaymentOccurrence[],
-    transaction?: DatabaseTransaction
-  ): Promise<void> {
-    if (!survivors.some((row) => row.status !== 'scheduled')) return;
-
-    const to = this.materialisationHorizonEnd();
-    const plan = planSettledRemap(
-      survivors,
-      this.dueDateSequence(previous, to),
-      this.dueDateSequence(updated, to)
-    );
-
-    // Displaced rows are all untouched `scheduled` ones and never
-    // movers themselves, so clearing them up front cannot break a
-    // later move.
-    for (const occurrenceId of plan.displacedOccurrenceIds) {
-      await this.occurrenceRepository.delete(occurrenceId, transaction);
-    }
-    for (const move of plan.moves) {
-      await this.occurrenceRepository.update(
-        move.occurrenceId,
-        { dueDate: move.toDueDate, updatedAt: new Date() },
-        transaction
-      );
-    }
-  }
-
-  // Index i is the i-th occurrence the rule produces, counted from its
-  // own anchor — which is what makes two sequences pairable by index.
-  // Asks the rule, not the lifecycle: a paused payment's settled rows
-  // have ordinal twins just like an active one's, and two empty
-  // sequences would silently pair nothing at all.
-  private dueDateSequence(payment: Payment, to: Date): string[] {
-    const schedule = this.buildRuleSchedule(payment);
-    return generateOccurrences(schedule, schedule.anchorDate, to).map((candidate) =>
-      toDateString(candidate.dueDate)
-    );
-  }
-
-  /**
    * The date the forward edge should reach today.
    *
    * Public so the sweep that rolls the edge selects payments against the
@@ -703,6 +792,59 @@ export class PaymentService {
     return { ...this.buildSchedule(payment), status: 'active' };
   }
 
+  /**
+   * An override belongs to a due date, and a schedule edit can remove that
+   * date. Left where it was, the edited occurrence sits beside the new
+   * schedule's own date for the same period and the bill falls due twice.
+   * It moves to the nearest new date nobody else has claimed, keeping its id
+   * and so its group choices; one past the new end date is dropped, because
+   * the payment no longer happens then.
+   */
+  private async moveOverridesOntoSchedule(
+    payment: Payment,
+    overridden: PaymentOccurrence[],
+    today: string,
+    transaction: DatabaseTransaction
+  ): Promise<void> {
+    if (overridden.length === 0) return;
+    const scheduled = new Set(
+      generateOccurrences(
+        this.buildRuleSchedule(payment),
+        parseUtcDateString(today),
+        this.materialisationHorizonEnd()
+      ).map((candidate) => toDateString(candidate.dueDate))
+    );
+    const unclaimed = new Set(scheduled);
+    for (const row of overridden) unclaimed.delete(row.dueDate);
+    for (const row of overridden) {
+      if (scheduled.has(row.dueDate)) continue;
+      const target =
+        payment.endDate && row.dueDate > payment.endDate
+          ? undefined
+          : nearestDate(row.dueDate, unclaimed);
+      if (!target) {
+        await transaction
+          .delete(schema.paymentOccurrences)
+          .where(eq(schema.paymentOccurrences.id, row.id));
+        continue;
+      }
+      unclaimed.delete(target);
+      await transaction
+        .delete(schema.paymentOccurrences)
+        .where(
+          and(
+            eq(schema.paymentOccurrences.paymentId, payment.id),
+            eq(schema.paymentOccurrences.dueDate, target),
+            eq(schema.paymentOccurrences.status, 'scheduled')
+          )
+        );
+      await transaction
+        .update(schema.paymentOccurrences)
+        .set({ dueDate: target, updatedAt: new Date() })
+        .where(eq(schema.paymentOccurrences.id, row.id));
+    }
+  }
+
   private async materialiseSchedule(
     payment: Payment,
     transaction?: DatabaseTransaction,
@@ -714,6 +856,15 @@ export class PaymentService {
     // exemption.
     options: { evenIfPaused?: boolean } = {}
   ): Promise<PaymentOccurrence[]> {
+    if (!transaction)
+      return getDb().transaction((tx) => this.materialiseSchedule(payment, tx, options));
+    const [current] = await transaction
+      .select()
+      .from(schema.payments)
+      .where(eq(schema.payments.id, payment.id))
+      .for('update');
+    if (!current) return [];
+    payment = current;
     const schedule = options.evenIfPaused
       ? this.buildRuleSchedule(payment)
       : this.buildSchedule(payment);
@@ -728,7 +879,10 @@ export class PaymentService {
     // regenerating the same 12 months from whenever the payment was
     // created.
     const to = this.materialisationHorizonEnd();
-    const candidates = generateOccurrences(schedule, schedule.anchorDate, to);
+    const from = payment.scheduleEffectiveFrom
+      ? parseUtcDateString(payment.scheduleEffectiveFrom)
+      : schedule.anchorDate;
+    const candidates = generateOccurrences(schedule, from, to);
     if (candidates.length === 0) return [];
 
     const rows = candidates.map((candidate) => ({
@@ -737,6 +891,21 @@ export class PaymentService {
       expectedAmount: candidate.expectedAmount,
     }));
 
-    return this.occurrenceRepository.bulkUpsert(rows, transaction);
+    const inserted = await this.occurrenceRepository.bulkUpsert(rows, transaction);
+    await this.paymentGroups.tagOccurrences(payment.userId, inserted, transaction);
+    return inserted;
   }
+}
+
+function nearestDate(from: string, dates: ReadonlySet<string>): string | undefined {
+  const origin = Date.parse(from);
+  let best: string | undefined;
+  for (const date of [...dates].sort()) {
+    if (
+      best === undefined ||
+      Math.abs(Date.parse(date) - origin) < Math.abs(Date.parse(best) - origin)
+    )
+      best = date;
+  }
+  return best;
 }

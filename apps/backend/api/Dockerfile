@@ -83,6 +83,10 @@ RUN test -s node_modules/bullmq/dist/esm/postgres/commands/add_job.sql \
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
+ARG SCANI_COMMIT=
+ARG SCANI_CORE_BUILD=
+ENV SERVICE_VERSION=${SCANI_COMMIT} SCANI_CORE_BUILD=${SCANI_CORE_BUILD}
+
 ENV NODE_ENV=production \
     PORT=3001 \
     HOST=0.0.0.0

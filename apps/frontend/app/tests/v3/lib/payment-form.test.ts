@@ -40,7 +40,7 @@ describe('describeV3PaymentFormBlockers', () => {
 
   test('an empty form still names the vendor as well as the amount', () => {
     const blockers = describeV3PaymentFormBlockers(t, { ...complete, vendorId: '', amount: '' });
-    expect(blockers).toEqual(['choose a vendor', 'enter the amount']);
+    expect(blockers).toEqual(['choose a payee', 'enter the amount']);
   });
 
   test.each([['0'], ['0.00'], ['   ']])('a fixed amount of %p blocks', (amount) => {
@@ -88,7 +88,7 @@ describe('describeV3PaymentFormBlockers', () => {
         intervalUnit: '',
       })
     ).toEqual([
-      'choose a vendor',
+      'choose a payee',
       'pick a currency from the list',
       'set an anchor date',
       'choose how often this repeats',

@@ -85,6 +85,22 @@ describe('loadLoggingConfig production guards', () => {
     );
   });
 
+  test('refuses LOG_LEVEL debug or trace in production, whatever its case (SC-1350)', () => {
+    process.env.NODE_ENV = 'production';
+    for (const level of ['debug', 'trace', 'DEBUG']) {
+      resetLoggingConfig();
+      expect(() => loadLoggingConfig({ ...prodEnv, LOG_LEVEL: level })).toThrow(/LOG_LEVEL/);
+    }
+  });
+
+  test('CONTROL: LOG_LEVEL info and warn still start in production', () => {
+    process.env.NODE_ENV = 'production';
+    for (const level of ['info', 'warn']) {
+      resetLoggingConfig();
+      expect(loadLoggingConfig({ ...prodEnv, LOG_LEVEL: level }).level).toBe(level);
+    }
+  });
+
   test('requires a 16+ char LOG_ID_PEPPER in production', () => {
     process.env.NODE_ENV = 'production';
     resetLoggingConfig();

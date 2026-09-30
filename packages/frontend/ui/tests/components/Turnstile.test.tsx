@@ -55,11 +55,15 @@ describe('turnstileBlocksSubmit', () => {
 
   it('every form gates on it rather than on its own required && !token', async () => {
     const root = new URL('../../../../../apps/frontend/', import.meta.url).pathname;
-    // cloud and landing are not in the public mirror; app is in both trees,
-    // so it is read unconditionally and a missing app file is a failure.
-    const files = ['app/src/pages/Auth.tsx'];
-    for (const f of ['cloud/src/pages/AuthPage.tsx', 'landing/src/components/sections/Contact.tsx'])
-      if (await Bun.file(root + f).exists()) files.push(f);
+    // landing is not in the public mirror; app is in both trees, so its forms
+    // are read unconditionally and a missing app file is a failure. The cloud
+    // console has no form since it signs in with the Scani account.
+    const files = [
+      'app/src/pages/Auth.tsx',
+      'app/src/v3/components/settings/ConfirmIdentityDialog.tsx',
+    ];
+    const landing = 'landing/src/components/sections/Contact.tsx';
+    if (await Bun.file(root + landing).exists()) files.push(landing);
     for (const file of files) {
       const source = await Bun.file(root + file).text();
       expect(source).toContain('turnstile.blocksSubmit');

@@ -44,6 +44,10 @@ const envSchema = z.object({
 
   FRONTEND_URL: inProd ? httpsUrlInProduction : urlSchema.default('http://localhost:5173'),
 
+  // The Cloud console origin. Its browser calls /api/auth/* with credentials, so
+  // it must be a trusted origin and a CORS origin. Optional everywhere.
+  CLOUD_FRONTEND_URL: (inProd ? httpsUrlInProduction : urlSchema).optional(),
+
   // This backend's own public URL — Better-Auth needs it to generate
   // magic-link callback URLs that resolve to /api/auth/magic-link/verify.
   BACKEND_URL: inProd ? httpsUrlInProduction : urlSchema.default('http://localhost:3001'),
@@ -143,10 +147,6 @@ const envSchema = z.object({
     : z.union([z.literal('1'), z.literal('')]).optional(),
 
   STUB_CHAIN_DATA: inProd
-    ? z.literal(undefined).optional()
-    : z.union([z.literal('1'), z.literal('')]).optional(),
-
-  ALLOW_FORECAST_AS_OF: inProd
     ? z.literal(undefined).optional()
     : z.union([z.literal('1'), z.literal('')]).optional(),
 });

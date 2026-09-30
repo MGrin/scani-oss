@@ -30,9 +30,11 @@ import { cn } from '../../lib/cn';
  * - `wide` — a list that becomes a table above `lg`. Keeps climbing past `xl`
  *   because a table is the one thing that genuinely converts width into rows
  *   you can read without scrolling sideways.
- * - `grid` — a dashboard. Same phone column as `narrow`, then the widest
- *   measure, because it is the only surface that fills the width with parallel
- *   blocks rather than one long line of text.
+ * - `grid` — a dashboard. Below `lg` it takes the list pages' cap, so Home
+ *   fills an 820px tablet as Accounts does rather than sitting in a 560px
+ *   column beside them (SC-1433). Above `lg` the widest measure, because it is
+ *   the only surface that fills the width with parallel blocks rather than one
+ *   long line of text.
  *
  * Nothing goes edge-to-edge. Past ~1720 a row's label and its value sit far
  * enough apart that pairing them costs a saccade, which is the same failure as
@@ -41,7 +43,7 @@ import { cn } from '../../lib/cn';
 const MEASURES = {
   narrow: 'max-w-[560px] lg:max-w-[840px]',
   wide: 'max-w-[1100px] xl:max-w-[1400px] 2xl:max-w-[1720px]',
-  grid: 'max-w-[560px] lg:max-w-[1180px] xl:max-w-[1440px] 2xl:max-w-[1720px]',
+  grid: 'max-w-[1100px] lg:max-w-[1180px] xl:max-w-[1440px] 2xl:max-w-[1720px]',
 } as const;
 
 export type PageMeasure = keyof typeof MEASURES;
@@ -83,13 +85,26 @@ interface PageHeaderProps {
   title: string;
   /** The one thing this screen exists to let you start. */
   action?: ReactNode;
+  /** One sentence under the title, spaced as `CaptureHeader` spaces its own.
+   *  As a separate page child it took the page's full gap (SC-1433). */
+  description?: ReactNode;
 }
 
-export function PageHeader({ title, action }: PageHeaderProps) {
-  return (
-    <div className="flex items-center justify-between gap-3">
+export function PageHeader({ title, action, description }: PageHeaderProps) {
+  // A default button's height, so a header without an action sits exactly
+  // where one with an action does and the title does not jump between pages
+  // or between a page's views (SC-1433).
+  const row = (
+    <div className="flex min-h-[44px] items-center justify-between gap-3">
       <h1 className="text-title">{title}</h1>
       {action}
+    </div>
+  );
+  if (!description) return row;
+  return (
+    <div className="flex flex-col gap-2">
+      {row}
+      <p className="text-body text-muted-foreground">{description}</p>
     </div>
   );
 }
@@ -98,12 +113,16 @@ export function PageHeader({ title, action }: PageHeaderProps) {
  * Twelve columns, because it is the smallest number divisible by both 2 and 3 —
  * halves and thirds are the two splits a dashboard actually wants, and a grid
  * that cannot express both forces one of them into a nested container.
+ *
+ * A `third` is a half until `xl`: three cards in a row beside the sidebar at
+ * 1024-1279 left ~240px each, and Home's allocation control ran out of its
+ * card on an iPad (SC-1433). The leftover half is filled by the next block.
  */
 const SPANS = {
   full: 'lg:col-span-12',
   'two-thirds': 'lg:col-span-8',
   half: 'lg:col-span-6',
-  third: 'lg:col-span-4',
+  third: 'lg:col-span-6 xl:col-span-4',
 } as const;
 
 export type DashboardSpan = keyof typeof SPANS;

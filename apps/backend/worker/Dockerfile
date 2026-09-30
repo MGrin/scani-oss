@@ -99,6 +99,10 @@ RUN grep -q 'opts.maximumBlockTimeout' node_modules/bullmq/dist/esm/classes/work
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 
+ARG SCANI_COMMIT=
+ARG SCANI_CORE_BUILD=
+ENV SERVICE_VERSION=${SCANI_COMMIT} SCANI_CORE_BUILD=${SCANI_CORE_BUILD}
+
 ENV NODE_ENV=production
 
 # redis-server: with REDIS_EMBEDDED=1 this machine hosts the queue Redis

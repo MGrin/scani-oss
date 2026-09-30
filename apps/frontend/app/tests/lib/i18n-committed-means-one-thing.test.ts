@@ -129,8 +129,6 @@ const PROJECTED = [
   'v3.money.recurringSummary.projectedEachMonth',
   'vendors.projectedPerMonth',
   'vendors.projectedIncomePerMonth',
-  'v3.money.forecast.projectedTitle',
-  'v3.money.forecast.ofWhichProjected',
 ];
 
 describe('"committed" means one thing (SC-817)', () => {

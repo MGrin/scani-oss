@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  isConnectionPoolerUrl,
   postgresJsSsl,
   verifiedLibpqConnectionString,
   verifiedPgConnectionString,
@@ -59,5 +60,23 @@ describe('SC-784 — every hosted Postgres connection verifies the server', () =
   test('an unparseable URL fails closed', () => {
     expect(postgresJsSsl('not a url')).toBe('verify-full');
     expect(verifiedPgConnectionString('not a url')).toBe('not a url');
+  });
+});
+
+describe('SC-1442 — a connection pooler cannot hold a session advisory lock', () => {
+  test("Neon's pooler host is recognised", () => {
+    expect(
+      isConnectionPoolerUrl(
+        'postgresql://u:p@ep-x-pooler.ap-southeast-1.aws.neon.tech/db?sslmode=require'
+      )
+    ).toBe(true);
+  });
+
+  test('CONTROL: the direct host, a compose host and an unparseable URL are not', () => {
+    expect(isConnectionPoolerUrl('postgresql://u:p@ep-x.ap-southeast-1.aws.neon.tech/db')).toBe(
+      false
+    );
+    expect(isConnectionPoolerUrl('postgres://u:p@postgres:5432/x?sslmode=disable')).toBe(false);
+    expect(isConnectionPoolerUrl('not a url')).toBe(false);
   });
 });

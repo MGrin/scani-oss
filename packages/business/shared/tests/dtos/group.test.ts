@@ -157,6 +157,8 @@ describe('GroupWithCountsDto', () => {
     updatedAt: '2026-01-01T00:00:00Z',
     holdingsCount: 12,
     accountsCount: 3,
+    billsCount: 2,
+    payeesCount: 1,
     ...overrides,
   });
 
@@ -172,9 +174,13 @@ describe('GroupWithCountsDto', () => {
    * remembered to call `Number()`.
    */
   test('coerces counts delivered as bigint strings into numbers', () => {
-    const parsed = GroupWithCountsDto.parse(row({ holdingsCount: '1', accountsCount: '0' }));
+    const parsed = GroupWithCountsDto.parse(
+      row({ holdingsCount: '1', accountsCount: '0', billsCount: '4', payeesCount: '0' })
+    );
     expect(parsed.holdingsCount).toBe(1);
     expect(parsed.accountsCount).toBe(0);
+    expect(parsed.billsCount).toBe(4);
+    expect(parsed.payeesCount).toBe(0);
   });
 
   test('rejects missing counts', () => {

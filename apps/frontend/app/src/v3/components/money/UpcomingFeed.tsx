@@ -14,8 +14,8 @@ import { usePeekRoute } from '@scani/ui/v3/hooks/usePeekRoute';
 import type { PeekSpec } from '@scani/ui/v3/lib/peek';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import type { TFunction } from 'i18next';
-import { ArrowUpRight, CalendarClock } from 'lucide-react';
-import { useMemo } from 'react';
+import { CalendarClock, Plus } from 'lucide-react';
+import { type ReactNode, useMemo } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
@@ -34,6 +34,7 @@ import {
   PAYMENTS_HORIZON_DAYS,
   splitByDirection,
   splitByDueness,
+  upcomingBills,
   withinDays,
 } from '../../lib/money';
 import {
@@ -41,12 +42,16 @@ import {
   type HistoryEstimate,
   todayDateString,
 } from '../../lib/paymentTotals';
-import { V3_PAYMENT_ROUTES, V3_ROUTES } from '../../lib/routes';
+import { PAYMENT_SHEET, V3_ROUTES } from '../../lib/routes';
 import { BaseEquivalent } from '../BaseEquivalent';
 import { ConvertedFigure } from '../ConvertedFigure';
 import { ConvertedTotal } from '../ConvertedTotal';
 import { EstimatedFromHistory } from './EstimatedFromHistory';
 import { ExpectedIncome } from './ExpectedIncome';
+import { type GroupTag, WithGroupTags } from './GroupTags';
+import { OccurrenceEditor } from './OccurrenceEditor';
+import { PayeeMark } from './PayeeMark';
+import { PaymentSheetLink } from './PaymentSheetLink';
 import { SettleActions } from './SettleActions';
 
 /**
@@ -78,6 +83,9 @@ import { SettleActions } from './SettleActions';
 type UpcomingOccurrence = RouterOutputs['payments']['upcoming'][number];
 
 interface UpcomingFeedProps {
+  /** The page's search and Refine bar. The feed places it under its summary,
+   *  where every list's toolbar sits (V3DataView's order, SC-1433). */
+  toolbar: ReactNode;
   /** Every scheduled occurrence inside the *income* horizon — the longer of the
    *  two windows. The 30-day bill set is taken from it here. */
   occurrences: UpcomingOccurrence[];
@@ -101,7 +109,16 @@ interface UpcomingFeedProps {
    * step.
    */
   historyEstimates: ReadonlyMap<string, HistoryEstimate>;
+  /** How far ahead the bill list and its figure reach. The figure and the list
+   *  are cut from one set, so they always name the same window (SC-1405). */
+  horizonDays?: number;
+  /** Which groups each occurrence is in, and their names and colours, for
+   *  the tags after each row's cadence (SC-1408). */
+  occurrenceGroups?: Readonly<Record<string, readonly string[]>>;
+  groupById?: ReadonlyMap<string, GroupTag>;
 }
+
+const NO_GROUPS: ReadonlyMap<string, GroupTag> = new Map();
 
 function vendorFor(
   t: TFunction,
@@ -174,6 +191,11 @@ export function upcomingPeekSpec({
     delta: estimate ? <EstimatedFromHistory sourceDueDate={estimate.sourceDueDate} /> : undefined,
     actions: (
       <>
+        <OccurrenceEditor
+          occurrenceId={occurrence.id}
+          paymentId={occurrence.payment.id}
+          expectedAmount={occurrence.expectedAmount}
+        />
         <SettleActions
           occurrenceId={occurrence.id}
           expectedAmount={occurrence.expectedAmount}
@@ -187,9 +209,14 @@ export function upcomingPeekSpec({
             for a form; the primary stays with settling, which is what the
             sheet is for. */}
         <Button variant="outline" asChild>
-          <Link to={V3_PAYMENT_ROUTES.edit(occurrence.payment.id)}>
-            {t('v3.money.peek.editPayment')}
+          <Link to={`${V3_ROUTES.vendors}/${occurrence.payment.vendorId}`}>
+            {t('v3.money.groups.payeeDetails')}
           </Link>
+        </Button>
+        <Button variant="outline" asChild>
+          <PaymentSheetLink sheet={PAYMENT_SHEET.edit(occurrence.payment.id)}>
+            {t('v3.money.peek.editPayment')}
+          </PaymentSheetLink>
         </Button>
       </>
     ),
@@ -237,6 +264,10 @@ export function UpcomingFeed({
   rates,
   query,
   historyEstimates,
+  horizonDays = PAYMENTS_HORIZON_DAYS,
+  occurrenceGroups,
+  groupById = NO_GROUPS,
+  toolbar,
 }: UpcomingFeedProps) {
   const { t } = useTranslation();
   const peekRoute = usePeekRoute(V3_ROUTES.money);
@@ -248,13 +279,17 @@ export function UpcomingFeed({
   // under it. Bills are cut back to the thirty-day window; income keeps the
   // whole lookahead.
   const { bills, income } = useMemo(() => {
-    const split = splitByDirection(occurrences);
+    const split = splitByDirection(occurrences.filter((row) => row.status === 'scheduled'));
     return {
-      bills: withinDays(split.bills, today, PAYMENTS_HORIZON_DAYS),
-      income: split.income,
+      bills: upcomingBills(occurrences, today, horizonDays),
+      income: withinDays(split.income, today, INCOME_HORIZON_DAYS),
     };
-  }, [occurrences, today]);
+  }, [occurrences, today, horizonDays]);
 
+  // The list is the bills and nothing else, from the same set the figure above
+  // sums (SC-1405). It used to group every occurrence, so income and bills
+  // past the window sat under a total that did not count them, and a late
+  // payer was filed under Overdue as though the reader owed it.
   const groups = useMemo(() => groupUpcoming(t, bills, today), [bills, today, t]);
 
   // Second split, same reason as the first: a figure may only describe the set
@@ -325,17 +360,21 @@ export function UpcomingFeed({
   // feed standing rather than replacing it with a panel.
   if (query.isError && occurrences.length === 0) {
     return (
-      <QueryError
-        error={query.error}
-        subject={t('v3.money.upcoming.label')}
-        onRetry={query.retry}
-      />
+      <>
+        {toolbar}
+        <QueryError
+          error={query.error}
+          subject={t('v3.money.upcoming.label')}
+          onRetry={query.retry}
+        />
+      </>
     );
   }
 
   if (query.isLoading) {
     return (
       <>
+        {toolbar}
         {/* §2.5's ramp: nothing for 300ms, because this feed is one of the two
             queries the home screen has already warmed and a skeleton over a
             cached answer is the flash V3-16 exists to delete. */}
@@ -357,6 +396,7 @@ export function UpcomingFeed({
   if (occurrences.length === 0) {
     return (
       <>
+        {toolbar}
         <DataViewEmpty
           empty={{
             icon: CalendarClock,
@@ -369,16 +409,16 @@ export function UpcomingFeed({
               paymentCount > 0
                 ? 'ui.dataView.upcoming.empty.outsideWindow'
                 : 'ui.dataView.upcoming.empty.addOne',
-            action:
-              paymentCount > 0 ? (
-                <Button variant="outline" asChild>
-                  <Link to={V3_ROUTES.recurring}>{t('v3.money.upcoming.seeRecurring')}</Link>
-                </Button>
-              ) : (
-                <Button asChild>
-                  <Link to={V3_PAYMENT_ROUTES.create}>{t('v3.money.upcoming.addPayment')}</Link>
-                </Button>
-              ),
+            // The page's main action, whichever sentence is above it: the
+            // Recurring tab is one tap away in the view switch (rule 8, SC-1433).
+            action: (
+              <Button asChild>
+                <PaymentSheetLink sheet={PAYMENT_SHEET.create}>
+                  <Plus className="me-1.5 size-4" aria-hidden="true" />
+                  {t('v3.money.upcoming.addPayment')}
+                </PaymentSheetLink>
+              </Button>
+            ),
           }}
         />
         {sheet}
@@ -394,7 +434,7 @@ export function UpcomingFeed({
           // screen differ in how certain they are, and that is the distinction
           // the words have to carry. The window is named on both, because they
           // are not the same window and nothing should invite adding them.
-          label={t('v3.money.upcoming.billsCommitted', { count: PAYMENTS_HORIZON_DAYS })}
+          label={t('v3.money.upcoming.billsCommitted', { count: horizonDays })}
           totals={committed}
           tokenSymbolById={tokenSymbolById}
           rates={rates}
@@ -493,9 +533,11 @@ export function UpcomingFeed({
         ) : null}
       </Block>
 
+      {toolbar}
+
       {ahead.length === 0 ? (
         <p className="px-4 text-body text-muted-foreground">
-          {t('v3.money.upcoming.noneAhead', { count: PAYMENTS_HORIZON_DAYS })}
+          {t('v3.money.upcoming.noneAhead', { count: horizonDays })}
         </p>
       ) : null}
 
@@ -505,9 +547,10 @@ export function UpcomingFeed({
             <DataViewGroupHeading
               label={group.label}
               count={group.items.length}
-              // The overdue group's figure is already the "Overdue" line above.
+              // The overdue group's figure is already the "Overdue" line above,
+              // and a day with one bill would repeat that bill's own amount.
               aside={
-                group.overdue ? undefined : (
+                group.overdue || group.items.length < 2 ? undefined : (
                   <DayTotal
                     day={dayTotals(group.items, historyEstimates)}
                     tokenSymbolById={tokenSymbolById}
@@ -524,16 +567,19 @@ export function UpcomingFeed({
               return (
                 <DataRow
                   key={occurrence.id}
-                  leading={
-                    <ArrowUpRight aria-hidden="true" className="size-4 text-muted-foreground" />
-                  }
+                  leading={<PayeeMark name={vendorName} />}
                   label={vendorName}
-                  // The overdue group spans many dates, so its rows carry one;
-                  // a date group's heading already said it. Nothing says "Bill"
-                  // any more either — every row in this feed is one, and the
-                  // figure above says so.
+                  // An overdue row says how late it is: that is the one fact the
+                  // reader has to act on. Every other row says how often it
+                  // recurs; that it is a bill is what this list is.
                   sublabel={
-                    group.overdue ? formatOverdueBy(occurrence.dueDate, today, t) : undefined
+                    group.overdue
+                      ? formatOverdueBy(occurrence.dueDate, today, t)
+                      : formatPaymentInterval(
+                          t,
+                          occurrence.payment.intervalUnit,
+                          occurrence.payment.intervalCount
+                        )
                   }
                   value={
                     <Numeric
@@ -551,15 +597,20 @@ export function UpcomingFeed({
                   // estimate indistinguishable from a fixed bill is the one
                   // thing SC-625 exists to prevent.
                   delta={
-                    estimate ? (
-                      <EstimatedFromHistory sourceDueDate={estimate.sourceDueDate} />
-                    ) : (
-                      <BaseEquivalent
-                        amount={occurrence.expectedAmount ?? occurrence.actualAmount}
-                        currencyTokenId={occurrence.payment.currencyTokenId}
-                        rates={rates}
-                      />
-                    )
+                    <WithGroupTags
+                      groupIds={occurrenceGroups?.[occurrence.id]}
+                      groupById={groupById}
+                    >
+                      {estimate ? (
+                        <EstimatedFromHistory sourceDueDate={estimate.sourceDueDate} />
+                      ) : (
+                        <BaseEquivalent
+                          amount={occurrence.expectedAmount ?? occurrence.actualAmount}
+                          currencyTokenId={occurrence.payment.currencyTokenId}
+                          rates={rates}
+                        />
+                      )}
+                    </WithGroupTags>
                   }
                   onClick={() => peekRoute.open(occurrence.id)}
                   aria-label={t('v3.money.upcoming.row', {

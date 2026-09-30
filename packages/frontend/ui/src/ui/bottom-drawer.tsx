@@ -11,6 +11,7 @@ import {
   resolveDragClaim,
   resolveRelease,
 } from '../lib/snap-points';
+import { ScrollBody } from './scroll-body';
 
 /**
  * A bottom drawer that rests at one of several heights.
@@ -184,6 +185,113 @@ export interface BottomDrawerContentProps
   container?: PortalContainer;
 }
 
+/**
+ * Below this, a gap between the layout and the visual viewport is browser
+ * chrome (Safari's toolbar settling), not a keyboard.
+ */
+const KEYBOARD_MIN_PX = 120;
+
+/** The drawer's own height transition, plus a frame: when it is safe to measure. */
+const KEYBOARD_SETTLE_MS = 240;
+
+/**
+ * The home-indicator clearance a drawer's footer pads with. It is the
+ * safe-area inset at rest and 0 while the keyboard is up: the drawer then
+ * stands on the keyboard, above the home indicator, and padding for it left a
+ * ~100pt empty band between the actions and the keyboard while the fields
+ * above were clipped (SC-1433). Every drawer footer reads this rather than
+ * `env(safe-area-inset-bottom)` itself.
+ */
+export const DRAWER_SAFE_BOTTOM = 'var(--drawer-safe-bottom, env(safe-area-inset-bottom, 0px))';
+
+/**
+ * The software keyboard, as the drawer has to see it (SC-1434).
+ *
+ * iOS does not shrink the layout viewport for the keyboard: it slides the
+ * keyboard OVER the page and shrinks only `visualViewport`. A drawer anchored
+ * `bottom: 0` at `100dvh` therefore kept its bottom — the pinned Save, and the
+ * lower half of the fields — behind the keyboard, and the focused field could
+ * only be revealed as far as the drawer's own scroller reached, which was
+ * under the keyboard too.
+ *
+ * So while the keyboard is up the drawer stands on it: its bottom sits at the
+ * visual viewport's bottom edge and its height is capped to the visible band.
+ * `documentElement.clientHeight` is the layout height because it is the one
+ * figure that stays put in a standalone PWA, where `innerHeight` shrinks with
+ * the document offset (see `useVisualViewportShell`). `null` when no keyboard
+ * is up, which leaves the drawer exactly as it was.
+ */
+export function keyboardBand(
+  layoutHeight: number,
+  visualTop: number,
+  visualHeight: number
+): { bottom: number; height: number } | null {
+  const bottom = Math.max(0, Math.round(layoutHeight - visualTop - visualHeight));
+  return bottom >= KEYBOARD_MIN_PX ? { bottom, height: Math.round(visualHeight) } : null;
+}
+
+function useKeyboardBand(): { bottom: number; height: number } | null {
+  const [band, setBand] = React.useState<{ bottom: number; height: number } | null>(null);
+  React.useEffect(() => {
+    const vv = typeof window === 'undefined' ? undefined : window.visualViewport;
+    if (!vv) return;
+    const measure = () => {
+      const next = keyboardBand(document.documentElement.clientHeight, vv.offsetTop, vv.height);
+      setBand((current) => {
+        if (current?.bottom === next?.bottom && current?.height === next?.height) return current;
+        return next;
+      });
+    };
+    measure();
+    vv.addEventListener('resize', measure);
+    vv.addEventListener('scroll', measure);
+    return () => {
+      vv.removeEventListener('resize', measure);
+      vv.removeEventListener('scroll', measure);
+    };
+  }, []);
+  return band;
+}
+
+/**
+ * The open drawers, bottom first, so one covered by another can hide (SC-1433).
+ * The drawer on top keeps its own height — a one-field form stays one field
+ * tall — and every drawer under it is hidden, overlay included: a form resting
+ * over a peek left the peek's text clipped above it, and two overlays dim the
+ * page twice. Closing the top drawer shows the one below again, unchanged.
+ */
+let drawerStack: readonly number[] = [];
+let nextDrawerId = 1;
+const drawerListeners = new Set<() => void>();
+
+function subscribeDrawers(listener: () => void) {
+  drawerListeners.add(listener);
+  return () => drawerListeners.delete(listener);
+}
+
+function setDrawerStack(next: readonly number[]) {
+  drawerStack = next;
+  for (const listener of drawerListeners) listener();
+}
+
+/** `open` is whether this drawer's content is in the DOM: the component
+ *  itself renders while closed, with an empty portal, and must not count. */
+function useCoveredByAnotherDrawer(open: boolean): boolean {
+  const [id] = React.useState(() => nextDrawerId++);
+  React.useLayoutEffect(() => {
+    if (!open) return;
+    setDrawerStack([...drawerStack, id]);
+    return () => setDrawerStack(drawerStack.filter((entry) => entry !== id));
+  }, [id, open]);
+  const stack = React.useSyncExternalStore(
+    subscribeDrawers,
+    () => drawerStack,
+    () => drawerStack
+  );
+  const depth = stack.indexOf(id);
+  return depth >= 0 && depth < stack.length - 1;
+}
+
 const BottomDrawerContent = React.forwardRef<
   React.ElementRef<typeof DrawerPrimitive.Content>,
   BottomDrawerContentProps
@@ -205,6 +313,8 @@ const BottomDrawerContent = React.forwardRef<
     ref
   ) => {
     const portalContainer = usePortalContainer(container);
+    const [attached, setAttached] = React.useState(false);
+    const covered = useCoveredByAnotherDrawer(attached);
     const points = React.useMemo(() => normalizeSnapPoints(snapPoints), [snapPoints]);
     const [index, setIndex] = React.useState(() =>
       Math.min(Math.max(initialSnapIndex, 0), points.length - 1)
@@ -228,7 +338,28 @@ const BottomDrawerContent = React.forwardRef<
     // bottom edge off the bottom of the screen and show the page underneath.
     // So overshoot is felt in the release maths and looks like a hard
     // ceiling — one that now stops below the status bar, not under it.
-    const rendered = Math.min(position, 1);
+    const keyboard = useKeyboardBand();
+    // With the keyboard up the band above it is all the room there is, and a
+    // form resting at a fraction of it left the focused field no space to be
+    // revealed in (SC-1434), so the drawer takes the whole band until it drops.
+    const rendered = keyboard ? 1 : Math.min(position, 1);
+
+    // The drawer shrinks to the band AFTER the viewport has resized, so the
+    // app's focused-field correction (`useFocusedFieldVisibility`) measured
+    // the old, taller box and found nothing to do; the field sat below the new
+    // bottom edge. Once the new height has settled, bring the focused control
+    // into view inside the drawer's own scroller (SC-1434).
+    const keyboardBottom = keyboard?.bottom ?? 0;
+    React.useEffect(() => {
+      if (keyboardBottom === 0) return;
+      const timer = window.setTimeout(() => {
+        const focused = document.activeElement;
+        if (focused instanceof HTMLElement && contentRef.current?.contains(focused)) {
+          focused.scrollIntoView({ block: 'center' });
+        }
+      }, KEYBOARD_SETTLE_MS);
+      return () => window.clearTimeout(timer);
+    }, [keyboardBottom]);
     const atCeiling = settledIndex === points.length - 1;
 
     const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
@@ -341,6 +472,7 @@ const BottomDrawerContent = React.forwardRef<
         assignRef(ref, node);
         contentRef.current?.removeEventListener('touchmove', onTouchMove);
         contentRef.current = node;
+        setAttached(node !== null);
         node?.addEventListener('touchmove', onTouchMove, { passive: false });
       },
       // `onTouchMove` is held in a ref, so it never changes identity and the
@@ -351,7 +483,7 @@ const BottomDrawerContent = React.forwardRef<
 
     return (
       <BottomDrawerPortal container={portalContainer}>
-        <BottomDrawerOverlay />
+        <BottomDrawerOverlay style={covered ? { visibility: 'hidden' } : undefined} />
         <DrawerPrimitive.Content
           ref={attachContent}
           onPointerDown={handlePointerDown}
@@ -394,14 +526,19 @@ const BottomDrawerContent = React.forwardRef<
             // silently reintroduce the full-viewport height this exists to
             // avoid. A caller that genuinely needs a different ceiling passes
             // `style.height`, which still wins via the spread below.
-            height: DRAWER_HEIGHT,
+            height: keyboard
+              ? `min(${DRAWER_HEIGHT}, calc(${keyboard.height}px - max(var(--scani-banner-offset, 0px), env(safe-area-inset-top, 0px))))`
+              : DRAWER_HEIGHT,
+            // Standing on the keyboard rather than behind it (SC-1434).
+            bottom: keyboard ? `${keyboard.bottom}px` : 0,
+            ...(keyboard ? { '--drawer-safe-bottom': '0px' } : {}),
             transform: `translate3d(0, ${(1 - rendered) * 100}%, 0)`,
             // No transition while a finger is down: the drawer has to track
             // the pointer exactly, and easing a value that already follows
             // the finger is what makes a drag feel like it is lagging.
             transition:
               dragPosition === null
-                ? 'transform var(--motion-base, 180ms) var(--motion-ease, ease)'
+                ? 'transform var(--motion-base, 180ms) var(--motion-ease, ease), bottom var(--motion-base, 180ms) var(--motion-ease, ease), height var(--motion-base, 180ms) var(--motion-ease, ease)'
                 : 'none',
             willChange: 'transform',
             // A drag now starts over real content, and a mouse drag over text
@@ -414,6 +551,8 @@ const BottomDrawerContent = React.forwardRef<
             // transparent. The literal is the v3 dark sheet surface.
             backgroundColor: 'hsl(var(--popover, 225 12% 16%))',
             ...style,
+            // After the spread: a covered drawer is hidden whatever the caller set.
+            ...(covered ? { visibility: 'hidden' as const } : {}),
           }}
           {...props}
         >
@@ -471,6 +610,17 @@ const BottomDrawerContent = React.forwardRef<
             </div>
             {children}
           </div>
+          {/* Safari's URL pill and keyboard accessory bar float, translucent,
+              between the visual viewport's bottom and the keyboard, so the page
+              showed through under a drawer standing on the band. The sheet's
+              surface carries on down behind them (SC-1434). */}
+          {keyboard ? (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-0 top-full"
+              style={{ height: keyboard.bottom, backgroundColor: 'inherit' }}
+            />
+          ) : null}
         </DrawerPrimitive.Content>
       </BottomDrawerPortal>
     );
@@ -483,13 +633,10 @@ const BottomDrawerHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDi
 );
 BottomDrawerHeader.displayName = 'BottomDrawerHeader';
 
-/** The scrolling region. `overscroll-contain` stops a flick at the end of
- * this list from scrolling the page behind the drawer. */
+/** The scrolling region: `ScrollBody`, whose `overscroll-contain` stops a
+ * flick at the end of this list from scrolling the page behind the drawer. */
 const BottomDrawerBody = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div
-    className={cn('min-h-0 flex-1 overflow-y-auto overscroll-contain px-4', className)}
-    {...props}
-  />
+  <ScrollBody className={cn('px-4', className)} {...props} />
 );
 BottomDrawerBody.displayName = 'BottomDrawerBody';
 

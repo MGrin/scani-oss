@@ -4,7 +4,9 @@ import { X } from 'lucide-react';
 import * as React from 'react';
 import { useUiTranslation } from '../i18n';
 import { cn } from '../lib/cn';
+import { useDirection } from '../lib/direction';
 import { type PortalContainer, usePortalContainer } from '../lib/portal-container';
+import { usePanelStack } from './panel-stack';
 
 const Sheet = SheetPrimitive.Root;
 
@@ -112,12 +114,40 @@ const SheetContent = React.forwardRef<
 >(({ side = 'end', className, children, style, container, dismissible = true, ...props }, ref) => {
   const { t } = useUiTranslation();
   const portalContainer = usePortalContainer(container);
+  // A right-hand panel over another sits beside it rather than on top of it
+  // (SC-1435, UI standard rule 14); see `panel-stack.ts`. Every class that
+  // reads the stack is `lg:`, so below 1024px nothing here applies.
+  const stacked = side === 'end';
+  const stack = usePanelStack(stacked);
+  const place = stack.place;
+  // Signed here rather than with an `rtl:` variant: the covered panel moves
+  // toward the start edge, which is left in LTR and right in RTL.
+  const shiftSign = useDirection() === 'rtl' ? 1 : -1;
+  const setRef = React.useCallback(
+    (node: React.ElementRef<typeof SheetPrimitive.Content> | null) => {
+      stack.ref(node);
+      if (typeof ref === 'function') ref(node);
+      else if (ref) ref.current = node;
+    },
+    [ref, stack.ref]
+  );
   return (
     <SheetPortal container={portalContainer}>
-      <SheetOverlay />
+      {/* Only the bottom panel dims the page: a second dark overlay over the
+          first is what turned the page black (SC-1435). The others stay, as
+          transparent layers, so a click outside the top panel still closes it. */}
+      <SheetOverlay className={place && place.depth > 0 ? 'lg:bg-transparent' : undefined} />
       <SheetPrimitive.Content
-        ref={ref}
-        className={cn(sheetVariants({ side }), 'flex flex-col', className)}
+        ref={setRef}
+        data-panel-depth={place?.depth}
+        className={cn(
+          sheetVariants({ side }),
+          'flex flex-col',
+          stacked &&
+            'lg:transition-[translate] lg:duration-300 lg:ease-in-out motion-reduce:lg:transition-none lg:[translate:var(--panel-shift,0px)_0]',
+          place?.hidden && 'lg:invisible',
+          className
+        )}
         // Inline-style fallback for the drawer background. `bg-background`
         // depends on `--background` cascading through Radix's portal; if
         // the variable is unset for any reason (theme not yet hydrated,
@@ -125,7 +155,13 @@ const SheetContent = React.forwardRef<
         // which is invalid → transparent. The fallback in the var()
         // expression resolves to the dark-theme background literal so
         // the drawer is never see-through. Caller `style` still wins.
-        style={{ backgroundColor: 'hsl(var(--background, 0 0% 3.9%))', ...style }}
+        style={
+          {
+            backgroundColor: 'hsl(var(--background, 0 0% 3.9%))',
+            ...(place ? { '--panel-shift': `${place.shift * shiftSign}px` } : {}),
+            ...style,
+          } as React.CSSProperties
+        }
         // Radix closes on Escape and on a press outside the content. A
         // non-dismissible sheet cancels both rather than re-implementing the
         // dialog — see `dismissible`.

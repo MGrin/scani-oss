@@ -17,7 +17,6 @@ export const V3_ROUTES = {
   holdings: '/holdings',
   money: '/payments',
   recurring: '/payments/recurring',
-  forecast: '/payments/forecast',
   accounts: '/accounts',
   institutions: '/institutions',
   /** From `@scani/shared` so the segment its two queues compose from has
@@ -27,30 +26,50 @@ export const V3_ROUTES = {
   vaults: '/vaults',
   settings: '/settings',
   groups: '/groups',
-  entities: '/entities',
   tokens: '/tokens',
   vendors: '/vendors',
   jobs: '/jobs',
 } as const;
 
 /**
- * The recurring-payment form, which is a page rather than a peek: it is the one
- * place in Money that *writes* a record, and a twelve-field form does not
- * belong in a sheet that rests at half the viewport.
- *
- * Mirrors v2's paths exactly (`/payments/recurring/new`, `.../:id/edit`) for
- * the same reason as every other v3 route — `counterpartPath` crosses between
- * the two interfaces with a prefix strip, not a translation table.
+ * The recurring-payment form is a `FormSheet`, not a page (UI standard rule 3,
+ * SC-1414). It opens over whatever screen asked for it, so its address is a
+ * `sheet` value rather than a path: one param carries the mode and the id, and
+ * closing the sheet clears all of it at once.
+ */
+export const PAYMENT_SHEET = {
+  create: 'payment:new',
+  edit: (paymentId: string) => `payment:edit:${paymentId}`,
+  /** The create form prefilled from a parsed invoice — what Approve on a
+   *  document's extraction opens. */
+  fromExtraction: (extractionId: string) => `payment:invoice:${extractionId}`,
+} as const;
+
+export type PaymentSheetTarget =
+  | { mode: 'new' }
+  | { mode: 'edit'; paymentId: string }
+  | { mode: 'invoice'; extractionId: string };
+
+/** Which bill form a `sheet` value asks for, or null when it is not one. */
+export function parsePaymentSheet(sheet: string | null): PaymentSheetTarget | null {
+  if (sheet === PAYMENT_SHEET.create) return { mode: 'new' };
+  const edit = sheet?.match(/^payment:edit:(.+)$/);
+  if (edit?.[1]) return { mode: 'edit', paymentId: edit[1] };
+  const invoice = sheet?.match(/^payment:invoice:(.+)$/);
+  if (invoice?.[1]) return { mode: 'invoice', extractionId: invoice[1] };
+  return null;
+}
+
+const overBills = (sheet: string) => `${V3_ROUTES.money}?sheet=${encodeURIComponent(sheet)}`;
+
+/**
+ * The form as a link from another screen: the sheet over Bills. A button on a
+ * Bills view opens it over the view it is on instead (`usePaymentSheet`).
  */
 export const V3_PAYMENT_ROUTES = {
-  create: `${V3_ROUTES.recurring}/new`,
-  edit: (paymentId: string) => `${V3_ROUTES.recurring}/${encodeURIComponent(paymentId)}/edit`,
-  /** The same create form, prefilled from a parsed invoice — what Approve on a
-   *  document's extraction opens. `PaymentFormPage` already reads
-   *  `?fromExtraction`; this is the only thing that was missing to reach it
-   *  without crossing back to v2. */
-  fromExtraction: (extractionId: string) =>
-    `${V3_ROUTES.recurring}/new?fromExtraction=${encodeURIComponent(extractionId)}`,
+  create: overBills(PAYMENT_SHEET.create),
+  edit: (paymentId: string) => overBills(PAYMENT_SHEET.edit(paymentId)),
+  fromExtraction: (extractionId: string) => overBills(PAYMENT_SHEET.fromExtraction(extractionId)),
 } as const;
 
 /**
@@ -237,6 +256,13 @@ export const TRANSFER_ANSWERED_PATH = `${TRANSFER_REVIEW_PATH}/answered`;
  */
 export const TRANSFER_RULES_PATH = `${TRANSFER_REVIEW_PATH}/rules`;
 
+/**
+ * Balance changes already explained, and the undo (SC-1433): the balance
+ * queue's second view, as `answered` is the transfer queue's. A segment, not
+ * an observation id, so it is registered before the queue's `:peekId?`.
+ */
+export const BALANCE_GAP_ANSWERED_PATH = `${BALANCE_GAP_REVIEW_PATH}/answered`;
+
 export interface V3NavItem {
   /** i18n key resolved with `t()` at render time. */
   labelKey: string;
@@ -312,10 +338,7 @@ export const V3_DRAWER_PRIMARY: readonly V3NavItem[] = [
 /** Everything else, as a list below the grid. Reaching it is what the
  * drawer's full-height snap point is for. */
 export const V3_DRAWER_SECONDARY: readonly V3NavItem[] = [
-  { labelKey: 'nav.recurringPayments', icon: 'Repeat', path: V3_ROUTES.recurring },
-  { labelKey: 'nav.vendors', icon: 'Store', path: V3_ROUTES.vendors },
   { labelKey: 'nav.groups', icon: 'Tags', path: V3_ROUTES.groups },
-  { labelKey: 'nav.entities', icon: 'Scale', path: V3_ROUTES.entities },
   { labelKey: 'nav.tokens', icon: 'Coins', path: V3_ROUTES.tokens },
   { labelKey: 'nav.jobs', icon: 'ListChecks', path: V3_ROUTES.jobs },
 ];
@@ -340,11 +363,7 @@ export const V3_SIDEBAR_SECTIONS: readonly V3NavSection[] = [
   },
   {
     titleKey: 'nav.sections.payments',
-    items: [
-      { labelKey: 'nav.paymentsOverview', icon: 'CalendarClock', path: V3_ROUTES.money },
-      { labelKey: 'nav.recurringPayments', icon: 'Repeat', path: V3_ROUTES.recurring },
-      { labelKey: 'nav.vendors', icon: 'Store', path: V3_ROUTES.vendors },
-    ],
+    items: [{ labelKey: 'nav.money', icon: 'CalendarClock', path: V3_ROUTES.money }],
   },
   {
     titleKey: 'nav.sections.organization',
@@ -446,6 +465,9 @@ function resolveDrillDownTab(active: string, search: string | undefined): string
  */
 export function resolveActiveTabPath(pathname: string, search?: string): string | null {
   const path = normalize(pathname);
+  // Payees is one of Money's three segments, at a path of its own; Money lit
+  // on Upcoming and Recurring and on nothing on Payees (SC-1433).
+  if (covers(V3_ROUTES.vendors, path)) return V3_ROUTES.money;
   const active = resolveActiveV3Path(path);
   if (active === null) return null;
   const tabPaths = V3_TAB_ITEMS.flatMap((item) => (item.path ? [item.path] : []));

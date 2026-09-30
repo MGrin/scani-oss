@@ -1,6 +1,7 @@
 import type { HoldingWithDetails } from '@scani/shared';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
+import { Eye, EyeOff } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
@@ -55,7 +56,16 @@ export function HoldingStatusAction({
 
   return (
     <ConfirmAction
-      label={label}
+      label={
+        <>
+          {holding.isActive ? (
+            <EyeOff className="me-2 size-4" aria-hidden="true" />
+          ) : (
+            <Eye className="me-2 size-4" aria-hidden="true" />
+          )}
+          {label}
+        </>
+      }
       confirmLabel={t('v3.holdings.status.confirm', { label, symbol: holding.token.symbol })}
       open={open}
       onOpenChange={setOpen}

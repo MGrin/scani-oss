@@ -38,6 +38,7 @@ describe('the submit row', () => {
         onSubmit={() => {}}
         stage={null}
         busyLabel="the upload"
+        cancelTo="/"
         error={null}
       />
     );
@@ -53,6 +54,7 @@ describe('the submit row', () => {
         onSubmit={() => {}}
         stage={null}
         busyLabel="the upload"
+        cancelTo="/"
         error={null}
       />
     );
@@ -68,10 +70,29 @@ describe('the submit row', () => {
         onSubmit={() => {}}
         stage={null}
         busyLabel="the upload"
+        cancelTo="/"
         error="Could not reach the server. Check your connection."
       />
     );
     expect(markup).toContain('Could not reach the server. Check your connection.');
+  });
+
+  test('Cancel comes before the primary and leaves to where the header points (rule 9)', () => {
+    const markup = render(
+      <CaptureSubmit
+        label="Upload and read it"
+        blockers={[]}
+        onSubmit={() => {}}
+        stage={null}
+        busyLabel="the upload"
+        cancelTo="/documents"
+        error={null}
+      />
+    );
+    const cancel = markup.indexOf('href="/documents"');
+    expect(cancel).toBeGreaterThan(-1);
+    expect(markup.slice(cancel)).toContain('>Cancel<');
+    expect(cancel).toBeLessThan(markup.indexOf('Upload and read it'));
   });
 
   test('a submission in flight replaces the button rather than spinning it', () => {
@@ -84,6 +105,7 @@ describe('the submit row', () => {
         onSubmit={() => {}}
         stage="upload"
         busyLabel="the upload"
+        cancelTo="/"
         error={null}
       />
     );
@@ -138,6 +160,13 @@ describe('the capture header', () => {
     );
     expect(markup).toContain('href="/"');
     expect(markup).toContain('Upload a file');
+  });
+
+  test('the default way out is translated and says where it goes (rule 7)', () => {
+    const markup = render(
+      <CaptureHeader title="Upload a file" description="A statement or a screenshot." />
+    );
+    expect(markup).toContain('Back to home');
   });
 });
 

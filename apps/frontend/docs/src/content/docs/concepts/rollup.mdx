@@ -92,9 +92,10 @@ function isIncludedInTotal(holding, token) {
 }
 ```
 
-The same rule is duplicated in SQL inside
-`PortfolioValueDailyRepository.findIncludedHoldingScopeRange` so the
-chart read path and the dashboard headline always agree. Keeping the
+The same rule is duplicated in SQL, in the one inclusion clause
+(`includedHoldingRows`) that every per-holding reader in
+`PortfolioValueDailyRepository` filters through, so the chart read path
+and the dashboard headline always agree. Keeping the
 two definitions in sync is the *point* — that's what makes the
 chart's latest point reconcile with the headline.
 

@@ -101,6 +101,42 @@ export class HoldingCoverageRepository {
   // merely for having been asked a narrow question, which is what
   // `completenessIsClaimed` below separates.
   /**
+   * Per account, when its newest active holding with rows from `source` that no
+   * run has claimed complete was created. Accounts with none are absent.
+   *
+   * A holding the recurring 30-day window found first is born unclaimed, and
+   * nothing but a full walk can claim it — 57 Base airdrops on production
+   * (SC-1427). The scheduler compares this against the last full attempt, so a
+   * holding that one full walk already could not claim is not walked again.
+   */
+  async findNewestUnclaimedHolding(
+    accountIds: readonly string[],
+    source: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, Date>> {
+    if (accountIds.length === 0) return new Map();
+    const rows = await this.getDb(transaction)
+      .select({
+        accountId: schema.holdings.accountId,
+        newest: sql<Date>`max(${schema.holdings.createdAt})`.mapWith(
+          (value: string | Date) => new Date(value)
+        ),
+      })
+      .from(schema.holdingCoverage)
+      .innerJoin(schema.holdings, eq(schema.holdings.id, schema.holdingCoverage.holdingId))
+      .where(
+        and(
+          inArray(schema.holdings.accountId, [...accountIds]),
+          eq(schema.holdings.isActive, true),
+          eq(schema.holdingCoverage.hasCompleteTxHistory, false),
+          sql`${source} = ANY(${schema.holdingCoverage.txSources})`
+        )
+      )
+      .groupBy(schema.holdings.accountId);
+    return new Map(rows.map((r) => [r.accountId, r.newest]));
+  }
+
+  /**
    * `completenessIsClaimed` says whether this run is entitled to state
    * anything about `has_complete_tx_history` at all.
    *
@@ -362,6 +398,86 @@ export class HoldingCoverageRepository {
   // enough (Helius truncation, mid-history CSV exports). Returns a Map
   // keyed by holding_id; missing keys mean no coverage row was written
   // for that holding (a sizeable minority of prod holdings as of 2026-05).
+  /**
+   * Holdings whose ledger cannot reach their earliest recorded balance
+   * (SC-1444). The rollup rebuilds a past balance backward from the nearest
+   * later anchor, the earliest observation or else the holding row, and floors
+   * a negative result to zero. Walking back from that anchor through the
+   * transactions before it and going below zero means outflows are missing
+   * (gas on an EVM wallet, SC-1443), so the history is incomplete: its value
+   * reads empty while its real transfers still book as flows.
+   */
+  async findRebuildGoesNegative(
+    holdingIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Set<string>> {
+    if (holdingIds.length === 0) return new Set();
+    const db = this.getDb(transaction);
+    const ids = sql.join(
+      [...new Set(holdingIds)].map((id) => sql`${id}::uuid`),
+      sql`, `
+    );
+    const rows = (await db.execute(sql`
+      with anchor as (
+        select h.id as holding_id,
+          coalesce(o.observed_at, h.last_updated) as at,
+          coalesce(o.balance, h.balance)::numeric as balance
+        from holdings h
+        left join lateral (
+          select observed_at, balance from holding_balance_observations
+          where holding_id = h.id order by observed_at asc limit 1
+        ) o on true
+        where h.id in (${ids})
+      ),
+      walked as (
+        select a.holding_id,
+          a.balance - sum(t.quantity::numeric) over (
+            partition by t.holding_id order by t.occurred_at desc, t.id desc
+            rows between unbounded preceding and current row
+          ) as before_tx,
+          greatest(a.balance, max(abs(t.quantity::numeric)) over (partition by t.holding_id)) as scale
+        from anchor a
+        join holding_transactions t on t.holding_id = a.holding_id and t.occurred_at <= a.at
+      )
+      -- A shortfall under 1% of the holding's own scale is fee dust, which
+      -- the floor absorbs harmlessly; measured on production the real gaps
+      -- all sit at 1.5% or more and the dust at 0.6% or less.
+      select distinct holding_id from walked where before_tx < -0.01 * scale
+    `)) as unknown as Array<{ holding_id: string }>;
+    return new Set(rows.map((row) => row.holding_id));
+  }
+
+  /**
+   * Positions that were simply held (SC-1448): no transaction at all, and
+   * every balance reading, plus the holding's balance today, is the same
+   * quantity above zero. A broker statement with no trade in its window gives
+   * exactly this, and nothing else vouches for the holding's flows. Returns
+   * the date of the first reading, from which the holding can be counted.
+   */
+  async findUnchangedSinceFirstReading(
+    holdingIds: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, string>> {
+    if (holdingIds.length === 0) return new Map();
+    const db = this.getDb(transaction);
+    const ids = sql.join(
+      [...new Set(holdingIds)].map((id) => sql`${id}::uuid`),
+      sql`, `
+    );
+    const rows = (await db.execute(sql`
+      select o.holding_id, to_char(min(o.observed_at) at time zone 'UTC', 'YYYY-MM-DD') as since
+      from holding_balance_observations o
+      join holdings h on h.id = o.holding_id
+      where o.holding_id in (${ids})
+        and not exists (select 1 from holding_transactions t where t.holding_id = o.holding_id)
+      group by o.holding_id, h.balance
+      having count(distinct o.balance::numeric) = 1
+        and min(o.balance::numeric) > 0
+        and min(o.balance::numeric) = h.balance::numeric
+    `)) as unknown as Array<{ holding_id: string; since: string }>;
+    return new Map(rows.map((row) => [row.holding_id, row.since]));
+  }
+
   async findManyByHoldingIds(
     holdingIds: string[],
     transaction?: DatabaseTransaction

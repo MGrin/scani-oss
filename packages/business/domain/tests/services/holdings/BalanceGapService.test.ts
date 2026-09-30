@@ -1,3 +1,5 @@
+import type { DatabaseTransaction } from '@scani/db';
+
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -80,6 +82,8 @@ function seed(candidates: BalanceGapCandidate[]): {
 
   Container.set(HoldingBalanceObservationRepository, {
     findGapCandidatesForUser: async () => candidates,
+    lockForGapAnswer: async (id: string) =>
+      candidates.find((row) => row.observationId === id) ?? null,
     setGapReview: async (args: {
       observationId: string;
       answer: string | null;
@@ -147,6 +151,11 @@ function seed(candidates: BalanceGapCandidate[]): {
   } as unknown as ManualBalanceEditService);
 
   const service = new BalanceGapService();
+  const originalAnswer = service.answer.bind(service);
+  const transaction = {
+    update: () => ({ set: () => ({ where: async () => [] }) }),
+  } as unknown as DatabaseTransaction;
+  service.answer = (userId, input, now) => originalAnswer(userId, input, now, transaction);
   Container.set(BalanceGapService, service);
   return { service, recorded, stamped };
 }

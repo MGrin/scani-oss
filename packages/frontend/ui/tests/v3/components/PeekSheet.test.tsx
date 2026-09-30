@@ -166,6 +166,28 @@ describe('PeekBody — the depth', () => {
     expect(html).not.toInclude('truncate');
   });
 
+  // UI standard rule 4's one exception (SC-1419): a rare, contextual action
+  // goes in its own labelled row at the END of the body, never loose between
+  // the facts. It is last because it is the least often wanted thing here.
+  test('a rare action comes after every section, titled and explained', () => {
+    const html = render(
+      <PeekBody
+        spec={{
+          ...SPEC,
+          endAction: {
+            title: 'Not a real holding?',
+            hint: 'Scam airdrops can be taken out of your total.',
+            action: <button type="button">Mark as scam</button>,
+          },
+        }}
+      />
+    );
+    expect(html).toInclude('Not a real holding?');
+    expect(html).toInclude('Scam airdrops can be taken out of your total.');
+    expect(html.indexOf('Last priced')).toBeLessThan(html.indexOf('Not a real holding?'));
+    expect(html.indexOf('Not a real holding?')).toBeLessThan(html.indexOf('Mark as scam'));
+  });
+
   test('a record with nothing but primary facts renders no empty section', () => {
     const html = render(
       <PeekBody spec={{ title: 'CASH', primary: [{ label: 'A', value: '1' }] }} />

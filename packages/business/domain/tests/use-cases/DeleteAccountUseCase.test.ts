@@ -133,6 +133,26 @@ test('removes the account and its login, and leaves another account alone', asyn
   expect(await counts(control)).toEqual(EVERYTHING);
 });
 
+test('deleting a user deletes its Cloud API keys', async () => {
+  const target = await seedAccount(`keyed-${randomUUID().slice(0, 8)}@example.invalid`);
+  await getDb().insert(schema.cloudApiKeys).values({
+    ownerUserId: target.userId,
+    tenantId: target.userId,
+    name: 'fixture',
+    keyPrefix: 'scani_sk_test',
+    hashedKey: randomUUID(),
+  });
+
+  await Container.get(DeleteAccountUseCase).execute(target.userId);
+
+  expect(
+    await getDb()
+      .select()
+      .from(schema.cloudApiKeys)
+      .where(eq(schema.cloudApiKeys.ownerUserId, target.userId))
+  ).toEqual([]);
+});
+
 test('an id with no user reads as not deleted, so a re-run is harmless', async () => {
   expect(await Container.get(DeleteAccountUseCase).execute(randomUUID())).toEqual({
     deleted: false,

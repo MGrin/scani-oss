@@ -5,6 +5,7 @@ import path from 'node:path';
 import {
   type CensusContainer,
   type CensusVolume,
+  censusFromProbes,
   censusProjects,
   formatBytes,
   formatCensus,
@@ -79,17 +80,47 @@ describe('a worktree that is gone is reclaimable; one that is merely idle is not
     expect(isReclaimable(p?.state as StackState)).toBe(true);
   });
 
-  test('gone + volumes only — the state the ticket is actually about now', () => {
-    // The real remnant on 2026-08-27: containers already died, storage did
-    // not. A running-containers-only reporter reads CLEAN over this.
+  test('volumes only is NOT gone: nothing on disk says the checkout is dead (SC-1417)', () => {
+    // SC-803 called this reclaimable, and on 2026-09-29 the reaper offered
+    // `scani_scani_oss_f4ef8653` for --apply: five volumes of the LIVE
+    // ~/Projects/mgrin/scani-oss clone. Volumes carry no working_dir, and
+    // this repository's `git worktree list` cannot see a separate clone, so
+    // "no checkout" here only ever meant "no checkout we can see".
     const [p] = censusProjects({
       containers: [],
       volumes: [volume(GONE_PROJECT, 65_200_000)],
       liveProjects,
     });
+    expect(p?.state).toBe('unattributed');
+    expect(isReclaimable(p?.state as StackState)).toBe(false);
+    expect(p?.bytes).toBe(65_200_000);
+  });
+
+  test('a working_dir that could not be looked at is not evidence of death', () => {
+    const scratch = mkdtempSync(path.join(tmpdir(), 'census-sc1417-'));
+    const loop = path.join(scratch, 'a');
+    symlinkSync(path.join(scratch, 'b'), loop);
+    symlinkSync(loop, path.join(scratch, 'b'));
+    try {
+      const [p] = censusProjects({
+        containers: [container({ project: GONE_PROJECT, workingDir: loop, running: false })],
+        volumes: [volume(GONE_PROJECT)],
+        liveProjects,
+      });
+      expect(p?.state).toBe('unattributed');
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  });
+
+  test('gone-idle needs a container whose working_dir is confirmed absent', () => {
+    const [p] = censusProjects({
+      containers: [container({ project: GONE_PROJECT, workingDir: GONE_DIR, running: false })],
+      volumes: [volume(GONE_PROJECT, 65_200_000)],
+      liveProjects,
+    });
     expect(p?.state).toBe('gone-idle');
     expect(isReclaimable(p?.state as StackState)).toBe(true);
-    expect(p?.bytes).toBe(65_200_000);
   });
 
   test('LIVE worktree with its stack down is NOT reclaimable', () => {
@@ -105,7 +136,7 @@ describe('a worktree that is gone is reclaimable; one that is merely idle is not
 
   test('live-idle and gone-idle are never the same state', () => {
     const projects = censusProjects({
-      containers: [],
+      containers: [container({ project: GONE_PROJECT, workingDir: GONE_DIR, running: false })],
       volumes: [volume(LIVE_PROJECT), volume(GONE_PROJECT)],
       liveProjects,
     });
@@ -166,6 +197,93 @@ describe('a question that was never answered is not an answer', () => {
     });
     expect(p?.bytes).toBeNull();
     expect(formatBytes(null)).toBe('size unknown');
+  });
+});
+
+/**
+ * SC-1417. The reaper asks for sizes, and `docker system df -v` is the slowest
+ * thing it asks: 12s standalone on 71 volumes, and it timed out on BOTH
+ * attempts inside the census (10s, then 30s). That made the whole census
+ * blind, so `dev:stacks:reap` refused with "docker could not be asked" while
+ * `docker volume ls` answered in half a second from the same shell. Sizes are
+ * a courtesy on the report; the volume LIST is what a reaper acts on.
+ */
+describe('an optional size probe never blinds the census', () => {
+  const psOut = ['p-postgres-1', GONE_PROJECT, GONE_DIR, 'exited'].join('\t');
+  const lsOut = `${GONE_PROJECT}_postgres-data\t${GONE_PROJECT}`;
+  const enumerate = () => ({ kind: 'enumerated' as const, projects: new Set([LIVE_PROJECT]) });
+
+  test('a timed-out size probe still enumerates, with sizes unknown', () => {
+    const census = censusFromProbes(
+      {
+        ps: { kind: 'ok', output: psOut },
+        volumes: { kind: 'ok', output: lsOut },
+        sizes: { kind: 'timedOut' },
+      },
+      enumerate
+    );
+    expect(census.blind).toBeNull();
+    expect(census.projects.map((p) => p.state)).toEqual(['gone-idle']);
+    expect(census.projects[0]?.bytes).toBeNull();
+    expect(census.sizesUnmeasured).toEqual({ kind: 'timedOut' });
+  });
+
+  test('CONTROL: a volume list that could not be read still refuses', () => {
+    const census = censusFromProbes(
+      {
+        ps: { kind: 'ok', output: psOut },
+        volumes: { kind: 'unavailable', reason: 'permission denied' },
+        sizes: { kind: 'ok', output: '[]' },
+      },
+      enumerate
+    );
+    expect(census.blind).toEqual({ kind: 'unavailable', reason: 'permission denied' });
+    expect(census.projects).toEqual([]);
+  });
+
+  test('sizes that did answer are carried onto the listed volumes', () => {
+    const sized = JSON.stringify([
+      {
+        Name: `${GONE_PROJECT}_postgres-data`,
+        Labels: `com.docker.compose.project=${GONE_PROJECT}`,
+        Size: '2kB',
+      },
+    ]);
+    const census = censusFromProbes(
+      {
+        ps: { kind: 'ok', output: psOut },
+        volumes: { kind: 'ok', output: lsOut },
+        sizes: { kind: 'ok', output: sized },
+      },
+      enumerate
+    );
+    expect(census.projects[0]?.bytes).toBe(2000);
+    expect(census.sizesUnmeasured).toBeNull();
+  });
+
+  test('the report says the sizes were not measured, and only then', () => {
+    const probes = {
+      ps: { kind: 'ok', output: psOut },
+      volumes: { kind: 'ok', output: lsOut },
+    } as const;
+    const timedOut = censusFromProbes({ ...probes, sizes: { kind: 'timedOut' } }, enumerate);
+    expect(formatCensus(timedOut)).toContain(
+      'sizes were not measured: `docker system df -v` did not answer in time'
+    );
+    const measured = censusFromProbes(
+      { ...probes, sizes: { kind: 'ok', output: '[]' } },
+      enumerate
+    );
+    expect(formatCensus(measured)).not.toContain('sizes were not measured');
+  });
+
+  test('the cheap path asks for no sizes and claims none are missing', () => {
+    const census = censusFromProbes(
+      { ps: { kind: 'ok', output: psOut }, volumes: { kind: 'ok', output: lsOut }, sizes: null },
+      enumerate
+    );
+    expect(census.blind).toBeNull();
+    expect(census.sizesUnmeasured).toBeNull();
   });
 });
 
@@ -265,7 +383,7 @@ describe('the down clause is silent unless there is something to say', () => {
 
   test('names the count and the command when orphans exist elsewhere', () => {
     const projects = censusProjects({
-      containers: [],
+      containers: [container({ project: GONE_PROJECT, workingDir: GONE_DIR, running: false })],
       volumes: [volume(GONE_PROJECT)],
       liveProjects,
     });
@@ -288,6 +406,7 @@ describe('the down clause is silent unless there is something to say', () => {
 describe('the report never prints one number a reader could reap from', () => {
   const census: MachineCensus = {
     blind: null,
+    sizesUnmeasured: null,
     checkouts: 1,
     enumeration: { kind: 'enumerated', projects: new Set([LIVE_PROJECT]) },
     projects: censusProjects({
@@ -322,6 +441,7 @@ describe('the report never prints one number a reader could reap from', () => {
     const blind: MachineCensus = {
       projects: [],
       blind: { kind: 'unavailable', reason: 'no socket' },
+      sizesUnmeasured: null,
       checkouts: null,
       enumeration: null,
     };
@@ -334,6 +454,7 @@ describe('the report never prints one number a reader could reap from', () => {
     const empty: MachineCensus = {
       projects: [],
       blind: null,
+      sizesUnmeasured: null,
       checkouts: 1,
       enumeration: { kind: 'enumerated', projects: new Set([LIVE_PROJECT]) },
     };
@@ -398,6 +519,7 @@ describe('a path that could not be looked at is not called gone', () => {
   test('the report renders it that way under its project', () => {
     const census: MachineCensus = {
       blind: null,
+      sizesUnmeasured: null,
       checkouts: 1,
       enumeration: { kind: 'enumerated', projects: new Set([LIVE_PROJECT]) },
       projects: censusProjects({

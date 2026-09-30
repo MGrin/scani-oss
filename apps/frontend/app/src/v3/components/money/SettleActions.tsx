@@ -1,10 +1,13 @@
 import { Button } from '@scani/ui/ui/button';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { AmountInput } from '@scani/ui/v3/components/AmountInput';
-import { Check, Loader2, X } from 'lucide-react';
+import { describeQueryError } from '@scani/ui/v3/lib/errors';
+import { Check } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
+import { Field } from '../form/Field';
+import { FormActions, FormSheet } from '../form/FormSheet';
 
 /**
  * Settling an occurrence — the one thing the Money tab exists to let you do.
@@ -16,9 +19,11 @@ import { trpc } from '@/lib/trpc';
  * is what a 393px screen cannot hold. The row opens the record; the record
  * carries what you can do to it.
  *
- * The amount editor stays inline rather than becoming a second overlay — a
- * dialog stacked on a sheet is two dismiss gestures deep, and the amount is
- * usually already known and only needs confirming.
+ * The amount is confirmed in a `FormSheet` (UI standard rule 13, SC-1433),
+ * pre-filled with the expected amount, which is usually already right. It was
+ * an inline amount box with an icon-only cancel in the peek's action row; a
+ * sheet over the peek now sits beside it on desktop (rule 14), which was the
+ * cost that kept it inline.
  */
 
 interface SettleActionsProps {
@@ -38,84 +43,105 @@ export function SettleActions({
   onSettled,
 }: SettleActionsProps) {
   const { t } = useTranslation();
-  const [editing, setEditing] = useState(false);
-  const [amount, setAmount] = useState(expectedAmount ?? '');
+  const [open, setOpen] = useState(false);
   const utils = trpc.useUtils();
 
   const settleLabel =
     direction === 'inflow' ? t('v3.money.settle.markReceived') : t('v3.money.settle.markPaid');
-  const settledLabel =
-    direction === 'inflow' ? t('v3.money.settle.markedReceived') : t('v3.money.settle.markedPaid');
 
-  const settleMutation = trpc.payments.settleOccurrence.useMutation({
-    onSuccess: (_, variables) => {
-      setEditing(false);
-      showSuccess(variables.status === 'skipped' ? t('v3.money.settle.skipped') : settledLabel);
+  const skip = trpc.payments.settleOccurrence.useMutation({
+    onSuccess: () => {
+      showSuccess(t('v3.money.settle.skipped'));
       void utils.payments.invalidate();
       onSettled?.();
     },
     onError: (error) => showError(error, t('v3.money.pending.updatingOccurrence')),
   });
 
-  if (editing) {
-    return (
-      <div className="flex w-full flex-wrap items-center gap-2">
-        <AmountInput
-          value={amount}
-          onValueChange={setAmount}
-          // 16px, like every other input in v3: iOS zooms the page on focusing
-          // anything smaller, and the zoom reads as "the app jumped".
-          className="w-32 text-body"
-          aria-label={t('v3.money.settle.amountSettled')}
-          decimalScale={2}
-          disabled={settleMutation.isPending}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') setEditing(false);
-          }}
-        />
-        <Button
-          disabled={settleMutation.isPending || amount.trim().length === 0}
-          onClick={() =>
-            settleMutation.mutate({ occurrenceId, status: 'matched', actualAmount: amount })
-          }
-        >
-          {settleMutation.isPending ? (
-            <Loader2 className="me-1.5 h-4 w-4 animate-spin" aria-hidden="true" />
-          ) : (
-            <Check className="me-1.5 h-4 w-4" aria-hidden="true" />
-          )}
-          {t('v3.money.settle.confirm')}
-        </Button>
-        <Button
-          variant="ghost"
-          aria-label={t('v3.money.settle.cancel')}
-          disabled={settleMutation.isPending}
-          onClick={() => setEditing(false)}
-        >
-          <X className="h-4 w-4" aria-hidden="true" />
-        </Button>
-      </div>
-    );
-  }
-
   return (
     <>
-      <Button
-        onClick={() => {
-          setAmount(expectedAmount ?? '');
-          setEditing(true);
-        }}
-      >
+      <Button onClick={() => setOpen(true)}>
         <Check className="me-1.5 h-4 w-4" aria-hidden="true" />
         {settleLabel}
       </Button>
       <Button
         variant="outline"
-        disabled={settleMutation.isPending}
-        onClick={() => settleMutation.mutate({ occurrenceId, status: 'skipped' })}
+        disabled={skip.isPending}
+        onClick={() => skip.mutate({ occurrenceId, status: 'skipped' })}
       >
         {t('v3.money.settle.skip')}
       </Button>
+      {/* Mounted only while open, so each opening seeds from the expected amount. */}
+      {open ? (
+        <SettleSheet
+          occurrenceId={occurrenceId}
+          expectedAmount={expectedAmount}
+          direction={direction}
+          onOpenChange={setOpen}
+          onSettled={onSettled}
+        />
+      ) : null}
     </>
+  );
+}
+
+function SettleSheet({
+  occurrenceId,
+  expectedAmount,
+  direction,
+  onOpenChange,
+  onSettled,
+}: SettleActionsProps & { onOpenChange: (open: boolean) => void }) {
+  const { t } = useTranslation();
+  const utils = trpc.useUtils();
+  const [amount, setAmount] = useState(expectedAmount ?? '');
+  const [failure, setFailure] = useState<string | null>(null);
+  const inflow = direction === 'inflow';
+
+  const settle = trpc.payments.settleOccurrence.useMutation({
+    onSuccess: () => {
+      showSuccess(inflow ? t('v3.money.settle.markedReceived') : t('v3.money.settle.markedPaid'));
+      void utils.payments.invalidate();
+      onOpenChange(false);
+      onSettled?.();
+    },
+    onError: (error) => {
+      const copy = describeQueryError(error, t('v3.money.thisPayment'), 'save');
+      setFailure(`${copy.title}. ${copy.detail}`);
+    },
+  });
+
+  return (
+    <FormSheet
+      open
+      onOpenChange={onOpenChange}
+      title={inflow ? t('v3.money.settle.markReceived') : t('v3.money.settle.markPaid')}
+      description={
+        inflow ? t('v3.money.settle.descriptionReceived') : t('v3.money.settle.descriptionPaid')
+      }
+      footer={
+        <FormActions
+          submitLabel={inflow ? t('v3.money.settle.markReceived') : t('v3.money.settle.markPaid')}
+          pendingLabel={t('v3.form.saving')}
+          onSubmit={() =>
+            settle.mutate({ occurrenceId, status: 'matched', actualAmount: amount.trim() })
+          }
+          onCancel={() => onOpenChange(false)}
+          blockers={amount.trim() === '' ? [t('v3.money.settle.blockerAmount')] : []}
+          pending={settle.isPending}
+          error={failure}
+        />
+      }
+    >
+      <Field label={t('v3.money.settle.amountSettled')} htmlFor={`settle-amount-${occurrenceId}`}>
+        <AmountInput
+          id={`settle-amount-${occurrenceId}`}
+          value={amount}
+          onValueChange={setAmount}
+          decimalScale={2}
+          disabled={settle.isPending}
+        />
+      </Field>
+    </FormSheet>
   );
 }

@@ -24,10 +24,6 @@ import type { Payment, PaymentOccurrence } from '@scani/db/schema';
 import { withTransaction } from '@scani/db/transaction';
 import { PaymentOccurrenceRepository, PaymentRepository } from '@scani/domain/repositories';
 import {
-  LiquidAssetsService,
-  type ObservedBurnAnswer,
-  ObservedBurnService,
-  observedBurnAnswerOf,
   PaymentForecastService,
   PaymentHasSettledOccurrencesError,
   PaymentService,
@@ -42,10 +38,8 @@ import {
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
-import { resolveForecastAsOf } from '../lib/forecast-as-of';
 import { strictInput } from '../lib/strict-input';
 import { assertTokensVisible } from '../lib/token-visibility';
-import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
 const PAYMENT_DIRECTION = z.enum(['outflow', 'inflow']);
@@ -60,6 +54,7 @@ const SuggestionKeySchema = z.object({
 });
 
 const CreatePaymentInputSchema = z.object({
+  groupIds: z.array(z.string().uuid()).max(100).optional(),
   vendorId: z.string().uuid(),
   direction: PAYMENT_DIRECTION,
   kind: PAYMENT_KIND,
@@ -89,6 +84,7 @@ const CreatePaymentFromExtractionInputSchema = CreatePaymentInputSchema.omit({
 });
 
 const UpdatePaymentInputSchema = z.object({
+  groupIds: z.array(z.string().uuid()).max(100).optional(),
   paymentId: z.string().uuid(),
   vendorId: z.string().uuid().optional(),
   direction: PAYMENT_DIRECTION.optional(),
@@ -159,11 +155,42 @@ function horizonDateString(days: number): string {
  * returning `Date` because that is what it means; the conversion belongs at the
  * wire, once.
  */
-function wireAnswer(answer: ObservedBurnAnswer) {
-  return answer.kind === 'none' ? answer : { ...answer, at: answer.at.toISOString() };
-}
 
 export const paymentsRouter = router({
+  groupAssignments: protectedProcedure.query(({ ctx }) =>
+    Container.get(PaymentService).groupAssignments(ctx.userId)
+  ),
+  assignGroups: protectedProcedure
+    .input(
+      strictInput(
+        z.object({
+          paymentId: z.string().uuid(),
+          occurrenceId: z.string().uuid().optional(),
+          groupIds: z.array(z.string().uuid()).max(100),
+        })
+      )
+    )
+    .mutation(({ ctx, input }) => Container.get(PaymentService).assignGroups(ctx.userId, input)),
+  editOccurrence: protectedProcedure
+    .input(
+      strictInput(
+        z.object({
+          occurrenceId: z.string().uuid(),
+          expectedAmount: z.string().nullable(),
+          groupIds: z.array(z.string().uuid()).max(100).optional(),
+        })
+      )
+    )
+    .mutation(({ ctx, input }) =>
+      Container.get(PaymentService).editOccurrence(ctx.userId, input.occurrenceId, {
+        expectedAmount: input.expectedAmount,
+        groupIds: input.groupIds,
+      })
+    ),
+  scheduled: protectedProcedure.query(({ ctx }) =>
+    Container.get(PaymentForecastService).forecast(ctx.userId)
+  ),
+
   list: protectedProcedure.query(async ({ ctx }) => {
     const rows = await Container.get(PaymentRepository).findByUser(ctx.userId);
     return rows.map(serializePayment);
@@ -415,25 +442,36 @@ export const paymentsRouter = router({
    * ever enters this path.
    */
   upcoming: protectedProcedure
-    .input(strictInput(z.object({ days: z.number().int().min(0).max(365).default(30) })))
+    .input(
+      strictInput(
+        z.object({
+          days: z.number().int().min(0).max(365).default(30),
+          status: z.enum(['scheduled', 'matched', 'skipped', 'missed', 'all']).default('scheduled'),
+        })
+      )
+    )
     .query(async ({ ctx, input }) => {
       const paymentRepository = Container.get(PaymentRepository);
       const occurrenceRepository = Container.get(PaymentOccurrenceRepository);
 
       const activePayments = (await paymentRepository.findByUser(ctx.userId)).filter(
-        (payment) => payment.status === 'active'
+        (payment) => input.status !== 'scheduled' || payment.status === 'active'
       );
       if (activePayments.length === 0) return [];
 
       const horizon = horizonDateString(input.days);
-      const occurrenceLists = await Promise.all(
-        activePayments.map((payment) => occurrenceRepository.findByPaymentId(payment.id))
+      const occurrenceLists = await occurrenceRepository.findByPaymentIds(
+        activePayments.map((payment) => payment.id)
       );
       const paymentsById = new Map(activePayments.map((payment) => [payment.id, payment]));
 
       return occurrenceLists
         .flat()
-        .filter((occurrence) => occurrence.status === 'scheduled' && occurrence.dueDate <= horizon)
+        .filter(
+          (occurrence) =>
+            (input.status === 'all' || occurrence.status === input.status) &&
+            occurrence.dueDate <= horizon
+        )
         .sort((a, b) => a.dueDate.localeCompare(b.dueDate))
         .map((occurrence) => {
           // Guaranteed present: every occurrence in occurrenceLists was
@@ -442,76 +480,19 @@ export const paymentsRouter = router({
           if (!payment) {
             throw new Error(`Occurrence ${occurrence.id} has no owning payment in this batch`);
           }
+          // A settled row shows the payee, currency and direction it settled
+          // under, not whatever the bill says now (SC-1401).
+          const bill = serializePayment(payment);
           return {
             ...serializeOccurrence(occurrence),
-            payment: serializePayment(payment),
+            payment: {
+              ...bill,
+              vendorId: occurrence.settledVendorId ?? bill.vendorId,
+              currencyTokenId: occurrence.settledCurrencyTokenId ?? bill.currencyTokenId,
+              direction: occurrence.settledDirection ?? bill.direction,
+            },
           };
         });
-    }),
-
-  /**
-   * Cashflow forecast and runway (SC-461).
-   *
-   * Takes no window. The server always answers for twelve months and the
-   * reader's 3 / 6 / 12 choice slices the same payload client-side — see
-   * `PaymentForecastService` for why the runway must not change because
-   * somebody tapped a different tab.
-   *
-   * Amounts come back UNCONVERTED, one movement per due date in the currency
-   * that will actually move, and the base-currency figure is made in the UI
-   * through `convertTotalsToBase` / `<ConvertedTotal>`. That is deliberate:
-   * V3-52 left exactly one conversion path on the client, and it is the one
-   * that also prints what could not be converted and how stale the rates
-   * were. A forecast converted here would arrive as a number with none of
-   * that attached — on the one surface whose whole job is admitting what it
-   * does not know.
-   *
-   * `liquid` is the exception and is already in base currency, because a
-   * holding's value has been valued server-side by `PortfolioValuationService`
-   * everywhere else in the app and re-deriving it here would be the second
-   * rate path this avoids.
-   *
-   * `asOf` moves "today" for the e2e stack only, and is refused everywhere
-   * else — see `lib/forecast-as-of.ts` (SC-623). The app never sends it.
-   */
-  forecast: protectedProcedure
-    .input(strictInput(z.object({ asOf: DATE_STRING.optional() }).optional()))
-    .query(async ({ ctx, input }) => {
-      const asOf = resolveForecastAsOf(input?.asOf, process.env);
-      const { dbUser } = await requireAuth(ctx);
-      const [forecast, liquid, observedBurn] = await Promise.all([
-        Container.get(PaymentForecastService).forecast(ctx.userId, asOf),
-        Container.get(LiquidAssetsService).getLiquidAssets(
-          ctx.userId,
-          dbUser.baseCurrencyId ?? undefined,
-          ctx.requestCache
-        ),
-        // SC-657. Burn measured as the rate money leaves the tracked perimeter,
-        // alongside — never summed with — the recurring book. See
-        // `services/payments/burn.ts` for why the two are not additive.
-        //
-        // `null` without a base currency rather than a figure in mixed tokens:
-        // the exits run USD/USDC/USDT/SOL/ETH, and summing raw quantity across
-        // those is meaningless. A surface with nothing to say says nothing.
-        dbUser.baseCurrencyId
-          ? Container.get(ObservedBurnService).observed(ctx.userId, dbUser.baseCurrencyId, asOf)
-          : Promise.resolve(null),
-      ]);
-      return {
-        ...forecast,
-        liquid,
-        observedBurn,
-        // SC-661. What the user has SAID about the measured drain, sent as a
-        // state rather than as six columns for the client to interpret. Whether a
-        // confirmation still holds is a domain judgement with a tolerance in it
-        // (`CONFIRMATION_TOLERANCE`), and a surface that re-derived it would be
-        // the second place that rule lives.
-        //
-        // No extra query: the columns are already on `dbUser`.
-        observedBurnAnswer: wireAnswer(
-          observedBurnAnswerOf(dbUser, dbUser.baseCurrencyId, observedBurn?.perMonthMean ?? null)
-        ),
-      };
     }),
 
   settleOccurrence: protectedProcedure

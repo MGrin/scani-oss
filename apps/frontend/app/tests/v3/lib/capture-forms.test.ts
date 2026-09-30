@@ -14,6 +14,7 @@ import {
   emptyWalletImportDraft,
   formatFileSize,
   IMPORT_ACCEPT,
+  INVOICE_ACCEPT,
   integrationCategoryLabel,
   planImportFile,
   planInvoiceFile,
@@ -89,7 +90,12 @@ describe('what a file is', () => {
 
   test('an invoice is a fixed table, because the parse job dispatches on the type', () => {
     expect(planInvoiceFile({ name: 'bill.pdf' })).toEqual({ contentType: 'application/pdf' });
-    expect(planInvoiceFile({ name: 'photo.HEIC' })).toEqual({ contentType: 'image/heic' });
+    expect(planInvoiceFile({ name: 'photo.jpg' })).toEqual({ contentType: 'image/jpeg' });
+    // SC-1399: nothing downstream reads HEIC, so the picker refuses it up front.
+    expect(planInvoiceFile({ name: 'photo.HEIC' })).toBeNull();
+    expect(planInvoiceFile({ name: 'photo.heif' })).toBeNull();
+    expect(INVOICE_ACCEPT).not.toContain('heic');
+    expect(describeInvoiceFileProblem(t, 'photo.heic')).toContain('PDF');
     expect(planInvoiceFile({ name: 'export.csv' })).toBeNull();
     expect(describeInvoiceFileProblem(t, 'export.csv')).toContain('PDF');
   });

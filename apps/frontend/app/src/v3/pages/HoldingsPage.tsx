@@ -1,20 +1,17 @@
-import { Decimal, type HoldingWithDetails, manualEditNeedsCause } from '@scani/shared';
-import { ConfirmDialog } from '@scani/ui/components/ConfirmDialog';
+import type { HoldingWithDetails } from '@scani/shared';
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
-import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { V3DataView } from '@scani/ui/v3/components/data-view/V3DataView';
-import { PageLayout } from '@scani/ui/v3/components/PageLayout';
+import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
 import { useHoldingActions } from '@/v3/hooks/useHoldingActions';
 import { useOpenCapture } from '../components/capture/CaptureSheetContext';
 import { AssignGroupsSheet } from '../components/groups/AssignGroupsSheet';
 import { ApyConfigSheet } from '../components/holdings/ApyConfigSheet';
-import { HoldingEditCauseDialog } from '../components/holdings/HoldingEditCauseDialog';
+import { EditHoldingSheet } from '../components/holdings/EditHoldingSheet';
 import { holdingsDataViewConfig } from '../components/holdings/holdingsConfig';
 import { RecordMovementSheet } from '../components/holdings/RecordMovementSheet';
 import { EditCustomTokenPriceSheet } from '../components/tokens/EditCustomTokenPriceSheet';
@@ -106,46 +103,29 @@ export function HoldingsPage() {
     accountsQuery,
     ...(qualityParam ? [qualityQuery] : [])
   );
-  const utils = trpc.useUtils();
 
   const actions = useHoldingActions();
   const refresh = useHoldingRefresh(actions);
 
   const [apyTarget, setApyTarget] = useState<HoldingWithDetails | null>(null);
-  const [apyRemoveTarget, setApyRemoveTarget] = useState<HoldingWithDetails | null>(null);
   const [priceTarget, setPriceTarget] = useState<HoldingWithDetails | null>(null);
   /**
-   * The edit waiting on "what did that mean?" (SC-510).
-   *
-   * Held here rather than inside `HoldingAmountFact` because the answer needs
-   * a dialog and the fact lives inside the peek drawer — a Radix dialog
-   * mounted in that drawer is torn down by the drawer's own dismiss, which is
-   * the same reason interest and manual-price are mounted at this level.
+   * The holding being edited (SC-1436). Mounted at this level rather than in
+   * the peek drawer, for the reason interest and manual price are: a sheet
+   * opened from inside the drawer is torn down by the drawer's own dismiss.
    */
-  const [causeTarget, setCauseTarget] = useState<{
-    holding: HoldingWithDetails;
-    balance: string;
-  } | null>(null);
+  const [editTarget, setEditTarget] = useState<HoldingWithDetails | null>(null);
   const [assignTarget, setAssignTarget] = useState<{ ids: string[]; clear: () => void } | null>(
     null
   );
   /**
    * The holding a movement is being recorded against (SC-607).
    *
-   * Mounted here rather than inside the peek for the same reason the cause
-   * dialog is: a Radix dialog opened from inside the drawer is torn down by
+   * Mounted here rather than inside the peek for the same reason the edit
+   * sheet is: a Radix dialog opened from inside the drawer is torn down by
    * the drawer's own dismiss.
    */
   const [movementTarget, setMovementTarget] = useState<HoldingWithDetails | null>(null);
-
-  const removeApyMutation = trpc.holdings.deleteApyConfig.useMutation({
-    onSuccess: () => {
-      setApyRemoveTarget(null);
-      showSuccess(t('v3.holdings.apy.removed'));
-      void invalidatePortfolioQueries(utils);
-    },
-    onError: (error) => showError(error, t('v3.holdings.apy.removing')),
-  });
 
   const holdings = holdingsQuery.data?.holdings ?? [];
   const currency = baseCurrencyQuery.data?.symbol || 'USD';
@@ -202,16 +182,7 @@ export function HoldingsPage() {
     peek: {
       currency,
       t,
-      // A quantity edit on a holding we fetch a price for is unambiguously a
-      // flow — performance arrives through that price — so it writes straight
-      // through and the server derives the cause. Everything else has to be
-      // asked, because the same delta could be money moved, a corrected figure
-      // or growth, and two of those three readings produce a wrong number that
-      // looks entirely plausible (SC-510).
-      onSetAmount: (holding, balance) =>
-        manualEditNeedsCause(holding.token.typeCode)
-          ? setCauseTarget({ holding, balance })
-          : actions.updateHolding(holding.id, { balance }),
+      onEdit: setEditTarget,
       onToggleActive: (holding) =>
         actions.updateHolding(holding.id, { isActive: !holding.isActive }),
       isTogglingActive: actions.isUpdating,
@@ -223,12 +194,8 @@ export function HoldingsPage() {
       refreshingBalanceId: refresh.refreshingBalanceId,
       onEditPrice: setPriceTarget,
       onRecordMovement: setMovementTarget,
-      // Straight through — a rename carries no `editCause` question, because
-      // it makes no claim about the balance (SC-564).
-      onSetLabel: (holding, label) => actions.updateHolding(holding.id, { label }),
       contestedHoldingIds,
       onConfigureApy: setApyTarget,
-      onRemoveApy: setApyRemoveTarget,
       // The confirmation is `HoldingDeleteAction`'s, inline in the peek's own
       // action row (SC-73) — the same move the bulk bar made. What stays here
       // is the part the sheet cannot own: the record is out of the cache after
@@ -246,24 +213,9 @@ export function HoldingsPage() {
     // and it converts every pixel it is given into a column the reader would
     // otherwise have to open the peek sheet to see.
     <PageLayout measure="wide">
-      <h1 className="text-title">{t('v3.holdings.page.title')}</h1>
+      <PageHeader title={t('v3.holdings.page.title')} />
 
       <V3DataView config={config} getId={(item) => item.id} query={holdingsState} />
-
-      <ConfirmDialog
-        open={apyRemoveTarget !== null}
-        onOpenChange={(open) => {
-          if (!open) setApyRemoveTarget(null);
-        }}
-        title={t('v3.holdings.apy.trigger')}
-        description={t('v3.holdings.apy.consequence')}
-        confirmLabel={t('v3.holdings.apy.commit')}
-        variant="destructive"
-        isPending={removeApyMutation.isPending}
-        onConfirm={() => {
-          if (apyRemoveTarget) removeApyMutation.mutate({ holdingId: apyRemoveTarget.id });
-        }}
-      />
 
       {/* Mounted only while targeted, so each dialog's own form state starts
           from the holding it was opened for rather than from the last one. */}
@@ -282,42 +234,21 @@ export function HoldingsPage() {
         />
       ) : null}
 
-      {causeTarget ? (
-        <HoldingEditCauseDialog
-          // Keyed for the reason `ApyConfigSheet` is: the dialog seeds its
-          // answer and its date once, at mount, from the holding it was
-          // opened for.
-          key={causeTarget.holding.id}
-          open
+      {editTarget ? (
+        <EditHoldingSheet
+          // Keyed for the reason `ApyConfigSheet` is: the sheet seeds its
+          // fields and the cause answer once, at mount.
+          key={editTarget.id}
+          holding={editTarget}
+          showPot={Boolean(editTarget.label) || contestedHoldingIds.has(editTarget.id)}
           onOpenChange={(open) => {
-            if (!open) setCauseTarget(null);
+            if (!open) setEditTarget(null);
           }}
-          holdingLabel={causeTarget.holding.label ?? causeTarget.holding.token.symbol}
-          holdingId={causeTarget.holding.id}
-          tokenSymbol={causeTarget.holding.token.symbol}
-          // Compared as decimals rather than as numbers: a balance is a
-          // decimal string precisely because it does not survive a float, and
-          // the sign of the difference is what decides whether a destination
-          // is owed (SC-606).
-          isOutflow={new Decimal(causeTarget.balance).lt(causeTarget.holding.amount)}
-          // What left, unsigned — the bound a stated fee has to fit inside and
-          // the figure the arrival is derived from (SC-857). Undefined on an
-          // inflow, where no fee is asked for.
-          outflowQuantity={
-            new Decimal(causeTarget.balance).lt(causeTarget.holding.amount)
-              ? new Decimal(causeTarget.holding.amount).minus(causeTarget.balance).toString()
-              : undefined
-          }
-          defaultCause={causeTarget.holding.manualEditCause ?? null}
-          onConfirm={(editCause, editOccurredAt, editOutflow) => {
-            actions.updateHolding(causeTarget.holding.id, {
-              balance: causeTarget.balance,
-              editCause,
-              ...(editOccurredAt ? { editOccurredAt } : {}),
-              ...(editOutflow ? { editOutflow } : {}),
-            });
-            setCauseTarget(null);
-          }}
+          // A quantity edit on a holding we fetch a price for is unambiguously
+          // a flow, so the server derives the cause there; the sheet asks it
+          // everywhere else (`manualEditNeedsCause`, SC-510) and sends the
+          // answer with the balance, and a rename carries none (SC-564).
+          onSave={(edit) => actions.updateHolding(editTarget.id, edit)}
         />
       ) : null}
 

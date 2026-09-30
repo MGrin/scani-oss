@@ -120,12 +120,14 @@ describe('the tab strip at first paint (SC-1307)', () => {
       chosen: 'net-worth',
       hasReturns: false,
       returnsPending: true,
+      shown: false,
     });
     // ~465ms later.
     const afterProbe = resolveHomeMetric({
       chosen: 'net-worth',
       hasReturns: true,
       returnsPending: false,
+      shown: false,
     });
     expect(atPaint.offered).toBe(false);
     expect(afterProbe.offered).toBe(true);
@@ -139,11 +141,13 @@ describe('the tab strip at first paint (SC-1307)', () => {
       chosen: 'net-worth',
       hasReturns: hint,
       returnsPending: true,
+      shown: false,
     });
     const afterProbe = resolveHomeMetric({
       chosen: 'net-worth',
       hasReturns: true,
       returnsPending: false,
+      shown: false,
     });
     expect(atPaint.offered).toBe(true);
     expect(atPaint).toEqual(afterProbe);
@@ -173,6 +177,7 @@ describe('the tab strip at first paint (SC-1307)', () => {
       chosen: 'net-worth',
       hasReturns: answered ?? remembered ?? false,
       returnsPending: true,
+      shown: false,
     });
 
     expect(remembered).toBe(true);
@@ -188,6 +193,7 @@ describe('the tab strip at first paint (SC-1307)', () => {
       chosen: 'net-worth',
       hasReturns: true,
       returnsPending: false,
+      shown: false,
     });
     expect(atPaint).toEqual(afterProbe);
   });
@@ -197,11 +203,13 @@ describe('the tab strip at first paint (SC-1307)', () => {
       chosen: 'net-worth',
       hasReturns: true,
       returnsPending: true,
+      shown: false,
     });
     const afterProbe = resolveHomeMetric({
       chosen: 'net-worth',
       hasReturns: false,
       returnsPending: false,
+      shown: false,
     });
     expect(atPaint.offered).toBe(true);
     expect(afterProbe.offered).toBe(false);
@@ -229,6 +237,7 @@ describe('the tab strip at first paint (SC-1307)', () => {
       chosen: 'net-worth',
       hasReturns: readReturnsAvailability() ?? false,
       returnsPending: true,
+      shown: false,
     });
     expect(nextPaint.offered).toBe(false);
   });
@@ -238,6 +247,7 @@ describe('the tab strip at first paint (SC-1307)', () => {
       chosen: 'net-worth',
       hasReturns: false,
       returnsPending: true,
+      shown: false,
     });
     expect(atPaint.offered).toBe(false);
   });

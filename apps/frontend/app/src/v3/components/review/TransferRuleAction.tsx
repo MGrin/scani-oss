@@ -1,18 +1,16 @@
 import type { PendingTransferReview, TransferReviewRuleVerdict } from '@scani/shared';
 import { formatCurrency, TRANSFER_REVIEW_RULE_NOTE_MAX } from '@scani/shared';
 import { userFacingMessage } from '@scani/ui/lib/user-facing-error';
+import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
-import { Label } from '@scani/ui/ui/label';
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { useToast } from '@scani/ui/ui/use-toast';
-import { Block } from '@scani/ui/v3/components/Block';
-import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
-
+import type { PeekEndAction } from '@scani/ui/v3/lib/peek';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
-import { TRANSFER_RULES_PATH } from '../../lib/routes';
+import { Field } from '../form/Field';
+import { FormActions, FormSheet } from '../form/FormSheet';
 
 /**
  * "Make a rule about this destination" (SC-375, re-keyed by SC-381, given a
@@ -61,42 +59,71 @@ import { TRANSFER_RULES_PATH } from '../../lib/routes';
  * and is not offered at all when the server refuses the destination —
  * `markPreview` reports `own_wallet` for an address in the reader's own
  * `user_wallets`, which is SC-350's ten wrong answers as a standing check.
+ *
+ * **Where it lives** (SC-1433): the transfer peek's `endAction` row — rare and
+ * contextual, rule 4's exception — opening a `FormSheet` like every other
+ * create (rule 13). It was a `ConfirmAction` whose chooser held a text field,
+ * inside a card in the peek's body. A destination already under a rule shows
+ * no row: `RuleNotice` above the answers already carries its note, and the
+ * rules themselves are a view of this queue.
  */
-export function TransferRuleAction({
+
+/** The peek's end row for a destination with no rule yet, or nothing. */
+export function transferRuleEndAction(
+  t: ReturnType<typeof useTranslation>['t'],
+  item: PendingTransferReview,
+  onHidden: () => void
+): PeekEndAction | undefined {
+  if (item.counterpartyKey === null || item.matchedRule !== null) return undefined;
+  return {
+    title: t('v3.review.rules.rowTitle'),
+    hint: t('v3.review.rules.rowHint'),
+    action: <TransferRuleAction item={item} onHidden={onHidden} />,
+  };
+}
+
+function TransferRuleAction({
   item,
   onHidden,
 }: {
   item: PendingTransferReview;
-  /**
-   * Called when the rule just written takes this transfer out of the queue, so
-   * the sheet can close back to the list.
-   *
-   * Not for `ask_me`, which leaves the row exactly where it was and still
-   * unanswered — closing on that one would take away a question the reader has
-   * not answered yet. The other two both remove it: `not_a_disposal` hides it
-   * and `always_a_disposal` answers it. Without this the sheet stayed open over
-   * a row that had left the list and rendered "This transfer is not on this
-   * list" — true, and a strange thing to be told about something you just
-   * filed.
-   */
+  onHidden: () => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}>
+        {t('v3.review.rules.trigger')}
+      </Button>
+      {/* Mounted only while open: the verdict is not remembered between
+          transfers, and the mark preview is fetched only for a rule being
+          written. */}
+      {open ? <TransferRuleSheet item={item} onOpenChange={setOpen} onHidden={onHidden} /> : null}
+    </>
+  );
+}
+
+function TransferRuleSheet({
+  item,
+  onOpenChange,
+  onHidden,
+}: {
+  item: PendingTransferReview;
+  onOpenChange: (open: boolean) => void;
   onHidden: () => void;
 }) {
   const { t } = useTranslation();
   const { toast } = useToast();
   const utils = trpc.useUtils();
-  const [open, setOpen] = useState(false);
   const [verdict, setVerdict] = useState<TransferReviewRuleVerdict>('ask_me');
   const [note, setNote] = useState('');
+  const [failure, setFailure] = useState<string | null>(null);
+  const key = item.counterpartyKey ?? '';
 
-  // Loaded whenever the sheet is open rather than on selecting the marking
-  // option, because the option itself has to be able to say why it is
-  // unavailable. A preview that only appears after the reader picks the
-  // dangerous choice teaches them nothing before they pick it.
-  const preview = trpc.transferReview.rules.markPreview.useQuery(
-    { transactionId: item.transactionId },
-    { enabled: open }
-  );
-
+  const preview = trpc.transferReview.rules.markPreview.useQuery({
+    transactionId: item.transactionId,
+  });
   const create = trpc.transferReview.rules.create.useMutation({
     onSuccess: async (_data, variables) => {
       await Promise.all([
@@ -106,170 +133,111 @@ export function TransferRuleAction({
         utils.review.listPending.invalidate(),
       ]);
       toast({ title: t('v3.review.rules.toast.created') });
-      setOpen(false);
-      setNote('');
-      // Both of these take the row out of the queue, for opposite reasons: one
-      // hid it, the other answered it. Either way the sheet is now open over a
-      // transfer that is not on the list behind it.
+      onOpenChange(false);
       if (variables.verdict !== 'ask_me') onHidden();
     },
-    onError: (error) => {
-      toast({
-        title: t('v3.review.rules.toast.refused'),
-        description: userFacingMessage(error) ?? undefined,
-        variant: 'destructive',
-      });
-    },
+    onError: (error) => setFailure(userFacingMessage(error) ?? t('v3.review.rules.toast.refused')),
   });
-
-  // Nothing to key a rule on. A large share of production outflows are in this
-  // state — a Kraken withdrawal record does not say where the money went, and Solana
-  // rows carry no payload at all — so the control is absent rather than
-  // present and refusing. Keyed on `counterpartyKey` and not `counterparty`,
-  // because that is the field `rules.create` refuses on.
-  if (item.counterpartyKey === null) return null;
-
-  // The destination already has one. Offering "make a rule" here would produce
-  // a conflict the reader cannot act on from this screen, so it points at the
-  // rule instead — which is also where the undo is.
-  if (item.matchedRule !== null) {
-    return (
-      <Block className="flex flex-col gap-2 p-4">
-        <p className="text-caption text-muted-foreground">{t('v3.review.rules.alreadyRuled')}</p>
-        <p className="text-body">{item.matchedRule.note}</p>
-        <Link to={TRANSFER_RULES_PATH} className="text-label text-muted-foreground underline">
-          {t('v3.review.rules.manage')}
-        </Link>
-      </Block>
-    );
-  }
 
   const trimmed = note.trim();
   const mark = preview.data;
-  // Only `own_wallet` is worth a sentence here. `no_counterparty` cannot happen
-  // — the control is absent above for exactly that row — and `duplicate` is
-  // handled by the `matchedRule` branch, so the surface never has to explain
-  // it twice.
   const markRefusal =
     mark?.refusal === 'own_wallet'
       ? t('v3.review.rules.refusal.ownWallet', { key: mark.counterpartyKey })
       : null;
   const canMark = mark != null && mark.refusal === null;
-  // Selecting a verdict the preview then withdraws would leave the reader
-  // confirming a consequence for an option no longer on screen.
   const effectiveVerdict: TransferReviewRuleVerdict =
     verdict === 'always_a_disposal' && !canMark ? 'ask_me' : verdict;
+  const consequence =
+    effectiveVerdict === 'always_a_disposal'
+      ? markConsequence(t, mark)
+      : effectiveVerdict === 'not_a_disposal'
+        ? t('v3.review.rules.consequence.notADisposal', { key })
+        : t('v3.review.rules.consequence.askMe', { key });
 
   return (
-    <Block className="flex flex-col gap-3 p-4">
-      <ConfirmAction
-        label={t('v3.review.rules.trigger')}
-        confirmLabel={t('v3.review.rules.commit')}
-        chooser={
-          <div className="flex flex-col gap-3">
-            {/* What this transfer says, then what the rule will match. Both,
-                because after SC-381 they are different strings and the reader
-                is being asked to confirm the second one. */}
-            {item.counterparty !== null && item.counterparty !== item.counterpartyKey ? (
-              <div className="flex flex-col gap-1">
-                <span className="text-caption text-muted-foreground">
-                  {t('v3.review.rules.field.counterparty')}
-                </span>
-                {/* `dir="ltr"`: a counterparty key is machine data carrying
-                    bidi-neutral separators, and under `dir="rtl"` the segments
-                    either side of one swap places (SC-201). */}
-                <code dir="ltr" className="break-all text-caption text-muted-foreground">
-                  {item.counterparty}
-                </code>
-              </div>
-            ) : null}
-            <div className="flex flex-col gap-1">
-              <span className="text-caption text-muted-foreground">
-                {t('v3.review.rules.field.key')}
-              </span>
-              {/* Every character, selectable, and in that order — see the
-                  `dir="ltr"` note above. The truncated form the list renders is
-                  twelve characters two addresses can share. */}
-              <code dir="ltr" className="break-all text-caption">
-                {item.counterpartyKey}
-              </code>
-              {item.counterparty !== item.counterpartyKey ? (
-                <span className="text-caption text-muted-foreground">
-                  {t('v3.review.rules.field.keyHint')}
-                </span>
-              ) : null}
-            </div>
-            <div className="flex flex-col gap-1">
-              <Label htmlFor={`rule-note-${item.transactionId}`}>
-                {t('v3.review.rules.field.note')}
-              </Label>
-              <Input
-                id={`rule-note-${item.transactionId}`}
-                value={note}
-                maxLength={TRANSFER_REVIEW_RULE_NOTE_MAX}
-                placeholder={t('v3.review.rules.field.notePlaceholder')}
-                onChange={(event) => setNote(event.target.value)}
-              />
-            </div>
-            <Segmented
-              value={verdict}
-              onValueChange={(next) => setVerdict(next as TransferReviewRuleVerdict)}
-              aria-label={t('v3.review.rules.field.verdict')}
-            >
-              <SegmentedItem value="ask_me">{t('v3.review.rules.verdict.askMe')}</SegmentedItem>
-              <SegmentedItem value="not_a_disposal">
-                {t('v3.review.rules.verdict.notADisposal')}
-              </SegmentedItem>
-              {/* Absent, not disabled, when the server would refuse it. The
-                  refusal is about the destination and not about this control,
-                  and it is stated below in words rather than left as a control
-                  that does nothing when tapped. */}
-              {canMark ? (
-                <SegmentedItem value="always_a_disposal">
-                  {t('v3.review.rules.verdict.alwaysADisposal')}
-                </SegmentedItem>
-              ) : null}
-            </Segmented>
-            {markRefusal ? (
-              <p className="text-caption text-muted-foreground">{markRefusal}</p>
-            ) : null}
-          </div>
-        }
-        consequence={
-          effectiveVerdict === 'always_a_disposal'
-            ? markConsequence(t, mark)
-            : effectiveVerdict === 'not_a_disposal'
-              ? t('v3.review.rules.consequence.notADisposal', { key: item.counterpartyKey })
-              : t('v3.review.rules.consequence.askMe', { key: item.counterpartyKey })
-        }
-        canConfirm={trimmed.length > 0 && (effectiveVerdict !== 'always_a_disposal' || canMark)}
-        isPending={create.isPending}
-        open={open}
-        onOpenChange={setOpen}
-        onConfirm={() =>
-          create.mutate({
-            transactionId: item.transactionId,
-            verdict: effectiveVerdict,
-            note: trimmed,
-          })
-        }
-      />
-    </Block>
+    <FormSheet
+      open
+      onOpenChange={onOpenChange}
+      title={t('v3.review.rules.sheetTitle')}
+      description={t('v3.review.rules.sheetDescription')}
+      footer={
+        <FormActions
+          submitLabel={t('v3.review.rules.commit')}
+          pendingLabel={t('v3.form.saving')}
+          onSubmit={() =>
+            create.mutate({
+              transactionId: item.transactionId,
+              verdict: effectiveVerdict,
+              note: trimmed,
+            })
+          }
+          onCancel={() => onOpenChange(false)}
+          blockers={trimmed.length > 0 ? [] : [t('v3.review.rules.blocker.note')]}
+          pending={create.isPending}
+          error={failure}
+        />
+      }
+    >
+      {/* What this transfer says, then what the rule will match. Both, because
+          after SC-381 they are different strings and the reader is being asked
+          to confirm the second one. `dir="ltr"`: a counterparty key is machine
+          data carrying bidi-neutral separators, and under `dir="rtl"` the
+          segments either side of one swap places (SC-201). */}
+      {item.counterparty !== null && item.counterparty !== key ? (
+        <Field label={t('v3.review.rules.field.counterparty')}>
+          <code dir="ltr" className="break-all text-caption text-muted-foreground">
+            {item.counterparty}
+          </code>
+        </Field>
+      ) : null}
+      {/* Every character, selectable, and in that order. The truncated form the
+          list renders is twelve characters two addresses can share. */}
+      <Field
+        label={t('v3.review.rules.field.key')}
+        hint={item.counterparty !== key ? t('v3.review.rules.field.keyHint') : undefined}
+      >
+        <code dir="ltr" className="break-all text-caption">
+          {key}
+        </code>
+      </Field>
+      <Field label={t('v3.review.rules.field.note')} htmlFor={`rule-note-${item.transactionId}`}>
+        <Input
+          id={`rule-note-${item.transactionId}`}
+          value={note}
+          maxLength={TRANSFER_REVIEW_RULE_NOTE_MAX}
+          placeholder={t('v3.review.rules.field.notePlaceholder')}
+          onChange={(event) => setNote(event.target.value)}
+        />
+      </Field>
+      <Field label={t('v3.review.rules.field.verdict')} hint={markRefusal ?? consequence}>
+        {/* A column, as every set of translated sentence-long answers is. */}
+        <Segmented
+          orientation="vertical"
+          value={verdict}
+          onValueChange={(next) => setVerdict(next as TransferReviewRuleVerdict)}
+          aria-label={t('v3.review.rules.field.verdict')}
+        >
+          <SegmentedItem value="ask_me">{t('v3.review.rules.verdict.askMe')}</SegmentedItem>
+          <SegmentedItem value="not_a_disposal">
+            {t('v3.review.rules.verdict.notADisposal')}
+          </SegmentedItem>
+          {/* Absent, not disabled, when the server would refuse it. The refusal
+              is about the destination and not about this control, and it is
+              stated below in words rather than left as a control that does
+              nothing when tapped. */}
+          {canMark ? (
+            <SegmentedItem value="always_a_disposal">
+              {t('v3.review.rules.verdict.alwaysADisposal')}
+            </SegmentedItem>
+          ) : null}
+        </Segmented>
+      </Field>
+      {markRefusal ? <p className="text-caption text-muted-foreground">{consequence}</p> : null}
+    </FormSheet>
   );
 }
 
-/**
- * The sentence a marking confirmation has to say, in money.
- *
- * Three shapes rather than one, because the reader is authorizing three
- * different things and only one of them is the interesting case. Marking a
- * destination with nothing waiting is a standing sentence about the future and
- * says so. Marking one where no transfer has a price on its day books nothing
- * today and must not imply an amount. The middle case names the count and the
- * proceeds, and names the unpriced remainder separately rather than folding it
- * in as a zero — "we have no price that day" and "it was worth nothing" are
- * different claims and only one of them is checkable.
- */
 function markConsequence(
   t: ReturnType<typeof useTranslation>['t'],
   mark:

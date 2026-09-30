@@ -232,8 +232,9 @@ services:
       # them.
       CLOUD_MANAGEMENT_ENABLED: "true"
       DATABASE_URL: postgres://scani:scani@postgres:5432/scani?sslmode=disable
-      BETTER_AUTH_SECRET: dev_cloud_better_auth_secret_change_me_not_prod_safe
-      BETTER_AUTH_URL: "http://localhost:${DATA_PROVIDER_HOST_PORT:-8082}"
+      # The console's session is the app's own: the data-provider asks the
+      # api's Better-Auth for it per request, over the compose network.
+      APP_AUTH_URL: http://api:3001
       # Allowed origin for the cloud-frontend (browser) when calling the
       # data-provider's `cookieProcedure` routes. Matches the dev SPA
       # origin so manual testing of the cloud-management surface from

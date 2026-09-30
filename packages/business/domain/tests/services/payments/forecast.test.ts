@@ -349,6 +349,25 @@ describe('buildForecast — estimating from settled history (SC-625)', () => {
     ]);
   });
 
+  test('a figure settled in another currency is not the estimate once the bill moved currency (SC-1401)', () => {
+    // February settled in GBP; the bill is in EUR now. January's 92.40 is the
+    // latest figure in the bill's own currency.
+    const history = HISTORY.map((row) =>
+      row.dueDate.startsWith('2026-02') ? { ...row, settledCurrencyTokenId: 'gbp' } : row
+    );
+    const forecast = buildForecast(
+      [
+        input({ id: 'power', expectedAmount: null, estimateFromHistory: true }, [
+          ...history,
+          ...AHEAD,
+        ]),
+      ],
+      TODAY,
+      '2026-05-01'
+    );
+    expect(forecast.movements.map((movement) => movement.amount)).toEqual(['92.40', '92.40']);
+  });
+
   test('THE COUNT STAYS: opted in with nothing settled is still unprojectable', () => {
     // The opt-in is permission to use history, not a claim that history
     // exists. A book where every variable payment is opted in and none has

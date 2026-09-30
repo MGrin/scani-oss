@@ -2,7 +2,7 @@ import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Button } from '@scani/ui/ui/button';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
-import { Upload } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
@@ -66,7 +66,7 @@ export function FilesPage() {
         action={
           <Button asChild>
             <Link to={V3_CAPTURE_ROUTES.invoiceUpload}>
-              <Upload className="me-1.5 size-4" aria-hidden="true" />
+              <Plus className="me-1.5 size-4" aria-hidden="true" />
               {t('v3.documents.page.uploadInvoice')}
             </Link>
           </Button>

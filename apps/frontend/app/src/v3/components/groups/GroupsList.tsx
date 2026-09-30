@@ -16,6 +16,7 @@ import {
   groupAmount,
   groupValuesById,
 } from '../../lib/groups';
+import { type MemberKind, memberCountsLine } from '../../lib/membership';
 import { groupDetailPath } from '../../lib/routes';
 
 /**
@@ -51,6 +52,8 @@ export interface GroupRow {
   color: string;
   holdingsCount?: number | null;
   accountsCount?: number | null;
+  billsCount?: number | null;
+  payeesCount?: number | null;
 }
 
 interface GroupsListProps {
@@ -70,11 +73,28 @@ function accounts(group: GroupRow): number {
   return group.accountsCount ?? 0;
 }
 
+function bills(group: GroupRow): number {
+  return group.billsCount ?? 0;
+}
+
+function payees(group: GroupRow): number {
+  return group.payeesCount ?? 0;
+}
+
+function memberTotal(group: GroupRow): number {
+  return holdings(group) + accounts(group) + bills(group) + payees(group);
+}
+
+const COUNT_OF: Record<MemberKind, (group: GroupRow) => number> = {
+  holding: holdings,
+  account: accounts,
+  bill: bills,
+  payee: payees,
+};
+
+/** The group page's own line (`memberCountLine`), from the row's counts. */
 function memberLine(group: GroupRow, t: TFunction): string {
-  return [
-    t('v3.membership.count.holding', { count: holdings(group) }),
-    t('v3.membership.count.account', { count: accounts(group) }),
-  ].join(' · ');
+  return memberCountsLine((kind) => COUNT_OF[kind](group), t);
 }
 
 function ColorMark({ color }: { color: string }) {
@@ -130,10 +150,8 @@ export function groupsListConfig(
           { value: 'any', labelKey: 'ui.dataView.groups.option.hasMembers' },
           { value: 'none', labelKey: 'ui.dataView.groups.option.empty' },
         ],
-        fn: (group: GroupRow, value) => {
-          const total = holdings(group) + accounts(group);
-          return value === 'none' ? total === 0 : total > 0;
-        },
+        fn: (group: GroupRow, value) =>
+          value === 'none' ? memberTotal(group) === 0 : memberTotal(group) > 0,
       },
     ],
     sortDefs: [
@@ -163,9 +181,6 @@ export function groupsListConfig(
       value: figure(group),
       ariaLabel: `${group.name}, ${memberLine(group, t)}`,
     }),
-    // The phone list's answer to the desktop table's header: a money column
-    // with no name above it belongs to no claim (SC-69 3.3).
-    valueHeaderKey: 'ui.dataView.groups.config.value',
     columns: [
       {
         key: 'name',
@@ -196,6 +211,7 @@ export function groupsListConfig(
       {
         key: 'holdings',
         headerKey: 'ui.dataView.groups.col.holdings',
+        width: 'w-28',
         sortable: true,
         numeric: true,
         render: (group) => <Numeric value={holdings(group)} format="plain" decimals={0} />,
@@ -204,10 +220,27 @@ export function groupsListConfig(
       {
         key: 'accounts',
         headerKey: 'ui.dataView.groups.col.accounts',
+        width: 'w-28',
         sortable: true,
         numeric: true,
         render: (group) => <Numeric value={accounts(group)} format="plain" decimals={0} />,
         exportValue: (group) => exportCount(accounts(group)),
+      },
+      {
+        key: 'bills',
+        headerKey: 'ui.dataView.groups.col.bills',
+        width: 'w-28',
+        numeric: true,
+        render: (group) => <Numeric value={bills(group)} format="plain" decimals={0} />,
+        exportValue: (group) => exportCount(bills(group)),
+      },
+      {
+        key: 'payees',
+        headerKey: 'ui.dataView.groups.col.payees',
+        width: 'w-28',
+        numeric: true,
+        render: (group) => <Numeric value={payees(group)} format="plain" decimals={0} />,
+        exportValue: (group) => exportCount(payees(group)),
       },
     ],
     empty: {

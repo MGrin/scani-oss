@@ -23,9 +23,11 @@
 import { createComponentLogger } from '@scani/logging';
 import { Container, Service } from 'typedi';
 import { AccountRepository } from '../repositories/AccountRepository';
+import { HoldingCoverageRepository } from '../repositories/HoldingCoverageRepository';
 import { HoldingTransactionRepository } from '../repositories/HoldingTransactionRepository';
 import { InstitutionRepository } from '../repositories/InstitutionRepository';
 import { UserIntegrationCredentialsRepository } from '../repositories/UserIntegrationCredentialsRepository';
+import { type FullImportHistory, UserJobRepository } from '../repositories/UserJobRepository';
 import { sourceForChainId, sourceForProvider } from '../services/transactions/transaction-source';
 
 const logger = createComponentLogger('use-case:sync-exchange-transactions');
@@ -36,6 +38,13 @@ const logger = createComponentLogger('use-case:sync-exchange-transactions');
 // cadence plus late-settling transactions.
 const LOOKBACK_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1000;
+/**
+ * The most accounts one run walks in full AGAIN to earn back a lost claim
+ * (SC-1427), oldest last attempt first. An empty ledger's first full walk is
+ * not counted: that account has nothing to window over. Production had 5
+ * candidates when this was written, so the cap is a bound, not a queue.
+ */
+export const MAX_REWALKS_PER_RUN = 10;
 
 /** One account to refresh, with the ingester `source` + incremental cutoff. */
 export interface TransactionSyncTarget {
@@ -46,8 +55,9 @@ export interface TransactionSyncTarget {
   institutionId: string;
   /**
    * ISO-8601 lower bound for the incremental fetch, or undefined to read
-   * the whole ledger. Undefined only for an account that has no rows from
-   * this source at all — see `attachSince`.
+   * the whole ledger: for an account with no rows from this source, or one
+   * whose completeness claim was lost since its last full walk — see
+   * `attachSince` and `needsRewalk`.
    */
   since?: string;
 }
@@ -58,7 +68,7 @@ export interface SyncExchangeTransactionsResult {
   accountsFound: number;
   /** Accounts skipped because their provider has no ingester source. */
   skippedNoSource: number;
-  /** Targets emitted without a `since` because their ledger was empty. */
+  /** Targets emitted without a `since`: an empty ledger or an unclaimed holding. */
   fullHistoryTargets: number;
   durationMs: number;
 }
@@ -76,6 +86,8 @@ export class SyncExchangeTransactionsUseCase {
   private readonly credentialsRepository = Container.get(UserIntegrationCredentialsRepository);
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly holdingTransactionRepository = Container.get(HoldingTransactionRepository);
+  private readonly holdingCoverageRepository = Container.get(HoldingCoverageRepository);
+  private readonly userJobRepository = Container.get(UserJobRepository);
 
   async execute(): Promise<SyncExchangeTransactionsResult> {
     const startTime = Date.now();
@@ -131,7 +143,8 @@ export class SyncExchangeTransactionsUseCase {
 
   /**
    * Give each candidate its cutoff: the rolling window when the account
-   * already has a ledger from this source, and NO cutoff when it does not.
+   * already has a ledger from this source, and NO cutoff when it does not or
+   * when `needsRewalk` says a full walk would earn back a lost claim.
    *
    * An incremental window is a statement about what changed since the last
    * read, and an account that has never been read has no last read. Solana
@@ -155,16 +168,46 @@ export class SyncExchangeTransactionsUseCase {
     }
 
     const warm = new Map<string, Set<string>>();
+    const rewalkable: Array<{ key: string; lastFullAttemptAt: Date }> = [];
     for (const [source, accountIds] of bySource) {
       warm.set(
         source,
         await this.holdingTransactionRepository.findAccountsWithLedgerFor(accountIds, source)
       );
+      const unclaimed = await this.holdingCoverageRepository.findNewestUnclaimedHolding(
+        accountIds,
+        source
+      );
+      const history = await this.userJobRepository.findFullImportHistory(
+        [...unclaimed.keys()],
+        source
+      );
+      for (const [accountId, newestUnclaimed] of unclaimed) {
+        const h = history.get(accountId);
+        if (h && needsRewalk(h, newestUnclaimed)) {
+          rewalkable.push({
+            key: `${source}:${accountId}`,
+            lastFullAttemptAt: h.lastFullAttemptAt,
+          });
+        }
+      }
     }
+    rewalkable.sort((a, b) => a.lastFullAttemptAt.getTime() - b.lastFullAttemptAt.getTime());
+    const rewalk = new Set(rewalkable.slice(0, MAX_REWALKS_PER_RUN).map((r) => r.key));
+    if (rewalkable.length > rewalk.size) {
+      logger.warn(
+        { eligible: rewalkable.length, cap: MAX_REWALKS_PER_RUN },
+        'More ledgers lost their completeness claim than one run re-walks; the rest wait a night'
+      );
+    }
+
+    const windowed = (candidate: Candidate) =>
+      warm.get(candidate.source)?.has(candidate.accountId) &&
+      !rewalk.has(`${candidate.source}:${candidate.accountId}`);
 
     return candidates.map((candidate) => ({
       ...candidate,
-      since: warm.get(candidate.source)?.has(candidate.accountId) ? since : undefined,
+      since: windowed(candidate) ? since : undefined,
     }));
   }
 }
@@ -174,4 +217,24 @@ function chainIdOf(metadata: unknown): string | number | null {
   const chainId = meta.chainId;
   if (typeof chainId === 'string' || typeof chainId === 'number') return chainId;
   return null;
+}
+
+/**
+ * Whether an account's ledger is walked in full again (SC-1427).
+ *
+ * Only when its last full walk CLAIMED the whole ledger — so the source can
+ * deliver one — and something has cost a holding that claim SINCE the last
+ * full attempt: a holding the window found first, or a failed window, which
+ * retracts every claim (SC-168). The attempt spends the prompt, whatever it
+ * finds. A holding one full walk could not claim (an IBKR position older than
+ * the Flex window) therefore never prompts a second, and a failing full walk
+ * is not retried every night.
+ */
+function needsRewalk(history: FullImportHistory, newestUnclaimed: Date): boolean {
+  if (!history.claimed) return false;
+  const since = history.lastFullAttemptAt.getTime();
+  return (
+    newestUnclaimed.getTime() > since ||
+    (history.lastWindowFailureAt !== null && history.lastWindowFailureAt.getTime() > since)
+  );
 }

@@ -11,7 +11,7 @@
 // retirement deletes — and hid its one user-facing string from every scan
 // of `src/v3`.
 
-import { Decimal } from '@scani/shared';
+import { Decimal, getFormatLocale } from '@scani/shared';
 import type { TFunction } from 'i18next';
 
 export const PAYMENT_INTERVAL_UNITS = ['week', 'month', 'quarter', 'year'] as const;
@@ -151,10 +151,10 @@ export function sumAmountsByCurrency(entries: readonly CurrencyAmount[]): Map<st
  * A payment's own last settled amount, standing in as its estimate under
  * SC-625's opt-in — or `null`, which covers every reason there is no
  * substitute: the option is off, nothing has settled, or this caller has no
- * forecast payload to read one from.
+ * schedule payload to read one from.
  *
  * It is deliberately NOT recomputed here. The figure and the date come
- * straight off `payments.forecast`, which is the one place the rule for
+ * straight off `payments.scheduled`, which is the one place the rule for
  * "which settlement counts" lives, so the recurring list's monthly figure and
  * the projection's cannot disagree — they are the same computation, not two
  * implementations configured to match.
@@ -421,4 +421,24 @@ export function convertAmountToBase(
     amount: new Decimal(amount).times(new Decimal(rate.rate)),
     stale: at !== null && now.getTime() - at.getTime() > RATE_STALE_AFTER_MS,
   };
+}
+
+export function historyEstimatesByPaymentId(
+  estimated: readonly { paymentId: string; amount: string; sourceDueDate: string }[]
+): Map<string, HistoryEstimate> {
+  return new Map(
+    estimated.map((entry) => [
+      entry.paymentId,
+      { amount: entry.amount, sourceDueDate: entry.sourceDueDate },
+    ])
+  );
+}
+
+export function formatProjectionMonth(month: string): string {
+  const [year, monthNumber] = month.split('-').map(Number);
+  if (!year || !monthNumber) return month;
+  return new Date(Date.UTC(year, monthNumber - 1, 15)).toLocaleDateString(
+    getFormatLocale().dateLocale,
+    { timeZone: 'UTC', month: 'short', year: 'numeric' }
+  );
 }

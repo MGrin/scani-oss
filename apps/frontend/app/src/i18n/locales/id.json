@@ -74,10 +74,10 @@
   },
   "nav": {
     "sections": {
-      "portfolio": "Portofolio",
+      "portfolio": "Kekayaan",
       "organization": "Organisasi",
       "activity": "Aktivitas",
-      "payments": "Pembayaran"
+      "payments": "Tagihan"
     },
     "home": "Beranda",
     "holdings": "Kepemilikan",
@@ -100,7 +100,7 @@
     "review": "Tinjauan",
     "files": "Berkas",
     "payments": "Pembayaran",
-    "money": "Uang"
+    "money": "Tagihan"
   },
   "settings": {
     "title": "Pengaturan",
@@ -128,8 +128,8 @@
         "holdings_counted_other": "{{count}} kepemilikan",
         "payments_other": "pembayaran",
         "payments_counted_other": "{{count}} pembayaran",
-        "vendors_other": "vendor",
-        "vendors_counted_other": "{{count}} vendor",
+        "vendors_other": "penerima",
+        "vendors_counted_other": "{{count}} penerima",
         "accounts_other": "akun",
         "accounts_counted_other": "{{count}} akun",
         "institutions_other": "institusi",
@@ -151,7 +151,9 @@
         "hiddenHoldings_other": "kepemilikan tersembunyi",
         "hiddenHoldings_counted_other": "{{count}} kepemilikan tersembunyi",
         "customTokens_other": "token khusus",
-        "customTokens_counted_other": "{{count}} token khusus"
+        "customTokens_counted_other": "{{count}} token khusus",
+        "balanceChanges_other": "perubahan saldo",
+        "balanceChanges_counted_other": "{{count}} perubahan saldo"
       },
       "accounts": {
         "col": {
@@ -274,11 +276,12 @@
           "accounts": "Akun",
           "group": "Grup",
           "holdings": "Kepemilikan",
-          "value": "Nilai"
+          "value": "Nilai",
+          "bills": "Tagihan",
+          "payees": "Penerima"
         },
         "config": {
-          "searchGroups": "Cari grup",
-          "value": "Nilai"
+          "searchGroups": "Cari grup"
         },
         "empty": {
           "aGroupIsYourOwnLabel": "Grup adalah label Anda sendiri yang melintasi kepemilikan dan akun — \"dana pensiun\", \"kena pajak\", \"yang bersama\".",
@@ -330,6 +333,7 @@
       "holdings": {
         "col": {
           "account": "Akun",
+          "actions": "Tindakan",
           "amount": "Jumlah",
           "gainLoss": "Untung / rugi",
           "holding": "Kepemilikan",
@@ -487,10 +491,11 @@
           "cadence": "Frekuensi",
           "direction": "Arah",
           "status": "Status",
-          "vendor": "Vendor"
+          "groups": "Grup",
+          "vendor": "Penerima"
         },
         "config": {
-          "searchByVendor": "Cari berdasarkan vendor"
+          "searchByVendor": "Cari berdasarkan penerima"
         },
         "empty": {
           "addABillOrRecurringIncomeAndScaniTracksEveryDateItFallsDue": "Tambahkan tagihan atau pemasukan berulang, dan Scani akan melacak setiap tanggal jatuh temponya.",
@@ -499,7 +504,7 @@
         "filter": {
           "direction": "Arah",
           "status": "Status",
-          "vendor": "Vendor"
+          "vendor": "Penerima"
         },
         "group": {
           "direction": "Arah",
@@ -508,7 +513,7 @@
         "sort": {
           "amount": "Jumlah",
           "status": "Status",
-          "vendor": "Vendor"
+          "vendor": "Penerima"
         },
         "option": {
           "active": "Aktif",
@@ -516,6 +521,32 @@
           "ended": "Berakhir",
           "bill": "Tagihan",
           "income": "Pemasukan"
+        }
+      },
+      "bills": {
+        "config": {
+          "searchByPayee": "Cari berdasarkan penerima"
+        },
+        "filter": {
+          "group": "Grup",
+          "payee": "Penerima",
+          "status": "Status",
+          "period": "Periode"
+        },
+        "status": {
+          "upcoming": "Mendatang",
+          "matched": "Dibayar",
+          "missed": "Terlewat",
+          "skipped": "Dilewati",
+          "all": "Semua"
+        },
+        "period": {
+          "next30": "30 hari ke depan",
+          "next90": "90 hari ke depan",
+          "next365": "12 bulan ke depan",
+          "last30": "30 hari terakhir",
+          "last90": "90 hari terakhir",
+          "last365": "12 bulan terakhir"
         }
       },
       "review": {
@@ -530,7 +561,9 @@
         },
         "empty": {
           "importsLandHereWhenTheyFinish": "Impor bermuara di sini setelah selesai dan menunggu konfirmasi Anda sebelum kepemilikannya ikut dihitung.",
-          "nothingNeedsYourReview": "Tidak ada yang perlu Anda tinjau"
+          "nothingNeedsYourReview": "Tidak ada yang perlu Anda tinjau",
+          "nothingElse": "Tidak ada lagi yang perlu Anda tinjau",
+          "theQueuesAboveHoldTheRest": "Antrean di atas berisi sisanya."
         },
         "filter": {
           "type": "Tipe"
@@ -596,16 +629,16 @@
         "col": {
           "category": "Kategori",
           "kind": "Jenis",
-          "payments": "Pembayaran",
-          "vendor": "Vendor",
+          "payments": "Berulang",
+          "vendor": "Penerima",
           "perMonth": "Per bulan"
         },
         "config": {
-          "searchVendors": "Cari vendor"
+          "searchVendors": "Cari penerima"
         },
         "empty": {
-          "aVendorIsCreatedForYou": "Vendor dibuatkan untuk Anda pertama kali Anda mengarahkan sebuah pembayaran kepadanya. Anda juga bisa menambahkannya di sini.",
-          "noVendorsYet": "Belum ada vendor"
+          "aVendorIsCreatedForYou": "Penerima dibuatkan untuk Anda pertama kali Anda mengarahkan sebuah pembayaran kepadanya. Anda juga bisa menambahkannya di sini.",
+          "noVendorsYet": "Belum ada penerima"
         },
         "group": {
           "billsIncome": "Tagihan / pemasukan",
@@ -613,7 +646,7 @@
         },
         "sort": {
           "name": "Nama",
-          "payments": "Pembayaran"
+          "payments": "Berulang"
         }
       },
       "upcoming": {
@@ -622,14 +655,6 @@
           "noPayments": "Belum ada pembayaran berulang",
           "outsideWindow": "Pembayaran tetap Anda jatuh tempo di luar rentang ini.",
           "addOne": "Tambahkan tagihan atau pemasukan berulang, dan tanggal-tanggal berikutnya akan muncul di sini."
-        }
-      },
-      "forecast": {
-        "empty": {
-          "nothingToProject": "Tidak ada yang bisa diproyeksikan",
-          "noPayments": "Belum ada pembayaran berulang",
-          "allPausedOrUnpriced": "Semua pembayaran yang tercatat sedang dijeda, sudah berakhir, atau tidak memiliki jumlah untuk diproyeksikan.",
-          "addOne": "Tambahkan tagihan atau pemasukan berulang, dan perkiraannya akan muncul di sini."
         }
       },
       "itemCount_other": "{{count}} item",
@@ -734,6 +759,55 @@
         "sortedAscending": "{{label}}, rendah ke tinggi",
         "sortedDescending": "{{label}}, tinggi ke rendah",
         "subjectDescription": "Unduh {{subject}} Anda sebagai berkas milik Anda sendiri."
+      },
+      "members": {
+        "filter": {
+          "kind": "Jenis"
+        },
+        "col": {
+          "membership": "Keanggotaan",
+          "member": "Anggota"
+        }
+      },
+      "groupMembers": {
+        "empty": {
+          "title": "Grup ini masih kosong",
+          "description": "Tambahkan akun, kepemilikan, tagihan, atau penerima untuk melihat nilai grup ini."
+        }
+      },
+      "vaultMembers": {
+        "empty": {
+          "title": "Belum ada yang dihitung untuk target tabungan ini",
+          "description": "Lampirkan kepemilikan dan pilih berapa bagian dari masing-masing yang dihitung."
+        }
+      },
+      "transferRules": {
+        "empty": {
+          "noDestinationRulesYet": "Belum ada aturan tujuan",
+          "openAPaymentOutInTheQueue": "Buka sebuah pembayaran keluar di antrean dan catat ke mana perginya. Setiap pembayaran berikutnya ke tujuan yang sama akan membawa catatan Anda, berapa pun jumlahnya — dan tujuan yang Anda tandai akan dijawab untuk Anda."
+        }
+      },
+      "balanceGaps": {
+        "col": {
+          "answer": "Jawaban",
+          "answered": "Dijawab",
+          "change": "Perubahan",
+          "drift": "Jumlah",
+          "when": "Kapan"
+        },
+        "config": {
+          "search": "Cari perubahan saldo"
+        },
+        "empty": {
+          "everyChangeIsAccountedFor": "Setiap perubahan saldo sudah terjelaskan.",
+          "nothingToExplain": "Tidak ada yang perlu dijelaskan"
+        }
+      },
+      "answeredBalanceGaps": {
+        "empty": {
+          "answersLandHere": "Jawaban yang Anda berikan di antrean saldo muncul di sini agar bisa dibatalkan.",
+          "nothingAnsweredYet": "Belum ada perubahan saldo yang dijelaskan"
+        }
       }
     },
     "brand": {

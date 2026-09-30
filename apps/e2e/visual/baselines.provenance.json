@@ -1,31 +1,5 @@
 {
   "baselines": {
-    "forecast-desktop": {
-      "head": "64ac5157abcd24c74d137faf06fb485319fdf00d",
-      "renderedDigest": "698cefa06d69dcf5f8180e6a16186b691591200304026e0ca3a71fe95f67ee43",
-      "dirty": [],
-      "dirtyCount": 0,
-      "base": {
-        "ref": "64ac5157abcd24c74d137faf06fb485319fdf00d",
-        "confirmed": true,
-        "behind": 0
-      },
-      "sha256": "9a929ba4e7420c919f5833c8e521a974e7d21d0100f59b03817d309d855bbc54",
-      "capturedAt": "2026-09-25T01:24:56.804Z"
-    },
-    "forecast-phone": {
-      "head": "64ac5157abcd24c74d137faf06fb485319fdf00d",
-      "renderedDigest": "698cefa06d69dcf5f8180e6a16186b691591200304026e0ca3a71fe95f67ee43",
-      "dirty": [],
-      "dirtyCount": 0,
-      "base": {
-        "ref": "64ac5157abcd24c74d137faf06fb485319fdf00d",
-        "confirmed": true,
-        "behind": 0
-      },
-      "sha256": "8bb319a8f85488f8f4f5dcc6b3ce9fcd8cbba66861005833ef9a2a0a91f156e7",
-      "capturedAt": "2026-09-25T01:25:42.920Z"
-    },
     "holdings-desktop": {
       "sha256": "f706f1dc056537081a9bd4fb3ad3d1b993868b9c7c5a3d79446b1f0ae825e9fb",
       "capturedAt": null,
@@ -143,32 +117,6 @@
       "sha256": "1dc2c5c06e7d9a8e060a685f3d7140ab8b1fa02840dbf39c36c4111fde7e413f",
       "capturedAt": "2026-09-03T07:54:31.078Z"
     },
-    "home-runway-phone": {
-      "head": "160da87bddc5058c481e26b78924c37c14e3fcb9",
-      "renderedDigest": "2c55dc68f2f694ab8f6f2e5da4b1f07a78bac244c5fe9c329ab02ec424c9e166",
-      "dirty": [],
-      "dirtyCount": 0,
-      "base": {
-        "ref": "2375224e50aeff689ad53622e09e6a66d8c34fc2",
-        "confirmed": true,
-        "behind": 0
-      },
-      "sha256": "d2599e7f4dc55c451be2520c169a7921f62936e91223cf14832207479d9429ee",
-      "capturedAt": "2026-09-11T09:35:45.749Z"
-    },
-    "home-runway-stale-phone": {
-      "head": "4dac244bf0495b9be779077251685c7fad8a1bf9",
-      "renderedDigest": "a0438d1713ae55067aa81774fa46dfd2cea99d6ce8f6aa12ae1115d309b21a14",
-      "dirty": [],
-      "dirtyCount": 0,
-      "base": {
-        "ref": "631eb32daafecfb7e37fc6b105821d7f1f9875f1",
-        "confirmed": true,
-        "behind": 1
-      },
-      "sha256": "3a06f30dc0468bab1f7d0358c22ad02388b7c6f5536046af2e071c9195722485",
-      "capturedAt": "2026-09-19T04:16:20.950Z"
-    },
     "kitchen-sink-desktop": {
       "head": "2117f66ee6eded0f65e0d324daba61e36384e95e",
       "renderedDigest": "7ce245bcdf74ebb98336d120d77f1b25c7ec91f14e457cce8d8d558c9941874b",
@@ -218,30 +166,30 @@
       "capturedAt": "2026-09-19T02:07:38.254Z"
     },
     "payment-form-phone": {
-      "head": "e50d9281d7f96143d3f0a4c93703a2eddc368dcf",
-      "renderedDigest": "23354c435db68266e7345820e2c4612cddb8c8eeb0ce8bd962fc73a56a978918",
+      "head": "1a08537fe71ea2bafced054412257ed63801a914",
+      "renderedDigest": "232d8005c2618b38ece569b739f3d22429a0253223244851711dae11939b655d",
       "dirty": [],
       "dirtyCount": 0,
       "base": {
-        "ref": "17d106aa644e385d6c01187bed9ec8d61a1ecf3e",
+        "ref": "2c702b40190c1fbf9d0215630565ad8eab0352ec",
         "confirmed": true,
-        "behind": 0
+        "behind": 2
       },
-      "sha256": "960a4586191b36bf9d413975448ac20407697be924223e75d7f6273be71c4ef7",
-      "capturedAt": "2026-09-03T05:39:17.713Z"
+      "sha256": "37fe52fd6ca651a9043444e63c2024f75b0a98e2c75200368a63c5c0ba15bd3c",
+      "capturedAt": "2026-09-28T15:35:18.266Z"
     },
     "payment-form-phone-rtl": {
-      "head": "f78f85fc4d8559cfbdde97f6ab7242650b3ef9aa",
-      "renderedDigest": "5b0378581a88cb4f1c75ab58aa6ad987037734da456188db26dabb9bcc7adcc3",
+      "head": "1a08537fe71ea2bafced054412257ed63801a914",
+      "renderedDigest": "232d8005c2618b38ece569b739f3d22429a0253223244851711dae11939b655d",
       "dirty": [],
       "dirtyCount": 0,
       "base": {
-        "ref": "60e3ebd7bae78eae8879b9b4100d74d9e955070e",
+        "ref": "2c702b40190c1fbf9d0215630565ad8eab0352ec",
         "confirmed": true,
-        "behind": 0
+        "behind": 2
       },
-      "sha256": "2024447655d0a157b1692d86127be65cbeaec6d2490663dc7a3e7e9bbca7de3c",
-      "capturedAt": "2026-09-11T08:45:32.112Z"
+      "sha256": "fa2d803c86ff89f770758ebe362fe1fee08bd85071eb65682641b3984fe68bab",
+      "capturedAt": "2026-09-28T15:35:18.266Z"
     }
   }
 }

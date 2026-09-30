@@ -80,10 +80,10 @@
   },
   "nav": {
     "sections": {
-      "portfolio": "Portefeuille",
+      "portfolio": "Patrimoine",
       "organization": "Organisation",
       "activity": "Activité",
-      "payments": "Paiements"
+      "payments": "Factures"
     },
     "home": "Accueil",
     "holdings": "Positions",
@@ -106,7 +106,7 @@
     "review": "À vérifier",
     "files": "Fichiers",
     "payments": "Paiements",
-    "money": "Argent"
+    "money": "Factures"
   },
   "settings": {
     "title": "Paramètres",
@@ -142,12 +142,12 @@
         "payments_counted_one": "{{count}} paiement",
         "payments_counted_many": "{{count}} paiements",
         "payments_counted_other": "{{count}} paiements",
-        "vendors_one": "fournisseur",
-        "vendors_many": "fournisseurs",
-        "vendors_other": "fournisseurs",
-        "vendors_counted_one": "{{count}} fournisseur",
-        "vendors_counted_many": "{{count}} fournisseurs",
-        "vendors_counted_other": "{{count}} fournisseurs",
+        "vendors_one": "bénéficiaire",
+        "vendors_many": "bénéficiaires",
+        "vendors_other": "bénéficiaires",
+        "vendors_counted_one": "{{count}} bénéficiaire",
+        "vendors_counted_many": "{{count}} bénéficiaires",
+        "vendors_counted_other": "{{count}} bénéficiaires",
         "accounts_one": "compte",
         "accounts_many": "comptes",
         "accounts_other": "comptes",
@@ -213,7 +213,13 @@
         "customTokens_other": "jetons personnalisés",
         "customTokens_counted_one": "{{count}} jeton personnalisé",
         "customTokens_counted_many": "{{count}} jetons personnalisés",
-        "customTokens_counted_other": "{{count}} jetons personnalisés"
+        "customTokens_counted_other": "{{count}} jetons personnalisés",
+        "balanceChanges_one": "changement de solde",
+        "balanceChanges_counted_one": "{{count}} changement de solde",
+        "balanceChanges_many": "changements de solde",
+        "balanceChanges_counted_many": "{{count}} changements de solde",
+        "balanceChanges_other": "changements de solde",
+        "balanceChanges_counted_other": "{{count}} changements de solde"
       },
       "accounts": {
         "col": {
@@ -336,11 +342,12 @@
           "accounts": "Comptes",
           "group": "Groupe",
           "holdings": "Positions",
-          "value": "Valeur"
+          "value": "Valeur",
+          "bills": "Factures",
+          "payees": "Bénéficiaires"
         },
         "config": {
-          "searchGroups": "Rechercher des groupes",
-          "value": "Valeur"
+          "searchGroups": "Rechercher des groupes"
         },
         "empty": {
           "aGroupIsYourOwnLabel": "Un groupe est votre propre étiquette sur des positions et des comptes — « retraite », « imposable », « le compte joint ».",
@@ -392,6 +399,7 @@
       "holdings": {
         "col": {
           "account": "Compte",
+          "actions": "Actions",
           "amount": "Quantité",
           "gainLoss": "Plus ou moins-value",
           "holding": "Position",
@@ -556,10 +564,11 @@
           "cadence": "Fréquence",
           "direction": "Sens",
           "status": "Statut",
-          "vendor": "Fournisseur"
+          "groups": "Groupes",
+          "vendor": "Bénéficiaire"
         },
         "config": {
-          "searchByVendor": "Rechercher par fournisseur"
+          "searchByVendor": "Rechercher par bénéficiaire"
         },
         "empty": {
           "addABillOrRecurringIncomeAndScaniTracksEveryDateItFallsDue": "Ajoutez une facture ou un revenu récurrent et Scani suit chaque échéance.",
@@ -568,7 +577,7 @@
         "filter": {
           "direction": "Sens",
           "status": "Statut",
-          "vendor": "Fournisseur"
+          "vendor": "Bénéficiaire"
         },
         "group": {
           "direction": "Sens",
@@ -577,7 +586,7 @@
         "sort": {
           "amount": "Montant",
           "status": "Statut",
-          "vendor": "Fournisseur"
+          "vendor": "Bénéficiaire"
         },
         "option": {
           "active": "Actif",
@@ -585,6 +594,32 @@
           "ended": "Terminé",
           "bill": "Facture",
           "income": "Revenu"
+        }
+      },
+      "bills": {
+        "config": {
+          "searchByPayee": "Rechercher par bénéficiaire"
+        },
+        "filter": {
+          "group": "Groupe",
+          "payee": "Bénéficiaire",
+          "status": "Statut",
+          "period": "Période"
+        },
+        "status": {
+          "upcoming": "À venir",
+          "matched": "Payés",
+          "missed": "Manqués",
+          "skipped": "Ignorés",
+          "all": "Tous"
+        },
+        "period": {
+          "next30": "30 prochains jours",
+          "next90": "90 prochains jours",
+          "next365": "12 prochains mois",
+          "last30": "30 derniers jours",
+          "last90": "90 derniers jours",
+          "last365": "12 derniers mois"
         }
       },
       "review": {
@@ -599,7 +634,9 @@
         },
         "empty": {
           "importsLandHereWhenTheyFinish": "Les imports arrivent ici lorsqu’ils se terminent et demandent une confirmation avant que leurs positions soient comptées.",
-          "nothingNeedsYourReview": "Rien ne nécessite votre vérification"
+          "nothingNeedsYourReview": "Rien ne nécessite votre vérification",
+          "nothingElse": "Rien d’autre ne nécessite votre vérification",
+          "theQueuesAboveHoldTheRest": "Les files ci-dessus contiennent le reste."
         },
         "filter": {
           "type": "Type"
@@ -668,16 +705,16 @@
         "col": {
           "category": "Catégorie",
           "kind": "Nature",
-          "payments": "Paiements",
-          "vendor": "Fournisseur",
+          "payments": "Récurrents",
+          "vendor": "Bénéficiaire",
           "perMonth": "Par mois"
         },
         "config": {
-          "searchVendors": "Rechercher des fournisseurs"
+          "searchVendors": "Rechercher des bénéficiaires"
         },
         "empty": {
-          "aVendorIsCreatedForYou": "Un fournisseur est créé pour vous la première fois que vous rattachez un paiement à l’un d’eux. Vous pouvez aussi en ajouter un ici.",
-          "noVendorsYet": "Aucun fournisseur pour l’instant"
+          "aVendorIsCreatedForYou": "Un bénéficiaire est créé pour vous la première fois que vous rattachez un paiement à l’un d’eux. Vous pouvez aussi en ajouter un ici.",
+          "noVendorsYet": "Aucun bénéficiaire pour l’instant"
         },
         "group": {
           "billsIncome": "Factures / revenus",
@@ -685,7 +722,7 @@
         },
         "sort": {
           "name": "Nom",
-          "payments": "Paiements"
+          "payments": "Récurrents"
         }
       },
       "upcoming": {
@@ -696,14 +733,6 @@
           "noPayments": "Aucun paiement récurrent pour l’instant",
           "outsideWindow": "Vos paiements permanents arrivent à échéance en dehors de cette période.",
           "addOne": "Ajoutez une facture ou un revenu récurrent et ses prochaines dates apparaissent ici."
-        }
-      },
-      "forecast": {
-        "empty": {
-          "nothingToProject": "Rien à projeter",
-          "noPayments": "Aucun paiement récurrent pour l’instant",
-          "allPausedOrUnpriced": "Tous les paiements enregistrés sont en pause, terminés, ou sans montant à projeter.",
-          "addOne": "Ajoutez une facture ou un revenu récurrent et une prévision apparaît ici."
         }
       },
       "itemCount_one": "{{count}} élément",
@@ -812,6 +841,55 @@
         "sortedAscending": "{{label}}, du plus petit au plus grand",
         "sortedDescending": "{{label}}, du plus grand au plus petit",
         "subjectDescription": "Téléchargez vos {{subject}} dans un fichier qui vous appartient."
+      },
+      "members": {
+        "filter": {
+          "kind": "Nature"
+        },
+        "col": {
+          "membership": "Appartenance",
+          "member": "Membre"
+        }
+      },
+      "groupMembers": {
+        "empty": {
+          "title": "Ce groupe est encore vide",
+          "description": "Ajoutez des comptes, des positions, des factures ou des bénéficiaires pour voir ce que vaut ce groupe."
+        }
+      },
+      "vaultMembers": {
+        "empty": {
+          "title": "Rien ne compte encore pour cet objectif",
+          "description": "Rattachez des positions et choisissez la part de chacune qui compte."
+        }
+      },
+      "transferRules": {
+        "empty": {
+          "noDestinationRulesYet": "Aucune règle de destination pour l’instant",
+          "openAPaymentOutInTheQueue": "Ouvrez un paiement sortant dans la file et notez où il est allé. Tout paiement ultérieur vers la même destination portera votre note, quel qu’en soit le montant — et les destinations que vous marquez reçoivent une réponse à votre place."
+        }
+      },
+      "balanceGaps": {
+        "col": {
+          "answer": "Réponse",
+          "answered": "Répondu",
+          "change": "Changement",
+          "drift": "Montant",
+          "when": "Quand"
+        },
+        "config": {
+          "search": "Rechercher des changements de solde"
+        },
+        "empty": {
+          "everyChangeIsAccountedFor": "Chaque changement de solde est justifié.",
+          "nothingToExplain": "Rien à expliquer"
+        }
+      },
+      "answeredBalanceGaps": {
+        "empty": {
+          "answersLandHere": "Les réponses données dans la file des soldes arrivent ici, pour que vous puissiez en annuler une.",
+          "nothingAnsweredYet": "Aucun changement de solde expliqué pour l'instant"
+        }
       }
     },
     "brand": {

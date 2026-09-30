@@ -2,10 +2,12 @@ import '../../i18n-preload';
 
 import { describe, expect, test } from 'bun:test';
 import { BALANCE_GAP_REVIEW_KIND, TRANSFER_REVIEW_KIND } from '@scani/shared';
+import { SETTLED_QUERY_STATE } from '@scani/ui/v3/lib/query-state';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom';
-import { ReviewQueues } from '../../../src/v3/components/review/ReviewQueues';
+import { ReviewList } from '../../../src/v3/components/review/ReviewList';
+import { isQueueRow, ReviewQueues } from '../../../src/v3/components/review/ReviewQueues';
 import type { ReviewWireRow } from '../../../src/v3/lib/review-text';
 
 /**
@@ -63,8 +65,10 @@ describe('the review hub', () => {
       feedRow(TRANSFER_REVIEW_KIND, { code: 'unpairedTransfers', transfers: 12 }),
       feedRow(BALANCE_GAP_REVIEW_KIND, { code: 'unexplainedBalanceChanges', changes: 3 }),
     ]);
-    expect(html).toContain('12 payments out to classify');
-    expect(html).toContain('3 balance changes we cannot explain');
+    // The count alone: the card's title already says what is waiting (SC-1433).
+    expect(html).toContain('12 waiting');
+    expect(html).toContain('3 waiting');
+    expect(html).not.toContain('12 payments out to classify');
     expect(html).not.toContain('Nothing waiting');
   });
 
@@ -72,7 +76,7 @@ describe('the review hub', () => {
     const html = render([
       feedRow(TRANSFER_REVIEW_KIND, { code: 'unpairedTransfers', transfers: 1 }),
     ]);
-    expect(html).toContain('1 payment out to classify');
+    expect(html).toContain('1 waiting');
   });
 
   test('a queue with no row in the feed still gets its link', () => {
@@ -83,5 +87,39 @@ describe('the review hub', () => {
     ]);
     expect(html).toContain('href="/review/balances"');
     expect(html).toContain('Nothing waiting');
+  });
+});
+
+/**
+ * Each queue was on the page twice, as its card and as a feed row under it
+ * (SC-1419). The feed now drops the queue rows, and the one thing that must not
+ * follow is the old failure: a badged `/review` whose only work is a queue
+ * reading "Nothing needs your review".
+ */
+describe('the feed under the hub', () => {
+  function renderList(queueHasWork: boolean): string {
+    return renderToStaticMarkup(
+      createElement(
+        StaticRouter,
+        { location: '/review' },
+        createElement(ReviewList, { items: [], queueHasWork, query: SETTLED_QUERY_STATE })
+      )
+    );
+  }
+
+  test('a queue row belongs to its card, anything else to the feed', () => {
+    expect(isQueueRow(feedRow(TRANSFER_REVIEW_KIND, null))).toBe(true);
+    expect(isQueueRow(feedRow(BALANCE_GAP_REVIEW_KIND, null))).toBe(true);
+    expect(isQueueRow(feedRow('import_review', null))).toBe(false);
+  });
+
+  test('with work left in a queue, the empty feed says "nothing else"', () => {
+    const html = renderList(true);
+    expect(html).toContain('Nothing else needs your review');
+    expect(html).not.toContain('Nothing needs your review');
+  });
+
+  test('with every queue clear, it says nothing needs review', () => {
+    expect(renderList(false)).toContain('Nothing needs your review');
   });
 });

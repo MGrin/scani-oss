@@ -4,7 +4,6 @@ import {
   isDustQuantity,
   SMALLEST_SHOWN_QUANTITY,
 } from '@scani/shared';
-import { FaviconImg } from '@scani/ui/components/FaviconImg';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { DeltaPill } from '@scani/ui/v3/components/charts/DeltaPill';
@@ -12,9 +11,8 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
 import type { PeekFact, PeekSection, PeekSpec } from '@scani/ui/v3/lib/peek';
 import type { TFunction } from 'i18next';
-import { ArrowLeftRight, Pencil, RefreshCw, Wallet } from 'lucide-react';
+import { ArrowLeftRight, RefreshCw, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
-import { institutionIconUrl } from '@/lib/icons';
 import { tokenDisplayName } from '@/lib/utils';
 import {
   amountDecimals,
@@ -30,13 +28,15 @@ import {
 import { formatRelative } from '../../lib/relative-time';
 import { groupDetailPath } from '../../lib/routes';
 import { tokenTypeLabel } from '../../lib/tokens';
+import { InstitutionMark } from '../entities/InstitutionMark';
+import { EditAction } from '../form/FormSheet';
 import { HoldingAmountFact } from './HoldingAmountFact';
 import { HoldingDeleteAction } from './HoldingDeleteAction';
-import { HoldingLabelFact } from './HoldingLabelFact';
 import { HoldingScamAction } from './HoldingScamAction';
 import { HoldingStatusAction } from './HoldingStatusAction';
 import { HoldingTrend } from './HoldingTrend';
 import { RealizedLedger } from './RealizedLedger';
+import { RemoveApyAction } from './RemoveApyAction';
 
 /**
  * `HoldingDetailContent`, as a peek sheet.
@@ -68,11 +68,12 @@ export interface HoldingPeekContext {
    *  peek is assembled by six free functions, and threading `t` through all of
    *  them one parameter at a time is how one gets missed (SC-201). */
   t: TFunction;
-  onSetAmount: (holding: HoldingWithDetails, balance: string) => void;
+  /** Open `EditHoldingSheet` — the amount and the pot's name (SC-1436). */
+  onEdit: (holding: HoldingWithDetails) => void;
   /**
    * Record what actually happened, rather than the balance it leaves (SC-607).
    *
-   * Beside `onSetAmount`, not instead of it. Setting the amount is right when
+   * Beside `onEdit`, not instead of it. Setting the amount is right when
    * reconciling against a statement that only gives a closing figure; this is
    * right when the owner knows the movement — which is most of the time, and
    * is the case that used to be the long way round.
@@ -91,13 +92,6 @@ export interface HoldingPeekContext {
   refreshingBalanceId: string | null;
   onEditPrice: (holding: HoldingWithDetails) => void;
   /**
-   * Rename the pot. `null` clears the name (SC-564).
-   *
-   * The server refuses a name a sibling row already wears, so this can fail
-   * after the sheet is gone — the page reports it as a toast.
-   */
-  onSetLabel: (holding: HoldingWithDetails, label: string | null) => void;
-  /**
    * The holdings that share an (account, token) with at least one other row —
    * the only ones a name has any work to do on.
    *
@@ -108,7 +102,6 @@ export interface HoldingPeekContext {
    */
   contestedHoldingIds?: ReadonlySet<string>;
   onConfigureApy: (holding: HoldingWithDetails) => void;
-  onRemoveApy: (holding: HoldingWithDetails) => void;
   /** The write itself. `HoldingDeleteAction` owns the confirmation, so by the
    *  time this runs the reader has read what goes and pressed a
    *  differently-labelled second button. */
@@ -133,14 +126,17 @@ function PriceFact({
       <span className="flex items-center gap-2">
         <Numeric value={holdingPrice(holding)} currency={currency} />
         {hasCustomPrice(holding) ? (
-          <button
-            type="button"
+          // A text button, the same as the interest row's: a custom token's
+          // price is its own record with its own sheet, and an icon-only
+          // pencil in a fact is the shape rule 13 retired (SC-1436).
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => onEditPrice(holding)}
             aria-label={t('v3.holdings.peek.editPriceOf', { symbol: holding.token.symbol })}
-            className="-my-1 rounded-md p-1 text-muted-foreground transition-colors duration-fast ease-emphasized hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           >
-            <Pencil className="size-4" aria-hidden="true" />
-          </button>
+            {t('v3.holdings.peek.apyEdit')}
+          </Button>
         ) : null}
       </span>
       {holding.price?.timestamp ? (
@@ -184,14 +180,6 @@ function apySection(holding: HoldingWithDetails, ctx: HoldingPeekContext): PeekS
           <Numeric value={config.annualRatePct} format="percent" decimals={2} />
           <Button variant="ghost" size="sm" onClick={() => ctx.onConfigureApy(holding)}>
             {t('v3.holdings.peek.apyEdit')}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-destructive hover:text-destructive"
-            onClick={() => ctx.onRemoveApy(holding)}
-          >
-            {t('v3.holdings.peek.apyRemove')}
           </Button>
         </span>
       ),
@@ -404,11 +392,14 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
   return {
     title: holding.token.symbol,
     subtitle: `${tokenDisplayName(t, holding.token)} · ${holding.institution.name}`,
+    // `InstitutionMark` rather than a bare favicon: with no favicon the bare
+    // image rendered nothing inside a slot the header still reserved, which
+    // indented the title past every other peek's (SC-1433).
     leading: (
-      <FaviconImg
-        src={institutionIconUrl(holding.institution)}
+      <InstitutionMark
         name={holding.institution.name}
-        className="size-6 rounded-sm object-contain"
+        institution={holding.institution}
+        size="size-6"
       />
     ),
     value: <Numeric value={holding.value} currency={ctx.currency} />,
@@ -427,6 +418,9 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
           indicator="sign"
           className="text-caption text-muted-foreground"
         />
+        <span className="text-caption text-muted-foreground">
+          {t('v3.holdings.peek.sinceBought')}
+        </span>
       </span>
     ) : undefined,
     trend: (
@@ -444,18 +438,26 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     // `tests/v3/token-hygiene.test.ts` for the guard that pins the floor.
     actions: (
       <>
+        <EditAction onClick={() => ctx.onEdit(holding)} />
         <Button onClick={() => ctx.onRecordMovement(holding)}>
           <ArrowLeftRight className="me-2 size-4" aria-hidden="true" />
           {t('v3.holdings.movement.peekAction')}
         </Button>
-        <Button variant="outline" onClick={() => ctx.onRefreshPrice(holding)} disabled={priceBusy}>
-          {/* Disabled plus a changed label rather than a spinning icon: the
-              motion policy (V3-16) has not landed, and an unguarded
-              `animate-spin` is exactly the thing §2.4 says every animation
-              must be kept out of until it is. */}
-          <RefreshCw className="me-2 size-4" aria-hidden="true" />
-          {priceBusy ? t('v3.holdings.peek.refreshing') : t('v3.holdings.peek.refreshPrice')}
-        </Button>
+        {/* The base currency is 1 against itself, so there is nothing to refresh (SC-1447). */}
+        {holding.token.typeCode === 'fiat' && holding.token.symbol === ctx.currency ? null : (
+          <Button
+            variant="outline"
+            onClick={() => ctx.onRefreshPrice(holding)}
+            disabled={priceBusy}
+          >
+            {/* Disabled plus a changed label rather than a spinning icon: the
+                motion policy (V3-16) has not landed, and an unguarded
+                `animate-spin` is exactly the thing §2.4 says every animation
+                must be kept out of until it is. */}
+            <RefreshCw className="me-2 size-4" aria-hidden="true" />
+            {priceBusy ? t('v3.holdings.peek.refreshing') : t('v3.holdings.peek.refreshPrice')}
+          </Button>
+        )}
         {isSynced(holding) ? (
           <Button
             variant="outline"
@@ -472,6 +474,7 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
           onToggle={ctx.onToggleActive}
           isPending={ctx.isTogglingActive}
         />
+        {holding.apyConfig ? <RemoveApyAction holdingId={holding.id} /> : null}
         <HoldingDeleteAction
           holding={holding}
           currency={ctx.currency}
@@ -488,7 +491,6 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
             amount={holding.amount}
             symbol={holding.token.symbol}
             lookalikeOf={holding.token.lookalikeOf}
-            onSave={(balance) => ctx.onSetAmount(holding, balance)}
           />
         ),
       },
@@ -510,19 +512,21 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
       // the same test `ManualEntryPage` and `ReviewHoldingsCard` apply through
       // `contestedTokens` (SC-330).
       //
-      // Editable rather than a readout, because until SC-564 nothing could set
-      // one after creation — which is precisely why the rows this was built for
-      // never had a name to render.
+      // Set through the peek's Edit (`EditHoldingSheet`), because until SC-564
+      // nothing could set one after creation — which is precisely why the rows
+      // this was built for never had a name to render.
       ...(holding.label || ctx.contestedHoldingIds?.has(holding.id)
         ? [
             {
               label: t('v3.holdings.peek.pot'),
-              value: (
-                <HoldingLabelFact
-                  label={holding.label ?? null}
-                  symbol={holding.token.symbol}
-                  onSave={(label) => ctx.onSetLabel(holding, label)}
-                />
+              value: holding.label ? (
+                <span className="truncate">{holding.label}</span>
+              ) : (
+                // The prompt is the value: "Pot: —" says nothing, and this
+                // says what the peek's Edit would set.
+                <span className="truncate text-muted-foreground">
+                  {t('v3.holdings.labelFact.unnamed')}
+                </span>
               ),
             },
           ]
@@ -538,34 +542,32 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     // itself away on the holdings that never disposed of anything, which is
     // most of them.
     //
-    // `Mark as scam` sits here too, in the scrolling body, and not in
-    // `actions` with Deactivate and Delete. `actions` is the drawer's FIXED
-    // header on a phone, promised on screen at the 50% rest height; a fifth
-    // button wrapped that row to a third line and put this button, its
-    // confirmation and Delete under the fold, where nothing can scroll to
-    // them (SC-1160, found by the iPhone e2e). The body scrolls, so it is
-    // reachable at every snap point, and a rare verdict does not need to
-    // compete with Record a movement for the first screen.
     content: (
-      <>
-        <RealizedLedger
-          holdingId={holding.id}
-          currency={ctx.currency}
-          symbol={holding.token.symbol}
-        />
-        {canMarkScam(holding) ? (
-          <div className="flex">
+      <RealizedLedger
+        holdingId={holding.id}
+        currency={ctx.currency}
+        symbol={holding.token.symbol}
+        tokenTypeCode={holding.token.typeCode}
+      />
+    ),
+    sections,
+    // Rare (scam airdrops), so the body's last row rather than a header action:
+    // the phone header is the drawer's fixed top and already fills the rest
+    // height (SC-1160, SC-1419).
+    endAction: canMarkScam(holding)
+      ? {
+          title: t('v3.holdings.scam.rowTitle'),
+          hint: t('v3.holdings.scam.rowHint'),
+          action: (
             <HoldingScamAction
               holding={holding}
               currency={ctx.currency}
               onMarkScam={ctx.onMarkScam}
               isPending={ctx.isMarkingScam}
             />
-          </div>
-        ) : null}
-      </>
-    ),
-    sections,
+          ),
+        }
+      : undefined,
   };
 }
 

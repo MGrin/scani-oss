@@ -1,4 +1,5 @@
 import { expect, test } from 'bun:test';
+import { AIUnavailableError } from '@scani/providers/core/errors';
 import type { Redis } from 'ioredis';
 import { ProcessingGuard } from '../../src/usage/processing-guard';
 
@@ -16,6 +17,10 @@ function store() {
       eval: async (script: string, _count: number, key: string, marker: string, result: string) => {
         if (!script.includes("redis.call('GET'")) return 0;
         if (rows.get(key) !== marker) return null;
+        if (script.includes("redis.call('DEL'")) {
+          rows.delete(key);
+          return 1;
+        }
         rows.set(key, result);
         return 'OK';
       },
@@ -130,4 +135,38 @@ test('a delayed claim acknowledgement never dispatches paid work', async () => {
   claim.resolve('OK');
   await Bun.sleep(1);
   expect(calls).toBe(0);
+});
+
+test('an AI refusal that did no provider work frees the input for an immediate retry', async () => {
+  const { redis } = store();
+  const guard = new ProcessingGuard();
+  let calls = 0;
+  const work = async () => {
+    calls++;
+    throw new AIUnavailableError('rejected');
+  };
+  await expect(guard.run(redis, 'owner', 'ai', { p: 1 }, work)).rejects.toBeInstanceOf(
+    AIUnavailableError
+  );
+  await expect(guard.run(redis, 'owner', 'ai', { p: 1 }, work)).rejects.toBeInstanceOf(
+    AIUnavailableError
+  );
+  expect(calls).toBe(2);
+});
+
+test('a transient AI failure may have done paid work, so the input stays held', async () => {
+  const { redis } = store();
+  const guard = new ProcessingGuard();
+  let calls = 0;
+  const work = async () => {
+    calls++;
+    throw new AIUnavailableError('transient');
+  };
+  await expect(guard.run(redis, 'owner', 'ai', { p: 2 }, work)).rejects.toBeInstanceOf(
+    AIUnavailableError
+  );
+  await expect(guard.run(redis, 'owner', 'ai', { p: 2 }, work)).rejects.toMatchObject({
+    code: 'CONFLICT',
+  });
+  expect(calls).toBe(1);
 });

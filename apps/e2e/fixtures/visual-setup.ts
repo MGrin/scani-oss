@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { type Browser, chromium, type Page } from '@playwright/test';
-import { BURN_AS_OF, FORECAST_AS_OF, type VisualSession } from '../visual/screens';
+import type { VisualSession } from '../visual/screens';
 import {
   type ObservedContent,
   provenanceFailure,
@@ -10,7 +10,7 @@ import {
 } from '../visual/session-provenance';
 import { signIn } from './auth';
 import { assertStackUp } from './stack-probes';
-import { createAccount, createHolding, findDatabaseTokenId, trpcMutate } from './ui';
+import { createAccount, createHolding } from './ui';
 
 // `import.meta.dir` is Bun-only and this module is loaded by the Playwright
 // runner under Node; resolve the standard ESM way instead.
@@ -48,21 +48,6 @@ export const VISUAL_EMPTY_SESSION_FILE = resolve(E2E_ROOT, '.visual-empty-sessio
  * the empty session already makes.
  */
 export const VISUAL_ALLOCATION_SESSION_FILE = resolve(E2E_ROOT, '.visual-allocation-session.json');
-
-/**
- * A fourth signed-in user holding a book of recurring payments, for the
- * screens declared `session: 'forecast'` (SC-623).
- *
- * A separate account because home's "What's due" block lists recurring
- * payments, so seeding them on the first user would rewrite both of its home
- * baselines. It is also the session that found the sign-in budget was already
- * spent — see `sessionUserAgent`.
- */
-export const VISUAL_FORECAST_SESSION_FILE = resolve(E2E_ROOT, '.visual-forecast-session.json');
-
-/** A fifth user whose money left the tracked perimeter, for the screens
- *  declared `session: 'burn'` (SC-1219) — see `BURN_BOOK`. */
-export const VISUAL_BURN_SESSION_FILE = resolve(E2E_ROOT, '.visual-burn-session.json');
 
 /**
  * The websocket `scripts/visual.ts` publishes for the containerised browser.
@@ -152,100 +137,6 @@ const ALLOCATION_PORTFOLIO = [
   { account: 'Cash Buffer', type: 'Other', quantity: '4200' },
 ];
 
-/** The money the forecast's book is drawn down from. USD, as `PORTFOLIO` is,
- *  for the same reason: a converted figure is a function of an FX rate. */
-const FORECAST_PORTFOLIO = { account: 'Operating', type: 'Checking Account', quantity: '14000' };
-
-/**
- * The recurring book. Sized so the money RUNS OUT inside the twelve-month
- * window — in August 2027, from 14,000 — because the exhausted branch is the
- * one SC-623 is about: it alone draws the zero reference line and paints
- * `--loss`. A book that lasted would render "lasts beyond 12 months".
- *
- * Every anchor falls due AFTER `FORECAST_AS_OF`, and that is what keeps the
- * picture still. Occurrence rows are materialised relative to the REAL date,
- * and one dated before the pinned day would be counted overdue — a count that
- * would grow as the real date moves. Dated after it, a materialised row and the
- * rule's projection of the same due date are the same movement, so the
- * forecast is the same whichever of the two produced it. `seedForecastBook`
- * refuses an anchor that breaks this rather than trusting the list.
- *
- * USD throughout, and an inflow among the outflows so the chart has both.
- */
-const FORECAST_BOOK = [
-  {
-    vendor: 'Foxwood Studios',
-    direction: 'outflow',
-    amount: '3200',
-    unit: 'month',
-    anchor: '2027-03-15',
-  },
-  {
-    vendor: 'Northwind Software',
-    direction: 'outflow',
-    amount: '480',
-    unit: 'month',
-    anchor: '2027-03-20',
-  },
-  {
-    vendor: 'Harbour Insurance',
-    direction: 'outflow',
-    amount: '1350',
-    unit: 'quarter',
-    anchor: '2027-04-01',
-  },
-  {
-    vendor: 'Atlas Retainer',
-    direction: 'inflow',
-    amount: '1500',
-    unit: 'month',
-    anchor: '2027-03-28',
-  },
-] as const;
-
-/**
- * Money that LEFT the tracked perimeter inside the observed window — the
- * complete months before `BURN_AS_OF` — one payment of it valued from a stale
- * quote (SC-1219).
- *
- * THE STALE ROW IS A CUSTOM TOKEN, and neither alternative holds still. A USD
- * exit in a USD base is valued as itself and is never stale, and observed burn
- * never reads a fee. A EUR exit is stale only until something writes a EUR
- * rate near it — and `recordMovement` itself queues the backfill that does,
- * daily from the payment to today. A custom token has no pricing provider, so
- * its one price row is the manual one written when it was created.
- *
- * STALE ON EVERY RUN, with no date in it. That row is stamped with the api's
- * "now" and the payment falls a month before `BURN_AS_OF`, about three months
- * later — so the rate predates the payment by more than the 45-day cap whatever
- * the calendar says. The token is created once per stack and reused; its row
- * only ever gets older.
- *
- * The USD exits carry the drain so the token's price cannot reach the figure:
- * 18,500 left at about 2,000 a month is about 9.25 months, clear of either
- * rounding edge. One unit of the token stays held so the provenance count never
- * depends on how a zero balance is listed.
- */
-const BURN_ACCOUNTS = { operating: 'Operating', ledger: 'Private Ledger' } as const;
-const BURN_TOKEN = { symbol: 'VISBURN', name: 'Visual burn fixture' } as const;
-const BURN_BOOK = {
-  usd: '30500',
-  token: '3',
-  exits: [
-    { holding: 'usd', amount: '6000', monthsBeforeAsOf: 3 },
-    { holding: 'usd', amount: '6000', monthsBeforeAsOf: 1 },
-    { holding: 'token', amount: '2', monthsBeforeAsOf: 1 },
-  ],
-} as const;
-
-/** Noon UTC on the 15th, `months` before `BURN_AS_OF` — inside the window. */
-function burnDay(months: number): string {
-  const asOf = new Date(`${BURN_AS_OF}T00:00:00Z`);
-  return new Date(
-    Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth() - months, 15, 12)
-  ).toISOString();
-}
-
 /**
  * What this session actually holds, or `null` if it is not signed in.
  *
@@ -300,100 +191,6 @@ async function seedAllocationPortfolio(page: Page): Promise<void> {
   }
 }
 
-/** The operating account and the recurring book drawn from it. Same
- *  intolerance of a partial seed as `seedPortfolio`: a missing payment moves
- *  the runway month, and the forecast would still render. */
-async function seedForecastBook(page: Page): Promise<void> {
-  const account = await createAccount(page, {
-    name: FORECAST_PORTFOLIO.account,
-    type: FORECAST_PORTFOLIO.type,
-  });
-  await createHolding(page, {
-    accountId: account.id,
-    symbol: 'USD',
-    quantity: FORECAST_PORTFOLIO.quantity,
-    jobTimeoutMs: 120_000,
-  });
-  const currencyTokenId = await findDatabaseTokenId(page, 'USD');
-  for (const payment of FORECAST_BOOK) {
-    if (payment.anchor <= FORECAST_AS_OF) {
-      throw new Error(
-        `${payment.vendor} is anchored ${payment.anchor}, on or before the pinned ` +
-          `${FORECAST_AS_OF}: it would be counted overdue — see FORECAST_BOOK.`
-      );
-    }
-    const vendor = await trpcMutate<{ id: string }>(page, 'vendors.create', {
-      displayName: payment.vendor,
-    });
-    await trpcMutate(page, 'payments.create', {
-      vendorId: vendor.id,
-      direction: payment.direction,
-      kind: 'fixed',
-      expectedAmount: payment.amount,
-      currencyTokenId,
-      intervalUnit: payment.unit,
-      intervalCount: 1,
-      anchorDate: payment.anchor,
-      accountId: account.id,
-    });
-  }
-}
-
-/** The fixture's custom token, created on the first run against a stack and
- *  found by symbol after that — a second create is refused as a duplicate. */
-async function burnTokenSymbol(page: Page): Promise<string> {
-  try {
-    await trpcMutate(page, 'tokens.createCustom', {
-      symbol: BURN_TOKEN.symbol,
-      name: BURN_TOKEN.name,
-      typeCode: 'other',
-      manualPrice: 1,
-      baseCurrencyCode: 'USD',
-    });
-  } catch (error) {
-    if (!String(error).includes('already exists')) throw error;
-  }
-  return BURN_TOKEN.symbol;
-}
-
-/** Same intolerance of a partial seed as `seedForecastBook`: a missing exit
- *  moves the runway, and a missing stale one removes the only thing the screen
- *  this seeds exists to photograph. */
-async function seedBurnBook(page: Page): Promise<void> {
-  const operating = await createAccount(page, {
-    name: BURN_ACCOUNTS.operating,
-    type: 'Checking Account',
-  });
-  const usd = await createHolding(page, {
-    accountId: operating.id,
-    symbol: 'USD',
-    quantity: BURN_BOOK.usd,
-    jobTimeoutMs: 120_000,
-  });
-  const ledger = await createAccount(page, {
-    name: BURN_ACCOUNTS.ledger,
-    type: 'Checking Account',
-  });
-  const token = await createHolding(page, {
-    accountId: ledger.id,
-    symbol: await burnTokenSymbol(page),
-    quantity: BURN_BOOK.token,
-    jobTimeoutMs: 120_000,
-  });
-  const holding = { usd: usd.id, token: token.id };
-  for (const exit of BURN_BOOK.exits) {
-    await trpcMutate(page, 'holdings.recordMovement', {
-      movement: {
-        direction: 'outflow',
-        holdingId: holding[exit.holding],
-        amount: exit.amount,
-        occurredAt: burnDay(exit.monthsBeforeAsOf),
-        destination: 'left_control',
-      },
-    });
-  }
-}
-
 async function storedSessionIsValid(browser: Browser, file: string): Promise<boolean> {
   if (!existsSync(file)) return false;
   const context = await browser.newContext({ storageState: file, baseURL: BASE_URL });
@@ -423,8 +220,6 @@ const DECLARED_CONTENT: Record<VisualSession, SessionContent> = {
     accounts: ALLOCATION_PORTFOLIO.map((spec) => spec.account),
     holdings: ALLOCATION_PORTFOLIO.length,
   },
-  forecast: { accounts: [FORECAST_PORTFOLIO.account], holdings: 1 },
-  burn: { accounts: [BURN_ACCOUNTS.operating, BURN_ACCOUNTS.ledger], holdings: 2 },
 };
 
 /**
@@ -509,15 +304,14 @@ async function establishSession(
 /**
  * Playwright globalSetup for the visual config: confirms the stack is up and
  * leaves a signed-in, seeded storage state at `VISUAL_SESSION_FILE`, an empty
- * one at `VISUAL_EMPTY_SESSION_FILE`, an eight-account one at
- * `VISUAL_ALLOCATION_SESSION_FILE`, and one holding a recurring book at
- * `VISUAL_FORECAST_SESSION_FILE`.
+ * one at `VISUAL_EMPTY_SESSION_FILE`, and an eight-account one at
+ * `VISUAL_ALLOCATION_SESSION_FILE`.
  *
- * Four sign-ins on a cold run. Each spends 2 of the api's 6 auth attempts per
+ * Three sign-ins on a cold run. Each spends 2 of the api's 6 auth attempts per
  * client per hour — the OTP request and the sign-in — and each signs in under
  * its own client (`sessionUserAgent`), so each keeps 4 of its 6 free. On one
- * shared client the same run needs 8 of 6, which is why the fourth session
- * could not be added without that.
+ * shared client a fourth session would need 8 of 6, which is why a fourth one
+ * (SC-623's, removed with Planning in SC-1409) could not be added without that.
  *
  * The session is reused across runs for the same reason the screenshot
  * harness reuses its own — the API rate-limits sign-ins to 6 per IP per hour —
@@ -540,12 +334,8 @@ export default async function globalSetup(): Promise<void> {
       [VISUAL_SESSION_FILE, 'seeded', 'visual', seedPortfolio],
       [VISUAL_EMPTY_SESSION_FILE, 'empty', 'visual-empty', undefined],
       [VISUAL_ALLOCATION_SESSION_FILE, 'allocation', 'visual-allocation', seedAllocationPortfolio],
-      [VISUAL_FORECAST_SESSION_FILE, 'forecast', 'visual-forecast', seedForecastBook],
-      [VISUAL_BURN_SESSION_FILE, 'burn', 'visual-burn', seedBurnBook],
     ] as const) {
-      // `burn` is never reused: its payments are dated from `BURN_AS_OF`, which
-      // moves every month, so a stored one would drift out of its own window.
-      if (!fresh && session !== 'burn' && (await storedSessionIsValid(browser, file))) {
+      if (!fresh && (await storedSessionIsValid(browser, file))) {
         // intentional: tells the operator which user the baselines describe
         console.log(`Reusing stored ${label} session (VISUAL_FRESH=1 to reseed).`);
       } else {

@@ -19,6 +19,13 @@ import {
 } from 'drizzle-orm';
 import { Service } from 'typedi';
 
+/** See `UserJobRepository.findFullImportHistory`. */
+export interface FullImportHistory {
+  claimed: boolean;
+  lastFullAttemptAt: Date;
+  lastWindowFailureAt: Date | null;
+}
+
 /**
  * Durable mirror of user-initiated BullMQ jobs.
  *
@@ -586,6 +593,62 @@ export class UserJobRepository {
       .orderBy(desc(schema.userJobs.createdAt))
       .limit(1);
     return (row as UserJob | undefined) ?? null;
+  }
+
+  /**
+   * What each account's `transaction-import` history from `source` says about
+   * walking its whole ledger again (SC-1427). Accounts with no full import on
+   * record are absent, and are never walked again on this evidence.
+   *
+   * - `claimed`: the most recent COMPLETED full import (no `since`) claimed the
+   *   whole ledger. Only a full import may claim or deny, so windows are
+   *   skipped rather than read as a `false`, and a failed run states nothing.
+   * - `lastFullAttemptAt`: the newest full import in ANY state, queued and
+   *   failed included. Whatever prompted a re-walk is spent by the attempt, so
+   *   a holding one full walk could not claim never prompts another.
+   * - `lastWindowFailureAt`: the newest FAILED windowed import. A failure
+   *   retracts every claim on the account (SC-168), and only a full walk can
+   *   earn it back.
+   */
+  async findFullImportHistory(
+    accountIds: readonly string[],
+    source: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, FullImportHistory>> {
+    if (accountIds.length === 0) return new Map();
+    const accountId = sql<string>`${schema.userJobs.payloadSummary} ->> 'accountId'`;
+    const isFull = sql`${schema.userJobs.payloadSummary} ->> 'since' IS NULL`;
+    const rows = await this.getDb(transaction)
+      .select({
+        accountId,
+        claimed: sql<string | null>`(array_agg(${schema.userJobs.result} ->> 'hasCompleteTxHistory'
+          ORDER BY ${schema.userJobs.finishedAt} DESC)
+          FILTER (WHERE ${isFull} AND ${schema.userJobs.state} = 'completed'))[1]`,
+        lastFullAttemptAt: sql<
+          string | null
+        >`max(${schema.userJobs.createdAt}) FILTER (WHERE ${isFull})`,
+        lastWindowFailureAt: sql<string | null>`max(${schema.userJobs.updatedAt})
+          FILTER (WHERE NOT ${isFull} AND ${schema.userJobs.state} = 'failed')`,
+      })
+      .from(schema.userJobs)
+      .where(
+        and(
+          eq(schema.userJobs.jobName, 'transaction-import'),
+          sql`${schema.userJobs.payloadSummary} ->> 'source' = ${source}`,
+          inArray(accountId, [...accountIds])
+        )
+      )
+      .groupBy(accountId);
+    const out = new Map<string, FullImportHistory>();
+    for (const row of rows) {
+      if (row.lastFullAttemptAt === null) continue;
+      out.set(row.accountId, {
+        claimed: row.claimed === 'true',
+        lastFullAttemptAt: new Date(row.lastFullAttemptAt),
+        lastWindowFailureAt: row.lastWindowFailureAt ? new Date(row.lastWindowFailureAt) : null,
+      });
+    }
+    return out;
   }
 
   /** Count of in-flight jobs for the top-nav badge. */

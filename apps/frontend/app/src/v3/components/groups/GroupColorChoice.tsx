@@ -35,19 +35,26 @@ interface GroupColorChoiceProps {
 
 export function GroupColorChoice({ value, onChange, disabled }: GroupColorChoiceProps) {
   const { t } = useTranslation();
+  const selected = value.toLowerCase();
+  // A colour saved outside the palette (the API takes any hex) leads the row
+  // as its own choice: snapping it to the nearest swatch would recolour the
+  // group the moment its details were saved, without being asked to.
+  const colors = (GROUP_COLORS as readonly string[]).includes(selected)
+    ? GROUP_COLORS
+    : [selected, ...GROUP_COLORS];
   return (
     <div
       role="radiogroup"
       aria-label={t('v3.groups.colour.legend')}
       className="flex flex-wrap items-center gap-2"
     >
-      {GROUP_COLORS.map((color) => (
+      {colors.map((color) => (
         // biome-ignore lint/a11y/useSemanticElements: a native input[type=radio] is excluded from the token layer's coarse-pointer 44px rule (v3-tokens.css keys it off `button`), so swapping it in would silently drop the touch target on the surface this is built for
         <button
           key={color}
           type="button"
           role="radio"
-          aria-checked={value === color}
+          aria-checked={selected === color}
           aria-label={t('v3.groups.colour.swatch', { color })}
           disabled={disabled}
           onClick={() => onChange(color)}
@@ -55,7 +62,7 @@ export function GroupColorChoice({ value, onChange, disabled }: GroupColorChoice
             'size-5 rounded-full transition-opacity',
             'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background',
             'disabled:pointer-events-none disabled:opacity-50',
-            value === color
+            selected === color
               ? 'ring-2 ring-foreground ring-offset-2 ring-offset-background'
               : 'opacity-70 hover:opacity-100'
           )}

@@ -1,4 +1,5 @@
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
+import { Button } from '@scani/ui/ui/button';
 import { Block } from '@scani/ui/v3/components/Block';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { describeQueryError } from '@scani/ui/v3/lib/errors';
@@ -8,6 +9,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { uploadToR2 } from '@/v3/lib/r2-upload';
 import { AccountTargetFields } from '../components/capture/AccountTargetFields';
+import { AIAvailabilityNote } from '../components/capture/AIAvailabilityNote';
 import { CaptureHeader } from '../components/capture/CaptureHeader';
 import { CaptureSubmit } from '../components/capture/CaptureSubmit';
 import { FileDropField } from '../components/capture/FileDropField';
@@ -20,35 +22,14 @@ import {
   describeImportFileProblem,
   IMPORT_ACCEPT,
   IMPORT_FORMATS_KEY,
+  INVOICE_ACCEPT,
   planImportFile,
+  planInvoiceFile,
 } from '../lib/capture-forms';
 import { buildEnsureAccountInput } from '../lib/manual-entry';
 import { jobDetailPath } from '../lib/routes';
+import { V3_BASE } from '../lib/ui-version';
 
-/**
- * A screenshot, a bank statement or a broker's export — the capture route the
- * sheet leads with, because a phone is holding one of those far more often than
- * it is holding a set of figures.
- *
- * Two things change from v2 beyond the surface, and both are the same defect
- * seen from either end. v2 makes this a **wizard**: pick an account, press
- * Next, and only then is the file dialog reachable — and choosing the file *is*
- * the submit, so a file picked without an account is discarded with a toast
- * and the whole flow restarts. Here the account and the file are two fields of
- * one form, answerable in either order, and nothing is sent until the button is
- * pressed. What was a step gate becomes a named blocker.
- *
- * The other is the wait. Four round trips run behind this button — resolve the
- * account, sign the upload, send the bytes, enqueue the parse — and v2 draws
- * one spinner across all of them. `CaptureSubmit` runs the §2.5 ramp and names
- * the step, so a slow upload is legible as a slow upload.
- *
- * The account is resolved *before* the file goes up, and cached back into the
- * draft afterwards, both of which are v2's and load-bearing: the parse job binds
- * its review card to a real account id, and a retry after a failed upload must
- * not create a second account and trip the `(user, institution, name)` unique
- * constraint.
- */
 export function FileImportPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -62,6 +43,27 @@ export function FileImportPage() {
   useDocumentTitle(t(heading.titleKey));
 
   const [file, setFile] = useState<File | null>(null);
+  const [intent, setIntent] = useState<'statement' | 'invoice' | null>(
+    searchParams.get(FILE_IMPORT_KIND_PARAM) ? 'statement' : null
+  );
+  const capabilities = trpc.screenshots.capabilities.useQuery(undefined, {
+    staleTime: 15_000,
+    refetchOnWindowFocus: true,
+  });
+  const enqueueInvoice = trpc.documents.enqueueParse.useMutation();
+  const plan = file
+    ? (planImportFile(file) ??
+      (planInvoiceFile(file)
+        ? { ...planInvoiceFile(file)!, purpose: 'screenshot' as const, format: undefined }
+        : null))
+    : null;
+  const aiNeeded = Boolean(file && !plan?.format);
+  const invoice = intent === 'invoice' && aiNeeded;
+  const usable =
+    !aiNeeded ||
+    (plan?.contentType === 'application/pdf'
+      ? capabilities.data?.text || (invoice && capabilities.data?.pdf)
+      : capabilities.data?.image);
   const [stage, setStage] = useState<CaptureStage | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,18 +72,28 @@ export function FileImportPage() {
   const parseScreenshots = trpc.screenshots.parseScreenshots.useMutation();
   const parseStatement = trpc.fileImport.parseAndEnrich.useMutation();
 
-  const blockers = describeImportBlockers(t, target.draft, file);
+  const blockers = invoice ? [] : describeImportBlockers(t, target.draft, file);
+  if (aiNeeded && !intent) blockers.push(t('v3.capture.chooseIntent'));
+  if (!usable)
+    blockers.push(
+      t(capabilities.isLoading ? 'v3.capture.ai.blockerLoading' : 'v3.capture.ai.blocker')
+    );
 
   const submit = async () => {
-    const plan = file ? planImportFile(file) : null;
+    const plan = file
+      ? (planImportFile(file) ??
+        (planInvoiceFile(file)
+          ? { ...planInvoiceFile(file)!, purpose: 'screenshot' as const, format: undefined }
+          : null))
+      : null;
     const ensure = buildEnsureAccountInput(target.draft);
-    if (!file || !plan || !ensure || stage) return;
+    if (!file || !plan || (!invoice && !ensure) || stage || blockers.length) return;
 
     setError(null);
     setStage('account');
     try {
-      let accountId = ensure.accountId;
-      if (!accountId) {
+      let accountId = ensure?.accountId;
+      if (!invoice && !accountId && ensure) {
         const created = await ensureAccount.mutateAsync(ensure);
         accountId = created.accountId;
         // The account now exists, so the draft must stop describing one that
@@ -97,7 +109,7 @@ export function FileImportPage() {
 
       setStage('upload');
       const upload = await getUploadUrl.mutateAsync({
-        purpose: plan.purpose,
+        purpose: invoice ? 'document' : plan.purpose,
         contentType: plan.contentType,
         filename: file.name,
         sizeBytes: file.size,
@@ -112,29 +124,37 @@ export function FileImportPage() {
       // dedup key folds into the job id, and a retry that reuses it after a
       // failed upload would resolve to the job holding the *old* R2 key.
       const requestId = crypto.randomUUID();
-      const { jobId } = plan.format
-        ? await parseStatement.mutateAsync({
+      const { jobId } = invoice
+        ? await enqueueInvoice.mutateAsync({
             r2Key: upload.key,
+            mimeType: plan.contentType,
             originalFilename: file.name,
-            fileType: plan.format,
-            accountId,
             requestId,
           })
-        : await parseScreenshots.mutateAsync({
-            r2Keys: [upload.key],
-            // Index-parallel to `r2Keys`. Without it the Files list shows the
-            // presigner's uuid instead of what the user picked.
-            originalFilenames: [file.name],
-            accountId,
-            requestId,
-            minConfidence: 0.5,
-          });
+        : plan.format
+          ? await parseStatement.mutateAsync({
+              r2Key: upload.key,
+              originalFilename: file.name,
+              fileType: plan.format,
+              accountId: accountId!,
+              requestId,
+            })
+          : await parseScreenshots.mutateAsync({
+              r2Keys: [upload.key],
+              // Index-parallel to `r2Keys`. Without it the Files list shows the
+              // presigner's uuid instead of what the user picked.
+              originalFilenames: [file.name],
+              accountId: accountId!,
+              requestId,
+              minConfidence: 0.5,
+            });
 
       navigate(jobDetailPath(jobId));
     } catch (err) {
       const copy = describeQueryError(err, t('v3.capture.page.fileImport.subject'), 'save');
       setError(`${copy.title}. ${copy.detail}`);
       setStage(null);
+      void capabilities.refetch();
     }
   };
 
@@ -145,21 +165,19 @@ export function FileImportPage() {
       <CaptureHeader title={t(heading.titleKey)} description={t(heading.descriptionKey)} />
 
       <Block>
-        <AccountTargetFields
-          target={target}
-          disabled={busy}
-          title={t('v3.capture.fileImport.whereItBelongs')}
-        />
-      </Block>
-
-      <Block>
         <FieldSet title={t('v3.capture.page.fileImport.fieldset')}>
           <FileDropField
             inputId="import-file"
-            accept={IMPORT_ACCEPT}
+            accept={`${IMPORT_ACCEPT},${INVOICE_ACCEPT}`}
             file={file}
-            onFile={setFile}
-            validate={(filename) => describeImportFileProblem(t, filename)}
+            onFile={(next) => {
+              setFile(next);
+              setIntent(searchParams.get(FILE_IMPORT_KIND_PARAM) ? 'statement' : null);
+              setError(null);
+            }}
+            validate={(filename) =>
+              planInvoiceFile({ name: filename }) ? null : describeImportFileProblem(t, filename)
+            }
             formats={t(IMPORT_FORMATS_KEY)}
             prompt={t('v3.capture.page.fileImport.prompt')}
             disabled={busy}
@@ -167,12 +185,48 @@ export function FileImportPage() {
         </FieldSet>
       </Block>
 
+      {aiNeeded && (
+        <>
+          <AIAvailabilityNote
+            state={capabilities.isLoading ? 'loading' : (capabilities.data?.state ?? 'transient')}
+            invoice={invoice}
+          />
+          {!searchParams.get(FILE_IMPORT_KIND_PARAM) && (
+            <Block className="flex flex-col gap-2 p-4">
+              <p>{t('v3.capture.chooseIntent')}</p>
+              <Button
+                variant={intent === 'statement' ? 'default' : 'outline'}
+                onClick={() => setIntent('statement')}
+              >
+                {t('v3.capture.intent.statement')}
+              </Button>
+              <Button
+                variant={intent === 'invoice' ? 'default' : 'outline'}
+                onClick={() => setIntent('invoice')}
+              >
+                {t('v3.capture.intent.invoice')}
+              </Button>
+            </Block>
+          )}
+        </>
+      )}
+      {!invoice && (
+        <Block>
+          <AccountTargetFields
+            target={target}
+            disabled={busy}
+            title={t('v3.capture.fileImport.whereItBelongs')}
+          />
+        </Block>
+      )}
+
       <CaptureSubmit
         label={t('v3.capture.page.uploadAndRead')}
         blockers={blockers}
         onSubmit={submit}
         stage={stage}
-        busyLabel="the upload"
+        busyLabel={t('v3.capture.busy.upload')}
+        cancelTo={V3_BASE}
         error={error}
       />
     </PageLayout>

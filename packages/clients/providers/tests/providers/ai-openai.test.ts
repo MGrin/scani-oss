@@ -151,7 +151,7 @@ describe('OpenAIProvider', () => {
   test('parseScreenshot throws when api key not configured', async () => {
     const p = new OpenAIProvider('');
     expect(p.parseScreenshot({ imageBase64: 'a', mimeType: 'image/png' })).rejects.toThrow(
-      'apiKey not configured'
+      'AI processing unavailable (missing)'
     );
   });
 
@@ -161,7 +161,7 @@ describe('OpenAIProvider', () => {
     globalThis.fetch = (async () =>
       new Response('rate limited', { status: 429 })) as unknown as typeof fetch;
     try {
-      expect(p.completeText('hi')).rejects.toThrow('HTTP 429');
+      expect(p.completeText('hi')).rejects.toThrow('AI processing unavailable (transient)');
     } finally {
       globalThis.fetch = originalFetch;
     }

@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Entity, NewEntity } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 /**
@@ -55,55 +55,6 @@ export class EntityRepository extends BaseRepository<Entity, NewEntity> {
       return new Map(rows.map((row) => [row.id, row.entityId]));
     } catch (error) {
       this.logger.error({ userId, error }, 'Failed to map accounts to entities');
-      throw error;
-    }
-  }
-
-  /**
-   * Move accounts into an entity, or out of every entity when `entityId` is
-   * null.
-   *
-   * Scoped by `userId` in the same statement rather than checked beforehand:
-   * an ownership boundary is exactly the kind of thing where a caller passing
-   * somebody else's account id must write nothing, and a WHERE that cannot be
-   * forgotten is stronger than a check that can.
-   */
-  async assignAccounts(
-    userId: string,
-    accountIds: string[],
-    entityId: string | null,
-    transaction?: DatabaseTransaction
-  ): Promise<number> {
-    if (accountIds.length === 0) return 0;
-    try {
-      const database = this.getDb(transaction);
-      const updated = await database
-        .update(schema.accounts)
-        .set({ entityId, updatedAt: new Date() })
-        .where(and(eq(schema.accounts.userId, userId), inArray(schema.accounts.id, accountIds)))
-        .returning({ id: schema.accounts.id });
-      return updated.length;
-    } catch (error) {
-      this.logger.error({ userId, entityId, error }, 'Failed to assign accounts to entity');
-      throw error;
-    }
-  }
-
-  async findByIdForUser(
-    userId: string,
-    entityId: string,
-    transaction?: DatabaseTransaction
-  ): Promise<Entity | null> {
-    try {
-      const database = this.getDb(transaction);
-      const [row] = await database
-        .select()
-        .from(schema.entities)
-        .where(and(eq(schema.entities.userId, userId), eq(schema.entities.id, entityId)))
-        .limit(1);
-      return row ?? null;
-    } catch (error) {
-      this.logger.error({ userId, entityId, error }, 'Failed to find entity by id');
       throw error;
     }
   }

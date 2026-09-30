@@ -168,20 +168,10 @@ export class HoldingQueryService extends BaseService {
         const cachedCostBasis = costBasisMap.get(holding.id);
         const costBasis = cachedCostBasis !== undefined ? cachedCostBasis : currentValue;
 
-        let priceInfo = priceMetadataMap.get(token.id);
-        let priceStale = priceStaleMap.get(token.id);
-
-        if (!priceInfo && token.id === user.baseCurrencyId) {
-          priceInfo = {
-            value: '1',
-            timestamp: new Date().toISOString(),
-            source: 'Base Currency',
-          };
-          // A currency against itself is 1 at every instant, so this rate is
-          // not old and is not unknown either — it is the one price that
-          // cannot go stale.
-          priceStale = false;
-        }
+        // The base currency's price, date and freshness are decided once, in
+        // `PortfolioValuationService` (SC-1447).
+        const priceInfo = priceMetadataMap.get(token.id);
+        const priceStale = priceStaleMap.get(token.id);
 
         const holdingGroups = groupsMap.get(holding.id) || [];
         const apyConfig = apyConfigsMap.get(holding.id);

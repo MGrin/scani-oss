@@ -6,6 +6,8 @@ import { Label } from '@scani/ui/ui/label';
 import { useToast } from '@scani/ui/ui/use-toast';
 import { Block } from '@scani/ui/v3/components/Block';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
+import { DataViewEmpty } from '@scani/ui/v3/components/data-view/DataViewEmpty';
+import { Route } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
@@ -44,14 +46,18 @@ export function TransferRuleList({
   rules: TransferReviewRule[];
   hidden: HiddenTransferReview[];
 }) {
-  const { t } = useTranslation();
-
   if (rules.length === 0) {
     return (
-      <Block className="flex flex-col gap-2 p-4">
-        <p className="text-body">{t('v3.review.rules.empty.title')}</p>
-        <p className="text-caption text-muted-foreground">{t('v3.review.rules.empty.body')}</p>
-      </Block>
+      // A rule is written from a row in the queue, so there is no create action
+      // to offer here; the explanation says where rules come from (rule 8).
+      <DataViewEmpty
+        empty={{
+          icon: Route,
+          titleKey: 'ui.dataView.transferRules.empty.noDestinationRulesYet',
+          descriptionKey: 'ui.dataView.transferRules.empty.openAPaymentOutInTheQueue',
+          action: null,
+        }}
+      />
     );
   }
 

@@ -1,16 +1,10 @@
 import { MagicCodeInput } from '@scani/ui/components/MagicCodeInput';
 import { useTurnstile } from '@scani/ui/components/Turnstile';
 import { Button } from '@scani/ui/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@scani/ui/ui/dialog';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
+import { FormActions, FormSheet } from '../form/FormSheet';
 
 interface ConfirmIdentityDialogProps {
   open: boolean;
@@ -68,25 +62,40 @@ export function ConfirmIdentityDialog({
     onConfirmed();
   };
 
+  const close = () => onOpenChange(false);
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{t('v3.settings.reauth.title')}</DialogTitle>
-          <DialogDescription>{t('v3.settings.reauth.description', { email })}</DialogDescription>
-        </DialogHeader>
-        {turnstile.widget}
-        {sent ? (
-          <MagicCodeInput onSubmit={verify} onResend={send} isLoading={busy} error={error} />
-        ) : (
-          <div className="flex flex-col gap-2">
-            <Button onClick={() => void send()} disabled={busy || turnstile.blocksSubmit || !email}>
-              {busy ? t('v3.settings.reauth.sending') : t('v3.settings.reauth.send')}
+    <FormSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('v3.settings.reauth.title')}
+      description={t('v3.settings.reauth.description', { email })}
+      // Once the code is on its way the input submits itself, so the footer
+      // keeps only the way out.
+      footer={
+        sent ? (
+          <div className="flex flex-col lg:flex-row lg:justify-end">
+            <Button variant="ghost" onClick={close}>
+              {t('v3.form.cancel')}
             </Button>
-            {error ? <p className="text-label text-destructive">{error}</p> : null}
           </div>
-        )}
-      </DialogContent>
-    </Dialog>
+        ) : (
+          <FormActions
+            submitLabel={t('v3.settings.reauth.send')}
+            pendingLabel={t('v3.settings.reauth.sending')}
+            onSubmit={() => void send()}
+            onCancel={close}
+            blockers={turnstile.blocksSubmit ? [t('v3.settings.reauth.humanCheck')] : []}
+            pending={busy}
+            error={error}
+          />
+        )
+      }
+    >
+      {turnstile.widget}
+      {sent ? (
+        <MagicCodeInput onSubmit={verify} onResend={send} isLoading={busy} error={error} />
+      ) : null}
+    </FormSheet>
   );
 }

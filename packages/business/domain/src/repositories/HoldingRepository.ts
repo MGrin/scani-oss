@@ -492,7 +492,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
    *
    * Deliberately unfiltered by the inclusion contract. Its only caller
    * (`ReturnsScopeResolver`) feeds the result straight into
-   * `PortfolioValueDailyRepository.findIncludedHoldingScopeRange`, which
+   * `PortfolioValueDailyRepository.findIncludedHoldingValueRange`, which
    * applies hidden / inactive / scam in SQL — applying it twice, in two
    * places, is how the chart and the headline came to disagree in the first
    * place (`isIncludedInTotal`). One gate, and this is not it.

@@ -121,7 +121,7 @@ export function DateField({
   return (
     <div
       className={cn(
-        'relative flex h-11 w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-input bg-background px-3',
+        'relative flex h-11 w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-input bg-background dark:bg-input/30 px-3',
         'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
         disabled && 'cursor-not-allowed opacity-50',
         className

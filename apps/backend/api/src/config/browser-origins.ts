@@ -1,7 +1,8 @@
 /**
  * Browser origins the api answers to.
  *
- * Production accepts exactly one origin — `FRONTEND_URL` — and nothing else.
+ * Production accepts `FRONTEND_URL` plus, when configured, the Cloud console
+ * origin (`CLOUD_FRONTEND_URL`) — and nothing else.
  *
  * Development additionally accepts loopback on any port. A dev browser
  * arrives from whatever host it was actually pointed at, which is routinely
@@ -38,22 +39,30 @@ const LOOPBACK_TRUSTED_ORIGIN_PATTERNS = [
 export interface BrowserOriginOptions {
   /** Pass `isNodeEnvProduction()`. Production never gets the dev allowance. */
   isProduction: boolean;
+  /** Further exact origins (the Cloud console). Validated as https in production by the env schema. */
+  extraOrigins?: readonly string[];
+}
+
+function exactOrigins(frontendUrl: string, extraOrigins: readonly string[] = []): string[] {
+  return [...new Set([frontendUrl, ...extraOrigins])];
 }
 
 /** `origin` value for `@elysiajs/cors`. */
 export function buildCorsOrigins(
   frontendUrl: string,
-  { isProduction }: BrowserOriginOptions
+  { isProduction, extraOrigins }: BrowserOriginOptions
 ): (string | RegExp)[] {
-  return isProduction ? [frontendUrl] : [frontendUrl, LOOPBACK_ORIGIN];
+  const exact = exactOrigins(frontendUrl, extraOrigins);
+  return isProduction ? exact : [...exact, LOOPBACK_ORIGIN];
 }
 
 /** `trustedOrigins` value for Better-Auth. */
 export function buildTrustedOrigins(
   frontendUrl: string,
-  { isProduction }: BrowserOriginOptions
+  { isProduction, extraOrigins }: BrowserOriginOptions
 ): string[] {
-  return isProduction ? [frontendUrl] : [frontendUrl, ...LOOPBACK_TRUSTED_ORIGIN_PATTERNS];
+  const exact = exactOrigins(frontendUrl, extraOrigins);
+  return isProduction ? exact : [...exact, ...LOOPBACK_TRUSTED_ORIGIN_PATTERNS];
 }
 
 /**

@@ -17,6 +17,7 @@ import {
 } from '../../../src/v3/components/money/PaymentStatusToggle';
 import { RecurringList } from '../../../src/v3/components/money/RecurringList';
 import { RecurringSummary } from '../../../src/v3/components/money/RecurringSummary';
+import { SettledFeed } from '../../../src/v3/components/money/SettledFeed';
 import { UpcomingFeed, upcomingPeekSpec } from '../../../src/v3/components/money/UpcomingFeed';
 import { VendorList } from '../../../src/v3/components/money/VendorList';
 import type { HistoryEstimate } from '../../../src/v3/lib/paymentTotals';
@@ -163,6 +164,7 @@ function renderFeed(path = '/payments', overrides: Record<string, unknown> = {})
   return renderToStaticMarkup(
     <StaticRouter location={path}>
       <UpcomingFeed
+        toolbar={null}
         occurrences={asAny(OCCURRENCES)}
         paymentCount={2}
         vendorNameById={VENDOR_NAMES}
@@ -177,6 +179,46 @@ function renderFeed(path = '/payments', overrides: Record<string, unknown> = {})
 }
 
 describe('UpcomingFeed', () => {
+  // SC-1408: a bill's groups are on its row, so the list answers "which group
+  // is this in" without opening the bill.
+  test('a row names the groups its occurrence is in', () => {
+    const html = renderFeed('/payments', {
+      occurrences: asAny([DUE_BILL]),
+      occurrenceGroups: { [DUE_BILL.id]: ['g-home', 'g-gone'] },
+      groupById: new Map([['g-home', { name: 'Household', color: '#123456' }]]),
+    });
+    expect(html).toContain('Household');
+    expect(html).toContain('border-color:#123456');
+    // After the figure, in the value zone — never beside the payee's name,
+    // which truncates (UI standard, rule 5). The headline repeats the amount
+    // above the row, so it is the LAST 99.00 the badge has to follow.
+    expect(html.indexOf('Household')).toBeGreaterThan(html.lastIndexOf('99.00'));
+  });
+
+  test('a row with no groups carries no tag', () => {
+    const html = renderFeed('/payments', {
+      occurrences: asAny([DUE_BILL]),
+      groupById: new Map([['g-home', { name: 'Household', color: '#123456' }]]),
+    });
+    expect(html).not.toContain('Household');
+  });
+
+  // SC-1405: a day holding one bill printed that bill's amount twice, once in
+  // the date header and once on the row. The header total is for days with
+  // several bills.
+  test('a day with one bill shows its amount on the row only', () => {
+    const html = renderFeed('/payments', { occurrences: asAny([DUE_BILL]) });
+    // Once in the "next 30 days" headline, once on the row.
+    expect(html.split('99.00').length - 1).toBe(2);
+  });
+
+  test('the control: a day with two bills still shows their total', () => {
+    const second = { ...DUE_BILL, id: 'occurrence-due-2', expectedAmount: '1.00' };
+    const html = renderFeed('/payments', { occurrences: asAny([DUE_BILL, second]) });
+    // The headline and the day header both read 100.00.
+    expect(html.split('100.00').length - 1).toBe(2);
+  });
+
   // Fed in date-descending, so passing this means the feed reordered rather
   // than that the fixture happened to be in the right order already.
   test('leads with what is already late, whatever order the rows arrive in', () => {
@@ -236,18 +278,38 @@ describe('UpcomingFeed', () => {
   });
 
   /**
-   * V3-47, the reported defect: the figure had always been outflow-only and the
-   * list under it had not, so a salary appeared as a row beneath a heading that
-   * described bills. Income now has its own block, its own horizon and its own
-   * figure — below the bills, never inside them.
+   * V3-47, and again SC-1405: the figure is outflow-only, so the list under it
+   * must be too. SC-1396 put income back into the bill list — under OVERDUE, for
+   * a payer who was late — and mgrin could not tell what the screen was saying.
+   * The salary is a row in its own block below, never one of the bills.
    */
-  test('income is a block of its own, under the bills rather than among them', () => {
+  test('income is a block of its own, never a row in the bill list', () => {
     const html = renderFeed();
-    expect(html).toInclude('Income expected, next 90 days');
-    expect(html.indexOf('Bills committed')).toBeLessThan(html.indexOf('Income expected'));
-    // Every row in the bill feed is a bill, so nothing there says which is which
-    // any more — and the salary is not one of those rows.
-    expect(html.indexOf('Flare')).toBeGreaterThan(html.indexOf('Income expected'));
+    const bills = html.slice(0, html.indexOf('Income expected, next 90 days'));
+    const income = html.slice(html.indexOf('Income expected, next 90 days'));
+    expect(bills).not.toInclude('Flare');
+    expect(income).toInclude('Flare');
+    // The control: the same split does find the bill, so the absence above is a
+    // reading and not a slice that missed everything.
+    expect(bills).toInclude('Hetzner');
+  });
+
+  /** SC-1405: the headline is exactly the sum of the rows listed under it. */
+  test('the bill figure is the sum of the bill rows beneath it', () => {
+    const html = renderFeed('/payments', {
+      occurrences: asAny([
+        DUE_BILL,
+        {
+          ...DUE_BILL,
+          id: 'occurrence-second',
+          dueDate: daysFromToday(20),
+          expectedAmount: '11.00',
+        },
+      ]),
+    });
+    expect(html).toInclude('€110.00');
+    expect(html).toInclude('€99.00');
+    expect(html).toInclude('€11.00');
   });
 
   /**
@@ -293,12 +355,25 @@ describe('UpcomingFeed', () => {
     expect(html).toInclude('Nothing due in the next 30 days');
   });
 
-  test('a bill past the bill window is not in the bill figure', () => {
+  // SC-1405: one window for the figure and the list, so neither holds a row the
+  // other does not. The period in the Refine sheet moves both together.
+  test('a bill past the window is neither in the figure nor in the list', () => {
     const html = renderFeed('/payments', {
       occurrences: asAny([{ ...LATE_BILL, dueDate: daysFromToday(45) }]),
     });
     expect(html).not.toInclude('€42.00');
     expect(html).toInclude('Nothing due in the next 30 days');
+  });
+
+  test('the control: a longer period lists that bill AND counts it', () => {
+    const html = renderFeed('/payments', {
+      occurrences: asAny([{ ...LATE_BILL, dueDate: daysFromToday(45) }]),
+      horizonDays: 90,
+    });
+    expect(html).toInclude('Bills committed, next 90 days');
+    const figure = html.slice(0, html.indexOf('Hetzner'));
+    expect(figure).toInclude('€42.00');
+    expect(html.slice(html.indexOf('Hetzner'))).toInclude('€42.00');
   });
 
   // V3-52. The £2,400 bill used to print as a "Plus £2,400.00" tail beside a
@@ -342,7 +417,9 @@ describe('UpcomingFeed', () => {
   test('nothing due, but payments on file, is not the onboarding screen', () => {
     const html = renderFeed('/payments', { occurrences: [] });
     expect(html).toInclude('Nothing due in the next 90 days');
-    expect(html).toInclude('See recurring payments');
+    // The page's main action in both cases (rule 8, SC-1433); only the
+    // sentence above it differs.
+    expect(html).toInclude('Add a payment');
     expect(html).not.toInclude('No recurring payments yet');
   });
 
@@ -380,6 +457,55 @@ describe('UpcomingFeed', () => {
     expect(html).toInclude('load upcoming payments');
     expect(html).toInclude('Try again');
     expect(html).not.toInclude('Nothing due in the next');
+  });
+});
+
+/**
+ * SC-1405. The Bills list once Status asks for history: paid, missed, skipped.
+ * Nothing on it is still owed, so it carries no committed figure and no Overdue
+ * heading — a bill paid last month is not late.
+ */
+describe('SettledFeed', () => {
+  const PAID = {
+    ...LATE_BILL,
+    id: 'occurrence-paid',
+    status: 'matched',
+    actualAmount: '45.00',
+  };
+
+  const renderSettled = (occurrences: unknown[]) =>
+    renderToStaticMarkup(
+      <StaticRouter location="/payments">
+        <SettledFeed
+          occurrences={asAny(occurrences)}
+          vendorNameById={VENDOR_NAMES}
+          tokenSymbolById={TOKEN_SYMBOLS}
+          rates={RATES}
+          query={SETTLED_QUERY_STATE}
+          historyEstimates={NO_HISTORY}
+        />
+      </StaticRouter>
+    );
+
+  // The status is read through a key built from the row, which no literal-key
+  // scan sees — this is the test that stops that string being deleted again.
+  test('a paid row says so in words, with the amount that really moved', () => {
+    const html = renderSettled([PAID]);
+    expect(html).toInclude('Paid');
+    expect(html).not.toInclude('v3.money.groups.statuses');
+    expect(html).toInclude('€45.00');
+    expect(html).not.toInclude('€42.00');
+  });
+
+  test('history is not overdue, and carries no committed figure', () => {
+    const html = renderSettled([PAID]);
+    expect(html).not.toInclude('Overdue');
+    expect(html).not.toInclude('Bills committed');
+    expect(html).toInclude(formatDate(PAID.dueDate));
+  });
+
+  test('an empty period says so, rather than drawing nothing', () => {
+    expect(renderSettled([])).toInclude('Nothing in this period.');
   });
 });
 
@@ -680,8 +806,8 @@ describe('UpcomingFeed — a payment priced from history (SC-798)', () => {
       renderFeed('/payments', { occurrences: asAny([VARIABLE_INVOICE]), historyEstimates });
 
     test('the row shows the estimated figure and cites the month it came from', () => {
-      const income = renderIncome(CLIENT_ESTIMATE);
-      const block = income.slice(income.indexOf('Income expected'));
+      // The row sits in the shared list now (SC-1396), above the income figure.
+      const block = renderIncome(CLIENT_ESTIMATE);
 
       expect(block).toInclude('300.00');
       // The mark travels with the figure. A bare number here would make an
@@ -706,11 +832,16 @@ describe('UpcomingFeed — a payment priced from history (SC-798)', () => {
     test('the caption names only money the reader can see on the same surface', () => {
       // SC-807's ruling one level tighter than the tile it was written about.
       // The figure is still €0.00 — that is the ruling, not the defect — but
-      // €300.00 is now above the rows AND in one, rather than in neither.
+      // €300.00 is in a row of the income block AND in its caption, rather than
+      // in neither. The row lives in the block again (SC-1405), not in the bill
+      // list above it.
       const income = renderIncome(CLIENT_ESTIMATE);
       const block = income.slice(income.indexOf('Income expected'));
+      const bills = income.slice(0, income.indexOf('Income expected'));
+      expect(bills).not.toInclude('300.00');
 
       expect(block).toInclude('€0.00');
+      expect(block).toInclude('Estimated');
       expect(block.split('300.00').length - 1).toBeGreaterThanOrEqual(2);
       expect(block).not.toInclude('No value');
     });
@@ -830,7 +961,7 @@ function renderRecurring(path = '/payments/recurring', overrides: Record<string,
 describe('RecurringList', () => {
   test('is the list surface, with its search and its refine control', () => {
     const html = renderRecurring();
-    expect(html).toInclude('Search by vendor');
+    expect(html).toInclude('Search by payee');
     expect(html).toInclude('aria-label="Filter, sort and group"');
     expect(html).toInclude('2 payments');
   });
@@ -868,7 +999,8 @@ describe('RecurringList', () => {
   test('an empty surface offers the button that creates the first record', () => {
     const html = renderRecurring('/payments/recurring', { payments: [] });
     expect(html).toInclude('No recurring payments yet');
-    expect(html).toInclude('/payments/recurring/new');
+    // Over the list it sits on, so closing the form returns there (SC-1414).
+    expect(html).toInclude('/payments/recurring?sheet=payment%3Anew');
   });
 });
 
@@ -1145,7 +1277,6 @@ function renderVendors(path = '/vendors', overrides: Record<string, unknown> = {
         rates={RATES}
         query={SETTLED_QUERY_STATE}
         historyEstimates={NO_HISTORY}
-        creating={false}
         onCreatingChange={() => {}}
         {...overrides}
       />
@@ -1159,11 +1290,11 @@ describe('VendorList', () => {
     expect(html).toInclude('Hetzner');
     expect(html).toInclude('Hosting');
     expect(html).toInclude('Uncategorised');
-    expect(html).toInclude('2 vendors');
+    expect(html).toInclude('2 payees');
   });
 
   test('the count is announced, since “2” alone says nothing', () => {
-    expect(renderVendors()).toInclude('Hetzner, 2 payments');
+    expect(renderVendors()).toInclude('Hetzner, 2 recurring payments');
   });
 
   // V3-53. The row's figure is the monthly commitment: two €42/month payments
@@ -1219,7 +1350,7 @@ describe('VendorList', () => {
   });
 
   test('an income row announces its direction, so two rows are told apart', () => {
-    expect(renderVendors()).toInclude('Flare, Income, 1 payment');
+    expect(renderVendors()).toInclude('Flare, Income, 1 recurring payment');
   });
 
   // GBP settlements with no rate must be named beside the total, not folded
@@ -1231,10 +1362,10 @@ describe('VendorList', () => {
     expect(html).toInclude('£100.00');
   });
 
-  test('the empty state says where vendors come from', () => {
+  test('the empty state says where payees come from', () => {
     const html = renderVendors('/vendors', { vendors: [] });
-    expect(html).toInclude('No vendors yet');
-    expect(html).toInclude('New vendor');
+    expect(html).toInclude('No payees yet');
+    expect(html).toInclude('New payee');
   });
 });
 
@@ -1371,9 +1502,9 @@ describe('DuplicateVendorPicker', () => {
   });
 
   test('a long list gets a search field; a short one does not raise a keyboard for nothing', () => {
-    expect(renderPicker()).toInclude('Search for the duplicate vendor');
+    expect(renderPicker()).toInclude('Search for the duplicate payee');
     expect(renderPicker({ candidates: CANDIDATES.slice(0, 3) })).not.toInclude(
-      'Search for the duplicate vendor'
+      'Search for the duplicate payee'
     );
   });
 

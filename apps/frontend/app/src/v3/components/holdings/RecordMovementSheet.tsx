@@ -1,20 +1,13 @@
-import { Button } from '@scani/ui/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@scani/ui/ui/dialog';
 import { useTranslation } from 'react-i18next';
 import { useMovementForm } from '../../hooks/useMovementForm';
 import type { MovementHolding, MovementSubmission } from '../../lib/movement-form';
+import { FormActions, FormSheet } from '../form/FormSheet';
 import { MovementWhatFields, MovementWhereFields } from './MovementFields';
 
 /**
  * "I withdrew 2000" — the movement, recorded as itself (SC-607), from the
- * holding's own peek sheet.
+ * holding's own peek sheet, in a `FormSheet` (SC-1413; it was a centred
+ * `Dialog` despite its name).
  *
  * ## One flow, two chromes
  *
@@ -51,7 +44,7 @@ import { MovementWhatFields, MovementWhereFields } from './MovementFields';
  * same-day prior observation against two with a 72-hour-old one. Only a
  * deliberately chosen other day becomes that day's midnight.
  *
- * The rule itself is `dateFieldInstant`, shared with `HoldingEditCauseDialog`
+ * The rule itself is `dateFieldInstant`, shared with `useHoldingEditCause`
  * since SC-612 — which is the same defect on the other surface, found after
  * this one was fixed here. Two forms asking for a date must not date the same
  * movement differently.
@@ -82,27 +75,27 @@ export function RecordMovementSheet({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{t('v3.holdings.movement.title')}</DialogTitle>
-          <DialogDescription>{t('v3.holdings.movement.description')}</DialogDescription>
-        </DialogHeader>
-
-        <div className="flex flex-col gap-4">
-          <MovementWhatFields form={form} holding={holding} holdings={[]} disabled={isSaving} />
-          {form.asksWhere ? <MovementWhereFields form={form} disabled={isSaving} /> : null}
-        </div>
-
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isSaving}>
-            {t('v3.holdings.movement.cancel')}
-          </Button>
-          <Button onClick={submit} disabled={form.blockers.length > 0 || isSaving}>
-            {isSaving ? t('v3.holdings.movement.saving') : t('v3.holdings.movement.save')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+    <FormSheet
+      open={open}
+      onOpenChange={onOpenChange}
+      title={t('v3.holdings.movement.title')}
+      description={t('v3.holdings.movement.description')}
+      footer={
+        <FormActions
+          submitLabel={t('v3.holdings.movement.save')}
+          pendingLabel={t('v3.holdings.movement.saving')}
+          onSubmit={submit}
+          onCancel={() => onOpenChange(false)}
+          blockers={form.blockers}
+          pending={isSaving}
+          error={null}
+        />
+      }
+    >
+      <div className="flex flex-col gap-4">
+        <MovementWhatFields form={form} holding={holding} holdings={[]} disabled={isSaving} />
+        {form.asksWhere ? <MovementWhereFields form={form} disabled={isSaving} /> : null}
+      </div>
+    </FormSheet>
   );
 }

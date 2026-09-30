@@ -127,3 +127,54 @@ describe('computeTimeWeightedReturn — annualization', () => {
     expect(pct(result?.annualized)).toBeCloseTo(0.1997, 4);
   });
 });
+
+// SC-1432. End-of-day divides a day's whole gap by the OPENING value, which
+// is right while the flow is small next to it. A flow that dwarfs the opening
+// puts its own day's movement on a tiny denominator: a £300 scope took a
+// £1,500 transfer, the close sat £20 under the flow's value, and that one
+// day read −6.7%. Such a flow counts from the
+// open: r = V₁/(V₀ + F) − 1.
+describe('computeTimeWeightedReturn — a flow larger than the opening counts from the open (SC-1432)', () => {
+  test('£300 open, £1,500 in, £20 below reads about −1.1%', () => {
+    const result = computeTimeWeightedReturn([
+      point('2026-02-10', 300),
+      point('2026-02-11', 300 + 1500 - 20, 1500),
+    ]);
+    expect(pct(result?.cumulative)).toBeCloseTo(-20 / (300 + 1500), 12);
+    expect(pct(result?.cumulative)).toBeCloseTo(-0.0111, 4);
+    // What end-of-day gave, stated so the test says what it fixes.
+    expect((300 + 1500 - 20 - 1500) / 300 - 1).toBeCloseTo(-0.0667, 4);
+  });
+
+  test('CONTROL: a flow smaller than the opening is still end-of-day, to the digit', () => {
+    const result = computeTimeWeightedReturn([
+      point('2026-01-01', 1000),
+      point('2026-01-02', 1600, 500),
+    ]);
+    expect(result?.cumulative).toBe(new Decimal(1100).div(1000).minus(1).toString());
+  });
+
+  test('BOUNDARY: a flow exactly equal to the opening stays end-of-day', () => {
+    const result = computeTimeWeightedReturn([
+      point('2026-01-01', 1000),
+      point('2026-01-02', 1900, 1000),
+    ]);
+    expect(pct(result?.cumulative)).toBeCloseTo(-0.1, 12);
+  });
+
+  test('across a gap it stays end-of-day: the flow landed after part of the move', () => {
+    const result = computeTimeWeightedReturn([
+      point('2026-01-01', 300),
+      point('2026-01-05', 300 + 1500 - 20, 1500),
+    ]);
+    expect(pct(result?.cumulative)).toBeCloseTo((300 - 20) / 300 - 1, 12);
+  });
+
+  test('an outflow is never re-based, however large', () => {
+    const result = computeTimeWeightedReturn([
+      point('2026-01-01', 1000),
+      point('2026-01-02', 0, -1000),
+    ]);
+    expect(pct(result?.cumulative)).toBe(0);
+  });
+});

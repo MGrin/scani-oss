@@ -11,10 +11,12 @@ import { useReviewFeed } from '@/v3/hooks/useReviewFeed';
 import { CaptureSheet } from '../components/capture/CaptureSheet';
 import { CaptureSheetProvider } from '../components/capture/CaptureSheetContext';
 import { DemoBanner } from '../components/DemoBanner';
+import { PaymentFormSheet } from '../components/money/PaymentFormSheet';
 import { PullToRefreshIndicator } from '../components/PullToRefreshIndicator';
 import { V3TokenScope } from '../components/V3TokenScope';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import { resolveActiveTabPath, resolveActiveV3Path } from '../lib/routes';
+import { ScaniBrand } from './ScaniBrand';
 import { V3MoreDrawer } from './V3MoreDrawer';
 import { V3Sidebar } from './V3Sidebar';
 import { V3_TAB_BAR_SPACER, V3TabBar } from './V3TabBar';
@@ -99,8 +101,7 @@ export function V3Shell() {
               minHeight: 'calc(3.5rem + env(safe-area-inset-top))',
             }}
           >
-            {/* The "v3" chip that sat here is gone (V3-19) — see `V3Sidebar`. */}
-            <span className="text-title">Scani</span>
+            <ScaniBrand />
             <div className="ms-auto flex items-center gap-1">
               <ThemeToggle variant="icon" side="bottom" align="end" />
             </div>
@@ -188,11 +189,16 @@ export function V3Shell() {
 
       <V3TabBar
         activeTabPath={activeTabPath}
+        // A destination no tab owns is reached through More, so More reads as
+        // where you are rather than the bar going dark (SC-1433).
+        moreActive={activePath !== null && activeTabPath === null}
         onCapturePress={openCapture}
         onMorePress={more.open}
         actionRequiredCount={actionRequiredCount}
       />
       <CaptureSheet open={capture.isOpen} onOpenChange={capture.setOpen} />
+      {/* The bill form opens over any screen, from the URL (SC-1414). */}
+      <PaymentFormSheet />
       <V3MoreDrawer
         open={more.isOpen}
         onOpenChange={more.setOpen}

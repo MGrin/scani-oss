@@ -76,7 +76,8 @@ export const aiOpenAIFactory: ProviderFactory = async (deps) => {
     provider: 'openai',
     envVar: 'OPENAI_API_KEY',
     keyed: apiKey !== '',
-    degradedBehaviour: 'throws on every call, so screenshot and document parsing fail',
+    degradedBehaviour:
+      'AI extraction unavailable; structured imports, manual entry and independent connections remain available',
   });
   return new OpenAIProvider(apiKey, deps.rateLimiterRegistry);
 };

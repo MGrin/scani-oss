@@ -75,6 +75,7 @@
 import {
   type CheckoutEnumeration,
   formatBytes,
+  isDerivedName,
   isReclaimable,
   type MachineCensus,
   type StackProject,
@@ -160,6 +161,9 @@ function refuseEnumeration(e: CheckoutEnumeration | null): string | null {
 }
 
 function describeKept(p: StackProject): string {
+  if (p.state === 'unattributed' && isDerivedName(p.project)) {
+    return `${p.project} is not behind any checkout of THIS repository, but no container records where its checkout is, so nothing proves it dead — a separate clone's stack looks exactly like this (SC-1417). Never reclaimable`;
+  }
   if (p.state === 'unattributed') {
     return `${p.project} is not a name any checkout derives — it may be serving one anyway (a bare \`docker compose up\` adopts the directory leaf), so it is never reclaimable`;
   }

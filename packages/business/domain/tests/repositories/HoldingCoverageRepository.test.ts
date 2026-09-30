@@ -760,4 +760,63 @@ describe('HoldingCoverageRepository — the window the source covers', () => {
       expect(row.historyStartsAt?.toISOString()).toBe(EARLY.toISOString());
     });
   });
+
+  // SC-1427: an airdrop first seen by a 30-day window is born unclaimed, and
+  // the scheduler compares when against the last full walk.
+  test('findNewestUnclaimedHolding dates the newest unclaimed holding from the source, per account', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, accountId, holdingId } = await makeHoldingFixture(tx);
+      const airdrop = await makeHolding(tx, {
+        userId,
+        accountId,
+        tokenId: (await makeToken(tx)).id,
+      });
+      await repo().upsertManyFromIngester(
+        [{ holdingId, txSources: ['etherscan'], hasCompleteTxHistory: true }],
+        {},
+        tx
+      );
+      await repo().upsertManyFromIngester(
+        [{ holdingId: airdrop.id, txSources: ['etherscan'], hasCompleteTxHistory: false }],
+        { completenessIsClaimed: false },
+        tx
+      );
+
+      const found = await repo().findNewestUnclaimedHolding([accountId], 'etherscan', tx);
+      expect([...found.keys()]).toEqual([accountId]);
+      expect(found.get(accountId)?.getTime()).toBe(airdrop.createdAt.getTime());
+      // Another source's rows say nothing about this one.
+      expect((await repo().findNewestUnclaimedHolding([accountId], 'kraken-api', tx)).size).toBe(0);
+    });
+  });
+
+  test('findNewestUnclaimedHolding leaves an account whose every holding is claimed', async () => {
+    await withTestDb(async (tx) => {
+      const { accountId, holdingId } = await makeHoldingFixture(tx);
+      await repo().upsertManyFromIngester(
+        [{ holdingId, txSources: ['etherscan'], hasCompleteTxHistory: true }],
+        {},
+        tx
+      );
+      expect((await repo().findNewestUnclaimedHolding([accountId], 'etherscan', tx)).size).toBe(0);
+    });
+  });
+
+  test('findNewestUnclaimedHolding ignores an unclaimed holding the user archived', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, accountId } = await makeHoldingFixture(tx);
+      const archived = await makeHolding(tx, {
+        userId,
+        accountId,
+        tokenId: (await makeToken(tx)).id,
+        isActive: false,
+      });
+      await repo().upsertManyFromIngester(
+        [{ holdingId: archived.id, txSources: ['etherscan'], hasCompleteTxHistory: false }],
+        {},
+        tx
+      );
+      expect((await repo().findNewestUnclaimedHolding([accountId], 'etherscan', tx)).size).toBe(0);
+    });
+  });
 });

@@ -1,14 +1,11 @@
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
-import { cn } from '@scani/ui/lib/cn';
-import { MIRROR_IN_RTL } from '@scani/ui/lib/direction';
-import { Button } from '@scani/ui/ui/button';
 import { Skeleton } from '@scani/ui/ui/skeleton';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
-import { ArrowLeft } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { Link, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { useJobStatus } from '@/v3/hooks/useJobStatus';
+import { BackLink } from '../components/BackLink';
 import { JobDetailHeader } from '../components/jobs/JobDetailHeader';
 import { jobLabelFor } from '../lib/job-labels';
 import { resolveV3ReviewRenderer } from '../lib/job-result';
@@ -56,7 +53,7 @@ export function JobDetailPage() {
   if (jobQuery.isLoading) {
     return (
       <PageLayout measure="wide">
-        <BackLink />
+        <BackLink to={V3_ROUTES.jobs} label={t('v3.jobs.detail.backToJobs')} />
         <Skeleton className="h-32 w-full" aria-hidden="true" />
       </PageLayout>
     );
@@ -65,7 +62,7 @@ export function JobDetailPage() {
   if (jobQuery.error || !jobQuery.data) {
     return (
       <PageLayout measure="wide">
-        <BackLink />
+        <BackLink to={V3_ROUTES.jobs} label={t('v3.jobs.detail.backToJobs')} />
         <p className="text-body text-muted-foreground">{t('v3.jobs.detail.notFound')}</p>
       </PageLayout>
     );
@@ -77,7 +74,7 @@ export function JobDetailPage() {
 
   return (
     <PageLayout measure="wide">
-      <BackLink />
+      <BackLink to={V3_ROUTES.jobs} label={t('v3.jobs.detail.backToJobs')} />
       <JobDetailHeader
         job={{
           jobId: job.jobId,
@@ -107,17 +104,5 @@ export function JobDetailPage() {
           })
         : null}
     </PageLayout>
-  );
-}
-
-function BackLink() {
-  const { t } = useTranslation();
-  return (
-    <Button variant="ghost" size="sm" asChild className="-ms-2 self-start">
-      <Link to={V3_ROUTES.jobs}>
-        <ArrowLeft className={cn(MIRROR_IN_RTL, 'me-2 size-4')} aria-hidden="true" />
-        {t('v3.jobs.detail.backToJobs')}
-      </Link>
-    </Button>
   );
 }

@@ -6,9 +6,7 @@ import {
 } from '../fixtures/visual-network';
 import {
   VISUAL_ALLOCATION_SESSION_FILE,
-  VISUAL_BURN_SESSION_FILE,
   VISUAL_EMPTY_SESSION_FILE,
-  VISUAL_FORECAST_SESSION_FILE,
   VISUAL_SESSION_FILE,
 } from '../fixtures/visual-setup';
 import { BASELINE_SHRINK_ALLOW_ENV, baselineBytes, baselineCollapse } from './capture-size';
@@ -16,10 +14,9 @@ import { pinReturnsWindow, RETURNS_PROCEDURES } from './returns-window';
 import { describeSpinner, ROUTE_PENDING, readPendingRoutes } from './route-pending';
 import {
   ALLOCATION_DIMENSION_STORAGE_KEY,
-  BURN_AS_OF,
   FIXED_NOW,
   FOLDING_DIMENSION,
-  FORECAST_AS_OF,
+  PINNED_DAY,
   VISUAL_SCREENS,
   type VisualScreen,
   type VisualSession,
@@ -42,13 +39,11 @@ import { assertPixelsSettled } from './stability';
  */
 
 /** The storage state each `session` is photographed under — see
- *  `fixtures/visual-setup.ts`, which writes all four. */
+ *  `fixtures/visual-setup.ts`, which writes all three. */
 const SESSION_FILE: Record<VisualSession, string> = {
   seeded: VISUAL_SESSION_FILE,
   empty: VISUAL_EMPTY_SESSION_FILE,
   allocation: VISUAL_ALLOCATION_SESSION_FILE,
-  forecast: VISUAL_FORECAST_SESSION_FILE,
-  burn: VISUAL_BURN_SESSION_FILE,
 };
 
 /**
@@ -84,72 +79,10 @@ const SHELL_TIMEOUT_MS = 90_000;
  */
 const SETTLE_MS = 800;
 
-/** The procedure whose clock `FORECAST_AS_OF` pins. */
-const FORECAST_PROCEDURE = 'payments.forecast';
-
 /** The procedures one tRPC request carries: `/trpc/a,b,c` is a batch of three. */
 function trpcProcedures(url: URL): string[] {
   if (!url.pathname.startsWith('/trpc/')) return [];
   return decodeURIComponent(url.pathname.slice('/trpc/'.length)).split(',');
-}
-
-/** What every `payments.forecast` the page received was dated from. */
-interface ForecastReads {
-  todays: string[];
-  errors: string[];
-  staleValued: number[];
-}
-
-/**
- * Pins the api's clock for a screen that declares `forecastAsOf` (SC-623).
- *
- * The app never sends `asOf` — only this gate needs a forecast that does not
- * move with the real date — so it is added to the request here rather than
- * taught to the product. A batched GET carries one input per procedure, keyed
- * by position, and `payments.forecast` takes none, so its slot is absent and
- * is written rather than merged into.
- *
- * `fallback` rather than `continue`, so `pinExternalNetwork`'s handler still
- * sees the request after this one has rewritten it.
- */
-async function pinForecastClock(page: Page, screen: VisualScreen): Promise<ForecastReads | null> {
-  if (!screen.forecastAsOf && !screen.burnAsOf) return null;
-  const asOf = pinnedAsOf(screen);
-  const reads: ForecastReads = { todays: [], errors: [], staleValued: [] };
-
-  await page.route(
-    (url) => trpcProcedures(url).includes(FORECAST_PROCEDURE),
-    async (route) => {
-      const url = new URL(route.request().url());
-      const index = trpcProcedures(url).indexOf(FORECAST_PROCEDURE);
-      const raw = url.searchParams.get('input');
-      const parsed = (raw ? JSON.parse(raw) : {}) as Record<string, unknown>;
-      const input =
-        url.searchParams.get('batch') === '1'
-          ? { ...parsed, [index]: { ...(parsed[index] as object), asOf } }
-          : { ...parsed, asOf };
-      url.searchParams.set('input', JSON.stringify(input));
-      await route.fallback({ url: url.toString() });
-    }
-  );
-
-  page.on('response', async (response) => {
-    const url = new URL(response.url());
-    const index = trpcProcedures(url).indexOf(FORECAST_PROCEDURE);
-    if (index === -1) return;
-    const body = (await response.json().catch(() => null)) as unknown;
-    const entry = (Array.isArray(body) ? body[index] : body) as {
-      result?: { data?: { today?: unknown; observedBurn?: { staleValued?: unknown } | null } };
-      error?: { message?: string };
-    } | null;
-    const stale = entry?.result?.data?.observedBurn?.staleValued;
-    if (typeof stale === 'number') reads.staleValued.push(stale);
-    const today = entry?.result?.data?.today;
-    if (typeof today === 'string') reads.todays.push(today);
-    else reads.errors.push(entry?.error?.message ?? `HTTP ${response.status()}`);
-  });
-
-  return reads;
 }
 
 /** What `pinReturnsClock` did to every returns request the page sent. */
@@ -159,7 +92,7 @@ interface ReturnsReads {
 }
 
 /**
- * Dates every returns window from `FORECAST_AS_OF` — the pinned day — instead of
+ * Dates every returns window from `PINNED_DAY` instead of
  * the api's clock (SC-1300); `returns-window.ts` says why. On every screen,
  * because every home screen renders the Returns card and pinning a request a
  * screen never sends costs nothing: the same argument `FIXED_NOW` makes.
@@ -183,7 +116,7 @@ async function pinReturnsClock(page: Page): Promise<ReturnsReads> {
       const input: Record<string, unknown> = { ...parsed };
       procedures.forEach((procedure, index) => {
         if (!isReturns(procedure)) return;
-        const pin = pinReturnsWindow(batch ? parsed[index] : parsed, FORECAST_AS_OF);
+        const pin = pinReturnsWindow(batch ? parsed[index] : parsed, PINNED_DAY);
         if (pin.kind === 'refused') {
           reads.refused.push(`${procedure}: ${pin.reason}`);
           return;
@@ -207,48 +140,6 @@ function assertReturnsPinned(screen: VisualScreen, reads: ReturnsReads, fail: Fa
       `(${reads.refused.join('; ')}), so the card on this picture moves with the real date. ` +
       'See returns-window.ts (SC-1300).'
   );
-}
-
-/** The day a screen's forecast is dated from — see `burnAsOf` in `screens.ts`. */
-function pinnedAsOf(screen: VisualScreen): string {
-  return screen.burnAsOf ? BURN_AS_OF : FORECAST_AS_OF;
-}
-
-/** That every forecast on the page was dated from its pinned day. Checked on
- *  a passing capture too — see `forecastAsOf` in `screens.ts`. */
-function assertForecastPinned(screen: VisualScreen, reads: ForecastReads | null, fail: Fail): void {
-  if (!reads) return;
-  if (reads.errors.length > 0) {
-    fail(
-      `${screen.name}: payments.forecast was refused or failed: ${reads.errors.join('; ')}. ` +
-        'The api honours asOf only with ALLOW_FORECAST_AS_OF=1, which docker-compose.yml sets ' +
-        'by default — a stack started with it empty cannot be photographed here (SC-623).'
-    );
-  }
-  if (reads.todays.length === 0) {
-    fail(
-      `${screen.name}: declares forecastAsOf and the page received no payments.forecast ` +
-        'response, so nothing says which day this picture of a forecast is dated from.'
-    );
-  }
-  // SC-1219: the caption this screen exists for renders only on a stale count,
-  // so a clean line here is a seed that never reached the component.
-  if (screen.staleValued && !reads.staleValued.some((n) => n > 0)) {
-    fail(
-      `${screen.name}: declares staleValued and no forecast on the page counted a stale-valued ` +
-        `payment (read: ${reads.staleValued.join(', ') || 'none'}). The burn seed's stale row ` +
-        'did not reach the observed drain — see BURN_BOOK in fixtures/visual-setup.ts.'
-    );
-  }
-  const asOf = pinnedAsOf(screen);
-  const wrong = reads.todays.filter((today) => today !== asOf);
-  if (wrong.length > 0) {
-    fail(
-      `${screen.name}: a forecast on this page is dated ${wrong.join(', ')}, not ` +
-        `${asOf}. The asOf rewrite did not reach it, so this is a picture of the ` +
-        'real date and would change next month.'
-    );
-  }
 }
 
 /**
@@ -873,7 +764,6 @@ function declare(screen: VisualScreen): void {
     // Before `goto`: a route added after a navigation has started does not
     // apply to the requests that navigation already made.
     const network = await pinExternalNetwork(page);
-    const forecastReads = await pinForecastClock(page, screen);
     const returnsReads = await pinReturnsClock(page);
     await stallDataIfAsked(page);
     const loads = trackDocumentLoads(page);
@@ -885,21 +775,6 @@ function declare(screen: VisualScreen): void {
     await page.goto(routeFor(screen));
     await settle(page, loads, screen.name);
     await applyDirection(page, screen);
-    if (screen.element) {
-      // A component that renders nothing is absent rather than empty, so a
-      // missing element is its own failure rather than a timeout inside the
-      // capture.
-      await page
-        .locator(screen.element)
-        .waitFor({ state: 'visible', timeout: SHELL_TIMEOUT_MS })
-        .catch((error: unknown) => {
-          throw new Error(
-            `${screen.name}: ${screen.element} never appeared. The component rendered nothing, ` +
-              'so the seed behind it did not land or the selector moved.',
-            { cause: error }
-          );
-        });
-    }
     await assertPixelsSettled(page, screen.name);
 
     // The capture's own failure is held rather than thrown, because
@@ -908,11 +783,7 @@ function declare(screen: VisualScreen): void {
     // how SC-473 spent a session comparing images of nothing.
     let captured: unknown;
     try {
-      if (screen.element) {
-        await expect(page.locator(screen.element)).toHaveScreenshot(`${screen.name}.png`);
-      } else {
-        await expect(page).toHaveScreenshot(`${screen.name}.png`);
-      }
+      await expect(page).toHaveScreenshot(`${screen.name}.png`);
     } catch (error) {
       captured = error;
     }
@@ -928,7 +799,6 @@ function declare(screen: VisualScreen): void {
     await assertScriptFace(page, screen, fail);
     await assertPinnedBytes(page, network, screen, fail);
     await assertAllocationFolded(page, screen, fail);
-    assertForecastPinned(screen, forecastReads, fail);
     assertReturnsPinned(screen, returnsReads, fail);
     // LAST, and that is the whole point of it. The four above each name a
     // specific cause or a specific missing thing, and where one of them

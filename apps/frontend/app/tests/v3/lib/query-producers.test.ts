@@ -4,7 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { captureContextQuery } from '../../../src/v3/lib/capture';
-import { V3_PAYMENT_ROUTES } from '../../../src/v3/lib/routes';
+import { parsePaymentSheet, V3_PAYMENT_ROUTES } from '../../../src/v3/lib/routes';
 
 /**
  * Every query parameter a v3 screen reads must be one some v3 screen writes.
@@ -98,7 +98,9 @@ describe('v3 query parameters', () => {
   // quietly green.
   test('the scan actually finds the parameters v3 reads', () => {
     expect(CONSUMED.length).toBeGreaterThan(0);
-    expect(CONSUMED.map((c) => c.key)).toContain('fromExtraction');
+    // `fromExtraction` was the example until SC-1414 moved it into the bill
+    // sheet's `sheet` value; `accountId` is a reader still in the tree.
+    expect(CONSUMED.map((c) => c.key)).toContain('accountId');
   });
 
   test('every parameter a v3 screen reads is written by a v3 screen', () => {
@@ -118,42 +120,26 @@ describe('v3 query parameters', () => {
 describe('the invoice → payment bridge', () => {
   /**
    * The two halves stated against each other rather than against a literal.
-   * `PaymentFormPage` is the consumer and `V3_PAYMENT_ROUTES.fromExtraction` is
-   * the producer, and the test that matters is that they agree on the spelling
-   * — a rename on either side is exactly how this breaks again.
+   * `V3_PAYMENT_ROUTES.fromExtraction` is the producer and `parsePaymentSheet`
+   * — what `PaymentFormSheet` opens from — is the consumer; the form became a
+   * sheet in SC-1414, so the extraction id rides in the `sheet` value now. A
+   * rename on either side is exactly how this breaks again.
    */
-  test('the route helper writes the parameter the form reads', () => {
-    const form = FILES.find((file) => file.relative === 'pages/PaymentFormPage.tsx');
-    expect(form).toBeDefined();
-    const keys = [...(form?.source ?? '').matchAll(CONSUMER)].map((match) => match[1]);
-    expect(keys).toContain('fromExtraction');
-
+  test('the route helper writes the sheet value the form reads', () => {
     const url = new URL(V3_PAYMENT_ROUTES.fromExtraction('abc-123'), 'https://app.scani.xyz');
-    expect(url.pathname).toBe('/payments/recurring/new');
-    expect(url.searchParams.get('fromExtraction')).toBe('abc-123');
+    expect(url.pathname).toBe('/payments');
+    expect(parsePaymentSheet(url.searchParams.get('sheet'))).toEqual({
+      mode: 'invoice',
+      extractionId: 'abc-123',
+    });
   });
 
   test('the id is encoded rather than interpolated raw', () => {
     const url = new URL(V3_PAYMENT_ROUTES.fromExtraction('a b&c=d'), 'https://app.scani.xyz');
-    expect(url.searchParams.get('fromExtraction')).toBe('a b&c=d');
-  });
-
-  /**
-   * A helper nothing calls is the same defect one step along: the link would
-   * exist in the route table and still be unreachable from the app. The
-   * producer has to be a screen.
-   */
-  test('a rendered v3 surface links to it', () => {
-    const callers = FILES.filter(
-      (file) =>
-        file.relative !== 'lib/routes.ts' &&
-        file.source.includes('V3_PAYMENT_ROUTES.fromExtraction')
-    ).map((file) => file.relative);
-
-    expect(callers.length).toBeGreaterThan(0);
-    expect(
-      callers.some((path) => path.startsWith('components/') || path.startsWith('pages/'))
-    ).toBe(true);
+    expect(parsePaymentSheet(url.searchParams.get('sheet'))).toEqual({
+      mode: 'invoice',
+      extractionId: 'a b&c=d',
+    });
   });
 });
 

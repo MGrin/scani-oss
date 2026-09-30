@@ -10,6 +10,7 @@ import { createElement, Fragment, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom';
 import { trpc } from '../../../src/lib/trpc';
+import { HoldingTrendView } from '../../../src/v3/components/holdings/HoldingTrend';
 import {
   type HoldingPeekContext,
   holdingPeekSpec,
@@ -41,7 +42,7 @@ const t = i18n.t.bind(i18n);
 const CONTEXT: HoldingPeekContext = {
   t,
   currency: 'USD',
-  onSetAmount: () => undefined,
+  onEdit: () => undefined,
   onRecordMovement: () => undefined,
   onToggleActive: () => undefined,
   onMarkScam: () => undefined,
@@ -50,9 +51,7 @@ const CONTEXT: HoldingPeekContext = {
   refreshingPriceId: null,
   refreshingBalanceId: null,
   onEditPrice: () => undefined,
-  onSetLabel: () => undefined,
   onConfigureApy: () => undefined,
-  onRemoveApy: () => undefined,
   onDelete: () => undefined,
 };
 
@@ -338,6 +337,29 @@ describe('a stale price', () => {
 });
 
 describe('actions', () => {
+  test('removing interest is a peek action, confirmed inline, and only with a rate (SC-1413)', () => {
+    const savings = { ...holding().account, typeCode: 'savings' };
+    const withRate = holding({
+      account: savings,
+      apyConfig: {
+        id: 'c1',
+        annualRatePct: '4.5',
+        payoutFrequency: 'monthly',
+        payoutDayOfWeek: null,
+        payoutDayOfMonth: 1,
+        payoutMonth: null,
+        lastPayoutAt: null,
+        isActive: true,
+      },
+    });
+    const actions = (item: HoldingWithDetails) =>
+      renderNode(<TrpcContext>{holdingPeekSpec(item, CONTEXT).actions}</TrpcContext>);
+    expect(actions(withRate)).toInclude('Remove interest configuration');
+    expect(actions(holding({ account: savings }))).not.toInclude('Remove interest configuration');
+    // Not a second, unconfirmed button beside the rate any more.
+    expect(factValues(withRate, 'Interest')[0]).not.toInclude('Remove');
+  });
+
   test('a manual holding is not offered a sync it cannot do', () => {
     const synced = renderNode(holdingPeekSpec(holding(), CONTEXT).actions);
     expect(synced).toInclude('Sync balance');
@@ -345,6 +367,18 @@ describe('actions', () => {
     const manual = renderNode(holdingPeekSpec(holding({ source: 'manual' }), CONTEXT).actions);
     expect(manual).not.toInclude('Sync balance');
     expect(manual).toInclude('Refresh price');
+  });
+
+  test('a holding in the base currency is not offered a price refresh (SC-1447)', () => {
+    const cash = (symbol: string) =>
+      holding({
+        token: { ...holding().token, symbol, name: symbol, type: 'Fiat', typeCode: 'fiat' },
+      });
+    // CONTEXT's base currency is USD.
+    expect(renderNode(holdingPeekSpec(cash('USD'), CONTEXT).actions)).not.toInclude(
+      'Refresh price'
+    );
+    expect(renderNode(holdingPeekSpec(cash('EUR'), CONTEXT).actions)).toInclude('Refresh price');
   });
 
   test('a refresh in flight names itself and cannot be pressed twice', () => {
@@ -440,6 +474,28 @@ describe('what the body actually renders', () => {
   });
 });
 
+/**
+ * SC-1422: the header shows two figures over two different periods. The pill
+ * is gain since bought; the line is the last 30 days and is coloured by its own
+ * first-to-last. BTC read a green +164.4% over a red line, and neither said
+ * which period it covered, so the reader could not tell which to believe.
+ */
+describe('the header names the period of each figure (SC-1422)', () => {
+  test('the gain pill says it is measured since the holding was bought', () => {
+    const html = renderNode(holdingPeekSpec(holding(), CONTEXT).delta);
+    expect(html).toInclude('since bought');
+  });
+
+  test('the trend line says which window it draws', () => {
+    const html = renderNode(createElement(HoldingTrendView, { points: [1, 2, 3], symbol: 'BTC' }));
+    expect(html).toInclude('Last 30d');
+  });
+
+  test('a holding with no cost basis has no pill, so nothing claims "since bought"', () => {
+    expect(holdingPeekSpec(holding({ costBasis: null }), CONTEXT).delta).toBeUndefined();
+  });
+});
+
 describe('holdingRowDelta', () => {
   test('is the P/L percentage, signed', () => {
     const html = renderNode(holdingRowDelta(holding({ value: 150, costBasis: 100 })));
@@ -523,6 +579,21 @@ describe('Mark as scam (SC-1251)', () => {
 
   test('is offered on a token', () => {
     expect(body(holding())).toInclude(label);
+  });
+
+  // SC-1419: it sat as a lone button between the facts and PERFORMANCE. It is
+  // rare (scam airdrops), so it is the body's last row, under its own title.
+  test('is the last thing in the body, after every section', () => {
+    const html = body(holding());
+    const at = html.indexOf(label);
+    expect(at).toBeGreaterThan(-1);
+    // "Added" is the Record section's last fact, and Record the last section.
+    expect(html.lastIndexOf(t('v3.holdings.peek.added'))).toBeLessThan(at);
+    expect(html.indexOf(t('v3.holdings.scam.rowTitle'))).toBeLessThan(at);
+    const content = renderToStaticMarkup(
+      <TrpcContext>{holdingPeekSpec(holding(), CONTEXT).content}</TrpcContext>
+    );
+    expect(content).not.toInclude(label);
   });
 
   test('is withheld on a national currency, which it would hide wholesale', () => {

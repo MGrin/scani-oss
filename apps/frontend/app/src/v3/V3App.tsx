@@ -6,10 +6,12 @@ import { V3ErrorBoundary } from './components/V3ErrorBoundary';
 // Side-effect import, and it belongs here rather than deeper: this is the
 // module every v3 route is reached through (SC-169).
 import './i18n';
+import { LegacyPaymentFormRedirect } from './components/money/PaymentFormSheet';
 import { useViewTransitionLocation } from './hooks/useViewTransitionLocation';
 import { V3Shell } from './layouts/V3Shell';
 import { useInstallPdfExport } from './lib/pdf-export';
 import {
+  BALANCE_GAP_ANSWERED_PATH,
   BALANCE_GAP_REVIEW_PATH,
   TRANSFER_ANSWERED_PATH,
   TRANSFER_REVIEW_PATH,
@@ -20,9 +22,9 @@ import {
 import { V3_BASE } from './lib/ui-version';
 import { AccountsPage } from './pages/AccountsPage';
 import { AnsweredTransfersPage } from './pages/AnsweredTransfersPage';
+import { BalanceGapsAnsweredPage } from './pages/BalanceGapsAnsweredPage';
 import { BalanceGapsReviewPage } from './pages/BalanceGapsReviewPage';
 import { DocumentDetailPage } from './pages/DocumentDetailPage';
-import { EntitiesPage } from './pages/EntitiesPage';
 import { FileImportPage } from './pages/FileImportPage';
 import { FilesPage } from './pages/FilesPage';
 import { GroupDetailPage } from './pages/GroupDetailPage';
@@ -38,7 +40,6 @@ import { JobsPage } from './pages/JobsPage';
 import { ManualEntryPage } from './pages/ManualEntryPage';
 import { MoneyPage } from './pages/MoneyPage';
 import { NotFoundPage } from './pages/NotFoundPage';
-import { PaymentFormPage } from './pages/PaymentFormPage';
 import { RecordMovementPage } from './pages/RecordMovementPage';
 import { ReviewPage } from './pages/ReviewPage';
 import { SettingsPage } from './pages/SettingsPage';
@@ -105,21 +106,28 @@ export function V3App() {
 
             {/* Money (V3-13, extended by SC-461) — one surface, four views.
 
-                The form's two paths are registered before the peek so React
-                Router's static-over-dynamic ranking cannot be the only thing
-                keeping `/payments/recurring/new` out of the peek's id space.
+                The form is a sheet now (SC-1414); its two old paths stay as
+                redirects, registered before the peek so React Router's
+                static-over-dynamic ranking cannot be the only thing keeping
+                `/payments/recurring/new` out of the peek's id space.
                 The peeks themselves are `:peekId?` on the view's own route for
                 the reason in the kitchen-sink note above: an index route plus a
                 child would remount the list every time a row is tapped. */}
-            <Route path={`${relative(V3_ROUTES.recurring)}/new`} element={<PaymentFormPage />} />
+            <Route
+              path={`${relative(V3_ROUTES.recurring)}/new`}
+              element={<LegacyPaymentFormRedirect />}
+            />
             <Route
               path={`${relative(V3_ROUTES.recurring)}/:id/edit`}
-              element={<PaymentFormPage />}
+              element={<LegacyPaymentFormRedirect />}
             />
             <Route path={`${relative(V3_ROUTES.recurring)}/:peekId?`} element={<MoneyPage />} />
             {/* Before the peek route, same reason as the form's two paths:
-                `forecast` must not be reachable as an occurrence id. */}
-            <Route path={relative(V3_ROUTES.forecast)} element={<MoneyPage />} />
+                the retired Forecast view's old link must not be read as an
+                occurrence id. It and the removed Planning page's link both
+                open Bills (SC-1409). */}
+            <Route path="payments/forecast" element={<Navigate to={V3_ROUTES.money} replace />} />
+            <Route path="wealth/planning" element={<Navigate to={V3_ROUTES.money} replace />} />
             <Route path={`${relative(V3_ROUTES.money)}/:peekId?`} element={<MoneyPage />} />
             <Route path={`${relative(V3_ROUTES.vendors)}/:peekId?`} element={<MoneyPage />} />
 
@@ -187,7 +195,8 @@ export function V3App() {
                   because those are real pages rather than sheets over the list
                   — so the list does unmount, which is correct: you have left
                   it. Groups joined them in SC-70, when its member list became
-                  editable in place.
+                  editable in place. Their detail pages take a `:peekId?` of
+                  their own for the member rows' sheets (SC-1404).
                 - The rest take the `:peekId?` optional child for the reason in
                   the kitchen-sink note above.
 
@@ -217,7 +226,14 @@ export function V3App() {
             {/* `balances` is a segment under Review, like `transfers` (SC-501),
                 and registered before the feed's own route for the same
                 reason. */}
-            <Route path={relative(BALANCE_GAP_REVIEW_PATH)} element={<BalanceGapsReviewPage />} />
+            <Route
+              path={`${relative(BALANCE_GAP_ANSWERED_PATH)}/:peekId?`}
+              element={<BalanceGapsAnsweredPage />}
+            />
+            <Route
+              path={`${relative(BALANCE_GAP_REVIEW_PATH)}/:peekId?`}
+              element={<BalanceGapsReviewPage />}
+            />
             <Route path={relative(V3_ROUTES.review)} element={<ReviewPage />} />
             <Route path={relative(V3_ROUTES.jobs)} element={<JobsPage />} />
             <Route path={`${relative(V3_ROUTES.jobs)}/:jobId`} element={<JobDetailPage />} />
@@ -227,10 +243,16 @@ export function V3App() {
               element={<InstitutionsPage />}
             />
             <Route path={relative(V3_ROUTES.vaults)} element={<VaultsPage />} />
-            <Route path={`${relative(V3_ROUTES.vaults)}/:id`} element={<VaultDetailPage />} />
+            <Route
+              path={`${relative(V3_ROUTES.vaults)}/:id/:peekId?`}
+              element={<VaultDetailPage />}
+            />
             <Route path={relative(V3_ROUTES.groups)} element={<GroupsPage />} />
-            <Route path={relative(V3_ROUTES.entities)} element={<EntitiesPage />} />
-            <Route path={`${relative(V3_ROUTES.groups)}/:id`} element={<GroupDetailPage />} />
+            <Route path="entities" element={<Navigate to={V3_ROUTES.accounts} replace />} />
+            <Route
+              path={`${relative(V3_ROUTES.groups)}/:id/:peekId?`}
+              element={<GroupDetailPage />}
+            />
             <Route
               path={`${relative(V3_ROUTES.tokens)}/hidden/:peekId?`}
               element={<TokensPage />}

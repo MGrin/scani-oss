@@ -3,7 +3,7 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import { MANUAL_EDIT_CAUSES } from '@scani/shared';
 import { dateFieldInstant, todayIso } from '../../../src/v3/components/form/DateField';
-import { holdingEditOccurredAt } from '../../../src/v3/components/holdings/HoldingEditCauseDialog';
+import { holdingEditOccurredAt } from '../../../src/v3/components/holdings/HoldingEditCause';
 
 /**
  * What the cause dialog sends as the date — the one thing about this form

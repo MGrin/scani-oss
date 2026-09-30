@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import en from '@/i18n/locales/en.json';
 import {
   documentDetailPath,
+  PAYMENT_SHEET,
+  parsePaymentSheet,
   resolveActiveTabPath,
   resolveActiveV3Path,
   V3_CAPTURE_ROUTES,
@@ -129,9 +131,9 @@ describe('resolveActiveV3Path', () => {
     expect(resolveActiveV3Path(`${V3_ROUTES.holdings}/abc123`)).toBe(V3_ROUTES.holdings);
   });
 
-  test('the most specific entry wins, not the first that matches', () => {
-    expect(resolveActiveV3Path(V3_ROUTES.recurring)).toBe(V3_ROUTES.recurring);
-    expect(resolveActiveV3Path(`${V3_ROUTES.recurring}/xyz`)).toBe(V3_ROUTES.recurring);
+  test('legacy recurring paths stay within Bills', () => {
+    expect(resolveActiveV3Path(V3_ROUTES.recurring)).toBe(V3_ROUTES.money);
+    expect(resolveActiveV3Path(`${V3_ROUTES.recurring}/xyz`)).toBe(V3_ROUTES.money);
   });
 
   test('the v3 root covers only itself', () => {
@@ -153,6 +155,11 @@ describe('resolveActiveTabPath', () => {
     expect(resolveActiveTabPath(V3_ROUTES.money)).toBe(V3_ROUTES.money);
     expect(resolveActiveTabPath(V3_ROUTES.recurring)).toBe(V3_ROUTES.money);
     expect(resolveActiveTabPath(`${V3_ROUTES.recurring}/xyz`)).toBe(V3_ROUTES.money);
+  });
+
+  test('Payees is a Money segment, so Money stays lit on it and its peek (SC-1433)', () => {
+    expect(resolveActiveTabPath(V3_ROUTES.vendors)).toBe(V3_ROUTES.money);
+    expect(resolveActiveTabPath(`${V3_ROUTES.vendors}/abc`)).toBe(V3_ROUTES.money);
   });
 
   test('Home lights only on Home', () => {
@@ -244,8 +251,33 @@ describe('the Files routes (V3-43)', () => {
 
   test('approving an extraction opens the payment form inside v3', () => {
     expect(V3_PAYMENT_ROUTES.fromExtraction('ex 1')).toBe(
-      '/payments/recurring/new?fromExtraction=ex%201'
+      '/payments?sheet=payment%3Ainvoice%3Aex%201'
     );
+  });
+
+  // SC-1414: the bill form is a sheet, addressed by one `sheet` value.
+  test('every payment sheet value parses back to what it opens', () => {
+    expect(parsePaymentSheet(PAYMENT_SHEET.create)).toEqual({ mode: 'new' });
+    expect(parsePaymentSheet(PAYMENT_SHEET.edit('p-1'))).toEqual({
+      mode: 'edit',
+      paymentId: 'p-1',
+    });
+    expect(parsePaymentSheet(PAYMENT_SHEET.fromExtraction('x-1'))).toEqual({
+      mode: 'invoice',
+      extractionId: 'x-1',
+    });
+  });
+
+  test('a sheet that is not the bill form, or an empty id, opens nothing', () => {
+    expect(parsePaymentSheet(null)).toBeNull();
+    expect(parsePaymentSheet('refine:bills')).toBeNull();
+    expect(parsePaymentSheet('payment:edit:')).toBeNull();
+    expect(parsePaymentSheet('payment:')).toBeNull();
+  });
+
+  test('create and edit links open the sheet over Bills', () => {
+    expect(V3_PAYMENT_ROUTES.create).toBe('/payments?sheet=payment%3Anew');
+    expect(V3_PAYMENT_ROUTES.edit('p 1')).toBe('/payments?sheet=payment%3Aedit%3Ap%201');
   });
 
   // SC-83. The parameter name is the contract, not an implementation detail:
@@ -255,10 +287,10 @@ describe('the Files routes (V3-43)', () => {
     expect(vendorPaymentsPath('v 1')).toBe('/payments/recurring?vendor=v%201');
   });
 
-  test('the narrowed recurring list is still the Money tab, and still Recurring', () => {
+  test('the narrowed schedule list belongs to Bills', () => {
     // The link crosses from Vendors to Recurring, so the bar has to follow it
     // — an unlit Money tab there would say the reader had left the section.
     expect(resolveActiveTabPath('/payments/recurring', '?vendor=v1')).toBe(V3_ROUTES.money);
-    expect(resolveActiveV3Path('/payments/recurring')).toBe(V3_ROUTES.recurring);
+    expect(resolveActiveV3Path('/payments/recurring')).toBe(V3_ROUTES.money);
   });
 });

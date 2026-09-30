@@ -266,7 +266,8 @@ function ConnectForm({ integration }: { integration: Integration }) {
         blockers={describeCredentialBlockers(credentialFields, values, t)}
         onSubmit={submit}
         stage={stage}
-        busyLabel="the connection"
+        busyLabel={t('v3.capture.busy.connection')}
+        cancelTo={V3_CAPTURE_ROUTES.integrations}
         error={error}
       />
     </PageLayout>

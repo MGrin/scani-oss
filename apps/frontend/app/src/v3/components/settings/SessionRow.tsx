@@ -64,6 +64,7 @@ export function SessionRow({ session, isPending, onRevoke }: SessionRowProps) {
       <ConfirmAction
         label={t('v3.settings.sessions.revoke')}
         triggerClassName="text-destructive hover:text-destructive"
+        destructive
         // The commit names the device rather than repeating the trigger's
         // verb, so the second tap is a different act — and at 390px the
         // button is the part that gets read.

@@ -6,8 +6,7 @@ import { useTranslation } from 'react-i18next';
  *
  * `/auth` rendered **zero anchors** — measured on `app.scani.xyz` and again on
  * a local stack: `anchors 0 · hrefs []`. It is SC-997's defect on the surface
- * SC-997 did not cover, and `apps/frontend/cloud/src/components/AuthPageExits.tsx`
- * is the fix this mirrors rather than a pattern invented here.
+ * SC-997 did not cover.
  *
  * The trap is the same one SC-121 closed on the reference page: a visitor sent
  * here from a link has the URL bar and nothing else, and **an installed PWA
@@ -16,15 +15,13 @@ import { useTranslation } from 'react-i18next';
  * ready to hand over an email would want — what this is, how it works, and a
  * version they can look at without an account.
  *
- * **Bare hostnames rather than labels**, which is what cloud already ships for
- * `scani.xyz`: they are addresses, not copy, so there is nothing here for nine
+ * **Bare hostnames rather than labels**: they are addresses, not copy, so there is nothing here for nine
  * locales to disagree about and nothing to keep in sync with the sites they
  * point at. The demo is the one worth the click — SC-450 measured 15 signups
  * against 2 returns, so "look before you commit" is the path the demo exists
  * to serve — and `demo.scani.xyz` says what it is without being translated.
  *
- * Hardcoded rather than read from the environment, as cloud's `LANDING_HREF`
- * is: these are this project's own sites, and a self-hoster's sign-in screen
+ * Hardcoded rather than read from the environment: these are this project's own sites, and a self-hoster's sign-in screen
  * pointing at them is accurate rather than a leak.
  */
 

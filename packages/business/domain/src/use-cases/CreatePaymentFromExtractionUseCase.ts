@@ -71,6 +71,7 @@ export interface CreatePaymentFromExtractionInput {
   // The invoice says it was already paid: settle the anchor occurrence
   // immediately rather than leaving it scheduled and due.
   markAnchorPaid?: boolean;
+  groupIds?: string[];
 }
 
 @Service()
@@ -116,6 +117,7 @@ export class CreatePaymentFromExtractionUseCase {
         accountId: input.accountId ?? null,
         notes: input.notes ?? null,
         origin: 'document',
+        groupIds: input.groupIds,
       },
       transaction
     );

@@ -37,6 +37,71 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
   protected readonly table = schema.groups;
   protected readonly tableName = 'groups';
 
+  async changeMembership(
+    userId: string,
+    groupId: string,
+    accountIds: string[],
+    holdingIds: string[],
+    direction: 'add' | 'remove'
+  ): Promise<void> {
+    if (
+      accountIds.length + holdingIds.length > 500 ||
+      new Set(accountIds).size !== accountIds.length ||
+      new Set(holdingIds).size !== holdingIds.length
+    )
+      throw new Error('Invalid membership selection');
+    await this.getDb().transaction(async (tx) => {
+      const [group] = await tx
+        .select()
+        .from(schema.groups)
+        .where(and(eq(schema.groups.id, groupId), eq(schema.groups.userId, userId)))
+        .for('update');
+      if (!group) throw new Error('Group not found');
+      if (accountIds.length) {
+        const owned = await tx
+          .select({ id: schema.accounts.id })
+          .from(schema.accounts)
+          .where(and(eq(schema.accounts.userId, userId), inArray(schema.accounts.id, accountIds)))
+          .orderBy(schema.accounts.id)
+          .for('update');
+        if (owned.length !== accountIds.length) throw new Error('Account not found');
+      }
+      if (holdingIds.length) {
+        const owned = await tx
+          .select({ id: schema.holdings.id })
+          .from(schema.holdings)
+          .where(and(eq(schema.holdings.userId, userId), inArray(schema.holdings.id, holdingIds)))
+          .orderBy(schema.holdings.id)
+          .for('update');
+        if (owned.length !== holdingIds.length) throw new Error('Holding not found');
+      }
+      if (direction === 'add') {
+        await this.addAccountGroups(accountIds, [groupId], tx);
+        await this.bulkAddHoldingGroups(holdingIds, [groupId], tx);
+      } else {
+        await this.removeAccountGroups(accountIds, [groupId], tx);
+        await this.bulkRemoveHoldingGroups(holdingIds, [groupId], tx);
+      }
+    });
+  }
+
+  async membershipDetails(userId: string, groupId: string) {
+    const group = await this.findById(groupId);
+    if (!group || group.userId !== userId) throw new Error('Group not found');
+    const db = this.getDb();
+    const [direct, excluded] = await Promise.all([
+      db
+        .select({ id: schema.holdingGroups.holdingId })
+        .from(schema.holdingGroups)
+        .where(eq(schema.holdingGroups.groupId, groupId)),
+      db
+        .select({ id: schema.holdingGroupExclusions.holdingId })
+        .from(schema.holdingGroupExclusions)
+        .where(eq(schema.holdingGroupExclusions.groupId, groupId)),
+    ]);
+    return { direct: direct.map((r) => r.id), excluded: excluded.map((r) => r.id) };
+  }
+
   async findByUser(userId: string, transaction?: DatabaseTransaction): Promise<Group[]> {
     try {
       const database = this.getDb(transaction);
@@ -84,6 +149,8 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
       Group & {
         holdingsCount: number;
         accountsCount: number;
+        billsCount: number;
+        payeesCount: number;
       }
     >
   > {
@@ -152,6 +219,35 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
             WHERE ag.group_id = "groups"."id"
               AND a.user_id = "groups"."user_id"
           )`,
+          // The bills side of the same three states (SC-1408), the expression
+          // `PaymentGroupService.resolve` reads: in by the bill's own row or
+          // by its payee's rule, and not excluded.
+          billsCount: sql<number>`(
+            SELECT COUNT(*)::int
+            FROM payments p
+            WHERE p.user_id = "groups"."user_id"
+              AND (
+                EXISTS (
+                  SELECT 1 FROM payment_groups pg
+                  WHERE pg.payment_id = p.id AND pg.group_id = "groups"."id"
+                )
+                OR EXISTS (
+                  SELECT 1 FROM vendor_groups vg
+                  WHERE vg.vendor_id = p.vendor_id AND vg.group_id = "groups"."id"
+                )
+              )
+              AND NOT EXISTS (
+                SELECT 1 FROM payment_group_exclusions ex
+                WHERE ex.payment_id = p.id AND ex.group_id = "groups"."id"
+              )
+          )`,
+          payeesCount: sql<number>`(
+            SELECT COUNT(*)::int
+            FROM vendor_groups vg
+            JOIN vendors v ON v.id = vg.vendor_id
+            WHERE vg.group_id = "groups"."id"
+              AND v.user_id = "groups"."user_id"
+          )`,
         })
         .from(schema.groups)
         .where(and(eq(schema.groups.userId, userId), eq(schema.groups.isActive, true)))
@@ -161,6 +257,8 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
         Group & {
           holdingsCount: number;
           accountsCount: number;
+          billsCount: number;
+          payeesCount: number;
         }
       >;
     } catch (error) {

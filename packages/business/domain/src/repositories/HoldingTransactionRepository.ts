@@ -207,7 +207,8 @@ export class HoldingTransactionRepository extends BaseRepository<
   ): Promise<BulkUpsertResult> {
     try {
       if (rows.length === 0) return { rows: [], merges: [] };
-      const database = this.getDb(transaction);
+      if (!transaction) return this.getDb().transaction((tx) => this.bulkUpsert(rows, tx));
+      const database = transaction;
 
       // Dedupe by the conflict target `(holding_id, source, external_id)`
       // before sending to Postgres. ON CONFLICT DO UPDATE rejects a
@@ -253,6 +254,64 @@ export class HoldingTransactionRepository extends BaseRepository<
         );
       }
 
+      // Serialize reconciliation with imports for these holdings. Only a unique exact
+      // observation-backed explanation can stand in for an authoritative arrival.
+      await database
+        .select({ id: schema.holdings.id })
+        .from(schema.holdings)
+        .where(
+          inArray(schema.holdings.id, [...new Set(inputRows.map((row) => row.holdingId))].sort())
+        )
+        .orderBy(schema.holdings.id)
+        .for('update');
+      for (const row of inputRows) {
+        if (!row.externalId || row.source.startsWith('user-') || row.source === 'transfer-review')
+          continue;
+        const known = await database
+          .select({ id: schema.holdingTransactions.id })
+          .from(schema.holdingTransactions)
+          .where(
+            and(
+              eq(schema.holdingTransactions.holdingId, row.holdingId),
+              eq(schema.holdingTransactions.source, row.source),
+              eq(schema.holdingTransactions.externalId, row.externalId)
+            )
+          )
+          .limit(1);
+        if (known.length) continue;
+        const kinds = ['deposit', 'transfer_in'].includes(row.kind)
+          ? ['deposit', 'transfer_in']
+          : ['withdraw', 'transfer_out'].includes(row.kind)
+            ? ['withdraw', 'transfer_out']
+            : [row.kind];
+        const candidates = await database
+          .select()
+          .from(schema.holdingTransactions)
+          .where(
+            and(
+              eq(schema.holdingTransactions.holdingId, row.holdingId),
+              eq(schema.holdingTransactions.userId, row.userId),
+              inArray(schema.holdingTransactions.kind, kinds),
+              sql`${schema.holdingTransactions.quantity}::numeric = ${row.quantity}::numeric`,
+              sql`((${schema.holdingTransactions.source} = 'user-balance-edit' AND ${schema.holdingTransactions.sourceMetadata}->>'gapObservationId' IS NOT NULL AND ${new Date(row.occurredAt).toISOString()} > (${schema.holdingTransactions.sourceMetadata}->>'gapFrom')::timestamptz AND ${new Date(row.occurredAt).toISOString()} <= (${schema.holdingTransactions.sourceMetadata}->>'gapTo')::timestamptz)
+            OR (${schema.holdingTransactions.source} = 'transfer-review' AND CASE WHEN ${schema.holdingTransactions.sourceMetadata}->>'arrivalFrom' IS NOT NULL THEN ${new Date(row.occurredAt).toISOString()} >= (${schema.holdingTransactions.sourceMetadata}->>'arrivalFrom')::timestamptz AND ${new Date(row.occurredAt).toISOString()} <= (${schema.holdingTransactions.sourceMetadata}->>'arrivalTo')::timestamptz ELSE ${schema.holdingTransactions.occurredAt} = ${new Date(row.occurredAt).toISOString()} END))`
+            )
+          )
+          .for('update');
+        const competing = inputRows.filter(
+          (other) =>
+            other.holdingId === row.holdingId &&
+            other.kind === row.kind &&
+            other.quantity === row.quantity
+        );
+        if (candidates.length !== 1 || competing.length !== 1) continue;
+        const candidate = candidates[0]!;
+        await database
+          .update(schema.holdingTransactions)
+          .set({ source: row.source, externalId: row.externalId })
+          .where(eq(schema.holdingTransactions.id, candidate.id));
+      }
+
       const results = await database
         .insert(schema.holdingTransactions)
         // biome-ignore lint/suspicious/noExplicitAny: Drizzle array insert type
@@ -286,7 +345,7 @@ export class HoldingTransactionRepository extends BaseRepository<
             // nothing, which is the shape SC-332 exists to remove (a swap
             // leg that reads as answered while its partner is unreachable).
             swapGroupId: sql`EXCLUDED.swap_group_id`,
-            sourceMetadata: sql`EXCLUDED.source_metadata`,
+            sourceMetadata: sql`${schema.holdingTransactions.sourceMetadata} || EXCLUDED.source_metadata`,
             rawPayload: sql`EXCLUDED.raw_payload`,
             counterparty: sql`EXCLUDED.counterparty`,
             description: sql`EXCLUDED.description`,

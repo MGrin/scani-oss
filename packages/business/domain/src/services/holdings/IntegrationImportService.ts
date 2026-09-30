@@ -263,6 +263,7 @@ export class IntegrationImportService extends BaseService {
               holdingId: existingHolding.id,
               balance: holding.balance,
               eventContext,
+              observedAt: snapshot.capturedAt,
             },
             tx
           );
@@ -301,6 +302,7 @@ export class IntegrationImportService extends BaseService {
               source: options.sourceTag,
               arrival: options.arrival,
               externalId,
+              observedAt: snapshot.capturedAt,
               eventContext: options.baseCurrencyId
                 ? { baseCurrencyId: options.baseCurrencyId }
                 : undefined,

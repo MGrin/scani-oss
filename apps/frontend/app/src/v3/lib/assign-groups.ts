@@ -68,3 +68,16 @@ export function describeAssignment(diff: GroupAssignmentDiff, t: TFunction): str
 export function createAndAssignBlockers(name: string, t: TFunction): string[] {
   return name.trim().length === 0 ? [t('v3.groups.assign.needName')] : [];
 }
+
+/**
+ * The groups every one of `payeeIds` has a payee rule into (SC-1408) — the
+ * payee counterpart of `getCommonGroups`, so the sheet pre-ticks only what the
+ * whole selection shares and the diff leaves the rest alone.
+ */
+export function commonPayeeGroups(
+  rules: Readonly<Record<string, readonly string[]>>,
+  payeeIds: readonly string[]
+): string[] {
+  const [first = [], ...rest] = payeeIds.map((id) => rules[id] ?? []);
+  return first.filter((groupId) => rest.every((ids) => ids.includes(groupId)));
+}

@@ -81,6 +81,7 @@ describe('detail routes name the record, not the section', () => {
    */
   test('the holdings list keeps the section in its own h1', async () => {
     const source = await pageSource('HoldingsPage');
-    expect(source).toContain('<h1 className="text-title">{t(\'v3.holdings.page.title\')}</h1>');
+    // Through `PageHeader`, which renders the h1 (UI standard rule 1, SC-1433).
+    expect(source).toContain("<PageHeader title={t('v3.holdings.page.title')} />");
   });
 });

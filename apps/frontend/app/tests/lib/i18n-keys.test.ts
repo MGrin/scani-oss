@@ -352,23 +352,6 @@ describe('i18n keys in the keyed roots', () => {
       'v3.money.cadence.every_month_one',
       'v3.money.cadence.every_quarter_one',
       'v3.money.cadence.every_year_one',
-      // SC-625's two buttons in the forecast's caveat blocks. The count picks
-      // "it/its" against "them/their" and prints no number, because the number
-      // is already in the line DIRECTLY ABOVE each button — `couldEstimate`
-      // above `useLastSettled` ("2 of them have settled before…"), and
-      // `estimatedCount` above `stopEstimating` ("3 variable payments are
-      // priced from their last settled amount…"). "Use 2 their last settled
-      // amounts" is not English.
-      //
-      // Identical shape to `vendorPeek.seePayments_*` above, and falsifiable
-      // in one step rather than on my word: if either of those two sibling
-      // keys ever stops printing `{{count}}`, these four lose their reason and
-      // belong back inside the rule. `tests/v3/components/forecast.test.tsx`
-      // pins the rendered sentence ("1 of them has settled before").
-      'v3.money.forecast.useLastSettled_one',
-      'v3.money.forecast.useLastSettled_other',
-      'v3.money.forecast.stopEstimating_one',
-      'v3.money.forecast.stopEstimating_other',
     ]);
     /**
      * A data-view noun is plural-formed but does NOT count (SC-257).
@@ -487,6 +470,24 @@ function leaves(node: unknown, prefix = ''): string[] {
   );
 }
 
+/**
+ * English's keys as `code` must spell them: a pluralised stem carries THIS
+ * language's categories rather than English's two — Russian needs `_few` and
+ * `_many`, Japanese only `_other` — the rule `i18n-locales.test.ts` applies to
+ * the shared files. A missing form is not harmless: i18next answers it from
+ * the fallback language, so a Russian reader would get the English sentence.
+ */
+function inLanguage(english: string[], code: string): string[] {
+  const categories = new Intl.PluralRules(code).resolvedOptions().pluralCategories;
+  const keys = new Set<string>();
+  for (const key of english) {
+    const stem = /^(.*)_(zero|one|two|few|many|other)$/.exec(key)?.[1];
+    if (stem) for (const category of categories) keys.add(`${stem}_${category}`);
+    else keys.add(key);
+  }
+  return [...keys].sort();
+}
+
 describe('a directory with its own locale bundle', () => {
   const OUTSIDE = join(V3_ROOT, 'pages', 'SettingsPage.tsx');
 
@@ -513,11 +514,12 @@ describe('a directory with its own locale bundle', () => {
           .sort();
       const shared = json(join(V3_ROOT, 'i18n', 'locales'));
       expect(json(join(dir, 'locales'))).toEqual(shared);
-      const english = leaves(ownBundle(dir)).sort();
+      const english = leaves(ownBundle(dir));
       for (const file of shared) {
-        expect({ file, keys: leaves(ownBundle(dir, file.replace(/\.json$/, ''))).sort() }).toEqual({
+        const code = file.replace(/\.json$/, '');
+        expect({ file, keys: leaves(ownBundle(dir, code)).sort() }).toEqual({
           file,
-          keys: english,
+          keys: inLanguage(english, code),
         });
       }
     }

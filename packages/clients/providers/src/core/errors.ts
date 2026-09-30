@@ -145,3 +145,12 @@ export function credentialRejection(err: unknown): { valid: false; message: stri
   }
   throw err;
 }
+
+export class AIUnavailableError extends ProviderError {
+  constructor(readonly state: 'missing' | 'rejected' | 'transient') {
+    super(
+      `AI processing unavailable (${state})`,
+      state === 'transient' ? 'retryable' : 'unrecoverable'
+    );
+  }
+}

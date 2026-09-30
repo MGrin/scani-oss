@@ -120,6 +120,17 @@ export function CreateCustomTokenSheet({ open, onOpenChange }: CreateCustomToken
       onOpenChange={onOpenChange}
       title={t('v3.tokens.create.title')}
       description={t('v3.tokens.create.description')}
+      footer={
+        <FormActions
+          submitLabel={t('v3.tokens.create.submit')}
+          pendingLabel={t('v3.tokens.create.submitting')}
+          onSubmit={handleSubmit}
+          onCancel={() => onOpenChange(false)}
+          blockers={blockers}
+          pending={createMutation.isPending}
+          error={failure}
+        />
+      }
     >
       <div className="flex flex-col gap-4">
         <Field label={t('v3.tokens.create.symbol')} htmlFor="v3-custom-token-symbol">
@@ -207,16 +218,6 @@ export function CreateCustomTokenSheet({ open, onOpenChange }: CreateCustomToken
             maxLength={2000}
           />
         </Field>
-
-        <FormActions
-          submitLabel={t('v3.tokens.create.submit')}
-          pendingLabel={t('v3.tokens.create.submitting')}
-          onSubmit={handleSubmit}
-          onCancel={() => onOpenChange(false)}
-          blockers={blockers}
-          pending={createMutation.isPending}
-          error={failure}
-        />
       </div>
     </FormSheet>
   );

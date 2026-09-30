@@ -386,6 +386,20 @@ export class HoldingBalanceObservationRepository extends BaseRepository<
    * given once is how a guess becomes permanent — and a repository that
    * cannot express the undo makes the next person add a second write path.
    */
+  async lockForGapAnswer(observationId: string, userId: string, transaction: DatabaseTransaction) {
+    const [row] = await transaction
+      .select()
+      .from(schema.holdingBalanceObservations)
+      .where(
+        and(
+          eq(schema.holdingBalanceObservations.id, observationId),
+          eq(schema.holdingBalanceObservations.userId, userId)
+        )
+      )
+      .for('update');
+    return row ?? null;
+  }
+
   async setGapReview(
     args: {
       observationId: string;

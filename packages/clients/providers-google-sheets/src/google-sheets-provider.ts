@@ -19,7 +19,8 @@
  * — no more direct `new GoogleSheetsProvider(...)` in domain code.
  */
 
-import { type DbType, client as pgClient } from '@scani/db/connection';
+import { reserveForSessionLock } from '@scani/db';
+import type { DbType } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import type { CustomLogger } from '@scani/logging';
 import type { Capability, CurrentPriceProvider } from '@scani/providers/core/capabilities';
@@ -936,7 +937,7 @@ export class GoogleSheetsProvider implements CurrentPriceProvider {
       'Attempting to acquire Google Sheets advisory lock with timeout'
     );
 
-    const reserved = await pgClient.reserve();
+    const reserved = await reserveForSessionLock();
     let acquired = false;
     try {
       const startTime = Date.now();

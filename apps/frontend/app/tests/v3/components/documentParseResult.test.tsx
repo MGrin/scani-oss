@@ -42,7 +42,7 @@ const SUMMARY = {
 describe('DocumentParseResult', () => {
   test('links each extraction to the prefilled payment form', () => {
     const html = render(<DocumentParseResult result={SUMMARY} />);
-    expect(html).toContain('/payments/recurring/new?fromExtraction=ext-1');
+    expect(html).toContain('/payments?sheet=payment%3Ainvoice%3Aext-1');
     expect(html).toContain('Hetzner Online GmbH');
     expect(html).toContain('R0012345');
   });
@@ -86,8 +86,8 @@ describe('DocumentParseResult', () => {
         }}
       />
     );
-    expect(html).toContain('fromExtraction=ext-1');
-    expect(html).toContain('fromExtraction=ext-2');
+    expect(html).toContain('payment%3Ainvoice%3Aext-1');
+    expect(html).toContain('payment%3Ainvoice%3Aext-2');
   });
 
   /**
@@ -150,7 +150,7 @@ describe('resolveV3ReviewRenderer', () => {
         })}
       </StaticRouter>
     );
-    expect(html).toContain('fromExtraction=ext-1');
+    expect(html).toContain('payment%3Ainvoice%3Aext-1');
 
     for (const kind of ['wallet-import', 'exchange-import', 'screenshot-parse', 'file-import']) {
       expect(resolveV3ReviewRenderer(kind).kind).toBe(kind);

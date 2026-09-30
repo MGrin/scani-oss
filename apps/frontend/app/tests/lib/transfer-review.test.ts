@@ -9,6 +9,7 @@ import {
   destinationGroup,
   destinationScale,
   type SplitDraftRow,
+  splitBlockers,
   splitConsequence,
   splitIsCommittable,
   toSplitPortions,
@@ -208,6 +209,41 @@ describe('splitIsCommittable — the reported division', () => {
     });
     expect(splitIsCommittable(draft, ITEM)).toBe(false);
     expect(splitConsequence(t, draft, ITEM, () => null)).toContain('Only one part');
+  });
+});
+
+describe('splitBlockers — what Save waits on (SC-1433)', () => {
+  // `FormActions` disables Save on a non-empty list, so the list and
+  // `splitIsCommittable` must agree on every draft or Save lies either way.
+  const drafts: [string, SplitDraftRow[]][] = [
+    ['empty', rows()],
+    ['one part', rows({ left_control: { amount: '4000' } })],
+    ['no destination', rows({ internal: { amount: '3500' }, left_control: { amount: '500' } })],
+    [
+      'two links',
+      rows({
+        paired: { amount: '2000', matchTransactionId: 'dep-1' },
+        internal: { amount: '2000', destination: SAVINGS },
+      }),
+    ],
+    ['short', rows({ left_control: { amount: '100' }, untracked: { amount: '100' } })],
+    ['zero', rows({ left_control: { amount: '0' }, untracked: { amount: '4000' } })],
+    ['paired, no deposit', rows({ paired: { amount: '3500' }, left_control: { amount: '500' } })],
+    [
+      'the reported division',
+      rows({ internal: { amount: '3500', destination: SAVINGS }, left_control: { amount: '500' } }),
+    ],
+  ];
+
+  for (const [name, draft] of drafts) {
+    test(`agrees with splitIsCommittable: ${name}`, () => {
+      expect(splitBlockers(t, draft, ITEM).length === 0).toBe(splitIsCommittable(draft, ITEM));
+    });
+  }
+
+  test('names the total when the parts do not add up', () => {
+    const draft = rows({ left_control: { amount: '100' }, untracked: { amount: '100' } });
+    expect(splitBlockers(t, draft, ITEM).join(' ')).toContain('adding up to');
   });
 });
 

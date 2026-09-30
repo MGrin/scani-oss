@@ -24,6 +24,13 @@ export interface PeekFact {
   value: ReactNode;
 }
 
+/** A titled row that says what the action is for, then offers it. */
+export interface PeekEndAction {
+  title: string;
+  hint: string;
+  action: ReactNode;
+}
+
 /** A titled group of facts, shown below the fold. */
 export interface PeekSection {
   title: string;
@@ -76,6 +83,16 @@ export interface PeekSpec {
    */
   content?: ReactNode;
   sections?: PeekSection[];
+  /**
+   * A rare, contextual action, drawn as the body's last row under its own
+   * title (UI standard rule 4, its one exception; SC-1419).
+   *
+   * Rare enough not to earn a place in `actions`, which is the drawer's fixed
+   * header on a phone and already fills the ~50% rest height. Last, not loose
+   * between the facts: "Mark as scam" sat between a holding's facts and its
+   * PERFORMANCE section and read as part of neither.
+   */
+  endAction?: PeekEndAction;
   /** The two or three things you would open the record to do. */
   actions?: ReactNode;
 }

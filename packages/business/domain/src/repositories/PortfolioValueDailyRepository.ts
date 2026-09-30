@@ -55,6 +55,48 @@ export interface IncludedHoldingScopeRow {
   transfersUnreviewed: number;
 }
 
+/**
+ * One day of `IncludedHoldingScopeRow`s summed in SQL (SC-1369). Home read
+ * every holding's row for every day and summed them in JS: 49,988 rows for
+ * one user's year, and decoding them was most of the api's CPU per Home load.
+ * The inclusion contract is the same WHERE clause; only the summing moved.
+ *
+ * The money columns are `text`; they are summed as `numeric`, which is exact
+ * and keeps the widest scale of its inputs (`150.0000000000`), and
+ * `aggregateDailyTotals` normalises that back to Decimal's printing. The PnL
+ * three are NULL unless every row that day carries all three, and the two
+ * provenance counts are NULL if any row that day predates their column.
+ */
+export interface IncludedDailyTotalsRow {
+  snapshotDate: string;
+  totalValue: string;
+  costBasis: string | null;
+  realizedPnl: string | null;
+  unrealizedPnl: string | null;
+  holdingsWithKnownValue: number;
+  holdingsTotal: number;
+  holdingsUnpriceable: number;
+  holdingsStalePriced: number;
+  holdingsStaleAnchored: number | null;
+  oldestAnchorAt: Date | null;
+  holdingsBeforeRecords: number | null;
+  holdingsBasisUnknown: number;
+  transfersUnreviewed: number;
+  /** Any row that day was partial, stale-priced, stale-anchored or before records. */
+  anyPartial: boolean;
+}
+
+/** The columns `ReturnsService` reads from a per-holding row (SC-1369). */
+export type IncludedHoldingValueRow = Omit<
+  IncludedHoldingScopeRow,
+  | 'costBasis'
+  | 'realizedPnl'
+  | 'unrealizedPnl'
+  | 'oldestAnchorAt'
+  | 'holdingsUnpriceable'
+  | 'holdingsBasisUnknown'
+>;
+
 const daily = schema.portfolioValueDaily;
 
 // Every column the rollup derives. The PnL three are here because leaving them
@@ -163,46 +205,31 @@ export class PortfolioValueDailyRepository {
   ): Promise<IncludedHoldingScopeRow[]> {
     if (holdingIds !== undefined && holdingIds.length === 0) return [];
     try {
-      const db = this.getDb(transaction);
-      const fromStr = from.toISOString().slice(0, 10);
-      const toStr = to.toISOString().slice(0, 10);
-      const results = await db
+      const results = await this.getDb(transaction)
         .select({
-          snapshotDate: schema.portfolioValueDaily.snapshotDate,
-          holdingId: schema.portfolioValueDaily.scopeId,
-          totalValue: schema.portfolioValueDaily.totalValue,
-          costBasis: schema.portfolioValueDaily.costBasis,
-          realizedPnl: schema.portfolioValueDaily.realizedPnl,
-          unrealizedPnl: schema.portfolioValueDaily.unrealizedPnl,
-          coverageQuality: schema.portfolioValueDaily.coverageQuality,
-          holdingsWithKnownValue: schema.portfolioValueDaily.holdingsWithKnownValue,
-          holdingsTotal: schema.portfolioValueDaily.holdingsTotal,
-          holdingsUnpriceable: schema.portfolioValueDaily.holdingsUnpriceable,
-          holdingsStalePriced: schema.portfolioValueDaily.holdingsStalePriced,
-          holdingsStaleAnchored: schema.portfolioValueDaily.holdingsStaleAnchored,
-          oldestAnchorAt: schema.portfolioValueDaily.oldestAnchorAt,
-          holdingsBeforeRecords: schema.portfolioValueDaily.holdingsBeforeRecords,
-          holdingsInterpolated: schema.portfolioValueDaily.holdingsInterpolated,
-          holdingsBasisUnknown: schema.portfolioValueDaily.holdingsBasisUnknown,
-          transfersUnreviewed: schema.portfolioValueDaily.transfersUnreviewed,
+          snapshotDate: daily.snapshotDate,
+          holdingId: daily.scopeId,
+          totalValue: daily.totalValue,
+          costBasis: daily.costBasis,
+          realizedPnl: daily.realizedPnl,
+          unrealizedPnl: daily.unrealizedPnl,
+          coverageQuality: daily.coverageQuality,
+          holdingsWithKnownValue: daily.holdingsWithKnownValue,
+          holdingsTotal: daily.holdingsTotal,
+          holdingsUnpriceable: daily.holdingsUnpriceable,
+          holdingsStalePriced: daily.holdingsStalePriced,
+          holdingsStaleAnchored: daily.holdingsStaleAnchored,
+          oldestAnchorAt: daily.oldestAnchorAt,
+          holdingsBeforeRecords: daily.holdingsBeforeRecords,
+          holdingsInterpolated: daily.holdingsInterpolated,
+          holdingsBasisUnknown: daily.holdingsBasisUnknown,
+          transfersUnreviewed: daily.transfersUnreviewed,
         })
-        .from(schema.portfolioValueDaily)
-        .innerJoin(schema.holdings, eq(schema.holdings.id, schema.portfolioValueDaily.scopeId))
+        .from(daily)
+        .innerJoin(schema.holdings, eq(schema.holdings.id, daily.scopeId))
         .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
-        .where(
-          and(
-            eq(schema.portfolioValueDaily.userId, userId),
-            eq(schema.portfolioValueDaily.scopeKind, 'holding'),
-            eq(schema.portfolioValueDaily.baseCurrencyId, baseCurrencyId),
-            gte(schema.portfolioValueDaily.snapshotDate, fromStr),
-            lte(schema.portfolioValueDaily.snapshotDate, toStr),
-            eq(schema.holdings.isHidden, false),
-            eq(schema.holdings.isActive, true),
-            notScamFor(),
-            ...(holdingIds ? [inArray(schema.portfolioValueDaily.scopeId, [...holdingIds])] : [])
-          )
-        )
-        .orderBy(asc(schema.portfolioValueDaily.snapshotDate));
+        .where(this.includedHoldingRows(userId, baseCurrencyId, from, to, holdingIds))
+        .orderBy(asc(daily.snapshotDate));
       return results as IncludedHoldingScopeRow[];
     } catch (error) {
       this.logger.error(
@@ -211,6 +238,135 @@ export class PortfolioValueDailyRepository {
       );
       throw error;
     }
+  }
+
+  /**
+   * `findIncludedHoldingScopeRange` narrowed to what `ReturnsService` reads
+   * (SC-1369). Returns needs rows per holding, so it cannot take day sums, but
+   * it read seventeen columns per row and used eleven. The six it never read
+   * include the only timestamp, and the date comes back as text, so neither
+   * pays a Date parse per row.
+   */
+  async findIncludedHoldingValueRange(
+    userId: string,
+    baseCurrencyId: string,
+    from: Date,
+    to: Date,
+    holdingIds?: readonly string[],
+    transaction?: DatabaseTransaction
+  ): Promise<IncludedHoldingValueRow[]> {
+    if (holdingIds !== undefined && holdingIds.length === 0) return [];
+    try {
+      const results = await this.getDb(transaction)
+        .select({
+          snapshotDate: sql<string>`${daily.snapshotDate}::text`,
+          holdingId: daily.scopeId,
+          totalValue: daily.totalValue,
+          coverageQuality: daily.coverageQuality,
+          holdingsWithKnownValue: daily.holdingsWithKnownValue,
+          holdingsTotal: daily.holdingsTotal,
+          holdingsStalePriced: daily.holdingsStalePriced,
+          holdingsStaleAnchored: daily.holdingsStaleAnchored,
+          holdingsBeforeRecords: daily.holdingsBeforeRecords,
+          holdingsInterpolated: daily.holdingsInterpolated,
+          transfersUnreviewed: daily.transfersUnreviewed,
+        })
+        .from(daily)
+        .innerJoin(schema.holdings, eq(schema.holdings.id, daily.scopeId))
+        .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
+        .where(this.includedHoldingRows(userId, baseCurrencyId, from, to, holdingIds))
+        .orderBy(asc(daily.snapshotDate));
+      return results as IncludedHoldingValueRow[];
+    } catch (error) {
+      this.logger.error(
+        { userId, baseCurrencyId, from, to, error: error instanceof Error ? error.message : error },
+        'Failed to find included holding values in portfolio_value_daily'
+      );
+      throw error;
+    }
+  }
+
+  /** The included holdings' rows summed per day, in SQL. See `IncludedDailyTotalsRow`. */
+  async findIncludedHoldingDailyTotals(
+    userId: string,
+    baseCurrencyId: string,
+    from: Date,
+    to: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<IncludedDailyTotalsRow[]> {
+    const pnlComplete = sql`bool_and(${daily.costBasis} IS NOT NULL AND ${daily.realizedPnl} IS NOT NULL AND ${daily.unrealizedPnl} IS NOT NULL)`;
+    try {
+      return await this.getDb(transaction)
+        .select({
+          snapshotDate: sql<string>`${daily.snapshotDate}::text`,
+          totalValue: sql<string>`sum(${daily.totalValue}::numeric)::text`,
+          costBasis: sql<
+            string | null
+          >`CASE WHEN ${pnlComplete} THEN sum(${daily.costBasis}::numeric)::text END`,
+          realizedPnl: sql<
+            string | null
+          >`CASE WHEN ${pnlComplete} THEN sum(${daily.realizedPnl}::numeric)::text END`,
+          unrealizedPnl: sql<
+            string | null
+          >`CASE WHEN ${pnlComplete} THEN sum(${daily.unrealizedPnl}::numeric)::text END`,
+          holdingsWithKnownValue: sql<number>`sum(${daily.holdingsWithKnownValue})::int`,
+          holdingsTotal: sql<number>`sum(${daily.holdingsTotal})::int`,
+          holdingsUnpriceable: sql<number>`sum(${daily.holdingsUnpriceable})::int`,
+          holdingsStalePriced: sql<number>`sum(${daily.holdingsStalePriced})::int`,
+          holdingsStaleAnchored: sql<
+            number | null
+          >`CASE WHEN bool_or(${daily.holdingsStaleAnchored} IS NULL) THEN NULL ELSE sum(${daily.holdingsStaleAnchored})::int END`,
+          oldestAnchorAt: sql<Date | null>`min(${daily.oldestAnchorAt})`.mapWith(
+            daily.oldestAnchorAt
+          ),
+          holdingsBeforeRecords: sql<
+            number | null
+          >`CASE WHEN bool_or(${daily.holdingsBeforeRecords} IS NULL) THEN NULL ELSE sum(${daily.holdingsBeforeRecords})::int END`,
+          holdingsBasisUnknown: sql<number>`sum(${daily.holdingsBasisUnknown})::int`,
+          transfersUnreviewed: sql<number>`sum(${daily.transfersUnreviewed})::int`,
+          anyPartial: sql<boolean>`bool_or(${daily.coverageQuality} = 'partial' OR ${daily.holdingsStalePriced} > 0 OR coalesce(${daily.holdingsStaleAnchored}, 0) > 0 OR coalesce(${daily.holdingsBeforeRecords}, 0) > 0)`,
+        })
+        .from(daily)
+        .innerJoin(schema.holdings, eq(schema.holdings.id, daily.scopeId))
+        .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
+        .where(this.includedHoldingRows(userId, baseCurrencyId, from, to))
+        .groupBy(daily.snapshotDate)
+        .orderBy(asc(daily.snapshotDate));
+    } catch (error) {
+      this.logger.error(
+        { userId, baseCurrencyId, from, to, error: error instanceof Error ? error.message : error },
+        'Failed to sum included holding-scope portfolio_value_daily rows per day'
+      );
+      throw error;
+    }
+  }
+
+  // The inclusion contract over `scope_kind='holding'` rows: every reader of
+  // per-holding rows filters through this one clause, so a day's sum and the
+  // rows it sums cannot disagree about which holdings count. Assumes the
+  // `holdings` and `tokens` joins.
+  //
+  // NOTE: the same predicate is TypeScript in `lib/holding-inclusion.ts`, which
+  // the dashboard headline uses. The two must stay aligned, or the chart's
+  // latest point stops reconciling with the headline.
+  private includedHoldingRows(
+    userId: string,
+    baseCurrencyId: string,
+    from: Date,
+    to: Date,
+    holdingIds?: readonly string[]
+  ) {
+    return and(
+      eq(daily.userId, userId),
+      eq(daily.scopeKind, 'holding'),
+      eq(daily.baseCurrencyId, baseCurrencyId),
+      gte(daily.snapshotDate, from.toISOString().slice(0, 10)),
+      lte(daily.snapshotDate, to.toISOString().slice(0, 10)),
+      eq(schema.holdings.isHidden, false),
+      eq(schema.holdings.isActive, true),
+      notScamFor(),
+      ...(holdingIds ? [inArray(daily.scopeId, [...holdingIds])] : [])
+    );
   }
 
   /**

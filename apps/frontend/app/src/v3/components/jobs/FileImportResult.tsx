@@ -1,6 +1,7 @@
-import { formatDate, quantityDecimals } from '@scani/shared';
+import { CsvMappingDto, formatDate, quantityDecimals } from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
 import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
@@ -11,7 +12,9 @@ import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
+import { columnChoices, columnFromOption, columnOption, NO_COLUMN } from '../../lib/csv-columns';
 import {
+  type FileImportColumnPrompt,
   type FileImportCurrencyPrompt,
   type FileImportDateOrder,
   type FileImportDateOrderPrompt,
@@ -54,6 +57,15 @@ export function FileImportResult({ result, jobId }: { result: unknown; jobId: st
       </Block>
     );
   }
+
+  if (view.needsColumnMapping)
+    return (
+      <ColumnMappingPrompt
+        accountId={view.accountId}
+        prompt={view.needsColumnMapping}
+        pickerJobId={jobId}
+      />
+    );
 
   if (view.needsDateOrder) {
     return (
@@ -311,6 +323,7 @@ function CurrencyPrompt({
                 requestId: crypto.randomUUID(),
                 defaultCurrency: chosen.symbol,
                 dateOrder: prompt.dateOrder,
+                customMapping: prompt.customMapping,
               });
             }}
             className="w-full lg:w-auto lg:self-start"
@@ -376,6 +389,7 @@ function DateOrderPrompt({
       accountId,
       requestId: crypto.randomUUID(),
       defaultCurrency: prompt.defaultCurrency,
+      customMapping: prompt.customMapping,
       dateOrder,
     });
   };
@@ -427,5 +441,84 @@ function DateOrderPrompt({
         lines={warnings}
       />
     </div>
+  );
+}
+
+function ColumnMappingPrompt({
+  accountId,
+  prompt,
+  pickerJobId,
+}: {
+  accountId: string;
+  prompt: FileImportColumnPrompt;
+  pickerJobId: string;
+}) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
+  const [mapping, setMapping] = useState<Record<string, string>>({
+    date: '',
+    description: '',
+    amount: '',
+  });
+  const mark = trpc.jobs.markActionTaken.useMutation();
+  const reparse = trpc.fileImport.parseAndEnrich.useMutation({
+    onSuccess: ({ jobId }) => {
+      mark.mutate({ jobId: pickerJobId });
+      navigate(jobDetailPath(jobId));
+    },
+  });
+  const parsed = CsvMappingDto.safeParse(mapping);
+  return (
+    <Block className="flex flex-col gap-4 p-4">
+      <BlockHeader title={t('v3.jobs.file.columns.title')} />
+      <p>{t('v3.jobs.file.columns.body')}</p>
+      {(
+        ['date', 'description', 'amount', 'credit', 'debit', 'currency', 'balance', 'fee'] as const
+      ).map((field) => (
+        <Field key={field} label={t(`v3.jobs.file.columns.${field}`)} htmlFor={`column-${field}`}>
+          <Select
+            value={columnOption(mapping[field] ?? '', prompt.headers)}
+            onValueChange={(value) =>
+              setMapping({ ...mapping, [field]: columnFromOption(value, prompt.headers) })
+            }
+            disabled={reparse.isPending}
+          >
+            <SelectTrigger id={`column-${field}`}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_COLUMN}>{t('v3.jobs.file.columns.none')}</SelectItem>
+              {columnChoices(prompt.headers).map((choice) => (
+                <SelectItem key={choice.value} value={choice.value}>
+                  {choice.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      ))}
+      {reparse.error ? (
+        <p role="alert">
+          {describeQueryError(reparse.error, t('v3.jobs.file.currency.subject'), 'save').detail}
+        </p>
+      ) : null}
+      <Button
+        disabled={!parsed.success || reparse.isPending}
+        onClick={() => {
+          if (parsed.success)
+            reparse.mutate({
+              r2Key: prompt.r2Key,
+              fileType: 'csv',
+              accountId,
+              requestId: crypto.randomUUID(),
+              customMapping: parsed.data,
+              dateOrder: prompt.dateOrder,
+              defaultCurrency: prompt.defaultCurrency,
+            });
+        }}
+      >
+        {t('v3.jobs.file.columns.apply')}
+      </Button>
+    </Block>
   );
 }

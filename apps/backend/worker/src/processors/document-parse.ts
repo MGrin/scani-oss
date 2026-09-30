@@ -1,8 +1,13 @@
 import { isMissingObjectError, StorageFacade } from '@scani/cloud-client/facades/storage-facade';
 import type { Document } from '@scani/db/schema';
-import { DocumentIngestionService, DocumentRetentionService } from '@scani/domain/services';
+import {
+  DocumentIngestionService,
+  DocumentRetentionService,
+  UploadedFileService,
+} from '@scani/domain/services';
 import { DOCUMENT_PARSE, type DocumentParseJob } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
+import { AIUnavailableError } from '@scani/providers/core/errors';
 import {
   type ProcessorContext,
   UnrecoverableError,
@@ -49,15 +54,48 @@ export class DocumentParseProcessor extends UserJobProcessor<
     await ctx.reportStatus(
       data.reparseOf ? 'Re-reading with the current extractor…' : 'Checking for a duplicate…'
     );
-    const result = await ingestion.ingest({
-      userId: data.userId,
-      bytes: new Uint8Array(buf),
-      mimeType: data.mimeType,
-      r2Key: data.r2Key,
-      originalFilename: data.originalFilename,
-      sourceKind: data.sourceKind,
-      reparseOf: data.reparseOf,
-    });
+    const result = await ingestion
+      .ingest({
+        userId: data.userId,
+        bytes: new Uint8Array(buf),
+        mimeType: data.mimeType,
+        r2Key: data.r2Key,
+        originalFilename: data.originalFilename,
+        sourceKind: data.sourceKind,
+        reparseOf: data.reparseOf,
+      })
+      .catch(async (error: unknown) => {
+        // A transient outage retries, but its last attempt must end the same
+        // way a missing provider does, or the user is left with a raw error.
+        const lastAttempt = ctx.job.attemptsMade + 1 >= (ctx.job.opts?.attempts ?? 1);
+        if (
+          error instanceof AIUnavailableError &&
+          (error.kind === 'unrecoverable' || lastAttempt)
+        ) {
+          let saved = false;
+          try {
+            const document = await Container.get(UploadedFileService).record({
+              userId: data.userId,
+              purpose: 'invoice',
+              bytes: new Uint8Array(buf),
+              mimeType: data.mimeType,
+              r2Key: data.r2Key,
+              originalFilename: data.originalFilename,
+            });
+            saved = retention.isRetained(document.r2Key);
+          } catch {
+            /* Keep the original upload when recording fails. */
+          }
+          throw userFacing(
+            new UnrecoverableError(
+              saved
+                ? 'AI processing is unavailable. Your file is saved in Files. Enter the details manually, or re-read the saved file when processing is available.'
+                : 'AI processing is unavailable. Enter the details manually. Your upload could not be saved permanently; keep your original file to upload again.'
+            )
+          );
+        }
+        throw error;
+      });
 
     if (!result.deduped) {
       await ctx.reportStatus('Extracting invoice data with AI…');

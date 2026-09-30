@@ -1,6 +1,10 @@
 import { z } from 'zod';
+import { readCoreBuild } from './core-build';
+
+export { type CoreBuild, readCoreBuild } from './core-build';
 
 export {
+  isConnectionPoolerUrl,
   postgresJsSsl,
   verifiedLibpqConnectionString,
   verifiedPgConnectionString,
@@ -223,10 +227,18 @@ export function isDemoModeRequested(env: Record<string, string | undefined>): bo
  * host as unable to say, never as serving an old build. Nothing else from the
  * environment is echoed.
  */
-export function servedVersion(serviceVersion: string | undefined): { commit?: string } {
-  return serviceVersion !== undefined && /^[0-9a-f]{40}$/.test(serviceVersion)
-    ? { commit: serviceVersion }
-    : {};
+export function servedVersion(
+  serviceVersion: string | undefined,
+  coreBuild = Bun.env.SCANI_CORE_BUILD
+) {
+  if (serviceVersion === undefined || !/^[0-9a-f]{40}$/.test(serviceVersion)) return {};
+  // A deploy that could not stage a fresh mapping leaves the previous one on
+  // the host; it describes another build, so it drops the label, not the commit.
+  try {
+    return { commit: serviceVersion, ...readCoreBuild(coreBuild, serviceVersion) };
+  } catch {
+    return { commit: serviceVersion };
+  }
 }
 
 export { diagnosticsAuthorized, healthBodyFor, publicHealthBody } from './diagnostics';

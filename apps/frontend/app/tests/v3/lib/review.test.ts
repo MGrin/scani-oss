@@ -14,6 +14,7 @@ function item(overrides: Partial<ReviewRow> = {}): ReviewRow {
   const row: ReviewRow = {
     id: 'job:abc',
     kind: 'screenshot-parse',
+    labelCode: 'job',
     title: 'Document parse',
     detail: '2 holdings · BTC, ETH',
     amount: null,

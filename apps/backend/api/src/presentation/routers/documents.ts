@@ -26,6 +26,7 @@ import {
   type ExtractionOccurrenceLink,
 } from '@scani/domain/repositories';
 import {
+  AIRouter,
   DocumentDeletionService,
   DocumentDownloadService,
   DocumentReparseService,
@@ -36,6 +37,7 @@ import { BullMqEnqueueService } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { requireAI } from '../ai-required';
 import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
 
@@ -163,6 +165,18 @@ function serializeListItem(item: DocumentListItem, isRetained: (key: string) => 
   };
 }
 
+/** A PDF is read as a file where a provider can, and as extracted text otherwise. */
+async function requireDocumentOperation(mimeType: string): Promise<void> {
+  const router = Container.get(AIRouter);
+  const operation =
+    mimeType !== 'application/pdf'
+      ? 'image'
+      : (await router.getAvailability()).pdf
+        ? 'pdf'
+        : 'text';
+  await router.requireOperation(operation);
+}
+
 export const documentsRouter = router({
   /**
    * Enqueue the `document-parse` job for an already-uploaded file.
@@ -182,6 +196,7 @@ export const documentsRouter = router({
       )
     )
     .mutation(async ({ ctx, input }) => {
+      await requireAI(() => requireDocumentOperation(input.mimeType));
       assertOwnedDocumentKey(input.r2Key, ctx.userId);
       await assertUploadLanded(input.r2Key);
       const jobId = await Container.get(BullMqEnqueueService).add(DOCUMENT_PARSE, {
@@ -217,6 +232,12 @@ export const documentsRouter = router({
   reparse: protectedProcedure
     .input(strictInput(z.object({ documentId: z.string().uuid() })))
     .mutation(async ({ ctx, input }) => {
+      const document = await Container.get(DocumentRepository).findByIdAndUser(
+        input.documentId,
+        ctx.userId
+      );
+      if (!document) throw new TRPCError({ code: 'NOT_FOUND', message: 'Document not found' });
+      await requireAI(() => requireDocumentOperation(document.mimeType));
       const outcome = await Container.get(DocumentReparseService).prepare(
         input.documentId,
         ctx.userId

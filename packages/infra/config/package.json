@@ -5,7 +5,9 @@
   "version": "1.0.0",
   "description": "Shared env-validation primitives: isProduction, requiredInProd, url shapes.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./core-build": "./src/core-build.ts",
+    "./postgres-direct-tls": "./src/postgres-direct-tls.ts"
   },
   "scripts": {
     "lint": "biome check .",
