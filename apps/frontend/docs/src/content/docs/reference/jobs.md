@@ -114,8 +114,7 @@ Defined in `packages/business/jobs/src/retry-policies.ts`:
 ## DLQ (dead-letter queue)
 
 Jobs that exhaust their retries land in `scani-dlq`. The
-`dlq-depth-probe` job alarms when depth grows. Operators replay
-via the HMAC-gated `jobs.dlqReplay` endpoint on the api.
+`dlq-depth-probe` job alarms when depth grows.
 
 ## Adding a job
 

@@ -11,9 +11,10 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
  * pages are effects-driven.
  *
  * The env and the mocks are in place before the modules under test load: the
- * allow-list is read from `VITE_CLOUD_URL` once, at import.
+ * allow-list is read from `VITE_CLOUD_URL` and `VITE_ADMIN_URL` once, at import.
  */
 process.env.VITE_CLOUD_URL = 'https://cloud.scani.xyz/';
+process.env.VITE_ADMIN_URL = 'https://admin.example.com';
 
 const magicLink = mock(async (_args: { email: string; callbackURL: string }) => ({ error: null }));
 mock.module('@/lib/auth-client', () => ({
@@ -30,8 +31,10 @@ const { AuthContext } = await import('@/contexts/auth-context');
 const { AuthProvider, useAuth } = await import('@/contexts/AuthContext');
 const { Auth } = await import('@/pages/Auth');
 const { AuthCallback } = await import('@/pages/AuthCallback');
+const { safeReturnTo } = await import('@/lib/return-origins');
 
 const CONSOLE_KEYS = 'https://cloud.scani.xyz/keys';
+const ADMIN_ROLLOUTS = 'https://admin.example.com/rollouts';
 
 const assign = mock((_url: string) => {});
 Object.defineProperty(window.location, 'assign', { value: assign, configurable: true });
@@ -156,6 +159,44 @@ describe('leaving sign-in for the Cloud console', () => {
     );
     expect(assign).not.toHaveBeenCalled();
     expect(html).toContain('HOME');
+  });
+});
+
+describe('leaving sign-in for the admin app', () => {
+  test('safeReturnTo accepts the admin origin when VITE_ADMIN_URL is set', () => {
+    expect(safeReturnTo(ADMIN_ROLLOUTS, '/')).toBe(ADMIN_ROLLOUTS);
+  });
+
+  test('the cloud origin is still accepted beside it', () => {
+    expect(safeReturnTo(CONSOLE_KEYS, '/')).toBe(CONSOLE_KEYS);
+  });
+
+  test('a look-alike host that merely starts with the admin origin is rejected', () => {
+    expect(safeReturnTo('https://admin.example.com.evil.example/rollouts', '/')).toBe('/');
+  });
+
+  /**
+   * The allow-list is read once, at import, and this process imported it with
+   * VITE_ADMIN_URL set, so the unset case needs a process of its own. The
+   * cloud URL stays accepted there: the control that the child read anything.
+   */
+  test('with VITE_ADMIN_URL unset the admin URL is rejected', () => {
+    const module = new URL('../../src/lib/return-origins.ts', import.meta.url).pathname;
+    const script = `const { safeReturnTo } = await import(${JSON.stringify(module)});
+      console.log(JSON.stringify([
+        safeReturnTo(${JSON.stringify(ADMIN_ROLLOUTS)}, '/'),
+        safeReturnTo(${JSON.stringify(CONSOLE_KEYS)}, '/'),
+      ]));`;
+    const env: Record<string, string | undefined> = { ...process.env };
+    delete env.VITE_ADMIN_URL;
+    const child = Bun.spawnSync(['bun', '-e', script], { env, stderr: 'pipe' });
+    expect(child.stderr.toString()).toBe('');
+    expect(JSON.parse(child.stdout.toString())).toEqual(['/', CONSOLE_KEYS]);
+  });
+
+  test('/auth with the admin returnTo assigns the admin URL', async () => {
+    await signedInAt(`/auth?returnTo=${ADMIN_ROLLOUTS}`);
+    expect(assign.mock.calls).toEqual([[ADMIN_ROLLOUTS]]);
   });
 });
 

@@ -109,8 +109,8 @@ const envSchema = z.object({
   // only, which is all a deploy smoke or a container healthcheck reads.
   DIAGNOSTICS_TOKEN: z.string().min(32).optional(),
 
-  // HMAC shared secret for job-management actions (BullMQ retry/remove,
-  // DLQ replay). Required in prod.
+  // HMAC key for the worker wake ping below and the admin audit log's
+  // signature chain. Required in prod.
   JOBS_HMAC_SECRET: requiredInProd(z.string().min(32), 'JOBS_HMAC_SECRET'),
 
   // Where the api pings the worker after a user enqueues, so the job starts

@@ -11,7 +11,7 @@ sidebar:
 |---|---|---|
 | Holdings, transactions, observations, prices, vaults, groups, accounts, users, sessions, encrypted integration creds | Postgres | **Yes. The whole truth lives here.** |
 | BullMQ job state, scheduled-job state | Postgres, in the `bullmq` schema | **Covered by the Postgres backup below** — `pg_dump` of the database takes every schema, so you get it whether or not you meant to. |
-| Rate-limiter buckets, realtime pub/sub, job-lifecycle events, portfolio-value cache, admin HMAC nonces | Redis | No. All of it regenerates from "now". |
+| Rate-limiter buckets, realtime pub/sub, job-lifecycle events, portfolio-value cache | Redis | No. All of it regenerates from "now". |
 | Screenshot uploads, CSV imports, file-import payloads | S3 / SeaweedFS | If your retention model needs them. The application can run without them; only the audit trail / re-parse flow is impacted. |
 | Code, schema, env config | Git + your secret store | **Yes.** |
 
@@ -71,7 +71,6 @@ breaks every sync until each user re-enters their keys.
 - Realtime pub/sub topics (ephemeral by definition).
 - Job-lifecycle events already delivered to the UI.
 - The portfolio-value cache (recomputed on the next read).
-- Admin HMAC replay nonces (expire on their own TTL).
 
 Job state is **not** in this list. BullMQ runs on the Postgres
 backend, so in-flight, delayed and repeatable jobs live in the

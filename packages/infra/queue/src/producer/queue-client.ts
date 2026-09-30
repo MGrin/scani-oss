@@ -7,7 +7,7 @@ import { createPostgresBackend, type PostgresQueueBackend, Queue } from 'bullmq'
 type PgQueue = Queue<any, any, string, any, any, string, PostgresQueueBackend>;
 
 import { Service } from 'typedi';
-import { DEFAULT_DLQ_NAME, DEFAULT_QUEUE_NAME } from '../core/default-names';
+import { DEFAULT_QUEUE_NAME } from '../core/default-names';
 
 const log = createComponentLogger('queue:client');
 
@@ -31,7 +31,6 @@ export const DEFAULT_QUEUE_SCHEMA = 'bullmq';
 @Service()
 export class QueueClient {
   private queue: PgQueue | null = null;
-  private dlq: PgQueue | null = null;
   private config: QueueClientConfig | null = null;
 
   configure(config: QueueClientConfig): PgQueue {
@@ -67,40 +66,10 @@ export class QueueClient {
     return this.queue;
   }
 
-  /**
-   * The dead-letter queue, on the same connection, opened on first use.
-   *
-   * The api is a producer and never runs a `WorkerClient`, so it has no
-   * other handle on `scani-dlq` — and replaying an entry has to go
-   * through BullMQ's own state machine rather than hand-written SQL:
-   * a job spans several tables in the `bullmq` schema and recomputing
-   * that by hand is exactly what `admin-jobs.ts` refuses to do for the
-   * main queue.
-   *
-   * Lazy rather than opened in `configure()` because only the admin
-   * replay route wants it; the worker builds its own inside
-   * `WorkerClient`. `close()` closes whichever were opened.
-   */
-  getDlq(): PgQueue {
-    if (!this.config) {
-      throw new Error('QueueClient not configured — call configure() at boot');
-    }
-    if (!this.dlq) {
-      const name = DEFAULT_DLQ_NAME;
-      this.dlq = this.open(name);
-      log.info({ queue: name, backend: 'postgres' }, '📮 DLQ handle opened');
-    }
-    return this.dlq;
-  }
-
   async close(): Promise<void> {
     if (this.queue) {
       await this.queue.close();
       this.queue = null;
-    }
-    if (this.dlq) {
-      await this.dlq.close();
-      this.dlq = null;
     }
     this.config = null;
   }

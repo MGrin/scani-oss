@@ -119,8 +119,8 @@ Redis is required, but **the job queue is not on it** — BullMQ runs
 on the Postgres backend, so job state lives in the `bullmq` schema
 of the database above. What Redis carries is realtime SSE pub/sub,
 job-lifecycle events pushed to the UI, the api's request rate
-limiter, the shared upstream-provider rate limiter, the
-portfolio-value cache and the admin HMAC replay-nonce store. All of
+limiter, the shared upstream-provider rate limiter and the
+portfolio-value cache. All of
 it is ephemeral and regenerates.
 
 | Provider | Notes |

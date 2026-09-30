@@ -89,7 +89,6 @@ export interface StackService {
 export const STACK_SERVICES: readonly StackService[] = [
   { env: 'FRONTEND_HOST_PORT', base: 5173, label: 'app', scheme: 'http' },
   { env: 'LANDING_HOST_PORT', base: 5174, label: 'landing', scheme: 'http' },
-  { env: 'ADMIN_HOST_PORT', base: 5175, label: 'admin', scheme: 'http' },
   { env: 'CLOUD_HOST_PORT', base: 5176, label: 'cloud', scheme: 'http' },
   { env: 'API_HOST_PORT', base: 3011, label: 'api', scheme: 'http' },
   { env: 'DATA_PROVIDER_HOST_PORT', base: 8082, label: 'data-provider', scheme: 'http' },

@@ -119,8 +119,6 @@ The chart UI reads `coverageQuality` and renders accordingly: a
 - **On import.** A user-initiated import triggers a
   `portfolio-history-backfill` user job for that user, scoped to the
   affected date range.
-- **Manual.** Operators can enqueue a rollup for one user / one
-  date range via the HMAC-gated job endpoint on the api.
 
 <Aside type="note" title="Why a cache instead of computing on every dashboard load">
   Computing the totals per request would mean reconstructing

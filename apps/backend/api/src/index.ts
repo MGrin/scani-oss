@@ -151,8 +151,6 @@ import { aiHealthCheck } from './lib/ai-health';
 import { monitorEventLoopStalls } from './lib/event-loop-stalls';
 import { isLivenessProbe } from './lib/liveness';
 import { isPrivateSessionRead } from './lib/private-session-read';
-import { registerAdminDataRoutes } from './presentation/http/admin-data';
-import { registerAdminJobsRoutes } from './presentation/http/admin-jobs';
 import { registerInstitutionIconRoutes } from './presentation/http/institution-icons';
 import { registerUnsubscribeRoutes } from './presentation/http/unsubscribe';
 import {
@@ -649,8 +647,6 @@ const app = new Elysia()
 // the demo's HMAC secrets and unsubscribe tokens have no surface to be wrong
 // about.
 if (!demoConfig.enabled) {
-  registerAdminJobsRoutes(app, redisConnection);
-  registerAdminDataRoutes(app, redisConnection);
   // One-click, no-login digest opt-out (SC-460). Public by design.
   registerUnsubscribeRoutes(app);
 } else {
