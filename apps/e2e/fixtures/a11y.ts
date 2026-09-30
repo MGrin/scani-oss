@@ -251,6 +251,38 @@ export const EXEMPT_TARGETS = [
 ].join(', ');
 
 /**
+ * Waits for every finite animation and transition on the page to finish, so
+ * a sheet is measured where it rests rather than mid-slide. Infinite
+ * animations (spinners) never finish and are skipped; the wait is bounded so
+ * a paused one cannot hang it.
+ */
+export async function settleAnimations(page: Page, timeoutMs = 3000): Promise<void> {
+  await page.evaluate(async (limit) => {
+    const finite = document
+      .getAnimations()
+      .filter((a) => Number.isFinite(Number(a.effect?.getComputedTiming().endTime)));
+    await Promise.race([
+      Promise.all(finite.map((a) => a.finished.catch(() => undefined))),
+      new Promise((resolve) => setTimeout(resolve, limit)),
+    ]);
+  }, timeoutMs);
+}
+
+/**
+ * The smallest measured size that counts as meeting `minimum`: one WebKit
+ * layout unit (1/64 px) under it.
+ *
+ * Settling is not enough on its own. The phone drawer RESTS at an inline
+ * `translate3d(0, 8%, 0)` — 47.92px of a 599px sheet — so after every finite
+ * animation has finished, WebKit still reports the 44px date field in the
+ * payment sheet as 43.99993896484375, and its `min-height: 44px` wrapper reads
+ * the same. A real shortfall is at least a whole layout unit and still fails.
+ */
+export function targetReach(minimum: number): number {
+  return minimum - 1 / 64;
+}
+
+/**
  * The house touch-target rule: 44×44 CSS px on anything a finger points at.
  *
  * Deliberately measured rather than asserted from class names — the v3 rule
@@ -264,6 +296,7 @@ export async function measureUndersizedTargets(
   surface: string,
   minimum = 44
 ): Promise<Measured<TargetMeasurement>> {
+  await settleAnimations(page);
   return page.evaluate(
     ({ surface: label, minimum: floor, interactive: INTERACTIVE, exempt: EXEMPT }) => {
       const empty = { scanned: 0, offenders: [] };
@@ -313,7 +346,12 @@ export async function measureUndersizedTargets(
       }
       return { scanned, offenders };
     },
-    { surface, minimum, interactive: INTERACTIVE_TARGETS, exempt: EXEMPT_TARGETS }
+    {
+      surface,
+      minimum: targetReach(minimum),
+      interactive: INTERACTIVE_TARGETS,
+      exempt: EXEMPT_TARGETS,
+    }
   );
 }
 

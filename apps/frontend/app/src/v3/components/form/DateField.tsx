@@ -121,10 +121,7 @@ export function DateField({
   return (
     <div
       className={cn(
-        // `min-h-[44px]` as on the shared Input: `h-11` alone lets a flex
-        // parent squeeze the wrapper by a fraction of a pixel, and the input
-        // inset from it then measures under 44 (iPhone, payment sheet).
-        'relative flex h-11 min-h-[44px] w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-input bg-background dark:bg-input/30 px-3',
+        'relative flex h-11 w-full min-w-0 items-center gap-2 overflow-hidden rounded-md border border-input bg-background dark:bg-input/30 px-3',
         'focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background',
         disabled && 'cursor-not-allowed opacity-50',
         className

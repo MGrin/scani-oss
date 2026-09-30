@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { EXEMPT_TARGETS, INTERACTIVE_TARGETS } from '../fixtures/a11y';
+import { EXEMPT_TARGETS, INTERACTIVE_TARGETS, targetReach } from '../fixtures/a11y';
 
 /**
  * That the touch-target walk's query is as wide as SC-989 decided it is.
@@ -232,5 +232,16 @@ describe('EXEMPT_TARGETS', () => {
   ] as const)('still measures %s — the proxy rule is structural, not a size', (_label, html) => {
     expect(matched(INTERACTIVE_TARGETS, html)).toBe(true);
     expect(matched(EXEMPT_TARGETS, html)).toBe(false);
+  });
+});
+
+describe('a 44px target is measured to within one layout unit', () => {
+  test('the settled reading of the 44px date field in the resting phone drawer clears it', () => {
+    expect(43.99993896484375 >= targetReach(44)).toBe(true);
+  });
+
+  test('CONTROL: a control a real fraction short still fails', () => {
+    expect(43.98 >= targetReach(44)).toBe(false);
+    expect(43 >= targetReach(44)).toBe(false);
   });
 });
