@@ -1,3 +1,4 @@
+import '../../i18n-preload';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
