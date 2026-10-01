@@ -1,3 +1,5 @@
+import { createComponentLogger } from '@scani/logging';
+import { captureException } from '@scani/logging/sentry';
 import { APIError } from 'better-auth/api';
 
 type SignInGuard = (userId: string) => Promise<boolean>;
@@ -22,6 +24,19 @@ export function registerSignInGuard(next: SignInGuard): void {
   guard = next;
 }
 
-export function isSignInAllowed(userId: string): Promise<boolean> {
-  return guard(userId);
+const logger = createComponentLogger('sign-in-guard');
+
+/**
+ * A guard that throws fails CLOSED: no session is created. That is only safe if
+ * it is loud, because a guard bug locks every user out, so it is logged at
+ * error level and sent to Sentry before the sign-in fails.
+ */
+export async function isSignInAllowed(userId: string): Promise<boolean> {
+  try {
+    return await guard(userId);
+  } catch (error) {
+    logger.error({ err: error, userId }, 'sign-in guard failed; sign-in refused');
+    captureException(error, { component: 'sign-in-guard' });
+    throw error;
+  }
 }

@@ -1,6 +1,7 @@
-import { afterAll, afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { db } from '@scani/db';
 import { userSessions, users } from '@scani/db/schema';
+import * as sentry from '@scani/logging/sentry';
 import { eq, inArray } from 'drizzle-orm';
 import { createBetterAuth } from '../../src/auth/better-auth';
 import { registerSignInGuard, SignInRefused } from '../../src/auth/sign-in-guard';
@@ -98,6 +99,35 @@ describe('sign-in guard', () => {
       'guard backend unavailable'
     );
     expect(await sessionCount(id)).toBe(0);
+  });
+
+  test('a guard that throws is reported to Sentry with its cause', async () => {
+    const { id } = await probeUser();
+    const cause = new Error('guard backend unavailable');
+    registerSignInGuard(async () => {
+      throw cause;
+    });
+    const captured = spyOn(sentry, 'captureException');
+    try {
+      const ctx = await auth.$context;
+      await expect(ctx.internalAdapter.createSession(id)).rejects.toThrow(cause.message);
+      expect(captured).toHaveBeenCalledWith(cause, { component: 'sign-in-guard' });
+    } finally {
+      captured.mockRestore();
+    }
+  });
+
+  test('a refusal is not reported as an error (control)', async () => {
+    const { id } = await probeUser();
+    registerSignInGuard(async () => false);
+    const captured = spyOn(sentry, 'captureException');
+    try {
+      const ctx = await auth.$context;
+      await expect(ctx.internalAdapter.createSession(id)).rejects.toBeInstanceOf(SignInRefused);
+      expect(captured).not.toHaveBeenCalled();
+    } finally {
+      captured.mockRestore();
+    }
   });
 });
 
