@@ -19,3 +19,17 @@ describe('servedVersion names a commit only when it has one (SC-1182)', () => {
     expect(servedVersion(raw)).toEqual({});
   });
 });
+
+describe('servedVersion names the release a public image was published as (SC-1484)', () => {
+  test('a release image serves its version beside its commit', () => {
+    expect(servedVersion(SHA, '', '0.51.0')).toEqual({ commit: SHA, productVersion: '0.51.0' });
+  });
+
+  test('a build given no release claims none', () => {
+    expect(servedVersion(SHA, '', undefined)).toEqual({ commit: SHA });
+  });
+
+  test('a malformed release drops the label, not the commit', () => {
+    expect(servedVersion(SHA, '', 'v0.51.0')).toEqual({ commit: SHA });
+  });
+});
