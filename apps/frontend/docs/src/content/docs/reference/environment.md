@@ -136,6 +136,7 @@ Both optional; unset, sign-in and the contact form work with no check. Set the s
 | `LOG_WEBSOCKET_MESSAGES` | package | Log WebSocket frames. Default on. |
 | `SERVICE_NAME` | app | Set automatically by compose (`api`, `worker`, `data-provider`). |
 | `SERVICE_VERSION` | app | Set automatically by the build; surfaces in log records. When it is a full 40-character commit sha, the api, the worker's wake port and the data-provider also answer `GET /version.json` with `{"commit": "<sha>"}`; anything else answers `{}`. |
+| `SCANI_RELEASE_VERSION` | app (build) | Set by the image publish from its `v*` tag, e.g. `0.51.0`. The app header and `/version.json` name it as the release. Unset on a local or self-built image, which reads Development; anything that is not bare semver fails the build. |
 | `AI_DEFAULT_PROVIDER` | app (worker) | Optional. Which AI provider the worker picks first. Defaults to `openai`, which is also the only AI provider any backend service registers. |
 
 ## Provider keys (Tier 1 API/worker and Scani-managed processing service)

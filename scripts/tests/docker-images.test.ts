@@ -517,7 +517,7 @@ describe('every file that states the whole image set agrees with it', () => {
  * the value exists only upstream — so each tree asserts the half it holds, and
  * the private tree asserts the workflow's ABSENCE rather than skipping it.
  */
-describe('the published frontend-app image names its commit', () => {
+describe('the published images name their commit and their release', () => {
   const DOCKERFILE = readFileSync(path.join(REPO_ROOT, 'apps/frontend/app/Dockerfile'), 'utf8');
 
   test('the build stage declares SCANI_COMMIT before it builds', () => {
@@ -525,22 +525,31 @@ describe('the published frontend-app image names its commit', () => {
       DOCKERFILE.search(/^FROM \S+ AS build$/m),
       DOCKERFILE.search(/^FROM \S+ AS runtime$/m)
     );
-    const arg = buildStage.search(/^ARG SCANI_COMMIT=$/m);
     const build = buildStage.search(/^RUN bun run build$/m);
-    expect(`arg=${arg >= 0} build=${build >= 0} ordered=${arg < build}`).toBe(
-      'arg=true build=true ordered=true'
-    );
+    for (const name of ['SCANI_COMMIT', 'SCANI_RELEASE_VERSION']) {
+      const arg = buildStage.search(new RegExp(`^ARG ${name}=$`, 'm'));
+      expect(`${name} arg=${arg >= 0} build=${build >= 0} ordered=${arg < build}`).toBe(
+        `${name} arg=true build=true ordered=true`
+      );
+    }
   });
 
-  test('the publish workflow passes the tagged commit to the frontend-app build', () => {
+  // SC-1484: `core-release.json` never reaches the mirror, so the tag is the
+  // only source of the release a public image names, and it is checked by a
+  // job every build waits on — before anything is pushed.
+  test('the publish workflow passes the tagged commit and the checked release to every build', () => {
     if (existsSync(PRIVATE_MARKER)) {
       expect(existsSync(PUBLISH_WORKFLOW)).toBe(false);
       return;
     }
     const workflow = readFileSync(PUBLISH_WORKFLOW, 'utf8');
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, matched as literal text — not an unfinished template literal
+    expect(workflow).toContain('SCANI_COMMIT=${{ github.sha }}');
     expect(workflow).toContain(
       // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression, matched as literal text — not an unfinished template literal
-      "${{ matrix.image == 'frontend-app' && format('SCANI_COMMIT={0}', github.sha) || '' }}"
+      'SCANI_RELEASE_VERSION=${{ needs.release-version.outputs.version }}'
     );
+    expect(workflow).toMatch(/^ {2}build:\n(?: {4}.*\n)*? {4}needs: release-version$/m);
+    expect(workflow).toContain('run: bun scripts/release-version.ts');
   });
 });

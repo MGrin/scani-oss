@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { readCoreBuild } from './core-build';
+import { readCoreBuild, readReleaseVersion } from './core-build';
 
 export { type CoreBuild, readCoreBuild } from './core-build';
 
@@ -229,13 +229,16 @@ export function isDemoModeRequested(env: Record<string, string | undefined>): bo
  */
 export function servedVersion(
   serviceVersion: string | undefined,
-  coreBuild = Bun.env.SCANI_CORE_BUILD
+  coreBuild = Bun.env.SCANI_CORE_BUILD,
+  releaseVersion = Bun.env.SCANI_RELEASE_VERSION
 ) {
   if (serviceVersion === undefined || !/^[0-9a-f]{40}$/.test(serviceVersion)) return {};
   // A deploy that could not stage a fresh mapping leaves the previous one on
   // the host; it describes another build, so it drops the label, not the commit.
   try {
-    return { commit: serviceVersion, ...readCoreBuild(coreBuild, serviceVersion) };
+    const mapping = readCoreBuild(coreBuild, serviceVersion);
+    const productVersion = mapping ? undefined : readReleaseVersion(releaseVersion);
+    return { commit: serviceVersion, ...mapping, ...(productVersion ? { productVersion } : {}) };
   } catch {
     return { commit: serviceVersion };
   }

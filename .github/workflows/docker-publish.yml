@@ -64,6 +64,10 @@ on:
       - 'apps/*/*/package.json'
       - 'packages/*/*/package.json'
       - '.github/workflows/docker-publish.yml'
+      # The release-version job's own inputs (SC-1484).
+      - '.github/actions/setup-bun/action.yml'
+      - 'bunfig.toml'
+      - 'scripts/release-version.ts'
   workflow_dispatch:
 
 permissions:
@@ -76,8 +80,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The release every image below names, decided once and before any build
+  # (SC-1484). A tag that is not bare semver, or that disagrees with
+  # `.release-please-manifest.json`, fails here, so no image is pushed under a
+  # release it cannot name. Other refs build unpublished, claiming no release.
+  release-version:
+    name: Release version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
+      - uses: ./.github/actions/setup-bun
+        with:
+          install: 'false'
+      - id: version
+        run: bun scripts/release-version.ts
+
   build:
     name: Build ${{ matrix.image }}
+    needs: release-version
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -168,6 +190,10 @@ jobs:
           # And the commit, so the image's `/version.json` names what it serves
           # (SC-1187, SC-1208). On a `v*` tag push `github.sha` is the release
           # commit; the Dockerfile's `ARG SCANI_COMMIT` hands it to the build.
+          #
+          # And the release, so the image names the version it was published as
+          # (SC-1484). It is empty off a tag, and an empty one claims nothing.
           build-args: |
             ${{ matrix.image == 'frontend-app' && 'VITE_API_URL=/api' || '' }}
-            ${{ matrix.image == 'frontend-app' && format('SCANI_COMMIT={0}', github.sha) || '' }}
+            SCANI_COMMIT=${{ github.sha }}
+            SCANI_RELEASE_VERSION=${{ needs.release-version.outputs.version }}

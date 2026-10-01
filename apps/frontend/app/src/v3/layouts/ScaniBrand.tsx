@@ -10,7 +10,10 @@ export function ScaniBrand() {
   const build = typeof __SCANI_CORE_BUILD__ === 'undefined' ? null : __SCANI_CORE_BUILD__;
   const commit = typeof __SCANI_BUILD_COMMIT__ === 'undefined' ? null : __SCANI_BUILD_COMMIT__;
   const [open, setOpen] = useState(false);
-  const release = build ? `v${build.productVersion}` : t('v3.brand.development');
+  const releaseVersion =
+    typeof __SCANI_RELEASE_VERSION__ === 'undefined' ? null : __SCANI_RELEASE_VERSION__;
+  const productVersion = build?.productVersion ?? releaseVersion;
+  const release = productVersion ? `v${productVersion}` : t('v3.brand.development');
   // Build facts, not a form: the peek's read-only sheet rather than a centred
   // dialog (SC-1413). `break-all` because a commit and a fingerprint are one
   // long unbroken token each.
