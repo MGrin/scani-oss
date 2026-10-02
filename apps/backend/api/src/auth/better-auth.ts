@@ -19,6 +19,7 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { languageFromAuthContext } from './request-language';
 import { screenshotBotPlugin } from './screenshot-bot-plugin';
+import { isSignInAllowed, SignInRefused } from './sign-in-guard';
 import { recordSignupSource, signupSourceFromAuthContext } from './signup-source';
 
 const authLogger = createComponentLogger('auth');
@@ -160,6 +161,13 @@ export function createBetterAuth(opts: {
         },
       },
       session: {
+        // Every new session, whichever sign-in path created it, passes the
+        // registered guard first. Throwing aborts the insert.
+        create: {
+          before: async (data) => {
+            if (!(await isSignInAllowed(data.userId))) throw new SignInRefused();
+          },
+        },
         // Absolute session-max enforcement (SC-1351). The base config
         // (`expiresIn` 7 days, `updateAge` 1 day) is a sliding window with no
         // ceiling of its own. A refresh passes only `{ expiresAt, updatedAt }`,
