@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { type CoreBuild, readCoreBuild } from '@scani/config/core-build';
+import { type CoreBuild, readCoreBuild, readReleaseVersion } from '@scani/config/core-build';
 import type { Plugin, Rollup } from 'vite';
 
 /**
@@ -43,11 +43,14 @@ export function versionPayload(
   buildHash: string,
   buildTime: Date,
   commit: string | undefined,
-  coreBuild?: CoreBuild
+  coreBuild?: CoreBuild,
+  releaseVersion?: string
 ): VersionPayload {
+  const productVersion = coreBuild?.productVersion ?? releaseVersion;
   return {
     version: buildHash,
-    ...(coreBuild ? { productVersion: coreBuild.productVersion, coreBuild } : {}),
+    ...(productVersion ? { productVersion } : {}),
+    ...(coreBuild ? { coreBuild } : {}),
     buildTime: buildTime.toISOString(),
     ...(commit === undefined ? {} : { commit }),
   };
@@ -89,6 +92,7 @@ export function viteVersion(): Plugin {
   let buildHash = '';
   let commit: string | undefined;
   let coreBuild: CoreBuild | undefined;
+  let releaseVersion: string | undefined;
 
   return {
     name: 'vite-version',
@@ -97,10 +101,12 @@ export function viteVersion(): Plugin {
       const told = command === 'build' ? VERSION_PLACEHOLDER : 'dev';
       commit = readCommit(process.env.SCANI_COMMIT);
       coreBuild = readCoreBuild(process.env.SCANI_CORE_BUILD, commit);
+      releaseVersion = readReleaseVersion(process.env.SCANI_RELEASE_VERSION);
       return {
         define: {
           __SCANI_BUILD_VERSION__: JSON.stringify(told),
           __SCANI_CORE_BUILD__: JSON.stringify(coreBuild ?? null),
+          __SCANI_RELEASE_VERSION__: JSON.stringify(releaseVersion ?? null),
           __SCANI_BUILD_COMMIT__: JSON.stringify(commit ?? null),
         },
       };
@@ -124,7 +130,7 @@ export function viteVersion(): Plugin {
       const outDir = options.dir || resolve(process.cwd(), 'dist');
       writeFileSync(
         resolve(outDir, 'version.json'),
-        JSON.stringify(versionPayload(buildHash, new Date(), commit, coreBuild))
+        JSON.stringify(versionPayload(buildHash, new Date(), commit, coreBuild, releaseVersion))
       );
     },
     configureServer(server) {

@@ -49,6 +49,7 @@ ENV VITE_API_URL=${VITE_API_URL} \
 # local build, which names no commit rather than guessing one.
 ARG SCANI_CORE_BUILD=
 ARG SCANI_COMMIT=
+ARG SCANI_RELEASE_VERSION=
 
 WORKDIR /app/apps/frontend/app
 RUN bun run build

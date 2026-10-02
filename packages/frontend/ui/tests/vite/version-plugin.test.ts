@@ -184,3 +184,47 @@ describe('the version is the build output, not the moment of the build', () => {
     expect(versionOf()).toHaveLength(VERSION_PLACEHOLDER.length);
   });
 });
+
+// SC-1484: public release images have no Core mapping, so the release they
+// were published as arrives on its own, and a build given none claims none.
+describe('viteVersion names the release a public image was published as', () => {
+  const saved = process.env.SCANI_RELEASE_VERSION;
+  let dir = '';
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env.SCANI_RELEASE_VERSION;
+    else process.env.SCANI_RELEASE_VERSION = saved;
+    if (dir !== '') rmSync(dir, { recursive: true, force: true });
+  });
+
+  const define = () =>
+    (
+      viteVersion().config as (
+        c: object,
+        e: { command: string }
+      ) => { define: { __SCANI_RELEASE_VERSION__: string } }
+    )({}, { command: 'build' }).define.__SCANI_RELEASE_VERSION__;
+
+  function build(): Record<string, unknown> {
+    dir = mkdtempSync(join(tmpdir(), 'sc1484-version-'));
+    runBuild(viteVersion(), appBundle(), dir);
+    return JSON.parse(readFileSync(join(dir, 'version.json'), 'utf8'));
+  }
+
+  test('SCANI_RELEASE_VERSION reaches the bundle and version.json', () => {
+    process.env.SCANI_RELEASE_VERSION = '0.51.0';
+    expect(JSON.parse(define())).toBe('0.51.0');
+    expect(build().productVersion).toBe('0.51.0');
+  });
+
+  test('without it a build claims no release', () => {
+    delete process.env.SCANI_RELEASE_VERSION;
+    expect(JSON.parse(define())).toBeNull();
+    expect(build()).not.toHaveProperty('productVersion');
+  });
+
+  test('a tag name or anything not bare semver is refused', () => {
+    process.env.SCANI_RELEASE_VERSION = 'v0.51.0';
+    expect(define).toThrow('bare semver');
+  });
+});
