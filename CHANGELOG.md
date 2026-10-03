@@ -19,6 +19,22 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.51.0](https://github.com/MGrin/scani-oss/compare/v0.50.0...v0.51.0) (2026-10-03)
+
+
+### Features
+
+* **api:** sign-in guard on session create; extract /health/deep checks (SC-1471) ([19992a1](https://github.com/MGrin/scani-oss/commit/19992a1b46b53f4801701a781a84240038309b6c))
+* **app:** trade settlements, margin debt, and a new ledger foundation ([92ef33b](https://github.com/MGrin/scani-oss/commit/92ef33b0feb1db14bc295b1fff99faa5d449ac23))
+
+
+### Bug Fixes
+
+* **auth:** a failing sign-in guard is logged and sent to Sentry (SC-1471) ([7254540](https://github.com/MGrin/scani-oss/commit/72545408889a24482f05f3009b7d4fe86f5cc59c))
+* **email:** trim the unsubscribe base URL without a backtracking regex ([93ea5ab](https://github.com/MGrin/scani-oss/commit/93ea5abbad5fa9f505d68b7b7fc0b9cb147e2ef6))
+* exempt the test preload's own variable from docs:check, and keep a private-only test out ([a438fc7](https://github.com/MGrin/scani-oss/commit/a438fc7efa1233518c9e1e7fb44d0cb182e6746a))
+* **release:** public images name the release they were published as (SC-1484) ([e518f69](https://github.com/MGrin/scani-oss/commit/e518f692c1feed5cf00507529154e1d324390ee1))
+
 ## [0.50.0](https://github.com/MGrin/scani-oss/compare/v0.49.0...v0.50.0) (2026-09-30)
 
 
