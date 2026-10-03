@@ -128,8 +128,10 @@ export class IntegrationCredentialsService extends BaseService {
       // Encrypt the credentials
       const encrypted = encryptCredentials(credentials);
 
-      // Check if credentials already exist
-      const existing = await this.credentialsRepository.findByUserAndInstitution(
+      // The row whether or not it is active: a disconnect keeps it, inactive,
+      // and the key is (user, institution), so a reconnect re-activates it.
+      // Reading active rows only made the insert below collide (SC-1534).
+      const existing = await this.credentialsRepository.findStoredByUserAndInstitution(
         userId,
         institutionId
       );

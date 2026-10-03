@@ -70,6 +70,29 @@ export class UserIntegrationCredentialsRepository extends BaseRepository<
   }
 
   /**
+   * The (user, institution) row whether or not it is active. The key allows
+   * one, and a disconnect keeps it inactive rather than deleting it, so a
+   * connect has to find that row to re-activate it (SC-1534).
+   */
+  async findStoredByUserAndInstitution(
+    userId: string,
+    institutionId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<UserIntegrationCredentials | undefined> {
+    const [stored] = await this.getDb(transaction)
+      .select()
+      .from(schema.userIntegrationCredentials)
+      .where(
+        and(
+          eq(schema.userIntegrationCredentials.userId, userId),
+          eq(schema.userIntegrationCredentials.institutionId, institutionId)
+        )
+      )
+      .limit(1);
+    return stored;
+  }
+
+  /**
    * Find all credentials by institution
    */
   async findByInstitution(
