@@ -19,6 +19,13 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.51.1](https://github.com/MGrin/scani-oss/compare/v0.51.0...v0.51.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* **self-host:** sign-in works on the published image ([cb59263](https://github.com/MGrin/scani-oss/commit/cb5926328ac33499be1858bc772fd89968ac1f2d))
+
 ## [0.51.0](https://github.com/MGrin/scani-oss/compare/v0.50.0...v0.51.0) (2026-10-03)
 
 
