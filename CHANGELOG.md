@@ -19,6 +19,13 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.52.0](https://github.com/MGrin/scani-oss/compare/v0.51.2...v0.52.0) (2026-10-03)
+
+
+### Features
+
+* **app:** imports, balance syncs and manual edits share one ledger write path ([19a2ee9](https://github.com/MGrin/scani-oss/commit/19a2ee9eb7b07d3ebee7de2ad7be94370d42a783))
+
 ## [0.51.2](https://github.com/MGrin/scani-oss/compare/v0.51.1...v0.51.2) (2026-10-03)
 
 
