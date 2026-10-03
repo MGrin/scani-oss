@@ -22,28 +22,12 @@ export const GROUP_COLORS = [
   '#64748b', // slate
 ] as const;
 
-export type GroupColor = (typeof GROUP_COLORS)[number];
-
-export type Group = {
-  id: string;
-  userId: string;
-  name: string;
-  color: string;
-  description: string | null;
-  displayOrder: number;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-};
-
 export const CreateGroupDto = z.object({
   name: z.string().min(1).max(50),
   color: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
   description: z.string().max(200).optional().nullable(),
   displayOrder: z.number().optional(),
 });
-
-export type CreateGroupInput = z.infer<typeof CreateGroupDto>;
 
 export const UpdateGroupDto = z.object({
   name: z.string().min(1).max(50).optional(),
@@ -56,23 +40,17 @@ export const UpdateGroupDto = z.object({
   isActive: z.boolean().optional(),
 });
 
-export type UpdateGroupInput = z.infer<typeof UpdateGroupDto>;
-
 // DTO for assigning groups to holdings
 export const AssignHoldingGroupsDto = z.object({
   holdingId: z.string().uuid(),
   groupIds: z.array(z.string().uuid()),
 });
 
-export type AssignHoldingGroupsInput = z.infer<typeof AssignHoldingGroupsDto>;
-
 // DTO for assigning groups to accounts
 export const AssignAccountGroupsDto = z.object({
   accountId: z.string().uuid(),
   groupIds: z.array(z.string().uuid()),
 });
-
-export type AssignAccountGroupsInput = z.infer<typeof AssignAccountGroupsDto>;
 
 // Extended holding type with groups
 export const HoldingWithGroupsDto = z.object({
@@ -86,8 +64,6 @@ export const HoldingWithGroupsDto = z.object({
   ),
 });
 
-export type HoldingWithGroups = z.infer<typeof HoldingWithGroupsDto>;
-
 // Extended account type with groups
 export const AccountWithGroupsDto = z.object({
   id: z.string(),
@@ -99,8 +75,6 @@ export const AccountWithGroupsDto = z.object({
     })
   ),
 });
-
-export type AccountWithGroups = z.infer<typeof AccountWithGroupsDto>;
 
 /**
  * A row of `groups.getAllWithCounts`, and the reason the counts are coerced.
@@ -135,5 +109,3 @@ export const GroupWithCountsDto = z.object({
   billsCount: wireCount,
   payeesCount: wireCount,
 });
-
-export type GroupWithCounts = z.infer<typeof GroupWithCountsDto>;

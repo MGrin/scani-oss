@@ -44,7 +44,9 @@
         "extension": "un .{{ext}}",
         "noExtension": "ninguna extensión de archivo",
         "remove": "Quitar {{name}}",
-        "unsupported": "Este es {{named}}. Scani lee {{formats}}."
+        "unsupported": "Este es {{named}}. Scani lee {{formats}}.",
+        "tooLarge": "Este archivo pesa {{size}}. El límite es {{limit}}.",
+        "withLimit": "{{formats}}, hasta {{limit}}"
       },
       "fileImport": {
         "either": {
@@ -1005,7 +1007,8 @@
         },
         "empty": "Todavía no hay nada valorado en este desglose.",
         "loadingLabel": "tu distribución",
-        "title": "Distribución"
+        "title": "Distribución",
+        "groupsOverlap": "Una posición puede estar en varios grupos y cuenta en cada uno, así que estas cifras no suman tu patrimonio neto."
       },
       "attentionRow": {
         "needsReview_many": "{{count}} elementos necesitan tu revisión",
@@ -1243,6 +1246,10 @@
         "unpricedAtZero_many": "{{count}} tokens sin precio contados como cero.",
         "unpricedAtZero_other": "{{count}} tokens sin precio contados como cero."
       }
+    },
+    "allocation": {
+      "marginDebt": "Deuda de margen",
+      "shareOfAssets": "Porcentaje de los activos"
     },
     "jobs": {
       "awaitingYou": "Esta ejecución está esperándote. Todavía no hay nada de ella en tu cartera.",
@@ -2384,7 +2391,15 @@
         "unexplainedBalanceChanges_other": "{{count}} variaciones de saldo que no podemos explicar",
         "unpairedTransfers_many": "{{count}} pagos salientes por clasificar",
         "unpairedTransfers_one": "{{count}} pago saliente por clasificar",
-        "unpairedTransfers_other": "{{count}} pagos salientes por clasificar"
+        "unpairedTransfers_other": "{{count}} pagos salientes por clasificar",
+        "answersTradesExplain": "Cubiertas por operaciones importadas",
+        "answersExplained_one": "{{count}} explicación en {{subject}}",
+        "answersExplained_many": "{{count}} explicaciones en {{subject}}",
+        "answersExplained_other": "{{count}} explicaciones en {{subject}}",
+        "unpriceableAirdrops": "Tokens que nada puede valorar",
+        "unpriceableTokens_one": "{{count}} token llegó a tus billeteras y nada puede ponerle precio",
+        "unpriceableTokens_other": "{{count}} tokens llegaron a tus billeteras y nada puede ponerles precio",
+        "unpriceableTokens_many": "{{count}} tokens llegaron a tus billeteras y nada puede ponerles precio"
       },
       "kind": {
         "transferOut": "Transferencia de salida",
@@ -2720,6 +2735,52 @@
         "queue_many": "{{count}} pagos salientes por clasificar.",
         "queue_other": "{{count}} pagos salientes por clasificar.",
         "unreviewedNote": "Sin respuesta, esto no contabiliza ninguna ganancia en ningún sentido."
+      },
+      "settled": {
+        "title": "Explicaciones en {{subject}}",
+        "description": "Las operaciones importadas ahora también explican estas variaciones de saldo, así que el mismo dinero se cuenta dos veces. Retirar elimina tus explicaciones; Conservar las deja como están.",
+        "full": "Explicado por operaciones importadas",
+        "partial": "<explained/> de <amount/> explicado por operaciones importadas. Si la retiras, se volverá a preguntar por el resto.",
+        "movesOther": "Esta explicación también cambió otra posición",
+        "keep": "Conservar",
+        "retire": "Retirar",
+        "confirmOther": "Al retirarlas también se elimina lo que estas explicaciones registraron en otra posición.",
+        "confirmRetire": "Sí, retirarlas",
+        "undo": "Deshacer",
+        "failed": "No se pudieron cambiar algunas explicaciones. Inténtalo de nuevo.",
+        "toast": {
+          "retired_one": "{{count}} explicación retirada",
+          "retired_many": "{{count}} explicaciones retiradas",
+          "retired_other": "{{count}} explicaciones retiradas",
+          "kept": "Explicaciones conservadas",
+          "undone": "Explicaciones restauradas",
+          "undoFailed": "No se pudieron restaurar las explicaciones"
+        }
+      },
+      "unpriceable": {
+        "title": "Tokens que nada puede valorar",
+        "description": "Llegaron a tus billeteras y ninguna fuente de precios los ha cotizado nunca, así que ya no cuentan nada en tu patrimonio neto. Ocultar los quita de tus listas; desmarca los que quieras conservar y no volveremos a preguntarte por ellos. Puedes recuperar cualquiera desde Tokens, en Ocultos.",
+        "hideAll": "Ocultar todos",
+        "keepAll": "Conservar todos",
+        "hideSome_one": "Ocultar {{count}}",
+        "hideSome_other": "Ocultar {{count}}",
+        "failed": "No se ocultó nada. Inténtalo de nuevo.",
+        "keepFailed": "No se guardó tu elección. Inténtalo de nuevo.",
+        "partlyFailed_one": "No se pudo ocultar {{count}} token. Inténtalo de nuevo.",
+        "partlyFailed_other": "No se pudieron ocultar {{count}} tokens. Inténtalo de nuevo.",
+        "undo": "Deshacer",
+        "toast": {
+          "hidden_one": "{{count}} token oculto",
+          "hidden_other": "{{count}} tokens ocultos",
+          "restored": "Tokens restaurados",
+          "restoreFailed": "No se pudieron restaurar los tokens",
+          "hidden_many": "{{count}} tokens ocultos",
+          "kept_one": "{{count}} token conservado",
+          "kept_many": "{{count}} tokens conservados",
+          "kept_other": "{{count}} tokens conservados"
+        },
+        "hideSome_many": "Ocultar {{count}}",
+        "partlyFailed_many": "No se pudieron ocultar {{count}} tokens. Inténtalo de nuevo."
       }
     },
     "settings": {

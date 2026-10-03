@@ -27,7 +27,7 @@ export const DURABLE_RESULT_MAX_BYTES = 2 * 1024 * 1024;
  *  renders from it while the durable row is reachable, so it stays small. */
 export const WIRE_RESULT_MAX_BYTES = 32 * 1024;
 
-export const TRUNCATION_KEY = '_truncation';
+const TRUNCATION_KEY = '_truncation';
 
 /** Marks a root-level value (an array or scalar result) that did not fit. */
 export const TRUNCATION_ROOT_FIELD = '<root>';

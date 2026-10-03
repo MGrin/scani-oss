@@ -71,12 +71,15 @@ export const HOLDING_INTENT_TABLES = [
   'holding_groups',
   'holding_group_exclusions',
   'vault_holdings',
+  'retired_gap_answers',
 ] as const;
 
-/** Derived from the ledger and rebuilt on demand, so it records nothing that
- *  a delete could lose. See the docblock — this is the exclusion the FK test
+/** Records nothing that a delete could lose. `holding_coverage` is derived from
+ *  the ledger and rebuilt on demand; `engine_shadow_differences` is a nightly
+ *  comparison report whose FK is SET NULL, so a delete clears the reference and
+ *  the difference stands. See the docblock — this is the exclusion the FK test
  *  checks against, not an omission. */
-export const HOLDING_DERIVED_TABLES = ['holding_coverage'] as const;
+export const HOLDING_DERIVED_TABLES = ['holding_coverage', 'engine_shadow_differences'] as const;
 
 /**
  * True when nothing in `HOLDING_INTENT_TABLES` references this holding.

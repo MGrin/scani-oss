@@ -23,7 +23,7 @@ export interface FileImportJob extends UserJobBase {
   dateOrder?: 'day-first' | 'month-first';
 }
 
-export const fileImportSchema: z.ZodType<FileImportJob> = z.object({
+const fileImportSchema: z.ZodType<FileImportJob> = z.object({
   customMapping: CsvMappingDto.optional(),
   userId: z.string().min(1),
   requestId: z.string().min(1),

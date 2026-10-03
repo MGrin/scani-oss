@@ -487,7 +487,7 @@ function collectBranchFacts(ref = 'HEAD'): BranchFacts {
  * and SKIPS — a silent pass on a mirror-bound push, which is this file's own
  * subject reproduced inside its caller.
  */
-export function refArg(argv: readonly string[]): string {
+function refArg(argv: readonly string[]): string {
   const i = argv.indexOf('--ref');
   if (i >= 0 && argv[i + 1] !== undefined) return argv[i + 1] as string;
   const inline = argv.find((a) => a.startsWith('--ref='));

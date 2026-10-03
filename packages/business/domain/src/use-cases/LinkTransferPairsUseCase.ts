@@ -22,8 +22,9 @@
  *      is minutes).
  *
  * Writes: `holding_transactions.transfer_group_id` on both rows with a
- * fresh uuid. Idempotent — re-running skips rows that already have a
- * group_id set.
+ * fresh uuid, and both rows' ledger labels in the same transaction, since a
+ * paired leg maps to `transfer_out`/`transfer_in` (A2 D-5). Idempotent —
+ * re-running skips rows that already have a group_id set.
  *
  * What it does NOT do (SC-150): resolve anything it is unsure about. A row
  * with several plausible matches, or none, is left alone for the review queue
@@ -55,7 +56,7 @@ import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import { and, eq, gte, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
-import { Service } from 'typedi';
+import { Container, Service } from 'typedi';
 import { PERSON_AUTHORED_INFLOW_SOURCES } from '../lib/person-authored-sources';
 import {
   candidatePairClass,
@@ -65,6 +66,7 @@ import {
   QTY_MATCH_EPSILON,
   type TransferLeg,
 } from '../lib/transfer-matching';
+import { HoldingTransactionRepository } from '../repositories/HoldingTransactionRepository';
 
 const logger = createComponentLogger('use-case:link-transfer-pairs');
 
@@ -128,6 +130,8 @@ function toLeg(row: LegRow): TransferLeg {
 
 @Service()
 export class LinkTransferPairsUseCase {
+  private readonly transactions = Container.get(HoldingTransactionRepository);
+
   /**
    * Link two legs the OWNER declared, rather than two this pass guessed at
    * (SC-607).
@@ -227,6 +231,11 @@ export class LinkTransferPairsUseCase {
         `Declared transfer pairing affected ${updated.length} rows, expected 2 — refusing a half-linked pair`
       );
     }
+    await this.transactions.relabelEntries(
+      pair.userId,
+      updated.map((r) => r.id),
+      tx
+    );
 
     await tx
       .update(schema.holdingTransactions)
@@ -400,31 +409,40 @@ export class LinkTransferPairsUseCase {
       // it just made. If either row was grabbed in between, the UPDATE
       // returns 0 affected rows and we skip — both legs stay linked to
       // whichever run got there first.
-      const updated = await db
-        .update(schema.holdingTransactions)
-        .set({ transferGroupId: groupId, updatedAt: sql`now()` })
-        .where(
-          and(
-            inArray(schema.holdingTransactions.id, [out.transactionId, best.row.id]),
-            isNull(schema.holdingTransactions.transferGroupId)
+      const paired = await db.transaction(async (tx) => {
+        const updated = await tx
+          .update(schema.holdingTransactions)
+          .set({ transferGroupId: groupId, updatedAt: sql`now()` })
+          .where(
+            and(
+              inArray(schema.holdingTransactions.id, [out.transactionId, best.row.id]),
+              isNull(schema.holdingTransactions.transferGroupId)
+            )
           )
-        )
-        .returning({ id: schema.holdingTransactions.id });
-      // Both rows must be updated for a successful pair; if only one
-      // moved (the other was raced), we roll back by clearing the one
-      // we set, keeping the ledger consistent.
-      if (updated.length !== 2) {
-        if (updated.length === 1) {
-          const [lone] = updated;
-          if (lone) {
-            await db
-              .update(schema.holdingTransactions)
-              .set({ transferGroupId: null, updatedAt: sql`now()` })
-              .where(eq(schema.holdingTransactions.id, lone.id));
+          .returning({ id: schema.holdingTransactions.id });
+        // Both rows must be updated for a successful pair; if only one
+        // moved (the other was raced), we roll back by clearing the one
+        // we set, keeping the ledger consistent.
+        if (updated.length !== 2) {
+          if (updated.length === 1) {
+            const [lone] = updated;
+            if (lone) {
+              await tx
+                .update(schema.holdingTransactions)
+                .set({ transferGroupId: null, updatedAt: sql`now()` })
+                .where(eq(schema.holdingTransactions.id, lone.id));
+            }
           }
+          return false;
         }
-        continue;
-      }
+        await this.transactions.relabelEntries(
+          opts.userId,
+          updated.map((r) => r.id),
+          tx
+        );
+        return true;
+      });
+      if (!paired) continue;
       linked += 1;
       if (best.bridge) bridged += 1;
     }

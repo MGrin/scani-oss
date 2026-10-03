@@ -10,7 +10,7 @@ export interface ExchangeImportJob extends UserJobBase {
   provider: string;
 }
 
-export const exchangeImportSchema: z.ZodType<ExchangeImportJob> = z.object({
+const exchangeImportSchema: z.ZodType<ExchangeImportJob> = z.object({
   userId: z.string().min(1),
   requestId: z.string().min(1),
   institutionId: z.string().min(1),

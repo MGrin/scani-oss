@@ -9,8 +9,6 @@ import { type PortalContainer, usePortalContainer } from '../lib/portal-containe
 
 const Select = SelectPrimitive.Root;
 
-const SelectGroup = SelectPrimitive.Group;
-
 const SelectValue = SelectPrimitive.Value;
 
 const SelectTrigger = React.forwardRef<
@@ -72,7 +70,7 @@ SelectScrollDownButton.displayName = SelectPrimitive.ScrollDownButton.displayNam
  * a fixed `max-h-96`, and on an iPhone 15 Pro the popover opened at -7px,
  * clipping its first row above the viewport.
  */
-export interface SelectContentProps
+interface SelectContentProps
   extends React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content> {
   /** Where the portal mounts. See `lib/portal-container.tsx`. */
   container?: PortalContainer;
@@ -160,15 +158,4 @@ const SelectSeparator = React.forwardRef<
 ));
 SelectSeparator.displayName = SelectPrimitive.Separator.displayName;
 
-export {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectLabel,
-  SelectScrollDownButton,
-  SelectScrollUpButton,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-};
+export { Select, SelectContent, SelectItem, SelectTrigger, SelectValue };

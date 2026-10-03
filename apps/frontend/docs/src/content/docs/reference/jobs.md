@@ -37,6 +37,7 @@ four times an hour.
 | `transfer-linking` | Nightly, 03:45 UTC (`45 3 * * *`) | Pair CEX withdrawals with wallet deposits via `LinkTransferPairsUseCase`. |
 | `backfill-token-identity` | Weekly, Sunday 02:00 UTC (`0 2 * * 0`) | Re-enrich tokens whose `providerMetadata` hasn't been touched lately. |
 | `backfill-counterparty` | Nightly, 05:30 UTC (`30 5 * * *`) | Extract a counterparty + description onto `holding_transactions` rows that predate the per-provider extractors. |
+| `engine-shadow` | Nightly, 05:45 UTC (`45 5 * * *`) | Foundation shadow (A1): compute every holding's balance and every held token's price with the new engine beside today's stored balances and both of today's price resolvers, and store each difference with a cause category in `engine_shadow_differences`. Writes only its report tables, plus any exchange rate the live price resolver fetches into `token_prices`, as a dashboard read does. A failed attempt is retried, and a retry runs only the kinds no earlier attempt recorded. Removed at the flip (A5). |
 | `reconcile-pending-credentials` | Every 15 minutes (`*/15 * * * *`) | Sweep stuck `pending` integration-credential rows (UI flow interruptions). |
 | `reconcile-orphaned-user-jobs` | Every 15 minutes (`*/15 * * * *`) | Sweep stuck `running` user-job rows whose worker process died. |
 | `dlq-depth-probe` | Every 15 minutes (`*/15 * * * *`) | Read the dead-letter queue depth; emit a warn log when it crosses thresholds. |
@@ -51,6 +52,7 @@ four times an hour.
 | `weekly-digest` | Weekly, Monday 08:00 UTC (`0 8 * * 1`) | One email a week per account: base-currency net worth and its change over seven days, the biggest movers, bills due in the coming week, and anything waiting in the review queue. Every figure comes from the per-holding rows of `portfolio_value_daily`, filtered by the same inclusion rule as the dashboard total (hidden, inactive and scam-flagged holdings are left out), so the letter and the dashboard agree — which is also why it fires on Monday morning rather than Sunday night, after the 04:00 rollup. An account with no portfolio is **not** mailed, and neither is one whose newest rollup row is more than 8 days old. Every letter carries a one-click, no-login unsubscribe (`GET /e/u/:token` on the api). Needs `FRONTEND_URL` + `BACKEND_URL` on the worker; without them the job logs a refusal on every fire and sends nothing. |
 
 | `alert-sweep` | Daily, 09:00 UTC (`0 9 * * *`) | Evaluate the named alert rules and email each affected account at most once per fault. Today there is one rule, `integration-stale`: an active, credentialed integration whose accounts have not synced for `ALERT_STALE_SYNC_HOURS` (default 24), or which has never produced an account at all. Same signal as `stale-sync-probe` above, at a far looser threshold and pointed at the USER rather than at Sentry — 3h is two missed cycles and the right moment to page us, and the wrong moment to mail somebody about a blip. One letter per account however many connections it names, and it names only the ones this run claimed, never everything still broken. `alert_deliveries` is what makes that true across a BullMQ retry; a row is deleted when the integration syncs again, so a fault that recurs alerts a second time. Unverified addresses and accounts that opted out are never claimed for. Every letter carries a one-click, no-login unsubscribe (`GET /e/a/:token` on the api) that is SEPARATE from the digest's. Needs `FRONTEND_URL` + `BACKEND_URL` on the worker; without them the job logs a refusal on every fire and sends nothing. |
+| `activation-nudge` | Daily, 10:00 UTC (`0 10 * * *`) | **Off unless `ACTIVATION_NUDGE_ENABLED=1`**; every other fire logs that it skipped. One email, ever, to a verified account that signed up at least three days ago and has added no account and no holding. Each account is claimed in `users.activation_nudge_sent_at` before the send, so a retry or an overlapping fire never sends twice; a failed send gives the claim back and is counted, so the next day tries again. Written in the language the account last signed in with (`users.language`), English when none is recorded. Every letter carries a one-click, no-login unsubscribe (`GET /e/n/:token` on the api), separate from the digest's and the alerts', and links the privacy policy. Needs `FRONTEND_URL`, `BACKEND_URL` and `PRIVACY_URL` on the worker; without them the job logs a refusal and sends nothing. |
 ## Scheduled jobs — declared but not registered
 
 A descriptor can exist in `packages/business/jobs/src/scheduled-jobs/`
@@ -114,8 +116,7 @@ Defined in `packages/business/jobs/src/retry-policies.ts`:
 ## DLQ (dead-letter queue)
 
 Jobs that exhaust their retries land in `scani-dlq`. The
-`dlq-depth-probe` job alarms when depth grows. Operators replay
-via the HMAC-gated `jobs.dlqReplay` endpoint on the api.
+`dlq-depth-probe` job alarms when depth grows.
 
 ## Adding a job
 

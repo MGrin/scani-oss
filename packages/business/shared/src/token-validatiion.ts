@@ -1,7 +1,6 @@
 import { z } from 'zod';
 
-export const TokenProviderSchema = z.enum(['finnhub', 'coingecko', 'defillama']);
-export type TokenProvider = z.infer<typeof TokenProviderSchema>;
+const TokenProviderSchema = z.enum(['finnhub', 'coingecko', 'defillama']);
 
 export const TokenMetadataSchema = z.object({
   symbol: z.string().min(1).max(40),
@@ -13,14 +12,12 @@ export const TokenMetadataSchema = z.object({
   provider: TokenProviderSchema,
   providerMetadata: z.record(z.unknown()).default({}),
 });
-export type TokenMetadata = z.infer<typeof TokenMetadataSchema>;
 
 export const TokenValidationResultSchema = z.object({
   isValid: z.boolean(),
   metadata: TokenMetadataSchema.optional(),
   error: z.string().optional(),
 });
-export type TokenValidationResult = z.infer<typeof TokenValidationResultSchema>;
 
 // export const ProviderValidationSchema = z.object({
 //   exactMatch: TokenValidationResultSchema.optional(),

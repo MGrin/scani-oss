@@ -422,3 +422,268 @@ describe('KrakenProvider — autoallocation', () => {
     expect(events.some((e) => e.externalId.startsWith('LEARN2'))).toBe(false);
   }, 15_000); // One real `PAGE_COOLDOWN_MS` sleep sits between the two pages.
 });
+
+// SC-1486: Kraken's own `amount` is the direction. Three production rows
+// carried a NEGATIVE amount under a type the mapping always read as an
+// inflow, and each was stored as money in.
+describe('KrakenProvider — the amount decides the direction (SC-1486)', () => {
+  const at = (iso: string) => new Date(iso).getTime() / 1000;
+  const walk = (ledger: Record<string, KrakenLedgerEntry>) =>
+    new KrakenProvider(
+      stubApi({ ledgers: { ledger, count: Object.keys(ledger).length } })
+    ).fetchTransactions(baseCtx as never);
+
+  test('a returned deposit leaves, net of the fee it refunded', async () => {
+    const events = await walk({
+      'LDEP01-AAAAA-000001': ledgerEntry({
+        refid: 'FTRET01',
+        type: 'deposit',
+        asset: 'EUR.HOLD',
+        amount: '-300.0000',
+        fee: '-12.0000',
+        balance: '0.0000',
+      }),
+    });
+    expect(events.map((e) => [e.kind, e.primary.quantity, e.fee])).toEqual([
+      ['withdraw', '-288', undefined],
+    ]);
+  });
+
+  test('a staking debit with a matching credit on another asset is one swap', async () => {
+    const events = await walk({
+      'LMIG01-AAAAA-000001': ledgerEntry({
+        refid: 'STOUT01',
+        type: 'staking',
+        asset: 'ETH2',
+        amount: '-0.0312345678',
+        time: at('2020-03-11T10:00:00Z'),
+      }),
+      'LMIG02-BBBBB-000002': ledgerEntry({
+        refid: 'STIN01',
+        type: 'staking',
+        asset: 'XETH',
+        amount: '0.0312345678',
+        time: at('2020-03-10T12:00:00Z'),
+      }),
+      'LREW01-CCCCC-000003': ledgerEntry({
+        refid: 'STREW01',
+        type: 'staking',
+        asset: 'XETH',
+        amount: '0.0001111111',
+        time: at('2020-03-09T10:00:00Z'),
+      }),
+    });
+    const byId = new Map(events.map((e) => [e.externalId, e]));
+    const out = byId.get('LMIG01-AAAAA-000001');
+    const into = byId.get('LMIG02-BBBBB-000002');
+    expect([out?.kind, out?.primary.quantity, into?.kind, into?.primary.quantity]).toEqual([
+      'swap_out',
+      '-0.0312345678',
+      'swap_in',
+      '0.0312345678',
+    ]);
+    expect(out?.swapGroupKey).toBeDefined();
+    expect(out?.swapGroupKey).toBe(into?.swapGroupKey);
+    expect(byId.get('LREW01-CCCCC-000003')?.kind).toBe('reward');
+  });
+
+  test('a staking debit with no matching credit is money out, not a reward', async () => {
+    const events = await walk({
+      'LMIG03-AAAAA-000004': ledgerEntry({
+        refid: 'STOUT02',
+        type: 'staking',
+        asset: 'ETH2',
+        amount: '-0.0004444440',
+        time: at('2020-03-12T10:00:00Z'),
+      }),
+      'LMIG04-BBBBB-000005': ledgerEntry({
+        refid: 'STIN02',
+        type: 'staking',
+        asset: 'XETH',
+        amount: '0.0004444440',
+        // Outside the window: a coincidence of amounts, not a conversion.
+        time: at('2020-04-12T10:00:00Z'),
+      }),
+    });
+    const kinds = Object.fromEntries(
+      events.map((e) => [e.externalId, [e.kind, e.primary.quantity]])
+    );
+    expect(kinds).toEqual({
+      'LMIG03-AAAAA-000004': ['withdraw', '-0.000444444'],
+      'LMIG04-BBBBB-000005': ['reward', '0.000444444'],
+    });
+  });
+
+  test('control: an ordinary deposit and reward are unchanged', async () => {
+    const events = await walk({
+      'LDEP02-AAAAA-000006': ledgerEntry({
+        refid: 'FTOK01',
+        type: 'deposit',
+        asset: 'ZEUR',
+        amount: '340.0000',
+        fee: '13.0000',
+      }),
+      'LREW02-BBBBB-000007': ledgerEntry({
+        refid: 'STOK01',
+        type: 'staking',
+        asset: 'XETH',
+        amount: '0.0007',
+      }),
+    });
+    const kinds = Object.fromEntries(
+      events.map((e) => [e.externalId, [e.kind, e.primary.quantity, e.fee?.quantity]])
+    );
+    expect(kinds).toEqual({
+      'LDEP02-AAAAA-000006': ['deposit', '340', '-13'],
+      'LREW02-BBBBB-000007': ['reward', '0.0007', undefined],
+    });
+  });
+});
+
+// SC-1486: moving a balance between spot and staking can change the asset
+// Kraken books it under (ETH -> ETH2, SOL -> SOL03). The two legs are
+// `transfer` entries on two different holdings, and unpaired each one read
+// as money in or out.
+describe('KrakenProvider — a transfer that changes asset is a swap (SC-1486)', () => {
+  const at = (iso: string) => new Date(iso).getTime() / 1000;
+  const walk = (ledger: Record<string, KrakenLedgerEntry>) =>
+    new KrakenProvider(
+      stubApi({ ledgers: { ledger, count: Object.keys(ledger).length } })
+    ).fetchTransactions(baseCtx as never);
+
+  test('spot to staking under another asset pairs into one swap', async () => {
+    const events = await walk({
+      'LSPOT1-AAAAA-000001': ledgerEntry({
+        refid: 'FTOUT1',
+        type: 'transfer',
+        subtype: 'spottostaking',
+        asset: 'XETH',
+        amount: '-1.0000000000',
+        time: at('2020-02-01T10:00:00Z'),
+      }),
+      'LSTAK1-BBBBB-000002': ledgerEntry({
+        refid: 'FTIN1',
+        type: 'transfer',
+        subtype: 'stakingfromspot',
+        asset: 'ETH2.S',
+        amount: '1.0000000000',
+        time: at('2020-02-01T10:01:30Z'),
+      }),
+    });
+    const byId = new Map(events.map((e) => [e.externalId, e]));
+    const out = byId.get('LSPOT1-AAAAA-000001');
+    const into = byId.get('LSTAK1-BBBBB-000002');
+    expect([out?.kind, into?.kind]).toEqual(['swap_out', 'swap_in']);
+    expect(out?.swapGroupKey).toBeDefined();
+    expect(out?.swapGroupKey).toBe(into?.swapGroupKey);
+  });
+
+  test('control: a same-asset spot/staking move is not a swap', async () => {
+    const events = await walk({
+      'LSPOT2-AAAAA-000003': ledgerEntry({
+        refid: 'FTOUT2',
+        type: 'transfer',
+        subtype: 'spottostaking',
+        asset: 'DOT',
+        amount: '-25.5000000',
+        time: at('2020-02-02T10:00:00Z'),
+      }),
+      'LSTAK2-BBBBB-000004': ledgerEntry({
+        refid: 'FTIN2',
+        type: 'transfer',
+        subtype: 'stakingfromspot',
+        asset: 'DOT.S',
+        amount: '25.5000000',
+        time: at('2020-02-02T10:00:10Z'),
+      }),
+    });
+    expect(events.some((e) => e.kind === 'swap_out' || e.kind === 'swap_in')).toBe(false);
+  });
+});
+
+// SC-1486: a spot/staking move that stays on one asset is two `transfer`
+// entries in one holding that cancel. Emitted, each reached Review as money
+// out and money in; mgrin answered 14 of them `left_control` in one bulk
+// action, which booked every one as a sale. Like a net-zero reallocation
+// (SC-362), the pair is not an event.
+describe('KrakenProvider — a same-asset spot/staking move is not an event (SC-1486)', () => {
+  const at = (iso: string) => new Date(iso).getTime() / 1000;
+  const walk = (ledger: Record<string, KrakenLedgerEntry>) =>
+    new KrakenProvider(
+      stubApi({ ledgers: { ledger, count: Object.keys(ledger).length } })
+    ).fetchTransactions(baseCtx as never);
+
+  test('the two legs cancel and neither is emitted', async () => {
+    const events = await walk({
+      'LSPOT3-AAAAA-000005': ledgerEntry({
+        refid: 'FTOUT3',
+        type: 'transfer',
+        subtype: 'spottostaking',
+        asset: 'SOL',
+        amount: '-5.2500000000',
+        time: at('2020-02-03T10:00:00Z'),
+      }),
+      'LSTAK3-BBBBB-000006': ledgerEntry({
+        refid: 'FTIN3',
+        type: 'transfer',
+        subtype: 'stakingfromspot',
+        asset: 'SOL03.S',
+        amount: '5.2500000000',
+        time: at('2020-02-03T10:01:09Z'),
+      }),
+    });
+    expect(events).toEqual([]);
+  });
+
+  test('two pairs at one instant both cancel', async () => {
+    const leg = (id: string, asset: string, amount: string) =>
+      ledgerEntry({
+        refid: `R${id}`,
+        type: 'transfer',
+        asset,
+        amount,
+        time: at('2020-02-04T10:00:00Z'),
+      });
+    const events = await walk({
+      'LA-1': leg('A1', 'SOL.S', '-6.5000000000'),
+      'LA-2': leg('A2', 'SOL', '6.5000000000'),
+      'LA-3': leg('A3', 'SOL', '-6.5000000000'),
+      'LA-4': leg('A4', 'SOL.S', '6.5000000000'),
+    });
+    expect(events).toEqual([]);
+  });
+
+  test('controls: a real withdrawal, and transfers minutes apart, are kept', async () => {
+    const events = await walk({
+      'LWD-1': ledgerEntry({
+        refid: 'RW1',
+        type: 'withdrawal',
+        asset: 'USDC',
+        amount: '-1500.00',
+        time: at('2020-02-05T10:00:00Z'),
+      }),
+      'LDP-1': ledgerEntry({
+        refid: 'RD1',
+        type: 'deposit',
+        asset: 'USDC',
+        amount: '1500.00',
+        time: at('2020-02-05T10:01:00Z'),
+      }),
+      'LFAR-1': ledgerEntry({
+        refid: 'RF1',
+        type: 'transfer',
+        asset: 'ADA',
+        amount: '-100',
+        time: at('2022-01-01T00:00:00Z'),
+      }),
+      'LFAR-2': ledgerEntry({
+        refid: 'RF2',
+        type: 'transfer',
+        asset: 'ADA.S',
+        amount: '100',
+        time: at('2022-01-01T00:10:00Z'),
+      }),
+    });
+    expect(events.map((e) => e.externalId).sort()).toEqual(['LDP-1', 'LFAR-1', 'LFAR-2', 'LWD-1']);
+  });
+});

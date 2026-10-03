@@ -6,6 +6,7 @@ import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { CurrencyConverter } from './CurrencyConverter';
 import { PricingProviderRouter } from './PricingProviderRouter';
+import { LIVE_PRICE_WINDOW_MS } from './price-windows';
 
 const pricingLogger = createComponentLogger('pricing');
 
@@ -33,7 +34,6 @@ const PRICE_GRAPH_FIAT_SOURCE = 'price-graph';
  */
 @Service()
 export class PricingService {
-  private readonly LIVE_PRICE_WINDOW_MS = 60 * 60 * 1000;
   private readonly HISTORICAL_PRICE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
   private readonly ongoingRequests = new Map<string, Promise<Map<string, string>>>();
@@ -842,7 +842,7 @@ export class PricingService {
     timestamp: Date
   ): Promise<CachedPrice | null> {
     const isLive = this.isLivePrice(timestamp);
-    const maxAge = isLive ? this.LIVE_PRICE_WINDOW_MS : this.HISTORICAL_PRICE_WINDOW_MS;
+    const maxAge = isLive ? LIVE_PRICE_WINDOW_MS : this.HISTORICAL_PRICE_WINDOW_MS;
 
     const price = await this.tokenPriceRepository.findPriceAtTimestamp(
       tokenId,
@@ -1047,7 +1047,7 @@ export class PricingService {
     );
 
     const isLive = this.isLivePrice(timestamp);
-    const maxAge = isLive ? this.LIVE_PRICE_WINDOW_MS : this.HISTORICAL_PRICE_WINDOW_MS;
+    const maxAge = isLive ? LIVE_PRICE_WINDOW_MS : this.HISTORICAL_PRICE_WINDOW_MS;
     const minTimestamp = new Date(timestamp.getTime() - maxAge);
 
     for (const [tokenId, price] of latestPrices.entries()) {

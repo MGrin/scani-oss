@@ -9,12 +9,14 @@ import {
   excludedFromTotal,
   HOLDINGS_PRICE_PARAM,
   holdingAllocation,
+  holdingsDebt,
   holdingsValue,
   STALE_PRICE,
   stalePricedInTotal,
   stalePriceSearch,
 } from '../../lib/holdings';
 import { AllocationBar } from '../charts/AllocationBar';
+import { MarginDebtLine } from '../charts/MarginDebtLine';
 
 /**
  * What the list adds up to, over the rows actually shown.
@@ -92,6 +94,7 @@ export function HoldingsSummary({ holdings, currency }: HoldingsSummaryProps) {
   const excluded = excludedFromTotal(holdings);
   const stale = stalePricedInTotal(holdings);
   const allInactive = allExcludedFromTotal(holdings);
+  const marginDebt = holdingsDebt(holdings);
   const staleSentence = (
     <Trans
       i18nKey="v3.holdings.summary.stalePriced"
@@ -172,8 +175,10 @@ export function HoldingsSummary({ holdings, currency }: HoldingsSummaryProps) {
           items={allocation}
           currency={currency}
           label={t('v3.holdings.summary.allocation')}
+          shareCaption={marginDebt < 0 ? t('v3.allocation.shareOfAssets') : undefined}
         />
       ) : null}
+      <MarginDebtLine value={marginDebt} currency={currency} underLegend={allocation.length > 1} />
     </Block>
   );
 }

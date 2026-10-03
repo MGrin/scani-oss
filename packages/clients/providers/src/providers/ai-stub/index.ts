@@ -41,7 +41,7 @@ const STUB_USAGE = { tokensIn: 0, tokensOut: 0, totalTokens: 0, upstreamCostUsd:
 // `aiOpenAIFactory` (see api/worker boot) the stub wins.
 const STUB_PROVIDER_KEY = 'ai-openai';
 
-export class AIStubProvider implements AIInferenceProvider {
+class AIStubProvider implements AIInferenceProvider {
   readonly providerKey = STUB_PROVIDER_KEY;
   readonly capabilities: readonly Capability[] = ['ai-inference'];
 

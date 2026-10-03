@@ -29,8 +29,6 @@ import { PageCapWatch } from '../../core/utils/page-cap';
 import { bitstampManifest } from './manifest';
 import { resolvePair, resolveSingleAsset } from './pair-resolver';
 
-export { bitstampManifest } from './manifest';
-
 const BITSTAMP_INSTITUTION_CODE = 'bitstamp';
 const BITSTAMP_HOST = 'www.bitstamp.net';
 

@@ -638,6 +638,4 @@ export {
   type ContractRef,
   contractRefFromMetadata,
   contradictsDeployments,
-  resolveCoingeckoId,
-  WELL_KNOWN_COINGECKO_IDS,
 } from './well-known-ids';

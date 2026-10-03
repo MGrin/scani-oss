@@ -182,6 +182,12 @@ describe('BybitProvider', () => {
           },
         };
       }
+      if (url.includes('/v5/asset/deposit/query-internal-record')) {
+        return { body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', rows: [] } } };
+      }
+      if (url.includes('/v5/account/transaction-log')) {
+        return { body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', list: [] } } };
+      }
       throw new Error(`Unexpected URL: ${url}`);
     });
 
@@ -242,6 +248,12 @@ describe('BybitProvider', () => {
           body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', rows: [] } },
         };
       }
+      if (url.includes('/v5/asset/deposit/query-internal-record')) {
+        return { body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', rows: [] } } };
+      }
+      if (url.includes('/v5/account/transaction-log')) {
+        return { body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', list: [] } } };
+      }
       throw new Error(`Unexpected URL: ${url}`);
     });
 
@@ -290,6 +302,12 @@ describe('BybitProvider', () => {
           body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', rows: [] } },
         };
       }
+      if (url.includes('/v5/asset/deposit/query-internal-record')) {
+        return { body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', rows: [] } } };
+      }
+      if (url.includes('/v5/account/transaction-log')) {
+        return { body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', list: [] } } };
+      }
       throw new Error(`Unexpected URL: ${url}`);
     });
 
@@ -333,6 +351,12 @@ describe('BybitProvider', () => {
         return {
           body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', rows: [] } },
         };
+      }
+      if (url.includes('/v5/asset/deposit/query-internal-record')) {
+        return { body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', rows: [] } } };
+      }
+      if (url.includes('/v5/account/transaction-log')) {
+        return { body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', list: [] } } };
       }
       throw new Error(`Unexpected URL: ${url}`);
     });
@@ -399,6 +423,12 @@ describe('BybitProvider', () => {
             },
           },
         };
+      }
+      if (url.includes('/v5/asset/deposit/query-internal-record')) {
+        return { body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', rows: [] } } };
+      }
+      if (url.includes('/v5/account/transaction-log')) {
+        return { body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', list: [] } } };
       }
       throw new Error(`Unexpected URL: ${url}`);
     });
@@ -490,5 +520,235 @@ liveDescribe('BybitProvider [live testnet]', () => {
     };
     const events = await p.fetchTransactions(liveCtx as never);
     expect(Array.isArray(events)).toBe(true);
+  });
+});
+
+describe('BybitProvider — Funding wallet and Bybit-internal transfers (SC-1461)', () => {
+  const since = new Date('2026-09-01T00:00:00Z');
+  const until = new Date('2026-09-20T00:00:00Z');
+
+  function wallets(unified: Array<[string, string]>, fund: Array<[string, string]>) {
+    return (url: string): FakeResponse => {
+      if (url.includes('/v5/account/wallet-balance')) {
+        return {
+          body: {
+            retCode: 0,
+            retMsg: 'OK',
+            result: {
+              list: [
+                {
+                  accountType: 'UNIFIED',
+                  coin: unified.map(([coin, walletBalance]) => ({
+                    coin,
+                    walletBalance,
+                    usdValue: '0',
+                  })),
+                },
+              ],
+            },
+          },
+        };
+      }
+      if (url.includes('/v5/asset/transfer/query-account-coins-balance')) {
+        return {
+          body: {
+            retCode: 0,
+            retMsg: 'OK',
+            result: { balance: fund.map(([coin, walletBalance]) => ({ coin, walletBalance })) },
+          },
+        };
+      }
+      return { body: { retCode: 0, retMsg: 'OK', result: { rows: [], list: [] } } };
+    };
+  }
+
+  async function balancesOf(handler: (url: string) => FakeResponse) {
+    const p = new BybitProvider(passthroughLimiter());
+    const hook = queueFetch(handler);
+    try {
+      const out = await p.fetchBalances(ctx as never);
+      return Object.fromEntries(out.map((h) => [h.tokenIdentity.symbol, h.balance]));
+    } finally {
+      hook.restore();
+    }
+  }
+
+  test('a balance is Funding plus Unified, per coin', async () => {
+    const out = await balancesOf(
+      wallets(
+        [
+          ['USDT', '50'],
+          ['BTC', '0.1'],
+        ],
+        [
+          ['USDT', '100'],
+          ['ETH', '2'],
+        ]
+      )
+    );
+    expect(out).toEqual({ USDT: '150', BTC: '0.1', ETH: '2' });
+  });
+
+  test('moving money between Funding and Unified changes no balance', async () => {
+    const inFunding = await balancesOf(wallets([], [['USDT', '4793']]));
+    const inUnified = await balancesOf(wallets([['USDT', '4793']], []));
+    const split = await balancesOf(wallets([['USDT', '1000']], [['USDT', '3793']]));
+    expect(inFunding).toEqual({ USDT: '4793' });
+    expect(inUnified).toEqual(inFunding);
+    expect(split).toEqual(inFunding);
+  });
+
+  test('a Funding/Unified move never becomes a deposit or withdrawal', async () => {
+    const p = new BybitProvider(passthroughLimiter());
+    const hook = queueFetch(wallets([], []));
+    try {
+      const events = await p.fetchTransactions({ ...(ctx as object), since, until } as never);
+      expect(events).toEqual([]);
+      expect(hook.calls.some((u) => u.includes('inter-transfer'))).toBe(false);
+      expect(hook.calls.some((u) => u.includes('universal-transfer'))).toBe(false);
+    } finally {
+      hook.restore();
+    }
+  });
+
+  test('a key that cannot read Funding fails loudly instead of reading Unified alone', async () => {
+    const denied = (url: string): FakeResponse =>
+      url.includes('query-account-coins-balance')
+        ? { body: { retCode: 10005, retMsg: 'Permission denied' } }
+        : wallets([['USDT', '50']], [])(url);
+    const p = new BybitProvider(passthroughLimiter());
+    const hook = queueFetch(denied);
+    try {
+      await expect(p.fetchBalances(ctx as never)).rejects.toThrow(/Funding wallet/);
+      const v = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'bybit');
+      expect(v.valid).toBe(false);
+      expect(v.message).toMatch(/Funding wallet/);
+    } finally {
+      hook.restore();
+    }
+  });
+
+  test('withdrawals are asked for every type, Bybit-internal included', async () => {
+    const p = new BybitProvider(passthroughLimiter());
+    const hook = queueFetch(wallets([], []));
+    try {
+      await p.fetchTransactions({ ...(ctx as object), since, until } as never);
+      const wd = hook.calls.filter((u) => u.includes('/v5/asset/withdraw/query-record'));
+      expect(wd.length).toBeGreaterThan(0);
+      for (const u of wd) expect(new URL(u).searchParams.get('withdrawType')).toBe('2');
+    } finally {
+      hook.restore();
+    }
+  });
+
+  test('a completed internal deposit is imported; a failed one is not', async () => {
+    const handler = (url: string): FakeResponse =>
+      url.includes('/v5/asset/deposit/query-internal-record')
+        ? {
+            body: {
+              retCode: 0,
+              retMsg: 'OK',
+              result: {
+                rows: [
+                  { id: 'a1', coin: 'USDT', amount: '319', status: 2, createdTime: '1757000000' },
+                  { id: 'a2', coin: 'USDT', amount: '999', status: 3, createdTime: '1757000100' },
+                ],
+              },
+            },
+          }
+        : wallets([], [])(url);
+    const p = new BybitProvider(passthroughLimiter());
+    const hook = queueFetch(handler);
+    try {
+      const events = await p.fetchTransactions({ ...(ctx as object), since, until } as never);
+      expect(events).toHaveLength(1);
+      expect(events[0]?.externalId).toBe('internal-deposit-a1');
+      expect(events[0]?.kind).toBe('deposit');
+      expect(events[0]?.primary.quantity).toBe('319');
+      expect(events[0]?.occurredAt.toISOString()).toBe('2025-09-04T15:33:20.000Z');
+    } finally {
+      hook.restore();
+    }
+  });
+});
+
+describe('BybitProvider — Unified transaction log (SC-1461)', () => {
+  const since = new Date('2026-07-01T00:00:00Z');
+  const until = new Date('2026-07-24T00:00:00Z');
+  const row = (id: string, type: string, change: string, extra: Record<string, string> = {}) => ({
+    id,
+    currency: 'USDT',
+    type,
+    change,
+    transactionTime: '1752768000000',
+    ...extra,
+  });
+
+  async function importLog(list: unknown[]) {
+    const p = new BybitProvider(passthroughLimiter());
+    const hook = queueFetch((url) => {
+      if (url.includes('/v5/account/transaction-log')) {
+        return { body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', list } } };
+      }
+      return { body: { retCode: 0, retMsg: 'OK', result: { rows: [], list: [] } } };
+    });
+    try {
+      const events = await p.fetchTransactions({ ...(ctx as object), since, until } as never);
+      return events.filter((e) => e.externalId.startsWith('txlog-'));
+    } finally {
+      hook.restore();
+    }
+  }
+
+  test('a futures fill, funding and a liquidation import as signed realized PnL', async () => {
+    const events = await importLog([
+      row('a', 'TRADE', '-1234.567891', { category: 'linear' }),
+      row('b', 'TRADE', '876.54321098', { category: 'linear' }),
+      row('c', 'SETTLEMENT', '3.14159265', { category: 'linear' }),
+      row('d', 'LIQUIDATION', '-222.33344', { category: 'linear' }),
+    ]);
+    expect(events.map((e) => [e.externalId, e.kind, e.primary.quantity])).toEqual([
+      ['txlog-a', 'realized_pnl', '-1234.567891'],
+      ['txlog-b', 'realized_pnl', '876.54321098'],
+      ['txlog-c', 'realized_pnl', '3.14159265'],
+      ['txlog-d', 'realized_pnl', '-222.33344'],
+    ]);
+  });
+
+  test('spot fills and Funding/Unified transfers in the log are not imported twice', async () => {
+    const events = await importLog([
+      row('s', 'TRADE', '-2910.64', { category: 'spot' }),
+      row('i', 'TRANSFER_IN', '5000'),
+      row('o', 'TRANSFER_OUT', '-300'),
+      row('x', 'EXEMPTED_INTEREST', '0'),
+    ]);
+    expect(events).toEqual([]);
+  });
+
+  test('borrow interest paid is a fee; interest received is interest', async () => {
+    const events = await importLog([row('p', 'INTEREST', '-0.0123'), row('r', 'INTEREST', '0.5')]);
+    expect(events.map((e) => [e.kind, e.primary.quantity])).toEqual([
+      ['fee', '-0.0123'],
+      ['interest', '0.5'],
+    ]);
+  });
+
+  test('a row repeated across two windows is imported once', async () => {
+    const dup = row('same', 'SETTLEMENT', '-1.11122233', { category: 'linear' });
+    const events = await importLog([dup, dup]);
+    expect(events).toHaveLength(1);
+  });
+
+  test("Bybit's auto-repay conversion imports as one spot sale", async () => {
+    const events = await importLog([
+      row('t1-s', 'CURRENCY_SELL', '-0.00043219', { currency: 'BTC', tradeId: 't1' }),
+      row('t1-b', 'CURRENCY_BUY', '12.34567891', { tradeId: 't1' }),
+    ]);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.kind).toBe('sell');
+    expect(events[0]?.primary.tokenIdentity.symbol).toBe('BTC');
+    expect(events[0]?.primary.quantity).toBe('-0.00043219');
+    expect(events[0]?.counter?.tokenIdentity.symbol).toBe('USDT');
+    expect(events[0]?.counter?.quantity).toBe('12.34567891');
   });
 });

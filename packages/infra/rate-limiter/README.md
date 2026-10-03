@@ -161,6 +161,13 @@ shares one bucket. Every other header reaches a Fly-direct app exactly as
 the client sent it: trusting `cf-connecting-ip` first let one caller rotate
 it past every per-IP cap (SC-1262).
 
+One exception, for a caller inside Fly's private network (SC-1495). When
+`fly-client-ip` is an `fdaa:` address or absent, the caller is one of our own
+machines, and `x-scani-forwarded-client-ip` names the client it forwards for.
+The frontend image's nginx sets it from the `fly-client-ip` it received, which
+is what keeps visitors on separate keys when nginx reaches the api through
+flycast. A request with a public `fly-client-ip` never has that header read.
+
 Off Fly it tries edge headers in priority order: `cf-connecting-ip` →
 `fly-client-ip` → `x-real-ip` → rightmost entry of `x-forwarded-for` →
 `UA|Origin|Method`.

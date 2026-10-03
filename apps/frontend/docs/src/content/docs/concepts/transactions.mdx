@@ -37,6 +37,7 @@ linking possible.
 | `occurredAt` | When the event happened per the source — **not** Scani's ingest time. |
 | `externalId` | Chain tx hash, exchange trade ID, bank tx ID — the dedup key. **NOT NULL** so the unique constraint on `(holdingId, source, externalId)` is meaningful. Ingesters synthesise a stable id when the source doesn't provide one. |
 | `swapGroupId` | Links both legs of a swap. |
+| `settlesTransactionId` | On a `settle_in` / `settle_out` / `fee` row derived from a trade: uuid → the trade's row. `ON DELETE CASCADE`, so deleting the trade removes its cash side. |
 | `transferGroupId` | Links a CEX withdraw to a wallet deposit. Populated by the [transfer-linking job](/concepts/transfers/). |
 | `source` | `'binance-api'`, `'etherscan'`, `'statement-csv'`, `'screenshot'`, `'user-entered'`, `'reconciliation-opening'`, …. |
 | `sourceMetadata` (jsonb) | Provider-specific payload context. |
@@ -45,7 +46,7 @@ linking possible.
 
 **Uniqueness:** `(holdingId, source, externalId)`. Indexes on
 `(userId, occurredAt desc)`, `(holdingId, occurredAt desc)`,
-`transferGroupId`, `swapGroupId`.
+`transferGroupId`, `swapGroupId`, and `settlesTransactionId` where set.
 
 ## Kinds
 
@@ -64,6 +65,7 @@ The current live set, declared as the `HoldingTransactionKind` union:
 | `withdraw` | An outflow to outside the tracked system. |
 | `transfer_in` / `transfer_out` | Paired flows between two tracked accounts. Get a shared `transferGroupId` when [linked](/concepts/transfers/). |
 | `swap_in` / `swap_out` | Both legs of a single swap. Share a `swapGroupId`. |
+| `settle_in` / `settle_out` | The cash side of a `buy` / `sell` from a broker or exchange that reports a trade as one row (IBKR, Binance, Bybit, …), written on the account's cash holding. Quantity is the trade's `counterQuantity`, gross of commission; a commission in another currency is its own `fee` row. Linked to the trade by `settlesTransactionId`. |
 | `fee` | A fee in the holding's token. |
 | `reward` | Staking reward, mining reward, liquidity-mining drop. |
 | `interest` | Yield from APY config payouts (see [APY & yield](/concepts/apy/)). |

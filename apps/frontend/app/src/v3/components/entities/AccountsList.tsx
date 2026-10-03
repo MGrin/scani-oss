@@ -11,7 +11,9 @@ import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   type AccountRow,
+  accountAssets,
   accountLastSync,
+  accountsDebt,
   accountsValue,
   accountValue,
   balancesAsOfFact,
@@ -208,8 +210,9 @@ export function AccountsList({
     summary: (items) => (
       <EntityValueSummary
         value={accountsValue(items)}
+        marginDebt={accountsDebt(items)}
         currency={currency}
-        allocation={namedAllocation(items, accountValue)}
+        allocation={namedAllocation(items, accountAssets)}
         allocationLabel={t('v3.entities.account.valueByAccount')}
       />
     ),

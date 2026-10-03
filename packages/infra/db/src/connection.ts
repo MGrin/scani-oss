@@ -172,18 +172,10 @@ export const isReadOnlySession = readOnlySession;
 // Type-safe database instance
 export type DbType = typeof db;
 
-// Helper function to get database with proper typing
-export function getTypedDb() {
-  return db as ReturnType<typeof drizzlePostgres>;
-}
-
 // Alias for compatibility with existing code
 export function getDb() {
   return db;
 }
-
-// Export schema for convenience
-export { schema };
 
 /**
  * Get database connection pool statistics
@@ -217,10 +209,3 @@ export async function getActiveConnectionsCount(): Promise<number | null> {
     return null;
   }
 }
-
-// Export connection monitoring utilities
-export {
-  endConnectionTracking,
-  getConnectionMonitoringStats,
-  startConnectionTracking,
-} from './connection-monitor';

@@ -22,6 +22,13 @@ export const MANUAL_HOLDING_SOURCE = 'manual';
 export const WALLET_BALANCE_SYNC_SOURCE = 'blockchain';
 export const EXCHANGE_BALANCE_SYNC_SOURCE = 'sync_exchange_balances';
 
+/**
+ * The prefix of the `holdings.source` a credentialed import writes:
+ * `import_<institution>` from `ImportExchangeAccountsUseCase`, `import_ibkr`
+ * from `ImportIbkrAccountsUseCase`.
+ */
+export const IMPORTED_HOLDING_SOURCE_PREFIX = 'import_';
+
 export type BalanceSyncSource =
   | typeof WALLET_BALANCE_SYNC_SOURCE
   | typeof EXCHANGE_BALANCE_SYNC_SOURCE;

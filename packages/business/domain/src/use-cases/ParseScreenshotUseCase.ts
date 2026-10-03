@@ -12,8 +12,6 @@ import { safeStatus } from './lib/safeStatus';
 
 const logger = createComponentLogger('use-case:parse-screenshot');
 
-export type { EnrichedParsedHolding };
-
 export interface ParseScreenshotInput {
   imageBase64: string;
   mimeType?: string;

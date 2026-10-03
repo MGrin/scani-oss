@@ -31,7 +31,7 @@ const CANDIDATE_WINDOW_MS = 2 * 60 * 60 * 1000;
 const REPAIR_QTY_EPSILON = new Decimal('0.02');
 
 /** The arrival a plan would claim, with the facts that justify claiming it. */
-export interface BridgedArrival {
+interface BridgedArrival {
   transactionId: string;
   holdingId: string;
   accountName: string;
@@ -43,7 +43,7 @@ export interface BridgedArrival {
 }
 
 /** One leg of the group standing between a plan and its arrival. */
-export interface BlockingLeg {
+interface BlockingLeg {
   transactionId: string;
   holdingId: string;
   quantity: string;
@@ -60,7 +60,7 @@ export interface BlockingLeg {
  * the cost is a decision only the person whose answers they are can take. The
  * whole finding of SC-353 is that all four provable bridges land here.
  */
-export interface ArrivalBlocker {
+interface ArrivalBlocker {
   groupId: string;
   /** Never acted on unless this says UNLINK — see `apply`. */
   verdict: SameHoldingGroupVerdict;

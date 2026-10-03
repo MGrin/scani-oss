@@ -122,7 +122,8 @@
           "institution": "Institusi",
           "account": "Akun",
           "group": "Grup"
-        }
+        },
+        "groupsOverlap": "Satu aset bisa berada di beberapa grup dan dihitung di masing-masing, jadi angka-angka ini tidak dijumlahkan menjadi kekayaan bersih Anda."
       },
       "upcoming": {
         "title": "Tagihan mendatang",
@@ -286,6 +287,10 @@
         "enteredLate": "Sejak tanggal pertama laporannya: {{holdings}}.",
         "unpricedAtZero_other": "{{count}} token tanpa harga dihitung nol."
       }
+    },
+    "allocation": {
+      "marginDebt": "Utang margin",
+      "shareOfAssets": "Porsi aset"
     },
     "money": {
       "upcoming": {
@@ -1316,7 +1321,11 @@
         "labelled": "{{label}} · {{body}}",
         "unpairedTransfers_other": "{{count}} pembayaran keluar untuk diklasifikasikan",
         "balanceChangesToExplain": "Perubahan saldo yang perlu dijelaskan",
-        "unexplainedBalanceChanges_other": "{{count}} perubahan saldo yang tidak dapat kami jelaskan"
+        "unexplainedBalanceChanges_other": "{{count}} perubahan saldo yang tidak dapat kami jelaskan",
+        "answersTradesExplain": "Dicakup transaksi impor",
+        "answersExplained_other": "{{count}} penjelasan pada {{subject}}",
+        "unpriceableAirdrops": "Token yang tidak bisa diberi harga",
+        "unpriceableTokens_other": "{{count}} token masuk ke dompet Anda dan tidak ada yang bisa memberinya harga"
       },
       "kind": {
         "withdrawal": "Penarikan",
@@ -1676,6 +1685,42 @@
           "received": "Masukkan jumlah yang diterima"
         },
         "undoFailed": "Tidak dapat dibatalkan"
+      },
+      "settled": {
+        "title": "Penjelasan pada {{subject}}",
+        "description": "Transaksi yang kami impor kini juga menjelaskan perubahan saldo ini, sehingga uang yang sama terhitung dua kali. Tarik menghapus penjelasan Anda; Simpan membiarkannya apa adanya.",
+        "full": "Dijelaskan oleh transaksi impor",
+        "partial": "<explained/> dari <amount/> dijelaskan oleh transaksi impor. Jika ditarik, sisanya akan ditanyakan lagi.",
+        "movesOther": "Penjelasan ini juga mengubah aset lain",
+        "keep": "Simpan",
+        "retire": "Tarik",
+        "confirmOther": "Menarik juga menghapus apa yang dicatat penjelasan ini pada aset lain.",
+        "confirmRetire": "Ya, tarik semuanya",
+        "undo": "Urungkan",
+        "failed": "Beberapa penjelasan tidak dapat diubah. Coba lagi.",
+        "toast": {
+          "retired_other": "{{count}} penjelasan ditarik",
+          "kept": "Penjelasan disimpan",
+          "undone": "Penjelasan dikembalikan",
+          "undoFailed": "Tidak dapat mengembalikan penjelasan"
+        }
+      },
+      "unpriceable": {
+        "title": "Token yang tidak bisa diberi harga",
+        "description": "Token ini masuk ke dompet Anda dan belum pernah dikutip oleh sumber harga mana pun, jadi nilainya sudah tidak dihitung dalam kekayaan bersih Anda. Sembunyikan akan menghapusnya dari daftar Anda; hapus centang pada yang ingin Anda simpan, dan kami tidak akan menanyakannya lagi. Anda bisa mengembalikan mana pun dari Token, di bagian Tersembunyi.",
+        "hideAll": "Sembunyikan semua",
+        "keepAll": "Simpan semua",
+        "hideSome_other": "Sembunyikan {{count}}",
+        "failed": "Tidak ada yang disembunyikan. Coba lagi.",
+        "keepFailed": "Pilihan Anda tidak tersimpan. Coba lagi.",
+        "partlyFailed_other": "{{count}} token tidak dapat disembunyikan. Coba lagi.",
+        "undo": "Urungkan",
+        "toast": {
+          "hidden_other": "{{count}} token disembunyikan",
+          "kept_other": "{{count}} token disimpan",
+          "restored": "Token dikembalikan",
+          "restoreFailed": "Tidak dapat mengembalikan token"
+        }
       }
     },
     "form": {
@@ -1783,6 +1828,8 @@
         "extension": "sebuah .{{ext}}",
         "noExtension": "tanpa ekstensi berkas sama sekali",
         "unsupported": "Yang ini {{named}}. Scani membaca {{formats}}.",
+        "tooLarge": "Berkas ini berukuran {{size}}. Batasnya {{limit}}.",
+        "withLimit": "{{formats}}, hingga {{limit}}",
         "remove": "Hapus {{name}}"
       },
       "blocker": {

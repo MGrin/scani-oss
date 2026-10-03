@@ -84,7 +84,7 @@ export function composeInterpolates(): ReadonlySet<string> {
  * asked of it (which services are in the default profile, and which of those
  * are meant to stay up) differ only in the predicate.
  */
-export interface ComposeServiceBlock {
+interface ComposeServiceBlock {
   readonly name: string;
   /** No `profiles:` key, so compose starts it without `--profile`. */
   readonly inDefaultProfile: boolean;
@@ -94,7 +94,7 @@ export interface ComposeServiceBlock {
   readonly interpolations: readonly string[];
 }
 
-export function composeServiceBlocks(): readonly ComposeServiceBlock[] {
+function composeServiceBlocks(): readonly ComposeServiceBlock[] {
   const source = readFileSync(resolve(REPO_ROOT, 'docker-compose.yml'), 'utf8');
   const blocks: ComposeServiceBlock[] = [];
   let inServices = false;
@@ -504,7 +504,7 @@ export function upArgs(passthrough: readonly string[] = [], mode: StackMode = 'f
  * volumes were 0s, 1s and 2s; this is the cold-initdb case with room, not a
  * budget anybody should be near.
  */
-export const POSTGRES_TCP_BUDGET_SECONDS = 60;
+const POSTGRES_TCP_BUDGET_SECONDS = 60;
 
 export interface PostgresProbe {
   readonly ready: boolean;
@@ -838,7 +838,7 @@ async function run(command: string[], env: Record<string, string>): Promise<numb
  * volumes that are somebody's database, and a script that reaps them on a bind
  * failure would delete a colleague's work to save a restart.
  */
-export function explainPortConflicts(env: Record<string, string>): string {
+function explainPortConflicts(env: Record<string, string>): string {
   const lines: string[] = [];
   let asked = false;
   let blind: DockerProbe | null = null;

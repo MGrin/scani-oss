@@ -2,6 +2,7 @@ import type { DatabaseTransaction } from '@scani/db';
 import type { CoverageQuality } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import { holdingCountsInTotal } from '../../lib/holding-inclusion';
 import { AccountRepository } from '../../repositories/AccountRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
@@ -19,7 +20,7 @@ export type PortfolioValueScope =
   | { kind: 'account'; id: string }
   | { kind: 'holding'; id: string };
 
-export interface PortfolioValueAtTimePerHolding {
+interface PortfolioValueAtTimePerHolding {
   holdingId: string;
   accountId: string;
   tokenId: string;
@@ -232,9 +233,12 @@ export class PortfolioValuationAtTimeService {
     // visibility flag: `findByUser` returns those rows "visible but excluded
     // from totals", Home excludes them, and counting one here put a
     // deactivated $888K position on every day of a chart whose Home read
-    // ~$117K (SC-1328).
-    const allHoldings = (await this.holdingRepository.findByUser(userId, opts.tx)).filter(
-      (h) => h.isActive
+    // ~$117K (SC-1328). Hidden ones are fetched and the inclusion rule
+    // decides: a position the closed-position sweep hid is still history,
+    // and dropping it took its whole realized PnL out of every past day
+    // (SC-1486). Scam tokens are already filtered by `findByUser`.
+    const allHoldings = (await this.holdingRepository.findByUser(userId, opts.tx, true)).filter(
+      holdingCountsInTotal
     );
 
     // Apply the per-entity scope filter (institution / account /

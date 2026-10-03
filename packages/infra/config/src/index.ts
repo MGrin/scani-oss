@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { readCoreBuild, readReleaseVersion } from './core-build';
 
-export { type CoreBuild, readCoreBuild } from './core-build';
+export { readCoreBuild } from './core-build';
 
 export {
   isConnectionPoolerUrl,

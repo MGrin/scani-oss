@@ -16,8 +16,6 @@ export const GetAssetAllocationInputDto = z.object({
   dimension: AssetAllocationDimensionDto,
 });
 
-export type GetAssetAllocationInput = z.infer<typeof GetAssetAllocationInputDto>;
-
 export const AssetAllocationItemDto = z.object({
   id: z.string(),
   code: z.string(),
@@ -31,8 +29,8 @@ export type AssetAllocationItem = z.infer<typeof AssetAllocationItemDto>;
 export const GetAssetAllocationOutputDto = z.object({
   dimension: AssetAllocationDimensionDto,
   items: z.array(AssetAllocationItemDto),
+  /** Signed: `"0"`, or the negative sum of the holdings kept out of `items` (SC-1463). */
+  marginDebt: z.string(),
   totalValue: z.string(),
   baseCurrency: z.string(),
 });
-
-export type GetAssetAllocationOutput = z.infer<typeof GetAssetAllocationOutputDto>;

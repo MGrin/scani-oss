@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { Container } from 'typedi';
 import { EMAIL_STREAMS, UserRepository } from '../../src/repositories/UserRepository';
 import { withTestDb } from '../../test/helpers/db';
-import { makeUser } from '../../test/helpers/factories';
-import { makeToken } from '../../test/helpers/factories-extra';
+import { makeInstitution, makeUser } from '../../test/helpers/factories';
+import { makeAccount, makeHolding, makeToken } from '../../test/helpers/factories-extra';
 
 // UserRepository is a thin wrapper over BaseRepository — the test here is
 // mostly a smoke test that BaseRepository's generic create/update/delete
@@ -264,6 +264,94 @@ describe('UserRepository — alert stream (SC-459)', () => {
     // `inArray(col, [])` is a SQL syntax error in postgres, not an empty result.
     await withTestDb(async (tx) => {
       expect(await repo().findAlertRecipients([], tx)).toEqual([]);
+    });
+  });
+});
+
+describe('UserRepository — activation nudge (SC-1503)', () => {
+  const SIGNED_UP = new Date('2026-09-01T00:00:00.000Z');
+  const CUTOFF = new Date('2026-09-04T00:00:00.000Z');
+  const idle = (over: Record<string, unknown> = {}) => ({
+    emailVerified: true,
+    createdAt: SIGNED_UP,
+    ...over,
+  });
+  const ids = async (tx: Parameters<typeof makeUser>[0]) =>
+    (await repo().findActivationNudgeRecipients(CUTOFF, tx)).map((r) => r.id);
+
+  test('a verified account that signed up before the cutoff and added nothing is a recipient', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx, idle({ language: 'ru' }));
+      const row = (await repo().findActivationNudgeRecipients(CUTOFF, tx)).find(
+        (r) => r.id === user.id
+      );
+      expect(row?.language).toBe('ru');
+      expect(row?.unsubscribeToken).toBeTruthy();
+    });
+  });
+
+  test('too new, unverified, or opted out: not a recipient', async () => {
+    await withTestDb(async (tx) => {
+      const fresh = await makeUser(tx, idle({ createdAt: new Date('2026-09-05T00:00:00.000Z') }));
+      const unverified = await makeUser(tx, idle({ emailVerified: false }));
+      const optedOut = await makeUser(tx, idle({ onboardingOptOutAt: SIGNED_UP }));
+      const found = await ids(tx);
+      for (const user of [fresh, unverified, optedOut]) expect(found).not.toContain(user.id);
+    });
+  });
+
+  test('an account with an account, or with a holding, is not a recipient', async () => {
+    await withTestDb(async (tx) => {
+      const institution = await makeInstitution(tx);
+      const token = await makeToken(tx);
+      const withAccount = await makeUser(tx, idle());
+      await makeAccount(tx, { userId: withAccount.id, institutionId: institution.id });
+      const withHolding = await makeUser(tx, idle());
+      const account = await makeAccount(tx, {
+        userId: withHolding.id,
+        institutionId: institution.id,
+      });
+      await makeHolding(tx, { userId: withHolding.id, accountId: account.id, tokenId: token.id });
+      const control = await makeUser(tx, idle());
+      const found = await ids(tx);
+      expect(found).not.toContain(withAccount.id);
+      expect(found).not.toContain(withHolding.id);
+      expect(found).toContain(control.id);
+    });
+  });
+
+  test('a claim is taken once, and a claimed account is no longer a recipient', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx, idle());
+      const at = new Date('2026-09-04T10:00:00.000Z');
+      expect(await repo().claimActivationNudge(user.id, at, tx)).toBe(true);
+      expect(await repo().claimActivationNudge(user.id, at, tx)).toBe(false);
+      expect(await ids(tx)).not.toContain(user.id);
+    });
+  });
+
+  test('a release clears only its own claim', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx, idle());
+      const at = new Date('2026-09-04T10:00:00.000Z');
+      await repo().claimActivationNudge(user.id, at, tx);
+      await repo().releaseActivationNudge(user.id, new Date('2026-09-05T10:00:00.000Z'), tx);
+      expect(await ids(tx)).not.toContain(user.id);
+      await repo().releaseActivationNudge(user.id, at, tx);
+      expect(await ids(tx)).toContain(user.id);
+    });
+  });
+
+  test('the onboarding unsubscribe writes its own column only', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx, idle());
+      const token = (await repo().findById(user.id, tx))?.emailUnsubscribeToken ?? '';
+      expect(await repo().optOutByToken(EMAIL_STREAMS.onboarding, token, SIGNED_UP, tx)).toBe(true);
+      const row = await repo().findById(user.id, tx);
+      expect(row?.onboardingOptOutAt?.toISOString()).toBe(SIGNED_UP.toISOString());
+      expect(row?.digestOptOutAt).toBeNull();
+      expect(row?.alertsOptOutAt).toBeNull();
+      expect(await ids(tx)).not.toContain(user.id);
     });
   });
 });

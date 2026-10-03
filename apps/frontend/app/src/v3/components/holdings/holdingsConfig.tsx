@@ -306,7 +306,7 @@ export function holdingsDataViewConfig({
       { key: 'price', labelKey: 'ui.dataView.holdings.sort.price' },
       { key: 'pnl', labelKey: 'ui.dataView.holdings.sort.pnl' },
     ],
-    sortFn: compareHoldings,
+    sortFn: (a, b, field, direction) => compareHoldings(a, b, field, direction, currency),
     // The IA change, made concrete: the two destinations that lost their tab
     // are the first two ways to slice this list.
     groupByDefs: [
@@ -423,7 +423,7 @@ export function holdingsDataViewConfig({
           </span>
         </span>
       ),
-      delta: holdingRowDelta(item),
+      delta: holdingRowDelta(item, currency),
       // Account and value included (SC-71 7.2): two rows for the same token in
       // two accounts are told apart on screen by exactly those two things, and
       // named `BTC, Bitcoin` alike without them.
@@ -457,7 +457,7 @@ export function holdingsDataViewConfig({
         key: 'symbol',
         headerKey: 'ui.dataView.holdings.col.holding',
         sortable: true,
-        width: 'w-[22%]',
+        width: 'w-[16%]',
         render: (item) => (
           <span className="flex min-w-0 flex-col">
             <span className="flex min-w-0 items-center gap-2">
@@ -515,7 +515,7 @@ export function holdingsDataViewConfig({
       {
         key: 'account',
         headerKey: 'ui.dataView.holdings.col.account',
-        width: 'w-[16%]',
+        width: 'w-[15%]',
         render: (item) => <span className="truncate">{item.account.name}</span>,
       },
       {
@@ -543,6 +543,7 @@ export function holdingsDataViewConfig({
         headerKey: 'ui.dataView.holdings.col.price',
         sortable: true,
         numeric: true,
+        width: 'w-24',
         // The desktop table has a price column, and that is the cell the fact
         // is about; the phone row has only the value, so it carries it there.
         render: (item) =>
@@ -560,6 +561,7 @@ export function holdingsDataViewConfig({
         headerKey: 'ui.dataView.holdings.col.value',
         sortable: true,
         numeric: true,
+        width: 'w-32',
         render: (item) => <Numeric value={item.value} currency={currency} />,
         exportValue: (item) => exportMoney(item.value, currency),
         exportTotal: true,
@@ -570,8 +572,9 @@ export function holdingsDataViewConfig({
         sortable: true,
         numeric: true,
         width: 'w-32',
-        render: (item) => holdingRowDelta(item) ?? <span className="text-muted-foreground">—</span>,
-        exportValue: (item) => exportPercent(holdingGainLoss(item)?.percent),
+        render: (item) =>
+          holdingRowDelta(item, currency) ?? <span className="text-muted-foreground">—</span>,
+        exportValue: (item) => exportPercent(holdingGainLoss(item, currency)?.percent),
       },
     ],
     empty: {

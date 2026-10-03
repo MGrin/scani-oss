@@ -29,7 +29,7 @@ interface AuthFormData {
  * `zodResolver(z.object({ email: emailSchema }))` read better and cost 13 KB
  * brotli in the bundle every cold visitor waits for, because `@scani/shared`'s
  * validators were the eager bundle's only route to zod (SC-169). The rule
- * itself has not moved — `emailError` is what `emailSchema` is now built from,
+ * itself has not moved — `emailErrorReason` is what `emailSchema` is now built from,
  * so the form and the schema cannot disagree.
  *
  * Trimming here rather than in `sendTo`: the zod schema trimmed before handing
@@ -37,10 +37,11 @@ interface AuthFormData {
  * is common enough that dropping that would be a regression nobody attributed
  * to this change.
  *
- * It takes the REASON and names it here (SC-405). `emailError` returns English,
- * because `@scani/shared` is the contract the api and worker import and has no
- * `t()` to reach — so the one field on this screen answered a Russian reader in
- * English while everything around it was translated.
+ * It takes the REASON and names it here (SC-405). A message built in
+ * `@scani/shared` is English, because that package is the contract the api and
+ * worker import and has no `t()` to reach — so the one field on this screen
+ * answered a Russian reader in English while everything around it was
+ * translated.
  */
 function resolveAuthForm(values: AuthFormData, t: TFunction): ResolverResult<AuthFormData> {
   const reason = emailErrorReason(values.email ?? '');

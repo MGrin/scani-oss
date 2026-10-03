@@ -4,6 +4,8 @@ import Container from 'typedi';
 import { DocumentExtractionRepository } from '../../src/repositories/DocumentExtractionRepository';
 import { UserJobRepository } from '../../src/repositories/UserJobRepository';
 import { BalanceGapService } from '../../src/services/holdings/BalanceGapService';
+import { SettlementAnswerReviewService } from '../../src/services/holdings/SettlementAnswerReviewService';
+import { UnpriceableAirdropService } from '../../src/services/holdings/UnpriceableAirdropService';
 import { ReviewFeedService } from '../../src/services/ReviewFeedService';
 import { TransferReviewService } from '../../src/services/TransferReviewService';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
@@ -38,6 +40,14 @@ function makeService(deadJobs: unknown[], pendingReview: unknown[] = []): Review
   Container.set(BalanceGapService, {
     pendingSummary: async () => ({ count: 0, latestAt: null }),
   } as unknown as BalanceGapService);
+  // Answers imported trades now explain (SC-1453): the same reason, empty.
+  Container.set(SettlementAnswerReviewService, {
+    listPending: async () => [],
+  } as unknown as SettlementAnswerReviewService);
+  // Wallet tokens nothing can price (SC-1469): the same reason, empty.
+  Container.set(UnpriceableAirdropService, {
+    listPending: async () => [],
+  } as unknown as UnpriceableAirdropService);
   const instance = new ReviewFeedService();
   Container.set(ReviewFeedService, instance);
   return instance;

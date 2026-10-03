@@ -18,6 +18,11 @@ interface PriceMapInput {
  * symbol-keyed map holds one price for two different assets and every consumer
  * below values both of them at it (SC-1114). Callers must look up with
  * `token.id`.
+ *
+ * A negative balance prices its token too: margin debt is negative cash
+ * (SC-1462), and a currency held only as debt would otherwise go unpriced and
+ * drop out of every figure built on this map while net worth still counts it
+ * (SC-1463).
  */
 export function extractPriceMap(portfolioValue: PriceMapInput): Map<string, string> {
   const priceMap = new Map<string, string>();
@@ -25,7 +30,7 @@ export function extractPriceMap(portfolioValue: PriceMapInput): Map<string, stri
     if (portfolioHolding.value === null) continue;
     const balance = new Decimal(portfolioHolding.balance);
     const value = new Decimal(portfolioHolding.value);
-    if (balance.greaterThan(0) && !priceMap.has(portfolioHolding.tokenId)) {
+    if (!balance.isZero() && !priceMap.has(portfolioHolding.tokenId)) {
       const price = value.div(balance);
       priceMap.set(portfolioHolding.tokenId, price.toString());
     }

@@ -11,7 +11,7 @@ import { describe, expect, test } from 'bun:test';
 import type { DatabaseTransaction } from '@scani/db';
 import type { HoldingBalanceObservation } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HoldingBalanceObservationRepository } from '../../src/repositories/HoldingBalanceObservationRepository';
 import { withTestDb } from '../../test/helpers/db';
@@ -155,6 +155,93 @@ describe('HoldingBalanceObservationRepository.findAnchorsForInstants', () => {
       // No instants still carries the first row: earliestEvidenceAt reads it.
       const got = await repo().findAnchorsForInstants([h.id], [], tx);
       expect(got.get(h.id)?.map((o) => o.balance)).toEqual(['1']);
+    });
+  });
+
+  // SC-1516: the lateral rewrite returns exactly what the tuple-IN form did,
+  // row for row, ties included. The old query is kept here as the reference.
+  test('returns the same rows as the tuple-IN query it replaced', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const instType = await makeInstitutionType(tx);
+      const inst = await makeInstitution(tx, { typeId: instType.id });
+      const acct = await makeAccount(tx, { userId: user.id, institutionId: inst.id });
+      const holding = async () =>
+        makeHolding(tx, { userId: user.id, accountId: acct.id, tokenId: (await makeToken(tx)).id });
+      const dense = await holding();
+      const tied = await holding();
+      const empty = await holding();
+      await repo().bulkAppend(
+        Array.from({ length: 20 * 24 }, (_, i) => ({
+          userId: user.id,
+          holdingId: dense.id,
+          balance: String(i),
+          observedAt: new Date(START + i * HOUR),
+          source: 'sync-capture',
+        })),
+        tx
+      );
+      // Ties on the first row, on a row an instant lands on, and on the last.
+      await repo().bulkAppend(
+        [0, 0, 7, 7, 7, 15, 15].map((day, i) => ({
+          userId: user.id,
+          holdingId: tied.id,
+          balance: String(i),
+          observedAt: new Date(START + day * DAY),
+          source: ['manual', 'sync-capture', 'statement'][i % 3] as string,
+        })),
+        tx
+      );
+      const ids = [dense.id, tied.id, empty.id];
+      const instants = [
+        ...Array.from({ length: 12 }, (_, i) => new Date(START + i * 2 * DAY + DAY - 1)),
+        new Date(START + 7 * DAY),
+        new Date(START - DAY),
+        new Date(START + 40 * DAY),
+      ];
+
+      const obs = schema.holdingBalanceObservations;
+      const idArray = sql`ARRAY[${sql.join(
+        ids.map((id) => sql`${id}`),
+        sql`, `
+      )}]::uuid[]`;
+      const atArray = sql`ARRAY[${sql.join(
+        instants.map((at) => sql`${at.toISOString()}`),
+        sql`, `
+      )}]::timestamptz[]`;
+      const before = await tx
+        .select()
+        .from(obs)
+        .where(
+          sql`(${obs.holdingId}, ${obs.observedAt}) IN (
+            WITH h AS (SELECT unnest(${idArray}) AS id), d AS (SELECT unnest(${atArray}) AS at)
+            SELECT h.id, f.observed_at FROM h CROSS JOIN LATERAL (
+              SELECT o.observed_at FROM holding_balance_observations o
+              WHERE o.holding_id = h.id ORDER BY o.observed_at ASC LIMIT 1) f
+            UNION
+            SELECT h.id, a.observed_at FROM h CROSS JOIN d CROSS JOIN LATERAL (
+              SELECT o.observed_at FROM holding_balance_observations o
+              WHERE o.holding_id = h.id AND o.observed_at >= d.at
+              ORDER BY o.observed_at ASC LIMIT 1) a
+            UNION
+            SELECT h.id, b.observed_at FROM h CROSS JOIN d CROSS JOIN LATERAL (
+              SELECT o.observed_at FROM holding_balance_observations o
+              WHERE o.holding_id = h.id AND o.observed_at <= d.at
+              ORDER BY o.observed_at DESC LIMIT 1) b)`
+        )
+        .orderBy(asc(obs.observedAt), asc(obs.id));
+      const after = await repo().findAnchorsForInstants(ids, instants, tx);
+
+      // The reference must have something to agree with, ties among it.
+      expect(before.length).toBeGreaterThan(20);
+      expect(before.filter((o) => o.holdingId === tied.id)).toHaveLength(7);
+      for (const id of ids) {
+        const want = before.filter((o) => o.holdingId === id);
+        const got = [...(after.get(id) ?? [])].sort(
+          (a, b) => a.observedAt.getTime() - b.observedAt.getTime() || a.id.localeCompare(b.id)
+        );
+        expect(got).toEqual(want);
+      }
     });
   });
 });

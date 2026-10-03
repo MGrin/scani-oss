@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { CreateHoldingsWithDependenciesDto } from '../../src/dtos/batch';
 import { CreateHoldingDto, UpdateHoldingDto } from '../../src/dtos/holding';
 
 describe('CreateHoldingDto validation', () => {
@@ -123,5 +124,46 @@ describe('UpdateHoldingDto validation', () => {
       const result = UpdateHoldingDto.safeParse({ isActive });
       expect(result.success).toBe(false);
     }
+  });
+});
+
+// SC-1462 dropped the database CHECK that also refused a negative balance, so
+// these validators are the only line between a person and a margin loan they
+// typed themselves. Only a broker statement may report one.
+describe('user-entered balances still refuse a negative (SC-1462)', () => {
+  const margin = '-5509.33';
+  const ids = {
+    accountId: '550e8400-e29b-41d4-a716-446655440000',
+    tokenId: '550e8400-e29b-41d4-a716-446655440001',
+  };
+
+  test('create', () => {
+    expect(CreateHoldingDto.safeParse({ ...ids, balance: margin }).success).toBe(false);
+  });
+
+  test('edit', () => {
+    expect(UpdateHoldingDto.safeParse({ balance: margin }).success).toBe(false);
+  });
+
+  test('batch add', () => {
+    const r = CreateHoldingsWithDependenciesDto.safeParse({
+      accountId: ids.accountId,
+      holdings: [{ tokenId: ids.tokenId, balance: margin }],
+    });
+    expect(r.success).toBe(false);
+    expect(r.error?.issues.map((i) => i.path.join('.'))).toEqual(['holdings.0.balance']);
+  });
+
+  // The control: the same payload at zero passes, so the refusals above are
+  // about the sign and nothing else.
+  test('the same payloads at zero pass', () => {
+    expect(CreateHoldingDto.safeParse({ ...ids, balance: '0' }).success).toBe(true);
+    expect(UpdateHoldingDto.safeParse({ balance: '0' }).success).toBe(true);
+    expect(
+      CreateHoldingsWithDependenciesDto.safeParse({
+        accountId: ids.accountId,
+        holdings: [{ tokenId: ids.tokenId, balance: '0' }],
+      }).success
+    ).toBe(true);
   });
 });

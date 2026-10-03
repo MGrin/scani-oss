@@ -402,8 +402,6 @@ describe('every provider that can claim a complete history can also retract it',
     expect(canClaimAndCaps.map((s) => s.name).sort()).toEqual([
       'bitstamp',
       'coinbase',
-      'gemini',
-      'huobi',
       'kraken',
       'kucoin',
     ]);
@@ -425,7 +423,16 @@ describe('every provider that can claim a complete history can also retract it',
       .filter((s) => pageCapLoops(s.source).length > 0 && declaredHorizon(s.source) !== null)
       .map((s) => s.name)
       .sort();
-    expect(cappedWithHorizon).toEqual(['airwallex', 'binance', 'bitget', 'gate', 'mexc', 'okx']);
+    expect(cappedWithHorizon).toEqual([
+      'airwallex',
+      'binance',
+      'bitget',
+      'gate',
+      'gemini',
+      'huobi',
+      'mexc',
+      'okx',
+    ]);
   });
 });
 

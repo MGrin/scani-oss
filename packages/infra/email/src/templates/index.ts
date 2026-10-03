@@ -1,3 +1,4 @@
+export { renderActivationNudgeEmail } from './activation-nudge';
 export { renderContactReceivedEmail } from './contact-received';
 export {
   renderIntegrationAlertEmail,

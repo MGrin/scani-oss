@@ -69,6 +69,7 @@ export interface DashboardOverview {
       value: string;
       percentage: string;
     }>;
+    marginDebt: string;
     totalValue: string;
     baseCurrency: string;
   };

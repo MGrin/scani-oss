@@ -7,29 +7,13 @@ import { type SQL, sql } from 'drizzle-orm';
  */
 export const CUSTOM_TOKEN_TYPE_CODES = ['private-company', 'other'] as const;
 
-export type CustomTokenTypeCode = (typeof CUSTOM_TOKEN_TYPE_CODES)[number];
-
-export function isCustomTokenTypeCode(code: string | null | undefined): boolean {
-  return (CUSTOM_TOKEN_TYPE_CODES as readonly string[]).includes(code ?? '');
-}
-
 /**
- * Whether `userId` may see, price or hold this token. A catalog token is
- * everybody's; a custom one is its owner's alone, and a custom token with no
- * owner is NOBODY's — the backfill leaves one unattributed only when no record
- * says who made it, and "unknown" must not read as "everyone".
- */
-export function isTokenVisibleTo(
-  token: { createdByUserId: string | null },
-  typeCode: string | null | undefined,
-  userId: string
-): boolean {
-  return !isCustomTokenTypeCode(typeCode) || token.createdByUserId === userId;
-}
-
-/**
- * The SQL form of `isTokenVisibleTo`, for a query over `tokens`. It asks the
- * type through a subquery so a caller need not join `token_types` to use it.
+ * Whether `userId` may see, price or hold a token, as SQL for a query over
+ * `tokens`. A catalog token is everybody's; a custom one is its owner's alone,
+ * and a custom token with no owner is NOBODY's — the backfill leaves one
+ * unattributed only when no record says who made it, and "unknown" must not
+ * read as "everyone". It asks the type through a subquery so a caller need not
+ * join `token_types` to use it.
  *
  * The tokens relation is spelled as a qualified identifier rather than a
  * drizzle column, for the reason `effectiveScamProbability` gives: a column

@@ -25,6 +25,7 @@ import type {
   HistoricalPriceProvider,
 } from '@scani/providers/core/capabilities';
 import type { ProviderContext } from '@scani/providers/core/types';
+import { LIVE_PRICE_WINDOW_MS } from './price-windows';
 
 export interface PricingResult {
   tokenId: string;
@@ -55,13 +56,6 @@ export type PricingProviderKey =
   | 'defiLlama'
   | 'finnhub'
   | 'googleSheets';
-
-/**
- * Window inside which a price request is considered "current" — beyond
- * this, the adapter routes to `fetchHistoricalPrice` if available.
- * Mirrors `PricingService.LIVE_PRICE_WINDOW_MS`.
- */
-const LIVE_PRICE_WINDOW_MS = 60 * 60 * 1000;
 
 function isHistoricalCapable(p: CurrentPriceProvider): p is HistoricalPriceProvider {
   return typeof (p as HistoricalPriceProvider).fetchHistoricalPrice === 'function';

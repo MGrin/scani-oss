@@ -74,6 +74,10 @@ const CREATED_DESTINATION_KEY = 'createdDestinationHolding';
  *  and why this is not derivable from `CREATED_DESTINATION_KEY`. */
 const MOVED_ANCHOR_KEY = 'movedDestinationAnchor';
 
+/** The third marker (SC-1474): the typed deposit this arrival replaced, kept
+ *  whole so a reopen can put it back exactly as the person wrote it. */
+const ADOPTED_EDIT_KEY = 'adoptedBalanceEdit';
+
 export type CreatedDestination = 'created' | 'reused' | 'unrecorded';
 
 export type MovedDestinationAnchor = 'moved' | 'not_moved' | 'unrecorded';
@@ -95,11 +99,13 @@ export function arrivalMetadata(opts: {
   createdDestination: boolean;
   movedDestinationAnchor: boolean;
   outflowAt: Date;
+  adoptedBalanceEdit?: AdoptedBalanceEdit;
 }): Record<string, unknown> {
   return {
     outflowTransactionId: opts.outflowTransactionId,
     [CREATED_DESTINATION_KEY]: opts.createdDestination,
     [MOVED_ANCHOR_KEY]: opts.movedDestinationAnchor,
+    ...(opts.adoptedBalanceEdit ? { [ADOPTED_EDIT_KEY]: opts.adoptedBalanceEdit } : {}),
     arrivalFrom: opts.outflowAt.toISOString(),
     arrivalTo: new Date(
       opts.outflowAt.getTime() + ARRIVAL_WINDOW_DAYS * 24 * 60 * 60 * 1000
@@ -173,4 +179,41 @@ export function readMovedDestinationAnchor(sourceMetadata: unknown): MovedDestin
   if (value === true) return 'moved';
   if (value === false) return 'not_moved';
   return 'unrecorded';
+}
+
+/**
+ * A typed deposit a transfer answer took over instead of writing a second
+ * arrival beside it (SC-1474). The answer and the person's own entry were two
+ * records of one move, so the destination counted the money twice.
+ */
+export interface AdoptedBalanceEdit {
+  holdingId: string;
+  tokenId: string;
+  kind: string;
+  quantity: string;
+  occurredAt: string;
+  source: string;
+  externalId: string;
+  counterparty: string | null;
+  description: string | null;
+  sourceMetadata: unknown;
+}
+
+/** The typed deposit to put back when this arrival is withdrawn, or null. */
+export function readAdoptedBalanceEdit(sourceMetadata: unknown): AdoptedBalanceEdit | null {
+  if (typeof sourceMetadata !== 'object' || sourceMetadata === null) return null;
+  const value = (sourceMetadata as Record<string, unknown>)[ADOPTED_EDIT_KEY];
+  if (typeof value !== 'object' || value === null) return null;
+  const edit = value as Partial<AdoptedBalanceEdit>;
+  if (
+    typeof edit.holdingId !== 'string' ||
+    typeof edit.tokenId !== 'string' ||
+    typeof edit.kind !== 'string' ||
+    typeof edit.quantity !== 'string' ||
+    typeof edit.occurredAt !== 'string' ||
+    typeof edit.source !== 'string' ||
+    typeof edit.externalId !== 'string'
+  )
+    return null;
+  return edit as AdoptedBalanceEdit;
 }

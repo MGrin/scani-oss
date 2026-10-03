@@ -680,15 +680,49 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
       // have reported that row's `null` as this one's.
       const gap = candidates.find((row) => row.holdingId === holding.id && row.balance === '2000');
 
-      // Must-be-FOUND: the interval really is an unexplained gap. Without this
-      // the assertion below would pass on a fixture that never made one, which
-      // is the whole failure this suite was written against in SC-245.
-      expect(gap).toBeDefined();
-      expect(gap?.source).toBe('sync-capture');
+      // Since SC-1474 a back-dated edit explains the interval whose balance it
+      // changed, so that interval is no longer a gap at all. Before, it was a
+      // gap the edit's stamp had to answer, and the back-dated row raised a
+      // second question one interval earlier (SC-612). Either way the queue
+      // must not ask: no unanswered, unexplained interval on this holding.
+      // `a correction and a growth answer their observation too` below is the
+      // control that this fixture does make gaps: `growth` writes no row.
+      expect(gap === undefined || gap.gapReview === 'flow').toBe(true);
 
-      // …and it is answered, in the vocabulary the queue itself writes, so
-      // `listPending` skips it at `candidate.gapReview !== null`.
-      expect(gap?.gapReview).toBe('flow');
+      // Must-be-FOUND, on THIS fixture (SC-245): the edit really produced a
+      // 4000 -> 2000 observation, and the ledger row it wrote accounts for
+      // the whole -2000. A fixture that never moved the balance has no such
+      // observation and fails here.
+      const [observed] = await tx
+        .select()
+        .from(schema.holdingBalanceObservations)
+        .where(
+          and(
+            eq(schema.holdingBalanceObservations.holdingId, holding.id),
+            eq(schema.holdingBalanceObservations.balance, '2000')
+          )
+        );
+      expect(observed?.previousBalance).toBe('4000');
+      const edits = await tx
+        .select()
+        .from(schema.holdingTransactions)
+        .where(
+          and(
+            eq(schema.holdingTransactions.holdingId, holding.id),
+            eq(schema.holdingTransactions.source, 'user-balance-edit')
+          )
+        );
+      expect(edits).toHaveLength(1);
+      const moved = edits.reduce((sum, row) => sum.add(row.quantity), new Decimal(0));
+      expect(unexplainedDrift('4000', '2000', [moved.toString()]).isZero()).toBe(true);
+      const unanswered = candidates.filter(
+        (row) =>
+          row.holdingId === holding.id &&
+          !unexplainedDrift(row.previousBalance, row.balance, [row.explained]).isZero() &&
+          row.gapReview === null &&
+          row.source === 'sync-capture'
+      );
+      expect(unanswered).toHaveLength(0);
     });
   });
 
@@ -841,8 +875,11 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
       );
     }
 
+    // Both read 0 since SC-1474: the flow explains the interval whose balance
+    // it changed, whatever day it is dated to, so the 12h case no longer
+    // manufactures a question one interval earlier.
     for (const [previousAgeHours, expected] of [
-      [12, 1],
+      [12, 0],
       [72, 0],
     ] as const) {
       test(`a flow dated 18h back leaves ${expected} question with the previous observation ${previousAgeHours}h old`, async () => {

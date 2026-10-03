@@ -57,13 +57,15 @@ import type {
   TransactionEvent,
   WithUserCreds,
 } from '../../core/types';
-import { type KrakenApiService, KrakenApiService as KrakenApiServiceClass } from './api-service';
+import {
+  type KrakenApiService,
+  KrakenApiService as KrakenApiServiceClass,
+  type KrakenLedgerEntry,
+} from './api-service';
 import { isKrakenFiatAsset, normalizeKrakenAsset } from './asset-normalizer';
 import { fetchKrakenHistoricalPrice, readKrakenAssetCode } from './kraken-ohlc';
 import { auditKrakenLedger, type KrakenLedgerRow } from './ledger-integrity';
 import { krakenManifest } from './manifest';
-
-export { krakenManifest } from './manifest';
 
 const KRAKEN_INSTITUTION_CODE = 'kraken';
 const KRAKEN_BASE_URL = 'https://api.kraken.com';
@@ -95,6 +97,96 @@ const AUTOALLOCATION_SUBTYPE = 'autoallocation';
  * ledger, so the pending map holds one bucket per
  * `(refid, normalized asset)` until the whole walk is done.
  */
+/**
+ * How far apart Kraken books the two sides of a staking conversion. The
+ * ETH2 -> ETH conversion at the 2023 Shapella unlock credited ETH up to a
+ * day BEFORE debiting ETH2 (SC-1486), so the window looks both ways.
+ */
+const STAKING_CONVERSION_WINDOW_MS = 72 * 60 * 60 * 1000;
+
+/**
+ * Pairs a debit with a credit of the same amount on ANOTHER asset within the
+ * window, as one swap (SC-1486): a staking conversion (ETH2 -> ETH), and a
+ * spot/staking transfer Kraken books under another asset (ETH -> ETH2). A
+ * same-asset move (DOT -> DOT.S, SOL -> SOL03.S) normalizes to one holding
+ * and is left alone. Each credit pairs at most once; an unpaired entry keeps
+ * its kind.
+ */
+function pairConversions(events: CexNormalizedEvent[]): void {
+  const credits = events.filter((e) => e.kind === 'reward' || e.kind === 'deposit');
+  const taken = new Set<CexNormalizedEvent>();
+  for (const debit of events) {
+    if (debit.kind !== 'withdraw') continue;
+    const amount = new Decimal(debit.quantity).abs();
+    const credit = credits.find(
+      (c) =>
+        !taken.has(c) &&
+        c.assetCode !== debit.assetCode &&
+        new Decimal(c.quantity).abs().eq(amount) &&
+        Math.abs(c.occurredAt.getTime() - debit.occurredAt.getTime()) <=
+          STAKING_CONVERSION_WINDOW_MS
+    );
+    if (!credit) continue;
+    taken.add(credit);
+    const swapGroupKey = `kraken-conversion:${debit.externalId}`;
+    Object.assign(debit, {
+      kind: 'swap_out',
+      swapGroupKey,
+      counterAssetCode: credit.assetCode,
+      counterQuantity: amount.toString(),
+      priceNative: '1',
+      priceNativeAssetCode: credit.assetCode,
+    });
+    Object.assign(credit, {
+      kind: 'swap_in',
+      swapGroupKey,
+      counterAssetCode: debit.assetCode,
+      counterQuantity: amount.toString(),
+      priceNative: '1',
+      priceNativeAssetCode: debit.assetCode,
+    });
+  }
+}
+
+/**
+ * How far apart Kraken books the two sides of a same-asset spot/staking
+ * move. Measured on production: 0 to 69 seconds (SC-1486).
+ */
+const INTERNAL_MOVE_WINDOW_MS = 2 * 60 * 1000;
+
+/**
+ * Drops a same-asset spot/staking move: a `transfer` debit and an equal
+ * `transfer` credit of the same normalized asset within the window. Both
+ * land on one holding and cancel, so like a net-zero reallocation (SC-362)
+ * the pair is not an event; emitted, each leg reached Review as money out and
+ * money in (SC-1486). Each credit pairs at most once, nearest in time.
+ */
+function dropInternalMoves(events: CexNormalizedEvent[]): CexNormalizedEvent[] {
+  const isTransfer = (e: CexNormalizedEvent) =>
+    (e.rawPayload as KrakenLedgerEntry | undefined)?.type === 'transfer';
+  const credits = events.filter((e) => e.kind === 'deposit' && isTransfer(e));
+  const dropped = new Set<CexNormalizedEvent>();
+  for (const debit of events) {
+    if (debit.kind !== 'withdraw' || !isTransfer(debit)) continue;
+    const amount = new Decimal(debit.quantity).abs();
+    const gap = (c: CexNormalizedEvent) =>
+      Math.abs(c.occurredAt.getTime() - debit.occurredAt.getTime());
+    const credit = credits
+      .filter(
+        (c) =>
+          !dropped.has(c) &&
+          c.assetCode === debit.assetCode &&
+          new Decimal(c.quantity).abs().eq(amount) &&
+          gap(c) <= INTERNAL_MOVE_WINDOW_MS
+      )
+      .sort((a, b) => gap(a) - gap(b))[0];
+    if (!credit) continue;
+    dropped.add(debit);
+    dropped.add(credit);
+  }
+  return events.filter((e) => !dropped.has(e));
+}
+
 interface AutoallocationBucket {
   /** Signed sum of the bucket's `amount`s. Zero = the operation moved nothing. */
   net: Decimal;
@@ -115,14 +207,16 @@ function mapKrakenKind(type: string, amountIsPositive: boolean): CexNormalizedEv
       return amountIsPositive ? 'buy' : 'sell';
     case 'receive':
       return 'buy';
+    // Kraken's `amount` is the direction for these too: a returned deposit
+    // and a staking balance converted away are negative (SC-1486).
     case 'deposit':
-      return 'deposit';
+      return amountIsPositive ? 'deposit' : 'withdraw';
     case 'withdrawal':
       return 'withdraw';
     case 'staking':
     case 'reward':
     case 'earn':
-      return 'reward';
+      return amountIsPositive ? 'reward' : 'withdraw';
     default:
       return amountIsPositive ? 'deposit' : 'withdraw';
   }
@@ -301,6 +395,7 @@ export class KrakenProvider
     let page = 0;
     let truncated = false;
     const pending = new Map<string, AutoallocationBucket>();
+    const conversions: CexNormalizedEvent[] = [];
     const seen: KrakenLedgerRow[] = [];
 
     while (page < MAX_LEDGER_PAGES) {
@@ -322,11 +417,16 @@ export class KrakenProvider
         const kind = mapKrakenKind(entry.type, positive);
         const asset = normalizeKrakenAsset(entry.asset);
         const feeNum = Number.parseFloat(entry.fee);
+        // A negative fee is Kraken handing a fee back, on a returned deposit
+        // (SC-1486). It is not a charge, so it nets into what moved: the
+        // balance changes by `amount - fee`.
+        const quantity =
+          feeNum < 0 ? new Decimal(entry.amount).minus(entry.fee).toString() : entry.amount;
 
         const event: CexNormalizedEvent = {
           kind,
           assetCode: asset,
-          quantity: entry.amount,
+          quantity,
           feeAssetCode: feeNum > 0 ? asset : undefined,
           feeQuantity: feeNum > 0 ? entry.fee : undefined,
           occurredAt: new Date(entry.time * 1000),
@@ -358,6 +458,13 @@ export class KrakenProvider
           continue;
         }
 
+        // Held to the end, like the buckets above: the two sides of a
+        // conversion can sit a day apart and on different pages.
+        if (entry.type === 'staking' || entry.type === 'transfer') {
+          conversions.push(event);
+          continue;
+        }
+
         yield event;
       }
 
@@ -378,6 +485,9 @@ export class KrakenProvider
       if (bucket.net.isZero() && !bucket.hasFee) continue;
       for (const event of bucket.events) yield event;
     }
+    const moved = dropInternalMoves(conversions);
+    pairConversions(moved);
+    for (const event of moved) yield event;
 
     const audit = auditKrakenLedger(seen);
     if (!audit.isComplete) {
@@ -478,12 +588,10 @@ export const krakenFactory: ProviderFactory = async (deps) => {
 };
 
 export type { KrakenLedgerEntry } from './api-service';
-export { normalizeKrakenAsset } from './asset-normalizer';
 // Re-exported so the SC-395 repair can run the SAME audit over the ledger
 // entries this importer stored verbatim in `raw_payload`, rather than a
 // second implementation of "does this feed contradict itself".
 export {
   auditKrakenLedger,
-  type KrakenLedgerAudit,
   type KrakenLedgerRow,
 } from './ledger-integrity';

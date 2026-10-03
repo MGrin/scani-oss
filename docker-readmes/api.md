@@ -53,7 +53,7 @@ step, standalone `docker run`), and what happens if you skip them
 | `REDIS_URL` | Redis 7+ connection string |
 | `BETTER_AUTH_SECRET` | 32+ chars; signs sessions |
 | `ENCRYPTION_KEY` | 32 hex chars; **must match** `scani/worker` |
-| `JOBS_HMAC_SECRET` | Shared secret for HMAC-gated job admin endpoints |
+| `JOBS_HMAC_SECRET` | Signs the worker wake ping and the admin audit log |
 | `FRONTEND_URL` / `BACKEND_URL` | What the browser sees; powers CORS + cookies |
 | `S3_*` | Object storage (any S3-compatible store) |
 | `SCANI_CLOUD_URL` / `SCANI_CLOUD_API_KEY` | Where `scani/data-provider` lives + bearer to reach it |

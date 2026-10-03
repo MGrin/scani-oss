@@ -79,6 +79,12 @@ export const users = pgTable(
     // mailing the same people twice (SC-460). Alerts use `alert_deliveries`
     // instead — a per-account cooldown cannot express "not about Kraken again".
     digestLastSentAt: timestamp('digest_last_sent_at', { withTimezone: true }),
+    // The language a job writes to this account in (SC-1503). Captured at
+    // sign-up and sign-in from then on; NULL means the English letter.
+    language: text('language'),
+    // Once ever. Claimed before the send, cleared if the send fails (SC-1503).
+    activationNudgeSentAt: timestamp('activation_nudge_sent_at', { withTimezone: true }),
+    onboardingOptOutAt: timestamp('onboarding_opt_out_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

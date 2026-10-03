@@ -138,9 +138,9 @@ export function renderIntegrationAlertEmail({
       footerNote: `You get this because a connection you set up in
                 <a href="${escapeHtml(integrationsUrl)}" style="color:${brand.textMuted};">${escapeHtml(brand.appName)}</a>
                 stopped working.
-                <a href="${escapeHtml(unsubscribeUrl)}" style="color:${brand.textMuted};text-decoration:underline;">Stop these alerts</a>
+                <a href="${escapeHtml(unsubscribeUrl)}" data-no-track style="color:${brand.textMuted};text-decoration:underline;">Stop these alerts</a>
                 — one click, no sign-in. That leaves the weekly digest running;
-                <a href="${escapeHtml(digestUnsubscribeUrl)}" style="color:${brand.textMuted};text-decoration:underline;">stop that too</a>.`,
+                <a href="${escapeHtml(digestUnsubscribeUrl)}" data-no-track style="color:${brand.textMuted};text-decoration:underline;">stop that too</a>.`,
     }),
   };
 }

@@ -64,8 +64,6 @@ const DRAWER_HEIGHT =
   'calc(100dvh - max(var(--scani-banner-offset, 0px), env(safe-area-inset-top, 0px)))';
 
 const BottomDrawer = DrawerPrimitive.Root;
-const BottomDrawerTrigger = DrawerPrimitive.Trigger;
-const BottomDrawerClose = DrawerPrimitive.Close;
 const BottomDrawerPortal = DrawerPrimitive.Portal;
 
 const DEFAULT_SNAP_POINTS = [0.4, 1] as const;
@@ -156,7 +154,7 @@ function assignRef<T>(ref: React.ForwardedRef<T>, node: T | null): void {
   else if (ref) ref.current = node;
 }
 
-export interface BottomDrawerContentProps
+interface BottomDrawerContentProps
   extends React.ComponentPropsWithoutRef<typeof DrawerPrimitive.Content> {
   /** Rest heights as fractions of the viewport, in any order. Normalized to
    * ascending, deduplicated and clamped to `(0, 1]`. */
@@ -667,12 +665,8 @@ BottomDrawerDescription.displayName = DrawerPrimitive.Description.displayName;
 export {
   BottomDrawer,
   BottomDrawerBody,
-  BottomDrawerClose,
   BottomDrawerContent,
   BottomDrawerDescription,
   BottomDrawerHeader,
-  BottomDrawerOverlay,
-  BottomDrawerPortal,
   BottomDrawerTitle,
-  BottomDrawerTrigger,
 };

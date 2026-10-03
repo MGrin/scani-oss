@@ -10,7 +10,7 @@ import { TokenRepository } from '../../repositories/TokenRepository';
 import { TransferReviewService } from '../TransferReviewService';
 
 /** How far back a "since last week" comparison reaches. */
-export const DIGEST_WINDOW_DAYS = 7;
+const DIGEST_WINDOW_DAYS = 7;
 
 /**
  * How stale the newest rollup row may be before the digest refuses to quote it.
@@ -20,7 +20,7 @@ export const DIGEST_WINDOW_DAYS = 7;
  * failed — and a mail that says "your net worth is X" over a figure nobody has
  * recomputed in over a week is a wrong statement, not a stale one.
  */
-export const DIGEST_MAX_SNAPSHOT_AGE_DAYS = 8;
+const DIGEST_MAX_SNAPSHOT_AGE_DAYS = 8;
 
 /** Bills shown by name before the digest starts counting them instead. */
 const MAX_BILLS_LISTED = 3;
@@ -30,7 +30,7 @@ const MAX_MOVERS = 3;
 
 type Direction = 'up' | 'down' | 'flat';
 
-export interface DigestChange {
+interface DigestChange {
   /** Signed, already formatted in the base currency. */
   amount: string;
   /** e.g. `2.1%`. Absent when last week's figure was zero. */
@@ -53,7 +53,7 @@ export interface DigestBill {
   amount: string | null;
 }
 
-export interface WeeklyDigest {
+interface WeeklyDigest {
   /** Net worth, formatted in the user's base currency. */
   netWorth: string;
   /** The snapshot date the figure is FROM — never presented as "now". */
@@ -69,7 +69,7 @@ export interface WeeklyDigest {
 }
 
 /** Reasons a digest was not built. Each is reported separately — see below. */
-export type DigestSkipReason = 'no-snapshot' | 'stale-snapshot' | 'no-holdings';
+type DigestSkipReason = 'no-snapshot' | 'stale-snapshot' | 'no-holdings';
 
 export type DigestOutcome =
   | { digest: WeeklyDigest; skipped?: undefined }

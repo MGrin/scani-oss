@@ -33,7 +33,7 @@ import { type ProbeResult, probeDataProvider } from './health-probe';
  * blip is never invisible — it is just a log line instead of a page.
  */
 
-export interface OutageInfo {
+interface OutageInfo {
   url?: string;
   status?: number;
   error?: string;
@@ -41,7 +41,7 @@ export interface OutageInfo {
   consecutiveFailures: number;
 }
 
-export interface RecoveryInfo {
+interface RecoveryInfo {
   url?: string;
   /** How many consecutive cycles had failed before this one succeeded. */
   failedCycles: number;

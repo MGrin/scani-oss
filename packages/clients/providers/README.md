@@ -24,7 +24,7 @@ src/
 │   ├── errors.ts                  ProviderError + classifyError + .fromHttp(res)
 │   ├── rate-limiter-registry.ts   single namespace map (boot fails on duplicates)
 │   ├── registry.ts                capability-bucketed dispatch
-│   ├── testing.ts                 createMockContext, replayHttp, assertImplementsCapability
+│   ├── testing.ts                 createMockSelfCredContext, makeMockToken
 │   ├── types.ts                   PriceQuote, HoldingSnapshot, TransactionEvent, ProviderContext
 │   ├── base/
 │   │   ├── base-cex-provider.ts        pagination + asset-identity for stream-history CEX (Kraken)
@@ -58,8 +58,8 @@ Registration is **duck-typed**: a provider class doesn't need to declare
 which interfaces it implements. The registry runs `is*Provider(provider)`
 guards for every capability and slots the instance into every bucket
 that returns `true`. A typo in a method name silently disables a
-capability — `assertImplementsCapability(provider, 'transactions')`
-in tests catches that before it becomes a "no transactions provider for
+capability, so a provider's test calls the capability method it claims
+before that becomes a "no transactions provider for
 institutionCode='kraken'" runtime surprise.
 
 ## Provider selection by deployment tier
@@ -132,7 +132,7 @@ await buildProviderRegistry({
    upstream API base URL, env vars, capabilities, special notes
    (auth quirks, pagination notes, known gaps).
 8. Add a test under `tests/providers/<name>.test.ts` using
-   `core/testing.ts`'s `createMockContext` + `replayHttp` helpers.
+   `core/testing.ts`'s `createMockSelfCredContext` + `makeMockToken` helpers.
 
 ## Env vars
 
@@ -176,10 +176,8 @@ bun test --preload ./packages/business/domain/test-preload.ts \
   packages/clients/providers --timeout 30000
 ```
 
-Tests use `core/testing.ts` helpers (`createMockContext`,
-`makeMockToken`, `assertImplementsCapability`, `replayHttp`,
-`as*Provider`) so a typo in a capability method name fails loudly at
-test time.
+Tests use `core/testing.ts` helpers (`createMockSelfCredContext`,
+`makeMockToken`).
 
 ## Follow-ups
 

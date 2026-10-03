@@ -192,8 +192,7 @@ describe('probeExitedPositions — which rows are worth an upstream call (SC-852
         { externalId: '0xclosed', symbol: 'CLOSED', balance: '0' },
         // no key to ask about
         { externalId: null, symbol: 'NOKEY' },
-        // the user cannot see it, so no warning of theirs depends on it
-        { externalId: '0xhidden', symbol: 'HIDDEN', isHidden: true },
+        // scam dust: nobody reads it, so it is not worth the shared budget
         { externalId: '0xdust', symbol: 'DUST', scam: 0.9 },
       ],
       snapshots: [snapshot(WETH, 'WETH')],
@@ -230,6 +229,59 @@ describe('probeExitedPositions — which rows are worth an upstream call (SC-852
     });
     expect(asked).toEqual([]);
     expect(snapshots).toEqual([]);
+  });
+});
+
+/**
+ * A HIDDEN ROW IS STILL PROBED (SC-1489). Hiding takes a holding out of net
+ * worth, not out of the ledger: PnL and the feeds engine still read its
+ * balance. A hidden holding sat at a stale balance for months while the chain
+ * read 0, because hidden rows were filtered out here. The same three states apply,
+ * so each test is a pair: a hidden row measured at zero is corrected, and a
+ * hidden row the provider could not read, or still holds, is left alone.
+ */
+describe('probeExitedPositions — hidden rows are probed too (SC-1489)', () => {
+  const hidden = { externalId: USDC, symbol: 'USDC', isHidden: true };
+
+  test('a hidden row measured at zero is asked about and corrected', async () => {
+    const { asked, snapshots } = await probeExits({
+      holdings: [hidden],
+      answer: answerAll('exited'),
+    });
+    expect(asked).toEqual([[USDC]]);
+    expect(snapshots.map((s) => [s.externalId, s.balance])).toEqual([[USDC, '0']]);
+  });
+
+  test('a hidden row the provider could not read keeps its balance', async () => {
+    const { asked, snapshots } = await probeExits({
+      holdings: [hidden],
+      answer: answerAll('unreadable'),
+    });
+    expect(asked).toEqual([[USDC]]);
+    expect(snapshots).toEqual([]);
+  });
+
+  test('a hidden row still held keeps its balance', async () => {
+    const { snapshots } = await probeExits({ holdings: [hidden], answer: answerAll('held') });
+    expect(snapshots).toEqual([]);
+  });
+
+  test('a throwing probe on a hidden row zeroes nothing', async () => {
+    const { snapshots } = await probeExits({
+      holdings: [hidden],
+      answer: async () => {
+        throw new Error('etherscan 502');
+      },
+    });
+    expect(snapshots).toEqual([]);
+  });
+
+  test('a hidden scam-flagged row is still never asked about', async () => {
+    const { asked } = await probeExits({
+      holdings: [{ ...hidden, externalId: '0xdust', symbol: 'DUST', scam: 0.9 }],
+      answer: answerAll('exited'),
+    });
+    expect(asked).toEqual([]);
   });
 });
 

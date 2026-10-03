@@ -11,9 +11,11 @@ Gate.io spot accounts.
 - **Endpoints used**: `/spot/accounts`, `/spot/accounts/ledger`,
   `/spot/my_trades`, `/wallet/deposits`, `/wallet/withdrawals`.
 - **Notes**: extends `BaseHmacCexProvider`. `available + locked` summed
-  for the user-facing total. Transactions strategy: ledger-per-currency
-  is the primary "single feed" (covers fee + sub-account transfers);
-  trade events come from `/spot/my_trades` per held base × quote pair
+  for the user-facing total. Transactions strategy: the ledger across
+  every currency is the primary "single feed" (covers fee + sub-account
+  transfers, and names every currency the account has touched);
+  trade events come from `/spot/my_trades` per base × quote pair, bases
+  being held assets plus every currency the ledger and wallet feeds name
   (the per-leg ledger view lacks pair info); deposits/withdrawals come
   from `/wallet/deposits` + `/wallet/withdrawals` (txid-bearing source
   of truth). Pair format is delimited (`BTC_USDT`) so splitting is a

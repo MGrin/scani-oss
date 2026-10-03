@@ -18,7 +18,7 @@ export interface RefreshAccountBalanceJob extends UserJobBase {
   accountId: string;
 }
 
-export const refreshAccountBalanceSchema: z.ZodType<RefreshAccountBalanceJob> = z.object({
+const refreshAccountBalanceSchema: z.ZodType<RefreshAccountBalanceJob> = z.object({
   userId: z.string().min(1),
   requestId: z.string().min(1),
   holdingId: z.string().min(1).optional(),

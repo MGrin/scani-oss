@@ -41,7 +41,7 @@ export interface ManualHoldingsCreateJob extends UserJobBase {
   parentJobIdToStampOnSuccess?: string;
 }
 
-export const manualHoldingsCreateSchema: z.ZodType<ManualHoldingsCreateJob> = z
+const manualHoldingsCreateSchema: z.ZodType<ManualHoldingsCreateJob> = z
   .object({
     userId: z.string().min(1),
     requestId: z.string().min(1),

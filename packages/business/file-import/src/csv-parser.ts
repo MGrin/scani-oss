@@ -153,7 +153,7 @@ function getColumn(
  * Revolut export carries `0.00` in that column, and a ledger full of
  * zero-value fee rows is noise the reader has to skip past.
  */
-export function normaliseStatementFee(cell: string | undefined): number | undefined {
+function normaliseStatementFee(cell: string | undefined): number | undefined {
   const raw = parseNumber(cell);
   return raw !== null && raw !== 0 ? Math.abs(raw) : undefined;
 }

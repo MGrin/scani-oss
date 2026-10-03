@@ -7,13 +7,19 @@ import {
   isJobAwaitingFailureDecision,
   type ReviewAmount,
   type ReviewItem,
+  SETTLED_ANSWERS_REVIEW_KIND,
+  settledAnswersReviewPath,
   TRANSFER_REVIEW_KIND,
   TRANSFER_REVIEW_PATH,
+  UNPRICEABLE_AIRDROPS_REVIEW_KIND,
+  UNPRICEABLE_AIRDROPS_REVIEW_PATH,
 } from '@scani/shared';
 import Container, { Service } from 'typedi';
 import { DocumentExtractionRepository } from '../repositories/DocumentExtractionRepository';
 import { UserJobRepository } from '../repositories/UserJobRepository';
 import { BalanceGapService } from './holdings/BalanceGapService';
+import { SettlementAnswerReviewService } from './holdings/SettlementAnswerReviewService';
+import { UnpriceableAirdropService } from './holdings/UnpriceableAirdropService';
 import { describePendingReview } from './reviewDetail';
 import { TransferReviewService } from './TransferReviewService';
 
@@ -38,6 +44,8 @@ export class ReviewFeedService {
   private readonly documentExtractions = Container.get(DocumentExtractionRepository);
   private readonly transferReviews = Container.get(TransferReviewService);
   private readonly balanceGaps = Container.get(BalanceGapService);
+  private readonly settledAnswers = Container.get(SettlementAnswerReviewService);
+  private readonly unpriceableAirdrops = Container.get(UnpriceableAirdropService);
 
   async listPending(userId: string): Promise<ReviewItem[]> {
     const sources = await Promise.all([
@@ -46,6 +54,8 @@ export class ReviewFeedService {
       this.fromExtractions(userId),
       this.fromTransfers(userId),
       this.fromBalanceGaps(userId),
+      this.fromSettledAnswers(userId),
+      this.fromUnpriceableAirdrops(userId),
     ]);
     return sources.flat().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
@@ -205,6 +215,65 @@ export class ReviewFeedService {
         represents: count,
         createdAt: latestAt,
         href: BALANCE_GAP_REVIEW_PATH,
+      },
+    ];
+  }
+
+  /**
+   * Answers imported trades now explain (SC-1453) — **one row per holding**,
+   * unlike the two queues above, because the owner retires or keeps them per
+   * holding and each row opens that holding's own sheet. There are few of
+   * them: they exist only where an owner answered a gap on a broker's cash
+   * before its trades were settled there.
+   *
+   * `createdAt` is the newest of the holding's answers, the last moment the
+   * owner touched any of them.
+   */
+  private async fromSettledAnswers(userId: string): Promise<ReviewItem[]> {
+    const holdings = await this.settledAnswers.listPending(userId);
+    return holdings.map((holding) => ({
+      id: `${SETTLED_ANSWERS_REVIEW_KIND}:${holding.holdingId}`,
+      kind: SETTLED_ANSWERS_REVIEW_KIND,
+      label: { code: 'answersTradesExplain' as const },
+      detail: {
+        code: 'answersExplainedByTrades' as const,
+        answers: holding.answers.length,
+        tokenSymbol: holding.tokenSymbol,
+        ...(holding.accountName ? { accountName: holding.accountName } : {}),
+      },
+      represents: holding.answers.length,
+      createdAt: new Date(
+        Math.max(...holding.answers.map((answer) => Date.parse(answer.answeredAt ?? answer.to)))
+      ),
+      href: settledAnswersReviewPath(holding.holdingId),
+    }));
+  }
+
+  /**
+   * Wallet tokens nothing can price (SC-1469) — **one row for all of them**,
+   * because the owner answers them with one Hide, in one sheet. Nothing hides
+   * without that answer: these rows already count for zero, so asking costs
+   * the totals nothing.
+   *
+   * It weighs **1** on the badge, unlike the other aggregated rows, by operator
+   * decision (2026-10-01): it is one question, asked once and answered with one
+   * tap. The count stays in `detail` for the sentence.
+   *
+   * `createdAt` is the newest one's arrival, so a fresh airdrop floats the row
+   * up the way a fresh import does.
+   */
+  private async fromUnpriceableAirdrops(userId: string): Promise<ReviewItem[]> {
+    const airdrops = await this.unpriceableAirdrops.listPending(userId);
+    if (airdrops.length === 0) return [];
+    return [
+      {
+        id: `${UNPRICEABLE_AIRDROPS_REVIEW_KIND}:pending`,
+        kind: UNPRICEABLE_AIRDROPS_REVIEW_KIND,
+        label: { code: 'unpriceableAirdrops' as const },
+        detail: { code: 'unpriceableAirdrops' as const, count: airdrops.length },
+        represents: 1,
+        createdAt: new Date(Math.max(...airdrops.map((airdrop) => airdrop.arrivedAt.getTime()))),
+        href: UNPRICEABLE_AIRDROPS_REVIEW_PATH,
       },
     ];
   }

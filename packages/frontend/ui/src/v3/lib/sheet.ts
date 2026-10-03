@@ -53,7 +53,7 @@ export function exportSheet(pageKey: string): string {
  * the More drawer must not convince a Refine sheet that its own entry is
  * poppable.
  */
-export const SHEET_STATE_KEY = 'v3SheetFrom';
+const SHEET_STATE_KEY = 'v3SheetFrom';
 
 /** Which sheet a URL has open, or null. */
 export function parseSheet(search: string): string | null {

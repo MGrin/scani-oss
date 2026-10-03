@@ -571,3 +571,48 @@ describe('TronProvider.fetchTransactions over an address with no end (SC-1271)',
     }
   });
 });
+
+/**
+ * SC-1481. `callJson` reads every non-2xx as null, and `paginate` read null as
+ * "no more rows" — so a refused page ended the walk as though the address had
+ * no further history, and the run claimed a complete one.
+ */
+describe('TronProvider.fetchTransactions over a refused page (SC-1481)', () => {
+  function mockTron(trc20: () => Response) {
+    globalThis.fetch = (async (url: string) => {
+      if (String(url).includes('/transactions/trc20')) return trc20();
+      return Response.json({ data: [], meta: {}, success: true });
+    }) as unknown as typeof fetch;
+  }
+
+  test('an error response on the TRC-20 walk retracts the claim', async () => {
+    const originalFetch = globalThis.fetch;
+    mockTron(() => new Response('forbidden', { status: 403 }));
+    const retractions: string[] = [];
+    try {
+      await new TronProvider(passthroughLimiter(), 'http://api').fetchTransactions({
+        ...ctx,
+        retractHistoryClaim: (r: string) => retractions.push(r),
+      } as never);
+      expect(retractions).toHaveLength(1);
+      expect(retractions[0]).toContain('tron: the TRC-20 transfer walk failed');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('an empty feed that ends on its own retracts nothing', async () => {
+    const originalFetch = globalThis.fetch;
+    mockTron(() => Response.json({ data: [], meta: {}, success: true }));
+    const retractions: string[] = [];
+    try {
+      await new TronProvider(passthroughLimiter(), 'http://api').fetchTransactions({
+        ...ctx,
+        retractHistoryClaim: (r: string) => retractions.push(r),
+      } as never);
+      expect(retractions).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});

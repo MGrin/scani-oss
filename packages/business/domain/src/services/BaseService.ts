@@ -173,41 +173,4 @@ export abstract class BaseService {
       throw error;
     }
   }
-
-  /**
-   * Retry a function with exponential backoff
-   *
-   * @param fn - Function to retry
-   * @param maxRetries - Maximum number of retry attempts
-   * @param baseDelay - Base delay in milliseconds (will be doubled each retry)
-   * @returns Result of the function
-   * @throws Error if all retries fail
-   */
-  protected async retryWithBackoff<T>(
-    fn: () => Promise<T>,
-    maxRetries = 3,
-    baseDelay = 1000
-  ): Promise<T> {
-    let lastError: Error | undefined;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        return await fn();
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-
-        if (attempt < maxRetries) {
-          const delay = baseDelay * 2 ** attempt;
-          this.logger.warn(
-            { attempt, maxRetries, delay, error: lastError },
-            `Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms`
-          );
-          await new Promise((resolve) => setTimeout(resolve, delay));
-        }
-      }
-    }
-
-    this.logger.error({ maxRetries, error: lastError }, 'All retry attempts failed');
-    throw lastError || new Error('Operation failed after retries');
-  }
 }

@@ -57,4 +57,21 @@ export const zh: EmailStrings = {
     textBody: '点击下面的链接，确认 {app} 可以通过这个地址联系到你。该链接只能使用一次。',
     textIgnore: '不是你注册的 {app}？可以放心忽略这封邮件。',
   },
+  activationNudge: {
+    subject: '在 {app} 中添加你的第一个账户',
+    preheader: '连接交易所、钱包或银行文件，{app} 就会开始追踪。',
+    greeting: '{name}，你好：',
+    greetingNoName: '你好：',
+    headline: '添加你的第一个账户',
+    body: '你几天前注册了 {app}，但还没有添加任何内容。连接交易所或钱包、导入银行对账单，或手动输入余额，之后 {app} 会持续更新你的净资产和收益。',
+    button: '打开 {app}',
+    once: '这是我们唯一一次提醒。',
+    footer:
+      '你收到这封邮件（仅此一次），是因为你注册了 {appLink}。{unsubscribeLink}：一键操作，无需登录。我们如何处理你的数据：{privacyLink}。',
+    unsubscribe: '不再接收此类邮件',
+    privacy: '隐私政策',
+    textOpen: '打开 {app}：{url}',
+    textUnsubscribe: '不再接收此类邮件：{url}',
+    textPrivacy: '隐私政策：{url}',
+  },
 };

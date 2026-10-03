@@ -67,19 +67,3 @@ export const UpsertHoldingApyConfigDto = z
       });
     }
   });
-
-export type UpsertHoldingApyConfigInput = z.infer<typeof UpsertHoldingApyConfigDto>;
-
-export type HoldingApyConfigResponse = {
-  id: string;
-  holdingId: string;
-  annualRatePct: string;
-  payoutFrequency: string;
-  payoutDayOfWeek: number | null;
-  payoutDayOfMonth: number | null;
-  payoutMonth: number | null;
-  lastPayoutAt: string | null;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-};

@@ -17,7 +17,7 @@ export interface ScreenshotParseJob extends UserJobBase {
   accountId?: string;
 }
 
-export const screenshotParseSchema: z.ZodType<ScreenshotParseJob> = z.object({
+const screenshotParseSchema: z.ZodType<ScreenshotParseJob> = z.object({
   userId: z.string().min(1),
   requestId: z.string().min(1),
   r2Keys: z.array(z.string().min(1)).min(1).max(10),

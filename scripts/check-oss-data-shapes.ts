@@ -77,7 +77,8 @@ import {
  * {@link EXIT_OK}, because an instrument that cannot demonstrate it still works
  * has not checked anything.
  */
-export const EXIT_SELF_TEST_FAILED = 10;
+const EXIT_SELF_TEST_FAILED = 10;
+
 export { EXIT_OK, EXIT_REFUSED, EXIT_UNKNOWN };
 
 /**
@@ -427,6 +428,16 @@ export const ASSERTED_NOT_PRODUCTION: ReadonlySet<string> = new Set(
     // drizzle-kit's own snapshot id, written by the generator into the
     // migration journal. It identifies a schema snapshot, not a row.
     'f37aaae9-601c-46ab-968d-b01da1842f50',
+    // RFC 4122's DNS and URL namespaces, and four version-5 UUIDs computed
+    // from them over names the test spells out (`deterministic-id.test.ts`).
+    // The first is the vector Python's `uuid` documentation prints. A hash has
+    // no structure to give it, and each is reproducible from the test alone.
+    '6ba7b810-9dad-11d1-80b4-00c04fd430c8',
+    '6ba7b811-9dad-11d1-80b4-00c04fd430c8',
+    '886313e1-3b8a-5372-9b90-0c9aee199e5d',
+    '44c5c88c-c258-50bf-880a-dc0e40bbe296',
+    '4ebd0208-8328-5d69-8c44-ec50939c0967',
+    '77ae2dd3-8047-52c9-a718-905c83278e3e',
   ].map((v) => v.toLowerCase())
 );
 
@@ -459,7 +470,7 @@ export const ASSERTED_NOT_PRODUCTION: ReadonlySet<string> = new Set(
  * while a leaked value appears in the migration or repair script it came from.
  * `git log --all -S<value> --name-only` separates the two in one step.
  */
-export const IDENTIFIER_BY_DESIGN_PATHS: readonly string[] = [
+const IDENTIFIER_BY_DESIGN_PATHS: readonly string[] = [
   'packages/clients/providers/src/providers/coingecko/well-known-ids.ts',
   'packages/clients/providers/tests/providers/coingecko-wellknown-positive-match.test.ts',
   'packages/clients/providers/tests/providers/coingecko-contract-guard.test.ts',
@@ -540,9 +551,9 @@ export const RULES: readonly Rule[] = [
   },
 ];
 
-export const RULE_COUNT = RULES.length;
+const RULE_COUNT = RULES.length;
 
-export interface Finding {
+interface Finding {
   readonly path: string;
   readonly line: number;
   readonly rule: string;

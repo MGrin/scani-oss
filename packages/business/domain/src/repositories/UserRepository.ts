@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewUser, User } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, eq, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, isNull, lt, lte, notExists, or } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { Service } from 'typedi';
 
@@ -22,17 +22,34 @@ export interface AlertRecipient {
   unsubscribeToken: string;
 }
 
+/** One account the activation nudge may be sent to (SC-1503). */
+export interface NudgeRecipient {
+  id: string;
+  email: string;
+  name: string;
+  /** NULL for every account that signed up before it was recorded. */
+  language: string | null;
+  unsubscribeToken: string;
+}
+
 /**
- * The two mail streams a reader can opt out of, and the column that records
- * each. One token authenticates both; this is the only thing that differs
- * between them (SC-459).
+ * The mail streams a reader can opt out of, and the column that records each.
+ * One token authenticates all of them; this is the only thing that differs
+ * between them (SC-459, SC-1503).
  */
 export const EMAIL_STREAMS = {
   digest: 'digest',
   alerts: 'alerts',
+  onboarding: 'onboarding',
 } as const;
 
 export type EmailStream = (typeof EMAIL_STREAMS)[keyof typeof EMAIL_STREAMS];
+
+const OPT_OUT_COLUMN = {
+  [EMAIL_STREAMS.digest]: 'digestOptOutAt',
+  [EMAIL_STREAMS.alerts]: 'alertsOptOutAt',
+  [EMAIL_STREAMS.onboarding]: 'onboardingOptOutAt',
+} as const satisfies Record<EmailStream, keyof typeof schema.users.$inferSelect>;
 
 @Service()
 export class UserRepository extends BaseRepository<User, NewUser> {
@@ -148,12 +165,12 @@ export class UserRepository extends BaseRepository<User, NewUser> {
     at: Date = new Date(),
     transaction?: DatabaseTransaction
   ): Promise<boolean> {
-    const column: PgColumn =
-      stream === EMAIL_STREAMS.alerts ? schema.users.alertsOptOutAt : schema.users.digestOptOutAt;
+    const key = OPT_OUT_COLUMN[stream];
+    const column: PgColumn = schema.users[key];
     const db = this.getDb(transaction);
     await db
       .update(schema.users)
-      .set(stream === EMAIL_STREAMS.alerts ? { alertsOptOutAt: at } : { digestOptOutAt: at })
+      .set({ [key]: at })
       .where(and(eq(schema.users.emailUnsubscribeToken, token), isNull(column)));
     const found = await db
       .select({ id: schema.users.id })
@@ -161,6 +178,80 @@ export class UserRepository extends BaseRepository<User, NewUser> {
       .where(eq(schema.users.emailUnsubscribeToken, token))
       .limit(1);
     return found.length > 0;
+  }
+
+  /**
+   * Accounts the activation nudge may be sent to (SC-1503): verified, signed
+   * up on or before `signedUpBefore`, never nudged, not opted out, and with
+   * nothing added — no account and no holding.
+   */
+  async findActivationNudgeRecipients(
+    signedUpBefore: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<NudgeRecipient[]> {
+    const db = this.getDb(transaction);
+    return db
+      .select({
+        id: schema.users.id,
+        email: schema.users.email,
+        name: schema.users.name,
+        language: schema.users.language,
+        unsubscribeToken: schema.users.emailUnsubscribeToken,
+      })
+      .from(schema.users)
+      .where(
+        and(
+          eq(schema.users.emailVerified, true),
+          lte(schema.users.createdAt, signedUpBefore),
+          isNull(schema.users.activationNudgeSentAt),
+          isNull(schema.users.onboardingOptOutAt),
+          notExists(
+            db
+              .select({ id: schema.accounts.id })
+              .from(schema.accounts)
+              .where(eq(schema.accounts.userId, schema.users.id))
+          ),
+          notExists(
+            db
+              .select({ id: schema.holdings.id })
+              .from(schema.holdings)
+              .where(eq(schema.holdings.userId, schema.users.id))
+          )
+        )
+      );
+  }
+
+  /**
+   * Take the one nudge this account will ever get. True only for the caller
+   * that set the column: `IS NULL` in the WHERE makes a second run, or a
+   * BullMQ retry, match nothing.
+   */
+  async claimActivationNudge(
+    userId: string,
+    at: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<boolean> {
+    const claimed = await this.getDb(transaction)
+      .update(schema.users)
+      .set({ activationNudgeSentAt: at })
+      .where(and(eq(schema.users.id, userId), isNull(schema.users.activationNudgeSentAt)))
+      .returning({ id: schema.users.id });
+    return claimed.length > 0;
+  }
+
+  /**
+   * Give a claim back after the send failed, so tomorrow's run tries again.
+   * Only the claim this caller made: a later one is somebody else's.
+   */
+  async releaseActivationNudge(
+    userId: string,
+    at: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<void> {
+    await this.getDb(transaction)
+      .update(schema.users)
+      .set({ activationNudgeSentAt: null })
+      .where(and(eq(schema.users.id, userId), eq(schema.users.activationNudgeSentAt, at)));
   }
 
   /**

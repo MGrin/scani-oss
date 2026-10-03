@@ -14,7 +14,6 @@ export * from './format/date';
 export * from './format/locale';
 export * from './format/precision';
 export {
-  type AccountLabelParts,
   accountLabel,
   accountLabelParts,
 } from './lib/account-label';
@@ -29,18 +28,15 @@ export {
   type BalanceGapAnswer,
   type BalanceGapSuppression,
   type BalanceGapSuppressionCounts,
-  isBalanceGapAnswer,
   isLedgerWritingAnswer,
 } from './lib/balance-gap';
 export {
   counterpartyFromPayload,
-  type ExplorerLinks,
   explorerLinks,
   normalizeCounterparty,
   txHashFromPayload,
 } from './lib/block-explorer';
 export {
-  type ObservedAffordability,
   observedAffordability,
   observedRunwayMonths,
   projectedShareOfObserved,
@@ -49,7 +45,6 @@ export {
 export {
   HOLDING_MOVEMENT_DIRECTIONS,
   type HoldingMovementDirection,
-  isHoldingMovementDirection,
   movementOutflowRefusesInternal,
 } from './lib/holding-movement';
 export {
@@ -59,23 +54,16 @@ export {
   manualEditNeedsCause,
 } from './lib/manual-balance-edit';
 export {
-  type MoneyAttributionInput,
   type MoneyAttributionRates,
-  type MoneySplit,
   splitChangeIntoMoney,
 } from './lib/returns-money';
+export { UPLOADED_FILE_MAX_BYTES } from './lib/uploaded-file';
 export * from './token-validatiion';
 export * from './usage/outcomes';
 export { safeExternalUrl } from './utils/safe-external-url';
-export { safeRedirectPath, safeReturnTarget } from './utils/safe-redirect';
-export {
-  isIgnoredSentryMessage,
-  isThirdPartyOnlyStack,
-  SENTRY_IGNORED_ERROR_PATTERNS,
-} from './utils/sentry-noise';
+export { safeRedirectPath } from './utils/safe-redirect';
 export {
   scrubSentryBreadcrumb,
   scrubSentryEvent,
-  scrubString,
 } from './utils/sentry-scrubber';
 export * from './validators';

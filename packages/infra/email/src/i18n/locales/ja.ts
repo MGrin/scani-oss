@@ -60,4 +60,21 @@ export const ja: EmailStrings = {
       '下のリンクをクリックして、{app} がこのアドレスで連絡できることをご確認ください。このリンクは一度だけ有効です。',
     textIgnore: '{app} に登録した覚えがない場合は、このメールを破棄していただいて問題ありません。',
   },
+  activationNudge: {
+    subject: '{app} に最初の口座を追加しましょう',
+    preheader: '取引所、ウォレット、銀行ファイルをつなぐと、{app} が記録を始めます。',
+    greeting: '{name} さん',
+    greetingNoName: 'こんにちは',
+    headline: '最初の口座を追加しましょう',
+    body: '数日前に {app} に登録されましたが、まだ何も追加されていません。取引所やウォレットを接続する、銀行の明細を取り込む、残高を入力する、のいずれかを行えば、その後は {app} が純資産とリターンを最新の状態に保ちます。',
+    button: '{app} を開く',
+    once: 'このお知らせをお送りするのは今回限りです。',
+    footer:
+      '{appLink} にご登録いただいたため、このメールを一度だけお送りしています。{unsubscribeLink}（ワンクリック、ログイン不要）。データの取り扱いについて：{privacyLink}。',
+    unsubscribe: 'このメールの配信を停止',
+    privacy: 'プライバシーポリシー',
+    textOpen: '{app} を開く: {url}',
+    textUnsubscribe: 'このメールの配信を停止: {url}',
+    textPrivacy: 'プライバシーポリシー: {url}',
+  },
 };

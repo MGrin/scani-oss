@@ -14,21 +14,22 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
-import { credentialRejection } from '../../core/errors';
+import { credentialRejection, ProviderError } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
   ProviderContext,
   TransactionEvent,
+  TransactionFetchContext,
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
+import { PageCapWatch } from '../../core/utils/page-cap';
 import { splitConcatenatedPair } from '../../core/utils/symbol-splitter';
 import { slidingWindows } from '../../core/utils/time-windows';
+import { WalkFailureWatch } from '../../core/utils/walk-failures';
 import { mexcManifest } from './manifest';
-
-export { mexcManifest } from './manifest';
 
 const MEXC_INSTITUTION_CODE = 'mexc';
 const RECV_WINDOW = 5000;
@@ -51,6 +52,19 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 const FIVE_YEARS_MS = 5 * 365 * 24 * 60 * 60 * 1000;
 const MAX_TRADE_PAGES_PER_WINDOW = 200;
+
+// 30014 "invalid symbol" — https://mexcdevelop.github.io/apidocs/spot_v3_en/ (error code table)
+const INVALID_SYMBOL_CODE = 30014;
+
+function isInvalidSymbol(err: unknown): boolean {
+  if (!(err instanceof ProviderError) || !err.body) return false;
+  try {
+    const { code } = JSON.parse(err.body) as { code?: unknown };
+    return code === INVALID_SYMBOL_CODE;
+  } catch {
+    return false;
+  }
+}
 
 interface MexcBalance {
   asset: string;
@@ -162,32 +176,48 @@ export class MexcProvider
     return out;
   }
 
-  async fetchTransactions(
-    ctx: WithUserCreds<ProviderContext> & {
-      institutionCode: string;
-      since?: Date;
-      until?: Date;
-    }
-  ): Promise<TransactionEvent[]> {
+  async fetchTransactions(ctx: TransactionFetchContext): Promise<TransactionEvent[]> {
     const creds = await this.resolveApiCreds(ctx);
     if (!creds) return [];
 
     const until = ctx.until ?? new Date();
     const since = ctx.since ?? new Date(until.getTime() - FIVE_YEARS_MS);
+    const failures = new WalkFailureWatch(this.providerKey, this.logger);
+    const capped = new PageCapWatch();
 
-    const balances = await this.fetchSpot(creds).catch(() => []);
-    const heldAssets = new Set<string>();
+    const balances = await failures.attempt(
+      'the balance read',
+      () => this.fetchSpot(creds),
+      [] as MexcBalance[]
+    );
+    const assets = new Set<string>();
     for (const b of balances) {
       const total = new Decimal(b.free || '0').plus(b.locked || '0');
-      if (total.gt(0)) heldAssets.add(b.asset.toUpperCase());
+      if (total.gt(0)) assets.add(b.asset.toUpperCase());
     }
+
+    // Deposits and withdrawals are walked across every coin before any
+    // trade: they are the feeds MEXC lists without a symbol, so they are
+    // what names an asset that has since been sold to zero (SC-1480).
+    const deposits = await failures.attempt(
+      'the deposit walk',
+      () => this.fetchAllDeposits(creds, since, until, capped),
+      [] as MexcDeposit[]
+    );
+    const withdraws = await failures.attempt(
+      'the withdrawal walk',
+      () => this.fetchAllWithdraws(creds, since, until, capped),
+      [] as MexcWithdraw[]
+    );
+    for (const row of [...deposits, ...withdraws]) assets.add(row.coin.toUpperCase());
 
     const events: TransactionEvent[] = [];
 
-    const symbols = this.buildCandidateSymbols(heldAssets);
-    for (const symbol of symbols) {
-      const trades = await this.fetchAllTradesForSymbol(creds, symbol, since, until).catch(
-        () => []
+    for (const symbol of this.buildCandidateSymbols(assets)) {
+      const trades = await failures.attempt(
+        `the ${symbol} trades walk`,
+        () => this.fetchAllTradesForSymbol(creds, symbol, since, until),
+        [] as MexcTrade[]
       );
       for (const trade of trades) {
         const event = this.tradeToEvent(trade);
@@ -195,13 +225,11 @@ export class MexcProvider
       }
     }
 
-    for (const asset of heldAssets) {
-      const deposits = await this.fetchAllDeposits(creds, asset, since, until).catch(() => []);
-      for (const dep of deposits) events.push(this.depositToEvent(dep));
-      const withdraws = await this.fetchAllWithdraws(creds, asset, since, until).catch(() => []);
-      for (const w of withdraws) events.push(this.withdrawToEvent(w));
-    }
+    for (const dep of deposits) events.push(this.depositToEvent(dep));
+    for (const w of withdraws) events.push(this.withdrawToEvent(w));
 
+    capped.retract(ctx, this.providerKey);
+    failures.retract(ctx);
     return events;
   }
 
@@ -236,10 +264,10 @@ export class MexcProvider
     return data.balances ?? [];
   }
 
-  private buildCandidateSymbols(heldAssets: ReadonlySet<string>): string[] {
+  private buildCandidateSymbols(assets: ReadonlySet<string>): string[] {
     const quoteSet = new Set<string>(TX_QUOTE_ASSETS);
     const out: string[] = [];
-    for (const base of heldAssets) {
+    for (const base of assets) {
       for (const quote of TX_QUOTE_ASSETS) {
         if (base === quote) continue;
         out.push(`${base}${quote}`);
@@ -249,9 +277,9 @@ export class MexcProvider
     // Reverse pairs where the held asset is the quote leg (user holds
     // USDT — try ETHUSDT, BTCUSDT). Bounded by the same cap so wide
     // stablecoin holdings don't blow it out.
-    for (const quote of heldAssets) {
+    for (const quote of assets) {
       if (!quoteSet.has(quote)) continue;
-      for (const base of heldAssets) {
+      for (const base of assets) {
         if (base === quote) continue;
         const sym = `${base}${quote}`;
         if (out.includes(sym)) continue;
@@ -280,10 +308,18 @@ export class MexcProvider
         };
         if (fromId !== undefined) params.fromId = fromId;
         const query = this.signedQueryString(creds.apiSecret, params);
-        const trades = await this.signedJson<MexcTrade[]>(
-          { method: 'GET', url: '/api/v3/myTrades', query },
-          creds
-        );
+        let trades: MexcTrade[];
+        try {
+          trades = await this.signedJson<MexcTrade[]>(
+            { method: 'GET', url: '/api/v3/myTrades', query },
+            creds
+          );
+        } catch (err) {
+          // A candidate pair MEXC does not list is an absent market, not a
+          // failed walk: the candidates are a cross-product.
+          if (isInvalidSymbol(err)) return [];
+          throw err;
+        }
         if (!Array.isArray(trades) || trades.length === 0) break;
         all.push(...trades);
         if (trades.length < TRADES_PAGE_SIZE) break;
@@ -297,20 +333,18 @@ export class MexcProvider
     return all;
   }
 
-  // MEXC's deposit/withdraw endpoints don't expose an explicit cursor:
-  // we cap each window at one page and trust the 90-day limit + 1000-row
-  // ceiling. If a user exceeds that we'd silently truncate — acceptable
-  // until we see one in the wild.
+  // MEXC's deposit/withdraw endpoints don't expose an explicit cursor, so
+  // each 90-day window is one page of at most 1000 rows. A full page may
+  // have stopped short of the window's end, and says so through `capped`.
   private async fetchAllDeposits(
     creds: ApiKeyCreds,
-    asset: string,
     since: Date,
-    until: Date
+    until: Date,
+    capped: PageCapWatch
   ): Promise<MexcDeposit[]> {
     const out: MexcDeposit[] = [];
     for (const window of slidingWindows(since, until, NINETY_DAYS_MS)) {
       const query = this.signedQueryString(creds.apiSecret, {
-        coin: asset,
         startTime: window.start.getTime(),
         endTime: window.end.getTime(),
         limit: CAPITAL_PAGE_SIZE,
@@ -319,21 +353,28 @@ export class MexcProvider
         { method: 'GET', url: '/api/v3/capital/deposit/hisrec', query },
         creds
       );
-      if (Array.isArray(page$)) out.push(...page$);
+      if (!Array.isArray(page$)) continue;
+      out.push(...page$);
+      if (page$.length >= CAPITAL_PAGE_SIZE) {
+        capped.note({
+          walk: { kind: 'feed', path: '/api/v3/capital/deposit/hisrec' },
+          pages: 1,
+          rows: page$.length,
+        });
+      }
     }
     return out;
   }
 
   private async fetchAllWithdraws(
     creds: ApiKeyCreds,
-    asset: string,
     since: Date,
-    until: Date
+    until: Date,
+    capped: PageCapWatch
   ): Promise<MexcWithdraw[]> {
     const out: MexcWithdraw[] = [];
     for (const window of slidingWindows(since, until, NINETY_DAYS_MS)) {
       const query = this.signedQueryString(creds.apiSecret, {
-        coin: asset,
         startTime: window.start.getTime(),
         endTime: window.end.getTime(),
         limit: CAPITAL_PAGE_SIZE,
@@ -342,7 +383,15 @@ export class MexcProvider
         { method: 'GET', url: '/api/v3/capital/withdraw/history', query },
         creds
       );
-      if (Array.isArray(page$)) out.push(...page$);
+      if (!Array.isArray(page$)) continue;
+      out.push(...page$);
+      if (page$.length >= CAPITAL_PAGE_SIZE) {
+        capped.note({
+          walk: { kind: 'feed', path: '/api/v3/capital/withdraw/history' },
+          pages: 1,
+          rows: page$.length,
+        });
+      }
     }
     return out;
   }

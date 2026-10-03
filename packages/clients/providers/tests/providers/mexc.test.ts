@@ -143,7 +143,8 @@ describe('MexcProvider.fetchTransactions', () => {
         const coin = u.match(/[?&]coin=([^&]+)/)?.[1] ?? '';
         const startTime = Number(u.match(/[?&]startTime=(\d+)/)?.[1] ?? '0');
         const endTime = Number(u.match(/[?&]endTime=(\d+)/)?.[1] ?? '0');
-        if (coin !== 'BTC') return new Response('[]', { status: 200 });
+        // No `coin` means every coin, which is how the provider asks (SC-1480).
+        if (coin !== '' && coin !== 'BTC') return new Response('[]', { status: 200 });
         const dep = {
           amount: '0.1',
           coin: 'BTC',
@@ -159,7 +160,7 @@ describe('MexcProvider.fetchTransactions', () => {
         const coin = u.match(/[?&]coin=([^&]+)/)?.[1] ?? '';
         const startTime = Number(u.match(/[?&]startTime=(\d+)/)?.[1] ?? '0');
         const endTime = Number(u.match(/[?&]endTime=(\d+)/)?.[1] ?? '0');
-        if (coin !== 'USDT') return new Response('[]', { status: 200 });
+        if (coin !== '' && coin !== 'USDT') return new Response('[]', { status: 200 });
         const wd = {
           id: 'w1',
           amount: '50',
@@ -353,15 +354,15 @@ describe('MexcProvider.fetchTransactions', () => {
     }) as unknown as typeof fetch;
 
     try {
-      // 200-day range → ⌈200/90⌉ = 3 windows per asset (90 + 90 + 20).
+      // 200-day range → ⌈200/90⌉ = 3 windows (90 + 90 + 20).
       const until = new Date('2024-08-01T00:00:00Z');
       const since = new Date(until.getTime() - 200 * 24 * 60 * 60 * 1000);
       await p.fetchTransactions({ ...ctx, since, until } as never);
 
-      // Single held asset (BTC) → 3 deposit windows + 3 withdraw windows.
+      // One walk across every coin → 3 deposit windows + 3 withdraw windows.
       expect(depositWindows.length).toBe(3);
       expect(withdrawWindows.length).toBe(3);
-      expect(depositWindows[0]?.coin).toBe('BTC');
+      expect(depositWindows[0]?.coin).toBe('');
       expect(depositWindows[0]?.startTime).toBe(since.getTime());
       expect(depositWindows[2]?.endTime).toBe(until.getTime());
       expect((depositWindows[0]?.endTime ?? 0) - (depositWindows[0]?.startTime ?? 0)).toBe(
@@ -417,4 +418,95 @@ describe('MexcProvider.fetchTransactions', () => {
     },
     60_000
   );
+});
+
+/**
+ * SC-1480 / SC-1481. Trade symbols used to come from CURRENT balances only, so
+ * an asset deposited, traded and sold to zero never had its trades asked for;
+ * and every sub-walk was `.catch(() => [])` with nothing said.
+ */
+describe('MexcProvider.fetchTransactions — exited assets and failed walks', () => {
+  const since = new Date('2023-10-01T00:00:00Z');
+  const until = new Date('2024-01-01T00:00:00Z');
+  const ethSell = {
+    symbol: 'ETHUSDT',
+    id: '7',
+    orderId: '1',
+    price: '2000',
+    qty: '1',
+    quoteQty: '2000',
+    commission: '0',
+    commissionAsset: 'USDT',
+    time: 1_700_000_000_000,
+    isBuyer: false,
+    isMaker: false,
+  };
+
+  function mockMexc(withdrawals: () => Response): string[] {
+    const tradeSymbols: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      const u = String(url);
+      if (u.includes('/api/v3/account')) {
+        return Response.json({ balances: [{ asset: 'USDT', free: '2000', locked: '0' }] });
+      }
+      if (u.includes('/api/v3/capital/deposit/hisrec')) return Response.json([]);
+      if (u.includes('/api/v3/capital/withdraw/history')) return withdrawals();
+      if (u.includes('/api/v3/myTrades')) {
+        const symbol = u.match(/[?&]symbol=([^&]+)/)?.[1] ?? '';
+        const start = Number(u.match(/[?&]startTime=(\d+)/)?.[1] ?? '0');
+        const end = Number(u.match(/[?&]endTime=(\d+)/)?.[1] ?? '0');
+        tradeSymbols.push(symbol);
+        if (symbol === 'ETHUSDT') {
+          return Response.json(ethSell.time >= start && ethSell.time <= end ? [ethSell] : []);
+        }
+        // Every other candidate is a pair MEXC does not list.
+        return Response.json({ code: 30014, msg: 'invalid symbol' }, { status: 400 });
+      }
+      throw new Error(`Unexpected URL: ${u}`);
+    }) as unknown as typeof fetch;
+    return tradeSymbols;
+  }
+
+  test('an asset seen only in withdrawals has its trades fetched, and absent pairs retract nothing', async () => {
+    const originalFetch = globalThis.fetch;
+    const tradeSymbols = mockMexc(() =>
+      Response.json([
+        { id: 'w1', amount: '1', coin: 'ETH', status: 6, applyTime: 1_699_000_000_000 },
+      ])
+    );
+    const retractions: unknown[] = [];
+    try {
+      const events = await new MexcProvider(passthroughLimiter()).fetchTransactions({
+        ...ctx,
+        since,
+        until,
+        retractHistoryClaim: (r: unknown) => retractions.push(r),
+      } as never);
+      expect(tradeSymbols).toContain('ETHUSDT');
+      expect(events.map((e) => e.externalId)).toContain('ETHUSDT-7');
+      expect(retractions).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('a failed withdrawal walk retracts the history claim', async () => {
+    const originalFetch = globalThis.fetch;
+    mockMexc(() =>
+      Response.json({ code: 700003, msg: 'Timestamp outside recvWindow' }, { status: 400 })
+    );
+    const retractions: string[] = [];
+    try {
+      await new MexcProvider(passthroughLimiter()).fetchTransactions({
+        ...ctx,
+        since,
+        until,
+        retractHistoryClaim: (r: string) => retractions.push(r),
+      } as never);
+      expect(retractions).toHaveLength(1);
+      expect(retractions[0]).toContain('mexc: the withdrawal walk failed');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

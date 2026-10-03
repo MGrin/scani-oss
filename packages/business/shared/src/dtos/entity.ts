@@ -13,7 +13,7 @@ import { z } from 'zod';
 /** The literal id of the bucket holding every account nobody has classified. */
 export const UNASSIGNED_ENTITY = 'unassigned';
 
-export const entityValueSchema = z.object({
+const entityValueSchema = z.object({
   /** An entity's id, or the literal `'unassigned'`. */
   entityId: z.string(),
   /** Decimal string, base currency. */
@@ -22,8 +22,6 @@ export const entityValueSchema = z.object({
   /** Symbols inside this boundary we could not price — unknown, not zero. */
   unpricedSymbols: z.array(z.string()),
 });
-
-export type EntityValueDto = z.infer<typeof entityValueSchema>;
 
 /**
  * Per-boundary totals and the combined view, in one response.
@@ -41,5 +39,3 @@ export const entityValuationSchema = z.object({
   entities: z.array(entityValueSchema),
   unassigned: entityValueSchema,
 });
-
-export type EntityValuationDto = z.infer<typeof entityValuationSchema>;

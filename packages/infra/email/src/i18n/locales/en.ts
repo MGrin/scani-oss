@@ -61,4 +61,21 @@ export const en: EmailStrings = {
       'Click the link below to confirm {app} can reach you at this address. The link works once.',
     textIgnore: "Didn't sign up for {app}? You can ignore this email safely.",
   },
+  activationNudge: {
+    subject: 'Add your first account to {app}',
+    preheader: 'Connect an exchange, a wallet or a bank file and {app} starts tracking.',
+    greeting: 'Hi {name},',
+    greetingNoName: 'Hi,',
+    headline: 'Add your first account',
+    body: "You signed up for {app} a few days ago and haven't added anything yet. Connect an exchange or a wallet, import a bank statement, or type in a balance, and {app} keeps your net worth and returns up to date from there.",
+    button: 'Open {app}',
+    once: "This is the only reminder we'll send.",
+    footer:
+      'You get this once because you signed up for {appLink}. {unsubscribeLink}, one click, no sign-in. How we handle your data: {privacyLink}.',
+    unsubscribe: 'Stop these emails',
+    privacy: 'privacy policy',
+    textOpen: 'Open {app}: {url}',
+    textUnsubscribe: 'Stop these emails: {url}',
+    textPrivacy: 'Privacy policy: {url}',
+  },
 };

@@ -43,6 +43,7 @@ import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from
 import Container, { Service } from 'typedi';
 import {
   arrivalMetadata,
+  readAdoptedBalanceEdit,
   readCreatedDestination,
   readMovedDestinationAnchor,
 } from '../lib/created-destination';
@@ -75,6 +76,7 @@ import {
 } from '../lib/transfer-unlink';
 import { upstreamEventKey } from '../lib/upstream-event';
 import { HoldingCoverageRepository } from '../repositories/HoldingCoverageRepository';
+import { HoldingTransactionRepository } from '../repositories/HoldingTransactionRepository';
 // A service reaching for a use case, which nothing else in this layer does.
 // The alternative was a second writer of `holdings.balance` for the undo in
 // `undoDeclaredTransfer`, and SC-245 is what that costs. Resolved at the CALL
@@ -87,10 +89,10 @@ import {
   BalanceSyncOwnershipService,
   type SyncOwnableAccount,
 } from './accounts/BalanceSyncOwnershipService';
-import { type BalanceSyncSource, MANUAL_HOLDING_SOURCE } from './holdings/balance-sync-sources';
 import { HOLDING_OPEN_OBSERVATION_SOURCE, HoldingService } from './holdings/HoldingService';
 import { manualEditFeeExternalId } from './holdings/ManualBalanceEditService';
 import { PriceGraphService } from './pricing/PriceGraphService';
+import { adoptTypedDeposit, anchorIsUnobserved, openingOf } from './transfer-arrival';
 
 /**
  * Why an answer was refused, in terms the API can turn into the right status.
@@ -137,7 +139,7 @@ export type SplitResolveResult =
 export type UnlinkPairResult =
   | { ok: true; unlinked: string[] }
   | { ok: false; reason: 'gone' }
-  | { ok: false; reason: 'reviewed' };
+  | { ok: false; reason: 'reviewed' | 'mirror' };
 
 /**
  * Withdrawing a pairing the system has since PROVEN false (SC-378).
@@ -815,6 +817,7 @@ export class TransferReviewService {
           updatedAt: sql`now()`,
         })
         .where(eq(schema.holdingTransactions.id, outflow.id));
+      if (groupId) await relabelLegs(tx, userId, [outflow.id]);
 
       return { ok: true } as const;
     };
@@ -1098,6 +1101,7 @@ export class TransferReviewService {
           updatedAt: sql`now()`,
         })
         .where(eq(schema.holdingTransactions.id, outflow.id));
+      if (groupId) await relabelLegs(tx, userId, [outflow.id]);
 
       return { ok: true } as const;
     });
@@ -1310,7 +1314,7 @@ export class TransferReviewService {
       );
 
       if (row.transferGroupId) {
-        await tx
+        const unpaired = await tx
           .update(schema.holdingTransactions)
           .set({ transferGroupId: null, updatedAt: sql`now()` })
           .where(
@@ -1318,7 +1322,13 @@ export class TransferReviewService {
               eq(schema.holdingTransactions.userId, userId),
               eq(schema.holdingTransactions.transferGroupId, row.transferGroupId)
             )
-          );
+          )
+          .returning({ id: schema.holdingTransactions.id });
+        await relabelLegs(
+          tx,
+          userId,
+          unpaired.map((r) => r.id)
+        );
       }
 
       return true;
@@ -1971,6 +1981,22 @@ export class TransferReviewService {
       if (readMovedDestinationAnchor(row.sourceMetadata) === 'moved') {
         restore.push({ holdingId: row.holdingId, quantity: row.quantity });
       }
+      const adoptedEdit = readAdoptedBalanceEdit(row.sourceMetadata);
+      if (adoptedEdit) {
+        await tx.insert(schema.holdingTransactions).values({
+          userId,
+          holdingId: adoptedEdit.holdingId,
+          tokenId: adoptedEdit.tokenId,
+          kind: adoptedEdit.kind as HoldingTransaction['kind'],
+          quantity: adoptedEdit.quantity,
+          occurredAt: new Date(adoptedEdit.occurredAt),
+          source: adoptedEdit.source,
+          externalId: adoptedEdit.externalId,
+          counterparty: adoptedEdit.counterparty,
+          description: adoptedEdit.description,
+          sourceMetadata: adoptedEdit.sourceMetadata as Record<string, unknown>,
+        });
+      }
     }
     // After the delete loop, so `holdingIsUntouched` above judges the holding
     // as the answer left it — the observation this write records would read as
@@ -2028,7 +2054,7 @@ export class TransferReviewService {
    * transaction hash, could then never be recorded, because `claimInflow` will not take an
    * inflow that already carries a group id.
    *
-   * Two refusals rather than one, because they mean different things:
+   * Three refusals rather than one, because they mean different things:
    *
    * - **`gone`** — no such row, not this user's, or it carries no group id.
    * - **`reviewed`** — some leg of the group was answered by a person. That
@@ -2040,6 +2066,9 @@ export class TransferReviewService {
    *   a same-holding artifact, where no transfer happened for it to be about —
    *   is `withdrawSameHoldingPairing`, and it is gated on that proof rather
    *   than on the caller asking nicely.
+   * - **`mirror`** — the group is a classified row and the mirror leg ingest
+   *   wrote for it (A2). No matcher made it, and unlinking would strand the
+   *   leg and the anchor it moved (`unlinkPairRefusal`).
    *
    * Unlinking books nothing. `isConfirmedDisposal` is `left_control` alone, so
    * a freed outflow with no answer is `hold` — it realizes nothing and instead
@@ -2065,6 +2094,7 @@ export class TransferReviewService {
         .select({
           id: schema.holdingTransactions.id,
           transferReview: schema.holdingTransactions.transferReview,
+          kindOrigin: schema.holdingTransactions.kindOrigin,
         })
         .from(schema.holdingTransactions)
         .where(
@@ -2078,7 +2108,7 @@ export class TransferReviewService {
       const refusal = unlinkPairRefusal(legs);
       if (refusal) return { ok: false, reason: refusal.reason } as const;
 
-      await tx
+      const unpaired = await tx
         .update(schema.holdingTransactions)
         .set({ transferGroupId: null, updatedAt: sql`now()` })
         .where(
@@ -2086,7 +2116,13 @@ export class TransferReviewService {
             eq(schema.holdingTransactions.userId, userId),
             eq(schema.holdingTransactions.transferGroupId, row.transferGroupId)
           )
-        );
+        )
+        .returning({ id: schema.holdingTransactions.id });
+      await relabelLegs(
+        tx,
+        userId,
+        unpaired.map((r) => r.id)
+      );
 
       return { ok: true, unlinked: legs.map((leg) => leg.id) } as const;
     });
@@ -2150,7 +2186,7 @@ export class TransferReviewService {
         await this.clearAnswer(tx, userId, leg.id, 'repair');
       }
 
-      await tx
+      const unpaired = await tx
         .update(schema.holdingTransactions)
         .set({ transferGroupId: null, updatedAt: sql`now()` })
         .where(
@@ -2158,7 +2194,13 @@ export class TransferReviewService {
             eq(schema.holdingTransactions.userId, userId),
             eq(schema.holdingTransactions.transferGroupId, row.transferGroupId)
           )
-        );
+        )
+        .returning({ id: schema.holdingTransactions.id });
+      await relabelLegs(
+        tx,
+        userId,
+        unpaired.map((r) => r.id)
+      );
 
       return {
         ok: true,
@@ -2537,7 +2579,20 @@ async function claimInflow(
     .update(schema.holdingTransactions)
     .set({ transferGroupId: groupId, updatedAt: sql`now()` })
     .where(eq(schema.holdingTransactions.id, inflow.id));
+  await relabelLegs(tx, userId, [inflow.id]);
   return true;
+}
+
+/**
+ * Re-labels the rows whose transfer group a queue write just set or cleared,
+ * since D-5 maps a paired leg to `transfer_out`/`transfer_in` (A2 D-5).
+ */
+function relabelLegs(
+  tx: DatabaseTransaction,
+  userId: string,
+  ids: readonly string[]
+): Promise<number> {
+  return Container.get(HoldingTransactionRepository).relabelEntries(userId, ids, tx);
 }
 
 /**
@@ -2587,7 +2642,7 @@ async function claimInflowSet(
       // A refusal is RETURNED, and the transaction around it commits — so the
       // parts claimed before this one are released here, or they would stay
       // linked to an outflow that was never answered.
-      await tx
+      const released = await tx
         .update(schema.holdingTransactions)
         .set({ transferGroupId: null, updatedAt: sql`now()` })
         .where(
@@ -2595,7 +2650,13 @@ async function claimInflowSet(
             eq(schema.holdingTransactions.userId, userId),
             eq(schema.holdingTransactions.transferGroupId, groupId)
           )
-        );
+        )
+        .returning({ id: schema.holdingTransactions.id });
+      await relabelLegs(
+        tx,
+        userId,
+        released.map((r) => r.id)
+      );
       return { ok: false, reason: 'partner_gone' };
     }
   }
@@ -2749,12 +2810,22 @@ async function writeInflow(
     }
   }
 
-  const movedAnchor =
+  // **A deposit the person already typed is the same money** (SC-1474). Where
+  // they recorded the arrival themselves on this holding, writing another one
+  // beside it counts the move twice. The answer takes their row over instead:
+  // it is removed here and kept whole on the arrival, so a reopen puts it back.
+  // The balance already includes it, so the anchor does not move either.
+  const adopted =
     reused && !opts.observedEvent
+      ? await adoptTypedDeposit(tx, userId, reused.id, arrivalTokenId, quantity, outflow.occurredAt)
+      : null;
+
+  const movedAnchor =
+    reused && !opts.observedEvent && !adopted
       ? await moveUnobservedAnchor(tx, userId, account, reused, quantity)
       : false;
 
-  await tx
+  const arrival = await tx
     .insert(schema.holdingTransactions)
     .values({
       userId,
@@ -2773,6 +2844,7 @@ async function writeInflow(
         createdDestination,
         movedDestinationAnchor: movedAnchor,
         outflowAt: outflow.occurredAt,
+        adoptedBalanceEdit: adopted ?? undefined,
       }),
     })
     // Re-answering after a reopen deletes the previous row first, so a
@@ -2795,7 +2867,13 @@ async function writeInflow(
         transferGroupId: groupId,
         updatedAt: sql`now()`,
       },
-    });
+    })
+    .returning({ id: schema.holdingTransactions.id });
+  await relabelLegs(
+    tx,
+    userId,
+    arrival.map((r) => r.id)
+  );
 
   // This is the one ledger write in the codebase that doesn't go through
   // `HoldingTransactionRepository.bulkUpsert`, so it states the coverage
@@ -2804,13 +2882,6 @@ async function writeInflow(
   await Container.get(HoldingCoverageRepository).syncTxBoundsFromLedger([holdingId], tx);
 
   return { ok: true };
-}
-
-function anchorIsUnobserved(
-  holding: { source: string },
-  accountSyncSource: BalanceSyncSource | null
-): boolean {
-  return holding.source === MANUAL_HOLDING_SOURCE || accountSyncSource === null;
 }
 
 /**
@@ -2869,22 +2940,6 @@ async function moveUnobservedAnchor(
     tx
   );
   return true;
-}
-
-async function openingOf(
-  tx: DatabaseTransaction,
-  account: SyncOwnableAccount,
-  quantity: Decimal
-): Promise<{ balance: string; source: string }> {
-  const syncSource = await Container.get(BalanceSyncOwnershipService).resolveSyncSource(
-    account,
-    tx
-  );
-  if (syncSource) return { balance: '0', source: syncSource };
-  // Nobody syncs this account, so the amount that just moved in is the best
-  // fact anyone has — and a holding at zero holding a 250 deposit would read
-  // as 250 short from the day it was made.
-  return { balance: quantity.toString(), source: 'manual' };
 }
 
 /**

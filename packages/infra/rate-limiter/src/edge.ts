@@ -10,7 +10,29 @@
 import { timingSafeEqual } from 'node:crypto';
 import { loadRateLimiterConfig, type RateLimiterConfig } from './config';
 
-export const EDGE_HEADER = 'x-scani-edge';
+const EDGE_HEADER = 'x-scani-edge';
+
+/**
+ * Off Fly, the reverse proxy in front of an app sets this on its public
+ * listener and overwrites any copy a client sent (SC-1496). Its private
+ * listener does not.
+ */
+const PUBLIC_INGRESS_HEADER = 'x-scani-public-ingress';
+
+/**
+ * Whether a request came in from the internet: Fly's public proxy sets
+ * `fly-client-ip`, our own proxy sets `PUBLIC_INGRESS_HEADER`. Either header
+ * only ever makes a request judged, so a client sending one gains nothing.
+ * Their ABSENCE proves a private caller only where something guarantees to set
+ * one: on Fly, or with `SCANI_INGRESS_MARKED=on`.
+ */
+export function reachedPublicIngress(req: Request): boolean {
+  return req.headers.has('fly-client-ip') || req.headers.has(PUBLIC_INGRESS_HEADER);
+}
+
+export function ingressIsMarked(config: RateLimiterConfig = loadRateLimiterConfig()): boolean {
+  return Boolean(config.FLY_APP_NAME) || config.SCANI_INGRESS_MARKED === 'on';
+}
 
 export function cameThroughEdge(
   req: Request,
@@ -30,16 +52,15 @@ function isHealthPath(pathname: string): boolean {
 
 /**
  * The refusal for a request that bypassed Cloudflare, or null to let it
- * through. Only a request that reached Fly's PUBLIC proxy is judged — Fly adds
- * `fly-client-ip` there and nowhere else — so health checks and
- * private-network callers are never refused.
+ * through. Only a request that reached a public ingress is judged, so health
+ * checks and private-network callers are never refused.
  */
 export function edgeLockRefusal(
   req: Request,
   config: RateLimiterConfig = loadRateLimiterConfig()
 ): Response | null {
   if (config.SCANI_EDGE_LOCK !== 'enforce') return null;
-  if (!req.headers.get('fly-client-ip')) return null;
+  if (!reachedPublicIngress(req)) return null;
   if (isHealthPath(new URL(req.url).pathname)) return null;
   if (cameThroughEdge(req, config)) return null;
   return new Response(JSON.stringify({ error: 'Forbidden' }), {

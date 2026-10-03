@@ -44,8 +44,6 @@ import type {
 } from '../../core/types';
 import { airwallexManifest } from './manifest';
 
-export { airwallexManifest } from './manifest';
-
 const AIRWALLEX_INSTITUTION_CODE = 'airwallex';
 const AIRWALLEX_BASE_URL = 'https://api.airwallex.com';
 const DAY_MS = 24 * 60 * 60 * 1000;

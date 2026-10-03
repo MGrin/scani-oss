@@ -4,6 +4,8 @@ import Container from 'typedi';
 import { DocumentExtractionRepository } from '../../src/repositories/DocumentExtractionRepository';
 import { UserJobRepository } from '../../src/repositories/UserJobRepository';
 import { BalanceGapService } from '../../src/services/holdings/BalanceGapService';
+import { SettlementAnswerReviewService } from '../../src/services/holdings/SettlementAnswerReviewService';
+import { UnpriceableAirdropService } from '../../src/services/holdings/UnpriceableAirdropService';
 import { ReviewFeedService } from '../../src/services/ReviewFeedService';
 import { TransferReviewService } from '../../src/services/TransferReviewService';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
@@ -17,7 +19,9 @@ function makeService(
   extractions: unknown[] = [],
   transfers: { count: number; latestCreatedAt: Date | null } = { count: 0, latestCreatedAt: null },
   deadJobs: unknown[] = [],
-  balanceGaps: { count: number; latestAt: Date | null } = { count: 0, latestAt: null }
+  balanceGaps: { count: number; latestAt: Date | null } = { count: 0, latestAt: null },
+  settledAnswers: unknown[] = [],
+  unpriceableAirdrops: unknown[] = []
 ): ReviewFeedService {
   Container.set(UserJobRepository, {
     findPendingReview: async () => jobs,
@@ -39,6 +43,12 @@ function makeService(
   Container.set(BalanceGapService, {
     pendingSummary: async () => balanceGaps,
   } as unknown as BalanceGapService);
+  Container.set(SettlementAnswerReviewService, {
+    listPending: async () => settledAnswers,
+  } as unknown as SettlementAnswerReviewService);
+  Container.set(UnpriceableAirdropService, {
+    listPending: async () => unpriceableAirdrops,
+  } as unknown as UnpriceableAirdropService);
   const instance = new ReviewFeedService();
   Container.set(ReviewFeedService, instance);
   return instance;
@@ -239,5 +249,128 @@ describe('ReviewFeedService.listPending', () => {
     const svc = makeService([], [], { count: 12, latestCreatedAt: new Date() });
     const [item] = await svc.listPending('user-1');
     expect(item?.amount).toBeUndefined();
+  });
+
+  /**
+   * Answers imported trades now explain (SC-1453) arrive one row per holding,
+   * each weighing its number of answers and opening that holding's sheet on
+   * Review.
+   */
+  test('answers imported trades explain arrive as one row per holding', async () => {
+    const answer = (to: string, answeredAt: string | null) => ({
+      observationId: `obs-${to}`,
+      answeredAt,
+      from: '2026-06-01T00:00:00.000Z',
+      to,
+      amount: '-100',
+      explained: 'full',
+      remainder: '0',
+      movesAnotherHolding: false,
+    });
+    const svc = makeService([], [], undefined, [], undefined, [
+      {
+        holdingId: 'holding-usd',
+        tokenSymbol: 'USD',
+        tokenTypeCode: 'fiat',
+        accountName: 'Broker',
+        answers: [
+          answer('2026-06-26T00:00:00.000Z', '2026-09-01T00:00:00.000Z'),
+          answer('2026-07-19T00:00:00.000Z', null),
+        ],
+      },
+      {
+        holdingId: 'holding-cad',
+        tokenSymbol: 'CAD',
+        tokenTypeCode: 'fiat',
+        accountName: null,
+        answers: [answer('2026-08-05T00:00:00.000Z', '2026-09-02T00:00:00.000Z')],
+      },
+    ]);
+    const items = await svc.listPending('user-1');
+
+    expect(items.map((item) => item.id)).toEqual([
+      'settlement-answers:holding-cad',
+      'settlement-answers:holding-usd',
+    ]);
+    const [cad, usd] = items;
+    expect(usd).toMatchObject({
+      kind: 'settlement-answers',
+      label: { code: 'answersTradesExplain' },
+      detail: {
+        code: 'answersExplainedByTrades',
+        answers: 2,
+        tokenSymbol: 'USD',
+        accountName: 'Broker',
+      },
+      represents: 2,
+      href: '/review/holding-usd',
+      createdAt: new Date('2026-09-01T00:00:00.000Z'),
+    });
+    // No account name is left out rather than sent empty, which the contract refuses.
+    expect(cad?.detail).toEqual({
+      code: 'answersExplainedByTrades',
+      answers: 1,
+      tokenSymbol: 'CAD',
+    });
+    expect(reviewBadgeCount(items)).toBe(3);
+    for (const item of items) expect(reviewItemSchema.safeParse(item).success).toBe(true);
+  });
+});
+
+/**
+ * Wallet tokens nothing can price (SC-1469). The selection itself is
+ * `UnpriceableAirdropService`'s and is tested against the database there; this
+ * pins the row the feed makes of it.
+ */
+describe('ReviewFeedService — unpriceable airdrops', () => {
+  const airdrop = (holdingId: string, arrivedAt: string) => ({
+    holdingId,
+    tokenSymbol: 'DUST',
+    tokenName: 'Dust',
+    tokenTypeCode: 'crypto',
+    accountName: 'MetaMask',
+    balance: '1000',
+    arrivedAt: new Date(arrivedAt),
+  });
+
+  /**
+   * `represents` is 1 however many tokens sit behind the row — the one
+   * aggregated row that does not weigh its queue (SC-860's rule above). Operator
+   * decision 2026-10-01, SC-1469: it is one item, asked once and answered with
+   * one tap, so the badge counts it once. The sentence still carries the count.
+   */
+  test('one row for all of them, weighing one, opening their sheet', async () => {
+    const svc = makeService(
+      [],
+      [],
+      undefined,
+      [],
+      undefined,
+      [],
+      [
+        airdrop('h-1', '2026-09-01T00:00:00.000Z'),
+        airdrop('h-2', '2026-09-20T00:00:00.000Z'),
+        airdrop('h-3', '2026-09-10T00:00:00.000Z'),
+      ]
+    );
+    const items = await svc.listPending('user-1');
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      id: 'unpriceable-airdrops:pending',
+      kind: 'unpriceable-airdrops',
+      label: { code: 'unpriceableAirdrops' },
+      detail: { code: 'unpriceableAirdrops', count: 3 },
+      represents: 1,
+      href: '/review/unpriceable-airdrops',
+      createdAt: new Date('2026-09-20T00:00:00.000Z'),
+    });
+    expect(reviewBadgeCount(items)).toBe(1);
+    expect(reviewItemSchema.safeParse(items[0]).success).toBe(true);
+  });
+
+  test('none means no row at all', async () => {
+    const svc = makeService([]);
+    expect(await svc.listPending('user-1')).toEqual([]);
   });
 });

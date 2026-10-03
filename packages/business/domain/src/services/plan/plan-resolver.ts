@@ -1,7 +1,7 @@
 import { Container, Token } from 'typedi';
 
-export type PlanTier = 'unlimited' | 'paid' | 'free';
-export type PlanGate = 'none' | 'checkout-required';
+type PlanTier = 'unlimited' | 'paid' | 'free';
+type PlanGate = 'none' | 'checkout-required';
 
 export interface PlanAccess {
   tier: PlanTier;

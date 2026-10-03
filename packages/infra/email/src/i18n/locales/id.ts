@@ -71,4 +71,21 @@ export const id: EmailStrings = {
       'Klik tautan di bawah untuk mengonfirmasi bahwa {app} bisa menghubungi Anda di alamat ini. Tautan ini hanya bisa dipakai sekali.',
     textIgnore: 'Bukan Anda yang mendaftar di {app}? Abaikan saja email ini.',
   },
+  activationNudge: {
+    subject: 'Tambahkan akun pertama Anda ke {app}',
+    preheader: 'Hubungkan bursa, dompet, atau file bank, dan {app} mulai melacak.',
+    greeting: 'Halo {name},',
+    greetingNoName: 'Halo,',
+    headline: 'Tambahkan akun pertama Anda',
+    body: 'Anda mendaftar di {app} beberapa hari lalu dan belum menambahkan apa pun. Hubungkan bursa atau dompet, impor rekening koran bank, atau ketik saldo, dan {app} akan menjaga kekayaan bersih dan imbal hasil Anda tetap terbaru sejak itu.',
+    button: 'Buka {app}',
+    once: 'Ini satu-satunya pengingat yang akan kami kirim.',
+    footer:
+      'Anda menerima ini satu kali karena Anda mendaftar di {appLink}. {unsubscribeLink}, satu klik, tanpa masuk. Cara kami menangani data Anda: {privacyLink}.',
+    unsubscribe: 'Berhenti menerima email ini',
+    privacy: 'kebijakan privasi',
+    textOpen: 'Buka {app}: {url}',
+    textUnsubscribe: 'Berhenti menerima email ini: {url}',
+    textPrivacy: 'Kebijakan privasi: {url}',
+  },
 };

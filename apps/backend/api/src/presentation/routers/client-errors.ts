@@ -13,7 +13,9 @@ const logger = createComponentLogger('router:client-errors');
 /**
  * Client-side error reporting endpoint.
  *
- * The V2 ErrorBoundary posts to this on every caught exception. Errors are
+ * The app's error boundaries post here when the build has no browser Sentry
+ * client — a self-hosted build with no DSN; with one, the crash goes to the
+ * frontend Sentry project directly and never reaches this (SC-1492). Errors are
  * logged as structured JSON and sent to Sentry, because Fly keeps the log for
  * minutes and a report nobody saw in time is lost (SC-1333).
  *

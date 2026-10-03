@@ -427,7 +427,7 @@ export async function waitForJob<R = unknown>(
  * the seeded fiat row matches the query exactly, so the first
  * database-sourced hit whose symbol matches case-insensitively is it.
  */
-export async function findDatabaseTokenId(page: Page, symbol: string): Promise<string> {
+async function findDatabaseTokenId(page: Page, symbol: string): Promise<string> {
   const searchInput = encodeURIComponent(JSON.stringify({ query: symbol, limit: 10 }));
   const searchRes = await page.request.get(
     `${API_BASE_URL}/trpc/tokens.search?input=${searchInput}`

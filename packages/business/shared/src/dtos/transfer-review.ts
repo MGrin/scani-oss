@@ -132,7 +132,7 @@ export function answerIsOwedFor(kind: string): boolean {
  * portion of a split may carry either of them. See rule 3 on
  * `transferReviewSplitSchema`.
  */
-export const TRANSFER_LINKING_DECISIONS = ['paired', 'internal'] as const;
+const TRANSFER_LINKING_DECISIONS = ['paired', 'internal'] as const;
 
 export function isLinkingDecision(decision: TransferReviewDecision): boolean {
   return (TRANSFER_LINKING_DECISIONS as readonly string[]).includes(decision);
@@ -304,7 +304,7 @@ export function feeFitsMovement(fee: string | Decimal, movement: string | Decima
   }
 }
 
-export const transferDestinationRelevanceSchema = z.enum(['holds_token', 'same_network', 'other']);
+const transferDestinationRelevanceSchema = z.enum(['holds_token', 'same_network', 'other']);
 
 export type TransferDestinationRelevance = z.infer<typeof transferDestinationRelevanceSchema>;
 
@@ -323,7 +323,7 @@ export const TRANSFER_DESTINATION_RELEVANCE_ORDER: readonly TransferDestinationR
  * are identical, and "6,217.15, manual" versus "1,201.50, imported" is the
  * whole of the distinction.
  */
-export const transferDestinationSchema = z.object({
+const transferDestinationSchema = z.object({
   accountId: z.string().uuid(),
   holdingId: z.string().uuid().nullable(),
   accountName: z.string(),
@@ -364,7 +364,7 @@ export type TransferDestination = z.infer<typeof transferDestinationSchema>;
  * would make the sum the user is being asked to check depend on a price
  * lookup.
  */
-export const transferReviewSplitPortionSchema = z.object({
+const transferReviewSplitPortionSchema = z.object({
   decision: transferReviewDecisionSchema,
   /** Positive Decimal string. Zero is not a portion — it is the portion not
    *  being used, which is expressed by leaving it out. */
@@ -668,7 +668,7 @@ export function answerWithdrawnBy(row: {
  * reader is looking for a row they already decided, and the only action is to
  * reopen it — after which it is a pending row and carries everything again.
  */
-export const answeredTransferReviewSchema = z.object({
+const answeredTransferReviewSchema = z.object({
   transactionId: z.string().uuid(),
   holdingId: z.string().uuid(),
   tokenSymbol: z.string(),
@@ -779,12 +779,12 @@ export const TRANSFER_CANDIDATE_REASONS = [
   'both_outside',
 ] as const;
 
-export const transferCandidateReasonSchema = z.enum(TRANSFER_CANDIDATE_REASONS);
+const transferCandidateReasonSchema = z.enum(TRANSFER_CANDIDATE_REASONS);
 
 export type TransferCandidateReason = (typeof TRANSFER_CANDIDATE_REASONS)[number];
 
 /** One side of a possible pair: an inflow that might be the same money. */
-export const transferCandidateSchema = z.object({
+const transferCandidateSchema = z.object({
   transactionId: z.string().uuid(),
   holdingId: z.string().uuid(),
   /** Where it landed, in the words the rest of the app uses. */
@@ -825,7 +825,7 @@ export type TransferCandidate = z.infer<typeof transferCandidateSchema>;
  * is near enough to be a candidate on its own, so without this the queue
  * offered only the answer that writes the 4,000 a second time.
  */
-export const transferCandidateCombinationSchema = z.object({
+const transferCandidateCombinationSchema = z.object({
   holdingId: z.string().uuid(),
   accountName: z.string(),
   institutionName: z.string().nullable(),
@@ -848,11 +848,7 @@ export const transferCandidateCombinationSchema = z.object({
 
 export type TransferCandidateCombination = z.infer<typeof transferCandidateCombinationSchema>;
 
-export const TRANSFER_REVIEW_RULE_VERDICTS = [
-  'not_a_disposal',
-  'ask_me',
-  'always_a_disposal',
-] as const;
+const TRANSFER_REVIEW_RULE_VERDICTS = ['not_a_disposal', 'ask_me', 'always_a_disposal'] as const;
 
 /**
  * Whether this verdict is the one that WRITES.
@@ -889,7 +885,7 @@ export const transferReviewRuleNoteSchema = z
  * that is all 42 characters; for a payment rail it is the recipient the rail
  * named, with the per-payment amount stripped (SC-381).
  */
-export const transferReviewRuleSchema = z.object({
+const transferReviewRuleSchema = z.object({
   id: z.string().uuid(),
   matchCounterparty: z.string(),
   verdict: transferReviewRuleVerdictSchema,
@@ -932,7 +928,7 @@ export type TransferReviewRule = z.infer<typeof transferReviewRuleSchema>;
  * sale" column shows — so the figure quoted here is one the reader has already
  * seen per row.
  */
-export const ruleMarkPreviewSchema = z.object({
+const ruleMarkPreviewSchema = z.object({
   /** The string the rule would be written on, normalized. Null when this
    *  transfer names no destination, which is when `create` refuses. */
   counterpartyKey: z.string().nullable(),
@@ -965,7 +961,7 @@ export type RuleMarkPreview = z.infer<typeof ruleMarkPreviewSchema>;
  * pairing "row → rule" is recomputed from the same predicate that produced it,
  * every read, so it can never go stale against a revoked rule.
  */
-export const matchedTransferRuleSchema = z.object({
+const matchedTransferRuleSchema = z.object({
   ruleId: z.string().uuid(),
   note: z.string(),
   /**
@@ -981,8 +977,6 @@ export const matchedTransferRuleSchema = z.object({
   verdict: transferReviewRuleVerdictSchema,
 });
 
-export type MatchedTransferRule = z.infer<typeof matchedTransferRuleSchema>;
-
 /**
  * A transfer a `not_a_disposal` rule is keeping out of the queue.
  *
@@ -994,7 +988,7 @@ export type MatchedTransferRule = z.infer<typeof matchedTransferRuleSchema>;
  * here goes straight back to being pending, because nothing was ever written
  * to it.
  */
-export const hiddenTransferReviewSchema = z.object({
+const hiddenTransferReviewSchema = z.object({
   transactionId: z.string().uuid(),
   holdingId: z.string().uuid(),
   tokenSymbol: z.string(),
@@ -1012,7 +1006,7 @@ export const hiddenTransferReviewSchema = z.object({
 export type HiddenTransferReview = z.infer<typeof hiddenTransferReviewSchema>;
 
 /** An unpaired outflow, with everything needed to judge it. */
-export const pendingTransferReviewSchema = z.object({
+const pendingTransferReviewSchema = z.object({
   transactionId: z.string().uuid(),
   holdingId: z.string().uuid(),
   tokenSymbol: z.string(),
@@ -1140,7 +1134,7 @@ export const MAX_BULK_TRANSFER_ROWS = 500;
  * (SC-186, folded into SC-382). Re-answering is the operation with value;
  * un-answering is only ever the way back from a tap just taken.
  */
-export const bulkTransferEntrySchema = z.object({
+const bulkTransferEntrySchema = z.object({
   transactionId: z.string().uuid(),
   decision: bulkTransferDecisionSchema.nullable(),
 });
@@ -1181,16 +1175,9 @@ export const bulkTransferEntriesSchema = z
  *   the caller's own `user_wallets`. `detail` is the address. The same refusal
  *   `resolve` gives (SC-365), applied before a batch can give it twelve times.
  */
-export const BULK_TRANSFER_REFUSALS = [
-  'gone',
-  'linked',
-  'answered_otherwise',
-  'own_wallet',
-] as const;
+const BULK_TRANSFER_REFUSALS = ['gone', 'linked', 'answered_otherwise', 'own_wallet'] as const;
 
-export type BulkTransferRefusalReason = (typeof BULK_TRANSFER_REFUSALS)[number];
-
-export const bulkTransferRefusalSchema = z.object({
+const bulkTransferRefusalSchema = z.object({
   transactionId: z.string().uuid(),
   reason: z.enum(BULK_TRANSFER_REFUSALS),
   /** The answer in the way, or the wallet address. Null when the reason says
@@ -1214,7 +1201,7 @@ export type BulkTransferRefusal = z.infer<typeof bulkTransferRefusalSchema>;
  * was a sale" column. The confirmation and the write cannot disagree about
  * which rows they are about, because they are handed the same list.
  */
-export const bulkTransferPreviewSchema = z.object({
+const bulkTransferPreviewSchema = z.object({
   /** The rows that would be written, in the order they were asked about. */
   eligible: z.array(z.string().uuid()),
   refusals: z.array(bulkTransferRefusalSchema),
@@ -1246,7 +1233,7 @@ export type BulkTransferPreview = z.infer<typeof bulkTransferPreviewSchema>;
 
 /** One row that was written, and the answer it used to carry. Handed straight
  *  back to `bulkResolve` to undo the batch. */
-export const bulkTransferAppliedSchema = z.object({
+const bulkTransferAppliedSchema = z.object({
   transactionId: z.string().uuid(),
   previous: bulkTransferDecisionSchema.nullable(),
 });

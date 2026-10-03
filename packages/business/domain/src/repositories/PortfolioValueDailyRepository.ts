@@ -8,20 +8,7 @@ import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lte, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
-import { notScamFor } from '../lib/scam-verdict';
-
-export interface PortfolioValueDailyRow {
-  userId: string;
-  scopeKind: 'user' | 'institution' | 'account' | 'holding';
-  scopeId: string;
-  snapshotDate: string; // 'YYYY-MM-DD' — Postgres `date` round-trips as string
-  baseCurrencyId: string;
-  totalValue: string;
-  coverageQuality: CoverageQuality;
-  holdingsWithKnownValue: number;
-  holdingsTotal: number;
-  computedAt: Date;
-}
+import { includedInTotalSql } from '../lib/holding-inclusion';
 
 export interface ScopeFilter {
   kind: 'user' | 'institution' | 'account' | 'holding';
@@ -182,17 +169,16 @@ export class PortfolioValueDailyRepository {
   }
 
   // Per-holding (`scope_kind='holding'`) rollup rows for the chart,
-  // pre-filtered by the shared inclusion contract: only holdings that
-  // are not hidden, active, and non-scam are returned. The caller
+  // pre-filtered by the shared inclusion contract (`includedInTotalSql`):
+  // owner-hidden, inactive and scam holdings are left out. The caller
   // groups these by snapshot_date to build the user-wide series, so the
   // chart total reconciles with the dashboard headline (which applies
-  // the same contract via `isIncludedInTotal`). The three holding /
-  // token WHERE conditions below MUST mirror that predicate.
+  // the same contract via `isIncludedInTotal`).
   //
   // `holdingIds` narrows the same query to a subset — a group, a vault, one
   // account (SC-457). It is a NARROWING of the inclusion contract and never a
-  // way around it: the three WHERE conditions below still apply, so a scope
-  // naming a hidden holding gets the same answer as one that does not name it.
+  // way around it: the contract still applies, so a scope naming an
+  // owner-hidden holding gets the same answer as one that does not name it.
   // An empty array is a scope with nothing in it and returns nothing;
   // `undefined` is "no scope filter" and returns everything.
   async findIncludedHoldingScopeRange(
@@ -362,9 +348,7 @@ export class PortfolioValueDailyRepository {
       eq(daily.baseCurrencyId, baseCurrencyId),
       gte(daily.snapshotDate, from.toISOString().slice(0, 10)),
       lte(daily.snapshotDate, to.toISOString().slice(0, 10)),
-      eq(schema.holdings.isHidden, false),
-      eq(schema.holdings.isActive, true),
-      notScamFor(),
+      includedInTotalSql(),
       ...(holdingIds ? [inArray(daily.scopeId, [...holdingIds])] : [])
     );
   }
@@ -408,9 +392,7 @@ export class PortfolioValueDailyRepository {
         .where(
           and(
             eq(schema.holdings.userId, userId),
-            eq(schema.holdings.isHidden, false),
-            eq(schema.holdings.isActive, true),
-            notScamFor(),
+            includedInTotalSql(),
             ...(holdingIds ? [inArray(schema.holdings.id, [...holdingIds])] : [])
           )
         );

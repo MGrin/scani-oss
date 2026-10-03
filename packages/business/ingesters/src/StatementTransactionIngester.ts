@@ -1,32 +1,81 @@
-import type { NewHoldingBalanceObservation, NewHoldingTransaction } from '@scani/db/schema';
+import type { NewHoldingTransaction } from '@scani/db/schema';
 import { type ParsedTransaction, type ParseResult, statementPayee } from '@scani/file-import';
 import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import { Service } from 'typedi';
 
-export interface StatementResolveTokenFn {
-  // Caller-owned lookup so the ingester stays decoupled from
-  // TokenService/HoldingService — keeps the package leaf-free of
-  // @scani/domain. Implementations should find-or-create the holding
-  // for (userId, accountId, tokenId) so statements for already-closed
-  // accounts still attribute to a real holding row.
-  resolveFiatTokenBySymbol(symbol: string): Promise<{ holdingId: string; tokenId: string } | null>;
-}
-
-export interface StatementIngesterInput {
-  userId: string;
+interface StatementIngesterInput {
   accountId: string;
   parseResult: ParseResult;
-  resolveToken: StatementResolveTokenFn;
   defaultCurrency?: string;
 }
 
+/**
+ * A ledger row as the statement states it. It names no holding and no token:
+ * the write path resolves both from the currency of the line it sits in.
+ */
+export type StatementRow = Pick<
+  NewHoldingTransaction,
+  'kind' | 'source' | 'sourceMetadata' | 'rawPayload'
+> & {
+  quantity: string;
+  occurredAt: Date;
+  externalId: string;
+  counterparty: string | null;
+};
+
+/** One parsed transaction: its row, then its fee row when it has one. */
+export interface StatementLine {
+  currency: string;
+  rows: StatementRow[];
+}
+
+/** One parsed transaction with no currency to import it under: the warning that says so, and its date. */
+interface SkippedStatementLine {
+  skipped: string;
+  at: Date;
+}
+
+export interface StatementClose {
+  currency: string;
+  at: Date;
+  balance: string;
+}
+
 export interface StatementIngesterResult {
-  transactions: NewHoldingTransaction[];
-  observations: NewHoldingBalanceObservation[];
+  format: ParseResult['format'];
+  bankTemplate: string | null;
+  /** Every parsed transaction, in file order. */
+  lines: Array<StatementLine | SkippedStatementLine>;
+  /** The balance the statement ends on, when its last row carries one. */
+  closes: StatementClose[];
+  /** The parser's own warnings. */
   warnings: string[];
-  firstEventAt: Date | null;
-  lastEventAt: Date | null;
+}
+
+const unknownCurrency = (currency: string) =>
+  `Unknown currency '${currency}' — statement rows for this currency skipped`;
+
+/**
+ * The warnings an import reports, once the write path has said which
+ * currencies it could not place: the parser's, then each transaction's in file
+ * order, then the close's. An unknown currency warns once per transaction in
+ * it, and once more for a close in it.
+ */
+export function statementWarnings(
+  result: StatementIngesterResult,
+  unknownCurrencies: ReadonlySet<string>
+): string[] {
+  return [
+    ...result.warnings,
+    ...result.lines.flatMap((line) => {
+      if ('skipped' in line) return [line.skipped];
+      return unknownCurrencies.has(line.currency) ? [unknownCurrency(line.currency)] : [];
+    }),
+    ...result.closes
+      .filter((close) => unknownCurrencies.has(close.currency))
+      .map((close) => unknownCurrency(close.currency)),
+  ];
 }
 
 @Service()
@@ -35,39 +84,14 @@ export class StatementTransactionIngester {
 
   readonly source = 'statement';
 
-  async ingest(input: StatementIngesterInput): Promise<StatementIngesterResult> {
+  ingest(input: StatementIngesterInput): StatementIngesterResult {
     const { parseResult } = input;
-    const warnings = [...parseResult.warnings];
-    const transactions: NewHoldingTransaction[] = [];
-    const observations: NewHoldingBalanceObservation[] = [];
-    const accumulator: { first: Date | null; last: Date | null } = { first: null, last: null };
-
-    if (parseResult.transactions.length === 0) {
-      return {
-        transactions,
-        observations,
-        warnings,
-        firstEventAt: null,
-        lastEventAt: null,
-      };
-    }
-
-    const tokenCache = new Map<string, { holdingId: string; tokenId: string }>();
-    const resolveCurrency = async (
-      symbol: string
-    ): Promise<{ holdingId: string; tokenId: string } | null> => {
-      const upper = symbol.trim().toUpperCase();
-      if (!upper) return null;
-      const cached = tokenCache.get(upper);
-      if (cached) return cached;
-      const r = await input.resolveToken.resolveFiatTokenBySymbol(upper);
-      if (!r) {
-        warnings.push(`Unknown currency '${upper}' — statement rows for this currency skipped`);
-        return null;
-      }
-      tokenCache.set(upper, r);
-      return r;
-    };
+    const lines: StatementIngesterResult['lines'] = [];
+    const closes: StatementClose[] = [];
+    const currencyOf = (tx: ParsedTransaction) =>
+      (tx.currency || input.defaultCurrency || parseResult.detectedCurrency || '')
+        .trim()
+        .toUpperCase();
 
     const sourceTag = `statement-${parseResult.format}`;
 
@@ -78,20 +102,14 @@ export class StatementTransactionIngester {
 
     for (const tx of parseResult.transactions) {
       ordinal += 1;
-      const currencySymbol = (
-        tx.currency ||
-        input.defaultCurrency ||
-        parseResult.detectedCurrency ||
-        ''
-      ).trim();
-      if (!currencySymbol) {
-        warnings.push(
-          `Transaction without currency at ${tx.date.toISOString()} — skipped (consider setting defaultCurrency on the account)`
-        );
+      const currency = currencyOf(tx);
+      if (!currency) {
+        lines.push({
+          skipped: `Transaction without currency at ${tx.date.toISOString()} — skipped (consider setting defaultCurrency on the account)`,
+          at: tx.date,
+        });
         continue;
       }
-      const resolved = await resolveCurrency(currencySymbol);
-      if (!resolved) continue;
 
       // Bank-statement amounts are signed money flow (positive = credit,
       // negative = debit). Store as-is and derive `kind` from sign —
@@ -100,36 +118,29 @@ export class StatementTransactionIngester {
       const kind = amt.isPositive() ? 'deposit' : amt.isNegative() ? 'withdraw' : 'unknown';
 
       const occurredAt = tx.date;
-      if (!accumulator.first || occurredAt.getTime() < accumulator.first.getTime()) {
-        accumulator.first = occurredAt;
-      }
-      if (!accumulator.last || occurredAt.getTime() > accumulator.last.getTime()) {
-        accumulator.last = occurredAt;
-      }
-
       const externalId = this.buildExternalId(tx, ordinal);
       // Marked, because elsewhere `counterparty` is an address or an account
       // identifier and this is a best reading of free text (SC-1325).
       const payee = statementPayee(tx.description);
+      const rawPayload = (tx.raw ?? null) as Record<string, unknown> | null;
 
-      transactions.push({
-        userId: input.userId,
-        holdingId: resolved.holdingId,
-        tokenId: resolved.tokenId,
-        kind,
-        quantity: amt.toString(),
-        occurredAt,
-        externalId,
-        source: sourceTag,
-        counterparty: payee,
-        sourceMetadata: {
-          description: tx.description,
-          bankTemplate: parseResult.bankTemplate ?? null,
-          format: parseResult.format,
-          ...(payee === null ? {} : { counterpartyFrom: 'description' }),
+      const rows: StatementRow[] = [
+        {
+          kind,
+          quantity: amt.toFixed(),
+          occurredAt,
+          externalId,
+          source: sourceTag,
+          counterparty: payee,
+          sourceMetadata: {
+            description: tx.description,
+            bankTemplate: parseResult.bankTemplate ?? null,
+            format: parseResult.format,
+            ...(payee === null ? {} : { counterpartyFrom: 'description' }),
+          },
+          rawPayload,
         },
-        rawPayload: (tx.raw ?? null) as Record<string, unknown> | null,
-      });
+      ];
 
       // A statement fee is its OWN ledger row, not `fee_quantity` on the one
       // above.
@@ -148,13 +159,9 @@ export class StatementTransactionIngester {
       // which is precisely what a `kind='fee'` row means here. Cost basis
       // skips that kind by name, so this adds nothing to the lot pool.
       if (tx.fee !== undefined && tx.fee !== 0) {
-        const feeQuantity = new Decimal(tx.fee).abs().neg();
-        transactions.push({
-          userId: input.userId,
-          holdingId: resolved.holdingId,
-          tokenId: resolved.tokenId,
+        rows.push({
           kind: 'fee',
-          quantity: feeQuantity.toString(),
+          quantity: new Decimal(tx.fee).abs().neg().toFixed(),
           // Same instant as its parent. The ledger is ordered by
           // `occurred_at` and a fee that sorts away from the movement that
           // incurred it reads as an unexplained charge.
@@ -164,48 +171,30 @@ export class StatementTransactionIngester {
           // (holding_id, source, external_id).
           externalId: `${externalId}:fee`,
           source: sourceTag,
+          counterparty: null,
           sourceMetadata: {
             description: tx.description ? `Fee — ${tx.description}` : 'Fee',
             bankTemplate: parseResult.bankTemplate ?? null,
             format: parseResult.format,
             feeForExternalId: externalId,
           },
-          rawPayload: (tx.raw ?? null) as Record<string, unknown> | null,
+          rawPayload,
         });
       }
+      lines.push({ currency, rows });
     }
 
     // Anchor balance-at-time at the statement's period end via a single
-    // closing-balance observation. Intra-statement running balances are
-    // ignored — one anchor per upload is enough.
+    // closing balance. Intra-statement running balances are ignored — one
+    // anchor per upload is enough.
     const sorted = [...parseResult.transactions].sort(
       (a, b) => a.date.getTime() - b.date.getTime()
     );
     const last = sorted[sorted.length - 1];
     if (last?.balance !== undefined && last.balance !== null) {
-      const currency = (
-        last.currency ||
-        input.defaultCurrency ||
-        parseResult.detectedCurrency ||
-        ''
-      )
-        .trim()
-        .toUpperCase();
-      const resolved = currency
-        ? (tokenCache.get(currency) ?? (await resolveCurrency(currency)))
-        : null;
-      if (resolved) {
-        observations.push({
-          userId: input.userId,
-          holdingId: resolved.holdingId,
-          balance: new Decimal(last.balance).toString(),
-          observedAt: last.date,
-          source: 'statement-close',
-          sourceMetadata: {
-            format: parseResult.format,
-            bankTemplate: parseResult.bankTemplate ?? null,
-          },
-        });
+      const currency = currencyOf(last);
+      if (currency) {
+        closes.push({ currency, at: last.date, balance: new Decimal(last.balance).toFixed() });
       }
     }
 
@@ -213,18 +202,18 @@ export class StatementTransactionIngester {
       {
         accountId: input.accountId,
         format: parseResult.format,
-        transactionCount: transactions.length,
-        observationCount: observations.length,
+        lineCount: lines.length,
+        closeCount: closes.length,
       },
       'Statement ingestion complete'
     );
 
     return {
-      transactions,
-      observations,
-      warnings,
-      firstEventAt: accumulator.first,
-      lastEventAt: accumulator.last,
+      format: parseResult.format,
+      bankTemplate: parseResult.bankTemplate ?? null,
+      lines,
+      closes,
+      warnings: [...parseResult.warnings],
     };
   }
 

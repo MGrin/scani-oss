@@ -8,6 +8,6 @@ describe('fetchWithTimeout', () => {
 
   // We can't easily exercise the retry/backoff path against the global
   // fetch in a unit test without spinning up a server; the per-provider
-  // tests using replayHttp from core/testing.ts cover that. Here we just
-  // verify the URL pre-validation, which is the synchronous safety net.
+  // tests cover that. Here we just verify the URL pre-validation, which is
+  // the synchronous safety net.
 });

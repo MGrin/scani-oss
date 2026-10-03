@@ -21,7 +21,7 @@ import { getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { eq, sql } from 'drizzle-orm';
 
-export const HARNESS_EMAIL = 'cold-boot@scani.local';
+const HARNESS_EMAIL = 'cold-boot@scani.local';
 
 const HOLDINGS = 20;
 const DAYS = 400;

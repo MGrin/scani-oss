@@ -34,12 +34,6 @@ export const HOLDING_MOVEMENT_DIRECTIONS = ['inflow', 'outflow', 'transfer'] as 
 
 export type HoldingMovementDirection = (typeof HOLDING_MOVEMENT_DIRECTIONS)[number];
 
-export function isHoldingMovementDirection(value: unknown): value is HoldingMovementDirection {
-  return (
-    typeof value === 'string' && (HOLDING_MOVEMENT_DIRECTIONS as readonly string[]).includes(value)
-  );
-}
-
 /**
  * Where an outflow went — asked IN the form, for every holding, with no
  * default (mgrin, 2026-08-25).

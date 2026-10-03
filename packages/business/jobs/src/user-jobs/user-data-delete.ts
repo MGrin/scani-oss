@@ -8,7 +8,7 @@ export type UserDataDeleteJob = UserJobBase & {
   deleteAccount?: boolean;
 };
 
-export const userDataDeleteSchema: z.ZodType<UserDataDeleteJob> = z.object({
+const userDataDeleteSchema: z.ZodType<UserDataDeleteJob> = z.object({
   userId: z.string().min(1),
   requestId: z.string().min(1),
   deleteAccount: z.boolean().optional(),

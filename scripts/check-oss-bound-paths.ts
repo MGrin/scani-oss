@@ -51,6 +51,9 @@
 //   OSS_ALLOW_NEW_FILES=1 git commit ...          # the escape
 
 import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 /** Whether the branch being committed to is bound for the public mirror. */
 export type Boundness =
@@ -325,7 +328,7 @@ export function classifyBranch(facts: BranchFacts): Boundness {
  * time somebody rewords a sentence — silently, with no test failing, because
  * the sentence would still read correctly to a human.
  */
-export type ViolationKind =
+type ViolationKind =
   /**
    * Tracked in `origin/main` and absent upstream: private source the checkout
    * should have removed. This is the SC-569 hazard the guard exists for, and
@@ -517,6 +520,54 @@ export function applyNewFileAllowance(
 }
 
 /**
+ * The classifier verdicts that make a privately tracked path admissible to the
+ * mirror: `oss-eligible` (identical in both repos) and `divergent` (declared to
+ * exist upstream in its own form). Everything else, `excluded` and
+ * `private-only` first, stays refused.
+ */
+const ADMISSIBLE_VERDICTS: ReadonlySet<string> = new Set(['oss-eligible', 'divergent']);
+
+/**
+ * Admit a `private-only` violation only on the private classifier's word
+ * (SC-1515).
+ *
+ * The predicate above is right about the SC-569 hazard and wrong about a port:
+ * every file new to the mirror is tracked privately and absent upstream, so it
+ * reads as private-only source and the guard refused every port of a new file,
+ * with no flag that could admit it. This file is shared with the mirror and
+ * cannot import the classifier, so the caller runs it out of `origin/main` and
+ * hands the verdicts in. `verdictOf` is `null` when that run could not happen,
+ * and then NOTHING is admitted: "could not classify" never resolves toward a
+ * pass. The content scanners run on every admitted path after this, unchanged.
+ */
+export function applyClassifierAdmission(
+  violations: readonly Violation[],
+  verdictOf: ((path: string) => string | undefined) | null
+): Allowance {
+  const refused: Violation[] = [];
+  const admitted: Violation[] = [];
+  for (const v of violations) {
+    if (v.kind !== 'private-only') {
+      refused.push(v);
+      continue;
+    }
+    const verdict = verdictOf === null ? undefined : verdictOf(v.path);
+    if (verdict !== undefined && ADMISSIBLE_VERDICTS.has(verdict)) {
+      admitted.push({ ...v, why: `classified \`${verdict}\` by origin/main's oss-classify` });
+    } else {
+      refused.push({
+        ...v,
+        why:
+          verdictOf === null
+            ? `${v.why}; origin/main's oss-classify could not be run, so it could not be admitted`
+            : `${v.why}; origin/main's oss-classify says \`${verdict ?? 'no verdict'}\``,
+      });
+    }
+  }
+  return { refused, admitted };
+}
+
+/**
  * The verdict word each outcome prints.
  *
  * Exported and pinned because three of the five share `exit 0`, so the WORD is
@@ -603,6 +654,58 @@ function gitPaths(args: string[]): string[] | null {
  * Three git calls, measured at ~150ms total against a 2680-path tree, against
  * a hook that already runs `bun run type-check`.
  */
+/**
+ * The environment for a git command run in a scratch directory. A hook runs
+ * with `GIT_DIR` (and in pre-commit `GIT_INDEX_FILE`) exported, so an
+ * inherited `git init` re-initialises the SHARED repository instead of the
+ * scratch one, and as bare: that flipped `core.bare` for every scani checkout
+ * on this machine (SC-1515).
+ */
+export function scratchGitEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return Object.fromEntries(
+    Object.entries(env).filter(([k]) => !k.startsWith('GIT_'))
+  ) as NodeJS.ProcessEnv;
+}
+
+/**
+ * Run `oss-classify` as `origin/main` has it over `paths`, from a scratch copy
+ * of that commit's `scripts/` and `.gitattributes`, so the rules are the
+ * pinned private ones whatever branch is checked out. `null` on any failure.
+ */
+function classifyAtOrigin(
+  paths: readonly string[]
+): { sha: string; verdicts: Map<string, string> } | null {
+  const sha = git(['rev-parse', '--verify', 'origin/main^{commit}']);
+  if (!sha.ok || !git(['cat-file', '-e', 'origin/main:scripts/oss-classify.ts']).ok) return null;
+  const dir = mkdtempSync(join(tmpdir(), 'oss-bound-classify-'));
+  try {
+    const archive = spawnSync('sh', [
+      '-c',
+      `git archive origin/main scripts .gitattributes | tar -x -C "$1"`,
+      'sh',
+      dir,
+    ]);
+    if (archive.status !== 0) return null;
+    const env = scratchGitEnv();
+    if (spawnSync('git', ['init', '-q'], { cwd: dir, env }).status !== 0) return null;
+    const run = spawnSync('bun', [join('scripts', 'oss-classify.ts'), '--stdin', '--json'], {
+      cwd: dir,
+      env,
+      input: paths.join('\n'),
+      encoding: 'utf8',
+      maxBuffer: 1 << 28,
+    });
+    if (run.status !== 0) return null;
+    const parsed = JSON.parse(run.stdout) as { all?: { file: string; verdict: string }[] };
+    if (!Array.isArray(parsed.all)) return null;
+    return { sha: sha.stdout, verdicts: new Map(parsed.all.map((r) => [r.file, r.verdict])) };
+  } catch {
+    return null;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
 function treePaths(ref: string): string[] | null {
   return gitPaths(['ls-tree', '-r', '--full-tree', '--name-only', ref]);
 }
@@ -677,7 +780,7 @@ export function collectBranchFacts(ref = 'HEAD'): BranchFacts {
  * branchA, read `private`, and SKIP — a silent pass on a mirror-bound push,
  * which is this check's own subject reproduced inside its caller.
  */
-export interface PathSource {
+interface PathSource {
   kind: 'staged' | 'given';
   /** Only for `given`. Already filtered to A/M/R/C by the caller. */
   paths?: readonly string[];
@@ -779,7 +882,15 @@ function main(allowNewFiles: boolean, source: PathSource = { kind: 'staged' }): 
     trackedPrivately: (p) => git(['cat-file', '-e', `origin/main:${p}`]).ok,
   });
 
-  const { refused, admitted } = applyNewFileAllowance(violations, allowNewFiles);
+  const privateTracked = violations.filter((v) => v.kind === 'private-only').map((v) => v.path);
+  const classified = privateTracked.length > 0 ? classifyAtOrigin(privateTracked) : null;
+  const byClassifier = applyClassifierAdmission(
+    violations,
+    classified === null ? null : (p) => classified.verdicts.get(p)
+  );
+  const byFlag = applyNewFileAllowance(byClassifier.refused, allowNewFiles);
+  const refused = byFlag.refused;
+  const admitted = [...byClassifier.admitted, ...byFlag.admitted];
 
   if (refused.length > 0) {
     for (const v of refused) console.error(`  ${v.path}\n      ${v.why}`);
@@ -801,9 +912,9 @@ function main(allowNewFiles: boolean, source: PathSource = { kind: 'staged' }): 
         : '`git restore --staged` them';
     if (refused.some((v) => v.kind === 'private-only')) {
       console.error(
-        `  The paths above are private source, and OSS_ALLOW_NEW_FILES=1 does NOT\n` +
-          `  admit them — it is scoped to files absent from both repos. ${remedy};\n` +
-          `  if one genuinely belongs upstream, land it there first. See SC-569.`
+        `  The paths above are tracked privately, and origin/main's oss-classify did\n` +
+          `  not mark them oss-eligible or divergent, so they stay private. ${remedy};\n` +
+          `  if one genuinely belongs upstream, classify it so in scripts/oss-eligibility.ts first. See SC-569, SC-1515.`
       );
     } else {
       console.error(
@@ -822,9 +933,17 @@ function main(allowNewFiles: boolean, source: PathSource = { kind: 'staged' }): 
   // text told them apart — which nothing reads. Each admitted path is listed,
   // so what the flag let through is on the record rather than merely counted.
   if (admitted.length > 0) {
-    for (const v of admitted) console.log(`  admitted: ${v.path}`);
+    for (const v of admitted) console.log(`  admitted: ${v.path} (${v.why})`);
+    const parts = [
+      byClassifier.admitted.length > 0
+        ? `origin/main's oss-classify${classified ? ` at ${classified.sha.slice(0, 9)}` : ''} admitted ${byClassifier.admitted.length} privately tracked file(s) as oss-eligible or divergent`
+        : null,
+      byFlag.admitted.length > 0
+        ? `OSS_ALLOW_NEW_FILES=1 admitted ${byFlag.admitted.length} new shared file(s)`
+        : null,
+    ].filter((p) => p !== null);
     console.log(
-      `oss-bound-paths: ${VERDICT.allowed} · exit ${EXIT_OK} · OSS_ALLOW_NEW_FILES=1 admitted ${admitted.length} new shared file(s) of ${paths.length} ${noun}; 0 private-only`
+      `oss-bound-paths: ${VERDICT.allowed} · exit ${EXIT_OK} · ${parts.join('; ')} of ${paths.length} ${noun}; 0 refused`
     );
     return EXIT_OK;
   }

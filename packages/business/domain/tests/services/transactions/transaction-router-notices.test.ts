@@ -6,9 +6,6 @@ import type { TransactionsProvider } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { NoticeInput, ProviderContext, TransactionEvent } from '@scani/providers/core/types';
 import { Container } from 'typedi';
-import { TokenTypeRepository } from '../../../src/repositories/EnumRepositories';
-import { HoldingService } from '../../../src/services/holdings/HoldingService';
-import { TokenIdentityService } from '../../../src/services/tokens/TokenIdentityService';
 import {
   TransactionRouter,
   type TransactionRouterRequest,
@@ -57,8 +54,6 @@ interface Opts {
   horizonMs?: number;
   retractWith?: readonly NoticeInput[];
   noteWith?: readonly NoticeInput[];
-  /** Makes every identity lookup throw, to exercise the keyed failure line. */
-  identityThrows?: string;
   since?: Date;
 }
 
@@ -78,28 +73,6 @@ function run(opts: Opts) {
   const registry = new ProviderRegistry();
   registry.register(provider);
   Container.set(ProviderRegistry, registry);
-
-  Container.set(TokenIdentityService, {
-    findOrCreateByIdentity: async () => {
-      if (opts.identityThrows) throw new Error(opts.identityThrows);
-      return { id: 'token-BTC' } as never;
-    },
-    findByIdentity: async () => {
-      if (opts.identityThrows) throw new Error(opts.identityThrows);
-      return { id: 'token-BTC' } as never;
-    },
-  } as unknown as TokenIdentityService);
-
-  Container.set(HoldingService, {
-    findOrCreateForIngest: async () => ({ id: 'holding-1' }),
-    findExistingForIngest: async () => ({ id: 'holding-1' }),
-  } as unknown as HoldingService);
-
-  Container.set(TokenTypeRepository, {
-    findByCode: async () => ({ id: 'crypto-type-id' }) as never,
-    findByCodes: async (codes: string[]) =>
-      codes.map((code) => ({ id: `${code}-type-id`, code })) as never,
-  } as unknown as TokenTypeRepository);
 
   const router = new TransactionRouter();
   Container.set(TransactionRouter, router);
@@ -203,26 +176,5 @@ describe('TransactionRouter — the horizon sentence carries its key (SC-434)', 
 
     expect(result.warnings).toEqual([]);
     expect(result.warningDetails).toEqual([]);
-  });
-});
-
-/**
- * The frame is ours and the tail is not (SC-434). An upstream message cannot
- * be keyed — it is written by something outside this app — so it travels as
- * a param and renders verbatim inside a translated sentence.
- */
-describe('TransactionRouter — an upstream message rides inside a keyed frame', () => {
-  test('the key names the failure and the param carries the untranslatable text', async () => {
-    const result = await run({
-      events: [event()],
-      identityThrows: 'CoinGecko rejected request: 429 Too Many Requests',
-    });
-
-    const failure = result.warningDetails.find(
-      (d) => d.key === 'v3.jobs.notices.tokenIdentityFailed'
-    );
-    expect(failure).toBeDefined();
-    expect(failure?.params?.error).toBe('CoinGecko rejected request: 429 Too Many Requests');
-    expect(String(failure?.params?.identity)).toContain('BTC');
   });
 });

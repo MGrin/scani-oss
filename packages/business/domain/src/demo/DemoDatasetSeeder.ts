@@ -36,7 +36,7 @@ import { type BuildDemoDatasetOptions, buildDemoDataset, type DemoDataset } from
 const logger = createComponentLogger('demo-dataset-seeder');
 
 /** Tags every price row this seeder writes, so it can take them back. */
-export const DEMO_PRICE_SOURCE = 'demo-dataset';
+const DEMO_PRICE_SOURCE = 'demo-dataset';
 
 const CHUNK = 1000;
 

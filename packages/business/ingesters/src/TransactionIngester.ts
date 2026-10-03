@@ -11,7 +11,7 @@ export interface IngesterResult {
   warnings: string[];
 }
 
-export interface CoverageUpdate {
+interface CoverageUpdate {
   firstEventAt: Date | null;
   lastEventAt: Date | null;
   // Drives `has_complete_tx_history` on holding_coverage. e.g. Etherscan
@@ -22,7 +22,7 @@ export interface CoverageUpdate {
   sourceTag: string;
 }
 
-export interface TransactionIngesterOptions {
+interface TransactionIngesterOptions {
   // Incremental cutoff. Provided after an initial backfill so re-runs
   // fetch only new events.
   since?: Date;

@@ -19,11 +19,16 @@ const CREDENTIAL_KEYS = [
   'cookie',
 ];
 
+// Personal identifiers (SC-1509). A deleted account must leave nothing but its
+// id behind, and a log line outlives the account; log `pseudonymizeId(email)`
+// where a line needs to be correlatable.
+const PERSONAL_KEYS = ['email', 'subjectEmail'];
+
+const REDACTED_KEYS = [...CREDENTIAL_KEYS, ...PERSONAL_KEYS];
+
 export const LOG_REDACT: NonNullable<LoggerOptions['redact']> = {
   // Censor parents before children: the redactor shares descendants of a
   // terminal path, so visiting its children first would mutate caller data.
-  paths: [0, 1, 2, 3].flatMap((depth) =>
-    CREDENTIAL_KEYS.map((key) => `${'*.'.repeat(depth)}${key}`)
-  ),
+  paths: [0, 1, 2, 3].flatMap((depth) => REDACTED_KEYS.map((key) => `${'*.'.repeat(depth)}${key}`)),
   censor: '[redacted]',
 };

@@ -1,3 +1,4 @@
+import { UPLOADED_FILE_MAX_BYTES } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { FileUp, Paperclip, X } from 'lucide-react';
 import { type DragEvent, useState } from 'react';
@@ -52,9 +53,15 @@ export function FileDropField({
   const [problem, setProblem] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
 
+  const limit = formatFileSize(UPLOADED_FILE_MAX_BYTES);
+
   const take = (candidate: File | undefined) => {
     if (!candidate) return;
-    const rejection = validate(candidate.name);
+    const rejection =
+      validate(candidate.name) ??
+      (candidate.size > UPLOADED_FILE_MAX_BYTES
+        ? t('v3.capture.file.tooLarge', { size: formatFileSize(candidate.size), limit })
+        : null);
     setProblem(rejection);
     onFile(rejection ? null : candidate);
   };
@@ -127,7 +134,9 @@ export function FileDropField({
           {problem}
         </span>
       ) : (
-        <span className="text-caption text-muted-foreground">{formats}</span>
+        <span className="text-caption text-muted-foreground">
+          {t('v3.capture.file.withLimit', { formats, limit })}
+        </span>
       )}
       <input
         id={inputId}

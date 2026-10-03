@@ -16,6 +16,7 @@ import { UserRepository } from '../../../src/repositories/UserRepository';
 import { VaultRepository } from '../../../src/repositories/VaultRepository';
 import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
 import { AssetCurrencyService } from '../../../src/services/returns/AssetCurrencyService';
+import { DriftLedgerService } from '../../../src/services/returns/DriftLedgerService';
 import { ExternalFlowService } from '../../../src/services/returns/ExternalFlowService';
 import { ReturnsScopeResolver } from '../../../src/services/returns/ReturnsScopeResolver';
 import {
@@ -245,6 +246,7 @@ function install(fixture: Fixture): ReturnsService {
       fixture.holdings
         .filter((h) => !filter?.accountId || h.accountId === filter.accountId)
         .map((h) => h.id),
+    findIdsIncludedInTotal: async (ids: readonly string[]) => new Set(ids),
     findByIds: async (ids: string[]) => ids.map((id) => holdingById.get(id)).filter(Boolean),
   } as never);
 
@@ -358,6 +360,9 @@ function install(fixture: Fixture): ReturnsService {
 
   const resolver = new ReturnsScopeResolver();
   Container.set(ReturnsScopeResolver, resolver);
+  Container.set(DriftLedgerService, {
+    forHoldings: async () => new Map(),
+  } as unknown as DriftLedgerService);
   const flowService = new ExternalFlowService();
   Container.set(ExternalFlowService, flowService);
   const service = new ReturnsService();

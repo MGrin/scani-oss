@@ -2,6 +2,7 @@ import type { DatabaseTransaction } from '@scani/db';
 import type { CoverageQuality, HoldingCoverage, HoldingTransaction } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import { flowRoleOfRow } from '../../lib/returns/flow-classification';
 import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
 import type { BalanceAtTimeCaches } from '../pricing/BalanceAtTimeService';
@@ -14,6 +15,7 @@ import {
   historyCompletenessOf,
 } from '../pricing/CostBasisService';
 import type { PriceLookup } from '../pricing/PriceLookup';
+import { DriftLedgerService, withDrift } from '../returns/DriftLedgerService';
 import { TransferReviewService } from '../TransferReviewService';
 import {
   PortfolioValuationAtTimeService,
@@ -167,6 +169,7 @@ export class PnLAtTimeService {
   // The queue's own service, so the caption's count and the page its link
   // opens are answering to one predicate (SC-1067).
   private readonly transferReviewService = Container.get(TransferReviewService);
+  private readonly driftLedgerService = Container.get(DriftLedgerService);
 
   async getPnL(
     userId: string,
@@ -213,8 +216,17 @@ export class PnLAtTimeService {
     // Cost basis needs every holding's full tx history — both to detect
     // transfer-linked components and to cost-walk them together. The
     // rollup hands these in via caches; ad-hoc callers pay one bulk read.
-    const txsByHolding: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>> = opts.caches
+    const ledgerByHolding: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>> = opts.caches
       ?.transactions ?? (await this.txRepository.findForHoldingsAll(holdingIds, opts.tx));
+    // Unexplained balance changes walk as money in or out, so a balance that
+    // moved with no transaction is never PnL (SC-1470, mgrin 2026-10-01).
+    const txsByHolding = withDrift(
+      ledgerByHolding,
+      await this.driftLedgerService.forHoldings(userId, heldTokenByHolding, {
+        transactions: ledgerByHolding,
+        tx: opts.tx,
+      })
+    );
 
     // The flag every provider writes honestly and nothing has ever read
     // (SC-149). Kraken reports `false` when its ledger endpoint pages out
@@ -287,15 +299,25 @@ export class PnLAtTimeService {
     for (const ph of valuation.perHolding) {
       const cost = costByHolding.get(ph.holdingId);
       const rawCostBasis = cost?.costBasis ?? new Decimal(0);
-      const rawRealized = cost?.realizedPnl ?? new Decimal(0);
+      const rawRealized = (cost?.realizedPnl ?? new Decimal(0)).add(cost?.income ?? 0);
       const hasTransactions = cost?.hasTransactions ?? false;
       // Cost-unknown holding: no cost-relevant transaction at or before
       // `at`, so the walk reports costBasis 0. Substitute the holding's
       // current value as cost basis — PnL then reads as a flat 0 instead
       // of fabricating the entire value as an unrealized gain.
       const costUnknown = ph.valueInBase !== null && !hasTransactions;
-      const costBasis = costUnknown && ph.valueInBase !== null ? ph.valueInBase : rawCostBasis;
-      const realizedPnl = costUnknown ? new Decimal(0) : rawRealized;
+      // A unit of the base currency costs one unit, so base-currency cash has no
+      // unrealized PnL whatever lots the walk left. A ledger short of an outflow
+      // (a fee, an unmatched spend) leaves lots behind, and each read as a loss
+      // the size of money already spent (SC-1467).
+      const atPar = ph.valueInBase !== null && ph.tokenId === baseCurrencyId;
+      const costBasis =
+        (costUnknown || atPar) && ph.valueInBase !== null ? ph.valueInBase : rawCostBasis;
+      const realizedPnl = costUnknown
+        ? new Decimal(0)
+        : atPar
+          ? rawRealized.add(baseCashFees(txsByHolding.get(ph.holdingId) ?? [], at))
+          : rawRealized;
       // A holding kept out of the value side stays out of the cost side.
       //
       // The gate is "we could not value it", not `ph.unpriceable` — which is
@@ -376,11 +398,29 @@ export class PnLAtTimeService {
   }
 }
 
+/**
+ * What base-currency cash paid up to `at` that the cost walk does not book:
+ * its fees, the negative rows Returns counts as return (`flowRoleOfRow`). The
+ * walk books income at receipt for every holding (SC-1470); base cash carries
+ * its own value as cost basis, so without this its fees reached no PnL.
+ */
+function baseCashFees(txs: ReadonlyArray<HoldingTransaction>, at: Date): Decimal {
+  let fees = new Decimal(0);
+  const ids = new Set(txs.map((tx) => tx.id));
+  for (const tx of txs) {
+    if (tx.occurredAt > at || flowRoleOfRow(tx, ids) !== 'return') continue;
+    const quantity = new Decimal(tx.quantity);
+    if (quantity.isNegative()) fees = fees.add(quantity);
+  }
+  return fees;
+}
+
 // Partition holdings into transfer-connected components (sets of
 // holdings joined by a shared transfer_group_id, walked together by
 // CostBasisService.walkComponent) and singletons (no linked transfer,
 // walked per-holding). Union-find over holdings that co-occur on any
 // transfer_group_id.
+
 function buildTransferComponents(
   holdingIds: ReadonlyArray<string>,
   txsByHolding: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>>

@@ -29,7 +29,7 @@ const CANDIDATE_WINDOW_MS = 2 * 60 * 60 * 1000;
 const REPAIR_QTY_EPSILON = new Decimal('0.02');
 
 /** The arrival a plan would claim, with the facts that justify claiming it. */
-export interface MatchedArrival {
+interface MatchedArrival {
   transactionId: string;
   holdingId: string;
   accountName: string;

@@ -36,7 +36,7 @@ export interface PortfolioHistoryBackfillJob extends UserJobBase {
   rollupProgress?: PortfolioHistoryRollupProgress;
 }
 
-export const portfolioHistoryBackfillSchema: z.ZodType<PortfolioHistoryBackfillJob> = z.object({
+const portfolioHistoryBackfillSchema: z.ZodType<PortfolioHistoryBackfillJob> = z.object({
   userId: z.string().min(1),
   requestId: z.string().min(1),
   tokenIds: z.array(z.string().uuid()),

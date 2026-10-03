@@ -1,35 +1,13 @@
-export {
-  type DemoBootstrapResult,
-  ensureDemoDatasetSeeded,
-  isDemoPersonaPresent,
-  todayAnchor,
-} from './bootstrap';
-export { DEMO_PRICE_SOURCE, DemoDatasetSeeder, type DemoSeedSummary } from './DemoDatasetSeeder';
-export {
-  type BuildDemoDatasetOptions,
-  buildDemoDataset,
-  type DemoDataset,
-  type DemoRollupRow,
-  type DemoScopeKind,
-  type DemoTransactionRow,
-} from './dataset';
+export { ensureDemoDatasetSeeded } from './bootstrap';
+export { DemoDatasetSeeder } from './DemoDatasetSeeder';
 export {
   assertDemoOnlyDatabase,
   assertDemoOnlyUsers,
   assertNoForeignUsers,
-  assertNoForeignUsersInDatabase,
   DEMO_MODE_ENV_VAR,
-  type DemoIdentity,
   DemoModeRefused,
   demoIdentity,
   foreignUserEmails,
   isDemoModeRequested,
 } from './mode';
-export {
-  DEMO_ANCHOR_DATE,
-  DEMO_BASE_CURRENCY,
-  DEMO_COST_BASIS_METHOD,
-  DEMO_HISTORY_DAYS,
-  DEMO_USER_EMAIL,
-  DEMO_USER_NAME,
-} from './persona';
+export { DEMO_USER_EMAIL } from './persona';

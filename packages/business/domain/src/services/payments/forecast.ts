@@ -87,7 +87,7 @@ export interface ForecastPayment {
   estimateFromHistory: boolean;
 }
 
-export interface ForecastOccurrenceRow {
+interface ForecastOccurrenceRow {
   dueDate: string;
   /** `'scheduled'` | `'matched'` | `'missed'` | `'skipped'`. */
   status: string;
@@ -107,9 +107,9 @@ export interface ForecastPaymentInput {
   occurrences: readonly ForecastOccurrenceRow[];
 }
 
-export type ForecastDirection = 'inflow' | 'outflow';
+type ForecastDirection = 'inflow' | 'outflow';
 
-export interface ForecastMovement {
+interface ForecastMovement {
   paymentId: string;
   /** `YYYY-MM-DD`. */
   dueDate: string;
@@ -135,7 +135,7 @@ export interface ForecastMovement {
 }
 
 /** A payment that is running and has no amount anybody could project. */
-export interface UnprojectablePayment {
+interface UnprojectablePayment {
   paymentId: string;
   direction: ForecastDirection;
   /**
@@ -166,7 +166,7 @@ export interface UnprojectablePayment {
  * nothing to cite; that provenance is the third visual register, and it works
  * even for a reader who ignores every badge on the screen.
  */
-export interface HistoryEstimatedPayment {
+interface HistoryEstimatedPayment {
   paymentId: string;
   direction: ForecastDirection;
   currencyTokenId: string;
@@ -416,9 +416,4 @@ export function buildForecast(
   overdue.sort((a, b) => a.dueDate.localeCompare(b.dueDate));
 
   return { movements, overdue, unprojectable, estimatedFromHistory };
-}
-
-/** The month bucket a date falls in, `YYYY-MM`. */
-export function monthKey(dueDate: string): string {
-  return dueDate.slice(0, 7);
 }

@@ -203,7 +203,7 @@ export function renderWeeklyDigestEmail({
       content,
       footerNote: `You get this weekly because you have a portfolio in
                 <a href="${escapeHtml(appUrl)}" style="color:${brand.textMuted};">${escapeHtml(brand.appName)}</a>.
-                <a href="${escapeHtml(unsubscribeUrl)}" style="color:${brand.textMuted};text-decoration:underline;">Unsubscribe</a>
+                <a href="${escapeHtml(unsubscribeUrl)}" data-no-track style="color:${brand.textMuted};text-decoration:underline;">Unsubscribe</a>
                 — one click, no sign-in.`,
     }),
   };

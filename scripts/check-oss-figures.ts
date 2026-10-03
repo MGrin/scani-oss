@@ -86,7 +86,7 @@ import {
  */
 export const EXIT_SELF_TEST_FAILED = 10;
 
-export { EXIT_OK, EXIT_REFUSED, EXIT_UNKNOWN };
+export { EXIT_OK, EXIT_REFUSED };
 
 /**
  * A decimal literal with THREE OR MORE fraction digits.
@@ -365,7 +365,7 @@ function population(cwd: string, fromCommits: readonly string[] | null): GitRun 
   return { kind: 'ran', stdout: parts.join('\n') };
 }
 
-export function main(argv: readonly string[], cwd: string, stdin: string): number {
+function main(argv: readonly string[], cwd: string, stdin: string): number {
   const broken = selfTest();
   if (broken.length > 0) {
     for (const b of broken) console.error(`  ${b}`);

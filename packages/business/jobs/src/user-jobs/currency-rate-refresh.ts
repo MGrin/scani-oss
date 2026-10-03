@@ -44,7 +44,7 @@ export interface CurrencyRateRefreshJob extends UserJobBase {
   toSymbol: string;
 }
 
-export const currencyRateRefreshSchema: z.ZodType<CurrencyRateRefreshJob> = z.object({
+const currencyRateRefreshSchema: z.ZodType<CurrencyRateRefreshJob> = z.object({
   userId: z.string().min(1),
   requestId: z.string().min(1),
   fromTokenId: z.string().uuid(),

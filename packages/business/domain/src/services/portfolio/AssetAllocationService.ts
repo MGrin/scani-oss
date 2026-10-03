@@ -1,6 +1,7 @@
 import type { AssetAllocationDimension, AssetAllocationItem } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import { aggregateAllocation, shareOf, splitDebt } from '../../lib/portfolio/allocation';
 import { extractPriceMap } from '../../lib/price-map';
 import { getOrComputeFromCache } from '../../lib/request-cache';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
@@ -49,6 +50,14 @@ type HoldingWithCompleteDetails = {
   };
 };
 
+type AllocationResult = {
+  items: AssetAllocationItem[];
+  /** Signed: `"0"`, or the negative sum of the holdings kept out of `items`. */
+  marginDebt: string;
+  totalValue: string;
+  baseCurrency: string;
+};
+
 @Service()
 export class AssetAllocationService extends BaseService {
   private readonly portfolioService = Container.get(PortfolioValuationService);
@@ -64,11 +73,7 @@ export class AssetAllocationService extends BaseService {
     dimension: AssetAllocationDimension,
     userBaseCurrencyId?: string,
     requestCache?: RequestCache
-  ): Promise<{
-    items: AssetAllocationItem[];
-    totalValue: string;
-    baseCurrency: string;
-  }> {
+  ): Promise<AllocationResult> {
     this.logger.debug({ userId, dimension }, 'Getting asset allocation');
 
     // PERFORMANCE FIX: Use request cache for holdings to avoid duplicate fetches
@@ -100,138 +105,31 @@ export class AssetAllocationService extends BaseService {
     dimension: AssetAllocationDimension,
     portfolioValue: PortfolioValueResult,
     holdingsWithDetails: HoldingWithCompleteDetails[]
-  ): Promise<{
-    items: AssetAllocationItem[];
-    totalValue: string;
-    baseCurrency: string;
-  }> {
-    // Extract token prices
+  ): Promise<AllocationResult> {
     const priceMap = extractPriceMap(portfolioValue);
 
-    // Calculate allocation based on dimension
-    const items = await this.calculateAllocationByDimension(
-      holdingsWithDetails,
-      priceMap,
-      portfolioValue.totalValue,
-      dimension,
-      userId
-    );
+    if (dimension === 'group') {
+      const { assets, marginDebt } = splitDebt(holdingsWithDetails, priceMap);
+      return {
+        items: await this.calculateGroupAllocation(
+          assets,
+          priceMap,
+          new Decimal(portfolioValue.totalValue).minus(marginDebt),
+          userId
+        ),
+        marginDebt: marginDebt.toString(),
+        totalValue: portfolioValue.totalValue,
+        baseCurrency: portfolioValue.baseCurrency,
+      };
+    }
 
+    const { items, marginDebt } = aggregateAllocation(holdingsWithDetails, priceMap, dimension);
     return {
       items,
+      marginDebt: marginDebt.toString(),
       totalValue: portfolioValue.totalValue,
       baseCurrency: portfolioValue.baseCurrency,
     };
-  }
-
-  private async calculateAllocationByDimension(
-    holdingsWithDetails: HoldingWithCompleteDetails[],
-    priceMap: Map<string, string>,
-    totalValue: string,
-    dimension: AssetAllocationDimension,
-    userId: string
-  ): Promise<AssetAllocationItem[]> {
-    const aggregationMap = new Map<
-      string,
-      { id: string; code: string; name: string; value: Decimal }
-    >();
-
-    // Aggregate by dimension - only include active holdings
-    for (const { holding, token, account, institution } of holdingsWithDetails) {
-      // Skip inactive holdings from allocation calculations
-      if (!holding.isActive) {
-        continue;
-      }
-      // priceMap only contains priceable tokens — an absent key means
-      // we couldn't resolve the price. Skip such holdings from the
-      // allocation (the corresponding slice would be 0 anyway, but
-      // skipping makes the intent explicit and avoids confusing
-      // "unpriceable" with "worth zero").
-      const price = priceMap.get(token.id);
-      if (!price) continue;
-      const balance = new Decimal(holding.balance);
-      const value = balance.mul(new Decimal(price));
-
-      let key: string;
-      let id: string;
-      let code: string;
-      let name: string;
-
-      switch (dimension) {
-        case 'token':
-          key = token.id;
-          id = token.id;
-          code = token.symbol;
-          name = token.name;
-          break;
-        case 'token_type':
-          key = token.typeCode;
-          id = token.typeId;
-          code = token.typeCode;
-          name = token.typeName;
-          break;
-        case 'account':
-          key = account.id;
-          id = account.id;
-          code = account.name;
-          name = account.name;
-          break;
-        case 'account_type':
-          key = account.typeCode;
-          id = account.typeCode;
-          code = account.typeCode;
-          name = account.typeName;
-          break;
-        case 'institution':
-          key = institution.id;
-          id = institution.id;
-          code = institution.name;
-          name = institution.name;
-          break;
-        case 'institution_type':
-          key = institution.typeCode;
-          id = institution.typeCode;
-          code = institution.typeCode;
-          name = institution.typeName;
-          break;
-        case 'group':
-          // Skip - will be handled separately after the loop
-          continue;
-        default:
-          throw new Error(
-            `Unknown dimension: ${dimension}. Valid dimensions are: token, token_type, account, account_type, institution, institution_type, group`
-          );
-      }
-
-      if (!aggregationMap.has(key)) {
-        aggregationMap.set(key, { id, code, name, value: new Decimal(0) });
-      }
-
-      const existing = aggregationMap.get(key)!;
-      existing.value = existing.value.add(value);
-    }
-
-    // Handle group dimension separately
-    if (dimension === 'group') {
-      return await this.calculateGroupAllocation(holdingsWithDetails, priceMap, totalValue, userId);
-    }
-
-    // Convert to array and calculate percentages
-    const totalValueDecimal = new Decimal(totalValue);
-    const items = Array.from(aggregationMap.values())
-      .map((item) => ({
-        id: item.id,
-        code: item.code,
-        name: item.name,
-        value: item.value.toString(),
-        percentage: totalValueDecimal.greaterThan(0)
-          ? item.value.div(totalValueDecimal).mul(100).toFixed(2)
-          : '0',
-      }))
-      .filter((item) => new Decimal(item.value).greaterThan(0))
-      .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value)));
-
-    return items;
   }
 
   /**
@@ -245,7 +143,7 @@ export class AssetAllocationService extends BaseService {
   private async calculateGroupAllocation(
     holdingsWithDetails: HoldingWithCompleteDetails[],
     priceMap: Map<string, string>,
-    totalValue: string,
+    grossAssets: Decimal,
     userId: string
   ): Promise<AssetAllocationItem[]> {
     const { groups, ungrouped } = await this.groupValuation.valueByGroup(
@@ -254,7 +152,6 @@ export class AssetAllocationService extends BaseService {
       priceMap
     );
 
-    const totalValueDecimal = new Decimal(totalValue);
     return [
       ...groups.map(({ group, total }) => ({
         id: group.id,
@@ -264,12 +161,7 @@ export class AssetAllocationService extends BaseService {
       })),
       { id: 'ungrouped', code: 'Ungrouped', name: 'Ungrouped', value: ungrouped.value },
     ]
-      .map((item) => ({
-        ...item,
-        percentage: totalValueDecimal.greaterThan(0)
-          ? new Decimal(item.value).div(totalValueDecimal).mul(100).toFixed(2)
-          : '0',
-      }))
+      .map((item) => ({ ...item, percentage: shareOf(item.value, grossAssets) }))
       .filter((item) => new Decimal(item.value).greaterThan(0))
       .sort((a, b) => new Decimal(b.value).comparedTo(new Decimal(a.value)));
   }

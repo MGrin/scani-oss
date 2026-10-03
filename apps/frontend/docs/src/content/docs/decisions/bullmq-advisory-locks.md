@@ -95,10 +95,9 @@ path.
   move, so is the queue. A worker cannot dequeue a job it will then
   be unable to write, because reaching the queue and reaching the
   data are now the same reachability question.
-- **Operator tooling reuses the queue.** HMAC-gated job endpoints on
-  the api can retry a failed job, replay a DLQ message, or kick off
-  an out-of-schedule run — the same BullMQ that runs everything
-  else.
+- **Operator tooling reuses the queue.** Retrying a failed job,
+  replaying a DLQ message or kicking off an out-of-schedule run goes
+  through the same BullMQ that runs everything else.
 
 ## What the design costs
 

@@ -120,11 +120,11 @@ describe('KucoinProvider — pure mappers', () => {
     expect(event?.occurredAt.getTime()).toBe(1700000000000);
   });
 
-  test('ledgerItemToEvent: sub-account transfer with negative amount → transfer_out', () => {
+  test('ledgerItemToEvent: sub-account transfer, direction out → transfer_out at -amount', () => {
     const event = ledgerItemToEvent({
       id: '1002',
       currency: 'USDT',
-      amount: '-100',
+      amount: '100',
       fee: '0',
       balance: '900',
       bizType: 'Sub-account transfer',
@@ -198,7 +198,7 @@ describe('KucoinProvider.fetchTransactions — fixture-driven', () => {
           {
             id: 'L2',
             currency: 'BTC',
-            amount: '-0.05',
+            amount: '0.05',
             fee: '0.0001',
             balance: '0.15',
             bizType: 'Trade_Exchange',
@@ -400,5 +400,68 @@ liveDescribe('KucoinProvider — live (SCANI_LIVE=1, throwaway account)', () => 
     };
     const events = await p.fetchTransactions(liveCtx as never);
     expect(Array.isArray(events)).toBe(true);
+  });
+});
+
+/**
+ * SC-1478 / SC-1479. KuCoin's account ledger sends `amount` UNSIGNED and carries
+ * the side in `direction` (`in` | `out`) — the official spec's own example is
+ * `"amount": "0.01"` with `"direction": "out"`. A mapper that signs from `amount`
+ * lands every outflow as an inflow and flips the kind with it (a sell becomes
+ * `buy`, an outbound transfer `transfer_in`).
+ */
+describe('KucoinProvider — ledger amounts arrive unsigned; direction carries the side (SC-1478)', () => {
+  const row = (bizType: string, direction: 'in' | 'out') => ({
+    id: `${bizType}-${direction}`,
+    currency: 'USDT',
+    amount: '5',
+    fee: '0',
+    balance: '0',
+    accountType: 'MAIN',
+    bizType,
+    direction,
+    createdAt: 1728658481484,
+  });
+
+  const outflows = [
+    ['Withdrawal', 'withdraw'],
+    ['Trade_Exchange', 'sell'],
+    ['TRANSFER', 'transfer_out'],
+    ['SUB_TRANSFER', 'transfer_out'],
+  ] as const;
+
+  for (const [bizType, kind] of outflows) {
+    test(`${bizType} out, amount "5" → ${kind} at -5`, () => {
+      const event = ledgerItemToEvent(row(bizType, 'out'));
+      expect(event?.kind).toBe(kind);
+      expect(event?.primary.quantity).toBe('-5');
+    });
+  }
+
+  test('control: an inflow keeps its kind and positive quantity', () => {
+    const event = ledgerItemToEvent(row('Deposit', 'in'));
+    expect(event?.kind).toBe('deposit');
+    expect(event?.primary.quantity).toBe('5');
+  });
+});
+
+describe('KucoinProvider — a row with no recognised direction keeps the amount sign (SC-1479)', () => {
+  const base = {
+    id: 'x',
+    currency: 'USDT',
+    fee: '0',
+    balance: '0',
+    accountType: 'MAIN',
+    bizType: 'Withdrawal',
+    createdAt: 1728658481484,
+  };
+  test('missing direction, signed -5 stays an outflow at -5', () => {
+    const event = ledgerItemToEvent({ ...base, amount: '-5' } as never);
+    expect(event?.primary.quantity).toBe('-5');
+  });
+  test('missing direction, unsigned 5 stays an inflow at +5 (never defaulted to out)', () => {
+    const event = ledgerItemToEvent({ ...base, bizType: 'Deposit', amount: '5' } as never);
+    expect(event?.kind).toBe('deposit');
+    expect(event?.primary.quantity).toBe('5');
   });
 });

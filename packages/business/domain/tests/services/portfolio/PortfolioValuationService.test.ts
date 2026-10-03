@@ -8,7 +8,11 @@ import * as schema from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
-import { PortfolioValuationService } from '../../../src/services/portfolio/PortfolioValuationService';
+import {
+  PortfolioValuationService,
+  type PortfolioValueResult,
+  sumPortfolioDebtByAccount,
+} from '../../../src/services/portfolio/PortfolioValuationService';
 import { PortfolioValueCache } from '../../../src/services/portfolio/PortfolioValueCache';
 import { PricingService } from '../../../src/services/pricing/PricingService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
@@ -532,5 +536,51 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
     expect(cash?.priceStale).toBe(false);
     expect(cash?.priceSource).toBe('Base Currency');
     expect(portfolio.holdings.find((h) => h.value === '110400')?.priceStale).toBe(true);
+  });
+});
+
+describe('sumPortfolioDebtByAccount', () => {
+  function portfolio(
+    holdings: Array<{ accountId: string; value: string | null; isActive?: boolean }>
+  ): PortfolioValueResult {
+    return {
+      totalValue: '0',
+      baseCurrency: 'USD',
+      holdings: holdings.map((h, index) => ({
+        accountId: h.accountId,
+        tokenId: `token-${index}`,
+        tokenSymbol: `T${index}`,
+        balance: h.value ?? '-1',
+        currentPrice: h.value === null ? null : '1',
+        value: h.value,
+        isActive: h.isActive ?? true,
+      })),
+    };
+  }
+
+  test('sums only the negative holdings, per account', () => {
+    const debt = sumPortfolioDebtByAccount(
+      portfolio([
+        { accountId: 'A', value: '10000' },
+        { accountId: 'A', value: '-2500' },
+        { accountId: 'B', value: '500' },
+      ])
+    );
+    expect(debt.get('A')?.toString()).toBe('-2500');
+    expect(debt.has('B')).toBe(false);
+  });
+
+  test('an unpriced or inactive negative holding is not debt', () => {
+    const debt = sumPortfolioDebtByAccount(
+      portfolio([
+        { accountId: 'A', value: null },
+        { accountId: 'C', value: '-300', isActive: false },
+      ])
+    );
+    expect(debt.size).toBe(0);
+  });
+
+  test('no valuation, no debt', () => {
+    expect(sumPortfolioDebtByAccount(null).size).toBe(0);
   });
 });

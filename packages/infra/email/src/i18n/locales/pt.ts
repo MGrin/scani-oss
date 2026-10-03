@@ -80,4 +80,22 @@ export const pt: EmailStrings = {
       'Clique na ligação abaixo para confirmar que {app} o pode contactar neste endereço. A ligação só funciona uma vez.',
     textIgnore: 'Não criou nenhuma conta {app}? Pode ignorar esta mensagem sem problema.',
   },
+  activationNudge: {
+    subject: 'Adicione sua primeira conta ao {app}',
+    preheader:
+      'Conecte uma corretora, uma carteira ou um arquivo bancário e o {app} começa a acompanhar.',
+    greeting: 'Olá, {name},',
+    greetingNoName: 'Olá,',
+    headline: 'Adicione sua primeira conta',
+    body: 'Você se cadastrou no {app} há alguns dias e ainda não adicionou nada. Conecte uma corretora ou uma carteira, importe um extrato bancário ou digite um saldo, e o {app} mantém seu patrimônio líquido e seus rendimentos atualizados a partir daí.',
+    button: 'Abrir o {app}',
+    once: 'Este é o único lembrete que enviaremos.',
+    footer:
+      'Você recebe isto uma única vez porque se cadastrou no {appLink}. {unsubscribeLink}: um clique, sem login. Como tratamos seus dados: {privacyLink}.',
+    unsubscribe: 'Parar de receber estes e-mails',
+    privacy: 'política de privacidade',
+    textOpen: 'Abrir o {app}: {url}',
+    textUnsubscribe: 'Parar de receber estes e-mails: {url}',
+    textPrivacy: 'Política de privacidade: {url}',
+  },
 };

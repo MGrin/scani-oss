@@ -47,7 +47,7 @@ ownership rule.
 | `BACKEND_URL` | app (api), worker | Browser-facing api URL. Embedded in magic-link emails, and in the one-click unsubscribe links (`/e/u/:token` for the digest, `/e/a/:token` for alerts — SC-460, SC-459). Optional on the worker — absent, both jobs log a refusal and send nothing. |
 | `COOKIE_DOMAIN` | app (api) | Cross-subdomain cookie scope. Leave unset for same-origin. |
 | `BETTER_AUTH_SECRET` | app (api) | 32+ chars. Better-Auth session signing key. |
-| `JOBS_HMAC_SECRET` | app (api), worker | 32+ chars. HMAC for operator job endpoints, and for the api's wake ping to the worker. Optional on the worker — only its wake endpoint needs it. |
+| `JOBS_HMAC_SECRET` | app (api), worker | 32+ chars. Signs the api's wake ping to the worker and the admin audit log's signature chain. Optional on the worker — only its wake endpoint needs it. |
 | `WORKER_WAKE_URL` | app (api) | Where the api pings the worker after a user enqueues, e.g. `http://worker:8081`. **Optional** — only a Postgres that scales to zero (Neon) needs it, because a suspend kills the worker's `LISTEN` and a new job then waits for the worker's idle poll, up to 10 minutes. Self-hosters leave it unset: their Postgres never suspends, so jobs already start at once. |
 | `WORKER_WAKE_PORT` | app (worker) | Port the worker's wake endpoint listens on, on all interfaces. **Optional** — served only when `JOBS_HMAC_SECRET` is set too. Pair with `WORKER_WAKE_URL`. |
 | `SCREENSHOT_BOT_SECRET` | app (api) | 32+ chars. Screenshot-bot sign-in bearer. **Optional everywhere** — unset endpoint refuses with 403, feature disabled. Set if you use a screenshot-capture pipeline. |
@@ -71,26 +71,6 @@ ownership rule.
 | `GLOBAL_HOURLY_USD_CAP` | app (data-provider) | Cumulative upstream USD per hour across all tenants. Trips a circuit breaker; further requests get 503 until the next hour-bucket. Decimals allowed. **`0` or absent = no cap.** |
 | `VITE_DATA_PROVIDER_URL` | cloud + landing (frontend) | Where those SPAs send tRPC calls. Baked at build time. Empty is legal and means same-origin, which is how dev works through the Vite proxy. |
 | `DATA_PROVIDER_PROXY_TARGET` | cloud (vite dev server) | What that dev proxy forwards to. Default `http://localhost:8082`. Dev only — the production build never reads it. |
-
-## Admin dashboard
-
-The passkey-gated infra console (`apps/frontend/admin`, Next.js). None
-of these are needed to run Scani — the admin app is an operator tool and
-a self-host deployment can skip it entirely.
-
-| Variable | Owner | What it does |
-|---|---|---|
-| `ADMIN_ORIGIN` | admin | Public origin of the console. WebAuthn checks it, so a mismatch means every passkey assertion is rejected. |
-| `ADMIN_RP_ID` | admin | WebAuthn Relying Party ID — the registrable domain of `ADMIN_ORIGIN`. |
-| `ADMIN_PASSKEY_CREDENTIAL_ID` | admin | Base64 credential ID of the one enrolled passkey. |
-| `ADMIN_PASSKEY_PUBLIC_KEY` | admin | Its public key. Together with the ID above, this *is* the user directory: there is no admin table. |
-| `ADMIN_SESSION_SECRET` | admin | Signs the admin session cookie. |
-| `ADMIN_BOOTSTRAP_TOKEN` | admin | One-time token that lets the first passkey enrol. Unset once a passkey exists — a live bootstrap token is a second way in. |
-| `NEXT_PUBLIC_SENTRY_DSN` | admin | Browser + server Sentry for the console. Unset → no-op. |
-| `NEXT_PUBLIC_SENTRY_ENVIRONMENT` | admin | Tag (`production`, `preview`). |
-| `NEXT_PUBLIC_SENTRY_RELEASE` | admin | Release identifier. |
-| `SENTRY_AUTH_TOKEN` | admin (build + API routes) | Uploads source maps at build time, and backs the console's "resolve issue" action. A write-scoped token, unlike the DSNs above. |
-| `SENTRY_ORG` | admin (build) | Sentry organisation slug for that upload. |
 
 ## Storage
 
@@ -174,8 +154,9 @@ enabled](/self-hosting/tier1/optional-keys/#how-to-tell-whats-enabled).
 | `VITE_SENTRY_DSN` | app (frontend) | Browser-side Sentry. Baked at build time. |
 | `VITE_SENTRY_ENABLED` | app (frontend) | Enable client-side reporting. |
 | `VITE_API_URL` | app, cloud (frontend) | URL the SPA calls for `/api`. Bun-bundled image bakes `/api`. |
-| `VITE_APP_URL` | cloud (frontend) | Scani app origin the console sends signed-out visitors to (`/auth?returnTo=`). Required in production. Baked at build time. |
+| `VITE_APP_URL` | cloud, admin (frontend) | Scani app origin the console sends signed-out visitors to (`/auth?returnTo=`). Required in production for cloud; the admin build falls back to `https://app.scani.xyz`. Baked at build time. |
 | `VITE_CLOUD_URL` | app (frontend) | Cloud console origin the app may return to after sign-in (`/auth?returnTo=`). Unset = no cross-origin return. Baked at build time. |
+| `VITE_ADMIN_URL` | app (frontend) | Admin app origin the app may return to after sign-in, beside `VITE_CLOUD_URL`. Unset = no return to the admin. Baked at build time. |
 | `SCANI_COMMIT` | docs site (build) | Full 40-hex commit the docs are built from, written into every page as `<meta name="scani-commit">` so a probe can tell which commit a host serves. Unset = no marker; anything else that is not a full sha fails the build. |
 | `API_UPSTREAM` | app (frontend-app nginx) | Inside the prod `frontend-app` image, nginx reverse-proxies `/api/*` → `${API_UPSTREAM}`. Default `http://api:3001` (compose network). Override when running `frontend-app` outside compose. |
 | `FRONTEND_PORT` | docker-compose.prod.yml | Host port for the `frontend-app` container. Default 8080. |

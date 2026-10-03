@@ -1,11 +1,16 @@
 import { describe, expect, test } from 'bun:test';
 import { TransactionImportCoordinator, TransactionImportUnrecoverableError } from '@scani/domain';
+import { HoldingRepository, PortfolioValueDailyRepository } from '@scani/domain/repositories';
+import { FeedBatchRejected, PortfolioValueCache } from '@scani/domain/services';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import type { TransactionImportJob } from '@scani/jobs';
 import { ProviderError } from '@scani/providers/core/errors';
-import { type ProcessorContext, UnrecoverableError } from '@scani/queue';
+import { BullMqEnqueueService, type ProcessorContext, UnrecoverableError } from '@scani/queue';
 import { Container } from 'typedi';
-import { IngestTransactionsProcessor } from '../../src/processors/ingest-transactions';
+import {
+  IngestTransactionsProcessor,
+  widenToEarliestWrite,
+} from '../../src/processors/ingest-transactions';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -98,11 +103,97 @@ describe('IngestTransactionsProcessor error classification', () => {
     expect((err as Error).message).toBe('socket hang up');
   });
 
+  // R38. The feed write refuses a batch before it reads anything, and the same
+  // events refuse the same way on every attempt, so retrying spends the budget
+  // on a known answer.
+  test('a batch the feed write refuses fails immediately, naming every problem', async () => {
+    const err = await failureOf(
+      new FeedBatchRejected([
+        { code: 'empty-external-id', detail: 'entry 2 has an empty external id' },
+        { code: 'invalid-date', detail: 'entry 5 occurs at an invalid date' },
+      ])
+    );
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect((err as Error).message).toContain('empty-external-id');
+    expect((err as Error).message).toContain('invalid-date');
+  });
+
   test('the pre-existing coordinator bridge still works', async () => {
     const err = await failureOf(
       new TransactionImportUnrecoverableError('No stored credentials', 'no-credentials')
     );
     expect(err).toBeInstanceOf(UnrecoverableError);
     expect((err as Error).message).toBe('No stored credentials');
+  });
+});
+
+/**
+ * SC-1459. The rebuild an import queues was sized from the snapshot's age
+ * alone, so a row written 200 days back into a portfolio snapshotted
+ * yesterday rebuilt 8 days and left the other 192 stale.
+ */
+describe('the rebuild after an import reaches the oldest row it wrote', () => {
+  const NOW = new Date('2026-09-30T12:00:00Z');
+  const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000).toISOString();
+
+  test('a row 200 days back widens an 8-day window past it', () => {
+    expect(widenToEarliestWrite(8, daysAgo(200), NOW)).toBeGreaterThanOrEqual(200);
+  });
+
+  test('an opening balance 547 days back reaches past the 400-day default', () => {
+    expect(widenToEarliestWrite(400, daysAgo(547), NOW)).toBeGreaterThanOrEqual(547);
+  });
+
+  test('control: an import of recent rows keeps the snapshot window, so an hourly sync stays small', () => {
+    expect(widenToEarliestWrite(8, daysAgo(0), NOW)).toBe(8);
+    expect(widenToEarliestWrite(8, null, NOW)).toBe(8);
+  });
+
+  test('the window is capped at the schema maximum', () => {
+    expect(widenToEarliestWrite(8, daysAgo(365 * 200), NOW)).toBe(365 * 100);
+  });
+
+  function processorEnqueuing(earliestWrittenAt: string | null) {
+    const added: Array<{ requestId: string; lookbackDays: number }> = [];
+    Container.set(TransactionImportCoordinator, {
+      execute: async () => ({
+        transactions: 3,
+        earliestWrittenAt,
+        warnings: [],
+        warningDetails: [],
+      }),
+    } as unknown as TransactionImportCoordinator);
+    Container.set(PortfolioValueDailyRepository, {
+      findLatestSnapshotDate: async () =>
+        new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
+    } as unknown as PortfolioValueDailyRepository);
+    Container.set(HoldingRepository, {
+      hasHoldingCreatedAfter: async () => false,
+    } as unknown as HoldingRepository);
+    Container.set(BullMqEnqueueService, {
+      add: async (_d: unknown, payload: { requestId: string; lookbackDays: number }) => {
+        added.push(payload);
+      },
+    } as unknown as BullMqEnqueueService);
+    Container.set(PortfolioValueCache, {
+      bust: async () => undefined,
+    } as unknown as PortfolioValueCache);
+    return { processor: new TestableProcessor(), added };
+  }
+
+  test('the queued job carries the widened window under its own id', async () => {
+    const earliest = new Date(Date.now() - 200 * 86_400_000).toISOString();
+    const { processor, added } = processorEnqueuing(earliest);
+    await processor.run(JOB, makeCtx());
+    expect(added).toHaveLength(1);
+    expect(added[0]?.lookbackDays).toBeGreaterThanOrEqual(200);
+    expect(added[0]?.requestId).toMatch(/^tx-import-\d+-\d+d$/);
+  });
+
+  test('control: a recent import keeps the bucket id, so a wave still coalesces into one job', async () => {
+    const { processor, added } = processorEnqueuing(new Date().toISOString());
+    await processor.run(JOB, makeCtx());
+    expect(added[0]?.lookbackDays).toBeLessThan(30);
+    expect(added[0]?.requestId).toMatch(/^tx-import-\d+$/);
   });
 });

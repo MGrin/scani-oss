@@ -15,8 +15,8 @@
  * here — they're orchestrator concerns and stay in the domain layer.
  */
 
-export const DEFAULT_FETCH_TIMEOUT_MS = 8000;
-export const DEFAULT_MAX_RETRIES = 2;
+const DEFAULT_FETCH_TIMEOUT_MS = 8000;
+const DEFAULT_MAX_RETRIES = 2;
 
 export async function fetchWithTimeout(
   url: string,

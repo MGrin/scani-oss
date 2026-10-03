@@ -136,7 +136,8 @@
           "institution": "Institution",
           "account": "Account",
           "group": "Group"
-        }
+        },
+        "groupsOverlap": "A holding can sit in several groups and counts in each, so these don't add up to your net worth."
       },
       "upcoming": {
         "title": "Upcoming bills",
@@ -314,6 +315,10 @@
         "unpricedAtZero_one": "{{count}} unpriced token counted at zero.",
         "unpricedAtZero_other": "{{count}} unpriced tokens counted at zero."
       }
+    },
+    "allocation": {
+      "marginDebt": "Margin debt",
+      "shareOfAssets": "Share of assets"
     },
     "money": {
       "upcoming": {
@@ -1422,7 +1427,13 @@
         "unpairedTransfers_other": "{{count}} payments out to classify",
         "balanceChangesToExplain": "Balance changes to explain",
         "unexplainedBalanceChanges_one": "{{count}} balance change we cannot explain",
-        "unexplainedBalanceChanges_other": "{{count}} balance changes we cannot explain"
+        "unexplainedBalanceChanges_other": "{{count}} balance changes we cannot explain",
+        "answersTradesExplain": "Covered by imported trades",
+        "answersExplained_one": "{{count}} explanation on {{subject}}",
+        "answersExplained_other": "{{count}} explanations on {{subject}}",
+        "unpriceableAirdrops": "Tokens nothing can price",
+        "unpriceableTokens_one": "{{count}} token arrived in your wallets that nothing can price",
+        "unpriceableTokens_other": "{{count}} tokens arrived in your wallets that nothing can price"
       },
       "kind": {
         "withdrawal": "Withdrawal",
@@ -1819,6 +1830,47 @@
           "received": "Enter the quantity received"
         },
         "undoFailed": "Could not undo that"
+      },
+      "settled": {
+        "title": "Explanations on {{subject}}",
+        "description": "Trades we imported now explain these balance changes too, so the same money is counted twice. Retire removes your explanations; Keep leaves them as they are.",
+        "full": "Explained by imported trades",
+        "partial": "<explained/> of <amount/> explained by imported trades. Retire it and the rest is asked about again.",
+        "movesOther": "This explanation also changed another holding",
+        "keep": "Keep",
+        "retire": "Retire",
+        "confirmOther": "Retiring also removes what these explanations recorded on another holding.",
+        "confirmRetire": "Yes, retire them",
+        "undo": "Undo",
+        "failed": "Some explanations could not be changed. Try again.",
+        "toast": {
+          "retired_one": "{{count}} explanation retired",
+          "retired_other": "{{count}} explanations retired",
+          "kept": "Explanations kept",
+          "undone": "Explanations put back",
+          "undoFailed": "Could not put the explanations back"
+        }
+      },
+      "unpriceable": {
+        "title": "Tokens nothing can price",
+        "description": "These arrived in your wallets and no price source has ever quoted them, so they already count for nothing in your net worth. Hide takes them off your lists; untick any you want to keep, and you will not be asked about those again. You can bring any of them back from Tokens, under Hidden.",
+        "hideAll": "Hide all",
+        "keepAll": "Keep all",
+        "hideSome_one": "Hide {{count}}",
+        "hideSome_other": "Hide {{count}}",
+        "failed": "Nothing was hidden. Try again.",
+        "keepFailed": "Your choice to keep these was not saved. Try again.",
+        "partlyFailed_one": "{{count}} token could not be hidden. Try again.",
+        "partlyFailed_other": "{{count}} tokens could not be hidden. Try again.",
+        "undo": "Undo",
+        "toast": {
+          "hidden_one": "{{count}} token hidden",
+          "hidden_other": "{{count}} tokens hidden",
+          "kept_one": "{{count}} token kept",
+          "kept_other": "{{count}} tokens kept",
+          "restored": "Tokens restored",
+          "restoreFailed": "Could not restore the tokens"
+        }
       }
     },
     "form": {
@@ -1928,6 +1980,8 @@
         "extension": "a .{{ext}}",
         "noExtension": "no file extension at all",
         "unsupported": "This one is {{named}}. Scani reads {{formats}}.",
+        "tooLarge": "This file is {{size}}. The limit is {{limit}}.",
+        "withLimit": "{{formats}}, up to {{limit}}",
         "remove": "Remove {{name}}"
       },
       "blocker": {

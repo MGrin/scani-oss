@@ -10,7 +10,7 @@ const Popover = PopoverPrimitive.Root;
 
 const PopoverTrigger = PopoverPrimitive.Trigger;
 
-export interface PopoverContentProps
+interface PopoverContentProps
   extends React.ComponentPropsWithoutRef<typeof PopoverPrimitive.Content> {
   /** Where the portal mounts. See `lib/portal-container.tsx`. */
   container?: PortalContainer;

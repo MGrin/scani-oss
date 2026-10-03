@@ -41,7 +41,7 @@ const RUN_TAG = `${Date.now().toString(36)}${process.pid.toString(36)}`;
  * `retry` is in the identity because a retry that inherits a spent bucket
  * re-runs against the state that failed it.
  */
-export function rateLimitIdentity(testInfo: TestInfo, scope = 'ctx'): string {
+function rateLimitIdentity(testInfo: TestInfo, scope = 'ctx'): string {
   return `${RUN_TAG}-${scope}-${testInfo.testId}-${testInfo.retry}`;
 }
 
@@ -51,7 +51,7 @@ export function rateLimitIdentity(testInfo: TestInfo, scope = 'ctx'): string {
  * detection, the PWA shell — still sees exactly what the device descriptor
  * says it should.
  */
-export function isolatedUserAgent(testInfo: TestInfo, scope?: string): string {
+function isolatedUserAgent(testInfo: TestInfo, scope?: string): string {
   const base = testInfo.project.use.userAgent;
   const token = `scani-e2e/${rateLimitIdentity(testInfo, scope)}`;
   return base ? `${base} ${token}` : token;

@@ -86,6 +86,7 @@ export function DataViewRows<T>({
               key={id}
               label={spec.label}
               sublabel={spec.sublabel}
+              wrapIdentity={spec.wrapIdentity}
               leading={<SelectionBox checked={isSelected} />}
               value={spec.value}
               delta={spec.delta}
@@ -102,6 +103,7 @@ export function DataViewRows<T>({
             key={id}
             label={spec.label}
             sublabel={spec.sublabel}
+            wrapIdentity={spec.wrapIdentity}
             leading={spec.leading}
             value={spec.value}
             delta={spec.delta}

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { NewHoldingTransaction } from '@scani/db/schema';
 import { Container } from 'typedi';
+import { ownFeeLegFor, settlementLegsFor } from '../../../src/lib/transactions/trade-settlement';
 import { HoldingBalanceObservationRepository } from '../../../src/repositories/HoldingBalanceObservationRepository';
 import {
   type CoverageUpsertMerge,
@@ -12,6 +13,7 @@ import {
   HoldingTransactionRepository,
 } from '../../../src/repositories/HoldingTransactionRepository';
 import { TokenRepository } from '../../../src/repositories/TokenRepository';
+import type { IngestResult } from '../../../src/services/feeds/FeedIngestService';
 import { OpeningBalanceReconciliationService } from '../../../src/services/holdings/OpeningBalanceReconciliationService';
 import { TransferReviewService } from '../../../src/services/TransferReviewService';
 import {
@@ -28,6 +30,7 @@ import {
   NON_EVM_WALLET_SOURCES,
   sourceForChainId,
 } from '../../../src/services/transactions/transaction-source';
+import { CEX_SOURCE_TO_INSTITUTION } from '../../../src/services/transactions/transaction-sources';
 import { IntegrationCredentialsService } from '../../../src/services/users/IntegrationCredentialsService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
@@ -35,7 +38,7 @@ import { restoreContainerAfterAll } from '../../../test/helpers/container';
 // so no later test file resolves them (SC-448).
 restoreContainerAfterAll();
 
-// SC-168. `persistAndReport` is the only writer of
+// SC-168. `afterIngest` is the only writer of
 // `has_complete_tx_history` and it sits on the success path, so before
 // this a failed run left the last success's claim standing — and since
 // SC-149 that claim drives cost basis. What the coordinator owes is a
@@ -110,27 +113,34 @@ const INPUT = {
   source: 'bybit-api',
 };
 
+/** A run as the steps after the write see it: the rows ingest wrote, and what the fetch claimed. */
+interface Run {
+  rows: ReadonlyArray<{ holdingId: string; occurredAt: Date }>;
+  hasCompleteTxHistory: boolean;
+  historyRetractions: string[];
+}
+
 // Class-field DI resolves at construction, so the stubs have to be on the
 // container before the coordinator is built — the one from `beforeEach`
 // already holds the real ledger repository.
 //
-// `persistAndReport` is the function these tickets name. Reaching it
-// through `execute` would mean standing up a provider, credentials and an
-// account row to test a step that happens after all three.
+// `afterIngest` is the step these tickets name: everything the run does once
+// its write has committed. Reaching it through `execute` would mean standing
+// up a provider, credentials and an account row to test a step that happens
+// after all three.
 function persistWithStubs(
-  bulkUpserted: string[],
   merges: BulkUpsertMerge[] = [],
-  marks: { calls: string[]; fail?: boolean } = { calls: [] }
+  marks: { calls: string[]; fail?: boolean; links?: string[] } = { calls: [] },
+  reconcileHolding: (holdingId: string) => Promise<unknown> = async () => undefined,
+  changed = true
 ) {
   Container.set(HoldingTransactionRepository, {
-    bulkUpsert: async (rows: Array<{ holdingId: string }>) => {
-      bulkUpserted.push(...rows.map((r) => r.holdingId));
-      return { rows, merges };
+    linkSettlements: async (userId: string) => {
+      marks.links?.push(userId);
+      return 0;
     },
   });
-  Container.set(OpeningBalanceReconciliationService, {
-    reconcileHolding: async () => undefined,
-  });
+  Container.set(OpeningBalanceReconciliationService, { reconcileHolding });
   Container.set(TransferReviewService, {
     applyDisposalMarks: async (userId: string) => {
       marks.calls.push(userId);
@@ -140,7 +150,47 @@ function persistWithStubs(
   });
   const c = new TransactionImportCoordinator();
   // biome-ignore lint/complexity/useLiteralKeys: dot access on a private member is a TS error; bracket notation is the only way to reach the method under test.
-  return c['persistAndReport'].bind(c);
+  const afterIngest = c['afterIngest'].bind(c);
+  return (userId: string, accountId: string, source: string, run: Run, since?: Date) => {
+    const fetched: TransactionRouterResult = {
+      events: run.rows.map((row, i) => ({
+        externalId: `event-${i}`,
+        occurredAt: row.occurredAt,
+        kind: 'buy',
+        primary: { tokenIdentity: { symbol: 'BTC' }, quantity: '1' },
+      })),
+      fetchedAt: new Date('2026-09-01T00:00:00Z'),
+      horizonMs: undefined,
+      warnings: [],
+      warningDetails: [],
+      hasCompleteTxHistory: run.hasCompleteTxHistory,
+      historyRetractions: run.historyRetractions,
+      historyStartsAt: null,
+    };
+    const earliest = run.rows.reduce<Date | null>(
+      (a, r) => (!a || r.occurredAt < a ? r.occurredAt : a),
+      null
+    );
+    const ingested: IngestResult = {
+      userId,
+      inputId: 'input-1',
+      touchedHoldingIds: [...new Set(run.rows.map((r) => r.holdingId))],
+      createdHoldingIds: [],
+      earliestChangedAt: changed ? earliest : null,
+      notices: [],
+      noticeDetails: [],
+      entryOutcomes: run.rows.map(() => 'landed'),
+      rowsSent: run.rows.length,
+      entriesWritten: run.rows.length,
+      merges,
+      checkpointsWritten: 0,
+      windowRecorded: true,
+      mirrorHoldingIds: [],
+      skippedAssets: [],
+      holdings: [],
+    };
+    return afterIngest(userId, accountId, source, fetched, ingested, since);
+  };
 }
 
 describe('TransactionImportCoordinator — a failed run retracts its completeness claim', () => {
@@ -189,34 +239,26 @@ describe("TransactionImportCoordinator — the run's oldest event is not a holdi
     };
   }
 
-  function routerResult(): TransactionRouterResult {
+  function routerResult(): Run {
     return {
-      transactions: [tx(OLD_HOLDING, RUN_OLDEST, 'btc-1'), tx(NEW_HOLDING, RUN_NEWEST, 'new-1')],
-      observations: [],
-      warnings: [],
-      warningDetails: [],
-      firstEventAt: RUN_OLDEST,
-      lastEventAt: RUN_NEWEST,
+      rows: [tx(OLD_HOLDING, RUN_OLDEST, 'btc-1'), tx(NEW_HOLDING, RUN_NEWEST, 'new-1')],
       hasCompleteTxHistory: true,
       historyRetractions: [],
-      historyStartsAt: null,
     };
   }
 
   test('neither holding is stamped with the bounds of the run', async () => {
-    const bulkUpserted: string[] = [];
-    const persist = persistWithStubs(bulkUpserted);
+    const persist = persistWithStubs();
 
     await persist('user-1', 'account-1', 'kraken-api', routerResult(), new Date('2026-01-01'));
 
-    expect(coverage.ingesterRows).toHaveLength(2);
+    // The ledger write is what carries the per-holding bounds now, so both
+    // holdings the write touched get a coverage row and neither gets the bounds.
+    expect(coverage.ingesterRows.map((row) => row.holdingId)).toEqual([OLD_HOLDING, NEW_HOLDING]);
     for (const row of coverage.ingesterRows) {
       expect(row.firstTxAt).toBeNull();
       expect(row.lastTxAt).toBeNull();
     }
-    // The ledger write is what carries the per-holding bounds now, so both
-    // holdings have to have reached it.
-    expect(new Set(bulkUpserted)).toEqual(new Set([OLD_HOLDING, NEW_HOLDING]));
   });
 
   // SC-360. Wiring wallets into the nightly sync pointed an incremental run
@@ -225,7 +267,7 @@ describe("TransactionImportCoordinator — the run's oldest event is not a holdi
   // writing that through would have retracted all 39 — silently, and into
   // the flag cost basis is computed from (SC-149).
   test('an incremental run does not present its completeness as a claim', async () => {
-    const persist = persistWithStubs([]);
+    const persist = persistWithStubs();
 
     await persist('user-1', 'account-1', 'etherscan', routerResult(), new Date('2026-01-01'));
 
@@ -234,7 +276,7 @@ describe("TransactionImportCoordinator — the run's oldest event is not a holdi
   });
 
   test('a full-history run does claim it', async () => {
-    const persist = persistWithStubs([]);
+    const persist = persistWithStubs();
 
     await persist('user-1', 'account-1', 'etherscan', routerResult(), undefined);
 
@@ -248,8 +290,8 @@ describe("TransactionImportCoordinator — the run's oldest event is not a holdi
   // shows up, because a full re-import is something a person triggers by
   // hand and may never do again.
   test('an incremental run that the provider retracted writes the retraction through', async () => {
-    const persist = persistWithStubs([]);
-    const retracted: TransactionRouterResult = {
+    const persist = persistWithStubs();
+    const retracted: Run = {
       ...routerResult(),
       hasCompleteTxHistory: false,
       historyRetractions: ['kraken: the ledger contradicts itself over the 492 entries returned'],
@@ -265,12 +307,11 @@ describe("TransactionImportCoordinator — the run's oldest event is not a holdi
   // entirely — which is SC-360 re-introduced, and the nightly sync silently
   // retracting 39 wallets is what that costs.
   test('an incremental run with nothing retracted still makes no claim', async () => {
-    const persist = persistWithStubs([]);
-    const notRetracted: TransactionRouterResult = {
+    const persist = persistWithStubs();
+    const notRetracted: Run = {
       ...routerResult(),
       hasCompleteTxHistory: false,
       historyRetractions: [],
-      historyStartsAt: null,
     };
 
     await persist('user-1', 'account-1', 'kraken-api', notRetracted, new Date('2026-01-01'));
@@ -279,7 +320,7 @@ describe("TransactionImportCoordinator — the run's oldest event is not a holdi
   });
 
   test('the run summary itself still reports the run', async () => {
-    const persist = persistWithStubs([]);
+    const persist = persistWithStubs();
 
     const summary = await persist(
       'user-1',
@@ -401,39 +442,19 @@ describe('resolveInstitutionCode', () => {
 describe('TransactionImportCoordinator — a merged batch says so in the summary', () => {
   const HOLDING = '00000000-0000-4000-8000-00000000000a';
 
-  function routerResult(): TransactionRouterResult {
+  function routerResult(): Run {
     return {
-      transactions: [
-        {
-          userId: '00000000-0000-4000-8000-000000000001',
-          holdingId: HOLDING,
-          tokenId: '00000000-0000-4000-8000-00000000000c',
-          kind: 'transfer_in',
-          quantity: '1',
-          occurredAt: new Date('2026-08-01T00:00:00Z'),
-          externalId: '0xdeadbeef',
-          source: 'etherscan',
-        },
-      ],
-      observations: [],
-      warnings: [],
-      warningDetails: [],
-      firstEventAt: new Date('2026-08-01T00:00:00Z'),
-      lastEventAt: new Date('2026-08-01T00:00:00Z'),
+      rows: [{ holdingId: HOLDING, occurredAt: new Date('2026-08-01T00:00:00Z') }],
       hasCompleteTxHistory: true,
       historyRetractions: [],
-      historyStartsAt: null,
     };
   }
 
   test('the collapsed rows become a warning naming the source and the count', async () => {
-    const persist = persistWithStubs(
-      [],
-      [
-        { holdingId: HOLDING, source: 'etherscan', externalId: '0xdeadbeef', dropped: 2 },
-        { holdingId: HOLDING, source: 'etherscan', externalId: '0xfeed', dropped: 1 },
-      ]
-    );
+    const persist = persistWithStubs([
+      { holdingId: HOLDING, source: 'etherscan', externalId: '0xdeadbeef', dropped: 2 },
+      { holdingId: HOLDING, source: 'etherscan', externalId: '0xfeed', dropped: 1 },
+    ]);
 
     const summary = await persist('user-1', 'account-1', 'etherscan', routerResult(), undefined);
 
@@ -445,7 +466,7 @@ describe('TransactionImportCoordinator — a merged batch says so in the summary
   });
 
   test('a batch with nothing merged adds no warning', async () => {
-    const persist = persistWithStubs([]);
+    const persist = persistWithStubs();
 
     const summary = await persist('user-1', 'account-1', 'etherscan', routerResult(), undefined);
 
@@ -458,7 +479,7 @@ describe('TransactionImportCoordinator — a merged batch says so in the summary
   // collapse that reaches nobody is indistinguishable from a clean run.
   test('a collapsed coverage batch reaches the same summary', async () => {
     coverage.ingesterMerges = [{ holdingId: HOLDING, dropped: 1 }];
-    const persist = persistWithStubs([]);
+    const persist = persistWithStubs();
 
     const summary = await persist('user-1', 'account-1', 'etherscan', routerResult(), undefined);
 
@@ -469,7 +490,7 @@ describe('TransactionImportCoordinator — a merged batch says so in the summary
 
   test('a collapsed coverage batch does not retract the run completeness claim', async () => {
     coverage.ingesterMerges = [{ holdingId: HOLDING, dropped: 1 }];
-    const persist = persistWithStubs([]);
+    const persist = persistWithStubs();
 
     const summary = await persist('user-1', 'account-1', 'etherscan', routerResult(), undefined);
 
@@ -487,24 +508,77 @@ describe('TransactionImportCoordinator — a merged batch says so in the summary
   // for the user whose ledger it just wrote, and without anyone reading.
   test('the rows it writes are put under their destination rules for that user', async () => {
     const marks = { calls: [] as string[] };
-    const persist = persistWithStubs([], [], marks);
+    const persist = persistWithStubs([], marks);
 
     await persist('user-1', 'account-1', 'etherscan', routerResult(), undefined);
 
     expect(marks.calls).toEqual(['user-1']);
   });
 
+  // SC-1486: Kraken writes no settlement legs but does write own-token fee
+  // rows, and an unlinked one is counted on top of the fee its row still
+  // folds into cost. Gating the link on settlement sources alone left all
+  // 481 production Kraken fee rows unlinked.
+  test('a source that writes own-token fee rows links them', async () => {
+    const marks = { calls: [] as string[], links: [] as string[] };
+    const persist = persistWithStubs([], marks);
+
+    await persist('user-1', 'account-1', 'kraken-api', routerResult(), undefined);
+
+    expect(marks.links).toEqual(['user-1']);
+  });
+
+  // The test #2129 needed (SC-1486). The router decides which rows carry a
+  // `settles` marker and the coordinator decides which sources get linked,
+  // from two different source sets; a source in the first and not the second
+  // writes settling rows nobody links, and nothing fails. So this asks the
+  // ROUTER's own leg builders, for every source, whether a canonical trade
+  // with a commission in each shape yields a settling leg, and requires the
+  // coordinator to link every source that does.
+  test('every source whose rows can settle a trade is linked', async () => {
+    const trade = (source: string, feeToken: string) =>
+      ({
+        kind: 'buy',
+        tokenId: 'btc',
+        quantity: '1',
+        counterTokenId: 'usd',
+        counterQuantity: '-100',
+        feeTokenId: feeToken,
+        feeQuantity: '-1',
+        externalId: 'x-1',
+        source,
+      }) as const;
+    const settles = (source: string) =>
+      settlementLegsFor(trade(source, 'usd')).length > 0 ||
+      ownFeeLegFor(trade(source, 'btc')) !== null;
+
+    const sources = [...Object.keys(CEX_SOURCE_TO_INSTITUTION), 'etherscan', 'statement-csv'];
+    const unlinked: string[] = [];
+    for (const source of sources.filter(settles)) {
+      const marks = { calls: [] as string[], links: [] as string[] };
+      await persistWithStubs([], marks)('user-1', 'account-1', source, routerResult(), undefined);
+      if (marks.links.length === 0) unlinked.push(source);
+    }
+    // A control that could fail: Kraken settles only through its own-token
+    // fee leg, which is the shape #2129 added and the link gate missed.
+    expect(sources.filter(settles)).toContain('kraken-api');
+    expect(unlinked).toEqual([]);
+  });
+
+  test('control: a wallet source links nothing', async () => {
+    const marks = { calls: [] as string[], links: [] as string[] };
+    const persist = persistWithStubs([], marks);
+
+    await persist('user-1', 'account-1', 'etherscan', routerResult(), undefined);
+
+    expect(marks.links).toEqual([]);
+  });
+
   test('a run that wrote nothing applies nothing', async () => {
     const marks = { calls: [] as string[] };
-    const persist = persistWithStubs([], [], marks);
+    const persist = persistWithStubs([], marks);
 
-    await persist(
-      'user-1',
-      'account-1',
-      'etherscan',
-      { ...routerResult(), transactions: [] },
-      undefined
-    );
+    await persist('user-1', 'account-1', 'etherscan', { ...routerResult(), rows: [] }, undefined);
 
     expect(marks.calls).toEqual([]);
   });
@@ -514,7 +588,7 @@ describe('TransactionImportCoordinator — a merged batch says so in the summary
   // transfer-linking sweep applies the rules anyway.
   test('rules that could not be applied do not fail the import', async () => {
     const marks = { calls: [] as string[], fail: true };
-    const persist = persistWithStubs([], [], marks);
+    const persist = persistWithStubs([], marks);
 
     const summary = await persist('user-1', 'account-1', 'etherscan', routerResult(), undefined);
 
@@ -523,14 +597,68 @@ describe('TransactionImportCoordinator — a merged batch says so in the summary
   });
 
   test('the merge does not retract the run completeness claim', async () => {
-    const persist = persistWithStubs(
-      [],
-      [{ holdingId: HOLDING, source: 'etherscan', externalId: '0xdeadbeef', dropped: 2 }]
-    );
+    const persist = persistWithStubs([
+      { holdingId: HOLDING, source: 'etherscan', externalId: '0xdeadbeef', dropped: 2 },
+    ]);
 
     const summary = await persist('user-1', 'account-1', 'etherscan', routerResult(), undefined);
 
     expect(coverage.ingesterOpts[0]?.completenessIsClaimed).toBe(true);
     expect(summary.hasCompleteTxHistory).toBe(true);
+  });
+});
+
+// SC-1459. The worker sizes the rebuild after an import from the oldest date
+// the run changed in the ledger: a transaction it inserted or altered, or an
+// opening balance it moved. Rows re-sent as stored do not count.
+describe('TransactionImportCoordinator — the oldest date a run changed', () => {
+  const HOLDING = '00000000-0000-4000-8000-00000000000d';
+  const FIRST_TX = new Date('2026-03-01T00:00:00Z');
+  const OPENING = new Date('2025-03-01T00:00:00Z');
+
+  function result(): Run {
+    return {
+      rows: [{ holdingId: HOLDING, occurredAt: FIRST_TX }],
+      hasCompleteTxHistory: true,
+      historyRetractions: [],
+    };
+  }
+
+  test('a changed transaction sets it', async () => {
+    const persist = persistWithStubs();
+    const out = await persist('user-1', 'account-1', 'ibkr-api', result());
+    expect(out.earliestWrittenAt).toBe(FIRST_TX.toISOString());
+  });
+
+  test('an opening moved before that transaction sets it earlier', async () => {
+    const persist = persistWithStubs([], { calls: [] }, async () => ({
+      openingBalanceSynthesized: true,
+      openingAt: OPENING,
+      openingChangedAt: OPENING,
+    }));
+    const out = await persist('user-1', 'account-1', 'ibkr-api', result());
+    expect(out.earliestWrittenAt).toBe(OPENING.toISOString());
+  });
+
+  test('the nightly shape: rows and opening re-sent unchanged leave it null', async () => {
+    const persist = persistWithStubs(
+      [],
+      { calls: [] },
+      async () => ({ openingBalanceSynthesized: true, openingAt: OPENING, openingChangedAt: null }),
+      false
+    );
+    const out = await persist('user-1', 'account-1', 'ibkr-api', result());
+    expect(out.earliestWrittenAt).toBeNull();
+  });
+
+  test('an incremental run does not reconcile, so only its transactions count', async () => {
+    let asked = 0;
+    const persist = persistWithStubs([], { calls: [] }, async () => {
+      asked++;
+      return { openingBalanceSynthesized: true, openingAt: OPENING, openingChangedAt: OPENING };
+    });
+    const out = await persist('user-1', 'account-1', 'ibkr-api', result(), new Date('2026-01-01'));
+    expect(asked).toBe(0);
+    expect(out.earliestWrittenAt).toBe(FIRST_TX.toISOString());
   });
 });

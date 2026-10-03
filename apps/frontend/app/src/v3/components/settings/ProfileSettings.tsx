@@ -7,7 +7,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFormatLocale } from '@/contexts/FormatLocaleContext';
 import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
-import { AVAILABLE_LANGUAGES } from '@/i18n';
+import { AVAILABLE_LANGUAGES, locales } from '@/i18n';
 import { trpc } from '@/lib/trpc';
 import { optimisticPatchUser } from '@/v3/hooks/optimisticUpdates';
 import { FiatCurrencyField } from '../form/FiatCurrencyField';
@@ -54,6 +54,14 @@ export function ProfileSettings() {
 
   const [name, setName] = useState('');
   const [baseCurrencyId, setBaseCurrencyId] = useState('');
+
+  // The language's strings are fetched before the switch (SC-1498), so the
+  // interface never renders the new language with nothing to say in it. A
+  // fetch that fails leaves the language where it was and says why.
+  const changeLanguage = (code: string) =>
+    locales
+      .change(code)
+      .catch((error: unknown) => showError(error, t('v3.settings.pending.savingSettings')));
 
   const update = trpc.users.updateCurrent.useMutation({
     onMutate: async (variables) => {
@@ -178,7 +186,7 @@ export function ProfileSettings() {
             >
               <Select
                 value={i18n.resolvedLanguage ?? i18n.language}
-                onValueChange={(code) => void i18n.changeLanguage(code)}
+                onValueChange={(code) => void changeLanguage(code)}
               >
                 <SelectTrigger id="settings-language">
                   <SelectValue />

@@ -7,6 +7,7 @@ import { Container } from 'typedi';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
 import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { DriftLedgerService } from '../../../src/services/returns/DriftLedgerService';
 import { ExternalFlowService } from '../../../src/services/returns/ExternalFlowService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
@@ -106,6 +107,7 @@ function makeService(rows: HoldingTransaction[], unpriced: string[] = []): Exter
     findForHoldingsInRange: async () => rows,
   } as unknown as HoldingTransactionRepository);
   Container.set(HoldingRepository, {
+    findIdsIncludedInTotal: async (ids: readonly string[]) => new Set(ids),
     findByIds: async () => [
       { id: USDT_HOLDING, tokenId: USDT },
       { id: ETH_HOLDING, tokenId: ETH },
@@ -119,6 +121,9 @@ function makeService(rows: HoldingTransaction[], unpriced: string[] = []): Exter
       return rate ? { amount: new Decimal(amount).mul(rate), stale: false } : null;
     },
   } as unknown as PriceGraphService);
+  Container.set(DriftLedgerService, {
+    forHoldings: async () => new Map(),
+  } as unknown as DriftLedgerService);
   const instance = new ExternalFlowService();
   Container.set(ExternalFlowService, instance);
   return instance;

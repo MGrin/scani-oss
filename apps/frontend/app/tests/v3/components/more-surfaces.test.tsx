@@ -488,7 +488,7 @@ describe('GroupsList', () => {
     expect(renderGroups()).not.toContain('Inactive');
   });
 
-  test('the export marks that group on its name and keeps its value, and the TOTAL, at the active money', () => {
+  test('the export marks that group on its name and keeps its value at the active money', () => {
     const config = groupsListConfig(
       { groups: GROUPS, values: WITH_CLOSED, baseCurrency: 'EUR', onCreate: noop },
       t,
@@ -520,15 +520,39 @@ describe('GroupsList', () => {
       { kind: 'text', value: 'Taxable' },
       { kind: 'text', value: 'Empty · Inactive' },
     ]);
-    // The value column is the one the writers total, and it sums to the
-    // active money alone: the 99,999 of closed positions is in no cell.
-    expect(sheet?.totalColumns?.[valueAt]).toBe(true);
+    // The 99,999 of closed positions is in no cell.
     const total = cells.reduce(
       (sum, cell) => sum + Number((cell.value as { value?: string })?.value ?? 0),
       0
     );
     expect(total).toBe(48250.5);
     expect(cells[1]?.value).toMatchObject({ kind: 'number', value: '0.00' });
+  });
+
+  // A holding in two groups counts in full in each (SC-1469), so a column
+  // total would state a sum that is nobody's money.
+  test('the export has no TOTAL row, because groups overlap', () => {
+    const config = groupsListConfig(
+      { groups: GROUPS, values: WITH_CLOSED, baseCurrency: 'EUR', onCreate: noop },
+      t,
+      noop
+    );
+    const {
+      sheets: [sheet],
+    } = buildDataViewSheets({
+      config,
+      items: GROUPS,
+      groupBy: '',
+      filtered: false,
+      filteredCount: 2,
+      totalCount: 2,
+      activeFilters: [],
+      searchTerm: '',
+      sortField: 'value',
+      sortDirection: 'desc',
+      generatedAt: new Date('2026-09-19T00:00:00.000Z'),
+    });
+    expect(sheet?.totalColumns?.some(Boolean) ?? false).toBe(false);
   });
 });
 

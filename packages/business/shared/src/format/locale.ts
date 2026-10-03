@@ -49,7 +49,7 @@
  * language and says nothing about whether the interface is ready for it.
  */
 
-export type TextDirection = 'ltr' | 'rtl';
+type TextDirection = 'ltr' | 'rtl';
 
 export interface LanguageFormat {
   /** CLDR region used for dates when the reader has chosen none. */
@@ -111,7 +111,7 @@ export const LANGUAGE_FORMATS: Readonly<Record<string, LanguageFormat>> = {
 };
 
 /** The language every unknown tag falls back to, and the app's own. */
-export const FALLBACK_LANGUAGE = 'en';
+const FALLBACK_LANGUAGE = 'en';
 
 /**
  * The stored value meaning "no region chosen — follow the interface language".

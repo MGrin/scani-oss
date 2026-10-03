@@ -68,6 +68,76 @@ const T1 = new Date('2026-06-02T00:00:00Z');
 const T2 = new Date('2026-06-03T00:00:00Z');
 
 describe('findGapCandidatesForUser', () => {
+  describe('a balance edit dated earlier than it was entered (SC-1474)', () => {
+    // The 08-25 Revolut case: the edit took 4005.24 to 2005.24 at 06:08 and
+    // dated the money to the previous day. Bucketed by its date, the edit sat
+    // in an interval where the balance did not move, and the 06:08 drop read
+    // as unexplained; answering it wrote the -2000 a second time.
+    const D0 = new Date('2026-08-24T00:00:00Z');
+    const D1 = new Date('2026-08-25T00:00:00Z');
+    const EDIT = new Date('2026-08-25T06:08:19.479Z');
+    const OBS = new Date('2026-08-25T06:08:19.526Z');
+
+    test('the edit explains the reading it produced, and no gap is left', async () => {
+      await withTestDb(async (tx) => {
+        const { userId, accountId, tokenId } = await fixture(tx);
+        const holding = await makeHolding(tx, { userId, accountId, tokenId });
+        await observe(tx, { userId, holdingId: holding.id, balance: '4005', observedAt: D0 });
+        await observe(tx, { userId, holdingId: holding.id, balance: '4005', observedAt: D1 });
+        await makeHoldingTransaction(tx, {
+          userId,
+          holdingId: holding.id,
+          tokenId,
+          kind: 'withdraw',
+          quantity: '-2000',
+          occurredAt: new Date('2026-08-24T12:00:00Z'),
+          source: 'user-balance-edit',
+          sourceMetadata: { cause: 'flow', editedAt: EDIT.toISOString() },
+        });
+        await observe(tx, { userId, holdingId: holding.id, balance: '2005', observedAt: OBS });
+
+        expect(await repo().findGapCandidatesForUser(userId, tx)).toHaveLength(0);
+      });
+    });
+
+    test('control: the same drop with no edit row is still a gap', async () => {
+      await withTestDb(async (tx) => {
+        const { userId, accountId, tokenId } = await fixture(tx);
+        const holding = await makeHolding(tx, { userId, accountId, tokenId });
+        await observe(tx, { userId, holdingId: holding.id, balance: '4005', observedAt: D1 });
+        const closing = await observe(tx, {
+          userId,
+          holdingId: holding.id,
+          balance: '2005',
+          observedAt: OBS,
+        });
+
+        const rows = await repo().findGapCandidatesForUser(userId, tx);
+        expect(rows.map((row) => row.observationId)).toEqual([closing]);
+      });
+    });
+
+    test('control: an imported row keeps its own date', async () => {
+      await withTestDb(async (tx) => {
+        const { userId, accountId, tokenId } = await fixture(tx);
+        const holding = await makeHolding(tx, { userId, accountId, tokenId });
+        await observe(tx, { userId, holdingId: holding.id, balance: '4005', observedAt: D1 });
+        await makeHoldingTransaction(tx, {
+          userId,
+          holdingId: holding.id,
+          tokenId,
+          kind: 'withdraw',
+          quantity: '-2000',
+          occurredAt: new Date('2026-08-24T12:00:00Z'),
+          sourceMetadata: { editedAt: EDIT.toISOString() },
+        });
+        await observe(tx, { userId, holdingId: holding.id, balance: '2005', observedAt: OBS });
+
+        expect(await repo().findGapCandidatesForUser(userId, tx)).toHaveLength(1);
+      });
+    });
+  });
+
   test('a balance change with no transaction is a candidate', async () => {
     await withTestDb(async (tx) => {
       const { userId, accountId, tokenId } = await fixture(tx);

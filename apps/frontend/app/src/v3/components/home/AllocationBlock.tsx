@@ -6,6 +6,7 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { TruncatedText } from '@scani/ui/v3/components/TruncatedText';
 import { useDelayedLoading } from '@scani/ui/v3/hooks/useDelayedLoading';
 import { CHART_OTHER_COLOR, foldAllocation } from '@scani/ui/v3/lib/chart';
+import { toFiniteNumber } from '@scani/ui/v3/lib/numeric';
 import { type ReactNode, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
@@ -19,10 +20,14 @@ import {
   allocationItems,
   DEFAULT_ALLOCATION_DIMENSION,
   foldedAllocationItems,
+  groupShareRows,
+  groupsOverlap,
 } from '../../lib/home';
 import { V3_ROUTES } from '../../lib/routes';
 import { VIEW_PREFERENCE_KEYS } from '../../lib/view-preference';
 import { AllocationBar } from '../charts/AllocationBar';
+import { MarginDebtLine } from '../charts/MarginDebtLine';
+import { ShareRows } from '../charts/ShareRows';
 import { DisclosureButton } from './DisclosureButton';
 
 /**
@@ -116,6 +121,11 @@ export function AllocationBlock() {
   const items = allocationItems(t, allocation.data?.items ?? [], dimension);
   const segments = foldAllocation(items);
   const folded = foldedAllocationItems(items, segments);
+  const marginDebt = toFiniteNumber(allocation.data?.marginDebt) ?? 0;
+  // The server keeps margin debt out of every part, so the parts are shares of
+  // gross assets; without debt that is net worth.
+  const assets = (toFiniteNumber(allocation.data?.totalValue) ?? 0) - marginDebt;
+  const groupCut = dimension === 'group';
 
   const labelKey =
     ALLOCATION_DIMENSIONS.find((option) => option.key === dimension)?.labelKey ??
@@ -166,6 +176,17 @@ export function AllocationBlock() {
           />
         ) : segments.length === 0 ? (
           <p className="text-body text-muted-foreground">{t('v3.home.allocation.empty')}</p>
+        ) : groupCut ? (
+          // Groups overlap — a holding counts in full in each of its groups —
+          // so a stacked bar would draw a split that does not exist (SC-1469).
+          <ShareRows
+            rows={groupShareRows(items, assets)}
+            currency={currency}
+            label={t('v3.home.allocation.barLabel', { dimension: t(labelKey) })}
+            note={groupsOverlap(items, assets) ? t('v3.home.allocation.groupsOverlap') : null}
+            shareCaption={marginDebt < 0 ? t('v3.allocation.shareOfAssets') : undefined}
+            itemHref={(row) => allocationHref(dimension, row.key)}
+          />
         ) : (
           <>
             {/* Every row reaches the holdings behind its share (SC-74). The
@@ -177,6 +198,7 @@ export function AllocationBlock() {
               currency={currency}
               label={t('v3.home.allocation.barLabel', { dimension: t(labelKey) })}
               itemHref={(segment) => allocationHref(dimension, segment.key)}
+              shareCaption={marginDebt < 0 ? t('v3.allocation.shareOfAssets') : undefined}
             />
 
             {folded.length > 0 ? (
@@ -212,6 +234,14 @@ export function AllocationBlock() {
             ) : null}
           </>
         )}
+
+        {/* Outside the empty branch on purpose: debt larger than every asset
+            leaves no slice to draw, and the debt is still there (SC-1463). */}
+        <MarginDebtLine
+          value={marginDebt}
+          currency={currency}
+          underLegend={segments.length > 0 && !groupCut}
+        />
       </div>
     </Block>
   );

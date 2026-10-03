@@ -22,7 +22,7 @@ const KRAKEN_SOURCE = (() => {
 })();
 
 /** One coverage row a retraction would move, named so the plan is readable. */
-export interface KrakenClaimingHolding {
+interface KrakenClaimingHolding {
   holdingId: string;
   symbol: string;
   txCount: number;
@@ -46,7 +46,7 @@ export interface KrakenCoveragePlan {
  * An account whose claim can be neither confirmed nor contradicted. Never
  * repaired — reported, so the run stops instead of guessing.
  */
-export interface KrakenCoverageBlocked {
+interface KrakenCoverageBlocked {
   accountId: string;
   accountName: string;
   reason: string;

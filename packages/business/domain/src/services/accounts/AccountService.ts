@@ -12,6 +12,7 @@ import { UserRepository } from '../../repositories/UserRepository';
 import { BaseService } from '../BaseService';
 import {
   PortfolioValuationService,
+  sumPortfolioDebtByAccount,
   sumPortfolioValuesByAccount,
 } from '../portfolio/PortfolioValuationService';
 import { IntegrationCredentialsService } from '../users/IntegrationCredentialsService';
@@ -139,6 +140,7 @@ export class AccountService extends BaseService {
     }
 
     const valueByAccount = sumPortfolioValuesByAccount(portfolio);
+    const debtByAccount = sumPortfolioDebtByAccount(portfolio);
 
     return accounts.map((account) => {
       const accountGroups = groupsMap.get(account.id) || [];
@@ -147,6 +149,7 @@ export class AccountService extends BaseService {
         summary: {
           holdingsCount: holdingsCountByAccount.get(account.id) ?? 0,
           totalValue: (valueByAccount.get(account.id) ?? new Decimal(0)).toString(),
+          marginDebt: (debtByAccount.get(account.id) ?? new Decimal(0)).toString(),
         },
         groups: accountGroups.map((g) => ({ id: g.id, name: g.name, color: g.color })),
       };
@@ -178,11 +181,13 @@ export class AccountService extends BaseService {
     const holdingsCount = holdings.filter((h) => h.accountId === accountId).length;
     const accountGroups = groupsMap.get(accountId) || [];
     const totalValue = sumPortfolioValuesByAccount(portfolio).get(accountId) ?? new Decimal(0);
+    const marginDebt = sumPortfolioDebtByAccount(portfolio).get(accountId) ?? new Decimal(0);
     return {
       ...account,
       summary: {
         holdingsCount,
         totalValue: totalValue.toString(),
+        marginDebt: marginDebt.toString(),
       },
       groups: accountGroups.map((g) => ({ id: g.id, name: g.name, color: g.color })),
     };

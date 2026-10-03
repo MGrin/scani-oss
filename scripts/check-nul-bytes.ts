@@ -197,7 +197,7 @@ export function verdict(result: ScanResult): string {
  * inside it. `git diff` is not CWD-relative, which is why the two are easy to
  * assume alike; the same trap cost SC-662 a silent miss in another guard.
  */
-export function repoRoot(cwd: string): string {
+function repoRoot(cwd: string): string {
   const run = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd, encoding: 'utf8' });
   if (run.status !== 0) {
     throw new Error(`git rev-parse --show-toplevel failed (${run.status}): ${run.stderr?.trim()}`);
@@ -206,7 +206,7 @@ export function repoRoot(cwd: string): string {
 }
 
 /** Tracked paths, NUL-delimited so a newline in a filename cannot split one. */
-export function trackedPaths(root: string): string[] {
+function trackedPaths(root: string): string[] {
   const run = spawnSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'buffer' });
   if (run.status !== 0) {
     throw new Error(

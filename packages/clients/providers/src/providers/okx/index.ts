@@ -33,8 +33,6 @@ import {
   type OkxTransfersResponse,
 } from './transfer-mapper';
 
-export { okxManifest } from './manifest';
-
 const OKX_INSTITUTION_CODE = 'okx';
 
 // Bills feed page size cap; OKX returns at most 100 rows per call and
@@ -354,7 +352,6 @@ export const okxFactory: ProviderFactory = async (deps) => {
   return new OkxProvider(registered);
 };
 
-export type { OkxBill, OkxBillsResponse } from './bill-mapper';
+export type { OkxBill } from './bill-mapper';
 export { mapOkxBillToEvent } from './bill-mapper';
-export type { OkxTransfer, OkxTransfersResponse } from './transfer-mapper';
-export { mapOkxDepositToEvent, mapOkxWithdrawalToEvent } from './transfer-mapper';
+export type { OkxTransfer } from './transfer-mapper';

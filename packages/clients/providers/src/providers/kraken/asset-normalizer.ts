@@ -15,7 +15,12 @@
  *      attributable to one holding row instead of fragmenting into
  *      `XBT` / `XBT.F` / `XBT.S`.
  *
- *   3. **Historical aliases**: `XBT` → BTC, `XDG` → DOGE.
+ *   3. **Numbered lock-up codes** (`SOL03.S`, `DOT28.S`): a bonded
+ *      staking balance, the digits naming the lock-up. Only on a code
+ *      that carried a suffix, so a ticker like `C98` is untouched. As
+ *      its own token it has no price, so its lots cost 0 (SC-1486).
+ *
+ *   4. **Historical aliases**: `XBT` → BTC, `XDG` → DOGE.
  *
  * Order matters: strip suffix first, then prefix, then alias-map.
  */
@@ -31,7 +36,10 @@ export function normalizeKrakenAsset(raw: string): string {
   // 1. Strip earn/staking/variant suffixes — anything from the first
   //    `.` onward.
   const dotIdx = symbol.indexOf('.');
-  if (dotIdx > 0) symbol = symbol.substring(0, dotIdx);
+  if (dotIdx > 0) {
+    symbol = symbol.substring(0, dotIdx);
+    symbol = symbol.replace(/^([A-Z]{3,})\d{2}$/, '$1');
+  }
 
   // 2. Strip the 'X' / 'Z' prefix when the remainder is ≥3 chars.
   //    This is the rule that turns 'XXBT' into 'XBT' (then the
@@ -40,7 +48,7 @@ export function normalizeKrakenAsset(raw: string): string {
     symbol = symbol.substring(1);
   }
 
-  // 3. Historical aliases.
+  // 4. Historical aliases.
   symbol = HISTORICAL_ALIASES[symbol] ?? symbol;
 
   return symbol.toUpperCase();

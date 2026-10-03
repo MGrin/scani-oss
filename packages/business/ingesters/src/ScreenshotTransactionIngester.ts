@@ -17,7 +17,7 @@ export interface ScreenshotIngesterResult {
   lastEventAt: Date | null;
 }
 
-export interface ScreenshotParserOptions {
+interface ScreenshotParserOptions {
   accountType?: string;
   expectedCurrency?: string;
   context?: string;
@@ -25,7 +25,7 @@ export interface ScreenshotParserOptions {
   mimeType?: string;
 }
 
-export interface ScreenshotParserHolding {
+interface ScreenshotParserHolding {
   symbol?: string;
   name?: string;
   quantity?: number | string;
@@ -33,7 +33,7 @@ export interface ScreenshotParserHolding {
   confidence: number;
 }
 
-export interface ScreenshotParserResult {
+interface ScreenshotParserResult {
   holdings: ScreenshotParserHolding[];
   overallConfidence: number;
   context?: string;

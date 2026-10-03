@@ -16,9 +16,13 @@ Huobi/HTX spot accounts.
 - **Notes**: extends `BaseHmacCexProvider`. Resolves spot account id(s)
   first, then fetches per-account balances and sums across types.
   Transactions: discovers candidate `${base}${quote}` symbols from the
-  cross-product of non-zero balance currencies × `[usdt, usdc, husd,
-  btc, usd]` (capped at 30); paginates `matchresults` per symbol via
-  `from-id`+`direct=next`; paginates `deposit-withdraw` per non-zero
-  balance currency for `type=deposit` and `type=withdraw`.
+  cross-product of non-zero balance currencies and every currency
+  `deposit-withdraw` names × `[usdt, usdc, husd, btc, usd]` (capped at
+  30; a truncated list retracts the complete-history claim); paginates
+  `matchresults` per symbol in 48h windows back to its 120-day reach
+  (the declared horizon), via `from-id`+`direct=next` within each; paginates
+  `deposit-withdraw` across all currencies for `type=deposit` and
+  `type=withdraw`. A non-`ok` page other than `base-symbol-error`
+  retracts the complete-history claim.
   `/v1/account/history` is available as a future safety-net for
   transfers / lending interest that the two primary feeds miss.

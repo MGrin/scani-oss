@@ -74,4 +74,22 @@ export const fr: EmailStrings = {
     textIgnore:
       'Vous n’avez pas créé de compte {app} ? Vous pouvez ignorer cet e-mail sans risque.',
   },
+  activationNudge: {
+    subject: 'Ajoutez votre premier compte à {app}',
+    preheader:
+      "Connectez une plateforme d'échange, un portefeuille ou un relevé bancaire, et {app} commence le suivi.",
+    greeting: 'Bonjour {name},',
+    greetingNoName: 'Bonjour,',
+    headline: 'Ajoutez votre premier compte',
+    body: "Vous vous êtes inscrit à {app} il y a quelques jours et n'avez encore rien ajouté. Connectez une plateforme d'échange ou un portefeuille, importez un relevé bancaire ou saisissez un solde : {app} tiendra ensuite votre patrimoine net et vos rendements à jour.",
+    button: 'Ouvrir {app}',
+    once: "C'est le seul rappel que nous vous enverrons.",
+    footer:
+      'Vous recevez ce message une seule fois parce que vous vous êtes inscrit à {appLink}. {unsubscribeLink} : un clic, sans connexion. Comment nous traitons vos données : {privacyLink}.',
+    unsubscribe: 'Ne plus recevoir ces e-mails',
+    privacy: 'politique de confidentialité',
+    textOpen: 'Ouvrir {app} : {url}',
+    textUnsubscribe: 'Ne plus recevoir ces e-mails : {url}',
+    textPrivacy: 'Politique de confidentialité : {url}',
+  },
 };

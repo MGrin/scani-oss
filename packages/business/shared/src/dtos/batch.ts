@@ -122,7 +122,3 @@ export type CreateHoldingsWithDependenciesResponseDto = {
   createdInstitution: boolean;
   createdAccount: boolean;
 };
-
-export type CreateHoldingsBatchResponseDto = CreateHoldingsWithDependenciesResponseDto & {
-  updatedHoldingIds: string[];
-};

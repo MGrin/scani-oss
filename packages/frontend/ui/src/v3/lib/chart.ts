@@ -29,7 +29,7 @@ export const CHART_SERIES_LIMIT = 6;
  * it also keeps every segment wide enough that the 2px surface gaps between
  * them stay proportionally negligible.
  */
-export const MIN_VISIBLE_SHARE = 0.01;
+const MIN_VISIBLE_SHARE = 0.01;
 
 /**
  * A CSS custom property rather than a resolved colour, so a theme flip

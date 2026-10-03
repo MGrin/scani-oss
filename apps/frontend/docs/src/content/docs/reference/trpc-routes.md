@@ -41,15 +41,15 @@ Located in `apps/backend/api/src/presentation/routers/`.
 | `review` | Read-model over everything awaiting the user — pending job results plus pending document extractions. |
 | `transfer-review` | Outflows the `transfer-linking` matcher could not pair: `listPending`, `resolve` (`paired` with a deposit / `left_control` / `untracked`), `reopen`. |
 | `balance-gaps` | Balance changes no transaction explains: `listPending` (with the count of what was suppressed and why), `answer` (`flow` writes a deposit / withdrawal at a date inside the interval, `correction` a restatement, `growth` and `unknown` write nothing). |
-| `jobs` | HMAC-gated operator endpoints: retry, remove, DLQ replay. |
+| `settlement-answers` | Balance-gap answers that imported trade settlements now explain: `listPending` (per holding, each answer `full` or `partial` with its remainder), `retire` (removes the answer's rows and keeps a copy; asks again when it also moved another holding), `keep`, `undoRetire` (puts the rows back with their original ids). |
+| `jobs` | The signed-in user's own jobs: status, list, retry, cancel, remove. |
 | `batch-operations` | Batched mutations the SPA uses for bulk edits. |
 | `client-errors` | Endpoint the SPA posts unhandled-error reports to. |
 | `demo` | Public and session-free. `status` answers whether this deployment is the read-only demo (`SCANI_DEMO_MODE=1`), and on the demo returns the persona's identity and the signup URL. The SPA asks this before it asks for a session, so it must not need one. |
 | `exports` | `renderPdf` typesets a workbook the client already assembled — it reads no holdings of its own, so a statement cannot drift from the CSV beside it; the account name comes from the session, never the input. `everything` returns the whole account for the "export everything" file. |
 
 Auth: every router except the user-facing magic-link entry points and
-`demo` requires a Better-Auth session cookie. The `jobs` router
-additionally requires an HMAC signature using `JOBS_HMAC_SECRET`.
+`demo` requires a Better-Auth session cookie.
 
 On a demo deployment (`SCANI_DEMO_MODE=1`) every **mutation** in every
 router above is refused with `FORBIDDEN` before its resolver runs, and

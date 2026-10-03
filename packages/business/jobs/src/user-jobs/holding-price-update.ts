@@ -9,7 +9,7 @@ export interface HoldingPriceUpdateJob extends UserJobBase {
   priceSource: string;
 }
 
-export const holdingPriceUpdateSchema: z.ZodType<HoldingPriceUpdateJob> = z.object({
+const holdingPriceUpdateSchema: z.ZodType<HoldingPriceUpdateJob> = z.object({
   userId: z.string().min(1),
   requestId: z.string().min(1),
   holdingId: z.string().min(1),

@@ -23,6 +23,7 @@ import { pushRouter } from './routers/push';
 import { reviewRouter } from './routers/review';
 import { screenshotsRouter } from './routers/screenshots';
 import { sessionsRouter } from './routers/sessions';
+import { settlementAnswersRouter } from './routers/settlement-answers';
 import { storageRouter } from './routers/storage';
 import { createTokensRouter } from './routers/tokens';
 import { transactionsRouter } from './routers/transactions';
@@ -108,6 +109,8 @@ export const appRouter = router({
   // Unpaired transfers awaiting a human decision (SC-150). Separate from
   // `review` because this one writes.
   balanceGaps: balanceGapsRouter,
+  // Answers imported trade settlements now explain: retire, keep, undo (SC-1453).
+  settlementAnswers: settlementAnswersRouter,
   transferReview: transferReviewRouter,
 
   storage: storageRouter,

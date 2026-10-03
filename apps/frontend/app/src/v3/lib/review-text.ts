@@ -70,6 +70,10 @@ export function reviewTitle(texts: ReviewTexts, label: ReviewLabel): string {
       return texts.t('v3.review.item.transfersToConfirm');
     case 'balanceChangesToExplain':
       return texts.t('v3.review.item.balanceChangesToExplain');
+    case 'answersTradesExplain':
+      return texts.t('v3.review.item.answersTradesExplain');
+    case 'unpriceableAirdrops':
+      return texts.t('v3.review.item.unpriceableAirdrops');
   }
 }
 
@@ -121,8 +125,20 @@ export function reviewDetailText(
       return detail.name;
     case 'unexplainedBalanceChanges':
       return texts.t('v3.review.item.unexplainedBalanceChanges', { count: detail.changes });
+    case 'answersExplainedByTrades':
+      return texts.t('v3.review.item.answersExplained', {
+        count: detail.answers,
+        subject: detail.accountName
+          ? texts.t('v3.review.balances.subject', {
+              account: detail.accountName,
+              symbol: detail.tokenSymbol,
+            })
+          : detail.tokenSymbol,
+      });
     case 'unpairedTransfers':
       return texts.t('v3.review.item.unpairedTransfers', { count: detail.transfers });
+    case 'unpriceableAirdrops':
+      return texts.t('v3.review.item.unpriceableTokens', { count: detail.count });
     case 'jobFailure': {
       // The one description of a failure, shared with both frontends' job
       // pages — so /review cannot call a dead job something the job's own

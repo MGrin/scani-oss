@@ -27,8 +27,6 @@ import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { splitConcatenatedPair } from '../../core/utils/symbol-splitter';
 import { bitgetManifest } from './manifest';
 
-export { bitgetManifest } from './manifest';
-
 const BITGET_INSTITUTION_CODE = 'bitget';
 
 // Bitget V2 spot/trade/fills + wallet/deposit-records + wallet/withdrawal-

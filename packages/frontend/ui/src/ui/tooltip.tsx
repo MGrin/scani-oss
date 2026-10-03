@@ -12,7 +12,7 @@ const Tooltip = TooltipPrimitive.Root;
 
 const TooltipTrigger = TooltipPrimitive.Trigger;
 
-export interface TooltipContentProps
+interface TooltipContentProps
   extends React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content> {
   /** Where the portal mounts. See `lib/portal-container.tsx`. */
   container?: PortalContainer;

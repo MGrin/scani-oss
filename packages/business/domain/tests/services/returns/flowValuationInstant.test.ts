@@ -4,13 +4,12 @@ import { describe, expect, test } from 'bun:test';
 import type { HoldingTransaction } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
+import { flowValuationInstant } from '../../../src/lib/tx-valuation';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
 import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
-import {
-  ExternalFlowService,
-  flowValuationInstant,
-} from '../../../src/services/returns/ExternalFlowService';
+import { DriftLedgerService } from '../../../src/services/returns/DriftLedgerService';
+import { ExternalFlowService } from '../../../src/services/returns/ExternalFlowService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
 /**
@@ -62,6 +61,7 @@ describe('ExternalFlowService values a flow at that instant', () => {
       ],
     } as unknown as HoldingTransactionRepository);
     Container.set(HoldingRepository, {
+      findIdsIncludedInTotal: async (ids: readonly string[]) => new Set(ids),
       findByIds: async () => [{ id: 'h-eur', tokenId: 'token-EUR' }],
     } as unknown as HoldingRepository);
     Container.set(PriceGraphService, {
@@ -72,6 +72,9 @@ describe('ExternalFlowService values a flow at that instant', () => {
       },
     } as unknown as PriceGraphService);
 
+    Container.set(DriftLedgerService, {
+      forHoldings: async () => new Map(),
+    } as unknown as DriftLedgerService);
     await new ExternalFlowService().forHoldings(
       [{ holdingId: 'h-eur', weight: new Decimal(1) }],
       'token-GBP',

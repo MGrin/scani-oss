@@ -62,7 +62,7 @@ const DELIMITER_ROW = /^\s*\|(?:\s*:?-{1,}:?\s*\|)+\s*$/;
  * Fences are tracked because half these pages document shell and SQL, and a
  * `|` inside a fence is a pipe operator, not a column separator.
  */
-export function hasPipeTable(source: string): boolean {
+function hasPipeTable(source: string): boolean {
   const lines = stripFrontmatter(source).split('\n');
   let fence: string | null = null;
 

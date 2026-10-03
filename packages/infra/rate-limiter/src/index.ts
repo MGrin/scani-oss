@@ -3,7 +3,12 @@ export {
   type RateLimiterConfig,
   resetRateLimiterConfig,
 } from './config';
-export { cameThroughEdge, EDGE_HEADER, edgeLockRefusal } from './edge';
+export {
+  cameThroughEdge,
+  edgeLockRefusal,
+  ingressIsMarked,
+  reachedPublicIngress,
+} from './edge';
 
 import type { Redis } from 'ioredis';
 import { InMemoryInflowRateLimiter } from './inflow/in-memory';
@@ -15,7 +20,6 @@ import { RedisOutflowRateLimiter } from './outflow/redis';
 
 export { credentialBucketKey } from './credential-key';
 export {
-  type InflowDegradedHandler,
   type InflowDegradedReport,
   setInflowDegradedHandler,
 } from './inflow/degraded';
@@ -23,18 +27,13 @@ export { InMemoryInflowRateLimiter } from './inflow/in-memory';
 export {
   defaultInflowKey,
   extractXffTail,
-  type InflowKeyFn,
   InflowRateLimiter,
   type InflowRateLimiterOptions,
 } from './inflow/inflow-rate-limiter';
 export { RedisInflowRateLimiter } from './inflow/redis';
 export { InMemoryOutflowRateLimiter } from './outflow/in-memory';
 export { OutflowRateLimiter } from './outflow/outflow-rate-limiter';
-export {
-  OutflowLimiterUnavailableError,
-  RedisOutflowRateLimiter,
-  type RedisOutflowRateLimiterOptions,
-} from './outflow/redis';
+export { RedisOutflowRateLimiter } from './outflow/redis';
 export {
   type OutflowLimiterConfig,
   OutflowRateLimiterRegistry,
@@ -53,13 +52,9 @@ export {
 // incident: the deploy's post-worker recycle verified the data-provider
 // against `/ready`, which answers a bare boolean, so a machine that came back
 // on an unresolvable Redis name looked healthy and never got its one retry.
-export { type PingableRedis, pingWithin, RedisPingTimeoutError } from './ping-within';
+export { pingWithin } from './ping-within';
 export {
-  createReachabilityTracker,
-  isNameResolutionError,
   observeRedisReachability,
-  type ReachabilityLogger,
-  type RedisEventSource,
   type RedisReachability,
 } from './redis-reachability';
 // SC-327. The tracker above says a Redis has been unreachable for N ms; this
@@ -77,11 +72,10 @@ export {
 // rate; circuit breakers stop calling when the upstream is clearly
 // failing; retry wraps individual calls when the failure looks transient.
 export {
-  CircuitBreaker,
   integrationCircuitBreaker,
   pricingCircuitBreaker,
 } from './resilience/circuit-breaker';
-export { defaultIsTransient, type RetryOptions, withRetry } from './resilience/retry';
+export { type RetryOptions, withRetry } from './resilience/retry';
 export { getSharedRedis, setSharedRedis } from './shared-redis';
 
 // Picks the right outflow impl based on whether a Redis client is

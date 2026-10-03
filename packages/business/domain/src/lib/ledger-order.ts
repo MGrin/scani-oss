@@ -1,6 +1,7 @@
 import * as schema from '@scani/db/schema';
 import type { SQL } from 'drizzle-orm';
 import { asc, desc, sql } from 'drizzle-orm';
+import { compareText } from '../engine/order';
 
 /**
  * The one order a ledger walk is allowed to read its events in (SC-342).
@@ -89,10 +90,6 @@ export interface LedgerOrderKey {
   source: string;
   externalId: string;
   id: string;
-}
-
-function compareText(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 export function compareLedgerEvents(a: LedgerOrderKey, b: LedgerOrderKey): number {

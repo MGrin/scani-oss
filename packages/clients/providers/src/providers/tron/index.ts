@@ -30,10 +30,12 @@ import type {
   HoldingSnapshot,
   ProviderContext,
   TransactionEvent,
+  TransactionFetchContext,
   WithUserCreds,
 } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
 import { type PageCapWalk, PageCapWatch } from '../../core/utils/page-cap';
+import { WalkFailureWatch } from '../../core/utils/walk-failures';
 import { WALLET_HISTORY_ROW_CAP } from '../../core/wallet-limits';
 import { tronBase58ToHex } from './address';
 
@@ -179,13 +181,7 @@ export class TronProvider
     return out;
   }
 
-  async fetchTransactions(
-    ctx: WithUserCreds<ProviderContext> & {
-      institutionCode: string;
-      since?: Date;
-      until?: Date;
-    }
-  ): Promise<TransactionEvent[]> {
+  async fetchTransactions(ctx: TransactionFetchContext): Promise<TransactionEvent[]> {
     const creds = await ctx.resolveCredentials(ctx.credentialsRef);
     const address =
       (creds.walletAddress as string | undefined) ?? (creds.address as string | undefined);
@@ -200,13 +196,15 @@ export class TronProvider
     const walletHex = tronBase58ToHex(address).toLowerCase();
 
     const capped = new PageCapWatch();
+    const failures = new WalkFailureWatch(this.providerKey, this.logger);
     const [native, trc20] = await Promise.all([
-      this.fetchNativeTxs(address, walletHex, capped),
-      this.fetchTrc20Txs(address, capped),
+      this.fetchNativeTxs(address, walletHex, capped, failures),
+      this.fetchTrc20Txs(address, capped, failures),
     ]);
 
     const events = [...native, ...trc20];
     capped.retract(ctx, this.providerKey);
+    failures.retract(ctx);
     return events.filter((e) => {
       if (ctx.since && e.occurredAt < ctx.since) return false;
       if (ctx.until && e.occurredAt > ctx.until) return false;
@@ -267,14 +265,16 @@ export class TronProvider
   private async fetchNativeTxs(
     address: string,
     walletHex: string,
-    capped: PageCapWatch
+    capped: PageCapWatch,
+    failures: WalkFailureWatch
   ): Promise<TransactionEvent[]> {
     const events: TransactionEvent[] = [];
     for await (const row of this.paginate<TronNativeTxRow>(
       `${this.apiUrl}/v1/accounts/${encodeURIComponent(address)}/transactions`,
       { only_confirmed: 'true' },
       { kind: 'trxTransfers' },
-      capped
+      capped,
+      failures
     )) {
       const event = this.toNativeEvent(row, walletHex);
       if (event) events.push(event);
@@ -282,13 +282,18 @@ export class TronProvider
     return events;
   }
 
-  private async fetchTrc20Txs(address: string, capped: PageCapWatch): Promise<TransactionEvent[]> {
+  private async fetchTrc20Txs(
+    address: string,
+    capped: PageCapWatch,
+    failures: WalkFailureWatch
+  ): Promise<TransactionEvent[]> {
     const events: TransactionEvent[] = [];
     for await (const row of this.paginate<TronTrc20Row>(
       `${this.apiUrl}/v1/accounts/${encodeURIComponent(address)}/transactions/trc20`,
       { only_confirmed: 'true' },
       { kind: 'trc20Transfers' },
-      capped
+      capped,
+      failures
     )) {
       const event = this.toTrc20Event(row, address);
       if (event) events.push(event);
@@ -300,7 +305,8 @@ export class TronProvider
     baseUrl: string,
     extraParams: Record<string, string>,
     walk: PageCapWalk,
-    capped: PageCapWatch
+    capped: PageCapWatch,
+    failures: WalkFailureWatch
   ): AsyncGenerator<T> {
     let fingerprint: string | undefined;
     let rowsSeen = 0;
@@ -313,11 +319,20 @@ export class TronProvider
       if (fingerprint) params.set('fingerprint', fingerprint);
       const url = `${baseUrl}?${params.toString()}`;
       const response = (await this.callJson(url)) as TronPaginatedResponse<T> | null;
-      const rows = response?.data ?? [];
+      // A refused page is not the end of the feed: `callJson` reads every
+      // non-2xx as null, and treating that as "no more rows" let a 500 on the
+      // first page claim a complete, empty history (SC-1481).
+      if (!response || response.success === false) {
+        failures.note(
+          walk.kind === 'trxTransfers' ? 'the TRX transfer walk' : 'the TRC-20 transfer walk'
+        );
+        break;
+      }
+      const rows = response.data ?? [];
       for (const row of rows) yield row;
       rowsSeen += rows.length;
       pages += 1;
-      const nextFingerprint = response?.meta?.fingerprint;
+      const nextFingerprint = response.meta?.fingerprint;
       if (!nextFingerprint || rows.length === 0) break;
       // The address is the requester's choice, so its size is too (SC-1271).
       if (rowsSeen >= WALLET_HISTORY_ROW_CAP) {

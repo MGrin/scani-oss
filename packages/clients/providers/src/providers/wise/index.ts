@@ -47,8 +47,6 @@ import type {
 import { slidingWindows } from '../../core/utils/time-windows';
 import { wiseManifest } from './manifest';
 
-export { wiseManifest } from './manifest';
-
 const WISE_INSTITUTION_CODE = 'wise';
 const WISE_BASE_URL = 'https://api.wise.com';
 const STATEMENT_MAX_DAYS = 469;
@@ -332,10 +330,7 @@ export class WiseProvider implements BalanceProvider, TransactionsProvider, Cred
  *     or `null` if the row's type/details combination is not supported;
  *   - an optional sibling fee event when `totalFees.value > 0`.
  */
-export function mapTransaction(
-  tx: WiseStatementTransaction,
-  index: number
-): readonly TransactionEvent[] {
+function mapTransaction(tx: WiseStatementTransaction, index: number): readonly TransactionEvent[] {
   const occurredAt = new Date(tx.date);
   const detailsType = (tx.details?.type ?? '').toUpperCase();
   const externalId = `${tx.referenceNumber}-${index}`;

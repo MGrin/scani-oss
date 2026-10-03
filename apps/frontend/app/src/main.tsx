@@ -16,12 +16,13 @@ import { Toaster } from '@scani/ui/ui/toaster';
 import * as Sentry from '@sentry/react';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { reportClientError } from '@/lib/report-client-error';
 import { captureSignupSource } from '@/lib/signup-source';
 import { TRPCProvider } from '@/lib/trpc-provider';
 import { warmInterface } from '@/lib/warm-interface';
 import { applyDocumentUiVersion } from '@/v3/lib/ui-version';
 import App from './App.tsx';
-import i18n from './i18n';
+import i18n, { activeLocaleReady } from './i18n';
 import { applyFormatLocale, browserStorage, readStoredRegion } from './i18n/format-locale';
 import './index.css';
 
@@ -115,17 +116,6 @@ if (SENTRY_DSN) {
 // set once and stays (SC-423).
 applyDocumentUiVersion(document.documentElement);
 
-// Same reasoning one line up, for `<html lang>` and `<html dir>` (SC-201).
-// `FormatLocaleProvider` keeps both in step from here on; doing it once before
-// React's first render is what stops the document announcing the wrong language
-// — and, once a right-to-left locale exists, painting one frame left-to-right.
-// The detector has already run: `./i18n` initialises i18next at import time.
-applyFormatLocale(
-  i18n.resolvedLanguage ?? i18n.language,
-  readStoredRegion(browserStorage()),
-  document
-);
-
 // The interface arrives as its own chunk (SC-132 #2), and it is requested here
 // rather than when the route renders — that is below the auth gate, so it would
 // otherwise queue behind the session probe and give the split back every
@@ -144,19 +134,37 @@ if (!rootElement) {
   throw new Error('Failed to find the root element');
 }
 
-ReactDOM.createRoot(rootElement).render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <ThemeProvider>
-        <TRPCProvider>
-          <App />
-          <Toaster />
-          <UpdateBanner />
-        </TRPCProvider>
-      </ThemeProvider>
-    </ErrorBoundary>
-  </React.StrictMode>
-);
+// Rendered once the reader's language is in (SC-1498). For an English reader
+// that promise is already settled, so this costs one microtask; for anyone else
+// it is one small fetch, started at import, in place of a frame of English.
+void activeLocaleReady.then(() => {
+  // `<html lang>` and `<html dir>`, before React's first render for the reason
+  // the token attribute above is (SC-201): it stops the document announcing
+  // the wrong language and painting a right-to-left locale one frame
+  // left-to-right. `FormatLocaleProvider` keeps both in step from here on.
+  applyFormatLocale(
+    i18n.resolvedLanguage ?? i18n.language,
+    readStoredRegion(browserStorage()),
+    document
+  );
+  ReactDOM.createRoot(rootElement).render(
+    <React.StrictMode>
+      <ErrorBoundary
+        onError={(error, info) =>
+          void reportClientError({ error, componentStack: info.componentStack ?? undefined })
+        }
+      >
+        <ThemeProvider>
+          <TRPCProvider>
+            <App />
+            <Toaster />
+            <UpdateBanner />
+          </TRPCProvider>
+        </ThemeProvider>
+      </ErrorBoundary>
+    </React.StrictMode>
+  );
+});
 
 // Register service worker for PWA support
 // Update detection is handled by useAppUpdate hook + UpdateBanner component

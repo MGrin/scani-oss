@@ -8,11 +8,16 @@ import { z } from 'zod';
 // way to a proxied api (SC-1264). Unset, nothing reads the header. With
 // `SCANI_EDGE_LOCK=enforce` a request that reached Fly's public proxy without
 // it is refused, which is what stops `*.fly.dev` bypassing Cloudflare.
+//
+// `SCANI_INGRESS_MARKED=on` says the proxy in front of this app marks every
+// public request with `x-scani-public-ingress`, so a request without it is a
+// private caller — what Fly's `fly-client-ip` says on Fly (SC-1496).
 const envSchema = z
   .object({
     FLY_APP_NAME: z.string().min(1).optional(),
     SCANI_EDGE_SECRET: z.string().min(32).optional(),
     SCANI_EDGE_LOCK: z.enum(['off', 'enforce']).default('off'),
+    SCANI_INGRESS_MARKED: z.enum(['off', 'on']).default('off'),
   })
   .refine((env) => env.SCANI_EDGE_LOCK === 'off' || env.SCANI_EDGE_SECRET, {
     message: 'SCANI_EDGE_LOCK=enforce needs SCANI_EDGE_SECRET, or it refuses every request',

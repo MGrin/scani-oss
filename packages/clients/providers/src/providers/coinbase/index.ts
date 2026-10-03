@@ -28,8 +28,6 @@ import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { PageCapWatch } from '../../core/utils/page-cap';
 import { coinbaseManifest } from './manifest';
 
-export { coinbaseManifest } from './manifest';
-
 const COINBASE_INSTITUTION_CODE = 'coinbase';
 const API_VERSION = '2024-01-01';
 const ACCOUNTS_PAGE_LIMIT = 100;

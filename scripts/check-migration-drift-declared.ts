@@ -195,7 +195,7 @@ export type Finding =
   | { kind: 'renamed'; tag: string; file: string; toTag: string };
 
 /** The two findings a declaration can answer. The other two it cannot. */
-export function isEditFinding(finding: Finding): boolean {
+function isEditFinding(finding: Finding): boolean {
   return finding.kind === 'undeclared' || finding.kind === 'stale';
 }
 
@@ -414,7 +414,7 @@ export function defaultBase(env: Record<string, string | undefined>): string {
   return prBase !== undefined && prBase !== '' ? `origin/${prBase}` : 'origin/main';
 }
 
-export function run(argv: readonly string[], env: Record<string, string | undefined>): Judgement {
+function run(argv: readonly string[], env: Record<string, string | undefined>): Judgement {
   const repo = path.resolve(argValue(argv, '--repo') ?? path.resolve(import.meta.dir, '..'));
   const base = argValue(argv, '--base') ?? defaultBase(env);
 

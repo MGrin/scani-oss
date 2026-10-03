@@ -110,7 +110,7 @@ interface DemoHoldingRow {
   readonly txSources: readonly string[];
 }
 
-export interface DemoTransactionRow {
+interface DemoTransactionRow {
   readonly id: string;
   readonly holdingKey: string;
   readonly symbol: string;
@@ -138,9 +138,9 @@ interface DemoObservationRow {
   readonly source: string;
 }
 
-export type DemoScopeKind = 'user' | 'institution' | 'account' | 'holding';
+type DemoScopeKind = 'user' | 'institution' | 'account' | 'holding';
 
-export interface DemoRollupRow {
+interface DemoRollupRow {
   readonly scopeKind: DemoScopeKind;
   /** Holding key, account key, institution NAME, or `'user'`. */
   readonly scopeRef: string;

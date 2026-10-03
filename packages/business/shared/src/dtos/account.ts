@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export type Account = {
+type Account = {
   name: string;
   description: string | null;
   id: string;
@@ -26,7 +26,10 @@ export const CreateAccountDto = z.object({
 export type AccountWihSumaryDTO = Account & {
   summary: {
     holdingsCount: number;
+    /** Net: assets plus `marginDebt`. */
     totalValue: string;
+    /** Signed: `"0"`, or the negative sum of the account's debt holdings (SC-1463). */
+    marginDebt: string;
   };
   groups: Array<{
     id: string;
@@ -42,5 +45,3 @@ export const UpdateAccountDto = z.object({
   institutionId: z.string().uuid().optional(),
   description: z.string().max(500).optional().nullable(),
 });
-
-export type UpdateAccountInput = z.infer<typeof UpdateAccountDto>;

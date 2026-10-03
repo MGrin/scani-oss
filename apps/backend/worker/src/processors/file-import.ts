@@ -1,21 +1,23 @@
 import { randomUUID } from 'node:crypto';
 import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
-import {
-  describeMergedRows,
-  HoldingBalanceObservationRepository,
-  HoldingRepository,
-  HoldingTransactionRepository,
-  TokenRepository,
-  UserJobRepository,
-} from '@scani/domain/repositories';
+import { getDb } from '@scani/db';
+import type { Document, Token } from '@scani/db/schema';
+import { describeMergedRows, TokenRepository, UserJobRepository } from '@scani/domain/repositories';
 import {
   CsvColumnDetectionService,
-  HoldingService,
+  FeedIngestService,
+  type IngestResult,
+  legacyStatementBatch,
   TransferReviewService,
   UploadedFileService,
 } from '@scani/domain/services';
 import { parseStatement } from '@scani/file-import';
-import { StatementTransactionIngester } from '@scani/ingesters';
+import {
+  type StatementClose,
+  type StatementLine,
+  StatementTransactionIngester,
+  statementWarnings,
+} from '@scani/ingesters';
 import {
   FILE_IMPORT,
   type FileImportJob,
@@ -26,8 +28,8 @@ import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService, type ProcessorContext, UserJobProcessor } from '@scani/queue';
 import type { CsvMapping } from '@scani/shared';
 import { Container, Service } from 'typedi';
-import { balanceWithoutClose } from '../lib/balance-without-close';
 import { readUpload } from '../lib/read-upload';
+import { widenToEarliestWrite } from './ingest-transactions';
 
 const logger = createComponentLogger('processor:file-import');
 
@@ -101,11 +103,6 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
   protected async handle(data: FileImportJob, ctx: ProcessorContext): Promise<FileImportResult> {
     const storage = Container.get(StorageFacade);
     const csvColumnDetection = Container.get(CsvColumnDetectionService);
-    const tokenRepo = Container.get(TokenRepository);
-    const holdingRepo = Container.get(HoldingRepository);
-    const holdingService = Container.get(HoldingService);
-    const txRepo = Container.get(HoldingTransactionRepository);
-    const obsRepo = Container.get(HoldingBalanceObservationRepository);
     const ingester = Container.get(StatementTransactionIngester);
 
     await ctx.reportStatus('Reading uploaded file…');
@@ -118,7 +115,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     // The currency-picker retry consumes this same key a second time and
     // hits `UploadedFileService`'s content-hash lookup, so it reuses the
     // row rather than listing the upload twice.
-    await this.record(data, buf, ctx.job.id);
+    const document = await this.record(data, buf, ctx.job.id);
     // R2 keys are uploaded under `temp/file-import/{userId}/` which the
     // bucket lifecycle rule (24h) cleans up. We never delete the temp file
     // ourselves — that would race the currency-picker retry path, where
@@ -223,111 +220,73 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
       };
     }
 
-    // Build the holding-by-currency map first. Each unique currency
-    // in the parsed transactions resolves to a fiat token, then to
-    // the user's holding for that token (find-or-create with balance
-    // = 0; the actual balance lands via the closing-balance
-    // observation the ingester emits). The resolution chain mirrors
-    // the ingester's: per-row currency, then file-detected currency,
-    // then user-supplied fallback.
-    const uniqueCurrencies = new Set<string>();
-    for (const tx of parsed.transactions) {
-      const cur = (tx.currency || parsed.detectedCurrency || fallbackCurrency || '')
-        .trim()
-        .toUpperCase();
-      if (cur) uniqueCurrencies.add(cur);
-    }
-
-    if (uniqueCurrencies.size > 0) {
-      await ctx.reportStatus(
-        `Resolving ${uniqueCurrencies.size} ${uniqueCurrencies.size === 1 ? 'currency' : 'currencies'}…`
-      );
-    }
-    const holdingByCurrency = new Map<
-      string,
-      { holdingId: string; tokenId: string; symbol: string; name: string }
-    >();
-    const holdingsCreated: string[] = [];
-    for (const symbol of uniqueCurrencies) {
-      const token = await tokenRepo.findBySymbol(symbol);
-      if (!token) {
-        logger.warn(
-          { jobId: ctx.job.id, symbol },
-          'Statement currency not found in tokens table; rows for this currency will be skipped'
-        );
-        continue;
-      }
-      const existing = await holdingRepo.findByAccountAndToken(
-        data.accountId,
-        token.id,
-        data.userId
-      );
-      if (existing) {
-        holdingByCurrency.set(symbol, {
-          holdingId: existing.id,
-          tokenId: token.id,
-          symbol: token.symbol,
-          name: token.name,
-        });
-        continue;
-      }
-      // Skip the create-time sync-capture obs: we'll write the real one
-      // via `updateHoldingBalance` once the ingester gives us the closing
-      // balance. Without this skip, two sync-capture obs land at NOW
-      // (placeholder 0 + real closing) within ~50ms; `findLatestAtOrAfter`
-      // picks the earlier one (balance=0) and the chart goes to 0 for
-      // every day between the statement's last row and import day.
-      const created = await holdingService.createHoldingWithEvent({
-        accountId: data.accountId,
-        tokenId: token.id,
-        balance: '0',
-        userId: data.userId,
-        source: 'statement-import',
-        // The user uploaded the statement this currency was read from
-        // (SC-277).
-        arrival: 'user_confirmed',
-        skipSyncCapture: true,
-      });
-      holdingByCurrency.set(symbol, {
-        holdingId: created.id,
-        tokenId: token.id,
-        symbol: token.symbol,
-        name: token.name,
-      });
-      holdingsCreated.push(created.id);
-    }
-
-    await ctx.reportStatus(
-      `Ingesting ${parsed.transactions.length} ${parsed.transactions.length === 1 ? 'transaction' : 'transactions'}…`
-    );
-    const ingestResult = await ingester.ingest({
-      userId: data.userId,
+    const statement = ingester.ingest({
       accountId: data.accountId,
       parseResult: parsed,
       defaultCurrency: fallbackCurrency || undefined,
-      resolveToken: {
-        async resolveFiatTokenBySymbol(sym) {
-          const upper = sym.trim().toUpperCase();
-          const found = holdingByCurrency.get(upper);
-          return found ? { holdingId: found.holdingId, tokenId: found.tokenId } : null;
-        },
-      },
     });
+    const lines = statement.lines.filter((line): line is StatementLine => !('skipped' in line));
+    const currencies = [...new Set(lines.map((line) => line.currency))];
 
-    // Write transactions + observations to the DB. Both are idempotent —
-    // dedup keys are (holdingId, source, externalId) for transactions
-    // and (holdingId, observedAt, source) for observations.
+    if (currencies.length > 0) {
+      await ctx.reportStatus(
+        `Resolving ${currencies.length} ${currencies.length === 1 ? 'currency' : 'currencies'}…`
+      );
+    }
+    await ctx.reportStatus(
+      `Ingesting ${parsed.transactions.length} ${parsed.transactions.length === 1 ? 'transaction' : 'transactions'}…`
+    );
     await ctx.reportStatus('Saving transactions to your account…');
-    const written = await txRepo.bulkUpsert(ingestResult.transactions);
+
+    // One transaction: the holdings, the rows, the close, the window and the
+    // balances are all written or none is. A statement none of whose
+    // currencies the catalog knows has nothing to write, so it records no
+    // input and no window either: a window would claim a period nothing was
+    // read for.
+    //
+    // The tokens the summary names are read in that transaction too. Read
+    // after the commit, a failure would fail a job whose import had landed,
+    // and the retry would find nothing changed and rebuild 400 days over rows
+    // older than that (ruling R26).
+    const imported = (await this.knowsAny(currencies))
+      ? await getDb().transaction(async (tx) => {
+          const ingested = await Container.get(FeedIngestService).ingest(
+            legacyStatementBatch({
+              userId: data.userId,
+              accountId: data.accountId,
+              result: statement,
+              uploadRef: data.r2Key,
+              // The same file is the same document, so it is the same fetch and
+              // a second upload of it records no second window.
+              fetchedAt: document?.createdAt ?? new Date(),
+            }),
+            tx
+          );
+          const tokens = await Container.get(TokenRepository).findByIds(
+            ingested.holdings.map((h) => h.tokenId),
+            tx
+          );
+          return { ingested, tokens };
+        })
+      : null;
+    const ingested = imported?.ingested ?? null;
+    const unknown = new Set(ingested ? ingested.skippedAssets.map((a) => a.symbol) : currencies);
+    for (const symbol of unknown) {
+      logger.warn(
+        { jobId: ctx.job.id, symbol },
+        'Statement currency not found in tokens table; rows for this currency will be skipped'
+      );
+    }
+    const warnings = statementWarnings(statement, unknown);
     // A statement's synthetic externalId is built from the parsed row, so
     // two rows a bank genuinely repeated on one day collapse into one and
     // the import used to report only the surviving count (SC-349). The
     // merge is legitimate often enough that it must not fail the import —
     // but the user is the only one who can tell a real duplicate from a
     // row their statement lost.
-    const merged = describeMergedRows(written.merges);
+    const merged = describeMergedRows(ingested?.merges ?? []);
     if (merged) {
-      ingestResult.warnings.push(`${merged} Check the statement for genuinely repeated entries.`);
+      warnings.push(`${merged} Check the statement for genuinely repeated entries.`);
     }
     // A statement's payments carry the counterparty a destination rule is keyed
     // on, so an outflow to a marked destination is answered here, when it is
@@ -341,79 +300,14 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
         'Applying destination rules to imported statement rows failed (non-fatal)'
       );
     }
-    await obsRepo.bulkAppend(ingestResult.observations);
 
-    // Update each affected holding's `balance` column to the latest
-    // observed close. Use HoldingService.updateHoldingBalance (not a
-    // direct UPDATE) so a fresh sync-capture observation lands at NOW
-    // with the correct value — without it, the stale balance=0
-    // sync-capture written at holding-creation time stays as the
-    // newest anchor and BalanceAtTimeService returns 0 for any date
-    // between the statement's last day and today.
-    const closingByHolding = new Map<string, string>();
-    for (const obs of ingestResult.observations) {
-      if (typeof obs.balance === 'string') {
-        closingByHolding.set(obs.holdingId, obs.balance);
-      }
-    }
-    for (const [holdingId, balance] of closingByHolding) {
-      try {
-        await holdingService.updateHoldingBalance(holdingId, balance);
-      } catch (err) {
-        logger.warn(
-          { jobId: ctx.job.id, holdingId, error: err instanceof Error ? err.message : err },
-          'Failed to update holding balance from statement close (non-fatal)'
-        );
-      }
-    }
-
-    // A holding this import created, from a file with no balance column, has
-    // no close to take. Its own rows are then the only evidence (SC-1324); a
-    // holding that already existed keeps whatever its balance was.
-    const balanceFromByHolding = new Map<string, 'imported-rows' | 'unknown'>();
-    const rowsBalanceByHolding = new Map<string, string>();
-    for (const holdingId of holdingsCreated) {
-      if (closingByHolding.has(holdingId)) continue;
-      const derived = balanceWithoutClose(
-        ingestResult.transactions
-          .filter((tx) => tx.holdingId === holdingId)
-          .map((tx) => tx.quantity)
-      );
-      balanceFromByHolding.set(
-        holdingId,
-        derived.kind === 'from-rows' ? 'imported-rows' : 'unknown'
-      );
-      if (derived.kind !== 'from-rows') continue;
-      try {
-        await holdingService.updateHoldingBalance(holdingId, derived.balance);
-        rowsBalanceByHolding.set(holdingId, derived.balance);
-      } catch (err) {
-        balanceFromByHolding.set(holdingId, 'unknown');
-        logger.warn(
-          { jobId: ctx.job.id, holdingId, error: err instanceof Error ? err.message : err },
-          'Failed to set a new holding balance from its imported rows (non-fatal)'
-        );
-      }
-    }
-
-    const txCountByHolding = new Map<string, number>();
-    for (const tx of ingestResult.transactions) {
-      txCountByHolding.set(tx.holdingId, (txCountByHolding.get(tx.holdingId) ?? 0) + 1);
-    }
-    const holdingsTouched: FileImportSummary['holdingsTouched'] = [
-      ...holdingByCurrency.entries(),
-    ].map(([_sym, info]) => ({
-      holdingId: info.holdingId,
-      tokenId: info.tokenId,
-      symbol: info.symbol,
-      name: info.name,
-      transactionCount: txCountByHolding.get(info.holdingId) ?? 0,
-      closingBalance: closingByHolding.get(info.holdingId) ?? null,
-      balanceFrom: closingByHolding.has(info.holdingId)
-        ? 'statement-close'
-        : (balanceFromByHolding.get(info.holdingId) ?? 'unchanged'),
-      rowsBalance: rowsBalanceByHolding.get(info.holdingId) ?? null,
-    }));
+    // Counted as sent, a re-sent row included, as they always were.
+    const written = lines.filter((line) => !unknown.has(line.currency));
+    const closes = statement.closes.filter((close) => !unknown.has(close.currency));
+    const transactionCount = written.reduce((count, line) => count + line.rows.length, 0);
+    const holdingsTouched = imported
+      ? this.summarize(imported.ingested, imported.tokens, written, closes)
+      : [];
 
     // Auto-stamp `action_taken_at` — structured CSV imports have no
     // review step, so the /jobs sidebar would otherwise insist on
@@ -430,14 +324,19 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
       }
     }
 
-    if (ingestResult.transactions.length > 0) {
+    if (transactionCount > 0) {
       const tokenIds = [...new Set(holdingsTouched.map((h) => h.tokenId))];
       try {
         await Container.get(BullMqEnqueueService).add(PORTFOLIO_HISTORY_BACKFILL, {
           userId: data.userId,
           requestId: randomUUID(),
           tokenIds,
-          lookbackDays: PORTFOLIO_HISTORY_LOOKBACK_DAYS,
+          // A statement older than the chart window is rebuilt back to its
+          // oldest changed row, rather than to the window's edge.
+          lookbackDays: widenToEarliestWrite(
+            PORTFOLIO_HISTORY_LOOKBACK_DAYS,
+            ingested?.earliestChangedAt?.toISOString() ?? null
+          ),
         });
       } catch (err) {
         logger.warn(
@@ -450,25 +349,74 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     return {
       format: parsed.format,
       accountId: data.accountId,
-      transactionCount: ingestResult.transactions.length,
-      observationCount: ingestResult.observations.length,
-      holdingsCreated,
+      transactionCount,
+      observationCount: closes.length,
+      holdingsCreated: ingested?.createdHoldingIds ?? [],
       holdingsTouched,
-      warnings: ingestResult.warnings,
+      warnings,
     };
+  }
+
+  private async knowsAny(currencies: readonly string[]): Promise<boolean> {
+    const tokens = Container.get(TokenRepository);
+    for (const currency of currencies) {
+      if (await tokens.findBySymbol(currency)) return true;
+    }
+    return false;
+  }
+
+  /** One line per holding the import wrote into, in the order the statement first named each. */
+  private summarize(
+    ingested: IngestResult,
+    tokens: readonly Token[],
+    written: readonly StatementLine[],
+    closes: readonly StatementClose[]
+  ): FileImportSummary['holdingsTouched'] {
+    const created = new Set(ingested.createdHoldingIds);
+    return ingested.holdings.flatMap((holding) => {
+      const token = tokens.find((t) => t.id === holding.tokenId);
+      if (!token) return [];
+      // A statement currency is its catalog token's symbol.
+      const close = closes.find((c) => c.currency === token.symbol);
+      // A holding this import created, from a file with no balance column, has
+      // no close to take. Its own rows are then the only evidence (SC-1324); a
+      // holding that already existed keeps whatever its balance was.
+      const fromRows = close === undefined && created.has(holding.holdingId);
+      return [
+        {
+          holdingId: holding.holdingId,
+          tokenId: token.id,
+          symbol: token.symbol,
+          name: token.name,
+          transactionCount: written
+            .filter((line) => line.currency === token.symbol)
+            .reduce((count, line) => count + line.rows.length, 0),
+          closingBalance: close?.balance ?? null,
+          balanceFrom: close
+            ? 'statement-close'
+            : !fromRows
+              ? 'unchanged'
+              : holding.cacheBalance === null
+                ? 'unknown'
+                : 'imported-rows',
+          rowsBalance: fromRows ? holding.cacheBalance : null,
+        },
+      ];
+    });
   }
 
   /**
    * Never throws — the user's goal is the import, and a failed bookkeeping
-   * write must not fail a statement that parsed cleanly.
+   * write must not fail a statement that parsed cleanly. Null when the upload
+   * could not be recorded.
    */
   private async record(
     data: FileImportJob,
     bytes: Buffer,
     jobId: string | undefined
-  ): Promise<void> {
+  ): Promise<Document | null> {
     try {
-      await Container.get(UploadedFileService).record({
+      return await Container.get(UploadedFileService).record({
         userId: data.userId,
         purpose: 'file-import',
         bytes: new Uint8Array(bytes),
@@ -486,6 +434,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
         { jobId, r2Key: data.r2Key, error: err instanceof Error ? err.message : err },
         'Statement upload could not be recorded (non-fatal)'
       );
+      return null;
     }
   }
 }

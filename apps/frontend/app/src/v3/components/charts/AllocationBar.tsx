@@ -50,6 +50,13 @@ interface AllocationBarProps {
    * which is what a legend is.
    */
   itemHref?: (segment: AllocationSegment) => string | null;
+  /**
+   * Names what the percentages are a share of. Set only when the figure above
+   * the bar is not the bar's own sum — with margin debt the hero is net and
+   * the bar is gross assets, so "52%" of assets must not read as 52% of net
+   * worth (SC-1463). Without debt the two are equal and nothing renders.
+   */
+  shareCaption?: string;
   className?: string;
 }
 
@@ -59,6 +66,7 @@ export function AllocationBar({
   label,
   maxSegments,
   itemHref,
+  shareCaption,
   className,
 }: AllocationBarProps) {
   const segments = foldAllocation(items, maxSegments === undefined ? {} : { maxSegments });
@@ -94,6 +102,10 @@ export function AllocationBar({
           />
         ))}
       </div>
+
+      {shareCaption ? (
+        <p className="max-w-[34rem] text-end text-caption text-muted-foreground">{shareCaption}</p>
+      ) : null}
 
       {/* Capped rather than full-bleed (SC-71 8.3). Every row here pairs a name
           on the left with its value on the right, and on a wide card the two

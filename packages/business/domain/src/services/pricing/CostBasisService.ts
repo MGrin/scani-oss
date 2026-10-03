@@ -12,6 +12,7 @@ import {
 } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import { DRIFT_GROWTH_KIND, DRIFT_IN_KIND, DRIFT_OUT_KIND } from '../../lib/balances/drift-rows';
 import { sortLedgerEvents } from '../../lib/ledger-order';
 import {
   type CostBasisMethod,
@@ -23,12 +24,13 @@ import {
   poolDrawFor,
   type Section104Plan,
 } from '../../lib/lot-matching';
+import { flowRoleOfRow, rowIdsByHolding } from '../../lib/returns/flow-classification';
 import {
   type FeeValuation,
   type TxValuation,
   type ValuationBasis,
+  valueRowInBase,
   valueTradeFeeInBase,
-  valueTransactionInBase,
   withTradeFee,
 } from '../../lib/tx-valuation';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
@@ -40,7 +42,7 @@ import type { PriceLookup } from './PriceLookup';
 // the lot's `qty`, denominated in the user's base currency at
 // transaction time. `date` is the lot's acquisition date (preserved
 // for first-in-first-out ordering and downstream lot-detail queries).
-export interface CostLot {
+interface CostLot {
   qty: Decimal;
   cost: Decimal;
   date: Date;
@@ -103,6 +105,10 @@ export interface CostBasisAtTime {
   // `holdingsBasisUnknown`, which reaches the chart, the PnL series and
   // both exports.
   basisQuality: CostBasisQuality;
+  // Income booked at receipt — interest, rewards, airdrops, answered growth —
+  // at what it was worth then (SC-1470). Apart from `realizedPnl`, which is the
+  // sum of the walk's disposal rows and must stay so (SC-90).
+  income?: Decimal;
   // Outflows at or before `at` whose lots left with no gain booked because
   // nobody has answered them yet (SC-160). Exactly the rows the review
   // queue holds — see `countsAsUnreviewed`. `realizedPnl` above understates
@@ -198,7 +204,7 @@ export type DisposalOutcome =
  * Which identification rule this walk applies (SC-462). See
  * `lib/lot-matching.ts` — the walk is otherwise regime-independent.
  */
-export type { CostBasisMethod, ValuationBasis };
+export type { CostBasisMethod };
 
 /**
  * Whose answer a disposal's outcome rests on (SC-324). It IS
@@ -211,7 +217,7 @@ export type { CostBasisMethod, ValuationBasis };
  * 'left_control'` alone, and that column holds an answer a person gave and a
  * value something wrote in the same three words.
  */
-export type DisposalAnswerSource = DisposalAnswerSourceDto;
+type DisposalAnswerSource = DisposalAnswerSourceDto;
 
 /**
  * One outflow matched against one acquisition lot (SC-152).
@@ -317,13 +323,28 @@ const INFLOW_BUY_KINDS = new Set(['buy', 'swap_in']);
 // all do we fall back to a true zero-cost lot.
 const INFLOW_OTHER_KINDS = new Set([
   'deposit',
+  // The cash a sale paid into the cash holding (SC-1453), at its worth that day (SC-1467).
+  'settle_in',
   'reward',
   'interest',
   'airdrop',
   'transfer_in',
   'opening_balance',
+  // An unexplained rise (SC-1470): money in at its worth that day, like a
+  // deposit; or, answered `growth`, earned like a reward. A FALL answered
+  // `growth` is skipped below, as a standalone `fee` is.
+  DRIFT_IN_KIND,
+  DRIFT_GROWTH_KIND,
 ]);
-const OUTFLOW_SELL_KINDS = new Set(['sell', 'swap_out']);
+// `settle_out` is the cash a purchase spent (SC-1453). Walked as a sale of that cash so
+// its lots leave the pool: skipped, they stayed in it beside the stock that
+// bought them, and the same money was cost twice (SC-1467).
+const OUTFLOW_SELL_KINDS = new Set(['sell', 'swap_out', 'settle_out']);
+const INCOME_KINDS = new Set(['reward', 'interest', 'airdrop', DRIFT_GROWTH_KIND]);
+function isSettlingFee(tx: HoldingTransaction, sameHoldingRowIds: ReadonlySet<string>): boolean {
+  return tx.kind === 'fee' && flowRoleOfRow(tx, sameHoldingRowIds) === 'external';
+}
+
 function isConfirmedDisposal(tx: HoldingTransaction): boolean {
   return tx.transferReview === 'left_control';
 }
@@ -807,7 +828,67 @@ export class CostBasisService {
       hasTxByHolding.set(h, txs.length > 0);
       for (const tx of txs) events.push(tx);
     }
-    const ordered = sortLedgerEvents(events);
+    const ordered = deferEarlyArrivals(sortLedgerEvents(events));
+    const idsByHolding = rowIdsByHolding(ordered);
+    const settlesTrade = (t: HoldingTransaction) =>
+      isSettlingFee(t, idsByHolding.get(t.holdingId) ?? new Set());
+    // A conversion's commission that a fee row on the SAME holding pays stays a
+    // cost of the cash through that row (SC-1464). IBKR also reports it on the
+    // trade row, and folding it in there as well counted one commission twice:
+    // +2.00 of residual per USD/CAD conversion (SC-1486).
+    const paidByOwnFeeRow = new Set(
+      ordered
+        .filter(
+          (t) =>
+            t.kind === 'fee' &&
+            t.settlesTransactionId !== null &&
+            (idsByHolding.get(t.holdingId)?.has(t.settlesTransactionId) ?? false)
+        )
+        .map((t) => t.settlesTransactionId)
+    );
+    const tradeFee = (t: HoldingTransaction, heldTokenId: string | null) =>
+      paidByOwnFeeRow.has(t.id)
+        ? null
+        : this.tradeFeeInBase(dbTx, t, baseCurrencyId, heldTokenId, priceLookup);
+    // Cash a trade settles against can go below zero (a margin debit, which
+    // mgrin ruled is negative net worth). The pool cannot hold a negative lot,
+    // so what an outflow spends past the open lots is held here as a SHORT, at
+    // what it was spent for, and later inflows close it before they open a lot
+    // (SC-1470). Only for holdings that carry settlement rows: a stock sold
+    // past its recorded buys is a missing buy, not a short.
+    const shortable = new Set(
+      ordered
+        .filter((t) => t.kind === 'settle_in' || t.kind === 'settle_out' || settlesTrade(t))
+        .map((t) => t.holdingId)
+    );
+    const shorts = new Map<string, Array<{ qty: Decimal; value: Decimal }>>();
+    const openShort = (holdingId: string, qty: Decimal, value: Decimal) => {
+      if (!shortable.has(holdingId) || qty.lte(0)) return false;
+      const open = shorts.get(holdingId) ?? [];
+      open.push({ qty, value });
+      shorts.set(holdingId, open);
+      return true;
+    };
+    // Closes shorts with `qty` units that cost `cost`, oldest first, booking
+    // the difference as realized. Returns what is left to open as a lot.
+    const closeShorts = (holdingId: string, qty: Decimal, cost: Decimal) => {
+      const open = shorts.get(holdingId);
+      let left = qty;
+      let leftCost = cost;
+      while (open && open.length > 0 && left.gt(0)) {
+        const short = open[0] as { qty: Decimal; value: Decimal };
+        const take = Decimal.min(short.qty, left);
+        const value = short.value.mul(take).div(short.qty);
+        const paid = qty.isZero() ? new Decimal(0) : cost.mul(take).div(qty);
+        addRealized(holdingId, value.minus(paid));
+        short.qty = short.qty.minus(take);
+        short.value = short.value.minus(value);
+        if (short.qty.isZero()) open.shift();
+        left = left.minus(take);
+        leftCost = leftCost.minus(paid);
+      }
+      return { qty: left, cost: leftCost };
+    };
     // Decided before the fold, because rule 2 matches FORWARDS in time: a
     // disposal can be identified with a purchase made up to 30 days after it,
     // which no sequential walk can answer at the moment it reaches the
@@ -888,6 +969,7 @@ export class CostBasisService {
         portion: PortionRef;
       }>
     >();
+    const incomeByHolding = new Map<string, Decimal>();
     const addRealized = (holdingId: string, amount: Decimal): void => {
       realizedByHolding.set(
         holdingId,
@@ -924,17 +1006,36 @@ export class CostBasisService {
           heldTokenId,
           priceLookup
         ),
-        await this.tradeFeeInBase(dbTx, tx, baseCurrencyId, heldTokenId, priceLookup),
+        await tradeFee(tx, heldTokenId),
         WHOLE_ROW
       );
       acquisitionValues.set(tx.id, value);
       return value;
     };
 
+    // A unit of the base currency costs one unit, so base-currency cash that
+    // leaves beyond its recorded lots leaves at par, not at zero cost. At zero
+    // the whole shortfall was booked as a gain on a dollar spent as a dollar
+    // (SC-1467). Any other token keeps the unknown-basis row.
+    const atPar = (
+      holdingId: string,
+      wantQty: Decimal,
+      taken: ComponentLot[],
+      at: Date
+    ): ComponentLot[] => {
+      if (heldTokenByHolding.get(holdingId) !== baseCurrencyId) return taken;
+      const short = wantQty.minus(taken.reduce((s, l) => s.add(l.qty), new Decimal(0)));
+      if (short.lte(0)) return taken;
+      return [
+        ...taken,
+        { qty: short, cost: short, date: at, holdingId, stale: false, unpriced: false },
+      ];
+    };
+
     // What one disposal consumes: the acquisitions the identification rules
     // gave it first, then the pool for the rest. Under FIFO the plan is empty
     // and this is `popHolding` and nothing else.
-    const matchedLots = async (
+    const matchedFromPlan = async (
       key: string,
       holdingId: string,
       wantQty: Decimal
@@ -966,12 +1067,32 @@ export class CostBasisService {
       }
       return [...slices, ...popHolding(holdingId, wantQty.minus(claimed))];
     };
+    const matchedLots = async (
+      key: string,
+      holdingId: string,
+      wantQty: Decimal,
+      at: Date
+    ): Promise<ComponentLot[]> =>
+      atPar(holdingId, wantQty, await matchedFromPlan(key, holdingId, wantQty), at);
 
     for (const [position, tx] of ordered.entries()) {
       const holdingId = tx.holdingId;
       const qtyAbs = new Decimal(tx.quantity).abs();
       if (qtyAbs.isZero()) continue;
       const heldTokenId = heldTokenByHolding.get(holdingId) ?? null;
+
+      if (tx.kind === DRIFT_GROWTH_KIND && new Decimal(tx.quantity).isNegative()) continue;
+      // An unexplained fall is money out (mgrin, SC-1470): it leaves at pool
+      // cost and realizes nothing, so it can be neither a gain nor a loss.
+      if (tx.kind === DRIFT_OUT_KIND) {
+        const popped = popHolding(holdingId, qtyAbs);
+        const shortfall = qtyAbs.minus(popped.reduce((s, l) => s.add(l.qty), new Decimal(0)));
+        if (shortable.has(holdingId) && shortfall.gt(0)) {
+          const worth = await acquisitionValue(tx);
+          if (worth) openShort(holdingId, shortfall, worth.amount.mul(shortfall).div(qtyAbs));
+        }
+        continue;
+      }
 
       if (INFLOW_BUY_KINDS.has(tx.kind) || INFLOW_OTHER_KINDS.has(tx.kind)) {
         const tgid = tx.transferGroupId;
@@ -1005,6 +1126,15 @@ export class CostBasisService {
         }
         const cost = await acquisitionValue(tx);
         doubtFor(holdingId).observe(cost);
+        // Income is a gain when it arrives, at what it was worth (SC-1470). The
+        // lot then costs that much, so only its moves since are unrealized;
+        // booked as cost alone, the income itself was in no PnL while Returns
+        // counted it.
+        if (cost && INCOME_KINDS.has(tx.kind))
+          incomeByHolding.set(
+            holdingId,
+            (incomeByHolding.get(holdingId) ?? new Decimal(0)).add(cost.amount)
+          );
         // Units a same-day or bed-and-breakfast disposal already claimed never
         // reach the Section 104 pool — that is what those rules DO. The
         // disposal booked them when it was walked (or will, for a same-day
@@ -1012,11 +1142,15 @@ export class CostBasisService {
         // one purchase twice. Under FIFO nothing is ever reserved and this
         // subtracts zero.
         const reserved = plan.reserved.get(tx.id) ?? new Decimal(0);
-        const open = qtyAbs.minus(reserved);
-        if (open.gt(0)) {
+        const rest = closeShorts(
+          holdingId,
+          qtyAbs.minus(reserved),
+          cost === null ? new Decimal(0) : cost.amount.mul(qtyAbs.minus(reserved)).div(qtyAbs)
+        );
+        if (rest.qty.gt(0)) {
           lots.push({
-            qty: open,
-            cost: cost === null ? new Decimal(0) : cost.amount.mul(open).div(qtyAbs),
+            qty: rest.qty,
+            cost: rest.cost,
             date: tx.occurredAt,
             holdingId,
             stale: cost?.stale ?? false,
@@ -1026,18 +1160,31 @@ export class CostBasisService {
         continue;
       }
 
-      if (OUTFLOW_SELL_KINDS.has(tx.kind)) {
+      // A `fee` row settling a trade is that trade's cash leg (SC-1470): it
+      // spends the cash the way `settle_out` does, not as a cost of the cash.
+      if (OUTFLOW_SELL_KINDS.has(tx.kind) || settlesTrade(tx)) {
         const proceeds = withTradeFee(
           await this.txValueInBase(dbTx, tx, qtyAbs, baseCurrencyId, heldTokenId, priceLookup),
-          await this.tradeFeeInBase(dbTx, tx, baseCurrencyId, heldTokenId, priceLookup),
+          await tradeFee(tx, heldTokenId),
           WHOLE_ROW.neg()
         );
         doubtFor(holdingId).observe(proceeds);
-        const popped = await matchedLots(`${tx.id}#${WHOLE_PORTION.index}`, holdingId, qtyAbs);
+        const popped = await matchedLots(
+          `${tx.id}#${WHOLE_PORTION.index}`,
+          holdingId,
+          qtyAbs,
+          tx.occurredAt
+        );
         record(tx, qtyAbs, proceeds, popped, proceeds === null ? 'unpriced' : 'realized');
         if (proceeds !== null) {
           const soldCost = popped.reduce((s, l) => s.add(l.cost), new Decimal(0));
-          addRealized(holdingId, proceeds.amount.minus(soldCost));
+          const shortfall = qtyAbs.minus(popped.reduce((s, l) => s.add(l.qty), new Decimal(0)));
+          const shortValue = proceeds.amount.mul(shortfall).div(qtyAbs);
+          const shorted = openShort(holdingId, shortfall, shortValue);
+          addRealized(
+            holdingId,
+            proceeds.amount.minus(shorted ? shortValue : new Decimal(0)).minus(soldCost)
+          );
         }
         // proceeds === null → neither the execution rate nor the held token
         // could be converted (SC-397). Pop at zero realized; the row carries
@@ -1112,6 +1259,11 @@ export class CostBasisService {
               const bucket = pending.get(tgid);
               if (bucket) bucket.push(...popped);
               else pending.set(tgid, [...popped]);
+            } else {
+              // Unlinked, nothing carries the cost on, and the flow side leaves
+              // the fee share out, so it is a loss at cost — never priced, which
+              // would invent a gain (SC-1486).
+              addRealized(holdingId, popped.reduce((s, l) => s.add(l.cost), new Decimal(0)).neg());
             }
             record(tx, portion.qty, null, popped, 'fee', portion);
             continue;
@@ -1123,7 +1275,12 @@ export class CostBasisService {
             // 30-day rules are about. When proceeds is null (no priceable route
             // at occurredAt) fall through silently at zero realized rather than
             // fabricating a phantom loss.
-            const popped = await matchedLots(`${tx.id}#${portion.index}`, holdingId, portion.qty);
+            const popped = await matchedLots(
+              `${tx.id}#${portion.index}`,
+              holdingId,
+              portion.qty,
+              tx.occurredAt
+            );
             // The fee is the whole row's, so this share bears its part of it
             // and a share that realizes nothing bears none.
             const proceeds = withTradeFee(
@@ -1135,7 +1292,7 @@ export class CostBasisService {
                 heldTokenId,
                 priceLookup
               ),
-              await this.tradeFeeInBase(dbTx, tx, baseCurrencyId, heldTokenId, priceLookup),
+              await tradeFee(tx, heldTokenId),
               portion.qty.div(qtyAbs).neg()
             );
             doubtFor(holdingId).observe(proceeds);
@@ -1205,6 +1362,7 @@ export class CostBasisService {
           record(acc.tx, acc.qtyAbs, null, acc.popped, 'awaiting_pair', acc.portion);
           continue;
         }
+        const popped = atPar(acc.holdingId, acc.qtyAbs, acc.popped, acc.tx.occurredAt);
         const proceeds = withTradeFee(
           await this.txValueInBase(
             dbTx,
@@ -1214,7 +1372,7 @@ export class CostBasisService {
             acc.heldTokenId,
             priceLookup
           ),
-          await this.tradeFeeInBase(dbTx, acc.tx, baseCurrencyId, acc.heldTokenId, priceLookup),
+          await tradeFee(acc.tx, acc.heldTokenId),
           acc.qtyAbs.div(new Decimal(acc.tx.quantity).abs()).neg()
         );
         doubtFor(acc.holdingId).observe(proceeds);
@@ -1222,12 +1380,12 @@ export class CostBasisService {
           acc.tx,
           acc.qtyAbs,
           proceeds,
-          acc.popped,
+          popped,
           proceeds === null ? 'unpriced' : 'realized',
           acc.portion
         );
         if (proceeds !== null) {
-          const poppedCost = acc.popped.reduce((s, l) => s.add(l.cost), new Decimal(0));
+          const poppedCost = popped.reduce((s, l) => s.add(l.cost), new Decimal(0));
           addRealized(acc.holdingId, proceeds.amount.minus(poppedCost));
         }
       }
@@ -1238,10 +1396,16 @@ export class CostBasisService {
     for (const h of holdingIds) {
       const holdingLots = lots.filter((l) => l.holdingId === h);
       const hasTransactions = hasTxByHolding.get(h) ?? false;
+      const open = shorts.get(h) ?? [];
       out.set(h, {
-        openQty: holdingLots.reduce((s, l) => s.add(l.qty), new Decimal(0)),
-        costBasis: holdingLots.reduce((s, l) => s.add(l.cost), new Decimal(0)),
+        openQty: holdingLots
+          .reduce((s, l) => s.add(l.qty), new Decimal(0))
+          .minus(open.reduce((s, o) => s.add(o.qty), new Decimal(0))),
+        costBasis: holdingLots
+          .reduce((s, l) => s.add(l.cost), new Decimal(0))
+          .minus(open.reduce((s, o) => s.add(o.value), new Decimal(0))),
         realizedPnl: realizedByHolding.get(h) ?? new Decimal(0),
+        income: incomeByHolding.get(h) ?? new Decimal(0),
         lots: holdingLots.map((l) => ({
           qty: l.qty,
           cost: l.cost,
@@ -1278,7 +1442,7 @@ export class CostBasisService {
     heldTokenId: string | null,
     priceLookup?: PriceLookup
   ): Promise<TxValuation | null> {
-    return valueTransactionInBase(
+    return valueRowInBase(
       this.priceGraphService,
       dbTx,
       tx,
@@ -1437,6 +1601,57 @@ function carriesAcross(
     if (sourceTokenId !== undefined && sourceTokenId !== arrivalTokenId) return false;
   }
   return true;
+}
+
+/**
+ * How far ahead of its departure a linked arrival may be stamped and still be
+ * walked after it. Production's widest is 145 seconds (SC-1486).
+ */
+const EARLY_ARRIVAL_WINDOW_MS = 10 * 60 * 1000;
+
+const isLinkedArrival = (tx: HoldingTransaction) =>
+  tx.transferGroupId !== null && (tx.kind === 'transfer_in' || tx.kind === 'deposit');
+
+/**
+ * Walks a linked arrival right after its departure when the arrival is stamped
+ * first (SC-1486). A chain stamps an exchange withdrawal landing a minute or
+ * two before the exchange stamps it leaving; in time order the arrival found
+ * no lots, opened one at market, and the lots that left were never claimed.
+ *
+ * The arrival moves, not the departure, so a source buy inside the gap still
+ * funds the withdrawal. It stays put when the gap is over the window, or when
+ * its own holding has another row inside the gap: that row may spend what
+ * arrived, and it must not run before the arrival does.
+ */
+function deferEarlyArrivals(ordered: HoldingTransaction[]): HoldingTransaction[] {
+  const lastDeparture = new Map<string, number>();
+  for (const [position, tx] of ordered.entries()) {
+    if (tx.transferGroupId && OUTFLOW_NEUTRAL_KINDS.has(tx.kind)) {
+      lastDeparture.set(tx.transferGroupId, position);
+    }
+  }
+  const deferredAfter = new Map<number, HoldingTransaction[]>();
+  const deferred = new Set<HoldingTransaction>();
+  for (const [position, tx] of ordered.entries()) {
+    if (!isLinkedArrival(tx) || !tx.transferGroupId) continue;
+    const departure = lastDeparture.get(tx.transferGroupId);
+    if (departure === undefined || departure < position) continue;
+    const gap = (ordered[departure]?.occurredAt.getTime() ?? 0) - tx.occurredAt.getTime();
+    if (gap > EARLY_ARRIVAL_WINDOW_MS) continue;
+    const between = ordered.slice(position + 1, departure);
+    if (between.some((other) => other.holdingId === tx.holdingId)) continue;
+    deferred.add(tx);
+    const list = deferredAfter.get(departure);
+    if (list) list.push(tx);
+    else deferredAfter.set(departure, [tx]);
+  }
+  if (deferred.size === 0) return ordered;
+  const out: HoldingTransaction[] = [];
+  for (const [position, tx] of ordered.entries()) {
+    if (!deferred.has(tx)) out.push(tx);
+    for (const arrival of deferredAfter.get(position) ?? []) out.push(arrival);
+  }
+  return out;
 }
 
 /**

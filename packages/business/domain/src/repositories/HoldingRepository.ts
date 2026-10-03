@@ -3,6 +3,7 @@ import type { Holding, NewHolding, Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
+import { includedInTotalSql } from '../lib/holding-inclusion';
 import { effectiveScamProbability, notScamFor } from '../lib/scam-verdict';
 
 /**
@@ -359,10 +360,16 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           holdingSource: schema.holdings.source,
           holdingArrival: schema.holdings.arrival,
           holdingIsHidden: schema.holdings.isHidden,
+          holdingHiddenBy: schema.holdings.hiddenBy,
           holdingIsActive: schema.holdings.isActive,
           holdingExternalId: schema.holdings.externalId,
           holdingLabel: schema.holdings.label,
           holdingManualEditCause: schema.holdings.manualEditCause,
+          holdingAbsentFromStatements: schema.holdings.absentFromStatements,
+          holdingKind: schema.holdings.kind,
+          holdingStartsAt: schema.holdings.startsAt,
+          holdingValueBase: schema.holdings.valueBase,
+          holdingValuePricedAt: schema.holdings.valuePricedAt,
           holdingLastUpdated: schema.holdings.lastUpdated,
           holdingCreatedAt: schema.holdings.createdAt,
           // Token data with type
@@ -412,9 +419,15 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           source: r.holdingSource,
           arrival: r.holdingArrival,
           isHidden: r.holdingIsHidden,
+          hiddenBy: r.holdingHiddenBy,
           isActive: r.holdingIsActive,
           externalId: r.holdingExternalId,
           manualEditCause: r.holdingManualEditCause,
+          absentFromStatements: r.holdingAbsentFromStatements,
+          kind: r.holdingKind,
+          startsAt: r.holdingStartsAt,
+          valueBase: r.holdingValueBase,
+          valuePricedAt: r.holdingValuePricedAt,
           lastUpdated: r.holdingLastUpdated,
           createdAt: r.holdingCreatedAt,
         },
@@ -522,6 +535,45 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   }
 
   /**
+   * The ids among `holdingIds` that count toward a total, under the one
+   * inclusion rule the value series applies in SQL (`includedInTotalSql`).
+   * The flow side reads it so a holding's flows are counted exactly when its
+   * value and PnL are (SC-1486).
+   */
+  async findIdsIncludedInTotal(
+    holdingIds: readonly string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Set<string>> {
+    if (holdingIds.length === 0) return new Set();
+    const rows = await this.getDb(transaction)
+      .select({ id: schema.holdings.id })
+      .from(schema.holdings)
+      .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
+      .where(and(inArray(schema.holdings.id, [...holdingIds]), includedInTotalSql()));
+    return new Set(rows.map((row) => row.id));
+  }
+
+  /** A human was shown these positions (`HoldingArrival`), scoped to their owner. */
+  async markUserConfirmed(
+    userId: string,
+    holdingIds: readonly string[],
+    transaction?: DatabaseTransaction
+  ): Promise<void> {
+    if (holdingIds.length === 0) return;
+    try {
+      await this.getDb(transaction)
+        .update(schema.holdings)
+        .set({ arrival: 'user_confirmed' })
+        .where(
+          and(eq(schema.holdings.userId, userId), inArray(schema.holdings.id, [...holdingIds]))
+        );
+    } catch (error) {
+      this.logger.error({ userId, holdingIds, error }, 'Failed to mark holdings user-confirmed');
+      throw error;
+    }
+  }
+
+  /**
    * Mark a holding as hidden (soft delete for blockchain holdings)
    */
   async markAsHidden(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
@@ -531,10 +583,29 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         .update(schema.holdings)
         .set({
           isHidden: true,
+          hiddenBy: 'user',
         })
         .where(eq(schema.holdings.id, holdingId));
     } catch (error) {
       this.logger.error({ holdingId, error }, 'Failed to mark holding as hidden');
+      throw error;
+    }
+  }
+
+  /** The statement dates a synced holding has been missing from (SC-1451);
+   *  `null` once its source reports it again. */
+  async setAbsentFromStatements(
+    holdingId: string,
+    dates: Date[] | null,
+    transaction?: DatabaseTransaction
+  ): Promise<void> {
+    try {
+      await this.getDb(transaction)
+        .update(schema.holdings)
+        .set({ absentFromStatements: dates })
+        .where(eq(schema.holdings.id, holdingId));
+    } catch (error) {
+      this.logger.error({ holdingId, error }, 'Failed to record statement absence');
       throw error;
     }
   }
@@ -549,6 +620,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         .update(schema.holdings)
         .set({
           isHidden: false,
+          hiddenBy: null,
         })
         .where(eq(schema.holdings.id, holdingId));
     } catch (error) {
@@ -610,6 +682,53 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       this.logger.error({ holdingId, balance, error }, 'Failed to update holding balance');
       throw error;
     }
+  }
+
+  /**
+   * Moves `starts_at` back to `at` when the write reaches earlier, never later
+   * (foundation A2 D-6). A NULL stays NULL for the classification backfill:
+   * `LEAST` ignores NULL, so filling it here would cut off older evidence.
+   */
+  async lowerStartsAt(
+    userId: string,
+    holdingId: string,
+    at: Date,
+    transaction: DatabaseTransaction
+  ): Promise<void> {
+    await this.getDb(transaction)
+      .update(schema.holdings)
+      .set({ startsAt: at })
+      .where(
+        and(
+          eq(schema.holdings.id, holdingId),
+          eq(schema.holdings.userId, userId),
+          gt(schema.holdings.startsAt, at)
+        )
+      );
+  }
+
+  /**
+   * Makes these holdings feed ones where they are not already; a kind never
+   * moves back to snapshot (A2 D-6). Returns the holdings it changed.
+   */
+  async markFeed(
+    userId: string,
+    holdingIds: readonly string[],
+    transaction: DatabaseTransaction
+  ): Promise<string[]> {
+    if (holdingIds.length === 0) return [];
+    const flipped = await this.getDb(transaction)
+      .update(schema.holdings)
+      .set({ kind: 'feed' })
+      .where(
+        and(
+          eq(schema.holdings.userId, userId),
+          inArray(schema.holdings.id, [...holdingIds]),
+          sql`${schema.holdings.kind} IS DISTINCT FROM 'feed'`
+        )
+      )
+      .returning({ id: schema.holdings.id });
+    return flipped.map((h) => h.id);
   }
 
   /**

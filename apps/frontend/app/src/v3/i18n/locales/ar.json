@@ -88,7 +88,21 @@
         "unexplainedBalanceChanges_two": "تغيّران في الرصيد يتعذّر علينا تفسيرهما",
         "unexplainedBalanceChanges_few": "{{count}} تغيّرات في الرصيد يتعذّر علينا تفسيرها",
         "unexplainedBalanceChanges_many": "{{count}} تغيّرًا في الرصيد يتعذّر علينا تفسيرها",
-        "unexplainedBalanceChanges_other": "{{count}} تغيّر في الرصيد يتعذّر علينا تفسيرها"
+        "unexplainedBalanceChanges_other": "{{count}} تغيّر في الرصيد يتعذّر علينا تفسيرها",
+        "answersTradesExplain": "مغطاة بالصفقات المستوردة",
+        "answersExplained_zero": "لا تفسيرات في {{subject}}",
+        "answersExplained_one": "تفسير واحد في {{subject}}",
+        "answersExplained_two": "تفسيران في {{subject}}",
+        "answersExplained_few": "{{count}} تفسيرات في {{subject}}",
+        "answersExplained_many": "{{count}} تفسيرًا في {{subject}}",
+        "answersExplained_other": "{{count}} تفسير في {{subject}}",
+        "unpriceableAirdrops": "توكنات لا يمكن تسعيرها",
+        "unpriceableTokens_zero": "لا توكنات في محافظك تعذّر تسعيرها",
+        "unpriceableTokens_one": "توكن واحد وصل إلى محافظك ولا يمكن تسعيره",
+        "unpriceableTokens_two": "توكنان وصلا إلى محافظك ولا يمكن تسعيرهما",
+        "unpriceableTokens_few": "{{count}} توكنات وصلت إلى محافظك ولا يمكن تسعيرها",
+        "unpriceableTokens_many": "{{count}} توكنًا وصل إلى محافظك ولا يمكن تسعيره",
+        "unpriceableTokens_other": "{{count}} توكن وصل إلى محافظك ولا يمكن تسعيره"
       },
       "kind": {
         "withdrawal": "سحب",
@@ -633,6 +647,67 @@
           "received": "أدخل الكمية المستلمة"
         },
         "undoFailed": "تعذّر التراجع"
+      },
+      "settled": {
+        "title": "التفسيرات في {{subject}}",
+        "description": "باتت الصفقات المستوردة تفسّر تغيّرات الرصيد هذه أيضًا، فيُحتسب المال نفسه مرتين. «سحب» يزيل تفسيراتك، و«إبقاء» يتركها كما هي.",
+        "full": "تفسّره الصفقات المستوردة",
+        "partial": "تفسّر الصفقات المستوردة <explained/> من <amount/>. إن سحبته فسنسألك عن الباقي مجددًا.",
+        "movesOther": "غيّر هذا التفسير مركزًا آخر أيضًا",
+        "keep": "إبقاء",
+        "retire": "سحب",
+        "confirmOther": "سحبها يزيل أيضًا ما سجّلته هذه التفسيرات في مركز آخر.",
+        "confirmRetire": "نعم، اسحبها",
+        "undo": "تراجع",
+        "failed": "تعذّر تغيير بعض التفسيرات. يُرجى المحاولة مجددًا.",
+        "toast": {
+          "retired_zero": "لم يُسحب أي تفسير",
+          "retired_one": "سُحب تفسير واحد",
+          "retired_two": "سُحب تفسيران",
+          "retired_few": "سُحبت {{count}} تفسيرات",
+          "retired_many": "سُحب {{count}} تفسيرًا",
+          "retired_other": "سُحب {{count}} تفسير",
+          "kept": "أُبقيت التفسيرات",
+          "undone": "أُعيدت التفسيرات",
+          "undoFailed": "تعذّرت إعادة التفسيرات"
+        }
+      },
+      "unpriceable": {
+        "title": "توكنات لا يمكن تسعيرها",
+        "description": "وصلت هذه التوكنات إلى محافظك ولم يسعّرها أي مصدر أسعار قط، لذا فهي لا تُحتسب أصلًا في صافي ثروتك. الإخفاء يزيلها من قوائمك؛ ألغِ تحديد ما تريد الإبقاء عليه، ولن نسألك عنه مرة أخرى. يمكنك استعادة أيٍّ منها من التوكنات، ضمن قسم مخفي.",
+        "hideAll": "إخفاء الكل",
+        "keepAll": "الإبقاء على الكل",
+        "hideSome_zero": "إخفاء {{count}}",
+        "hideSome_one": "إخفاء {{count}}",
+        "hideSome_two": "إخفاء {{count}}",
+        "hideSome_few": "إخفاء {{count}}",
+        "hideSome_many": "إخفاء {{count}}",
+        "hideSome_other": "إخفاء {{count}}",
+        "failed": "لم يُخفَ أي شيء. حاول مرة أخرى.",
+        "keepFailed": "لم يُحفظ اختيارك. حاول مرة أخرى.",
+        "partlyFailed_zero": "لم يتعذّر إخفاء أي توكن.",
+        "partlyFailed_one": "تعذّر إخفاء توكن واحد. حاول مرة أخرى.",
+        "partlyFailed_two": "تعذّر إخفاء توكنين. حاول مرة أخرى.",
+        "partlyFailed_few": "تعذّر إخفاء {{count}} توكنات. حاول مرة أخرى.",
+        "partlyFailed_many": "تعذّر إخفاء {{count}} توكنًا. حاول مرة أخرى.",
+        "partlyFailed_other": "تعذّر إخفاء {{count}} توكن. حاول مرة أخرى.",
+        "undo": "تراجع",
+        "toast": {
+          "hidden_zero": "لم يُخفَ أي توكن",
+          "hidden_one": "أُخفي توكن واحد",
+          "hidden_two": "أُخفي توكنان",
+          "hidden_few": "أُخفيت {{count}} توكنات",
+          "hidden_many": "أُخفي {{count}} توكنًا",
+          "hidden_other": "أُخفي {{count}} توكن",
+          "kept_zero": "لم يُبقَ على أي توكن",
+          "kept_one": "أُبقي على توكن واحد",
+          "kept_two": "أُبقي على توكنين",
+          "kept_few": "أُبقي على {{count}} توكنات",
+          "kept_many": "أُبقي على {{count}} توكنًا",
+          "kept_other": "أُبقي على {{count}} توكن",
+          "restored": "أُعيدت التوكنات",
+          "restoreFailed": "تعذّرت استعادة التوكنات"
+        }
       }
     },
     "money": {
@@ -2214,6 +2289,8 @@
         "extension": "ملف .{{ext}}",
         "noExtension": "ملف بلا امتداد على الإطلاق",
         "unsupported": "هذا الملف {{named}}. يقرأ Scani الصيغ التالية: {{formats}}.",
+        "tooLarge": "حجم هذا الملف {{size}}. الحد الأقصى هو {{limit}}.",
+        "withLimit": "{{formats}}، حتى {{limit}}",
         "remove": "إزالة {{name}}"
       },
       "blocker": {
@@ -2692,7 +2769,8 @@
           "institution": "المؤسسة",
           "account": "الحساب",
           "group": "المجموعة"
-        }
+        },
+        "groupsOverlap": "قد يكون الأصل الواحد ضمن عدة مجموعات ويُحتسب في كل منها، لذا لا يساوي مجموع هذه القيم صافي ثروتك."
       },
       "upcoming": {
         "title": "المصروفات القادمة",
@@ -2926,6 +3004,10 @@
         "unpricedAtZero_many": "{{count}} رمزًا بلا سعر احتُسبت بقيمة صفر.",
         "unpricedAtZero_other": "{{count}} رمز بلا سعر احتُسب بقيمة صفر."
       }
+    },
+    "allocation": {
+      "marginDebt": "دين الهامش",
+      "shareOfAssets": "حصة من الأصول"
     },
     "vaults": {
       "targetReached": "تم بلوغ المبلغ المستهدف",

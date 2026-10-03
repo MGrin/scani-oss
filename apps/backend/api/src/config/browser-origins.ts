@@ -1,3 +1,6 @@
+import { TURNSTILE_HEADER } from '@scani/http-fetch';
+import { LANGUAGE_HEADER } from '@scani/shared';
+
 /**
  * Browser origins the api answers to.
  *
@@ -54,6 +57,33 @@ export function buildCorsOrigins(
 ): (string | RegExp)[] {
   const exact = exactOrigins(frontendUrl, extraOrigins);
   return isProduction ? exact : [...exact, LOOPBACK_ORIGIN];
+}
+
+/**
+ * Everything the API passes to `@elysiajs/cors`, in one place so the test
+ * exercises the real options rather than a copy (SC-1500).
+ *
+ * `allowedHeaders`: `LANGUAGE_HEADER` is what the auth client puts the
+ * reader's interface language on (SC-412). A custom header makes the sign-in
+ * POST preflighted, so omitting it here does not degrade the letter to
+ * English — it fails the request outright. `TURNSTILE_HEADER` carries the
+ * sign-in widget's token (SC-1266) and fails the same way.
+ *
+ * `maxAge`: the plugin's default is 5 seconds, so any call after a short idle
+ * paid a preflight round trip again. 7200 is the longest Chromium honours.
+ *
+ * `exposeHeaders`: the plugin's default echoes every REQUEST header name back,
+ * `cf-connecting-ip` and `x-forwarded-for` among them. No browser client reads
+ * a response header beyond the ones always exposed, so none is listed.
+ */
+export function buildCorsOptions(frontendUrl: string, options: BrowserOriginOptions) {
+  return {
+    origin: buildCorsOrigins(frontendUrl, options),
+    credentials: true,
+    allowedHeaders: ['Authorization', 'Content-Type', LANGUAGE_HEADER, TURNSTILE_HEADER],
+    maxAge: 7200,
+    exposeHeaders: [] as string[],
+  };
 }
 
 /** `trustedOrigins` value for Better-Auth. */

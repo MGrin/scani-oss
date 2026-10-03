@@ -69,8 +69,6 @@ import {
   TRANSACTION_SECTIONS,
 } from './statement-warnings';
 
-export { ibkrManifest } from './manifest';
-
 const IBKR_INSTITUTION_CODE = 'ibkr';
 const FLEX_SEND_URL =
   'https://ndcdyn.interactivebrokers.com/AccountManagement/FlexWebService/SendRequest';
@@ -461,11 +459,17 @@ function parseCashBalances(xml: string): CashBalance[] {
     let endingCash = extractAttr(attrs, 'endingCash');
     if (!endingCash) endingCash = extractAttr(attrs, 'endingSettledCash');
     const cash = Number.parseFloat(endingCash);
-    // Skip zero and negative (margin-debt) cash for the same reason as
-    // short positions above — a negative cash balance is a liability, not
-    // a holding, and holdings.balance is constrained to >= 0.
-    if (!Number.isFinite(cash) || cash <= 0) continue;
-    out.push({ currency, endingCash, reportDate: extractAttr(attrs, 'reportDate') });
+    // Only a row with no readable figure is skipped. A present row at zero is
+    // a MEASURED zero and is reported as one (SC-1451): skipping it made a
+    // currency that went to 0 look exactly like one the statement left out,
+    // and the sync then zeroes whatever is absent. Negative cash is margin
+    // debt and keeps its sign (SC-1462): IBKR subtracts it from net worth.
+    if (!Number.isFinite(cash)) continue;
+    out.push({
+      currency,
+      endingCash: cash === 0 ? '0' : endingCash,
+      reportDate: extractAttr(attrs, 'reportDate'),
+    });
   }
   return out;
 }
@@ -644,6 +648,48 @@ function tradeToEvent(t: TradeRow): TransactionEvent | null {
   return event;
 }
 
+// A currency conversion arrives as `<Trade assetCategory="CASH">`, symbol
+// BASE.QUOTE: `quantity` is in the base currency and `tradeMoney` in the quote.
+// A stock trade is one row on the stock, but here BOTH sides are cash holdings,
+// so it becomes two linked rows, one per currency, each a buy or sell so Returns
+// reads it as internal rather than money in or out. The fee rides the base leg
+// only, so it is charged once (SC-1452).
+function fxTradeToEvents(t: TradeRow): TransactionEvent[] {
+  const [base, quote] = t.symbol.toUpperCase().split('.');
+  if (!t.tradeID || !base || !quote) return [];
+  const buySell = t.buySell.toUpperCase();
+  const baseKind: 'buy' | 'sell' | null =
+    buySell === 'BUY' ? 'buy' : buySell === 'SELL' ? 'sell' : null;
+  if (!baseKind) return [];
+  const baseQty = enforceSign(t.quantity || '0', baseKind);
+  const quoteQty = inferCounterSign(baseQty, t.tradeMoney || '0');
+  const occurredAt = parseFlexDateTime(t.dateTime);
+  const baseLeg: TransactionEvent = {
+    externalId: t.tradeID,
+    occurredAt,
+    kind: baseKind,
+    primary: { tokenIdentity: buildCurrencyIdentity(base), quantity: baseQty, tokenType: 'fiat' },
+    counter: { tokenIdentity: buildCurrencyIdentity(quote), quantity: quoteQty, tokenType: 'fiat' },
+    rawPayload: t,
+  };
+  if (t.ibCommission && t.ibCommissionCurrency && !new Decimal(t.ibCommission).abs().isZero()) {
+    baseLeg.fee = {
+      tokenIdentity: buildCurrencyIdentity(t.ibCommissionCurrency),
+      quantity: negateFee(t.ibCommission),
+      tokenType: 'fiat',
+    };
+  }
+  const quoteLeg: TransactionEvent = {
+    externalId: `${t.tradeID}:quote`,
+    occurredAt,
+    kind: baseKind === 'buy' ? 'sell' : 'buy',
+    primary: { tokenIdentity: buildCurrencyIdentity(quote), quantity: quoteQty, tokenType: 'fiat' },
+    counter: { tokenIdentity: buildCurrencyIdentity(base), quantity: baseQty, tokenType: 'fiat' },
+    rawPayload: t,
+  };
+  return [baseLeg, quoteLeg];
+}
+
 /**
  * Why a cash row produced no event — separated from producing one because the
  * three reasons are not alike (SC-435).
@@ -716,6 +762,12 @@ export class IbkrProvider
     private readonly limiter: OutflowRateLimiter,
     private readonly sleep: (ms: number) => Promise<void> = delay
   ) {}
+
+  /** A cash currency missing from one statement is not evidence it went to
+   *  zero (SC-1451): the CashReport has left out a currency that was still
+   *  held. A present-at-zero row is reported as 0 (`parseCashBalances`); an
+   *  absence zeroes only after three consecutive statements. */
+  readonly absentFiatConfirmations = 3;
 
   canFetchBalances(c: string): boolean {
     return c === IBKR_INSTITUTION_CODE;
@@ -898,6 +950,10 @@ export class IbkrProvider
 
     const events: TransactionEvent[] = [];
     for (const t of trades) {
+      if (t.assetCategory === 'CASH') {
+        events.push(...fxTradeToEvents(t));
+        continue;
+      }
       const e = tradeToEvent(t);
       if (e) events.push(e);
     }

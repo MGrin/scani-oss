@@ -13,41 +13,18 @@
 export { reserveForSessionLock, withAdvisoryLock } from './advisory-lock';
 export { BaseRepository, type DatabaseTransaction } from './base-repository';
 export {
-  client,
-  type DbType,
   db,
   getActiveConnectionsCount,
   getConnectionStats,
   getDb,
-  getTypedDb,
-  isReadOnlySession,
 } from './connection';
 export {
   endConnectionTracking,
   getConnectionMonitoringStats,
   startConnectionTracking,
 } from './connection-monitor';
-export { type UpsertJobHeartbeatInput, upsertJobHeartbeat } from './job-heartbeat-writer';
-export {
-  createProcedureCallRecorder,
-  DEFAULT_FLUSH_INTERVAL_MS,
-  type ProcedureCallRecorder,
-  type ProcedureCallTally,
-  type ProcedureCallWriter,
-  procedureCallRecorder,
-  writeProcedureCallsToDb,
-} from './procedure-call-recorder';
-export {
-  assertNoConflictingOptionsParam,
-  assertSessionReadOnly,
-  isDryRunOperatorScript,
-  isOperatorScript,
-  READ_ONLY_ENV_VAR,
-  READ_ONLY_STARTUP_OPTION,
-  REPAIR_WRITE_FLAG,
-  type ReadOnlyIntentInput,
-  resolveReadOnlyIntent,
-} from './read-only';
+export { upsertJobHeartbeat } from './job-heartbeat-writer';
+export { procedureCallRecorder } from './procedure-call-recorder';
 // `./schema/index`, not `./schema` — a file named `schema.ts` would shadow the
 // directory, and a stale one silently did until SC-278. Tables missing from
 // `@scani/db` while present in `@scani/db/schema` is that shadow, not a
@@ -56,15 +33,8 @@ export * from './schema/index';
 export {
   checkIndexDrift,
   checkSchemaDrift,
-  type DatabaseColumnRow,
   describeIndexDrift,
   describeSchemaDrift,
-  diffSchema,
-  expectedSchema,
-  SCHEMA_DRIFT_TIMEOUT_MS,
-  type SchemaDriftOptions,
-  type SchemaDriftReport,
-  SchemaDriftTimeoutError,
 } from './schema-drift';
-export { awaitSchemaReady, type SchemaReadyOptions } from './schema-ready';
+export { awaitSchemaReady } from './schema-ready';
 export * from './transaction';

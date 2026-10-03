@@ -49,6 +49,7 @@ export class HideClosedHoldingsUseCase {
       )
       UPDATE holdings h
       SET is_hidden = true,
+          hidden_by = 'auto',
           last_updated = NOW()
       FROM candidates c
       WHERE c.id = h.id

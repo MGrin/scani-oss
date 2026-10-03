@@ -123,3 +123,27 @@ describe('IBKR statement as-of (SC-384)', () => {
     expect(out[0]?.capturedAt.getTime()).toBeGreaterThanOrEqual(before);
   });
 });
+
+// SC-1451. A cash row that is PRESENT at zero is a measured zero, and was
+// dropped with the missing ones: a currency that went to 0 and a currency the
+// statement left out both came out absent, and the sync zeroes what is absent.
+// SC-1462: a row below zero is margin debt and keeps its sign.
+describe('IBKR cash rows (SC-1451, SC-1462)', () => {
+  test('a present row reports its figure, negative included; only a row with no figure is left out', async () => {
+    const out = await balancesFrom(`
+      <FlexQueryResponse>
+        <FlexStatement accountId="U1234567" fromDate="20260719" toDate="20260720" period="LastBusinessDay">
+          <CashReportCurrency currency="USD" endingCash="0" reportDate="20260720" />
+          <CashReportCurrency currency="CAD" endingCash="-12.40" reportDate="20260720" />
+          <CashReportCurrency currency="EUR" endingCash="5.25" reportDate="20260720" />
+          <CashReportCurrency currency="GBP" reportDate="20260720" />
+        </FlexStatement>
+      </FlexQueryResponse>
+    `);
+    const balance = (symbol: string) => out.find((h) => h.tokenIdentity.symbol === symbol)?.balance;
+    expect(balance('USD')).toBe('0');
+    expect(balance('CAD')).toBe('-12.4');
+    expect(balance('EUR')).toBe('5.25');
+    expect(balance('GBP')).toBeUndefined();
+  }, 30_000);
+});

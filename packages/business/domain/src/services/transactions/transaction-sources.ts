@@ -42,15 +42,51 @@ export const CEX_SOURCE_TO_INSTITUTION: Record<string, string> = {
   'airwallex-api': 'airwallex',
 };
 
+/**
+ * Sources that report a trade as ONE row, with the cash side only as its
+ * counter. The cash leg is derived as its own settlement row (SC-1453). Every
+ * other source already writes the cash row itself, so deriving one there would
+ * count the money twice.
+ */
+/**
+ * Sources whose quantity is GROSS of a fee taken in the row's own token
+ * (SC-1486): Kraken's ledger `amount` and Bybit's `execQty` are what moved
+ * before the fee, and the fee arrives only as a field beside them. Without a row
+ * of its own the holding's ledger ran ahead of its balance by every such fee,
+ * and the balance check booked that gap as money out — each fee counted twice.
+ */
+export const GROSS_OF_OWN_FEE_SOURCES: ReadonlySet<string> = new Set(['kraken-api', 'bybit-api']);
+
+export const SETTLEMENT_DERIVED_SOURCES: ReadonlySet<string> = new Set([
+  'ibkr-api',
+  'binance-api',
+  'bybit-api',
+  'bitget-api',
+  'gate-api',
+  'gemini-api',
+  'mexc-api',
+  'huobi-api',
+  'bitstamp-api',
+]);
+
 /** Exchange/broker transaction-import source tags. */
 const EXCHANGE_SOURCES: ReadonlySet<string> = new Set(Object.keys(CEX_SOURCE_TO_INSTITUTION));
 
 /**
  * True when the source is an on-chain wallet import (EVM, Solana, …) —
  * i.e. anything that is not a known exchange/broker source. Wallet
- * imports are review-gated, so the transaction router runs FIND-ONLY
- * for them.
+ * imports are review-gated, so a transaction import finds only for them
+ * (`legacyTransactionBatch`, by `inputSourceClass`, which agrees on every
+ * source the import accepts).
  */
 export function isWalletDerivedSource(source: string): boolean {
   return !EXCHANGE_SOURCES.has(source);
+}
+
+/**
+ * What a FIND-ONLY import says about the events it dropped for want of a
+ * holding the user kept, so the run does not go quiet about them (SC-343).
+ */
+export function walletReviewSkipNotice(events: number, tokens: number): string {
+  return `Skipped ${events} tx event(s) referencing ${tokens} token(s) the user didn't keep during wallet review.`;
 }

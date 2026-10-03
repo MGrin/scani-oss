@@ -16,6 +16,7 @@ export const JOB_NAMES = {
   paymentHorizonRoll: 'payment-horizon-roll',
   weeklyDigest: 'weekly-digest',
   alertSweep: 'alert-sweep',
+  activationNudge: 'activation-nudge',
   reconcilePendingCredentials: 'reconcile-pending-credentials',
   reconcileOrphanedUserJobs: 'reconcile-orphaned-user-jobs',
   historicalPriceBackfill: 'historical-price-backfill',
@@ -43,8 +44,7 @@ export const JOB_NAMES = {
   jobHeartbeatProbe: 'job-heartbeat-probe',
   staleSyncProbe: 'stale-sync-probe',
   splitHoldingProbe: 'split-holding-probe',
+  engineShadow: 'engine-shadow',
   demoReset: 'demo-reset',
   dbBackup: 'db-backup',
 } as const;
-
-export type JobName = (typeof JOB_NAMES)[keyof typeof JOB_NAMES];

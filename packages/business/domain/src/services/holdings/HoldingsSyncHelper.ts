@@ -6,6 +6,7 @@ import type { HoldingSnapshot } from '@scani/providers/core/types';
 import { type HoldingArrivalAttribution, isValidDecimalString } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { BaseService } from '../BaseService';
 import { TokenService } from '../tokens/TokenService';
 import { MANUAL_HOLDING_SOURCE } from './balance-sync-sources';
@@ -47,6 +48,11 @@ export interface ProcessSnapshotsForAccountInput {
   // the one create path shared by the wallet-import review and the hourly
   // sync — a default here would let one inherit the other's answer.
   arrival: HoldingArrivalAttribution;
+  // Holdings whose ABSENCE from a non-empty snapshot is not yet a zero
+  // (SC-1451): each absence records the snapshot's statement date, and the
+  // holding zeroes once it has been missing from `statements` distinct dates.
+  // Unset keeps `staleStrategy: 'zero'` exactly as it was.
+  absenceConfirmation?: { tokenIds: ReadonlySet<string>; statements: number };
   tx: DatabaseTransaction;
 }
 
@@ -90,8 +96,10 @@ export class HoldingsSyncHelper extends BaseService {
       updateOnly,
       skipUnchangedUpdates,
       arrival,
+      absenceConfirmation,
       tx,
     } = input;
+    const holdingRepository = Container.get(HoldingRepository);
 
     let updated = 0;
     let created = 0;
@@ -142,12 +150,14 @@ export class HoldingsSyncHelper extends BaseService {
           continue;
         }
 
-        // holdings.balance carries a `>= 0` check constraint. A negative
-        // snapshot (e.g. an IBKR short/margin-debt leg that slipped past the
-        // provider filter) would abort the entire shared sync transaction —
-        // taking down every other user's sync in the same run — so skip it
-        // here and let the stale-zeroing pass settle any existing row to 0.
-        if (new Decimal(integrationHolding.balance).isNegative()) {
+        // Only cash may go negative: margin debt, which subtracts from net
+        // worth as the broker shows it (SC-1462). A negative position in
+        // anything else is a short, which has no representation here, so it
+        // is skipped and the stale-zeroing pass settles any existing row to 0.
+        if (
+          new Decimal(integrationHolding.balance).isNegative() &&
+          integrationHolding.tokenType !== 'fiat'
+        ) {
           this.logger.warn(
             { accountId: account.id, holding: integrationHolding },
             'Skipping integration holding with negative balance'
@@ -192,6 +202,9 @@ export class HoldingsSyncHelper extends BaseService {
         const wasHidden = existing?.isHidden ?? false;
 
         if (existing) {
+          if (existing.absentFromStatements?.length) {
+            await holdingRepository.setAbsentFromStatements(existing.id, null, tx);
+          }
           if (skipUnchangedUpdates && existing.balance === balance) continue;
 
           await this.holdingService.updateHoldingBalanceWithEvent(
@@ -258,10 +271,19 @@ export class HoldingsSyncHelper extends BaseService {
           );
         }
       } else {
+        const statementAsOf = new Date(Math.max(...snapshots.map((s) => +new Date(s.capturedAt))));
         for (const [tokenId, existing] of existingByTokenId) {
           if (seenTokenIds.has(tokenId)) continue;
           if (existing.balance === '0') continue;
           try {
+            if (absenceConfirmation?.tokenIds.has(tokenId)) {
+              const dates = absentDates(existing.absentFromStatements, statementAsOf);
+              if (dates.length < absenceConfirmation.statements) {
+                await holdingRepository.setAbsentFromStatements(existing.id, dates, tx);
+                continue;
+              }
+              await holdingRepository.setAbsentFromStatements(existing.id, null, tx);
+            }
             await this.holdingService.updateHoldingBalanceWithEvent(
               { holdingId: existing.id, balance: '0', eventContext },
               tx
@@ -296,6 +318,15 @@ export class HoldingsSyncHelper extends BaseService {
     const compositeKey = `${token.id}:${lookupExternalId}`;
     return existingByCompositeKey.get(compositeKey) ?? existingByTokenId.get(token.id);
   }
+}
+
+/** The recorded absence dates plus this statement's, one per calendar day, so
+ *  an hourly re-read of the same statement is counted once. */
+function absentDates(prior: Date[] | null, statementAsOf: Date): Date[] {
+  const day = (d: Date) => new Date(d).toISOString().slice(0, 10);
+  const dates = [...(prior ?? [])];
+  if (!dates.some((d) => day(d) === day(statementAsOf))) dates.push(statementAsOf);
+  return dates;
 }
 
 function pickExternalLookupKey(holding: IntegrationHolding): string {

@@ -50,7 +50,7 @@ export const DOCUMENT_EXTRACTION_REVIEW_KIND = 'document-extraction';
  * side, recorded rather than inferred so the job page cannot later claim
  * a discarded parse was imported.
  */
-export const REVIEW_OUTCOMES = ['imported', 'discarded'] as const;
+const REVIEW_OUTCOMES = ['imported', 'discarded'] as const;
 
 export const reviewOutcomeSchema = z.enum(REVIEW_OUTCOMES);
 
@@ -75,7 +75,7 @@ export type ReviewOutcome = (typeof REVIEW_OUTCOMES)[number];
  * survives a round trip through prose is a figure waiting to be misread the
  * first time the prose changes.
  */
-export const reviewLabelSchema = z.discriminatedUnion('code', [
+const reviewLabelSchema = z.discriminatedUnion('code', [
   /** A completed job whose result is waiting to be confirmed. */
   z.object({ code: z.literal('job'), jobName: z.string().min(1) }),
   /** A job the queue has given up on (SC-153). */
@@ -84,6 +84,10 @@ export const reviewLabelSchema = z.discriminatedUnion('code', [
   z.object({ code: z.literal('transfersToConfirm') }),
   /** Unexplained balance changes waiting to be explained (SC-501). */
   z.object({ code: z.literal('balanceChangesToExplain') }),
+  /** Answers on one holding that imported trades now explain (SC-1453). */
+  z.object({ code: z.literal('answersTradesExplain') }),
+  /** Wallet tokens nothing can price, waiting on one Hide (SC-1469). */
+  z.object({ code: z.literal('unpriceableAirdrops') }),
 ]);
 
 export type ReviewLabel = z.infer<typeof reviewLabelSchema>;
@@ -101,7 +105,7 @@ export type ReviewLabel = z.infer<typeof reviewLabelSchema>;
  * Structurally typed against `JobFailureFacts` rather than importing its shape
  * — one direction of dependency, and `job-failure.ts` stays untouched.
  */
-export const reviewJobFailureFactsSchema = z.object({
+const reviewJobFailureFactsSchema = z.object({
   state: z.string(),
   /** A `Date` on the server, the ISO string it serialises to on the client —
    *  this router runs without a transformer, and `describeJobFailure` reads
@@ -161,12 +165,28 @@ export const reviewDetailSchema = z.discriminatedUnion('code', [
     changes: z.number().int().nonnegative(),
   }),
   z.object({ code: z.literal('jobFailure'), facts: reviewJobFailureFactsSchema }),
+  /**
+   * How many of one holding's answers imported trades now explain, and which
+   * holding (SC-1453). One row per holding, because the owner retires or keeps
+   * them per holding.
+   */
+  z.object({
+    code: z.literal('answersExplainedByTrades'),
+    answers: z.number().int().positive(),
+    tokenSymbol: z.string().min(1),
+    accountName: z.string().min(1).optional(),
+  }),
+  /** How many wallet tokens nothing can price (SC-1469). One row for all of them. */
+  z.object({
+    code: z.literal('unpriceableAirdrops'),
+    count: z.number().int().positive(),
+  }),
 ]);
 
 export type ReviewDetail = z.infer<typeof reviewDetailSchema>;
 
 /** A figure, not a phrase. The value stays a decimal string end to end. */
-export const reviewAmountSchema = z.object({
+const reviewAmountSchema = z.object({
   value: z.string().min(1),
   currency: z.string().length(3),
 });
@@ -187,7 +207,9 @@ export const reviewItemSchema = z.object({
    * row per record and carry `1`; the two whose queue is unbounded emit ONE
    * row for the whole queue and carry its size — `unpairedTransfers` and
    * `unexplainedBalanceChanges`, whose `detail` already holds the same
-   * figure for the sentence the client renders.
+   * figure for the sentence the client renders. `unpriceableAirdrops` is the
+   * exception that aggregates and still carries `1`: one question, asked once
+   * (SC-1469).
    *
    * Until this field existed nothing on the wire said so, and the nav badge
    * read `items.length`: 200 unpaired transfers plus 30 unexplained balance
@@ -236,6 +258,23 @@ export const TRANSFER_REVIEW_PATH = `${REVIEW_PATH}/transfers`;
 
 /** The unexplained-balance-change queue (SC-501). */
 export const BALANCE_GAP_REVIEW_PATH = `${REVIEW_PATH}/balances`;
+
+/** `ReviewItem.kind` for answers imported trades now explain (SC-1453). */
+export const SETTLED_ANSWERS_REVIEW_KIND = 'settlement-answers';
+
+/**
+ * Where a holding's answers that imported trades explain open: its sheet over
+ * Review itself, the way a list row opens its peek (SC-1453).
+ */
+export function settledAnswersReviewPath(holdingId: string): string {
+  return `${REVIEW_PATH}/${encodeURIComponent(holdingId)}`;
+}
+
+/** `ReviewItem.kind` for wallet tokens nothing can price (SC-1469). */
+export const UNPRICEABLE_AIRDROPS_REVIEW_KIND = 'unpriceable-airdrops';
+
+/** Their sheet, over Review itself like the settled-answers one. */
+export const UNPRICEABLE_AIRDROPS_REVIEW_PATH = `${REVIEW_PATH}/${UNPRICEABLE_AIRDROPS_REVIEW_KIND}`;
 
 /**
  * "How much is waiting on me" — the number the nav badge, the home screen's

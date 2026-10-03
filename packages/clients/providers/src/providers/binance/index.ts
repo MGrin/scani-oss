@@ -20,15 +20,15 @@ import type {
   HoldingSnapshot,
   ProviderContext,
   TransactionEvent,
+  TransactionFetchContext,
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { splitConcatenatedPair } from '../../core/utils/symbol-splitter';
 import { slidingWindows } from '../../core/utils/time-windows';
+import { WalkFailureWatch } from '../../core/utils/walk-failures';
 import { binanceManifest } from './manifest';
-
-export { binanceManifest } from './manifest';
 
 const BINANCE_INSTITUTION_CODE = 'binance';
 const RECV_WINDOW = 5000;
@@ -72,14 +72,22 @@ const C2C_TRADE_TYPES = ['BUY', 'SELL'] as const;
  */
 const INACCESSIBLE_WALLET_CODES: ReadonlySet<number> = new Set([-2015, -3003]);
 
-function inaccessibleWallet(err: unknown): boolean {
-  if (!(err instanceof ProviderError) || !err.body) return false;
+// -1121 BAD_SYMBOL "Invalid symbol." — https://github.com/binance/binance-spot-api-docs/blob/master/errors.md
+const INVALID_SYMBOL_CODE = -1121;
+
+function binanceErrorCode(err: unknown): number | null {
+  if (!(err instanceof ProviderError) || !err.body) return null;
   try {
     const { code } = JSON.parse(err.body) as { code?: unknown };
-    return typeof code === 'number' && INACCESSIBLE_WALLET_CODES.has(code);
+    return typeof code === 'number' ? code : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function inaccessibleWallet(err: unknown): boolean {
+  const code = binanceErrorCode(err);
+  return code !== null && INACCESSIBLE_WALLET_CODES.has(code);
 }
 
 interface BinanceWalletBalance {
@@ -272,58 +280,84 @@ export class BinanceProvider
     return out;
   }
 
-  async fetchTransactions(
-    ctx: WithUserCreds<ProviderContext> & {
-      institutionCode: string;
-      since?: Date;
-      until?: Date;
-    }
-  ): Promise<TransactionEvent[]> {
+  async fetchTransactions(ctx: TransactionFetchContext): Promise<TransactionEvent[]> {
     const creds = await this.resolveApiCreds(ctx);
     if (!creds) return [];
 
     const until = ctx.until ?? new Date();
     const since = ctx.since ?? new Date(until.getTime() - FIVE_YEARS_MS);
+    const failures = new WalkFailureWatch(this.providerKey, this.logger);
 
     const [spot, margin, funding] = await Promise.all([
-      this.fetchSpot(creds).catch(() => []),
-      this.fetchMargin(creds).catch(() => []),
-      this.fetchFunding(creds).catch(() => []),
+      failures.attempt('the spot balance read', () => this.fetchSpot(creds), []),
+      this.optionalWallet('margin', () => this.fetchMargin(creds)).catch((err) => {
+        failures.note('the margin balance read', err);
+        return [];
+      }),
+      this.optionalWallet('funding', () => this.fetchFunding(creds)).catch((err) => {
+        failures.note('the funding balance read', err);
+        return [];
+      }),
     ]);
-    const heldAssets = new Set<string>();
+    const assets = new Set<string>();
     for (const b of [...spot, ...margin, ...funding]) {
       const total = new Decimal(b.free).plus(b.locked);
-      if (total.gt(0)) heldAssets.add(b.asset.toUpperCase());
+      if (total.gt(0)) assets.add(b.asset.toUpperCase());
     }
+
+    // Deposits, withdrawals and P2P orders are walked across every coin
+    // before any trade: they are the feeds Binance lists without a symbol,
+    // so they are what names an asset that has since been sold to zero
+    // (SC-1480).
+    const deposits = await failures.attempt(
+      'the deposit walk',
+      () => this.fetchAllDeposits(creds, since, until),
+      [] as BinanceDeposit[]
+    );
+    const withdraws = await failures.attempt(
+      'the withdrawal walk',
+      () => this.fetchAllWithdraws(creds, since, until),
+      [] as BinanceWithdraw[]
+    );
+    // A key without C2C permission lands here too. It is still a walk that
+    // was not read, so it retracts like any other.
+    const p2pOrders = await failures.attempt(
+      'the P2P order walk',
+      () => this.fetchAllP2POrders(creds, since, until),
+      [] as BinanceC2COrder[]
+    );
+    for (const row of [...deposits, ...withdraws]) assets.add(row.coin.toUpperCase());
+    for (const order of p2pOrders) assets.add(order.asset.toUpperCase());
 
     const events: TransactionEvent[] = [];
 
-    const symbols = this.buildCandidateSymbols(heldAssets);
-    for (const symbol of symbols) {
-      const trades = await this.fetchAllTradesForSymbol(creds, symbol).catch(() => []);
+    const candidates = this.buildCandidateSymbols(assets);
+    if (candidates.skipped > 0) {
+      failures.note(
+        `${candidates.skipped} candidate pair${candidates.skipped === 1 ? '' : 's'} past the ${MAX_CANDIDATE_SYMBOLS}-pair cap`
+      );
+    }
+    for (const symbol of candidates.symbols) {
+      const trades = await failures.attempt(
+        `the ${symbol} trades walk`,
+        () => this.fetchAllTradesForSymbol(creds, symbol),
+        [] as BinanceTrade[]
+      );
       for (const trade of trades) {
         const event = this.tradeToEvent(trade);
         if (event) events.push(event);
       }
     }
 
-    for (const asset of heldAssets) {
-      const deposits = await this.fetchAllDeposits(creds, asset, since, until).catch(() => []);
-      for (const dep of deposits) events.push(this.depositToEvent(dep));
-      const withdraws = await this.fetchAllWithdraws(creds, asset, since, until).catch(() => []);
-      for (const w of withdraws) events.push(this.withdrawToEvent(w));
-    }
+    for (const dep of deposits) events.push(this.depositToEvent(dep));
+    for (const w of withdraws) events.push(this.withdrawToEvent(w));
 
-    // C2C (P2P) orders are reported via a separate endpoint that's keyed
-    // by tradeType + time window, not by asset — wrap the whole branch
-    // in catch so a key without C2C permission still imports trades +
-    // capital deposits + withdraws.
-    const p2pOrders = await this.fetchAllP2POrders(creds, since, until).catch(() => []);
     for (const order of p2pOrders) {
       const event = this.p2pOrderToEvent(order);
       if (event) events.push(event);
     }
 
+    failures.retract(ctx);
     return events;
   }
 
@@ -400,30 +434,27 @@ export class BinanceProvider
     }));
   }
 
-  private buildCandidateSymbols(heldAssets: ReadonlySet<string>): string[] {
-    const quoteSet = new Set<string>(TX_QUOTE_ASSETS);
-    const out: string[] = [];
-    for (const base of heldAssets) {
+  /**
+   * Every candidate pair, in priority order: each asset against each quote
+   * currency. The first MAX_CANDIDATE_SYMBOLS are walked; the rest are
+   * `skipped`, and the caller must say so rather than return a shorter ledger
+   * in silence (SC-1481). A held quote currency needs no reverse pass: ETH
+   * against a held USDT is already ETHUSDT from ETH's own row.
+   */
+  private buildCandidateSymbols(assets: ReadonlySet<string>): {
+    symbols: string[];
+    skipped: number;
+  } {
+    const all: string[] = [];
+    for (const base of assets) {
       for (const quote of TX_QUOTE_ASSETS) {
-        if (base === quote) continue;
-        out.push(`${base}${quote}`);
-        if (out.length >= MAX_CANDIDATE_SYMBOLS) return out;
+        if (base !== quote) all.push(`${base}${quote}`);
       }
     }
-    // Also include reverse pairs where the held asset is the quote leg
-    // (e.g. user holds USDT — try ETHUSDT, BTCUSDT). Bounded by the same
-    // cap so a wide spread of stablecoin holdings doesn't blow it out.
-    for (const quote of heldAssets) {
-      if (!quoteSet.has(quote)) continue;
-      for (const base of heldAssets) {
-        if (base === quote) continue;
-        const sym = `${base}${quote}`;
-        if (out.includes(sym)) continue;
-        out.push(sym);
-        if (out.length >= MAX_CANDIDATE_SYMBOLS) return out;
-      }
-    }
-    return out;
+    return {
+      symbols: all.slice(0, MAX_CANDIDATE_SYMBOLS),
+      skipped: Math.max(0, all.length - MAX_CANDIDATE_SYMBOLS),
+    };
   }
 
   private async fetchAllTradesForSymbol(
@@ -438,10 +469,18 @@ export class BinanceProvider
         limit: TRADES_PAGE_SIZE,
         fromId,
       });
-      const trades = await this.signedJson<BinanceTrade[]>(
-        { method: 'GET', url: '/api/v3/myTrades', query },
-        creds
-      );
+      let trades: BinanceTrade[];
+      try {
+        trades = await this.signedJson<BinanceTrade[]>(
+          { method: 'GET', url: '/api/v3/myTrades', query },
+          creds
+        );
+      } catch (err) {
+        // A candidate pair Binance does not list is an absent market, not a
+        // failed walk: the candidates are a cross-product.
+        if (page === 0 && binanceErrorCode(err) === INVALID_SYMBOL_CODE) return [];
+        throw err;
+      }
       if (!Array.isArray(trades) || trades.length === 0) break;
       all.push(...trades);
       const lastId = trades[trades.length - 1]?.id;
@@ -453,7 +492,6 @@ export class BinanceProvider
 
   private async fetchAllDeposits(
     creds: ApiKeyCreds,
-    asset: string,
     since: Date,
     until: Date
   ): Promise<BinanceDeposit[]> {
@@ -462,7 +500,6 @@ export class BinanceProvider
       let offset = 0;
       for (let page = 0; page < MAX_CAPITAL_PAGES_PER_WINDOW; page++) {
         const query = this.signedQueryString(creds.apiSecret, {
-          coin: asset,
           startTime: window.start.getTime(),
           endTime: window.end.getTime(),
           offset,
@@ -483,7 +520,6 @@ export class BinanceProvider
 
   private async fetchAllWithdraws(
     creds: ApiKeyCreds,
-    asset: string,
     since: Date,
     until: Date
   ): Promise<BinanceWithdraw[]> {
@@ -492,7 +528,6 @@ export class BinanceProvider
       let offset = 0;
       for (let page = 0; page < MAX_CAPITAL_PAGES_PER_WINDOW; page++) {
         const query = this.signedQueryString(creds.apiSecret, {
-          coin: asset,
           startTime: window.start.getTime(),
           endTime: window.end.getTime(),
           offset,

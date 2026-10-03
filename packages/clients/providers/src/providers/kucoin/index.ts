@@ -28,8 +28,6 @@ import { PageCapWatch } from '../../core/utils/page-cap';
 import { mapKucoinBizType } from './biz-types';
 import { kucoinManifest } from './manifest';
 
-export { kucoinManifest } from './manifest';
-
 const KUCOIN_INSTITUTION_CODE = 'kucoin';
 
 const LEDGER_PAGE_SIZE = 500;
@@ -97,15 +95,22 @@ function tokenIdentity(currency: string): Partial<NewToken> {
 }
 
 export function ledgerItemToEvent(item: KucoinLedgerItem): TransactionEvent | null {
-  const amount = new Decimal(item.amount || '0');
-  if (amount.isZero()) return null;
-  const kind = mapKucoinBizType(item.bizType, amount.isPositive());
+  // KuCoin sends `amount` unsigned; the side lives only in `direction` (SC-1479).
+  // An absent or unrecognised `direction` falls back to the amount's own sign
+  // rather than defaulting to an outflow, which would be this defect inverted.
+  const raw = new Decimal(item.amount || '0');
+  const magnitude = raw.abs();
+  if (magnitude.isZero()) return null;
+  const isInflow =
+    item.direction === 'in' ? true : item.direction === 'out' ? false : raw.isPositive();
+  const quantity = isInflow ? magnitude : magnitude.neg();
+  const kind = mapKucoinBizType(item.bizType, isInflow);
 
   const event: TransactionEvent = {
     externalId: `ledger:${item.id}`,
     occurredAt: new Date(item.createdAt),
     kind,
-    primary: { tokenIdentity: tokenIdentity(item.currency), quantity: amount.toString() },
+    primary: { tokenIdentity: tokenIdentity(item.currency), quantity: quantity.toString() },
     rawPayload: item,
   };
 

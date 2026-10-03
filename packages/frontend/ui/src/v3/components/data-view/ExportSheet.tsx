@@ -220,7 +220,7 @@ export interface ExportSheetProps {
 
 /** The header. Exported for `RefineHeader`'s reason: the sheet itself is a
  *  Radix portal and renders nothing under `renderToStaticMarkup`. */
-export function ExportHeader({ subject }: { subject: string }) {
+function ExportHeader({ subject }: { subject: string }) {
   const { t } = useUiTranslation();
   return (
     <div className="flex flex-col gap-0.5">

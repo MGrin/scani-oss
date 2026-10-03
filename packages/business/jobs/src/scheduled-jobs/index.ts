@@ -1,3 +1,4 @@
+export { ACTIVATION_NUDGE_SCHEDULE } from './activation-nudge';
 export { ALERT_SWEEP_SCHEDULE } from './alert-sweep';
 export { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
 export { BACKFILL_COUNTERPARTY_SCHEDULE } from './backfill-counterparty';
@@ -5,6 +6,7 @@ export { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from './backfill-token-identity';
 export { DB_BACKUP_SCHEDULE } from './db-backup';
 export { DEMO_RESET_SCHEDULE } from './demo-reset';
 export { DLQ_DEPTH_PROBE_SCHEDULE } from './dlq-depth-probe';
+export { ENGINE_SHADOW_SCHEDULE } from './engine-shadow';
 export { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 export { EXCHANGE_TRANSACTIONS_SCHEDULE } from './exchange-transactions';
 export { FOREX_BACKFILL_SCHEDULE } from './forex-backfill';
@@ -35,12 +37,14 @@ export { TRANSFER_LINKING_SCHEDULE } from './transfer-linking';
 export { WALLET_BALANCES_SCHEDULE } from './wallet-balances';
 export { WEEKLY_DIGEST_SCHEDULE } from './weekly-digest';
 
+import { ACTIVATION_NUDGE_SCHEDULE } from './activation-nudge';
 import { ALERT_SWEEP_SCHEDULE } from './alert-sweep';
 import { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
 import { BACKFILL_COUNTERPARTY_SCHEDULE } from './backfill-counterparty';
 import { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from './backfill-token-identity';
 import { DB_BACKUP_SCHEDULE } from './db-backup';
 import { DLQ_DEPTH_PROBE_SCHEDULE } from './dlq-depth-probe';
+import { ENGINE_SHADOW_SCHEDULE } from './engine-shadow';
 import { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 import { EXCHANGE_TRANSACTIONS_SCHEDULE } from './exchange-transactions';
 import { FOREX_BACKFILL_SCHEDULE } from './forex-backfill';
@@ -81,6 +85,8 @@ export const SCHEDULED_JOB_DESCRIPTORS = [
   WEEKLY_DIGEST_SCHEDULE,
   // And in the SAME commit as `AlertSweepProcessor` (SC-459).
   ALERT_SWEEP_SCHEDULE,
+  // In the SAME commit as `ActivationNudgeProcessor` (SC-1503).
+  ACTIVATION_NUDGE_SCHEDULE,
   RECONCILE_PENDING_CREDENTIALS_SCHEDULE,
   RECONCILE_ORPHANED_USER_JOBS_SCHEDULE,
   HISTORICAL_PRICE_BACKFILL_SCHEDULE,
@@ -96,6 +102,9 @@ export const SCHEDULED_JOB_DESCRIPTORS = [
   JOB_HEARTBEAT_PROBE_SCHEDULE,
   STALE_SYNC_PROBE_SCHEDULE,
   SPLIT_HOLDING_PROBE_SCHEDULE,
+  // Registered in the SAME commit as `EngineShadowProcessor` (foundation A1),
+  // for the reason given on `PAYMENT_DUE_REMINDER_SCHEDULE` above.
+  ENGINE_SHADOW_SCHEDULE,
   // Registered in the SAME commit as `DbBackupProcessor` (SC-793), for the
   // reason given on `PAYMENT_DUE_REMINDER_SCHEDULE` above.
   DB_BACKUP_SCHEDULE,

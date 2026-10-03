@@ -131,6 +131,22 @@ worth keeping:
 Widening the range is the user's action in Account Management and nothing
 here can do it for them, which is what the retraction's wording says.
 
+### When a currency is missing from one statement (SC-1451)
+
+The CashReport can leave out a currency that is still held: on 2026-07-20
+USD and CAD were both missing, and back the next day. The balance sync read
+the absence as a zero. So a cash row is now handled three ways:
+
+- **Present, above 0:** its balance.
+- **Present, at or below 0:** a `0` row. A real close-out arrives as a
+  measured zero, and margin debt is a liability, not a holding.
+- **Missing, or with no figure:** unknown. The provider sets
+  `absentFiatConfirmations = 3`, so the sync records the statement date on the
+  holding (`holdings.absent_from_statements`) and zeroes it only after three
+  distinct statements without it. One sighting clears the count.
+
+Stock positions are unchanged: a symbol missing from `<OpenPosition>` is closed.
+
 ## Auth + env
 
 - Per-user `flexQueryToken` + `flexQueryId` (both encrypted; user

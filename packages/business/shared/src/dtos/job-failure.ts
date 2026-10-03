@@ -79,7 +79,7 @@ export interface JobFailureFacts {
  * numbers — a count that survives a round trip through prose is a count
  * waiting to be misread the first time the prose changes.
  */
-export type JobFailureNaming =
+type JobFailureNaming =
   /** The user stopped it. */
   | { code: 'cancelled' }
   /** Never reached the queue: it did not run and changed nothing. */

@@ -18,7 +18,7 @@ export interface DocumentParseJob extends UserJobBase {
   reparseOf?: string;
 }
 
-export const documentParseSchema: z.ZodType<DocumentParseJob> = z.object({
+const documentParseSchema: z.ZodType<DocumentParseJob> = z.object({
   userId: z.string().min(1),
   requestId: z.string().min(1),
   r2Key: z.string().min(1),

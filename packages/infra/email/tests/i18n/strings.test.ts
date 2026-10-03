@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { EMAIL_STRINGS, type EmailStrings, fill, resolveEmailStrings } from '../../src/i18n';
+import { renderActivationNudgeEmail } from '../../src/templates/activation-nudge';
 import { escapeHtml } from '../../src/templates/layout';
 import { renderMagicLinkEmail } from '../../src/templates/magic-link';
 import { renderOtpEmail } from '../../src/templates/otp';
@@ -218,6 +219,17 @@ describe('the fallback is the WHOLE letter, never a key of it', () => {
     // like a key that matched nothing (SC-802).
     ...(['sign-in', 'email-verification', 'forget-password', 'change-email'] as OtpType[]).map(
       (type) => renderOtpEmail({ brand: SCANI_BRAND, code: '123456', type, language })
+    ),
+    // Both greetings, so neither sits in the population unable to fire.
+    ...['Ada Lovelace', ''].map((name) =>
+      renderActivationNudgeEmail({
+        brand: SCANI_BRAND,
+        name,
+        language,
+        appUrl: 'https://app.scani.xyz',
+        unsubscribeUrl: 'https://api.scani.xyz/e/n/8b1f1a2e-0000-4000-8000-000000000000',
+        privacyUrl: 'https://scani.xyz/privacy',
+      })
     ),
   ];
 

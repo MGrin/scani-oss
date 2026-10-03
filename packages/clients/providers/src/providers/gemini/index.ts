@@ -14,7 +14,7 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
-import { credentialRejection } from '../../core/errors';
+import { credentialRejection, ProviderError } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
@@ -26,9 +26,8 @@ import type {
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { PageCapWatch } from '../../core/utils/page-cap';
+import { WalkFailureWatch } from '../../core/utils/walk-failures';
 import { geminiManifest } from './manifest';
-
-export { geminiManifest } from './manifest';
 
 const GEMINI_INSTITUTION_CODE = 'gemini';
 
@@ -37,6 +36,9 @@ const MYTRADES_PAGE_SIZE = 500;
 const TRANSFERS_PAGE_SIZE = 50;
 const MAX_TRADE_PAGES = 200;
 const MAX_TRANSFER_PAGES = 200;
+// Gemini opened to the public on 2015-10-25, so no account is older.
+const GEMINI_LAUNCH_MS = Date.UTC(2015, 9, 25);
+const SINCE_GEMINI_LAUNCH_MS = Date.now() - GEMINI_LAUNCH_MS;
 
 interface GeminiBalance {
   currency: string;
@@ -85,6 +87,31 @@ function tokenIdentity(currency: string): Partial<NewToken> {
   };
 }
 
+// reason "InvalidSymbol" = "Unknown or invalid symbol" — https://developer.gemini.com/error-codes.
+// The page states the reason, not the status, so the REASON decides; the 4xx
+// bound only keeps a 5xx body from being read as one.
+function isInvalidSymbol(err: unknown): boolean {
+  if (!(err instanceof ProviderError) || err.status === undefined || !err.body) return false;
+  if (err.status < 400 || err.status >= 500) return false;
+  try {
+    const { reason } = JSON.parse(err.body) as { reason?: unknown };
+    return reason === 'InvalidSymbol';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Any other 4xx says the request itself is refused — a bad or under-scoped key
+ * (401/403), a rate limit the limiter could not absorb (429). That fails every
+ * walk the same way, so it fails the sync rather than being tolerated as one
+ * missing walk (SC-1481). A 5xx stays a tolerated, retracted walk.
+ */
+function isRequestRefusal(err: unknown): boolean {
+  if (!(err instanceof ProviderError) || err.status === undefined) return false;
+  return err.status >= 400 && err.status < 500 && !isInvalidSymbol(err);
+}
+
 function splitGeminiSymbol(
   symbol: string,
   quotes: readonly string[]
@@ -112,6 +139,13 @@ export class GeminiProvider
     'transactions',
     'credential-validator',
   ];
+  // Declared so the router never claims a complete history here, not because
+  // the walk stops early: trades are asked for per symbol, and the symbols are
+  // enumerated from balances and transfers, so an asset bought and sold to
+  // zero without ever being deposited or withdrawn is never seen. That gap is
+  // structural, so the claim must be too. The value is the true reach — the
+  // walks are unbounded in time, and nothing on Gemini predates its launch.
+  readonly transactionHistoryHorizonMs = SINCE_GEMINI_LAUNCH_MS;
   protected readonly baseUrl: string;
 
   constructor(limiter: OutflowRateLimiter, baseUrl = 'https://api.gemini.com') {
@@ -178,16 +212,33 @@ export class GeminiProvider
     if (!creds) return [];
 
     const capped = new PageCapWatch();
+    const failures = new WalkFailureWatch(this.providerKey, this.logger);
 
-    const balances = await this.signedJson<GeminiBalance[]>(
-      { method: 'POST', url: '/v1/balances' },
-      creds
-    ).catch(() => [] as GeminiBalance[]);
-    const heldAssets = new Set<string>();
+    const balances = await failures.attempt(
+      'the balance read',
+      () => this.signedJson<GeminiBalance[]>({ method: 'POST', url: '/v1/balances' }, creds),
+      [] as GeminiBalance[],
+      isRequestRefusal
+    );
+    const assets = new Set<string>();
     if (Array.isArray(balances)) {
       for (const b of balances) {
-        if (Number.parseFloat(b.amount) > 0) heldAssets.add(b.currency.toLowerCase());
+        if (Number.parseFloat(b.amount) > 0) assets.add(b.currency.toLowerCase());
       }
+    }
+
+    // Transfers are walked first because they are the one feed Gemini lists
+    // without a symbol: an asset deposited, traded and sold to zero is absent
+    // from the balances above and would otherwise never have its trades asked
+    // for (SC-1480).
+    const transfers = await failures.attempt(
+      'the transfers walk',
+      () => this.fetchAllTransfers(creds, capped),
+      [] as GeminiTransfer[],
+      isRequestRefusal
+    );
+    for (const transfer of transfers) {
+      if (transfer.currency) assets.add(transfer.currency.toLowerCase());
     }
 
     const events: TransactionEvent[] = [];
@@ -199,15 +250,20 @@ export class GeminiProvider
       events.push(event);
     };
 
-    for (const symbol of this.buildCandidateSymbols(heldAssets)) {
-      const trades = await this.fetchAllTradesForSymbol(creds, symbol, capped).catch(() => []);
+    for (const symbol of this.buildCandidateSymbols(assets)) {
+      const trades = await failures.attempt(
+        `the ${symbol} trades walk`,
+        () => this.fetchAllTradesForSymbol(creds, symbol, capped),
+        [] as GeminiTrade[],
+        isRequestRefusal
+      );
       for (const trade of trades) push(this.tradeToEvent(symbol, trade));
     }
 
-    const transfers = await this.fetchAllTransfers(creds, capped).catch(() => []);
     for (const transfer of transfers) push(this.transferToEvent(transfer));
 
     capped.retract(ctx, this.providerKey);
+    failures.retract(ctx);
     return events;
   }
 
@@ -230,10 +286,10 @@ export class GeminiProvider
     }
   }
 
-  private buildCandidateSymbols(heldAssets: ReadonlySet<string>): string[] {
+  private buildCandidateSymbols(assets: ReadonlySet<string>): string[] {
     const out: string[] = [];
     const seen = new Set<string>();
-    for (const base of heldAssets) {
+    for (const base of assets) {
       for (const quote of TX_QUOTE_ASSETS) {
         if (base === quote) continue;
         const sym = `${base}${quote}`;
@@ -263,7 +319,16 @@ export class GeminiProvider
         url: '/v1/mytrades',
         payloadExtras,
       };
-      const trades = await this.signedJson<GeminiTrade[]>(req, creds);
+      let trades: GeminiTrade[];
+      try {
+        trades = await this.signedJson<GeminiTrade[]>(req, creds);
+      } catch (err) {
+        // A candidate pair Gemini does not list is an absent market, not a
+        // failed walk: the candidates are a cross-product, so most runs ask
+        // about several that do not exist.
+        if (page === 0 && isInvalidSymbol(err)) return [];
+        throw err;
+      }
       if (!Array.isArray(trades) || trades.length === 0) break;
       all.push(...trades);
       const oldest = trades.reduce(

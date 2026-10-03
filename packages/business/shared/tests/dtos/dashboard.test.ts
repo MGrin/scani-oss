@@ -73,6 +73,7 @@ describe('GetAssetAllocationOutputDto', () => {
           { id: '1', code: 'crypto', name: 'Crypto', value: '100', percentage: '50' },
           { id: '2', code: 'fiat', name: 'Fiat', value: '100', percentage: '50' },
         ],
+        marginDebt: '0',
         totalValue: '200',
         baseCurrency: 'USD',
       }).success
@@ -84,6 +85,7 @@ describe('GetAssetAllocationOutputDto', () => {
       GetAssetAllocationOutputDto.safeParse({
         dimension: 'group',
         items: [],
+        marginDebt: '0',
         totalValue: '0',
         baseCurrency: 'USD',
       }).success
@@ -95,9 +97,23 @@ describe('GetAssetAllocationOutputDto', () => {
       GetAssetAllocationOutputDto.safeParse({
         dimension: 'token',
         items: [{ id: 'x' /* missing other fields */ }],
+        marginDebt: '0',
         totalValue: '0',
         baseCurrency: 'USD',
       }).success
     ).toBe(false);
+  });
+
+  test('carries margin debt beside the slices, and requires it', () => {
+    const payload = {
+      dimension: 'token_type',
+      items: [{ id: '1', code: 'stock', name: 'Stock', value: '10000', percentage: '100.00' }],
+      marginDebt: '-2500',
+      totalValue: '7500',
+      baseCurrency: 'USD',
+    };
+    expect(GetAssetAllocationOutputDto.safeParse(payload).success).toBe(true);
+    const { marginDebt: _omitted, ...withoutDebt } = payload;
+    expect(GetAssetAllocationOutputDto.safeParse(withoutDebt).success).toBe(false);
   });
 });

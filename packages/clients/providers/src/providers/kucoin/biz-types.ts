@@ -24,26 +24,24 @@ const FIXED: Record<string, KucoinTransactionKind> = {
 
 const DIRECTIONAL: Record<
   string,
-  { positive: KucoinTransactionKind; negative: KucoinTransactionKind }
+  { inflow: KucoinTransactionKind; outflow: KucoinTransactionKind }
 > = {
-  exchange: { positive: 'buy', negative: 'sell' },
-  trade_exchange: { positive: 'buy', negative: 'sell' },
-  spot_trading: { positive: 'buy', negative: 'sell' },
-  sub_account_transfer: { positive: 'transfer_in', negative: 'transfer_out' },
-  main_transfer: { positive: 'transfer_in', negative: 'transfer_out' },
-  inner_transfer: { positive: 'transfer_in', negative: 'transfer_out' },
-  transfer: { positive: 'transfer_in', negative: 'transfer_out' },
-  convert_to_kcs: { positive: 'swap_in', negative: 'swap_out' },
+  exchange: { inflow: 'buy', outflow: 'sell' },
+  trade_exchange: { inflow: 'buy', outflow: 'sell' },
+  spot_trading: { inflow: 'buy', outflow: 'sell' },
+  sub_account_transfer: { inflow: 'transfer_in', outflow: 'transfer_out' },
+  sub_transfer: { inflow: 'transfer_in', outflow: 'transfer_out' },
+  main_transfer: { inflow: 'transfer_in', outflow: 'transfer_out' },
+  inner_transfer: { inflow: 'transfer_in', outflow: 'transfer_out' },
+  transfer: { inflow: 'transfer_in', outflow: 'transfer_out' },
+  convert_to_kcs: { inflow: 'swap_in', outflow: 'swap_out' },
 };
 
-export function mapKucoinBizType(
-  bizType: string,
-  amountIsPositive: boolean
-): KucoinTransactionKind {
+export function mapKucoinBizType(bizType: string, isInflow: boolean): KucoinTransactionKind {
   const key = normalize(bizType);
   const fixed = FIXED[key];
   if (fixed) return fixed;
   const dir = DIRECTIONAL[key];
-  if (dir) return amountIsPositive ? dir.positive : dir.negative;
+  if (dir) return isInflow ? dir.inflow : dir.outflow;
   return 'unknown';
 }

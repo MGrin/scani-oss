@@ -31,7 +31,7 @@ import { manualOutflowAnswerSchema } from './transfer-review';
  * None of them goes near a float — an 18-decimal crypto quantity does not
  * survive one, and `baseValue` is what the owner is shown.
  */
-export const balanceGapSchema = z.object({
+const balanceGapSchema = z.object({
   /** The CLOSING observation of the pair. See above. */
   observationId: z.string().uuid(),
   holdingId: z.string().uuid(),
@@ -85,7 +85,7 @@ export const balanceGapSchema = z.object({
 
 export type BalanceGap = z.infer<typeof balanceGapSchema>;
 
-export const balanceGapAnswerSchema = z.enum(BALANCE_GAP_ANSWERS);
+const balanceGapAnswerSchema = z.enum(BALANCE_GAP_ANSWERS);
 
 /**
  * Why gaps were left out of the list, one count per reason.
@@ -95,15 +95,13 @@ export const balanceGapAnswerSchema = z.enum(BALANCE_GAP_ANSWERS);
  * missed them, and the difference matters most on the day somebody says "you
  * did not ask me about the big one".
  */
-export const balanceGapSuppressionsSchema = z.object(
+const balanceGapSuppressionsSchema = z.object(
   Object.fromEntries(
     BALANCE_GAP_SUPPRESSIONS.map((reason) => [reason, z.number().int().nonnegative()])
   ) as Record<BalanceGapSuppression, z.ZodNumber>
 );
 
-export type BalanceGapSuppressions = z.infer<typeof balanceGapSuppressionsSchema>;
-
-export const balanceGapListSchema = z.object({
+const balanceGapListSchema = z.object({
   items: z.array(balanceGapSchema),
   /** Every gap found before any suppression ran. */
   examined: z.number().int().nonnegative(),
@@ -167,18 +165,7 @@ export const answerBalanceGapSchema = z.object({
 
 export type AnswerBalanceGapInput = z.infer<typeof answerBalanceGapSchema>;
 
-/**
- * Why an answer was refused, in terms the API turns into a status.
- *
- * `already-answered` is separate from `gone` deliberately: two tabs open on
- * the same queue is an ordinary thing, and "somebody already answered this"
- * is a different sentence from "that holding no longer exists".
- */
-export const BALANCE_GAP_REFUSALS = ['gone', 'already-answered', 'no-longer-a-gap'] as const;
-
-export type BalanceGapRefusal = (typeof BALANCE_GAP_REFUSALS)[number];
-
-export const answerBalanceGapResultSchema = z.object({
+const answerBalanceGapResultSchema = z.object({
   observationId: z.string().uuid(),
   answer: balanceGapAnswerSchema,
   /** The ledger row written, or null for `growth` and `unknown`. */

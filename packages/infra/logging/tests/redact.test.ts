@@ -32,6 +32,18 @@ describe('LOG_REDACT', () => {
     expect(line).toContain('[redacted]');
   });
 
+  // SC-1509: the privacy policy says a deleted account leaves nothing personal
+  // behind beyond its id, and a log line is somewhere it would otherwise stay.
+  test.each([
+    ['a top-level email', { email: 'person@example.com' }],
+    ['a nested email', { user: { email: 'person@example.com' } }],
+    ['a billing subject email', { row: { subjectEmail: 'person@example.com' } }],
+  ])('censors %s', (_label, entry) => {
+    const line = capture(entry);
+    expect(line).not.toContain('person@example.com');
+    expect(line).toContain('[redacted]');
+  });
+
   test('control: ordinary fields are logged as they are', () => {
     const line = capture({ input: { symbol: 'AAPL', limit: 10 } });
     expect(line).toContain('AAPL');

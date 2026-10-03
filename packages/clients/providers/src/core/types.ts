@@ -405,6 +405,7 @@ export interface TransactionEvent {
     | 'swap_in'
     | 'swap_out'
     | 'opening_balance'
+    | 'realized_pnl'
     | 'unknown';
   /** Primary token + signed quantity. Outflows negative; inflows
       positive. Sign-enforcement happens at the base-class boundary,

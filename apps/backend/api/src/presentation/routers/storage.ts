@@ -30,6 +30,10 @@ import { protectedProcedure, router } from '../trpc';
 
 const MAX_SIZE_BYTES = UPLOAD_LIMITS.PRESIGN_UPLOAD_BYTES;
 
+function megabytes(bytes: number): string {
+  return `${Number((bytes / 2 ** 20).toFixed(1))} MB`;
+}
+
 // Counted in bytes, per UTC day (SC-1267).
 const uploadBudget = new UserBudget({
   namespace: 'rl:upload-bytes',
@@ -85,11 +89,19 @@ export const storageRouter = router({
           purpose: z.enum(['screenshot', 'file-import', 'document']),
           contentType: z.string().min(1).max(200),
           filename: z.string().min(1).max(200),
-          sizeBytes: z.number().int().positive().max(MAX_SIZE_BYTES),
+          sizeBytes: z.number().int().positive(),
         })
       )
     )
     .mutation(async ({ input, ctx }) => {
+      // Refused here rather than by zod's `.max`, whose message is an issue
+      // list the app will not show a reader (SC-1492).
+      if (input.sizeBytes > MAX_SIZE_BYTES) {
+        throw new TRPCError({
+          code: 'PAYLOAD_TOO_LARGE',
+          message: `This file is ${megabytes(input.sizeBytes)}. The limit is ${megabytes(MAX_SIZE_BYTES)}.`,
+        });
+      }
       const normalisedContentType = input.contentType.toLowerCase().split(';')[0]?.trim() ?? '';
       if (!ALLOWED_CONTENT_TYPES[input.purpose].includes(normalisedContentType)) {
         throw new TRPCError({

@@ -284,6 +284,15 @@ export interface BalanceProvider extends ProviderBase {
   ): Promise<HoldingSnapshot[]>;
 
   /**
+   * How many consecutive statements a held FIAT holding must be missing from
+   * before the sync reads the absence as a zero (SC-1451). Unset means an
+   * absence from a non-empty snapshot zeroes at once, which is right for a
+   * venue that lists every balance it holds. Set it for a reporting interface
+   * that can leave a held currency out of one report.
+   */
+  readonly absentFiatConfirmations?: number;
+
+  /**
    * The current balance of assets the caller ALREADY KNOWS ABOUT, asked one by
    * one (SC-852).
    *
