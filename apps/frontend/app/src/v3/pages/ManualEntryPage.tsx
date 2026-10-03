@@ -145,6 +145,7 @@ export function ManualEntryPage() {
                       onValueChange={(balance) => patchHolding(holding.uid, { balance })}
                       placeholder="0.00"
                       decimalScale={8}
+                      negativeNotice={t('v3.capture.page.manual.negativeRefused')}
                       disabled={isSaving}
                       wrapperClassName="min-w-0 flex-1"
                       className="text-body"

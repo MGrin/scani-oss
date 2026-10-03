@@ -156,7 +156,7 @@ describe('dataQualityRows', () => {
       t,
       report({ holdings: { ...report().holdings, negativeOpening: 1 } })
     );
-    expect(rows.find((row) => row.label.startsWith('Negative'))?.warn).toBe(true);
+    expect(rows.find((row) => row.label.includes('starts below zero'))?.warn).toBe(true);
   });
 
   /**
@@ -277,7 +277,7 @@ describe('dataQualityRows', () => {
       report({ lookalikeTokens: [{ symbol: 'UЅDС', lookalikeOf: 'USDC' }] })
     );
 
-    expect(rows[0]?.label).toBe('Shown positions sharing a symbol with another token row');
+    expect(rows[0]?.label).toBe('Holdings that share a symbol with another token');
     expect(rows[0]?.value).toBe(0);
     expect(rows[0]?.warn).toBe(false);
   });

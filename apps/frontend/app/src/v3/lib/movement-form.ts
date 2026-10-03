@@ -143,6 +143,23 @@ export function movementFeeArrival(draft: MovementDraft): string | null {
 }
 
 /**
+ * The balance a movement would leave when it takes the holding below zero, or
+ * `null` when it would not (SC-1518). A journey pass recorded 99,999 USD out of
+ * a 2,500 USD holding and nothing on the form said so — the "Currently" hint sat
+ * right beside the number it contradicted. A warning, not a blocker: an
+ * overdrawn card or a margin balance is a real negative, and only the owner
+ * knows which this is.
+ */
+export function movementBalanceBelowZero(
+  holdingAmount: string,
+  draft: Pick<MovementDraft, 'direction' | 'amount'>
+): string | null {
+  if (draft.direction === 'inflow' || !amountIsPositive(draft.amount)) return null;
+  const after = new Decimal(holdingAmount).minus(draft.amount.trim());
+  return after.isNegative() ? after.toString() : null;
+}
+
+/**
  * The institution, and what is left of the account name once a repeat of it has
  * been taken off — `accountLabelParts`, not a join (SC-862).
  *

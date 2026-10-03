@@ -16,7 +16,10 @@
       "hintCode": "We'll send you a 6-digit code to sign in.",
       "hintLink": "We'll send you a secure magic link to sign in.",
       "newAccount": "New to Scani? Your account will be created automatically.",
-      "humanCheckFailed": "The human check could not load. Disable any blocker for challenges.cloudflare.com, then reload."
+      "humanCheckFailed": "The human check could not load. Disable any blocker for challenges.cloudflare.com, then reload.",
+      "cloudTitle": "Sign in to Scani Cloud",
+      "cloudSubtitle": "Your API keys live in the Scani Cloud console. Enter your email to sign in or create an account.",
+      "cloudNewAccount": "New to Scani Cloud? Your account is created automatically, and you go straight back to the console."
     },
     "code": {
       "title": "Enter verification code",
@@ -26,7 +29,7 @@
     "linkSent": {
       "title": "Check your email",
       "subtitle": "We've sent you a magic link to sign in",
-      "body": "Click the link in your email to access your account. If this is your first time, we'll create an account for you automatically.",
+      "body": "Click the link in your email to access your account. If this is your first time, we'll create an account for you automatically. Open it in this same browser — on a phone, Mail can open a different one.",
       "resend": "Send another email"
     },
     "callback": {

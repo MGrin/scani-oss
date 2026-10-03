@@ -6,7 +6,7 @@ import { Block } from '@scani/ui/v3/components/Block';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFormatLocale } from '@/contexts/FormatLocaleContext';
-import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
+import { invalidateAfterCurrencyChange } from '@/hooks/invalidatePortfolioQueries';
 import { AVAILABLE_LANGUAGES, locales } from '@/i18n';
 import { trpc } from '@/lib/trpc';
 import { optimisticPatchUser } from '@/v3/hooks/optimisticUpdates';
@@ -80,7 +80,7 @@ export function ProfileSettings() {
       // typo in your name refetches every chart in the app.
       const next = variables.baseCurrencyId ?? null;
       if (next !== (context?.previousBaseCurrencyId ?? null)) {
-        void invalidatePortfolioQueries(utils, { refetchType: 'all' });
+        void invalidateAfterCurrencyChange(utils);
       }
     },
     onError: (error, _variables, context) => {

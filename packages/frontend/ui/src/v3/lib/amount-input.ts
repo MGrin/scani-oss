@@ -69,6 +69,8 @@ export interface ParsedAmount {
   /** The input was read one of two defensible ways and we picked one. The
    *  caller must surface this; see the note above about `1,234`. */
   ambiguous: boolean;
+  /** A minus was typed into a field that refuses one, and dropped. */
+  negativeRefused?: boolean;
 }
 
 const EMPTY: ParsedAmount = { text: '', value: '', ambiguous: false };
@@ -81,6 +83,13 @@ const EMPTY: ParsedAmount = { text: '', value: '', ambiguous: false };
  * keypresses, which is what makes typing and pasting the same code path.
  */
 export function parseAmountInput(raw: string, rules: AmountRules = {}): ParsedAmount {
+  const parsed = readAmount(raw, rules);
+  return !rules.allowNegative && MINUS_SIGN.test(toAsciiFigures(raw).replace(GROUPING_ONLY, ''))
+    ? { ...parsed, negativeRefused: true }
+    : parsed;
+}
+
+function readAmount(raw: string, rules: AmountRules): ParsedAmount {
   const { decimalScale = 2, allowNegative = false } = rules;
 
   const stripped = toAsciiFigures(raw).replace(GROUPING_ONLY, '');

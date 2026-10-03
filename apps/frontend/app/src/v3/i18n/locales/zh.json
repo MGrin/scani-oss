@@ -994,7 +994,9 @@
         },
         "amountLabel": "流动了多少",
         "currentBalance": "当前为 {{amount}} {{symbol}}",
+        "belowZero": "当前 {{amount}} {{symbol}} — 之后余额为 {{after}} {{symbol}}，低于零",
         "dateLabel": "资金是什么时候流动的？",
+        "futureDate": "该日期在未来。保存前请确认。",
         "whereLabel": "它去了哪里？",
         "where": {
           "left_control": {
@@ -1221,7 +1223,7 @@
       "dataQuality": {
         "title": "数据质量",
         "flagged": "已标记",
-        "duplicateRows": "与另一条标的记录共用同一代码的显示中持仓",
+        "duplicateRows": "与另一个代币同名的持仓",
         "duplicateChip": "{{symbol}}×{{count}}",
         "duplicateChipLookalike": "{{symbol}}×{{count}}（显示为 {{lookalikeOf}}）",
         "lookalikeRows": "代码仿冒了其他代码的显示中持仓",
@@ -1235,9 +1237,9 @@
         "noPriceSourceHint": "{{symbols}}——是我们的配置问题，不是市场问题",
         "nothingCanPrice": "任何数据源都无法定价的显示中持仓",
         "nothingCanPriceHint": "没有市场的空投或已退市标的——不计入图表覆盖度",
-        "negativeOpening": "合成的起始余额为负",
+        "negativeOpening": "历史从负值开始的持仓",
         "negativeOpeningHint": "某次导入没有回溯到第一笔交易之前",
-        "missingCoverage": "没有覆盖度记录的持仓",
+        "missingCoverage": "尚无价值历史的持仓",
         "intro": "每次访问都会重新统计。标记为“{{flag}}”的都值得查看一下。",
         "rowLink": "{{label}}：{{count}}——在持仓中查看"
       },
@@ -1934,6 +1936,7 @@
           "fieldset": "内容",
           "token": "标的",
           "amount": "数量",
+          "negativeRefused": "暂不支持负余额。负债账户请输入 0，还款可添加到“账单”。",
           "removeHolding": "移除第 {{index}} 笔持仓",
           "save": "保存持仓",
           "tokenFor": "第 {{index}} 笔持仓的标的",

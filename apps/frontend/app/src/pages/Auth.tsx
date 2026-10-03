@@ -16,7 +16,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
-import { goToReturnTarget, safeReturnTo } from '@/lib/return-origins';
+import { goToReturnTarget, isCloudReturn, safeReturnTo } from '@/lib/return-origins';
 import { AuthPageExits } from '../components/AuthPageExits';
 
 interface AuthFormData {
@@ -89,6 +89,7 @@ export function Auth() {
   // Validated against open-redirect chains: a same-origin path, or an
   // absolute URL on an allow-listed origin (the Cloud console).
   const returnTo = safeReturnTo(searchParams.get('returnTo'), '/');
+  const forCloud = isCloudReturn(returnTo);
 
   // Leave /auth as soon as the session resolves. Covers two cases the
   // static "check your email" screen otherwise strands the user in:
@@ -288,9 +289,11 @@ export function Auth() {
         <Card className="w-full">
           <CardHeader className="space-y-1">
             <h2 className="text-2xl text-center font-semibold leading-none tracking-tight">
-              {t('auth.signIn.title')}
+              {t(forCloud ? 'auth.signIn.cloudTitle' : 'auth.signIn.title')}
             </h2>
-            <CardDescription className="text-center">{t('auth.signIn.subtitle')}</CardDescription>
+            <CardDescription className="text-center">
+              {t(forCloud ? 'auth.signIn.cloudSubtitle' : 'auth.signIn.subtitle')}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
@@ -337,7 +340,7 @@ export function Auth() {
               <div className="text-center text-sm text-muted-foreground">
                 <p>
                   {runningAsPWA ? t('auth.signIn.hintCode') : t('auth.signIn.hintLink')} <br />
-                  {t('auth.signIn.newAccount')}
+                  {t(forCloud ? 'auth.signIn.cloudNewAccount' : 'auth.signIn.newAccount')}
                 </p>
               </div>
             </form>

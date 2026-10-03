@@ -918,7 +918,7 @@
       "dataQuality": {
         "title": "Qualité des données",
         "flagged": "Signalé",
-        "duplicateRows": "Positions affichées partageant un symbole avec une autre ligne de jeton",
+        "duplicateRows": "Positions qui partagent un symbole avec un autre jeton",
         "duplicateChip": "{{symbol}}×{{count}}",
         "duplicateChipLookalike": "{{symbol}}×{{count}} (s’affiche comme {{lookalikeOf}})",
         "lookalikeRows": "Positions affichées dont le symbole en imite un autre",
@@ -934,9 +934,9 @@
         "noPriceSourceHint": "{{symbols}} — notre configuration, pas le marché",
         "nothingCanPrice": "Positions affichées que rien ne peut valoriser",
         "nothingCanPriceHint": "Jetons reçus par airdrop ou retirés de la cote, sans marché — exclus de la couverture des graphiques",
-        "negativeOpening": "Solde d’ouverture reconstitué négatif",
+        "negativeOpening": "Positions dont l’historique commence sous zéro",
         "negativeOpeningHint": "Un import qui n’a pas remonté avant la première transaction",
-        "missingCoverage": "Positions sans ligne de couverture",
+        "missingCoverage": "Positions sans historique de valeur pour l’instant",
         "intro": "Recompté à chaque visite. Tout ce qui porte la mention « {{flag}} » mérite qu’on s’y arrête.",
         "rowLink": "{{label}} : {{count}} — afficher dans Positions"
       },
@@ -1478,7 +1478,9 @@
         },
         "amountLabel": "Combien a bougé",
         "currentBalance": "Actuellement {{amount}} {{symbol}}",
+        "belowZero": "Actuellement {{amount}} {{symbol}} — il resterait {{after}} {{symbol}}, sous zéro",
         "dateLabel": "Quand l’argent a-t-il bougé ?",
+        "futureDate": "Cette date est dans le futur. Vérifiez-la avant d’enregistrer.",
         "whereLabel": "Où est-il allé ?",
         "where": {
           "left_control": {
@@ -1701,6 +1703,7 @@
           "fieldset": "Quoi",
           "token": "Jeton",
           "amount": "Quantité",
+          "negativeRefused": "Les soldes négatifs ne sont pas encore pris en charge. Pour un compte endetté, saisissez 0 — le remboursement peut aller dans Factures.",
           "removeHolding": "Retirer la position {{index}}",
           "save": "Enregistrer les positions",
           "tokenFor": "jeton de la position {{index}}",

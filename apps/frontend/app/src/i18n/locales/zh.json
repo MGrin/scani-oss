@@ -16,7 +16,10 @@
       "hintCode": "我们会向你发送 6 位验证码用于登录。",
       "hintLink": "我们会向你发送一个安全的登录链接。",
       "newAccount": "第一次使用 Scani？我们会自动为你创建账户。",
-      "humanCheckFailed": "无法加载人机验证。请为 challenges.cloudflare.com 停用拦截器，然后重新加载。"
+      "humanCheckFailed": "无法加载人机验证。请为 challenges.cloudflare.com 停用拦截器，然后重新加载。",
+      "cloudTitle": "登录 Scani Cloud",
+      "cloudSubtitle": "您的 API 密钥在 Scani Cloud 控制台中管理。输入邮箱以登录或创建账户。",
+      "cloudNewAccount": "第一次使用 Scani Cloud？账户会自动创建，并直接返回控制台。"
     },
     "code": {
       "title": "输入验证码",
@@ -26,7 +29,7 @@
     "linkSent": {
       "title": "请查收邮件",
       "subtitle": "我们已向你发送登录链接",
-      "body": "点击邮件中的链接即可进入你的账户。如果这是你第一次使用，我们会自动为你创建账户。",
+      "body": "点击邮件中的链接即可进入你的账户。如果这是你第一次使用，我们会自动为你创建账户。请在当前浏览器中打开——在手机上，邮件应用可能会打开另一个浏览器。",
       "resend": "重新发送邮件"
     },
     "callback": {
@@ -933,6 +936,7 @@
     },
     "loadingRamp": {
       "stalled": "仍在等待服务器响应。没有任何内容被更改。",
+      "offline": "你已离线。没有任何更改——恢复联网后将继续加载。",
       "retry": "重试",
       "loading": "正在加载{{label}}"
     },

@@ -994,7 +994,9 @@
         },
         "amountLabel": "動いた額",
         "currentBalance": "現在 {{amount}} {{symbol}}",
+        "belowZero": "現在 {{amount}} {{symbol}} — 残高は {{after}} {{symbol}} となり、ゼロを下回ります",
         "dateLabel": "お金が動いたのはいつですか？",
+        "futureDate": "未来の日付です。保存する前に確認してください。",
         "whereLabel": "どこへ行きましたか？",
         "where": {
           "left_control": {
@@ -1221,7 +1223,7 @@
       "dataQuality": {
         "title": "データ品質",
         "flagged": "要確認",
-        "duplicateRows": "他のトークン行とシンボルが重複している表示中の保有資産",
+        "duplicateRows": "別のトークンと同じシンボルを持つ保有資産",
         "duplicateChip": "{{symbol}}×{{count}}",
         "duplicateChipLookalike": "{{symbol}}×{{count}}（{{lookalikeOf}} に見せかけ）",
         "lookalikeRows": "シンボルが他のものに似せている表示中の保有資産",
@@ -1235,9 +1237,9 @@
         "noPriceSourceHint": "{{symbols}} — 市場ではなく当方の設定の問題です",
         "nothingCanPrice": "どこも価格を付けられない表示中の保有資産",
         "nothingCanPriceHint": "市場のないエアドロップ済み・上場廃止のトークンです。チャートのカバレッジから除外しています",
-        "negativeOpening": "合成された初期残高がマイナス",
+        "negativeOpening": "履歴がマイナスから始まる保有資産",
         "negativeOpeningHint": "最初の取引より前まで遡れなかった取り込みです",
-        "missingCoverage": "カバレッジ行のない保有資産",
+        "missingCoverage": "価値の履歴がまだない保有資産",
         "intro": "アクセスのたびに数え直しています。「{{flag}}」が付いたものは確認する価値があります。",
         "rowLink": "{{label}}: {{count}} — 保有資産で表示"
       },
@@ -1934,6 +1936,7 @@
           "fieldset": "内容",
           "token": "トークン",
           "amount": "数量",
+          "negativeRefused": "マイナス残高はまだサポートされていません。負債のある口座は0と入力し、返済は「請求」に追加できます。",
           "removeHolding": "保有資産 {{index}} を削除",
           "save": "保有資産を保存",
           "tokenFor": "保有資産 {{index}} のトークン",

@@ -33,6 +33,9 @@ interface AmountInputProps
   /** Layout for the element wrapping input + notice. Sizing that used to sit
    *  on the input belongs here whenever the field is a flex child. */
   wrapperClassName?: string;
+  /** Shown when a minus is typed into a field that refuses one, so the sign
+   *  is never dropped without a word (SC-1530). */
+  negativeNotice?: string;
 }
 
 export const AmountInput = React.forwardRef<HTMLInputElement, AmountInputProps>(
@@ -45,6 +48,7 @@ export const AmountInput = React.forwardRef<HTMLInputElement, AmountInputProps>(
       suffix = '',
       className,
       wrapperClassName,
+      negativeNotice,
       onFocus,
       onBlur,
       ...props
@@ -57,7 +61,10 @@ export const AmountInput = React.forwardRef<HTMLInputElement, AmountInputProps>(
     // half-typed `12,` survive the render that follows its own keystroke.
     const [draft, setDraft] = React.useState<string | null>(null);
     const [ambiguous, setAmbiguous] = React.useState(false);
+    const [minusRefused, setMinusRefused] = React.useState(false);
     const noticeId = React.useId();
+    const refusalId = React.useId();
+    const showRefusal = Boolean(negativeNotice) && minusRefused;
 
     const rules = { decimalScale, allowNegative };
     const display = draft ?? formatAmountForDisplay(value, suffix);
@@ -73,17 +80,23 @@ export const AmountInput = React.forwardRef<HTMLInputElement, AmountInputProps>(
           inputMode={decimalScale === 0 ? 'numeric' : 'decimal'}
           autoComplete="off"
           value={display}
-          aria-describedby={ambiguous ? noticeId : props['aria-describedby']}
+          aria-describedby={
+            showRefusal ? refusalId : ambiguous ? noticeId : props['aria-describedby']
+          }
           className={cn(className)}
           onFocus={(event) => {
             setDraft(value);
             setAmbiguous(false);
+            setMinusRefused(false);
             onFocus?.(event);
           }}
           onChange={(event) => {
             const parsed = parseAmountInput(event.target.value, rules);
             setDraft(parsed.text);
             setAmbiguous(false);
+            // Sticky until the next edit session: clearing it on the following
+            // keystroke would flash it away before it could be read.
+            if (parsed.negativeRefused) setMinusRefused(true);
             if (parsed.value !== value) onValueChange(parsed.value);
           }}
           onBlur={(event) => {
@@ -107,6 +120,11 @@ export const AmountInput = React.forwardRef<HTMLInputElement, AmountInputProps>(
               : t('ui.amountInput.readAsDecimal', {
                   amount: formatAmountForDisplay(value, suffix),
                 })}
+          </span>
+        ) : null}
+        {showRefusal ? (
+          <span id={refusalId} role="status" className="text-caption text-muted-foreground">
+            {negativeNotice}
           </span>
         ) : null}
       </span>

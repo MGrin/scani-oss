@@ -234,6 +234,7 @@
     },
     "loadingRamp": {
       "stalled": "Still waiting on the server. Nothing has been changed.",
+      "offline": "You're offline. Nothing has been changed — this will load once you're back online.",
       "retry": "Try again",
       "loading": "Loading {{label}}"
     },
