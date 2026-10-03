@@ -470,3 +470,92 @@ liveDescribe('GateProvider [live production / read-only key]', () => {
     expect(Array.isArray(events)).toBe(true);
   });
 });
+
+/**
+ * SC-1480 / SC-1481. Trade pairs used to come from CURRENT balances only, so
+ * an asset bought and sold to zero never had its trades asked for; and every
+ * sub-walk was `.catch(() => [])` with nothing said.
+ */
+describe('GateProvider.fetchTransactions — exited assets and failed walks', () => {
+  const since = new Date('2023-11-01T00:00:00Z');
+  const until = new Date('2023-11-20T00:00:00Z');
+  const ethSell = {
+    id: '7',
+    create_time: '1700000000',
+    currency_pair: 'ETH_USDT',
+    side: 'sell',
+    amount: '1',
+    price: '2000',
+  };
+
+  function mockGate(ledger: () => FakeResponse) {
+    const pairs: string[] = [];
+    const hook = queueFetch((url) => {
+      const u = new URL(url);
+      if (u.pathname.endsWith('/spot/accounts/ledger')) return ledger();
+      if (u.pathname.endsWith('/spot/accounts')) {
+        return { body: [{ currency: 'USDT', available: '2000', locked: '0' }] };
+      }
+      if (u.pathname.endsWith('/wallet/deposits')) return { body: [] };
+      if (u.pathname.endsWith('/wallet/withdrawals')) return { body: [] };
+      if (u.pathname.endsWith('/spot/my_trades')) {
+        const pair = u.searchParams.get('currency_pair') ?? '';
+        pairs.push(pair);
+        if (pair === 'ETH_USDT') return { body: u.searchParams.get('last_id') ? [] : [ethSell] };
+        // Every other candidate is a pair Gate does not list.
+        return { status: 400, body: { label: 'INVALID_CURRENCY_PAIR', message: pair } };
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+    return { hook, pairs };
+  }
+
+  test('an asset seen only in the ledger has its trades fetched, and absent pairs retract nothing', async () => {
+    const { hook, pairs } = mockGate(() => ({
+      body: [
+        {
+          id: 'L-9',
+          time: '1700000000',
+          currency: 'ETH',
+          change: '-1',
+          balance: '0',
+          type: 'trade',
+        },
+      ],
+    }));
+    const retractions: unknown[] = [];
+    try {
+      const events = await new GateProvider(passthroughLimiter()).fetchTransactions({
+        ...ctx,
+        since,
+        until,
+        retractHistoryClaim: (r: unknown) => retractions.push(r),
+      } as never);
+      expect(pairs).toContain('ETH_USDT');
+      expect(events.map((e) => e.externalId)).toContain('ETH_USDT-7');
+      expect(retractions).toEqual([]);
+    } finally {
+      hook.restore();
+    }
+  });
+
+  test('a failed ledger walk retracts the history claim', async () => {
+    const { hook } = mockGate(() => ({
+      status: 400,
+      body: { label: 'INVALID_PARAM_VALUE', message: 'from' },
+    }));
+    const retractions: string[] = [];
+    try {
+      await new GateProvider(passthroughLimiter()).fetchTransactions({
+        ...ctx,
+        since,
+        until,
+        retractHistoryClaim: (r: string) => retractions.push(r),
+      } as never);
+      expect(retractions).toHaveLength(1);
+      expect(retractions[0]).toContain('gate: the ledger walk failed');
+    } finally {
+      hook.restore();
+    }
+  });
+});

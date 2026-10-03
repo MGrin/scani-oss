@@ -105,15 +105,17 @@ describe('IbkrProvider', () => {
         | undefined;
       expect(aaplMeta?.finnhub?.symbol).toBe('AAPL');
       expect(aaplMeta?.exchangeInfo).toBeUndefined();
-      // Zero-quantity GOOG is skipped, BASE_SUMMARY skipped, EUR=0 skipped.
-      // Short positions (TSLA, -5) and margin-debt cash (GBP, -1200.75) are
-      // liabilities, not long holdings — the schema models balance >= 0, so
-      // they must be dropped at the parse layer rather than trip the
-      // holdings_balance_nonneg_chk constraint downstream.
+      // Zero-quantity GOOG is skipped, BASE_SUMMARY skipped. A short position
+      // (TSLA, -5) has no representation as a holding, so it is dropped at the
+      // parse layer. Only cash may go negative (SC-1462).
       expect(out.find((h) => h.tokenIdentity.symbol === 'GOOG')).toBeUndefined();
-      expect(out.find((h) => h.tokenIdentity.symbol === 'EUR')).toBeUndefined();
       expect(out.find((h) => h.tokenIdentity.symbol === 'TSLA')).toBeUndefined();
-      expect(out.find((h) => h.tokenIdentity.symbol === 'GBP')).toBeUndefined();
+      // Cash is the exception (SC-1451): a PRESENT row at zero is a measured
+      // zero, and dropping it made a currency that went to 0 indistinguishable
+      // from one the statement left out. Margin debt keeps its sign (SC-1462):
+      // IBKR subtracts it from net worth, and so do we.
+      expect(out.find((h) => h.tokenIdentity.symbol === 'EUR')?.balance).toBe('0');
+      expect(out.find((h) => h.tokenIdentity.symbol === 'GBP')?.balance).toBe('-1200.75');
     } finally {
       globalThis.fetch = originalFetch;
     }

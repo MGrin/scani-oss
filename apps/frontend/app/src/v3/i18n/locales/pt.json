@@ -44,7 +44,9 @@
         "extension": "um ficheiro .{{ext}}",
         "noExtension": "um ficheiro sem qualquer extensão",
         "remove": "Remover {{name}}",
-        "unsupported": "Este é {{named}}. O Scani lê {{formats}}."
+        "unsupported": "Este é {{named}}. O Scani lê {{formats}}.",
+        "tooLarge": "Este ficheiro tem {{size}}. O limite é {{limit}}.",
+        "withLimit": "{{formats}}, até {{limit}}"
       },
       "fileImport": {
         "either": {
@@ -1005,7 +1007,8 @@
         },
         "empty": "Ainda não há nada com preço nesta repartição.",
         "loadingLabel": "a sua alocação",
-        "title": "Alocação"
+        "title": "Alocação",
+        "groupsOverlap": "Uma posição pode estar em vários grupos e conta em cada um, por isso estes valores não somam o seu património líquido."
       },
       "attentionRow": {
         "needsReview_many": "{{count}} elementos precisam da sua revisão",
@@ -1243,6 +1246,10 @@
         "unpricedAtZero_many": "{{count}} tokens sem preço contados como zero.",
         "unpricedAtZero_other": "{{count}} tokens sem preço contados como zero."
       }
+    },
+    "allocation": {
+      "marginDebt": "Dívida de margem",
+      "shareOfAssets": "Parcela dos ativos"
     },
     "jobs": {
       "awaitingYou": "Esta execução está à sua espera. Ainda não entrou nada dela no seu portefólio.",
@@ -2384,7 +2391,15 @@
         "unexplainedBalanceChanges_other": "{{count}} variações de saldo que não conseguimos explicar",
         "unpairedTransfers_many": "{{count}} pagamentos de saída por classificar",
         "unpairedTransfers_one": "{{count}} pagamento de saída por classificar",
-        "unpairedTransfers_other": "{{count}} pagamentos de saída por classificar"
+        "unpairedTransfers_other": "{{count}} pagamentos de saída por classificar",
+        "answersTradesExplain": "Cobertas por operações importadas",
+        "answersExplained_one": "{{count}} explicação em {{subject}}",
+        "answersExplained_many": "{{count}} explicações em {{subject}}",
+        "answersExplained_other": "{{count}} explicações em {{subject}}",
+        "unpriceableAirdrops": "Tokens que nada consegue avaliar",
+        "unpriceableTokens_one": "{{count}} token chegou às suas carteiras e nada lhe consegue dar preço",
+        "unpriceableTokens_other": "{{count}} tokens chegaram às suas carteiras e nada lhes consegue dar preço",
+        "unpriceableTokens_many": "{{count}} tokens chegaram às suas carteiras e nada lhes consegue dar preço"
       },
       "kind": {
         "transferOut": "Transferência de saída",
@@ -2720,6 +2735,52 @@
         "queue_many": "{{count}} pagamentos de saída por classificar.",
         "queue_other": "{{count}} pagamentos de saída por classificar.",
         "unreviewedNote": "Sem resposta, isto não apura nenhum ganho de nenhum dos lados."
+      },
+      "settled": {
+        "title": "Explicações em {{subject}}",
+        "description": "As operações importadas agora também explicam estas variações de saldo, por isso o mesmo dinheiro é contado duas vezes. Retirar remove as suas explicações; Manter deixa-as como estão.",
+        "full": "Explicado por operações importadas",
+        "partial": "<explained/> de <amount/> explicado por operações importadas. Se a retirar, o resto volta a ser perguntado.",
+        "movesOther": "Esta explicação também alterou outra posição",
+        "keep": "Manter",
+        "retire": "Retirar",
+        "confirmOther": "Retirar também remove o que estas explicações registaram noutra posição.",
+        "confirmRetire": "Sim, retirá-las",
+        "undo": "Anular",
+        "failed": "Não foi possível alterar algumas explicações. Tente outra vez.",
+        "toast": {
+          "retired_one": "{{count}} explicação retirada",
+          "retired_many": "{{count}} explicações retiradas",
+          "retired_other": "{{count}} explicações retiradas",
+          "kept": "Explicações mantidas",
+          "undone": "Explicações repostas",
+          "undoFailed": "Não foi possível repor as explicações"
+        }
+      },
+      "unpriceable": {
+        "title": "Tokens que nada consegue avaliar",
+        "description": "Chegaram às suas carteiras e nenhuma fonte de preços os cotou alguma vez, por isso já não contam para o seu património líquido. Ocultar retira-os das suas listas; desmarque os que quiser manter e não voltaremos a perguntar por eles. Pode recuperar qualquer um em Tokens, na secção Ocultos.",
+        "hideAll": "Ocultar todos",
+        "keepAll": "Manter todos",
+        "hideSome_one": "Ocultar {{count}}",
+        "hideSome_other": "Ocultar {{count}}",
+        "failed": "Nada foi ocultado. Tente novamente.",
+        "keepFailed": "Não foi possível guardar a sua escolha. Tente novamente.",
+        "partlyFailed_one": "Não foi possível ocultar {{count}} token. Tente novamente.",
+        "partlyFailed_other": "Não foi possível ocultar {{count}} tokens. Tente novamente.",
+        "undo": "Anular",
+        "toast": {
+          "hidden_one": "{{count}} token ocultado",
+          "hidden_other": "{{count}} tokens ocultados",
+          "restored": "Tokens restaurados",
+          "restoreFailed": "Não foi possível restaurar os tokens",
+          "hidden_many": "{{count}} tokens ocultados",
+          "kept_one": "{{count}} token mantido",
+          "kept_many": "{{count}} tokens mantidos",
+          "kept_other": "{{count}} tokens mantidos"
+        },
+        "hideSome_many": "Ocultar {{count}}",
+        "partlyFailed_many": "Não foi possível ocultar {{count}} tokens. Tente novamente."
       }
     },
     "settings": {

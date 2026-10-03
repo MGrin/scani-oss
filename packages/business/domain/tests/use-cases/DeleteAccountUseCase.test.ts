@@ -12,7 +12,7 @@ import { afterAll, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
-import { eq, inArray, or } from 'drizzle-orm';
+import { eq, inArray, or, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { DeleteAccountUseCase } from '../../src/use-cases/DeleteAccountUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
@@ -127,6 +127,7 @@ test('removes the account and its login, and leaves another account alone', asyn
 
   expect(await Container.get(DeleteAccountUseCase).execute(target.userId)).toEqual({
     deleted: true,
+    email: target.email,
   });
 
   expect(await counts(target)).toEqual(NOTHING);
@@ -176,6 +177,7 @@ test('deletes an account that priced a custom token, keeping the edit without it
 
   expect(await Container.get(DeleteAccountUseCase).execute(target.userId)).toEqual({
     deleted: true,
+    email: target.email,
   });
   expect(await counts(target)).toEqual(NOTHING);
 
@@ -192,4 +194,44 @@ test('deletes an account that priced a custom token, keeping the edit without it
     { price: '2', by: control.userId },
   ]);
   expect(await counts(control)).toEqual(EVERYTHING);
+});
+
+/**
+ * Every row that points at the user, wherever it lives (SC-1509). The column
+ * list comes from the catalog rather than from the manifest, so a table added
+ * later is swept without anyone remembering to list it here.
+ */
+async function rowsPointingAt(userId: string): Promise<Record<string, number>> {
+  const db = getDb();
+  const fks = (await db.execute(sql`
+    select n.nspname as schema, c.relname as tbl, a.attname as col
+    from pg_constraint k
+    join pg_class c on c.oid = k.conrelid
+    join pg_namespace n on n.oid = c.relnamespace
+    join pg_attribute a on a.attrelid = k.conrelid and a.attnum = any(k.conkey)
+    where k.contype = 'f' and k.confrelid = 'public.users'::regclass
+  `)) as unknown as { schema: string; tbl: string; col: string }[];
+  const found: Record<string, number> = {};
+  for (const { schema: s, tbl, col } of fks) {
+    const [row] = (await db.execute(
+      sql`select count(*)::int as n from ${sql.identifier(s)}.${sql.identifier(tbl)} where ${sql.identifier(col)} = ${userId}`
+    )) as unknown as { n: number }[];
+    if (row && row.n > 0) found[`${s}.${tbl}.${col}`] = row.n;
+  }
+  return found;
+}
+
+test('a deleted account leaves no row pointing at it in any table (SC-1509)', async () => {
+  const tag = randomUUID().slice(0, 8);
+  const target = await seedAccount(`sweep-${tag}@example.invalid`);
+  const control = await seedAccount(`sweepctl-${tag}@example.invalid`);
+
+  // Must-be-found arm: the same sweep sees the seeded rows, so an empty result
+  // below is a reading, not a query that never matched anything.
+  expect(Object.keys(await rowsPointingAt(target.userId)).length).toBeGreaterThanOrEqual(3);
+
+  await Container.get(DeleteAccountUseCase).execute(target.userId);
+
+  expect(await rowsPointingAt(target.userId)).toEqual({});
+  expect(Object.keys(await rowsPointingAt(control.userId)).length).toBeGreaterThanOrEqual(3);
 });

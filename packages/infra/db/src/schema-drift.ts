@@ -44,7 +44,7 @@ export interface SchemaDriftReport {
   latencyMs: number;
 }
 
-export class SchemaDriftTimeoutError extends Error {
+class SchemaDriftTimeoutError extends Error {
   constructor(readonly timeoutMs: number) {
     super(`schema drift check timed out after ${timeoutMs}ms`);
     this.name = 'SchemaDriftTimeoutError';
@@ -59,7 +59,7 @@ export class SchemaDriftTimeoutError extends Error {
  * scan is single-digit milliseconds against a warm Neon compute; two seconds
  * is the same allowance the Redis ping gets.
  */
-export const SCHEMA_DRIFT_TIMEOUT_MS = 2_000;
+const SCHEMA_DRIFT_TIMEOUT_MS = 2_000;
 
 /** Rows as `information_schema.columns` returns them. */
 export interface DatabaseColumnRow {

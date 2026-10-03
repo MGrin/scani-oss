@@ -44,21 +44,3 @@ export function emailErrorReason(value: string): EmailErrorReason | undefined {
   if (!EMAIL_PATTERN.test(trimmed)) return 'invalid';
   return undefined;
 }
-
-/**
- * The message to show for `value`, or `undefined` when it is acceptable.
- *
- * Returns the message rather than a boolean because both callers need the text
- * and the two messages are not interchangeable: "Email is required" belongs to
- * an untouched field, "Please enter a valid email address" to a typo.
- */
-export function emailError(value: string): string | undefined {
-  switch (emailErrorReason(value)) {
-    case 'required':
-      return 'Email is required';
-    case 'invalid':
-      return 'Please enter a valid email address';
-    default:
-      return undefined;
-  }
-}

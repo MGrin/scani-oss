@@ -1344,3 +1344,82 @@ describe('BaseEvmProvider — a zero-value token transfer is not a transfer (SC-
     expect(await provider.runFetchTransactions(ctx('ethereum'))).toEqual([]);
   });
 });
+
+describe('BaseEvmProvider — WETH9 wraps and unwraps carry their wrapped leg (SC-1468)', () => {
+  const WETH = '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2';
+  const WRAPPING: EvmChainConfig = {
+    ...ETHEREUM,
+    wrappedNative: { contractAddress: WETH, symbol: 'WETH', name: 'Wrapped Ether' },
+  };
+  // withdraw(0.5 ether)
+  const UNWRAP_INPUT = `0x2e1a7d4d${(5n * 10n ** 17n).toString(16).padStart(64, '0')}`;
+
+  function wethLegs(events: TransactionEvent[]) {
+    return events.filter((e) => e.primary.tokenIdentity.symbol === 'WETH');
+  }
+
+  test('an unwrap books the WETH it burned, beside the ETH paid back', async () => {
+    const provider = new TestEvmProvider([WRAPPING], {
+      native: [
+        {
+          rows: [
+            nativeRow({ hash: '0xu', from: WALLET, to: WETH, value: '0', input: UNWRAP_INPUT }),
+          ],
+          hitPageCap: false,
+        },
+      ],
+      token: [],
+      internal: [
+        {
+          rows: [internalRow({ hash: '0xu', from: WETH, value: '500000000000000000' })],
+          hitPageCap: false,
+        },
+      ],
+    });
+    const events = await provider.runFetchTransactions(ctx('ethereum'));
+    const [weth] = wethLegs(events);
+    expect(weth?.primary.quantity).toBe('-0.5');
+    expect(weth?.externalId).toBe('0xu:wrap');
+    expect(weth?.primary.tokenIdentity.providerMetadata).toEqual({
+      etherscan: { chainId: 1, contractAddress: WETH },
+    });
+  });
+
+  test('a wrap books the WETH it minted, beside the ETH sent', async () => {
+    const provider = new TestEvmProvider([WRAPPING], {
+      native: [
+        {
+          rows: [nativeRow({ hash: '0xw', from: WALLET, to: WETH, input: '0xd0e30db0' })],
+          hitPageCap: false,
+        },
+      ],
+      token: [],
+    });
+    const events = await provider.runFetchTransactions(ctx('ethereum'));
+    expect(wethLegs(events).map((e) => e.primary.quantity)).toEqual(['1']);
+  });
+
+  test('control: other calls to the wrapper and failed unwraps book no WETH leg', async () => {
+    const provider = new TestEvmProvider([WRAPPING], {
+      native: [
+        {
+          rows: [
+            nativeRow({ hash: '0xa', from: WALLET, to: WETH, value: '0', input: '0x095ea7b3' }),
+            nativeRow({
+              hash: '0xf',
+              from: WALLET,
+              to: WETH,
+              value: '0',
+              input: UNWRAP_INPUT,
+              isError: '1',
+            }),
+          ],
+          hitPageCap: false,
+        },
+      ],
+      token: [],
+    });
+    const events = await provider.runFetchTransactions(ctx('ethereum'));
+    expect(wethLegs(events)).toHaveLength(0);
+  });
+});

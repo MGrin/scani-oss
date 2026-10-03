@@ -2,12 +2,17 @@ import type { HoldingTransaction } from '@scani/db/schema';
 import { feeShareOf } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
-import { flowRoleOf } from '../../lib/returns/flow-classification';
-import { type ValuationBasis, valueTransactionInBase } from '../../lib/tx-valuation';
+import {
+  commissionCrossesInto,
+  flowRoleOfRow,
+  rowIdsByHolding,
+} from '../../lib/returns/flow-classification';
+import { type ValuationBasis, valueRowInBase, valueTradeFeeInBase } from '../../lib/tx-valuation';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
 import { PriceGraphService } from '../pricing/PriceGraphService';
 import type { PriceLookup } from '../pricing/PriceLookup';
+import { DriftLedgerService } from './DriftLedgerService';
 import type { WeightedHolding } from './ReturnsScopeResolver';
 
 /**
@@ -93,6 +98,7 @@ export class ExternalFlowService {
   private readonly txRepository = Container.get(HoldingTransactionRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly priceGraphService = Container.get(PriceGraphService);
+  private readonly driftLedgerService = Container.get(DriftLedgerService);
 
   async forHoldings(
     holdings: readonly WeightedHolding[],
@@ -109,12 +115,41 @@ export class ExternalFlowService {
         problemsByHolding: new Map(),
       };
 
-    const weights = new Map(holdings.map((h) => [h.holdingId, h.weight]));
+    // A holding's flows count exactly when its value and PnL do: the value
+    // series reads only holdings the inclusion rule admits, and a flow on one it
+    // leaves out stood beside no value at all (SC-1486).
+    const included = await this.holdingRepository.findIdsIncludedInTotal(
+      holdings.map((h) => h.holdingId)
+    );
+    const weights = new Map(
+      holdings.filter((h) => included.has(h.holdingId)).map((h) => [h.holdingId, h.weight])
+    );
     const holdingIds = [...weights.keys()];
-    const [transactions, holdingRows] = await Promise.all([
+    if (holdingIds.length === 0)
+      return {
+        flows: [],
+        unvaluedCount: 0,
+        staleValuedCount: 0,
+        unresolvedCount: 0,
+        problemsByHolding: new Map(),
+      };
+    const [ledger, holdingRows] = await Promise.all([
       this.txRepository.findForHoldingsInRange(holdingIds, from, to),
       this.holdingRepository.findByIds(holdingIds),
     ]);
+    // An unexplained balance change is money in or out, never return (SC-1470,
+    // mgrin 2026-10-01): its rows join the ledger's here, inside `(from, to]`.
+    // Only for a holding the value series counts: an inactive one is never
+    // valued (SC-1328), so its opening would be money in with no value beside it.
+    const drift = await this.driftLedgerService.forHoldings(
+      holdingRows[0]?.userId ?? '',
+      new Map(holdingRows.filter((row) => row.isActive).map((row) => [row.id, row.tokenId])),
+      { tx: undefined }
+    );
+    const transactions = [
+      ...ledger,
+      ...[...drift.values()].flat().filter((row) => row.occurredAt > from && row.occurredAt <= to),
+    ];
     // Nothing crossed the boundary, so there is nothing to value and no
     // reason to pay for a prefetch. Most accounts in the product are here.
     if (transactions.length === 0)
@@ -169,13 +204,14 @@ export class ExternalFlowService {
     for (const tx of unresolved) flag(tx.holdingId, 'unresolved');
     const unresolvedCount = unresolved.length;
 
+    const idsByHolding = rowIdsByHolding(transactions);
     for (const tx of transactions) {
       // `return` rows are the portfolio earning or spending its own value and
       // never crossed a boundary. `restatement` rows did not cross one either,
       // but they DID move the reconstructed value series — see the note on
       // `ExternalFlow` — so they stay in and are dropped later, by role, only
       // where they would become a cashflow.
-      if (flowRoleOf(tx.kind) === 'return') continue;
+      if (flowRoleOfRow(tx, idsByHolding.get(tx.holdingId) ?? NO_IDS) === 'return') continue;
       const weight = weights.get(tx.holdingId);
       if (!weight) continue;
 
@@ -212,7 +248,25 @@ export class ExternalFlowService {
       // The ledger's own sign is the direction: negative quantity is value
       // leaving the holding. `valueTransactionInBase` works on magnitudes, so
       // the sign is re-applied here and nowhere else.
-      const magnitude = valuation ? valuation.amount : new Decimal(0);
+      //
+      // A trade's commission is part of what crossed (SC-1470): a purchase put
+      // the price AND the commission into the position, which is what the cost
+      // walk books as its cost, and a sale took out the proceeds less it. The
+      // cash that paid it leaves through its own settling `fee` row.
+      const commission =
+        valuation &&
+        TRADE_KINDS.has(tx.kind) &&
+        commissionCrossesInto(tx, heldTokenByHolding.get(tx.holdingId) ?? tx.tokenId ?? null)
+          ? await this.commissionOf(tx, baseCurrencyId, heldTokenByHolding, priceLookup)
+          : new Decimal(0);
+      const magnitude = valuation
+        ? Decimal.max(
+            0,
+            quantity.isNegative()
+              ? valuation.amount.minus(commission)
+              : valuation.amount.add(commission)
+          )
+        : new Decimal(0);
       const signed = quantity.isNegative() ? magnitude.negated() : magnitude;
 
       flows.push({
@@ -244,24 +298,10 @@ export class ExternalFlowService {
     // ingester lets the two drift. Fall back to the row's own token rather
     // than refusing to value it.
     const heldTokenId = heldTokenByHolding.get(tx.holdingId) ?? tx.tokenId ?? null;
-    const at = flowValuationInstant(tx.occurredAt);
-    const arrival = this.arrivalOf(tx, qtyAbs, heldTokenId);
-    if (arrival) {
-      const valued = await valueTransactionInBase(
-        this.priceGraphService,
-        undefined,
-        { priceNative: null, priceNativeTokenId: null, occurredAt: at },
-        arrival.quantity,
-        baseCurrencyId,
-        arrival.tokenId,
-        priceLookup
-      );
-      if (valued) return valued;
-    }
-    return valueTransactionInBase(
+    return valueRowInBase(
       this.priceGraphService,
       undefined,
-      { ...tx, occurredAt: at },
+      tx,
       qtyAbs,
       baseCurrencyId,
       heldTokenId,
@@ -269,53 +309,27 @@ export class ExternalFlowService {
     );
   }
 
-  /**
-   * What ARRIVED in a swap, which both legs are valued at (SC-1438).
-   *
-   * Each leg's execution rate is quoted in the other token, so valued that way
-   * the swap-in reads what was given up and the swap-out what arrived: the two
-   * legs of one swap disagree by the slippage, and a swap-in beside a same-day
-   * transfer of the same token books the slippage as money moving. Valued at
-   * the arrival, both legs take one number, a swap inside the scope cancels,
-   * and the slippage stays in the value series of the side that paid it.
-   * Cost basis keeps the execution rate: what was paid IS the cost.
-   */
-  private arrivalOf(
+  private async commissionOf(
     tx: HoldingTransaction,
-    qtyAbs: Decimal,
-    heldTokenId: string | null
-  ): { tokenId: string; quantity: Decimal } | null {
-    if (tx.kind === 'swap_in' && heldTokenId) return { tokenId: heldTokenId, quantity: qtyAbs };
-    if (tx.kind !== 'swap_out' || !tx.counterTokenId || !tx.counterQuantity) return null;
-    const own = new Decimal(tx.quantity).abs();
-    if (own.isZero()) return null;
-    // A fee share taken off this leg takes the same share of what it bought.
-    return {
-      tokenId: tx.counterTokenId,
-      quantity: new Decimal(tx.counterQuantity).abs().mul(qtyAbs).div(own),
-    };
+    baseCurrencyId: string,
+    heldTokenByHolding: ReadonlyMap<string, string>,
+    priceLookup: PriceLookup
+  ): Promise<Decimal> {
+    const heldTokenId = heldTokenByHolding.get(tx.holdingId) ?? tx.tokenId ?? null;
+    const fee = await valueTradeFeeInBase(
+      this.priceGraphService,
+      undefined,
+      tx,
+      baseCurrencyId,
+      heldTokenId,
+      priceLookup
+    );
+    return fee?.amount ?? new Decimal(0);
   }
 }
 
-/**
- * The instant a flow is valued at: the one the daily rollup values that day's
- * balance at (SC-1254).
- *
- * A flow and the balance change it causes must be read at the same prices, or
- * the difference lands in the return. Valued at its own timestamp, a deposit
- * at 10:28 read the latest price at or before it, while the rollup valued the
- * same money at 23:59:59.999Z. Where a pair has more than one price per day —
- * a seeded series and a backfilled one, 5.7% apart — that turned flat cash
- * into a −7.8% return.
- *
- * `RollupPortfolioValueDailyUseCase` values a past day at 23:59:59.999Z and
- * today at the moment it runs, so today's flows are valued now.
- */
-export function flowValuationInstant(occurredAt: Date, now: Date = new Date()): Date {
-  const endOfDay = new Date(occurredAt);
-  endOfDay.setUTCHours(23, 59, 59, 999);
-  return endOfDay.getTime() > now.getTime() ? now : endOfDay;
-}
+const TRADE_KINDS: ReadonlySet<string> = new Set(['buy', 'sell']);
+const NO_IDS: ReadonlySet<string> = new Set();
 
 /**
  * Fold flows onto the measured days that can carry them.

@@ -79,7 +79,7 @@ export interface ProcedureCallRecorder {
 // machine goes away is lost. The question is presence and recency, not an
 // exact total, so a lost partial minute changes no answer. Revisit only if
 // someone needs these numbers to reconcile against billing.
-export const DEFAULT_FLUSH_INTERVAL_MS = 60_000;
+const DEFAULT_FLUSH_INTERVAL_MS = 60_000;
 
 export function createProcedureCallRecorder(
   write: ProcedureCallWriter,
@@ -173,7 +173,7 @@ export function buildProcedureCallUpsert(tallies: ProcedureCallTally[]) {
     });
 }
 
-export const writeProcedureCallsToDb: ProcedureCallWriter = async (tallies) => {
+const writeProcedureCallsToDb: ProcedureCallWriter = async (tallies) => {
   await buildProcedureCallUpsert(tallies);
 };
 

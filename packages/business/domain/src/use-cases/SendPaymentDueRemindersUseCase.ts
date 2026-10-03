@@ -37,7 +37,7 @@ export const REMINDER_TARGET_PATH = '/payments';
  * Twelve hours: comfortably longer than any retry chain, comfortably shorter
  * than the 24 between two legitimate reminders.
  */
-export const REMINDER_COOLDOWN_MS = 12 * 60 * 60 * 1000;
+const REMINDER_COOLDOWN_MS = 12 * 60 * 60 * 1000;
 
 /** Users are processed in batches; each is independent. */
 const USER_CONCURRENCY = 20;

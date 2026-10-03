@@ -13,7 +13,7 @@ export {
   userIdFromChannel,
 } from './base';
 export { RedisRealtimeUpdatesService } from './redis';
-export { type ClientConnection, WebSocketRealtimeUpdatesService } from './websocket';
+export { WebSocketRealtimeUpdatesService } from './websocket';
 
 // Convenience helpers for code that doesn't want to grab the service
 // directly. Both go through the Redis transport so emissions reach every

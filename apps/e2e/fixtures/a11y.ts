@@ -25,7 +25,7 @@ import type { Page } from '@playwright/test';
  * failures (region, page-has-heading-one), and a gate that fails on an
  * opinion gets disabled within a month.
  */
-export const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
+const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'];
 
 /**
  * Impacts that fail the build. `critical` is the ticket's floor; `serious`
@@ -33,7 +33,7 @@ export const WCAG_TAGS = ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'
  * non-text contrast — both report as `serious`, and a contrast gate that
  * ignores them would gate nothing.
  */
-export const BLOCKING_IMPACTS: ReadonlySet<string> = new Set(['critical', 'serious']);
+const BLOCKING_IMPACTS: ReadonlySet<string> = new Set(['critical', 'serious']);
 
 export interface A11yFinding {
   surface: string;
@@ -256,7 +256,7 @@ export const EXEMPT_TARGETS = [
  * animations (spinners) never finish and are skipped; the wait is bounded so
  * a paused one cannot hang it.
  */
-export async function settleAnimations(page: Page, timeoutMs = 3000): Promise<void> {
+async function settleAnimations(page: Page, timeoutMs = 3000): Promise<void> {
   await page.evaluate(async (limit) => {
     const finite = document
       .getAnimations()

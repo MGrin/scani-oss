@@ -7,7 +7,7 @@
 // WHY THE SIGNATURE IS THE DISCRIMINATOR AND THE BALANCE IS NOT (SC-398). The
 // wallet review pre-creates holdings only for tokens with a CURRENT balance, so
 // a token bought and fully exited before the first import never gets one — and
-// `TransactionRouter` resolves wallet-derived sources FIND-ONLY, so the buy leg
+// the transaction import resolves wallet-derived sources FIND-ONLY, so the buy leg
 // AND the sell leg are both dropped. The whole life of the position is
 // invisible, with no row anywhere to notice.
 //

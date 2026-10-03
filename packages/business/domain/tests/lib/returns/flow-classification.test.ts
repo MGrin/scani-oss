@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { flowRoleOf } from '../../../src/lib/returns/flow-classification';
+import { flowRoleOf, flowRoleOfRow } from '../../../src/lib/returns/flow-classification';
 
 describe('flowRoleOf', () => {
   test('money the owner put in or took out is external', () => {
@@ -16,6 +16,19 @@ describe('flowRoleOf', () => {
     ]) {
       expect(flowRoleOf(kind)).toBe('external');
     }
+  });
+
+  test("a trade's settlement takes the trade's role, so the two cancel (SC-1453)", () => {
+    expect(flowRoleOf('settle_in')).toBe(flowRoleOf('sell'));
+    expect(flowRoleOf('settle_out')).toBe(flowRoleOf('buy'));
+    expect(flowRoleOf('settle_in')).toBe('external');
+    expect(flowRoleOf('settle_out')).toBe('external');
+  });
+
+  test('a derivatives profit or loss is a return, never money paid in or out (SC-1461)', () => {
+    expect(flowRoleOf('realized_pnl')).toBe('return');
+    expect(flowRoleOf('realized_pnl')).not.toBe(flowRoleOf('withdraw'));
+    expect(flowRoleOf('realized_pnl')).not.toBe(flowRoleOf('deposit'));
   });
 
   test('value the portfolio produced or consumed is return', () => {
@@ -62,6 +75,8 @@ describe('flowRoleOf', () => {
       'transfer_out',
       'swap_in',
       'swap_out',
+      'settle_in',
+      'settle_out',
       'opening_balance',
       'reward',
       'interest',
@@ -73,5 +88,27 @@ describe('flowRoleOf', () => {
     ]) {
       expect(flowRoleOf(kind)).not.toBe('restatement');
     }
+  });
+});
+
+describe('flowRoleOfRow (SC-1470)', () => {
+  const none = new Set<string>();
+  test("a fee settling a trade on another holding is that trade's cash leg, so money out", () => {
+    expect(flowRoleOfRow({ kind: 'fee', settlesTransactionId: 'voo-buy' }, none)).toBe('external');
+  });
+
+  test("an FX conversion's commission, settling a leg on its own holding, stays a cost (SC-1464)", () => {
+    expect(
+      flowRoleOfRow({ kind: 'fee', settlesTransactionId: 'usd-leg' }, new Set(['usd-leg']))
+    ).toBe('return');
+  });
+
+  test('control: a fee nothing settles is still a cost the portfolio paid', () => {
+    expect(flowRoleOfRow({ kind: 'fee', settlesTransactionId: null }, none)).toBe('return');
+  });
+
+  test("every other row keeps its kind's role", () => {
+    expect(flowRoleOfRow({ kind: 'interest', settlesTransactionId: 'x' }, none)).toBe('return');
+    expect(flowRoleOfRow({ kind: 'settle_out', settlesTransactionId: 'x' }, none)).toBe('external');
   });
 });

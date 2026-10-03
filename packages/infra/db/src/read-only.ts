@@ -67,7 +67,7 @@ export interface ReadOnlyIntentInput {
  * failure `REPAIR_WRITE_FLAG`'s own comment above warns about, and was the
  * live state of this repo until SC-646.
  */
-export const WRITE_FLAGS: readonly string[] = [REPAIR_WRITE_FLAG, '--apply'];
+const WRITE_FLAGS: readonly string[] = [REPAIR_WRITE_FLAG, '--apply'];
 
 /**
  * Whether the entry point is an operator script — a one-off tool a human runs

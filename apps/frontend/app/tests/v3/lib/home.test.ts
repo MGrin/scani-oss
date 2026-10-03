@@ -15,6 +15,8 @@ import {
   foldedAllocationItems,
   formatDueIn,
   groupRows,
+  groupShareRows,
+  groupsOverlap,
   HOME_METRIC_KEYS,
   HOME_METRICS,
   HOME_PERIOD_KEYS,
@@ -192,6 +194,27 @@ describe('allocationItems', () => {
       { key: 'crypto', label: 'Cryptocurrency', value: 52000 },
       { key: 'stock', label: 'Stock / ETF / Equity / Commodity', value: 31000 },
     ]);
+  });
+
+  /**
+   * Invariant, Home (SC-1463): the account cut of one account in debt (10 000
+   * of stock, −2 500 of cash) beside one without (5 000). The server keeps the
+   * cash out of the slices and reports it as `marginDebt`, so the bar plus the
+   * debt line is the net total the hero shows.
+   */
+  test('invariant, Home: slices plus margin debt is the net total, to the cent', () => {
+    const wire = {
+      items: [
+        { id: 'margin', code: 'Margin', name: 'Margin', value: '10000.10' },
+        { id: 'wallet', code: 'Wallet', name: 'Wallet', value: '5000' },
+      ],
+      marginDebt: '-2500.25',
+      totalValue: '12499.85',
+    };
+    const slices = allocationItems(t, wire.items, 'account');
+    expect(slices.map((slice) => slice.key)).toEqual(['margin', 'wallet']);
+    const sum = slices.reduce((total, slice) => total + slice.value, 0);
+    expect((sum + Number(wire.marginDebt)).toFixed(2)).toBe(Number(wire.totalValue).toFixed(2));
   });
 
   /**
@@ -1422,5 +1445,67 @@ describe('the chosen tab survives a reload', () => {
         storageHolding(null)
       )
     ).toBe('net-worth');
+  });
+});
+
+/**
+ * The group cut is the one whose parts overlap: a holding in three groups
+ * counts in full in each (SC-1469). So each row is its own share of the whole,
+ * the shares may sum past 100%, and nothing may present them as a split.
+ */
+describe('groupShareRows', () => {
+  const parts = [
+    { key: 'a', label: 'Long term', value: 600 },
+    { key: 'b', label: 'Crypto', value: 600 },
+  ];
+
+  test('each share is its value over the whole, unclamped and not renormalised', () => {
+    expect(groupShareRows(parts, 1000).map((row) => row.share)).toEqual([0.6, 0.6]);
+  });
+
+  test('a part larger than the whole keeps its real share', () => {
+    expect(groupShareRows([{ key: 'a', label: 'A', value: 1500 }], 1000)[0]?.share).toBe(1.5);
+  });
+
+  test('with nothing to be a share of, no share is invented', () => {
+    expect(groupShareRows(parts, 0).map((row) => row.share)).toEqual([null, null]);
+    expect(groupShareRows(parts, -50).map((row) => row.share)).toEqual([null, null]);
+  });
+});
+
+describe('groupsOverlap', () => {
+  test('parts summing past the whole overlap', () => {
+    const parts = [
+      { key: 'a', label: 'A', value: 600 },
+      { key: 'b', label: 'B', value: 600 },
+    ];
+    expect(groupsOverlap(parts, 1000)).toBe(true);
+  });
+
+  test('parts that add up to the whole do not', () => {
+    const parts = [
+      { key: 'a', label: 'A', value: 400 },
+      { key: 'b', label: 'B', value: 600 },
+    ];
+    expect(groupsOverlap(parts, 1000)).toBe(false);
+  });
+
+  // Decimal strings parsed to floats drift by fractions of a cent; that is
+  // rounding, not a holding counted twice.
+  test('sub-cent drift is not overlap', () => {
+    const parts = [
+      { key: 'a', label: 'A', value: 0.1 + 0.2 },
+      { key: 'b', label: 'B', value: 999.7 },
+    ];
+    expect(groupsOverlap(parts, 1000)).toBe(false);
+  });
+
+  test('one group and the ungrouped rest cannot overlap', () => {
+    const parts = [
+      { key: 'g', label: 'G', value: 700 },
+      { key: 'ungrouped', label: 'Ungrouped', value: 300 },
+    ];
+    expect(groupsOverlap(parts, 1000)).toBe(false);
+    expect(groupsOverlap([], 0)).toBe(false);
   });
 });

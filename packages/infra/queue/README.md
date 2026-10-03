@@ -124,9 +124,8 @@ The framework doesn't change. Drop a new descriptor + processor:
 1. **Define the descriptor** in `packages/business/jobs/src/user-jobs/<name>.ts`
    (or `scheduled-jobs/<name>.ts`) — payload type + zod schema + retry
    policy + jobId + summarizer.
-2. **Add it to** `USER_JOB_DESCRIPTORS` (or
-   `SCHEDULED_JOB_DESCRIPTORS`) in the corresponding
-   `index.ts` registry.
+2. **Export it** from the corresponding `index.ts`, and for a scheduled
+   job add it to `SCHEDULED_JOB_DESCRIPTORS` there.
 3. **Write a processor class** in
    `apps/backend/worker/src/processors/<name>.ts`:
    ```ts

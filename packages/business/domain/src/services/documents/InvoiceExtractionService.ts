@@ -40,9 +40,9 @@ import { AiSpendBudget } from '../ai/AiSpendBudget';
 import { INVOICE_EXTRACTION_PROMPT, PROMPT_VERSION } from './invoicePrompt';
 import { extractText } from './pdfExtraction';
 
-export type ExtractorKind = 'text-llm' | 'vision-llm';
+type ExtractorKind = 'text-llm' | 'vision-llm';
 
-export interface ExtractedLineItem {
+interface ExtractedLineItem {
   description: string;
   /** Decimal string, or null when the model didn't report it. Never a JS float. */
   quantity: string | null;
@@ -50,7 +50,7 @@ export interface ExtractedLineItem {
   amount: string | null;
 }
 
-export interface ExtractedInvoice {
+interface ExtractedInvoice {
   ordinal: number;
   vendorNameRaw: string;
   invoiceNumber: string | null;
@@ -70,7 +70,7 @@ export interface ExtractedInvoice {
   extractorKind: ExtractorKind;
 }
 
-export interface InvoiceExtractionUsage {
+interface InvoiceExtractionUsage {
   upstreamCostUsd: number;
 }
 

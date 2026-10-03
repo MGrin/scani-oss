@@ -18,6 +18,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { loadersByCode } from '../../src/i18n/locale-loader';
 import { HELD_LANGUAGES, isOfferedLanguage } from '../../src/i18n/offered-languages';
 
 const SRC = join(import.meta.dir, '../../src');
@@ -49,20 +50,25 @@ describe('offered languages', () => {
     expect(shipped.filter((code) => !isOfferedLanguage(code))).toEqual([]);
   });
 
+  // The hold used to be a `continue` in each file's own loop. Locales load on
+  // demand now (SC-1498) and both files hand their glob to `loadersByCode`,
+  // which is where a held language is dropped — before it is registered,
+  // offered or fetched.
+  test('loadersByCode drops a held language', () => {
+    const load = async () => ({ default: {} });
+    const keyed = loadersByCode(
+      { './locales/he.json': load, './locales/ar.json': load },
+      new Set(['he'])
+    );
+    expect(Object.keys(keyed)).toEqual(['ar']);
+  });
+
   for (const loader of ['i18n/index.ts', 'v3/i18n/index.ts']) {
-    test(`${loader} skips a held language before it registers anything`, () => {
+    test(`${loader} reaches its lazy locales only through loadersByCode`, () => {
       const source = readFileSync(join(SRC, loader), 'utf8');
-      const loop = source.indexOf('for (const [path, mod] of Object.entries(localeModules))');
-      const skip = source.indexOf('if (!isOfferedLanguage(code)) continue;', loop);
-      const register = Math.min(
-        ...['resources[code]', 'addResourceBundle(code']
-          .map((call) => source.indexOf(call, loop))
-          .filter((at) => at !== -1)
-      );
-      expect(loop).toBeGreaterThan(-1);
-      expect(Number.isFinite(register)).toBe(true);
-      expect(skip).toBeGreaterThan(loop);
-      expect(skip).toBeLessThan(register);
+      // One call. A second glob would be a second door past the hold.
+      expect(source.match(/import\.meta\.glob</g)?.length).toBe(1);
+      expect(source).toMatch(/loadersByCode\(\s*import\.meta\.glob/);
     });
   }
 });

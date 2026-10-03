@@ -9,17 +9,11 @@ import { LANGUAGE_HEADER } from '@scani/shared';
  * stored to read — the language has to arrive with the request, and it does,
  * on a header the app sets from its own `i18n.language`.
  *
- * There is deliberately no `users.language` column behind this. Every email
- * the product sends is sent inside an HTTP request from a browser: the api's
- * magic-link and OTP mails, and every message the data-provider sends on
- * behalf of a visitor in front of a page. Nothing in `apps/backend/worker`
- * sends mail at all. A column would therefore be written by one caller and read by
- * none — which is the "no dead code" rule, and also a worse answer than the
- * header for the case that matters, since the first letter an account ever
- * receives is the one sent before any preference could have been stored.
- *
- * The day a job emails somebody — a payment reminder, a report — that changes,
- * and the language becomes a property of the user rather than of a request.
+ * On a sign-in it is also written to `users.language` (SC-1503): the
+ * activation nudge is mailed by a job, outside any request, so for that one
+ * letter the language is a property of the account. Every other mail still
+ * reads the header, because the first letter an account receives is sent
+ * before any preference could have been stored.
  *
  * Better-Auth hands its callbacks a `GenericEndpointContext` whose shape is
  * partial by type, so both spellings are read: `headers` is what better-call

@@ -202,7 +202,7 @@ export function releasableSibling(siblingSubjects: readonly string[]): string | 
  * `say "&lt; 0.00000001" not "0"`. Comparing the two without decoding reports
  * a shortfall for an entry that is present.
  */
-export function decodeEntities(text: string): string {
+function decodeEntities(text: string): string {
   return text
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')

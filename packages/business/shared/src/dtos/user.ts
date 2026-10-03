@@ -34,7 +34,7 @@ export type UpdateUserInput = z.infer<typeof UpdateUserDto>;
  */
 const ZONE_NAME = /^[A-Za-z][A-Za-z0-9_-]*(?:\/[A-Za-z0-9+_-]+)*$/;
 
-export function isIanaTimezone(value: string): boolean {
+function isIanaTimezone(value: string): boolean {
   if (!ZONE_NAME.test(value)) return false;
   try {
     new Intl.DateTimeFormat('en-US', { timeZone: value });
@@ -44,7 +44,7 @@ export function isIanaTimezone(value: string): boolean {
   }
 }
 
-export const timezoneSchema = z
+const timezoneSchema = z
   .string()
   .min(1)
   // Longest real zone name is `America/Argentina/ComodRivadavia` at 32; 64
@@ -53,8 +53,6 @@ export const timezoneSchema = z
   .refine(isIanaTimezone, { message: 'must be an IANA timezone name, e.g. Asia/Makassar' });
 
 export const ReportTimezoneDto = z.object({ timezone: timezoneSchema });
-
-export type ReportTimezoneInput = z.infer<typeof ReportTimezoneDto>;
 
 /**
  * What the `users` handlers that answer with a user — `getCurrent` and
@@ -93,5 +91,3 @@ export const CurrentUserDto = z.object({
   timezone: z.string().nullable(),
   baseCurrencyId: z.string().uuid().nullable(),
 });
-
-export type CurrentUserOutput = z.infer<typeof CurrentUserDto>;

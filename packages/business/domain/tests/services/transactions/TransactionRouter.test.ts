@@ -6,9 +6,6 @@ import type { TransactionsProvider } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { ProviderContext, TransactionEvent } from '@scani/providers/core/types';
 import { Container } from 'typedi';
-import { TokenTypeRepository } from '../../../src/repositories/EnumRepositories';
-import { HoldingService } from '../../../src/services/holdings/HoldingService';
-import { TokenIdentityService } from '../../../src/services/tokens/TokenIdentityService';
 import {
   TransactionRouter,
   type TransactionRouterRequest,
@@ -48,14 +45,6 @@ interface SetupOpts {
   /** When provided, the registry is seeded with a stub
       `TransactionsProvider` for this institutionCode. */
   withProviderForInstitution?: string;
-  /** Token ids the stubbed `HoldingService.findExistingForIngest`
-      reports as already having a holding. Used to exercise the
-      wallet-source FIND-ONLY path. */
-  existingHoldingTokenIds?: Set<string>;
-  /** Symbols the stubbed `TokenIdentityService.findByIdentity` already has
-      a `tokens` row for. Anything else is unknown to the database, so a
-      find-only lookup misses and only a create would materialize it. */
-  existingTokenSymbols?: Set<string>;
   /** Mirrors a provider that substitutes its own look-back when handed no
       `since` (Bybit, Bitget, OKX). */
   transactionHistoryHorizonMs?: number;
@@ -74,22 +63,14 @@ interface SetupOpts {
 
 function setup(opts: SetupOpts): {
   router: TransactionRouter;
-  fetchCalls: number;
   request: TransactionRouterRequest;
-  createdTokenSymbols: string[];
-  identityLookups: () => number;
 } {
-  let fetchCalls = 0;
-  let identityLookups = 0;
-  const createdTokenSymbols: string[] = [];
-
   const provider: TransactionsProvider = {
     providerKey: 'stub',
     capabilities: ['transactions'],
     canFetchTransactions: (institutionCode: string) =>
       institutionCode === opts.withProviderForInstitution,
     fetchTransactions: async (ctx) => {
-      fetchCalls++;
       (opts.retractWith ?? []).forEach((reason, i) => {
         const at = opts.retractBounds?.[i];
         ctx.retractHistoryClaim?.(reason, at ? { historyStartsAt: at } : undefined);
@@ -103,48 +84,6 @@ function setup(opts: SetupOpts): {
   const registry = new ProviderRegistry();
   if (opts.withProviderForInstitution) registry.register(provider);
   Container.set(ProviderRegistry, registry);
-
-  // Stubs for TokenIdentityService, HoldingService, TokenTypeRepository.
-  // They simulate "always finds/creates" with deterministic ids.
-  Container.set(TokenIdentityService, {
-    findOrCreateByIdentity: async (partial: { symbol?: string }) => {
-      const symbol = partial.symbol ?? 'unknown';
-      if (!opts.existingTokenSymbols?.has(symbol)) createdTokenSymbols.push(symbol);
-      return { id: `token-${symbol}` } as never;
-    },
-    findByIdentity: async (partial: { symbol?: string }) => {
-      const symbol = partial.symbol ?? 'unknown';
-      identityLookups++;
-      // No `existingTokenSymbols` supplied → every token is already known,
-      // which is what the pre-SC-343 tests assume.
-      const known = opts.existingTokenSymbols?.has(symbol) ?? true;
-      return known ? ({ id: `token-${symbol}` } as never) : null;
-    },
-  } as unknown as TokenIdentityService);
-
-  Container.set(HoldingService, {
-    findOrCreateForIngest: async (input: {
-      userId: string;
-      accountId: string;
-      tokenId: string;
-    }): Promise<{ id: string }> => ({ id: `holding-${input.tokenId}` }),
-    findExistingForIngest: async (input: {
-      userId: string;
-      accountId: string;
-      tokenId: string;
-    }): Promise<{ id: string } | null> =>
-      opts.existingHoldingTokenIds?.has(input.tokenId) ? { id: `holding-${input.tokenId}` } : null,
-  } as unknown as HoldingService);
-
-  Container.set(TokenTypeRepository, {
-    findByCode: async (code: string) =>
-      code === 'crypto' ? ({ id: 'crypto-type-id' } as never) : ({ id: 'fiat-type-id' } as never),
-    findByCodes: async (codes: string[]) =>
-      codes.map((code) => ({
-        id: code === 'crypto' ? 'crypto-type-id' : `${code}-type-id`,
-        code,
-      })) as never,
-  } as unknown as TokenTypeRepository);
 
   const router = new TransactionRouter();
   Container.set(TransactionRouter, router);
@@ -162,16 +101,7 @@ function setup(opts: SetupOpts): {
     })) as ProviderContext['resolveCredentials'],
   };
 
-  return {
-    router,
-    fetchCalls: 0,
-    request,
-    createdTokenSymbols,
-    identityLookups: () => identityLookups,
-    get fetchCallsCount() {
-      return fetchCalls;
-    },
-  } as never;
+  return { router, request };
 }
 
 describe('TransactionRouter.hasProviderFor', () => {
@@ -195,10 +125,7 @@ describe('TransactionRouter.run', () => {
   test('returns an empty result when the provider returns no events', async () => {
     const { router, request } = setup({ events: [], withProviderForInstitution: 'kraken' });
     const result = await router.run(request);
-    expect(result.transactions).toHaveLength(0);
-    expect(result.observations).toHaveLength(0);
-    expect(result.firstEventAt).toBeNull();
-    expect(result.lastEventAt).toBeNull();
+    expect(result.events).toHaveLength(0);
     // No `since` provided in request → claims complete history.
     expect(result.hasCompleteTxHistory).toBe(true);
   });
@@ -226,9 +153,8 @@ describe('TransactionRouter.run', () => {
   });
 
   test('the horizon suppresses the claim on a run that returned events too', async () => {
-    // The empty-result and materialized paths build the flag separately, and
-    // only the empty one was exercised — a bounded provider that actually
-    // returns transactions is the case that reaches the ledger.
+    // A bounded provider that actually returns transactions is the case that
+    // reaches the ledger, so the claim is checked on one, not only on an empty run.
     const { router, request } = setup({
       withProviderForInstitution: 'kraken',
       transactionHistoryHorizonMs: 7 * 24 * 60 * 60 * 1000,
@@ -242,7 +168,8 @@ describe('TransactionRouter.run', () => {
       ],
     });
     const result = await router.run(request);
-    expect(result.transactions).toHaveLength(1);
+    expect(result.events).toHaveLength(1);
+    expect(result.horizonMs).toBe(7 * 24 * 60 * 60 * 1000);
     expect(result.hasCompleteTxHistory).toBe(false);
   });
 
@@ -344,438 +271,27 @@ describe('TransactionRouter.run', () => {
     expect(result.hasCompleteTxHistory).toBe(true);
   });
 
-  test('materializes a single deposit event into a NewHoldingTransaction', async () => {
-    const occurred = new Date('2024-06-01T10:00:00Z');
-    const { router, request } = setup({
-      withProviderForInstitution: 'kraken',
-      events: [
-        {
-          externalId: 'deposit-1',
-          occurredAt: occurred,
-          kind: 'deposit',
-          primary: { tokenIdentity: { symbol: 'BTC', name: 'Bitcoin' }, quantity: '0.5' },
-        },
-      ],
-    });
+  test("returns the provider's events as they came, and the instant it asked", async () => {
+    const events = [
+      {
+        externalId: 'b',
+        occurredAt: new Date('2024-06-01T00:00:00Z'),
+        kind: 'deposit',
+        primary: { tokenIdentity: { symbol: 'ETH' }, quantity: '2' },
+      },
+      {
+        externalId: 'a',
+        occurredAt: new Date('2024-05-01T00:00:00Z'),
+        kind: 'deposit',
+        primary: { tokenIdentity: { symbol: 'ETH' }, quantity: '1' },
+      },
+    ] as TransactionEvent[];
+    const { router, request } = setup({ withProviderForInstitution: 'kraken', events });
+    const before = new Date();
     const result = await router.run(request);
-    expect(result.transactions).toHaveLength(1);
-    const tx = result.transactions[0];
-    expect(tx?.kind).toBe('deposit');
-    expect(tx?.quantity).toBe('0.5');
-    expect(tx?.tokenId).toBe('token-BTC');
-    expect(tx?.holdingId).toBe('holding-token-BTC');
-    expect(tx?.source).toBe('kraken-api');
-    expect(tx?.externalId).toBe('deposit-1');
-    expect(tx?.occurredAt.getTime()).toBe(occurred.getTime());
-    expect(result.firstEventAt?.getTime()).toBe(occurred.getTime());
-    expect(result.lastEventAt?.getTime()).toBe(occurred.getTime());
-  });
-
-  // Wallet-derived imports (etherscan, solana, …) are review-gated:
-  // the router must FIND-ONLY so a tx referencing a token the user
-  // dropped at the wallet-import review can't silently re-create that
-  // holding. Exchange sources keep create-on-miss.
-  test('wallet source (solana) skips a tx for a token with no pre-existing holding', async () => {
-    const { router, request } = setup({
-      withProviderForInstitution: 'solana',
-      existingHoldingTokenIds: new Set(), // nothing pre-created
-      events: [
-        {
-          externalId: 'spl-1',
-          occurredAt: new Date('2024-06-01T10:00:00Z'),
-          kind: 'deposit',
-          primary: { tokenIdentity: { symbol: 'BONK', name: 'Bonk' }, quantity: '100' },
-        },
-      ],
-    });
-    const result = await router.run({
-      ...request,
-      source: 'solana',
-      institutionCode: 'solana',
-    });
-    // FIND-ONLY: no holding exists → the event is dropped, not created.
-    expect(result.transactions).toHaveLength(0);
-  });
-
-  test('wallet source (solana) keeps a tx for a token the user kept at review', async () => {
-    const { router, request } = setup({
-      withProviderForInstitution: 'solana',
-      existingHoldingTokenIds: new Set(['token-SOL']),
-      events: [
-        {
-          externalId: 'sol-1',
-          occurredAt: new Date('2024-06-01T10:00:00Z'),
-          kind: 'deposit',
-          primary: { tokenIdentity: { symbol: 'SOL', name: 'Solana' }, quantity: '2' },
-        },
-      ],
-    });
-    const result = await router.run({
-      ...request,
-      source: 'solana',
-      institutionCode: 'solana',
-    });
-    expect(result.transactions).toHaveLength(1);
-    expect(result.transactions[0]?.tokenId).toBe('token-SOL');
-  });
-
-  test('exchange source (kraken-api) still creates a holding on miss', async () => {
-    const { router, request } = setup({
-      withProviderForInstitution: 'kraken',
-      existingHoldingTokenIds: new Set(), // nothing pre-created
-      events: [
-        {
-          externalId: 'dep-1',
-          occurredAt: new Date('2024-06-01T10:00:00Z'),
-          kind: 'deposit',
-          primary: { tokenIdentity: { symbol: 'XRP', name: 'XRP' }, quantity: '10' },
-        },
-      ],
-    });
-    // request defaults to source 'kraken-api' / institutionCode 'kraken'.
-    const result = await router.run(request);
-    expect(result.transactions).toHaveLength(1);
-    expect(result.transactions[0]?.tokenId).toBe('token-XRP');
-  });
-
-  test('tracks first/last event timestamps across multiple events', async () => {
-    const t1 = new Date('2024-05-01T00:00:00Z');
-    const t2 = new Date('2024-06-01T00:00:00Z');
-    const t3 = new Date('2024-04-01T00:00:00Z');
-    const { router, request } = setup({
-      withProviderForInstitution: 'kraken',
-      events: [
-        {
-          externalId: 'a',
-          occurredAt: t1,
-          kind: 'deposit',
-          primary: { tokenIdentity: { symbol: 'ETH' }, quantity: '1' },
-        },
-        {
-          externalId: 'b',
-          occurredAt: t2,
-          kind: 'deposit',
-          primary: { tokenIdentity: { symbol: 'ETH' }, quantity: '2' },
-        },
-        {
-          externalId: 'c',
-          occurredAt: t3,
-          kind: 'deposit',
-          primary: { tokenIdentity: { symbol: 'ETH' }, quantity: '3' },
-        },
-      ],
-    });
-    const result = await router.run(request);
-    expect(result.transactions).toHaveLength(3);
-    // t3 is earliest, t2 latest.
-    expect(result.firstEventAt?.getTime()).toBe(t3.getTime());
-    expect(result.lastEventAt?.getTime()).toBe(t2.getTime());
-  });
-});
-
-describe('TransactionRouter — a wallet source mints no token it cannot use (SC-343)', () => {
-  // The router resolved the token identity FIRST and the holding second, so a
-  // wallet-derived event for a token the user dropped at review wrote a
-  // `tokens` row and then threw every event that referenced it away. A hundred
-  // or so rows on production, many of them plain `USDC` / `USD Coin` /
-  // `Tether USD` on a spam contract with a scam score of 0 — indistinguishable,
-  // in token search, from the real thing.
-  //
-  // A holding cannot exist without a token row, so under FIND-ONLY a token
-  // that is not already in the database can never yield a holding. Creating
-  // it is therefore always useless work, and the row it leaves behind is the
-  // whole cost.
-  test('an unknown token on a wallet source is never created', async () => {
-    const { router, request, createdTokenSymbols } = setup({
-      withProviderForInstitution: 'ethereum',
-      existingTokenSymbols: new Set(),
-      existingHoldingTokenIds: new Set(),
-      events: [
-        {
-          externalId: 'spam-1',
-          occurredAt: new Date('2024-06-01T10:00:00Z'),
-          kind: 'transfer_in',
-          primary: { tokenIdentity: { symbol: 'USDC', name: 'USD Coin' }, quantity: '1000' },
-        },
-      ],
-    });
-    const result = await router.run({
-      ...request,
-      source: 'etherscan',
-      institutionCode: 'ethereum',
-    });
-    expect(result.transactions).toHaveLength(0);
-    expect(createdTokenSymbols).toEqual([]);
-  });
-
-  test('the skip is still reported, so the run does not go quiet about it', async () => {
-    const { router, request } = setup({
-      withProviderForInstitution: 'ethereum',
-      existingTokenSymbols: new Set(),
-      existingHoldingTokenIds: new Set(),
-      events: [
-        {
-          externalId: 'spam-1',
-          occurredAt: new Date('2024-06-01T10:00:00Z'),
-          kind: 'transfer_in',
-          primary: { tokenIdentity: { symbol: 'USDC', name: 'USD Coin' }, quantity: '1000' },
-        },
-        {
-          externalId: 'spam-2',
-          occurredAt: new Date('2024-06-02T10:00:00Z'),
-          kind: 'transfer_in',
-          primary: { tokenIdentity: { symbol: 'USDC', name: 'USD Coin' }, quantity: '2000' },
-        },
-      ],
-    });
-    const result = await router.run({
-      ...request,
-      source: 'etherscan',
-      institutionCode: 'ethereum',
-    });
-    expect(result.warnings).toEqual([
-      "Skipped 2 tx event(s) referencing 1 token(s) the user didn't keep during wallet review.",
-    ]);
-  });
-
-  test('a token the user kept still resolves and still lands', async () => {
-    const { router, request, createdTokenSymbols } = setup({
-      withProviderForInstitution: 'ethereum',
-      existingTokenSymbols: new Set(['WETH']),
-      existingHoldingTokenIds: new Set(['token-WETH']),
-      events: [
-        {
-          externalId: 'real-1',
-          occurredAt: new Date('2024-06-01T10:00:00Z'),
-          kind: 'transfer_in',
-          primary: { tokenIdentity: { symbol: 'WETH', name: 'Wrapped Ether' }, quantity: '0.4' },
-        },
-      ],
-    });
-    const result = await router.run({
-      ...request,
-      source: 'etherscan',
-      institutionCode: 'ethereum',
-    });
-    expect(result.transactions).toHaveLength(1);
-    expect(result.transactions[0]?.tokenId).toBe('token-WETH');
-    expect(createdTokenSymbols).toEqual([]);
-  });
-
-  test('an exchange source still creates the token, because a deposit needs no review', async () => {
-    const { router, request, createdTokenSymbols } = setup({
-      withProviderForInstitution: 'kraken',
-      existingTokenSymbols: new Set(),
-      existingHoldingTokenIds: new Set(),
-      events: [
-        {
-          externalId: 'dep-1',
-          occurredAt: new Date('2024-06-01T10:00:00Z'),
-          kind: 'deposit',
-          primary: { tokenIdentity: { symbol: 'XRP', name: 'XRP' }, quantity: '10' },
-        },
-      ],
-    });
-    const result = await router.run(request);
-    expect(result.transactions).toHaveLength(1);
-    expect(createdTokenSymbols).toEqual(['XRP']);
-  });
-
-  test('the counter side of a surviving swap is still created', async () => {
-    // Only the PRIMARY leg gates on a holding. A swap's counter token is
-    // priced against, not held, so refusing to materialize it would strip the
-    // quote off an event that did land — and a swap leg without its price
-    // realizes at zero (SC-332).
-    const { router, request, createdTokenSymbols } = setup({
-      withProviderForInstitution: 'ethereum',
-      existingTokenSymbols: new Set(['WETH']),
-      existingHoldingTokenIds: new Set(['token-WETH']),
-      events: [
-        {
-          externalId: 'swap-1',
-          occurredAt: new Date('2024-06-01T10:00:00Z'),
-          kind: 'swap_out',
-          primary: { tokenIdentity: { symbol: 'WETH', name: 'Wrapped Ether' }, quantity: '-1' },
-          counter: { tokenIdentity: { symbol: 'AAVE', name: 'Aave' }, quantity: '20' },
-        },
-      ],
-    });
-    const result = await router.run({
-      ...request,
-      source: 'etherscan',
-      institutionCode: 'ethereum',
-    });
-    expect(result.transactions).toHaveLength(1);
-    expect(result.transactions[0]?.counterTokenId).toBe('token-AAVE');
-    expect(createdTokenSymbols).toEqual(['AAVE']);
-  });
-
-  test('an identity looked up and missed once is not looked up again', async () => {
-    // 410 events referencing 124 absent tokens in the production run. Without
-    // a negative cache that is 410 queries for 124 answers.
-    const { router, request, identityLookups } = setup({
-      withProviderForInstitution: 'ethereum',
-      existingTokenSymbols: new Set(),
-      existingHoldingTokenIds: new Set(),
-      events: Array.from({ length: 5 }, (_, i) => ({
-        externalId: `spam-${i}`,
-        occurredAt: new Date('2024-06-01T10:00:00Z'),
-        kind: 'transfer_in' as const,
-        primary: { tokenIdentity: { symbol: 'USDC', name: 'USD Coin' }, quantity: '1' },
-      })),
-    });
-    const result = await router.run({
-      ...request,
-      source: 'etherscan',
-      institutionCode: 'ethereum',
-    });
-    expect(result.transactions).toHaveLength(0);
-    expect(identityLookups()).toBe(1);
-    expect(result.warnings).toEqual([
-      "Skipped 5 tx event(s) referencing 1 token(s) the user didn't keep during wallet review.",
-    ]);
-  });
-});
-
-describe('TransactionRouter — swap groups (SC-332)', () => {
-  const SWAP_LEGS: TransactionEvent[] = [
-    {
-      externalId: '0xswap',
-      occurredAt: new Date('2024-06-01T10:00:00Z'),
-      kind: 'swap_out',
-      primary: { tokenIdentity: { symbol: 'ETH' }, quantity: '-1' },
-      counter: { tokenIdentity: { symbol: 'USDC' }, quantity: '2000' },
-      priceNative: { value: '2000', quoteIdentity: { symbol: 'USDC' } },
-      swapGroupKey: '1:0xswap',
-    },
-    {
-      externalId: '0xswap-0xusdc',
-      occurredAt: new Date('2024-06-01T10:00:00Z'),
-      kind: 'swap_in',
-      primary: { tokenIdentity: { symbol: 'USDC' }, quantity: '2000' },
-      counter: { tokenIdentity: { symbol: 'ETH' }, quantity: '-1' },
-      priceNative: { value: '0.0005', quoteIdentity: { symbol: 'ETH' } },
-      swapGroupKey: '1:0xswap',
-    },
-  ];
-
-  test('both surviving legs of one swap share a single swapGroupId', async () => {
-    const { router, request } = setup({
-      withProviderForInstitution: 'ethereum',
-      existingHoldingTokenIds: new Set(['token-ETH', 'token-USDC']),
-      events: SWAP_LEGS,
-    });
-    const result = await router.run({
-      ...request,
-      source: 'etherscan',
-      institutionCode: 'ethereum',
-    });
-
-    expect(result.transactions).toHaveLength(2);
-    const [out, inn] = result.transactions;
-    expect(out?.swapGroupId).toBeTruthy();
-    expect(out?.swapGroupId).toBe(inn?.swapGroupId as string);
-    expect(out?.kind).toBe('swap_out');
-    expect(inn?.kind).toBe('swap_in');
-  });
-
-  test('two swaps in one run do not share a swapGroupId', async () => {
-    const second = SWAP_LEGS.map((e) => ({
-      ...e,
-      externalId: `${e.externalId}-b`,
-      swapGroupKey: '1:0xother',
-    }));
-    const { router, request } = setup({
-      withProviderForInstitution: 'ethereum',
-      existingHoldingTokenIds: new Set(['token-ETH', 'token-USDC']),
-      events: [...SWAP_LEGS, ...second],
-    });
-    const result = await router.run({
-      ...request,
-      source: 'etherscan',
-      institutionCode: 'ethereum',
-    });
-
-    const groups = new Set(result.transactions.map((t) => t.swapGroupId));
-    expect(result.transactions).toHaveLength(4);
-    expect(groups.size).toBe(2);
-  });
-
-  // The half-swap. Wallet sources are FIND-ONLY, so an in-leg whose token has
-  // no holding on the account is dropped — and a lone `swap_out` is the worst
-  // of both worlds: it leaves the transfer-review queue (whose predicate is
-  // `kind IN ('withdraw','transfer_out')`) so nobody can answer it, and it
-  // realizes at ZERO because `txValueInBase` refuses to price a swap from the
-  // held token. It must go back to being the plain transfer it was.
-  test('a swap leg whose partner was dropped reverts to a plain transfer', async () => {
-    const { router, request } = setup({
-      withProviderForInstitution: 'ethereum',
-      existingHoldingTokenIds: new Set(['token-ETH']), // USDC has no holding
-      events: SWAP_LEGS,
-    });
-    const result = await router.run({
-      ...request,
-      source: 'etherscan',
-      institutionCode: 'ethereum',
-    });
-
-    expect(result.transactions).toHaveLength(1);
-    const orphan = result.transactions[0];
-    expect(orphan?.kind).toBe('transfer_out');
-    expect(orphan?.swapGroupId).toBeNull();
-    expect(orphan?.counterTokenId).toBeNull();
-    expect(orphan?.priceNative).toBeNull();
-  });
-
-  test('an orphaned swap leg is reported as a warning, not silently downgraded', async () => {
-    const { router, request } = setup({
-      withProviderForInstitution: 'ethereum',
-      existingHoldingTokenIds: new Set(['token-ETH']),
-      events: SWAP_LEGS,
-    });
-    const result = await router.run({
-      ...request,
-      source: 'etherscan',
-      institutionCode: 'ethereum',
-    });
-    expect(result.warnings.some((w) => /swap/i.test(w))).toBe(true);
-  });
-
-  test('an orphaned inflow leg reverts to transfer_in, by its own sign', async () => {
-    const { router, request } = setup({
-      withProviderForInstitution: 'ethereum',
-      existingHoldingTokenIds: new Set(['token-USDC']), // ETH has no holding
-      events: SWAP_LEGS,
-    });
-    const result = await router.run({
-      ...request,
-      source: 'etherscan',
-      institutionCode: 'ethereum',
-    });
-    expect(result.transactions).toHaveLength(1);
-    expect(result.transactions[0]?.kind).toBe('transfer_in');
-  });
-
-  test('events with no swapGroupKey are untouched', async () => {
-    const { router, request } = setup({
-      withProviderForInstitution: 'ethereum',
-      existingHoldingTokenIds: new Set(['token-ETH']),
-      events: [
-        {
-          externalId: '0xplain',
-          occurredAt: new Date('2024-06-01T10:00:00Z'),
-          kind: 'transfer_out',
-          primary: { tokenIdentity: { symbol: 'ETH' }, quantity: '-1' },
-        },
-      ],
-    });
-    const result = await router.run({
-      ...request,
-      source: 'etherscan',
-      institutionCode: 'ethereum',
-    });
-    expect(result.transactions[0]?.kind).toBe('transfer_out');
-    expect(result.transactions[0]?.swapGroupId).toBeNull();
+    expect(result.events).toEqual(events);
+    expect(result.fetchedAt >= before && result.fetchedAt <= new Date()).toBe(true);
+    expect(result.horizonMs).toBeUndefined();
   });
 });
 
@@ -841,8 +357,7 @@ describe('TransactionRouter — a provider retracts the completeness claim', () 
     expect(result.warnings).toContain('kraken: the ledger walk stopped at the 20-page cap');
   });
 
-  // The empty-result and materialized paths build the flag separately, and
-  // a run that fetched nothing is exactly the shape a revoked key takes —
+  // A run that fetched nothing is exactly the shape a revoked key takes —
   // the case where the reason matters most and the events cannot carry it.
   test('a retraction on a run that returned no events retracts and still explains', async () => {
     const { router, request } = setup({
@@ -853,7 +368,7 @@ describe('TransactionRouter — a provider retracts the completeness claim', () 
 
     const result = await router.run(request);
 
-    expect(result.transactions).toHaveLength(0);
+    expect(result.events).toHaveLength(0);
     expect(result.hasCompleteTxHistory).toBe(false);
     expect(result.warnings).toEqual([
       'kraken: no API key was available, so no ledger was walked at all',
@@ -984,7 +499,7 @@ describe('TransactionRouter — a retraction can say how far back it reached', (
 
     const result = await router.run(request);
 
-    expect(result.transactions).toEqual([]);
+    expect(result.events).toEqual([]);
     expect(result.historyStartsAt).toEqual(WINDOW_OPENS);
   });
 });

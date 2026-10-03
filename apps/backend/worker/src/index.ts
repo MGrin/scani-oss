@@ -107,6 +107,7 @@ import { Container } from 'typedi';
 // the class registers with the typedi Container before WorkerClient
 // pulls them out and registers them.
 import { isPostgresTransientError } from './lib/postgres-transient-error';
+import { ActivationNudgeProcessor } from './processors/activation-nudge';
 import { AlertSweepProcessor } from './processors/alert-sweep';
 import { ApyPayoutsProcessor } from './processors/apy-payouts';
 import { BackfillCounterpartyProcessor } from './processors/backfill-counterparty';
@@ -116,6 +117,7 @@ import { DbBackupProcessor } from './processors/db-backup';
 import { DemoResetProcessor } from './processors/demo-reset';
 import { DlqDepthProbeProcessor } from './processors/dlq-depth-probe';
 import { DocumentParseProcessor } from './processors/document-parse';
+import { EngineShadowProcessor } from './processors/engine-shadow';
 import { ExchangeBalancesProcessor } from './processors/exchange-balances';
 import { ExchangeImportProcessor } from './processors/exchange-import';
 import { ExchangeTransactionsProcessor } from './processors/exchange-transactions';
@@ -175,11 +177,14 @@ function resolveProcessors() {
     Container.get(JobHeartbeatProbeProcessor),
     Container.get(StaleSyncProbeProcessor),
     Container.get(SplitHoldingProbeProcessor),
+    Container.get(EngineShadowProcessor),
     Container.get(RescoreScamTokensProcessor),
     Container.get(PaymentDueReminderProcessor),
     Container.get(PaymentHorizonRollProcessor),
     Container.get(WeeklyDigestProcessor),
     Container.get(AlertSweepProcessor),
+    // Shipped OFF; armed by ACTIVATION_NUDGE_ENABLED=1 (SC-1503).
+    Container.get(ActivationNudgeProcessor),
     // Armed only when SCANI_DEMO_MODE=1; registered unconditionally so a demo
     // instance never boots with the schedule and no processor behind it.
     Container.get(DemoResetProcessor),
@@ -536,9 +541,10 @@ async function main(): Promise<void> {
   redisMonitor.unref?.();
 
   // --- Graceful shutdown ---------------------------------------------------
-  // Drain budget — must be < Fly's grace_period (default 30s) minus
-  // a safety margin for the post-drain steps (queueClient close,
-  // Redis quit, Sentry flush ≈ 3s combined).
+  // Drain budget — must be < `kill_timeout` in fly.toml minus a margin for
+  // the post-drain steps (queueClient close, Redis quit, Sentry flush ≈ 3s).
+  // Fly's own default is 5s, not 30s: without the fly.toml key the machine
+  // was killed before this budget ran out (SC-1454).
   const DRAIN_TIMEOUT_MS = 25_000;
   let shuttingDown = false;
   const shutdown = async (signal: NodeJS.Signals) => {

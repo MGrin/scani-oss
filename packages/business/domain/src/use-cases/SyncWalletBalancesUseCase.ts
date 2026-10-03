@@ -223,6 +223,8 @@ export class SyncWalletBalancesUseCase {
     // pre-existing tokens that merely received a new holding — only the
     // former may be scam-scored, never the latter (see scoreAndWarmNewTokens).
     const runStartedAt = new Date();
+    // Where the hour's run spends its time, with no address in it (SC-1513).
+    const pairTimings: Array<{ chain: string; ms: number; snapshots: number }> = [];
 
     // STEP 1 & 2 combined: iterate users in pages (keyset pagination on id)
     // and fetch blockchain data incrementally. This keeps peak memory bounded
@@ -413,6 +415,7 @@ export class SyncWalletBalancesUseCase {
                 institutionId,
                 walletAddress: userWallet.walletAddress,
               });
+              const pairStartedAt = Date.now();
               let snapshots: HoldingSnapshot[];
               try {
                 snapshots = await withRetry(() => provider.fetchBalances(ctx), {
@@ -471,6 +474,11 @@ export class SyncWalletBalancesUseCase {
                 snapshots: [...keptSnapshots, ...probed.snapshots],
                 exitedSymbols: probed.exitedSymbols,
               });
+              pairTimings.push({
+                chain: institutionCode,
+                ms: Date.now() - pairStartedAt,
+                snapshots: keptSnapshots.length + probed.snapshots.length,
+              });
             } catch (error) {
               accountsFailed++;
               const errorMessage = error instanceof Error ? error.message : String(error);
@@ -501,6 +509,8 @@ export class SyncWalletBalancesUseCase {
     // STEP 3: Process ALL updates in a SINGLE TRANSACTION
     // This dramatically reduces connection usage from N*M operations to 1 transaction
     const createdTokenIdsByUser = new Map<string, Set<string>>();
+    const fetchPhaseMs = Date.now() - runStartedAt.getTime();
+    const writeStartedAt = Date.now();
     await withTransaction(
       async (tx) => {
         for (const walletData of walletDataToSync) {
@@ -587,7 +597,18 @@ export class SyncWalletBalancesUseCase {
     // STEP 4: Scam-score + warm prices for tokens auto-discovered this run.
     // Runs after the transaction commits (warm-up does its own network I/O
     // under a time budget). Non-fatal — the hourly pricing cron backfills.
+    const writePhaseMs = Date.now() - writeStartedAt;
+    const warmStartedAt = Date.now();
     await this.scoreAndWarmNewTokens(createdTokenIdsByUser, runStartedAt);
+    logger.info(
+      {
+        fetchPhaseMs,
+        writePhaseMs,
+        warmPhaseMs: Date.now() - warmStartedAt,
+        pairs: pairTimings.sort((a, b) => b.ms - a.ms),
+      },
+      'Wallet balance sync timing'
+    );
 
     return {
       accountsSynced,

@@ -1,12 +1,13 @@
 # @scani/ingesters
 
-Transaction-ingester abstractions and the registry that worker processors dispatch through. Leaf package — never imports `@scani/domain`; callers inject the AI screenshot-parser callback and the token-resolver function so this package stays decoupled from domain services.
+Transaction-ingester abstractions and the registry that worker processors dispatch through. Leaf package — never imports `@scani/domain`; callers inject the AI screenshot-parser callback so this package stays decoupled from domain services.
 
 Owns:
 
 - `TransactionIngester` — interface every ingester implements: a stable `source` string and an `ingestForAccount(accountId, options)` method returning `IngesterResult` (transactions + balance observations + coverage update + soft warnings).
 - `TransactionIngesterRegistry` — `@Service()` singleton that the worker bootstraps with a wiring file. Worker processors call `registry.require(source)` to dispatch by `holding_transactions.source` tag.
-- `StatementTransactionIngester` — turns a `@scani/file-import` `ParseResult` into normalized `holding_transactions` rows + a closing-balance `holding_balance_observations` anchor. Owns the dedup-friendly `external_id` synthesis (prefers natural ids like `fitid`/`txid`; falls back to `synthetic:<date>:<amount>:<desc>:<ordinal>`).
+- `StatementTransactionIngester` — turns a `@scani/file-import` `ParseResult` into the statement's ledger rows, grouped per parsed transaction and keyed by currency, plus the closing balance its last row carries. It names no holding and no token: `legacyStatementBatch` in `@scani/domain` turns the result into a feed batch, and `FeedIngestService` resolves both when it writes it. Owns the dedup-friendly `external_id` synthesis (prefers natural ids like `fitid`/`txid`; falls back to `synthetic:<date>:<amount>:<desc>:<ordinal>`).
+- `statementWarnings` — the warnings an import reports once the write path has said which currencies the catalog does not know: the parser's, then one per transaction in file order, then the close's.
 - `ScreenshotTransactionIngester` — placeholder for AI-parsed bank-statement screenshots. Currently returns an empty result; the parser callback shape (`ScreenshotParserFn`) is finalized so the AI prompt landing later won't churn the public surface.
 
 ## Why a separate package
@@ -15,7 +16,7 @@ Two pulls toward the same code: (1) the worker's `apps/backend/worker/src/proces
 
 The dependency-injection rule that keeps this clean: caller-owned callbacks for everything `@scani/domain` provides.
 
-- `StatementTransactionIngester.ingest({ resolveToken })` — `resolveToken.resolveFiatTokenBySymbol(symbol)` is implemented by the worker (which has access to `TokenService` + `HoldingService`). The ingester only knows it needs a `(symbol) => { holdingId, tokenId } | null` resolver.
+- `StatementTransactionIngester.ingest` takes no callback: it is synchronous and reads nothing but the `ParseResult`.
 - `ScreenshotTransactionIngester` constructor takes a `ScreenshotParserFn` — the worker injects a closure over `Container.get(ScreenshotParsingService).parseScreenshot`.
 
 ## Usage (worker bootstrap)
@@ -43,5 +44,5 @@ bun test packages/business/ingesters --timeout 30000
 Coverage:
 
 - `TransactionIngesterRegistry.test.ts` — register / get / require / list, including the duplicate-registration warning and the "no ingester" error path.
-- `StatementTransactionIngester.test.ts` — empty ParseResult, currency resolution + caching, unknown-currency warning, default-currency fallback, signed amount → `kind` mapping (deposit / withdraw / unknown), closing-balance observation, natural vs synthetic external-id synthesis, multiple-currencies in one statement.
+- `StatementTransactionIngester.test.ts` — empty ParseResult, rows keyed by currency, default- and detected-currency fallback, a row with no currency skipped with its warning and its date, signed amount → `kind` mapping (deposit / withdraw), the closing balance, natural vs synthetic external-id synthesis, and the order and count of `statementWarnings`.
 - `ScreenshotTransactionIngester.test.ts` — smoke test confirming the stub returns the empty-result shape and exposes `source = 'screenshot'`.

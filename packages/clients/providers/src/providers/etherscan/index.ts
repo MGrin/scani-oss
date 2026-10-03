@@ -841,4 +841,3 @@ export const etherscanFactory: ProviderFactory = async (deps) => {
 };
 
 export { ETHERSCAN_CHAINS, findChainConfig } from './chains';
-export { isLikelySpamToken } from './spam-filter';

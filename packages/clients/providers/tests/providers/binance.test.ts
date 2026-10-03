@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { BinanceProvider } from '../../src/providers/binance';
 
@@ -363,7 +363,9 @@ describe('BinanceProvider.fetchTransactions', () => {
         const startMs = Number(u.match(/[?&]startTime=(\d+)/)?.[1] ?? '0');
         const endMs = Number(u.match(/[?&]endTime=(\d+)/)?.[1] ?? '0');
         calls.push({ kind: 'deposit', url: coin });
-        const filtered = (depositsByCoin.get(coin) ?? []).filter((d) => {
+        // No `coin` means every coin, which is how the provider asks (SC-1480).
+        const rows = coin ? (depositsByCoin.get(coin) ?? []) : [...depositsByCoin.values()].flat();
+        const filtered = rows.filter((d) => {
           const t = (d as { insertTime: number }).insertTime;
           return t >= startMs && t <= endMs;
         });
@@ -374,7 +376,10 @@ describe('BinanceProvider.fetchTransactions', () => {
         const startMs = Number(u.match(/[?&]startTime=(\d+)/)?.[1] ?? '0');
         const endMs = Number(u.match(/[?&]endTime=(\d+)/)?.[1] ?? '0');
         calls.push({ kind: 'withdraw', url: coin });
-        const filtered = (withdrawsByCoin.get(coin) ?? []).filter((w) => {
+        const rows = coin
+          ? (withdrawsByCoin.get(coin) ?? [])
+          : [...withdrawsByCoin.values()].flat();
+        const filtered = rows.filter((w) => {
           const t = (w as { applyTime: number }).applyTime;
           return t >= startMs && t <= endMs;
         });
@@ -641,4 +646,178 @@ describe('BinanceProvider.fetchTransactions', () => {
     },
     60_000
   );
+});
+
+/**
+ * SC-1480 / SC-1481. Trade symbols used to come from CURRENT balances only, so
+ * an asset deposited, traded and sold to zero never had its trades asked for;
+ * and every sub-walk was `.catch(() => [])` with nothing said.
+ */
+describe('BinanceProvider.fetchTransactions — exited assets and failed walks', () => {
+  const since = new Date('2023-10-01T00:00:00Z');
+  const until = new Date('2024-01-01T00:00:00Z');
+  const ethSell = {
+    symbol: 'ETHUSDT',
+    id: 7,
+    orderId: 1,
+    price: '2000',
+    qty: '1',
+    quoteQty: '2000',
+    commission: '0',
+    commissionAsset: 'USDT',
+    time: 1_700_000_000_000,
+    isBuyer: false,
+    isMaker: false,
+  };
+
+  function mockBinance(deposits: () => Response): string[] {
+    const tradeSymbols: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      const u = String(url);
+      if (u.includes('/api/v3/account')) {
+        return Response.json({ balances: [{ asset: 'USDT', free: '2000', locked: '0' }] });
+      }
+      if (u.includes('/sapi/v1/margin/account')) return Response.json({ userAssets: [] });
+      if (u.includes('/sapi/v1/asset/get-funding-asset')) return Response.json([]);
+      if (u.includes('/sapi/v1/c2c/orderMatch/listUserOrderHistory')) {
+        return Response.json({ code: '000000', data: [], success: true });
+      }
+      if (u.includes('/sapi/v1/capital/deposit/hisrec')) return deposits();
+      if (u.includes('/sapi/v1/capital/withdraw/history')) return Response.json([]);
+      if (u.includes('/api/v3/myTrades')) {
+        const symbol = u.match(/[?&]symbol=([^&]+)/)?.[1] ?? '';
+        const fromId = u.match(/[?&]fromId=(\d+)/)?.[1] ?? '0';
+        if (fromId === '0') tradeSymbols.push(symbol);
+        if (symbol === 'ETHUSDT') return Response.json(fromId === '0' ? [ethSell] : []);
+        // Every other candidate is a pair Binance does not list.
+        return Response.json({ code: -1121, msg: 'Invalid symbol.' }, { status: 400 });
+      }
+      throw new Error(`Unexpected URL: ${u}`);
+    }) as unknown as typeof fetch;
+    return tradeSymbols;
+  }
+
+  test('an asset seen only in deposits has its trades fetched, and absent pairs retract nothing', async () => {
+    const originalFetch = globalThis.fetch;
+    const tradeSymbols = mockBinance(() => {
+      return Response.json([
+        { amount: '1', coin: 'ETH', status: 1, txId: 'd-eth', insertTime: 1_699_000_000_000 },
+      ]);
+    });
+    const retractions: unknown[] = [];
+    try {
+      const events = await new BinanceProvider(passthroughLimiter()).fetchTransactions({
+        ...ctx,
+        since,
+        until,
+        retractHistoryClaim: (r: unknown) => retractions.push(r),
+      } as never);
+      expect(tradeSymbols).toContain('ETHUSDT');
+      expect(events.map((e) => e.externalId)).toContain('ETHUSDT-7');
+      expect(retractions).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('a failed deposit walk retracts the history claim', async () => {
+    const originalFetch = globalThis.fetch;
+    mockBinance(() =>
+      Response.json({ code: -1003, msg: 'Too much request weight' }, { status: 418 })
+    );
+    const retractions: string[] = [];
+    try {
+      await new BinanceProvider(passthroughLimiter()).fetchTransactions({
+        ...ctx,
+        since,
+        until,
+        retractHistoryClaim: (r: string) => retractions.push(r),
+      } as never);
+      expect(retractions).toHaveLength(1);
+      expect(retractions[0]).toContain('binance: the deposit walk failed');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+/**
+ * Past the 50-pair cap the remaining candidates are never walked, so the run
+ * must say so: a warning naming how many were skipped and no complete-history
+ * claim (operator review of #2122, SC-1481). Candidates are each asset against
+ * 10 quote currencies minus itself, so counts move in steps of 10 (or 9 for a
+ * quote currency): 50 is the cap exactly, 54 the first count past it.
+ */
+describe('BinanceProvider.fetchTransactions — the candidate-pair cap', () => {
+  function mockHeld(assets: string[]): string[] {
+    const asked: string[] = [];
+    globalThis.fetch = (async (url: string) => {
+      const u = String(url);
+      if (u.includes('/api/v3/account')) {
+        return Response.json({
+          balances: assets.map((asset) => ({ asset, free: '1', locked: '0' })),
+        });
+      }
+      if (u.includes('/sapi/v1/margin/account')) return Response.json({ userAssets: [] });
+      if (u.includes('/sapi/v1/asset/get-funding-asset')) return Response.json([]);
+      if (u.includes('/sapi/v1/c2c/orderMatch/listUserOrderHistory')) {
+        return Response.json({ code: '000000', data: [], success: true });
+      }
+      if (u.includes('/sapi/v1/capital/deposit/hisrec')) return Response.json([]);
+      if (u.includes('/sapi/v1/capital/withdraw/history')) return Response.json([]);
+      if (u.includes('/api/v3/myTrades')) {
+        asked.push(u.match(/[?&]symbol=([^&]+)/)?.[1] ?? '');
+        return Response.json([]);
+      }
+      throw new Error(`Unexpected URL: ${u}`);
+    }) as unknown as typeof fetch;
+    return asked;
+  }
+
+  async function run(assets: string[]) {
+    const asked = mockHeld(assets);
+    const retractions: string[] = [];
+    const provider = new BinanceProvider(passthroughLimiter());
+    const warn = spyOn(provider['logger'], 'warn');
+    await provider.fetchTransactions({
+      ...ctx,
+      retractHistoryClaim: (r: string) => retractions.push(r),
+    } as never);
+    return { asked, retractions, warn };
+  }
+
+  test('exactly 50 candidates are all walked, with no warning and no retraction', async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      const { asked, retractions, warn } = await run(['AAA', 'BBB', 'CCC', 'DDD', 'EEE']);
+      expect(asked).toHaveLength(50);
+      expect(retractions).toEqual([]);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('54 candidates walk 50, warn that 4 were skipped and retract the claim', async () => {
+    const originalFetch = globalThis.fetch;
+    try {
+      const { asked, retractions, warn } = await run([
+        'USDT',
+        'USDC',
+        'FDUSD',
+        'BUSD',
+        'BTC',
+        'ETH',
+      ]);
+      expect(asked).toHaveLength(50);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(JSON.stringify(warn.mock.calls[0])).toContain(
+        '4 candidate pairs past the 50-pair cap'
+      );
+      expect(retractions).toHaveLength(1);
+      expect(retractions[0]).toContain('4 candidate pairs past the 50-pair cap');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
 });

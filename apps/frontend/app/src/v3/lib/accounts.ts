@@ -27,7 +27,8 @@ export interface AccountRow {
   typeId: string;
   institutionId: string;
   metadata?: unknown;
-  summary: { holdingsCount: number; totalValue: string };
+  /** `totalValue` is net; `marginDebt` is signed, 0 or negative (SC-1463). */
+  summary: { holdingsCount: number; totalValue: string; marginDebt?: string };
   groups: readonly { id: string; name: string }[];
 }
 
@@ -37,7 +38,7 @@ export interface InstitutionRow {
   description: string | null;
   website: string | null;
   typeId: string;
-  summary?: { accountCount: number; totalValue: string };
+  summary?: { accountCount: number; totalValue: string; marginDebt?: string };
 }
 
 /** The ISO timestamp an integration last wrote, or null for a manual account. */
@@ -124,6 +125,36 @@ export function accountsValue(accounts: readonly AccountRow[]): number {
 
 export function institutionsValue(institutions: readonly InstitutionRow[]): number {
   return institutions.reduce((total, item) => total + institutionValue(item), 0);
+}
+
+/**
+ * Margin debt (SC-1463): signed, 0 or negative. `totalValue` already nets it,
+ * so a row's gross assets — what the summary bar is made of — are the value
+ * minus the debt. An account whose debt outweighs its assets is still a part.
+ */
+export function accountDebt(account: AccountRow): number {
+  return toNumber(account.summary.marginDebt);
+}
+
+export function institutionDebt(institution: InstitutionRow): number {
+  return toNumber(institution.summary?.marginDebt);
+}
+
+export function accountAssets(account: AccountRow): number {
+  return accountValue(account) - accountDebt(account);
+}
+
+export function institutionAssets(institution: InstitutionRow): number {
+  return institutionValue(institution) - institutionDebt(institution);
+}
+
+/** Over the rows shown, the same set as `accountsValue`. */
+export function accountsDebt(accounts: readonly AccountRow[]): number {
+  return accounts.reduce((total, account) => total + accountDebt(account), 0);
+}
+
+export function institutionsDebt(institutions: readonly InstitutionRow[]): number {
+  return institutions.reduce((total, item) => total + institutionDebt(item), 0);
 }
 
 /**

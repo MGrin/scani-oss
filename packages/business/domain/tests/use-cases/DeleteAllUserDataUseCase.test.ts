@@ -51,6 +51,7 @@ let seededTokenIds: string[] = [];
 let seededCustomTokenId: string;
 let seededInstitutionId: string;
 let seededR2Key: string;
+let seededShadowRunId: string;
 /** Per-table counts for this user, taken after the seed and before the run. */
 const seededCounts = new Map<string, number>();
 
@@ -82,6 +83,37 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
     balance: '1',
     observedAt: new Date(),
     source: 'test-fixture',
+  });
+  await tx.insert(schema.retiredGapAnswers).values({
+    userId,
+    holdingId: holding.id,
+    gapFrom: new Date('2026-01-01T00:00:00Z'),
+    gapTo: new Date('2026-01-02T00:00:00Z'),
+    answer: {},
+    rows: [],
+    reason: 'settlements',
+  });
+  // The run carries no user, so the flow leaves it standing; teardown removes it.
+  const [shadowRun] = await tx
+    .insert(schema.engineShadowRuns)
+    .values({
+      kind: 'balance',
+      asOf: new Date(),
+      startedAt: new Date(),
+      finishedAt: new Date(),
+      status: 'complete',
+      scope: 'user',
+    })
+    .returning({ id: schema.engineShadowRuns.id });
+  if (!shadowRun) throw new Error('fixture: the shadow run was not written');
+  seededShadowRunId = shadowRun.id;
+  await tx.insert(schema.engineShadowDifferences).values({
+    runId: shadowRun.id,
+    userId,
+    holdingId: holding.id,
+    at: new Date(),
+    comparator: 'stored-balance',
+    category: 'unexplained',
   });
   await tx.insert(schema.portfolioValueDaily).values({
     userId,
@@ -145,6 +177,30 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
     note: 'fixture',
   });
   await makeCredential(tx, { userId, institutionId: institution.id });
+  const [feedInput] = await tx
+    .insert(schema.feedInputs)
+    .values({ userId, accountId: account.id, source: 'statement' })
+    .returning({ id: schema.feedInputs.id });
+  if (!feedInput) throw new Error('fixture: the feed input was not written');
+  await tx.insert(schema.feedMatchRules).values({
+    userId,
+    inputId: feedInput.id,
+    matchField: 'description',
+    pattern: 'fixture',
+    ledgerKind: 'fee',
+    createdBy: 'person',
+  });
+  await tx.insert(schema.judgmentDecisions).values({
+    userId,
+    questionKey: 'fixture',
+    questionVersion: 1,
+    stateHash: randomUUID(),
+    modelId: 'fixture',
+    answer: 'yes',
+    probabilities: {},
+    applied: 'auto',
+  });
+  await tx.insert(schema.outboxEvents).values({ userId, type: 'fixture', payload: {} });
   await tx.insert(schema.credentialPoolState).values({ userId, institutionId: institution.id });
   await tx
     .insert(schema.alertDeliveries)
@@ -225,6 +281,9 @@ afterAll(async () => {
       .delete(schema.credentialPoolBorrowLog)
       .where(eq(schema.credentialPoolBorrowLog.providerKey, 'fixture'));
     await db.delete(schema.users).where(eq(schema.users.id, userId));
+    await db
+      .delete(schema.engineShadowRuns)
+      .where(eq(schema.engineShadowRuns.id, seededShadowRunId));
     for (const id of seededTokenIds) await db.delete(schema.tokens).where(eq(schema.tokens.id, id));
     await db.delete(schema.institutions).where(eq(schema.institutions.id, seededInstitutionId));
   } catch {

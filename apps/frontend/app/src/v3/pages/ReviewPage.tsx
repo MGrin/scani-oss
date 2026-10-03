@@ -1,10 +1,15 @@
+import { UNPRICEABLE_AIRDROPS_REVIEW_KIND } from '@scani/shared';
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
+import { usePeekRoute } from '@scani/ui/v3/hooks/usePeekRoute';
 import { loadingOnly } from '@scani/ui/v3/lib/query-state';
 import { useTranslation } from 'react-i18next';
 import { useReviewFeed } from '@/v3/hooks/useReviewFeed';
 import { ReviewList } from '../components/review/ReviewList';
 import { isQueueRow, ReviewQueues } from '../components/review/ReviewQueues';
+import { SettlementAnswersSheet } from '../components/review/SettlementAnswers';
+import { UnpriceableAirdropsSheet } from '../components/review/UnpriceableAirdrops';
+import { V3_ROUTES } from '../lib/routes';
 
 /**
  * Everything waiting on the user, and the way into the queues that hold the
@@ -23,11 +28,17 @@ import { isQueueRow, ReviewQueues } from '../components/review/ReviewQueues';
  * and — for `/review/balances` — nothing at all. `ReviewQueues` is what makes
  * the badge's promise good, and it reads the counts out of the feed this page
  * has already fetched rather than asking twice.
+ *
+ * A row for answers imported trades now explain opens its holding's sheet over
+ * this page, at `/review/<holdingId>` (SC-1453), so closing it lands back on
+ * the feed that led there. Wallet tokens nothing can price open theirs the
+ * same way, at `/review/unpriceable-airdrops` (SC-1469).
  */
 export function ReviewPage() {
   const { t } = useTranslation();
   useDocumentTitle(t('v3.review.page.title'));
   const { items, isLoading } = useReviewFeed();
+  const peek = usePeekRoute(V3_ROUTES.review);
 
   return (
     <PageLayout measure="wide">
@@ -38,6 +49,11 @@ export function ReviewPage() {
         queueHasWork={items.some(isQueueRow)}
         query={loadingOnly(isLoading)}
       />
+      {peek.id === UNPRICEABLE_AIRDROPS_REVIEW_KIND ? (
+        <UnpriceableAirdropsSheet onClose={peek.close} />
+      ) : peek.id ? (
+        <SettlementAnswersSheet holdingId={peek.id} onClose={peek.close} />
+      ) : null}
     </PageLayout>
   );
 }

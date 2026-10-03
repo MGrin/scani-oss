@@ -1,6 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { HoldingTransaction, NewHoldingTransaction } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
+import { Decimal } from '@scani/shared';
 import {
   and,
   asc,
@@ -9,15 +10,26 @@ import {
   gte,
   inArray,
   isNotNull,
+  isNull,
   lt,
   lte,
   ne,
   notInArray,
+  or,
   sql,
 } from 'drizzle-orm';
+import type { PgColumn } from 'drizzle-orm/pg-core';
 import { Container, Service } from 'typedi';
+import type { LedgerKind } from '../engine/types';
 import { ledgerOrderBy } from '../lib/ledger-order';
 import { PERSON_AUTHORED_SOURCES } from '../lib/person-authored-sources';
+import { isSettlementLeg } from '../lib/transactions/trade-settlement';
+import { ruleDecidablePredicate } from '../lib/transfer-review-queue';
+import {
+  type LedgerMapping,
+  mapLegacyEntry,
+  UNDERIVABLE_KIND_ORIGINS,
+} from '../services/foundation/legacy-ledger-kinds';
 import { HoldingCoverageRepository } from './HoldingCoverageRepository';
 import { describeMergedBatch, type MergedRowSubject } from './merged-rows';
 
@@ -162,10 +174,126 @@ export interface PersonAuthoredOverlap {
 }
 
 export interface BulkUpsertResult {
+  /** As the upsert returned them: their label columns predate the re-label. */
   rows: HoldingTransaction[];
   /** Empty unless the batch carried the same dedup key twice. */
   merges: BulkUpsertMerge[];
+  /**
+   * The oldest date this batch actually moved in the ledger: a row inserted,
+   * or one whose valuation fields changed (the earlier of its old and new
+   * date). Null when every row was already stored as sent. A nightly sync
+   * re-sends months of unchanged rows, and history before the first real
+   * change is not stale (SC-1459).
+   */
+  earliestChangedAt: Date | null;
 }
+
+const VALUATION_FIELDS = [
+  'kind',
+  'tokenId',
+  'feeTokenId',
+  'counterTokenId',
+  'priceNativeTokenId',
+  'counterPriceNativeTokenId',
+] as const;
+const VALUATION_AMOUNTS = [
+  'quantity',
+  'feeQuantity',
+  'counterQuantity',
+  'priceNative',
+  'counterPriceNative',
+] as const;
+
+function sameAmount(a: unknown, b: unknown): boolean {
+  if (a == null || b == null) return a == null && b == null;
+  return new Decimal(String(a)).eq(new Decimal(String(b)));
+}
+
+/** Whether an upsert would move this row's value, or its date, in the ledger. */
+function changesValuation(stored: Record<string, unknown>, sent: Record<string, unknown>): boolean {
+  if (new Date(stored.occurredAt as Date).getTime() !== new Date(sent.occurredAt as Date).getTime())
+    return true;
+  for (const f of VALUATION_FIELDS) if ((stored[f] ?? null) !== (sent[f] ?? null)) return true;
+  for (const f of VALUATION_AMOUNTS) if (!sameAmount(stored[f], sent[f])) return true;
+  return false;
+}
+
+/**
+ * What a re-import overwrites on a row it already holds. Re-parsing after a
+ * normalizer improvement should overwrite derived fields but preserve
+ * ingest/created_at.
+ */
+const REIMPORTED = {
+  kind: sql`EXCLUDED.kind`,
+  quantity: sql`EXCLUDED.quantity`,
+  priceNative: sql`EXCLUDED.price_native`,
+  priceNativeTokenId: sql`EXCLUDED.price_native_token_id`,
+  counterTokenId: sql`EXCLUDED.counter_token_id`,
+  counterQuantity: sql`EXCLUDED.counter_quantity`,
+  counterPriceNative: sql`EXCLUDED.counter_price_native`,
+  counterPriceNativeTokenId: sql`EXCLUDED.counter_price_native_token_id`,
+  feeQuantity: sql`EXCLUDED.fee_quantity`,
+  feeTokenId: sql`EXCLUDED.fee_token_id`,
+  occurredAt: sql`EXCLUDED.occurred_at`,
+  // Derived by the ingester from the transaction itself, so the re-import is
+  // authoritative — unlike `transfer_group_id` and `transfer_review`, which
+  // belong to the matcher and to a person and are absent from this list on
+  // purpose. Without it a re-import that recognises a swap for the first time
+  // would update `kind` to `swap_out` and leave the row linked to nothing,
+  // which is the shape SC-332 exists to remove (a swap leg that reads as
+  // answered while its partner is unreachable).
+  swapGroupId: sql`EXCLUDED.swap_group_id`,
+  sourceMetadata: sql`${schema.holdingTransactions.sourceMetadata} || EXCLUDED.source_metadata`,
+  rawPayload: sql`EXCLUDED.raw_payload`,
+  counterparty: sql`EXCLUDED.counterparty`,
+  description: sql`EXCLUDED.description`,
+};
+
+/**
+ * Whether a re-import moves any of `REIMPORTED`. A replay of rows already held
+ * as sent bumps no `updated_at` (A2 D-7), so a re-import that changed nothing
+ * reads as one.
+ */
+const REIMPORT_CHANGES = sql`(${sql.join(
+  (Object.keys(REIMPORTED) as Array<keyof typeof REIMPORTED>).map(
+    (key) => schema.holdingTransactions[key]
+  ),
+  sql`, `
+)}) IS DISTINCT FROM (${sql.join(Object.values(REIMPORTED), sql`, `)})`;
+
+/** Rows per read and per `UPDATE … FROM (VALUES …)` statement in `relabelEntries`. */
+const RELABEL_BATCH_SIZE = 500;
+
+// What `mapLegacyEntry` reads, and nothing more.
+const LEGACY_ENTRY_FACTS = {
+  id: schema.holdingTransactions.id,
+  kind: schema.holdingTransactions.kind,
+  source: schema.holdingTransactions.source,
+  transferGroupId: schema.holdingTransactions.transferGroupId,
+  swapGroupId: schema.holdingTransactions.swapGroupId,
+  settlesTransactionId: schema.holdingTransactions.settlesTransactionId,
+  priceNative: schema.holdingTransactions.priceNative,
+  priceNativeTokenId: schema.holdingTransactions.priceNativeTokenId,
+};
+
+type MappedEntry = Extract<LedgerMapping, { excluded: null }>;
+
+// Every label `relabelEntries` overwrites. `input_id` is not one: the writer states it.
+const RELABELLED_COLUMNS: readonly {
+  column: PgColumn;
+  value: (m: MappedEntry) => string | null;
+}[] = [
+  { column: schema.holdingTransactions.ledgerKind, value: (m) => m.ledgerKind },
+  { column: schema.holdingTransactions.kindSubtype, value: (m) => m.kindSubtype },
+  { column: schema.holdingTransactions.groupId, value: (m) => m.groupId },
+  { column: schema.holdingTransactions.feeOf, value: (m) => m.feeOf },
+  { column: schema.holdingTransactions.executionPrice, value: (m) => m.executionPrice },
+  {
+    column: schema.holdingTransactions.executionPriceTokenId,
+    value: (m) => m.executionPriceTokenId,
+  },
+  { column: schema.holdingTransactions.kindOrigin, value: (m) => m.kindOrigin },
+];
 
 const TRANSACTION_ROWS: MergedRowSubject = {
   row: 'transaction',
@@ -201,12 +329,60 @@ export class HoldingTransactionRepository extends BaseRepository<
   // extractions), callers should provide a stable synthetic external_id
   // before passing to this method — otherwise every re-ingest creates
   // duplicates.
+  private async earliestChangeIn(
+    rows: NewHoldingTransaction[],
+    database: DatabaseTransaction
+  ): Promise<Date | null> {
+    const keyed = rows.filter((r) => r.externalId);
+    const stored = keyed.length
+      ? await database
+          .select()
+          .from(schema.holdingTransactions)
+          .where(
+            and(
+              inArray(schema.holdingTransactions.holdingId, [
+                ...new Set(keyed.map((r) => r.holdingId)),
+              ]),
+              inArray(schema.holdingTransactions.source, [...new Set(keyed.map((r) => r.source))]),
+              inArray(schema.holdingTransactions.externalId, [
+                ...new Set(keyed.map((r) => r.externalId as string)),
+              ])
+            )
+          )
+      : [];
+    const byKey = new Map(stored.map((r) => [`${r.holdingId}|${r.source}|${r.externalId}`, r]));
+    let earliest: Date | null = null;
+    const consider = (d: Date) => {
+      if (!earliest || d < earliest) earliest = d;
+    };
+    for (const row of rows) {
+      const sentAt = new Date(row.occurredAt);
+      const prior = row.externalId
+        ? byKey.get(`${row.holdingId}|${row.source}|${row.externalId}`)
+        : undefined;
+      if (!prior) {
+        consider(sentAt);
+        continue;
+      }
+      if (
+        !changesValuation(
+          prior as unknown as Record<string, unknown>,
+          row as unknown as Record<string, unknown>
+        )
+      )
+        continue;
+      consider(sentAt);
+      consider(new Date(prior.occurredAt));
+    }
+    return earliest;
+  }
+
   async bulkUpsert(
     rows: NewHoldingTransaction[],
     transaction?: DatabaseTransaction
   ): Promise<BulkUpsertResult> {
     try {
-      if (rows.length === 0) return { rows: [], merges: [] };
+      if (rows.length === 0) return { rows: [], merges: [], earliestChangedAt: null };
       if (!transaction) return this.getDb().transaction((tx) => this.bulkUpsert(rows, tx));
       const database = transaction;
 
@@ -254,6 +430,14 @@ export class HoldingTransactionRepository extends BaseRepository<
         );
       }
 
+      // A batch can carry several users' rows, and a re-label is per user.
+      const toRelabel = new Map<string, Set<string>>();
+      const relabelLater = (userId: string, id: string) => {
+        const ids = toRelabel.get(userId);
+        if (ids) ids.add(id);
+        else toRelabel.set(userId, new Set([id]));
+      };
+
       // Serialize reconciliation with imports for these holdings. Only a unique exact
       // observation-backed explanation can stand in for an authoritative arrival.
       await database
@@ -267,6 +451,11 @@ export class HoldingTransactionRepository extends BaseRepository<
       for (const row of inputRows) {
         if (!row.externalId || row.source.startsWith('user-') || row.source === 'transfer-review')
           continue;
+        // A settlement leg is derived, not reported, so an equal amount is no
+        // evidence it is the money a person's answer described. Retiring that
+        // answer is the person's call, through the settlement review (SC-858,
+        // SC-1453).
+        if (isSettlementLeg(row)) continue;
         const known = await database
           .select({ id: schema.holdingTransactions.id })
           .from(schema.holdingTransactions)
@@ -298,19 +487,28 @@ export class HoldingTransactionRepository extends BaseRepository<
             )
           )
           .for('update');
+        if (candidates.length !== 1) continue;
+        const candidate = candidates[0]!;
+        // Only rows that could be this same arrival compete for it. Equal amounts at
+        // other times are different money: three 1,000 USDT deposits on three days
+        // each own their own answer (SC-1468).
         const competing = inputRows.filter(
           (other) =>
             other.holdingId === row.holdingId &&
             other.kind === row.kind &&
-            other.quantity === row.quantity
+            other.quantity === row.quantity &&
+            fallsInArrivalWindow(candidate, other.occurredAt)
         );
-        if (candidates.length !== 1 || competing.length !== 1) continue;
-        const candidate = candidates[0]!;
-        await database
+        if (competing.length !== 1) continue;
+        const takenOver = await database
           .update(schema.holdingTransactions)
-          .set({ source: row.source, externalId: row.externalId })
-          .where(eq(schema.holdingTransactions.id, candidate.id));
+          .set({ source: row.source, externalId: row.externalId, updatedAt: sql`now()` })
+          .where(eq(schema.holdingTransactions.id, candidate.id))
+          .returning({ id: schema.holdingTransactions.id });
+        for (const { id } of takenOver) relabelLater(row.userId, id);
       }
+
+      const earliestChangedAt = await this.earliestChangeIn(inputRows, database);
 
       const results = await database
         .insert(schema.holdingTransactions)
@@ -322,37 +520,19 @@ export class HoldingTransactionRepository extends BaseRepository<
             schema.holdingTransactions.source,
             schema.holdingTransactions.externalId,
           ],
-          // Re-parsing after a normalizer improvement should overwrite
-          // derived fields but preserve ingest/created_at.
           set: {
-            kind: sql`EXCLUDED.kind`,
-            quantity: sql`EXCLUDED.quantity`,
-            priceNative: sql`EXCLUDED.price_native`,
-            priceNativeTokenId: sql`EXCLUDED.price_native_token_id`,
-            counterTokenId: sql`EXCLUDED.counter_token_id`,
-            counterQuantity: sql`EXCLUDED.counter_quantity`,
-            counterPriceNative: sql`EXCLUDED.counter_price_native`,
-            counterPriceNativeTokenId: sql`EXCLUDED.counter_price_native_token_id`,
-            feeQuantity: sql`EXCLUDED.fee_quantity`,
-            feeTokenId: sql`EXCLUDED.fee_token_id`,
-            occurredAt: sql`EXCLUDED.occurred_at`,
-            // Derived by the ingester from the transaction itself, so the
-            // re-import is authoritative — unlike `transfer_group_id` and
-            // `transfer_review`, which belong to the matcher and to a person
-            // and are absent from this list on purpose. Without it a
-            // re-import that recognises a swap for the first time would
-            // update `kind` to `swap_out` and leave the row linked to
-            // nothing, which is the shape SC-332 exists to remove (a swap
-            // leg that reads as answered while its partner is unreachable).
-            swapGroupId: sql`EXCLUDED.swap_group_id`,
-            sourceMetadata: sql`${schema.holdingTransactions.sourceMetadata} || EXCLUDED.source_metadata`,
-            rawPayload: sql`EXCLUDED.raw_payload`,
-            counterparty: sql`EXCLUDED.counterparty`,
-            description: sql`EXCLUDED.description`,
-            updatedAt: sql`now()`,
+            ...REIMPORTED,
+            updatedAt: sql`CASE WHEN ${REIMPORT_CHANGES} THEN now() ELSE ${schema.holdingTransactions.updatedAt} END`,
           },
         })
         .returning();
+
+      // A re-import can rewrite a row's kind or swap group, and a takeover its
+      // source, so every row written here is re-labelled from what it now holds.
+      for (const r of results) relabelLater(r.userId, r.id);
+      for (const [userId, ids] of toRelabel) {
+        await this.relabelEntries(userId, [...ids], database);
+      }
 
       // `holding_coverage.first_tx_at` / `last_tx_at` summarize this
       // table, so they are re-derived here rather than reported by each
@@ -367,7 +547,7 @@ export class HoldingTransactionRepository extends BaseRepository<
       );
 
       this.logger.debug({ count: results.length }, 'Bulk upserted holding transactions');
-      return { rows: results as HoldingTransaction[], merges };
+      return { rows: results as HoldingTransaction[], merges, earliestChangedAt };
     } catch (error) {
       // postgres-js error shape varies: sometimes plain Error with
       // pg fields siblings, sometimes `cause` wraps the actual DB
@@ -398,6 +578,190 @@ export class HoldingTransactionRepository extends BaseRepository<
       );
       throw error;
     }
+  }
+
+  /**
+   * Point each unlinked settlement row at the trade it was derived from
+   * (SC-1453), wherever it was written: ingest links a leg to its batch's one
+   * row of that external id (`linkLegs`), and this sweep takes the rest. Scoped
+   * to the settlement's own account, since an external id is only unique per
+   * source within one account. Where two trades match, `UPDATE … FROM` links
+   * whichever row Postgres reaches first.
+   */
+  async linkSettlements(userId: string, transaction?: DatabaseTransaction): Promise<number> {
+    if (!transaction) return this.getDb().transaction((tx) => this.linkSettlements(userId, tx));
+    const linked = (await transaction.execute(sql`
+      UPDATE holding_transactions s
+      SET settles_transaction_id = t.id
+      FROM holding_transactions t, holdings th, holdings sh
+      WHERE s.user_id = ${userId}
+        AND s.kind IN ('settle_in', 'settle_out', 'fee')
+        AND s.settles_transaction_id IS NULL
+        AND s.source_metadata ? 'settles'
+        AND sh.id = s.holding_id
+        AND t.user_id = s.user_id
+        AND t.source = s.source
+        AND (t.kind IN ('buy', 'sell') OR (s.kind = 'fee' AND t.holding_id = s.holding_id))
+        AND t.kind NOT IN ('settle_in', 'settle_out', 'fee')
+        AND t.external_id = s.source_metadata->>'settles'
+        AND th.id = t.holding_id
+        AND th.account_id = sh.account_id
+      RETURNING s.id
+    `)) as unknown as Array<{ id: string }>;
+    // The trade is a settle leg's group and a fee's `fee_of` (D-5).
+    await this.relabelEntries(
+      userId,
+      linked.map((r) => r.id),
+      transaction
+    );
+    return linked.length;
+  }
+
+  /**
+   * Points each leg at the row it settles where it points at none yet, both
+   * rows of one feed batch, then re-labels the legs it linked: a settle leg's
+   * group and a fee's `fee_of` are that row (D-5). A leg's row is always in its
+   * batch, since `validateBatch` refuses one that is not. A leg two of the
+   * batch's rows answer to is not passed here: it stays unlinked unless a
+   * caller runs `linkSettlements`, which reads `source_metadata.settles`.
+   */
+  async linkLegs(
+    userId: string,
+    links: ReadonlyArray<{ legId: string; parentId: string }>,
+    tx: DatabaseTransaction
+  ): Promise<number> {
+    if (links.length === 0) return 0;
+    const values = sql.join(
+      links.map(({ legId, parentId }) => sql`(${legId}::uuid, ${parentId}::uuid)`),
+      sql`, `
+    );
+    const linked = (await tx.execute(sql`
+      UPDATE holding_transactions s
+      SET settles_transaction_id = v.parent_id
+      FROM (VALUES ${values}) AS v (leg_id, parent_id)
+      WHERE s.id = v.leg_id
+        AND s.user_id = ${userId}
+        AND s.settles_transaction_id IS NULL
+      RETURNING s.id
+    `)) as unknown as Array<{ id: string }>;
+    await this.relabelEntries(
+      userId,
+      linked.map((r) => r.id),
+      tx
+    );
+    return linked.length;
+  }
+
+  /**
+   * Overwrites every label with `mapLegacyEntry` of the row as stored, so a
+   * label follows its row when a re-import or a linker changes the facts it
+   * was mapped from (A2 D-5). An excluded row has every label cleared.
+   *
+   * A row with a `decision_id`, or labelled by a rule, a mirror leg or Jev, is
+   * left alone: today's legacy facts cannot re-derive that label. Only
+   * `userId`'s rows are written, whatever ids are passed, and `input_id` never
+   * is. Returns the rows whose labels changed.
+   */
+  async relabelEntries(
+    userId: string,
+    rowIds: readonly string[],
+    tx: DatabaseTransaction
+  ): Promise<number> {
+    const t = schema.holdingTransactions;
+    const relabellable = and(
+      eq(t.userId, userId),
+      isNull(t.decisionId),
+      or(isNull(t.kindOrigin), notInArray(t.kindOrigin, [...UNDERIVABLE_KIND_ORIGINS]))
+    );
+    const name = (c: PgColumn) => sql.identifier(c.name);
+    const columns = RELABELLED_COLUMNS.map((c) => c.column);
+    const set = sql.join(
+      columns.map((c) => sql`${name(c)} = v.${name(c)}`),
+      sql`, `
+    );
+    const changes = sql`(${sql.join(columns, sql`, `)}) IS DISTINCT FROM (${sql.join(
+      columns.map((c) => sql`v.${name(c)}`),
+      sql`, `
+    )})`;
+    const valueNames = sql.join([sql`id`, ...columns.map(name)], sql`, `);
+
+    const ids = [...new Set(rowIds)];
+    let changed = 0;
+    for (let start = 0; start < ids.length; start += RELABEL_BATCH_SIZE) {
+      const rows = await tx
+        .select(LEGACY_ENTRY_FACTS)
+        .from(t)
+        .where(and(inArray(t.id, ids.slice(start, start + RELABEL_BATCH_SIZE)), relabellable));
+      if (rows.length === 0) continue;
+      const values = rows.map((row) => {
+        const mapping = mapLegacyEntry(row);
+        const cells = RELABELLED_COLUMNS.map(
+          ({ column, value }) =>
+            sql`${mapping.excluded === null ? value(mapping) : null}::${sql.raw(column.getSQLType())}`
+        );
+        return sql`(${sql.join([sql`${row.id}::uuid`, ...cells], sql`, `)})`;
+      });
+      // The guard is re-asserted here, so a decision committed since the read still wins.
+      const updated = (await tx.execute(sql`
+        UPDATE ${t} SET ${set}
+        FROM (VALUES ${sql.join(values, sql`, `)}) AS v (${valueNames})
+        WHERE ${t.id} = v.id AND ${relabellable} AND ${changes}
+        RETURNING ${t.id}
+      `)) as unknown as unknown[];
+      changed += updated.length;
+    }
+    return changed;
+  }
+
+  /**
+   * Of `rowIds`, the user's rows classification may still decide (A2 D-10):
+   * `ruleDecidablePredicate` (unpaired, unanswered, non-zero, not taken back
+   * from a rule), with a ledger kind that names no destination, and no
+   * decision and no rule, mirror or Jev label on them already.
+   */
+  async findUnclassified(
+    userId: string,
+    rowIds: readonly string[],
+    tx: DatabaseTransaction
+  ): Promise<HoldingTransaction[]> {
+    const t = schema.holdingTransactions;
+    const ids = [...new Set(rowIds)];
+    const found: HoldingTransaction[] = [];
+    for (let start = 0; start < ids.length; start += RELABEL_BATCH_SIZE) {
+      const rows = await tx
+        .select()
+        .from(t)
+        .where(
+          and(
+            inArray(t.id, ids.slice(start, start + RELABEL_BATCH_SIZE)),
+            ruleDecidablePredicate(userId),
+            isNull(t.decisionId),
+            or(isNull(t.kindOrigin), notInArray(t.kindOrigin, [...UNDERIVABLE_KIND_ORIGINS])),
+            inArray(t.ledgerKind, ['outflow', 'inflow', 'transfer_in', 'transfer_out'])
+          )
+        )
+        .orderBy(asc(t.occurredAt), asc(t.id));
+      found.push(...rows);
+    }
+    return found;
+  }
+
+  /**
+   * A rule's ledger kind on one row, with `kind_origin 'rule'`, which
+   * `relabelEntries` then leaves (D-10). A label only: no legacy fact moves,
+   * so neither does `updated_at`.
+   */
+  async labelByRule(
+    userId: string,
+    rowId: string,
+    ledgerKind: LedgerKind,
+    tx: DatabaseTransaction
+  ): Promise<void> {
+    const t = schema.holdingTransactions;
+    await tx
+      .update(t)
+      .set({ ledgerKind, kindOrigin: 'rule' })
+      .where(and(eq(t.id, rowId), eq(t.userId, userId), isNull(t.decisionId)));
   }
 
   // Returns every tx for a given holding in (from, to] ordered by time.
@@ -1129,4 +1493,21 @@ export class HoldingTransactionRepository extends BaseRepository<
       throw error;
     }
   }
+}
+
+function fallsInArrivalWindow(
+  candidate: { source: string; occurredAt: Date | string; sourceMetadata: unknown },
+  occurredAt: Date | string
+): boolean {
+  const at = new Date(occurredAt).getTime();
+  const meta = (candidate.sourceMetadata ?? {}) as Record<string, unknown>;
+  if (candidate.source === 'user-balance-edit') {
+    const from = new Date(String(meta.gapFrom)).getTime();
+    const to = new Date(String(meta.gapTo)).getTime();
+    return at > from && at <= to;
+  }
+  if (typeof meta.arrivalFrom === 'string' && typeof meta.arrivalTo === 'string') {
+    return at >= new Date(meta.arrivalFrom).getTime() && at <= new Date(meta.arrivalTo).getTime();
+  }
+  return at === new Date(candidate.occurredAt).getTime();
 }

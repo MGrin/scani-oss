@@ -41,9 +41,12 @@ import { groupDetailPath } from '../../lib/routes';
  *
  * **A group of only inactive holdings shows what they are worth, muted and
  * badged Inactive** (SC-1128), where it used to show 0 beside a list of rows
- * that each carry a value. That figure is display only: the sort, the export's
- * value column and its TOTAL all read `amount`, which stays 0, so the TOTAL
- * still equals the portfolio's money. The export marks the row on its name.
+ * that each carry a value. That figure is display only: the sort and the
+ * export's value column read `amount`, which stays 0. The export marks the row
+ * on its name.
+ *
+ * **The export has no TOTAL row** (SC-1469). A holding in several groups counts
+ * in full in each, so the column's sum is not anybody's money.
  */
 
 export interface GroupRow {
@@ -206,7 +209,6 @@ export function groupsListConfig(
         width: 'w-40',
         render: figure,
         exportValue: (group) => exportMoney(amount(group), baseCurrency),
-        exportTotal: true,
       },
       {
         key: 'holdings',

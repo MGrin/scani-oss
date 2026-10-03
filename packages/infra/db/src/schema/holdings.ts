@@ -1,5 +1,6 @@
 import { relations, sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   boolean,
   index,
   jsonb,
@@ -12,6 +13,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { accounts } from './accounts';
+import { feedInputs, judgmentDecisions } from './feeds';
 import { holdingGroups } from './groups';
 import { tokens } from './tokens';
 import { transferReviewRules } from './transfer-review-rules';
@@ -51,6 +53,10 @@ export const holdings = pgTable(
     // row a sync target (SC-330).
     label: text('label'),
     isHidden: boolean('is_hidden').notNull().default(false),
+    // Who hid it (SC-1486): 'auto' is the closed-position sweep, and such a
+    // holding still counts in value history, PnL, returns and flows. 'user', or
+    // null on a hidden row, is the owner's, and it counts nowhere.
+    hiddenBy: text('hidden_by').$type<'user' | 'auto'>(),
     isActive: boolean('is_active').notNull().default(true),
     // What the owner last said a manual balance edit on THIS holding meant —
     // 'flow' | 'correction' | 'growth' (SC-510). The remembered default for
@@ -62,6 +68,22 @@ export const holdings = pgTable(
     // guessed at. `manualEditNeedsCause` in @scani/shared is which holdings
     // that applies to and why.
     manualEditCause: text('manual_edit_cause'),
+    // The distinct statement dates a synced holding has been MISSING from,
+    // oldest first; NULL while the source still reports it (SC-1451). Only
+    // read for a provider that sets `absentFiatConfirmations`: an absence
+    // zeroes the holding once this reaches that many dates, and one sighting
+    // clears it. Dates, not syncs, so an hourly re-read of one statement
+    // counts once.
+    absentFromStatements: timestamp('absent_from_statements', { withTimezone: true }).array(),
+    // How the position is kept: a `snapshot` is a balance somebody reported, a
+    // `feed` is one the ledger derives. NULL until classified: the
+    // classification backfill fills it where it is still NULL. The columns
+    // after it are the feed's start and the base-currency value with the
+    // moment it was priced.
+    kind: text('kind').$type<'snapshot' | 'feed'>(),
+    startsAt: timestamp('starts_at', { withTimezone: true }),
+    valueBase: text('value_base'),
+    valuePricedAt: timestamp('value_priced_at', { withTimezone: true }),
     lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -144,7 +166,8 @@ export const holdingTransactions = pgTable(
       .notNull()
       .references(() => tokens.id, { onDelete: 'restrict' }),
     // buy|sell|deposit|withdraw|transfer_in|transfer_out|swap_in|swap_out|
-    // fee|reward|interest|airdrop|opening_balance|correction|unknown
+    // settle_in|settle_out|fee|reward|interest|airdrop|opening_balance|
+    // correction|unknown
     kind: text('kind').notNull(),
     // Signed Decimal.js string. Negative for outflows (sell, withdraw, fee).
     quantity: text('quantity').notNull(),
@@ -184,6 +207,13 @@ export const holdingTransactions = pgTable(
     swapGroupId: uuid('swap_group_id'),
     // Links CEX withdraw ↔ wallet deposit (populated by Phase 3 matcher).
     transferGroupId: uuid('transfer_group_id'),
+    // A `settle_in`/`settle_out`/`fee` row written for a single-row trade
+    // points at that trade (SC-1453), so deleting the trade takes its cash
+    // side with it.
+    settlesTransactionId: uuid('settles_transaction_id').references(
+      (): AnyPgColumn => holdingTransactions.id,
+      { onDelete: 'cascade' }
+    ),
     // The user's answer to "what actually happened to this outflow", for the
     // ones `LinkTransferPairsUseCase` could not pair on its own — see
     // TRANSFER_REVIEW_DECISIONS in @scani/shared for the three values.
@@ -230,6 +260,25 @@ export const holdingTransactions = pgTable(
     // that is expected, not a gap to backfill.
     counterparty: text('counterparty'),
     description: text('description'),
+    // What the feeds model makes of this row, beside the legacy `kind` above,
+    // which the lot walker and the returns classifier still switch on. All NULL
+    // until a classifier or the backfill writes them. `ledgerKind` is plain
+    // text here: the engine owns the list and the CHECK in the migration holds
+    // the database to it.
+    ledgerKind: text('ledger_kind'),
+    kindSubtype: text('kind_subtype'),
+    groupId: uuid('group_id'),
+    // Names an entry or a group, so it has no foreign key.
+    feeOf: uuid('fee_of'),
+    inputId: uuid('input_id').references(() => feedInputs.id, { onDelete: 'set null' }),
+    executionPrice: text('execution_price'),
+    executionPriceTokenId: uuid('execution_price_token_id').references(() => tokens.id, {
+      onDelete: 'set null',
+    }),
+    kindOrigin: text('kind_origin').$type<'source' | 'rule' | 'jev' | 'person' | 'mirror'>(),
+    decisionId: uuid('decision_id').references(() => judgmentDecisions.id, {
+      onDelete: 'set null',
+    }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -245,6 +294,9 @@ export const holdingTransactions = pgTable(
     ),
     transferGroupIdx: index('idx_holding_tx_transfer_group').on(table.transferGroupId),
     swapGroupIdx: index('idx_holding_tx_swap_group').on(table.swapGroupId),
+    settlesIdx: index('idx_holding_tx_settles')
+      .on(table.settlesTransactionId)
+      .where(sql`settles_transaction_id IS NOT NULL`),
     // The transfer-review queue's own read: unpaired, undecided outflows for
     // one user, newest first. Partial because that set is a rounding error
     // next to the table — every paired outflow, every answered one and every
@@ -263,6 +315,15 @@ export const holdingTransactions = pgTable(
     counterpartyIdx: index('idx_holding_tx_counterparty')
       .on(table.userId, table.counterparty)
       .where(sql`${table.counterparty} IS NOT NULL`),
+    // A deleted input, decision or token clears its rows' reference by SET
+    // NULL, which walks the table by that column.
+    inputIdIdx: index('idx_holding_tx_input_id').on(table.inputId).where(sql`input_id IS NOT NULL`),
+    decisionIdIdx: index('idx_holding_tx_decision_id')
+      .on(table.decisionId)
+      .where(sql`decision_id IS NOT NULL`),
+    executionPriceTokenIdx: index('idx_holding_tx_execution_price_token_id')
+      .on(table.executionPriceTokenId)
+      .where(sql`execution_price_token_id IS NOT NULL`),
   })
 );
 
@@ -317,6 +378,15 @@ export const holdingBalanceObservations = pgTable(
     balanceMoved: boolean('balance_moved').generatedAlwaysAs(
       sql`previous_balance IS NOT NULL AND balance::numeric <> previous_balance::numeric`
     ),
+    // What this observation is evidence of, who stands behind it, which input
+    // it came from, why the balance moved and when a later one replaced it.
+    // All NULL until a writer classifies it; an input that is deleted clears
+    // `inputId` rather than the observation.
+    role: text('role').$type<'snapshot' | 'checkpoint' | 'verification'>(),
+    authority: text('authority').$type<'provider' | 'statement' | 'person'>(),
+    inputId: uuid('input_id').references(() => feedInputs.id, { onDelete: 'set null' }),
+    cause: text('cause').$type<'flow' | 'growth' | 'correction'>(),
+    supersededAt: timestamp('superseded_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
@@ -342,6 +412,11 @@ export const holdingBalanceObservations = pgTable(
     balanceMovedIdx: index('idx_holding_obs_balance_moved')
       .on(table.userId)
       .where(sql`balance_moved`),
+    // A deleted input clears its observations' reference by SET NULL, which
+    // walks the table by that column.
+    inputIdIdx: index('idx_holding_obs_input_id')
+      .on(table.inputId)
+      .where(sql`input_id IS NOT NULL`),
   })
 );
 
@@ -408,6 +483,42 @@ export const holdingApyConfigs = pgTable(
   (table) => ({
     holdingIdIdx: index('idx_holding_apy_configs_holding_id').on(table.holdingId),
     activeIdx: index('idx_holding_apy_configs_active').on(table.isActive),
+  })
+);
+
+// A balance-gap answer the owner retired because imported trade settlements
+// now explain its interval (SC-1453), kept whole so Undo can put it back. Its
+// rows leave the ledger through `BalanceGapService`'s undo path; this is the
+// only copy, which is why it is append-only: nothing prunes it, restoring
+// stamps `restored_at` and keeps the row, and only the account's own data
+// deletion removes it. `rows` and `removed_holdings` are `to_jsonb` of the
+// removed rows, all columns, so a restore is exact to the microsecond.
+export const retiredGapAnswers = pgTable(
+  'retired_gap_answers',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    holdingId: uuid('holding_id').references(() => holdings.id, { onDelete: 'set null' }),
+    observationId: uuid('observation_id').references(() => holdingBalanceObservations.id, {
+      onDelete: 'set null',
+    }),
+    gapFrom: timestamp('gap_from', { withTimezone: true }).notNull(),
+    gapTo: timestamp('gap_to', { withTimezone: true }).notNull(),
+    // The observation's answer columns and its whole `source_metadata`, as
+    // they were before the retirement.
+    answer: jsonb('answer').notNull(),
+    rows: jsonb('rows').notNull(),
+    // A destination holding the answer had opened and the removal deleted,
+    // with its observations and coverage: `[{ holding, observations, coverage }]`.
+    removedHoldings: jsonb('removed_holdings').notNull().default('[]'),
+    reason: text('reason').notNull(),
+    retiredAt: timestamp('retired_at', { withTimezone: true }).notNull().defaultNow(),
+    restoredAt: timestamp('restored_at', { withTimezone: true }),
+  },
+  (table) => ({
+    userIdx: index('idx_retired_gap_answers_user').on(table.userId),
   })
 );
 
@@ -499,11 +610,19 @@ export type HoldingTransactionKind =
   | 'transfer_out'
   | 'swap_in'
   | 'swap_out'
+  // The cash side of a trade its source reported as one row (SC-1453), on the
+  // cash holding, linked to the trade by `settles_transaction_id`.
+  | 'settle_in'
+  | 'settle_out'
   | 'fee'
   | 'reward'
   | 'interest'
   | 'airdrop'
   | 'opening_balance'
+  // Realized profit or loss on a position the holding does not record as
+  // units — a derivatives fill, a funding settlement, a liquidation — signed
+  // either way (SC-1461). A return, never money paid in or taken out.
+  | 'realized_pnl'
   // A restatement, not an event: the previously recorded balance was wrong
   // (SC-510). Written only by `ManualBalanceEditService`, dated at the moment
   // the superseded figure entered the record rather than at the edit, and

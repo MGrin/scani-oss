@@ -367,4 +367,3 @@ export type HoldingsWithSummary = {
 };
 
 export type CreateHoldingInput = z.infer<typeof CreateHoldingDto>;
-export type UpdateHoldingInput = z.infer<typeof UpdateHoldingDto>;

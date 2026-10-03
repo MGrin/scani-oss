@@ -33,14 +33,19 @@
  * `withdrawPairingRefusal` refuses on the absence of one — so there is no
  * group both accept and none that neither reaches. `sameHoldingRepairPlan`
  * asks both, in that order, and returns the ONE action a caller should take.
+ *
+ * A mirror pair (A2) is the one group outside both, deliberately: it spans
+ * two holdings, so it is never an artifact, and `unlinkPair` refuses it too.
  */
 
 import type { SameHoldingGroupVerdict } from './upstream-event';
 import { type GroupLegFacts, sameHoldingGroupVerdict } from './upstream-event';
 
-/** The only leg fact `unlinkPair`'s refusal depends on. */
+/** The leg facts `unlinkPair`'s refusal depends on. */
 export interface UnlinkLegReviewFacts {
   readonly transferReview: string | null;
+  /** `holding_transactions.kind_origin`; absent reads as not a mirror leg. */
+  readonly kindOrigin?: string | null;
 }
 
 /** Everything either write path's gate reads, plus the id it reports back. */
@@ -56,14 +61,20 @@ export interface RepairLegFacts extends GroupLegFacts, UnlinkLegReviewFacts {
  * and a caller switching on its result should not have to handle two reasons
  * it will never be given.
  */
-export interface RepairRefusal<R extends string> {
+interface RepairRefusal<R extends string> {
   readonly reason: R;
   /** Operator-readable, naming what causes it. */
   readonly detail: string;
 }
 
-/** `unlinkPair` refuses on one thing: some leg carries an answer. */
-export type UnlinkRefusalReason = 'reviewed';
+/**
+ * `unlinkPair` refuses when some leg carries an answer, or when a leg is a
+ * mirror leg ingest wrote for a classified row (A2, R48). That pair carries no
+ * answer by design, so the first gate cannot see it; unlinking it would leave
+ * the leg and the anchor it moved standing while the source row went back to
+ * the queue, where an `internal` answer writes the money a second time.
+ */
+type UnlinkRefusalReason = 'reviewed' | 'mirror';
 export type UnlinkRefusal = RepairRefusal<UnlinkRefusalReason>;
 
 /**
@@ -85,13 +96,22 @@ export type WithdrawRefusal = RepairRefusal<WithdrawRefusalReason>;
  */
 export function unlinkPairRefusal(legs: ReadonlyArray<UnlinkLegReviewFacts>): UnlinkRefusal | null {
   const answers = legs.flatMap((leg) => (leg.transferReview === null ? [] : [leg.transferReview]));
-  if (answers.length === 0) return null;
-  return {
-    reason: 'reviewed',
-    detail:
-      `${answers.length} of ${legs.length} leg(s) answered ` +
-      `(${[...new Set(answers)].sort().join(', ')}) — reopen them first`,
-  };
+  if (answers.length > 0) {
+    return {
+      reason: 'reviewed',
+      detail:
+        `${answers.length} of ${legs.length} leg(s) answered ` +
+        `(${[...new Set(answers)].sort().join(', ')}) — reopen them first`,
+    };
+  }
+  if (legs.some((leg) => leg.kindOrigin === 'mirror')) {
+    return {
+      reason: 'mirror',
+      detail:
+        'the group holds a mirror leg a classification wrote; it has no matcher pairing to break',
+    };
+  }
+  return null;
 }
 
 /**
@@ -133,7 +153,7 @@ export function withdrawPairingRefusal(
 }
 
 /** The one write a caller should make for this group. */
-export type SameHoldingRepairAction = 'unlink' | 'withdraw' | 'keep';
+type SameHoldingRepairAction = 'unlink' | 'withdraw' | 'keep';
 
 export interface SameHoldingRepairPlan {
   /**

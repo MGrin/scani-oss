@@ -19,8 +19,19 @@ import { OUTFLOW_KINDS } from './transfer-matching';
  */
 export function pendingPredicate(userId: string) {
   return and(
-    eq(schema.holdingTransactions.userId, userId),
     inArray(schema.holdingTransactions.kind, [...OUTFLOW_KINDS]),
+    unansweredPredicate(userId)
+  );
+}
+
+/**
+ * The queue's set before it narrows to outflows: unpaired, unanswered and
+ * non-zero. Feed classification reads it for inflows too, through
+ * `ruleDecidablePredicate`.
+ */
+function unansweredPredicate(userId: string) {
+  return and(
+    eq(schema.holdingTransactions.userId, userId),
     isNull(schema.holdingTransactions.transferGroupId),
     isNull(schema.holdingTransactions.transferReview),
     // A zero-quantity outflow moves nothing, so no answer to it can change
@@ -94,7 +105,22 @@ export function pendingPredicate(userId: string) {
  * answer, and a rule answering it instead would take that question away.
  */
 export function ruleWritablePredicate(userId: string) {
-  return and(pendingPredicate(userId), isNull(schema.holdingTransactions.transferReviewSource));
+  return and(pendingPredicate(userId), notOverruled());
+}
+
+/**
+ * `ruleWritablePredicate` for both directions: the rows feed classification
+ * may decide (foundation A2 D-10), so that what a feed rule or an own address
+ * decides is never a row a person, a pairing or a repair already did, and
+ * never one a person took back from a rule.
+ */
+export function ruleDecidablePredicate(userId: string) {
+  return and(unansweredPredicate(userId), notOverruled());
+}
+
+/** `transfer_review_source IS NULL`; `ruleWritablePredicate` says why. */
+function notOverruled() {
+  return isNull(schema.holdingTransactions.transferReviewSource);
 }
 
 /**

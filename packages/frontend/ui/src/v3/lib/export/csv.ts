@@ -109,7 +109,7 @@ function escapeField(raw: string, separator: CsvSeparator): string {
  * how a `Gain / loss` column reached a reader as `35.13513513513512` — twelve
  * digits of float noise under a header that did not even say percent.
  */
-export function csvField(value: ExportValue): string {
+function csvField(value: ExportValue): string {
   switch (value.kind) {
     case 'blank':
       return '';
@@ -125,7 +125,7 @@ export function csvField(value: ExportValue): string {
   }
 }
 
-export const CSV_COMMENT = '#';
+const CSV_COMMENT = '#';
 
 /**
  * The provenance block, as comment lines.
@@ -136,7 +136,7 @@ export const CSV_COMMENT = '#';
  * get is newline stripping — a filter value containing a line break would
  * otherwise silently end the comment and inject a row.
  */
-export function csvPreamble(provenance: ExportProvenance): string[] {
+function csvPreamble(provenance: ExportProvenance): string[] {
   return [
     ...provenanceLines(provenance).map(
       ({ label, value }) => `${CSV_COMMENT} ${label}: ${value.replace(/[\r\n]+/g, ' ')}`

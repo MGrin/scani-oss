@@ -174,6 +174,37 @@ describe('accountExportSheets', () => {
     ]);
   });
 
+  it("lists a trade's settlement as its own row, named after the trade it settles (SC-1453)", () => {
+    const trade = DATA.transactions[0];
+    if (!trade) throw new Error('fixture has no transaction');
+    const withSettlement = {
+      ...DATA,
+      transactions: [
+        { ...trade, kind: 'buy', externalId: 'ibkr-trade-1' },
+        {
+          ...trade,
+          id: 'x2',
+          symbol: 'USD',
+          kind: 'settle_out',
+          quantity: '-33938.80',
+          priceNative: null,
+          externalId: 'ibkr-trade-1:settle',
+        },
+      ],
+    } as AccountExport;
+    const sheet = accountExportSheets(withSettlement, AT, t).sheets.find(
+      (s) => s.name === 'Transactions'
+    );
+    const column = (header: string) => sheet?.headers.indexOf(header) ?? -1;
+    const settlement = sheet?.rows[1];
+    expect(settlement?.[column('Kind')]).toEqual({ kind: 'text', value: 'settle_out' });
+    expect(settlement?.[column('Symbol')]).toEqual({ kind: 'text', value: 'USD' });
+    expect(settlement?.[column('External id')]).toEqual({
+      kind: 'text',
+      value: 'ibkr-trade-1:settle',
+    });
+  });
+
   it('leaves the identity of every record intact, so the file is still useful', () => {
     const { sheets } = accountExportSheets(DATA, AT, t, { hideAmounts: true });
     expect(sheets.find((s) => s.name === 'Holdings')?.headers).toContain('Symbol');

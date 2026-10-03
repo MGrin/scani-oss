@@ -27,9 +27,9 @@ import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enfor
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { PageCapWatch } from '../../core/utils/page-cap';
 import { splitConcatenatedPair } from '../../core/utils/symbol-splitter';
+import type { TimeWindow } from '../../core/utils/time-windows';
+import { WalkFailureWatch } from '../../core/utils/walk-failures';
 import { huobiManifest } from './manifest';
-
-export { huobiManifest } from './manifest';
 
 const HUOBI_INSTITUTION_CODE = 'huobi';
 const HUOBI_HOST = 'api.huobi.pro';
@@ -40,6 +40,16 @@ const MAX_CANDIDATE_SYMBOLS = 30;
 const MATCHRESULTS_PAGE_SIZE = 500;
 const DEPOSIT_WITHDRAW_PAGE_SIZE = 500;
 const MAX_PAGES = 200;
+const HOUR_MS = 60 * 60 * 1000;
+// `/v1/order/matchresults` answers [end-time − 48h, end-time] when given no
+// start-time, and "the query window can be shifted within 120 days" —
+// https://huobiapi.github.io/docs/spot/v1/en/. So fills are walked in 48h
+// windows, and nothing older than 120 days is reachable at all.
+const MATCHRESULTS_WINDOW_MS = 48 * HOUR_MS;
+const MATCHRESULTS_REACH_MS = 120 * 24 * HOUR_MS;
+// The oldest window is requested last, possibly minutes into a long run, so
+// the walk stops an hour short of the limit rather than be refused at its edge.
+const MATCHRESULTS_WALK_REACH_MS = MATCHRESULTS_REACH_MS - HOUR_MS;
 
 interface HuobiBalance {
   currency: string;
@@ -119,6 +129,12 @@ export class HuobiProvider
     'transactions',
     'credential-validator',
   ];
+  // Declared so the router never claims a complete history here. Trades are
+  // asked for per symbol, and the symbols are enumerated from balances and
+  // deposit/withdraw history, so an asset bought and sold to zero without
+  // ever moving on or off the exchange is never seen; and `matchresults`
+  // reaches back no further than 120 days, whatever the walk asks.
+  readonly transactionHistoryHorizonMs = MATCHRESULTS_WALK_REACH_MS;
   protected readonly baseUrl = `https://${HUOBI_HOST}`;
 
   // Huobi puts the signature in the query string; signRequest contributes
@@ -159,7 +175,18 @@ export class HuobiProvider
     const creds = await this.resolveApiCreds(ctx);
     if (!creds) return [];
 
-    const merged = await this.fetchAggregateSpotBalances(creds);
+    // A balances run has no retraction channel, so an unreadable account is
+    // at least said out loud rather than read as an account holding nothing.
+    const merged = await this.fetchAggregateSpotBalances(creds, (accountId, err) =>
+      this.logger.warn(
+        {
+          providerKey: this.providerKey,
+          accountId,
+          err: err instanceof Error ? err.message : err,
+        },
+        'Huobi spot account balance could not be read; its holdings are missing from this sync'
+      )
+    );
     const out: HoldingSnapshot[] = [];
     for (const [currency, total] of merged) {
       out.push({
@@ -182,13 +209,36 @@ export class HuobiProvider
     if (!creds) return [];
 
     const capped = new PageCapWatch();
+    const failures = new WalkFailureWatch(this.providerKey, this.logger);
 
-    const balances = await this.fetchAggregateSpotBalances(creds);
-    const currencies = [...balances.keys()].map((c) => c.toLowerCase());
-    if (currencies.length === 0) return [];
+    const balances = await this.fetchAggregateSpotBalances(creds, (accountId, err) =>
+      failures.note(`the balance read for account ${accountId}`, err)
+    );
 
     const sinceMs = ctx.since?.getTime();
     const untilMs = ctx.until?.getTime();
+
+    // Deposits and withdrawals are walked across every currency, not per
+    // held one: they are the only feed Huobi lists without a symbol, so they
+    // are what names an asset that has since been sold to zero (SC-1480).
+    const transfers: HuobiDepositWithdrawRow[] = [];
+    for (const type of ['deposit', 'withdraw'] as const) {
+      for await (const row of this.iterateDepositWithdraw(
+        creds,
+        type,
+        sinceMs,
+        untilMs,
+        capped,
+        failures
+      )) {
+        transfers.push(row);
+      }
+    }
+
+    const currencies = new Set([...balances.keys()].map((c) => c.toLowerCase()));
+    for (const row of transfers) {
+      if (row.currency) currencies.add(row.currency.toLowerCase());
+    }
 
     const events: TransactionEvent[] = [];
     const seen = new Set<string>();
@@ -199,36 +249,31 @@ export class HuobiProvider
       events.push(event);
     };
 
-    for (const symbol of buildCandidateSymbols(currencies, MAX_CANDIDATE_SYMBOLS)) {
-      for await (const row of this.iterateMatchResults(creds, symbol, sinceMs, untilMs, capped)) {
+    const symbols = buildCandidateSymbols([...currencies], MAX_CANDIDATE_SYMBOLS);
+    const unwalked = countCandidateSymbols([...currencies]) - symbols.length;
+    if (unwalked > 0) {
+      const reason = `huobi: ${unwalked} candidate trading pair${unwalked === 1 ? '' : 's'} beyond the ${MAX_CANDIDATE_SYMBOLS}-pair cap ${unwalked === 1 ? 'was' : 'were'} never walked, so their trades were never fetched`;
+      this.logger.warn({ providerKey: this.providerKey, unwalked }, reason);
+      ctx.retractHistoryClaim?.(reason);
+    }
+    const now = Date.now();
+    const reachFloor = now - MATCHRESULTS_WALK_REACH_MS;
+    if (ctx.since && ctx.since.getTime() < reachFloor) {
+      const reason = `huobi: fills before ${new Date(reachFloor).toISOString().slice(0, 10)} are beyond the 120 days /v1/order/matchresults serves, so trades older than that were never fetched`;
+      this.logger.warn({ providerKey: this.providerKey }, reason);
+      ctx.retractHistoryClaim?.(reason);
+    }
+    const windows = matchResultWindows(Math.max(sinceMs ?? reachFloor, reachFloor), untilMs ?? now);
+    for (const symbol of symbols) {
+      for await (const row of this.iterateMatchResults(creds, symbol, windows, capped, failures)) {
         push(matchResultToEvent(row));
       }
     }
 
-    for (const currency of currencies) {
-      for await (const row of this.iterateDepositWithdraw(
-        creds,
-        currency,
-        'deposit',
-        sinceMs,
-        untilMs,
-        capped
-      )) {
-        push(depositWithdrawToEvent(row));
-      }
-      for await (const row of this.iterateDepositWithdraw(
-        creds,
-        currency,
-        'withdraw',
-        sinceMs,
-        untilMs,
-        capped
-      )) {
-        push(depositWithdrawToEvent(row));
-      }
-    }
+    for (const row of transfers) push(depositWithdrawToEvent(row));
 
     capped.retract(ctx, this.providerKey);
+    failures.retract(ctx);
     return events;
   }
 
@@ -258,7 +303,14 @@ export class HuobiProvider
     }
   }
 
-  private async fetchAggregateSpotBalances(creds: ApiKeyCreds): Promise<Map<string, Decimal>> {
+  /**
+   * A spot account whose balance cannot be read is skipped rather than
+   * failing the whole read, and reported through `onAccountFailure`.
+   */
+  private async fetchAggregateSpotBalances(
+    creds: ApiKeyCreds,
+    onAccountFailure: (accountId: number, err?: unknown) => void
+  ): Promise<Map<string, Decimal>> {
     const accountsData = await this.signedJson<HuobiAccountsResponse>(
       {
         method: 'GET',
@@ -282,14 +334,17 @@ export class HuobiProvider
           { method: 'GET', url: path, query: this.authQueryString(creds, 'GET', path) },
           creds
         );
-        if (balanceData.status !== 'ok') continue;
+        if (balanceData.status !== 'ok') {
+          onAccountFailure(acct.id, balanceData.status);
+          continue;
+        }
         for (const b of balanceData.data.list) {
           const amt = new Decimal(b.balance || '0');
           if (amt.lte(0)) continue;
           merged.set(b.currency, (merged.get(b.currency) ?? new Decimal(0)).plus(amt));
         }
-      } catch {
-        // Per-account failures shouldn't kill the whole sync; skip.
+      } catch (err) {
+        onAccountFailure(acct.id, err);
       }
     }
     return merged;
@@ -298,54 +353,61 @@ export class HuobiProvider
   private async *iterateMatchResults(
     creds: ApiKeyCreds,
     symbol: string,
-    sinceMs: number | undefined,
-    untilMs: number | undefined,
-    capped: PageCapWatch
+    windows: readonly TimeWindow[],
+    capped: PageCapWatch,
+    failures: WalkFailureWatch
   ): AsyncGenerator<HuobiMatchResult> {
     const path = '/v1/order/matchresults';
-    let fromId: string | undefined;
+    // One page budget per symbol across all of its windows.
     let pages = 0;
     let rows = 0;
-    while (pages < MAX_PAGES) {
-      pages += 1;
-      const extra: Record<string, string> = {
-        symbol,
-        size: String(MATCHRESULTS_PAGE_SIZE),
-        direct: 'next',
-      };
-      if (sinceMs !== undefined) extra['start-time'] = String(sinceMs);
-      if (untilMs !== undefined) extra['end-time'] = String(untilMs);
-      if (fromId !== undefined) extra['from-id'] = fromId;
+    for (const window of windows) {
+      let fromId: string | undefined;
+      while (true) {
+        if (pages >= MAX_PAGES) {
+          capped.note({ walk: { kind: 'symbolTrades', symbol }, pages: MAX_PAGES, rows });
+          return;
+        }
+        pages += 1;
+        const extra: Record<string, string> = {
+          symbol,
+          size: String(MATCHRESULTS_PAGE_SIZE),
+          direct: 'next',
+          'start-time': String(window.start.getTime()),
+          'end-time': String(window.end.getTime()),
+        };
+        if (fromId !== undefined) extra['from-id'] = fromId;
 
-      const data = await this.signedJson<HuobiMatchResultsResponse>(
-        { method: 'GET', url: path, query: this.authQueryString(creds, 'GET', path, extra) },
-        creds
-      );
-      if (data.status !== 'ok') {
-        // Invalid symbol or temporary glitch: skip this symbol entirely
-        // rather than abort the whole transactions sync.
-        return;
+        const data = await this.signedJson<HuobiMatchResultsResponse>(
+          { method: 'GET', url: path, query: this.authQueryString(creds, 'GET', path, extra) },
+          creds
+        );
+        if (data.status !== 'ok') {
+          // A candidate pair Huobi does not list is an absent market. Anything
+          // else is a walk that stopped short, and says so.
+          if (!isInvalidSymbol(data)) {
+            failures.note(`the ${symbol} trades walk`, data['err-code'] ?? data.status);
+          }
+          return;
+        }
+        const page = data.data ?? [];
+        rows += page.length;
+        for (const row of page) yield row;
+        if (page.length < MATCHRESULTS_PAGE_SIZE) break;
+        const last = page[page.length - 1];
+        if (!last) break;
+        fromId = String(last.id);
       }
-      const page = data.data ?? [];
-      rows += page.length;
-      for (const row of page) yield row;
-      if (page.length < MATCHRESULTS_PAGE_SIZE) return;
-      const last = page[page.length - 1];
-      if (!last) return;
-      fromId = String(last.id);
     }
-    // Every early exit above `return`s, so reaching here means the `pages`
-    // bound is what stopped the walk — not the end of the feed.
-    capped.note({ walk: { kind: 'symbolTrades', symbol }, pages: MAX_PAGES, rows });
   }
 
   private async *iterateDepositWithdraw(
     creds: ApiKeyCreds,
-    currency: string,
     type: 'deposit' | 'withdraw',
     sinceMs: number | undefined,
     untilMs: number | undefined,
-    capped: PageCapWatch
+    capped: PageCapWatch,
+    failures: WalkFailureWatch
   ): AsyncGenerator<HuobiDepositWithdrawRow> {
     const path = '/v1/query/deposit-withdraw';
     let from: string | undefined;
@@ -354,7 +416,6 @@ export class HuobiProvider
     while (pages < MAX_PAGES) {
       pages += 1;
       const extra: Record<string, string> = {
-        currency,
         type,
         size: String(DEPOSIT_WITHDRAW_PAGE_SIZE),
         direct: 'next',
@@ -365,7 +426,10 @@ export class HuobiProvider
         { method: 'GET', url: path, query: this.authQueryString(creds, 'GET', path, extra) },
         creds
       );
-      if (data.status !== 'ok') return;
+      if (data.status !== 'ok') {
+        failures.note(`the ${type} walk`, data['err-code'] ?? data.status);
+        return;
+      }
       const page = data.data ?? [];
       rows += page.length;
       let lastId: number | undefined;
@@ -381,14 +445,33 @@ export class HuobiProvider
       from = String(lastId);
     }
     capped.note({
-      walk: {
-        kind: type === 'deposit' ? 'currencyDeposits' : 'currencyWithdrawals',
-        currency,
-      },
+      walk: { kind: 'feed', path: `/v1/query/deposit-withdraw?type=${type}` },
       pages: MAX_PAGES,
       rows,
     });
   }
+}
+
+// "base-symbol-error symbol is invalid" — https://huobiapi.github.io/docs/spot/v1/en/
+function isInvalidSymbol(data: HuobiMatchResultsResponse): boolean {
+  return data['err-code'] === 'base-symbol-error';
+}
+
+/** How many candidates `buildCandidateSymbols` would return with no cap. */
+function countCandidateSymbols(currencies: string[]): number {
+  return buildCandidateSymbols(currencies, Number.POSITIVE_INFINITY).length;
+}
+
+/** 48h windows walked backwards from `untilMs` to `floorMs`, newest first. */
+function matchResultWindows(floorMs: number, untilMs: number): TimeWindow[] {
+  const out: TimeWindow[] = [];
+  let end = untilMs;
+  while (end > floorMs) {
+    const start = Math.max(end - MATCHRESULTS_WINDOW_MS, floorMs);
+    out.push({ start: new Date(start), end: new Date(end) });
+    end = start;
+  }
+  return out;
 }
 
 export function buildCandidateSymbols(
@@ -412,7 +495,7 @@ export function buildCandidateSymbols(
   return out;
 }
 
-export function matchResultToEvent(row: HuobiMatchResult): TransactionEvent | null {
+function matchResultToEvent(row: HuobiMatchResult): TransactionEvent | null {
   const split = splitConcatenatedPair(row.symbol, HUOBI_QUOTE_ASSETS);
   if (!split) return null;
   const side: TransactionEvent['kind'] = row.type.startsWith('buy-')
@@ -446,7 +529,7 @@ export function matchResultToEvent(row: HuobiMatchResult): TransactionEvent | nu
   };
 }
 
-export function depositWithdrawToEvent(row: HuobiDepositWithdrawRow): TransactionEvent {
+function depositWithdrawToEvent(row: HuobiDepositWithdrawRow): TransactionEvent {
   const ts = row['updated-at'] ?? row['created-at'] ?? 0;
   const occurredAt = new Date(ts);
   const kind: TransactionEvent['kind'] = row.type === 'deposit' ? 'deposit' : 'withdraw';

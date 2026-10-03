@@ -16,22 +16,27 @@
  * it, so the queue and the interpolation cannot disagree about what is
  * unexplained.
  *
- * ## Why it is a question and not a classification
+ * ## What it counts as until it is answered, and after
  *
- * The drift is observable; what it MEANT is not. Booking it as an external
- * flow would cancel a departure against an arrival and take the headline
- * close to what net worth says — and it would do that by declaring an
- * undated, unexplained balance change to be a contribution or a withdrawal,
+ * **Money in or out, never gain** (mgrin, 2026-10-01, SC-1470). Until then
+ * this said the opposite: an unexplained change stayed performance, because
+ * booking it as a flow would declare an undated change to be a contribution
  * on evidence that is only *the balance changed and we hold no reason*. That
- * claim has never been made in this codebase.
+ * rule left mgrin's net-worth change, his money in and out and his PnL
+ * unable to reconcile — 19,269 of value had left one account with nothing
+ * saying where — and he chose, knowing it changes Returns for every user,
+ * that a change nobody can explain is not a return.
  *
- * Leaving it as performance is the status quo: flattering on inflows,
- * punishing on outflows. Measured on production 2026-08-22, it is the largest
- * remaining error in one owner's time-weighted return.
+ * So `drift-rows.ts` in `@scani/domain` books every unexplained change as
+ * `drift_in` / `drift_out`, spread across the gap exactly as the value series
+ * interpolates it, for the readers of money only. An answer still changes
+ * that: `flow` and `correction` write their own ledger rows and leave nothing
+ * unexplained; `growth` makes the change `drift_growth`, which IS return,
+ * because the owner said so; `unknown` leaves it money in or out.
  *
- * So neither. The owner is asked, the answer is theirs, it carries a real
- * date and a real amount, and the return corrects itself through the ordinary
- * transaction path. **Nothing here infers a flow.**
+ * The gap stays in the review queue either way. Booking it as a flow is the
+ * default reading, not an answer, and the dated `flow` the owner can give is
+ * still better than a ramp across the whole interval.
  *
  * ## Why a human is not the preferred channel but the only one
  *
@@ -69,10 +74,9 @@ export type BalanceGapAnswer = (typeof BALANCE_GAP_ANSWERS)[number];
  * A queue whose only exits are three confident answers is a queue people
  * abandon at the first row they cannot place, and the rows nobody can place
  * are exactly the old ones this feature exists for. So it is answerable, it
- * writes **no ledger row** — the drift stays interpolated and stays
- * attributed to performance, which is the honest treatment of a change nobody
- * can explain — and it stamps the review so the same gap is not asked about
- * again.
+ * writes **no ledger row** — the drift stays interpolated and counts as money
+ * in or out, like any unanswered gap (SC-1470) — and it stamps the review so
+ * the same gap is not asked about again.
  *
  * It is deliberately NOT a member of `MANUAL_EDIT_CAUSES`. That type is the
  * input to `ManualBalanceEditService.record`, which must keep exhausting its
@@ -80,10 +84,6 @@ export type BalanceGapAnswer = (typeof BALANCE_GAP_ANSWERS)[number];
  * whole job is to write something.
  */
 export const BALANCE_GAP_UNKNOWN: BalanceGapAnswer = 'unknown';
-
-export function isBalanceGapAnswer(value: unknown): value is BalanceGapAnswer {
-  return typeof value === 'string' && (BALANCE_GAP_ANSWERS as readonly string[]).includes(value);
-}
 
 /** The three answers that reach `ManualBalanceEditService`. */
 export function isLedgerWritingAnswer(answer: BalanceGapAnswer): answer is ManualEditCause {
@@ -194,11 +194,17 @@ export const BALANCE_GAP_DATE_PROMPT_MIN_SPAN_MS = 24 * 60 * 60 * 1000;
  * feed lands the transfer later the item leaves by itself, with no window to
  * tune and nothing to expire.
  *
- * What this does NOT solve, stated rather than papered over: if the owner
- * answers a gap and the feed then imports the same movement, the ledger holds
- * both. `answer` re-derives the gap and refuses when the drift has already
- * gone, which closes the race up to the moment of answering and not after it.
- * That exposure is the same one SC-510's manual balance edit already carries.
+ * What happens when the owner answers a gap and the feed then imports the same
+ * movement. `answer` re-derives the gap and refuses when the drift has already
+ * gone, which closes the race up to the moment of answering. After it, one case
+ * resolves itself: an imported row of the same kind, the exact same amount and a
+ * date inside the answered interval takes the answer's row over in `bulkUpsert`
+ * (SC-1396), so the ledger holds it once. Everything else holds both — an import
+ * that arrives as separate legs against a net answer, and any derived settlement
+ * leg, which never takes an answer over — because an amount is not an
+ * identifier (SC-858). Answers that imported trade settlements now explain are
+ * offered back to the owner to retire or keep (SC-1453); nothing retires one
+ * without them.
  */
 
 /**

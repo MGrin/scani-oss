@@ -14,6 +14,8 @@ import {
   type ArrivalPart,
   arrivalCombinations,
   candidatePairClass,
+  INFLOW_KINDS,
+  OUTFLOW_KINDS,
   reviewPairClass,
   type TransferLeg,
 } from '../../src/lib/transfer-matching';
@@ -224,5 +226,20 @@ describe('arrivalCombinations — money that landed in parts (SC-1365)', () => {
     ]);
     expect(ids(found)[0]).toEqual(['a', 'b', 'c']);
     expect(found.every((c) => c.length <= 3)).toBe(true);
+  });
+});
+
+/**
+ * A settlement is the cash side of a trade on the same account (SC-1453). It
+ * never left the owner's hands, so the linker must never pair it with a
+ * deposit elsewhere, and the review queue, which reads the same outflow kinds,
+ * must never ask where it went.
+ */
+describe('the kinds the linker and the review queue read', () => {
+  test('never include a trade settlement', () => {
+    for (const kind of ['settle_in', 'settle_out']) {
+      expect(OUTFLOW_KINDS).not.toContain(kind);
+      expect(INFLOW_KINDS).not.toContain(kind);
+    }
   });
 });

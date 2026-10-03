@@ -17,7 +17,7 @@ const logger = createComponentLogger('service:exited-position-probe');
  * row, and the token identity to write the zero back under.
  */
 export interface HoldingProbeCandidate {
-  holding: Pick<Holding, 'externalId' | 'source' | 'isHidden' | 'balance'>;
+  holding: Pick<Holding, 'externalId' | 'source' | 'balance'>;
   token: Pick<
     Token,
     | 'symbol'
@@ -60,9 +60,11 @@ export interface ExitedPositionProbeResult {
  * non-zero balance, and absent from the snapshot just returned. That is
  * usually 0-2 rows; the whole holdings table is not the population.
  *
- * The visibility filter is what the refresh path's `existingSymbols` is built
- * from. Hidden and scam-flagged rows resolve no warning anyone reads, so
- * probing them would spend the shared budget on dust.
+ * Scam-flagged rows resolve no warning anyone reads, so probing them would
+ * spend the shared budget on dust. HIDDEN rows are probed (SC-1489): hiding
+ * takes a holding out of net worth, not out of the ledger, and PnL and the
+ * feeds engine still read its balance. Skipping them left a hidden holding at
+ * a stale balance for months while the chain read 0.
  *
  * THREE OUTCOMES, and only one of them writes anything:
  *
@@ -106,7 +108,6 @@ export class ExitedPositionProbe {
       const externalId = row.holding.externalId;
       if (!externalId) continue;
       if (row.holding.source !== WALLET_BALANCE_SYNC_SOURCE) continue;
-      if (row.holding.isHidden) continue;
       if (Number(row.token.isScamProbability ?? 0) >= SCAM_PROBABILITY_THRESHOLD) continue;
       // Already at zero: nothing to correct, and the probe would spend a call
       // to confirm the number that is already on the screen.

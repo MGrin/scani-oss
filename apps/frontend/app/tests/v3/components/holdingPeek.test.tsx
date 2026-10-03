@@ -498,13 +498,13 @@ describe('the header names the period of each figure (SC-1422)', () => {
 
 describe('holdingRowDelta', () => {
   test('is the P/L percentage, signed', () => {
-    const html = renderNode(holdingRowDelta(holding({ value: 150, costBasis: 100 })));
+    const html = renderNode(holdingRowDelta(holding({ value: 150, costBasis: 100 }), 'USD'));
     expect(html).toInclude('+');
     expect(html).toInclude('50.0%');
   });
 
   test('is nothing at all when there is no basis for it', () => {
-    expect(holdingRowDelta(holding({ costBasis: null }))).toBeUndefined();
+    expect(holdingRowDelta(holding({ costBasis: null }), 'USD')).toBeUndefined();
   });
 });
 

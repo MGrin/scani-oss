@@ -14,20 +14,20 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
-import { credentialRejection } from '../../core/errors';
+import { credentialRejection, ProviderError } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
   ProviderContext,
   TransactionEvent,
+  TransactionFetchContext,
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
 import { slidingWindows } from '../../core/utils/time-windows';
+import { WalkFailureWatch } from '../../core/utils/walk-failures';
 import { gateManifest } from './manifest';
-
-export { gateManifest } from './manifest';
 
 const GATE_INSTITUTION_CODE = 'gate';
 
@@ -52,6 +52,17 @@ const MAX_CANDIDATE_PAIRS = 80;
 const MAX_TRADE_PAGES_PER_WINDOW = 200;
 const MAX_LEDGER_PAGES_PER_WINDOW = 200;
 const MAX_WALLET_PAGES_PER_WINDOW = 50;
+
+// INVALID_CURRENCY_PAIR, verified live: GET /api/v4/spot/tickers?currency_pair=XRP_DOGE -> 400.
+function isInvalidPair(err: unknown): boolean {
+  if (!(err instanceof ProviderError) || !err.body) return false;
+  try {
+    const { label } = JSON.parse(err.body) as { label?: unknown };
+    return label === 'INVALID_CURRENCY_PAIR';
+  } catch {
+    return false;
+  }
+}
 
 interface GateSpotBalance {
   currency: string;
@@ -172,66 +183,84 @@ export class GateProvider
 
   /**
    * Strategy:
-   *   1. /spot/accounts/ledger per held currency — primary "single feed"
-   *      covering trade/deposit/withdraw/fee/transfer rows. We emit
+   *   1. /spot/accounts/ledger across every currency — primary "single
+   *      feed" covering trade/deposit/withdraw/fee/transfer rows. We emit
    *      fee + transfer events directly here; trade rows are skipped
    *      because the per-leg ledger view doesn't carry pair info, and
    *      deposit/withdraw rows are skipped because they don't carry a
-   *      txid.
-   *   2. /spot/my_trades per candidate pair — the authoritative source
-   *      for trade events (gives us pair, price, counter-leg, fee).
-   *      Candidate pairs come from held assets × known quote suffixes.
-   *   3. /wallet/deposits + /wallet/withdrawals — txid-bearing source
+   *      txid. Every row still names its currency, which is what makes it
+   *      the enumeration of assets the account has ever touched (SC-1480).
+   *   2. /wallet/deposits + /wallet/withdrawals — txid-bearing source
    *      of truth for deposit/withdraw events.
+   *   3. /spot/my_trades per candidate pair — the authoritative source
+   *      for trade events (gives us pair, price, counter-leg, fee).
+   *      Candidate pairs come from held assets and every currency the
+   *      feeds above named, × known quote suffixes.
    */
-  async fetchTransactions(
-    ctx: WithUserCreds<ProviderContext> & {
-      institutionCode: string;
-      since?: Date;
-      until?: Date;
-    }
-  ): Promise<TransactionEvent[]> {
+  async fetchTransactions(ctx: TransactionFetchContext): Promise<TransactionEvent[]> {
     const creds = await this.resolveApiCreds(ctx);
     if (!creds) return [];
 
     const until = ctx.until ?? new Date();
     const since = ctx.since ?? new Date(until.getTime() - FIVE_YEARS_MS);
+    const failures = new WalkFailureWatch(this.providerKey, this.logger);
 
-    const balances = await this.fetchSpotBalances(creds).catch(() => []);
-    const heldAssets = new Set<string>();
+    const balances = await failures.attempt(
+      'the balance read',
+      () => this.fetchSpotBalances(creds),
+      [] as GateSpotBalance[]
+    );
+    const assets = new Set<string>();
     for (const b of balances) {
       const total = new Decimal(b.available || '0').plus(b.locked || '0');
-      if (total.gt(0)) heldAssets.add(b.currency.toUpperCase());
+      if (total.gt(0)) assets.add(b.currency.toUpperCase());
+    }
+
+    const ledger = await failures.attempt(
+      'the ledger walk',
+      () => this.paginateLedger(creds, since, until),
+      [] as GateLedgerRow[]
+    );
+    const deposits = await failures.attempt(
+      'the deposit walk',
+      () => this.paginateDeposits(creds, since, until),
+      [] as GateWalletDeposit[]
+    );
+    const withdrawals = await failures.attempt(
+      'the withdrawal walk',
+      () => this.paginateWithdrawals(creds, since, until),
+      [] as GateWalletWithdrawal[]
+    );
+    for (const row of [...ledger, ...deposits, ...withdrawals]) {
+      if (row.currency) assets.add(row.currency.toUpperCase());
     }
 
     const events: TransactionEvent[] = [];
 
-    for (const currency of heldAssets) {
-      const rows = await this.paginateLedger(creds, currency, since, until).catch(() => []);
-      for (const row of rows) {
-        if (row.type === 'fee') {
-          events.push(this.ledgerFeeToEvent(row));
-        } else if (row.type === 'transfer') {
-          events.push(this.ledgerTransferToEvent(row));
-        }
+    for (const row of ledger) {
+      if (row.type === 'fee') {
+        events.push(this.ledgerFeeToEvent(row));
+      } else if (row.type === 'transfer') {
+        events.push(this.ledgerTransferToEvent(row));
       }
     }
 
-    const pairs = this.buildCandidatePairs(heldAssets);
-    for (const pair of pairs) {
-      const trades = await this.paginateMyTrades(creds, pair, since, until).catch(() => []);
+    for (const pair of this.buildCandidatePairs(assets)) {
+      const trades = await failures.attempt(
+        `the ${pair} trades walk`,
+        () => this.paginateMyTrades(creds, pair, since, until),
+        [] as GateTrade[]
+      );
       for (const t of trades) {
         const ev = this.tradeToEvent(t);
         if (ev) events.push(ev);
       }
     }
 
-    const deposits = await this.paginateDeposits(creds, since, until).catch(() => []);
     for (const d of deposits) events.push(this.depositToEvent(d));
-
-    const withdrawals = await this.paginateWithdrawals(creds, since, until).catch(() => []);
     for (const w of withdrawals) events.push(this.withdrawToEvent(w));
 
+    failures.retract(ctx);
     return events;
   }
 
@@ -261,7 +290,7 @@ export class GateProvider
     return Array.isArray(balances) ? balances : [];
   }
 
-  private buildCandidatePairs(held: ReadonlySet<string>): string[] {
+  private buildCandidatePairs(assets: ReadonlySet<string>): string[] {
     const out: string[] = [];
     const seen = new Set<string>();
     const push = (pair: string): boolean => {
@@ -270,18 +299,17 @@ export class GateProvider
       out.push(pair);
       return out.length < MAX_CANDIDATE_PAIRS;
     };
-    for (const base of held) {
+    for (const base of assets) {
       for (const quote of TX_QUOTE_ASSETS) {
         if (base === quote) continue;
         if (!push(`${base}_${quote}`)) return out;
       }
     }
-    // Held quote-asset legs (e.g. user holds USDT — try ETH_USDT, BTC_USDT
-    // even when ETH/BTC are no longer in their wallet).
+    // Quote-asset legs (e.g. USDT — try ETH_USDT, BTC_USDT).
     const quoteSet = new Set<string>(TX_QUOTE_ASSETS);
-    for (const quote of held) {
+    for (const quote of assets) {
       if (!quoteSet.has(quote)) continue;
-      for (const base of held) {
+      for (const base of assets) {
         if (base === quote) continue;
         if (!push(`${base}_${quote}`)) return out;
       }
@@ -306,10 +334,18 @@ export class GateProvider
           to: String(Math.floor(window.end.getTime() / 1000)),
         });
         if (lastId) params.set('last_id', lastId);
-        const trades = await this.signedJson<GateTrade[]>(
-          { method: 'GET', url: '/spot/my_trades', query: params.toString() },
-          creds
-        );
+        let trades: GateTrade[];
+        try {
+          trades = await this.signedJson<GateTrade[]>(
+            { method: 'GET', url: '/spot/my_trades', query: params.toString() },
+            creds
+          );
+        } catch (err) {
+          // A candidate pair Gate does not list is an absent market, not a
+          // failed walk: the candidates are a cross-product.
+          if (isInvalidPair(err)) return [];
+          throw err;
+        }
         if (!Array.isArray(trades) || trades.length === 0) break;
         all.push(...trades);
         if (trades.length < TRADES_PAGE_LIMIT) break;
@@ -323,7 +359,6 @@ export class GateProvider
 
   private async paginateLedger(
     creds: ApiKeyCreds,
-    currency: string,
     since: Date,
     until: Date
   ): Promise<GateLedgerRow[]> {
@@ -332,7 +367,6 @@ export class GateProvider
       let pageNum = 1;
       for (let page = 0; page < MAX_LEDGER_PAGES_PER_WINDOW; page += 1) {
         const params = new URLSearchParams({
-          currency,
           limit: String(LEDGER_PAGE_LIMIT),
           from: String(Math.floor(window.start.getTime() / 1000)),
           to: String(Math.floor(window.end.getTime() / 1000)),

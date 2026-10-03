@@ -257,6 +257,6 @@ export function buildDataViewSheets<T>(input: DataViewExportInput<T>): ExportWor
 /** "holdings" → "Holdings". The nouns are stored lowercase because they are
  *  written mid-sentence everywhere else; a sheet tab and a title are not
  *  mid-sentence. */
-export function sentenceNoun(noun: string): string {
+function sentenceNoun(noun: string): string {
   return noun.charAt(0).toUpperCase() + noun.slice(1);
 }

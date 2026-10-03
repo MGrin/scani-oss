@@ -3,15 +3,21 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import {
   type AccountRow,
+  accountAssets,
   accountBalancesAsOf,
+  accountDebt,
   accountFiltersFromParams,
   accountLastSync,
+  accountsDebt,
   accountsValue,
   accountValue,
   balancesAsOfFact,
   compareAccounts,
   compareInstitutions,
   type InstitutionRow,
+  institutionAssets,
+  institutionDebt,
+  institutionsDebt,
   institutionsValue,
   institutionValue,
   isStaleSync,
@@ -105,6 +111,80 @@ describe('namedAllocation', () => {
     const allocation = namedAllocation(items, (item) => (item.id === 'b' ? 900 : 10));
     expect(allocation.map((entry) => entry.label)).toEqual(['Big', 'Small']);
     expect(allocation[0]).toEqual({ key: 'b', label: 'Big', value: 900 });
+  });
+});
+
+/**
+ * Margin debt (SC-1463). A summary's `totalValue` is NET, so the bar reads each
+ * row's gross assets and the debt is drawn as its own line under it. The
+ * fixture is one account in debt beside one without, which is the only shape
+ * where a wrong sign or a dropped row changes the answer.
+ */
+describe('margin debt', () => {
+  const inDebt = account({
+    id: 'margin',
+    name: 'Margin',
+    summary: { holdingsCount: 2, totalValue: '-500', marginDebt: '-2500' },
+  });
+  const clean = account({
+    id: 'spot',
+    name: 'Spot',
+    summary: { holdingsCount: 1, totalValue: '1200.50', marginDebt: '0' },
+  });
+
+  test('an account reads its debt, and a row without the field has none', () => {
+    expect(accountDebt(inDebt)).toBe(-2500);
+    expect(accountDebt(clean)).toBe(0);
+    expect(accountDebt(account())).toBe(0);
+  });
+
+  test('the debt line sums only the rows passed — the filtered set', () => {
+    expect(accountsDebt([inDebt, clean])).toBe(-2500);
+    expect(accountsDebt([clean])).toBe(0);
+  });
+
+  test('an account whose net is negative keeps its assets as a part', () => {
+    const parts = namedAllocation([inDebt, clean], accountAssets);
+    expect(parts).toEqual([
+      { key: 'margin', label: 'Margin', value: 2000 },
+      { key: 'spot', label: 'Spot', value: 1200.5 },
+    ]);
+  });
+
+  test('invariant, Accounts: parts plus debt is the net total shown, to the cent', () => {
+    const rows = [inDebt, clean];
+    const parts = namedAllocation(rows, accountAssets).reduce((sum, part) => sum + part.value, 0);
+    expect((parts + accountsDebt(rows)).toFixed(2)).toBe(accountsValue(rows).toFixed(2));
+    expect(accountsValue(rows).toFixed(2)).toBe('700.50');
+  });
+
+  const ibkr = institution({
+    id: 'ibkr',
+    name: 'IBKR',
+    summary: { accountCount: 1, totalValue: '7500.10', marginDebt: '-2500.25' },
+  });
+  const kraken = institution({
+    id: 'kraken',
+    name: 'Kraken',
+    summary: { accountCount: 2, totalValue: '4000', marginDebt: '0' },
+  });
+
+  test('an institution reads its debt, and one with no summary has none', () => {
+    expect(institutionDebt(ibkr)).toBe(-2500.25);
+    expect(institutionDebt(institution({ summary: undefined }))).toBe(0);
+    expect(institutionsDebt([kraken])).toBe(0);
+  });
+
+  test('invariant, Institutions: parts plus debt is the net total shown, to the cent', () => {
+    const rows = [ibkr, kraken];
+    const parts = namedAllocation(rows, institutionAssets);
+    expect(parts.map((part) => [part.key, part.value])).toEqual([
+      ['ibkr', 10000.35],
+      ['kraken', 4000],
+    ]);
+    const sum = parts.reduce((total, part) => total + part.value, 0);
+    expect((sum + institutionsDebt(rows)).toFixed(2)).toBe(institutionsValue(rows).toFixed(2));
+    expect(institutionsValue(rows).toFixed(2)).toBe('11500.10');
   });
 });
 

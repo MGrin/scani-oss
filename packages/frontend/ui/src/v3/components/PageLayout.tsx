@@ -46,7 +46,7 @@ const MEASURES = {
   grid: 'max-w-[1100px] lg:max-w-[1180px] xl:max-w-[1440px] 2xl:max-w-[1720px]',
 } as const;
 
-export type PageMeasure = keyof typeof MEASURES;
+type PageMeasure = keyof typeof MEASURES;
 
 /**
  * Gutters widen and vertical rhythm tightens above `lg`, which is the density

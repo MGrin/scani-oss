@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { ChunkLoadError } from '@scani/ui/lib/lazy-chunk';
+import * as Sentry from '@sentry/react';
 import { reportClientError } from '@/lib/report-client-error';
 
 /**
@@ -63,5 +64,103 @@ describe('reportClientError route', () => {
     }) as typeof fetch;
     await reportClientError({ error: new Error('boom') });
     expect(bodies[0]?.route).toBe('/auth/verify');
+  });
+});
+
+/**
+ * SC-1492. Error boundaries catch a crash before Sentry's global handler does,
+ * so the browser SDK never saw one and the scani-frontend project received
+ * transactions and zero errors; every crash went through the api relay and
+ * landed in the backend project as `[client] …`. With a browser client active
+ * the crash goes to Sentry directly and the relay is not also called. Without
+ * one — a self-hosted build with no DSN — the relay is the only channel left.
+ */
+describe('reportClientError with the browser Sentry client active', () => {
+  const realWindow = (globalThis as { window?: unknown }).window;
+  let fetchCalls = 0;
+
+  function withActiveClient() {
+    const getClient = spyOn(Sentry, 'getClient').mockReturnValue({} as Sentry.BrowserClient);
+    const capture = spyOn(Sentry, 'captureException').mockReturnValue('event-id');
+    return {
+      capture,
+      restore: () => {
+        getClient.mockRestore();
+        capture.mockRestore();
+      },
+    };
+  }
+
+  afterEach(() => {
+    if (realWindow === undefined) delete (globalThis as { window?: unknown }).window;
+    else (globalThis as { window?: unknown }).window = realWindow;
+  });
+
+  function countFetches() {
+    fetchCalls = 0;
+    globalThis.fetch = (async () => {
+      fetchCalls += 1;
+      return new Response('{}');
+    }) as unknown as typeof fetch;
+  }
+
+  test('captures the error itself, with its component stack, and does not post to the relay', async () => {
+    countFetches();
+    const { capture, restore } = withActiveClient();
+    try {
+      const error = new TypeError('x is undefined');
+      await reportClientError({ error, componentStack: '\n    at Hero' });
+      expect(capture).toHaveBeenCalledTimes(1);
+      const [captured, hint] = capture.mock.calls[0] as [unknown, Record<string, unknown>];
+      expect(captured).toBe(error);
+      expect(hint.contexts).toEqual({ react: { componentStack: '\n    at Hero' } });
+      expect(hint.level).toBe('error');
+      expect(fetchCalls).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test('a chunk that would not load is captured as a warning', async () => {
+    countFetches();
+    const { capture, restore } = withActiveClient();
+    try {
+      await reportClientError({
+        error: new ChunkLoadError('interface', new TypeError('Importing a module script failed.')),
+      });
+      const hint = capture.mock.calls[0]?.[1] as { level?: string } | undefined;
+      expect(hint?.level).toBe('warning');
+    } finally {
+      restore();
+    }
+  });
+
+  test('the route tag is the path without its query string', async () => {
+    (globalThis as { window?: unknown }).window = {
+      location: { pathname: '/auth/verify', search: '?token=abc123' },
+    };
+    countFetches();
+    const { capture, restore } = withActiveClient();
+    try {
+      await reportClientError({ error: new Error('boom') });
+      const hint = capture.mock.calls[0]?.[1] as { tags?: Record<string, string> };
+      expect(hint.tags?.route).toBe('/auth/verify');
+      expect(JSON.stringify(hint)).not.toContain('abc123');
+    } finally {
+      restore();
+    }
+  });
+
+  test('CONTROL: with no client active, the relay is posted to and Sentry is not called', async () => {
+    countFetches();
+    const capture = spyOn(Sentry, 'captureException');
+    try {
+      expect(Sentry.getClient()).toBeUndefined();
+      await reportClientError({ error: new Error('boom') });
+      expect(fetchCalls).toBe(1);
+      expect(capture).not.toHaveBeenCalled();
+    } finally {
+      capture.mockRestore();
+    }
   });
 });

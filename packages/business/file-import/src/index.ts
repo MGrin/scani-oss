@@ -1,22 +1,9 @@
-export {
-  normaliseStatementFee,
-  parseCsvStatement,
-  statementFeeFromRawPayload,
-} from './csv-parser';
-export type { AmbiguousDateOrder, DateOrder } from './dates';
-export { detectBankTemplate, detectFormat } from './format-detector';
-export { parseIbCsvStatement } from './ib-csv-parser';
-export { parseOfxStatement } from './ofx-parser';
-export { parseQifStatement } from './qif-parser';
+export { statementFeeFromRawPayload } from './csv-parser';
 export { statementPayee } from './statement-payee';
 export type {
-  CsvColumnMapping,
-  ExtractedHolding,
   ParsedTransaction,
   ParseResult,
-  StatementFormat,
 } from './types';
-export { BANK_TEMPLATES } from './types';
 
 import { createComponentLogger } from '@scani/logging';
 import Papa from 'papaparse';
@@ -30,7 +17,7 @@ import type { CsvColumnMapping, ExtractedHolding, ParsedTransaction, ParseResult
 
 const logger = createComponentLogger('file-import');
 
-export type AIColumnDetector = (
+type AIColumnDetector = (
   headers: string[],
   sampleRows: Record<string, string>[]
 ) => Promise<Record<string, string> | null>;
@@ -47,7 +34,7 @@ export interface ParseStatementOptions {
  * Extract holdings (final balances per currency/asset) from parsed transactions.
  * Groups by currency and finds the last transaction with a balance for each.
  */
-export function extractHoldingsFromTransactions(
+function extractHoldingsFromTransactions(
   transactions: ParsedTransaction[],
   fallbackCurrency?: string
 ): ExtractedHolding[] {

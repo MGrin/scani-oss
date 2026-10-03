@@ -30,6 +30,8 @@ import type { PeekConfig } from './peek';
 export interface RowSpec {
   label: ReactNode;
   sublabel?: ReactNode;
+  /** Identity gives way by height, not width: `<DataRow wrapIdentity>`. */
+  wrapIdentity?: boolean;
   /** Favicon or avatar. The selection box takes this slot when selecting. */
   leading?: ReactNode;
   value: ReactNode;
@@ -49,7 +51,7 @@ export interface RowSpec {
  * — the same trap `nounKey?: string` would have been in SC-257, at fifteen
  * times the scale. Renaming the field makes the compiler produce the work list.
  *
- * v2 is untouched and keeps `FilterDef`/`SortDef`/`GroupByDef`. The hook that
+ * v2 is untouched and keeps `FilterDef`. The hook that
  * consumes both now declares only what it actually reads (`FilterDefBase` and
  * friends), which is why neither dialect constrains the other.
  */
@@ -501,7 +503,7 @@ export function nameList(names: readonly string[], max = 3): string {
  * something a test can hold, and something the next case has to be added to
  * rather than folded into.
  */
-export type DataViewSurface =
+type DataViewSurface =
   | 'error'
   /** Nothing at all — the onboarding screen, a claim about the account. */
   | 'empty'

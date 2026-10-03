@@ -7,7 +7,7 @@ import type { ExitedPosition, HoldingSnapshot } from '@scani/providers/core/type
  * `fetchBalances` answers *what is here now*, and until this existed that was
  * the whole offer list — so a token bought and fully exited before the first
  * import was offered to nobody, got no holding, and then had BOTH its legs
- * dropped by `TransactionRouter`'s find-only resolution. PUNKS, GALA,
+ * dropped by the transaction import's find-only resolution. PUNKS, GALA,
  * ETHBTCTrend and cbETH have zero rows anywhere in the production ledger and
  * every one of them was bought with the owner's own ETH.
  *

@@ -25,6 +25,12 @@
 # here should be read as though it does.
 #
 # Skip with `git push --no-verify`.
+#
+# A PUSH ANYWHERE ELSE RUNS `scripts/prepush-static.sh` ONCE (SC-1501): the
+# Verifier's static arms, in parallel, 1-2 minutes — the arms that 62 of 92 red
+# PR builds died on. `SCANI_PREPUSH_STATIC=0 git push` skips only that, and
+# leaves the mirror checks above armed; `--no-verify` skips both. A tree
+# without the script (the mirror's) skips it with a note.
 
 set -eu
 
@@ -89,9 +95,11 @@ pushed_commits() {
 
 # stdin is one line per ref: <local_ref> <local_sha> <remote_ref> <remote_sha>
 checked_any=0
+pushed_shas=""
 while read -r _local_ref local_sha _remote_ref _remote_sha; do
   # A deletion. Nothing is leaving, so there is nothing to judge.
   [ "$local_sha" = "$ZERO" ] && continue
+  pushed_shas="$pushed_shas $local_sha"
 
   # Only a push AT the mirror can carry anything to the mirror. Measured
   # while testing this hook: without this gate, an upstream-derived branch
@@ -219,6 +227,45 @@ while read -r _local_ref local_sha _remote_ref _remote_sha; do
     fail "scripts/check-oss-internal-refs.ts is not in this tree and this push is bound for ${REMOTE_URL} — NO INTERNAL REFERENCE WAS CHECKED. This is not a pass."
   fi
 done
+
+# SC-1501. Once per push, after every ref is read, so a multi-ref push pays the
+# minute once.
+run_static_subset() {
+  if [ -z "$pushed_shas" ]; then
+    note "every ref in this push is a deletion; static subset NOT run"
+    return 0
+  fi
+  if [ "${SCANI_PREPUSH_STATIC:-1}" = 0 ]; then
+    note "SCANI_PREPUSH_STATIC=0: static subset NOT run (narrower than --no-verify, which also skips the mirror checks)"
+    return 0
+  fi
+  if [ ! -f scripts/prepush-static.sh ]; then
+    note "scripts/prepush-static.sh is not in this tree; static subset NOT run"
+    return 0
+  fi
+  # The arms read the working tree, and git hands this hook shas, not trees.
+  local head dirty=0 sha
+  head=$(git rev-parse -q --verify HEAD 2>/dev/null) || head=""
+  [ -z "$(git status --porcelain --untracked-files=no 2>/dev/null)" ] || dirty=1
+  for sha in $pushed_shas; do
+    if [ "$sha" != "$head" ] || [ "$dirty" = 1 ]; then
+      note "the static subset reads the WORKING TREE, which is not exactly the commit(s) being pushed (pushed:${pushed_shas}, HEAD ${head:-none}, tracked changes: $([ "$dirty" = 1 ] && echo yes || echo no))"
+      break
+    fi
+  done
+  note "running the static subset (scripts/prepush-static.sh); skip it with SCANI_PREPUSH_STATIC=0"
+  # git exports GIT_DIR to a hook. An arm that runs `git init --bare <scratch>`
+  # with it set re-initialises THIS repository as bare instead (SC-1501).
+  # shellcheck disable=SC2046 # the names are meant to split
+  if ! (unset $(git rev-parse --local-env-vars); bash scripts/prepush-static.sh); then
+    echo "${RED}✗ pre-push failed:${RESET} the static subset is red — the FAIL arm(s) above are what CI would refuse." >&2
+    echo "  Fix it and push again. \`SCANI_PREPUSH_STATIC=0 git push\` skips only this subset; \`git push --no-verify\` skips the whole hook." >&2
+    exit 1
+  fi
+  ok "static subset passed"
+}
+
+is_mirror_remote || run_static_subset
 
 [ "$checked_any" = 1 ] && ok "pre-push passed"
 exit 0

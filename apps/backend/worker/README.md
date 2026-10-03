@@ -19,6 +19,7 @@ src/
     ├── demo-reset.ts                   (scheduled, daily 06:00 UTC — ARMED ONLY when SCANI_DEMO_MODE=1, and then it is the only schedule this worker registers)
     ├── dlq-depth-probe.ts              (scheduled, every 15 minutes)
     ├── document-parse.ts               (user-initiated)
+    ├── engine-shadow.ts                (scheduled, nightly 05:45 UTC)
     ├── exchange-balances.ts            (scheduled, hourly)
     ├── exchange-import.ts              (user-initiated)
     ├── exchange-transactions.ts        (scheduled, daily 01:00 UTC)
@@ -41,6 +42,7 @@ src/
     ├── rescore-scam-tokens.ts          (scheduled, nightly 02:30 UTC)
     ├── screenshot-parse.ts             (user-initiated)
     ├── alert-sweep.ts                 (scheduled, daily 09:00 UTC)
+    ├── activation-nudge.ts            (scheduled, daily 10:00 UTC, off by default)
     ├── split-holding-probe.ts          (scheduled, nightly 04:30 UTC)
     ├── stale-sync-probe.ts             (scheduled, hourly)
     ├── token-prices-downsample.ts      (scheduled, nightly 05:00 UTC)
@@ -107,6 +109,8 @@ bun dev:worker
 ## Deploy
 
 Compiled to a single binary via `bun build --compile`. Runtime image is `debian:bookworm-slim` + `/app/server`. No HTTP port, no healthcheck — Fly observes the machine's exit status; BullMQ liveness is the signal that the worker is healthy. Deploys to Fly as `scani-worker` from `fly.toml`.
+
+A deploy hands in-flight jobs back to the queue within `kill_timeout` (SC-1454). A hard death (OOM, host loss) cannot, and costs up to ~20 min before the stalled check reclaims the job: two passes of its 600s interval.
 
 ## Tests
 

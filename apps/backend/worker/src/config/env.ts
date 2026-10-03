@@ -93,6 +93,12 @@ const envSchema = z.object({
   // than by the use case.
   FRONTEND_URL: optionalUrl,
   BACKEND_URL: optionalUrl,
+  // SC-1503. The activation nudge links the privacy policy, and refuses to send
+  // without one: set this only once the page is live.
+  PRIVACY_URL: optionalUrl,
+  // SC-1503. The nudge ships switched off. "1" arms it; anything else, or
+  // unset, leaves the daily job a logged no-op.
+  ACTIVATION_NUDGE_ENABLED: z.union([z.literal('1'), z.literal('')]).optional(),
 
   // Where the nightly `db-backup` job writes the dump (SC-793). Deliberately
   // a DIFFERENT bucket from the one `@scani/storage` is configured with:

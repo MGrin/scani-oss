@@ -26,23 +26,58 @@
  * The injected transaction exists for these tests. Without it `execute` opens
  * and commits its own, and a rollback-isolated test cannot contain rows a
  * committed transaction wrote.
+ *
+ * Foundation A2 moved the writes onto `HoldingResolver` and
+ * `SnapshotWriter.record` (Task 4). The last block pins what the move may and
+ * may not change: the observation now carries its labels, and history reads the
+ * same. Its golden figures are computed by hand from the fixture, and the block
+ * passed on the path before the move, so they are that path's figures.
  */
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { type DatabaseTransaction, getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
-import { eq } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
+import { Container } from 'typedi';
+import { FoundationClassificationService } from '../../src/services/foundation/FoundationClassificationService';
 import {
   CreateHoldingsWithDependenciesUseCase,
   duplicateTokenIds,
 } from '../../src/use-cases/CreateHoldingsWithDependenciesUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
 import { withTestDb } from '../../test/helpers/db';
-import { makeInstitution, makeUser } from '../../test/helpers/factories';
-import { makeAccount, makeHolding, makeToken } from '../../test/helpers/factories-extra';
+import { makeInstitution, makeInstitutionType, makeUser } from '../../test/helpers/factories';
+import {
+  makeAccount,
+  makeHolding,
+  makeHoldingTransaction,
+  makeToken,
+} from '../../test/helpers/factories-extra';
+import { expectHistoryUnchanged, type HistoryReading } from '../../test/helpers/history-neutrality';
+import { expectLabelsSettled } from '../../test/helpers/labels-settled';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
 restoreContainerAfterAll();
+
+const createdUserIds: string[] = [];
+const createdTokenIds: string[] = [];
+const createdInstitutionIds: string[] = [];
+
+// The committed fixtures below. Tokens and institutions are not reachable from
+// the user cascade, so they go explicitly, after the users whose holdings
+// restrict them (SC-230).
+afterEach(async () => {
+  const db = getDb();
+  const users = createdUserIds.splice(0);
+  const tokens = createdTokenIds.splice(0);
+  const institutions = createdInstitutionIds.splice(0);
+  if (users.length) await db.delete(schema.users).where(inArray(schema.users.id, users));
+  if (tokens.length) await db.delete(schema.tokens).where(inArray(schema.tokens.id, tokens));
+  if (institutions.length) {
+    await db.delete(schema.institutions).where(inArray(schema.institutions.id, institutions));
+  }
+});
 
 /**
  * Constructed, not resolved. `bun test` loads every file into ONE process and
@@ -240,5 +275,245 @@ describe('CreateHoldingsWithDependenciesUseCase', () => {
 
       expect(result.holdings.length).toBe(2);
     });
+  });
+});
+
+const JUNE_1 = new Date('2026-06-01T00:00:00Z');
+const JULY_1 = new Date('2026-07-01T00:00:00Z');
+const LONG_AGO = new Date('2026-01-01T00:00:00Z');
+
+const observationsOf = (tx: DatabaseTransaction, holdingId: string) =>
+  tx
+    .select()
+    .from(schema.holdingBalanceObservations)
+    .where(eq(schema.holdingBalanceObservations.holdingId, holdingId))
+    .orderBy(asc(schema.holdingBalanceObservations.observedAt));
+
+async function holdingRow(tx: DatabaseTransaction, holdingId: string) {
+  const [row] = await tx.select().from(schema.holdings).where(eq(schema.holdings.id, holdingId));
+  if (!row) throw new Error(`holding ${holdingId} is gone`);
+  return row;
+}
+
+/**
+ * Committed, because the history and label helpers read committed rows. A
+ * user holding 100 by hand since 1 June, observed then, with a deposit of 10 on
+ * 1 July the balance never caught up with; and a second token to create.
+ */
+async function committedFixture() {
+  const fixture = await getDb().transaction(async (tx) => {
+    const base = await makeToken(tx);
+    const user = await makeUser(tx, { baseCurrencyId: base.id });
+    const bank = await makeInstitutionType(tx, { code: 'bank' });
+    const institution = await makeInstitution(tx, { typeId: bank.id });
+    const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+    const usd = await makeToken(tx);
+    const eur = await makeToken(tx);
+    const existing = await makeHolding(tx, {
+      userId: user.id,
+      accountId: account.id,
+      tokenId: usd.id,
+      balance: '100',
+      createdAt: JUNE_1,
+      lastUpdated: JUNE_1,
+    });
+    await tx.insert(schema.holdingBalanceObservations).values({
+      userId: user.id,
+      holdingId: existing.id,
+      balance: '100',
+      observedAt: JUNE_1,
+      source: 'sync-capture',
+      sourceMetadata: { origin: 'updateHolding' },
+    });
+    await makeHoldingTransaction(tx, {
+      userId: user.id,
+      holdingId: existing.id,
+      kind: 'deposit',
+      quantity: '10',
+      occurredAt: JULY_1,
+      source: 'user-entered',
+    });
+    createdUserIds.push(user.id);
+    createdTokenIds.push(base.id, usd.id, eur.id);
+    createdInstitutionIds.push(institution.id);
+    return { user, account, existing, eur };
+  });
+  return fixture;
+}
+
+/** One create and one update, committed by the caller's transaction. */
+async function createAndUpdate(fixture: Awaited<ReturnType<typeof committedFixture>>) {
+  return getDb().transaction((tx) =>
+    useCase().execute(
+      {
+        accountId: fixture.account.id,
+        holdings: [{ tokenId: fixture.eur.id, balance: '250' }],
+        updateHoldings: [{ holdingId: fixture.existing.id, balance: '110' }],
+      },
+      fixture.user,
+      tx
+    )
+  );
+}
+
+describe('CreateHoldingsWithDependenciesUseCase writes through SnapshotWriter (foundation A2)', () => {
+  test('a created holding has exactly one observation: role snapshot, cause flow, source sync-capture, origin createHoldingWithEvent', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx, { baseCurrencyId: (await makeToken(tx)).id });
+      const institution = await makeInstitution(tx);
+      const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const eur = await makeToken(tx);
+      const before = Date.now();
+
+      const result = await useCase().execute(
+        {
+          accountId: account.id,
+          holdings: [{ tokenId: eur.id, balance: '2000.20', label: '  Savings ' }],
+        },
+        user,
+        tx
+      );
+
+      const after = Date.now();
+      expect(result.holdings).toHaveLength(1);
+      const created = result.holdings[0]!;
+      const row = await holdingRow(tx, created.id);
+      // What the caller gets back is the row as it stands, figure included:
+      // the worker prices and reports from it.
+      expect(created).toEqual(row);
+      expect(row).toMatchObject({
+        userId: user.id,
+        accountId: account.id,
+        tokenId: eur.id,
+        balance: '2000.20',
+        source: 'manual',
+        arrival: 'user_confirmed',
+        label: 'Savings',
+        externalId: null,
+        kind: 'snapshot',
+      });
+      expect(row.lastUpdated.getTime()).toBeGreaterThanOrEqual(before);
+      expect(row.lastUpdated.getTime()).toBeLessThanOrEqual(after);
+
+      const rows = await observationsOf(tx, created.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        userId: user.id,
+        balance: '2000.20',
+        source: 'sync-capture',
+        sourceMetadata: { origin: 'createHoldingWithEvent', source: 'manual' },
+        role: 'snapshot',
+        authority: 'person',
+        inputId: null,
+        cause: 'flow',
+        supersededAt: null,
+        gapReview: null,
+      });
+      expect(rows[0]!.observedAt.getTime()).toBeGreaterThanOrEqual(before);
+      expect(rows[0]!.observedAt.getTime()).toBeLessThanOrEqual(after);
+      // D-6: the holding starts at its first value.
+      expect(row.startsAt).toEqual(rows[0]!.observedAt);
+    });
+  });
+
+  test('an update on a feed holding writes a verification and sets the balance', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx, { baseCurrencyId: (await makeToken(tx)).id });
+      const institution = await makeInstitution(tx);
+      const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const usd = await makeToken(tx);
+      const feed = await makeHolding(tx, {
+        userId: user.id,
+        accountId: account.id,
+        tokenId: usd.id,
+        balance: '100',
+        source: 'import_airwallex',
+        externalId: 'USD',
+        kind: 'feed',
+        startsAt: LONG_AGO,
+        lastUpdated: LONG_AGO,
+      });
+      const before = Date.now();
+
+      const result = await useCase().execute(
+        {
+          accountId: account.id,
+          holdings: [],
+          updateHoldings: [{ holdingId: feed.id, balance: '175' }],
+        },
+        user,
+        tx
+      );
+
+      const after = Date.now();
+      expect(result.updatedHoldingIds).toEqual([feed.id]);
+      const row = await holdingRow(tx, feed.id);
+      expect(row.balance).toBe('175');
+      expect(row.lastUpdated.getTime()).toBeGreaterThanOrEqual(before);
+      expect(row.lastUpdated.getTime()).toBeLessThanOrEqual(after);
+      expect(row.kind).toBe('feed');
+      expect(row.startsAt).toEqual(LONG_AGO);
+
+      const rows = await observationsOf(tx, feed.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({
+        balance: '175',
+        source: 'sync-capture',
+        sourceMetadata: { origin: 'updateHoldingBalance' },
+        role: 'verification',
+        authority: 'person',
+        inputId: null,
+        cause: null,
+        supersededAt: null,
+      });
+      expect(rows[0]!.observedAt.getTime()).toBeGreaterThanOrEqual(before);
+      expect(rows[0]!.observedAt.getTime()).toBeLessThanOrEqual(after);
+    });
+  });
+
+  test('history unchanged', async () => {
+    const fixture = await committedFixture();
+    const created = (await createAndUpdate(fixture)).holdings[0]!;
+    const justAfter = new Date();
+
+    // Hand-computed from the fixture, and what the path before the move gave.
+    //   existing  15 May   before every record: walks back to the 1 June 100
+    //             15 June  110 now, less the 10 deposited on 1 July
+    //             15 July  the 110 the update recorded
+    //   created   15 May   before it existed: its first value, 250
+    const golden: Array<[string, Date, string]> = [
+      [fixture.existing.id, new Date('2026-05-15T00:00:00Z'), '100'],
+      [fixture.existing.id, new Date('2026-06-15T00:00:00Z'), '100'],
+      [fixture.existing.id, new Date('2026-07-15T00:00:00Z'), '110'],
+      [fixture.existing.id, justAfter, '110'],
+      [fixture.existing.id, new Date(), '110'],
+      [created.id, new Date('2026-05-15T00:00:00Z'), '250'],
+      [created.id, justAfter, '250'],
+      [created.id, new Date(), '250'],
+    ];
+    const readings: HistoryReading[] = golden.map(([holdingId, at, balance]) => ({
+      holdingId,
+      at,
+      balance,
+      anchor: null,
+    }));
+
+    await expectHistoryUnchanged(readings);
+    // The control: a figure the walk does not give is caught.
+    await expect(
+      expectHistoryUnchanged(readings.map((r, i) => (i === 1 ? { ...r, balance: '110' } : r)))
+    ).rejects.toThrow();
+  });
+
+  test('expectLabelsSettled', async () => {
+    const fixture = await committedFixture();
+    await Container.get(FoundationClassificationService).classify({
+      apply: true,
+      userId: fixture.user.id,
+    });
+
+    await createAndUpdate(fixture);
+
+    await expectLabelsSettled(fixture.user.id);
   });
 });

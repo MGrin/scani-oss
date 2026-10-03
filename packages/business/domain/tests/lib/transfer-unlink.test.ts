@@ -48,6 +48,23 @@ describe('unlinkPairRefusal', () => {
     ]);
     expect(refusal?.detail).toContain('left_control, paired');
   });
+
+  // A mirror pair carries no answer (R48), so the answer gate cannot see it;
+  // unlinking would leave the leg, and the anchor it moved, paired to nothing.
+  test('refuses a group holding a mirror leg, though no leg carries an answer', () => {
+    const refusal = unlinkPairRefusal([
+      { transferReview: null, kindOrigin: 'rule' },
+      { transferReview: null, kindOrigin: 'mirror' },
+    ]);
+    expect(refusal?.reason).toBe('mirror');
+    expect(refusal?.detail).toContain('mirror leg');
+    expect(
+      unlinkPairRefusal([
+        { transferReview: null, kindOrigin: 'rule' },
+        { transferReview: null, kindOrigin: 'source' },
+      ])
+    ).toBeNull();
+  });
 });
 
 /**

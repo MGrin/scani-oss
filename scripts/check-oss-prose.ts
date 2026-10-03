@@ -163,7 +163,7 @@ export { EXIT_OK, EXIT_UNKNOWN };
  * anything — and never a refusal, because it says nothing about the content
  * that was staged. Matches both siblings.
  */
-export const EXIT_SELF_TEST_FAILED = 10;
+const EXIT_SELF_TEST_FAILED = 10;
 
 /**
  * A signal on one of the two axes.
@@ -669,7 +669,7 @@ function report(findings: readonly Finding[], tail: string): number {
   return EXIT_OK;
 }
 
-export function main(argv: readonly string[], cwd: string, stdin: string): number {
+function main(argv: readonly string[], cwd: string, stdin: string): number {
   const broken = selfTest();
   if (broken.length > 0) {
     for (const b of broken) console.error(`  ${b}`);

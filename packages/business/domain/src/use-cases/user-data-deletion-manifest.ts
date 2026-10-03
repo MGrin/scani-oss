@@ -63,6 +63,23 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
     userColumn: schema.portfolioValueDaily.userId,
     echo: schema.portfolioValueDaily.snapshotDate,
   },
+  // Copies of ledger rows the owner retired (SC-1453). Append-only everywhere
+  // else, and this is the one delete it has: the account's own data going.
+  {
+    kind: 'delete',
+    table: schema.retiredGapAnswers,
+    userColumn: schema.retiredGapAnswers.userId,
+    echo: schema.retiredGapAnswers.id,
+  },
+  // The foundation shadow's balance differences for this user. Ahead of the
+  // holdings they name ON DELETE SET NULL, and so ahead of the accounts too.
+  // Price differences carry no user and are pruned with their run.
+  {
+    kind: 'delete',
+    table: schema.engineShadowDifferences,
+    userColumn: schema.engineShadowDifferences.userId,
+    echo: schema.engineShadowDifferences.id,
+  },
   {
     kind: 'delete',
     table: schema.holdingTransactions,
@@ -106,6 +123,36 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
     table: schema.vendors,
     userColumn: schema.vendors.userId,
     echo: schema.vendors.id,
+  },
+
+  // Feed inputs belong to an account and cascade from it, as do their windows
+  // and rules. Explicit and ahead of the accounts delete for the same reason as
+  // the PnL tables above: the returned counts are the audit log's "here is
+  // what we removed". Rules go before the inputs they hang off.
+  {
+    kind: 'delete',
+    table: schema.feedMatchRules,
+    userColumn: schema.feedMatchRules.userId,
+    echo: schema.feedMatchRules.id,
+  },
+  {
+    kind: 'delete',
+    table: schema.feedInputs,
+    userColumn: schema.feedInputs.userId,
+    echo: schema.feedInputs.id,
+    note: 'Takes `feed_input_windows` with it by cascade.',
+  },
+  {
+    kind: 'delete',
+    table: schema.judgmentDecisions,
+    userColumn: schema.judgmentDecisions.userId,
+    echo: schema.judgmentDecisions.id,
+  },
+  {
+    kind: 'delete',
+    table: schema.outboxEvents,
+    userColumn: schema.outboxEvents.userId,
+    echo: schema.outboxEvents.id,
   },
 
   // `holding_coverage` is keyed by (accountId, tokenId) with no userId of its
@@ -363,6 +410,23 @@ export const USER_ROW_COLUMN_DISPOSITIONS: readonly UserColumnDisposition[] = [
     column: schema.users.digestLastSentAt,
     reason:
       "A retry guard for the digest job. Clearing it lets a retry mail the account twice; it holds no content of the user's.",
+  },
+  {
+    kind: 'keep',
+    column: schema.users.onboardingOptOutAt,
+    reason: 'A consent record; same reasoning as `digestOptOutAt`.',
+  },
+  {
+    kind: 'keep',
+    column: schema.users.activationNudgeSentAt,
+    reason:
+      'The once-only guard for the activation nudge. Clearing it would mail the nudge a second time to an account that has just emptied itself (SC-1503).',
+  },
+  {
+    kind: 'keep',
+    column: schema.users.language,
+    reason:
+      'A display preference for the login that remains, recorded from the sign-in rather than typed; same reasoning as `timezone` (SC-1503).',
   },
   {
     kind: 'keep',

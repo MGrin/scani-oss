@@ -1,5 +1,3 @@
-import type React from 'react';
-import { useUiTranslation } from '../i18n';
 import { cn } from '../lib/cn';
 
 interface LoadingSpinnerProps {
@@ -26,39 +24,6 @@ export function LoadingSpinner({ size = 'md', className }: LoadingSpinnerProps) 
   );
 }
 
-interface PageLoaderProps {
-  className?: string;
-}
-
-// Full-content-area loader: centers the spinner instead of letting a
-// bare LoadingSpinner pin to the top-left of the page.
-export function PageLoader({ className }: PageLoaderProps) {
-  return (
-    <div
-      className={cn('flex min-h-[40vh] w-full items-center justify-center', className)}
-      aria-live="polite"
-    >
-      <LoadingSpinner size="lg" />
-    </div>
-  );
-}
-
-interface LoadingButtonProps {
-  isLoading: boolean;
-  loadingText: string;
-  children: React.ReactNode;
-  className?: string;
-}
-
-export function LoadingButton({ isLoading, loadingText, children, className }: LoadingButtonProps) {
-  return (
-    <div className={cn('flex items-center gap-2', className)}>
-      {isLoading && <LoadingSpinner size="sm" className="text-current" />}
-      <span>{isLoading ? loadingText : children}</span>
-    </div>
-  );
-}
-
 interface LoadingDotsProps {
   className?: string;
   dotClassName?: string;
@@ -80,98 +45,5 @@ export function LoadingDots({ className, dotClassName }: LoadingDotsProps) {
         style={{ animationDelay: '300ms' }}
       />
     </div>
-  );
-}
-
-interface ProgressIndicatorProps {
-  progress: number; // 0-100
-  label?: string;
-  className?: string;
-}
-
-export function ProgressIndicator({ progress, label, className }: ProgressIndicatorProps) {
-  return (
-    <div
-      className={cn('space-y-1', className)}
-      role="progressbar"
-      aria-valuenow={progress}
-      aria-valuemin={0}
-      aria-valuemax={100}
-    >
-      {label && <div className="text-sm font-medium">{label}</div>}
-      <div className="w-full bg-muted rounded-full h-2">
-        <div
-          className="bg-primary h-2 rounded-full transition-all duration-300 ease-in-out"
-          style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
-        />
-      </div>
-      <div className="text-xs text-muted-foreground text-end">{Math.round(progress)}%</div>
-    </div>
-  );
-}
-
-interface LoadingOverlayProps {
-  isVisible: boolean;
-  message?: string;
-  className?: string;
-}
-
-export function LoadingOverlay({
-  isVisible,
-  message = 'Loading...',
-  className,
-}: LoadingOverlayProps) {
-  if (!isVisible) return null;
-
-  return (
-    <output
-      className={cn(
-        'absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50',
-        className
-      )}
-    >
-      <div className="flex flex-col items-center gap-3 p-4">
-        <LoadingSpinner size="lg" />
-        <p className="text-sm font-medium">{message}</p>
-      </div>
-    </output>
-  );
-}
-
-// Accessibility-aware loading state that respects user preferences
-interface AccessibleLoadingProps {
-  isLoading: boolean;
-  children: React.ReactNode;
-  loadingComponent?: React.ReactNode;
-}
-
-export function AccessibleLoading({
-  isLoading,
-  children,
-  loadingComponent,
-}: AccessibleLoadingProps) {
-  const { t } = useUiTranslation();
-  // Respect user's motion preferences
-  const prefersReducedMotion =
-    typeof window !== 'undefined'
-      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
-      : false;
-
-  const defaultLoadingComponent = prefersReducedMotion ? (
-    <div className="flex items-center gap-2 text-blue-600">
-      <span className="w-2 h-2 bg-current rounded-full" aria-hidden="true" />
-      <span>{t('ui.loading.label')}</span>
-    </div>
-  ) : (
-    <div className="flex items-center gap-2 text-blue-600">
-      <LoadingDots className="text-current" />
-      <span>{t('ui.loading.label')}</span>
-    </div>
-  );
-
-  return (
-    <output aria-live="polite">
-      {isLoading ? loadingComponent || defaultLoadingComponent : children}
-    </output>
   );
 }

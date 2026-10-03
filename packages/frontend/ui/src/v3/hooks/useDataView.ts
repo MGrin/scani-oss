@@ -59,14 +59,6 @@ export interface FilterDef extends FilterDefBase {
   options: { value: string; label: string }[];
 }
 
-export interface SortDef extends SortDefBase {
-  label: string;
-}
-
-export interface GroupByDef extends GroupByDefBase {
-  label: string;
-}
-
 /**
  * What the HOOK accepts — labels omitted, because it never reads one.
  *
@@ -85,13 +77,6 @@ export interface DataViewConfigBase<T> {
   defaultSort?: { field: string; direction: 'asc' | 'desc' };
   defaultView?: 'table' | 'cards';
   defaultFilters?: Record<string, string>;
-}
-
-/** v2's config, with v2's English-labelled definitions. Unchanged. */
-export interface DataViewConfig<T> extends DataViewConfigBase<T> {
-  filterDefs?: FilterDef[];
-  sortDefs?: SortDef[];
-  groupByDefs?: GroupByDef[];
 }
 
 export interface DataViewReturn<T> {

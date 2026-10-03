@@ -8,9 +8,9 @@
  *   3. dispatch via `TransactionRouter` → registry's
  *      `TransactionsProvider.fetchTransactions(...)` →
  *      `TransactionEvent[]`,
- *   4. resolve identities + holdings via
- *      `TokenService.findOrCreateByIdentity` (the federated identity
- *      flow); persist as `NewHoldingTransaction[]`,
+ *   4. write the events as one feed batch through `FeedIngestService`
+ *      (`legacyTransactionBatch`): identities, holdings, rows and legs in
+ *      one transaction,
  *   5. update `holding_coverage`,
  *   6. run opening-balance reconciliation,
  *   7. report a summary so the processor can write it to user_jobs.
@@ -25,7 +25,6 @@ import { ProviderError } from '@scani/providers/core/errors';
 import { type JobNotice, type NoticeInput, toJobNotice } from '@scani/providers/core/types';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
-import { HoldingBalanceObservationRepository } from '../../repositories/HoldingBalanceObservationRepository';
 import {
   describeMergedCoverageRows,
   HoldingCoverageRepository,
@@ -35,12 +34,20 @@ import {
   HoldingTransactionRepository,
 } from '../../repositories/HoldingTransactionRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
+import { FeedIngestService, type IngestResult } from '../feeds/FeedIngestService';
+import { legacyTransactionBatch } from '../feeds/legacy/transaction-batch';
+import { ManualEditSupersessionService } from '../holdings/ManualEditSupersessionService';
 import { OpeningBalanceReconciliationService } from '../holdings/OpeningBalanceReconciliationService';
 import { TransferReviewService } from '../TransferReviewService';
 import { IntegrationCredentialsService } from '../users/IntegrationCredentialsService';
 import { TransactionRouter, type TransactionRouterResult } from './TransactionRouter';
 import { NON_EVM_WALLET_SOURCES } from './transaction-source';
-import { CEX_SOURCE_TO_INSTITUTION, isWalletDerivedSource } from './transaction-sources';
+import {
+  CEX_SOURCE_TO_INSTITUTION,
+  GROSS_OF_OWN_FEE_SOURCES,
+  isWalletDerivedSource,
+  SETTLEMENT_DERIVED_SOURCES,
+} from './transaction-sources';
 
 export interface TransactionImportInput {
   userId: string;
@@ -58,6 +65,14 @@ export interface TransactionImportResult {
   observations: number;
   firstEventAt: string | null;
   lastEventAt: string | null;
+  /**
+   * The oldest date this run changed in the ledger: a transaction it inserted
+   * or altered, or an opening balance it moved (SC-1459). History from here
+   * to today is now stale, so the rebuild the worker queues must reach it.
+   * Rows re-sent exactly as stored do not count, so a nightly sync that
+   * re-reads months of history leaves this null.
+   */
+  earliestWrittenAt: string | null;
   hasCompleteTxHistory: boolean;
   warnings: string[];
   /**
@@ -234,13 +249,14 @@ export class TransactionImportCoordinator {
 
   // Class-field DI per the project's typedi conventions (see CLAUDE.md).
   private readonly holdingTransactionRepo = Container.get(HoldingTransactionRepository);
-  private readonly observationRepo = Container.get(HoldingBalanceObservationRepository);
+  private readonly feedIngest = Container.get(FeedIngestService);
   private readonly coverageRepo = Container.get(HoldingCoverageRepository);
   private readonly reconciliation = Container.get(OpeningBalanceReconciliationService);
   private readonly credentialsService = Container.get(IntegrationCredentialsService);
   private readonly tokenRepo = Container.get(TokenRepository);
   private readonly router = Container.get(TransactionRouter);
   private readonly transferReviews = Container.get(TransferReviewService);
+  private readonly editSupersession = Container.get(ManualEditSupersessionService);
 
   async execute(input: TransactionImportInput): Promise<TransactionImportResult> {
     try {
@@ -255,7 +271,7 @@ export class TransactionImportCoordinator {
    * A run that failed must not leave the previous run's "we have the
    * whole ledger" claim standing (SC-168).
    *
-   * `has_complete_tx_history` is written only by `persistAndReport`, on
+   * `has_complete_tx_history` is written only by `afterIngest`, on
    * the success path, so before this every throw above it left the flag
    * at whatever the last success wrote. SC-149 made that flag drive cost
    * basis, which turned a stale note into a confident figure computed
@@ -422,22 +438,48 @@ export class TransactionImportCoordinator {
       throw error;
     }
 
-    return this.persistAndReport(userId, accountId, source, routerResult, since);
+    const ingested = await this.feedIngest.ingest(
+      legacyTransactionBatch({
+        userId,
+        accountId,
+        source,
+        events: routerResult.events,
+        context: {
+          since,
+          fetchedAt: routerResult.fetchedAt,
+          historyStartsAt: routerResult.historyStartsAt ?? undefined,
+          horizonMs: routerResult.horizonMs,
+          retracted: routerResult.historyRetractions.length > 0,
+        },
+      })
+    );
+    return this.afterIngest(userId, accountId, source, routerResult, ingested, since);
   }
 
   /**
-   * Persist router output and return a compact summary. Result is
-   * meant to be stored verbatim on the user_jobs row.
+   * What follows the run's committed write, exactly as it followed today's,
+   * and the compact summary stored verbatim on the user_jobs row.
    */
-  private async persistAndReport(
+  private async afterIngest(
     userId: string,
     accountId: string,
     source: string,
-    result: TransactionRouterResult,
+    fetched: TransactionRouterResult,
+    ingested: IngestResult,
     since?: Date
   ): Promise<TransactionImportResult> {
-    if (result.transactions.length > 0) {
-      const written = await this.holdingTransactionRepo.bulkUpsert(result.transactions);
+    const result = {
+      warnings: [...fetched.warnings, ...ingested.notices],
+      warningDetails: [...fetched.warningDetails, ...ingested.noticeDetails],
+    };
+    if (ingested.rowsSent > 0) {
+      // A leg whose trade is the batch's only row of that external id is
+      // linked inside the write already. This sweep takes the rest, as it
+      // always has. Own-token fee rows settle their row too (SC-1486), and
+      // Kraken writes those without writing any settlement leg.
+      if (SETTLEMENT_DERIVED_SOURCES.has(source) || GROSS_OF_OWN_FEE_SOURCES.has(source)) {
+        await this.holdingTransactionRepo.linkSettlements(userId);
+      }
       // An outflow to a destination the reader has marked *"always a
       // disposal"* is answered here, when it is written, rather than by
       // whoever reads the queue next — a read that wrote made the PnL caption
@@ -452,6 +494,17 @@ export class TransactionImportCoordinator {
           'Applying destination rules to imported rows failed — the nightly sweep will'
         );
       }
+      // A hand-entered edit the imported rows now describe is removed, so the
+      // movement is not counted twice (SC-1468). Non-fatal for the same reason
+      // as the rule pass above: the imported rows are already safe.
+      try {
+        await this.editSupersession.supersede(userId, ingested.touchedHoldingIds);
+      } catch (error) {
+        this.logger.warn(
+          { accountId, source, error: error instanceof Error ? error.message : error },
+          'Checking hand-entered edits against imported rows failed'
+        );
+      }
       // `bulkUpsert` must collapse rows sharing (holdingId, source,
       // externalId) — Postgres refuses a statement carrying the conflict
       // key twice — and until SC-349 the collapse was reported to nobody.
@@ -464,7 +517,7 @@ export class TransactionImportCoordinator {
       // `hasCompleteTxHistory` — retracting a standing claim on what may
       // be a legitimate merge is the same silent downgrade of cost basis
       // that `completenessIsClaimed` below exists to prevent.
-      const merged = describeMergedRows(written.merges);
+      const merged = describeMergedRows(ingested.merges);
       if (merged) {
         noteOnResult(
           result,
@@ -472,28 +525,19 @@ export class TransactionImportCoordinator {
         );
       }
     }
-    if (result.observations.length > 0) {
-      await this.observationRepo.bulkAppend(result.observations);
-    }
-
-    // Coverage metadata — one row per holding touched in this run.
-    // Every emitted tx carries a holdingId (enforced by
-    // `TransactionRouter.materializeEvents`), so the set is derivable
-    // without a secondary lookup.
-    const uniqueHoldings = new Set<string>();
-    for (const t of result.transactions) uniqueHoldings.add(t.holdingId);
-    for (const o of result.observations) uniqueHoldings.add(o.holdingId);
+    // Coverage metadata — one row per holding the run wrote a row into.
+    const uniqueHoldings = new Set(ingested.touchedHoldingIds);
 
     // What this run is entitled to state per holding: which source spoke,
     // and whether it believes it read the whole ledger.
     //
-    // NOT the tx bounds. `result.firstEventAt` / `lastEventAt` are a
+    // NOT the tx bounds. The summary's `firstEventAt` / `lastEventAt` are a
     // single min/max over every event in the run, across every holding —
     // a summary of the RUN, which is the right thing to report on the
     // user_jobs row below and the wrong thing to write to a holding. A
     // run importing BTC held since 2021 alongside a token first seen last
     // week used to stamp 2021 on both (SC-308). The bounds are derived
-    // per holding from the ledger by `bulkUpsert` above; passing null
+    // per holding from the ledger by ingest's `bulkUpsert`; passing null
     // here is not a gap, because `LEAST`/`GREATEST` ignore nulls and so
     // leave that derivation standing.
     //
@@ -519,7 +563,7 @@ export class TransactionImportCoordinator {
         firstTxAt: null,
         lastTxAt: null,
         txSources: [source],
-        hasCompleteTxHistory: result.hasCompleteTxHistory,
+        hasCompleteTxHistory: fetched.hasCompleteTxHistory,
         // Every holding this run touched gets the same window, because the
         // window is a property of the STATEMENT and not of a holding within it
         // (SC-900). Null on every run whose provider named none, and `LEAST`
@@ -530,9 +574,9 @@ export class TransactionImportCoordinator {
         // rather than evidence, and a bound is the opposite: it is only ever
         // set by a provider that has just RETRACTED, so it carries evidence in
         // the one direction the gate protects.
-        historyStartsAt: result.historyStartsAt,
+        historyStartsAt: fetched.historyStartsAt,
       })),
-      { completenessIsClaimed: !since || result.historyRetractions.length > 0 }
+      { completenessIsClaimed: !since || fetched.historyRetractions.length > 0 }
     );
     // The batch above is built from a `Set`, so no holding can repeat and
     // this is unreachable today. It is here because that is a property of
@@ -554,10 +598,15 @@ export class TransactionImportCoordinator {
     // Only for full-history runs — incremental `since` runs mustn't
     // synthesize opening_balance rows because the full history is by
     // definition missing.
+    let earliestWritten = ingested.earliestChangedAt;
     if (!since && uniqueHoldings.size > 0) {
       for (const holdingId of uniqueHoldings) {
         try {
-          await this.reconciliation.reconcileHolding(holdingId);
+          const reconciled = await this.reconciliation.reconcileHolding(holdingId);
+          const openingAt = reconciled?.openingChangedAt ?? null;
+          if (openingAt && (!earliestWritten || openingAt < earliestWritten)) {
+            earliestWritten = openingAt;
+          }
         } catch (error) {
           noteOnResult(
             result,
@@ -567,6 +616,15 @@ export class TransactionImportCoordinator {
       }
     }
 
+    // The run's own bounds, over the events that reached the ledger.
+    let firstEventAt: Date | null = null;
+    let lastEventAt: Date | null = null;
+    for (const [i, event] of fetched.events.entries()) {
+      if (ingested.entryOutcomes[i] !== 'landed') continue;
+      if (!firstEventAt || event.occurredAt < firstEventAt) firstEventAt = event.occurredAt;
+      if (!lastEventAt || event.occurredAt > lastEventAt) lastEventAt = event.occurredAt;
+    }
+
     // Reaching this line means the provider ran cleanly — any real
     // problem (no creds, no provider, unknown source) already threw
     // TransactionImportUnrecoverableError upstream. 0 transactions is
@@ -574,11 +632,13 @@ export class TransactionImportCoordinator {
     return {
       source,
       accountId,
-      transactions: result.transactions.length,
-      observations: result.observations.length,
-      firstEventAt: result.firstEventAt?.toISOString() ?? null,
-      lastEventAt: result.lastEventAt?.toISOString() ?? null,
-      hasCompleteTxHistory: result.hasCompleteTxHistory,
+      transactions: ingested.rowsSent,
+      // The router never emitted a balance observation; kept for the stored shape.
+      observations: 0,
+      firstEventAt: firstEventAt?.toISOString() ?? null,
+      lastEventAt: lastEventAt?.toISOString() ?? null,
+      earliestWrittenAt: earliestWritten?.toISOString() ?? null,
+      hasCompleteTxHistory: fetched.hasCompleteTxHistory,
       warnings: result.warnings,
       warningDetails: result.warningDetails,
       status: 'ok',

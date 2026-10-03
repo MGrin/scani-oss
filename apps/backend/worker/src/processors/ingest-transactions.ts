@@ -1,6 +1,6 @@
 import { TransactionImportCoordinator, TransactionImportUnrecoverableError } from '@scani/domain';
 import { HoldingRepository, PortfolioValueDailyRepository } from '@scani/domain/repositories';
-import { noteOnResult, PortfolioValueCache } from '@scani/domain/services';
+import { FeedBatchRejected, noteOnResult, PortfolioValueCache } from '@scani/domain/services';
 import {
   PORTFOLIO_HISTORY_BACKFILL,
   PORTFOLIO_HISTORY_LOOKBACK_DAYS,
@@ -40,6 +40,13 @@ const LOOKBACK_SAFETY_PAD_DAYS = 7;
 // import backfill reaches at least as deep as the 1Y chart range.
 const LOOKBACK_DEFAULT_DAYS = PORTFOLIO_HISTORY_LOOKBACK_DAYS;
 const LOOKBACK_MIN_DAYS = 1;
+// Ceiling for a window sized from the oldest row an import wrote (SC-1459):
+// the schema's own maximum, so any real history is reached. Memory does not
+// grow with the window, because the rollup walks it in 30-day chunks (SC-1283):
+// mgrin's full 1853-day rebuild peaked at 315 MB, SC-1440's at 440 MB, both
+// under the worker's 560 MB watchdog.
+const LOOKBACK_MAX_DAYS = 365 * 100;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 /**
  * The message to fail with when a provider has already told us retrying is
@@ -102,6 +109,12 @@ export class IngestTransactionsProcessor extends UserJobProcessor<TransactionImp
       if (error instanceof TransactionImportUnrecoverableError) {
         throw userFacing(new UnrecoverableError(error.message));
       }
+      // The feed write refused the batch before reading anything, and the
+      // same events are refused the same way on every attempt (R38). Its
+      // message names every problem code.
+      if (error instanceof FeedBatchRejected) {
+        throw userFacing(new UnrecoverableError(error.message));
+      }
       const terminal = describeTerminalProviderFailure(error);
       if (terminal) throw userFacing(new UnrecoverableError(terminal));
       throw error;
@@ -116,11 +129,19 @@ export class IngestTransactionsProcessor extends UserJobProcessor<TransactionImp
     // any concurrent runs.
     if (result.transactions > 0) {
       const bucket = Math.floor(Date.now() / ROLLUP_COALESCE_WINDOW_MS);
-      const lookbackDays = await computeLookbackDays(data.userId);
+      const snapshotWindow = await computeLookbackDays(data.userId);
+      const lookbackDays = widenToEarliestWrite(snapshotWindow, result.earliestWrittenAt);
+      // A window widened by a backdated row gets its own id, so it is never
+      // collapsed into a narrower job already queued in this bucket (the
+      // SC-1323 shape). The per-user lock runs the two one after the other.
+      const requestId =
+        lookbackDays > snapshotWindow
+          ? `tx-import-${bucket}-${lookbackDays}d`
+          : `tx-import-${bucket}`;
       try {
         await Container.get(BullMqEnqueueService).add(PORTFOLIO_HISTORY_BACKFILL, {
           userId: data.userId,
-          requestId: `tx-import-${bucket}`,
+          requestId,
           tokenIds: [],
           lookbackDays,
         });
@@ -168,6 +189,23 @@ export class IngestTransactionsProcessor extends UserJobProcessor<TransactionImp
 
     return result;
   }
+}
+
+/**
+ * The rebuild must reach the oldest row the import wrote, whatever the
+ * snapshot's age says (SC-1459): a backdated transaction or opening balance
+ * makes every day from its date to today stale.
+ */
+export function widenToEarliestWrite(
+  snapshotWindow: number,
+  earliestWrittenAt: string | null,
+  now: Date = new Date()
+): number {
+  if (!earliestWrittenAt) return snapshotWindow;
+  const written = new Date(earliestWrittenAt);
+  if (Number.isNaN(written.getTime())) return snapshotWindow;
+  const reach = Math.ceil((now.getTime() - written.getTime()) / DAY_MS) + LOOKBACK_SAFETY_PAD_DAYS;
+  return Math.min(Math.max(snapshotWindow, reach), LOOKBACK_MAX_DAYS);
 }
 
 // Adaptive lookback. First-ever rollup for a user → full year. Steady

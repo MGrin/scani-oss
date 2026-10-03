@@ -8,9 +8,11 @@ import {
   AlertCircle,
   ArrowLeftRight,
   CheckCircle2,
+  EyeOff,
   FileText,
   ListChecks,
   type LucideIcon,
+  ReceiptText,
   Scale,
 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -51,6 +53,8 @@ const REVIEW_ICONS: Record<ReviewRow['labelCode'], LucideIcon> = {
   jobFailed: AlertCircle,
   transfersToConfirm: ArrowLeftRight,
   balanceChangesToExplain: Scale,
+  answersTradesExplain: ReceiptText,
+  unpriceableAirdrops: EyeOff,
 };
 
 export function ReviewList({ items, queueHasWork, query }: ReviewListProps) {
@@ -112,6 +116,9 @@ export function ReviewList({ items, queueHasWork, query }: ReviewListProps) {
       })(),
       label: item.title,
       sublabel: item.detail ?? undefined,
+      // The detail line ends in what tells rows apart ("3 explanations on
+      // IBKR Portfolio · USD"); truncated on a phone, two currencies read alike.
+      wrapIdentity: true,
       value: item.amount ? (
         <Numeric value={item.amount.value} currency={item.amount.currency} />
       ) : null,

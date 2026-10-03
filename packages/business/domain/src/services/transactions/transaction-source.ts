@@ -25,6 +25,9 @@ const PROVIDER_SOURCE_MAP: Record<string, string> = {
   airwallex: 'airwallex-api',
 };
 
+/** `StatementTransactionIngester` tags each statement's rows `statement-<format>`. */
+export const STATEMENT_LEDGER_SOURCE_PREFIX = 'statement-';
+
 export function sourceForProvider(provider: string): string | null {
   return PROVIDER_SOURCE_MAP[provider.toLowerCase()] ?? null;
 }
@@ -34,6 +37,8 @@ export function sourceForProvider(provider: string): string | null {
 // chains); non-EVM chains use their own slug. The wallet-detection layer
 // encodes non-EVM chains as negative sentinels in `accounts.metadata.chainId`
 // (0 for Bitcoin, which predates the convention).
+export const EVM_WALLET_SOURCE = 'etherscan';
+
 const EVM_CHAIN_IDS: ReadonlySet<number> = new Set([
   1, 56, 137, 43114, 42161, 10, 8453, 250, 25, 42170, 324, 534352, 59144, 81457, 5000, 204, 100,
   42220, 1284, 1285,
@@ -77,6 +82,6 @@ export const NON_EVM_WALLET_SOURCES: ReadonlySet<string> = new Set(
 export function sourceForChainId(chainId: string | number | null | undefined): string | null {
   if (chainId === null || chainId === undefined) return null;
   const numeric = typeof chainId === 'number' ? chainId : Number(chainId);
-  if (Number.isFinite(numeric) && EVM_CHAIN_IDS.has(numeric)) return 'etherscan';
+  if (Number.isFinite(numeric) && EVM_CHAIN_IDS.has(numeric)) return EVM_WALLET_SOURCE;
   return NON_EVM_CHAIN_SOURCE_MAP[String(chainId)] ?? null;
 }

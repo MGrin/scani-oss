@@ -3,8 +3,8 @@
     "walkLots": {
       "A": {
         "openQty": "5.5",
-        "costBasis": "735",
-        "realizedPnl": "430",
+        "costBasis": "715",
+        "realizedPnl": "310",
         "lots": [
           {
             "qty": "1",
@@ -29,7 +29,7 @@
           },
           {
             "qty": "0.5",
-            "cost": "75",
+            "cost": "55",
             "date": "2024-07-02T10:00:00.000Z",
             "stale": false,
             "unpriced": false
@@ -189,8 +189,8 @@
     "walkComponent": {
       "A": {
         "openQty": "5.5",
-        "costBasis": "735",
-        "realizedPnl": "430",
+        "costBasis": "715",
+        "realizedPnl": "310",
         "lots": [
           {
             "qty": "1",
@@ -215,7 +215,7 @@
           },
           {
             "qty": "0.5",
-            "cost": "75",
+            "cost": "55",
             "date": "2024-07-02T10:00:00.000Z",
             "stale": false,
             "unpriced": false
@@ -384,7 +384,7 @@
       "A": {
         "openQty": "5.499999999999999999999999999",
         "costBasis": "588.8235294117647058823529411",
-        "realizedPnl": "273.2352941176470588235294117",
+        "realizedPnl": "186.1764705882352941176470588",
         "lots": [
           {
             "qty": "3.235294117647058823529411764",
@@ -727,8 +727,8 @@
           "acquiredAt": "2024-07-02T10:00:00.000Z",
           "quantity": "0.5",
           "proceeds": "60",
-          "costBasis": "75",
-          "gain": "-15",
+          "costBasis": "55",
+          "gain": "5",
           "holdingDays": 0,
           "portionIndex": 0,
           "portionCount": 1,
@@ -851,7 +851,7 @@
       "A": {
         "openQty": "5.499999999999999999999999999",
         "costBasis": "588.8235294117647058823529411",
-        "realizedPnl": "273.2352941176470588235294117",
+        "realizedPnl": "186.1764705882352941176470588",
         "lots": [
           {
             "qty": "3.235294117647058823529411764",
@@ -1279,8 +1279,8 @@
           "acquiredAt": "2024-07-02T10:00:00.000Z",
           "quantity": "0.5",
           "proceeds": "60",
-          "costBasis": "75",
-          "gain": "-15",
+          "costBasis": "55",
+          "gain": "5",
           "holdingDays": 0,
           "portionIndex": 0,
           "portionCount": 1,

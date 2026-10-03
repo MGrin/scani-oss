@@ -366,3 +366,244 @@ describe('GeminiProvider.fetchTransactions', () => {
     60_000
   );
 });
+
+/**
+ * SC-1478. Two defects in `fetchTransactions`, found by SC-1478 and
+ * fixed by SC-1480 and SC-1481.
+ *
+ * 1. Trade symbols are built from CURRENT balances only, so an asset that was
+ *    deposited, traded and fully sold is never asked about: its trades never
+ *    import, and Gemini declared no history horizon, so the import still claimed
+ *    a complete history for every holding it touched. It declares one now,
+ *    because a trades-only round trip still cannot be enumerated.
+ * 2. Every sub-walk is `.catch(() => [])` and only page caps retract the claim,
+ *    so a failed `/v2/transfers` call reads as "no deposits, complete history".
+ */
+describe('GeminiProvider.fetchTransactions — SC-1478', () => {
+  function mockGemini(handlers: {
+    balances: unknown;
+    trades: (symbol: string) => unknown;
+    transfers: () => Response;
+  }) {
+    const asked: string[] = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      const b64 = (init?.headers as Record<string, string> | undefined)?.['X-GEMINI-PAYLOAD'];
+      const payload = b64 ? JSON.parse(Buffer.from(b64, 'base64').toString('utf8')) : {};
+      if (u.endsWith('/v1/balances'))
+        return new Response(JSON.stringify(handlers.balances), { status: 200 });
+      if (u.endsWith('/v1/mytrades')) {
+        asked.push(payload.symbol);
+        return new Response(JSON.stringify(handlers.trades(payload.symbol)), { status: 200 });
+      }
+      if (u.endsWith('/v2/transfers')) return handlers.transfers();
+      throw new Error(`unexpected url: ${u}`);
+    }) as unknown as typeof fetch;
+    return asked;
+  }
+
+  const ethTrades = [
+    {
+      tid: 200,
+      symbol: 'ethusd',
+      price: '2000',
+      amount: '1',
+      timestamp: 1_700_000_000,
+      timestampms: 1_700_000_000_000,
+      type: 'Buy',
+    },
+    {
+      tid: 201,
+      symbol: 'ethusd',
+      price: '2500',
+      amount: '1',
+      timestamp: 1_700_100_000,
+      timestampms: 1_700_100_000_000,
+      type: 'Sell',
+    },
+  ];
+
+  test('an exited asset seen in transfers still has its trades fetched', async () => {
+    const originalFetch = globalThis.fetch;
+    const asked = mockGemini({
+      balances: [{ currency: 'USD', amount: '1000', type: 'exchange' }],
+      trades: (symbol) => (symbol === 'ethusd' ? ethTrades : []),
+      transfers: () =>
+        new Response(
+          JSON.stringify([
+            {
+              type: 'Deposit',
+              status: 'Complete',
+              timestampms: 1_699_900_000_000,
+              eid: 7,
+              currency: 'ETH',
+              amount: '1',
+            },
+          ]),
+          { status: 200 }
+        ),
+    });
+    try {
+      const events = await new GeminiProvider(passthroughLimiter()).fetchTransactions(ctx as never);
+      expect(asked).toContain('ethusd');
+      expect(events.map((e) => e.externalId)).toContain('trade-ethusd-201');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('a failed /v2/transfers walk retracts the complete-history claim', async () => {
+    const originalFetch = globalThis.fetch;
+    mockGemini({
+      balances: [{ currency: 'ETH', amount: '1', type: 'exchange' }],
+      trades: (symbol) => (symbol === 'ethusd' ? [ethTrades[0]] : []),
+      transfers: () => new Response('upstream down', { status: 500 }),
+    });
+    const retractions: unknown[] = [];
+    try {
+      const events = await new GeminiProvider(passthroughLimiter()).fetchTransactions({
+        ...ctx,
+        retractHistoryClaim: (reason: unknown) => retractions.push(reason),
+      } as never);
+      expect(events.some((e) => e.externalId === 'trade-ethusd-200')).toBe(true);
+      expect(retractions.length).toBeGreaterThan(0);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+/**
+ * The control for SC-1481's retraction: the candidate symbols are a
+ * cross-product, so most runs ask about pairs Gemini does not list. Those are
+ * absent markets, not failed walks, and must not take the claim away.
+ */
+describe('GeminiProvider.fetchTransactions — unlisted candidate pairs', () => {
+  // Gemini documents the reason, not the status, so any 4xx carrying it counts.
+  test.each([400, 404])('an InvalidSymbol refusal at HTTP %d retracts nothing', async (status) => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      const b64 = (init?.headers as Record<string, string> | undefined)?.['X-GEMINI-PAYLOAD'];
+      const payload = b64 ? JSON.parse(Buffer.from(b64, 'base64').toString('utf8')) : {};
+      if (u.endsWith('/v1/balances')) {
+        return Response.json([{ currency: 'ETH', amount: '1', type: 'exchange' }]);
+      }
+      if (u.endsWith('/v2/transfers')) return Response.json([]);
+      if (u.endsWith('/v1/mytrades')) {
+        if (payload.symbol === 'ethusd') return Response.json([]);
+        return Response.json(
+          { result: 'error', reason: 'InvalidSymbol', message: `Invalid symbol ${payload.symbol}` },
+          { status }
+        );
+      }
+      throw new Error(`unexpected url: ${u}`);
+    }) as unknown as typeof fetch;
+    const retractions: unknown[] = [];
+    try {
+      await new GeminiProvider(passthroughLimiter()).fetchTransactions({
+        ...ctx,
+        retractHistoryClaim: (r: unknown) => retractions.push(r),
+      } as never);
+      expect(retractions).toEqual([]);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+/**
+ * The other side of that control (operator review of #2122): only the
+ * documented `InvalidSymbol` reason is an absent market. A 403 (bad key) or a
+ * 429 (rate limit) on a candidate pair must fail the sync, never be read as
+ * "this pair does not exist" and dropped. A 5xx stays a tolerated walk.
+ */
+describe('GeminiProvider.fetchTransactions — refusals that are not InvalidSymbol', () => {
+  const mockTradesRefusal = (status: number, body: unknown) => {
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      const b64 = (init?.headers as Record<string, string> | undefined)?.['X-GEMINI-PAYLOAD'];
+      const payload = b64 ? JSON.parse(Buffer.from(b64, 'base64').toString('utf8')) : {};
+      if (u.endsWith('/v1/balances')) {
+        return Response.json([{ currency: 'ETH', amount: '1', type: 'exchange' }]);
+      }
+      if (u.endsWith('/v2/transfers')) return Response.json([]);
+      if (u.endsWith('/v1/mytrades')) {
+        if (payload.symbol === 'ethusd') return Response.json([]);
+        return Response.json(body, { status });
+      }
+      throw new Error(`unexpected url: ${u}`);
+    }) as unknown as typeof fetch;
+  };
+
+  test.each([
+    [403, { result: 'error', reason: 'InvalidSignature', message: 'Invalid signature' }],
+    [429, { result: 'error', reason: 'RateLimit', message: 'Requests were made too frequently' }],
+  ])('a %d on a candidate pair fails the sync', async (status, body) => {
+    const originalFetch = globalThis.fetch;
+    mockTradesRefusal(status, body);
+    try {
+      await expect(
+        new GeminiProvider(passthroughLimiter()).fetchTransactions(ctx as never)
+      ).rejects.toThrow(String(status));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  // A 5xx is retryable, so signedFetch backs off before the walk gives up: give it
+  // CI's budget rather than bun's bare 5s, or a timeout leaks the fetch mock.
+  test('a 500 on a candidate pair is tolerated and retracts the claim (control)', async () => {
+    const originalFetch = globalThis.fetch;
+    mockTradesRefusal(500, { result: 'error', reason: 'ServerError', message: 'down' });
+    const retractions: unknown[] = [];
+    try {
+      await new GeminiProvider(passthroughLimiter()).fetchTransactions({
+        ...ctx,
+        retractHistoryClaim: (r: unknown) => retractions.push(r),
+      } as never);
+      expect(retractions.length).toBe(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }, 30_000);
+});
+
+/**
+ * Even a clean run must not claim a complete history: an asset bought and sold
+ * to zero without ever being deposited or withdrawn appears in no feed Gemini
+ * can enumerate. The router claims completeness only for a since-less run
+ * through a provider with no horizon and no retraction, so the horizon is what
+ * makes it false.
+ */
+describe('GeminiProvider.fetchTransactions — completeness', () => {
+  test('a clean since-less run does not claim a complete history', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      const u = String(url);
+      if (u.endsWith('/v1/balances')) {
+        return Response.json([{ currency: 'ETH', amount: '1', type: 'exchange' }]);
+      }
+      if (u.endsWith('/v2/transfers') || u.endsWith('/v1/mytrades')) return Response.json([]);
+      throw new Error(`unexpected url: ${u}`);
+    }) as unknown as typeof fetch;
+    const retractions: unknown[] = [];
+    try {
+      const provider = new GeminiProvider(passthroughLimiter());
+      await provider.fetchTransactions({
+        ...ctx,
+        retractHistoryClaim: (r: unknown) => retractions.push(r),
+      } as never);
+      expect(retractions).toEqual([]);
+      // Reaches back to Gemini's launch, which no account predates.
+      expect(provider.transactionHistoryHorizonMs).toBeGreaterThanOrEqual(
+        Date.now() - Date.UTC(2015, 9, 25) - 60_000
+      );
+      const claimsComplete =
+        provider.transactionHistoryHorizonMs === undefined && retractions.length === 0;
+      expect(claimsComplete).toBe(false);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});

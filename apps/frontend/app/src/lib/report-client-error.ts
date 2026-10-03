@@ -1,17 +1,21 @@
 /**
- * Fire-and-forget client error reporting.
+ * Fire-and-forget client error reporting, for errors an error boundary caught
+ * before Sentry's global handler could see them.
  *
- * Posts errors caught by V2ErrorBoundary (and anywhere else that wants to
- * log a crash) to the backend `clientErrors.report` tRPC procedure.
+ * With the browser Sentry client active the error goes to Sentry directly, so
+ * it lands in the frontend project with its own stack (SC-1492). Without one —
+ * a self-hosted build with no DSN — it is posted to the api's
+ * `clientErrors.report` relay instead, never both.
  *
- * Uses `fetch` directly rather than the tRPC React client because error
- * boundaries run outside the React tree and must be callable from anywhere.
+ * The relay uses `fetch` directly rather than the tRPC React client because
+ * error boundaries run outside the React tree.
  *
  * Silently swallows all failures — an error-reporting path that can itself
  * throw creates infinite loops on already-broken UIs.
  */
 
 import { isChunkLoadError } from '@scani/ui/lib/lazy-chunk';
+import * as Sentry from '@sentry/react';
 
 const MAX_MESSAGE_LEN = 2000;
 const MAX_STACK_LEN = 8000;
@@ -29,6 +33,23 @@ export interface ReportClientErrorInput {
 
 export async function reportClientError(input: ReportClientErrorInput): Promise<void> {
   try {
+    // The path only: a query string can carry a magic-link token (SC-1350).
+    const route = typeof window !== 'undefined' ? window.location.pathname : undefined;
+    // A chunk that would not load is the network or a deploy, not a bug in
+    // this code, so it is filed below an error (SC-1380).
+    const chunkFailure = isChunkLoadError(input.error);
+
+    if (Sentry.getClient()) {
+      Sentry.captureException(input.error, {
+        level: chunkFailure ? 'warning' : 'error',
+        tags: route ? { route } : undefined,
+        contexts: input.componentStack
+          ? { react: { componentStack: input.componentStack } }
+          : undefined,
+      });
+      return;
+    }
+
     const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:3001';
     const url = `${apiBase}/trpc/clientErrors.report`;
 
@@ -36,13 +57,10 @@ export async function reportClientError(input: ReportClientErrorInput): Promise<
       message: truncate(input.error.message, MAX_MESSAGE_LEN) ?? 'Unknown error',
       stack: truncate(input.error.stack, MAX_STACK_LEN),
       componentStack: truncate(input.componentStack, MAX_COMPONENT_STACK_LEN),
-      // The path only: a query string can carry a magic-link token (SC-1350).
-      route: typeof window !== 'undefined' ? window.location.pathname : undefined,
+      route,
       userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : undefined,
       appVersion: import.meta.env.VITE_APP_VERSION as string | undefined,
-      // A chunk that would not load is the network or a deploy, not a bug in
-      // this code, so it is filed below an error (SC-1380).
-      level: isChunkLoadError(input.error) ? ('warning' as const) : undefined,
+      level: chunkFailure ? ('warning' as const) : undefined,
     };
 
     // tRPC v10 accepts raw JSON for non-batched mutations.

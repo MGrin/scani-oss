@@ -2,6 +2,7 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy
 
 import { describe, expect, it } from 'bun:test';
 import Decimal from 'decimal.js';
+import { extractPriceMap } from '../../../src/lib/price-map';
 
 /**
  * DashboardService unit tests with mocked repositories.
@@ -62,24 +63,6 @@ interface HoldingWithDetails {
 // ---------------------------------------------------------------------------
 // Replicated helpers from DashboardService
 // ---------------------------------------------------------------------------
-
-function extractPriceMap(portfolioValue: PortfolioValueResult): Map<string, string> {
-  // Mirror the real extractPriceMap (packages/business/domain/src/lib/price-map.ts):
-  // null `value` → skip the holding entirely; the returned map only
-  // contains tokens we can actually price, keyed on the token ID because a
-  // symbol is not unique (SC-1114).
-  const priceMap = new Map<string, string>();
-  for (const h of portfolioValue.holdings) {
-    if (h.value === null) continue;
-    const balance = new Decimal(h.balance);
-    const value = new Decimal(h.value);
-    if (balance.greaterThan(0) && !priceMap.has(h.tokenId)) {
-      const price = value.div(balance);
-      priceMap.set(h.tokenId, price.toString());
-    }
-  }
-  return priceMap;
-}
 
 function calculateTopHoldings(
   holdingsWithDetails: HoldingWithDetails[],

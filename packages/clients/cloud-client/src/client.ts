@@ -1,16 +1,14 @@
 import type { AppRouter } from '@scani/data-provider/types';
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
 
-export type { AppRouter };
-
-export interface CloudCallEvent {
+interface CloudCallEvent {
   routes: string;
   status: number | 'error';
   durationMs: number;
   requestId?: string;
   error?: string;
 }
-export type CloudCallSink = (event: CloudCallEvent) => void;
+type CloudCallSink = (event: CloudCallEvent) => void;
 
 export interface CloudClientOptions {
   url: string;

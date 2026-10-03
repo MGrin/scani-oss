@@ -708,5 +708,3 @@ process.on('unhandledRejection', (reason) => {
   logger.fatal({ reason }, '💀 Unhandled Promise Rejection - shutting down');
   process.exit(1);
 });
-
-export type { AppRouter } from './presentation/router';

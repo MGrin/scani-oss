@@ -28,7 +28,7 @@ export interface StickyOffset {
   barRef: (node: HTMLElement | null) => void;
 }
 
-export const STICKY_OFFSET_VAR = '--v3-list-sticky';
+const STICKY_OFFSET_VAR = '--v3-list-sticky';
 
 export function useStickyOffset(): StickyOffset {
   const root = useRef<HTMLElement | null>(null);

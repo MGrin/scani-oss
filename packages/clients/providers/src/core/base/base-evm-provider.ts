@@ -65,8 +65,6 @@ import { type CustomLogger, createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import type { Capability, ProviderBase } from '../capabilities';
 import type {
-  HoldingSnapshot,
-  PriceQuote,
   ProviderContext,
   TransactionEvent,
   TransactionFetchContext,
@@ -91,6 +89,16 @@ export interface EvmChainConfig {
   readonly nativeName: string;
   /** Native asset decimals — almost always 18 for EVM. */
   readonly nativeDecimals: number;
+  /**
+   * The chain's WETH9-style wrapper. Its `deposit()` and `withdraw()` emit
+   * `Deposit`/`Withdrawal`, never `Transfer`, so `tokentx` does not list a wrap
+   * or an unwrap and the wrapped leg has to be read off `txlist` (SC-1468).
+   */
+  readonly wrappedNative?: {
+    readonly contractAddress: string;
+    readonly symbol: string;
+    readonly name: string;
+  };
 }
 
 /**
@@ -112,6 +120,8 @@ export interface EvmNativeTxRow {
    * (SC-1445). Absent or empty on chains without one.
    */
   L1FeesPaid?: string;
+  /** Call data; read only to recognise a wrap or an unwrap (SC-1468). */
+  input?: string;
 }
 
 /**
@@ -178,6 +188,8 @@ interface EvmLeg {
 
 /** No ERC-20 contract can collide with this — addresses are 40 hex chars. */
 const NATIVE_TOKEN_KEY = 'native';
+const WETH_DEPOSIT = '0xd0e30db0';
+const WETH_WITHDRAW = '0x2e1a7d4d';
 
 /**
  * The `externalId` a token leg gets when its transaction moves that token
@@ -315,6 +327,8 @@ export abstract class BaseEvmProvider implements ProviderBase {
           if (leg) legs.push(leg);
           const fee = this.gasFeeLeg(row, chain, walletAddress);
           if (fee) feeLegs.push(fee);
+          const wrap = this.wrappedNativeLeg(row, chain, walletAddress);
+          if (wrap) legs.push(wrap);
         }
       )
     ) {
@@ -641,6 +655,58 @@ export abstract class BaseEvmProvider implements ProviderBase {
     };
   }
 
+  /**
+   * The wrapped side of a wrap or an unwrap the wallet sent to the chain's
+   * WETH9 contract. The native side is already a leg (the ETH sent with
+   * `deposit()`, or the internal transfer `withdraw()` pays back); without this
+   * one the wrapper balance only ever rose in the ledger, because the event
+   * WETH9 emits is not a `Transfer` (SC-1468).
+   */
+  private wrappedNativeLeg(
+    row: EvmNativeTxRow,
+    chain: EvmChainConfig,
+    walletAddress: string
+  ): EvmLeg | null {
+    const wrapper = chain.wrappedNative;
+    if (!wrapper) return null;
+    if (row.isError === '1' || row.txreceipt_status === '0') return null;
+    if (row.from.toLowerCase() !== walletAddress.toLowerCase()) return null;
+    const contract = wrapper.contractAddress.toLowerCase();
+    if (row.to.toLowerCase() !== contract) return null;
+    const input = (row.input ?? '').toLowerCase();
+    let wei: Decimal;
+    if (input.startsWith(WETH_WITHDRAW) && input.length >= 74) {
+      wei = new Decimal(`0x${input.slice(10, 74)}`).neg();
+    } else if (input === '0x' || input === '' || input.startsWith(WETH_DEPOSIT)) {
+      wei = new Decimal(row.value || '0');
+    } else {
+      return null;
+    }
+    if (wei.isZero()) return null;
+    const quantity = wei.div(new Decimal(10).pow(chain.nativeDecimals));
+    return {
+      hash: row.hash,
+      tokenKey: contract,
+      event: {
+        externalId: `${row.hash}:wrap`,
+        occurredAt: new Date(Number(row.timeStamp) * 1000),
+        kind: quantity.isNegative() ? 'transfer_out' : 'transfer_in',
+        primary: {
+          tokenIdentity: {
+            symbol: wrapper.symbol,
+            name: wrapper.name,
+            decimals: chain.nativeDecimals,
+            providerMetadata: {
+              etherscan: { chainId: chain.chainId, contractAddress: contract },
+            },
+          },
+          quantity: quantity.toString(),
+        },
+        rawPayload: row,
+      },
+    };
+  }
+
   private normalizeNativeTx(
     row: EvmNativeTxRow,
     chain: EvmChainConfig,
@@ -849,4 +915,4 @@ export abstract class BaseEvmProvider implements ProviderBase {
 }
 
 // Re-export for subclasses.
-export type { HoldingSnapshot, PriceQuote, TransactionEvent, WithUserCreds };
+export type { TransactionEvent, WithUserCreds };

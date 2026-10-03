@@ -82,6 +82,29 @@ export function sumPortfolioValuesByAccount(
 }
 
 /**
+ * Per-account margin debt: the sum of the active, priced holdings worth less
+ * than zero, the same rule the allocation applies (SC-1463). An account with
+ * no debt has no entry. The values are negative; `sumPortfolioValuesByAccount`
+ * already nets them, so a summary's assets are its total minus this.
+ */
+export function sumPortfolioDebtByAccount(
+  portfolio: PortfolioValueResult | null
+): Map<string, Decimal> {
+  const byAccount = new Map<string, Decimal>();
+  if (!portfolio) return byAccount;
+  for (const holding of portfolio.holdings) {
+    if (!holding.isActive || holding.value === null) continue;
+    const value = new Decimal(holding.value);
+    if (!value.lessThan(0)) continue;
+    byAccount.set(
+      holding.accountId,
+      (byAccount.get(holding.accountId) ?? new Decimal(0)).add(value)
+    );
+  }
+  return byAccount;
+}
+
+/**
  * Service to update portfolio values with current token prices
  * Converted to use TypeDI for proper dependency injection
  *

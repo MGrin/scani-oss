@@ -88,7 +88,6 @@
         "@sentry/node": "^10.75.3",
         "@sinclair/typebox": "^0.34.52",
         "@trpc/server": "^10.45.4",
-        "better-auth": "^1.7.6",
         "drizzle-orm": "^0.45.3",
         "elysia": "^1.4.30",
         "file-type": "^22.1.1",
@@ -204,6 +203,7 @@
         "@scani/deadline": "workspace:*",
         "@scani/email": "workspace:*",
         "@scani/file-import": "workspace:*",
+        "@scani/ingesters": "workspace:*",
         "@scani/logging": "workspace:*",
         "@scani/providers": "workspace:*",
         "@scani/push": "workspace:*",
@@ -420,7 +420,7 @@
       "version": "1.0.0",
       "dependencies": {
         "@scani/logging": "workspace:*",
-        "nodemailer": "^9.1.1",
+        "nodemailer": "^10.0.13",
         "typedi": "^0.10.0",
         "zod": "^3.25.76",
       },
@@ -2286,7 +2286,7 @@
 
     "node-releases": ["node-releases@2.0.57", "", {}, "sha512-kQK9LGGFiHtrWiNhZtA7Qbw17AQz+dmsEKODRIVTXA9+e5MS/2gZEBhYJt13GrAz5/IOZKddH/0Z3TP/Zgo+yw=="],
 
-    "nodemailer": ["nodemailer@9.1.1", "", {}, "sha512-izw9mVKFix6YSnC9eLgV6g1opl9DUlRio9ZNcq+Wu9Ujn2UwF+8Nl0B8nz22kEC+CTZCvinkxwJ0DeFbb6NwcQ=="],
+    "nodemailer": ["nodemailer@10.0.13", "", {}, "sha512-SzG86OlvcW/NNhUFC6uROMwRTL4n7MswfQqC/T8mhkmnY1YVa23zUEMYi4ijSeXSl9GLz9ZeTJDUatEDuY5FeQ=="],
 
     "normalize-path": ["normalize-path@3.0.0", "", {}, "sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA=="],
 

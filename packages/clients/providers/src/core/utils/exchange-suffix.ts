@@ -68,22 +68,6 @@ export const NON_US_EXCHANGE_SUFFIX_MAP: Record<string, { exchange: string; curr
   ME: { exchange: 'MISX', currency: 'RUB' },
 };
 
-/**
- * Inferred exchange info for a stock based on its symbol suffix
- * (e.g. `RY.TO` → TSX/CAD). Returns null for plain US symbols (and
- * special-case US share classes), letting the caller short-circuit
- * to Finnhub.
- */
-export function detectExchangeInfoFromSuffix(
-  symbol: string
-): { exchange: string; currency: string } | null {
-  if (!symbol) return null;
-  const dot = symbol.lastIndexOf('.');
-  if (dot < 0 || dot === symbol.length - 1) return null;
-  const suffix = symbol.slice(dot + 1).toUpperCase();
-  return NON_US_EXCHANGE_SUFFIX_MAP[suffix] ?? null;
-}
-
 export function parseInternationalNumber(value: string | null | undefined): number | null {
   if (!value || typeof value !== 'string') return null;
   const cleaned = value.trim();
@@ -113,21 +97,4 @@ export function sanitizeForGoogleFinanceSymbol(symbol: string): string {
   const upper = symbol.toString().toUpperCase().trim();
   const sanitized = upper.replace(/[^A-Z0-9.\-:]/g, '');
   return sanitized.slice(0, 32);
-}
-
-/**
- * Lower-cased Finnhub-symbol normalizer: drop exchange prefixes
- * (NASDAQGS:, NASDAQ:, NYSE:, …), drop `:US`/`.US` suffixes, and strip
- * the residual non-symbol characters.
- */
-export function normalizeForFinnhubSymbol(raw: string): string {
-  if (!raw) return '';
-  let s = raw.toUpperCase().trim();
-  s = s.replace(
-    /^(NASDAQGS:|NASDAQCM:|NASDAQ:|NYSEARCA:|NYSEAMERICAN:|NYSEMKT:|NYSE:|ARCA:|BATS:)/,
-    ''
-  );
-  s = s.replace(/(:US|\.US)$/i, '');
-  s = s.replace(/[^A-Z0-9.-]/g, '');
-  return s;
 }

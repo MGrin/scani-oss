@@ -12,6 +12,12 @@ import {
 import Decimal from 'decimal.js';
 import { and, eq, inArray, isNotNull, ne, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import {
+  GAP_ANSWER_ROW_SOURCES,
+  type GapAnswerReceipt,
+  gapAnswerRowIds,
+  readGapAnswerReceipt,
+} from '../../lib/balances/gap-answer-receipt';
 import { isExactReversal, unexplainedDrift } from '../../lib/balances/unexplained-drift';
 import type { BalanceGapCandidate } from '../../repositories/HoldingBalanceObservationRepository';
 import { HoldingBalanceObservationRepository } from '../../repositories/HoldingBalanceObservationRepository';
@@ -429,27 +435,7 @@ export class BalanceGapService {
     );
     if (!observation?.gapReview) return false;
     const metadata = (observation.sourceMetadata ?? {}) as Record<string, unknown>;
-    const receipt = metadata.gapAnswer as
-      | { transactionId?: string; feeTransactionId?: string }
-      | undefined;
-    if (receipt?.transactionId)
-      await this.transfers.reopen(userId, receipt.transactionId, transaction);
-    const ids = [receipt?.transactionId, receipt?.feeTransactionId].filter(
-      (id): id is string => !!id
-    );
-    if (ids.length)
-      await transaction
-        .delete(schema.holdingTransactions)
-        .where(
-          and(
-            eq(schema.holdingTransactions.userId, userId),
-            inArray(schema.holdingTransactions.id, ids),
-            inArray(schema.holdingTransactions.source, [
-              'user-balance-edit',
-              'user-balance-correction',
-            ])
-          )
-        );
+    await this.removeAnswerRows(userId, readGapAnswerReceipt(metadata), transaction);
     const { gapAnswer: priorAnswer, ...rest } = metadata;
     await transaction
       .update(schema.holdingBalanceObservations)
@@ -464,6 +450,32 @@ export class BalanceGapService {
       })
       .where(eq(schema.holdingBalanceObservations.id, observationId));
     return true;
+  }
+
+  /**
+   * Take an answer's rows out of the ledger: reopen the transfer review its
+   * withdrawal settled, which removes an arrival it booked on another holding,
+   * then delete the rows the answer itself wrote. `undo` and the settlement
+   * review's retire both go through here so they remove the same set (SC-1453).
+   */
+  async removeAnswerRows(
+    userId: string,
+    receipt: GapAnswerReceipt | undefined,
+    transaction: DatabaseTransaction
+  ): Promise<void> {
+    if (receipt?.transactionId)
+      await this.transfers.reopen(userId, receipt.transactionId, transaction);
+    const ids = gapAnswerRowIds(receipt);
+    if (ids.length)
+      await transaction
+        .delete(schema.holdingTransactions)
+        .where(
+          and(
+            eq(schema.holdingTransactions.userId, userId),
+            inArray(schema.holdingTransactions.id, ids),
+            inArray(schema.holdingTransactions.source, [...GAP_ANSWER_ROW_SOURCES])
+          )
+        );
   }
 
   /**

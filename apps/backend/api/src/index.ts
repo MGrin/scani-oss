@@ -20,11 +20,10 @@ import { DataProviderHealthMonitor } from '@scani/cloud-client/health-monitor';
 import { probeDataProvider } from '@scani/cloud-client/health-probe';
 import { getNodeEnv, healthBodyFor, isNodeEnvProduction, servedVersion } from '@scani/config';
 import { assertDemoOnlyDatabase } from '@scani/domain/demo';
-import { isBlockedAuthPath, TURNSTILE_HEADER, turnstileRefusal } from '@scani/http-fetch';
+import { isBlockedAuthPath, turnstileRefusal } from '@scani/http-fetch';
 import { createComponentLogger, createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { setSharedRedis } from '@scani/rate-limiter';
-import { LANGUAGE_HEADER } from '@scani/shared';
 
 // Sentry is the first thing we wire up so any subsequent boot-time failure
 // reaches the error tracker instead of being lost to stdout.
@@ -75,7 +74,7 @@ import {
   createStrictLimiter,
   defaultInflowKey,
   edgeLockRefusal,
-  loadRateLimiterConfig,
+  ingressIsMarked,
   observeRedisReachability,
   pingWithin,
   type StrandReport,
@@ -136,7 +135,7 @@ import { googleSheetsFactory } from '@scani/providers-google-sheets';
 import { CLIENT_IP_HEADER, createBetterAuth } from './auth/better-auth';
 import { createNewAddressCap } from './auth/new-address-cap';
 import {
-  buildCorsOrigins,
+  buildCorsOptions,
   buildTrustedOrigins,
   isAllowedWebSocketOrigin,
 } from './config/browser-origins';
@@ -145,8 +144,6 @@ import { monitorEventLoopStalls } from './lib/event-loop-stalls';
 import { isLivenessProbe } from './lib/liveness';
 import { isPrivateSessionRead } from './lib/private-session-read';
 import { runDeepChecks } from './presentation/health/deep-checks';
-import { registerAdminDataRoutes } from './presentation/http/admin-data';
-import { registerAdminJobsRoutes } from './presentation/http/admin-jobs';
 import { registerInstitutionIconRoutes } from './presentation/http/institution-icons';
 import { registerUnsubscribeRoutes } from './presentation/http/unsubscribe';
 import {
@@ -390,7 +387,7 @@ setInflowDegradedHandler(({ namespace, timeoutMs, error, count }) => {
 // Rate limiters. Bucket state lives in Redis so horizontally-scaled
 // backend instances share fairness.
 const globalLimiter = createStandardLimiter(redisConnection, 300);
-const onFly = Boolean(loadRateLimiterConfig().FLY_APP_NAME);
+const ingressMarked = ingressIsMarked();
 const strictLimiter = createStrictLimiter(redisConnection, 60);
 // Per-IP signup attempt cap. Better-Auth's signup response still
 // reveals "email exists" vs "new", so this limiter is the primary
@@ -489,7 +486,7 @@ const app = new Elysia()
     // I/O, and Fly's own per-machine concurrency ceiling (soft 80 / hard 120)
     // still applies, so the exposure is a cheap 200 rather than an
     // amplification.
-    if (isLivenessProbe(request) || isPrivateSessionRead(request, onFly)) return;
+    if (isLivenessProbe(request) || isPrivateSessionRead(request, ingressMarked)) return;
     const res = await globalLimiter.tryConsume(request);
     if ('ok' in res && res.ok) return;
     set.status = 429;
@@ -604,18 +601,9 @@ const app = new Elysia()
     };
   })
   .use(
-    cors({
-      // env.FRONTEND_URL is validated at startup: required + https in production.
-      // In dev this also allows loopback on any port — see browser-origins.ts.
-      origin: buildCorsOrigins(env.FRONTEND_URL, httpOriginOptions),
-      credentials: true,
-      // `LANGUAGE_HEADER` is what the auth client puts the reader's interface
-      // language on (SC-412). A custom header makes the sign-in POST
-      // preflighted, so omitting it here does not degrade the letter to
-      // English — it fails the request outright. `TURNSTILE_HEADER` carries
-      // the sign-in widget's token (SC-1266) and fails the same way.
-      allowedHeaders: ['Authorization', 'Content-Type', LANGUAGE_HEADER, TURNSTILE_HEADER],
-    })
+    // env.FRONTEND_URL is validated at startup: required + https in production.
+    // In dev this also allows loopback on any port — see browser-origins.ts.
+    cors(buildCorsOptions(env.FRONTEND_URL, httpOriginOptions))
   )
   .onAfterHandle(({ set }) => {
     set.headers = set.headers || {};
@@ -650,8 +638,6 @@ const app = new Elysia()
 // the demo's HMAC secrets and unsubscribe tokens have no surface to be wrong
 // about.
 if (!demoConfig.enabled) {
-  registerAdminJobsRoutes(app, redisConnection);
-  registerAdminDataRoutes(app, redisConnection);
   // One-click, no-login digest opt-out (SC-460). Public by design.
   registerUnsubscribeRoutes(app);
 } else {
@@ -1229,5 +1215,3 @@ process.on('unhandledRejection', (reason, promise) => {
   );
   process.exit(1);
 });
-
-export type { AppRouter } from './presentation/router';

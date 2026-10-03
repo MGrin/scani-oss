@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import type { Holding } from '@scani/db/schema';
 import type { HoldingSnapshot } from '@scani/providers/core/types';
 import { Container } from 'typedi';
+import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingService } from '../../../src/services/holdings/HoldingService';
 import { HoldingsSyncHelper } from '../../../src/services/holdings/HoldingsSyncHelper';
 import { TokenService } from '../../../src/services/tokens/TokenService';
@@ -76,6 +77,16 @@ function usdSnapshot(balance: string): HoldingSnapshot {
     capturedAt: new Date(),
     tokenType: 'fiat',
     tokenIdentity: { symbol: 'USD', name: 'United States Dollar' },
+  } as HoldingSnapshot;
+}
+
+function shortSnapshot(balance: string): HoldingSnapshot {
+  return {
+    externalId: 'TSLA',
+    balance,
+    capturedAt: new Date(),
+    tokenType: 'stock',
+    tokenIdentity: { symbol: 'TSLA', name: 'Tesla' },
   } as HoldingSnapshot;
 }
 
@@ -235,12 +246,12 @@ describe('HoldingsSyncHelper — arrival provenance', () => {
   });
 });
 
-describe('HoldingsSyncHelper — negative balances never reach the write path', () => {
-  // holdings.balance carries a `>= 0` check constraint. A negative snapshot
-  // (e.g. an IBKR short position or margin-debt cash) must be skipped here
-  // rather than attempt a write that aborts the whole shared sync
-  // transaction for every other user in the same run.
-  test('skips a negative snapshot instead of creating a holding', async () => {
+describe('HoldingsSyncHelper — only broker cash may go negative (SC-1462)', () => {
+  // Margin debt is a negative cash balance that subtracts from net worth, as
+  // the broker shows it (mgrin, 2026-09-30). A negative position in anything
+  // else (a short) has no representation here and is still skipped rather than
+  // written.
+  test('writes a negative cash snapshot as a negative holding', async () => {
     const { helper, calls } = setup();
 
     await helper.processSnapshotsForAccount({
@@ -249,11 +260,11 @@ describe('HoldingsSyncHelper — negative balances never reach the write path', 
       existingHoldings: [],
     });
 
-    expect(calls.creates).toEqual([]);
+    expect(calls.creates.map((c) => c.balance)).toEqual(['-42.5']);
     expect(calls.updates).toEqual([]);
   });
 
-  test('skips a negative snapshot instead of updating an existing holding', async () => {
+  test('moves an existing cash holding below zero', async () => {
     const { helper, calls } = setup();
 
     const auto = usdHolding({
@@ -269,9 +280,63 @@ describe('HoldingsSyncHelper — negative balances never reach the write path', 
       existingHoldings: [auto],
     });
 
-    // The negative snapshot is dropped, so `auto` is never written a
-    // negative value. Because its token is now unseen, the stale-zeroing
-    // pass zeroes it — a valid, constraint-respecting terminal state.
+    expect(calls.updates).toEqual([{ holdingId: 'auto-id', balance: '-1200.75' }]);
+    expect(calls.creates).toEqual([]);
+  });
+
+  // The control: a short position is not cash, and stays out.
+  test('skips a negative non-cash snapshot', async () => {
+    const { helper, calls } = setup();
+
+    await helper.processSnapshotsForAccount({
+      ...BASE_INPUT,
+      snapshots: [shortSnapshot('-5')],
+      existingHoldings: [],
+    });
+
+    expect(calls.creates).toEqual([]);
+    expect(calls.updates).toEqual([]);
+  });
+
+  test('skips a negative crypto snapshot', async () => {
+    const { helper, calls } = setup();
+
+    await helper.processSnapshotsForAccount({
+      ...BASE_INPUT,
+      snapshots: [
+        {
+          externalId: 'ETH',
+          balance: '-0.5',
+          capturedAt: new Date(),
+          tokenType: 'crypto',
+          tokenIdentity: { symbol: 'ETH', name: 'Ether' },
+        } as HoldingSnapshot,
+      ],
+      existingHoldings: [],
+    });
+
+    expect(calls.creates).toEqual([]);
+    expect(calls.updates).toEqual([]);
+  });
+
+  test('a negative non-cash snapshot never updates an existing holding', async () => {
+    const { helper, calls } = setup();
+
+    const auto = usdHolding({
+      id: 'auto-id',
+      source: 'import_ibkr',
+      externalId: 'USD',
+      balance: '585.44',
+    });
+
+    await helper.processSnapshotsForAccount({
+      ...BASE_INPUT,
+      snapshots: [shortSnapshot('-1200.75')],
+      existingHoldings: [auto],
+    });
+
+    // Dropped, so `auto` is never written a negative value. Its token is now
+    // unseen, so the stale-zeroing pass zeroes it.
     expect(calls.updates).toEqual([{ holdingId: 'auto-id', balance: '0' }]);
     expect(calls.creates).toEqual([]);
   });
@@ -385,5 +450,118 @@ describe('HoldingsSyncHelper — the observation is stamped at the source as-of'
       { kind: 'update', observedAt: asOf },
       { kind: 'create', observedAt: asOf },
     ]);
+  });
+});
+
+// SC-1451. IBKR's CashReport can leave out a currency that is still held, and
+// the sync read that absence as a zero: mgrin's USD and CAD both read 0 on
+// 2026-07-20 and were back the next day. An absence of a confirmed holding now
+// zeroes only after it has been missing from that many distinct statements.
+describe('HoldingsSyncHelper — a currency missing from one statement is not a zero', () => {
+  const CAD = 'cad-token';
+  const day = (iso: string) => new Date(`${iso}T05:00:00Z`);
+  const stock: HoldingSnapshot = {
+    externalId: 'VOO',
+    balance: '2',
+    capturedAt: day('2026-07-20'),
+    tokenType: 'stock',
+    tokenIdentity: { symbol: 'VOO', name: 'VOO' },
+  } as HoldingSnapshot;
+
+  function withRepo() {
+    const absences: Array<{ holdingId: string; dates: string[] | null }> = [];
+    Container.set(HoldingRepository, {
+      setAbsentFromStatements: async (holdingId: string, dates: Date[] | null) => {
+        absences.push({
+          holdingId,
+          dates: dates?.map((d) => d.toISOString().slice(0, 10)) ?? null,
+        });
+      },
+    } as unknown as HoldingRepository);
+    const { helper, calls } = setup();
+    return { helper, calls, absences };
+  }
+
+  const cash = (absent: string[] | null) =>
+    usdHolding({
+      id: 'cad-id',
+      tokenId: CAD,
+      source: 'import_ibkr',
+      externalId: 'CAD',
+      balance: '47.87',
+      absentFromStatements: absent?.map(day) ?? null,
+    } as Partial<Holding>);
+
+  const confirm = { absenceConfirmation: { tokenIds: new Set([CAD]), statements: 3 } };
+
+  test('the first statement that leaves it out records the date and keeps the balance', async () => {
+    const { helper, calls, absences } = withRepo();
+    await helper.processSnapshotsForAccount({
+      ...BASE_INPUT,
+      ...confirm,
+      snapshots: [stock],
+      existingHoldings: [cash(null)],
+    });
+    expect(calls.updates).not.toContainEqual({ holdingId: 'cad-id', balance: '0' });
+    expect(absences).toEqual([{ holdingId: 'cad-id', dates: ['2026-07-20'] }]);
+  });
+
+  test('re-reading the same statement does not count twice', async () => {
+    const { helper, calls, absences } = withRepo();
+    await helper.processSnapshotsForAccount({
+      ...BASE_INPUT,
+      ...confirm,
+      snapshots: [stock],
+      existingHoldings: [cash(['2026-07-19', '2026-07-20'])],
+    });
+    expect(calls.updates).toEqual([]);
+    expect(absences).toEqual([{ holdingId: 'cad-id', dates: ['2026-07-19', '2026-07-20'] }]);
+  });
+
+  test('the third consecutive statement without it lands the zero and clears the count', async () => {
+    const { helper, calls, absences } = withRepo();
+    await helper.processSnapshotsForAccount({
+      ...BASE_INPUT,
+      ...confirm,
+      snapshots: [stock],
+      existingHoldings: [cash(['2026-07-18', '2026-07-19'])],
+    });
+    expect(calls.updates).toContainEqual({ holdingId: 'cad-id', balance: '0' });
+    expect(absences).toEqual([{ holdingId: 'cad-id', dates: null }]);
+  });
+
+  test('reporting it again resets the count', async () => {
+    const { absences } = withRepo();
+    Container.set(TokenService, {
+      findOrCreateTokenFromIntegration: async () => ({ token: { id: CAD } }),
+    } as unknown as TokenService);
+    const helperWithCad = new HoldingsSyncHelper();
+    await helperWithCad.processSnapshotsForAccount({
+      ...BASE_INPUT,
+      ...confirm,
+      snapshots: [
+        { ...stock, externalId: 'CAD', balance: '47.87', tokenType: 'fiat' } as HoldingSnapshot,
+      ],
+      existingHoldings: [cash(['2026-07-20'])],
+    });
+    expect(absences).toEqual([{ holdingId: 'cad-id', dates: null }]);
+  });
+
+  test('a holding outside the confirmed set still zeroes at once', async () => {
+    const { helper, calls, absences } = withRepo();
+    const gone = usdHolding({
+      id: 'sold-id',
+      tokenId: 'other-token',
+      source: 'import_ibkr',
+      balance: '5',
+    });
+    await helper.processSnapshotsForAccount({
+      ...BASE_INPUT,
+      ...confirm,
+      snapshots: [stock],
+      existingHoldings: [gone],
+    });
+    expect(calls.updates).toContainEqual({ holdingId: 'sold-id', balance: '0' });
+    expect(absences).toEqual([]);
   });
 });

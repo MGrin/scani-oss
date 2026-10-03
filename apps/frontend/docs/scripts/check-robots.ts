@@ -138,7 +138,7 @@ async function walkRelative(dir: string, prefix = ''): Promise<string[]> {
 }
 
 /** The origin `@astrojs/sitemap` actually wrote, off the first `<loc>`. */
-export function originFromSitemapIndex(xml: string): string | null {
+function originFromSitemapIndex(xml: string): string | null {
   const loc = xml.match(/<loc>\s*([^<\s]+)\s*<\/loc>/);
   if (!loc) return null;
   try {

@@ -164,6 +164,7 @@ export class SyncExchangeBalancesUseCase {
         institutionId: string;
         snapshots: HoldingSnapshot[];
         existingHoldingsWithDetails: HoldingWithFullDetails[];
+        absentFiatConfirmations: number | undefined;
       }
 
       const allAccountHoldingsData: AccountHoldingsData[] = [];
@@ -370,6 +371,7 @@ export class SyncExchangeBalancesUseCase {
                   institutionId,
                   snapshots,
                   existingHoldingsWithDetails,
+                  absentFiatConfirmations: provider.absentFiatConfirmations,
                 });
 
                 // The provider answered, so whatever it was refusing is over
@@ -456,8 +458,19 @@ export class SyncExchangeBalancesUseCase {
         async (tx) => {
           for (const accountData of allAccountHoldingsData) {
             try {
-              const { account, snapshots, existingHoldingsWithDetails } = accountData;
+              const { account, snapshots, existingHoldingsWithDetails, absentFiatConfirmations } =
+                accountData;
               const existingHoldings = existingHoldingsWithDetails.map((h) => h.holding);
+              const absenceConfirmation = absentFiatConfirmations
+                ? {
+                    statements: absentFiatConfirmations,
+                    tokenIds: new Set(
+                      existingHoldingsWithDetails
+                        .filter((h) => h.token.typeCode === 'fiat')
+                        .map((h) => h.holding.tokenId)
+                    ),
+                  }
+                : undefined;
 
               const result = await this.holdingsSyncHelper.processSnapshotsForAccount({
                 account: { id: account.id, userId: account.userId },
@@ -477,6 +490,7 @@ export class SyncExchangeBalancesUseCase {
                 // Only the wallet recurring sync is locked down.
                 updateOnly: false,
                 arrival: 'auto_discovered',
+                absenceConfirmation,
                 tx,
               });
               holdingsUpdated += result.updated;

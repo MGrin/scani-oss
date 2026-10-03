@@ -32,6 +32,7 @@ import {
   holdingGainLoss,
   holdingMatches,
   holdingPrice,
+  holdingsDebt,
   holdingsValue,
   isStalePricedInTotal,
   isSynced,
@@ -88,21 +89,47 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
 
 describe('holdingGainLoss', () => {
   test('measures the position against its cost basis', () => {
-    expect(holdingGainLoss({ value: 150, costBasis: 100 })).toEqual({
+    expect(holdingGainLoss({ value: 150, costBasis: 100 }, 'USD')).toEqual({
       absolute: 50,
       percent: 50,
     });
   });
 
   test('is null when there is no cost basis to measure against', () => {
-    expect(holdingGainLoss({ value: 150, costBasis: 0 })).toBeNull();
-    expect(holdingGainLoss({ value: 150, costBasis: null })).toBeNull();
+    expect(holdingGainLoss({ value: 150, costBasis: 0 }, 'USD')).toBeNull();
+    expect(holdingGainLoss({ value: 150, costBasis: null }, 'USD')).toBeNull();
   });
 
   test('is null — not a total loss — when the position is unpriceable', () => {
     // v2 coerces the null to 0 and reports −100%. The price is unknown; the
     // holding did not go to zero.
-    expect(holdingGainLoss({ value: null, costBasis: 100 })).toBeNull();
+    expect(holdingGainLoss({ value: null, costBasis: 100 }, 'USD')).toBeNull();
+  });
+
+  // SC-1505: the server reads a base-currency cash holding's cost as its value
+  // before the rollup runs and as 0 after, so identical rows showed 0.0% and —.
+  test('is 0.0% for cash in the base currency, whatever cost basis the server sent', () => {
+    const usd = { typeCode: 'fiat', symbol: 'USD' };
+    for (const costBasis of [0, null, 12_500]) {
+      expect(holdingGainLoss({ value: 12_500, costBasis, token: usd }, 'USD')).toEqual({
+        absolute: 0,
+        percent: 0,
+      });
+    }
+  });
+
+  test('measures cash in another currency against its cost basis as before', () => {
+    const eur = { typeCode: 'fiat', symbol: 'EUR' };
+    expect(holdingGainLoss({ value: 110, costBasis: 100, token: eur }, 'USD')).toEqual({
+      absolute: 10,
+      percent: 10,
+    });
+    expect(holdingGainLoss({ value: 110, costBasis: 0, token: eur }, 'USD')).toBeNull();
+  });
+
+  test('a token that is not fiat is never the base currency, even with the same symbol', () => {
+    const token = { typeCode: 'crypto', symbol: 'USD' };
+    expect(holdingGainLoss({ value: 150, costBasis: 0, token }, 'USD')).toBeNull();
   });
 });
 
@@ -203,34 +230,35 @@ describe('compareHoldings', () => {
   const unpriced = holding({ id: 'c', value: null, price: undefined });
 
   test('sorts by value in both directions', () => {
-    expect(compareHoldings(priced, cheaper, 'value', 'asc')).toBeGreaterThan(0);
-    expect(compareHoldings(priced, cheaper, 'value', 'desc')).toBeLessThan(0);
+    expect(compareHoldings(priced, cheaper, 'value', 'asc', 'USD')).toBeGreaterThan(0);
+    expect(compareHoldings(priced, cheaper, 'value', 'desc', 'USD')).toBeLessThan(0);
   });
 
   test('keeps unpriced holdings last whichever way the column points', () => {
-    expect(compareHoldings(unpriced, priced, 'value', 'asc')).toBeGreaterThan(0);
-    expect(compareHoldings(unpriced, priced, 'value', 'desc')).toBeGreaterThan(0);
-    expect(compareHoldings(priced, unpriced, 'price', 'desc')).toBeLessThan(0);
+    expect(compareHoldings(unpriced, priced, 'value', 'asc', 'USD')).toBeGreaterThan(0);
+    expect(compareHoldings(unpriced, priced, 'value', 'desc', 'USD')).toBeGreaterThan(0);
+    expect(compareHoldings(priced, unpriced, 'price', 'desc', 'USD')).toBeLessThan(0);
   });
 
   test('sorts by symbol, amount and gain/loss', () => {
     const eth = holding({ token: { ...holding().token, symbol: 'ETH' } });
-    expect(compareHoldings(holding(), eth, 'symbol', 'asc')).toBeLessThan(0);
+    expect(compareHoldings(holding(), eth, 'symbol', 'asc', 'USD')).toBeLessThan(0);
     expect(
-      compareHoldings(holding({ amount: '1' }), holding({ amount: '2' }), 'amount', 'asc')
+      compareHoldings(holding({ amount: '1' }), holding({ amount: '2' }), 'amount', 'asc', 'USD')
     ).toBeLessThan(0);
     expect(
       compareHoldings(
         holding({ value: 200, costBasis: 100 }),
         holding({ value: 110, costBasis: 100 }),
         'pnl',
-        'asc'
+        'asc',
+        'USD'
       )
     ).toBeGreaterThan(0);
   });
 
   test('an unknown field is treated as the default value sort', () => {
-    expect(compareHoldings(priced, cheaper, 'nonsense', 'asc')).toBeGreaterThan(0);
+    expect(compareHoldings(priced, cheaper, 'nonsense', 'asc', 'USD')).toBeGreaterThan(0);
   });
 });
 
@@ -460,6 +488,42 @@ describe('holdingAllocation', () => {
     const withInactive = [...items, holding({ value: 1000, isActive: false })];
     const barTotal = holdingAllocation(t, withInactive).reduce((sum, item) => sum + item.value, 0);
     expect(barTotal).toBe(holdingsValue(withInactive));
+  });
+});
+
+/** Margin debt is negative cash (SC-1462), and never a segment (SC-1463). */
+describe('holdingsDebt', () => {
+  const usd = { ...holding().token, id: 'usd', symbol: 'USD', typeCode: 'fiat', type: 'Fiat' };
+  const stocks = holding({
+    id: 'stocks',
+    value: 10_000.1,
+    token: { ...holding().token, typeCode: 'stock', type: 'Equity' },
+  });
+  const debt = holding({ id: 'debt', value: -2_500.25, token: usd });
+  const otherAccount = holding({
+    id: 'btc',
+    value: 5_000,
+    account: { ...holding().account, id: 'a2', name: 'Wallet' },
+  });
+
+  test('sums the negative values of the rows that count', () => {
+    expect(holdingsDebt([stocks, debt, otherAccount])).toBe(-2_500.25);
+  });
+
+  test('ignores inactive rows and unpriced ones', () => {
+    expect(
+      holdingsDebt([
+        holding({ value: -300, isActive: false, token: usd }),
+        holding({ value: null, token: usd }),
+      ])
+    ).toBe(0);
+  });
+
+  test('invariant, Holdings: segments plus debt is the net total shown, to the cent', () => {
+    const rows = [stocks, debt, otherAccount];
+    const segments = holdingAllocation(t, rows).reduce((sum, item) => sum + item.value, 0);
+    expect((segments + holdingsDebt(rows)).toFixed(2)).toBe(holdingsValue(rows).toFixed(2));
+    expect(holdingsValue(rows).toFixed(2)).toBe('12499.85');
   });
 });
 
@@ -784,8 +848,8 @@ describe('amount as a decimal string', () => {
     // list put them in whatever order it received them and looked deliberate.
     const smaller = holding({ amount: '0.000000000000000001' });
     const larger = holding({ amount: '0.0000000004013' });
-    expect(compareHoldings(smaller, larger, 'amount', 'asc')).toBeLessThan(0);
-    expect(compareHoldings(smaller, larger, 'amount', 'desc')).toBeGreaterThan(0);
+    expect(compareHoldings(smaller, larger, 'amount', 'asc', 'USD')).toBeLessThan(0);
+    expect(compareHoldings(smaller, larger, 'amount', 'desc', 'USD')).toBeGreaterThan(0);
   });
 
   test('sorts balances a double cannot tell apart', () => {
@@ -793,17 +857,23 @@ describe('amount as a decimal string', () => {
     // double gives exactly 0 here, so the old comparator called them equal.
     const a = holding({ amount: '123456789012345.12345678' });
     const b = holding({ amount: '123456789012345.12345679' });
-    expect(compareHoldings(a, b, 'amount', 'asc')).toBeLessThan(0);
+    expect(compareHoldings(a, b, 'amount', 'asc', 'USD')).toBeLessThan(0);
     // Non-vacuous: this is what the old implementation was working with.
     expect(Number('123456789012345.12345678') - Number('123456789012345.12345679')).toBe(0);
   });
 
   test('sorts an ordinary pair the way it always did', () => {
     expect(
-      compareHoldings(holding({ amount: '1' }), holding({ amount: '2' }), 'amount', 'asc')
+      compareHoldings(holding({ amount: '1' }), holding({ amount: '2' }), 'amount', 'asc', 'USD')
     ).toBeLessThan(0);
     expect(
-      compareHoldings(holding({ amount: '12500' }), holding({ amount: '143.59' }), 'amount', 'asc')
+      compareHoldings(
+        holding({ amount: '12500' }),
+        holding({ amount: '143.59' }),
+        'amount',
+        'asc',
+        'USD'
+      )
     ).toBeGreaterThan(0);
   });
 

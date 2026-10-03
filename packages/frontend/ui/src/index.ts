@@ -10,33 +10,11 @@
  * apps/frontend/app is the canonical source of truth: when promoting a
  * new shared primitive, copy from there.
  */
-
-export { ConfirmDialog } from './components/ConfirmDialog';
 export { ErrorBoundary } from './components/ErrorBoundary';
-export { FaviconImg } from './components/FaviconImg';
-export {
-  InstallPromptBanner,
-  type InstallPromptBannerProps,
-} from './components/InstallPromptBanner';
-export { MagicCodeInput } from './components/MagicCodeInput';
-export { PullToRefresh } from './components/PullToRefresh';
-export { ScaniLogo } from './components/ScaniLogo';
-export { ThemeToggle, type ThemeToggleProps } from './components/ThemeToggle';
+export { InstallPromptBanner } from './components/InstallPromptBanner';
+export { ThemeToggle } from './components/ThemeToggle';
 export { UpdateBanner } from './components/UpdateBanner';
-export { type ResolvedTheme, type Theme, ThemeProvider, useTheme } from './contexts/ThemeContext';
-export { useAppUpdate } from './hooks/useAppUpdate';
-export { useDebouncedValue } from './hooks/useDebouncedValue';
-export { type UseInstallPromptResult, useInstallPrompt } from './hooks/useInstallPrompt';
-export {
-  type AssertFrontendEnvOptions,
-  assertFrontendEnv,
-  type FrontendEnvSpec,
-} from './lib/assert-frontend-env';
-export { cn } from './lib/cn';
-export {
-  type CreateAuthClientOptions,
-  createScaniAuthClient,
-  type ScaniAuthClient,
-} from './lib/create-auth-client';
+export { ThemeProvider } from './contexts/ThemeContext';
+export { assertFrontendEnv } from './lib/assert-frontend-env';
 export { createTrpcProvider } from './lib/create-trpc-react';
 export * from './lib/pwa-utils';

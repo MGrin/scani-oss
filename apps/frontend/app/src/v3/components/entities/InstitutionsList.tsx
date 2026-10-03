@@ -10,6 +10,8 @@ import { Link } from 'react-router-dom';
 import {
   compareInstitutions,
   type InstitutionRow,
+  institutionAssets,
+  institutionsDebt,
   institutionsValue,
   institutionValue,
   namedAllocation,
@@ -83,8 +85,9 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
     summary: (items) => (
       <EntityValueSummary
         value={institutionsValue(items)}
+        marginDebt={institutionsDebt(items)}
         currency={currency}
-        allocation={namedAllocation(items, institutionValue)}
+        allocation={namedAllocation(items, institutionAssets)}
         allocationLabel={t('v3.entities.institution.valueByInstitution')}
       />
     ),

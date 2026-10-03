@@ -23,7 +23,7 @@ import { buildForecast, type Forecast, type ForecastPaymentInput } from './forec
  */
 
 /** The window the schedule answers for, in months. See the class doc. */
-export const FORECAST_HORIZON_MONTHS = 12;
+const FORECAST_HORIZON_MONTHS = 12;
 
 export interface PaymentForecast extends Forecast {
   /** `YYYY-MM-DD`, the day the series starts. */

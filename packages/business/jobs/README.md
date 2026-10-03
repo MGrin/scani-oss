@@ -26,7 +26,7 @@ src/
 │   ├── holding-price-update.ts
 │   ├── user-data-delete.ts
 │   ├── transaction-import.ts
-│   └── index.ts                      ← USER_JOB_DESCRIPTORS array
+│   └── index.ts
 ├── scheduled-jobs/                   ← cron + lock metadata
 │   ├── pricing.ts
 │   ├── wallet-balances.ts
@@ -54,7 +54,6 @@ src/
 | `WALLET_IMPORT`, `EXCHANGE_IMPORT`, `SCREENSHOT_PARSE`, `FILE_IMPORT`, `HOLDING_PRICE_UPDATE`, `USER_DATA_DELETE`, `TRANSACTION_IMPORT` | `UserJobDescriptor` consts | One per user-initiated job |
 | `WalletImportJob`, `ExchangeImportJob`, `ScreenshotParseJob`, `FileImportJob`, `HoldingPriceUpdateJob`, `UserDataDeleteJob`, `TransactionImportJob` | payload types | Producer + consumer share |
 | `walletImportSchema`, `exchangeImportSchema`, …  | zod schemas | Worker re-validates on receive |
-| `USER_JOB_DESCRIPTORS` | readonly array | Iterate all user-initiated descriptors |
 | `PRICING_SCHEDULE`, `WALLET_BALANCES_SCHEDULE`, … (11 total) | `ScheduledJobDescriptor` consts | One per cron job |
 | `SCHEDULED_JOB_DESCRIPTORS` | readonly array | Iterate all scheduled descriptors |
 | `UserJobEnqueueMirror`, `UserJobLifecycleMirror`, `PostgresJobLock` | `@Service()` classes | Domain-side framework hooks |
@@ -107,8 +106,6 @@ src/
 3. Add it to `src/user-jobs/index.ts`:
    ```ts
    export { TAX_REPORT_GENERATE } from './tax-report-generate';
-   // ...
-   export const USER_JOB_DESCRIPTORS = [..., TAX_REPORT_GENERATE] as const;
    ```
 4. Add a worker processor in `apps/backend/worker/src/processors/`. See
    [`@scani/queue` README](../../infra/queue/README.md#adding-a-new-async-job).

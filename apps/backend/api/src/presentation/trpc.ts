@@ -14,6 +14,7 @@ import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import type { BetterAuthInstance } from '../auth/better-auth';
 import { isDemoMode } from '../config/demo';
 import { enterProcedure } from '../lib/event-loop-stalls';
+import { readableError } from './lib/readable-error';
 import { unrecognizedKeysFrom } from './lib/strict-input';
 import { type AuthContext, createAuthContext } from './middleware/auth';
 
@@ -166,10 +167,6 @@ const t = initTRPC.context<Context>().create({
   },
 });
 
-// NOTE: Request cache is now initialized at the HTTP request level in index.ts
-// using runWithRequestCacheAsync() wrapper around the tRPC handler.
-// This ensures ALL procedures in a batched request share the same cache.
-
 /**
  * Surface an unknown-parameter refusal, which nothing else here would (SC-675).
  *
@@ -206,7 +203,7 @@ function reportUnrecognizedKeys(
     },
     `🚫 Unknown parameter(s) refused on ${meta.path}: ${keys.join(', ')}`
   );
-  captureException(error, {
+  captureException(readableError(error, meta.path), {
     route: meta.path,
     type: meta.type,
     requestId: meta.ctx.requestId,
@@ -353,7 +350,7 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
     // (UNAUTHORIZED, BAD_REQUEST, NOT_FOUND, FORBIDDEN, CONFLICT) that
     // would otherwise drown out real server errors.
     if (!isExpectedClientError(error)) {
-      captureException(error, {
+      captureException(readableError(error, path), {
         route: path,
         type,
         requestId: ctx.requestId,

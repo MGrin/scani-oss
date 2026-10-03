@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@scani/logging": "workspace:*",
-    "nodemailer": "^9.1.1",
+    "nodemailer": "^10.0.13",
     "typedi": "^0.10.0",
     "zod": "^3.25.76"
   },

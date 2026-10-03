@@ -51,13 +51,31 @@ export interface HoldingGainLoss {
  * cost basis recorded, or no resolvable price for the position today.
  */
 export function holdingGainLoss(
-  holding: Pick<HoldingWithDetails, 'value' | 'costBasis'>
+  holding: Pick<HoldingWithDetails, 'value' | 'costBasis'> & {
+    token?: Pick<HoldingWithDetails['token'], 'typeCode' | 'symbol'>;
+  },
+  currency: string
 ): HoldingGainLoss | null {
   const { value, costBasis } = holding;
+  // Cash in the base currency is 1 against itself, so no gain is possible.
+  // Its stored cost basis is not evidence either way: before the rollup has
+  // run the server falls back to the value, after it a holding with no
+  // transactions has no lots and reads 0 (SC-1505).
+  if (holding.token && isBaseCurrencyHolding({ token: holding.token }, currency)) {
+    return typeof value === 'number' ? { absolute: 0, percent: 0 } : null;
+  }
   if (typeof value !== 'number' || typeof costBasis !== 'number') return null;
   if (!(costBasis > 0)) return null;
   const absolute = value - costBasis;
   return { absolute, percent: (absolute / costBasis) * 100 };
+}
+
+/** Whether this holding is cash in the currency every figure is shown in. */
+export function isBaseCurrencyHolding(
+  holding: { token: Pick<HoldingWithDetails['token'], 'typeCode' | 'symbol'> },
+  currency: string
+): boolean {
+  return holding.token.typeCode === 'fiat' && holding.token.symbol === currency;
 }
 
 /** The per-unit price as a number, or `null` when the holding is unpriceable. */
@@ -183,7 +201,8 @@ export function compareHoldings(
   a: HoldingWithDetails,
   b: HoldingWithDetails,
   field: string,
-  direction: 'asc' | 'desc'
+  direction: 'asc' | 'desc',
+  currency: string
 ): number {
   const factor = direction === 'asc' ? 1 : -1;
   switch (field as HoldingSortField) {
@@ -202,8 +221,8 @@ export function compareHoldings(
       return compareNullable(holdingPrice(a), holdingPrice(b), factor);
     case 'pnl':
       return compareNullable(
-        holdingGainLoss(a)?.percent ?? null,
-        holdingGainLoss(b)?.percent ?? null,
+        holdingGainLoss(a, currency)?.percent ?? null,
+        holdingGainLoss(b, currency)?.percent ?? null,
         factor
       );
     default:
@@ -251,6 +270,19 @@ export function countsTowardTotal(
 export function holdingsValue(holdings: readonly HoldingWithDetails[]): number {
   return holdings.reduce(
     (sum, holding) => (countsTowardTotal(holding) ? sum + (holding.value ?? 0) : sum),
+    0
+  );
+}
+
+/**
+ * Margin debt among the rows that count: the sum of their negative values
+ * (SC-1463). `holdingsValue` already nets it and `holdingAllocation` leaves it
+ * out, so this is the line that reconciles the bar with the figure.
+ */
+export function holdingsDebt(holdings: readonly HoldingWithDetails[]): number {
+  return holdings.reduce(
+    (sum, holding) =>
+      countsTowardTotal(holding) && (holding.value ?? 0) < 0 ? sum + (holding.value ?? 0) : sum,
     0
   );
 }

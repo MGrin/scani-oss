@@ -17,56 +17,29 @@ export {
   type JobLockSkipped,
 } from './consumer/job-lock';
 export { LIFECYCLE_MIRROR, type LifecycleMirror } from './consumer/lifecycle-mirror';
-export {
-  ResourceLock,
-  type ResourceLockAcquired,
-  type ResourceLockBusy,
-} from './consumer/resource-lock';
+export { ResourceLock } from './consumer/resource-lock';
 export { ScheduledJobProcessor } from './consumer/scheduled-job-processor';
 export { UserJobProcessor } from './consumer/user-job-processor';
-export {
-  type TerminalFailureHook,
-  WorkerClient,
-  type WorkerClientConfig,
-} from './consumer/worker-client';
+export { WorkerClient } from './consumer/worker-client';
 export { DEFAULT_DLQ_NAME, DEFAULT_QUEUE_NAME } from './core/default-names';
-export {
-  isScheduledJobDescriptor,
-  type ScheduledJobDescriptor,
-  type UserJobDescriptor,
+export type {
+  ScheduledJobDescriptor,
+  UserJobDescriptor,
 } from './core/job-descriptor';
-export {
-  DURABLE_RESULT_MAX_BYTES,
-  ResultTruncator,
-  readTruncationNotice,
-  TRUNCATION_KEY,
-  TRUNCATION_ROOT_FIELD,
-  type TruncationNotice,
-  WIRE_RESULT_MAX_BYTES,
-} from './core/result-truncator';
 export type {
   EnqueuedJobMeta,
-  JobEventPayload,
-  JobLifecycleState,
   LifecycleEvent,
   ProcessorContext,
   UserJobBase,
 } from './core/types';
 export { userFacing, userFacingMessage } from './core/user-facing';
-export { LifecyclePublisher } from './lifecycle/lifecycle-publisher';
 export { RedisLifecyclePublisher } from './lifecycle/redis-lifecycle-publisher';
 export { PostgresResourceLock } from './locks/postgres-resource-lock';
-export { RedisResourceLock } from './locks/redis-resource-lock';
 export { runQueueMigrations } from './migrate';
 export { BullMqEnqueueService } from './producer/bullmq-enqueue-service';
 export { ENQUEUE_MIRROR, type EnqueueMirror } from './producer/enqueue-mirror';
-export { EnqueueService } from './producer/enqueue-service';
 export { JobScheduler } from './producer/job-scheduler';
-export {
-  DEFAULT_QUEUE_SCHEMA,
-  QueueClient,
-  type QueueClientConfig,
-} from './producer/queue-client';
+export { QueueClient } from './producer/queue-client';
 export { serveWorkerWake, WorkerWakeClient } from './wake/worker-wake';
 // SC-225 / SC-321. The bounded ping and the reachability tracker moved to
 // `@scani/rate-limiter`, which the data-provider already depends on and this
@@ -78,8 +51,4 @@ export { serveWorkerWake, WorkerWakeClient } from './wake/worker-wake';
 // The `catch { return null }` at each resolve site stays — it is correct for
 // OSS and tests — and this is how a managed deployment says it is not one of
 // them, without changing anything for the deployments that are.
-export {
-  assertQueueBindings,
-  isQueueBindingRegistered,
-  type QueueBinding,
-} from './required-bindings';
+export { assertQueueBindings } from './required-bindings';

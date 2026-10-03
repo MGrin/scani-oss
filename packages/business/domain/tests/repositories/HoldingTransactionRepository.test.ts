@@ -41,7 +41,7 @@ describe('HoldingTransactionRepository', () => {
     await withTestDb(async (tx) => {
       const { userId, holdingId, tokenId } = await makeHoldingFixture(tx);
       const empty = await repo().bulkUpsert([], tx);
-      expect(empty).toEqual({ rows: [], merges: [] });
+      expect(empty).toEqual({ rows: [], merges: [], earliestChangedAt: null });
 
       const { rows: inserted } = await repo().bulkUpsert(
         [
@@ -857,6 +857,74 @@ describe('findPersonAuthoredOverlaps (SC-858)', () => {
       expect(mine.length).toBe(1);
       expect(mine[0]?.transferReview).toBe('left_control');
       expect(mine[0]?.transferReviewSource).toBe('user');
+    });
+  });
+});
+
+// SC-1459. The rebuild after an import is sized from the oldest date the
+// batch moved. A nightly sync re-sends months of rows exactly as stored, and
+// counting those would rebuild the whole window every night.
+describe('bulkUpsert — the oldest date a batch actually changed', () => {
+  const OLD = new Date('2025-03-01T00:00:00Z');
+  const NEW = new Date('2026-09-01T00:00:00Z');
+
+  test('a new row counts; the identical batch re-sent counts nothing', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, holdingId, tokenId } = await makeHoldingFixture(tx);
+      const row = (): NewHoldingTransaction => ({
+        userId,
+        holdingId,
+        tokenId,
+        kind: 'deposit',
+        quantity: '1.50',
+        occurredAt: OLD,
+        source: 'ibkr-api',
+        externalId: 'i-1',
+      });
+      expect((await repo().bulkUpsert([row()], tx)).earliestChangedAt).toEqual(OLD);
+      const again = await repo().bulkUpsert([{ ...row(), quantity: '1.5' }], tx);
+      expect(again.earliestChangedAt).toBeNull();
+      // Every row is still returned: callers find their own row in it.
+      expect(again.rows).toHaveLength(1);
+    });
+  });
+
+  test('a stored row whose amount changed counts from its date', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, holdingId, tokenId } = await makeHoldingFixture(tx);
+      const base = { userId, holdingId, tokenId, kind: 'deposit' as const, source: 'ibkr-api' };
+      await repo().bulkUpsert(
+        [
+          { ...base, quantity: '1', occurredAt: OLD, externalId: 'a' },
+          { ...base, quantity: '1', occurredAt: NEW, externalId: 'b' },
+        ],
+        tx
+      );
+      const out = await repo().bulkUpsert(
+        [
+          { ...base, quantity: '2', occurredAt: OLD, externalId: 'a' },
+          { ...base, quantity: '1', occurredAt: NEW, externalId: 'b' },
+        ],
+        tx
+      );
+      expect(out.earliestChangedAt).toEqual(OLD);
+    });
+  });
+
+  test('a row moved to a later date counts from where it used to be', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, holdingId, tokenId } = await makeHoldingFixture(tx);
+      const base = {
+        userId,
+        holdingId,
+        tokenId,
+        kind: 'deposit' as const,
+        source: 'ibkr-api',
+        quantity: '1',
+      };
+      await repo().bulkUpsert([{ ...base, occurredAt: OLD, externalId: 'm' }], tx);
+      const out = await repo().bulkUpsert([{ ...base, occurredAt: NEW, externalId: 'm' }], tx);
+      expect(out.earliestChangedAt).toEqual(OLD);
     });
   });
 });

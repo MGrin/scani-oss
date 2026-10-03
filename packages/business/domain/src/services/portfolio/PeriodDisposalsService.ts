@@ -19,7 +19,7 @@ export interface DisposalWindow {
   to: Date;
 }
 
-export interface DisposalTotals {
+interface DisposalTotals {
   /** Sum of the non-null `proceeds`. */
   proceeds: Decimal;
   /** Sum of every `costBasis`, zeroes included. */

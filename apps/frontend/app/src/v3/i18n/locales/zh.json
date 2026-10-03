@@ -122,7 +122,8 @@
           "institution": "机构",
           "account": "账户",
           "group": "分组"
-        }
+        },
+        "groupsOverlap": "一项持仓可以属于多个分组，并在每个分组中都计入，因此这些数值相加不等于你的净资产。"
       },
       "upcoming": {
         "title": "即将到期的账单",
@@ -286,6 +287,10 @@
         "enteredLate": "自对账单首日起计入：{{holdings}}。",
         "unpricedAtZero_other": "{{count}} 个无价格代币按零计入。"
       }
+    },
+    "allocation": {
+      "marginDebt": "保证金负债",
+      "shareOfAssets": "占资产比例"
     },
     "money": {
       "upcoming": {
@@ -1316,7 +1321,11 @@
         "labelled": "{{label}} · {{body}}",
         "unpairedTransfers_other": "{{count}} 笔待分类的付款",
         "balanceChangesToExplain": "待说明的余额变化",
-        "unexplainedBalanceChanges_other": "{{count}} 笔我们无法解释的余额变化"
+        "unexplainedBalanceChanges_other": "{{count}} 笔我们无法解释的余额变化",
+        "answersTradesExplain": "已由导入的交易涵盖",
+        "answersExplained_other": "{{subject}} 上的 {{count}} 条说明",
+        "unpriceableAirdrops": "无法定价的代币",
+        "unpriceableTokens_other": "你的钱包收到了 {{count}} 个无法定价的代币"
       },
       "kind": {
         "withdrawal": "提取",
@@ -1676,6 +1685,42 @@
           "received": "请输入收到的数量"
         },
         "undoFailed": "无法撤销"
+      },
+      "settled": {
+        "title": "{{subject}} 上的说明",
+        "description": "导入的交易现在也解释了这些余额变化，因此同一笔钱被计算了两次。“撤回”会删除你的说明；“保留”则保持不变。",
+        "full": "已由导入的交易解释",
+        "partial": "导入的交易解释了 <amount/> 中的 <explained/>。撤回后，剩余部分会再次询问你。",
+        "movesOther": "这条说明还改动了另一项持仓",
+        "keep": "保留",
+        "retire": "撤回",
+        "confirmOther": "撤回还会删除这些说明在另一项持仓上记录的内容。",
+        "confirmRetire": "是的，撤回",
+        "undo": "撤销",
+        "failed": "部分说明无法更改。请重试。",
+        "toast": {
+          "retired_other": "已撤回 {{count}} 条说明",
+          "kept": "已保留说明",
+          "undone": "已恢复说明",
+          "undoFailed": "无法恢复说明"
+        }
+      },
+      "unpriceable": {
+        "title": "无法定价的代币",
+        "description": "这些代币是转入你钱包的，从未有任何价格来源报过价，因此在你的净资产中本来就计为零。隐藏会将它们从列表中移除；想保留的请取消勾选，之后不会再询问。你可以随时在“标的”的“已隐藏”中恢复其中任何一个。",
+        "hideAll": "全部隐藏",
+        "keepAll": "全部保留",
+        "hideSome_other": "隐藏 {{count}} 个",
+        "failed": "未隐藏任何内容，请重试。",
+        "keepFailed": "未能保存你的选择，请重试。",
+        "partlyFailed_other": "有 {{count}} 个代币无法隐藏，请重试。",
+        "undo": "撤销",
+        "toast": {
+          "hidden_other": "已隐藏 {{count}} 个代币",
+          "kept_other": "已保留 {{count}} 个代币",
+          "restored": "代币已恢复",
+          "restoreFailed": "无法恢复这些代币"
+        }
       }
     },
     "form": {
@@ -1783,6 +1828,8 @@
         "extension": "一个 .{{ext}} 文件",
         "noExtension": "完全没有文件扩展名",
         "unsupported": "这个是{{named}}。Scani 可读取 {{formats}}。",
+        "tooLarge": "此文件大小为 {{size}}。上限为 {{limit}}。",
+        "withLimit": "{{formats}}，最大 {{limit}}",
         "remove": "移除 {{name}}"
       },
       "blocker": {

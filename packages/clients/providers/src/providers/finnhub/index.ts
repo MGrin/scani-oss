@@ -466,5 +466,3 @@ export const finnhubFactory: ProviderFactory = async (deps) => {
   });
   return new FinnhubProvider(registered, { apiKey });
 };
-
-export { detectExchangeInfo, normalizeForFinnhubSymbol } from './symbol';

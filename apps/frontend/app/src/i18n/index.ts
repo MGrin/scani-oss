@@ -3,18 +3,21 @@ import i18n from 'i18next';
 import LanguageDetector from 'i18next-browser-languagedetector';
 import { initReactI18next } from 'react-i18next';
 import { registerDurationFormatter } from './duration-format';
+import { LANGUAGE_NAMES } from './language-names';
+import { createLocaleLoader, loadersByCode } from './locale-loader';
+import englishLocale from './locales/en.json';
 import { isOfferedLanguage } from './offered-languages';
 import { resolveUiLocale } from './resolve-ui-locale';
 
-// Auto-discover every JSON file under `locales/`. Adding `es.json` (or
-// any other ISO code) is enough — no other file needs to be touched.
-// Vite inlines the matched modules at build time, so the locales ship
-// as part of the SPA bundle and there's no runtime fetch.
-const localeModules = import.meta.glob<{ default: Record<string, unknown> }>('./locales/*.json', {
-  eager: true,
-});
-
-type LocaleMeta = { name?: string; nativeName?: string };
+// English is bundled: it is the fallback every missing key resolves to, so it
+// has to be there before the first render. Every other locale is a chunk of its
+// own, fetched when it is the reader's language or when they pick it (SC-1498)
+// — nine bundled locales were 57 KB brotli of this chunk against English's 4.6.
+// Adding `es.json` is still enough for the strings; the picker's label for it
+// comes from `language-names.ts`, which a test holds against each `$meta`.
+const lazyLocales = loadersByCode(
+  import.meta.glob<{ default: Record<string, unknown> }>(['./locales/*.json', '!./locales/en.json'])
+);
 
 export interface AvailableLanguage {
   code: string;
@@ -22,22 +25,15 @@ export interface AvailableLanguage {
   nativeName: string;
 }
 
-const resources: Record<string, { translation: Record<string, unknown> }> = {};
-const availableLanguages: AvailableLanguage[] = [];
+const { $meta: _englishMeta, ...english } = englishLocale as Record<string, unknown>;
 
-for (const [path, mod] of Object.entries(localeModules)) {
-  const code = path.replace(/^\.\/locales\//, '').replace(/\.json$/, '');
-  if (!isOfferedLanguage(code)) continue;
-  const translation = { ...mod.default };
-  const meta = (translation.$meta as LocaleMeta | undefined) ?? {};
-  delete translation.$meta;
-  resources[code] = { translation };
-  availableLanguages.push({
+const availableLanguages: AvailableLanguage[] = ['en', ...Object.keys(lazyLocales)]
+  .filter((code) => isOfferedLanguage(code))
+  .map((code) => ({
     code,
-    name: meta.name ?? code,
-    nativeName: meta.nativeName ?? meta.name ?? code,
-  });
-}
+    name: LANGUAGE_NAMES[code]?.name ?? code,
+    nativeName: LANGUAGE_NAMES[code]?.nativeName ?? LANGUAGE_NAMES[code]?.name ?? code,
+  }));
 
 availableLanguages.sort((a, b) => a.name.localeCompare(b.name));
 
@@ -49,7 +45,7 @@ void i18n
   .use(LanguageDetector)
   .use(initReactI18next)
   .init({
-    resources,
+    resources: { en: { translation: english } },
     fallbackLng: 'en',
     supportedLngs: availableLanguages.map((l) => l.code),
     // Keys are flat at the top level — nesting is expressed via dots.
@@ -129,5 +125,31 @@ syncUiLocale(i18n.language);
 // `init`, so on a slower path the language can arrive after this module's body.
 i18n.on('initialized', () => syncUiLocale(i18n.language));
 i18n.on('languageChanged', syncUiLocale);
+
+/** Loads a language's strings, from every chunk that carries some, on demand. */
+export const locales = createLocaleLoader(i18n);
+locales.register(lazyLocales);
+
+/**
+ * Settles once the reader's own language is in, so the first render is in it
+ * rather than in English and then in it (SC-1498). Already settled for an
+ * English reader, who waits for nothing.
+ *
+ * `changeLanguage` to the language already set is what makes i18next look
+ * again: `resolvedLanguage` is worked out when the language is set, and it was
+ * set before these strings existed. A fetch that fails is swallowed on purpose
+ * — the reader gets the bundled English, which is a working app, where a
+ * rejection here would be a blank page.
+ */
+export const activeLocaleReady: Promise<void> = (async () => {
+  const code = locales.active();
+  if (!code) return;
+  try {
+    await locales.ensure(code);
+    await i18n.changeLanguage(i18n.language);
+  } catch {
+    // English stays.
+  }
+})();
 
 export default i18n;

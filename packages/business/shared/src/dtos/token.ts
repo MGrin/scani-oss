@@ -64,8 +64,6 @@ export const CreateTokenDto = z.object({
     .optional(),
 });
 
-export type CreateTokenInput = z.infer<typeof CreateTokenDto>;
-
 // Custom token: shared-by-all asset whose price is manually set (e.g.
 // private company shares). Distinct from CreateTokenDto's private path
 // so the schema matches the dedicated tokens.createCustom mutation
@@ -98,8 +96,6 @@ export const CreateCustomTokenDto = z.object({
   iconUrl: z.string().url().optional(),
 });
 
-export type CreateCustomTokenInput = z.infer<typeof CreateCustomTokenDto>;
-
 export const UpdateCustomPriceDto = z.object({
   tokenId: z.string().uuid(),
   newPrice: z.number().positive(),
@@ -110,5 +106,3 @@ export const UpdateCustomPriceDto = z.object({
     .transform((val) => val.toUpperCase()),
   reason: z.string().min(1).max(500).optional(),
 });
-
-export type UpdateCustomPriceInput = z.infer<typeof UpdateCustomPriceDto>;

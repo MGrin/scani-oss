@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { ParsedTransaction, ParseResult } from '@scani/file-import';
 import Decimal from 'decimal.js';
-import {
-  type StatementResolveTokenFn,
-  StatementTransactionIngester,
-} from '../src/StatementTransactionIngester';
+import { StatementTransactionIngester } from '../src/StatementTransactionIngester';
 
 /**
  * SC-136 — the Revolut ATM row: `Amount -120.00, Fee 1.50`, and the statement's
@@ -17,11 +14,6 @@ import {
  * derived from the ledger.
  */
 
-const resolver: StatementResolveTokenFn = {
-  resolveFiatTokenBySymbol: async (symbol) =>
-    symbol === 'GBP' ? { holdingId: 'h-gbp', tokenId: 't-gbp' } : null,
-};
-
 const makeParseResult = (transactions: ParsedTransaction[]): ParseResult => ({
   transactions,
   holdings: [],
@@ -30,13 +22,16 @@ const makeParseResult = (transactions: ParsedTransaction[]): ParseResult => ({
   warnings: [],
 });
 
-const ingest = (transactions: ParsedTransaction[]) =>
-  new StatementTransactionIngester().ingest({
-    userId: 'u1',
+const ingest = (transactions: ParsedTransaction[]) => {
+  const result = new StatementTransactionIngester().ingest({
     accountId: 'a1',
     parseResult: makeParseResult(transactions),
-    resolveToken: resolver,
   });
+  return {
+    lines: result.lines,
+    transactions: result.lines.flatMap((line) => ('skipped' in line ? [] : line.rows)),
+  };
+};
 
 const atm: ParsedTransaction = {
   date: new Date('2026-07-15T10:00:00Z'),
@@ -47,8 +42,8 @@ const atm: ParsedTransaction = {
 };
 
 describe('StatementTransactionIngester — statement fees', () => {
-  it('writes the fee as its own ledger row, not as a sidecar on the movement', async () => {
-    const { transactions } = await ingest([atm]);
+  it('writes the fee as its own ledger row, not as a sidecar on the movement', () => {
+    const { transactions } = ingest([atm]);
     expect(transactions).toHaveLength(2);
 
     const [movement, fee] = transactions;
@@ -56,56 +51,61 @@ describe('StatementTransactionIngester — statement fees', () => {
     expect(movement?.quantity).toBe('-120');
     // The sidecar stays empty: writing it here would look like a fix and
     // change no derived figure.
-    expect(movement?.feeQuantity ?? null).toBeNull();
+    expect(movement).not.toHaveProperty('feeQuantity');
 
     expect(fee?.kind).toBe('fee');
     expect(fee?.quantity).toBe('-1.5');
-    expect(fee?.holdingId).toBe('h-gbp');
-    expect(fee?.tokenId).toBe('t-gbp');
   });
 
   // The whole point: `sum(quantity)` is what the opening-balance reconciler
   // subtracts from the anchored closing balance.
-  it('the summed ledger now accounts for the full movement of the balance', async () => {
-    const { transactions } = await ingest([atm]);
+  it('the summed ledger now accounts for the full movement of the balance', () => {
+    const { transactions } = ingest([atm]);
     const total = transactions.reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
     expect(total.toString()).toBe('-121.5');
   });
 
-  it('anchors the fee at the same instant as the movement that incurred it', async () => {
-    const { transactions } = await ingest([atm]);
+  it('anchors the fee at the same instant as the movement that incurred it', () => {
+    const { transactions } = ingest([atm]);
     expect(transactions[1]?.occurredAt).toEqual(transactions[0]?.occurredAt as Date);
   });
 
   // `bulkUpsert` keys on (holding_id, source, external_id), so a re-upload has
   // to land on the same two rows rather than doubling the fee.
-  it('gives the fee a stable id derived from its parent', async () => {
-    const first = await ingest([atm]);
-    const second = await ingest([atm]);
+  it('gives the fee a stable id derived from its parent', () => {
+    const first = ingest([atm]);
+    const second = ingest([atm]);
     expect(first.transactions[1]?.externalId).toBe(`${first.transactions[0]?.externalId}:fee`);
     expect(second.transactions.map((t) => t.externalId)).toEqual(
       first.transactions.map((t) => t.externalId)
     );
   });
 
-  it('names the fee after the row it came from', async () => {
-    const { transactions } = await ingest([atm]);
+  it('names the fee after the row it came from', () => {
+    const { transactions } = ingest([atm]);
     const metadata = transactions[1]?.sourceMetadata as Record<string, unknown>;
     expect(metadata.description).toBe('Fee — Cash at Barclays ATM');
     expect(metadata.feeForExternalId).toBe(transactions[0]?.externalId);
   });
 
   // Every row of a Revolut export carries `Fee` — almost all of them 0.00.
-  it.each([[undefined], [0]])('a fee of %p adds no row', async (fee) => {
-    const { transactions } = await ingest([{ ...atm, fee: fee as number | undefined }]);
+  it.each([[undefined], [0]])('a fee of %p adds no row', (fee) => {
+    const { transactions } = ingest([{ ...atm, fee: fee as number | undefined }]);
     expect(transactions).toHaveLength(1);
     expect(transactions[0]?.kind).toBe('withdraw');
   });
 
-  // A currency the resolver cannot place skips the movement; the fee must not
-  // survive its own parent.
-  it('drops the fee when the row it belongs to is skipped', async () => {
-    const { transactions } = await ingest([{ ...atm, currency: 'XYZ' }]);
-    expect(transactions).toEqual([]);
+  // The write path skips a currency it cannot place a line at a time, so the
+  // fee has to sit in its parent's line: it must not survive its own parent.
+  it('keeps the fee in the line of the row it belongs to, so both are skipped together', () => {
+    const { lines } = ingest([{ ...atm, currency: 'XYZ' }, atm]);
+    expect(
+      lines.map((line) =>
+        'skipped' in line ? null : [line.currency, line.rows.map((r) => r.kind)]
+      )
+    ).toEqual([
+      ['XYZ', ['withdraw', 'fee']],
+      ['GBP', ['withdraw', 'fee']],
+    ]);
   });
 });

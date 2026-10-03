@@ -20,20 +20,30 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * only covered half is how a sender gets marked as spam instead. One more
  * click, on the page they are already looking at, with the same token.
  */
-const STREAMS: Record<EmailStream, { stopped: string; other: { label: string; path: string } }> = {
+const STREAMS: Record<
+  EmailStream,
+  { stopped: string; stillArrive: string; others: Array<{ label: string; path: string }> }
+> = {
   [EMAIL_STREAMS.digest]: {
     stopped: 'You will not get the weekly Scani digest again.',
-    other: { label: 'stop those too', path: 'e/a' },
+    stillArrive: 'Alerts about a connection that stops syncing still arrive',
+    others: [{ label: 'stop those too', path: 'e/a' }],
   },
   [EMAIL_STREAMS.alerts]: {
     stopped: 'You will not get alerts about your connections again.',
-    other: { label: 'stop that too', path: 'e/u' },
+    stillArrive: 'The weekly digest still arrives',
+    others: [{ label: 'stop that too', path: 'e/u' }],
   },
-};
-
-const OTHER_NAME: Record<EmailStream, string> = {
-  [EMAIL_STREAMS.digest]: 'Alerts about a connection that stops syncing still arrive',
-  [EMAIL_STREAMS.alerts]: 'The weekly digest still arrives',
+  // SC-1503. The nudge is sent once, so the page names what else can still
+  // arrive and offers both, rather than a reader learning it a week later.
+  [EMAIL_STREAMS.onboarding]: {
+    stopped: 'You will not get reminders about setting up Scani again.',
+    stillArrive: 'The weekly digest and connection alerts still arrive',
+    others: [
+      { label: 'stop the digest', path: 'e/u' },
+      { label: 'stop alerts', path: 'e/a' },
+    ],
+  },
 };
 
 function page(title: string, body: string): string {
@@ -96,7 +106,9 @@ export async function handleUnsubscribe(stream: EmailStream, token: string): Pro
         // No re-subscribe control exists yet, so the page does not offer one.
         // "Turn it back on in your account" would be the friendlier sentence
         // and would send the reader looking for a setting that is not there.
-        `${copy.stopped} ${OTHER_NAME[stream]} — <a href="/${copy.other.path}/${token}">${copy.other.label}</a>. ` +
+        `${copy.stopped} ${copy.stillArrive} — ${copy.others
+          .map((other) => `<a href="/${other.path}/${token}">${other.label}</a>`)
+          .join(', ')}. ` +
           'If this was a mistake, email support@scani.xyz and it will be turned back on.'
       )
     );
@@ -122,5 +134,8 @@ export function registerUnsubscribeRoutes(app: any): void {
   );
   app.get('/e/a/:token', ({ params }: { params: { token: string } }) =>
     handleUnsubscribe(EMAIL_STREAMS.alerts, params.token)
+  );
+  app.get('/e/n/:token', ({ params }: { params: { token: string } }) =>
+    handleUnsubscribe(EMAIL_STREAMS.onboarding, params.token)
   );
 }

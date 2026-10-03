@@ -142,7 +142,11 @@ describe('CostBasisService — a fee portion (SC-888)', () => {
     // Answering `left_control` for the whole 40 books 6,000 against 4,000 —
     // 2,000 — so the 250 difference IS the gain on the bank's charge, and it
     // is the number this answer exists to stop inventing.
-    expect(r.realizedPnl.toString()).toBe('1750');
+    //
+    // The charge's own cost, 5 x 100 = 500, is a loss (SC-1486): nothing else
+    // carries it, since an unlinked outflow has no destination to absorb it and
+    // the fee share is not a flow. Left out, the 500 vanished from both sides.
+    expect(r.realizedPnl.toString()).toBe('1250');
 
     const feeRows = ledger.filter((row) => row.outcome === 'fee');
     expect(feeRows).toHaveLength(1);
@@ -184,7 +188,7 @@ describe('CostBasisService — a fee portion (SC-888)', () => {
     expect(ledger.some((row) => row.outcome === 'retained')).toBe(false);
   });
 
-  test('a whole withdrawal answered `fee` realizes nothing', async () => {
+  test('a whole withdrawal answered `fee` realizes its cost as a loss, never a gain (SC-1486)', async () => {
     const svc = makeService();
     const ledger: DisposalLotMatch[] = [];
     const r = await svc.walkLots(
@@ -206,7 +210,9 @@ describe('CostBasisService — a fee portion (SC-888)', () => {
       'complete',
       ledger
     );
-    expect(r.realizedPnl.toString()).toBe('0');
+    // 2 units at a cost of 100: the bank took 200 of cost. Priced at 150 the
+    // row would say 300, which is the gain this answer must not invent.
+    expect(r.realizedPnl.toString()).toBe('-200');
     expect(ledger.filter((row) => row.outcome === 'fee')).toHaveLength(1);
   });
 

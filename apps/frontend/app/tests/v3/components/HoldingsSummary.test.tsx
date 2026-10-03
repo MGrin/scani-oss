@@ -229,3 +229,27 @@ describe('HoldingsSummary', () => {
     expect(html).not.toInclude('Excludes');
   });
 });
+
+/** Margin debt is negative cash (SC-1462), shown as its own line (SC-1463). */
+describe('HoldingsSummary margin debt', () => {
+  const usd = { ...holding().token, id: 'usd', symbol: 'USD', typeCode: 'fiat', type: 'Fiat' };
+  const rows = [
+    holding({ id: 'stock', value: 10_000, token: { ...holding().token, typeCode: 'stock' } }),
+    holding({ id: 'cash', value: -2_500, token: usd }),
+    holding({ id: 'btc', value: 5_000 }),
+  ];
+
+  test('the hero stays net, the debt is its own line, and the shares are of assets', () => {
+    const html = render(rows);
+    expect(html).toInclude('12,500.00');
+    expect(html).toInclude('data-ui="margin-debt"');
+    expect(html).toInclude('−$2,500.00');
+    expect(html).toInclude('Share of assets');
+  });
+
+  test('without debt, neither the line nor the caption renders', () => {
+    const html = render([rows[0] as HoldingWithDetails, rows[2] as HoldingWithDetails]);
+    expect(html).not.toInclude('margin-debt');
+    expect(html).not.toInclude('Share of assets');
+  });
+});

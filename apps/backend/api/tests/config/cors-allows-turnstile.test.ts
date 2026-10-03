@@ -9,9 +9,13 @@ import { TURNSTILE_HEADER } from '@scani/http-fetch';
  * reach Scani". The api is the only server that takes the token on a header:
  * the data-provider's `/api/auth` surface, which did too, is gone, and its
  * contact form carries the token in the tRPC input.
+ *
+ * The list lives in `buildCorsOptions` since SC-1500, which `src/index.ts`
+ * passes to `cors()` whole; `browser-origins.test.ts` pins that it does, and
+ * sends a real preflight through those options.
  */
 
-const SERVERS = ['apps/backend/api/src/index.ts'];
+const SERVERS = ['apps/backend/api/src/config/browser-origins.ts'];
 const ROOT = new URL('../../../../../', import.meta.url).pathname;
 
 describe('CORS lets the Turnstile token through the preflight', () => {

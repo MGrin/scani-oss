@@ -28,7 +28,7 @@ import { z } from 'zod';
  * (`cell.ts`), and the wire is the easiest place to lose it by accident.
  */
 
-export const ExportValueDto = z.discriminatedUnion('kind', [
+const ExportValueDto = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('blank') }),
   z.object({ kind: z.literal('text'), value: z.string() }),
   z.object({
@@ -59,12 +59,12 @@ export type ExportValueDtoType = z.infer<typeof ExportValueDto>;
  * a person reads. `rowCount`s are in row order and cover the sheet, so the two
  * cannot describe different documents.
  */
-export const ExportGroupDto = z.object({
+const ExportGroupDto = z.object({
   label: z.string(),
   rowCount: z.number().int().nonnegative(),
 });
 
-export const ExportSheetDto = z.object({
+const ExportSheetDto = z.object({
   name: z.string(),
   headers: z.array(z.string()),
   rows: z.array(z.array(ExportValueDto)),
@@ -87,9 +87,9 @@ export const ExportSheetDto = z.object({
 
 export type ExportSheetDtoType = z.infer<typeof ExportSheetDto>;
 
-export const ExportProvenanceLineDto = z.object({ label: z.string(), value: z.string() });
+const ExportProvenanceLineDto = z.object({ label: z.string(), value: z.string() });
 
-export const ExportProvenanceDto = z.object({
+const ExportProvenanceDto = z.object({
   subject: z.string(),
   scope: z.string(),
   /** ISO 8601. A `Date` does not survive JSON, and the renderer only prints it. */
@@ -98,8 +98,6 @@ export const ExportProvenanceDto = z.object({
   rowCount: z.number().int().nonnegative().optional(),
   amountsWithheld: z.boolean().optional(),
 });
-
-export type ExportProvenanceDtoType = z.infer<typeof ExportProvenanceDto>;
 
 /**
  * A PDF is a document someone reads, not a dataset someone queries, and past a

@@ -37,20 +37,9 @@
 import type { NewToken } from '@scani/db/schema';
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
-import type {
-  BalanceProvider,
-  Capability,
-  CredentialValidator,
-  CurrentPriceProvider,
-  HistoricalPriceProvider,
-  ProviderBase,
-  TokenIdentityProvider,
-  TransactionsProvider,
-} from '../capabilities';
+import type { Capability, ProviderBase } from '../capabilities';
 import {
-  type HoldingSnapshot,
   type NoticeInput,
-  type PriceQuote,
   type ProviderContext,
   type TransactionEvent,
   type TransactionFetchContext,
@@ -60,10 +49,20 @@ import {
 
 /**
  * Kinds a CEX provider can yield. Subset of `TransactionEvent.kind` —
- * `transfer_in`/`transfer_out` and `swap_in`/`swap_out` come from
- * blockchain providers, not CEXes.
+ * `transfer_in`/`transfer_out` come from blockchain providers. A swap is
+ * an exchange converting one asset into another on the holder's behalf
+ * (Kraken's ETH2 -> ETH, SC-1486), and its two legs share `swapGroupKey`.
  */
-export type CexEventKind = 'buy' | 'sell' | 'deposit' | 'withdraw' | 'fee' | 'reward' | 'interest';
+export type CexEventKind =
+  | 'buy'
+  | 'sell'
+  | 'deposit'
+  | 'withdraw'
+  | 'fee'
+  | 'reward'
+  | 'interest'
+  | 'swap_in'
+  | 'swap_out';
 
 /**
  * Raw event a concrete CEX provider yields per page row. Identity is
@@ -93,6 +92,8 @@ export interface CexNormalizedEvent {
   occurredAt: Date;
   /** Stable provider-native id; feeds the (source, externalId) dedup. */
   externalId: string;
+  /** Shared by the two legs of one swap. */
+  swapGroupKey?: string;
   rawPayload?: unknown;
 }
 
@@ -109,22 +110,6 @@ export interface CexWalkVerdict {
   /** Why not, in the words the run's warnings will carry. */
   reason?: string;
 }
-
-/**
- * Shape every concrete CEX provider declares as its public surface
- * area. The capability interfaces are duck-typed so the registry
- * picks up whichever methods the concrete class implements; this
- * union is just for IDE auto-complete.
- */
-export type CexProviderCapabilities = ProviderBase &
-  Partial<
-    BalanceProvider &
-      TransactionsProvider &
-      CurrentPriceProvider &
-      HistoricalPriceProvider &
-      TokenIdentityProvider &
-      CredentialValidator
-  >;
 
 /**
  * Concrete CEX providers extend `BaseCexProvider`. They:
@@ -223,6 +208,7 @@ export abstract class BaseCexProvider implements ProviderBase {
         primary: { tokenIdentity: primary, quantity: signedQty },
         rawPayload: raw.rawPayload,
       };
+      if (raw.swapGroupKey) event.swapGroupKey = raw.swapGroupKey;
       if (counter && raw.counterQuantity) {
         // Counter quantity is the OPPOSITE sign of primary on
         // buy/sell legs (you sell BTC for +USDT, or buy BTC for
@@ -282,9 +268,14 @@ export abstract class BaseCexProvider implements ProviderBase {
     const qty = new Decimal(rawQty);
     if (qty.isZero()) return qty.toString();
 
-    const shouldBeNegative = kind === 'sell' || kind === 'withdraw' || kind === 'fee';
+    const shouldBeNegative =
+      kind === 'sell' || kind === 'withdraw' || kind === 'fee' || kind === 'swap_out';
     const shouldBePositive =
-      kind === 'buy' || kind === 'deposit' || kind === 'reward' || kind === 'interest';
+      kind === 'buy' ||
+      kind === 'deposit' ||
+      kind === 'reward' ||
+      kind === 'interest' ||
+      kind === 'swap_in';
 
     if (shouldBeNegative && qty.isPositive()) return qty.neg().toString();
     if (shouldBePositive && qty.isNegative()) return qty.abs().toString();
@@ -306,4 +297,4 @@ export abstract class BaseCexProvider implements ProviderBase {
 }
 
 // Re-export common types for concrete subclasses to import in one line.
-export type { HoldingSnapshot, PriceQuote, TransactionEvent, WithUserCreds };
+export type { TransactionEvent, WithUserCreds };

@@ -91,7 +91,7 @@ export interface IntegrationImportOptions {
   transactionName?: string;
 }
 
-export interface ImportedHolding {
+interface ImportedHolding {
   id: string;
   accountId: string;
   accountName: string;
@@ -106,7 +106,7 @@ export interface ImportedHolding {
   isHidden: boolean;
 }
 
-export interface ImportedAccount {
+interface ImportedAccount {
   id: string;
   name: string;
   institutionId: string;

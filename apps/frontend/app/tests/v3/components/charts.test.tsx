@@ -9,6 +9,8 @@ import { ALLOCATION_OTHER_KEY } from '@scani/ui/v3/lib/chart';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom';
 import { AllocationBar } from '../../../src/v3/components/charts/AllocationBar';
+import { MarginDebtLine } from '../../../src/v3/components/charts/MarginDebtLine';
+import { ShareRows } from '../../../src/v3/components/charts/ShareRows';
 
 /**
  * `<Sparkline>` and `<ChartFrame>` are exercised by their pure parts only.
@@ -120,6 +122,144 @@ describe('AllocationBar', () => {
     );
     expect(html).toInclude('Other');
     expect(html.match(/<a /g)).toHaveLength(5);
+  });
+});
+
+/**
+ * Margin debt under an allocation bar (SC-1463). The line exists only when
+ * there is debt: a "0.00" row under every bar would be a claim about a loan
+ * nobody took, and the committed visual baselines have none.
+ */
+describe('MarginDebtLine', () => {
+  test('renders the label and the signed figure', () => {
+    const html = renderToStaticMarkup(<MarginDebtLine value={-1200} currency="USD" underLegend />);
+    expect(html).toInclude('Margin debt');
+    expect(html).toInclude('−$1,200.00');
+    expect(html).toInclude('data-ui="margin-debt"');
+  });
+
+  test('with no legend above it, the line drops the swatch indent and the legend column', () => {
+    const standalone = renderToStaticMarkup(
+      <MarginDebtLine value={-1200} currency="USD" underLegend={false} />
+    );
+    const legend = renderToStaticMarkup(
+      <MarginDebtLine value={-1200} currency="USD" underLegend />
+    );
+    expect(standalone).toInclude('justify-between');
+    expect(standalone).not.toInclude('size-2.5');
+    expect(standalone).toInclude('−$1,200.00');
+    expect(legend).toInclude('size-2.5');
+    expect(legend).not.toInclude('justify-between');
+  });
+
+  test('no debt renders nothing at all', () => {
+    expect(
+      renderToStaticMarkup(<MarginDebtLine value={0} currency="USD" underLegend={false} />)
+    ).toBe('');
+  });
+});
+
+describe('AllocationBar share caption', () => {
+  test('is absent unless asked for', () => {
+    const html = renderToStaticMarkup(
+      <AllocationBar items={ALLOCATION} currency="USD" label="Allocation by type" />
+    );
+    expect(html).not.toInclude('Share of assets');
+  });
+
+  test('renders above the legend when set', () => {
+    const html = renderToStaticMarkup(
+      <AllocationBar
+        items={ALLOCATION}
+        currency="USD"
+        label="Allocation by type"
+        shareCaption="Share of assets"
+      />
+    );
+    expect(html.indexOf('Share of assets')).toBeGreaterThan(html.indexOf('role="img"'));
+    expect(html.indexOf('Share of assets')).toBeLessThan(html.indexOf('<ul'));
+  });
+});
+
+/**
+ * The group cut (SC-1469). Groups overlap, so the rows are each a share of the
+ * whole rather than parts of a split: no stacked bar, and two groups holding
+ * the same 600 of a 1,000 portfolio both read 60%.
+ */
+describe('ShareRows', () => {
+  const OVERLAPPING = [
+    { key: 'a', label: 'Long term', value: 600, share: 0.6 },
+    { key: 'b', label: 'Crypto', value: 600, share: 0.6 },
+  ];
+
+  test('draws no stacked bar', () => {
+    const html = renderToStaticMarkup(
+      <ShareRows rows={OVERLAPPING} currency="USD" label="Groups" note={null} />
+    );
+    expect(html).not.toInclude('data-ui="allocation-bar"');
+    expect(html).not.toMatch(/--chart-\d/);
+  });
+
+  test('each row states its own share, so overlapping rows can sum past 100%', () => {
+    const html = renderToStaticMarkup(
+      <ShareRows rows={OVERLAPPING} currency="USD" label="Groups" note={null} />
+    );
+    expect(html.match(/width:60%/g)).toHaveLength(2);
+    expect(html.replace(/width:60%/g, '').match(/60%/g)).toHaveLength(2);
+  });
+
+  test('a share above the whole fills the meter and says its real figure', () => {
+    const html = renderToStaticMarkup(
+      <ShareRows
+        rows={[{ key: 'a', label: 'A', value: 1500, share: 1.5 }]}
+        currency="USD"
+        label="Groups"
+        note={null}
+      />
+    );
+    expect(html).toInclude('width:100%');
+    expect(html).toInclude('150%');
+  });
+
+  test('an unknown share draws no meter', () => {
+    const html = renderToStaticMarkup(
+      <ShareRows
+        rows={[{ key: 'a', label: 'A', value: 10, share: null }]}
+        currency="USD"
+        label="Groups"
+        note={null}
+      />
+    );
+    expect(html).not.toInclude('data-ui="share-meter"');
+  });
+
+  test('the note renders when given and not otherwise', () => {
+    const note = "These don't add up to your net worth.";
+    const html = renderToStaticMarkup(
+      <ShareRows rows={OVERLAPPING} currency="USD" label="Groups" note={note} />
+    );
+    expect(html).toInclude('don&#x27;t add up');
+    expect(
+      renderToStaticMarkup(
+        <ShareRows rows={OVERLAPPING} currency="USD" label="Groups" note={null} />
+      )
+    ).not.toInclude('add up');
+  });
+
+  test('with a resolver each addressable row is a link', () => {
+    const html = renderToStaticMarkup(
+      <StaticRouter location="/">
+        <ShareRows
+          rows={OVERLAPPING}
+          currency="USD"
+          label="Groups"
+          note={null}
+          itemHref={(row) => (row.key === 'b' ? null : `/holdings?group=${row.key}`)}
+        />
+      </StaticRouter>
+    );
+    expect(html).toInclude('href="/holdings?group=a"');
+    expect(html.match(/<a /g)).toHaveLength(1);
   });
 });
 

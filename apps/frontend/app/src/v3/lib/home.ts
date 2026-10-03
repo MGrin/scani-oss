@@ -934,6 +934,34 @@ export function foldedAllocationItems(
   return items.filter((item) => !kept.has(item.key));
 }
 
+/** One group on the group cut: its value and its share of the whole. */
+export interface ShareRow extends AllocationInput {
+  /** `value / total`, unclamped; `null` when there is no positive total. */
+  share: number | null;
+}
+
+/**
+ * The group cut's rows, each a share of the whole rather than a slice of it
+ * (SC-1469).
+ *
+ * `GroupValuationService` counts a holding in full in every group it belongs
+ * to, so the parts can sum past the whole. Renormalising them to 100% would
+ * shrink every group by the overlap and present a split that does not exist,
+ * which is why this does not go through `foldAllocation`.
+ */
+export function groupShareRows(items: readonly AllocationInput[], total: number): ShareRow[] {
+  return items.map((item) => ({ ...item, share: total > 0 ? item.value / total : null }));
+}
+
+/** Half a cent: below it a difference is float rounding, not a holding counted twice. */
+const OVERLAP_TOLERANCE = 0.005;
+
+/** Whether the parts sum past the whole — only possible when a holding sits in two groups. */
+export function groupsOverlap(items: readonly AllocationInput[], total: number): boolean {
+  const sum = items.reduce((acc, item) => acc + item.value, 0);
+  return sum > total + OVERLAP_TOLERANCE;
+}
+
 /** The subset of `dashboard.getOverview`'s `topHoldings` rows this screen reads. */
 export interface TopHoldingItem {
   id: string;

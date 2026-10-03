@@ -116,7 +116,7 @@ export interface AttributionPoint {
   flowByCurrency: Map<string | null, Decimal>;
 }
 
-export type UnattributedReason =
+type UnattributedReason =
   /** The scope held nothing to earn a return on — mirrors TWR's skip. */
   | 'no-opening-value'
   /** A bucket had no rate at one of the two boundaries. */
@@ -124,7 +124,7 @@ export type UnattributedReason =
   /** The asset leg came out at or below zero, so the ratio is undefined. */
   | 'non-positive-asset-leg';
 
-export interface AttributionPeriod {
+interface AttributionPeriod {
   from: string;
   to: string;
   /** `null` exactly when `reason` is set. */

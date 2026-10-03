@@ -1041,7 +1041,8 @@
           "institution": "Établissement",
           "account": "Compte",
           "group": "Groupe"
-        }
+        },
+        "groupsOverlap": "Une position peut appartenir à plusieurs groupes et compte dans chacun, donc ces montants ne s’additionnent pas à votre patrimoine net."
       },
       "upcoming": {
         "title": "Prochaines factures",
@@ -1233,6 +1234,10 @@
         "unpricedAtZero_many": "{{count}} jetons sans prix comptés à zéro.",
         "unpricedAtZero_other": "{{count}} jetons sans prix comptés à zéro."
       }
+    },
+    "allocation": {
+      "marginDebt": "Dette sur marge",
+      "shareOfAssets": "Part des actifs"
     },
     "holdings": {
       "amountFact": {
@@ -1588,6 +1593,8 @@
         "extension": "un .{{ext}}",
         "noExtension": "aucune extension de fichier",
         "unsupported": "Celui-ci est {{named}}. Scani lit {{formats}}.",
+        "tooLarge": "Ce fichier fait {{size}}. La limite est de {{limit}}.",
+        "withLimit": "{{formats}}, jusqu’à {{limit}}",
         "remove": "Retirer {{name}}"
       },
       "blocker": {
@@ -2248,7 +2255,15 @@
         "balanceChangesToExplain": "Variations de solde à expliquer",
         "unexplainedBalanceChanges_one": "{{count}} variation de solde que nous ne pouvons pas expliquer",
         "unexplainedBalanceChanges_many": "{{count}} variations de solde que nous ne pouvons pas expliquer",
-        "unexplainedBalanceChanges_other": "{{count}} variations de solde que nous ne pouvons pas expliquer"
+        "unexplainedBalanceChanges_other": "{{count}} variations de solde que nous ne pouvons pas expliquer",
+        "answersTradesExplain": "Couvertes par les opérations importées",
+        "answersExplained_one": "{{count}} explication sur {{subject}}",
+        "answersExplained_many": "{{count}} explications sur {{subject}}",
+        "answersExplained_other": "{{count}} explications sur {{subject}}",
+        "unpriceableAirdrops": "Jetons que rien ne peut valoriser",
+        "unpriceableTokens_one": "{{count}} jeton arrivé dans vos portefeuilles que rien ne peut valoriser",
+        "unpriceableTokens_other": "{{count}} jetons arrivés dans vos portefeuilles que rien ne peut valoriser",
+        "unpriceableTokens_many": "{{count}} jetons arrivés dans vos portefeuilles que rien ne peut valoriser"
       },
       "kind": {
         "withdrawal": "Retrait",
@@ -2682,6 +2697,52 @@
           "received": "Saisissez la quantité reçue"
         },
         "undoFailed": "Impossible d'annuler"
+      },
+      "settled": {
+        "title": "Explications sur {{subject}}",
+        "description": "Les opérations importées expliquent désormais aussi ces variations de solde, donc le même argent est compté deux fois. Retirer supprime vos explications ; Conserver les laisse telles quelles.",
+        "full": "Expliqué par les opérations importées",
+        "partial": "<explained/> sur <amount/> expliqué par les opérations importées. Si vous la retirez, le reste vous sera redemandé.",
+        "movesOther": "Cette explication a aussi modifié une autre position",
+        "keep": "Conserver",
+        "retire": "Retirer",
+        "confirmOther": "Les retirer supprime aussi ce que ces explications ont enregistré sur une autre position.",
+        "confirmRetire": "Oui, les retirer",
+        "undo": "Annuler",
+        "failed": "Certaines explications n’ont pas pu être modifiées. Réessayez.",
+        "toast": {
+          "retired_one": "{{count}} explication retirée",
+          "retired_many": "{{count}} explications retirées",
+          "retired_other": "{{count}} explications retirées",
+          "kept": "Explications conservées",
+          "undone": "Explications rétablies",
+          "undoFailed": "Impossible de rétablir les explications"
+        }
+      },
+      "unpriceable": {
+        "title": "Jetons que rien ne peut valoriser",
+        "description": "Ils sont arrivés dans vos portefeuilles et aucune source de prix ne les a jamais cotés : ils ne comptent déjà pour rien dans votre patrimoine net. Masquer les retire de vos listes ; décochez ceux que vous voulez garder, et nous ne vous les redemanderons plus. Vous pouvez en récupérer n’importe lequel depuis Jetons, dans Masqués.",
+        "hideAll": "Tout masquer",
+        "keepAll": "Tout garder",
+        "hideSome_one": "Masquer {{count}}",
+        "hideSome_other": "Masquer {{count}}",
+        "failed": "Rien n’a été masqué. Réessayez.",
+        "keepFailed": "Votre choix n’a pas été enregistré. Réessayez.",
+        "partlyFailed_one": "{{count}} jeton n’a pas pu être masqué. Réessayez.",
+        "partlyFailed_other": "{{count}} jetons n’ont pas pu être masqués. Réessayez.",
+        "undo": "Annuler",
+        "toast": {
+          "hidden_one": "{{count}} jeton masqué",
+          "hidden_other": "{{count}} jetons masqués",
+          "restored": "Jetons restaurés",
+          "restoreFailed": "Impossible de restaurer les jetons",
+          "hidden_many": "{{count}} jetons masqués",
+          "kept_one": "{{count}} jeton gardé",
+          "kept_many": "{{count}} jetons gardés",
+          "kept_other": "{{count}} jetons gardés"
+        },
+        "hideSome_many": "Masquer {{count}}",
+        "partlyFailed_many": "{{count}} jetons n’ont pas pu être masqués. Réessayez."
       }
     },
     "money": {

@@ -43,7 +43,7 @@ import { BalanceAtTimeService } from '../pricing/BalanceAtTimeService';
  * reconciles to zero is exactly what would stop anyone noticing the day the
  * window genuinely breaks.
  */
-export type ResidueCause = 'none' | 'unexplained' | 'before-available-history';
+type ResidueCause = 'none' | 'unexplained' | 'before-available-history';
 
 // What the reconciler will do to one holding, computed without doing it.
 export interface OpeningProjection {
@@ -101,6 +101,11 @@ export interface ReconciliationResult {
   openingBalanceSynthesized: boolean;
   // The occurred_at of the synthesized opening tx, if any.
   openingAt: Date | null;
+  // Set only when this run moved the opening in the ledger: written for the
+  // first time, or at a new date or quantity. Re-writing an identical opening
+  // on every full import leaves it null, so no rebuild is sized from it
+  // (SC-1459).
+  openingChangedAt?: Date | null;
   // Note left on holding_coverage if anything notable happened.
   notes: string | null;
   // Why the shortfall exists, when there is one. See `ResidueCause`.
@@ -503,7 +508,7 @@ export class OpeningBalanceReconciliationService {
     // `action === 'opening'`, the only branch that writes to the ledger.
     // `openingAt` is non-null on it by construction.
     const occurredAt = openingAt as Date;
-    await this.transactionRepository.bulkUpsert([
+    const written = await this.transactionRepository.bulkUpsert([
       {
         userId: projection.userId,
         holdingId,
@@ -558,6 +563,7 @@ export class OpeningBalanceReconciliationService {
       unexplainedResidual,
       openingBalanceSynthesized: true,
       openingAt: occurredAt,
+      openingChangedAt: written.earliestChangedAt,
       notes,
       residueCause,
       historyStartsAt,

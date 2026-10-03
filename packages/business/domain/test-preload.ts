@@ -98,6 +98,7 @@ if (!looksLocal && process.env.ALLOW_REMOTE_TEST_DB !== '1') {
 // reads decorator metadata at class-init time.
 import 'reflect-metadata';
 import { installContainerLeakGuard } from './test/helpers/container';
+import { installSharedConfigGuard, scrubGitLocation } from './test-git-guard';
 
 // One suite per database, or none. Two `bun run test` runs both land here on
 // the shared compose database, and 3 of 4 processes failed when that was
@@ -117,3 +118,13 @@ if (process.env.SCANI_ALLOW_SHARED_TEST_DB !== '1') {
 // default file order (SC-448). Installed last, so the patched `Container.set`
 // is in place before any test file loads.
 installContainerLeakGuard();
+
+// SC-1512. A run started under a git hook inherits its GIT_DIR, and every
+// scratch `git init` a test makes would then land on the real repository.
+scrubGitLocation(process.env);
+installSharedConfigGuard(process.cwd());
+
+// A gate-db a test spawns is part of this run, not a heavy run of its own:
+// claiming the machine lock from inside one re-labels or outlives the claim
+// the outer run already holds (SC-1512).
+process.env.SCANI_GATE_NESTED_IN = String(process.pid);

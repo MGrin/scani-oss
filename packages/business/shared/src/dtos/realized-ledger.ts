@@ -41,7 +41,7 @@ export const DISPOSAL_OUTCOMES = [
   'fee',
 ] as const;
 
-export const disposalOutcomeSchema = z.enum(DISPOSAL_OUTCOMES);
+const disposalOutcomeSchema = z.enum(DISPOSAL_OUTCOMES);
 
 export type DisposalOutcomeDto = (typeof DISPOSAL_OUTCOMES)[number];
 
@@ -79,9 +79,9 @@ export type DisposalOutcomeDto = (typeof DISPOSAL_OUTCOMES)[number];
  * document is provenance computed correctly and then dropped before the wire —
  * which is what this field exists to stop happening a second time.
  */
-export const DISPOSAL_ANSWER_SOURCES = [...ANSWER_SOURCES, 'none'] as const;
+const DISPOSAL_ANSWER_SOURCES = [...ANSWER_SOURCES, 'none'] as const;
 
-export const disposalAnswerSourceSchema = z.enum(DISPOSAL_ANSWER_SOURCES);
+const disposalAnswerSourceSchema = z.enum(DISPOSAL_ANSWER_SOURCES);
 
 export type DisposalAnswerSourceDto = (typeof DISPOSAL_ANSWER_SOURCES)[number];
 
@@ -96,9 +96,9 @@ export type DisposalAnswerSourceDto = (typeof DISPOSAL_ANSWER_SOURCES)[number];
  * fallback that had to be built, because refusing it is what made an
  * unpriceable counter asset book 0.00.
  */
-export const VALUATION_BASES = ['execution_rate', 'held_token'] as const;
+const VALUATION_BASES = ['execution_rate', 'held_token'] as const;
 
-export const valuationBasisSchema = z.enum(VALUATION_BASES);
+const valuationBasisSchema = z.enum(VALUATION_BASES);
 
 export type ValuationBasisDto = (typeof VALUATION_BASES)[number];
 
@@ -169,7 +169,7 @@ export const disposalLotMatchSchema = z.object({
 
 export type DisposalLotMatchDto = z.infer<typeof disposalLotMatchSchema>;
 
-export const realizedLedgerSchema = z.object({
+const realizedLedgerSchema = z.object({
   holdingId: z.string(),
   baseCurrencyId: z.string().nullable(),
   rows: z.array(disposalLotMatchSchema),

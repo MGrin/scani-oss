@@ -965,7 +965,7 @@ Required, and **not** where the job queue lives. Since the queue
 moved to Postgres, Redis carries only ephemeral state: realtime
 SSE pub/sub, job-lifecycle events pushed to the UI, the api's
 request rate limiter, the shared upstream-provider rate limiter,
-the portfolio-value cache, and the admin HMAC replay-nonce store.
+and the portfolio-value cache.
 Losing it costs live updates and rate-limit windows, never a job.
 The api still refuses readiness without it — `/readyz` pings it.
 

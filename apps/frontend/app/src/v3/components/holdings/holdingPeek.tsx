@@ -21,6 +21,7 @@ import {
   hasCustomPrice,
   holdingGainLoss,
   holdingPrice,
+  isBaseCurrencyHolding,
   isSynced,
   payoutScheduleLabel,
   supportsApy,
@@ -208,7 +209,7 @@ function apySection(holding: HoldingWithDetails, ctx: HoldingPeekContext): PeekS
 
 export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekContext): PeekSpec {
   const { t } = ctx;
-  const gainLoss = holdingGainLoss(holding);
+  const gainLoss = holdingGainLoss(holding, ctx.currency);
   const priceBusy = ctx.refreshingPriceId === holding.id;
   const balanceBusy = ctx.refreshingBalanceId === holding.id;
 
@@ -444,7 +445,7 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
           {t('v3.holdings.movement.peekAction')}
         </Button>
         {/* The base currency is 1 against itself, so there is nothing to refresh (SC-1447). */}
-        {holding.token.typeCode === 'fiat' && holding.token.symbol === ctx.currency ? null : (
+        {isBaseCurrencyHolding(holding, ctx.currency) ? null : (
           <Button
             variant="outline"
             onClick={() => ctx.onRefreshPrice(holding)}
@@ -574,8 +575,8 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
 /** The row's third zone: P/L when there is a cost basis to measure against,
  *  and nothing when there is not. Exported because the list and the desktop
  *  table's last column are the same claim and must not drift. */
-export function holdingRowDelta(holding: HoldingWithDetails) {
-  const gainLoss = holdingGainLoss(holding);
+export function holdingRowDelta(holding: HoldingWithDetails, currency: string) {
+  const gainLoss = holdingGainLoss(holding, currency);
   if (!gainLoss) return undefined;
   return <Numeric value={gainLoss.percent} format="percent" decimals={1} delta indicator="sign" />;
 }

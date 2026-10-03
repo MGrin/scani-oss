@@ -13,7 +13,7 @@ export interface TransactionImportJob extends UserJobBase {
   institutionId?: string;
 }
 
-export const transactionImportSchema: z.ZodType<TransactionImportJob> = z.object({
+const transactionImportSchema: z.ZodType<TransactionImportJob> = z.object({
   userId: z.string().min(1),
   requestId: z.string().min(1),
   accountId: z.string().uuid(),

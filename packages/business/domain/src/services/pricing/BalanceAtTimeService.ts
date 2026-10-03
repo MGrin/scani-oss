@@ -8,11 +8,23 @@ import { HoldingBalanceObservationRepository } from '../../repositories/HoldingB
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
 
+type HoldingAnchor = Pick<Holding, 'balance' | 'lastUpdated' | 'createdAt'>;
+type ObservationAnchor = Pick<HoldingBalanceObservation, 'observedAt' | 'balance'>;
+type LedgerMovement = Pick<HoldingTransaction, 'occurredAt' | 'quantity'>;
+
+// The only columns the walk itself reads, so a caller that needs nothing else
+// may hand in rows narrowed to them.
+export interface BalanceWalkCaches {
+  holdings?: ReadonlyMap<string, HoldingAnchor>;
+  observations?: ReadonlyMap<string, ReadonlyArray<ObservationAnchor>>;
+  transactions?: ReadonlyMap<string, ReadonlyArray<LedgerMovement>>;
+}
+
 // Pre-loaded per-user data the rollup hands in to short-circuit the
 // per-call DB reads. Each cache is a Map keyed by holdingId; absence
 // of a key (or `undefined`) means "fall through to the DB" so the
 // non-rollup callers (chart endpoint, ad-hoc valuation) still work.
-export interface BalanceAtTimeCaches {
+export interface BalanceAtTimeCaches extends BalanceWalkCaches {
   holdings?: ReadonlyMap<string, Holding>;
   observations?: ReadonlyMap<string, ReadonlyArray<HoldingBalanceObservation>>;
   transactions?: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>>;
@@ -44,9 +56,9 @@ export interface BalanceAtTimeResult {
   // needed no interpolation, which includes every densely-observed holding
   // and every date at or before the first observation.
   interpolated: boolean;
-  // The walk came out negative and was floored at zero, so the ledger is
-  // missing outflows (gas, fees, an unimported source) and this balance is
-  // not a reconstruction at all (SC-1444). Consumers that compound values
+  // The walk came out below the lowest balance this holding can have and was
+  // floored there, so the ledger is missing outflows (gas, fees, an unimported
+  // source) and this balance is not a reconstruction at all (SC-1444). Consumers that compound values
   // over time must treat the holding as not covered rather than as empty.
   floored: boolean;
 }
@@ -60,7 +72,8 @@ export interface BalanceAtTimeResult {
 //
 // Never mutates holdings; never rewrites observations. Pure read.
 
-// Floor the reconstructed past balance at zero. Imported tx histories
+// Floor the reconstructed past balance, at zero unless the source itself
+// reported a negative (SC-1462, below). Imported tx histories
 // from third-party APIs (Helius, Etherscan, exchange CSVs) are
 // frequently INCOMPLETE for early periods — Helius's parsed-tx index
 // has retention limits, exchange CSVs start at the first export date,
@@ -70,10 +83,26 @@ export interface BalanceAtTimeResult {
 // zero keeps the chart sensible (you can't have negatively held an
 // asset you can't short) without rewriting the underlying ledger,
 // which still preserves signed quantities for cost-basis math.
+//
+// SC-1462: broker cash CAN be negative (margin debt), and a reading or a
+// current balance below zero is the source saying so. The floor is the lowest
+// such evidence, so a measured debit reconstructs as itself, and a holding
+// that never reported one floors at zero exactly as before.
 const balanceLogger = createComponentLogger('pricing:balance-at-time');
 
-function clampNonNegative(d: Decimal): { value: Decimal; floored: boolean } {
-  return d.lt(0) ? { value: new Decimal(0), floored: true } : { value: d, floored: false };
+// One Decimal per row: comparing against the running minimum as a string
+// parsed it again on every row, and a heavy holding has 100k+ of them.
+function lowestOf(observations: ReadonlyArray<ObservationAnchor>): Decimal | null {
+  let lowest: Decimal | null = null;
+  for (const o of observations) {
+    const balance = new Decimal(o.balance);
+    if (lowest === null || balance.lt(lowest)) lowest = balance;
+  }
+  return lowest;
+}
+
+function clampAt(d: Decimal, floor: Decimal): { value: Decimal; floored: boolean } {
+  return d.lt(floor) ? { value: floor, floored: true } : { value: d, floored: false };
 }
 @Service()
 export class BalanceAtTimeService {
@@ -86,7 +115,7 @@ export class BalanceAtTimeService {
     holdingId: string,
     at: Date,
     tx: DatabaseTransaction | undefined,
-    caches: BalanceAtTimeCaches = {}
+    caches: BalanceWalkCaches = {}
   ): Promise<BalanceAtTimeResult> {
     // Resolved ONCE, above the anchor ladder, because every anchor has the
     // same lower-bound defect and anchor 1 reaches it first. Bounding the
@@ -95,6 +124,7 @@ export class BalanceAtTimeService {
     const holding = await this.findHolding(holdingId, caches, tx);
     const earliest = await this.earliestEvidenceAt(holdingId, holding, tx, caches);
     const beforeRecords = earliest !== null && at.getTime() < earliest.getTime();
+    const floor = await this.lowestPossible(holdingId, holding, caches, tx);
 
     // Try anchor 1: nearest observation at or after `at`.
     const after = await this.findObservationAtOrAfter(holdingId, at, caches, tx);
@@ -103,7 +133,7 @@ export class BalanceAtTimeService {
       const sumInRange = txs.reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
       const walked = new Decimal(after.balance).sub(sumInRange);
       const spread = await this.driftAhead(holdingId, at, after, caches, tx);
-      const clamped = this.noteFloor(holdingId, clampNonNegative(walked.sub(spread.share)));
+      const clamped = this.noteFloor(holdingId, clampAt(walked.sub(spread.share), floor));
       return {
         balance: clamped.value,
         floored: clamped.floored,
@@ -122,7 +152,7 @@ export class BalanceAtTimeService {
       const sumInRange = txs.reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
       const clamped = this.noteFloor(
         holdingId,
-        clampNonNegative(new Decimal(holding.balance).sub(sumInRange))
+        clampAt(new Decimal(holding.balance).sub(sumInRange), floor)
       );
       return {
         balance: clamped.value,
@@ -144,7 +174,7 @@ export class BalanceAtTimeService {
       const sumInRange = txs.reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
       const clamped = this.noteFloor(
         holdingId,
-        clampNonNegative(new Decimal(before.balance).add(sumInRange))
+        clampAt(new Decimal(before.balance).add(sumInRange), floor)
       );
       return {
         balance: clamped.value,
@@ -181,7 +211,7 @@ export class BalanceAtTimeService {
       this.flooredHoldings.add(holdingId);
       balanceLogger.warn(
         { holdingId },
-        'Reconstructed balance went negative and was floored at zero; the ledger is missing outflows'
+        'Reconstructed balance went below any balance the source reported and was floored; the ledger is missing outflows'
       );
     }
     return result;
@@ -214,8 +244,8 @@ export class BalanceAtTimeService {
   private async driftAhead(
     holdingId: string,
     at: Date,
-    after: HoldingBalanceObservation,
-    caches: BalanceAtTimeCaches,
+    after: ObservationAnchor,
+    caches: BalanceWalkCaches,
     tx: DatabaseTransaction | undefined
   ): Promise<{ share: Decimal; interpolated: boolean }> {
     const before = await this.findObservationAtOrBefore(holdingId, at, caches, tx);
@@ -276,9 +306,9 @@ export class BalanceAtTimeService {
   // `beforeRecords` true for the dates before it.
   async earliestEvidenceAt(
     holdingId: string,
-    holding: Holding | null,
+    holding: Pick<Holding, 'createdAt'> | null,
     tx: DatabaseTransaction | undefined,
-    caches: BalanceAtTimeCaches = {},
+    caches: BalanceWalkCaches = {},
     options: { excludeReconciliationOpening?: boolean } = {}
   ): Promise<Date | null> {
     const candidates: Date[] = [];
@@ -320,12 +350,25 @@ export class BalanceAtTimeService {
   // Cache-or-DB lookups. The rollup hands in pre-loaded Maps; ad-hoc
   // callers (chart endpoint, valuation services) pass nothing and
   // hit the DB.
+  private async lowestPossible(
+    holdingId: string,
+    holding: HoldingAnchor | null,
+    caches: BalanceWalkCaches,
+    tx: DatabaseTransaction | undefined
+  ): Promise<Decimal> {
+    const cached = caches.observations?.get(holdingId);
+    const lowest = cached
+      ? lowestOf(cached)
+      : await this.observationRepository.findLowestBalance(holdingId, tx);
+    return Decimal.min(0, lowest ?? 0, holding?.balance ?? 0);
+  }
+
   private async findObservationAtOrAfter(
     holdingId: string,
     at: Date,
-    caches: BalanceAtTimeCaches,
+    caches: BalanceWalkCaches,
     tx: DatabaseTransaction | undefined
-  ): Promise<HoldingBalanceObservation | null> {
+  ): Promise<ObservationAnchor | null> {
     const cached = caches.observations?.get(holdingId);
     if (cached) {
       const target = at.getTime();
@@ -342,13 +385,13 @@ export class BalanceAtTimeService {
   private async findObservationAtOrBefore(
     holdingId: string,
     at: Date,
-    caches: BalanceAtTimeCaches,
+    caches: BalanceWalkCaches,
     tx: DatabaseTransaction | undefined
-  ): Promise<HoldingBalanceObservation | null> {
+  ): Promise<ObservationAnchor | null> {
     const cached = caches.observations?.get(holdingId);
     if (cached) {
       const target = at.getTime();
-      let best: HoldingBalanceObservation | null = null;
+      let best: ObservationAnchor | null = null;
       for (const obs of cached) {
         if (obs.observedAt.getTime() <= target) best = obs;
         else break;
@@ -360,9 +403,9 @@ export class BalanceAtTimeService {
 
   private async findHolding(
     holdingId: string,
-    caches: BalanceAtTimeCaches,
+    caches: BalanceWalkCaches,
     tx: DatabaseTransaction | undefined
-  ): Promise<Holding | null> {
+  ): Promise<HoldingAnchor | null> {
     const cached = caches.holdings?.get(holdingId);
     if (cached) return cached;
     return this.holdingRepository.findById(holdingId, tx);
@@ -372,9 +415,9 @@ export class BalanceAtTimeService {
     holdingId: string,
     from: Date,
     to: Date,
-    caches: BalanceAtTimeCaches,
+    caches: BalanceWalkCaches,
     tx: DatabaseTransaction | undefined
-  ): Promise<HoldingTransaction[]> {
+  ): Promise<LedgerMovement[]> {
     const cached = caches.transactions?.get(holdingId);
     if (cached) {
       const lo = from.getTime();

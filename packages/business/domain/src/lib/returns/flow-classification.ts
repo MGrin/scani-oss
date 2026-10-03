@@ -1,3 +1,4 @@
+import { DRIFT_GROWTH_KIND } from '../balances/drift-rows';
 /**
  * Which ledger rows are CONTRIBUTIONS and which are PERFORMANCE (SC-457).
  *
@@ -69,6 +70,18 @@
  * So `restatement` is subtracted from the value series like a flow, and
  * excluded from the investor's cashflows entirely. It is a correction to the
  * MEASUREMENT, not an event in the portfolio.
+ *
+ * ## `settle_in` / `settle_out` are external, named rather than defaulted (SC-1453)
+ *
+ * A settlement is the cash side of a single-row trade, written on the cash
+ * holding. It must take the SAME role as the trade, because the two cancel only
+ * as a pair of `external` rows with opposite signs and equal value: a buy is
+ * money into the stock and its settlement the same money out of the cash, so
+ * with both holdings in scope the trade is not a contribution, and with only
+ * one it is exactly the value that crossed. They are named here because the
+ * denylist default is a statement about kinds nobody has thought about, and a
+ * later change to that default must not move these without someone deciding
+ * to. The commission is a separate `fee` row, so the cost stays in the return.
  */
 
 /** What a ledger row's value movement means for a return figure. */
@@ -83,7 +96,18 @@ export type FlowRole =
    */
   | 'restatement';
 
-const RETURN_KINDS: ReadonlySet<string> = new Set(['reward', 'interest', 'airdrop', 'fee']);
+const RETURN_KINDS: ReadonlySet<string> = new Set([
+  'reward',
+  'interest',
+  'airdrop',
+  'fee',
+  // SC-1461: a futures loss is the investment losing money, not a withdrawal.
+  'realized_pnl',
+  // SC-1470: an unexplained balance change the owner answered `growth`. Every
+  // other unexplained change is `drift_in` / `drift_out`, which the denylist
+  // below already makes external (mgrin, 2026-10-01).
+  DRIFT_GROWTH_KIND,
+]);
 
 /**
  * Restatements. One member today: `correction`, written only by
@@ -100,6 +124,8 @@ const RETURN_KINDS: ReadonlySet<string> = new Set(['reward', 'interest', 'airdro
  */
 const RESTATEMENT_KINDS: ReadonlySet<string> = new Set(['correction']);
 
+const SETTLEMENT_KINDS: ReadonlySet<string> = new Set(['settle_in', 'settle_out']);
+
 /**
  * Everything not named as performance is a contribution.
  *
@@ -112,5 +138,56 @@ const RESTATEMENT_KINDS: ReadonlySet<string> = new Set(['correction']);
  */
 export function flowRoleOf(kind: string): FlowRole {
   if (RESTATEMENT_KINDS.has(kind)) return 'restatement';
+  if (SETTLEMENT_KINDS.has(kind)) return 'external';
   return RETURN_KINDS.has(kind) ? 'return' : 'external';
+}
+
+/**
+ * A row's role, which differs from its kind's in one place (SC-1470): a `fee`
+ * row settling a trade on ANOTHER holding is that trade's commission leaving
+ * the cash. The trade's own row carries the same commission into the cost it
+ * books, so as `return` it was counted twice. It is the trade's cash leg, so
+ * it is `external`, like `settle_out`.
+ *
+ * A fee settling a trade on its OWN holding stays `return`: nothing else
+ * absorbs it. That is an FX conversion's commission taken from the currency
+ * it bought (SC-1464). `sameHoldingRowIds` is every row id on the fee's
+ * holding the caller has; the trade is on the same holding when it is there.
+ */
+export function flowRoleOfRow(
+  row: { kind: string; settlesTransactionId?: string | null },
+  sameHoldingRowIds: ReadonlySet<string>
+): FlowRole {
+  if (
+    row.kind === 'fee' &&
+    row.settlesTransactionId &&
+    !sameHoldingRowIds.has(row.settlesTransactionId)
+  )
+    return 'external';
+  return flowRoleOf(row.kind);
+}
+
+/** Row ids grouped by holding, for `flowRoleOfRow`. */
+export function rowIdsByHolding(
+  rows: Iterable<{ id: string; holdingId: string }>
+): Map<string, Set<string>> {
+  const out = new Map<string, Set<string>>();
+  for (const row of rows) {
+    const ids = out.get(row.holdingId) ?? new Set<string>();
+    ids.add(row.id);
+    out.set(row.holdingId, ids);
+  }
+  return out;
+}
+
+/**
+ * Whether a trade's commission belongs in its flow: when it is paid in a
+ * token other than the one the trade's holding holds, a fee row on that other
+ * holding pays it, and the trade booked it into its cost (SC-1470).
+ */
+export function commissionCrossesInto(
+  trade: { feeTokenId: string | null },
+  heldTokenId: string | null
+): boolean {
+  return Boolean(trade.feeTokenId) && trade.feeTokenId !== heldTokenId;
 }

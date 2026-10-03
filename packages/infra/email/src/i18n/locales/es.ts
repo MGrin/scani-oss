@@ -75,4 +75,22 @@ export const es: EmailStrings = {
       'Haz clic en el enlace de abajo para confirmar que {app} puede localizarte en esta dirección. El enlace solo funciona una vez.',
     textIgnore: '¿No has creado ninguna cuenta de {app}? Puedes ignorar este correo sin problema.',
   },
+  activationNudge: {
+    subject: 'Añade tu primera cuenta a {app}',
+    preheader:
+      'Conecta un exchange, una billetera o un archivo bancario y {app} empieza a hacer el seguimiento.',
+    greeting: 'Hola, {name}:',
+    greetingNoName: 'Hola:',
+    headline: 'Añade tu primera cuenta',
+    body: 'Te registraste en {app} hace unos días y todavía no has añadido nada. Conecta un exchange o una billetera, importa un extracto bancario o escribe un saldo, y {app} mantendrá al día tu patrimonio neto y tu rentabilidad a partir de ahí.',
+    button: 'Abrir {app}',
+    once: 'Este es el único recordatorio que te enviaremos.',
+    footer:
+      'Recibes esto una sola vez porque te registraste en {appLink}. {unsubscribeLink}: un clic, sin iniciar sesión. Cómo tratamos tus datos: {privacyLink}.',
+    unsubscribe: 'Dejar de recibir estos correos',
+    privacy: 'política de privacidad',
+    textOpen: 'Abrir {app}: {url}',
+    textUnsubscribe: 'Dejar de recibir estos correos: {url}',
+    textPrivacy: 'Política de privacidad: {url}',
+  },
 };

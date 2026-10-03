@@ -34,6 +34,15 @@ export interface InflowRateLimiterOptions {
  * from inside the private network) shares one bucket rather than falling
  * through to a header the client chose.
  *
+ * **A caller inside the private network may name the client it forwards for**
+ * (SC-1495). Our own nginx reaching the api through flycast is such a caller:
+ * Fly's proxy then reports the nginx machine's `fdaa:` address, or nothing, so
+ * every visitor would share one key. nginx copies the `fly-client-ip` Fly's
+ * public proxy gave IT into `x-scani-forwarded-client-ip`, and that header is
+ * read only when `fly-client-ip` is private or absent. A public caller always
+ * carries a public `fly-client-ip`, so it cannot choose its key this way; the
+ * absent arm rests on the same fact `edgeLockRefusal` does.
+ *
  * Off Fly the edge headers are tried in order, and `X-Forwarded-For` only by
  * its **rightmost** entry, which is the one a proxy appended. If an app on Fly
  * is ever put behind Cloudflare's proxy, `fly-client-ip` becomes Cloudflare's
@@ -47,7 +56,11 @@ export function defaultInflowKey(
   // Past Cloudflare (SC-1264), `fly-client-ip` is Cloudflare's address and the
   // client's is in `cf-connecting-ip`, which Cloudflare overwrites.
   if (cameThroughEdge(req, config)) return h.get('cf-connecting-ip') || 'edge:no-client-ip';
-  if (config.FLY_APP_NAME) return h.get('fly-client-ip') || 'fly:no-client-ip';
+  if (config.FLY_APP_NAME) {
+    const flyClientIp = h.get('fly-client-ip');
+    if (flyClientIp && !isFlyPrivateAddress(flyClientIp)) return flyClientIp;
+    return h.get(FORWARDED_CLIENT_IP_HEADER) || flyClientIp || 'fly:no-client-ip';
+  }
   return (
     h.get('cf-connecting-ip') ||
     h.get('fly-client-ip') ||
@@ -55,6 +68,13 @@ export function defaultInflowKey(
     extractXffTail(h.get('x-forwarded-for')) ||
     `${h.get('user-agent') || 'ua'}|${h.get('origin') || 'origin'}|${req.method}`
   );
+}
+
+const FORWARDED_CLIENT_IP_HEADER = 'x-scani-forwarded-client-ip';
+
+// Fly's private network is fdaa::/16, which no public client can connect from.
+function isFlyPrivateAddress(ip: string): boolean {
+  return ip.toLowerCase().startsWith('fdaa:');
 }
 
 export function extractXffTail(value: string | null): string | null {

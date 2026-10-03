@@ -26,7 +26,13 @@ describe('isPrivateSessionRead (exempt from the global inflow limiter)', () => {
     expect(isPrivateSessionRead(req('/api/auth/get-session', {}, 'POST'), true)).toBe(false);
   });
 
-  test('off Fly nothing sets fly-client-ip, so its absence proves nothing and nothing is exempt', () => {
+  test('where the ingress is unmarked, a missing header proves nothing and nothing is exempt', () => {
     expect(isPrivateSessionRead(req('/api/auth/get-session'), false)).toBe(false);
+  });
+
+  test('behind our own proxy, its public-ingress mark makes the read limited (SC-1496)', () => {
+    expect(
+      isPrivateSessionRead(req('/api/auth/get-session', { 'x-scani-public-ingress': '1' }), true)
+    ).toBe(false);
   });
 });

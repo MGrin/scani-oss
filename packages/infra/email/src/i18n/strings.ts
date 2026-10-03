@@ -94,6 +94,26 @@ export interface EmailStrings {
     readonly textBody: string;
     readonly textIgnore: string;
   };
+  /** The one reminder to an account with nothing added yet (SC-1503). */
+  readonly activationNudge: {
+    readonly subject: string;
+    readonly preheader: string;
+    /** `{name}` is the first name. */
+    readonly greeting: string;
+    readonly greetingNoName: string;
+    readonly headline: string;
+    readonly body: string;
+    readonly button: string;
+    readonly once: string;
+    /** `{appLink}`, `{unsubscribeLink}` and `{privacyLink}` are anchors, already escaped. */
+    readonly footer: string;
+    readonly unsubscribe: string;
+    readonly privacy: string;
+    /** `{url}` is the bare URL in the plain-text part. */
+    readonly textOpen: string;
+    readonly textUnsubscribe: string;
+    readonly textPrivacy: string;
+  };
 }
 
 /** The four OTP purposes, spelled as `OtpType` spells them minus the dashes. */

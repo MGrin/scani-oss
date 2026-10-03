@@ -30,3 +30,34 @@ describe('isIncludedInTotal', () => {
     ).toBe(true);
   });
 });
+
+// SC-1486, mgrin 2026-10-02: a holding the OWNER hid counts nowhere; one the
+// closed-position sweep hid still counts in value history, PnL, returns and
+// flows. A hidden holding with no `hiddenBy` reads as the owner's.
+describe('who hid it (SC-1486)', () => {
+  const cleanToken = { isScamProbability: 0 };
+
+  test('a holding the sweep hid still counts', () => {
+    expect(
+      isIncludedInTotal({ isHidden: true, isActive: true, hiddenBy: 'auto' }, cleanToken)
+    ).toBe(true);
+  });
+
+  test('a holding its owner hid does not', () => {
+    expect(
+      isIncludedInTotal({ isHidden: true, isActive: true, hiddenBy: 'user' }, cleanToken)
+    ).toBe(false);
+  });
+
+  test('a hidden holding nobody recorded is read as the owner’s', () => {
+    expect(isIncludedInTotal({ isHidden: true, isActive: true, hiddenBy: null }, cleanToken)).toBe(
+      false
+    );
+  });
+
+  test('an inactive holding the sweep hid still does not count', () => {
+    expect(
+      isIncludedInTotal({ isHidden: true, isActive: false, hiddenBy: 'auto' }, cleanToken)
+    ).toBe(false);
+  });
+});

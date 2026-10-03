@@ -48,7 +48,7 @@ These two flags do different things and matter for both the UI and the
 
 | Flag | UI behaviour | Synced by cron? | Counts toward totals? |
 |---|---|---|---|
-| `isHidden = true` | Hidden from dashboards and lists. | **Yes** — still kept up to date. | No. |
+| `isHidden = true` | Hidden from dashboards and lists. | **Yes** — still kept up to date. | No, if you hid it. Yes, if Scani hid it as a closed position (`hiddenBy = 'auto'`): it stays in value history, PnL, returns and flows. |
 | `isActive = false` | Visible (greyed). | **No** — left alone. | No. |
 
 The [holding-inclusion rule](/decisions/holding-inclusion-rule/)

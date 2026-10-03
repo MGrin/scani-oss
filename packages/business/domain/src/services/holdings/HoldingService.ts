@@ -369,34 +369,6 @@ export class HoldingService extends BaseService {
   }
 
   /**
-   * Create multiple holdings with event tracking
-   * Use this for bulk imports that need event tracking
-   */
-  async createManyHoldingsWithEvents(
-    inputs: CreateHoldingWithEventInput[],
-    transaction?: DatabaseTransaction
-  ): Promise<Holding[]> {
-    try {
-      this.logDebug('Creating multiple holdings with events', {
-        count: inputs.length,
-      });
-
-      const holdings: Holding[] = [];
-      for (const input of inputs) {
-        const holding = await this.createHoldingWithEvent(input, transaction);
-        holdings.push(holding);
-      }
-
-      this.logDebug('Multiple holdings with events created', {
-        count: holdings.length,
-      });
-      return holdings;
-    } catch (error) {
-      throw this.handleError(error, 'createManyHoldingsWithEvents');
-    }
-  }
-
-  /**
    * Update holding balance with optional event tracking
    */
   async updateHoldingBalance(
@@ -578,92 +550,5 @@ export class HoldingService extends BaseService {
     } catch (error) {
       throw this.handleError(error, 'unhideHoldingWithEvent');
     }
-  }
-
-  // Ingester-side helper: find the holding for (user, account, token),
-  // or create a balance=0 row when an ingester sees a token the user
-  // historically traded but no longer holds. The zero-balance row gives
-  // the ledger an anchor for tx attribution on fully-sold or delisted
-  // positions; the UI shows them with "0" balance and a full tx history.
-  //
-  // The "find" half goes through `findForIngest`, which prefers a row
-  // the import side created (`externalId IS NOT NULL`) over one the
-  // user maintains by hand, then orders oldest-first.
-  //
-  // Both halves of that sentence used to be wrong, and the comment was
-  // what kept the bug from being found (SC-193). It claimed "newest row
-  // wins", which described a tie-break the query did not have — there
-  // was no ORDER BY at all, so a `.limit(1)` over two matching rows took
-  // whichever the plan reached first. And it claimed this helper "only
-  // triggers for tokens the balance sync didn't return — historical-only
-  // positions where there's exactly one row per (account, token) by
-  // definition", which is false exactly when the balance importer has
-  // already created its own `externalId`-keyed row for that token. That
-  // is not an edge case: it is the shape of every integration that
-  // imports balances and transactions both.
-  //
-  // What it cost: 73 Airwallex transactions split 48/25 across two USD
-  // holdings in one account over the same window, the majority landing
-  // on the row marked `manual`. `TransactionRouter` memoises the
-  // resolution per run, so each run was internally consistent and
-  // different runs disagreed — which is why it reads as two blocks
-  // rather than as noise.
-  /**
-   * Read-only sibling of `findOrCreateForIngest`. Returns the existing
-   * holding for `(account, token)` or `null`. Used by the wallet
-   * tx-import path so that transactions referencing tokens the user
-   * didn't keep during the wallet-import review get skipped instead of
-   * silently re-introducing the (often spam) token. Exchange tx-import
-   * still uses the create-on-miss flavour because exchange holdings
-   * aren't gated by a review step.
-   */
-  async findExistingForIngest(
-    input: { userId: string; accountId: string; tokenId: string },
-    transaction?: DatabaseTransaction
-  ): Promise<Holding | null> {
-    return this.holdingRepository.findForIngest(
-      input.accountId,
-      input.tokenId,
-      input.userId,
-      transaction
-    );
-  }
-
-  async findOrCreateForIngest(
-    input: { userId: string; accountId: string; tokenId: string },
-    transaction?: DatabaseTransaction
-  ): Promise<Holding> {
-    // includeHidden is implicit: `findForIngest` does not filter on
-    // `isHidden`, because an ingester needs the row even if the user hid it.
-    const existing = await this.holdingRepository.findForIngest(
-      input.accountId,
-      input.tokenId,
-      input.userId,
-      transaction
-    );
-    if (existing) return existing;
-
-    // Create with balance=0 so the ledger has an anchor. Source is
-    // 'ingest-backfill' (NOT 'manual') so subsequent balance syncs
-    // don't mistake this for user-entered data and overwrite in ways
-    // the sync flow isn't prepared for.
-    const created = await this.holdingRepository.create(
-      {
-        userId: input.userId,
-        accountId: input.accountId,
-        tokenId: input.tokenId,
-        balance: '0',
-        source: 'ingest-backfill',
-        externalId: null,
-        lastUpdated: new Date(),
-      },
-      transaction
-    );
-    if (!created) {
-      throw new Error(
-        `findOrCreateForIngest: could not create holding for (${input.accountId}, ${input.tokenId})`
-      );
-    }
-    return created;
   }
 }

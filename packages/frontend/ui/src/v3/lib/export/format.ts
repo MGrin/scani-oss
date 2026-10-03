@@ -60,7 +60,7 @@ export function registerPdfRenderer(renderer: PdfRenderer): void {
   pdfRenderer = renderer;
 }
 
-export function pdfAvailable(): boolean {
+function pdfAvailable(): boolean {
   return pdfRenderer !== null;
 }
 

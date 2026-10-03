@@ -9,8 +9,17 @@ import { UserRepository } from '../../repositories/UserRepository';
 import { BaseService } from '../BaseService';
 import {
   PortfolioValuationService,
+  sumPortfolioDebtByAccount,
   sumPortfolioValuesByAccount,
 } from '../portfolio/PortfolioValuationService';
+
+type InstitutionSummary = {
+  accountCount: number;
+  /** Net: assets plus `marginDebt`. */
+  totalValue: string;
+  /** Signed: `"0"`, or the negative sum of its accounts' debt (SC-1463). */
+  marginDebt: string;
+};
 
 @Service()
 export class InstitutionService extends BaseService {
@@ -140,16 +149,9 @@ export class InstitutionService extends BaseService {
    * `portfolio_value_daily` rollup remains the source for the
    * historical chart; only the current total is live.
    */
-  async getInstitutionsByUserIdWithSummary(userId: string): Promise<
-    Array<
-      Institution & {
-        summary: {
-          accountCount: number;
-          totalValue: string;
-        };
-      }
-    >
-  > {
+  async getInstitutionsByUserIdWithSummary(
+    userId: string
+  ): Promise<Array<Institution & { summary: InstitutionSummary }>> {
     try {
       const [institutions, accounts, user] = await Promise.all([
         this.institutionRepository.findByUserId(userId),
@@ -169,13 +171,18 @@ export class InstitutionService extends BaseService {
       const portfolio = user?.baseCurrencyId
         ? await this.portfolioValuationService.getUserPortfolioValue(userId, user.baseCurrencyId)
         : null;
-      const valueByInstitution = rollUpToInstitution(portfolio, accounts);
+      const valueByInstitution = rollUpToInstitution(
+        sumPortfolioValuesByAccount(portfolio),
+        accounts
+      );
+      const debtByInstitution = rollUpToInstitution(sumPortfolioDebtByAccount(portfolio), accounts);
 
       return institutions.map((institution) => ({
         ...institution,
         summary: {
           accountCount: accountCountByInstitution.get(institution.id) ?? 0,
           totalValue: (valueByInstitution.get(institution.id) ?? new Decimal(0)).toString(),
+          marginDebt: (debtByInstitution.get(institution.id) ?? new Decimal(0)).toString(),
         },
       }));
     } catch (error) {
@@ -192,12 +199,7 @@ export class InstitutionService extends BaseService {
   async getInstitutionByIdWithSummary(
     userId: string,
     institutionId: string
-  ): Promise<
-    | (Institution & {
-        summary: { accountCount: number; totalValue: string };
-      })
-    | null
-  > {
+  ): Promise<(Institution & { summary: InstitutionSummary }) | null> {
     try {
       const [institution, accounts, user] = await Promise.all([
         this.institutionRepository.findById(institutionId),
@@ -215,13 +217,19 @@ export class InstitutionService extends BaseService {
         ? await this.portfolioValuationService.getUserPortfolioValue(userId, user.baseCurrencyId)
         : null;
       const totalValue =
-        rollUpToInstitution(portfolio, ownAccounts).get(institutionId) ?? new Decimal(0);
+        rollUpToInstitution(sumPortfolioValuesByAccount(portfolio), ownAccounts).get(
+          institutionId
+        ) ?? new Decimal(0);
+      const marginDebt =
+        rollUpToInstitution(sumPortfolioDebtByAccount(portfolio), ownAccounts).get(institutionId) ??
+        new Decimal(0);
 
       return {
         ...institution,
         summary: {
           accountCount: ownAccounts.length,
           totalValue: totalValue.toString(),
+          marginDebt: marginDebt.toString(),
         },
       };
     } catch (error) {
@@ -231,23 +239,22 @@ export class InstitutionService extends BaseService {
 }
 
 /**
- * Rolls a whole-user portfolio valuation up to per-institution current
- * totals, via the account→institution map. Only accounts in the
- * supplied list contribute, so a caller can scope the rollup.
+ * Rolls per-account figures up to per-institution ones, via the
+ * account→institution map. Only accounts in the supplied list contribute, so a
+ * caller can scope the rollup.
  */
 function rollUpToInstitution(
-  portfolio: Parameters<typeof sumPortfolioValuesByAccount>[0],
+  byAccount: Map<string, Decimal>,
   accounts: Array<{ id: string; institutionId: string }>
 ): Map<string, Decimal> {
-  const valueByAccount = sumPortfolioValuesByAccount(portfolio);
-  const valueByInstitution = new Map<string, Decimal>();
+  const byInstitution = new Map<string, Decimal>();
   for (const account of accounts) {
-    const accountValue = valueByAccount.get(account.id);
-    if (!accountValue) continue;
-    valueByInstitution.set(
+    const accountFigure = byAccount.get(account.id);
+    if (!accountFigure) continue;
+    byInstitution.set(
       account.institutionId,
-      (valueByInstitution.get(account.institutionId) ?? new Decimal(0)).add(accountValue)
+      (byInstitution.get(account.institutionId) ?? new Decimal(0)).add(accountFigure)
     );
   }
-  return valueByInstitution;
+  return byInstitution;
 }

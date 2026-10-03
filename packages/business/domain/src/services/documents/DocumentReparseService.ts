@@ -18,7 +18,7 @@ import { DocumentExtractionRepository } from '../../repositories/DocumentExtract
 import { DocumentRepository } from '../../repositories/DocumentRepository';
 import { DocumentRetentionService } from './DocumentRetentionService';
 
-export interface DocumentReparsePlan {
+interface DocumentReparsePlan {
   document: Document;
   /** Extractions cleared to make room for the fresh read. */
   clearedExtractionIds: string[];

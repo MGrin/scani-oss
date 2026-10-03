@@ -1,5 +1,5 @@
 import type { DatabaseTransaction } from '@scani/db';
-import type { User } from '@scani/db/schema';
+import type { Holding, User } from '@scani/db/schema';
 import { withTransaction } from '@scani/db/transaction';
 import { createComponentLogger } from '@scani/logging';
 import {
@@ -9,12 +9,9 @@ import {
 } from '@scani/shared';
 import Container, { Service } from 'typedi';
 import { HoldingRepository } from '../repositories/HoldingRepository';
-import {
-  AccountService,
-  HoldingService,
-  InstitutionService,
-  PortfolioValuationService,
-} from '../services';
+import { AccountService, InstitutionService, PortfolioValuationService } from '../services';
+import { HoldingResolver } from '../services/feeds/HoldingResolver';
+import { SnapshotWriter } from '../services/feeds/SnapshotWriter';
 
 const logger = createComponentLogger('use-case:create-holdings-with-dependencies');
 
@@ -77,8 +74,9 @@ export function duplicateTokenIds(
 export class CreateHoldingsWithDependenciesUseCase {
   private readonly institutionService = Container.get(InstitutionService);
   private readonly accountService = Container.get(AccountService);
-  private readonly holdingService = Container.get(HoldingService);
   private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly holdingResolver = Container.get(HoldingResolver);
+  private readonly snapshotWriter = Container.get(SnapshotWriter);
   private readonly portfolioValuationService = Container.get(PortfolioValuationService);
 
   async execute(
@@ -241,26 +239,43 @@ export class CreateHoldingsWithDependenciesUseCase {
         throw new DuplicateHoldingTokenError(duplicates, accountId);
       }
 
-      const createdHoldings = await this.holdingService.createManyHoldingsWithEvents(
-        input.holdings.map((h) => {
-          return {
+      const createdHoldings: Holding[] = [];
+      for (const h of input.holdings) {
+        const at = new Date();
+        const holding = await this.holdingResolver.createSnapshotHolding(
+          {
+            userId,
             accountId,
             tokenId: h.tokenId!,
-            balance: h.balance,
             // Empty is not a name — it is the absence of one, and the
             // position key already treats it that way.
             label: h.label?.trim() ? h.label.trim() : null,
-            userId,
             source: 'manual',
             // The user typed this position in (SC-277).
-            arrival: 'user_confirmed' as const,
-            eventContext: {
-              baseCurrencyId: user.baseCurrencyId!,
-            },
-          };
-        }),
-        tx
-      );
+            arrival: 'user_confirmed',
+            at,
+          },
+          tx
+        );
+        await this.snapshotWriter.record(
+          {
+            userId,
+            holdingId: holding.id,
+            amount: h.balance,
+            at,
+            cause: 'flow',
+            legacySource: 'sync-capture',
+            legacyMeta: { origin: 'createHoldingWithEvent', source: 'manual' },
+          },
+          { cache: 'set' },
+          tx
+        );
+        // Re-read, because the row was inserted with an empty cache: callers
+        // price and report from the figure the person typed.
+        const created = await this.holdingRepository.findById(holding.id, tx);
+        if (!created) throw new Error(`Holding ${holding.id} vanished inside its own create`);
+        createdHoldings.push(created);
+      }
 
       const updatedHoldingIds: string[] = [];
       for (const update of input.updateHoldings ?? []) {
@@ -271,7 +286,19 @@ export class CreateHoldingsWithDependenciesUseCase {
         if (existing.userId !== userId) {
           throw new Error(`Holding ${update.holdingId} does not belong to the user`);
         }
-        await this.holdingService.updateHoldingBalance(update.holdingId, update.balance, tx);
+        await this.snapshotWriter.record(
+          {
+            userId,
+            holdingId: update.holdingId,
+            amount: update.balance,
+            at: new Date(),
+            cause: null,
+            legacySource: 'sync-capture',
+            legacyMeta: { origin: 'updateHoldingBalance' },
+          },
+          { cache: 'set' },
+          tx
+        );
         updatedHoldingIds.push(update.holdingId);
       }
 

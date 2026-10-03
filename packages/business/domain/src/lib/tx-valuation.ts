@@ -40,7 +40,7 @@ export interface TxValuation {
 }
 
 /** The subset of a ledger row this valuation reads. */
-export type ValuableTransaction = Pick<
+type ValuableTransaction = Pick<
   HoldingTransaction,
   'priceNative' | 'priceNativeTokenId' | 'occurredAt'
 >;
@@ -53,7 +53,7 @@ export type ValuableTransaction = Pick<
  * both, and one identifier meaning two things one line apart is how a
  * shadowing bug gets written by somebody reading carefully.
  */
-export async function valueTransactionInBase(
+async function valueTransactionInBase(
   priceGraphService: PriceGraphService,
   dbTx: DatabaseTransaction | undefined,
   tx: ValuableTransaction,
@@ -154,6 +154,7 @@ export async function valueTradeFeeInBase(
   const qty = tradeFeeQuantity(tx.feeQuantity);
   if (qty === null) return null;
   if (qty === 'unreadable' || tx.feeTokenId === null) return { amount: null, stale: false };
+  if (tx.feeTokenId === baseCurrencyId) return { amount: qty, stale: false };
 
   if (tx.feeTokenId === tx.tokenId || tx.feeTokenId === heldTokenId) {
     const own = await valueTransactionInBase(
@@ -219,4 +220,151 @@ export function withTradeFee(
     stale: valuation.stale || fee.stale,
     basis: valuation.basis,
   };
+}
+
+/**
+ * The instant a flow is valued at: the one the daily rollup values that day's
+ * balance at (SC-1254).
+ *
+ * A flow and the balance change it causes must be read at the same prices, or
+ * the difference lands in the return. Valued at its own timestamp, a deposit
+ * at 10:28 read the latest price at or before it, while the rollup valued the
+ * same money at 23:59:59.999Z. Where a pair has more than one price per day —
+ * a seeded series and a backfilled one, 5.7% apart — that turned flat cash
+ * into a −7.8% return.
+ *
+ * `RollupPortfolioValueDailyUseCase` values a past day at 23:59:59.999Z and
+ * today at the moment it runs, so today's flows are valued now.
+ */
+export function flowValuationInstant(occurredAt: Date, now: Date = new Date()): Date {
+  const endOfDay = new Date(occurredAt);
+  endOfDay.setUTCHours(23, 59, 59, 999);
+  return endOfDay.getTime() > now.getTime() ? now : endOfDay;
+}
+
+const SWAP_LEG_KINDS: ReadonlySet<string> = new Set(['swap_in', 'swap_out']);
+
+function isSwapLeg(tx: Pick<HoldingTransaction, 'kind'>): boolean {
+  return SWAP_LEG_KINDS.has(tx.kind);
+}
+
+/** The subset of a ledger row a swap leg's valuation reads. */
+export type SwapLegTransaction = ValuableTransaction &
+  Pick<HoldingTransaction, 'kind' | 'quantity' | 'counterTokenId' | 'counterQuantity'>;
+
+/**
+ * A swap leg's value in base currency: what ARRIVED in the swap, at the day's
+ * close — the one number the external flow and the cost walk both use.
+ *
+ * Valued at the arrival, both legs of one swap take one number, so a swap
+ * inside the scope cancels and the slippage stays with the side that paid it
+ * (SC-1438). The cost walk used to keep each leg's execution rate instead, so
+ * a swap-in's lot cost and its flow differed by the slippage and the intraday
+ * move, and that difference surfaced as value change that was neither a flow
+ * nor a gain (SC-1475). Sharing the number moves the slippage into the
+ * swap-out's realized result, which is where it was paid.
+ *
+ * Falls back to the row's own valuation when the arrival cannot be priced.
+ */
+async function valueSwapLegInBase(
+  priceGraphService: PriceGraphService,
+  dbTx: DatabaseTransaction | undefined,
+  tx: SwapLegTransaction,
+  qtyAbs: Decimal,
+  baseCurrencyId: string,
+  heldTokenId: string | null,
+  priceLookup?: PriceLookup
+): Promise<TxValuation | null> {
+  const at = flowValuationInstant(tx.occurredAt);
+  const arrival = swapLegArrival(tx, qtyAbs, heldTokenId);
+  if (arrival) {
+    const valued = await valueTransactionInBase(
+      priceGraphService,
+      dbTx,
+      { priceNative: null, priceNativeTokenId: null, occurredAt: at },
+      arrival.quantity,
+      baseCurrencyId,
+      arrival.tokenId,
+      priceLookup
+    );
+    if (valued) return valued;
+  }
+  return valueTransactionInBase(
+    priceGraphService,
+    dbTx,
+    { ...tx, occurredAt: at },
+    qtyAbs,
+    baseCurrencyId,
+    heldTokenId,
+    priceLookup
+  );
+}
+
+function swapLegArrival(
+  tx: SwapLegTransaction,
+  qtyAbs: Decimal,
+  heldTokenId: string | null
+): { tokenId: string; quantity: Decimal } | null {
+  if (tx.kind === 'swap_in' && heldTokenId) return { tokenId: heldTokenId, quantity: qtyAbs };
+  if (tx.kind !== 'swap_out' || !tx.counterTokenId || !tx.counterQuantity) return null;
+  const own = new Decimal(tx.quantity).abs();
+  if (own.isZero()) return null;
+  // A fee share taken off this leg takes the same share of what it bought.
+  return {
+    tokenId: tx.counterTokenId,
+    quantity: new Decimal(tx.counterQuantity).abs().mul(qtyAbs).div(own),
+  };
+}
+
+const TRADE_KINDS: ReadonlySet<string> = new Set(['buy', 'sell']);
+
+function hasExecutionPrice(tx: Pick<HoldingTransaction, 'priceNative' | 'priceNativeTokenId'>) {
+  return Boolean(tx.priceNative && tx.priceNativeTokenId);
+}
+
+/**
+ * A row's value in base currency, as BOTH the flow side and the cost walk
+ * read it: one number per row, or the difference lands as value change that
+ * is neither a flow nor a gain.
+ *
+ * A swap leg takes its swap's shared valuation (SC-1475). A trade with its own
+ * execution price is valued at its own instant (SC-1470). Everything else —
+ * an opening balance, a deposit, a trade the source reported without a price —
+ * is valued at the day's close, where the rollup values that day's balance
+ * (SC-1254). The cost walk used to price those at their own minute while the
+ * flow took the close, so the intraday move stood between them (SC-1486).
+ */
+export async function valueRowInBase(
+  priceGraphService: PriceGraphService,
+  dbTx: DatabaseTransaction | undefined,
+  tx: SwapLegTransaction,
+  qtyAbs: Decimal,
+  baseCurrencyId: string,
+  heldTokenId: string | null,
+  priceLookup?: PriceLookup
+): Promise<TxValuation | null> {
+  if (isSwapLeg(tx)) {
+    return valueSwapLegInBase(
+      priceGraphService,
+      dbTx,
+      tx,
+      qtyAbs,
+      baseCurrencyId,
+      heldTokenId,
+      priceLookup
+    );
+  }
+  const at =
+    TRADE_KINDS.has(tx.kind) && hasExecutionPrice(tx)
+      ? tx.occurredAt
+      : flowValuationInstant(tx.occurredAt);
+  return valueTransactionInBase(
+    priceGraphService,
+    dbTx,
+    { ...tx, occurredAt: at },
+    qtyAbs,
+    baseCurrencyId,
+    heldTokenId,
+    priceLookup
+  );
 }

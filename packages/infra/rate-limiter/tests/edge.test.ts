@@ -3,6 +3,7 @@ import {
   cameThroughEdge,
   defaultInflowKey,
   edgeLockRefusal,
+  ingressIsMarked,
   loadRateLimiterConfig,
   type RateLimiterConfig,
   resetRateLimiterConfig,
@@ -13,6 +14,7 @@ const OFF: RateLimiterConfig = {
   FLY_APP_NAME: 'example-app',
   SCANI_EDGE_SECRET: SECRET,
   SCANI_EDGE_LOCK: 'off',
+  SCANI_INGRESS_MARKED: 'off',
 };
 const ENFORCE: RateLimiterConfig = { ...OFF, SCANI_EDGE_LOCK: 'enforce' };
 
@@ -31,7 +33,7 @@ describe('cameThroughEdge (SC-1264)', () => {
   });
 
   test('with no secret configured, nothing is trusted', () => {
-    const unset: RateLimiterConfig = { SCANI_EDGE_LOCK: 'off' };
+    const unset: RateLimiterConfig = { SCANI_EDGE_LOCK: 'off', SCANI_INGRESS_MARKED: 'off' };
     expect(cameThroughEdge(req({ 'x-scani-edge': SECRET }), unset)).toBe(false);
   });
 });
@@ -86,5 +88,33 @@ describe('edge config (SC-1264)', () => {
     expect(() => loadRateLimiterConfig({ SCANI_EDGE_SECRET: 'short' })).toThrow(
       /SCANI_EDGE_SECRET/
     );
+  });
+});
+
+describe('the lock off Fly, behind a proxy that marks its public listener (SC-1496)', () => {
+  const OFF_FLY: RateLimiterConfig = {
+    SCANI_EDGE_SECRET: SECRET,
+    SCANI_EDGE_LOCK: 'enforce',
+    SCANI_INGRESS_MARKED: 'on',
+  };
+  const marked = { 'x-scani-public-ingress': '1' };
+
+  test('a marked request without the edge header is refused', () => {
+    expect(edgeLockRefusal(req(marked), OFF_FLY)?.status).toBe(403);
+  });
+
+  test('a marked request that came through Cloudflare is let through', () => {
+    expect(edgeLockRefusal(req({ ...marked, 'x-scani-edge': SECRET }), OFF_FLY)).toBeNull();
+  });
+
+  test('health checks and unmarked private callers are never refused', () => {
+    expect(edgeLockRefusal(req(marked, '/health'), OFF_FLY)).toBeNull();
+    expect(edgeLockRefusal(req({}), OFF_FLY)).toBeNull();
+  });
+
+  test('the ingress counts as marked on Fly or when declared, and not otherwise', () => {
+    expect(ingressIsMarked(OFF_FLY)).toBe(true);
+    expect(ingressIsMarked(ENFORCE)).toBe(true);
+    expect(ingressIsMarked({ ...OFF_FLY, SCANI_INGRESS_MARKED: 'off' })).toBe(false);
   });
 });

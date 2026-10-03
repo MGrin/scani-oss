@@ -45,10 +45,10 @@ export interface BaseCurrencyToken {
  * action — must add a value there in a migration, which is the loud step that a
  * nullable actor column would not have forced.
  */
-export const COST_BASIS_METHOD_CHANGE_SOURCE = 'user_profile_update';
+const COST_BASIS_METHOD_CHANGE_SOURCE = 'user_profile_update';
 
 /** A cost-basis method change that actually moved figures, or `null`. */
-export interface CostBasisMethodChange {
+interface CostBasisMethodChange {
   readonly previousMethod: CostBasisMethodDto;
   readonly newMethod: CostBasisMethodDto;
 }

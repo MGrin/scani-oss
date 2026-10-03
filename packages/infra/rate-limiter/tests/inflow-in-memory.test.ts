@@ -127,7 +127,11 @@ describe('extractXffTail', () => {
 });
 
 describe('defaultInflowKey on Fly (SC-1262)', () => {
-  const FLY: RateLimiterConfig = { FLY_APP_NAME: 'example-app', SCANI_EDGE_LOCK: 'off' };
+  const FLY: RateLimiterConfig = {
+    FLY_APP_NAME: 'example-app',
+    SCANI_EDGE_LOCK: 'off',
+    SCANI_INGRESS_MARKED: 'off',
+  };
 
   test('keys on fly-client-ip and ignores every client-settable header', () => {
     const key = defaultInflowKey(
@@ -146,6 +150,43 @@ describe('defaultInflowKey on Fly (SC-1262)', () => {
     expect(defaultInflowKey(req({ 'cf-connecting-ip': '1.1.1.1', 'user-agent': 'a' }), FLY)).toBe(
       defaultInflowKey(req({ 'cf-connecting-ip': '2.2.2.2', 'user-agent': 'b' }), FLY)
     );
+  });
+
+  // SC-1495: nginx reaching the api through flycast. Fly's proxy reports the
+  // nginx machine (or nothing), and nginx names the visitor it forwards for.
+  const NGINX_6PN = 'fdaa:0:1234:a7b:1:2:3:2';
+
+  test('a private fly-client-ip keys on the visitor the private caller names', () => {
+    const visitor = (ip: string) =>
+      defaultInflowKey(req({ 'fly-client-ip': NGINX_6PN, 'x-scani-forwarded-client-ip': ip }), FLY);
+    expect(visitor('203.0.113.7')).toBe('203.0.113.7');
+    expect(visitor('198.51.100.9')).not.toBe(visitor('203.0.113.7'));
+  });
+
+  test('no fly-client-ip at all is a private caller too', () => {
+    expect(defaultInflowKey(req({ 'x-scani-forwarded-client-ip': '203.0.113.7' }), FLY)).toBe(
+      '203.0.113.7'
+    );
+  });
+
+  test('a public caller cannot choose its key with that header', () => {
+    const key = (forwarded: string) =>
+      defaultInflowKey(
+        req({ 'fly-client-ip': '198.51.100.23', 'x-scani-forwarded-client-ip': forwarded }),
+        FLY
+      );
+    expect(key('10.0.0.1')).toBe('198.51.100.23');
+    expect(key('10.0.0.2')).toBe('198.51.100.23');
+  });
+
+  test('a private caller that names nobody is keyed on its own address', () => {
+    expect(defaultInflowKey(req({ 'fly-client-ip': NGINX_6PN }), FLY)).toBe(NGINX_6PN);
+  });
+
+  test('off Fly the header is client-written and never read', () => {
+    expect(
+      defaultInflowKey(req({ 'x-scani-forwarded-client-ip': '9.9.9.9', 'x-real-ip': '3.3.3.3' }))
+    ).toBe('3.3.3.3');
   });
 
   test('a rotated cf-connecting-ip from one Fly client still gets 429', async () => {

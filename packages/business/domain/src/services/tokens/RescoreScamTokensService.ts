@@ -103,7 +103,7 @@ export interface RescoreResult {
  * and stock rows the function has never been asked about. `AMAZON.COM INC` returns 0.50 under a heuristic built for
  * memecoins.
  */
-export const RESCORE_BATCH_SIZE = 500;
+const RESCORE_BATCH_SIZE = 500;
 
 @Service()
 export class RescoreScamTokensService extends BaseService {

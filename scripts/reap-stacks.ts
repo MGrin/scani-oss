@@ -104,7 +104,7 @@ function probeDocker(argv: readonly string[]): DockerProbe {
  * It returns `null` on any blind probe rather than an empty result, which is
  * what makes `unverified` a state the sweep can be in.
  */
-export const dockerActions: ReapActions = {
+const dockerActions: ReapActions = {
   composeDown(project) {
     // `-p` resolves the project from container/volume LABELS, so this needs no
     // compose file and still works after the worktree directory is gone. That

@@ -86,4 +86,16 @@ describe('handleUnsubscribe (SC-460, SC-459)', () => {
       `/e/u/${TOKEN}`
     );
   });
+
+  test('the onboarding stream writes its own column and offers both others (SC-1503)', async () => {
+    const { seen } = stub({});
+    const response = await handleUnsubscribe(EMAIL_STREAMS.onboarding, TOKEN);
+    const body = await response.text();
+
+    expect(response.status).toBe(200);
+    expect(seen).toEqual([{ stream: 'onboarding', token: TOKEN }]);
+    expect(body).toContain('reminders about setting up Scani');
+    expect(body).toContain(`/e/u/${TOKEN}`);
+    expect(body).toContain(`/e/a/${TOKEN}`);
+  });
 });

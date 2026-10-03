@@ -1,8 +1,10 @@
 import { afterAll, describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  applyClassifierAdmission,
   applyNewFileAllowance,
   type BranchFacts,
   classifyBranch,
@@ -13,6 +15,7 @@ import {
   refusedPaths,
   routePaths,
   routingClause,
+  scratchGitEnv,
   type TreeMarkers,
   VERDICT,
   type Violation,
@@ -1256,5 +1259,128 @@ describe('routingClause (SC-835)', () => {
   test('the noun travels, so a pushed range is never described as staged', () => {
     expect(routingClause(null, 'pushed')).toContain('pushed paths');
     expect(routingClause(null, 'pushed')).not.toContain('staged');
+  });
+});
+
+describe("applyClassifierAdmission: a port carries new files only on the classifier's word (SC-1515)", () => {
+  const tracked = (path: string): Violation => ({
+    path,
+    kind: 'private-only',
+    why: 'tracked in origin/main and absent from upstream/main — private-only source',
+  });
+  const verdicts = new Map([
+    ['packages/business/domain/src/lib/new-shared.ts', 'oss-eligible'],
+    ['packages/business/domain/src/use-cases/AdaptedUseCase.ts', 'divergent'],
+    ['packages/infra/analytics/src/capture.ts', 'excluded'],
+    ['scripts/private-tool.ts', 'private-only'],
+  ]);
+  const verdictOf = (p: string) => verdicts.get(p);
+
+  test('an eligible new file is admitted', () => {
+    const v = tracked('packages/business/domain/src/lib/new-shared.ts');
+    const { refused, admitted } = applyClassifierAdmission([v], verdictOf);
+    expect(refused).toEqual([]);
+    expect(admitted.map((a) => a.path)).toEqual([v.path]);
+    expect(admitted[0]?.why).toContain('oss-eligible');
+  });
+
+  test('a divergent new file is admitted: it is declared to exist upstream in its own form', () => {
+    const { admitted } = applyClassifierAdmission(
+      [tracked('packages/business/domain/src/use-cases/AdaptedUseCase.ts')],
+      verdictOf
+    );
+    expect(admitted).toHaveLength(1);
+  });
+
+  test('THE LEAK GUARD: private-only and excluded paths stay refused', () => {
+    const { refused, admitted } = applyClassifierAdmission(
+      [tracked('scripts/private-tool.ts'), tracked('packages/infra/analytics/src/capture.ts')],
+      verdictOf
+    );
+    expect(admitted).toEqual([]);
+    expect(refused.map((r) => r.path)).toEqual([
+      'scripts/private-tool.ts',
+      'packages/infra/analytics/src/capture.ts',
+    ]);
+    expect(refused[0]?.why).toContain('private-only');
+  });
+
+  test('a path the classifier gave no verdict is refused', () => {
+    const { refused, admitted } = applyClassifierAdmission(
+      [tracked('nowhere/unruled.ts')],
+      verdictOf
+    );
+    expect(admitted).toEqual([]);
+    expect(refused[0]?.why).toContain('no verdict');
+  });
+
+  test('when the classifier could not run, nothing is admitted', () => {
+    const { refused, admitted } = applyClassifierAdmission(
+      [tracked('packages/business/domain/src/lib/new-shared.ts')],
+      null
+    );
+    expect(admitted).toEqual([]);
+    expect(refused[0]?.why).toContain('could not be run');
+  });
+
+  test('a file in neither repo is left to the new-file flag, never admitted here', () => {
+    const residue: Violation = {
+      path: 'apps/x/.vercel/project.json',
+      kind: 'new-file',
+      why: 'absent',
+    };
+    const { refused, admitted } = applyClassifierAdmission([residue], () => 'oss-eligible');
+    expect(admitted).toEqual([]);
+    expect(refused).toEqual([residue]);
+  });
+});
+
+describe('a scratch git command cannot reach the repository a hook runs in (SC-1515)', () => {
+  const root = mkdtempSync(join(tmpdir(), 'oss-bound-scratch-env-'));
+  afterAll(() => rmSync(root, { recursive: true, force: true }));
+
+  function sharedRepoAfterScratchInit(
+    prepare: (hookEnv: NodeJS.ProcessEnv) => NodeJS.ProcessEnv
+  ): string {
+    const shared = mkdtempSync(join(root, 'shared-'));
+    const scratch = mkdtempSync(join(root, 'scratch-'));
+    const clean = scratchGitEnv();
+    const gitIn = (cwd: string, ...args: string[]) => spawnSync('git', args, { cwd, env: clean });
+    gitIn(shared, 'init', '-q');
+    gitIn(
+      shared,
+      '-c',
+      'user.name=t',
+      '-c',
+      'user.email=t@t',
+      'commit',
+      '-q',
+      '--allow-empty',
+      '-m',
+      'a'
+    );
+    gitIn(shared, 'worktree', 'add', '-q', join(root, `${shared.split('/').pop()}-wt`));
+    const linkedGitDir = join(shared, '.git', 'worktrees', `${shared.split('/').pop()}-wt`);
+    spawnSync('git', ['init', '-q'], {
+      cwd: scratch,
+      env: prepare({ ...process.env, GIT_DIR: linkedGitDir }),
+    });
+    return spawnSync('git', ['config', '--get', 'core.bare'], {
+      cwd: shared,
+      env: scratchGitEnv(),
+      encoding: 'utf8',
+    }).stdout.trim();
+  }
+
+  test("the hazard: a linked worktree's inherited GIT_DIR turns the shared repository bare", () => {
+    expect(sharedRepoAfterScratchInit((hookEnv) => hookEnv)).toBe('true');
+  });
+
+  test('scratchGitEnv leaves it a work tree', () => {
+    expect(sharedRepoAfterScratchInit(scratchGitEnv)).toBe('false');
+    const inherited = { ...process.env, GIT_DIR: '/x', GIT_INDEX_FILE: '/y', GIT_WORK_TREE: '/z' };
+    const env = scratchGitEnv(inherited);
+    expect(Object.keys(env).filter((k) => k.startsWith('GIT_'))).toEqual([]);
+    expect(env.PATH).toBe(process.env.PATH);
   });
 });

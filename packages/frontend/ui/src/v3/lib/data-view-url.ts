@@ -36,8 +36,6 @@ export interface DataViewUrlState {
   groupBy: string;
 }
 
-export const EMPTY_URL_STATE: DataViewUrlState = { filters: {}, groupBy: '' };
-
 /**
  * A page that mounts more than one list namespaces its parameters; a page with
  * one list does not.

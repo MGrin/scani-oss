@@ -9,7 +9,7 @@ export interface WalletImportJob extends UserJobBase {
   label?: string;
 }
 
-export const walletImportSchema: z.ZodType<WalletImportJob> = z.object({
+const walletImportSchema: z.ZodType<WalletImportJob> = z.object({
   userId: z.string().min(1),
   requestId: z.string().min(1),
   chain: z.string().min(1),

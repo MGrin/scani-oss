@@ -122,7 +122,8 @@
           "institution": "金融機関",
           "account": "口座",
           "group": "グループ"
-        }
+        },
+        "groupsOverlap": "1つの保有資産が複数のグループに属し、それぞれで計上されることがあるため、これらの合計は純資産と一致しません。"
       },
       "upcoming": {
         "title": "今後の支払",
@@ -286,6 +287,10 @@
         "enteredLate": "明細書の初日から計上: {{holdings}}",
         "unpricedAtZero_other": "価格のないトークン{{count}}件はゼロとして計上"
       }
+    },
+    "allocation": {
+      "marginDebt": "信用取引の借入",
+      "shareOfAssets": "資産に占める割合"
     },
     "money": {
       "upcoming": {
@@ -1316,7 +1321,11 @@
         "labelled": "{{label}} · {{body}}",
         "unpairedTransfers_other": "分類が必要な出金{{count}}件",
         "balanceChangesToExplain": "説明が必要な残高の変動",
-        "unexplainedBalanceChanges_other": "説明のつかない残高の変動{{count}}件"
+        "unexplainedBalanceChanges_other": "説明のつかない残高の変動{{count}}件",
+        "answersTradesExplain": "取り込んだ取引で説明済み",
+        "answersExplained_other": "{{subject}} の説明{{count}}件",
+        "unpriceableAirdrops": "価格を付けられないトークン",
+        "unpriceableTokens_other": "ウォレットに届いた、価格を付けられないトークン{{count}}件"
       },
       "kind": {
         "withdrawal": "出金",
@@ -1676,6 +1685,42 @@
           "received": "受け取った数量を入力してください"
         },
         "undoFailed": "取り消せませんでした"
+      },
+      "settled": {
+        "title": "{{subject}} の説明",
+        "description": "取り込んだ取引がこれらの残高の変動も説明するようになったため、同じお金が二重に数えられています。「取り下げる」はあなたの説明を削除し、「残す」はそのままにします。",
+        "full": "取り込んだ取引で説明済み",
+        "partial": "<amount/> のうち <explained/> を取り込んだ取引が説明しています。取り下げると、残りについて改めて確認します。",
+        "movesOther": "この説明は別の保有資産も変更しました",
+        "keep": "残す",
+        "retire": "取り下げる",
+        "confirmOther": "取り下げると、これらの説明が別の保有資産に記録した内容も削除されます。",
+        "confirmRetire": "はい、取り下げる",
+        "undo": "元に戻す",
+        "failed": "一部の説明を変更できませんでした。もう一度お試しください。",
+        "toast": {
+          "retired_other": "{{count}}件の説明を取り下げました",
+          "kept": "説明を残しました",
+          "undone": "説明を元に戻しました",
+          "undoFailed": "説明を元に戻せませんでした"
+        }
+      },
+      "unpriceable": {
+        "title": "価格を付けられないトークン",
+        "description": "これらはウォレットに届いたもので、どの価格ソースからも一度も相場が付いていないため、すでに純資産には計上されていません。非表示にするとリストから外れます。残したいものはチェックを外してください。残したものについては今後確認しません。どれでも「トークン」の「非表示」から元に戻せます。",
+        "hideAll": "すべて非表示",
+        "keepAll": "すべて残す",
+        "hideSome_other": "{{count}}件を非表示",
+        "failed": "何も非表示にしませんでした。もう一度お試しください。",
+        "keepFailed": "選択を保存できませんでした。もう一度お試しください。",
+        "partlyFailed_other": "{{count}}件のトークンを非表示にできませんでした。もう一度お試しください。",
+        "undo": "元に戻す",
+        "toast": {
+          "hidden_other": "{{count}}件のトークンを非表示にしました",
+          "kept_other": "{{count}}件のトークンを残しました",
+          "restored": "トークンを元に戻しました",
+          "restoreFailed": "トークンを元に戻せませんでした"
+        }
       }
     },
     "form": {
@@ -1783,6 +1828,8 @@
         "extension": ".{{ext}} ファイル",
         "noExtension": "拡張子のないファイル",
         "unsupported": "これは{{named}}です。Scaniが読めるのは {{formats}} です。",
+        "tooLarge": "このファイルは {{size}} です。上限は {{limit}} です。",
+        "withLimit": "{{formats}}（{{limit}} まで）",
         "remove": "{{name}} を削除"
       },
       "blocker": {

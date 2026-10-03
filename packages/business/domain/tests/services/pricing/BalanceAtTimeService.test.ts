@@ -54,6 +54,10 @@ function makeObservationStub(
           } as never)
         : null;
     },
+    findLowestBalance: async (holdingId: string) => {
+      const balances = rows.filter((r) => r.holdingId === holdingId).map((r) => Number(r.balance));
+      return balances.length ? String(Math.min(...balances)) : null;
+    },
     findExtremesForHolding: async (holdingId: string) => {
       const times = rows
         .filter((r) => r.holdingId === holdingId)
@@ -479,6 +483,66 @@ describe('BalanceAtTimeService.getBalance — a negative walk is marked (SC-1444
     );
     const r = await svc.getBalance(HOLD, new Date('2021-11-01T00:00:00Z'), undefined);
     expect(r.balance?.toString()).toBe('0');
+    expect(r.floored).toBe(false);
+  });
+});
+
+// SC-1462. Broker cash can be negative (margin debt), and a reading that says
+// so is evidence the holding can go that low. The floor moves to the lowest
+// balance the source ever reported; with no negative evidence it stays at 0,
+// which is every SC-1444 case above.
+describe('BalanceAtTimeService.getBalance — a measured debit is not floored (SC-1462)', () => {
+  const usd = {
+    id: HOLD,
+    userId: 'u1',
+    accountId: 'acc-1',
+    tokenId: 'tok-usd',
+    balance: '93.86',
+    lastUpdated: new Date('2026-07-21T00:00:00Z'),
+    createdAt: new Date('2025-03-31T00:00:00Z'),
+  };
+  // mgrin's IBKR USD over the weekend of 2026-07-17 (margin until Monday's sales).
+  const readings = [
+    { holdingId: HOLD, balance: '-5509.33', observedAt: new Date('2026-07-20T00:00:00Z') },
+    { holdingId: HOLD, balance: '93.86', observedAt: new Date('2026-07-21T00:00:00Z') },
+  ];
+  const monday = [
+    { holdingId: HOLD, quantity: '5603.19', occurredAt: new Date('2026-07-20T09:30:00Z') },
+  ];
+
+  test('the weekend on margin reads the debit', async () => {
+    const svc = makeService(readings, monday, usd);
+    const r = await svc.getBalance(HOLD, new Date('2026-07-19T00:00:00Z'), undefined);
+    expect(r.balance?.toString()).toBe('-5509.33');
+    expect(r.floored).toBe(false);
+  });
+
+  test('after the sales it reads positive again', async () => {
+    const svc = makeService(readings, monday, usd);
+    const r = await svc.getBalance(HOLD, new Date('2026-07-20T12:00:00Z'), undefined);
+    expect(r.balance?.toString()).toBe('93.86');
+    expect(r.floored).toBe(false);
+  });
+
+  test('a walk below the lowest reading stops there and is flagged', async () => {
+    const svc = makeService(
+      [{ holdingId: HOLD, balance: '-100', observedAt: new Date('2026-06-01T00:00:00Z') }],
+      [{ holdingId: HOLD, quantity: '50', occurredAt: new Date('2026-05-01T00:00:00Z') }],
+      usd
+    );
+    const r = await svc.getBalance(HOLD, new Date('2026-04-01T00:00:00Z'), undefined);
+    expect(r.balance?.toString()).toBe('-100');
+    expect(r.floored).toBe(true);
+  });
+
+  test('a negative current balance is evidence too', async () => {
+    const svc = makeService(
+      [],
+      [{ holdingId: HOLD, quantity: '-8', occurredAt: new Date('2026-07-10T00:00:00Z') }],
+      { ...usd, balance: '-42' }
+    );
+    const r = await svc.getBalance(HOLD, new Date('2026-07-01T00:00:00Z'), undefined);
+    expect(r.balance?.toString()).toBe('-34');
     expect(r.floored).toBe(false);
   });
 });

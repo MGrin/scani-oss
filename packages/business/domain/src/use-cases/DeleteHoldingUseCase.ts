@@ -78,6 +78,7 @@ export class DeleteHoldingUseCase {
             .update(schema.holdings)
             .set({
               isHidden: true,
+              hiddenBy: 'user',
             })
             .where(eq(schema.holdings.id, holdingId));
 

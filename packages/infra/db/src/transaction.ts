@@ -102,50 +102,6 @@ export async function withTransaction<T>(
 }
 
 /**
- * Execute multiple operations in a single transaction
- * Useful for coordinating multiple repository operations
- *
- * @example
- * ```typescript
- * await batchTransaction([
- *   (tx) => userRepo.create({ email: 'user1@example.com' }, tx),
- *   (tx) => userRepo.create({ email: 'user2@example.com' }, tx),
- *   (tx) => userRepo.create({ email: 'user3@example.com' }, tx),
- * ], { name: 'batchCreateUsers' });
- * ```
- */
-export async function batchTransaction<T>(
-  operations: Array<(tx: Transaction) => Promise<T>>,
-  options: TransactionOptions = {}
-): Promise<T[]> {
-  return withTransaction(
-    async (tx) => {
-      const results: T[] = [];
-
-      for (const operation of operations) {
-        const result = await operation(tx);
-        results.push(result);
-      }
-
-      return results;
-    },
-    {
-      ...options,
-      name: options.name || 'batch-transaction',
-    }
-  );
-}
-
-/**
- * Type guard to check if an object is a transaction
- */
-export function isTransaction(obj: unknown): obj is Transaction {
-  // Check if obj has the basic structure of a Drizzle transaction
-  // This is a simple check - may need refinement
-  return obj !== null && typeof obj === 'object' && 'query' in obj && 'execute' in obj;
-}
-
-/**
  * Helper to get database instance (transaction or regular db)
  * Useful in repositories to accept optional transaction parameter
  *

@@ -409,4 +409,4 @@ export const defillamaFactory: ProviderFactory = async (deps) => {
   return new DeFiLlamaProvider(registered);
 };
 
-export { CHAIN_ID_TO_DEFILLAMA, DEFILLAMA_MIN_CONFIDENCE } from './chains';
+export { CHAIN_ID_TO_DEFILLAMA } from './chains';

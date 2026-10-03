@@ -15,16 +15,16 @@
  * Scani-owned providers (OpenAI, …) are not user-facing for setup.
  */
 
-export type CredentialFieldType = 'text' | 'password' | 'textarea';
+type CredentialFieldType = 'text' | 'password' | 'textarea';
 
 /**
  * Account-type codes matching the `account_types` seed rows. A provider
  * declares which type its imported accounts belong to so the import path
  * stops defaulting every integration to `crypto`.
  */
-export type AccountTypeCode = 'checking' | 'savings' | 'investment' | 'crypto' | 'other';
+type AccountTypeCode = 'checking' | 'savings' | 'investment' | 'crypto' | 'other';
 
-export interface CredentialField {
+interface CredentialField {
   /** Object key in the submitted credentials map (`apiKey`, `apiSecret`, …). */
   name: string;
   /** Form-label text rendered next to the input. */
@@ -41,7 +41,7 @@ export interface CredentialField {
   placeholder?: string;
 }
 
-export interface IntegrationInstructions {
+interface IntegrationInstructions {
   /** Ordered list rendered as `<ol>` under the form. */
   steps: string[];
   /** Optional link to upstream documentation. */

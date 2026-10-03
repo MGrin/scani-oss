@@ -63,6 +63,40 @@ describe('reviewTitle', () => {
     expect(reviewTitle(v3, { code: 'invoiceExtracted' })).toBe('Invoice extracted');
     expect(reviewTitle(v3, { code: 'transfersToConfirm' })).toBe('Payments out to classify');
     expect(reviewTitle(v3, { code: 'balanceChangesToExplain' })).toBe('Balance changes to explain');
+    expect(reviewTitle(v3, { code: 'answersTradesExplain' })).toBe('Covered by imported trades');
+    expect(reviewTitle(v3, { code: 'unpriceableAirdrops' })).toBe('Tokens nothing can price');
+  });
+
+  test('wallet tokens nothing can price are counted, never called names (SC-1469)', () => {
+    const line = (count: number) =>
+      detail((texts) => reviewDetailText(texts, { code: 'unpriceableAirdrops', count }));
+    expect(line(56)).toBe('56 tokens arrived in your wallets that nothing can price');
+    expect(line(1)).toBe('1 token arrived in your wallets that nothing can price');
+    expect(`${line(56)} ${reviewTitle(v3, { code: 'unpriceableAirdrops' })}`).not.toMatch(
+      /scam|spam/i
+    );
+  });
+
+  test('answers imported trades explain name their holding (SC-1453)', () => {
+    expect(
+      detail((texts) =>
+        reviewDetailText(texts, {
+          code: 'answersExplainedByTrades',
+          answers: 3,
+          tokenSymbol: 'USD',
+          accountName: 'Broker',
+        })
+      )
+    ).toBe('3 explanations on Broker · USD');
+    expect(
+      detail((texts) =>
+        reviewDetailText(texts, {
+          code: 'answersExplainedByTrades',
+          answers: 1,
+          tokenSymbol: 'CAD',
+        })
+      )
+    ).toBe('1 explanation on CAD');
   });
 });
 

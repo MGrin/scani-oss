@@ -104,7 +104,7 @@ export interface TransferLeg {
 
 export type CandidatePairClass = 'same_token' | 'bridged_asset';
 
-export function crossesEntityBoundary(a: string | null, b: string | null): boolean {
+function crossesEntityBoundary(a: string | null, b: string | null): boolean {
   return a !== b;
 }
 

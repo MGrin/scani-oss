@@ -128,7 +128,7 @@ describe('the file field', () => {
       />
     );
     expect(markup).toContain('Choose a file, or drop one here');
-    expect(markup).toContain(t(IMPORT_FORMATS_KEY));
+    expect(markup).toContain(`${t(IMPORT_FORMATS_KEY)}, up to 8 MB`);
     expect(markup).toContain(`accept="${IMPORT_ACCEPT}"`);
   });
 

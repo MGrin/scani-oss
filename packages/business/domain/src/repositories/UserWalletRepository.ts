@@ -1,6 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewUserWallet, UserWallet } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
+import { normalizeCounterparty } from '@scani/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
@@ -24,6 +25,13 @@ import { Service } from 'typedi';
 function shortAddress(address: string): string {
   if (address.length <= 20) return address;
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+/** One of the user's wallets, on the account that stands for it on one chain. */
+export interface OwnWalletAccount {
+  address: string;
+  accountId: string;
+  chainKey: string | null;
 }
 
 export type StaleWalletTarget = {
@@ -60,6 +68,38 @@ export class UserWalletRepository extends BaseRepository<UserWallet, NewUserWall
       this.logger.error({ userId, error }, 'Failed to find wallets by user');
       throw error;
     }
+  }
+
+  /**
+   * Every account of the user's that stands for one of their wallets on one
+   * chain, inactive wallets included, as `TransferReviewService.ownWalletAddresses`
+   * counts them: an address stays the user's own whether or not it syncs. The
+   * address is in `normalizeCounterparty`'s comparison form, and the chain is
+   * `metadata.chainId` as text, as `destinationsFor` compares it.
+   */
+  async findOwnWalletAccounts(
+    userId: string,
+    transaction: DatabaseTransaction
+  ): Promise<OwnWalletAccount[]> {
+    const rows = (await this.getDb(transaction).execute(sql`
+      select uw.wallet_address, a.id as account_id, a.metadata->>'chainId' as chain_key
+      from accounts a
+      join user_wallets uw
+        on uw.id::text = a.metadata->>'userWalletId'
+       and uw.user_id = a.user_id
+      where a.user_id = ${userId}
+      order by a.id
+    `)) as unknown as Array<{
+      wallet_address: string;
+      account_id: string;
+      chain_key: string | null;
+    }>;
+    return rows.flatMap((row) => {
+      const address = normalizeCounterparty(row.wallet_address);
+      return address === null
+        ? []
+        : [{ address, accountId: row.account_id, chainKey: row.chain_key }];
+    });
   }
 
   /**

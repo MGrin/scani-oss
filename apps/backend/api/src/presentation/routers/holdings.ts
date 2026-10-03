@@ -9,9 +9,11 @@ import {
 import {
   HoldingQueryService,
   HoldingService,
+  KeptHoldingNotFoundError,
   ManualBalanceEditService,
   ManualEditFeeRefused,
   RealizedLedgerService,
+  UnpriceableAirdropService,
 } from '@scani/domain/services';
 import {
   BulkAssignHoldingGroupsUseCase,
@@ -116,6 +118,38 @@ export const holdingsRouter = router({
         rows: rows.map(toDisposalLotMatchDto),
         realizedTotal: realizedTotal.toString(),
       };
+    }),
+
+  /**
+   * Wallet tokens nothing can price (SC-1469), for the Review sheet that asks
+   * once whether to hide them. `bulkDelete` hides each of these rather than
+   * deleting it, because every one came from a wallet sync.
+   */
+  unpriceableAirdrops: protectedProcedure.query(async ({ ctx }) => {
+    const airdrops = await Container.get(UnpriceableAirdropService).listPending(ctx.userId);
+    return airdrops.map(({ arrivedAt, ...airdrop }) => ({
+      ...airdrop,
+      arrivedAt: arrivedAt.toISOString(),
+    }));
+  }),
+
+  /**
+   * The ones the owner unticked on that sheet: kept, and never asked about
+   * again (SC-1469). Nothing is hidden or revalued, so no rollup is queued.
+   */
+  keepUnpriceableAirdrops: protectedProcedure
+    .input(strictInput(z.object({ ids: z.array(z.string().uuid()).min(1) })))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      try {
+        const keptIds = await Container.get(UnpriceableAirdropService).keep(dbUser.id, input.ids);
+        return { keptIds };
+      } catch (error) {
+        if (error instanceof KeptHoldingNotFoundError) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Holding not found' });
+        }
+        throw error;
+      }
     }),
 
   // Holdings hidden from the dashboard — user-hidden or auto-flagged as

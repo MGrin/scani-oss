@@ -400,3 +400,35 @@ describe('no locale defines a key English does not (SC-1238)', () => {
     expect(orphans(['v3.new.key', 'v3.items_few'], ['v3.new.key', 'v3.items_one'])).toEqual([]);
   });
 });
+
+/**
+ * Locales on demand (SC-1498). Two things that rot silently:
+ *
+ * 1. **A locale with no picker label.** The names moved out of each file's
+ *    `$meta` into `language-names.ts` so the menu does not need nine files;
+ *    a new locale without an entry would be offered under its bare code.
+ * 2. **An eager glob coming back.** `eager: true` on either glob puts every
+ *    language back in the chunk — the build succeeds and nothing renders wrong.
+ */
+describe('locales load on demand (SC-1498)', () => {
+  test('every locale file has the picker label its own $meta declares', async () => {
+    const { LANGUAGE_NAMES } = await import('../../src/i18n/language-names');
+    expect(Object.keys(LANGUAGE_NAMES).sort()).toEqual(codes(SHELL));
+    for (const code of codes(SHELL)) {
+      expect({ code, ...LANGUAGE_NAMES[code] }).toEqual({
+        code,
+        ...(load(SHELL, code).$meta as { name: string; nativeName: string }),
+      });
+    }
+  });
+
+  test.each(['../../src/i18n/index.ts', '../../src/v3/i18n/index.ts'])(
+    '%s bundles English alone and globs the rest lazily',
+    (file) => {
+      const source = readFileSync(resolve(import.meta.dir, file), 'utf8');
+      expect(source).toMatch(/from '\.\/locales\/en\.json'/);
+      expect(source).toContain("'!./locales/en.json'");
+      expect(source).not.toMatch(/eager:\s*true/);
+    }
+  );
+});

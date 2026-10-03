@@ -21,8 +21,6 @@ export const CreateVaultDto = z.object({
   description: z.string().max(500).optional().nullable(),
 });
 
-export type CreateVaultInput = z.infer<typeof CreateVaultDto>;
-
 export const UpdateVaultDto = z.object({
   name: z.string().min(1).max(100).optional(),
   targetAmount: z
@@ -47,8 +45,6 @@ export const UpdateVaultDto = z.object({
   isActive: z.boolean().optional(),
 });
 
-export type UpdateVaultInput = z.infer<typeof UpdateVaultDto>;
-
 export const AttachHoldingToVaultDto = z.object({
   vaultId: z.string().uuid(),
   holdingId: z.string().uuid(),
@@ -57,8 +53,6 @@ export const AttachHoldingToVaultDto = z.object({
     .min(0.01, 'Percentage must be greater than 0')
     .max(100, 'Percentage cannot exceed 100'),
 });
-
-export type AttachHoldingToVaultInput = z.infer<typeof AttachHoldingToVaultDto>;
 
 export const UpdateVaultHoldingDto = z.object({
   vaultId: z.string().uuid(),
@@ -69,14 +63,10 @@ export const UpdateVaultHoldingDto = z.object({
     .max(100, 'Percentage cannot exceed 100'),
 });
 
-export type UpdateVaultHoldingInput = z.infer<typeof UpdateVaultHoldingDto>;
-
 export const DetachHoldingFromVaultDto = z.object({
   vaultId: z.string().uuid(),
   holdingId: z.string().uuid(),
 });
-
-export type DetachHoldingFromVaultInput = z.infer<typeof DetachHoldingFromVaultDto>;
 
 // Types for vault display with progress
 

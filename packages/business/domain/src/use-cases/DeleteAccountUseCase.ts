@@ -24,8 +24,13 @@ const logger = createComponentLogger('use-case:delete-account');
 export class DeleteAccountUseCase {
   private readonly data = Container.get(DeleteAllUserDataUseCase);
 
-  async execute(userId: string): Promise<{ deleted: boolean }> {
+  /**
+   * `email` is the address the account had, for erasures that key on it
+   * after the row is gone (SC-1509).
+   */
+  async execute(userId: string): Promise<{ deleted: boolean; email?: string }> {
     let echoed = new Map<PgTable, string[]>();
+    let email: string | undefined;
 
     const deleted = await withTransaction(
       async (tx) => {
@@ -34,6 +39,7 @@ export class DeleteAccountUseCase {
           .from(schema.users)
           .where(eq(schema.users.id, userId));
         if (!user) return false;
+        email = user.email;
 
         echoed = await this.data.deleteRows(tx, userId);
 
@@ -56,6 +62,6 @@ export class DeleteAccountUseCase {
     if (!deleted) return { deleted: false };
     await this.data.purgeAfterCommit(userId, echoed);
     logger.warn({ userId }, 'Account deleted');
-    return { deleted: true };
+    return { deleted: true, email };
   }
 }

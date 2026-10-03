@@ -13,7 +13,7 @@ const logger = createComponentLogger('use-case:test-notification');
  * to the reminder job, and is pruned the same way — with one addition the
  * reminder does not need to distinguish: a 403.
  */
-export type TestNotificationOutcome =
+type TestNotificationOutcome =
   | { status: 'sent' }
   /** 404/410: the subscription is dead, and the row has been deleted. */
   | { status: 'gone' }
@@ -23,7 +23,7 @@ export type TestNotificationOutcome =
   | { status: 'vapid-mismatch' }
   | { status: 'failed'; statusCode: number | null };
 
-export interface TestNotificationDevice {
+interface TestNotificationDevice {
   /**
    * The caller's own endpoint, returned so the client can tell the device in
    * the reader's hand from the one in the next room. It never reaches a log

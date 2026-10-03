@@ -1,16 +1,16 @@
 import { withAdvisoryLock } from '@scani/db';
 import { withTransaction } from '@scani/db/transaction';
 import { createComponentLogger } from '@scani/logging';
-import { PAYOUTS_PER_YEAR } from '@scani/shared';
-import Decimal from 'decimal.js';
+import { Decimal, PAYOUTS_PER_YEAR } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import {
   type ActiveApyConfigWithHolding,
   HoldingApyConfigRepository,
 } from '../repositories/HoldingApyConfigRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
-import { HoldingTransactionRepository } from '../repositories/HoldingTransactionRepository';
-import { HoldingService, VaultService } from '../services';
+import { VaultService } from '../services';
+import { type SnapshotEntry, SnapshotWriter } from '../services/feeds/SnapshotWriter';
+import { APY_LEGACY_ANCHOR, LEGACY_ANCHOR_KEY } from '../services/foundation/legacy-ledger-kinds';
 
 const logger = createComponentLogger('use-case:apply-apy-payouts');
 
@@ -105,8 +105,7 @@ function computeDuePayoutDates(
 export class ApplyApyPayoutsUseCase {
   private readonly apyConfigRepository = Container.get(HoldingApyConfigRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
-  private readonly holdingTxRepository = Container.get(HoldingTransactionRepository);
-  private readonly holdingService = Container.get(HoldingService);
+  private readonly snapshotWriter = Container.get(SnapshotWriter);
   private readonly vaultService = Container.get(VaultService);
 
   async execute(): Promise<ApplyApyPayoutsResult> {
@@ -214,21 +213,52 @@ export class ApplyApyPayoutsUseCase {
           throw new Error(`Holding not found: ${entry.holdingId}`);
         }
 
-        // Per-payout interest amounts so we can write one ledger row per
-        // payout date with a stable externalId. Each row carries the
-        // post-compounding contribution at that date.
-        const perPayout: Array<{ date: Date; interest: Decimal }> = [];
+        // Interest compounds on the full-precision running balance, and the
+        // balance written is that running balance round8. A date's step is the
+        // difference between two round8 balances (b_0 the stored one), so the
+        // steps sum to the balance change exactly (A1 carry-forward 5, ruling R6).
+        //
+        // A row is interest, so it runs the way interest accrues: up on a
+        // balance above zero, down on one below it (rulings R10, R10a). A step
+        // of zero, or one against that direction, is rounding (a balance too
+        // small to earn 1e-8 in a period, or a stored one off the 8-dp grid) and
+        // is carried to the next date. A date books everything carried to it
+        // once that runs with its own interest. What is still carried when the
+        // run ends is not booked.
         let runningBalance = new Decimal(holding.balance);
+        let balance = runningBalance;
+        let unbooked = new Decimal(0);
         let totalInterest = new Decimal(0);
+        const entries: SnapshotEntry[] = [];
 
-        for (let i = 0; i < dueDates.length; i++) {
+        for (const date of dueDates) {
           const interest = runningBalance.mul(rate).div(perYear);
-          perPayout.push({ date: dueDates[i]!, interest });
           totalInterest = totalInterest.plus(interest);
           runningBalance = runningBalance.plus(interest);
+          const stepped = runningBalance.toDecimalPlaces(8);
+          unbooked = unbooked.plus(stepped.minus(balance));
+          balance = stepped;
+          // `cmp`, not `isPositive`: decimal.js counts zero as positive.
+          const direction = interest.cmp(0);
+          if (direction === 0 || unbooked.cmp(0) !== direction) continue;
+          entries.push({
+            externalId: `apy:${config.id}:${date.toISOString().slice(0, 10)}`,
+            amount: unbooked.toFixed(),
+            occurredAt: date,
+            legacy: {
+              kind: 'interest',
+              source: 'apy-payout',
+              sourceMetadata: {
+                configId: config.id,
+                annualRatePct: config.annualRatePct,
+                payoutFrequency: config.payoutFrequency,
+              },
+            },
+          });
+          unbooked = new Decimal(0);
         }
 
-        const newBalance = runningBalance.toDecimalPlaces(8).toFixed();
+        const newBalance = balance.toFixed();
 
         logger.debug(
           {
@@ -241,33 +271,25 @@ export class ApplyApyPayoutsUseCase {
           'Applying APY payout'
         );
 
-        // Ledger rows BEFORE the balance write. The unique index
-        // (holdingId, source, externalId) makes re-runs a no-op for
-        // already-applied dates — when paired with the advisory lock
-        // above, this means a crash between the ledger insert and the
-        // balance update is recovered correctly on the next tick: the
-        // ledger insert dedups, and only the missing balance delta is
-        // re-applied.
-        const txRows = perPayout.map(({ date, interest }) => ({
-          userId: holding.userId,
-          holdingId: holding.id,
-          tokenId: holding.tokenId,
-          kind: 'interest' as const,
-          quantity: interest.toFixed(),
-          occurredAt: date,
-          externalId: `apy:${config.id}:${date.toISOString().slice(0, 10)}`,
-          source: 'apy-payout',
-          sourceMetadata: {
-            configId: config.id,
-            annualRatePct: config.annualRatePct,
-            payoutFrequency: config.payoutFrequency,
+        await this.snapshotWriter.recordEntries(
+          {
+            userId: holding.userId,
+            holdingId: holding.id,
+            entries,
+            cache: { holdingId: holding.id, balance: newBalance },
+            // The copy `updateHoldingBalance` wrote after every run (ruling R11),
+            // plus the marker classification knows it by when the run booked no
+            // row (ruling R12).
+            legacyObservation: {
+              source: 'sync-capture',
+              sourceMetadata: {
+                origin: 'updateHoldingBalance',
+                [LEGACY_ANCHOR_KEY]: APY_LEGACY_ANCHOR,
+              },
+            },
           },
-        }));
-        if (txRows.length > 0) {
-          await this.holdingTxRepository.bulkUpsert(txRows, tx);
-        }
-
-        await this.holdingService.updateHoldingBalance(entry.holdingId, newBalance, tx);
+          tx
+        );
         await this.apyConfigRepository.updateLastPayoutAt(config.id, now, tx);
 
         return { totalInterest };

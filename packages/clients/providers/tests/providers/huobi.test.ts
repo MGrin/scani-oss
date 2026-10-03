@@ -229,10 +229,12 @@ describe('HuobiProvider fetchTransactions', () => {
     });
 
     try {
+      // Inside matchresults' 120-day reach, or nothing would be asked for.
+      const DAY = 24 * 60 * 60 * 1000;
       const events = await p.fetchTransactions({
         ...ctx,
-        since: new Date('2024-01-01T00:00:00Z'),
-        until: new Date('2024-01-05T00:00:00Z'),
+        since: new Date(Date.now() - 4 * DAY),
+        until: new Date(Date.now() - DAY),
       } as never);
 
       const trades = events.filter((e) => e.kind === 'buy' || e.kind === 'sell');
@@ -456,6 +458,214 @@ describe('HuobiProvider fetchTransactions', () => {
       expect(deposits[0]?.primary.quantity).toBe('20');
     } finally {
       fetchHook.restore();
+    }
+  });
+});
+
+/**
+ * SC-1480 / SC-1481. Trade symbols used to come from CURRENT balances only, so
+ * an asset deposited, traded and sold to zero never had its trades asked for —
+ * on a provider that then declared no horizon and so claimed a complete
+ * history. And a non-`ok` page ended a walk with nothing said.
+ */
+describe('HuobiProvider.fetchTransactions — exited assets and failed walks', () => {
+  const ethSell = {
+    id: 77,
+    symbol: 'ethusdt',
+    type: 'sell-limit',
+    price: '2000',
+    'filled-amount': '1',
+    'filled-fees': '0',
+    'fee-currency': 'usdt',
+    'created-at': 1_700_000_000_000,
+    'match-id': 1,
+    'order-id': 1,
+    'trade-id': 1,
+  };
+
+  function mockHuobi(opts: {
+    deposits: FakeResponse;
+    balance?: FakeResponse;
+    onMatch?: (u: URL) => void;
+  }) {
+    const symbols: string[] = [];
+    const hook = queueFetch((url) => {
+      const u = new URL(url);
+      if (u.pathname === '/v1/account/accounts') {
+        return { body: { status: 'ok', data: [{ id: 1, type: 'spot', state: 'working' }] } };
+      }
+      if (u.pathname.endsWith('/balance')) {
+        return (
+          opts.balance ?? {
+            body: {
+              status: 'ok',
+              data: { list: [{ currency: 'usdt', type: 'trade', balance: '2000' }] },
+            },
+          }
+        );
+      }
+      if (u.pathname === '/v1/query/deposit-withdraw') {
+        return u.searchParams.get('type') === 'deposit'
+          ? opts.deposits
+          : { body: { status: 'ok', data: [] } };
+      }
+      if (u.pathname === '/v1/order/matchresults') {
+        const symbol = u.searchParams.get('symbol') ?? '';
+        symbols.push(symbol);
+        opts.onMatch?.(u);
+        if (symbol === 'ethusdt') return { body: { status: 'ok', data: [ethSell] } };
+        // Every other candidate is a pair Huobi does not list.
+        return { body: { status: 'error', 'err-code': 'base-symbol-error' } };
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    });
+    return { hook, symbols };
+  }
+
+  const ethDeposit: FakeResponse = {
+    body: {
+      status: 'ok',
+      data: [
+        {
+          id: 5,
+          type: 'deposit',
+          currency: 'eth',
+          amount: '1',
+          state: 'safe',
+          'created-at': 1_699_000_000_000,
+        },
+      ],
+    },
+  };
+
+  test('an asset seen only in deposits has its trades fetched, and absent pairs retract nothing', async () => {
+    const { hook, symbols } = mockHuobi({ deposits: ethDeposit });
+    const retractions: unknown[] = [];
+    try {
+      const events = await new HuobiProvider(passthroughLimiter()).fetchTransactions({
+        ...ctx,
+        retractHistoryClaim: (r: unknown) => retractions.push(r),
+      } as never);
+      expect(symbols).toContain('ethusdt');
+      expect(events.map((e) => e.externalId)).toContain('match:77');
+      expect(retractions).toEqual([]);
+    } finally {
+      hook.restore();
+    }
+  });
+
+  /**
+   * Even a clean run must not claim a complete history: trades-only round
+   * trips cannot be enumerated, and `matchresults` reaches 120 days. The
+   * router claims completeness only for a since-less run through a provider
+   * with no horizon and no retraction, so the horizon is what makes it false.
+   */
+  test('a clean since-less run does not claim a complete history', async () => {
+    const { hook } = mockHuobi({ deposits: ethDeposit });
+    const retractions: unknown[] = [];
+    try {
+      const provider = new HuobiProvider(passthroughLimiter());
+      await provider.fetchTransactions({
+        ...ctx,
+        retractHistoryClaim: (r: unknown) => retractions.push(r),
+      } as never);
+      expect(retractions).toEqual([]);
+      // 120 days, less the hour kept back from matchresults' edge.
+      expect(provider.transactionHistoryHorizonMs).toBe((120 * 24 - 1) * 60 * 60 * 1000);
+      const claimsComplete =
+        provider.transactionHistoryHorizonMs === undefined && retractions.length === 0;
+      expect(claimsComplete).toBe(false);
+    } finally {
+      hook.restore();
+    }
+  });
+
+  test('a since-less run walks fills in 48h windows back to the 120-day reach', async () => {
+    const HOUR = 60 * 60 * 1000;
+    const windows: Array<{ start: number; end: number }> = [];
+    const { hook } = mockHuobi({
+      deposits: ethDeposit,
+      onMatch: (u) => {
+        if (u.searchParams.get('symbol') !== 'ethusdt') return;
+        windows.push({
+          start: Number(u.searchParams.get('start-time')),
+          end: Number(u.searchParams.get('end-time')),
+        });
+      },
+    });
+    const before = Date.now();
+    try {
+      await new HuobiProvider(passthroughLimiter()).fetchTransactions(ctx as never);
+      const after = Date.now();
+      expect(windows.length).toBeGreaterThan(1);
+      for (const w of windows) {
+        expect(w.end - w.start).toBeGreaterThan(0);
+        expect(w.end - w.start).toBeLessThanOrEqual(48 * HOUR);
+        expect(w.start).toBeGreaterThanOrEqual(before - 120 * 24 * HOUR);
+      }
+      // Newest first, contiguous, from now back to the reach.
+      expect(windows[0]!.end).toBeGreaterThanOrEqual(before);
+      expect(windows[0]!.end).toBeLessThanOrEqual(after);
+      for (let i = 1; i < windows.length; i++) {
+        expect(windows[i]!.end).toBe(windows[i - 1]!.start);
+      }
+      expect(windows.at(-1)!.start).toBeLessThanOrEqual(after - (120 * 24 - 1) * HOUR);
+    } finally {
+      hook.restore();
+    }
+  });
+
+  test('a spot account the balance sync cannot read is warned about, not skipped silently', async () => {
+    const { hook } = mockHuobi({
+      deposits: ethDeposit,
+      balance: { body: { status: 'error', 'err-code': 'system-busy' } },
+    });
+    const p = new HuobiProvider(passthroughLimiter());
+    const warnings: unknown[] = [];
+    (p as unknown as { logger: { warn: (...a: unknown[]) => void } }).logger.warn = (...a) =>
+      warnings.push(a);
+    try {
+      const holdings = await p.fetchBalances(ctx as never);
+      expect(holdings).toEqual([]);
+      expect(warnings).toHaveLength(1);
+      expect(JSON.stringify(warnings[0])).toContain('"accountId":1');
+    } finally {
+      hook.restore();
+    }
+  });
+
+  test('a refused deposit walk retracts the history claim', async () => {
+    const { hook } = mockHuobi({
+      deposits: { body: { status: 'error', 'err-code': 'api-signature-not-valid' } },
+    });
+    const retractions: string[] = [];
+    try {
+      await new HuobiProvider(passthroughLimiter()).fetchTransactions({
+        ...ctx,
+        retractHistoryClaim: (r: string) => retractions.push(r),
+      } as never);
+      expect(retractions).toHaveLength(1);
+      expect(retractions[0]).toContain('huobi: the deposit walk failed');
+    } finally {
+      hook.restore();
+    }
+  });
+
+  test('a spot account whose balance cannot be read retracts the history claim', async () => {
+    const { hook } = mockHuobi({
+      deposits: ethDeposit,
+      balance: { body: { status: 'error', 'err-code': 'system-busy' } },
+    });
+    const retractions: string[] = [];
+    try {
+      await new HuobiProvider(passthroughLimiter()).fetchTransactions({
+        ...ctx,
+        retractHistoryClaim: (r: string) => retractions.push(r),
+      } as never);
+      expect(retractions).toHaveLength(1);
+      expect(retractions[0]).toContain('huobi: the balance read for account 1 failed');
+    } finally {
+      hook.restore();
     }
   });
 });

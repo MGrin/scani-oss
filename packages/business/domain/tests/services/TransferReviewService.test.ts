@@ -445,6 +445,18 @@ describe('TransferReviewService — the queue', () => {
     await insertInflow(f, { at: anchor(), quantity: '1.0', externalId: 'q-3' });
     expect((await service().pendingSummary(f.userId)).count).toBe(0);
   });
+
+  test('never asks about a trade settlement, which is the cash side of a trade (SC-1453)', async () => {
+    const f = fixture!;
+    await insertOutflow(f, { at: anchor(), externalId: 'q-4:settle', kind: 'settle_out' });
+    expect((await service().pendingSummary(f.userId)).count).toBe(0);
+    expect(await service().listPending(f.userId)).toEqual([]);
+
+    // The control: the same row as a withdrawal is a question, so the zero
+    // above is the kind being excluded rather than a fixture that asks nothing.
+    await insertOutflow(f, { at: anchor(), externalId: 'q-4' });
+    expect((await service().pendingSummary(f.userId)).count).toBe(1);
+  });
 });
 
 describe('TransferReviewService — candidates', () => {
@@ -1588,6 +1600,88 @@ describe('TransferReviewService — moved to a holding Scani tracks', () => {
     expect(await balanceOf(f.inHoldingId)).toBe('4001');
 
     expect((await service().pendingSummary(f.userId)).count).toBe(0);
+  });
+
+  /** A deposit the owner typed on the destination, as a balance edit writes it. */
+  async function typeDeposit(f: Fixture, at: Date, quantity: string, tag: string) {
+    const [row] = await db
+      .insert(schema.holdingTransactions)
+      .values({
+        userId: f.userId,
+        holdingId: f.inHoldingId,
+        tokenId: f.tokenId,
+        kind: 'deposit',
+        quantity,
+        occurredAt: at,
+        source: 'user-balance-edit',
+        externalId: `manual-edit:${tag}`,
+        sourceMetadata: { cause: 'flow', editedAt: at.toISOString() },
+      })
+      .returning({ id: schema.holdingTransactions.id });
+    return row!.id;
+  }
+
+  async function typedDeposits(f: Fixture) {
+    return db
+      .select()
+      .from(schema.holdingTransactions)
+      .where(
+        and(
+          eq(schema.holdingTransactions.holdingId, f.inHoldingId),
+          eq(schema.holdingTransactions.source, 'user-balance-edit')
+        )
+      );
+  }
+
+  test('takes over a deposit the owner already typed, and a reopen puts it back (SC-1474)', async () => {
+    const f = fixture!;
+    const at = anchor();
+    // The owner raised the savings pot by hand when the money landed, two
+    // hours after it left. The balance already includes it.
+    await typeDeposit(f, new Date(at.getTime() + 2 * 3600_000), '4000', 'a');
+    await db
+      .update(schema.holdings)
+      .set({ balance: '4001' })
+      .where(eq(schema.holdings.id, f.inHoldingId));
+    const outId = await insertOutflow(f, { at, quantity: '-4000', externalId: 'i-adopt' });
+
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+      })
+    ).toEqual({ ok: true });
+
+    // One record of the move, not two, and the balance is not raised again.
+    expect(await createdInflows(f, outId)).toHaveLength(1);
+    expect(await typedDeposits(f)).toHaveLength(0);
+    expect(await balanceOf(f.inHoldingId)).toBe('4001');
+
+    expect(await service().reopen(f.userId, outId)).toBe(true);
+
+    // The owner's own entry comes back exactly as written.
+    expect(await createdInflows(f, outId)).toHaveLength(0);
+    const restored = await typedDeposits(f);
+    expect(restored).toHaveLength(1);
+    expect(restored[0]?.quantity).toBe('4000');
+    expect(restored[0]?.externalId).toBe('manual-edit:a');
+    expect(await balanceOf(f.inHoldingId)).toBe('4001');
+  });
+
+  test('leaves two same-amount typed deposits alone rather than guess (SC-1474)', async () => {
+    const f = fixture!;
+    const at = anchor();
+    await typeDeposit(f, new Date(at.getTime() + 3600_000), '4000', 'b');
+    await typeDeposit(f, new Date(at.getTime() + 7200_000), '4000', 'c');
+    const outId = await insertOutflow(f, { at, quantity: '-4000', externalId: 'i-ambiguous' });
+
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+      })
+    ).toEqual({ ok: true });
+
+    expect(await typedDeposits(f)).toHaveLength(2);
+    expect(await createdInflows(f, outId)).toHaveLength(1);
   });
 
   test('as one part of a split, writes the PART’s amount and not the row’s', async () => {

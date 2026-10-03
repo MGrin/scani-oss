@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import { cors } from '@elysiajs/cors';
 import { Elysia } from 'elysia';
 import {
+  buildCorsOptions,
   buildCorsOrigins,
   buildTrustedOrigins,
   isAllowedWebSocketOrigin,
@@ -204,5 +206,68 @@ describe('isAllowedWebSocketOrigin (SC-1351)', () => {
   // caller is not a browser, and cannot be carrying a victim's cookie.
   test('a handshake with no Origin is not a browser and is let through', () => {
     expect(isAllowedWebSocketOrigin(undefined, PROD_FRONTEND, PROD)).toBe(true);
+  });
+});
+
+/**
+ * The options the API really passes to `@elysiajs/cors` (SC-1500). The plugin's
+ * defaults cached a preflight for 5 seconds, so any call after a short idle
+ * paid a second round trip, and echoed every REQUEST header name back in
+ * `Access-Control-Expose-Headers` — `cf-connecting-ip`, `x-forwarded-for`.
+ * Built from `buildCorsOptions` itself, and the last test pins that
+ * `src/index.ts` passes exactly that, so these cannot pass over a copy.
+ */
+describe('the CORS options the API passes (SC-1500)', () => {
+  const app = new Elysia()
+    .use(cors(buildCorsOptions(PROD_FRONTEND, PROD)))
+    .get('/health', () => ({ status: 'ok' }));
+
+  const preflight = (requestHeaders: string) =>
+    app.handle(
+      new Request('http://api.test/health', {
+        method: 'OPTIONS',
+        headers: {
+          Origin: PROD_FRONTEND,
+          'Access-Control-Request-Method': 'GET',
+          'Access-Control-Request-Headers': requestHeaders,
+          'cf-connecting-ip': '203.0.113.7',
+          'x-forwarded-for': '203.0.113.7',
+        },
+      })
+    );
+
+  test('a preflight is cached for two hours, not five seconds', async () => {
+    const res = await preflight('x-scani-language');
+    expect(res.headers.get('access-control-max-age')).toBe('7200');
+  });
+
+  test('no request header name is echoed back as exposed', async () => {
+    for (const res of [
+      await preflight('x-scani-language'),
+      await app.handle(
+        new Request('http://api.test/health', {
+          headers: { Origin: PROD_FRONTEND, 'cf-connecting-ip': '203.0.113.7' },
+        })
+      ),
+    ]) {
+      expect(res.headers.get('access-control-expose-headers') ?? '').toBe('');
+    }
+  });
+
+  // The control: the headers sign-in needs are still allowed, so the two
+  // tests above cannot pass by breaking the preflight altogether.
+  test('the sign-in headers are still allowed for the frontend origin', async () => {
+    const res = await preflight('x-scani-language');
+    expect(res.headers.get('access-control-allow-origin')).toBe(PROD_FRONTEND);
+    expect(res.headers.get('access-control-allow-credentials')).toBe('true');
+    const allowed = (res.headers.get('access-control-allow-headers') ?? '').toLowerCase();
+    for (const name of ['authorization', 'content-type', 'x-scani-language', 'x-turnstile-token'])
+      expect(allowed).toContain(name);
+  });
+
+  test('src/index.ts passes buildCorsOptions and nothing of its own', () => {
+    const source = readFileSync(new URL('../../src/index.ts', import.meta.url), 'utf8');
+    expect(source).toContain('cors(buildCorsOptions(env.FRONTEND_URL, httpOriginOptions))');
+    expect(source.match(/\bcors\(/g)?.length).toBe(1);
   });
 });

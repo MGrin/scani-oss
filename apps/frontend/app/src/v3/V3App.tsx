@@ -234,7 +234,9 @@ export function V3App() {
               path={`${relative(BALANCE_GAP_REVIEW_PATH)}/:peekId?`}
               element={<BalanceGapsReviewPage />}
             />
-            <Route path={relative(V3_ROUTES.review)} element={<ReviewPage />} />
+            {/* The `:peekId?` is a holding whose answers imported trades now
+                explain (SC-1453): its sheet opens over the feed that led to it. */}
+            <Route path={`${relative(V3_ROUTES.review)}/:peekId?`} element={<ReviewPage />} />
             <Route path={relative(V3_ROUTES.jobs)} element={<JobsPage />} />
             <Route path={`${relative(V3_ROUTES.jobs)}/:jobId`} element={<JobDetailPage />} />
             <Route path={`${relative(V3_ROUTES.accounts)}/:peekId?`} element={<AccountsPage />} />

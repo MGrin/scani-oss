@@ -4,6 +4,7 @@ import { describe, expect, test } from 'bun:test';
 import type { HoldingTransaction } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
+import { HoldingBalanceObservationRepository } from '../../../src/repositories/HoldingBalanceObservationRepository';
 import { HoldingCoverageRepository } from '../../../src/repositories/HoldingCoverageRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
 import { PnLAtTimeService } from '../../../src/services/portfolio/PnLAtTimeService';
@@ -13,6 +14,7 @@ import {
   type CostBasisAtTime,
   CostBasisService,
 } from '../../../src/services/pricing/CostBasisService';
+import { DriftLedgerService } from '../../../src/services/returns/DriftLedgerService';
 import { TransferReviewService } from '../../../src/services/TransferReviewService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
@@ -70,6 +72,7 @@ function costResult(p: Partial<CostBasisAtTime> & { hasTransactions: boolean }):
     openQty: p.openQty ?? new Decimal(0),
     costBasis: p.costBasis ?? new Decimal(0),
     realizedPnl: p.realizedPnl ?? new Decimal(0),
+    income: p.income ?? new Decimal(0),
     lots: p.lots ?? [],
     hasTransactions: p.hasTransactions,
     basisQuality: p.basisQuality ?? (p.hasTransactions ? 'known' : 'unknown'),
@@ -97,6 +100,9 @@ function makeService(
   Container.set(HoldingCoverageRepository, {
     findManyByHoldingIds: async () => new Map(),
   } as unknown as HoldingCoverageRepository);
+  Container.set(DriftLedgerService, {
+    forHoldings: async () => new Map(),
+  } as unknown as DriftLedgerService);
   const instance = new PnLAtTimeService();
   Container.set(PnLAtTimeService, instance);
   return instance;
@@ -478,3 +484,218 @@ describe('PnLAtTimeService.getPnL — unreviewed transfers (SC-160)', () => {
     expect(r.perHolding.find((p) => p.holdingId === 'dust')?.transfersUnreviewed).toBe(5);
   });
 });
+
+describe('PnLAtTimeService.getPnL — base-currency cash (SC-1467)', () => {
+  test('base-currency cash carries its own value as cost basis, whatever lots the walk left', async () => {
+    const valuation = makeValuationStub([
+      { holdingId: 'usd', tokenId: USD, valueInBase: new Decimal(19) },
+      { holdingId: 'cad', tokenId: 'token-CAD', valueInBase: new Decimal(54) },
+    ]);
+    const costBasis = {
+      getCostBasis: async (holdingId: string) =>
+        costResult({
+          hasTransactions: true,
+          costBasis: new Decimal(holdingId === 'usd' ? 9921 : 60),
+          realizedPnl: new Decimal(holdingId === 'usd' ? -16 : 3),
+        }),
+      walkComponent: async () => {
+        throw new Error('walkComponent should not run — no transfers');
+      },
+    } as unknown as CostBasisService;
+    const r = await makeService(valuation, costBasis).getPnL('u', new Date(), USD, {
+      caches: {
+        transactions: new Map([
+          ['usd', []],
+          ['cad', []],
+        ]),
+      },
+      tx: undefined,
+    });
+    const usd = r.perHolding.find((p) => p.holdingId === 'usd');
+    expect(usd?.costBasis.toString()).toBe('19');
+    expect(usd?.unrealizedPnl?.toString()).toBe('0');
+    expect(usd?.realizedPnl.toString()).toBe('-16');
+    // Control: foreign cash keeps the walk's basis, so its FX move stays in PnL.
+    const cad = r.perHolding.find((p) => p.holdingId === 'cad');
+    expect(cad?.costBasis.toString()).toBe('60');
+    expect(cad?.unrealizedPnl?.toString()).toBe('-6');
+  });
+});
+
+describe('PnLAtTimeService.getPnL — base-currency cash income (SC-1470)', () => {
+  const row = (kind: string, quantity: string, occurredAt: string) =>
+    ({
+      kind,
+      quantity,
+      occurredAt: new Date(occurredAt),
+      transferGroupId: null,
+    }) as unknown as HoldingTransaction;
+
+  test('income the walk booked is gain on every holding; base cash adds its fees as cost', async () => {
+    const valuation = makeValuationStub([
+      { holdingId: 'usd', tokenId: USD, valueInBase: new Decimal(500) },
+      { holdingId: 'cad', tokenId: 'token-CAD', valueInBase: new Decimal(54) },
+    ]);
+    const costBasis = {
+      getCostBasis: async (holdingId: string) =>
+        costResult({
+          hasTransactions: true,
+          costBasis: new Decimal(holdingId === 'usd' ? 480 : 50),
+          realizedPnl: new Decimal(holdingId === 'usd' ? -16 : 3),
+          // What the walk booked at receipt: 10 interest + 3 reward, and 5 CAD-worth.
+          income: new Decimal(holdingId === 'usd' ? 13 : 5),
+        }),
+      walkComponent: async () => {
+        throw new Error('walkComponent should not run — no transfers');
+      },
+    } as unknown as CostBasisService;
+    const r = await makeService(valuation, costBasis).getPnL(
+      'u',
+      new Date('2026-06-30T23:59:59Z'),
+      USD,
+      {
+        caches: {
+          transactions: new Map([
+            [
+              'usd',
+              [
+                row('deposit', '400', '2026-01-01'),
+                row('interest', '10', '2026-02-01'),
+                row('reward', '3', '2026-03-01'),
+                row('fee', '-2', '2026-04-01'),
+                row('interest', '5', '2026-08-01'),
+              ],
+            ],
+            ['cad', [row('interest', '7', '2026-02-01')]],
+          ]),
+        },
+        tx: undefined,
+      }
+    );
+    const usd = r.perHolding.find((p) => p.holdingId === 'usd');
+    // -16 walked, +13 income the walk booked, -2 fee the walk leaves to base cash.
+    expect(usd?.realizedPnl.toString()).toBe('-5');
+    expect(usd?.unrealizedPnl?.toString()).toBe('0');
+    // Foreign cash's income is gain too; it used to sit only in its lots' cost.
+    const cad = r.perHolding.find((p) => p.holdingId === 'cad');
+    expect(cad?.realizedPnl.toString()).toBe('8');
+  });
+});
+
+describe('PnLAtTimeService.getPnL — an unexplained balance change walks as money (SC-1470)', () => {
+  const at = new Date('2026-10-01T23:59:59.999Z');
+  const valuation = makeValuationStub([
+    { holdingId: 'g', tokenId: 't', valueInBase: new Decimal(1000) },
+  ]);
+  const reading = (observedAt: string, balance: string, gapReview: string | null = null) => ({
+    holdingId: 'g',
+    observedAt: new Date(observedAt),
+    balance,
+    gapReview,
+  });
+
+  async function walkedRows(
+    ledger: HoldingTransaction[],
+    readings: ReturnType<typeof reading>[],
+    // What the rollup caches: only the anchor readings for its days (SC-1283).
+    cachedAnchors: ReturnType<typeof reading>[] = readings
+  ): Promise<Array<[string, string]>> {
+    let seen: ReadonlyArray<HoldingTransaction> = [];
+    const spy = {
+      getCostBasis: async (
+        _h: string,
+        _at: Date,
+        _b: string,
+        o: { txs?: HoldingTransaction[] }
+      ) => {
+        seen = o.txs ?? [];
+        return costResult({ hasTransactions: seen.length > 0 });
+      },
+    } as unknown as CostBasisService;
+    makeService(valuation, spy);
+    Container.set(HoldingBalanceObservationRepository, {
+      findReadingsForHoldings: async () => new Map([['g', readings]]),
+    } as unknown as HoldingBalanceObservationRepository);
+    Container.set(DriftLedgerService, new DriftLedgerService());
+    await new PnLAtTimeService().getPnL('u', at, USD, {
+      caches: {
+        holdings: new Map(),
+        transactions: new Map([['g', ledger]]),
+        observations: new Map([['g', cachedAnchors]]),
+      } as unknown as BalanceAtTimeCaches,
+      tx: undefined,
+    });
+    return seen.map((t) => [t.kind, t.quantity]);
+  }
+
+  test('a holding with no ledger arrives as money in at its first reading, and its fall leaves as money out', async () => {
+    expect(
+      await walkedRows(
+        [],
+        [reading('2026-03-02T10:00:00Z', '4'), reading('2026-03-02T20:00:00Z', '3')]
+      )
+    ).toEqual([
+      ['drift_in', '4'],
+      ['drift_out', '-1'],
+    ]);
+  });
+
+  test("a chunked rollup's anchor cache does not change the rows: they come from every reading", async () => {
+    const first = reading('2026-03-02T10:00:00Z', '4');
+    const last = reading('2026-03-09T10:00:00Z', '6');
+    const all = [first, reading('2026-03-05T10:00:00Z', '7'), last];
+    const full = await walkedRows([], all);
+    expect(await walkedRows([], all, [first, last])).toEqual(full);
+    // A gap's change is spread over its days; what matters is the totals.
+    const sum = (kind: string) =>
+      full
+        .filter(([k]) => k === kind)
+        .reduce((total, [, q]) => total.add(q), new Decimal(0))
+        .toString();
+    expect(sum('drift_in')).toBe('7');
+    expect(sum('drift_out')).toBe('-1');
+  });
+
+  test('a rise the owner answered growth is walked as earned, not as money in', async () => {
+    expect(
+      await walkedRows(
+        [ledgerRow('g', 'deposit', '4', '2026-03-01T00:00:00Z')],
+        [reading('2026-03-02T10:00:00Z', '4'), reading('2026-03-02T20:00:00Z', '5', 'growth')]
+      )
+    ).toEqual([
+      ['deposit', '4'],
+      ['drift_growth', '1'],
+    ]);
+  });
+
+  test('control: a change the ledger explains adds nothing to the walk', async () => {
+    expect(
+      await walkedRows(
+        [
+          ledgerRow('g', 'deposit', '4', '2026-03-01T00:00:00Z'),
+          ledgerRow('g', 'deposit', '1', '2026-03-02T15:00:00Z'),
+        ],
+        [reading('2026-03-02T10:00:00Z', '4'), reading('2026-03-02T20:00:00Z', '5')]
+      )
+    ).toEqual([
+      ['deposit', '4'],
+      ['deposit', '1'],
+    ]);
+  });
+});
+
+function ledgerRow(
+  holdingId: string,
+  kind: string,
+  quantity: string,
+  occurredAt: string
+): HoldingTransaction {
+  return {
+    id: `${kind}-${occurredAt}`,
+    holdingId,
+    tokenId: 't',
+    kind,
+    quantity,
+    occurredAt: new Date(occurredAt),
+  } as HoldingTransaction;
+}

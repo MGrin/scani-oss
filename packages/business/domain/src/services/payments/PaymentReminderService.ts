@@ -19,7 +19,7 @@ import Decimal from 'decimal.js';
  */
 
 /** The local hour the reminder targets. "around 5PM" (SC-226). */
-export const REMINDER_LOCAL_HOUR = 17;
+const REMINDER_LOCAL_HOUR = 17;
 
 export interface ReminderCandidate {
   userId: string;

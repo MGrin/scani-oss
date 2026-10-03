@@ -17,8 +17,11 @@ portfolio total lives in **two** places:
   per-day totals included.
 
 Both express the same predicate: a holding is included if and only if
-`isHidden = false`, `isActive = true`, and
-`token.isScamProbability < SCAM_PROBABILITY_THRESHOLD`.
+it is not hidden by its owner (`isHidden = false`, or `hiddenBy = 'auto'`
+when the closed-position sweep hid it), `isActive = true`, and
+`token.isScamProbability < SCAM_PROBABILITY_THRESHOLD`. The flow side of
+returns applies the same rule, so a holding's flows count exactly when its
+value and PnL do.
 
 ## The alternative we rejected
 

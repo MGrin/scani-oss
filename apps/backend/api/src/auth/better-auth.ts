@@ -11,7 +11,7 @@ import {
   userVerifications,
 } from '@scani/db/schema';
 import { SCANI_BRAND } from '@scani/email';
-import { createComponentLogger } from '@scani/logging';
+import { createComponentLogger, pseudonymizeId } from '@scani/logging';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { emailOTP, magicLink } from 'better-auth/plugins';
@@ -167,6 +167,24 @@ export function createBetterAuth(opts: {
           before: async (data) => {
             if (!(await isSignInAllowed(data.userId))) throw new SignInRefused();
           },
+          // SC-1503. A job now writes to this account, so its language has to
+          // outlive the request. Recorded on every sign-in, sign-up included;
+          // a failure here must never cost anyone their session.
+          after: async (session, ctx) => {
+            const language = languageFromAuthContext(ctx ?? undefined);
+            if (!language) return;
+            try {
+              await db.update(users).set({ language }).where(eq(users.id, session.userId));
+            } catch (err) {
+              authLogger.warn(
+                {
+                  userId: session.userId,
+                  error: err instanceof Error ? err.message : String(err),
+                },
+                'Failed to record the account language'
+              );
+            }
+          },
         },
         // Absolute session-max enforcement (SC-1351). The base config
         // (`expiresIn` 7 days, `updateAge` 1 day) is a sliding window with no
@@ -303,13 +321,19 @@ export function createBetterAuth(opts: {
       magicLink({
         sendMagicLink: async ({ email: to, url }, ctx) => {
           const language = languageFromAuthContext(ctx);
-          authLogger.info({ email: to, language }, '🪄 Magic-link callback fired');
+          authLogger.info(
+            { emailId: pseudonymizeId(to), language },
+            '🪄 Magic-link callback fired'
+          );
           try {
             await email.sendMagicLink({ to, url, language, brand });
-            authLogger.info({ email: to }, '✅ Magic link sent');
+            authLogger.info({ emailId: pseudonymizeId(to) }, '✅ Magic link sent');
           } catch (err) {
             authLogger.error(
-              { email: to, error: err instanceof Error ? err.message : String(err) },
+              {
+                emailId: pseudonymizeId(to),
+                error: err instanceof Error ? err.message : String(err),
+              },
               '❌ Failed to send magic link'
             );
             throw err;
@@ -337,10 +361,14 @@ export function createBetterAuth(opts: {
           const language = languageFromAuthContext(ctx);
           try {
             await email.sendOtp({ to, code: otp, type, language, brand });
-            authLogger.info({ email: to, type }, '✅ OTP sent');
+            authLogger.info({ emailId: pseudonymizeId(to), type }, '✅ OTP sent');
           } catch (err) {
             authLogger.error(
-              { email: to, type, error: err instanceof Error ? err.message : String(err) },
+              {
+                emailId: pseudonymizeId(to),
+                type,
+                error: err instanceof Error ? err.message : String(err),
+              },
               '❌ Failed to send OTP'
             );
             throw err;

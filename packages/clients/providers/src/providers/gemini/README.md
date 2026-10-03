@@ -13,8 +13,10 @@ Gemini exchange.
   `SCANI_TESTNET_GEMINI_BASE_URL` for sandbox overrides.
 - **Rate limit**: 5 req/s; namespace `gemini-private`.
 - **Endpoints used**:
-  - POST `/v1/balances` — current balances; also drives the trade-symbol
-    discovery sweep (held assets × `usd`/`usdt`/`btc` quotes).
+  - POST `/v1/balances` — current balances; with the currencies
+    `/v2/transfers` names, drives the trade-symbol discovery sweep
+    (assets × `usd`/`usdt`/`btc` quotes). A failed walk retracts the
+    complete-history claim; an `InvalidSymbol` refusal does not.
   - POST `/v1/mytrades` — past trades. Paginated by `timestamp` cursor
     (oldest row's `timestampms - 1`); `limit_trades` capped at 500.
   - POST `/v2/transfers` — multichain-aware deposits/withdrawals (the

@@ -538,7 +538,7 @@ export class ImportWalletAddressUseCase {
 
         // A position the wallet TRADED and no longer holds has no balance, so
         // the fetch above cannot see it — and the review is the only place a
-        // holding for it can be created, because `TransactionRouter` resolves
+        // holding for it can be created, because the transaction import resolves
         // wallet sources find-only and drops every leg of a token with no
         // holding. Buy and sell alike: the whole life of the position is
         // invisible, with no row anywhere to notice (SC-398).

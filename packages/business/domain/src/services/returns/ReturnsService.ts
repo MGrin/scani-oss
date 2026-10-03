@@ -149,7 +149,7 @@ export type ReturnsOutcome =
   /** No `baseCurrencyId` given and the account has none set. */
   | { status: 'no-base-currency' };
 
-export interface ReturnsCoverage {
+interface ReturnsCoverage {
   /** Days inside the effective window that carry a measurement. */
   measuredDays: number;
   /** Calendar days the effective window spans. */
@@ -213,7 +213,7 @@ export interface ReturnsResult {
   subset: ReturnsSubset | null;
 }
 
-export interface ReturnsSubset {
+interface ReturnsSubset {
   /** Holdings the figures are computed over. */
   includedHoldings: number;
   /** Holdings with a measured value in the window, included or not. */
