@@ -19,6 +19,16 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.52.1](https://github.com/MGrin/scani-oss/compare/v0.52.0...v0.52.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* **deletion:** clear a deleted account's dead-lettered jobs ([75deca5](https://github.com/MGrin/scani-oss/commit/75deca5c61a900abdd42d7786867dc4e870e1434))
+* **integrations:** reconnect re-activates the disconnected credential ([ec0773f](https://github.com/MGrin/scani-oss/commit/ec0773fa5bc229331deb6d91b2ab18cf7d58e7e2))
+* **pricing:** the nearest reading at or before T wins ([b3fb839](https://github.com/MGrin/scani-oss/commit/b3fb839d31b20910738d79639d0aa08977fd0277))
+* **self-host:** realtime connects, and a finished job reads as finished ([145efb9](https://github.com/MGrin/scani-oss/commit/145efb98e1c54e06a7c9e4b15981c2e4f688b197))
+
 ## [0.52.0](https://github.com/MGrin/scani-oss/compare/v0.51.2...v0.52.0) (2026-10-03)
 
 
