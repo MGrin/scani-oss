@@ -37,8 +37,9 @@ other tokens.
 `PriceGraphService.convert(...)` tries paths in order:
 
 1. **Identity.** Same token in and out: `(amount, rate=1, stale=false)`.
-2. **Direct lookup** at or before `at`, preferred granularity. The
-   edge `(from → to)` at the most recent timestamp wins.
+2. **Direct lookup.** The edge `(from → to)` with the nearest reading
+   at or before `at` wins. The preferred granularity only breaks a tie
+   between two readings at one instant.
 3. **Reverse direct.** If `(to → from)` exists, use `1/price`.
 4. **One-hop via each hub** in order (default `[USD, USDT, EUR]`,
    plus the user's display base when known). First hub whose two

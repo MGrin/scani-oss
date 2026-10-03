@@ -52,8 +52,9 @@ export class PriceLookup {
     return this.covered.has(`${tokenId}|${baseTokenId}`);
   }
 
-  // Mirrors TokenPriceRepository.findClosestPriceByGranularity but
-  // operates on the in-memory dataset.
+  // Mirrors TokenPriceRepository.findClosestPriceByGranularity on the
+  // in-memory rows: the nearest reading at or before `at`, with `prefer`
+  // deciding only between rows at that one instant (SC-1543).
   findClosestByGranularity(
     tokenId: string,
     baseTokenId: string,
@@ -61,16 +62,13 @@ export class PriceLookup {
     prefer: TokenPriceGranularity | null
   ): TokenPrice | null {
     const pairKey = `${tokenId}|${baseTokenId}`;
-    if (prefer) {
-      const granBucket = this.byPairGran.get(`${pairKey}|${prefer}`);
-      if (granBucket) {
-        const hit = pickClosestAtOrBefore(granBucket, at);
-        if (hit) return hit;
-      }
-    }
     const anyBucket = this.byPair.get(pairKey);
     if (!anyBucket) return null;
-    return pickClosestAtOrBefore(anyBucket, at);
+    const nearest = pickClosestAtOrBefore(anyBucket, at);
+    if (!nearest || !prefer || nearest.granularity === prefer) return nearest;
+    const granBucket = this.byPairGran.get(`${pairKey}|${prefer}`);
+    const preferred = granBucket ? pickClosestAtOrBefore(granBucket, at) : null;
+    return preferred?.timestamp.getTime() === nearest.timestamp.getTime() ? preferred : nearest;
   }
 }
 

@@ -174,6 +174,166 @@ describe('TokenPriceRepository', () => {
     });
   });
 
+  // SC-1543. The same rule as PriceLookup.findClosestByGranularity, which
+  // answers from memory what this answers from the table: the nearest
+  // reading at or before T, and the preferred granularity only at a tie.
+  const CLOSE_OF_OCT_1 = new Date('2026-10-01T23:59:59.999Z');
+
+  async function seed(
+    tx: DatabaseTransaction,
+    rows: Array<{ price: string; at: string; granularity: schema.TokenPriceGranularity }>
+  ): Promise<{ tokenId: string; baseId: string }> {
+    const token = await makeToken(tx);
+    const base = await makeToken(tx);
+    for (const row of rows) {
+      await repo().create(
+        {
+          tokenId: token.id,
+          baseTokenId: base.id,
+          price: row.price,
+          timestamp: new Date(row.at),
+          source: 'test',
+          granularity: row.granularity,
+        },
+        tx
+      );
+    }
+    return { tokenId: token.id, baseId: base.id };
+  }
+
+  describe('findClosestPriceByGranularity', () => {
+    test('a nearer reading beats an older row of the preferred granularity', async () => {
+      await withTestDb(async (tx) => {
+        const { tokenId, baseId } = await seed(tx, [
+          { price: '100', at: '2026-09-25T00:00:00Z', granularity: 'daily' },
+          { price: '110', at: '2026-10-01T23:00:00Z', granularity: 'intraday' },
+        ]);
+        const found = await repo().findClosestPriceByGranularity(
+          tokenId,
+          baseId,
+          CLOSE_OF_OCT_1,
+          'daily',
+          tx
+        );
+        expect(found?.price).toBe('110');
+      });
+    });
+
+    test('at one instant the preferred granularity wins', async () => {
+      await withTestDb(async (tx) => {
+        const { tokenId, baseId } = await seed(tx, [
+          { price: '101', at: '2026-10-01T00:00:00Z', granularity: 'intraday' },
+          { price: '100', at: '2026-10-01T00:00:00Z', granularity: 'daily' },
+        ]);
+        const daily = await repo().findClosestPriceByGranularity(
+          tokenId,
+          baseId,
+          CLOSE_OF_OCT_1,
+          'daily',
+          tx
+        );
+        const intraday = await repo().findClosestPriceByGranularity(
+          tokenId,
+          baseId,
+          CLOSE_OF_OCT_1,
+          'intraday',
+          tx
+        );
+        expect(daily?.price).toBe('100');
+        expect(intraday?.price).toBe('101');
+      });
+    });
+
+    test('a reading after T is never read', async () => {
+      await withTestDb(async (tx) => {
+        const { tokenId, baseId } = await seed(tx, [
+          { price: '100', at: '2026-09-25T00:00:00Z', granularity: 'daily' },
+          { price: '130', at: '2026-10-02T10:00:00Z', granularity: 'intraday' },
+        ]);
+        const found = await repo().findClosestPriceByGranularity(
+          tokenId,
+          baseId,
+          CLOSE_OF_OCT_1,
+          'daily',
+          tx
+        );
+        expect(found?.price).toBe('100');
+      });
+    });
+
+    test('daily rows only, as past the downsample window: the latest daily row (control)', async () => {
+      await withTestDb(async (tx) => {
+        const { tokenId, baseId } = await seed(tx, [
+          { price: '90', at: '2026-09-20T00:00:00Z', granularity: 'daily' },
+          { price: '95', at: '2026-09-21T00:00:00Z', granularity: 'daily' },
+        ]);
+        const found = await repo().findClosestPriceByGranularity(
+          tokenId,
+          baseId,
+          new Date('2026-09-21T23:59:59.999Z'),
+          'daily',
+          tx
+        );
+        expect(found?.price).toBe('95');
+      });
+    });
+
+    test('no preference: the nearest reading (control)', async () => {
+      await withTestDb(async (tx) => {
+        const { tokenId, baseId } = await seed(tx, [
+          { price: '100', at: '2026-09-25T00:00:00Z', granularity: 'daily' },
+          { price: '110', at: '2026-10-01T23:00:00Z', granularity: 'intraday' },
+        ]);
+        const found = await repo().findClosestPriceByGranularity(
+          tokenId,
+          baseId,
+          CLOSE_OF_OCT_1,
+          null,
+          tx
+        );
+        expect(found?.price).toBe('110');
+      });
+    });
+  });
+
+  // The backfill's question, which is not the readers': "is a DAILY row
+  // already stored near T". A nearer intraday reading must not answer it,
+  // or the backfill stops writing the daily row it exists to write (SC-1543).
+  describe('findLatestDailyAtOrBefore', () => {
+    test('the latest daily row, past a nearer intraday reading', async () => {
+      await withTestDb(async (tx) => {
+        const { tokenId, baseId } = await seed(tx, [
+          { price: '100', at: '2026-09-25T00:00:00Z', granularity: 'daily' },
+          { price: '110', at: '2026-10-01T23:00:00Z', granularity: 'intraday' },
+        ]);
+        const found = await repo().findLatestDailyAtOrBefore(tokenId, baseId, CLOSE_OF_OCT_1, tx);
+        expect(found?.price).toBe('100');
+        expect(found?.granularity).toBe('daily');
+      });
+    });
+
+    test('intraday rows only: nothing', async () => {
+      await withTestDb(async (tx) => {
+        const { tokenId, baseId } = await seed(tx, [
+          { price: '110', at: '2026-10-01T23:00:00Z', granularity: 'intraday' },
+        ]);
+        const found = await repo().findLatestDailyAtOrBefore(tokenId, baseId, CLOSE_OF_OCT_1, tx);
+        expect(found).toBeNull();
+      });
+    });
+
+    test('a daily row after T is never read', async () => {
+      await withTestDb(async (tx) => {
+        const { tokenId, baseId } = await seed(tx, [
+          { price: '100', at: '2026-09-25T00:00:00Z', granularity: 'daily' },
+          { price: '130', at: '2026-10-02T00:00:00Z', granularity: 'daily' },
+        ]);
+        const found = await repo().findLatestDailyAtOrBefore(tokenId, baseId, CLOSE_OF_OCT_1, tx);
+        expect(found?.price).toBe('100');
+      });
+    });
+  });
+
   // findLatestPricesForTokensAnyBase is the dashboard hot-path read for
   // users whose base currency differs from the base every cached price
   // is stored against (the EUR-user-with-USD-priced-holdings case that

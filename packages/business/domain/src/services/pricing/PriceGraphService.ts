@@ -50,7 +50,8 @@ export interface PriceGraphOptions {
 //
 // Path rules:
 //   1. Same token: identity (amount, rate=1, at=now).
-//   2. Direct lookup (from→to) at or before `at`, preferred granularity.
+//   2. Direct lookup (from→to): the nearest reading at or before `at`. The
+//      preferred granularity only breaks a tie at one instant.
 //   3. Reverse direct: if (to→from) exists, use 1/price.
 //   4. One-hop via each hub in order (from→H, H→to, or reversed).
 //   5. Two-hop via pairs of hubs (rare, only when allowed).
