@@ -81,3 +81,12 @@ export function resolveAuthBaseUrl(configured: string | undefined, origin: strin
 export function authBaseUrl(): string {
   return resolveAuthBaseUrl(CONFIGURED, globalThis.location?.origin ?? 'http://localhost');
 }
+
+/**
+ * Where the realtime WebSocket opens: the API base itself, with a trailing
+ * slash. Behind the published image that is `/api/`, which its nginx upgrades
+ * as an exact path — `nginx-realtime-upgrade.test.ts` compares the two.
+ */
+export function realtimeSocketUrl(apiBase: string): string {
+  return `${apiBase.replace(/^http/, 'ws')}/`;
+}

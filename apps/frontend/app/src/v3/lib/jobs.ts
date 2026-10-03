@@ -21,6 +21,28 @@ import type { TFunction } from 'i18next';
  * time, and the default grouping still floats it to the top.
  */
 
+/**
+ * The status poll's query options. The app's client calls an answer fresh for
+ * 30 s, so a poll through the cache asked the server once and then repeated
+ * "active" to itself for half a minute after the job had finished (SC-1542).
+ */
+export const JOB_STATUS_POLL_OPTIONS = { staleTime: 0 } as const;
+
+/**
+ * Whether the status poll has its last answer. The queue's own word is final:
+ * BullMQ calls a job `failed` only once its attempts are spent. A realtime
+ * `failed` is one attempt's, and a retry may still complete, so of the
+ * realtime states only `completed` ends the poll.
+ *
+ * Nothing ended it before. The 30 s cache hid that as one request per half
+ * minute on a finished job's page; asking the server every time would have
+ * made it one every 2 s (SC-1542).
+ */
+export function jobPollIsDone(source: 'poll' | 'event', state: string | undefined): boolean {
+  if (state === 'completed') return true;
+  return source === 'poll' && state === 'failed';
+}
+
 /** The fields the list's own logic reads off a `jobs.listMine` row. */
 export interface JobRow {
   jobId: string;

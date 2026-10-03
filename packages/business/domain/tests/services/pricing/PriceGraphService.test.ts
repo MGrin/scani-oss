@@ -1,13 +1,14 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
 import { describe, expect, test } from 'bun:test';
-import type { TokenPriceGranularity } from '@scani/db/schema';
+import type { TokenPrice, TokenPriceGranularity } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
 import { TokenTypeRepository } from '../../../src/repositories/EnumRepositories';
 import { TokenPriceRepository } from '../../../src/repositories/TokenPriceRepository';
 import { TokenRepository } from '../../../src/repositories/TokenRepository';
 import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceLookup } from '../../../src/services/pricing/PriceLookup';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -348,6 +349,60 @@ describe('PriceGraphService.convert — staleness', () => {
     const r = await svc.convert('1', 'BTC', 'EUR', AT, { tx: undefined });
     expect(r?.path).toBe('one-hop-token-USD');
     expect(r?.stale).toBe(true);
+  });
+});
+
+// SC-1543. Charts, cost basis and returns ask for `daily`. Until this, that
+// ask returned the latest daily row even when a nearer reading existed, and
+// the last week has no daily row for a token the hourly job prices.
+describe('PriceGraphService.convert — the nearest reading', () => {
+  const CLOSE_OF_OCT_1 = new Date('2026-10-01T23:59:59.999Z');
+
+  function reading(price: string, at: string, granularity: TokenPriceGranularity): TokenPrice {
+    return {
+      id: `${at}|${granularity}`,
+      tokenId: 'BTC',
+      baseTokenId: 'USD',
+      price,
+      timestamp: new Date(at),
+      source: 'test',
+      granularity,
+      createdAt: new Date(at),
+    };
+  }
+
+  test('a daily-preferring conversion reads the nearer intraday row', async () => {
+    const svc = makePriceGraphService(makeTokenPriceStub([]), makeTokenStub(HUB_ROWS));
+    const priceLookup = new PriceLookup([
+      reading('100', '2026-09-25T00:00:00Z', 'daily'),
+      reading('110', '2026-10-01T23:00:00Z', 'intraday'),
+    ]);
+    const r = await svc.convert('2', 'BTC', 'USD', CLOSE_OF_OCT_1, {
+      preferGranularity: 'daily',
+      priceLookup,
+      tx: undefined,
+    });
+    expect(r?.amount.toString()).toBe('220');
+    expect(r?.effectiveAt.toISOString()).toBe('2026-10-01T23:00:00.000Z');
+    expect(r?.stale).toBe(false);
+  });
+
+  test('the staleness cap still follows the granularity asked for', async () => {
+    // An intraday row 12 days old: stale under the 7-day cap, not under the
+    // 45-day one a daily ask gets. Unchanged by SC-1543.
+    const svc = makePriceGraphService(makeTokenPriceStub([]), makeTokenStub(HUB_ROWS));
+    const priceLookup = new PriceLookup([reading('110', '2026-09-19T23:00:00Z', 'intraday')]);
+    const asDaily = await svc.convert('1', 'BTC', 'USD', CLOSE_OF_OCT_1, {
+      preferGranularity: 'daily',
+      priceLookup,
+      tx: undefined,
+    });
+    const asAny = await svc.convert('1', 'BTC', 'USD', CLOSE_OF_OCT_1, {
+      priceLookup,
+      tx: undefined,
+    });
+    expect(asDaily?.stale).toBe(false);
+    expect(asAny?.stale).toBe(true);
   });
 });
 

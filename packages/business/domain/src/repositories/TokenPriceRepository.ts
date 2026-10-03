@@ -549,25 +549,12 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
     try {
       const database = this.getDb(transaction);
 
-      if (preferGranularity) {
-        const preferred = await database
-          .select()
-          .from(schema.tokenPrices)
-          .where(
-            and(
-              eq(schema.tokenPrices.tokenId, tokenId),
-              eq(schema.tokenPrices.baseTokenId, baseTokenId),
-              eq(schema.tokenPrices.granularity, preferGranularity),
-              lte(schema.tokenPrices.timestamp, timestamp)
-            )
-          )
-          .orderBy(desc(schema.tokenPrices.timestamp))
-          .limit(1);
-
-        if (preferred[0]) return preferred[0];
-      }
-
-      // Fall through to any granularity.
+      // The nearest reading at or before T. `preferGranularity` decides only
+      // between rows at that one instant. It used to take the latest row of
+      // that granularity whatever its age, and a token the hourly job prices
+      // has no daily row until the downsampler runs at day 8, so every
+      // daily-preferring read of the last week answered a week old (SC-1543).
+      const nearestFirst = desc(schema.tokenPrices.timestamp);
       const results = await database
         .select()
         .from(schema.tokenPrices)
@@ -578,13 +565,49 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
             lte(schema.tokenPrices.timestamp, timestamp)
           )
         )
-        .orderBy(desc(schema.tokenPrices.timestamp))
+        .orderBy(
+          ...(preferGranularity
+            ? [nearestFirst, desc(sql`${schema.tokenPrices.granularity} = ${preferGranularity}`)]
+            : [nearestFirst])
+        )
         .limit(1);
       return results[0] ?? null;
     } catch (error) {
       this.logger.error(
         { tokenId, baseTokenId, timestamp, preferGranularity, error },
         'Failed to find closest price by granularity'
+      );
+      throw error;
+    }
+  }
+
+  // The backfill's question: is a DAILY row stored at or before T. Not the
+  // readers' lookup above, which a nearer intraday reading answers (SC-1543).
+  async findLatestDailyAtOrBefore(
+    tokenId: string,
+    baseTokenId: string,
+    timestamp: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<TokenPrice | null> {
+    try {
+      const results = await this.getDb(transaction)
+        .select()
+        .from(schema.tokenPrices)
+        .where(
+          and(
+            eq(schema.tokenPrices.tokenId, tokenId),
+            eq(schema.tokenPrices.baseTokenId, baseTokenId),
+            eq(schema.tokenPrices.granularity, 'daily'),
+            lte(schema.tokenPrices.timestamp, timestamp)
+          )
+        )
+        .orderBy(desc(schema.tokenPrices.timestamp))
+        .limit(1);
+      return results[0] ?? null;
+    } catch (error) {
+      this.logger.error(
+        { tokenId, baseTokenId, timestamp, error },
+        'Failed to find latest daily price'
       );
       throw error;
     }
@@ -637,8 +660,8 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
   // Callers wrap this in a transaction so intraday data is never dropped
   // without its daily aggregate existing first.
   //
-  // Reads stay correct because every historical lookup (>36h in the past)
-  // prefers 'daily' and falls through to any granularity — see
+  // Reads stay correct because every historical lookup takes the nearest
+  // reading at or before T, whatever its granularity — see
   // PriceGraphService / CostBasisService / PortfolioValuationAtTimeService.
   //
   // Manual prices are exempt because they are not samples of a curve. A custom

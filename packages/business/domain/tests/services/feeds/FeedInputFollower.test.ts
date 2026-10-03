@@ -158,4 +158,44 @@ describe('FeedInputFollower.follow', () => {
       [null, 'active'],
     ]);
   }, 30_000);
+
+  /**
+   * A credential can go back to active (SC-1534), so the status a follow
+   * writes has to come from a read that no connect or disconnect can move
+   * under it: the credential row is taken FOR SHARE first. Here a disconnect
+   * is still uncommitted when the follow starts. An unlocked read sees the
+   * credential active, changes nothing and returns, and the input is left
+   * `active` beside a disconnected credential.
+   */
+  test('a follow waits for an uncommitted change to the credential, and writes the status it then reads', async () => {
+    const owner = await commitExchange(rows, { evidence: true, connected: true });
+    const account = { accountIds: [owner.account.id] };
+    await follower().follow(owner.userId, account);
+    expect((await inputs(owner.userId)).map((i) => i.status)).toEqual(['active']);
+
+    const held = latch();
+    const release = latch();
+    const holder = getDb().transaction(async (tx) => {
+      await tx
+        .update(schema.userIntegrationCredentials)
+        .set({ isActive: false })
+        .where(eq(schema.userIntegrationCredentials.id, owner.credentialId!));
+      held.open();
+      await release.passed;
+    });
+
+    let follow: Promise<void> = Promise.resolve();
+    let waited = false;
+    try {
+      await Promise.race([held.passed, holder]);
+      follow = follower().follow(owner.userId, account);
+      waited = !(await settlesWithin(follow, 1_500));
+    } finally {
+      release.open();
+    }
+    await Promise.allSettled([holder, follow]);
+
+    expect(waited).toBe(true);
+    expect((await inputs(owner.userId)).map((i) => i.status)).toEqual(['disconnected']);
+  }, 30_000);
 });

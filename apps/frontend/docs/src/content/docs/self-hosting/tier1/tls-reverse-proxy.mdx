@@ -8,7 +8,7 @@ sidebar:
 import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 
 The `frontend-app` container ships nginx that reverse-proxies `/api`
-and `/ws` to the internal `api:3001`. You only need to put a
+to the internal `api:3001`. You only need to put a
 **TLS-terminating reverse proxy** in front of `localhost:8080`, where
 `frontend-app` is published.
 
@@ -35,7 +35,7 @@ Two common layouts:
 
     That's it. Caddy provisions and renews the TLS certificate
     automatically via Let's Encrypt. `frontend-app` handles `/api`
-    and `/ws` internally.
+    internally.
   </TabItem>
   <TabItem label="docker-compose .env">
     ```ini
@@ -126,8 +126,8 @@ When the SPA lives on `app.example.com` and the api on
 
 ## What `frontend-app`'s internal nginx does
 
-`API_UPSTREAM` (default `http://api:3001`) is where `/api` and
-`/ws` requests are reverse-proxied:
+`API_UPSTREAM` (default `http://api:3001`) is where `/api`
+requests are reverse-proxied:
 
 ```ini
 # In docker-compose.prod.yml, the frontend-app service:
@@ -162,10 +162,11 @@ the api through the container's own `/api` proxy.
 
 ## WebSockets
 
-The api exposes a WebSocket endpoint at `/ws` (realtime SSE / pub-sub
-for live dashboard updates). Make sure your reverse proxy forwards
-the `Upgrade` and `Connection` headers — both Caddy and the nginx
-snippet above already do.
+The app opens a realtime WebSocket for live updates at `/api/` on its
+own origin, which `frontend-app` forwards to the api's root. In a
+split-origin setup it opens at the root of your api origin instead.
+Make sure your reverse proxy forwards the `Upgrade` and `Connection`
+headers — both Caddy and the nginx snippet above already do.
 
 ## Healthcheck endpoints
 

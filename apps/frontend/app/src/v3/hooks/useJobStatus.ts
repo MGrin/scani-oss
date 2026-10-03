@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { JobEvent } from '@/contexts/RealtimeContext';
 import { useRealtimeConnection } from '@/contexts/RealtimeContext';
 import { trpc } from '@/lib/trpc';
+import { JOB_STATUS_POLL_OPTIONS, jobPollIsDone } from '@/v3/lib/jobs';
 
 /**
  * Track the lifecycle of a single BullMQ job.
@@ -69,9 +70,11 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
 
     lastEventAtRef.current = Date.now();
     let cancelled = false;
+    let settled = false;
 
     const applyEvent = (event: JobEvent) => {
       lastEventAtRef.current = Date.now();
+      if (jobPollIsDone('event', event.state)) settled = true;
       setResult((prev) => {
         // Once we've observed a terminal state (completed/failed), ignore
         // any subsequent non-terminal WS event. Redis pub/sub preserves
@@ -112,7 +115,7 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
 
     const pollOnce = async () => {
       try {
-        const status = await utils.jobs.status.fetch({ jobId });
+        const status = await utils.jobs.status.fetch({ jobId }, JOB_STATUS_POLL_OPTIONS);
         if (cancelled) return;
         if (status.state === 'not_found') {
           notFoundStreak += 1;
@@ -126,6 +129,7 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
         }
         notFoundStreak = 0;
         const nextState = mapBullState(status.state);
+        if (jobPollIsDone('poll', nextState)) settled = true;
         setResult((prev) => {
           // Same terminal-latch guard as WS path — BullMQ's `jobs.status`
           // can briefly return `waiting` for the follow-up price-warm job
@@ -155,7 +159,7 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
     void pollOnce();
 
     const interval = setInterval(() => {
-      if (cancelled) return;
+      if (cancelled || settled) return;
       const age = Date.now() - lastEventAtRef.current;
       // Only poll when we haven't heard from WS recently; if WS is live,
       // the UI stays fresh without extra HTTP traffic.
@@ -169,11 +173,6 @@ export function useJobStatus(jobId: string | null): UseJobStatusResult {
       unsubscribe();
     };
   }, [jobId, subscribeToJob, utils]);
-
-  // Stop-condition: consumers check state and can unmount. Nothing to do
-  // here — the effect's interval naturally idles once state is terminal
-  // because incoming events set state=completed/failed.
-  void TERMINAL_STATES;
 
   return result;
 }

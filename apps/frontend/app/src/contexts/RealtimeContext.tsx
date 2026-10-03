@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
-import { apiBaseUrl } from '@/lib/api-base-url';
+import { apiBaseUrl, realtimeSocketUrl } from '@/lib/api-base-url';
 import { trpc } from '@/lib/trpc';
 
 /**
@@ -324,9 +324,7 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
       // because a relative URL resolves to an http: scheme. That throw is
       // caught below, so realtime just never connects on a self-hosted or
       // demo instance and nothing says why (SC-467).
-      const apiUrl = apiBaseUrl();
-      // http:// → ws://, https:// → wss://
-      const wsUrl = `${apiUrl.replace(/^http/, 'ws')}/`;
+      const wsUrl = realtimeSocketUrl(apiBaseUrl());
 
       // Defensive: refuse to open a non-secure WS in a secure page
       // context. Browsers should reject this anyway, but failing fast

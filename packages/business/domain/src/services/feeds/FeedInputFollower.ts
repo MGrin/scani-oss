@@ -24,6 +24,9 @@ import {
  * asked for, and a failure is logged per account while the others go on.
  * Each account is its own transaction and holds only that account's inputs,
  * so it cannot wait on an import while holding what the import needs (N2).
+ * It also holds the account's credential FOR SHARE, which no import takes
+ * inside a transaction: every write of that row is one statement of its own,
+ * so at worst one waits for this account's follow to end.
  */
 @Service()
 export class FeedInputFollower extends BaseService {
@@ -54,8 +57,18 @@ export class FeedInputFollower extends BaseService {
           // give up on the account after 5s, the foundation migrations' bound,
           // rather than hold the person behind statement_timeout.
           await tx.execute(sql`SET LOCAL lock_timeout = '5s'`);
-          await this.inputs.insertMissing(planFeedInputs(account), tx);
-          await this.inputs.linkAndSetStatus(planInputConnections(account), tx);
+          // A credential goes back to active on a reconnect (SC-1534), so the
+          // status written here must not come from the read above: a connect
+          // and a disconnect in flight together would leave whichever follow
+          // wrote last, not whichever change did. Lock the credential, then
+          // read the account again.
+          await this.inputs.lockCredentialOf(userId, account.accountId, tx);
+          const [current] = await this.inputs.findAccountInputFacts(userId, tx, {
+            accountIds: [account.accountId],
+          });
+          if (!current) return;
+          await this.inputs.insertMissing(planFeedInputs(current), tx);
+          await this.inputs.linkAndSetStatus(planInputConnections(current), tx);
         });
       } catch (error) {
         this.logWarning('Could not bring an account’s feed inputs up to its connection', {

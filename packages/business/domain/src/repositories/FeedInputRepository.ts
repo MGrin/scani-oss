@@ -142,6 +142,32 @@ export class FeedInputRepository extends BaseRepository<FeedInput, NewFeedInput>
     }));
   }
 
+  /**
+   * Takes the credential at the account's institution FOR SHARE, when the user
+   * has one. A connect or a disconnect writes that row, so it waits for the
+   * caller's transaction, and one still uncommitted is waited for here: what
+   * the caller reads next of the credential is what it is, until it commits.
+   */
+  async lockCredentialOf(
+    userId: string,
+    accountId: string,
+    tx: DatabaseTransaction
+  ): Promise<void> {
+    const credentials = schema.userIntegrationCredentials;
+    await this.getDb(tx)
+      .select({ id: credentials.id })
+      .from(credentials)
+      .innerJoin(
+        schema.accounts,
+        and(
+          eq(schema.accounts.userId, credentials.userId),
+          eq(schema.accounts.institutionId, credentials.institutionId)
+        )
+      )
+      .where(and(eq(schema.accounts.id, accountId), eq(schema.accounts.userId, userId)))
+      .for('share', { of: credentials });
+  }
+
   /** The user's inputs, in (account, source) order. */
   async findByUser(userId: string, tx?: DatabaseTransaction): Promise<FeedInput[]> {
     return this.getDb(tx)

@@ -346,16 +346,11 @@ export class PortfolioValuationAtTimeService {
         continue;
       }
 
-      // Price the balance. Prefer 'daily' for historical days (smoother,
-      // less noisy chart) but fall through to intraday when `at` is
-      // within the last 36h — today's daily close doesn't exist until
-      // the 00:00 UTC roll, and using a stale daily (Kraken's last
-      // available close can be months old for infrequently-traded
-      // pairs) produces a chart value that diverges dramatically from
-      // the live dashboard total. `preferGranularity: null` lets
-      // findClosestPriceByGranularity pick whichever row has the most
-      // recent timestamp ≤ `at`, which for `at = now` is the live
-      // intraday row (same source the dashboard uses).
+      // Price the balance at the nearest reading at or before `at`. The
+      // 'daily' preference never picks an older row over a nearer one
+      // (SC-1543): it breaks a tie at one instant and selects the wider
+      // daily staleness cap. Within the last 36h no preference is passed,
+      // so a recent day is judged by the intraday cap.
       const isRecent = Date.now() - at.getTime() < 36 * 60 * 60 * 1000;
       const priced = await this.priceGraphService.convert(
         result.balance,

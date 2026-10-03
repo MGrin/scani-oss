@@ -82,11 +82,10 @@ export class HistoricalPriceBackfillService {
     }
 
     // Fast path: already have a daily price on this token for this date.
-    const existing = await this.tokenPriceRepository.findClosestPriceByGranularity(
+    const existing = await this.tokenPriceRepository.findLatestDailyAtOrBefore(
       tokenId,
       baseTokenId,
-      at,
-      'daily'
+      at
     );
     if (existing && Math.abs(existing.timestamp.getTime() - at.getTime()) < 24 * 60 * 60 * 1000) {
       return {

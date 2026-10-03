@@ -59,6 +59,9 @@ function makeService(opts: {
     price: string;
     source: string;
   };
+  // What the readers' nearest-reading lookup would answer for this token: an
+  // intraday row. The backfill must not ask it (SC-1543).
+  nearestIntradayReading?: { at: Date; price: string };
   pricers: HistoricalPriceProvider[];
 }): {
   service: HistoricalPriceBackfillService;
@@ -87,7 +90,7 @@ function makeService(opts: {
   } as unknown as TokenRepository);
 
   Container.set(TokenPriceRepository, {
-    findClosestPriceByGranularity: async (tokenId: string, baseTokenId: string, at: Date) => {
+    findLatestDailyAtOrBefore: async (tokenId: string, baseTokenId: string, at: Date) => {
       const e = opts.existingPriceForToken;
       if (!e) return null;
       if (e.tokenId !== tokenId || e.baseTokenId !== baseTokenId) return null;
@@ -100,6 +103,19 @@ function makeService(opts: {
         price: e.price,
         timestamp: e.at,
         source: e.source,
+        granularity: 'daily',
+      } as never;
+    },
+    findClosestPriceByGranularity: async (tokenId: string, baseTokenId: string) => {
+      const n = opts.nearestIntradayReading;
+      if (!n) return null;
+      return {
+        tokenId,
+        baseTokenId,
+        price: n.price,
+        timestamp: n.at,
+        source: 'hourly-job',
+        granularity: 'intraday',
       } as never;
     },
     bulkUpsertDailyBackfill: async (rows: CapturedUpsert[]) => {
@@ -158,6 +174,34 @@ describe('HistoricalPriceBackfillService.backfillOne', () => {
     expect(r.status).toBe('already-have');
     expect(r.priceStored).toBe('42000');
     expect(captured).toHaveLength(0);
+  });
+
+  // SC-1543. The readers' lookup answers the nearest reading of any
+  // granularity. The backfill asks a different question, whether a DAILY row
+  // is stored, and an intraday reading an hour before T must not answer it.
+  test('an intraday reading within 24h is not a stored daily price', async () => {
+    const tokens = new Map<string, Token>();
+    tokens.set('eur', makeToken('eur', 'EUR'));
+    tokens.set('usd', makeToken('usd', 'USD'));
+    const at = new Date('2024-03-10T00:00:00Z');
+    const quote: PriceQuote = {
+      tokenId: 'eur',
+      baseTokenId: 'usd',
+      price: '1.09',
+      timestamp: at,
+      source: 'frankfurter_historical',
+    };
+    const { service, captured } = makeService({
+      tokens,
+      nearestIntradayReading: { at: new Date('2024-03-09T23:00:00Z'), price: '1.08' },
+      pricers: [
+        makePricer({ providerKey: 'fx', matches: (t) => t.symbol === 'EUR', result: quote }),
+      ],
+    });
+    const r = await service.backfillOne('eur', at, 'usd');
+    expect(r.status).toBe('inserted');
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.price).toBe('1.09');
   });
 
   test('returns provider-missing when no historical pricer claims the token', async () => {

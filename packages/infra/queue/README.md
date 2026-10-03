@@ -41,7 +41,7 @@ mentions `wallet-import` or `pricing` or any other scani-specific job.
 | `UserJobDescriptor<TPayload, TResult>` | contract | per-job catalog speaks this shape |
 | `ScheduledJobDescriptor` | contract | same, for cron jobs |
 | `LifecycleEvent`, `EnqueuedJobMeta`, `ProcessorContext`, `JobEventPayload`, `JobLifecycleState`, `UserJobBase` | types | |
-| `DEFAULT_QUEUE_NAME = 'scani-jobs'` / `DEFAULT_DLQ_NAME = 'scani-dlq'` | constants | overridable via `QueueClient.configure({ queueName })` |
+| `DEFAULT_QUEUE_NAME = 'scani-jobs'` / `DEFAULT_DLQ_NAME = 'scani-dlq'` | constants | overridable via `QueueClient.configure({ queueName, dlqName })`; `deadLetter()` opens the second one on first use |
 
 ## How a job flows through the framework
 
