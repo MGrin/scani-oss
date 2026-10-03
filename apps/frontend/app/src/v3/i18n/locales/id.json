@@ -2157,9 +2157,7 @@
           "bulkDeletedWithFailures_other": "{{count}} akun dihapus, {{failed}} gagal",
           "bulkDeletingContext": "Gagal menghapus akun",
           "updated": "Akun berhasil diperbarui",
-          "updatingContext": "Gagal memperbarui akun",
-          "syncing": "Menyinkronkan akun — saldo akan segera disegarkan",
-          "syncingContext": "Gagal memulai sinkronisasi akun"
+          "updatingContext": "Gagal memperbarui akun"
         }
       },
       "institution": {

@@ -1684,9 +1684,7 @@
           "bulkDeletedWithFailures_other": "Удалено {{count}} счёта, не удалось — {{failed}}",
           "bulkDeletingContext": "Не удалось удалить счета",
           "updated": "Счёт обновлён",
-          "updatingContext": "Не удалось обновить счёт",
-          "syncing": "Синхронизируем счёт — остатки скоро обновятся",
-          "syncingContext": "Не удалось запустить синхронизацию счёта"
+          "updatingContext": "Не удалось обновить счёт"
         }
       },
       "institution": {

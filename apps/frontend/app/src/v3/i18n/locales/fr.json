@@ -246,9 +246,7 @@
           "bulkDeletedWithFailures_other": "{{count}} comptes supprimés, {{failed}} en échec",
           "bulkDeletingContext": "Échec de la suppression des comptes",
           "updated": "Compte mis à jour",
-          "updatingContext": "Échec de la mise à jour du compte",
-          "syncing": "Synchronisation du compte — les soldes seront actualisés sous peu",
-          "syncingContext": "Impossible de démarrer la synchronisation du compte"
+          "updatingContext": "Échec de la mise à jour du compte"
         }
       },
       "institution": {

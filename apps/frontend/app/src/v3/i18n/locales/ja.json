@@ -2157,9 +2157,7 @@
           "bulkDeletedWithFailures_other": "{{count}}件の口座を削除しました（{{failed}}件は失敗）",
           "bulkDeletingContext": "口座を削除しています",
           "updated": "口座を更新しました",
-          "updatingContext": "口座を更新しています",
-          "syncing": "口座を同期しています。まもなく残高が更新されます",
-          "syncingContext": "口座の同期を開始しています"
+          "updatingContext": "口座を更新しています"
         }
       },
       "institution": {
