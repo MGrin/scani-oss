@@ -7,7 +7,7 @@ import { createPostgresBackend, type PostgresQueueBackend, Queue } from 'bullmq'
 type PgQueue = Queue<any, any, string, any, any, string, PostgresQueueBackend>;
 
 import { Service } from 'typedi';
-import { DEFAULT_QUEUE_NAME } from '../core/default-names';
+import { DEFAULT_DLQ_NAME, DEFAULT_QUEUE_NAME } from '../core/default-names';
 
 const log = createComponentLogger('queue:client');
 
@@ -15,6 +15,8 @@ export interface QueueClientConfig {
   /** Postgres connection string — the same DATABASE_URL the app already uses. */
   connection: string;
   queueName?: string;
+  /** Must match `WorkerClientConfig.dlqName`, which is the side that writes it. */
+  dlqName?: string;
   /**
    * Schema holding BullMQ's tables. Defaults to `bullmq`, which keeps them out
    * of the application's own namespace. Must match what `runQueueMigrations`
@@ -31,6 +33,7 @@ const DEFAULT_QUEUE_SCHEMA = 'bullmq';
 @Service()
 export class QueueClient {
   private queue: PgQueue | null = null;
+  private dlq: PgQueue | null = null;
   private config: QueueClientConfig | null = null;
 
   configure(config: QueueClientConfig): PgQueue {
@@ -66,10 +69,23 @@ export class QueueClient {
     return this.queue;
   }
 
+  /** Opened on first use: most processes never read the dead-letter queue. */
+  deadLetter(): PgQueue {
+    if (!this.config) {
+      throw new Error('QueueClient not configured — call configure() at boot');
+    }
+    this.dlq ??= this.open(this.config.dlqName ?? DEFAULT_DLQ_NAME);
+    return this.dlq;
+  }
+
   async close(): Promise<void> {
     if (this.queue) {
       await this.queue.close();
       this.queue = null;
+    }
+    if (this.dlq) {
+      await this.dlq.close();
+      this.dlq = null;
     }
     this.config = null;
   }

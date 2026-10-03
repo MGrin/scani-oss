@@ -180,9 +180,9 @@ export class DeleteAllUserDataUseCase {
    * happened.
    */
   private async purgeQueuePayloads(userId: string, jobIds: string[]): Promise<void> {
-    if (jobIds.length === 0) return;
     try {
-      const queue = Container.get(QueueClient).get();
+      const client = Container.get(QueueClient);
+      const queue = client.get();
       let removed = 0;
       for (const jobId of jobIds) {
         try {
@@ -198,8 +198,9 @@ export class DeleteAllUserDataUseCase {
           );
         }
       }
+      const deadLetters = await this.purgeDeadLetters(client, userId, new Set(jobIds));
       logger.info(
-        { userId, totalJobIds: jobIds.length, removed },
+        { userId, totalJobIds: jobIds.length, removed, deadLetters },
         'BullMQ payloads purged for deleted user'
       );
     } catch (err) {
@@ -210,5 +211,37 @@ export class DeleteAllUserDataUseCase {
         'QueueClient unavailable; skipping BullMQ payload purge'
       );
     }
+  }
+
+  /**
+   * A job that exhausts its retries is COPIED to the dead-letter queue under a
+   * new id, and nothing consumes that queue, so the copy outlives both the
+   * original and its `user_jobs` row. It is matched on the payload it wraps,
+   * because the id above cannot find it. Production held one for an account
+   * deleted a day earlier (SC-1509).
+   */
+  private async purgeDeadLetters(
+    client: QueueClient,
+    userId: string,
+    jobIds: Set<string>
+  ): Promise<number> {
+    let removed = 0;
+    for (const dead of await client.deadLetter().getJobs()) {
+      const wrapped = dead.data as { originalJobId?: unknown; data?: { userId?: unknown } } | null;
+      const theirs =
+        wrapped?.data?.userId === userId ||
+        (typeof wrapped?.originalJobId === 'string' && jobIds.has(wrapped.originalJobId));
+      if (!theirs) continue;
+      try {
+        await dead.remove();
+        removed++;
+      } catch (err) {
+        logger.warn(
+          { userId, jobId: dead.id, error: err instanceof Error ? err.message : String(err) },
+          'Failed to remove a dead-lettered payload during user-data-delete (non-fatal)'
+        );
+      }
+    }
+    return removed;
   }
 }
