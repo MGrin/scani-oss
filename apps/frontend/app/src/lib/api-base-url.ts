@@ -61,3 +61,23 @@ export function resolveApiBaseUrl(configured: string | undefined, origin: string
 export function apiBaseUrl(): string {
   return resolveApiBaseUrl(CONFIGURED, globalThis.location?.origin ?? 'http://localhost');
 }
+
+/**
+ * Where Better-Auth lives: `/api/auth` on the API's ORIGIN, in every build
+ * (SC-1520). The api mounts it there, and `BACKEND_URL` — which the magic-link
+ * email embeds — is an origin with no path for the same reason (SC-453).
+ *
+ * The API base cannot stand in for it. Better-Auth uses a base URL that
+ * carries a path exactly as given, so the published image's `<origin>/api`
+ * sent `/api/get-session` and `/api/sign-in/magic-link`, which its nginx
+ * stripped to `/get-session` before the api saw them: 404, and nobody could
+ * sign in to a self-hosted install. The image's nginx passes `/api/auth/`
+ * through unstripped, so the same answer holds behind it.
+ */
+export function resolveAuthBaseUrl(configured: string | undefined, origin: string): string {
+  return `${new URL(resolveApiBaseUrl(configured, origin)).origin}/api/auth`;
+}
+
+export function authBaseUrl(): string {
+  return resolveAuthBaseUrl(CONFIGURED, globalThis.location?.origin ?? 'http://localhost');
+}

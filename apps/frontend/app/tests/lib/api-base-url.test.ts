@@ -81,7 +81,8 @@ describe('nothing reaches Better-Auth or WebSocket unresolved', () => {
 
   test('auth-client.ts resolves rather than reading the raw env', () => {
     const source = readFileSync(resolve(ROOT, 'src/lib/auth-client.ts'), 'utf8');
-    expect(source).toContain('apiBaseUrl()');
+    // `authBaseUrl()` resolves through `resolveApiBaseUrl` too (SC-1520).
+    expect(source).toContain('authBaseUrl()');
     expect(source).not.toContain('import.meta.env.VITE_API_URL');
   });
 

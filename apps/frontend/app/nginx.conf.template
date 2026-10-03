@@ -99,6 +99,24 @@ server {
         return 404;
     }
 
+    # Better-Auth, passed through WITH its prefix. The api mounts it at
+    # /api/auth/*, and the magic-link email embeds BACKEND_URL — this
+    # origin, no path — so the link arrives here as /api/auth/... too. The
+    # /api/ block below strips its prefix and would hand the api
+    # /auth/..., which it does not serve: every sign-in 404'd (SC-1520).
+    location /api/auth/ {
+        add_header X-Robots-Tag "noindex, nofollow" always;
+        proxy_pass         ${API_UPSTREAM}/api/auth/;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   X-Scani-Forwarded-Client-IP $http_fly_client_ip;
+        proxy_set_header   Connection        "";
+        proxy_redirect     off;
+    }
+
     # Reverse-proxy /api/* to the backend service. The trailing slash on
     # both sides strips /api before forwarding (so the api itself sees
     # the un-prefixed path it knows about).

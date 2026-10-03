@@ -9,7 +9,8 @@ import { Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 
 The `frontend-app` container ships nginx that reverse-proxies `/api`
 and `/ws` to the internal `api:3001`. You only need to put a
-**TLS-terminating reverse proxy** in front of `frontend-app:8080`.
+**TLS-terminating reverse proxy** in front of `localhost:8080`, where
+`frontend-app` is published.
 
 Two common layouts:
 
