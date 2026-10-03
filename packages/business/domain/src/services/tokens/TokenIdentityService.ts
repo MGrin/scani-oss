@@ -178,6 +178,11 @@ export class TokenIdentityService extends BaseService {
     //    canonical Circle contract on chain id 1.
     const evmContract = inboundMetadata.etherscan?.contractAddress;
     const evmChainId = inboundMetadata.etherscan?.chainId;
+    // An SPL token is its mint; the symbol is whatever its creator typed. A
+    // scam mint calling itself SOL resolved by symbol onto native SOL and was
+    // priced as SOL (SC-1510). Native SOL carries no mint, so it still meets
+    // every other SOL by symbol.
+    const solanaMint = inboundMetadata.solana?.mint;
 
     // marketSegment doubles as the tie-breaker for the
     // `tokens_symbol_type_segment_unique` constraint. EVM tokens get
@@ -197,7 +202,11 @@ export class TokenIdentityService extends BaseService {
     const marketSegment = isFiatCode(symbol)
       ? null
       : (partial.marketSegment ??
-        (evmChainId && evmContract ? `evm:${evmChainId}:${evmContract.toLowerCase()}` : null));
+        (evmChainId && evmContract
+          ? `evm:${evmChainId}:${evmContract.toLowerCase()}`
+          : solanaMint
+            ? `solana:${solanaMint}`
+            : null));
     const base = { symbol, name, effectiveTypeId, marketSegment };
 
     if (evmChainId && evmContract) {
@@ -207,6 +216,11 @@ export class TokenIdentityService extends BaseService {
         transaction
       );
       if (byContract) return { ...base, existing: byContract };
+    }
+
+    if (solanaMint) {
+      const byMint = await this.tokenRepository.findBySolanaMint(solanaMint, transaction);
+      if (byMint) return { ...base, existing: byMint };
     }
 
     // 2. Fall through to the `(symbol, typeId, marketSegment)` tuple.

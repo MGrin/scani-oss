@@ -173,6 +173,21 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
   }
 
   /**
+   * The token an SPL mint already has (SC-1510). Exact match: a mint is
+   * base58, so case is part of it, and lowercasing would equate two mints.
+   */
+  async findBySolanaMint(mint: string, transaction?: DatabaseTransaction): Promise<Token | null> {
+    const database = this.getDb(transaction);
+    const results = await database
+      .select()
+      .from(schema.tokens)
+      .where(sql`${schema.tokens.providerMetadata}->'solana'->>'mint' = ${mint}`)
+      .orderBy(asc(schema.tokens.isScamProbability), desc(schema.tokens.createdAt))
+      .limit(1);
+    return results[0] || null;
+  }
+
+  /**
    * Other token rows that are THE SAME ASSET as the given ones, for the
    * purpose of borrowing a price (SC-198).
    *

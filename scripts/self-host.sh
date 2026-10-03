@@ -148,6 +148,49 @@ $(printf '%s' "$EXISTING_VOLUMES" | tr ' ' '\n' | sed 's/^/      /')
       docker volume rm ${EXISTING_VOLUMES}"
 fi
 
+# ------------------------------------------------------------- host ports
+#
+# A taken port does not fail here, it fails at `compose up`, after the pull and
+# the migration, as `Bind for 0.0.0.0:8080 failed: port is already allocated`,
+# which names neither the setting that moves it nor that everything before it
+# succeeded. Checked before anything is written, so a refusal leaves the
+# directory as it found it. A re-run of a running install holds its own ports,
+# so it is not a clash.
+
+env_value() { sed -n "s/^$1=//p" .env 2>/dev/null | sed -n 1p; }
+
+if [ -f .env ]; then
+  WEB_PORT="$(env_value FRONTEND_PORT)"; MAIL_PORT="$(env_value MAILPIT_UI_PORT)"
+  S3_PORT="$(env_value SEAWEEDFS_S3_HOST_PORT)"; PORT_TIER="$(env_value SCANI_DEPLOYMENT_TIER)"
+else
+  WEB_PORT="$SCANI_PORT"; MAIL_PORT="$SCANI_MAIL_PORT"
+  S3_PORT="${SEAWEEDFS_S3_HOST_PORT:-9000}"; PORT_TIER="$SCANI_DEPLOYMENT_TIER"
+fi
+
+port_taken() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
+
+RUNNING=""
+[ -n "$PROJECT" ] && RUNNING="$(docker ps -q --filter "label=com.docker.compose.project=${PROJECT}")"
+if [ -z "$RUNNING" ]; then
+  CHECKS="${WEB_PORT:-8080}|the web app|SCANI_PORT|FRONTEND_PORT
+${S3_PORT:-9000}|file storage|SEAWEEDFS_S3_HOST_PORT|SEAWEEDFS_S3_HOST_PORT"
+  [ "${PORT_TIER:-1}" = 2 ] || CHECKS="$CHECKS
+${MAIL_PORT:-8026}|the sign-in mail catcher|SCANI_MAIL_PORT|MAILPIT_UI_PORT"
+  while IFS='|' read -r port what env_name file_name; do
+    port_taken "$port" || continue
+    if [ -f .env ]; then
+      remedy="change ${file_name}=${port} in ./.env to a free port, then run this again."
+    else
+      remedy="run it again with ${env_name} set, for example:
+      curl -fsSL ${RAW_BASE}/scripts/self-host.sh | ${env_name}=<a free port> bash"
+    fi
+    die "port ${port} is already in use on this machine, and Scani needs it for ${what}.
+  To use another port, ${remedy}
+  To see what holds it: lsof -nP -iTCP:${port} -sTCP:LISTEN
+  Nothing has been written or started."
+  done <<<"$CHECKS"
+fi
+
 # ------------------------------------------------------------- compose file
 #
 # Run from a checkout and the file is already here; run from an empty
