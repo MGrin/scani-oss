@@ -4,8 +4,8 @@ import { JOB_NAMES } from '../job-names';
 
 export interface TransactionImportJob extends UserJobBase {
   accountId: string;
-  // Stable tag that the consumer maps to a TransactionIngester
-  // (etherscan / binance-api / kraken-api / statement-csv …).
+  // Stable tag the consumer maps to the provider that fetches the account's
+  // transactions (etherscan / binance-api / kraken-api …).
   source: string;
   // Optional ISO-8601 timestamp; incremental ingests use this.
   since?: string;

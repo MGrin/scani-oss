@@ -11,7 +11,6 @@ packages/business/domain/
 │   ├── use-cases/            application workflows triggered by jobs or HTTP
 │   ├── repositories/         data access; extend BaseRepository
 │   ├── features/             tRPC-shaped feature implementations (1400-LOC barrel + impl/*.ts)
-│   ├── ingesters/            TransactionIngester registry + per-source ingesters
 │   ├── external-services/    file-import (CSV / OFX / QIF / format-detector)
 │   ├── lib/                  shared helpers (request-cache, price-map)
 │   └── config/               shared domain-config constants
@@ -68,7 +67,7 @@ bun test --preload ./packages/business/domain/test-preload.ts packages/business/
 
 - **Read deduplication**: when several services in the same tRPC batch hit `PortfolioValuationService.getUserPortfolioValue`, pass `requestCache` from the tRPC context — `lib/request-cache.ts` collapses duplicate calls inside one HTTP request.
 - **Price-map extraction**: `lib/price-map.ts` exposes `extractPriceMap(portfolioValue)` so `AccountService` / `DashboardService` / `AssetAllocationService` don't reimplement the same `balance × price` walk.
-- **Holding mutations vs reads**: mutations live in `HoldingService`, reads in `HoldingQueryService`. Use the right one — mutating from the query service or vice versa is a code smell.
+- **Holding writes vs reads**: a holding is written by the feeds writers (`services/feeds/`: `FeedIngestService`, `SnapshotWriter`) and the holding use cases, and read through `HoldingQueryService`. `HoldingService` keeps only the restore of a hidden holding and a repair script's balance write. Mutating from the query service is a code smell.
 
 ## Type-check
 

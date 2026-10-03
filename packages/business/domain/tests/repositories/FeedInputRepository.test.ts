@@ -177,6 +177,35 @@ describe('findAccountInputFacts', () => {
       );
     });
   });
+
+  test('a scope reads only the accounts given, the accounts at an institution, or the accounts naming a wallet', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const wallet = await makeWallet(tx, user.id, true);
+      const exchange = await seedAccount(tx, user.id, 'sync_exchange_balances');
+      const sameInstitution = await makeAccount(tx, {
+        userId: user.id,
+        institutionId: exchange.institution.id,
+      });
+      const onChain = await seedAccount(tx, user.id, 'blockchain', { userWalletId: wallet.id });
+      const ids = (found: AccountInputFacts[]) => found.map((f) => f.accountId).toSorted();
+
+      expect(
+        ids(await repo().findAccountInputFacts(user.id, tx, { accountIds: [exchange.account.id] }))
+      ).toEqual([exchange.account.id]);
+      expect(
+        ids(
+          await repo().findAccountInputFacts(user.id, tx, {
+            institutionId: exchange.institution.id,
+          })
+        )
+      ).toEqual([exchange.account.id, sameInstitution.id].toSorted());
+      expect(ids(await repo().findAccountInputFacts(user.id, tx, { walletId: wallet.id }))).toEqual(
+        [onChain.account.id]
+      );
+      expect(await repo().findAccountInputFacts(user.id, tx, { accountIds: [] })).toEqual([]);
+    });
+  });
 });
 
 describe('insertMissing', () => {

@@ -60,6 +60,31 @@ describe('storage.getUploadUrl image types (SC-1399)', () => {
  * the app will not show a reader, so a client that skipped its own check said
  * only that something went wrong. It is a sentence now.
  */
+describe('storage.getUploadUrl statement PDFs (SC-1519)', () => {
+  test('screenshot: a PDF is accepted, because /import sends a statement PDF there', async () => {
+    Container.set(StorageFacade, {
+      async presignUpload() {
+        return {
+          uploadUrl: 'https://s3.test/put',
+          key: 'k',
+          expiresAt: new Date(),
+          requiredHeaders: {},
+        };
+      },
+    } as unknown as StorageFacade);
+    const res = await makeAuthedCaller({
+      id: crypto.randomUUID(),
+      email: 'pdf@example.invalid',
+    } as schema.User).storage.getUploadUrl({
+      purpose: 'screenshot',
+      contentType: 'application/pdf',
+      filename: 'statement.pdf',
+      sizeBytes: 1_000,
+    });
+    expect(res.method).toBe('PUT');
+  });
+});
+
 describe('storage.getUploadUrl size (SC-1492)', () => {
   function caller() {
     Container.set(StorageFacade, {

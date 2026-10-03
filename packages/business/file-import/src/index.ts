@@ -6,6 +6,7 @@ export type {
 } from './types';
 
 import { createComponentLogger } from '@scani/logging';
+import { AI_COLUMN_MAPPING_WARNING } from '@scani/shared';
 import Papa from 'papaparse';
 import { parseCsvStatement } from './csv-parser';
 import type { DateOrder } from './dates';
@@ -118,7 +119,7 @@ export async function parseStatement(
                   balance: aiMapping.balance || undefined,
                 };
                 result = parseCsvStatement(content, undefined, mergedMapping, { dateOrder });
-                result.warnings.push('Column mapping detected by AI');
+                result.warnings.push(AI_COLUMN_MAPPING_WARNING);
                 logger.info({ aiMapping }, 'Successfully re-parsed CSV with AI column mapping');
               }
             }

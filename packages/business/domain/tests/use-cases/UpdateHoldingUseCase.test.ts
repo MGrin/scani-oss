@@ -18,15 +18,18 @@
  * would have contained it.
  */
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, setSystemTime, test } from 'bun:test';
+import { getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import Decimal from 'decimal.js';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { unexplainedDrift } from '../../src/lib/balances/unexplained-drift';
 import { flowRoleOf } from '../../src/lib/returns/flow-classification';
 import { pendingPredicate } from '../../src/lib/transfer-review-queue';
 import { HoldingBalanceObservationRepository } from '../../src/repositories/HoldingBalanceObservationRepository';
+import { HoldingCacheWriter } from '../../src/services/feeds/HoldingCacheWriter';
+import { FoundationClassificationService } from '../../src/services/foundation/FoundationClassificationService';
 import { ManualEditFeeRefused } from '../../src/services/holdings/ManualBalanceEditService';
 import { TransferReviewService } from '../../src/services/TransferReviewService';
 import {
@@ -34,9 +37,23 @@ import {
   ManualOutflowAnswerRefused,
   UpdateHoldingUseCase,
 } from '../../src/use-cases/UpdateHoldingUseCase';
+import { committedRows } from '../../test/helpers/committed-rows';
 import { withTestDb } from '../../test/helpers/db';
-import { makeInstitution, makeUser } from '../../test/helpers/factories';
-import { makeAccount, makeHolding, makeToken } from '../../test/helpers/factories-extra';
+import { makeInstitution, makeInstitutionType, makeUser } from '../../test/helpers/factories';
+import {
+  makeAccount,
+  makeCheckpoint,
+  makeHolding,
+  makeHoldingTransaction,
+  makeToken,
+  makeWalletAccount,
+} from '../../test/helpers/factories-extra';
+import { expectHistoryUnchanged, type HistoryReading } from '../../test/helpers/history-neutrality';
+import {
+  expectLabelsSettled,
+  expectPersonRolesAsClassified,
+} from '../../test/helpers/labels-settled';
+import { backendPid, outcomeOf, waitUntilBlocked } from '../../test/helpers/lock-wait';
 
 const useCase = () => Container.get(UpdateHoldingUseCase);
 
@@ -244,7 +261,7 @@ describe('UpdateHoldingUseCase', () => {
   /**
    * The correction must not be dated AFTER this edit's own observation, and
    * the only thing that makes that true is the ordering inside `run`: the
-   * synthesis happens before `recordBalanceObservation`. Reverse the two and
+   * synthesis happens before `SnapshotWriter.record`. Reverse the two and
    * the correction supersedes itself, restating an interval one millisecond
    * long and leaving the whole delta as a step on today.
    *
@@ -1065,6 +1082,50 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
     });
   });
 
+  // D-1 exception U4. The destination's balance is one this path computes, so
+  // it is written as a plain decimal; `Decimal`'s own text for it is `5e-8`.
+  // The source's balance is the text a person typed, and stays as typed.
+  test('a declared transfer of dust writes the destination it computes in plain notation, and the typed balance as typed (U4)', async () => {
+    await withTestDb(async (tx) => {
+      const { user, institution, token, holding } = await cashHoldingObservedToday(tx);
+      const other = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const destination = await makeHolding(tx, {
+        userId: user.id,
+        accountId: other.id,
+        tokenId: token.id,
+        balance: '0',
+        source: 'manual',
+      });
+
+      await useCase().execute(
+        holding.id,
+        {
+          // 4,000 less 0.00000005, typed with a trailing zero.
+          balance: '3999.999999950',
+          editCause: 'flow',
+          editOccurredAt: backdatedBeforeLastObservation(),
+          editOutflow: {
+            decision: 'internal',
+            destination: { accountId: other.id, holdingId: destination.id },
+          },
+        },
+        user.id,
+        tx
+      );
+
+      const balanceOf = async (id: string) =>
+        (await tx.select().from(schema.holdings).where(eq(schema.holdings.id, id)))[0]?.balance;
+      expect(await balanceOf(destination.id)).toBe('0.00000005');
+      expect(await balanceOf(holding.id)).toBe('3999.999999950');
+
+      const copies = await tx
+        .select({ balance: schema.holdingBalanceObservations.balance })
+        .from(schema.holdingBalanceObservations)
+        .where(eq(schema.holdingBalanceObservations.holdingId, destination.id));
+      expect(copies.map((copy) => copy.balance)).toEqual(['0.00000005']);
+    });
+  });
+
   test('a declared transfer states its fee: the destination gets what ARRIVED (SC-857)', async () => {
     await withTestDb(async (tx) => {
       const { user, institution, token, holding } = await cashHoldingObservedToday(tx);
@@ -1279,5 +1340,1007 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
         )
       ).rejects.toBeInstanceOf(ManualOutflowAnswerRefused);
     });
+  });
+});
+
+/**
+ * Today's edit path, pinned before foundation A2 moves it onto
+ * `HoldingCacheWriter` and `SnapshotWriter.record` (Task 17). Everything here
+ * passed on the path before the move, so these are that path's figures,
+ * instants and legacy columns: the move may label the observation, and may
+ * change nothing a reader sees (D-1, R11).
+ */
+describe('UpdateHoldingUseCase — today’s edit, pinned before it moves (foundation A2)', () => {
+  type Tx = Parameters<Parameters<typeof withTestDb>[0]>[0];
+
+  const EDITED_AT = new Date('2026-03-01T09:30:00.000Z');
+  const STATED_LAST_UPDATED = new Date('2026-02-15T00:00:00.000Z');
+
+  afterEach(() => {
+    setSystemTime();
+  });
+
+  async function rowOf(tx: Tx, holdingId: string) {
+    const [row] = await tx.select().from(schema.holdings).where(eq(schema.holdings.id, holdingId));
+    if (!row) throw new Error(`holding ${holdingId} is gone`);
+    return row;
+  }
+
+  test('the observation is the legacy row: sync-capture, origin updateHolding, stamped when written, answered at the edit instant', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx, { lastUpdated: SEEDED_LAST_UPDATED });
+      const before = Date.now();
+
+      await useCase().execute(
+        holding.id,
+        { balance: '150', editCause: 'growth', editedAt: EDITED_AT },
+        user.id,
+        tx
+      );
+
+      const after = Date.now();
+      const rows = await observationsFor(tx, holding.id);
+      expect(rows).toHaveLength(1);
+      const [row] = rows;
+      expect(row).toMatchObject({
+        userId: user.id,
+        balance: '150',
+        source: 'sync-capture',
+        gapReview: 'growth',
+        gapReviewSource: 'user',
+      });
+      expect(row!.sourceMetadata).toEqual({ origin: 'updateHolding' });
+      // Answered at the edit, observed at the write: the two instants differ
+      // whenever a caller states `editedAt`.
+      expect(row!.gapReviewedAt?.toISOString()).toBe(EDITED_AT.toISOString());
+      expect(row!.observedAt.getTime()).toBeGreaterThanOrEqual(before);
+      expect(row!.observedAt.getTime()).toBeLessThanOrEqual(after);
+    });
+  });
+
+  test('an edit with no cause writes the legacy row unanswered', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx);
+
+      await useCase().execute(holding.id, { balance: '150', editedAt: EDITED_AT }, user.id, tx);
+
+      const [row] = await observationsFor(tx, holding.id);
+      expect(row).toMatchObject({
+        balance: '150',
+        source: 'sync-capture',
+        gapReview: null,
+        gapReviewSource: null,
+        gapReviewedAt: null,
+      });
+      expect(row!.sourceMetadata).toEqual({ origin: 'updateHolding' });
+    });
+  });
+
+  test('last_updated is the edit instant: editedAt when given, a stated lastUpdated over it, and only on a balance or isActive change', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx, { lastUpdated: SEEDED_LAST_UPDATED });
+
+      const edited = await useCase().execute(
+        holding.id,
+        { balance: '150', editedAt: EDITED_AT },
+        user.id,
+        tx
+      );
+      expect(edited.lastUpdated.toISOString()).toBe(EDITED_AT.toISOString());
+      expect((await rowOf(tx, holding.id)).lastUpdated.toISOString()).toBe(EDITED_AT.toISOString());
+
+      const stated = await useCase().execute(
+        holding.id,
+        { balance: '160', editedAt: EDITED_AT, lastUpdated: STATED_LAST_UPDATED },
+        user.id,
+        tx
+      );
+      expect(stated.lastUpdated.toISOString()).toBe(STATED_LAST_UPDATED.toISOString());
+      expect((await rowOf(tx, holding.id)).lastUpdated.toISOString()).toBe(
+        STATED_LAST_UPDATED.toISOString()
+      );
+
+      const renamed = await useCase().execute(
+        holding.id,
+        { label: 'Savings', editedAt: EDITED_AT },
+        user.id,
+        tx
+      );
+      expect(renamed.lastUpdated.toISOString()).toBe(STATED_LAST_UPDATED.toISOString());
+
+      const toggled = await useCase().execute(
+        holding.id,
+        { isActive: false, editedAt: EDITED_AT },
+        user.id,
+        tx
+      );
+      expect(toggled.lastUpdated.toISOString()).toBe(EDITED_AT.toISOString());
+      expect(toggled.balance).toBe('160');
+
+      const before = Date.now();
+      const unstated = await useCase().execute(holding.id, { balance: '170' }, user.id, tx);
+      const after = Date.now();
+      expect(unstated.lastUpdated.getTime()).toBeGreaterThanOrEqual(before);
+      expect(unstated.lastUpdated.getTime()).toBeLessThanOrEqual(after);
+      expect(unstated).toEqual(await rowOf(tx, holding.id));
+
+      // Three balance edits, three observations; the rename and the toggle wrote none.
+      expect((await observationsFor(tx, holding.id)).map((o) => o.balance).sort()).toEqual([
+        '150',
+        '160',
+        '170',
+      ]);
+    });
+  });
+
+  test('a correction is dated 1 ms after the figure it replaces entered: the last observation, or the edit instant when there is none', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx, { lastUpdated: SEEDED_LAST_UPDATED });
+
+      await useCase().execute(
+        holding.id,
+        { balance: '120', editCause: 'correction', editedAt: EDITED_AT },
+        user.id,
+        tx
+      );
+
+      const [correction] = await ledgerFor(tx, holding.id);
+      expect(correction).toMatchObject({
+        kind: 'correction',
+        source: 'user-balance-correction',
+        quantity: '20',
+        externalId: `manual-edit:${EDITED_AT.toISOString()}`,
+        inputId: null,
+      });
+      // The fallback reads the row the UPDATE returned, whose last_updated is
+      // already this edit's instant.
+      expect(correction!.occurredAt.getTime()).toBe(EDITED_AT.getTime() + 1);
+      expect(correction!.sourceMetadata).toEqual({
+        cause: 'correction',
+        previousBalance: '100',
+        newBalance: '120',
+        editedAt: EDITED_AT.toISOString(),
+      });
+    });
+
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx, { lastUpdated: SEEDED_LAST_UPDATED });
+      const enteredAt = new Date('2026-02-20T12:00:00.000Z');
+      await tx.insert(schema.holdingBalanceObservations).values({
+        userId: user.id,
+        holdingId: holding.id,
+        balance: '100',
+        observedAt: enteredAt,
+        source: 'sync-capture',
+        sourceMetadata: { origin: 'updateHolding' },
+      });
+
+      await useCase().execute(
+        holding.id,
+        { balance: '90', editCause: 'correction', editedAt: EDITED_AT },
+        user.id,
+        tx
+      );
+
+      const [correction] = await ledgerFor(tx, holding.id);
+      expect(correction!.quantity).toBe('-10');
+      expect(correction!.occurredAt.getTime()).toBe(enteredAt.getTime() + 1);
+    });
+  });
+
+  test('a value at an instant the holding already holds from the same source is dropped, and the balance is still set (R8)', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx, { lastUpdated: SEEDED_LAST_UPDATED });
+      setSystemTime(EDITED_AT);
+
+      await useCase().execute(holding.id, { balance: '150' }, user.id, tx);
+      const second = await useCase().execute(holding.id, { balance: '175' }, user.id, tx);
+
+      expect(second.balance).toBe('175');
+      expect(second.lastUpdated.toISOString()).toBe(EDITED_AT.toISOString());
+      const rows = await observationsFor(tx, holding.id);
+      expect(rows.map((o) => [o.balance, o.observedAt.toISOString()])).toEqual([
+        ['150', EDITED_AT.toISOString()],
+      ]);
+    });
+  });
+});
+
+/**
+ * The move's own assertions (foundation A2, Task 17). The observation is
+ * written by `SnapshotWriter.record`: its role by Rule P (a snapshot until the
+ * holding's feed has begun, a verification after, none on a NULL kind),
+ * authority `person`, no input, with the edit's cause and its attestation, and
+ * a correction retires the snapshot it restates. The legacy columns above stay.
+ */
+describe('UpdateHoldingUseCase records through SnapshotWriter (foundation A2)', () => {
+  type Tx = Parameters<Parameters<typeof withTestDb>[0]>[0];
+
+  const EDITED_AT = new Date('2026-03-01T09:30:00.000Z');
+  const LONG_AGO = new Date('2026-01-01T00:00:00.000Z');
+
+  afterEach(() => {
+    setSystemTime();
+  });
+
+  async function holdingsOfEveryKind(tx: Tx) {
+    const user = await makeUser(tx);
+    const institution = await makeInstitution(tx);
+    const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+    const of = async (kind: 'snapshot' | 'feed' | null) =>
+      makeHolding(tx, {
+        userId: user.id,
+        accountId: account.id,
+        tokenId: (await makeToken(tx)).id,
+        balance: '100',
+        source: 'manual',
+        kind,
+        startsAt: kind === null ? null : LONG_AGO,
+        lastUpdated: LONG_AGO,
+      });
+    return {
+      user,
+      snapshot: await of('snapshot'),
+      feed: await of('feed'),
+      unknown: await of(null),
+    };
+  }
+
+  async function holdingRowOf(tx: Tx, holdingId: string) {
+    const [row] = await tx.select().from(schema.holdings).where(eq(schema.holdings.id, holdingId));
+    if (!row) throw new Error(`holding ${holdingId} is gone`);
+    return row;
+  }
+
+  function personSnapshotsOf(tx: Tx, holdingId: string) {
+    return tx
+      .select()
+      .from(schema.holdingBalanceObservations)
+      .where(eq(schema.holdingBalanceObservations.holdingId, holdingId))
+      .orderBy(asc(schema.holdingBalanceObservations.observedAt));
+  }
+
+  test('an edit writes one observation, its role by Rule P, with the cause and the attestation', async () => {
+    await withTestDb(async (tx) => {
+      const { user, snapshot, feed, unknown } = await holdingsOfEveryKind(tx);
+      // The feed has begun, so a value on it is a verification (Rule P).
+      await makeCheckpoint(tx, { userId: user.id, holdingId: feed.id, observedAt: LONG_AGO });
+
+      await useCase().execute(
+        snapshot.id,
+        { balance: '150', editCause: 'growth', editedAt: EDITED_AT },
+        user.id,
+        tx
+      );
+      await useCase().execute(
+        feed.id,
+        { balance: '175', editCause: 'flow', editedAt: EDITED_AT },
+        user.id,
+        tx
+      );
+      await useCase().execute(unknown.id, { balance: '90', editedAt: EDITED_AT }, user.id, tx);
+
+      const legacy = {
+        source: 'sync-capture',
+        sourceMetadata: { origin: 'updateHolding' },
+        authority: 'person',
+        inputId: null,
+        supersededAt: null,
+      };
+      const [onSnapshot] = await observationsFor(tx, snapshot.id);
+      expect(await observationsFor(tx, snapshot.id)).toHaveLength(1);
+      expect(onSnapshot).toMatchObject({
+        ...legacy,
+        balance: '150',
+        role: 'snapshot',
+        cause: 'growth',
+        gapReview: 'growth',
+        gapReviewSource: 'user',
+      });
+      expect(onSnapshot!.gapReviewedAt?.toISOString()).toBe(EDITED_AT.toISOString());
+
+      // D-6: a person's value on a feed holding whose feed has begun is a
+      // verification, and still sets today's figure (D-1).
+      const onFeed = (await observationsFor(tx, feed.id)).filter((o) => o.authority === 'person');
+      expect(onFeed).toHaveLength(1);
+      expect(onFeed[0]).toMatchObject({
+        ...legacy,
+        balance: '175',
+        role: 'verification',
+        cause: 'flow',
+        gapReview: 'flow',
+      });
+      expect((await holdingRowOf(tx, feed.id)).balance).toBe('175');
+
+      // A NULL kind persists no role; the read-time Rule P fills it.
+      const onUnknown = await observationsFor(tx, unknown.id);
+      expect(onUnknown).toHaveLength(1);
+      expect(onUnknown[0]).toMatchObject({
+        ...legacy,
+        balance: '90',
+        role: null,
+        cause: null,
+        gapReview: null,
+      });
+
+      // A value at now lowers no start, and a NULL start stays NULL (D-6).
+      for (const [holding, startsAt] of [
+        [snapshot, LONG_AGO],
+        [feed, LONG_AGO],
+        [unknown, null],
+      ] as const) {
+        const row = await holdingRowOf(tx, holding.id);
+        expect(row.startsAt).toEqual(startsAt);
+        expect(row.kind).toBe(holding.kind);
+      }
+    });
+  });
+
+  test('a correction supersedes the previous snapshot, and the legacy correction row is still written', async () => {
+    await withTestDb(async (tx) => {
+      const { user, snapshot } = await holdingsOfEveryKind(tx);
+      await tx.insert(schema.holdingBalanceObservations).values({
+        userId: user.id,
+        holdingId: snapshot.id,
+        balance: '100',
+        observedAt: LONG_AGO,
+        source: 'sync-capture',
+        sourceMetadata: { origin: 'updateHolding' },
+        role: 'snapshot',
+        authority: 'person',
+        cause: 'flow',
+      });
+
+      // A plain value replaces nothing before it.
+      await useCase().execute(snapshot.id, { balance: '150', editCause: 'flow' }, user.id, tx);
+      await useCase().execute(
+        snapshot.id,
+        { balance: '140', editCause: 'correction' },
+        user.id,
+        tx
+      );
+
+      const rows = await personSnapshotsOf(tx, snapshot.id);
+      expect(
+        rows.map((o) => ({ balance: o.balance, cause: o.cause, live: o.supersededAt === null }))
+      ).toEqual([
+        { balance: '100', cause: 'flow', live: true },
+        { balance: '150', cause: 'flow', live: false },
+        { balance: '140', cause: 'correction', live: true },
+      ]);
+      // OD-6: today's restatement row stays beside the snapshot's cause.
+      const corrections = (await ledgerFor(tx, snapshot.id)).filter(
+        (row) => row.source === 'user-balance-correction'
+      );
+      expect(corrections.map((row) => [row.kind, row.quantity])).toEqual([['correction', '-10']]);
+    });
+  });
+
+  test('a same-instant value from the same source is dropped and supersedes nothing (R8)', async () => {
+    await withTestDb(async (tx) => {
+      const { user, snapshot } = await holdingsOfEveryKind(tx);
+      setSystemTime(EDITED_AT);
+
+      await useCase().execute(snapshot.id, { balance: '150', editCause: 'flow' }, user.id, tx);
+      await useCase().execute(
+        snapshot.id,
+        { balance: '140', editCause: 'correction' },
+        user.id,
+        tx
+      );
+
+      expect((await holdingRowOf(tx, snapshot.id)).balance).toBe('140');
+      const rows = await personSnapshotsOf(tx, snapshot.id);
+      expect(
+        rows.map((o) => ({ balance: o.balance, role: o.role, live: o.supersededAt === null }))
+      ).toEqual([{ balance: '150', role: 'snapshot', live: true }]);
+    });
+  });
+});
+
+/**
+ * Committed, because the history helper reads committed rows. A hand-kept
+ * holding of 100, observed on 1 June, with a deposit of 10 on 1 July its
+ * balance never caught up with; then four edits a person makes, each frozen at
+ * its own instant so every figure is the same on every run.
+ */
+describe('UpdateHoldingUseCase — history across a person’s edits (foundation A2)', () => {
+  const created = { users: [] as string[], tokens: [] as string[], institutions: [] as string[] };
+
+  afterEach(async () => {
+    setSystemTime();
+    const db = getDb();
+    const users = created.users.splice(0);
+    const tokens = created.tokens.splice(0);
+    const institutions = created.institutions.splice(0);
+    // Users first: their holdings are what keep the tokens restricted.
+    if (users.length) await db.delete(schema.users).where(inArray(schema.users.id, users));
+    if (tokens.length) await db.delete(schema.tokens).where(inArray(schema.tokens.id, tokens));
+    if (institutions.length) {
+      await db.delete(schema.institutions).where(inArray(schema.institutions.id, institutions));
+    }
+  });
+
+  const at = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
+
+  async function committedHolding(
+    kind: 'snapshot' | 'feed' | null = 'snapshot',
+    { observed = true }: { observed?: boolean } = {}
+  ) {
+    return await getDb().transaction(async (tx) => {
+      const user = await makeUser(tx);
+      const bank = await makeInstitutionType(tx, { code: 'bank' });
+      const institution = await makeInstitution(tx, { typeId: bank.id });
+      const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const token = await makeToken(tx);
+      const holding = await makeHolding(tx, {
+        userId: user.id,
+        accountId: account.id,
+        tokenId: token.id,
+        balance: '100',
+        source: 'manual',
+        kind,
+        startsAt: kind === null ? null : at('2026-06-01'),
+        createdAt: at('2026-06-01'),
+        lastUpdated: at('2026-06-01'),
+      });
+      if (observed) {
+        await tx.insert(schema.holdingBalanceObservations).values({
+          userId: user.id,
+          holdingId: holding.id,
+          balance: '100',
+          observedAt: at('2026-06-01'),
+          source: 'sync-capture',
+          sourceMetadata: { origin: 'updateHolding' },
+        });
+      }
+      await makeHoldingTransaction(tx, {
+        userId: user.id,
+        holdingId: holding.id,
+        kind: 'deposit',
+        quantity: '10',
+        occurredAt: at('2026-07-01'),
+        source: 'user-entered',
+      });
+      created.users.push(user.id);
+      created.tokens.push(token.id);
+      created.institutions.push(institution.id);
+      return { userId: user.id, holdingId: holding.id };
+    });
+  }
+
+  /** Each edit in its own committed transaction, at its own frozen instant. */
+  async function edit(
+    fixture: { userId: string; holdingId: string },
+    instant: Date,
+    data: Parameters<UpdateHoldingUseCase['execute']>[1]
+  ) {
+    setSystemTime(instant);
+    try {
+      await getDb().transaction((tx) =>
+        useCase().execute(fixture.holdingId, data, fixture.userId, tx)
+      );
+    } finally {
+      setSystemTime();
+    }
+  }
+
+  async function aPersonsEdits(fixture: { userId: string; holdingId: string }) {
+    await edit(fixture, at('2026-08-01'), {
+      balance: '150',
+      editCause: 'flow',
+      editOccurredAt: at('2026-07-20'),
+    });
+    await edit(fixture, at('2026-08-10'), { balance: '140', editCause: 'correction' });
+    await edit(fixture, at('2026-08-20'), { balance: '145', editCause: 'growth' });
+    await edit(fixture, at('2026-09-01'), { balance: '160' });
+  }
+
+  test('history unchanged: a flow, a correction, a growth and an uncaused edit read as they did before the move', async () => {
+    const fixture = await committedHolding();
+    await aPersonsEdits(fixture);
+
+    // Read on the path before the move. The drift between two observations
+    // is spread across the interval they bracket (`driftAhead`), which is why
+    // the figures between 1 June and 1 August are not round: 150 observed on
+    // 1 August, less the 60 booked since 1 June, leaves 10 unexplained.
+    //   15 May   before the first observation: its 100
+    //   15 Jun   97.70…   10 Jul 103.60…   25 Jul 151.14…   the spread drift
+    //   5 Aug    the correction dated 1 Aug + 1 ms restates the interval: 140
+    //   15 Aug   the growth, 5 of 10 days from 140 to 145
+    //   25 Aug   5 of 12 days from 145 to the uncaused 160
+    //   5 Sep, now   160
+    const golden: Array<[Date, string]> = [
+      [at('2026-05-15'), '100'],
+      [at('2026-06-15'), '97.70491803278688524590163934'],
+      [at('2026-07-10'), '103.6065573770491803278688525'],
+      [at('2026-07-25'), '151.1475409836065573770491803'],
+      [at('2026-08-05'), '140'],
+      [at('2026-08-15'), '142.5'],
+      [at('2026-08-25'), '151.25'],
+      [at('2026-09-05'), '160'],
+      [new Date(), '160'],
+    ];
+    const readings: HistoryReading[] = golden.map(([instant, balance]) => ({
+      holdingId: fixture.holdingId,
+      at: instant,
+      balance,
+      anchor: null,
+    }));
+
+    await expectHistoryUnchanged(readings);
+    // The control: a figure the walk does not give is caught.
+    await expect(
+      expectHistoryUnchanged(readings.map((r, i) => (i === 4 ? { ...r, balance: '150' } : r)))
+    ).rejects.toThrow();
+  });
+
+  test('expectLabelsSettled after a person’s edits on a backfilled snapshot and feed holding', async () => {
+    const snapshot = await committedHolding('snapshot');
+    const feed = await committedHolding('feed');
+    for (const { userId } of [snapshot, feed]) {
+      await Container.get(FoundationClassificationService).classify({ apply: true, userId });
+    }
+
+    await aPersonsEdits(snapshot);
+    await edit(feed, at('2026-08-01'), { balance: '150', editCause: 'flow' });
+    await edit(feed, at('2026-08-10'), { balance: '140', editCause: 'correction' });
+
+    await expectLabelsSettled(snapshot.userId);
+    await expectLabelsSettled(feed.userId);
+  });
+
+  /**
+   * R72. The holdings UPDATE runs before `SnapshotWriter.record`, so a second
+   * edit of one holding waits on the first's row lock and reads the first's
+   * snapshot once it commits. `FOR UPDATE` on the observations locks nothing
+   * when there is no snapshot yet, so without that order both first values
+   * would stay live.
+   */
+  test('two concurrent first values on one holding: the later one supersedes the earlier (R72)', async () => {
+    const fixture = await committedHolding('snapshot', { observed: false });
+    let wrote!: () => void;
+    let release!: () => void;
+    const firstWrote = new Promise<void>((resolve) => {
+      wrote = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let firstPid: number | undefined;
+    let secondPid: number | undefined;
+
+    const first = getDb().transaction(async (tx) => {
+      firstPid = await backendPid(tx);
+      await useCase().execute(
+        fixture.holdingId,
+        { balance: '120', editCause: 'correction' },
+        fixture.userId,
+        tx
+      );
+      wrote();
+      await released;
+    });
+    let second: Promise<unknown> = Promise.resolve();
+    let blocked = false;
+    try {
+      // Raced with the transaction itself, so a first edit that throws fails
+      // the test rather than leaving it waiting for a write that never comes.
+      await Promise.race([firstWrote, first]);
+      second = getDb().transaction(async (tx) => {
+        secondPid = await backendPid(tx);
+        await useCase().execute(
+          fixture.holdingId,
+          { balance: '130', editCause: 'correction' },
+          fixture.userId,
+          tx
+        );
+      });
+      // Release the first only once the second is waiting on it, so the
+      // interleaving is the race and not a sequence that happened to be safe.
+      blocked = await waitUntilBlocked({ pid: () => secondPid, settled: second }, firstPid!);
+    } finally {
+      // Always, so a failed wait cannot leave the first holding the row lock
+      // that the cleanup's user delete would then block on.
+      release();
+    }
+    await Promise.all([first, second]);
+    expect(blocked).toBe(true);
+
+    const rows = await getDb()
+      .select()
+      .from(schema.holdingBalanceObservations)
+      .where(eq(schema.holdingBalanceObservations.holdingId, fixture.holdingId))
+      .orderBy(asc(schema.holdingBalanceObservations.observedAt));
+    expect(
+      rows.map((o) => ({ balance: o.balance, role: o.role, live: o.supersededAt === null }))
+    ).toEqual([
+      { balance: '120', role: 'snapshot', live: false },
+      { balance: '130', role: 'snapshot', live: true },
+    ]);
+  });
+
+  /**
+   * A feed's order, its entry first and then its balance, with the edit
+   * arriving in between. Released once the edit waits on the feed, or once it
+   * has settled without waiting.
+   */
+  async function anEditBesideAFeed(data: Parameters<UpdateHoldingUseCase['execute']>[1]) {
+    const fixture = await committedHolding('snapshot');
+    let inserted!: () => void;
+    let proceed!: () => void;
+    const entryInserted = new Promise<void>((resolve) => {
+      inserted = resolve;
+    });
+    const proceeded = new Promise<void>((resolve) => {
+      proceed = resolve;
+    });
+    let feedPid: number | undefined;
+    let editPid: number | undefined;
+
+    const feed = getDb().transaction(async (tx) => {
+      feedPid = await backendPid(tx);
+      await makeHoldingTransaction(tx, {
+        userId: fixture.userId,
+        holdingId: fixture.holdingId,
+        kind: 'deposit',
+        quantity: '5',
+        occurredAt: at('2026-07-15'),
+        source: 'user-entered',
+      });
+      inserted();
+      await proceeded;
+      await Container.get(HoldingCacheWriter).apply(
+        fixture.userId,
+        [{ holdingId: fixture.holdingId, balance: '200' }],
+        tx
+      );
+    });
+    let edit: Promise<unknown> = Promise.resolve();
+    let blocked = false;
+    try {
+      await Promise.race([entryInserted, feed]);
+      edit = getDb().transaction(async (tx) => {
+        editPid = await backendPid(tx);
+        await useCase().execute(fixture.holdingId, data, fixture.userId, tx);
+      });
+      blocked = await waitUntilBlocked({ pid: () => editPid, settled: edit }, feedPid!);
+    } finally {
+      proceed();
+    }
+    const outcomes = await Promise.allSettled([feed, edit]);
+    return { blocked, outcomes: outcomes.map(outcomeOf) };
+  }
+
+  /**
+   * R75's lock is NO KEY UPDATE, the lock an UPDATE takes, and not FOR UPDATE.
+   * Every ledger row and observation that names a holding holds KEY SHARE on
+   * it for its foreign key until it commits, and FOR UPDATE waits on that. A
+   * cause-less edit writes no ledger row and already holds the row from its
+   * cache write, so with FOR UPDATE it would wait on a feed's uncommitted entry
+   * while the feed's own balance write waited on the edit, and Postgres would
+   * break that cycle by failing one.
+   */
+  test('a cause-less edit does not wait on a transaction that only names the holding, so one writing its balance next cannot deadlock with it (R75)', async () => {
+    expect(await anEditBesideAFeed({ balance: '150' })).toEqual({
+      blocked: false,
+      outcomes: ['fulfilled', 'fulfilled'],
+    });
+  });
+
+  /**
+   * An edit whose cause writes a ledger row upserts it, and the upsert locks
+   * the holding FOR UPDATE, which waits on that KEY SHARE (R82). So the edit
+   * takes FOR UPDATE before its cache write and waits out the feed without
+   * holding the row the feed writes next. NO KEY UPDATE at the cache write and
+   * FOR UPDATE at the upsert was an upgrade: each held what the other waited on.
+   */
+  test('an edit whose cause writes a ledger row waits out a transaction that names the holding and then writes it: both commit (no 40P01) (R82)', async () => {
+    expect(await anEditBesideAFeed({ balance: '150', editCause: 'flow' })).toEqual({
+      blocked: true,
+      outcomes: ['fulfilled', 'fulfilled'],
+    });
+  });
+
+  test('an edit whose cause writes no ledger row (growth) keeps the cause-less lock and does not wait (R82)', async () => {
+    expect(await anEditBesideAFeed({ balance: '150', editCause: 'growth' })).toEqual({
+      blocked: false,
+      outcomes: ['fulfilled', 'fulfilled'],
+    });
+  });
+});
+
+type DestinationTx = Parameters<Parameters<typeof withTestDb>[0]>[0];
+
+const WITHDRAWN_AT = new Date('2026-09-01T08:00:00.000Z');
+
+/** A manual source at 100, an unsynced account and a wallet account, one user. */
+async function sourceAndDestinations(tx: DestinationTx) {
+  const user = await makeUser(tx);
+  const institution = await makeInstitution(tx);
+  const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+  const token = await makeToken(tx);
+  const holding = await makeHolding(tx, {
+    userId: user.id,
+    accountId: account.id,
+    tokenId: token.id,
+    balance: '100',
+    source: 'manual',
+  });
+  const fresh = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+  const wallet = await makeWalletAccount(tx, { userId: user.id, institutionId: institution.id });
+  return { user, token, holding, fresh, wallet };
+}
+
+/** Sets the source to `balance` as a flow and answers it `internal` into `accountId`. */
+async function answeredInto(
+  tx: DestinationTx,
+  from: { userId: string; holdingId: string; tokenId: string },
+  accountId: string,
+  balance: string,
+  editedAt: Date
+) {
+  await useCase().execute(
+    from.holdingId,
+    {
+      balance,
+      editCause: 'flow',
+      editOccurredAt: WITHDRAWN_AT,
+      editedAt,
+      editOutflow: { decision: 'internal', destination: { accountId, holdingId: null } },
+    },
+    from.userId,
+    tx
+  );
+  const [opened] = await tx
+    .select()
+    .from(schema.holdings)
+    .where(
+      and(eq(schema.holdings.accountId, accountId), eq(schema.holdings.tokenId, from.tokenId))
+    );
+  if (!opened) throw new Error('no destination');
+  return opened;
+}
+
+/**
+ * The destination an `internal` answer opens through `DeclaredTransferService`,
+ * pinned on today's code before that INSERT moves onto `HoldingResolver`
+ * (foundation A2). Every assertion here reads the same after the move (D-1).
+ */
+describe('UpdateHoldingUseCase — the destination an internal answer opens, pinned before it moves (foundation A2)', () => {
+  const created = committedRows();
+
+  afterEach(created.drop);
+
+  test('it opens a manual row in an unsynced account and a blockchain row in a wallet account, at zero, moved by the arrival with one observation', async () => {
+    await withTestDb(async (tx) => {
+      const { user, token, holding, fresh, wallet } = await sourceAndDestinations(tx);
+      const from = { userId: user.id, holdingId: holding.id, tokenId: token.id };
+
+      for (const [accountId, source, balance, editedAt] of [
+        [fresh.id, 'manual', '60', new Date('2026-09-02T10:00:00.000Z')],
+        [wallet.id, 'blockchain', '20', new Date('2026-09-02T11:00:00.000Z')],
+      ] as const) {
+        const opened = await answeredInto(tx, from, accountId, balance, editedAt);
+
+        expect({
+          balance: opened.balance,
+          source: opened.source,
+          arrival: opened.arrival,
+          externalId: opened.externalId,
+          label: opened.label,
+          isActive: opened.isActive,
+          isHidden: opened.isHidden,
+          manualEditCause: opened.manualEditCause,
+          lastUpdated: opened.lastUpdated,
+        }).toEqual({
+          balance: '40',
+          source,
+          arrival: 'user_confirmed',
+          externalId: null,
+          label: null,
+          isActive: true,
+          isHidden: false,
+          manualEditCause: 'flow',
+          lastUpdated: editedAt,
+        });
+        const arrival = await ledgerFor(tx, opened.id);
+        expect(
+          arrival.map((r) => ({ kind: r.kind, quantity: r.quantity, occurredAt: r.occurredAt }))
+        ).toEqual([{ kind: 'deposit', quantity: '40', occurredAt: WITHDRAWN_AT }]);
+        expect(
+          (await observationsFor(tx, opened.id)).map((o) => ({
+            balance: o.balance,
+            source: o.source,
+            sourceMetadata: o.sourceMetadata,
+            gapReview: o.gapReview,
+            authority: o.authority,
+            cause: o.cause,
+          }))
+        ).toEqual([
+          {
+            balance: '40',
+            source: 'sync-capture',
+            sourceMetadata: { origin: 'updateHolding' },
+            gapReview: 'flow',
+            authority: 'person',
+            cause: 'flow',
+          },
+        ]);
+      }
+    });
+  });
+
+  test('history across an internal answer into a created destination reads as it did before the move', async () => {
+    const at = (iso: string) => new Date(iso);
+    const fixture = await getDb().transaction(async (tx) => {
+      const user = await makeUser(tx);
+      const institution = await makeInstitution(tx);
+      const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      // One source per destination, each observed once: a second answer dated
+      // before the first one's observation would leave drift in the first
+      // interval, spread over a span that ends at the wall clock.
+      const observedSource = async () => {
+        const token = await makeToken(tx);
+        created.tokens.push(token.id);
+        const holding = await makeHolding(tx, {
+          userId: user.id,
+          accountId: account.id,
+          tokenId: token.id,
+          balance: '100',
+          source: 'manual',
+          createdAt: at('2026-06-01T00:00:00.000Z'),
+          lastUpdated: at('2026-06-01T00:00:00.000Z'),
+        });
+        await tx.insert(schema.holdingBalanceObservations).values({
+          userId: user.id,
+          holdingId: holding.id,
+          balance: '100',
+          observedAt: at('2026-06-01T00:00:00.000Z'),
+          source: 'sync-capture',
+          sourceMetadata: { origin: 'updateHolding' },
+        });
+        return { userId: user.id, holdingId: holding.id, tokenId: token.id };
+      };
+      const fresh = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const wallet = await makeWalletAccount(tx, {
+        userId: user.id,
+        institutionId: institution.id,
+      });
+      created.users.push(user.id);
+      created.institutions.push(institution.id);
+      return {
+        intoFresh: await observedSource(),
+        intoWallet: await observedSource(),
+        freshId: fresh.id,
+        walletId: wallet.id,
+      };
+    });
+
+    const fresh = await getDb().transaction((tx) =>
+      answeredInto(tx, fixture.intoFresh, fixture.freshId, '60', at('2026-09-02T10:00:00.000Z'))
+    );
+    const wallet = await getDb().transaction((tx) =>
+      answeredInto(tx, fixture.intoWallet, fixture.walletId, '80', at('2026-09-02T11:00:00.000Z'))
+    );
+
+    // Before the withdrawal, after it, and now. Each source falls by exactly
+    // what left, so no drift is spread; each destination reads zero before
+    // the arrival and the arrival after it.
+    const before = at('2026-08-31T00:00:00.000Z');
+    const after = at('2026-09-02T00:00:00.000Z');
+    const now = new Date();
+    const golden: Array<[string, Date, string | null]> = [
+      [fixture.intoFresh.holdingId, before, '100'],
+      [fixture.intoFresh.holdingId, after, '60'],
+      [fixture.intoFresh.holdingId, now, '60'],
+      [fixture.intoWallet.holdingId, before, '100'],
+      [fixture.intoWallet.holdingId, after, '80'],
+      [fixture.intoWallet.holdingId, now, '80'],
+      [fresh.id, before, '0'],
+      [fresh.id, after, '40'],
+      [fresh.id, now, '40'],
+      [wallet.id, before, '0'],
+      [wallet.id, after, '20'],
+      [wallet.id, now, '20'],
+    ];
+    const readings: HistoryReading[] = golden.map(([holdingId, instant, balance]) => ({
+      holdingId,
+      at: instant,
+      balance,
+      anchor: null,
+    }));
+
+    await expectHistoryUnchanged(readings);
+    // The control: a figure the walk does not give is caught.
+    await expect(
+      expectHistoryUnchanged(readings.map((r, i) => (i === 7 ? { ...r, balance: '0' } : r)))
+    ).rejects.toThrow();
+  });
+});
+
+/**
+ * The destination an `internal` answer opens comes from `HoldingResolver`
+ * (foundation A2, D-4, D-6): feed in a sync-owned account, else snapshot,
+ * starting at the withdrawal's date, opened with no observation. The row, the
+ * ledger and the cache are the characterization's above (D-1).
+ */
+describe('UpdateHoldingUseCase — the destination an internal answer opens comes from HoldingResolver (foundation A2)', () => {
+  const created = committedRows();
+
+  afterEach(created.drop);
+
+  // Rule P (D7, R85): neither feed has produced evidence, so both arrivals are
+  // snapshots, as the backfill would label them.
+  test('a snapshot holding in an unsynced account and a feed one in a wallet account, each starting at the withdrawal’s date, the arrival a snapshot on both before any feed evidence', async () => {
+    await withTestDb(async (tx) => {
+      const { user, token, holding, fresh, wallet } = await sourceAndDestinations(tx);
+      const from = { userId: user.id, holdingId: holding.id, tokenId: token.id };
+
+      for (const [accountId, kind, role, balance, editedAt] of [
+        [fresh.id, 'snapshot', 'snapshot', '60', new Date('2026-09-02T10:00:00.000Z')],
+        [wallet.id, 'feed', 'snapshot', '20', new Date('2026-09-02T11:00:00.000Z')],
+      ] as const) {
+        const opened = await answeredInto(tx, from, accountId, balance, editedAt);
+
+        expect({ kind: opened.kind, startsAt: opened.startsAt }).toEqual({
+          kind,
+          startsAt: WITHDRAWN_AT,
+        });
+        expect(
+          (await observationsFor(tx, opened.id)).map((o) => ({
+            balance: o.balance,
+            role: o.role,
+            authority: o.authority,
+            inputId: o.inputId,
+            cause: o.cause,
+            supersededAt: o.supersededAt,
+          }))
+        ).toEqual([
+          {
+            balance: '40',
+            role,
+            authority: 'person',
+            inputId: null,
+            cause: 'flow',
+            supersededAt: null,
+          },
+        ]);
+      }
+      await expectPersonRolesAsClassified(user.id, tx);
+    });
+  });
+
+  test('expectLabelsSettled after internal answers open a snapshot and a feed destination', async () => {
+    const fixture = await getDb().transaction(async (tx) => {
+      const opened = await sourceAndDestinations(tx);
+      const institution = await tx
+        .select({ id: schema.accounts.institutionId })
+        .from(schema.accounts)
+        .where(eq(schema.accounts.id, opened.fresh.id));
+      created.users.push(opened.user.id);
+      created.tokens.push(opened.token.id);
+      created.institutions.push(...institution.map((row) => row.id));
+      return opened;
+    });
+    const from = {
+      userId: fixture.user.id,
+      holdingId: fixture.holding.id,
+      tokenId: fixture.token.id,
+    };
+    // The source settled first, as the backfill leaves it.
+    await Container.get(FoundationClassificationService).classify({
+      apply: true,
+      userId: from.userId,
+    });
+
+    await getDb().transaction((tx) =>
+      answeredInto(tx, from, fixture.fresh.id, '60', new Date('2026-09-02T10:00:00.000Z'))
+    );
+    await getDb().transaction((tx) =>
+      answeredInto(tx, from, fixture.wallet.id, '20', new Date('2026-09-02T11:00:00.000Z'))
+    );
+
+    await expectLabelsSettled(from.userId);
   });
 });

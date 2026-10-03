@@ -6,7 +6,7 @@
 
 export { restoreContainerAfterAll } from './container';
 export { withTestDb } from './db';
-export { makeInstitution, makeInstitutionType, makeUser } from './factories';
+export { makeCredential, makeInstitution, makeInstitutionType, makeUser } from './factories';
 export { makeAccount, makeHolding, makeToken } from './factories-extra';
 export { captureHistory } from './history-neutrality';
 export { expectLabelsSettled } from './labels-settled';

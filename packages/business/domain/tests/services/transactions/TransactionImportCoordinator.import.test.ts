@@ -20,8 +20,9 @@ import * as schema from '@scani/db/schema';
 import type { TransactionsProvider } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { NoticeInput, TransactionEvent } from '@scani/providers/core/types';
-import { asc, eq, inArray } from 'drizzle-orm';
+import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
+import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { FeedBatchRejected } from '../../../src/services/feeds/FeedIngestService';
 import { FoundationClassificationService } from '../../../src/services/foundation/FoundationClassificationService';
 import { TokenIdentityService } from '../../../src/services/tokens/TokenIdentityService';
@@ -761,6 +762,97 @@ describe('TransactionImportCoordinator.execute — what a run tells the reader',
   });
 });
 
+/**
+ * Two rulings pinned below `execute` by Task 11, pinned here through it (Task
+ * 11 review M8): `execute` runs ingest in its own transaction, after the pass
+ * that resolves tokens before that transaction opens.
+ */
+describe('TransactionImportCoordinator.execute — a run with something it cannot place, or nothing', () => {
+  const FAILING = sql`select 1 / 0`;
+
+  // R37: one bad event is dropped with today's notice; the run lands.
+  test("a holding that cannot be created skips its entries with today's notice and the run lands", async () => {
+    const owner = await seed();
+    const good = symbol('G');
+    const bad = symbol('B');
+    created.symbols.push(good, bad);
+    serve({
+      institutionCode: 'binance',
+      events: [
+        {
+          externalId: 'g-1',
+          occurredAt: at(1),
+          kind: 'deposit',
+          primary: { tokenIdentity: coin(good), quantity: '1' },
+        },
+        {
+          externalId: 'b-1',
+          occurredAt: at(2),
+          kind: 'deposit',
+          primary: { tokenIdentity: coin(bad), quantity: '2' },
+        },
+      ],
+    });
+    const message = await getDb()
+      .transaction((tx) => tx.execute(FAILING))
+      .then(
+        () => 'no error',
+        (error: unknown) => (error instanceof Error ? error.message : String(error))
+      );
+    const holdingRepository = Container.get(HoldingRepository);
+    const create = holdingRepository.create.bind(holdingRepository);
+    const spy = spyOn(holdingRepository, 'create').mockImplementation(
+      async (values, transaction) => {
+        if (!transaction) throw new Error('a holding insert outside a transaction');
+        const [token] = await transaction
+          .select()
+          .from(schema.tokens)
+          .where(eq(schema.tokens.id, values.tokenId));
+        if (token?.symbol === bad) await transaction.execute(FAILING);
+        return await create(values, transaction);
+      }
+    );
+    let result: Awaited<ReturnType<typeof run>>;
+    try {
+      result = await run({ ...owner, source: 'binance-api' });
+    } finally {
+      spy.mockRestore();
+    }
+
+    const [badToken] = await tokensWithSymbol([bad]);
+    const notice = `Failed to resolve holding for token ${badToken!.id}: ${message}`;
+    expect({ status: result.status, transactions: result.transactions }).toEqual({
+      status: 'ok',
+      transactions: 1,
+    });
+    expect(result.warnings).toEqual([notice]);
+    const { name } = await namedHoldings(owner.accountId, null);
+    expect((await ledgerOf(owner.userId)).map((r) => [r.externalId, name(r.holdingId)])).toEqual([
+      ['g-1', good],
+    ]);
+    const [input] = await inputsOf(owner.accountId);
+    expect((await windowsOf(input!.id)).length).toBe(1);
+  });
+
+  // R39: a run that read nothing still read its window, so it records one.
+  test('a zero-event run records its input and window', async () => {
+    const owner = await seed();
+    serve({ institutionCode: 'binance', events: [] });
+
+    const result = await run({ ...owner, source: 'binance-api' });
+
+    expect({ status: result.status, transactions: result.transactions }).toEqual({
+      status: 'ok',
+      transactions: 0,
+    });
+    const inputs = await inputsOf(owner.accountId);
+    expect(inputs.map((i) => i.source)).toEqual(['binance-api']);
+    const windows = await windowsOf(inputs[0]!.id);
+    expect(windows.map((w) => [w.fromAt, w.complete])).toEqual([[null, true]]);
+    expect(await ledgerOf(owner.userId)).toEqual([]);
+  });
+});
+
 // R38: today an empty external id was written. The feed write refuses the
 // whole batch before reading anything, and the job fails once (the processor
 // classifies the refusal as unrecoverable).
@@ -799,5 +891,44 @@ describe('TransactionImportCoordinator.execute — a batch the feed write refuse
     expect(await ledgerOf(owner.userId)).toEqual([]);
     expect(await holdingsOf(owner.accountId)).toEqual([]);
     expect(await inputsOf(owner.accountId)).toEqual([]);
+  });
+
+  // R57: one external id for two assets would keep only the last row under
+  // the input's key, so the run fails whole, by count and not by id.
+  test('one external id sent for two assets fails the run, counts it and writes nothing', async () => {
+    const owner = await seed();
+    const [first, second] = [symbol('F'), symbol('S')];
+    created.symbols.push(first, second);
+    serve({
+      institutionCode: 'kraken',
+      events: [
+        {
+          externalId: 'ledger-1',
+          occurredAt: at(1),
+          kind: 'deposit',
+          primary: { tokenIdentity: coin(first), quantity: '1' },
+        },
+        {
+          externalId: 'ledger-1',
+          occurredAt: at(1),
+          kind: 'withdraw',
+          primary: { tokenIdentity: coin(second), quantity: '-2' },
+        },
+      ],
+    });
+
+    const failure = await run({ ...owner, source: 'kraken-api' }).then(
+      () => null,
+      (error: unknown) => error
+    );
+
+    expect(failure).toBeInstanceOf(FeedBatchRejected);
+    expect((failure as Error).message).toBe(
+      'feed batch rejected: duplicate-external-id (1 external id(s) are each sent for more than one asset or source, by 2 entries in all)'
+    );
+    expect(await ledgerOf(owner.userId)).toEqual([]);
+    expect(await holdingsOf(owner.accountId)).toEqual([]);
+    expect(await inputsOf(owner.accountId)).toEqual([]);
+    expect(await tokensWithSymbol([first, second])).toEqual([]);
   });
 });

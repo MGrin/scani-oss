@@ -6,6 +6,11 @@ import { Service } from 'typedi';
 export interface CacheWrite {
   holdingId: string;
   balance: string;
+  /**
+   * The instant `last_updated` takes, when the path this replaces stamped one
+   * of its own; now otherwise. Legacy history walks the ledger back to it.
+   */
+  lastUpdated?: Date;
 }
 
 /**
@@ -20,10 +25,10 @@ export class HoldingCacheWriter {
     writes: readonly CacheWrite[],
     tx: DatabaseTransaction
   ): Promise<void> {
-    for (const { holdingId, balance } of writes) {
+    for (const { holdingId, balance, lastUpdated } of writes) {
       const updated = await tx
         .update(schema.holdings)
-        .set({ balance, lastUpdated: new Date() })
+        .set({ balance, lastUpdated: lastUpdated ?? new Date() })
         .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
         .returning({ id: schema.holdings.id });
       if (updated.length === 0) {

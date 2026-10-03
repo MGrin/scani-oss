@@ -171,6 +171,12 @@ describe('legacyTransactionBatch — the batch', () => {
       cacheObservation: null,
       derivesTradeLegs: true,
       holdingFailure: 'skip-entry',
+      absence: null,
+      clearsAbsenceTally: false,
+      createdCheckpointMeta: null,
+      unhideOnNonZero: false,
+      unchangedCheckpoint: 'append',
+      zeroOpensHolding: true,
     });
   });
 

@@ -1,10 +1,10 @@
 import type { RecordHoldingMovementInput } from '@scani/shared';
-import { showError, showSuccess } from '@scani/ui/ui/use-toast';
+import { showSuccess } from '@scani/ui/ui/use-toast';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
 import { trpc } from '@/lib/trpc';
-import type { MovementSubmission } from '../lib/movement-form';
+import { describeMovementFailure, type MovementSubmission } from '../lib/movement-form';
 
 /**
  * The wire payload, or `null` when the form did not actually answer.
@@ -66,17 +66,25 @@ async function buildPayload(
  * safe to retry: a submission that creates the account and then fails to
  * record the movement leaves an empty account behind, and pressing the button
  * again reuses it rather than colliding with it.
+ *
+ * ## Why a failure is inline
+ *
+ * It was a toast titled "Something went wrong" (SC-1527), over a form the
+ * reader then has to correct — and gone in seconds. `error` is the sentence
+ * from `describeMovementFailure`, and both chromes render it beside the button.
  */
 export function useRecordMovement(onDone: () => void) {
   const { t } = useTranslation();
   const utils = trpc.useUtils();
   const [isSaving, setIsSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const ensureAccount = trpc.batchOperations.ensureAccount.useMutation();
   const recordMovement = trpc.holdings.recordMovement.useMutation();
 
   const submit = async (movement: MovementSubmission) => {
     setIsSaving(true);
+    setError(null);
     try {
       const payload = await buildPayload(movement, async (input) => {
         const ensured = await ensureAccount.mutateAsync(input);
@@ -102,13 +110,13 @@ export function useRecordMovement(onDone: () => void) {
 
       showSuccess(t('v3.holdings.movement.recorded'));
       onDone();
-    } catch (error) {
-      showError(error, t('v3.holdings.movement.title'));
+    } catch (failure) {
+      setError(describeMovementFailure(t, failure, movement));
     } finally {
       setIsSaving(false);
       await invalidatePortfolioQueries(utils);
     }
   };
 
-  return { submit, isSaving };
+  return { submit, isSaving, error };
 }

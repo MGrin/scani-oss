@@ -103,7 +103,7 @@ export function classifyError(err: unknown): ProviderError['kind'] {
   if (/HTTP 40[13]|EAPI:Invalid (signature|nonce|key)|unauthor/i.test(msg)) {
     return 'auth-failed';
   }
-  if (/IBKR Flex Query error \(code 10(10|12)\)/.test(msg)) return 'auth-failed';
+  if (/IBKR Flex Query error \(code 101[0-5]\)/.test(msg)) return 'auth-failed';
   if (/IBKR Flex Query error \(code 1018\)/.test(msg)) return 'rate-limited';
   if (/HTTP 5\d{2}|ECONNRESET|ETIMEDOUT|ENOTFOUND|fetch failed/i.test(msg)) {
     return 'retryable';

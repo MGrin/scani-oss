@@ -25,6 +25,7 @@ export { EntityRepository } from './EntityRepository';
 export {
   AccountTypeRepository,
   InstitutionTypeRepository,
+  TokenTypeRepository,
 } from './EnumRepositories';
 export { GroupRepository } from './GroupRepository';
 export { HoldingApyConfigRepository } from './HoldingApyConfigRepository';

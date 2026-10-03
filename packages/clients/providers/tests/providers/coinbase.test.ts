@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { CoinbaseProvider } from '../../src/providers/coinbase';
+import { throwawayCdpKey } from '../helpers/cdp-key';
 
 function passthroughLimiter(): OutflowRateLimiter {
   return {
@@ -8,11 +9,14 @@ function passthroughLimiter(): OutflowRateLimiter {
   } as unknown as OutflowRateLimiter;
 }
 
+const cdpKey = throwawayCdpKey();
+const creds = { apiKey: cdpKey.name, apiSecret: cdpKey.privateKeyPem };
+
 const ctx = {
   institutionCode: 'coinbase',
   baseCurrency: { id: 'usd', symbol: 'USD' } as never,
   credentialsRef: { userId: 'u', institutionId: 'i' },
-  resolveCredentials: async () => ({ apiKey: 'k', apiSecret: 's' }),
+  resolveCredentials: async () => creds,
 };
 
 describe('CoinbaseProvider', () => {
@@ -89,7 +93,7 @@ describe('CoinbaseProvider', () => {
 
   test('validateCredentials rejects wrong institution', async () => {
     const p = new CoinbaseProvider(passthroughLimiter());
-    const r = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'binance');
+    const r = await p.validateCredentials(creds, 'binance');
     expect(r.valid).toBe(false);
   });
 
@@ -99,7 +103,7 @@ describe('CoinbaseProvider', () => {
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ data: [] }), { status: 200 })) as unknown as typeof fetch;
     try {
-      const r = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'coinbase');
+      const r = await p.validateCredentials(creds, 'coinbase');
       expect(r.valid).toBe(true);
     } finally {
       globalThis.fetch = originalFetch;
@@ -112,7 +116,7 @@ describe('CoinbaseProvider', () => {
     globalThis.fetch = (async () =>
       new Response('Unauthorized', { status: 401 })) as unknown as typeof fetch;
     try {
-      const r = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'coinbase');
+      const r = await p.validateCredentials(creds, 'coinbase');
       expect(r.valid).toBe(false);
       expect(r.message).toContain('coinbase HTTP 401');
     } finally {

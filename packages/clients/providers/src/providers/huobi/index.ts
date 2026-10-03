@@ -288,7 +288,7 @@ export class HuobiProvider
     const apiSecret = creds.apiSecret as string | undefined;
     if (!apiKey || !apiSecret) return { valid: false, message: 'apiKey + apiSecret required' };
     try {
-      const data = await this.signedJson<{ status: string }>(
+      const data = await this.signedJson<{ status: string; 'err-msg'?: string }>(
         {
           method: 'GET',
           url: '/v1/account/accounts',
@@ -296,7 +296,7 @@ export class HuobiProvider
         },
         { apiKey, apiSecret }
       );
-      if (data.status !== 'ok') return { valid: false, message: `Huobi: ${data.status}` };
+      if (data.status !== 'ok') return { valid: false, message: data['err-msg'] ?? data.status };
       return { valid: true };
     } catch (err) {
       return credentialRejection(err);

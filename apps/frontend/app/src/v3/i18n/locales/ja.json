@@ -1027,13 +1027,37 @@
           "holding": "動いた保有資産を選択",
           "amount": "動いた額を入力",
           "where": "資金の行き先を指定",
-          "fee": "手数料は動いた金額より小さくしてください"
-        }
+          "fee": "手数料は動いた金額より小さくしてください",
+          "exceedsBalance": "この保有には {{available}} {{symbol}} しかありません。その金額以下を入力してください"
+        },
+        "error": {
+          "exceedsBalance": "記録されませんでした。{{amount}} {{symbol}} は、この保有の現在の残高を超えています。残高を確認し、少ない金額を入力してください。"
+        },
+        "subject": "この移動"
       },
       "trendCaption": "直近{{period}}",
       "edit": {
         "title": "保有資産を編集",
         "description": "保有量と、複数を管理している場合はこのポットの名前を変更します。"
+      },
+      "activity": {
+        "heading": "最近の動き",
+        "kind": {
+          "moneyIn": "入金",
+          "moneyOut": "出金",
+          "transferIn": "振替入金",
+          "transferOut": "振替出金",
+          "bought": "購入",
+          "sold": "売却",
+          "swap": "スワップ",
+          "settlement": "取引の決済",
+          "fee": "手数料",
+          "reward": "報酬",
+          "interest": "利息",
+          "airdrop": "エアドロップ",
+          "openingBalance": "期首残高",
+          "correction": "修正"
+        }
       }
     },
     "export": {
@@ -1320,6 +1344,7 @@
         "chains_other": "{{count}}チェーン",
         "candidatesAcross_other": "{{chains}} にまたがる{{count}}件の候補",
         "nothingFound": "該当なし",
+        "couldNotRead": "読み取れませんでした — 応答がなかったため何も見つかっていません",
         "labelled": "{{label}} · {{body}}",
         "unpairedTransfers_other": "分類が必要な出金{{count}}件",
         "balanceChangesToExplain": "説明が必要な残高の変動",
@@ -1836,6 +1861,7 @@
       },
       "blocker": {
         "chooseFile": "アップロードするファイルを選択",
+        "chooseIntent": "ファイルの内容を選択",
         "chooseInvoice": "アップロードする請求書を選択",
         "chooseInstitution": "口座のある金融機関を選択",
         "nameInstitution": "新しい金融機関の名前を入力",
@@ -1847,7 +1873,10 @@
         "duplicateToken": "同じトークンを指す行にそれぞれ名前を付けるか、統合",
         "walletEmpty": "ウォレットアドレスを入力",
         "walletIncomplete": "ウォレットアドレスを最後まで入力",
-        "walletUnrecognised": "ウォレットアドレスを確認"
+        "walletUnrecognised": "ウォレットアドレスを確認",
+        "alreadyHeld": "{{account}} はすでに {{tokens}} を保有しています。別の枠として残すには新しい行に名前を付けるか、既存の保有の残高を変更してください",
+        "zeroAmount": "{{tokens}} に 0 より大きい金額を入力するか、その行を削除してください",
+        "unreadableAmount": "{{tokens}} の金額を修正してください。Scani が読み取れる数値ではありません"
       },
       "category": {
         "cryptoExchange": "暗号資産取引所",
@@ -1866,7 +1895,9 @@
         },
         "everyShape": "Ethereumをはじめとする各EVMチェーンは 0x と16進数40文字、Bitcoinは 1、3、bc1 で始まり、Solanaは英数字32〜44文字、Tronは T で始まり、TONは EQ または UQ で始まります。",
         "incomplete_other": "{{chain}} のアドレスとして不完全です。本来は{{shape}}ですが、これは{{count}}文字です。",
-        "unrecognised": "そのような形式のアドレスを持つチェーンをScaniは扱っていません。{{shapes}}"
+        "unrecognised": "そのような形式のアドレスを持つチェーンをScaniは扱っていません。{{shapes}}",
+        "innerSpace": "このアドレスの途中に空白があります。削除してください。アドレスは途切れのない一続きの文字列です。",
+        "ensName": "これはENS名です。Scaniが監視するのは名前ではなくアドレスです。その名前が指す0xアドレスを貼り付けてください。"
       },
       "institution": {
         "lookUpName": "ウェブサイトから名前を取得",
@@ -1943,7 +1974,9 @@
           "addAnother": "さらに追加",
           "potName": "これはどれですか？",
           "potNameHint": "このトークンを複数の行に入力しています。それぞれに名前を付けていただければ、別々の保有資産として扱います。",
-          "potNamePlaceholder": "貯蓄、頭金、結婚祝い…"
+          "potNamePlaceholder": "貯蓄、頭金、結婚祝い…",
+          "potNameHeldHint": "{{account}} はすでに {{symbol}} を保有しています。両方を別々の枠として残すには、この行に名前を付けてください。同じお金なら、行を追加せずにその保有の残高を変更してください。",
+          "alreadyHeldError": "保存されませんでした。この口座はすでに同じ名前でこれらのトークンのいずれかを保有しています。何も追加されていません。該当する行は上に示されています。"
         },
         "wallet": {
           "subject": "このウォレット",
@@ -1962,7 +1995,7 @@
       "integration": {
         "title": "サービスを接続",
         "subtitle": "読み取り専用のキーを1組。保存時に暗号化されます。",
-        "listSubtitle": "読み取り専用のAPIキーで、保存時に暗号化されます。残高は1時間ごとに同期され、同じサービスに複数の接続を持つこともできます。",
+        "listSubtitle": "読み取り専用のAPIキーで、保存時に暗号化されます。残高は1時間ごとに同期されます。同じサービスをもう一度接続すると、そのキーが置き換えられます。",
         "allServices": "すべてのサービス",
         "thisService": "このサービス",
         "notFoundTitle": "対応していないサービスです",
@@ -2007,8 +2040,6 @@
     "tokens": {
       "custom": {
         "nothingRecorded": "記録なし",
-        "unknownSource": "取得元不明",
-        "setManually": "手動で設定",
         "neverPriced": "価格が付いたことがありません",
         "newToken": "新しいカスタムトークン",
         "type": "種類",
@@ -2348,8 +2379,8 @@
       "kind": {
         "holdingPriceRefresh": "保有資産の価格更新",
         "fileFallback": "ファイル",
-        "fileEnriched": "{{type}} · 情報を補完",
-        "deleteAllData": "アカウントデータの全削除"
+        "deleteAllData": "アカウントデータの全削除",
+        "fileOfType": "{{type}}ファイル"
       },
       "fileCount_other": "{{count}}件のファイル",
       "page": {
@@ -2612,7 +2643,6 @@
         "format": "形式",
         "transactions": "取引",
         "newHoldings": "新しい保有資産",
-        "balanceAnchors": "残高の基準点",
         "holdingsTitle": "影響のあった保有資産",
         "row": {
           "new": "新規",
@@ -2658,6 +2688,11 @@
           "fee": "別途請求の手数料",
           "none": "未設定",
           "apply": "適用してインポート"
+        },
+        "balancesRecorded": "記録した残高",
+        "columnsRow": {
+          "label": "列",
+          "matchedAutomatically": "自動で認識"
         }
       },
       "manual": {
@@ -2696,6 +2731,10 @@
           "label": "失敗 — 再試行しません",
           "sentence": "再度試しても解消しない理由で失敗し、お見せできる記録も残っていません。そのまま再実行しても同じように失敗します。",
           "sentenceWithDetail": "再度試しても解消しない理由で失敗しました。下の詳細を確認して修正したうえで、もう一度実行してください。"
+        },
+        "sourceUnavailable": {
+          "label": "失敗 — 後で再試行してください",
+          "sentence": "このジョブが依存するサービスに接続できなかったため、途中で停止しました。しばらくしてからもう一度お試しください。"
         },
         "exhausted": {
           "label": "失敗 — 再試行しません",
@@ -2786,6 +2825,13 @@
       "pending": "変更待ちの共有ファイル",
       "pendingSection": "未公開の変更",
       "fingerprint": "Coreフィンガープリント"
+    },
+    "priceSource": {
+      "frankfurter": "Frankfurter（ECBレート）",
+      "manual": "手動で設定",
+      "baseCurrency": "基準通貨",
+      "siblingFallback": "同じ資産の別の銘柄",
+      "unknown": "取得元不明"
     }
   }
 }

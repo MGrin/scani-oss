@@ -13,18 +13,20 @@
  * stub.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { counterpartyFromPayload, normalizeCounterparty, undoEntriesFor } from '@scani/shared';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 
 import { counterpartyKeySql, pendingPredicate } from '../../src/lib/transfer-review-queue';
 import { sameHoldingRepairPlan, unlinkPairRefusal } from '../../src/lib/transfer-unlink';
 import { upstreamEventKey } from '../../src/lib/upstream-event';
 import { HoldingBalanceObservationRepository } from '../../src/repositories/HoldingBalanceObservationRepository';
+import { BalanceSyncOwnershipService } from '../../src/services/accounts/BalanceSyncOwnershipService';
+import { FoundationClassificationService } from '../../src/services/foundation/FoundationClassificationService';
 import { HOLDING_OPEN_OBSERVATION_SOURCE } from '../../src/services/holdings/HoldingService';
 import {
   MalformedCursorError,
@@ -34,6 +36,8 @@ import { LinkTransferPairsUseCase } from '../../src/use-cases/LinkTransferPairsU
 import { RecordHoldingMovementUseCase } from '../../src/use-cases/RecordHoldingMovementUseCase';
 import { UpdateHoldingUseCase } from '../../src/use-cases/UpdateHoldingUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
+import { expectHistoryUnchanged, type HistoryReading } from '../../test/helpers/history-neutrality';
+import { expectLabelsSettled } from '../../test/helpers/labels-settled';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -404,6 +408,46 @@ async function insertBridgeArrival(
  */
 function service(): TransferReviewService {
   return new TransferReviewService();
+}
+
+/** The one holding the user has of the fixture's token in `accountId`. */
+async function createdHoldingIn(f: Fixture, accountId: string) {
+  const rows = await db
+    .select()
+    .from(schema.holdings)
+    .where(
+      and(
+        eq(schema.holdings.userId, f.userId),
+        eq(schema.holdings.accountId, accountId),
+        eq(schema.holdings.tokenId, f.tokenId)
+      )
+    );
+  expect(rows).toHaveLength(1);
+  return rows[0]!;
+}
+
+/**
+ * Answers a fresh withdrawal of `quantity` `internal` into `accountId`, whose
+ * destination it opens, and returns the call's window.
+ */
+async function answerInto(
+  f: Fixture,
+  accountId: string,
+  opts: { quantity: string; externalId: string; at: Date; counterparty?: string }
+) {
+  const outId = await insertOutflow(f, {
+    at: opts.at,
+    quantity: `-${opts.quantity}`,
+    externalId: opts.externalId,
+    ...(opts.counterparty ? { counterparty: opts.counterparty } : {}),
+  });
+  const before = new Date();
+  expect(
+    await service().resolve(f.userId, outId, 'internal', {
+      destination: { accountId, holdingId: null },
+    })
+  ).toEqual({ ok: true });
+  return { outId, before, after: new Date() };
 }
 
 beforeEach(async () => {
@@ -1665,6 +1709,9 @@ describe('TransferReviewService — moved to a holding Scani tracks', () => {
     expect(restored[0]?.quantity).toBe('4000');
     expect(restored[0]?.externalId).toBe('manual-edit:a');
     expect(await balanceOf(f.inHoldingId)).toBe('4001');
+    // It is a row written again, so it is labelled as one (D-5): the typed
+    // deposit carried no label here, and comes back with the one its facts give.
+    expect(restored[0]).toMatchObject({ ledgerKind: 'inflow', kindOrigin: 'person' });
   });
 
   test('leaves two same-amount typed deposits alone rather than guess (SC-1474)', async () => {
@@ -2065,19 +2112,17 @@ describe('TransferReviewService — reopening an answer that had to create its d
     const { outId } = await answerIntoEmptyAccount(f, { quantity: '250', externalId: 's631-1' });
 
     // IF YOU ARE READING THIS BECAUSE THIS TEST WENT RED, IT IS PROBABLY NOT
-    // STALE. `writeInflow` creates its destination with a direct
-    // `tx.insert(schema.holdings)` and records NO balance observation, unlike
-    // `HoldingService.createHoldingWithEvent`, which records one — a live
-    // SC-245 residual. Repairing that by having `writeInflow` record a
-    // creation observation gives every holding it opens one immediately, so
-    // `holdingIsUntouched` answers "touched" for all of them and SC-631 stops
-    // deleting anything. Measured: that change fails exactly here and nowhere
-    // else, which is why this test is the whole warning.
-    //
-    // The repair is still right; it just needs the creation observation to be
-    // distinguishable from one a person caused, the way `holding_coverage` is
-    // excluded for being derived. Deleting this assertion buys a green suite
-    // and puts the money bug back.
+    // STALE. `TransferDestinationOpener.open` creates the destination and
+    // records its opening through `SnapshotWriter.record`, so every holding an
+    // answer opens in an unsynced account carries an observation from birth
+    // (SC-641). `holdingIsUntouched` leaves that one row out by its source,
+    // `HOLDING_OPEN_OBSERVATION_SOURCE`, the way `holding_coverage` is
+    // excluded for being derived. An opening recorded under any other source
+    // makes it answer "touched" for all of them, and SC-631 stops deleting
+    // anything. Measured before the opening had a source of its own: a
+    // creation observation fails exactly here and nowhere else, which is why
+    // this test is the whole warning. Deleting this assertion buys a green
+    // suite and puts the money bug back.
     expect(await service().reopen(f.userId, outId)).toBe(true);
 
     // THE NUMBER A PERSON SEES. Before this fix the account went on showing
@@ -2350,6 +2395,63 @@ describe('TransferReviewService — an arrival nobody else will observe (SC-856)
     expect(await observationCount(f.inHoldingId)).toBe(before + 1);
   });
 
+  /**
+   * R74. The move is a person's value with no cause. On a snapshot holding with
+   * no person value yet, which is what a mirror leg opens at zero
+   * (`MirrorLegWriter.open`) and a later answer reuses, it is the holding's
+   * first snapshot, and the backfill would call that money in. So it is
+   * labelled that way when it is written, and nothing is left to fill.
+   */
+  test('the moved anchor is a person snapshot, labelled at write as the backfill labels it (R74)', async () => {
+    const f = fixture!;
+    const [opened] = await db
+      .insert(schema.holdings)
+      .values({
+        userId: f.userId,
+        accountId: f.emptyAccountId,
+        tokenId: f.tokenId,
+        balance: '500',
+        source: 'manual',
+        kind: 'snapshot',
+        startsAt: new Date(anchor().getTime() - 24 * 60 * 60 * 1000),
+      })
+      .returning();
+    if (!opened) throw new Error('holding insert failed');
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'r74-labelled',
+    });
+    await Container.get(FoundationClassificationService).classify({
+      apply: true,
+      userId: f.userId,
+    });
+
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.emptyAccountId, holdingId: opened.id },
+      })
+    ).toEqual({ ok: true });
+
+    const rows = await db
+      .select()
+      .from(schema.holdingBalanceObservations)
+      .where(eq(schema.holdingBalanceObservations.holdingId, opened.id));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      balance: '2500',
+      source: 'sync-capture',
+      sourceMetadata: { origin: 'updateHolding' },
+      role: 'snapshot',
+      authority: 'person',
+      inputId: null,
+      cause: 'flow',
+      gapReview: null,
+      supersededAt: null,
+    });
+    await expectLabelsSettled(f.userId);
+  });
+
   test('the move writes no ledger row of its own — the arrival IS the entry', async () => {
     const f = fixture!;
     await setBalance(f.inHoldingId, '500');
@@ -2483,10 +2585,35 @@ describe('TransferReviewService — an arrival nobody else will observe (SC-856)
     // cannot say whether a sync owns the ACCOUNT.
     expect(by(f.inHoldingId, f.inAccountId)?.movesBalance).toBe(true);
     expect(by(syncedHoldingId, f.exchangeSyncedAccountId)?.movesBalance).toBe(false);
-    // No holding yet: `openingOf` opens at the moved amount where nobody
+    // No holding yet: the opener opens at the moved amount where nobody
     // syncs, and at zero where somebody does.
     expect(by(null, f.emptyAccountId)?.movesBalance).toBe(true);
     expect(by(null, f.walletSyncedAccountId)?.movesBalance).toBe(false);
+  });
+
+  test('the picker asks which sync owns its accounts once, for all of them', async () => {
+    const f = fixture!;
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'sc856-picker-batched',
+    });
+    const accounts = await db
+      .select({ id: schema.accounts.id })
+      .from(schema.accounts)
+      .where(eq(schema.accounts.userId, f.userId));
+    expect(accounts.length).toBeGreaterThan(3);
+
+    const resolve = spyOn(Container.get(BalanceSyncOwnershipService), 'resolveSyncSources');
+    try {
+      await service().listDestinations(f.userId, outId);
+
+      expect(
+        resolve.mock.calls.map(([userId, asked]) => [userId, asked.map(({ id }) => id).sort()])
+      ).toEqual([[f.userId, accounts.map(({ id }) => id).sort()]]);
+    } finally {
+      resolve.mockRestore();
+    }
   });
 
   test('a destination the answer CREATED is still opened, not moved twice', async () => {
@@ -2511,7 +2638,7 @@ describe('TransferReviewService — an arrival nobody else will observe (SC-856)
           eq(schema.holdings.tokenId, f.tokenId)
         )
       );
-    // `openingOf` already put the money in when it opened the row. Adding the
+    // The opener already put the money in when it opened the row. Adding the
     // 250 again here would be 500 in an account that received 250 — the same
     // arithmetic error this ticket is about, in the other direction.
     expect(created?.balance).toBe('250');
@@ -4645,11 +4772,12 @@ describe('TransferReviewService — reopening a transfer the OWNER declared (SC-
 
 /**
  * SC-641. `writeInflow` opened its destination with a direct
- * `tx.insert(schema.holdings)` and recorded no balance observation, while
- * `HoldingService.createHoldingWithEvent` — the path every other creator uses
- * — records one. SC-245's shape in a path SC-245 never reached, and
- * `HoldingService`'s own docblock predicted it: *"nothing stops the next
- * caller writing `holdings` directly."*
+ * `tx.insert(schema.holdings)` and recorded no balance observation, when
+ * every other creator recorded one. SC-245's shape in a path SC-245 never
+ * reached, and `HoldingService`'s own docblock predicted it: *"nothing stops
+ * the next caller writing `holdings` directly."* The destination is opened by
+ * `TransferDestinationOpener.open` today, which creates it through
+ * `HoldingResolver` and records the opening through `SnapshotWriter.record`.
  *
  * The two branches are treated DIFFERENTLY on purpose, and the last test here
  * is why rather than a comment claiming it.
@@ -4662,20 +4790,6 @@ describe('TransferReviewService — the opening observation of a holding it crea
       .where(eq(schema.holdingBalanceObservations.holdingId, holdingId));
   }
 
-  async function createdHoldingIn(f: Fixture, accountId: string) {
-    const [row] = await db
-      .select()
-      .from(schema.holdings)
-      .where(
-        and(
-          eq(schema.holdings.userId, f.userId),
-          eq(schema.holdings.accountId, accountId),
-          eq(schema.holdings.tokenId, f.tokenId)
-        )
-      );
-    return row;
-  }
-
   test('a destination nobody syncs is opened WITH an observation of the opening', async () => {
     const f = fixture!;
     const outId = await insertOutflow(f, { at: anchor(), quantity: '-250', externalId: 's641-1' });
@@ -4686,10 +4800,10 @@ describe('TransferReviewService — the opening observation of a holding it crea
     ).toEqual({ ok: true });
 
     const holding = await createdHoldingIn(f, f.emptyAccountId);
-    expect(holding?.balance).toBe('250');
+    expect(holding.balance).toBe('250');
 
     // The whole of SC-641: 250 appeared and nothing recorded that it had.
-    const obs = await observationsOn(holding?.id ?? '');
+    const obs = await observationsOn(holding.id);
     expect(obs).toHaveLength(1);
     expect(obs[0]?.balance).toBe('250');
   });
@@ -4702,7 +4816,7 @@ describe('TransferReviewService — the opening observation of a holding it crea
     });
 
     const holding = await createdHoldingIn(f, f.emptyAccountId);
-    const obs = await observationsOn(holding?.id ?? '');
+    const obs = await observationsOn(holding.id);
     // Load-bearing, not cosmetic. `holdingIsUntouched` (SC-631) reads an
     // observation as evidence a person touched the row, and excludes THIS
     // source on the ground that it records nothing beyond the holding's own
@@ -4722,9 +4836,9 @@ describe('TransferReviewService — the opening observation of a holding it crea
     ).toEqual({ ok: true });
 
     const holding = await createdHoldingIn(f, f.walletSyncedAccountId);
-    expect(holding?.balance).toBe('0');
+    expect(holding.balance).toBe('0');
     // Deliberate asymmetry. The next test is the reason.
-    expect(await observationsOn(holding?.id ?? '')).toEqual([]);
+    expect(await observationsOn(holding.id)).toEqual([]);
   });
 
   test('opening a sync-owned row with an observation would invent a gap the ledger cannot explain', async () => {
@@ -4734,7 +4848,7 @@ describe('TransferReviewService — the opening observation of a holding it crea
       destination: { accountId: f.walletSyncedAccountId, holdingId: null },
     });
     const holding = await createdHoldingIn(f, f.walletSyncedAccountId);
-    const holdingId = holding?.id ?? '';
+    const holdingId = holding.id;
 
     // The sync's first pass, an hour later, reporting the arrival.
     await db.insert(schema.holdingBalanceObservations).values({
@@ -4773,5 +4887,657 @@ describe('TransferReviewService — the opening observation of a holding it crea
     expect(mine[0]?.explained).toBe('0');
     expect(mine[0]?.balance).toBe('1000');
     expect(mine[0]?.previousBalance).toBe('0');
+  });
+});
+
+/**
+ * Where an `internal` answer opens its destination (`writeInflow`), pinned on
+ * today's code before that create moves onto `HoldingResolver`,
+ * `HoldingCacheWriter` and `SnapshotWriter` (foundation A2). Every assertion
+ * here reads the same after the move (D-1), apart from the ones the move names.
+ */
+describe('an internal answer’s created destination, pinned before it moves (foundation A2)', () => {
+  function observationsOn(holdingId: string) {
+    return db
+      .select()
+      .from(schema.holdingBalanceObservations)
+      .where(eq(schema.holdingBalanceObservations.holdingId, holdingId));
+  }
+
+  function ledgerOn(holdingId: string) {
+    return db
+      .select()
+      .from(schema.holdingTransactions)
+      .where(eq(schema.holdingTransactions.holdingId, holdingId));
+  }
+
+  async function outflowRow(outflowId: string) {
+    const [row] = await db
+      .select()
+      .from(schema.holdingTransactions)
+      .where(eq(schema.holdingTransactions.id, outflowId));
+    if (!row) throw new Error(`outflow ${outflowId} is gone`);
+    return row;
+  }
+
+  /** The row as a person and every legacy reader sees it. */
+  function visibleRow(row: typeof schema.holdings.$inferSelect) {
+    return {
+      accountId: row.accountId,
+      tokenId: row.tokenId,
+      balance: row.balance,
+      source: row.source,
+      arrival: row.arrival,
+      externalId: row.externalId,
+      label: row.label,
+      isActive: row.isActive,
+      isHidden: row.isHidden,
+      manualEditCause: row.manualEditCause,
+    };
+  }
+
+  /** The arrival `writeInflow` writes, with the labels its re-label leaves. */
+  async function arrivalOn(holdingId: string, outflowId: string) {
+    const rows = await ledgerOn(holdingId);
+    expect(rows).toHaveLength(1);
+    const row = rows[0]!;
+    const outflow = await outflowRow(outflowId);
+    expect(row.transferGroupId).toBe(outflow.transferGroupId ?? 'no group');
+    return {
+      kind: row.kind,
+      quantity: row.quantity,
+      occurredAt: row.occurredAt.toISOString(),
+      source: row.source,
+      externalId: row.externalId,
+      counterparty: row.counterparty,
+      description: row.description,
+      sourceMetadata: row.sourceMetadata,
+      inputId: row.inputId,
+      ledgerKind: row.ledgerKind,
+      kindOrigin: row.kindOrigin,
+      groupId: row.groupId === row.transferGroupId ? 'the transfer group' : row.groupId,
+    };
+  }
+
+  function arrivalOf(opts: {
+    quantity: string;
+    outflowId: string;
+    at: Date;
+    counterparty?: string;
+  }) {
+    return {
+      kind: 'transfer_in',
+      quantity: opts.quantity,
+      occurredAt: opts.at.toISOString(),
+      source: 'transfer-review',
+      externalId: opts.outflowId,
+      counterparty: opts.counterparty ?? null,
+      description: 'Arrival you recorded when reviewing the transfer it came from',
+      sourceMetadata: {
+        outflowTransactionId: opts.outflowId,
+        createdDestinationHolding: true,
+        movedDestinationAnchor: false,
+        arrivalFrom: opts.at.toISOString(),
+        arrivalTo: new Date(opts.at.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      inputId: null,
+      ledgerKind: 'transfer_in',
+      kindOrigin: 'person' as const,
+      groupId: 'the transfer group',
+    };
+  }
+
+  function expectWithin(at: Date | null | undefined, window: { before: Date; after: Date }) {
+    expect(at).toBeInstanceOf(Date);
+    expect(at!.getTime()).toBeGreaterThanOrEqual(window.before.getTime());
+    expect(at!.getTime()).toBeLessThanOrEqual(window.after.getTime());
+  }
+
+  async function coverageOf(holdingId: string) {
+    const [row] = await db
+      .select({
+        firstTxAt: schema.holdingCoverage.firstTxAt,
+        lastTxAt: schema.holdingCoverage.lastTxAt,
+      })
+      .from(schema.holdingCoverage)
+      .where(eq(schema.holdingCoverage.holdingId, holdingId));
+    return row;
+  }
+
+  test('an unsynced account’s destination opens as a manual row at the moved amount, with one holding-open observation and one arrival', async () => {
+    const f = fixture!;
+    const at = anchor();
+    const answered = await answerInto(f, f.emptyAccountId, {
+      quantity: '250',
+      externalId: 'a2-open-1',
+      at,
+      counterparty: 'savings pot',
+    });
+
+    const holding = await createdHoldingIn(f, f.emptyAccountId);
+    expect(visibleRow(holding)).toEqual({
+      accountId: f.emptyAccountId,
+      tokenId: f.tokenId,
+      balance: '250',
+      source: 'manual',
+      arrival: 'user_confirmed',
+      externalId: null,
+      label: null,
+      isActive: true,
+      isHidden: false,
+      manualEditCause: null,
+    });
+    // Stamped by the host clock at the write, not at the withdrawal.
+    expectWithin(holding.lastUpdated, answered);
+
+    const observations = await observationsOn(holding.id);
+    expect(observations).toHaveLength(1);
+    expect(observations[0]).toMatchObject({
+      balance: '250',
+      source: HOLDING_OPEN_OBSERVATION_SOURCE,
+      sourceMetadata: { origin: 'createHoldingWithEvent', source: 'manual' },
+      gapReview: null,
+      gapReviewSource: null,
+      gapReviewedAt: null,
+      supersededAt: null,
+    });
+    expectWithin(observations[0]?.observedAt, answered);
+
+    expect(await arrivalOn(holding.id, answered.outId)).toEqual(
+      arrivalOf({ quantity: '250', outflowId: answered.outId, at, counterparty: 'savings pot' })
+    );
+    expect(await coverageOf(holding.id)).toEqual({ firstTxAt: at, lastTxAt: at });
+
+    // What the queue shows: nothing waiting, and the answer remembers that it
+    // opened the holding, so a reopen offers to take it away again.
+    expect((await service().pendingSummary(f.userId)).count).toBe(0);
+    const { items } = await service().listAnswered(f.userId);
+    expect(items.find((r) => r.transactionId === answered.outId)).toMatchObject({
+      decision: 'internal',
+      createdDestination: true,
+      declared: false,
+    });
+  });
+
+  test('a sync-owned account’s destination opens at zero under the sync’s source, with no observation: blockchain for a wallet, sync_exchange_balances for an exchange', async () => {
+    const f = fixture!;
+    const at = anchor();
+    for (const [accountId, source, quantity, externalId] of [
+      [f.walletSyncedAccountId, 'blockchain', '1000', 'a2-open-wallet'],
+      [f.exchangeSyncedAccountId, 'sync_exchange_balances', '3250', 'a2-open-cex'],
+    ] as const) {
+      const answered = await answerInto(f, accountId, { quantity, externalId, at });
+
+      const holding = await createdHoldingIn(f, accountId);
+      expect(visibleRow(holding)).toEqual({
+        accountId,
+        tokenId: f.tokenId,
+        balance: '0',
+        source,
+        arrival: 'user_confirmed',
+        externalId: null,
+        label: null,
+        isActive: true,
+        isHidden: false,
+        manualEditCause: null,
+      });
+      expectWithin(holding.lastUpdated, answered);
+      expect(await observationsOn(holding.id)).toEqual([]);
+      expect(await arrivalOn(holding.id, answered.outId)).toEqual(
+        arrivalOf({ quantity, outflowId: answered.outId, at })
+      );
+      expect(await coverageOf(holding.id)).toEqual({ firstTxAt: at, lastTxAt: at });
+    }
+    expect((await service().pendingSummary(f.userId)).count).toBe(0);
+  });
+
+  test('an opening below 1e-6 is written in plain notation, the opening and the arrival alike (N6)', async () => {
+    const f = fixture!;
+    const at = anchor();
+    const answered = await answerInto(f, f.emptyAccountId, {
+      quantity: '0.00000005',
+      externalId: 'a2-open-dust',
+      at,
+    });
+
+    const holding = await createdHoldingIn(f, f.emptyAccountId);
+    const [observation] = await observationsOn(holding.id);
+    const [arrival] = await ledgerOn(holding.id);
+    expect({
+      balance: holding.balance,
+      observation: observation?.balance,
+      arrival: arrival?.quantity,
+    }).toEqual({ balance: '0.00000005', observation: '0.00000005', arrival: '0.00000005' });
+    expect(arrival?.externalId).toBe(answered.outId);
+  });
+
+  test('an arrival that meets one already written keeps the first write’s metadata and takes the later amount, date and group', async () => {
+    const f = fixture!;
+    const at = anchor();
+    const outId = await insertOutflow(f, { at, quantity: '-40', externalId: 'a2-conflict' });
+    // A second writer for the same question got there first, on the same
+    // destination: its row holds the key `writeInflow` inserts under.
+    const firstAt = new Date(at.getTime() - 60 * 60 * 1000);
+    const firstMetadata = { outflowTransactionId: outId, createdDestinationHolding: true };
+    const [first] = await db
+      .insert(schema.holdingTransactions)
+      .values({
+        userId: f.userId,
+        holdingId: f.inHoldingId,
+        tokenId: f.tokenId,
+        kind: 'transfer_in',
+        quantity: '1',
+        occurredAt: firstAt,
+        source: 'transfer-review',
+        externalId: outId,
+        sourceMetadata: firstMetadata,
+        // Stated, so the later write's now() cannot fall in the same millisecond.
+        updatedAt: firstAt,
+      })
+      .returning();
+    if (!first) throw new Error('first arrival insert failed');
+
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+      })
+    ).toEqual({ ok: true });
+
+    const rows = await ledgerOn(f.inHoldingId);
+    expect(rows).toHaveLength(1);
+    const outflow = await outflowRow(outId);
+    expect(rows[0]).toMatchObject({
+      id: first.id,
+      quantity: '40',
+      occurredAt: at,
+      transferGroupId: outflow.transferGroupId,
+      sourceMetadata: firstMetadata,
+      inputId: null,
+      ledgerKind: 'transfer_in',
+      groupId: outflow.transferGroupId,
+      kindOrigin: 'person',
+    });
+    expect(rows[0]!.updatedAt.getTime()).toBeGreaterThan(first.updatedAt.getTime());
+    // The anchor nobody syncs still moves by what arrived (SC-856).
+    const [destination] = await db
+      .select({ balance: schema.holdings.balance })
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, f.inHoldingId));
+    expect(destination?.balance).toBe('41');
+  });
+
+  test('history across answers that open a snapshot and a feed destination and move an existing anchor reads as it did before the move', async () => {
+    const f = fixture!;
+    const at = anchor();
+    const day = 24 * 60 * 60 * 1000;
+    await answerInto(f, f.emptyAccountId, { quantity: '250', externalId: 'a2-hist-1', at });
+    await answerInto(f, f.walletSyncedAccountId, {
+      quantity: '1000',
+      externalId: 'a2-hist-2',
+      at,
+    });
+    const movedId = await insertOutflow(f, { at, quantity: '-40', externalId: 'a2-hist-3' });
+    expect(
+      await service().resolve(f.userId, movedId, 'internal', {
+        destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+      })
+    ).toEqual({ ok: true });
+    const opened = (await createdHoldingIn(f, f.emptyAccountId)).id;
+    const openedAtZero = (await createdHoldingIn(f, f.walletSyncedAccountId)).id;
+
+    // Read on the path before the move. Each destination reads what it held
+    // before the arrival and the arrival after it; the source, which nothing
+    // here writes, reads the three withdrawals walked back from its zero.
+    const now = new Date();
+    const before = new Date(at.getTime() - day);
+    const after = new Date(at.getTime() + day);
+    const golden: Array<[string, Date, string | null]> = [
+      [opened, before, '0'],
+      [opened, after, '250'],
+      [opened, now, '250'],
+      [openedAtZero, before, '0'],
+      [openedAtZero, after, '0'],
+      [openedAtZero, now, '0'],
+      [f.inHoldingId, before, '1'],
+      [f.inHoldingId, after, '41'],
+      [f.inHoldingId, now, '41'],
+      [f.outHoldingId, before, '1290'],
+      [f.outHoldingId, after, '0'],
+      [f.outHoldingId, now, '0'],
+    ];
+    const readings: HistoryReading[] = golden.map(([holdingId, instant, balance]) => ({
+      holdingId,
+      at: instant,
+      balance,
+      anchor: null,
+    }));
+
+    await expectHistoryUnchanged(readings);
+    // The control: a figure the walk does not give is caught.
+    await expect(
+      expectHistoryUnchanged(readings.map((r, i) => (i === 1 ? { ...r, balance: '0' } : r)))
+    ).rejects.toThrow();
+  });
+});
+
+/**
+ * The destination an `internal` answer opens comes from `HoldingResolver`
+ * (foundation A2, D-4, D-6): a feed holding where a sync owns the account, else
+ * a snapshot one, starting at the withdrawal's date. A non-zero opening is set
+ * through `HoldingCacheWriter` and recorded through `SnapshotWriter`, so it is
+ * the holding's first snapshot, labelled at write. The row, the ledger, the
+ * cache and history are the characterization's above (D-1).
+ */
+describe('an internal answer’s created destination comes from the resolver and the writers (foundation A2)', () => {
+  async function labelledObservations(holdingId: string) {
+    const rows = await db
+      .select()
+      .from(schema.holdingBalanceObservations)
+      .where(eq(schema.holdingBalanceObservations.holdingId, holdingId));
+    return rows.map((o) => ({
+      balance: o.balance,
+      source: o.source,
+      sourceMetadata: o.sourceMetadata,
+      role: o.role,
+      authority: o.authority,
+      inputId: o.inputId,
+      cause: o.cause,
+      gapReview: o.gapReview,
+      supersededAt: o.supersededAt,
+    }));
+  }
+
+  test('an unsynced account’s destination is a snapshot holding starting at the withdrawal’s date, and its opening is its first snapshot', async () => {
+    const f = fixture!;
+    const at = anchor();
+    await answerInto(f, f.emptyAccountId, { quantity: '250', externalId: 'a2-snap', at });
+
+    const holding = await createdHoldingIn(f, f.emptyAccountId);
+    expect({ kind: holding.kind, startsAt: holding.startsAt }).toEqual({
+      kind: 'snapshot',
+      startsAt: at,
+    });
+    expect(await labelledObservations(holding.id)).toEqual([
+      {
+        balance: '250',
+        source: HOLDING_OPEN_OBSERVATION_SOURCE,
+        sourceMetadata: { origin: 'createHoldingWithEvent', source: 'manual' },
+        role: 'snapshot',
+        authority: 'person',
+        inputId: null,
+        cause: 'flow',
+        gapReview: null,
+        supersededAt: null,
+      },
+    ]);
+  });
+
+  test('a sync-owned account’s destination is a feed holding starting at the withdrawal’s date, opened with no observation, whole or as a split’s portion', async () => {
+    const f = fixture!;
+    const at = anchor();
+    await answerInto(f, f.exchangeSyncedAccountId, {
+      quantity: '3250',
+      externalId: 'a2-feed-cex',
+      at,
+    });
+    const splitId = await insertOutflow(f, { at, quantity: '-4000', externalId: 'a2-feed-split' });
+    expect(
+      await service().resolveSplit(f.userId, splitId, [
+        {
+          decision: 'internal',
+          quantity: '3500',
+          destination: { accountId: f.walletSyncedAccountId, holdingId: null },
+        },
+        { decision: 'left_control', quantity: '500' },
+      ])
+    ).toEqual({ ok: true });
+
+    for (const accountId of [f.exchangeSyncedAccountId, f.walletSyncedAccountId]) {
+      const holding = await createdHoldingIn(f, accountId);
+      expect({ kind: holding.kind, startsAt: holding.startsAt, balance: holding.balance }).toEqual({
+        kind: 'feed',
+        startsAt: at,
+        balance: '0',
+      });
+      expect(await labelledObservations(holding.id)).toEqual([]);
+    }
+  });
+
+  test('expectLabelsSettled after internal answers open a snapshot and a feed destination', async () => {
+    const f = fixture!;
+    const at = anchor();
+    const toSnapshot = await insertOutflow(f, { at, quantity: '-250', externalId: 'a2-lbl-1' });
+    const toFeed = await insertOutflow(f, { at, quantity: '-1000', externalId: 'a2-lbl-2' });
+    // The fixture settled first, as the backfill leaves it.
+    await Container.get(FoundationClassificationService).classify({
+      apply: true,
+      userId: f.userId,
+    });
+
+    for (const [outId, accountId] of [
+      [toSnapshot, f.emptyAccountId],
+      [toFeed, f.walletSyncedAccountId],
+    ] as const) {
+      expect(
+        await service().resolve(f.userId, outId, 'internal', {
+          destination: { accountId, holdingId: null },
+        })
+      ).toEqual({ ok: true });
+    }
+
+    await expectLabelsSettled(f.userId);
+  });
+});
+
+/**
+ * An arrival into a holding that already exists is dated at the withdrawal, so
+ * it lowers the holding's start to that date wherever the start is later
+ * (foundation A2, D-6), as a mirror leg's reuse does. Whether the answer moved
+ * the anchor does not matter: the arrival is the write.
+ */
+describe('an internal answer into an existing destination lowers its start to the withdrawal’s date (foundation A2, D-6)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  async function holdingRow(holdingId: string) {
+    const [row] = await db.select().from(schema.holdings).where(eq(schema.holdings.id, holdingId));
+    if (!row) throw new Error(`holding ${holdingId} is gone`);
+    return row;
+  }
+
+  async function heldIn(
+    f: Fixture,
+    accountId: string,
+    values: { source: string; kind: 'snapshot' | 'feed'; startsAt: Date | null }
+  ): Promise<string> {
+    const [row] = await db
+      .insert(schema.holdings)
+      .values({ userId: f.userId, accountId, tokenId: f.tokenId, balance: '0', ...values })
+      .returning({ id: schema.holdings.id });
+    if (!row) throw new Error('holding insert failed');
+    return row.id;
+  }
+
+  async function answer(
+    f: Fixture,
+    destination: { accountId: string; holdingId: string },
+    at: Date,
+    externalId: string,
+    observedEvent = false
+  ) {
+    const outId = await insertOutflow(f, { at, quantity: '-40', externalId });
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination,
+        ...(observedEvent ? { observedEvent } : {}),
+      })
+    ).toEqual({ ok: true });
+  }
+
+  test('a later start moves back to the withdrawal’s date, whether the answer moved the anchor, left it to the sync, or explained an observed event', async () => {
+    const f = fixture!;
+    const at = anchor();
+    const later = new Date(at.getTime() + 6 * DAY);
+    await db
+      .update(schema.holdings)
+      .set({ kind: 'snapshot', startsAt: later })
+      .where(eq(schema.holdings.id, f.inHoldingId));
+    const synced = await heldIn(f, f.walletSyncedAccountId, {
+      source: 'blockchain',
+      kind: 'feed',
+      startsAt: later,
+    });
+    const observed = await heldIn(f, f.emptyAccountId, {
+      source: 'manual',
+      kind: 'snapshot',
+      startsAt: later,
+    });
+
+    await answer(f, { accountId: f.inAccountId, holdingId: f.inHoldingId }, at, 'd6-moved');
+    await answer(f, { accountId: f.walletSyncedAccountId, holdingId: synced }, at, 'd6-synced');
+    await answer(f, { accountId: f.emptyAccountId, holdingId: observed }, at, 'd6-observed', true);
+
+    const rows = await Promise.all([f.inHoldingId, synced, observed].map(holdingRow));
+    expect(rows.map((r) => r.startsAt)).toEqual([at, at, at]);
+    // Which branch each took: only the anchor nobody syncs moved.
+    expect(rows.map((r) => r.balance)).toEqual(['41', '0', '0']);
+  });
+
+  test('an earlier start, and a NULL one, are left as they are', async () => {
+    const f = fixture!;
+    const at = anchor();
+    const earlier = new Date(at.getTime() - DAY);
+    const synced = await heldIn(f, f.walletSyncedAccountId, {
+      source: 'blockchain',
+      kind: 'feed',
+      startsAt: earlier,
+    });
+
+    // The fixture's destination has no start yet.
+    await answer(f, { accountId: f.inAccountId, holdingId: f.inHoldingId }, at, 'd6-null');
+    await answer(f, { accountId: f.walletSyncedAccountId, holdingId: synced }, at, 'd6-earlier');
+
+    expect((await holdingRow(f.inHoldingId)).startsAt).toBeNull();
+    expect((await holdingRow(synced)).startsAt).toEqual(earlier);
+  });
+});
+
+/**
+ * Decimals the queue writes as text are plain notation below 1e-6 too (U4,
+ * R87, R89): the arrival's amount when it meets one already written, and every
+ * anchor an answer moves or a reopen puts back. `toString()` writes exponent
+ * text there (`5e-8`), and the data export shows the text as written.
+ */
+describe('the queue writes amounts below 1e-6 in plain notation (foundation A2, U4)', () => {
+  const DUST = '0.00000005';
+
+  async function balanceOf(holdingId: string) {
+    const [row] = await db
+      .select({ balance: schema.holdings.balance })
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, holdingId));
+    return row?.balance;
+  }
+
+  async function setBalance(holdingId: string, balance: string) {
+    await db.update(schema.holdings).set({ balance }).where(eq(schema.holdings.id, holdingId));
+  }
+
+  /** The newest observation's figure, which the anchor move records beside the cache. */
+  async function lastObservedOn(holdingId: string) {
+    const [row] = await db
+      .select({ balance: schema.holdingBalanceObservations.balance })
+      .from(schema.holdingBalanceObservations)
+      .where(eq(schema.holdingBalanceObservations.holdingId, holdingId))
+      .orderBy(desc(schema.holdingBalanceObservations.observedAt))
+      .limit(1);
+    return row?.balance;
+  }
+
+  async function answerIntoTheUnsyncedHolding(f: Fixture, quantity: string, externalId: string) {
+    const outId = await insertOutflow(f, { at: anchor(), quantity: `-${quantity}`, externalId });
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+      })
+    ).toEqual({ ok: true });
+    return outId;
+  }
+
+  test('an arrival that meets one already written takes the later amount in plain notation (N6, the conflict path)', async () => {
+    const f = fixture!;
+    const at = anchor();
+    const outId = await insertOutflow(f, { at, quantity: `-${DUST}`, externalId: 'u4-conflict' });
+    await db.insert(schema.holdingTransactions).values({
+      userId: f.userId,
+      holdingId: f.inHoldingId,
+      tokenId: f.tokenId,
+      kind: 'transfer_in',
+      quantity: '1',
+      occurredAt: new Date(at.getTime() - 60 * 60 * 1000),
+      source: 'transfer-review',
+      externalId: outId,
+    });
+
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+      })
+    ).toEqual({ ok: true });
+
+    const rows = await db
+      .select({ quantity: schema.holdingTransactions.quantity })
+      .from(schema.holdingTransactions)
+      .where(eq(schema.holdingTransactions.holdingId, f.inHoldingId));
+    expect(rows).toEqual([{ quantity: DUST }]);
+  });
+
+  test('an anchor nobody syncs moves to a balance below 1e-6 in plain notation', async () => {
+    const f = fixture!;
+    await setBalance(f.inHoldingId, '0');
+
+    await answerIntoTheUnsyncedHolding(f, DUST, 'u4-move');
+
+    expect(await balanceOf(f.inHoldingId)).toBe(DUST);
+    expect(await lastObservedOn(f.inHoldingId)).toBe(DUST);
+  });
+
+  test('reopening a queue answer puts an anchor back below 1e-6 in plain notation', async () => {
+    const f = fixture!;
+    await setBalance(f.inHoldingId, DUST);
+    const outId = await answerIntoTheUnsyncedHolding(f, '1', 'u4-reopen');
+    expect(await balanceOf(f.inHoldingId)).toBe('1.00000005');
+
+    expect(await service().reopen(f.userId, outId)).toBe(true);
+
+    expect(await balanceOf(f.inHoldingId)).toBe(DUST);
+    expect(await lastObservedOn(f.inHoldingId)).toBe(DUST);
+  });
+
+  test('reopening a declared transfer puts its destination back below 1e-6 in plain notation', async () => {
+    const f = fixture!;
+    await setBalance(f.outHoldingId, '4000');
+    await setBalance(f.inHoldingId, DUST);
+    await new RecordHoldingMovementUseCase().execute(
+      {
+        holdingId: f.outHoldingId,
+        direction: 'transfer',
+        amount: '1',
+        occurredAt: anchor().toISOString(),
+        destinationAccountId: f.inAccountId,
+        destinationHoldingId: f.inHoldingId,
+      },
+      f.userId
+    );
+    expect(await balanceOf(f.inHoldingId)).toBe('1.00000005');
+    const [outflow] = await db
+      .select({ id: schema.holdingTransactions.id })
+      .from(schema.holdingTransactions)
+      .where(eq(schema.holdingTransactions.holdingId, f.outHoldingId));
+    if (!outflow) throw new Error('the declared transfer wrote no withdrawal');
+
+    expect(await service().reopen(f.userId, outflow.id)).toBe(true);
+
+    expect(await balanceOf(f.inHoldingId)).toBe(DUST);
+    expect(await balanceOf(f.outHoldingId)).toBe('4000');
   });
 });

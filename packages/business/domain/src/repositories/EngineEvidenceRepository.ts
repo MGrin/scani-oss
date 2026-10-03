@@ -17,10 +17,8 @@ import type {
   LegacyHoldingEvidence,
 } from '../services/foundation/legacy-classification';
 import { LEGACY_ANCHOR_KEY } from '../services/foundation/legacy-ledger-kinds';
+import { LABEL_BATCH_SIZE, MAPPED_ENTRY_LABELS } from './entry-labels';
 import { TokenPriceRepository } from './TokenPriceRepository';
-
-/** Rows per `UPDATE … FROM (VALUES …)` statement in `fillMissingLabels`. */
-const LABEL_BATCH_SIZE = 500;
 
 /**
  * Rows per read of observations or ledger rows. A heavy holding's history is
@@ -119,17 +117,8 @@ const TRANSACTION_EVIDENCE = {
 };
 
 const ENTRY_LABEL_COLUMNS: readonly LabelColumn<EntryLabel>[] = [
-  { column: schema.holdingTransactions.ledgerKind, value: (l) => l.ledgerKind },
-  { column: schema.holdingTransactions.kindSubtype, value: (l) => l.kindSubtype },
-  { column: schema.holdingTransactions.groupId, value: (l) => l.groupId },
-  { column: schema.holdingTransactions.feeOf, value: (l) => l.feeOf },
+  ...MAPPED_ENTRY_LABELS.map(({ key, column }) => ({ column, value: (l: EntryLabel) => l[key] })),
   { column: schema.holdingTransactions.inputId, value: (l) => l.inputId },
-  { column: schema.holdingTransactions.executionPrice, value: (l) => l.executionPrice },
-  {
-    column: schema.holdingTransactions.executionPriceTokenId,
-    value: (l) => l.executionPriceTokenId,
-  },
-  { column: schema.holdingTransactions.kindOrigin, value: (l) => l.kindOrigin },
 ];
 
 /**
@@ -390,6 +379,28 @@ export class EngineEvidenceRepository extends BaseRepository<Holding, NewHolding
         )
       )
       .orderBy(asc(schema.users.id));
+  }
+
+  /** When each of these ledger rows of the user was last written. */
+  async findEntryUpdatedAt(
+    userId: string,
+    entryIds: readonly string[],
+    tx?: DatabaseTransaction
+  ): Promise<Map<string, Date>> {
+    const updatedAt = new Map<string, Date>();
+    for (let start = 0; start < entryIds.length; start += LABEL_BATCH_SIZE) {
+      const rows = await this.getDb(tx)
+        .select({ id: ledger.id, updatedAt: ledger.updatedAt })
+        .from(ledger)
+        .where(
+          and(
+            eq(ledger.userId, userId),
+            inArray(ledger.id, entryIds.slice(start, start + LABEL_BATCH_SIZE))
+          )
+        );
+      for (const row of rows) updatedAt.set(row.id, row.updatedAt);
+    }
+    return updatedAt;
   }
 
   /**

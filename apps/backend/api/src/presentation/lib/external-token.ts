@@ -1,6 +1,6 @@
 type ExternalProvider = 'finnhub' | 'coingecko';
 
-interface ExternalSearchItem {
+export interface ExternalSearchItem {
   symbol: string;
   name: string;
   type: string;

@@ -108,12 +108,22 @@ export function FileImportResult({ result, jobId }: { result: unknown; jobId: st
             label={t('v3.jobs.file.newHoldings')}
             value={<Numeric value={view.newHoldingCount} format="plain" decimals={0} />}
           />
-          {/* A balance anchor is what a positions-only export leaves behind, so
-              it is the row that explains a run with no transactions at all. */}
-          <DataRow
-            label={t('v3.jobs.file.balanceAnchors')}
-            value={<Numeric value={view.observationCount} format="plain" decimals={0} />}
-          />
+          {/* A recorded balance is what a positions-only export leaves behind,
+              so it is the row that explains a run with no transactions at all.
+              At zero it explains nothing and counts a term the reader never
+              met (SC-1527). */}
+          {view.observationCount > 0 ? (
+            <DataRow
+              label={t('v3.jobs.file.balancesRecorded')}
+              value={<Numeric value={view.observationCount} format="plain" decimals={0} />}
+            />
+          ) : null}
+          {view.columnsMatchedAutomatically ? (
+            <DataRow
+              label={t('v3.jobs.file.columnsRow.label')}
+              value={t('v3.jobs.file.columnsRow.matchedAutomatically')}
+            />
+          ) : null}
         </DataRowList>
         {wroteNothing ? (
           <p className="border-t border-border p-4 text-body text-muted-foreground">

@@ -6,12 +6,23 @@ import { type HoldingArrivalAttribution, isValidDecimalString } from '@scani/sha
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { type BalancesAsOf, deriveBalancesAsOf, withBalancesAsOf } from '../../lib/balances-as-of';
+import { databaseErrorOf } from '../../lib/database-error';
+import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
+import { TokenRepository } from '../../repositories/TokenRepository';
 import { BaseService } from '../BaseService';
-import { TokenService } from '../tokens/TokenService';
-import { HoldingService } from './HoldingService';
+import { FeedIngestService } from '../feeds/FeedIngestService';
+import { FeedInputFollower } from '../feeds/FeedInputFollower';
+import { type LegacySnapshot, legacySnapshotBatch } from '../feeds/legacy/snapshot-batch';
+import {
+  accountChainId,
+  providerInputSource,
+  walletInputSource,
+} from '../foundation/plan-feed-inputs';
+import { WALLET_BALANCE_SYNC_SOURCE } from './balance-sync-sources';
 import {
   type IntegrationHolding,
+  integrationTokenIdentity,
   projectSnapshotsToHoldings,
   projectSnapshotToTokenMapping,
   type TokenMappingResult,
@@ -123,11 +134,19 @@ export interface IntegrationImportResult {
   errors: Array<{ accountInfo: DiscoveredAccountInfo; error: string }>;
 }
 
+/**
+ * Imports the accounts and balances a connect flow discovered: each account
+ * found or created and its metadata patched here, then each answer's balances
+ * written as one snapshot batch through `FeedIngestService` (A2 Task 15), in
+ * one transaction for every target.
+ */
 @Service()
 export class IntegrationImportService extends BaseService {
-  private readonly holdingService = Container.get(HoldingService);
-  private readonly tokenService = Container.get(TokenService);
+  private readonly feedIngest = Container.get(FeedIngestService);
+  private readonly feedInputs = Container.get(FeedInputFollower);
   private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
 
   constructor() {
     super('IntegrationImportService');
@@ -149,15 +168,37 @@ export class IntegrationImportService extends BaseService {
 
     await withTransaction(
       async (tx) => {
+        let databaseFailure: { error: unknown } | null = null;
         for (const target of targets) {
+          const rowErrors: IntegrationImportResult['errors'] = [];
           try {
-            await this.processTarget(target, options, result, tokenIdSet, tx);
+            // A savepoint per target, around its account as well as its
+            // balances, so a target that fails writes nothing — no account, no
+            // fresh `lastSync` over balances that rolled back — and the other
+            // targets land (R64).
+            const landed = await tx.transaction((sp) =>
+              this.processTarget(target, options, rowErrors, sp)
+            );
+            result.accounts.push(landed.account);
+            result.holdings.push(...landed.holdings);
+            for (const tokenId of landed.tokenIds) tokenIdSet.add(tokenId);
+            result.errors.push(...rowErrors);
           } catch (error) {
-            result.errors.push({
+            if (databaseFailure === null && databaseErrorOf(error) !== null) {
+              databaseFailure = { error };
+            }
+            result.errors.push(...rowErrors, {
               accountInfo: target.accountInfo,
               error: error instanceof Error ? error.message : String(error),
             });
           }
+        }
+        // Without savepoints postgres.js remembered a scope's first database
+        // error and rejected the import with it at commit, so the job retried.
+        // An import that landed nothing still rejects that way rather than
+        // reading as a terminal failure the caller will not retry (R66).
+        if (result.accounts.length === 0 && databaseFailure !== null) {
+          throw databaseFailure.error;
         }
       },
       {
@@ -166,24 +207,31 @@ export class IntegrationImportService extends BaseService {
       }
     );
 
+    // The connect created these accounts, and ingest their inputs with no
+    // credential or wallet: link them now the accounts are committed (R39).
+    await this.feedInputs.follow(options.userId, {
+      accountIds: result.accounts.map((account) => account.id),
+    });
+
     result.tokenIds = Array.from(tokenIdSet);
     return result;
   }
 
+  /**
+   * One target's account and balances. Its per-row errors go to `errors`, the
+   * ones known before a failure included; everything else is returned, for the
+   * caller to report once the target's savepoint has resolved.
+   */
   private async processTarget(
     target: IntegrationImportTarget,
     options: IntegrationImportOptions,
-    result: IntegrationImportResult,
-    tokenIdSet: Set<string>,
+    errors: IntegrationImportResult['errors'],
     tx: DatabaseTransaction
-  ): Promise<void> {
+  ): Promise<{ account: ImportedAccount; holdings: ImportedHolding[]; tokenIds: string[] }> {
     const { accountInfo, snapshots, accountMetadataPatch, preExistingAccountId } = target;
-    const eventContext = options.baseCurrencyId
-      ? { userId: options.userId, baseCurrencyId: options.baseCurrencyId }
-      : undefined;
 
-    const accountId = await this.resolveAccountRow(target, options, result, tx);
-    if (!accountId) return;
+    const account = await this.resolveAccountRow(target, options, tx);
+    const accountId = account.id;
 
     // One path rather than two (SC-384). The `preExistingAccountId` branch
     // used to `set({ metadata: { lastSync } })`, which REPLACES the column —
@@ -199,183 +247,218 @@ export class IntegrationImportService extends BaseService {
       );
     }
 
-    const holdingsResult = projectSnapshotsToHoldings(snapshots, accountId);
-    const snapshotsByExternalId = new Map<string, HoldingSnapshot>();
-    for (const s of snapshots) snapshotsByExternalId.set(s.externalId, s);
-
-    const seenExternalIds = new Set(
-      holdingsResult.holdings.map((h) => h.externalTokenId || h.symbol)
-    );
-
-    for (const holding of holdingsResult.holdings) {
-      try {
-        if (!holding.symbol || !holding.balance) continue;
-        if (!isValidDecimalString(holding.balance)) continue;
-
-        const isZero = parseFloat(holding.balance) === 0;
-        if (options.skipZeroBalances && isZero) continue;
-
-        const lookupExternalId =
-          holding.contractAddress || holding.externalTokenId || holding.symbol;
-        const snapshot =
-          snapshotsByExternalId.get(lookupExternalId) ?? snapshotsByExternalId.get(holding.symbol);
-        if (!snapshot) {
-          this.logger.warn(
-            { accountId, holding },
-            'No matching snapshot for holding — skipping (provider returned inconsistent shape)'
-          );
-          continue;
-        }
-
-        let tokenMapping = projectSnapshotToTokenMapping(snapshot);
-        const tokenTypeId = options.resolveTokenTypeId(snapshot, options.cryptoTokenTypeId);
-
-        if (options.postProcessTokenMapping) {
-          tokenMapping = await options.postProcessTokenMapping(
-            tokenMapping,
-            snapshot,
-            holding,
-            tokenTypeId,
-            tx
-          );
-        }
-
-        const { token, wasCreated } = await this.tokenService.findOrCreateTokenFromIntegration(
-          tokenMapping,
-          tokenTypeId,
-          tx
-        );
-        tokenIdSet.add(token.id);
-
-        const externalId = holding.externalTokenId || holding.symbol;
-        const existingHolding = await this.holdingRepository.findByAccountTokenAndExternalId(
-          accountId,
-          token.id,
-          externalId,
-          options.userId,
-          tx,
-          true
-        );
-
-        if (existingHolding) {
-          await this.holdingService.updateHoldingBalanceWithEvent(
-            {
-              holdingId: existingHolding.id,
-              balance: holding.balance,
-              eventContext,
-              observedAt: snapshot.capturedAt,
-            },
-            tx
-          );
-
-          // If this row was hidden but the upstream now reports a non-zero
-          // balance, unhide it so the user sees it on the dashboard again.
-          if (existingHolding.isHidden && !isZero) {
-            await this.holdingService.updateHoldingWithEvent(
-              existingHolding.id,
-              { isHidden: false, lastUpdated: new Date() },
-              tx
-            );
-          }
-
-          result.holdings.push({
-            id: existingHolding.id,
-            accountId,
-            accountName: this.findAccountNameInResult(result, accountId, target),
-            tokenId: token.id,
-            tokenSymbol: token.symbol,
-            tokenName: token.name,
-            tokenIconUrl: token.iconUrl ?? null,
-            tokenIsNew: false,
-            tokenScamProbability: token.isScamProbability ?? 0,
-            balance: holding.balance,
-            externalId: existingHolding.externalId,
-            isHidden: existingHolding.isHidden && isZero,
-          });
-        } else if (!isZero || !options.skipZeroBalances) {
-          const newHolding = await this.holdingService.createHoldingWithEvent(
-            {
-              userId: options.userId,
-              accountId,
-              tokenId: token.id,
-              balance: holding.balance,
-              source: options.sourceTag,
-              arrival: options.arrival,
-              externalId,
-              observedAt: snapshot.capturedAt,
-              eventContext: options.baseCurrencyId
-                ? { baseCurrencyId: options.baseCurrencyId }
-                : undefined,
-            },
-            tx
-          );
-
-          result.holdings.push({
-            id: newHolding.id,
-            accountId,
-            accountName: this.findAccountNameInResult(result, accountId, target),
-            tokenId: token.id,
-            tokenSymbol: token.symbol,
-            tokenName: token.name,
-            tokenIconUrl: token.iconUrl ?? null,
-            tokenIsNew: wasCreated,
-            tokenScamProbability: token.isScamProbability ?? 0,
-            balance: holding.balance,
-            externalId,
-            isHidden: false,
-          });
-        }
-      } catch (error) {
-        result.errors.push({
+    const projected = projectSnapshotsToHoldings(snapshots, accountId).holdings;
+    const { kept, failed } = await this.prepare(projected, snapshots, options, accountId, tx);
+    const report = () => {
+      for (const { index, error } of failed.sort((a, b) => a.index - b.index)) {
+        errors.push({
           accountInfo,
-          error: `Failed to import ${holding.symbol}: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
+          error: `Failed to import ${projected[index]?.symbol}: ${error}`,
         });
       }
-    }
+    };
 
-    if (options.zeroStaleHoldings) {
-      try {
-        const existingHoldings = await this.holdingRepository.findByAccount(
-          accountId,
-          tx,
-          true,
-          true
-        );
-        for (const eh of existingHoldings) {
-          if (eh.source !== options.sourceTag) continue;
-          if (eh.externalId && seenExternalIds.has(eh.externalId)) continue;
-          if (eh.balance === '0') continue;
-          await this.holdingService.updateHoldingBalanceWithEvent(
-            {
-              holdingId: eh.id,
-              balance: '0',
-              eventContext,
-            },
-            tx
-          );
-        }
-      } catch (error) {
+    const batch = legacySnapshotBatch({
+      userId: options.userId,
+      input: {
+        accountId,
+        source: this.inputSourceOf(target, options),
+        credentialId: null,
+        walletId: null,
+      },
+      returnedAt: snapshots.map((s) => s.capturedAt),
+      snapshots: kept.map((k) => k.snapshot),
+      absences: [],
+      fetchedAt: new Date(),
+      options: {
+        holdingMatch: 'external-id',
+        holdingPolicy: 'create',
+        holdingSource: options.sourceTag,
+        arrival: options.arrival,
+        holdingFailure: 'skip-entry',
+        // Every key the provider named, the rows dropped above included, so an
+        // asset reported at zero or in a shape that matched no snapshot keeps
+        // its old holding.
+        absence: options.zeroStaleHoldings
+          ? {
+              mode: 'immediate',
+              guardEmptySnapshot: false,
+              reportedKeys: projected.map((h) => h.externalTokenId || h.symbol),
+            }
+          : null,
+        clearsAbsenceTally: false,
+        unhideOnNonZero: true,
+        unchangedCheckpoint: 'append',
+        zeroOpensHolding: true,
+      },
+    });
+    const ingested = await this.feedIngest.ingest(batch, tx).catch((error: unknown) => {
+      report();
+      throw error;
+    });
+
+    const outcomes = ingested.checkpointOutcomes;
+    const holdingIds = [...new Set(outcomes.flatMap((o) => o.holdingId ?? []))];
+    // Every token resolved, a failed holding's included, in the provider's order.
+    const tokenIds = [...new Set(outcomes.flatMap((o) => o.tokenId ?? []))];
+    const holdingRows = new Map(
+      (await this.holdingRepository.findByIds(holdingIds, tx)).map((h) => [h.id, h])
+    );
+    const tokenRows = new Map(
+      (await this.tokenRepository.findByIds(tokenIds, tx)).map((t) => [t.id, t])
+    );
+    const holdings: ImportedHolding[] = [];
+    for (const [position, { index, holding }] of kept.entries()) {
+      const outcome = outcomes[position];
+      if (outcome === undefined) continue;
+      if (outcome.failure !== null) {
+        failed.push({ index, error: outcome.failure });
+        continue;
+      }
+      const row = outcome.holdingId === null ? undefined : holdingRows.get(outcome.holdingId);
+      const token = outcome.tokenId === null ? undefined : tokenRows.get(outcome.tokenId);
+      if (row === undefined || token === undefined) continue;
+      holdings.push({
+        id: row.id,
+        accountId,
+        accountName: account.name,
+        tokenId: token.id,
+        tokenSymbol: token.symbol,
+        tokenName: token.name,
+        tokenIconUrl: token.iconUrl ?? null,
+        tokenIsNew: false,
+        tokenScamProbability: token.isScamProbability ?? 0,
+        balance: holding.balance,
+        externalId: row.externalId,
+        // A hidden row reported at zero stays hidden; ingest shows the rest.
+        isHidden: row.isHidden && Number.parseFloat(holding.balance) === 0,
+      });
+    }
+    report();
+    return { account, holdings, tokenIds };
+  }
+
+  /**
+   * The rows of one answer the import keeps, in the provider's order, each
+   * with its token identified. A row with no symbol or an unreadable balance,
+   * a zero the caller skips, or one that matches no snapshot is dropped; one
+   * whose token cannot be identified is reported by its index. A row that
+   * reads the database does so in a savepoint, so a database error there costs
+   * that row rather than aborting the transaction under every later one (R64,
+   * R37's shape).
+   */
+  private async prepare(
+    projected: readonly IntegrationHolding[],
+    snapshots: readonly HoldingSnapshot[],
+    options: IntegrationImportOptions,
+    accountId: string,
+    tx: DatabaseTransaction
+  ): Promise<{
+    kept: Array<{ index: number; holding: IntegrationHolding; snapshot: LegacySnapshot }>;
+    failed: Array<{ index: number; error: string }>;
+  }> {
+    const snapshotsByExternalId = new Map<string, HoldingSnapshot>();
+    for (const s of snapshots) snapshotsByExternalId.set(s.externalId, s);
+    const typeCodes = new Map<string, string>();
+    const kept: Array<{ index: number; holding: IntegrationHolding; snapshot: LegacySnapshot }> =
+      [];
+    const failed: Array<{ index: number; error: string }> = [];
+
+    for (const [index, holding] of projected.entries()) {
+      if (!holding.symbol || !holding.balance) continue;
+      if (!isValidDecimalString(holding.balance)) continue;
+      if (options.skipZeroBalances && Number.parseFloat(holding.balance) === 0) continue;
+
+      const lookupExternalId = holding.contractAddress || holding.externalTokenId || holding.symbol;
+      const snapshot =
+        snapshotsByExternalId.get(lookupExternalId) ?? snapshotsByExternalId.get(holding.symbol);
+      if (!snapshot) {
         this.logger.warn(
-          {
-            accountId,
-            error: error instanceof Error ? error.message : String(error),
-          },
-          'Failed to zero stale holdings (non-critical)'
+          { accountId, holding },
+          'No matching snapshot for holding — skipping (provider returned inconsistent shape)'
         );
+        continue;
+      }
+
+      try {
+        const projectedMapping = projectSnapshotToTokenMapping(snapshot);
+        const tokenTypeId = options.resolveTokenTypeId(snapshot, options.cryptoTokenTypeId);
+        const prepareRow = async (within: DatabaseTransaction): Promise<LegacySnapshot> => {
+          const tokenMapping = options.postProcessTokenMapping
+            ? await options.postProcessTokenMapping(
+                projectedMapping,
+                snapshot,
+                holding,
+                tokenTypeId,
+                within
+              )
+            : projectedMapping;
+          const identity = integrationTokenIdentity(tokenMapping.token);
+          return {
+            asset: {
+              key: holding.externalTokenId || holding.symbol,
+              identity,
+              typeCode: await this.typeCodeOf(tokenTypeId, typeCodes, within),
+              lookup: 'identity',
+            },
+            balance: holding.balance,
+            capturedAt: snapshot.capturedAt,
+          };
+        };
+        // Only a row that can read the database needs the savepoint.
+        const prepared =
+          options.postProcessTokenMapping || !typeCodes.has(tokenTypeId)
+            ? await tx.transaction(prepareRow)
+            : await prepareRow(tx);
+        kept.push({ index, holding, snapshot: prepared });
+      } catch (error) {
+        failed.push({ index, error: error instanceof Error ? error.message : String(error) });
       }
     }
+    return { kept, failed };
+  }
+
+  /** The code of a token type the caller named by id, once per import. */
+  private async typeCodeOf(
+    typeId: string,
+    codes: Map<string, string>,
+    tx: DatabaseTransaction
+  ): Promise<string> {
+    const known = codes.get(typeId);
+    if (known !== undefined) return known;
+    const type = await this.tokenTypeRepository.findById(typeId, tx);
+    if (type === null) throw new Error(`No token type has the id ${typeId}`);
+    codes.set(typeId, type.code);
+    return type.code;
+  }
+
+  /** The account's input these balances belong to: its chain's for a wallet, else its provider's (D-7). */
+  private inputSourceOf(
+    target: IntegrationImportTarget,
+    options: IntegrationImportOptions
+  ): string {
+    if (options.sourceTag !== WALLET_BALANCE_SYNC_SOURCE) {
+      return providerInputSource(target.institution.name);
+    }
+    return walletInputSource(accountChainId(target.accountMetadataPatch));
   }
 
   private async resolveAccountRow(
     target: IntegrationImportTarget,
     options: IntegrationImportOptions,
-    result: IntegrationImportResult,
     tx: DatabaseTransaction
-  ): Promise<string | null> {
+  ): Promise<ImportedAccount> {
     const { institution, accountInfo, preExistingAccountId, accountName, accountDescription } =
       target;
+    const imported = (row: typeof schema.accounts.$inferSelect): ImportedAccount => ({
+      id: row.id,
+      name: row.name,
+      institutionId: institution.id,
+      institutionName: institution.name,
+      accountType: accountInfo.accountType,
+      externalId: accountInfo.externalId,
+      metadata: (row.metadata as Record<string, unknown>) ?? {},
+    });
 
     if (preExistingAccountId) {
       const [existing] = await tx
@@ -384,16 +467,7 @@ export class IntegrationImportService extends BaseService {
         .where(eq(schema.accounts.id, preExistingAccountId))
         .limit(1);
       if (existing) {
-        result.accounts.push({
-          id: existing.id,
-          name: existing.name,
-          institutionId: institution.id,
-          institutionName: institution.name,
-          accountType: accountInfo.accountType,
-          externalId: accountInfo.externalId,
-          metadata: (existing.metadata as Record<string, unknown>) ?? {},
-        });
-        return existing.id;
+        return imported(existing);
       }
     }
 
@@ -421,16 +495,7 @@ export class IntegrationImportService extends BaseService {
         );
 
     if (keyedExisting) {
-      result.accounts.push({
-        id: keyedExisting.id,
-        name: keyedExisting.name,
-        institutionId: institution.id,
-        institutionName: institution.name,
-        accountType: accountInfo.accountType,
-        externalId: accountInfo.externalId,
-        metadata: (keyedExisting.metadata as Record<string, unknown>) ?? {},
-      });
-      return keyedExisting.id;
+      return imported(keyedExisting);
     }
 
     const baseMetadata = accountInfo.metadata ?? {};
@@ -461,16 +526,7 @@ export class IntegrationImportService extends BaseService {
       throw new Error('Failed to create account');
     }
 
-    result.accounts.push({
-      id: newAccount.id,
-      name: newAccount.name,
-      institutionId: institution.id,
-      institutionName: institution.name,
-      accountType: accountInfo.accountType,
-      externalId: accountInfo.externalId,
-      metadata: (newAccount.metadata as Record<string, unknown>) ?? {},
-    });
-    return newAccount.id;
+    return imported(newAccount);
   }
 
   private async patchAccountMetadata(
@@ -497,14 +553,5 @@ export class IntegrationImportService extends BaseService {
       .update(schema.accounts)
       .set({ metadata: merged, updatedAt: new Date() })
       .where(eq(schema.accounts.id, accountId));
-  }
-
-  private findAccountNameInResult(
-    result: IntegrationImportResult,
-    accountId: string,
-    target: IntegrationImportTarget
-  ): string {
-    const found = result.accounts.find((a) => a.id === accountId);
-    return found?.name ?? target.accountName ?? target.accountInfo.name;
   }
 }

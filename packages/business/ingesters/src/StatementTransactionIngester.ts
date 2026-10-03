@@ -42,19 +42,37 @@ export interface StatementClose {
   balance: string;
 }
 
+/** A security the statement says the account held when its period ended. */
+export interface StatementPosition {
+  symbol: string;
+  at: Date;
+  quantity: string;
+}
+
 export interface StatementIngesterResult {
   format: ParseResult['format'];
   bankTemplate: string | null;
   /** Every parsed transaction, in file order. */
   lines: Array<StatementLine | SkippedStatementLine>;
-  /** The balance the statement ends on, when its last row carries one. */
+  /**
+   * The balance the statement ends on, when its last row carries one, and the
+   * cash a positions statement reports at its period end.
+   */
   closes: StatementClose[];
+  /** The securities a positions statement reports at its period end. */
+  positions: StatementPosition[];
   /** The parser's own warnings. */
   warnings: string[];
 }
 
 const unknownCurrency = (currency: string) =>
   `Unknown currency '${currency}' — statement rows for this currency skipped`;
+
+const unknownPosition = (symbol: string) =>
+  `Unknown symbol '${symbol}' — this position was not imported`;
+
+const ambiguousPosition = (symbol: string) =>
+  `Ambiguous ticker '${symbol}' — more than one listing has it, so this position was not imported`;
 
 /**
  * The warnings an import reports, once the write path has said which
@@ -64,7 +82,8 @@ const unknownCurrency = (currency: string) =>
  */
 export function statementWarnings(
   result: StatementIngesterResult,
-  unknownCurrencies: ReadonlySet<string>
+  unknownCurrencies: ReadonlySet<string>,
+  ambiguousTickers: ReadonlySet<string> = new Set()
 ): string[] {
   return [
     ...result.warnings,
@@ -75,6 +94,13 @@ export function statementWarnings(
     ...result.closes
       .filter((close) => unknownCurrencies.has(close.currency))
       .map((close) => unknownCurrency(close.currency)),
+    ...result.positions.flatMap((position) =>
+      ambiguousTickers.has(position.symbol)
+        ? [ambiguousPosition(position.symbol)]
+        : unknownCurrencies.has(position.symbol)
+          ? [unknownPosition(position.symbol)]
+          : []
+    ),
   ];
 }
 
@@ -88,6 +114,8 @@ export class StatementTransactionIngester {
     const { parseResult } = input;
     const lines: StatementIngesterResult['lines'] = [];
     const closes: StatementClose[] = [];
+    const positions: StatementPosition[] = [];
+    const warnings = [...parseResult.warnings];
     const currencyOf = (tx: ParsedTransaction) =>
       (tx.currency || input.defaultCurrency || parseResult.detectedCurrency || '')
         .trim()
@@ -198,12 +226,36 @@ export class StatementTransactionIngester {
       }
     }
 
+    const held = parseResult.positions;
+    if (held && held.asOf === null) {
+      warnings.push(
+        `The statement names no period end, so the ${held.cash.length + held.securities.length} positions it lists were not imported`
+      );
+    } else if (held?.asOf) {
+      const at = held.asOf;
+      for (const { currency, balance } of held.cash) {
+        closes.push({
+          currency: currency.toUpperCase(),
+          at,
+          balance: new Decimal(balance).toFixed(),
+        });
+      }
+      for (const { symbol, quantity } of held.securities) {
+        positions.push({
+          symbol: symbol.toUpperCase(),
+          at,
+          quantity: new Decimal(quantity).toFixed(),
+        });
+      }
+    }
+
     this.logger.info(
       {
         accountId: input.accountId,
         format: parseResult.format,
         lineCount: lines.length,
         closeCount: closes.length,
+        positionCount: positions.length,
       },
       'Statement ingestion complete'
     );
@@ -213,7 +265,8 @@ export class StatementTransactionIngester {
       bankTemplate: parseResult.bankTemplate ?? null,
       lines,
       closes,
-      warnings: [...parseResult.warnings],
+      positions,
+      warnings,
     };
   }
 

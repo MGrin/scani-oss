@@ -11,24 +11,10 @@ import type { AssetRef } from './feed-batch';
  * `skipped`: the catalog names no such token and the lookup may not create
  * one. `failed`: the lookup threw, and says why.
  */
-export type AssetResolution = { tokenId: string } | { skipped: string } | { failed: string };
-
-/**
- * Two refs with this key resolve to one token, so a batch resolves each key
- * once. It is every field a lookup matches on and never the symbol alone: two
- * tokens can share a symbol. A display field (name, decimals, icon) is not in
- * it, so two refs of one token that spell its name differently are one lookup.
- */
-export function assetKey(asset: AssetRef): string {
-  const { symbol, marketSegment, providerMetadata } = asset.identity;
-  return JSON.stringify([
-    asset.lookup ?? 'identity',
-    asset.typeCode,
-    symbol,
-    marketSegment ?? null,
-    providerMetadata ?? null,
-  ]);
-}
+export type AssetResolution =
+  | { tokenId: string }
+  | { skipped: string; ambiguous?: true }
+  | { failed: string };
 
 /** The token a batch's asset names (D-2). */
 @Service()
@@ -41,6 +27,9 @@ export class AssetResolver {
    * `catalog-symbol` is the statement import's lookup: the most legitimate
    * catalog token with the symbol (`TokenRepository.findBySymbol`). It never
    * creates one, in either mode, so a symbol the catalog lacks is skipped.
+   * `catalog-symbol-of-type` is the same within the asset's type, for a
+   * statement that names a security by its ticker alone, and skips a ticker
+   * two listings share: a wrong listing is a wrong price (SC-1510).
    *
    * `identity` is a provider's, through `TokenIdentityService`, so its ISO-fiat
    * override and its scam refusal hold; `find-only` creates nothing. A lookup
@@ -64,6 +53,20 @@ export class AssetResolver {
     const type = await this.tokenTypes.findByCode(asset.typeCode, tx);
     if (type === null) {
       throw new Error(`AssetResolver: no token type has the code ${asset.typeCode}`);
+    }
+    if (asset.lookup === 'catalog-symbol-of-type') {
+      const listings = await this.tokens.findCatalogListingsOfType(
+        asset.identity.symbol,
+        type.id,
+        tx
+      );
+      if (listings.length === 1) return { tokenId: listings[0]!.id };
+      return listings.length === 0
+        ? { skipped: `no catalog ${asset.typeCode} has the symbol ${asset.identity.symbol}` }
+        : {
+            skipped: `more than one catalog ${asset.typeCode} has the symbol ${asset.identity.symbol}`,
+            ambiguous: true,
+          };
     }
     const partial: Partial<NewToken> = { ...asset.identity, typeId: type.id };
     const lookup = (within?: Transaction): Promise<Token | null> =>

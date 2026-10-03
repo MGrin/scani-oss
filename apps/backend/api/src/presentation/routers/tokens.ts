@@ -21,7 +21,11 @@ import Container from 'typedi';
 import { z } from 'zod';
 import { LruCache } from '../../lib/lru-cache';
 import { enqueueCurrencyRateRefresh } from '../lib/currency-rate-refresh';
-import { externalSearchMetadata, matchVerifiedExternalToken } from '../lib/external-token';
+import {
+  type ExternalSearchItem,
+  externalSearchMetadata,
+  matchVerifiedExternalToken,
+} from '../lib/external-token';
 import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
@@ -40,17 +44,35 @@ import { strictInput } from '../lib/strict-input';
 // FIFO-evicting them as new typeahead chars come in. 1-hour TTL is
 // long enough that "USDC", "ETH", "BTC" etc. stay cached across an
 // entire user session.
-const searchCache = new LruCache<string, unknown[]>({
+// The provider's answer is cached as it came, before it is merged with any
+// one user's catalogue view, so a token materialised since is still filtered.
+const searchCache = new LruCache<string, ExternalSearchItem[]>({
   maxEntries: 100,
   ttlMs: 60 * 60 * 1000,
 });
 
-// Catalogue rows come first and are already exact-first; this lifts an exact
-// symbol from the provider half above the catalogue's partial matches. Stable,
-// so everything else keeps the order it was given.
-function exactSymbolFirst<T extends { symbol: string }>(rows: T[], query: string): T[] {
-  const isExact = (row: T) => row.symbol.toUpperCase() === query;
-  return [...rows.filter(isExact), ...rows.filter((row) => !isExact(row))];
+// A crypto listing of a stock borrows the stock's ticker. Offered above the
+// stock, a broker holding gets recorded as Cryptocurrency (SC-1524).
+const TOKENIZED_WRAPPER = /\b(tokeni[sz]ed|xstocks?|robinhood|dinari|stock token)\b/i;
+
+type RankedRow = { symbol: string; name: string; type?: string | null };
+
+// 0: the exact symbol, 1: the exact symbol worn by a tokenized wrapper, 2: the rest.
+function searchTier(row: RankedRow, query: string): number {
+  if (row.symbol.toUpperCase() !== query) return 2;
+  return row.type === 'crypto' && TOKENIZED_WRAPPER.test(row.name) ? 1 : 0;
+}
+
+// Stable, so catalogue rows stay ahead of provider rows within a tier.
+function rankSearchResults<T extends RankedRow>(rows: T[], query: string): T[] {
+  return [0, 1, 2].flatMap((tier) => rows.filter((row) => searchTier(row, query) === tier));
+}
+
+// `createFromExternal` resolves a pick to the existing row of the same symbol
+// and type, so that pair is the identity two results may not share. A symbol
+// alone is not: AAPL the equity and AAPL a crypto wrapper are two tokens.
+function searchIdentity(row: { symbol: string; type?: string | null }): string {
+  return `${row.symbol.toUpperCase()}:${row.type ?? ''}`;
 }
 
 // Helper function to map provider token types to database token types
@@ -300,30 +322,29 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
         // Finnhub / CoinGecko credentials live on data-provider only.
         if (dbTokens.length < input.limit && !dbHasFiatHit) {
           try {
-            const cached = searchCache.get(query);
-            if (cached) {
-              results.push(...(cached as typeof results).slice(0, input.limit - dbTokens.length));
-              return exactSymbolFirst(results, query);
+            let externalResults = searchCache.get(query);
+            if (!externalResults) {
+              const cloudClient = getCloudClient();
+              // No SCANI_CLOUD_URL → no data-provider → DB-only search.
+              // Returning early keeps the user-facing search responsive
+              // instead of throwing "cloud client not configured".
+              if (!cloudClient) return rankSearchResults(results, query);
+              externalResults = await cloudClient.tokens.search.query({
+                query,
+                limit: input.limit,
+              });
+              if (externalResults.length > 0) searchCache.set(query, externalResults);
             }
 
-            const cloudClient = getCloudClient();
-            // No SCANI_CLOUD_URL → no data-provider → DB-only search.
-            // Returning early keeps the user-facing search responsive
-            // instead of throwing "cloud client not configured".
-            if (!cloudClient) return exactSymbolFirst(results, query);
-            const externalResults = await cloudClient.tokens.search.query({
-              query,
-              limit: input.limit,
-            });
-
-            // Sort: exact symbol matches first, then for fiat-coded
-            // queries push non-fiat external hits down (Finnhub's
-            // USD/EUR/GBP equities don't deserve top billing on a fiat
-            // search), then crypto before stocks.
+            // Rank before the limit cuts: tier, then for fiat-coded queries
+            // push non-fiat external hits down (Finnhub's USD/EUR/GBP
+            // equities don't deserve top billing on a fiat search), then
+            // crypto before stocks.
+            const tier = (item: ExternalSearchItem) =>
+              searchTier({ ...item, type: mapProviderTypeToDbType(item.type) }, query);
             const sorted = [...externalResults].sort((a, b) => {
-              const aExact = a.symbol.toLowerCase() === query.toLowerCase() ? 0 : 1;
-              const bExact = b.symbol.toLowerCase() === query.toLowerCase() ? 0 : 1;
-              if (aExact !== bExact) return aExact - bExact;
+              const tiers = tier(a) - tier(b);
+              if (tiers !== 0) return tiers;
               if (isFiatQuery) {
                 const aFiat = (a.type ?? '').toLowerCase() === 'fiat' ? 0 : 1;
                 const bFiat = (b.type ?? '').toLowerCase() === 'fiat' ? 0 : 1;
@@ -333,28 +354,22 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
               return cryptoRank(a.provider) - cryptoRank(b.provider);
             });
 
+            const taken = new Set(results.map(searchIdentity));
             for (const item of sorted) {
               if (results.length >= input.limit) break;
-              const symbolUpper = item.symbol.toUpperCase();
-              const alreadyInDb = dbTokens.some((t) => t.symbol.toUpperCase() === symbolUpper);
-              const alreadyInResults = results.some((t) => t.symbol.toUpperCase() === symbolUpper);
-              if (alreadyInDb || alreadyInResults) continue;
-              const provider = item.provider as 'finnhub' | 'coingecko' | 'defillama';
+              const type = mapProviderTypeToDbType(item.type);
+              const identity = searchIdentity({ symbol: item.symbol, type });
+              if (taken.has(identity)) continue;
+              taken.add(identity);
               results.push({
                 symbol: item.symbol,
                 name: item.name,
-                type: mapProviderTypeToDbType(item.type),
+                type,
                 decimals: item.type === 'Crypto' ? 18 : 2,
                 source: 'external' as const,
-                provider,
+                provider: item.provider as 'finnhub' | 'coingecko' | 'defillama',
                 metadata: externalSearchMetadata(item),
               });
-            }
-
-            const externalCacheable = results.filter((r) => r.source === 'external');
-            if (externalCacheable.length > 0) {
-              // LruCache handles size cap + LRU eviction internally.
-              searchCache.set(query, externalCacheable);
             }
           } catch (error) {
             tokensLogger.warn(
@@ -368,7 +383,7 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
           }
         }
 
-        return exactSymbolFirst(results, query).slice(0, input.limit);
+        return rankSearchResults(results, query).slice(0, input.limit);
       }),
 
     // Create token from external provider metadata (for holding creation)

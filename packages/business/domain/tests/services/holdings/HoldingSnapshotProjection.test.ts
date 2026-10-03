@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import type { HoldingSnapshot } from '@scani/providers/core/types';
-import { projectSnapshotToTokenMapping } from '../../../src/services/holdings/HoldingSnapshotProjection';
+import {
+  integrationTokenIdentity,
+  projectSnapshotToTokenMapping,
+} from '../../../src/services/holdings/HoldingSnapshotProjection';
 
 function snapshot(overrides: Partial<HoldingSnapshot['tokenIdentity']>): HoldingSnapshot {
   return {
@@ -25,5 +28,19 @@ describe('projectSnapshotToTokenMapping — marketSegment threading', () => {
   test('null marketSegment when the provider supplies none', () => {
     const mapping = projectSnapshotToTokenMapping(snapshot({}));
     expect(mapping.token.marketSegment).toBeNull();
+  });
+});
+
+// The identity a balance import resolves its token by must carry the segment,
+// or it lands on a different stock token than the transaction import does.
+describe('integrationTokenIdentity — marketSegment forwarding', () => {
+  test('forwards a non-null marketSegment into the identity', () => {
+    const { token } = projectSnapshotToTokenMapping(snapshot({ marketSegment: 'US' }));
+    expect(integrationTokenIdentity(token).marketSegment).toBe('US');
+  });
+
+  test('omits marketSegment when the mapping carries none', () => {
+    const { token } = projectSnapshotToTokenMapping(snapshot({}));
+    expect(integrationTokenIdentity(token).marketSegment).toBeUndefined();
   });
 });

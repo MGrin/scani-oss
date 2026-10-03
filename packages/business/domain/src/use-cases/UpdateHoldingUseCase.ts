@@ -11,8 +11,11 @@ import {
 import Decimal from 'decimal.js';
 import { and, eq } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
+import { movedBalance } from '../lib/balances/moved-balance';
 import { HoldingRepository } from '../repositories/HoldingRepository';
-import { HoldingService, VaultService } from '../services';
+import { VaultService } from '../services';
+import { HoldingCacheWriter } from '../services/feeds/HoldingCacheWriter';
+import { SnapshotWriter } from '../services/feeds/SnapshotWriter';
 import { DeclaredTransferService } from '../services/holdings/DeclaredTransferService';
 import {
   ManualBalanceEditService,
@@ -133,18 +136,17 @@ export interface UpdateHoldingInput {
  * The only path a user can edit a MANUAL holding's balance through — the
  * app's "edit the balance directly" flow, via `holdings.update`.
  *
- * It writes `holdings` itself rather than going through `HoldingService`,
- * and that is deliberate: the write is scoped by `userId` as well as
- * `holdingId`, which is the ownership check, and
- * `HoldingService.updateHoldingBalance` keys on `holdingId` alone. Routing
- * through the service would either drop that scoping or duplicate it.
+ * Every write is scoped by `userId` as well as `holdingId`, which is the
+ * ownership check. The balance goes through `HoldingCacheWriter` and the
+ * observation through `SnapshotWriter.record` (foundation A2), and both scope
+ * the same way; `HoldingService.updateHoldingBalance` keys on `holdingId`
+ * alone, which is why this path never used it.
  *
- * What was NOT deliberate is that it therefore skipped the sync-capture
- * observation `HoldingService` appends on every other balance mutation.
- * Every manual balance edit any user ever made is missing from
- * `holding_balance_observations` — several holdings and a material amount of
- * drift on production when it was found, against zero across every synced
- * holding (SC-245).
+ * Until SC-245 it skipped the sync-capture observation `HoldingService`
+ * appends on every other balance mutation, so every manual balance edit made
+ * before then is missing from `holding_balance_observations` — several
+ * holdings and a material amount of drift on production when it was found,
+ * against zero across every synced holding.
  *
  * That is worse than a bookkeeping gap because of how the trail is read:
  * `BalanceAtTimeService` anchors a past-date balance on the nearest
@@ -161,8 +163,9 @@ export interface UpdateHoldingInput {
 @Service()
 export class UpdateHoldingUseCase {
   private readonly vaultService = Container.get(VaultService);
-  private readonly holdingService = Container.get(HoldingService);
   private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly cacheWriter = Container.get(HoldingCacheWriter);
+  private readonly snapshotWriter = Container.get(SnapshotWriter);
   private readonly manualBalanceEditService = Container.get(ManualBalanceEditService);
   private readonly transferReviews = Container.get(TransferReviewService);
   private readonly declaredTransfers = Container.get(DeclaredTransferService);
@@ -262,6 +265,7 @@ export class UpdateHoldingUseCase {
       destination,
       source,
       userId,
+      when.occurredAt,
       tx
     );
     // Same sentence the queue gives for the same fact, so the two surfaces do
@@ -277,7 +281,7 @@ export class UpdateHoldingUseCase {
     await this.execute(
       arrived.id,
       {
-        balance: new Decimal(arrived.balance).add(quantity).toString(),
+        balance: movedBalance(arrived.balance, quantity),
         editCause: 'flow',
         // The date the WITHDRAWAL was stamped with, not the edit instant: two
         // legs of one movement dated apart would leave each of them explaining
@@ -315,6 +319,8 @@ export class UpdateHoldingUseCase {
         editOutflow,
         editFee,
         label: requestedLabel,
+        balance,
+        lastUpdated: statedLastUpdated,
         ...columns
       } = data;
       const editedAt = requestedEditedAt ?? new Date();
@@ -347,6 +353,9 @@ export class UpdateHoldingUseCase {
         .from(schema.holdings)
         .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
         .limit(1);
+      if (!previous) {
+        throw new Error('Holding not found');
+      }
 
       // Empty is not a name, it is the absence of one, and the position key
       // already treats it that way — same normalisation the create path
@@ -358,7 +367,7 @@ export class UpdateHoldingUseCase {
             ? requestedLabel.trim()
             : null;
 
-      if (label && previous) {
+      if (label) {
         await this.refuseIfLabelTaken(label, holdingId, previous, userId, tx);
       }
 
@@ -369,13 +378,39 @@ export class UpdateHoldingUseCase {
       // fresh timestamp under a figure nobody re-checked, on exactly the rows
       // (four pots for one token) where the reader is already unsure which
       // number belongs to what.
-      const claimsTheBalanceMoved = data.balance !== undefined || data.isActive !== undefined;
+      const claimsTheBalanceMoved = balance !== undefined || data.isActive !== undefined;
+      const lastUpdated = statedLastUpdated || editedAt;
 
-      const updateData = {
+      // The balance through the one A2 writer of the cache (D-1), and BEFORE
+      // the observation below on every path that writes one: concurrent edits
+      // of one holding serialize on this row lock, so the second one's
+      // snapshot sees the first's once it commits (R72).
+      if (balance !== undefined) {
+        // An edit whose cause `record` will write a ledger row for takes the
+        // row FOR UPDATE first, the level that row's upsert takes. The cache
+        // write's NO KEY UPDATE and then that would be an upgrade: it waits on
+        // any writer naming the holding while holding the row that writer may
+        // write next (R82). Asked of `record`'s own rule, on the balance it
+        // will read back off the row; any other edit keeps the cache write's
+        // lock (R76).
+        if (
+          editCause &&
+          this.manualBalanceEditService.skipReason({
+            cause: editCause,
+            previousBalance: previous.balance,
+            newBalance: balance,
+          }) === null
+        ) {
+          await this.holdingRepository.lockOwned(userId, holdingId, 'update', tx);
+        }
+        await this.cacheWriter.apply(userId, [{ holdingId, balance, lastUpdated }], tx);
+      }
+
+      const fields = {
         ...columns,
         ...(label === undefined ? {} : { label }),
-        ...(data.lastUpdated || claimsTheBalanceMoved
-          ? { lastUpdated: data.lastUpdated || editedAt }
+        ...(balance === undefined && (statedLastUpdated || claimsTheBalanceMoved)
+          ? { lastUpdated }
           : {}),
         // Remember the answer as this holding's default for next time, and
         // only when a human could have given one. A derived cause on a priced
@@ -383,12 +418,13 @@ export class UpdateHoldingUseCase {
         // pre-selection on a control the user never sees.
         ...(editCause ? { manualEditCause: editCause } : {}),
       };
-
-      const [result] = await tx
-        .update(schema.holdings)
-        .set(updateData)
-        .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
-        .returning();
+      const owned = and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId));
+      // A balance-only edit has nothing left to set, and its row lock is
+      // already held by the cache write.
+      const [result] =
+        balance !== undefined && Object.values(fields).every((value) => value === undefined)
+          ? await tx.select().from(schema.holdings).where(owned).limit(1)
+          : await tx.update(schema.holdings).set(fields).where(owned).returning();
 
       if (!result) {
         throw new Error('Holding not found');
@@ -400,7 +436,7 @@ export class UpdateHoldingUseCase {
       // observation first would make the correction supersede itself and
       // restate an interval one millisecond long.
       const written =
-        data.balance !== undefined && editCause && previous
+        balance !== undefined && editCause
           ? await this.manualBalanceEditService.record(
               {
                 holding: result,
@@ -489,38 +525,51 @@ export class UpdateHoldingUseCase {
 
       // In the same transaction as the write it describes, and only when
       // the balance actually moved — an `isActive` toggle is not a balance
-      // observation. `result` is the row the update returned, so this costs
-      // no extra read.
-      if (data.balance !== undefined) {
-        await this.holdingService.recordBalanceObservation(
-          result,
-          tx,
-          { origin: 'updateHolding' },
-          // The person said what this change was, so the interval closing on
-          // this observation is answered and the balance-gap queue must not
-          // ask again (SC-606).
-          //
-          // This is NOT what `BalanceGapService`'s `owner-stated` suppression
-          // does, and the difference is why the third prompt existed. That one
-          // tests `source !== 'sync-capture'`, and every observation this
-          // service writes — a manual edit's included — carries
-          // `sync-capture`, so it has never fired on this path however
-          // confidently its docblock says SC-510 already asked.
-          //
-          // What actually left the gap open was the DATE. A `flow` is stamped
-          // at the day the user gave; the client pre-fills today, a date-only
-          // value becomes LOCAL midnight, and in any zone east of UTC that
-          // instant is yesterday — so the row lands outside `(previous
-          // observation, this one]` and stops explaining the very interval it
-          // was written for. Measured 2026-08-25 on a UTC+12 box: an
-          // observation 12h old gave three prompts, one 72h old gave two, with
-          // nothing else changed.
-          //
-          // Stamping the cause rather than suppressing the row keeps the
-          // answer readable: the observation says a person called this a flow,
-          // in the vocabulary the queue itself writes.
-          editCause ? { answer: editCause, at: editedAt } : undefined
+      // observation. Labelled by Rule P with the edit's cause (D-5, D-6,
+      // R85); its legacy source and origin are today's, because readers
+      // still key on them. Stamped now, as it always was, so a same-instant
+      // value from the same source is dropped by the key, as it always was
+      // (R8). The cache is already set above.
+      if (balance !== undefined) {
+        const recorded = await this.snapshotWriter.record(
+          {
+            userId,
+            holdingId,
+            amount: result.balance,
+            at: new Date(),
+            cause: editCause ?? null,
+            legacySource: 'sync-capture',
+            legacyMeta: { origin: 'updateHolding' },
+            // The person said what this change was, so the interval closing on
+            // this observation is answered and the balance-gap queue must not
+            // ask again (SC-606).
+            //
+            // This is NOT what `BalanceGapService`'s `owner-stated` suppression
+            // does, and the difference is why the third prompt existed. That one
+            // tests `source !== 'sync-capture'`, and every observation this
+            // path writes carries `sync-capture`, so it has never fired here
+            // however confidently its docblock says SC-510 already asked.
+            //
+            // What actually left the gap open was the DATE. A `flow` is stamped
+            // at the day the user gave; the client pre-fills today, a date-only
+            // value becomes LOCAL midnight, and in any zone east of UTC that
+            // instant is yesterday — so the row lands outside `(previous
+            // observation, this one]` and stops explaining the very interval it
+            // was written for. Measured 2026-08-25 on a UTC+12 box: an
+            // observation 12h old gave three prompts, one 72h old gave two, with
+            // nothing else changed.
+            //
+            // Stamping the cause rather than suppressing the row keeps the
+            // answer readable: the observation says a person called this a flow,
+            // in the vocabulary the queue itself writes.
+            ...(editCause ? { attestation: { answer: editCause, at: editedAt } } : {}),
+          },
+          { cache: 'unchanged' },
+          tx
         );
+        for (const notice of recorded.notices) {
+          logger.warn({ userId, holdingId }, notice);
+        }
       }
 
       logger.info(

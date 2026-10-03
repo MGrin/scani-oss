@@ -218,6 +218,53 @@ describe('FileImportResult', () => {
     expect(html).not.toContain('Nothing was written');
   });
 
+  /**
+   * SC-1527, measured as a new user on a plain `date,description,amount,currency`
+   * CSV: the summary read "Balance anchors 0" — an internal term, counting
+   * nothing — and the one warning on the page was "Column mapping detected by
+   * AI", a statement that the import worked as designed.
+   */
+  const TRANSACTIONS_ONLY = {
+    ...SUMMARY,
+    transactionCount: 3,
+    observationCount: 0,
+    holdingsTouched: [{ ...SUMMARY.holdingsTouched[0], transactionCount: 3 }],
+    warnings: ['Column mapping detected by AI'],
+  };
+
+  test('no internal "balance anchors" wording, and no row counting zero of them', () => {
+    const html = render(<FileImportResult result={TRANSACTIONS_ONLY} jobId="job-1" />);
+    expect(html).not.toContain('anchor');
+    expect(html).not.toContain('Balances recorded');
+  });
+
+  test('a balance the statement gave is counted in plain words', () => {
+    const html = render(<FileImportResult result={SUMMARY} jobId="job-1" />);
+    expect(html).not.toContain('anchor');
+    expect(html).toContain('Balances recorded');
+  });
+
+  test('an AI-matched column mapping is stated as a fact, not listed as a warning', () => {
+    const html = render(<FileImportResult result={TRANSACTIONS_ONLY} jobId="job-1" />);
+    expect(html).not.toContain('Column mapping detected by AI');
+    expect(html).not.toContain('1 warning');
+    expect(html).toContain('Matched automatically');
+  });
+
+  test('a real warning beside it is still a warning', () => {
+    const html = render(
+      <FileImportResult
+        result={{
+          ...TRANSACTIONS_ONLY,
+          warnings: ['Column mapping detected by AI', 'row 4 skipped'],
+        }}
+        jobId="job-1"
+      />
+    );
+    expect(html).toContain('1 warning');
+    expect(html).toContain('row 4 skipped');
+  });
+
   test('a payload it cannot read is stated rather than rendered as zeroes', () => {
     expect(render(<FileImportResult result={{ nope: 1 }} jobId="job-1" />)).toContain(
       'without a result we can read'

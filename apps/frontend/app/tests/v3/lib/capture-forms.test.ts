@@ -63,9 +63,8 @@ describe('what a file is', () => {
     expect(planImportFile({ name: 'a.tsv', type: '' })?.format).toBe('csv');
     expect(planImportFile({ name: 'a.ofx', type: '' })?.format).toBe('ofx');
     expect(planImportFile({ name: 'a.qif', type: '' })?.format).toBe('qif');
-    // v2's mapping, kept deliberately: `.qfx` is read by the CSV parser. Which
-    // parser sees a file is the worker's contract, not this port's to change.
-    expect(planImportFile({ name: 'a.qfx', type: '' })?.format).toBe('csv');
+    // QFX is OFX under Quicken's name (SC-1519); v2 sent it to the CSV parser.
+    expect(planImportFile({ name: 'a.qfx', type: '' })?.format).toBe('ofx');
   });
 
   test('anything else is refused, and the refusal names what would work', () => {
@@ -202,6 +201,34 @@ describe('the wallet form', () => {
     expect(describeWalletAddressProblem(t, 'bc1qar0srrr')).toContain('Bitcoin');
   });
 
+  // SC-1519: a Litecoin address matched the Solana pattern, was accepted, and
+  // dead-ended on `/jobs` with a Retry that could never succeed.
+  test('base58 that does not decode to a 32-byte key is not a Solana address', () => {
+    expect(describeWalletAddressProblem(t, 'LcHKx1bVWG3pVxvA4sVmDbeYNvSbumhxyH')).not.toBeNull();
+    expect(describeWalletAddressProblem(t, SOLANA)).toBeNull();
+    expect(describeWalletAddressProblem(t, '11111111111111111111111111111111')).toBeNull();
+  });
+
+  test('an all-capitals bech32 address is accepted and sent in lower case', () => {
+    const upper = BITCOIN_BECH32.toUpperCase();
+    expect(describeWalletAddressProblem(t, upper)).toBeNull();
+    expect(buildWalletImportInput({ address: upper, displayName: '' }, 'req-1')?.address).toBe(
+      BITCOIN_BECH32
+    );
+  });
+
+  test('a space inside an address is named as a space, not as a short address', () => {
+    const spaced = `${EVM.slice(0, 20)} ${EVM.slice(20)}`;
+    expect(describeWalletAddressProblem(t, spaced)).toContain('space inside');
+    expect(describeWalletImportBlockers(t, { address: spaced, displayName: '' })).toEqual([
+      'check the wallet address',
+    ]);
+  });
+
+  test('an ENS name is told to paste the address it points to', () => {
+    expect(describeWalletAddressProblem(t, 'vitalik.eth')).toContain('ENS name');
+  });
+
   test('sends a trimmed address, an optional name, and auto chain detection', () => {
     expect(
       buildWalletImportInput({ address: `  ${EVM}  `, displayName: '  Cold storage ' }, 'req-1')
@@ -257,6 +284,15 @@ describe('the credential form', () => {
     // A stored empty passphrase is a credential the provider will reject on
     // every sync from then on.
     expect(buildCredentials(fields, { apiKey: 'k', apiSecret: 's', passphrase: '' })).toEqual({
+      apiKey: 'k',
+      apiSecret: 's',
+    });
+  });
+
+  test('a pasted value loses the whitespace copied around it', () => {
+    expect(
+      buildCredentials(fields, { apiKey: ' k\n', apiSecret: 's\t', passphrase: '  ' })
+    ).toEqual({
       apiKey: 'k',
       apiSecret: 's',
     });

@@ -106,6 +106,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
     isActive: true,
     isHidden: false,
     source: 'import_wallet',
+    refreshable: true,
     ...overrides,
   };
 }
@@ -130,6 +131,21 @@ describe('the four facts above the fold', () => {
   test('are what the position is, not everything known about it', () => {
     const spec = holdingPeekSpec(holding(), CONTEXT);
     expect(spec.primary.map((fact) => fact.label)).toEqual(['Amount', 'Price', 'Account', 'Type']);
+  });
+
+  test("the price names its source, not the pricing service's key (SC-1527)", () => {
+    const priceFact = (source: string) =>
+      renderNode(
+        holdingPeekSpec(
+          holding({
+            price: { value: '0.92', timestamp: '2026-08-12T09:00:00.000Z', source },
+          }),
+          CONTEXT
+        ).primary.find((fact) => fact.label === 'Price')?.value
+      );
+    expect(priceFact('coingecko')).toContain('CoinGecko');
+    expect(priceFact('frankfurter_historical')).toContain('Frankfurter (ECB rates)');
+    expect(priceFact('frankfurter_historical')).not.toContain('frankfurter_historical');
   });
 
   test('the identity names the token and where it is held', () => {
@@ -360,13 +376,19 @@ describe('actions', () => {
     expect(factValues(withRate, 'Interest')[0]).not.toInclude('Remove');
   });
 
-  test('a manual holding is not offered a sync it cannot do', () => {
-    const synced = renderNode(holdingPeekSpec(holding(), CONTEXT).actions);
-    expect(synced).toInclude('Sync balance');
+  test('a balance sync is offered on what the server calls refreshable, not on the source (R95)', () => {
+    const actions = (item: HoldingWithDetails) =>
+      renderNode(holdingPeekSpec(item, CONTEXT).actions);
 
-    const manual = renderNode(holdingPeekSpec(holding({ source: 'manual' }), CONTEXT).actions);
-    expect(manual).not.toInclude('Sync balance');
-    expect(manual).toInclude('Refresh price');
+    expect(actions(holding({ refreshable: true }))).toInclude('Sync balance');
+    // Whatever the source reads. The server never calls a manual row
+    // refreshable (R97); the peek shows what it is told and derives nothing.
+    expect(actions(holding({ refreshable: true, source: 'manual' }))).toInclude('Sync balance');
+
+    // A disconnected exchange: its source still names the sync.
+    const disconnected = actions(holding({ refreshable: false, source: 'sync_exchange_balances' }));
+    expect(disconnected).not.toInclude('Sync balance');
+    expect(disconnected).toInclude('Refresh price');
   });
 
   test('a holding in the base currency is not offered a price refresh (SC-1447)', () => {
@@ -470,7 +492,7 @@ describe('what the body actually renders', () => {
     expect(html).toInclude('12,000.00');
     expect(html).toInclude('Long term');
     // The price's age, at full-strength muted ink rather than v2's `/70`.
-    expect(html).toInclude('coingecko');
+    expect(html).toInclude('CoinGecko');
   });
 });
 

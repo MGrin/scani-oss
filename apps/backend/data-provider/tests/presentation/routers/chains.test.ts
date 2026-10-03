@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import type { AddressValidatorProvider, BalanceProvider } from '@scani/providers/core/capabilities';
+import { ETHERSCAN_CHAINS } from '@scani/providers/providers/etherscan';
 // This workspace cannot depend on @scani/domain (it sits below it), so the
 // shared helper is reached the same way the shared test preload is: by path.
 import { restoreContainerAfterAll } from '../../../../../../packages/business/domain/test/helpers/container';
@@ -77,6 +78,15 @@ describe('chainsRouter.listConfigs', () => {
     const eth = out.find((c) => c.chainId === 1);
     expect(eth?.type).toBe('evm');
     expect(eth?.nativeSymbol).toBe('ETH');
+  });
+
+  test('its EVM rows are exactly the chains the Etherscan provider serves (SC-1524)', async () => {
+    const caller = chainsRouter.createCaller(buildAuthedContext());
+    const evm = (await caller.listConfigs())
+      .filter((c) => c.type === 'evm')
+      .map((c) => Number(c.chainId))
+      .sort((a, b) => a - b);
+    expect(evm).toEqual(ETHERSCAN_CHAINS.map((c) => c.chainId).sort((a, b) => a - b));
   });
 });
 

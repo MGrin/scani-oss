@@ -90,7 +90,7 @@ function fileTypeOf(pending: Record<string, unknown>): string | undefined {
   return typeof pending.fileType === 'string' && pending.fileType ? pending.fileType : undefined;
 }
 
-/** wallet-import: `{ walletLabel, chainsDetected, candidateCount }` */
+/** wallet-import: `{ walletLabel, chainsDetected, candidateCount, errors }` */
 function readWalletImport(result: unknown): ReviewDetail | undefined {
   const root = asRecord(result);
   if (!root) return undefined;
@@ -104,7 +104,14 @@ function readWalletImport(result: unknown): ReviewDetail | undefined {
   // A sweep that found nothing is worth saying out loud, and `candidates: 0`
   // is what says it: it explains an otherwise-empty review without the user
   // opening the job. The client owns the wording.
-  return { code: 'walletCandidates', walletLabel: label, candidates, chains };
+  const unreadChains = Array.isArray(root.errors) ? root.errors.length : 0;
+  return {
+    code: 'walletCandidates',
+    walletLabel: label,
+    candidates,
+    chains,
+    ...(unreadChains > 0 ? { unreadChains } : {}),
+  };
 }
 
 const READERS: Record<string, (result: unknown) => ReviewDetail | undefined> = {

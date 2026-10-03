@@ -204,6 +204,23 @@ describe('describeQueryError — a rejection names its reason (SC-140)', () => {
     expect(copy.detail).toInclude('already connected');
   });
 
+  /** SC-1527. A 409 is the server saying the request collides with what is
+   *  already stored, and the sentence it writes names the collision — "this
+   *  account already holds BTC". The screenshot review has no copy of its own
+   *  for it, so the generic sentence was all it could say. */
+  test('409 carries the server’s reason too', () => {
+    const copy = describeQueryError(
+      {
+        data: { httpStatus: 409 },
+        message: 'This account already holds BTC under the same name.',
+      },
+      'these holdings',
+      'save'
+    );
+    expect(copy.detail).toInclude('already holds BTC');
+    expect(copy.detail).not.toInclude('The server returned an error');
+  });
+
   /** These are the messages that must NOT reach a screen. A zod failure is
    *  serialised into the same status as a real refusal, and a `TRPCError`
    *  thrown with no message carries its own code as one. */

@@ -110,9 +110,13 @@ export function reviewDetailText(
     case 'walletCandidates': {
       // A sweep that found nothing says so: it explains an otherwise-empty
       // review without the reader opening the job.
+      // …unless chains failed to answer: then nothing was read, and "nothing
+      // found" contradicts the job page's "not a reading of an empty wallet".
       const body =
         detail.candidates === 0
-          ? texts.t('v3.review.item.nothingFound')
+          ? texts.t(
+              detail.unreadChains ? 'v3.review.item.couldNotRead' : 'v3.review.item.nothingFound'
+            )
           : texts.t('v3.review.item.candidatesAcross', {
               count: detail.candidates,
               chains: texts.t('v3.review.item.chains', { count: detail.chains }),

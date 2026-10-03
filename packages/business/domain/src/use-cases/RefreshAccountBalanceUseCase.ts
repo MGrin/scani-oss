@@ -1,4 +1,5 @@
-import { db, withTransaction } from '@scani/db';
+import { db, STATEMENT_TIMEOUT_MS, withTransaction } from '@scani/db';
+import type { FeedInput } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import type { BalanceProvider } from '@scani/providers/core/capabilities';
@@ -9,7 +10,14 @@ import { Container, Service } from 'typedi';
 import { deriveBalancesAsOf, withBalancesAsOf } from '../lib/balances-as-of';
 import { SCAM_PROBABILITY_THRESHOLD } from '../lib/constants';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
+import { FeedInputRepository } from '../repositories/FeedInputRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
+import { inputSourceClass } from '../services/foundation/legacy-ledger-kinds';
+import {
+  accountChainId,
+  providerInputSource,
+  walletInputSource,
+} from '../services/foundation/plan-feed-inputs';
 import {
   EXCHANGE_BALANCE_SYNC_SOURCE,
   WALLET_BALANCE_SYNC_SOURCE,
@@ -66,13 +74,15 @@ export interface RefreshAccountBalanceResult {
 // seconds rather than waiting for the next cron tick.
 //
 // Reuses `HoldingsSyncHelper.processSnapshotsForAccount` for persistence
-// — same write path the cron uses, same staleStrategy + sourceTag,
-// same realtime event emission. The only thing this class does on top
-// is figure out *which* provider context (wallet pubkey vs decrypted
+// — same write path the cron uses, same sourceTag. The only thing this
+// class does on top is figure out *which* feed the account has (a wallet
+// input's or a provider input's, else its metadata, as before inputs
+// existed) and so which provider context (wallet pubkey vs decrypted
 // CEX/brokerage credentials) to hand to `provider.fetchBalances()`.
 @Service()
 export class RefreshAccountBalanceUseCase {
   private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly feedInputRepository = Container.get(FeedInputRepository);
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
   private readonly holdingsSyncHelper = Container.get(HoldingsSyncHelper);
   private readonly walletDiscovery = Container.get(WalletDiscoveryService);
@@ -82,8 +92,7 @@ export class RefreshAccountBalanceUseCase {
   async execute(input: RefreshAccountBalanceInput): Promise<RefreshAccountBalanceResult> {
     const start = Date.now();
 
-    const { account, holdingsForAccount, holdingsWithDetails, existingSymbols } =
-      await this.resolveAccount(input);
+    const { account, holdingsWithDetails, existingSymbols } = await this.resolveAccount(input);
 
     const institutionId = account.institutionId;
     const institutionCode =
@@ -107,21 +116,29 @@ export class RefreshAccountBalanceUseCase {
 
     const meta = (account.metadata as Record<string, unknown> | null) ?? {};
     const userWalletId = typeof meta.userWalletId === 'string' ? meta.userWalletId : null;
+    const feed = this.feedOf(
+      (await this.feedInputRepository.findByUser(input.userId)).filter(
+        (i) => i.accountId === account.id
+      ),
+      userWalletId
+    );
 
     let ctx: ProviderContext & {
       institutionCode: string;
       credentialsRef: NonNullable<ProviderContext['credentialsRef']>;
       resolveCredentials: NonNullable<ProviderContext['resolveCredentials']>;
     };
-    let source: 'wallet' | 'exchange';
+    const source = feed.kind;
 
-    if (userWalletId) {
+    if (source === 'wallet') {
       // Wallet-backed account: provider gets the public chain address.
-      const [userWallet] = await db
-        .select()
-        .from(schema.userWallets)
-        .where(eq(schema.userWallets.id, userWalletId))
-        .limit(1);
+      const [userWallet] = userWalletId
+        ? await db
+            .select()
+            .from(schema.userWallets)
+            .where(eq(schema.userWallets.id, userWalletId))
+            .limit(1)
+        : [];
       if (!userWallet || userWallet.userId !== input.userId) {
         throw new Error(`User wallet not found for account ${account.id}`);
       }
@@ -131,7 +148,6 @@ export class RefreshAccountBalanceUseCase {
         institutionId,
         walletAddress: userWallet.walletAddress,
       });
-      source = 'wallet';
     } else {
       // Exchange/brokerage account: pull decrypted credentials by
       // (userId, institutionId). If the user revoked or expired their
@@ -141,6 +157,15 @@ export class RefreshAccountBalanceUseCase {
         institutionId
       );
       if (!decryptedCredentials) {
+        // Fed only by statements, there is nobody to ask: refused, where this
+        // threw before inputs existed (R70).
+        if (feed.statementsOnly) {
+          logger.warn(
+            { accountId: account.id },
+            'Account is fed only by statements and holds no active credential; nothing to refresh'
+          );
+          return this.unsupported(account.id, start);
+        }
         throw new Error(
           `No active integration credentials for account ${account.id} — re-authorise the integration first.`
         );
@@ -151,7 +176,6 @@ export class RefreshAccountBalanceUseCase {
         institutionId,
         decryptedCredentials,
       });
-      source = 'exchange';
     }
 
     // External fetch happens outside the DB transaction below.
@@ -167,12 +191,12 @@ export class RefreshAccountBalanceUseCase {
     // false-zeroing is high).
     if (snapshots.length === 0) {
       logger.warn(
-        { accountId: account.id, source: userWalletId ? 'wallet' : 'exchange' },
+        { accountId: account.id, source },
         'Provider returned no snapshots — refusing to zero existing holdings'
       );
       return {
         accountId: account.id,
-        source: userWalletId ? 'wallet' : 'exchange',
+        source,
         holdingsUpdated: 0,
         holdingsCreated: 0,
         holdingsRemoved: 0,
@@ -196,6 +220,7 @@ export class RefreshAccountBalanceUseCase {
     //
     // A person pressed Refresh, so the extra calls are affordable and there is
     // somebody to tell. The cron path is deliberately NOT changed here.
+    const fetchedAt = new Date();
     const probed =
       source === 'wallet'
         ? await this.probeExitedPositions({
@@ -203,7 +228,7 @@ export class RefreshAccountBalanceUseCase {
             ctx,
             holdings: holdingsWithDetails,
             snapshots,
-            capturedAt: new Date(),
+            capturedAt: fetchedAt,
           })
         : { snapshots: [] as HoldingSnapshot[], exitedSymbols: [] as string[] };
 
@@ -213,70 +238,77 @@ export class RefreshAccountBalanceUseCase {
     if (!cryptoTokenType) {
       throw new Error('Token type "crypto" not seeded — refresh aborted');
     }
-    const tokenTypeMap: Record<string, string> = {
-      crypto: cryptoTokenType.id,
-      fiat: fiatTokenType?.id ?? cryptoTokenType.id,
-      stock: stockTokenType?.id ?? cryptoTokenType.id,
-    };
-
-    let holdingsUpdated = 0;
-    let holdingsCreated = 0;
-    let holdingsRemoved = 0;
+    const typeCodes = new Set([
+      cryptoTokenType.code,
+      ...(fiatTokenType ? [fiatTokenType.code] : []),
+      ...(stockTokenType ? [stockTokenType.code] : []),
+    ]);
 
     const isWallet = source === 'wallet';
+    const inputSource =
+      feed.inputSource ??
+      (isWallet
+        ? walletInputSource(accountChainId(meta))
+        : providerInputSource(await this.institutionNameOf(institutionId)));
 
-    await withTransaction(async (tx) => {
-      const userBaseCurrencyId = await this.fetchUserBaseCurrency(input.userId, tx);
-      const result = await this.holdingsSyncHelper.processSnapshotsForAccount({
-        account: { id: account.id, userId: input.userId },
-        userId: input.userId,
-        userBaseCurrencyId,
-        snapshots: [...snapshots, ...probed.snapshots],
-        cryptoTokenTypeId: cryptoTokenType.id,
-        tokenTypeMap,
-        existingHoldings: holdingsForAccount,
-        // 'preserve' refuses to zero holdings whose tokens weren't
-        // in the provider response — Etherscan's `tokentx` discovery
-        // is unreliable (10k-row pagination cap, rate limiting) and
-        // 'zero' would wipe legitimate balances on a discovery glitch.
-        staleStrategy: 'preserve',
-        // Mirror the per-source cron settings exactly so refresh ==
-        // "trigger this account's cron once." Wallet path uses
-        // externalId dedup + 18 decimals; exchange path uses tokenId
-        // dedup + 8 decimals.
-        dedupStrategy: isWallet ? 'externalId' : 'tokenId',
-        sourceTag: isWallet ? WALLET_BALANCE_SYNC_SOURCE : EXCHANGE_BALANCE_SYNC_SOURCE,
-        respectHiddenForCounts: isWallet,
-        skipUnchangedUpdates: false,
-        // Wallet refresh refuses to auto-create holdings: chain
-        // discovery surfaces every airdropped scam-dust contract,
-        // and the user's curated set must not be silently re-expanded.
-        // Exchange refresh allows auto-create so a fresh deposit on
-        // the CEX appears immediately, matching exchange-cron behavior.
-        updateOnly: isWallet,
-        // A person pressed Refresh, but nobody was shown the rows that
-        // creates — same claim the cron makes, because this IS the cron
-        // triggered once (SC-277).
-        arrival: 'auto_discovered',
-        tx,
-      });
-      holdingsUpdated = result.updated;
-      holdingsCreated = result.created;
-      holdingsRemoved = result.removed;
+    // The body waits on the feed input's row lock while a concurrent cron or
+    // import ingests the account (N-i), and only the connection's
+    // statement_timeout ends that wait. A shorter race would report a failure
+    // for a transaction that then commits; this one outlasts the longest wait
+    // by as long again for the writes.
+    const result = await withTransaction(
+      (tx) =>
+        this.holdingsSyncHelper.processSnapshotsForAccount({
+          userId: input.userId,
+          accountId: account.id,
+          inputSource,
+          snapshots,
+          exits: probed.snapshots,
+          fetchedAt,
+          typeCodes,
+          // Mirror the per-source cron settings so refresh == "trigger this
+          // account's cron once", with the refresh's own read: it holds
+          // hidden and scam-flagged rows, so it matches them too.
+          holdingMatch: isWallet ? 'external-id-then-token-id' : 'token-id-with-scam',
+          // 'preserve' refuses to zero holdings whose tokens weren't
+          // in the provider response — Etherscan's `tokentx` discovery
+          // is unreliable (10k-row pagination cap, rate limiting) and
+          // 'zero' would wipe legitimate balances on a discovery glitch.
+          staleStrategy: 'preserve',
+          sourceTag: isWallet ? WALLET_BALANCE_SYNC_SOURCE : EXCHANGE_BALANCE_SYNC_SOURCE,
+          respectHiddenForCounts: isWallet,
+          skipUnchangedUpdates: false,
+          // Wallet refresh refuses to auto-create holdings: chain
+          // discovery surfaces every airdropped scam-dust contract,
+          // and the user's curated set must not be silently re-expanded.
+          // Exchange refresh allows auto-create so a fresh deposit on
+          // the CEX appears immediately, matching exchange-cron behavior.
+          updateOnly: isWallet,
+          // A person pressed Refresh, but nobody was shown the rows that
+          // creates — same claim the cron makes, because this IS the cron
+          // triggered once (SC-277).
+          arrival: 'auto_discovered',
+          tx,
+        }),
+      { name: 'refresh-account-balance', timeout: 2 * STATEMENT_TIMEOUT_MS }
+    );
+    const holdingsUpdated = result.updated;
+    const holdingsCreated = result.created;
+    const holdingsRemoved = result.removed;
 
-      // Stamp lastSync metadata so the holdings list can show "synced
-      // X minutes ago". Same shape the cron writes — including the second
-      // claim, because a person who presses Refresh on an IBKR account and
-      // watches the number not move is exactly the reader SC-384 is about.
-      const updatedMetadata = {
-        ...withBalancesAsOf(meta, deriveBalancesAsOf(snapshots)),
-        lastSync: new Date().toISOString(),
-      };
-      await tx
-        .update(schema.accounts)
-        .set({ metadata: updatedMetadata, updatedAt: new Date() })
-        .where(eq(schema.accounts.id, account.id));
-    });
+    // Stamp lastSync metadata so the holdings list can show "synced
+    // X minutes ago". Same shape the cron writes — including the second
+    // claim, because a person who presses Refresh on an IBKR account and
+    // watches the number not move is exactly the reader SC-384 is about.
+    // Once the balances have committed, outside their transaction (R68).
+    const updatedMetadata = {
+      ...withBalancesAsOf(meta, deriveBalancesAsOf(snapshots)),
+      lastSync: new Date().toISOString(),
+    };
+    await db
+      .update(schema.accounts)
+      .set({ metadata: updatedMetadata, updatedAt: new Date() })
+      .where(eq(schema.accounts.id, account.id));
 
     // Per-symbol diff: what the provider returned vs what already
     // existed on the account. Lets the UI tell the user "you clicked
@@ -368,10 +400,8 @@ export class RefreshAccountBalanceUseCase {
       throw new Error(`Account ${accountId} not found or not owned by user`);
     }
 
-    // Include hidden + scam-flagged rows so the dedup map sees every
-    // existing holding. Without this, refresh creates duplicates for
-    // tokens the user hid (or that were auto-flagged as scam dust)
-    // because the snapshot can't find the existing row to update.
+    // Hidden and scam-flagged rows included: the exit probe asks about a
+    // hidden row too (SC-1489), and only the visible ones are named below.
     const holdingsWithDetails = await this.holdingRepository.findByUserWithFullDetails(
       input.userId,
       account.id,
@@ -379,7 +409,6 @@ export class RefreshAccountBalanceUseCase {
       true,
       true
     );
-    const holdingsForAccount = holdingsWithDetails.map((h) => h.holding);
     // existingSymbols feeds the user-facing "X wasn't returned by the
     // provider" toast, so derive it from the visible set only — the
     // user shouldn't get warnings about scam dust they don't see.
@@ -395,19 +424,41 @@ export class RefreshAccountBalanceUseCase {
           .filter((s) => s.length > 0)
       )
     );
-    return { account, holdingsForAccount, holdingsWithDetails, existingSymbols };
+    return { account, holdingsWithDetails, existingSymbols };
   }
 
-  private async fetchUserBaseCurrency(
-    userId: string,
-    tx: Parameters<Parameters<typeof withTransaction>[0]>[0]
-  ): Promise<string | null> {
-    const [u] = await tx
-      .select({ baseCurrencyId: schema.users.baseCurrencyId })
-      .from(schema.users)
-      .where(eq(schema.users.id, userId))
+  /**
+   * Which feed the account's balances come from (D-13 #16, R70): a wallet
+   * input's, else a provider input's. An account with neither, because it has
+   * no input yet or only statements, is read as before, by whether its
+   * metadata names a wallet, and written under the input a sync would create
+   * for it. `statementsOnly` lets the exchange path refuse such an account
+   * that holds no credential, rather than throw.
+   */
+  private feedOf(
+    inputs: readonly FeedInput[],
+    userWalletId: string | null
+  ): { kind: 'wallet' | 'exchange'; inputSource: string | null; statementsOnly: boolean } {
+    const wallet = inputs.find((i) => inputSourceClass(i.source) === 'wallet');
+    if (wallet) return { kind: 'wallet', inputSource: wallet.source, statementsOnly: false };
+    const provider = inputs.find((i) => inputSourceClass(i.source) === 'provider');
+    if (provider) return { kind: 'exchange', inputSource: provider.source, statementsOnly: false };
+    return {
+      kind: userWalletId ? 'wallet' : 'exchange',
+      inputSource: null,
+      statementsOnly:
+        inputs.length > 0 && inputs.every((i) => inputSourceClass(i.source) === 'statement'),
+    };
+  }
+
+  private async institutionNameOf(institutionId: string): Promise<string> {
+    const [institution] = await db
+      .select({ name: schema.institutions.name })
+      .from(schema.institutions)
+      .where(eq(schema.institutions.id, institutionId))
       .limit(1);
-    return u?.baseCurrencyId ?? null;
+    if (!institution) throw new Error(`Institution ${institutionId} not found`);
+    return institution.name;
   }
 
   private unsupported(accountId: string, start: number): RefreshAccountBalanceResult {

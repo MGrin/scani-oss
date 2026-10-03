@@ -93,7 +93,6 @@ function setup(opts: SetupOpts): {
     accountId: 'a1',
     institutionId: 'inst-1',
     institutionCode: 'kraken',
-    source: 'kraken-api',
     baseCurrency: makeBaseCurrency(),
     resolveCredentials: (async () => ({
       apiKey: 'x',

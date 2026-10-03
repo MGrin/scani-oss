@@ -65,6 +65,12 @@ function batch(over: Partial<FeedBatch> = {}): FeedBatch {
       cacheObservation: null,
       derivesTradeLegs: false,
       holdingFailure: 'fail-batch',
+      absence: null,
+      clearsAbsenceTally: false,
+      createdCheckpointMeta: null,
+      unhideOnNonZero: false,
+      unchangedCheckpoint: 'append',
+      zeroOpensHolding: true,
     },
     notices: [],
     ...over,
@@ -222,16 +228,10 @@ describe('validateBatch', () => {
     ]);
   });
 
-  // Absence confirmation is not written yet; a batch that carries one would
-  // otherwise read as "nothing is absent" (ruling R30).
-  test('a batch carrying an absence is refused', () => {
+  // Ingest writes absences now (A2 Task 14), so R30's refusal is gone.
+  test('a batch carrying an absence is valid', () => {
     const absences = [{ asset: USD, confirmedAt: TO }];
-    expect(validateBatch(batch({ absences }), NOW)).toEqual([
-      {
-        code: 'absences-not-supported',
-        detail: 'the batch carries 1 absence(s), and absences are not written yet',
-      },
-    ]);
+    expect(validateBatch(batch({ absences }), NOW)).toEqual([]);
   });
 
   test('a leg settles an entry of its own batch, of its own source, that is not itself a leg', () => {
@@ -255,6 +255,57 @@ describe('validateBatch', () => {
     expect(codes(batch({ entries: [trade, otherSource] }))).toEqual(['settles-unknown-entry']);
     const onALeg = leg({ externalId: 't1:fee:fee', settlesExternalId: 't1:fee' });
     expect(codes(batch({ entries: [trade, leg({}), onALeg] }))).toEqual(['settles-unknown-entry']);
+  });
+
+  // R57: one input states an event once, so an external id sent for two
+  // different rows would keep only the last of them. The problem counts the
+  // ids and the entries and names neither.
+  test('one external id sent for another asset, holding key or source is refused, and counted', () => {
+    const BTC: AssetRef = { identity: { symbol: 'BTC', name: 'Bitcoin' }, typeCode: 'crypto' };
+    const shared = (over: Partial<FeedEntry>) => entry({ externalId: 'x1', ...over });
+    const otherAsset = shared({ asset: BTC });
+    const otherKey = shared({ asset: { ...USD, key: 'pot-b' } });
+    const otherSource = shared({ legacy: { kind: 'deposit', source: 'statement-ofx' } });
+
+    for (const second of [otherAsset, otherKey, otherSource]) {
+      expect(validateBatch(batch({ entries: [shared({}), second] }), NOW)).toEqual([
+        {
+          code: 'duplicate-external-id',
+          detail:
+            '1 external id(s) are each sent for more than one asset or source, by 2 entries in all',
+        },
+      ]);
+    }
+    const problems = validateBatch(
+      batch({
+        entries: [
+          shared({}),
+          otherAsset,
+          otherSource,
+          entry({ externalId: 'y1' }),
+          entry({ externalId: 'y1', asset: BTC }),
+          entry({ externalId: 'z1' }),
+        ],
+      }),
+      NOW
+    );
+    expect(problems).toEqual([
+      {
+        code: 'duplicate-external-id',
+        detail:
+          '2 external id(s) are each sent for more than one asset or source, by 5 entries in all',
+      },
+    ]);
+    expect(problems[0]?.detail).not.toContain('x1');
+  });
+
+  // The control: the same event sent twice is a re-send. The write merges it
+  // and reports the merge (SC-349), as it always has.
+  test('the same entry sent twice is not refused', () => {
+    const resent = entry({ externalId: 'x1', amount: '12' });
+    expect(validateBatch(batch({ entries: [entry({ externalId: 'x1' }), resent] }), NOW)).toEqual(
+      []
+    );
   });
 
   test('it does not modify the batch it reads', () => {

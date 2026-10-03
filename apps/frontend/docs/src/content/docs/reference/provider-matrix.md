@@ -59,7 +59,7 @@ leave your api.
 
 | Provider | Env var | Capabilities | Notes |
 |---|---|---|---|
-| Etherscan V2 | `ETHERSCAN_API_KEY` | balance, transaction, token-identity | **One key covers every V2-supported EVM chain** (Ethereum, Polygon, Arbitrum, Optimism, Base, BNB, …). |
+| Etherscan V2 | `ETHERSCAN_API_KEY` | balance, transaction, token-identity | **One key covers every EVM chain Scani reads** (Ethereum, Polygon, Arbitrum, Optimism, Base, BNB, …). |
 | Helius | `HELIUS_API_KEY` | balance, transaction, token-identity | Solana SPL + native. |
 | Bitcoin | _none_ | balance, transaction | Public RPC. |
 | Tron | _none_ | balance, transaction | |

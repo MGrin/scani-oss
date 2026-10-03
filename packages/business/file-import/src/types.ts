@@ -48,7 +48,20 @@ export interface ParseResult {
    * caller asks and re-parses with a `dateOrder` (SC-1291).
    */
   ambiguousDateOrder?: AmbiguousDateOrder;
+  /** What the account held when the statement's period ended, for a statement that says (IB). */
+  positions?: StatementPositions;
   needsColumnMapping?: { headers: string[]; rowCount: number };
+}
+
+/**
+ * An account's holdings as a statement reports them at the end of its period.
+ * `asOf` is null when the statement names no period end: the figures are then
+ * not dated, and nothing can be anchored on them.
+ */
+export interface StatementPositions {
+  asOf: Date | null;
+  cash: Array<{ currency: string; balance: string }>;
+  securities: Array<{ symbol: string; quantity: string }>;
 }
 
 export type StatementFormat = 'csv' | 'ofx' | 'mt940' | 'ib-csv' | 'pdf' | 'qif';

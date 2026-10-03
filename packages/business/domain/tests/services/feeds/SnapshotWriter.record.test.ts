@@ -1,7 +1,8 @@
 /**
  * `SnapshotWriter.record` writes a person's value on a holding (foundation A2):
- * one observation labelled by the holding's kind, authority `person`, no input,
- * with the cause; `starts_at` lowered by D-6; and the cache, when asked, through
+ * one observation, its role by Rule P (a snapshot until the holding's feed has
+ * produced evidence, a verification from then on), authority `person`, no
+ * input, with the cause; `starts_at` lowered by D-6; and the cache, when asked, through
  * `HoldingCacheWriter` (D-1). `HoldingResolver.createSnapshotHolding` is the one
  * holding INSERT on a person path: an empty cache and no observation (D-4).
  *
@@ -11,10 +12,10 @@
  * preceding every value.
  */
 
-import { describe, expect, test } from 'bun:test';
-import type { DatabaseTransaction } from '@scani/db';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { type DatabaseTransaction, getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { balanceAt } from '../../../src/engine/balance-at';
 import type { HoldingEvidence, SnapshotCause } from '../../../src/engine/types';
@@ -23,13 +24,16 @@ import { HoldingResolver } from '../../../src/services/feeds/HoldingResolver';
 import { type SnapshotValue, SnapshotWriter } from '../../../src/services/feeds/SnapshotWriter';
 import { classifyHoldingEvidence } from '../../../src/services/foundation/legacy-classification';
 import { withTestDb } from '../../../test/helpers/db';
-import { makeInstitution, makeUser } from '../../../test/helpers/factories';
+import { makeInstitution, makeInstitutionType, makeUser } from '../../../test/helpers/factories';
 import {
   makeAccount,
+  makeCheckpoint,
   makeHolding,
   makeHoldingTransaction,
   makeToken,
 } from '../../../test/helpers/factories-extra';
+import { expectPersonRolesAsClassified } from '../../../test/helpers/labels-settled';
+import { backendPid, waitUntilBlocked } from '../../../test/helpers/lock-wait';
 import { derived } from '../../engine/fixtures';
 
 const writer = () => Container.get(SnapshotWriter);
@@ -87,13 +91,16 @@ const observationsOf = (tx: DatabaseTransaction, holdingId: string) =>
       asc(schema.holdingBalanceObservations.source)
     );
 
+/** The person values' labels: a checkpoint seeded as the feed's evidence is left out. */
 const labelsOf = async (tx: DatabaseTransaction, holdingId: string) =>
-  (await observationsOf(tx, holdingId)).map((r) => ({
-    balance: r.balance,
-    role: r.role,
-    cause: r.cause,
-    superseded: r.supersededAt !== null,
-  }));
+  (await observationsOf(tx, holdingId))
+    .filter((r) => r.authority === 'person')
+    .map((r) => ({
+      balance: r.balance,
+      role: r.role,
+      cause: r.cause,
+      superseded: r.supersededAt !== null,
+    }));
 
 /**
  * A live person snapshot on a holding that is not a snapshot one now: typed
@@ -189,9 +196,10 @@ describe('SnapshotWriter.record', () => {
     });
   });
 
-  test('on a feed holding it writes a verification and still sets the cache', async () => {
+  test('on a feed holding whose feed has begun it writes a verification, and still sets the cache', async () => {
     await withTestDb(async (tx) => {
       const holding = await holdingOf(tx, { kind: 'feed', balance: '100' });
+      await makeCheckpoint(tx, { userId: holding.userId, holdingId: holding.id, observedAt: T0 });
       const before = Date.now();
 
       await writer().record(
@@ -203,7 +211,7 @@ describe('SnapshotWriter.record', () => {
       );
 
       const after = Date.now();
-      const rows = await observationsOf(tx, holding.id);
+      const rows = (await observationsOf(tx, holding.id)).filter((r) => r.authority === 'person');
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({
         balance: '175',
@@ -237,6 +245,105 @@ describe('SnapshotWriter.record', () => {
       });
       // A NULL start stays NULL for the backfill (D-6).
       expect((await holdingRow(tx, holding.id)).startsAt).toBeNull();
+    });
+  });
+
+  // Rule P (D7, R85): a feed that has produced no evidence has not begun, so a
+  // value typed on it is a snapshot, and replaces as one.
+  test('on a feed holding whose feed has not begun it writes a snapshot, and a correction replaces the snapshot before it (R85)', async () => {
+    await withTestDb(async (tx) => {
+      const holding = await holdingOf(tx, { kind: 'feed' });
+
+      await writer().record(valueOn(holding, '110', daysAfterT0(1)), { cache: 'unchanged' }, tx);
+      await writer().record(
+        valueOn(holding, '105', daysAfterT0(2), { cause: 'correction' }),
+        { cache: 'unchanged' },
+        tx
+      );
+
+      expect(await labelsOf(tx, holding.id)).toEqual([
+        { balance: '110', role: 'snapshot', cause: 'flow', superseded: true },
+        { balance: '105', role: 'snapshot', cause: 'correction', superseded: false },
+      ]);
+      await expectPersonRolesAsClassified(holding.userId, tx);
+    });
+  });
+
+  test('a value is a verification from the feed’s first evidence on, a checkpoint or a feed-sourced entry, and a snapshot before it (R85)', async () => {
+    await withTestDb(async (tx) => {
+      const byCheckpoint = await holdingOf(tx, { kind: 'feed' });
+      await makeCheckpoint(tx, {
+        userId: byCheckpoint.userId,
+        holdingId: byCheckpoint.id,
+        observedAt: daysAfterT0(5),
+      });
+      const byEntry = await holdingOf(tx, { kind: 'feed' });
+      await makeHoldingTransaction(tx, {
+        userId: byEntry.userId,
+        holdingId: byEntry.id,
+        kind: 'deposit',
+        quantity: '10',
+        occurredAt: daysAfterT0(5),
+        source: 'etherscan',
+      });
+
+      for (const holding of [byCheckpoint, byEntry]) {
+        for (const [amount, day] of [
+          ['90', 3],
+          ['100', 5],
+          ['110', 7],
+        ] as const) {
+          await writer().record(
+            valueOn(holding, amount, daysAfterT0(day)),
+            { cache: 'unchanged' },
+            tx
+          );
+        }
+        expect((await labelsOf(tx, holding.id)).map((l) => [l.balance, l.role])).toEqual([
+          ['90', 'snapshot'],
+          ['100', 'verification'],
+          ['110', 'verification'],
+        ]);
+        await expectPersonRolesAsClassified(holding.userId, tx);
+      }
+    });
+  });
+
+  // The invariant on its own: whatever the kind and wherever the feed's first
+  // evidence falls, the label written is the one O2's classifier derives (R85).
+  // The kind Rule P reads is the classifier's too: a row still stored as a
+  // snapshot holding that a feed-sourced entry has made a feed one (K3) reads
+  // as a feed, as it does in the engine.
+  test('the role written is the one the backfill derives for the row, on a snapshot holding, on a feed one either side of its first evidence, and on a snapshot row the classifier reads as a feed', async () => {
+    await withTestDb(async (tx) => {
+      const snapshot = await holdingOf(tx, { kind: 'snapshot' });
+      const silentFeed = await holdingOf(tx, { kind: 'feed' });
+      const begunFeed = await holdingOf(tx, { kind: 'feed' });
+      await makeCheckpoint(tx, {
+        userId: begunFeed.userId,
+        holdingId: begunFeed.id,
+        observedAt: daysAfterT0(2),
+      });
+      const fedSnapshot = await holdingOf(tx, { kind: 'snapshot' });
+      await makeHoldingTransaction(tx, {
+        userId: fedSnapshot.userId,
+        holdingId: fedSnapshot.id,
+        kind: 'deposit',
+        quantity: '10',
+        occurredAt: daysAfterT0(2),
+        source: 'etherscan',
+      });
+
+      for (const holding of [snapshot, silentFeed, begunFeed, fedSnapshot]) {
+        for (const day of [1, 3]) {
+          await writer().record(
+            valueOn(holding, '100', daysAfterT0(day)),
+            { cache: 'unchanged' },
+            tx
+          );
+        }
+        await expectPersonRolesAsClassified(holding.userId, tx);
+      }
     });
   });
 
@@ -378,6 +485,11 @@ describe('SnapshotWriter.record', () => {
   test('a verification at the instant of a live person snapshot leaves that snapshot live', async () => {
     await withTestDb(async (tx) => {
       const holding = await holdingOf(tx, { kind: 'feed' });
+      await makeCheckpoint(tx, {
+        userId: holding.userId,
+        holdingId: holding.id,
+        observedAt: LONG_AGO,
+      });
       await seedPersonSnapshot(tx, holding, '100', daysAfterT0(1), 'correction');
 
       const outcome = await writer().record(
@@ -396,9 +508,14 @@ describe('SnapshotWriter.record', () => {
     });
   });
 
-  test('a correction on a feed holding supersedes nothing', async () => {
+  test('a correction on a feed holding whose feed has begun supersedes nothing', async () => {
     await withTestDb(async (tx) => {
       const holding = await holdingOf(tx, { kind: 'feed' });
+      await makeCheckpoint(tx, {
+        userId: holding.userId,
+        holdingId: holding.id,
+        observedAt: LONG_AGO,
+      });
       await seedPersonSnapshot(tx, holding, '100', daysAfterT0(0), 'flow');
 
       const outcome = await writer().record(
@@ -517,6 +634,39 @@ describe('SnapshotWriter.record', () => {
     });
   });
 
+  /**
+   * R74. A value with no cause is still a snapshot, and the backfill would give
+   * it the cause Rule C derives, so it is filled at write instead: on the
+   * holding's first snapshot that is money in, and on a later one with nothing
+   * to pair it with there is none to give.
+   */
+  test('a value with no cause takes the cause A1 derives: flow as the first snapshot, none after it (R74)', async () => {
+    await withTestDb(async (tx) => {
+      const holding = await holdingOf(tx, { kind: 'snapshot' });
+
+      for (const [amount, day] of [
+        ['100', 1],
+        ['110', 2],
+      ] as const) {
+        await writer().record(
+          valueOn(holding, amount, daysAfterT0(day), { cause: null }),
+          { cache: 'unchanged' },
+          tx
+        );
+      }
+
+      expect(await labelsOf(tx, holding.id)).toEqual([
+        { balance: '100', role: 'snapshot', cause: 'flow', superseded: false },
+        { balance: '110', role: 'snapshot', cause: null, superseded: false },
+      ]);
+      const [raw] = await Container.get(EngineEvidenceRepository).findHoldingEvidence(
+        { userId: holding.userId, holdingIds: [holding.id] },
+        tx
+      );
+      expect(classifyHoldingEvidence(raw!).unlabelled.observations).toBe(0);
+    });
+  });
+
   test("record refuses another user's holding", async () => {
     await withTestDb(async (tx) => {
       const theirs = await holdingOf(tx, { kind: 'snapshot' });
@@ -532,6 +682,109 @@ describe('SnapshotWriter.record', () => {
 
       expect(await observationsOf(tx, theirs.id)).toEqual([]);
     });
+  });
+});
+
+/**
+ * R75. `record` locks the holding row before it reads anything, so the order
+ * R72 gives an edit holds for every caller. Committed, on two connections,
+ * because the race is between two transactions.
+ */
+describe('SnapshotWriter.record holds the holding while it reads (R75)', () => {
+  const created = { users: [] as string[], tokens: [] as string[], institutions: [] as string[] };
+
+  afterEach(async () => {
+    const db = getDb();
+    const users = created.users.splice(0);
+    const tokens = created.tokens.splice(0);
+    const institutions = created.institutions.splice(0);
+    // Users first: their holdings are what keep the tokens restricted.
+    if (users.length) await db.delete(schema.users).where(inArray(schema.users.id, users));
+    if (tokens.length) await db.delete(schema.tokens).where(inArray(schema.tokens.id, tokens));
+    if (institutions.length) {
+      await db.delete(schema.institutions).where(inArray(schema.institutions.id, institutions));
+    }
+  });
+
+  async function committedSnapshotHolding() {
+    return await getDb().transaction(async (tx) => {
+      const user = await makeUser(tx);
+      const bank = await makeInstitutionType(tx, { code: 'bank' });
+      const institution = await makeInstitution(tx, { typeId: bank.id });
+      const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const token = await makeToken(tx);
+      const holding = await makeHolding(tx, {
+        userId: user.id,
+        accountId: account.id,
+        tokenId: token.id,
+        balance: '100',
+        kind: 'snapshot',
+        startsAt: LONG_AGO,
+        lastUpdated: LONG_AGO,
+      });
+      created.users.push(user.id);
+      created.tokens.push(token.id);
+      created.institutions.push(institution.id);
+      return holding;
+    });
+  }
+
+  /**
+   * The first value leaves the cache alone, so the only row lock it holds on
+   * the holding is the one `record` takes. The second sets the cache, as
+   * `CreateHoldingsWithDependenciesUseCase` does. Without the lock the second
+   * read past the uncommitted first value before it waited at all, then waited
+   * at its own observation insert behind the per-holding lock the relink
+   * trigger takes (SC-1319), and both stayed live. So the wait alone proves
+   * nothing here; the supersession does.
+   */
+  test('a second value waits for the first, then supersedes the one it committed', async () => {
+    const holding = await committedSnapshotHolding();
+    let wrote!: () => void;
+    let release!: () => void;
+    const firstWrote = new Promise<void>((resolve) => {
+      wrote = resolve;
+    });
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let firstPid: number | undefined;
+    let secondPid: number | undefined;
+
+    const first = getDb().transaction(async (tx) => {
+      firstPid = await backendPid(tx);
+      await writer().record(valueOn(holding, '120', daysAfterT0(1)), { cache: 'unchanged' }, tx);
+      wrote();
+      await released;
+    });
+    let second: Promise<unknown> = Promise.resolve();
+    let blocked = false;
+    try {
+      await Promise.race([firstWrote, first]);
+      second = getDb().transaction(async (tx) => {
+        secondPid = await backendPid(tx);
+        await writer().record(
+          valueOn(holding, '130', daysAfterT0(2), { cause: 'correction' }),
+          { cache: 'set' },
+          tx
+        );
+      });
+      blocked = await waitUntilBlocked({ pid: () => secondPid, settled: second }, firstPid!);
+    } finally {
+      release();
+    }
+    await Promise.all([first, second]);
+
+    expect(blocked).toBe(true);
+    const rows = await getDb()
+      .select()
+      .from(schema.holdingBalanceObservations)
+      .where(eq(schema.holdingBalanceObservations.holdingId, holding.id))
+      .orderBy(asc(schema.holdingBalanceObservations.observedAt));
+    expect(rows.map((r) => ({ balance: r.balance, live: r.supersededAt === null }))).toEqual([
+      { balance: '120', live: false },
+      { balance: '130', live: true },
+    ]);
   });
 });
 

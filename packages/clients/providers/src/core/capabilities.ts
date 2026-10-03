@@ -336,10 +336,10 @@ export interface TransactionsProvider extends ProviderBase {
    *
    * The wallet review builds its offer list from current balances alone, so a
    * token bought and fully exited before the first import is offered to
-   * nobody, gets no holding, and then has BOTH its legs dropped by
-   * `TransactionRouter`'s find-only resolution. The whole life of the position
-   * is invisible, with no row anywhere to notice it. This is what makes those
-   * positions reviewable.
+   * nobody, gets no holding, and then has BOTH its legs dropped by the
+   * transaction import's find-only resolution (`FeedIngestService`, for a
+   * wallet's batch). The whole life of the position is invisible, with no row
+   * anywhere to notice it. This is what makes those positions reviewable.
    *
    * TWO CLAIMS, and an implementation owes BOTH:
    *

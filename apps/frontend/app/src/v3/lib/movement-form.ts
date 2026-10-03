@@ -7,6 +7,8 @@ import {
   type ManualOutflowDestination,
   movementOutflowRefusesInternal,
 } from '@scani/shared';
+import { httpStatus } from '@scani/ui/lib/user-facing-error';
+import { describeQueryError } from '@scani/ui/v3/lib/errors';
 import type { buildEnsureAccountInput } from './manual-entry';
 
 /**
@@ -31,6 +33,8 @@ export interface MovementHolding {
 
 export interface MovementSubmission {
   holdingId: string;
+  /** Display only — names the token in a refusal. Never sent. */
+  symbol: string;
   direction: HoldingMovementDirection;
   amount: string;
   occurredAt: string;
@@ -73,7 +77,11 @@ export interface MovementDraft {
   destination: MovementOutflowOption | null;
   /** What the fee field holds, verbatim. Empty means none was stated. */
   fee?: string;
+  /** The chosen holding's balance, when one is chosen (SC-1527). */
+  available?: string;
 }
+
+type Translate = (key: string, vars?: Record<string, unknown>) => string;
 
 function amountIsPositive(amount: string): boolean {
   const trimmed = amount.trim();
@@ -95,6 +103,9 @@ export function movementBlockerKeys(draft: MovementDraft): string[] {
   if (!amountIsPositive(draft.amount)) {
     blockers.push('v3.holdings.movement.blocker.amount');
   }
+  if (movementExceedsBalance(draft)) {
+    blockers.push('v3.holdings.movement.blocker.exceedsBalance');
+  }
   if (draft.direction === 'outflow' && draft.destination === null) {
     blockers.push('v3.holdings.movement.blocker.where');
   }
@@ -106,6 +117,58 @@ export function movementBlockerKeys(draft: MovementDraft): string[] {
     blockers.push('v3.holdings.movement.blocker.fee');
   }
   return blockers;
+}
+
+/**
+ * More leaving the holding than it holds (SC-1527).
+ *
+ * `RecordHoldingMovementUseCase`'s own rule — the remainder may not be
+ * negative, so all of it may leave — asked before the request rather than
+ * after. The form showed "Currently 0.4 BTC" above a field that accepted 0.5,
+ * and the refusal came back as "Something went wrong".
+ */
+function movementExceedsBalance(draft: MovementDraft): boolean {
+  if (draft.direction === 'inflow' || draft.available === undefined) return false;
+  if (!amountIsPositive(draft.amount)) return false;
+  try {
+    return new Decimal(draft.amount.trim()).greaterThan(draft.available);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The blockers as sentences. `available` is the balance as the field's hint
+ * prints it, so the reason and the "Currently …" line show one figure.
+ */
+export function describeMovementBlockers(
+  t: Translate,
+  draft: MovementDraft,
+  holding: { available: string; symbol: string }
+): string[] {
+  return movementBlockerKeys(draft).map((key) => t(key, holding));
+}
+
+/**
+ * The sentence for a movement the server refused (SC-1527).
+ *
+ * A 409 is `MovementExceedsBalanceError`: the balance moved between the form
+ * reading it and the server writing — the form itself refuses the case it can
+ * see. Said in the reader's language with the figure they typed; the server's
+ * sentence is English and names the balance as it stores it. Everything else
+ * goes through `describeQueryError`, which carries a written refusal's reason
+ * rather than the toast's "Something went wrong".
+ */
+export function describeMovementFailure(
+  t: Translate,
+  error: unknown,
+  movement: { amount: string; symbol: string }
+): string {
+  if (httpStatus(error) === 409) {
+    return t('v3.holdings.movement.error.exceedsBalance', movement);
+  }
+  const copy = describeQueryError(error, t('v3.holdings.movement.subject'), 'save');
+  return `${copy.title}. ${copy.detail}`;
 }
 
 /**

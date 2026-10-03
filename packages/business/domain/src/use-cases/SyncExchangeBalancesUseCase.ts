@@ -28,7 +28,6 @@ import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { deriveBalancesAsOf, withBalancesAsOf } from '../lib/balances-as-of';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
-import { HoldingRepository, type HoldingWithFullDetails } from '../repositories/HoldingRepository';
 import { InstitutionRepository } from '../repositories/InstitutionRepository';
 import {
   EXCHANGE_BALANCE_SYNC_SOURCE,
@@ -37,6 +36,7 @@ import {
   IntegrationCredentialsService,
   WalletDiscoveryService,
 } from '../services';
+import { providerInputSource } from '../services/foundation/plan-feed-inputs';
 
 const logger = createComponentLogger('use-case:sync-exchange-balances');
 
@@ -96,7 +96,6 @@ export function isSyncBlocked(
 export class SyncExchangeBalancesUseCase {
   private readonly walletDiscovery = Container.get(WalletDiscoveryService);
   private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
-  private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
   private readonly holdingsSyncHelper = Container.get(HoldingsSyncHelper);
   private readonly institutionRepository = Container.get(InstitutionRepository);
@@ -125,11 +124,11 @@ export class SyncExchangeBalancesUseCase {
         throw new Error('Token type "crypto" not found');
       }
 
-      const tokenTypeMap: Record<string, string> = {
-        crypto: cryptoTokenType.id,
-        fiat: fiatTokenType?.id ?? cryptoTokenType.id,
-        stock: stockTokenType?.id ?? cryptoTokenType.id,
-      };
+      const typeCodes = new Set([
+        cryptoTokenType.code,
+        ...(fiatTokenType ? [fiatTokenType.code] : []),
+        ...(stockTokenType ? [stockTokenType.code] : []),
+      ]);
 
       // Self-maintaining selection: institutions a user connected that aren't
       // blockchain wallets. See InstitutionRepository.findSyncableInstitutions.
@@ -160,10 +159,10 @@ export class SyncExchangeBalancesUseCase {
           metadata: unknown;
         };
         userId: string;
-        userBaseCurrencyId: string | null;
         institutionId: string;
+        institutionName: string;
         snapshots: HoldingSnapshot[];
-        existingHoldingsWithDetails: HoldingWithFullDetails[];
+        fetchedAt: Date;
         absentFiatConfirmations: number | undefined;
       }
 
@@ -348,29 +347,13 @@ export class SyncExchangeBalancesUseCase {
                   ),
                 ]);
 
-                // Get existing holdings for this account with token data
-                const existingHoldingsWithDetails =
-                  await this.holdingRepository.findByUserWithFullDetails(
-                    userCredential.userId,
-                    account.id,
-                    undefined,
-                    true // includeHidden so we can update them
-                  );
-
-                // Get user's baseCurrencyId for event context
-                const [user] = await db
-                  .select({ baseCurrencyId: schema.users.baseCurrencyId })
-                  .from(schema.users)
-                  .where(eq(schema.users.id, userCredential.userId))
-                  .limit(1);
-
                 allAccountHoldingsData.push({
                   account,
                   userId: userCredential.userId,
-                  userBaseCurrencyId: user?.baseCurrencyId ?? null,
                   institutionId,
+                  institutionName,
                   snapshots,
-                  existingHoldingsWithDetails,
+                  fetchedAt: new Date(),
                   absentFiatConfirmations: provider.absentFiatConfirmations,
                 });
 
@@ -453,35 +436,25 @@ export class SyncExchangeBalancesUseCase {
         }
       }
 
-      // STEP 2: Process ALL database operations in single transaction
-      await withTransaction(
-        async (tx) => {
-          for (const accountData of allAccountHoldingsData) {
-            try {
-              const { account, snapshots, existingHoldingsWithDetails, absentFiatConfirmations } =
-                accountData;
-              const existingHoldings = existingHoldingsWithDetails.map((h) => h.holding);
-              const absenceConfirmation = absentFiatConfirmations
-                ? {
-                    statements: absentFiatConfirmations,
-                    tokenIds: new Set(
-                      existingHoldingsWithDetails
-                        .filter((h) => h.token.typeCode === 'fiat')
-                        .map((h) => h.holding.tokenId)
-                    ),
-                  }
-                : undefined;
-
-              const result = await this.holdingsSyncHelper.processSnapshotsForAccount({
-                account: { id: account.id, userId: account.userId },
+      // STEP 2: each account in its own transaction (A2 Task 16), so one that
+      // fails costs itself; in one transaction for all of them, a SQL error
+      // aborted every account after it (25P02).
+      for (const accountData of allAccountHoldingsData) {
+        const { account, snapshots } = accountData;
+        try {
+          const result = await withTransaction(
+            (tx) =>
+              this.holdingsSyncHelper.processSnapshotsForAccount({
                 userId: account.userId,
-                userBaseCurrencyId: accountData.userBaseCurrencyId,
+                accountId: account.id,
+                inputSource: providerInputSource(accountData.institutionName),
                 snapshots,
-                cryptoTokenTypeId: cryptoTokenType.id,
-                tokenTypeMap,
-                existingHoldings,
+                exits: [],
+                fetchedAt: accountData.fetchedAt,
+                typeCodes,
+                holdingMatch: 'token-id',
                 staleStrategy: 'zero',
-                dedupStrategy: 'tokenId',
+                absentFiatConfirmations: accountData.absentFiatConfirmations,
                 sourceTag: EXCHANGE_BALANCE_SYNC_SOURCE,
                 respectHiddenForCounts: false,
                 skipUnchangedUpdates: true,
@@ -490,54 +463,55 @@ export class SyncExchangeBalancesUseCase {
                 // Only the wallet recurring sync is locked down.
                 updateOnly: false,
                 arrival: 'auto_discovered',
-                absenceConfirmation,
                 tx,
-              });
-              holdingsUpdated += result.updated;
-              holdingsCreated += result.created;
-              holdingsRemoved += result.removed;
+              }),
+            { name: 'syncExchangeBalances', timeout: 120000 }
+          );
+          holdingsUpdated += result.updated;
+          holdingsCreated += result.created;
+          holdingsRemoved += result.removed;
 
-              // Two claims, deliberately separate (SC-384). `lastSync` is when
-              // we reached the source; `balancesAsOf` is the moment the
-              // source's answer describes, and exists only when a provider
-              // told us they differ. For every live-balance venue that is
-              // never, and `withBalancesAsOf` clears the key rather than
-              // leaving yesterday's explanation attached to today's figures.
-              const updatedMetadata = {
-                ...withBalancesAsOf(account.metadata, deriveBalancesAsOf(snapshots)),
-                lastSync: new Date().toISOString(),
-              };
+          // Two claims, deliberately separate (SC-384). `lastSync` is when
+          // we reached the source; `balancesAsOf` is the moment the
+          // source's answer describes, and exists only when a provider
+          // told us they differ. For every live-balance venue that is
+          // never, and `withBalancesAsOf` clears the key rather than
+          // leaving yesterday's explanation attached to today's figures.
+          // Written once the balances have committed and outside their
+          // transaction, so the account row is never locked after the
+          // input an import locks after it (R68).
+          const updatedMetadata = {
+            ...withBalancesAsOf(account.metadata, deriveBalancesAsOf(snapshots)),
+            lastSync: new Date().toISOString(),
+          };
 
-              await tx
-                .update(schema.accounts)
-                .set({
-                  metadata: updatedMetadata,
-                  updatedAt: new Date(),
-                })
-                .where(eq(schema.accounts.id, account.id));
+          await db
+            .update(schema.accounts)
+            .set({
+              metadata: updatedMetadata,
+              updatedAt: new Date(),
+            })
+            .where(eq(schema.accounts.id, account.id));
 
-              accountsSynced++;
-              logger.debug({ accountId: account.id }, 'Successfully synced account');
-            } catch (error) {
-              accountsFailed++;
-              logger.error(
-                {
-                  accountId: accountData.account.id,
-                  error: error instanceof Error ? error.message : String(error),
-                },
-                'Failed to sync account'
-              );
-              errors.push({
-                accountId: accountData.account.id,
-                accountName: accountData.account.name || 'Unknown',
-                institutionId: accountData.institutionId,
-                error: error instanceof Error ? error.message : String(error),
-              });
-            }
-          }
-        },
-        { name: 'syncExchangeBalances', timeout: 120000 }
-      );
+          accountsSynced++;
+          logger.debug({ accountId: account.id }, 'Successfully synced account');
+        } catch (error) {
+          accountsFailed++;
+          logger.error(
+            {
+              accountId: account.id,
+              error: error instanceof Error ? error.message : String(error),
+            },
+            'Failed to sync account'
+          );
+          errors.push({
+            accountId: account.id,
+            accountName: account.name || 'Unknown',
+            institutionId: accountData.institutionId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
 
       const accountsFound = accountsSynced + accountsFailed;
       const durationMs = Date.now() - startTime;

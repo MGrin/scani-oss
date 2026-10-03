@@ -3,6 +3,7 @@ import {
   CreateHoldingsWithDependenciesDto,
   collidingHoldingTokens,
   contestedHoldingTokens,
+  HoldingBalanceString,
   holdingPositionKey,
 } from '../../src/dtos/batch';
 
@@ -63,6 +64,24 @@ describe('CreateHoldingsWithDependenciesDto validation', () => {
         expect(result.error.issues[0]?.path).toContain('balance');
       }
     }
+  });
+
+  // SC-1527: a 21-digit balance was stored, priced and summed into a
+  // $162,975,307.2T net worth. The form refuses it now, and so does the wire,
+  // so a client that does not is not the last line.
+  test('rejects a balance with more integer digits than any holding has', () => {
+    for (const balance of ['123456789012345678901', '1000000000000000']) {
+      const result = HoldingBalanceString.safeParse(balance);
+      expect({ balance, success: result.success }).toEqual({ balance, success: false });
+    }
+    expect(HoldingBalanceString.safeParse('999999999999999.12345678').success).toBe(true);
+    expect(
+      CreateHoldingsWithDependenciesDto.safeParse({
+        holdings: [
+          { tokenId: '550e8400-e29b-41d4-a716-446655440001', balance: '123456789012345678901' },
+        ],
+      }).success
+    ).toBe(false);
   });
 
   test('should reject negative balance', () => {

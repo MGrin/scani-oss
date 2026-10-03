@@ -63,10 +63,10 @@ export function planImportFile(file: { name: string; type?: string }): ImportFil
   return {
     purpose: 'file-import',
     contentType: file.type || 'text/plain',
-    // v2's mapping, kept byte for byte — including `.qfx` reading as CSV.
-    // Which parser sees a file is the worker's contract, and a port is not the
-    // place to change it.
-    format: ext === 'ofx' ? 'ofx' : ext === 'qif' ? 'qif' : 'csv',
+    // `.qfx` is Quicken's name for OFX, and `@scani/file-import`'s own
+    // detector reads it as one. v2 sent it as CSV, which dead-ended every QFX
+    // on a column-mapping form with nothing mapped (SC-1519).
+    format: ext === 'ofx' || ext === 'qfx' ? 'ofx' : ext === 'qif' ? 'qif' : 'csv',
   };
 }
 
@@ -205,9 +205,27 @@ interface WalletAddressShape {
   /** How the chain is named in a sentence. */
   chain: string;
   valid: RegExp;
+  /** Bytes the base58 text must decode to. The pattern alone admits a
+   *  Bitcoin or Litecoin address as Solana, which then fails on `/jobs`
+   *  rather than at the field (SC-1519). */
+  base58Bytes?: number;
   claim?: RegExp;
   /** What a valid one looks like, said to a person. */
   looksLikeKey: string;
+}
+
+const BASE58_ALPHABET = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+
+function base58ByteLength(value: string): number {
+  let n = 0n;
+  for (const char of value) n = n * 58n + BigInt(BASE58_ALPHABET.indexOf(char));
+  const leadingZeros = value.length - value.replace(/^1+/, '').length;
+  return leadingZeros + (n === 0n ? 0 : Math.ceil(n.toString(16).length / 2));
+}
+
+function matchesShape(shape: WalletAddressShape, value: string): boolean {
+  if (!shape.valid.test(value)) return false;
+  return shape.base58Bytes === undefined || base58ByteLength(value) === shape.base58Bytes;
 }
 
 const WALLET_ADDRESS_SHAPES: readonly WalletAddressShape[] = [
@@ -219,7 +237,7 @@ const WALLET_ADDRESS_SHAPES: readonly WalletAddressShape[] = [
   },
   {
     chain: 'Bitcoin',
-    valid: /^(?:[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{39,59})$/,
+    valid: /^(?:[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{39,59}|BC1[A-Z0-9]{39,59})$/,
     claim: /^bc1/i,
     looksLikeKey: 'v3.capture.wallet.shape.bitcoin',
   },
@@ -237,6 +255,7 @@ const WALLET_ADDRESS_SHAPES: readonly WalletAddressShape[] = [
   {
     chain: 'Solana',
     valid: /^[1-9A-HJ-NP-Za-km-z]{32,44}$/,
+    base58Bytes: 32,
     looksLikeKey: 'v3.capture.wallet.shape.solana',
   },
 ];
@@ -255,7 +274,8 @@ type WalletAddressVerdict =
 function walletAddressStatus(address: string): WalletAddressVerdict['status'] {
   const value = address.trim();
   if (!value) return 'empty';
-  if (WALLET_ADDRESS_SHAPES.some((shape) => shape.valid.test(value))) return 'valid';
+  if (WALLET_ADDRESS_SHAPES.some((shape) => matchesShape(shape, value))) return 'valid';
+  if (/\s/.test(value) || /\.eth$/i.test(value)) return 'unrecognised';
   return WALLET_ADDRESS_SHAPES.some((shape) => shape.claim?.test(value))
     ? 'incomplete'
     : 'unrecognised';
@@ -264,7 +284,14 @@ function walletAddressStatus(address: string): WalletAddressVerdict['status'] {
 function classifyWalletAddress(t: TFunction, address: string): WalletAddressVerdict {
   const value = address.trim();
   if (!value) return { status: 'empty' };
-  if (WALLET_ADDRESS_SHAPES.some((shape) => shape.valid.test(value))) return { status: 'valid' };
+  if (WALLET_ADDRESS_SHAPES.some((shape) => matchesShape(shape, value))) return { status: 'valid' };
+
+  if (/\s/.test(value)) {
+    return { status: 'unrecognised', problem: t('v3.capture.wallet.innerSpace') };
+  }
+  if (/\.eth$/i.test(value)) {
+    return { status: 'unrecognised', problem: t('v3.capture.wallet.ensName') };
+  }
 
   const claimed = WALLET_ADDRESS_SHAPES.find((shape) => shape.claim?.test(value));
   if (claimed) {
@@ -329,7 +356,11 @@ export function buildWalletImportInput(
 ): WalletImportInput | null {
   if (walletImportBlockerKeys(draft).length > 0) return null;
   return {
-    address: draft.address.trim(),
+    // bech32 is case-insensitive, and an all-capitals one (a QR code's
+    // alphanumeric mode) is the same address as its lower-case spelling.
+    address: /^BC1/.test(draft.address.trim())
+      ? draft.address.trim().toLowerCase()
+      : draft.address.trim(),
     displayName: draft.displayName.trim() || undefined,
     chain: 'auto',
     requestId,
@@ -358,6 +389,10 @@ export function describeCredentialBlockers(
  * Only the fields the manifest declares, and only the ones with a value —
  * v2's shape. An empty optional field must be absent rather than an empty
  * string, or the validator stores a credential the provider will reject.
+ *
+ * Trimmed, because a key copied off a venue's page usually carries a trailing
+ * newline or space, and the venue then rejects a credential that is right
+ * (SC-1519). No credential any provider issues begins or ends in whitespace.
  */
 export function buildCredentials(
   fields: readonly CredentialFieldLike[],
@@ -365,8 +400,8 @@ export function buildCredentials(
 ): Record<string, string> {
   const credentials: Record<string, string> = {};
   for (const field of fields) {
-    const value = values[field.name];
-    if (value !== undefined && value.length > 0) credentials[field.name] = value;
+    const value = values[field.name]?.trim();
+    if (value) credentials[field.name] = value;
   }
   return credentials;
 }

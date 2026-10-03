@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { NewHoldingTransaction } from '@scani/db/schema';
+import * as schema from '@scani/db/schema';
+import { eq, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HoldingCoverageRepository } from '../../src/repositories/HoldingCoverageRepository';
 import {
@@ -9,6 +11,7 @@ import {
 import { withTestDb } from '../../test/helpers/db';
 import { makeInstitution, makeInstitutionType, makeUser } from '../../test/helpers/factories';
 import { makeAccount, makeHolding, makeToken } from '../../test/helpers/factories-extra';
+import { withLockWatch } from '../../test/helpers/lock-watch';
 
 const repo = () => Container.get(HoldingTransactionRepository);
 
@@ -41,7 +44,12 @@ describe('HoldingTransactionRepository', () => {
     await withTestDb(async (tx) => {
       const { userId, holdingId, tokenId } = await makeHoldingFixture(tx);
       const empty = await repo().bulkUpsert([], tx);
-      expect(empty).toEqual({ rows: [], merges: [], earliestChangedAt: null });
+      expect(empty).toEqual({
+        rows: [],
+        merges: [],
+        earliestChangedAt: null,
+        duplicatePlacements: [],
+      });
 
       const { rows: inserted } = await repo().bulkUpsert(
         [
@@ -927,4 +935,50 @@ describe('bulkUpsert — the oldest date a batch actually changed', () => {
       expect(out.earliestChangedAt).toEqual(OLD);
     });
   });
+});
+
+// SC-1528. Postgres takes at most 65,535 parameters per statement and a ledger
+// row binds one per column it carries. The TON Foundation wallet's 7,182 rows
+// failed MAX_PARAMETERS_EXCEEDED on every retry, so its history never imported.
+describe('bulkUpsert — a batch larger than one statement can carry', () => {
+  const ROWS = 7000;
+  const OLDEST = new Date('2020-01-01T00:00:00Z');
+
+  test('every row lands, and the result covers the whole batch', async () => {
+    await withTestDb(async (tx) => {
+      await withLockWatch(tx, 'bulkUpsert 7,000 rows', async () => {
+        const { userId, holdingId, tokenId } = await makeHoldingFixture(tx);
+        const rows = Array.from(
+          { length: ROWS },
+          (_, i): NewHoldingTransaction => ({
+            userId,
+            holdingId,
+            tokenId,
+            kind: i % 2 ? 'withdraw' : 'deposit',
+            quantity: String(i % 2 ? -1 : 2),
+            occurredAt: i === ROWS - 1 ? OLDEST : new Date(Date.UTC(2025, 0, 1) + i * 60_000),
+            source: 'ton-api',
+            externalId: `ton-${i}`,
+            counterparty: `EQ-${i}`,
+            sourceMetadata: { lt: i },
+          })
+        );
+        // A key sent twice, at the far end of the batch.
+        rows.push({ ...rows[ROWS - 1]!, quantity: '3' });
+
+        const out = await repo().bulkUpsert(rows, tx);
+
+        expect(out.rows).toHaveLength(ROWS);
+        expect(out.earliestChangedAt).toEqual(OLDEST);
+        expect(out.merges).toEqual([
+          { holdingId, source: 'ton-api', externalId: `ton-${ROWS - 1}`, dropped: 1 },
+        ]);
+        const [stored] = await tx
+          .select({ rows: sql<number>`count(*)::int` })
+          .from(schema.holdingTransactions)
+          .where(eq(schema.holdingTransactions.holdingId, holdingId));
+        expect(stored?.rows).toBe(ROWS);
+      });
+    });
+  }, 120_000); // Thousands of rows, on a CI box several times slower than a laptop (SC-1528).
 });

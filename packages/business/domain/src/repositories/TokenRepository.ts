@@ -33,6 +33,29 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
     return results[0] || null;
   }
 
+  /**
+   * Up to two catalog tokens of one type with this symbol, so a caller can tell
+   * a ticker that names one listing from one that names several.
+   */
+  async findCatalogListingsOfType(
+    symbol: string,
+    typeId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Token[]> {
+    return this.getDb(transaction)
+      .select()
+      .from(schema.tokens)
+      .where(
+        and(
+          eq(schema.tokens.symbol, symbol.toUpperCase()),
+          eq(schema.tokens.typeId, typeId),
+          catalogTokenOnly()
+        )
+      )
+      .orderBy(asc(schema.tokens.isScamProbability), desc(schema.tokens.createdAt))
+      .limit(2);
+  }
+
   async findBySymbolAndType(
     symbol: string,
     typeId: string,

@@ -20,6 +20,12 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const NODE_ENV = getNodeEnv() || 'development';
 const IS_CRON_JOB = process.env.IS_CRON_JOB === 'true'; // Set to 'true' in cron job environment
 
+/**
+ * Postgres's cap on one statement, a lock wait included, for every connection
+ * this process opens. A `statement_timeout` in DATABASE_URL itself overrides it.
+ */
+export const STATEMENT_TIMEOUT_MS = IS_CRON_JOB ? 120_000 : 30_000;
+
 // Database connection
 let db: ReturnType<typeof drizzlePostgres>;
 
@@ -39,7 +45,7 @@ if (IS_CRON_JOB) {
   // Add statement_timeout if not already present (2 minutes for cron jobs)
   // This prevents queries from hanging indefinitely in cron job context
   if (!dbUrl.searchParams.has('statement_timeout')) {
-    dbUrl.searchParams.set('statement_timeout', '120000'); // 120 seconds in milliseconds
+    dbUrl.searchParams.set('statement_timeout', String(STATEMENT_TIMEOUT_MS));
   }
 
   finalDatabaseUrl = dbUrl.toString();
@@ -91,7 +97,7 @@ const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> 
     // Cap per-query wall-time so a runaway query can't pin a pool slot
     // indefinitely under load. Cron jobs run heavier sweeps, so they get
     // the longer ceiling (also applied via the URL param above).
-    statement_timeout: IS_CRON_JOB ? 120000 : 30000,
+    statement_timeout: STATEMENT_TIMEOUT_MS,
     // Postgres refuses the write itself, so a bug in a dry run fails with
     // 25006 instead of succeeding. `options` and not a URL param: query params
     // are spread OVER this object by postgres.js, so the URL is the one place

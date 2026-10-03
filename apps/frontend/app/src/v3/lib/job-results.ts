@@ -1,4 +1,4 @@
-import { type CsvMapping, CsvMappingDto } from '@scani/shared';
+import { AI_COLUMN_MAPPING_WARNING, type CsvMapping, CsvMappingDto } from '@scani/shared';
 
 /**
  * The four remaining job results, read before they are rendered.
@@ -299,6 +299,9 @@ export interface FileImportView {
   newHoldingCount: number;
   holdings: FileImportHolding[];
   warnings: string[];
+  /** The AI detector chose the CSV's columns — said as a fact, not counted as
+   *  a warning (SC-1527). */
+  columnsMatchedAutomatically: boolean;
   /** Set when the file carried no usable currency and the parse stopped. */
   needsCurrency: FileImportCurrencyPrompt | null;
   /** Set when nothing said whether `03/04` is day- or month-first (SC-1291). */
@@ -316,6 +319,7 @@ export function readFileImport(result: unknown): FileImportView | null {
   const hasCurrencyPrompt = typeof needsCurrencyRaw.r2Key === 'string';
   const needsDateOrderRaw = asRecord(record.needsDateOrder);
   const columns = asRecord(record.needsColumnMapping);
+  const lines = asStringList(record.warnings);
 
   return {
     needsColumnMapping:
@@ -356,7 +360,8 @@ export function readFileImport(result: unknown): FileImportView | null {
         isNew: created.has(holdingId),
       };
     }),
-    warnings: asStringList(record.warnings),
+    warnings: lines.filter((line) => line !== AI_COLUMN_MAPPING_WARNING),
+    columnsMatchedAutomatically: lines.includes(AI_COLUMN_MAPPING_WARNING),
     needsCurrency: hasCurrencyPrompt
       ? {
           customMapping: readMapping(needsCurrencyRaw.customMapping),

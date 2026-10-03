@@ -105,11 +105,6 @@ export function supportsApy(holding: Pick<HoldingWithDetails, 'account'>): boole
   return APY_ACCOUNT_TYPES.has(holding.account.typeCode);
 }
 
-/** Whether the balance can be re-fetched from the venue it came from. */
-export function isSynced(holding: Pick<HoldingWithDetails, 'source'>): boolean {
-  return Boolean(holding.source) && holding.source !== 'manual';
-}
-
 /**
  * How many fraction digits to show for a unit count.
  *
@@ -131,9 +126,9 @@ export function isSynced(holding: Pick<HoldingWithDetails, 'source'>): boolean {
  *
  * ## Why the sign is enough, and no marker column is needed
  *
- * `CreateHoldingDto` and `UpdateHoldingDto` both refuse a negative balance
- * (`greaterThanOrEqualTo(0)`), and `UpdateHoldingDto` gates the
- * `holdings.update` mutation — so no request a person can make writes one.
+ * `CreateHoldingsWithDependenciesDto` and `UpdateHoldingDto` both refuse a
+ * negative balance (`greaterThanOrEqualTo(0)`), and `UpdateHoldingDto` gates
+ * the `holdings.update` mutation — so no request a person can make writes one.
  * `RecordHoldingMovementUseCase` separately refuses an outflow larger than the
  * balance. A negative therefore came from a domain path writing through the
  * use case rather than the wire, and the sign says so BY CONSTRUCTION. That is

@@ -82,6 +82,19 @@ describe('file-import', () => {
     expect(readFileImport(base)?.holdings[0]?.closingBalance).toBe('0.00007715');
   });
 
+  test('an AI column mapping is a fact about the parse, not a warning (SC-1527)', () => {
+    // The worker appends this line whenever it asked the model for the
+    // columns, which on a plain `date,description,amount,currency` CSV is every
+    // time — and the job page listed it under "1 warning".
+    const view = readFileImport({
+      ...base,
+      warnings: ['Column mapping detected by AI', 'row 4 skipped'],
+    });
+    expect(view?.warnings).toEqual(['row 4 skipped']);
+    expect(view?.columnsMatchedAutomatically).toBe(true);
+    expect(readFileImport(base)?.columnsMatchedAutomatically).toBe(false);
+  });
+
   test('a missing closing balance stays null, not zero', () => {
     expect(readFileImport(base)?.holdings[1]?.closingBalance).toBeNull();
   });

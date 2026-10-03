@@ -61,6 +61,32 @@ describe('describeJobFailure', () => {
     expect(described?.code).toBe('unrecoverable');
   });
 
+  // SC-1527. A manual-holdings job read "Failed — won't retry" over a Retry
+  // button: the chip said another attempt would not help, the page offered one.
+  test('an unrecoverable failure does not offer the retry it says will not help', () => {
+    const described = describeJobFailure({
+      state: 'failed',
+      deadAt: new Date(),
+      failureReason: 'unrecoverable',
+      attemptsMade: 1,
+      attemptsAllowed: 3,
+    });
+    expect(described?.retryWorthOffering).toBe(false);
+  });
+
+  test('a source that could not be reached is its own failure, and worth retrying later', () => {
+    const described = describeJobFailure({
+      state: 'failed',
+      deadAt: new Date(),
+      failureReason: 'source_unavailable',
+      attemptsMade: 1,
+      attemptsAllowed: 3,
+    });
+    expect(described?.code).toBe('sourceUnavailable');
+    expect(described?.willRetry).toBe(false);
+    expect(described?.retryWorthOffering).toBe(true);
+  });
+
   test('a job that never reached the queue says so, and says nothing ran', () => {
     const described = describeJobFailure({
       state: 'failed',
@@ -144,6 +170,7 @@ describe('describeJobFailure', () => {
       { state: 'failed', deadAt: new Date(), failureReason: 'cancelled' },
       { state: 'failed', deadAt: new Date(), failureReason: 'never_delivered' },
       { state: 'failed', deadAt: new Date(), failureReason: 'unrecoverable' },
+      { state: 'failed', deadAt: new Date(), failureReason: 'source_unavailable' },
       { state: 'failed', deadAt: new Date(), attemptsAllowed: 3, attemptsMade: 3 },
       { state: 'failed', deadAt: new Date(), attemptsAllowed: 1, attemptsMade: 1 },
       { state: 'failed', deadAt: null, attemptsMade: 1, attemptsAllowed: 3, queueHasJob: false },
@@ -162,7 +189,7 @@ describe('describeJobFailure', () => {
     }
     // Non-vacuous: every branch of the describer is covered above, so a new
     // one that renders prose cannot hide behind an unexercised path.
-    expect(codes.size).toBe(8);
+    expect(codes.size).toBe(9);
   });
 });
 

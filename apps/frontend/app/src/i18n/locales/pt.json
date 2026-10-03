@@ -131,7 +131,10 @@
     },
     "amountInput": {
       "readAsDecimal": "Lido como {{amount}} — aqui, tanto a vírgula como o ponto significam uma casa decimal. Elimine o separador se queria dizer um milhar.",
-      "readAsWhole": "Lido como {{amount}} — este campo aceita apenas números inteiros."
+      "readAsWhole": "Lido como {{amount}} — este campo aceita apenas números inteiros.",
+      "exponent": "A notação científica como 1e5 não é lida aqui — escreva o número por extenso, por exemplo 100000.",
+      "tooLarge": "São mais de {{max}} dígitos antes da casa decimal, e nenhum saldo os tem — verifique o montante.",
+      "truncated": "Lido como {{amount}} — este campo não guarda mais casas decimais do que isso."
     },
     "brand": {
       "logoAlt": "Logótipo {{name}}"

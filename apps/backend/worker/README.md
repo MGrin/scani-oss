@@ -62,11 +62,10 @@ src/
 3. `loadEnv()` — fail-fast on required env.
 4. `initializeContainer()` — registers `@Service()` classes from `@scani/domain`.
 5. `buildProviderRegistry()` — provider registry (cloud or direct mode).
-6. Wire `@scani/ingesters` callbacks: pass `Container.get(ScreenshotParsingService).parseScreenshot.bind(...)` into `ScreenshotTransactionIngester`; register both ingesters with `TransactionIngesterRegistry`.
-7. **Resolve every processor class** via `Container.get(...)` — side-effect imports at the top of `index.ts` ensure typedi has them registered. The list lives in `index.ts` itself; adding a new processor means importing it here AND calling `workerClient.register()`.
-8. Register the BullMQ Worker on the shared `scani-jobs` queue + the dead-letter `scani-dlq`.
-9. Register repeatable schedules from `SCHEDULED_JOB_DESCRIPTORS` in `@scani/jobs` via `JobScheduler.upsertAll()`, which reconciles: a schedule dropped from that list is removed from BullMQ rather than firing forever. Under `SCANI_DEMO_MODE=1` the worker registers `DEMO_RESET_SCHEDULE` and nothing else.
-10. SIGTERM/SIGINT: drain in-flight jobs, `Sentry.flush(2s)`, exit.
+6. **Resolve every processor class** via `Container.get(...)` — side-effect imports at the top of `index.ts` ensure typedi has them registered. The list lives in `index.ts` itself; adding a new processor means importing it here AND calling `workerClient.register()`.
+7. Register the BullMQ Worker on the shared `scani-jobs` queue + the dead-letter `scani-dlq`.
+8. Register repeatable schedules from `SCHEDULED_JOB_DESCRIPTORS` in `@scani/jobs` via `JobScheduler.upsertAll()`, which reconciles: a schedule dropped from that list is removed from BullMQ rather than firing forever. Under `SCANI_DEMO_MODE=1` the worker registers `DEMO_RESET_SCHEDULE` and nothing else.
+9. SIGTERM/SIGINT: drain in-flight jobs, `Sentry.flush(2s)`, exit.
 
 ## Processor anatomy
 

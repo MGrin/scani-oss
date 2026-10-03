@@ -22,6 +22,7 @@ type PgWorker = Worker<any, any, string, PostgresQueueBackend>;
 import { Container, Service } from 'typedi';
 import { DEFAULT_DLQ_NAME, DEFAULT_QUEUE_NAME } from '../core/default-names';
 import { isScheduledJobDescriptor } from '../core/job-descriptor';
+import { jobDeathReason } from '../core/source-unavailable';
 import { userFacingMessage } from '../core/user-facing';
 import { interruptIdleWait } from '../wake/worker-wake';
 import { LIFECYCLE_MIRROR, type LifecycleMirror } from './lifecycle-mirror';
@@ -386,7 +387,7 @@ export class WorkerClient {
         userFacingError: userFacingMessage(err),
         attemptsMade: job.attemptsMade,
         attemptsAllowed: (job.opts.attempts as number | undefined) ?? 1,
-        reason: unrecoverable ? 'unrecoverable' : 'retries_exhausted',
+        reason: jobDeathReason(err, unrecoverable),
       });
     } catch (mirrorErr) {
       log.error(

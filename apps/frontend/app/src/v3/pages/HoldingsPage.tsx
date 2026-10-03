@@ -264,6 +264,7 @@ export function HoldingsPage() {
           }}
           holding={movementTarget}
           isSaving={movement.isSaving}
+          error={movement.error}
           onSubmit={movement.submit}
         />
       ) : null}

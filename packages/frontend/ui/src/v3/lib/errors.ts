@@ -146,7 +146,10 @@ export function describeQueryError(
 
   // A 422 is the same case as a 400 — both are "we read your input and it is
   // not usable", and tRPC's `UNPROCESSABLE_CONTENT` reaches the client as one.
-  if (status === 400 || status === 422) {
+  // A 409 is the input colliding with what is already stored — "this account
+  // already holds BTC" — and the sentence that names the collision is the
+  // answer for the same reason (SC-1527).
+  if (status === 400 || status === 409 || status === 422) {
     const reason = rejectionReason(error);
     if (reason) {
       return {

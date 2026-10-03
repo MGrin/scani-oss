@@ -110,6 +110,81 @@ export async function makeAccount(
   return row;
 }
 
+/** A user's wallet at a fresh address, on the owner's institution. */
+export async function makeWallet(
+  tx: DatabaseTransaction,
+  owner: { userId: string; institutionId: string },
+  overrides: Partial<typeof schema.userWallets.$inferInsert> = {}
+): Promise<typeof schema.userWallets.$inferSelect> {
+  const [wallet] = await tx
+    .insert(schema.userWallets)
+    .values({
+      userId: owner.userId,
+      walletAddress: `0x${randomUUID().replace(/-/g, '')}`,
+      institutionIds: [owner.institutionId],
+      ...overrides,
+    })
+    .returning();
+  if (!wallet) throw new Error('wallet insert failed');
+  return wallet;
+}
+
+/** An account the wallet sync owns (SC-356): the pointer, to a live wallet. */
+export async function makeWalletAccount(
+  tx: DatabaseTransaction,
+  owner: { userId: string; institutionId: string }
+): Promise<typeof schema.accounts.$inferSelect> {
+  const wallet = await makeWallet(tx, owner);
+  return await makeAccount(tx, { ...owner, metadata: { userWalletId: wallet.id } });
+}
+
+/** The account the wallet import makes for one EVM chain: it names the wallet. */
+export function makeChainAccount(
+  tx: DatabaseTransaction,
+  owner: { userId: string; institutionId: string },
+  walletId: string
+): Promise<typeof schema.accounts.$inferSelect> {
+  return makeAccount(tx, {
+    userId: owner.userId,
+    institutionId: owner.institutionId,
+    metadata: { chainId: 1, userWalletId: walletId },
+  });
+}
+
+/**
+ * A statement's closing balance, labelled as the statement writer labels it:
+ * a checkpoint, the evidence that the holding's feed has begun (Rule P, D7).
+ * Its source is not the `sync-capture` a person's value carries, so the two
+ * can share an instant.
+ */
+export async function makeCheckpoint(
+  tx: DatabaseTransaction,
+  fields: { userId: string; holdingId: string; observedAt: Date; balance?: string }
+): Promise<typeof schema.holdingBalanceObservations.$inferSelect> {
+  const [row] = await tx
+    .insert(schema.holdingBalanceObservations)
+    .values({
+      userId: fields.userId,
+      holdingId: fields.holdingId,
+      balance: fields.balance ?? '100',
+      observedAt: fields.observedAt,
+      source: 'statement-close',
+      role: 'checkpoint',
+      authority: 'statement',
+    })
+    .returning();
+  if (!row) throw new Error('holding_balance_observations insert failed');
+  return row;
+}
+
+/** Balance observations as given, in one statement: a history to read back. */
+export async function makeObservations(
+  tx: DatabaseTransaction,
+  rows: Array<typeof schema.holdingBalanceObservations.$inferInsert>
+): Promise<void> {
+  if (rows.length > 0) await tx.insert(schema.holdingBalanceObservations).values(rows);
+}
+
 export async function makeHolding(
   tx: DatabaseTransaction,
   overrides: Partial<typeof schema.holdings.$inferInsert> & {

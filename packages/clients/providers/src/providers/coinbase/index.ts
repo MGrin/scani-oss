@@ -1,4 +1,4 @@
-import crypto from 'node:crypto';
+import { createPrivateKey, type KeyObject, randomBytes, sign } from 'node:crypto';
 import type { NewToken } from '@scani/db/schema';
 import { createOutflowLimiter } from '@scani/rate-limiter';
 import Decimal from 'decimal.js';
@@ -14,7 +14,7 @@ import type {
   CredentialValidator,
   TransactionsProvider,
 } from '../../core/capabilities';
-import { credentialRejection } from '../../core/errors';
+import { credentialRejection, ProviderError } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
@@ -30,6 +30,8 @@ import { coinbaseManifest } from './manifest';
 
 const COINBASE_INSTITUTION_CODE = 'coinbase';
 const API_VERSION = '2024-01-01';
+const API_HOST = 'api.coinbase.com';
+const JWT_LIFETIME_SECONDS = 120;
 const ACCOUNTS_PAGE_LIMIT = 100;
 const TX_PAGE_LIMIT = 100;
 const MAX_ACCOUNT_PAGES = 50;
@@ -79,21 +81,63 @@ export class CoinbaseProvider
     'transactions',
     'credential-validator',
   ];
-  protected readonly baseUrl = 'https://api.coinbase.com';
+  protected readonly baseUrl = `https://${API_HOST}`;
 
   protected signRequest(req: SignedRequest, creds: ApiKeyCreds): Record<string, string> {
-    const timestamp = Math.floor(Date.now() / 1000).toString();
-    // Coinbase signs the FULL path including query string (the
-    // pagination next_uri may include query params).
-    const queryStr = req.query ? `?${req.query}` : '';
-    const preSign = timestamp + req.method + req.url + queryStr + (req.body ?? '');
-    const signature = crypto.createHmac('sha256', creds.apiSecret).update(preSign).digest('hex');
     return {
-      'CB-ACCESS-KEY': creds.apiKey,
-      'CB-ACCESS-SIGN': signature,
-      'CB-ACCESS-TIMESTAMP': timestamp,
+      Authorization: `Bearer ${this.cdpJwt(req, creds)}`,
       'CB-VERSION': API_VERSION,
     };
+  }
+
+  /**
+   * A Coinbase Developer Platform key authenticates one request at a time: an
+   * ES256 JWT naming the key, valid for two minutes, bound to the request's
+   * method, host and path. The query string is not part of `uri`.
+   */
+  private cdpJwt(req: SignedRequest, creds: ApiKeyCreds): string {
+    const keyName = creds.apiKey.trim();
+    const privateKey = this.cdpPrivateKey(creds.apiSecret);
+    const nbf = Math.floor(Date.now() / 1000);
+    const header = {
+      alg: 'ES256',
+      typ: 'JWT',
+      kid: keyName,
+      nonce: randomBytes(16).toString('hex'),
+    };
+    const claims = {
+      sub: keyName,
+      iss: 'cdp',
+      nbf,
+      exp: nbf + JWT_LIFETIME_SECONDS,
+      uri: `${req.method} ${API_HOST}${req.url}`,
+    };
+    const signingInput = `${base64url(JSON.stringify(header))}.${base64url(JSON.stringify(claims))}`;
+    const signature = sign('sha256', Buffer.from(signingInput), {
+      key: privateKey,
+      dsaEncoding: 'ieee-p1363',
+    });
+    return `${signingInput}.${signature.toString('base64url')}`;
+  }
+
+  /**
+   * Users copy `privateKey` out of the downloaded JSON, so it can arrive still
+   * quoted and with its newlines as literal `\n` escapes.
+   */
+  private cdpPrivateKey(pasted: string): KeyObject {
+    const pem = pasted.trim().replace(/^"|"$/g, '').replaceAll('\\n', '\n');
+    let key: KeyObject | null = null;
+    try {
+      key = createPrivateKey(pem);
+    } catch {}
+    if (key?.asymmetricKeyType !== 'ec' || key.asymmetricKeyDetails?.namedCurve !== 'prime256v1') {
+      throw new ProviderError(
+        'Coinbase private key must be the ECDSA (EC) privateKey value from the downloaded JSON; Ed25519 keys cannot sign Coinbase account requests',
+        'auth-failed',
+        this.providerKey
+      );
+    }
+    return key;
   }
 
   canFetchBalances(c: string): boolean {
@@ -166,7 +210,9 @@ export class CoinbaseProvider
     }
     const apiKey = creds.apiKey as string | undefined;
     const apiSecret = creds.apiSecret as string | undefined;
-    if (!apiKey || !apiSecret) return { valid: false, message: 'apiKey + apiSecret required' };
+    if (!apiKey || !apiSecret) {
+      return { valid: false, message: 'API key name and private key are required' };
+    }
     try {
       await this.signedFetch(
         { method: 'GET', url: '/v2/accounts', query: 'limit=1' },
@@ -336,6 +382,10 @@ export class CoinbaseProvider
     if (idx === -1) return [uri, undefined];
     return [uri.slice(0, idx), uri.slice(idx + 1)];
   }
+}
+
+function base64url(text: string): string {
+  return Buffer.from(text).toString('base64url');
 }
 
 export const coinbaseFactory: ProviderFactory = async (deps) => {

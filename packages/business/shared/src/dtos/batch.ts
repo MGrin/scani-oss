@@ -1,5 +1,10 @@
 import z from 'zod';
-import { Decimal, isValidDecimalString } from '../decimal';
+import {
+  AMOUNT_MAX_INTEGER_DIGITS,
+  amountWithinIntegerDigits,
+  Decimal,
+  isValidDecimalString,
+} from '../decimal';
 import { CreateAccountDto } from './account';
 import { HOLDING_LABEL_MAX_LENGTH, type Holding } from './holding';
 import { CreateInstitutionDto } from './institution';
@@ -84,6 +89,20 @@ export function collidingHoldingTokens(
   return colliding;
 }
 
+/**
+ * A holding's balance on the wire: a finite, non-negative decimal under
+ * `AMOUNT_MAX_INTEGER_DIGITS` (SC-1527). Decimal's own syntax, exponent
+ * included, because a screenshot parse can hand over `1e-7` as JS prints it.
+ */
+export const HoldingBalanceString = z
+  .string()
+  .refine((value) => isValidDecimalString(value) && new Decimal(value).greaterThanOrEqualTo(0), {
+    message: 'Balance must be a valid decimal number string that is non-negative',
+  })
+  .refine(amountWithinIntegerDigits, {
+    message: `Balance must have at most ${AMOUNT_MAX_INTEGER_DIGITS} digits before the decimal point`,
+  });
+
 export const CreateHoldingsWithDependenciesDto = z.object({
   institution: CreateInstitutionDto.optional(),
 
@@ -94,15 +113,7 @@ export const CreateHoldingsWithDependenciesDto = z.object({
     .array(
       z.object({
         tokenId: z.string().uuid(),
-        balance: z.string().refine(
-          (val) => {
-            if (!isValidDecimalString(val)) return false;
-            return new Decimal(val).greaterThanOrEqualTo(0);
-          },
-          {
-            message: 'Balance must be a valid decimal number string that is non-negative',
-          }
-        ),
+        balance: HoldingBalanceString,
         // What the user calls this pot, when one account holds several rows
         // for one token. Optional because the ordinary account holds one
         // (SC-330). Trimmed here rather than at the call sites so the

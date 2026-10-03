@@ -15,6 +15,39 @@
  * here — they're orchestrator concerns and stay in the domain layer.
  */
 
+/**
+ * The URL with every query VALUE blanked and any userinfo dropped — the only
+ * form of a URL allowed into an error message or a log line (SC-1523).
+ *
+ * Every value, not a list of sensitive names: IBKR's Flex token travels as
+ * `?t=` and our Etherscan key as `apikey=`, and a name list is a list the next
+ * provider will not be on. The error text this feeds is logged by the worker,
+ * stored by BullMQ as the job's failure reason and sent to Sentry.
+ */
+export function redactUrl(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return '[unparseable URL]';
+  }
+  url.username = '';
+  url.password = '';
+  const names = [...url.searchParams.keys()];
+  const query = names.length ? `?${names.map((name) => `${name}=…`).join('&')}` : '';
+  return `${url.origin}${url.pathname}${query}`;
+}
+
+/** The message and stack of `error`, with the raw URL replaced wherever the
+ *  runtime itself quoted it. */
+function withoutRawUrl(error: Error, url: string, safeUrl: string): Error {
+  const scrub = (text: string) => text.split(url).join(safeUrl);
+  const clean = new Error(scrub(error.message));
+  clean.name = error.name;
+  clean.stack = error.stack === undefined ? undefined : scrub(error.stack);
+  return clean;
+}
+
 const DEFAULT_FETCH_TIMEOUT_MS = 8000;
 const DEFAULT_MAX_RETRIES = 2;
 
@@ -25,11 +58,12 @@ export async function fetchWithTimeout(
   maxRetries: number = DEFAULT_MAX_RETRIES
 ): Promise<Response> {
   let lastError: Error | null = null;
+  const safeUrl = redactUrl(url);
 
   try {
     new URL(url);
   } catch {
-    throw new Error(`Invalid URL format: ${url}. Check for typos in the URL or port number.`);
+    throw new Error(`Invalid URL format: ${safeUrl}. Check for typos in the URL or port number.`);
   }
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -66,9 +100,13 @@ export async function fetchWithTimeout(
 
       return response;
     } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
+      lastError = withoutRawUrl(
+        error instanceof Error ? error : new Error(String(error)),
+        url,
+        safeUrl
+      );
       const enhancedError = new Error(
-        `${lastError.message} - URL: ${url} (attempt ${attempt + 1}/${maxRetries + 1})`
+        `${lastError.message} - URL: ${safeUrl} (attempt ${attempt + 1}/${maxRetries + 1})`
       );
       enhancedError.name = lastError.name;
       enhancedError.stack = lastError.stack;
@@ -83,7 +121,7 @@ export async function fetchWithTimeout(
     }
   }
 
-  throw lastError || new Error(`Max retries (${maxRetries}) exceeded for URL: ${url}`);
+  throw lastError || new Error(`Max retries (${maxRetries}) exceeded for URL: ${safeUrl}`);
 }
 
 function shouldRetry(response: Response): boolean {

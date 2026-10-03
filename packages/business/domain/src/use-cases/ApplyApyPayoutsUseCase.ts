@@ -258,6 +258,8 @@ export class ApplyApyPayoutsUseCase {
           unbooked = new Decimal(0);
         }
 
+        // The round8 total itself. Re-adding its change to the stored balance
+        // rounds twice at 28 digits and can leave a tail below the 8-dp grid.
         const newBalance = balance.toFixed();
 
         logger.debug(

@@ -65,7 +65,7 @@ function failedJob(userFacingError: string | null): JobDetailHeaderJob {
     userFacingError,
     deadAt: '2026-08-22T09:00:09.000Z',
     failureReason: 'unrecoverable',
-    retry: { available: true, reason: 'unrecoverable', queueHasJob: true },
+    retry: { available: false, reason: 'unrecoverable' },
   };
 }
 
@@ -109,5 +109,61 @@ describe('a terminal failure never points at a detail block it is not rendering'
       const hasBlock = message !== null && html.includes(message);
       expect(instructs).toBe(hasBlock);
     }
+  });
+});
+
+// SC-1519: a failed attempt stamps `finishedAt` before the retry runs, and the
+// header read "Attempt 2 of 3 · Finished just now" over a live progress bar.
+describe('JobDetailHeader — a job between attempts', () => {
+  test('a running job does not claim to have finished', () => {
+    const html = renderToStaticMarkup(
+      <Harness>
+        <JobDetailHeader
+          job={{
+            ...failedJob(null),
+            state: 'active',
+            frameworkState: 'active',
+            attemptsMade: 1,
+            attemptsAllowed: 3,
+            deadAt: null,
+            failureReason: null,
+            retry: undefined,
+          }}
+        />
+      </Harness>
+    );
+    expect(html).toContain('progressbar');
+    expect(html).not.toContain('Finished');
+  });
+});
+
+// SC-1527. The api stopped offering Retry on an unrecoverable failure; the page
+// has to say so in the sentence it already shows rather than in a second line
+// that contradicts it — "Nothing to retry." is the copy for a job that never
+// failed at all.
+describe('JobDetailHeader — Retry only where retrying can help', () => {
+  test('an unrecoverable failure shows no Retry and no second excuse for it', () => {
+    const html = render(null);
+    expect(html).not.toContain('>Retry<');
+    expect(html).not.toContain('Nothing to retry');
+    expect(html).toContain('Re-running it unchanged will fail the same way');
+  });
+
+  test('a wallet import stopped by an outage keeps its Retry and says why', () => {
+    const html = renderToStaticMarkup(
+      <Harness>
+        <JobDetailHeader
+          job={{
+            ...failedJob(null),
+            jobName: 'wallet-import',
+            failureReason: 'source_unavailable',
+            retry: { available: true, queueHasJob: true },
+          }}
+        />
+      </Harness>
+    );
+    expect(html).toContain('Retry');
+    expect(html).toContain('Try it again later');
+    expect(html).not.toContain('won&#x27;t retry');
   });
 });

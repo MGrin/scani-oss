@@ -1,10 +1,8 @@
 import type { Token, TokenMetadata } from '@scani/db/schema';
-import type { DatabaseTransaction } from '@scani/db/transaction';
 import { Container, Service } from 'typedi';
 import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { BaseService } from '../BaseService';
-import { TokenIdentityService } from './TokenIdentityService';
 
 // TokenService — token CRUD, canonical reads, and provider-driven
 // find-or-create entry points. Federated identity resolution lives in
@@ -14,7 +12,6 @@ import { TokenIdentityService } from './TokenIdentityService';
 export class TokenService extends BaseService {
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
-  private readonly tokenIdentityService = Container.get(TokenIdentityService);
 
   constructor() {
     super('TokenService');
@@ -64,114 +61,6 @@ export class TokenService extends BaseService {
       return await this.tokenRepository.findByType(typeCode, undefined);
     } catch (error) {
       throw this.handleError(error, 'getTokensByType');
-    }
-  }
-
-  /**
-   * Generic find-or-create from an integration's token mapping.
-   * Works with any token type (crypto / fiat / stock / …) the
-   * caller passes via tokenTypeId.
-   */
-  async findOrCreateTokenFromIntegration(
-    tokenMapping: {
-      token: {
-        symbol: string;
-        name: string;
-        typeId: string;
-        decimals?: number | null;
-        iconUrl?: string | null;
-        // Structural exchange segment supplied by the provider (IBKR
-        // maps listingExchange → 'US' / 'TO' / 'L'). Must reach
-        // findOrCreateByIdentity so a balance import resolves the same
-        // segmented stock token the tx import does.
-        marketSegment?: string | null;
-        // Accepts both string-encoded JSON and the schema-typed
-        // `TokenMetadata` object — `HoldingSnapshotProjection` passes
-        // through whichever the upstream provider produced.
-        providerMetadata?: string | TokenMetadata;
-      };
-      isNew: boolean;
-      confidence: number;
-    },
-    tokenTypeId: string,
-    transaction?: DatabaseTransaction
-  ): Promise<{ token: Token; wasCreated: boolean }> {
-    try {
-      this.validateNonEmptyString(tokenTypeId, 'tokenTypeId');
-
-      // Delegate to the EVM-aware identity service so the (chain,
-      // contract) tuple drives the lookup. The legacy implementation
-      // resolved by `(symbol, typeId)` only, which collapsed the
-      // user's per-chain USDC holdings into a single token row —
-      // every wallet's USDC holding pointed at whichever USDC
-      // contract was inserted first, breaking downstream tx-import
-      // resolution because chain-specific tx events couldn't find
-      // their per-chain holding.
-      const incomingMetadata = tokenMapping.token.providerMetadata
-        ? typeof tokenMapping.token.providerMetadata === 'string'
-          ? (JSON.parse(tokenMapping.token.providerMetadata) as TokenMetadata)
-          : (tokenMapping.token.providerMetadata as TokenMetadata)
-        : ({} as TokenMetadata);
-
-      const token = await this.tokenIdentityService.findOrCreateByIdentity(
-        {
-          symbol: tokenMapping.token.symbol.toUpperCase(),
-          name: tokenMapping.token.name,
-          typeId: tokenTypeId,
-          decimals: tokenMapping.token.decimals ?? null,
-          iconUrl: tokenMapping.token.iconUrl ?? null,
-          marketSegment: tokenMapping.token.marketSegment ?? undefined,
-          providerMetadata: incomingMetadata,
-        },
-        transaction
-      );
-      this.assertExists(token, 'Failed to find or create token');
-      // findOrCreateByIdentity doesn't expose `wasCreated`. The
-      // wrapper's only consumer (HoldingsSyncHelper) ignores this
-      // flag in practice; defaulting to false keeps the contract.
-      return { token, wasCreated: false };
-    } catch (error) {
-      throw this.handleError(error, 'findOrCreateTokenFromIntegration');
-    }
-  }
-
-  /**
-   * Crypto-only wrapper around findOrCreateTokenFromIntegration for
-   * blockchain/wallet integrations. Validates that the provided
-   * cryptoTokenTypeId resolves to the 'crypto' token type.
-   */
-  async findOrCreateTokenFromIntegrationMapping(
-    tokenMapping: {
-      token: {
-        symbol: string;
-        name: string;
-        typeId: string;
-        decimals?: number | null;
-        iconUrl?: string | null;
-        providerMetadata?: string | TokenMetadata;
-      };
-      isNew: boolean;
-      confidence: number;
-    },
-    cryptoTokenTypeId: string,
-    transaction?: DatabaseTransaction
-  ): Promise<{ token: Token; wasCreated: boolean }> {
-    try {
-      this.validateNonEmptyString(cryptoTokenTypeId, 'cryptoTokenTypeId');
-
-      const tokenType = await this.tokenTypeRepository.findById(cryptoTokenTypeId, transaction);
-      if (!tokenType) {
-        throw new Error(`Token type with ID '${cryptoTokenTypeId}' not found`);
-      }
-      if (tokenType.code !== 'crypto') {
-        throw new Error(
-          `Blockchain tokens must be of type "crypto". Provided type: ${tokenType.code}`
-        );
-      }
-
-      return this.findOrCreateTokenFromIntegration(tokenMapping, cryptoTokenTypeId, transaction);
-    } catch (error) {
-      throw this.handleError(error, 'findOrCreateTokenFromIntegrationMapping');
     }
   }
 

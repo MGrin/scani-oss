@@ -415,30 +415,33 @@ test('every feed table keyed on a user has an index on user_id', async () => {
   });
 });
 
-test("each new foreign key on the evidence tables has a partial index, so a parent's delete does not scan them", async () => {
+// `holding_transactions.input_id` lost its partial index in A2 Task 13: the
+// unique (input_id, external_id) key leads on it and serves the same walk.
+test("each new foreign key on the evidence tables has an index, so a parent's delete does not scan them", async () => {
   await inRollback(async (tx) => {
     const found = await rows<{ indexname: string; tablename: string; indexdef: string }>(
       tx,
       sql`SELECT indexname, tablename, indexdef FROM pg_indexes
           WHERE schemaname = current_schema()
             AND tablename IN ('holding_balance_observations', 'holding_transactions')
-            AND indexname IN ('idx_holding_obs_input_id', 'idx_holding_tx_input_id',
-                              'idx_holding_tx_decision_id', 'idx_holding_tx_execution_price_token_id')
+            AND indexname IN ('idx_holding_obs_input_id', 'idx_holding_tx_decision_id',
+                              'idx_holding_tx_execution_price_token_id', 'holding_tx_input_external_uq')
           ORDER BY indexname`
     );
 
     expect(found.map((r) => [r.indexname, r.tablename])).toEqual([
+      ['holding_tx_input_external_uq', 'holding_transactions'],
       ['idx_holding_obs_input_id', 'holding_balance_observations'],
       ['idx_holding_tx_decision_id', 'holding_transactions'],
       ['idx_holding_tx_execution_price_token_id', 'holding_transactions'],
-      ['idx_holding_tx_input_id', 'holding_transactions'],
     ]);
     for (const { indexname, indexdef } of found) {
-      const column = /\((\w+)\) WHERE \((\w+) IS NOT NULL\)$/.exec(indexdef);
-      expect({ indexname, partialOn: column?.[1] === column?.[2] }).toEqual({
+      const partial = /\((\w+)\) WHERE \((\w+) IS NOT NULL\)$/.exec(indexdef);
+      const leading = /USING btree \((\w+),/.exec(indexdef);
+      expect({
         indexname,
-        partialOn: true,
-      });
+        covers: partial ? partial[1] === partial[2] : leading?.[1] === 'input_id',
+      }).toEqual({ indexname, covers: true });
     }
   });
 });

@@ -7,10 +7,7 @@ import type { TransactionImportJob } from '@scani/jobs';
 import { ProviderError } from '@scani/providers/core/errors';
 import { BullMqEnqueueService, type ProcessorContext, UnrecoverableError } from '@scani/queue';
 import { Container } from 'typedi';
-import {
-  IngestTransactionsProcessor,
-  widenToEarliestWrite,
-} from '../../src/processors/ingest-transactions';
+import { IngestTransactionsProcessor } from '../../src/processors/ingest-transactions';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -118,6 +115,15 @@ describe('IngestTransactionsProcessor error classification', () => {
     expect((err as Error).message).toContain('invalid-date');
   });
 
+  // R57. One external id for two rows is refused the same way on every attempt.
+  test('a batch naming one external id for two rows fails immediately, and says how many', async () => {
+    const detail =
+      '1 external id(s) are each sent for more than one asset or source, by 2 entries in all';
+    const err = await failureOf(new FeedBatchRejected([{ code: 'duplicate-external-id', detail }]));
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect((err as Error).message).toBe(`feed batch rejected: duplicate-external-id (${detail})`);
+  });
+
   test('the pre-existing coordinator bridge still works', async () => {
     const err = await failureOf(
       new TransactionImportUnrecoverableError('No stored credentials', 'no-credentials')
@@ -133,26 +139,6 @@ describe('IngestTransactionsProcessor error classification', () => {
  * yesterday rebuilt 8 days and left the other 192 stale.
  */
 describe('the rebuild after an import reaches the oldest row it wrote', () => {
-  const NOW = new Date('2026-09-30T12:00:00Z');
-  const daysAgo = (n: number) => new Date(NOW.getTime() - n * 86_400_000).toISOString();
-
-  test('a row 200 days back widens an 8-day window past it', () => {
-    expect(widenToEarliestWrite(8, daysAgo(200), NOW)).toBeGreaterThanOrEqual(200);
-  });
-
-  test('an opening balance 547 days back reaches past the 400-day default', () => {
-    expect(widenToEarliestWrite(400, daysAgo(547), NOW)).toBeGreaterThanOrEqual(547);
-  });
-
-  test('control: an import of recent rows keeps the snapshot window, so an hourly sync stays small', () => {
-    expect(widenToEarliestWrite(8, daysAgo(0), NOW)).toBe(8);
-    expect(widenToEarliestWrite(8, null, NOW)).toBe(8);
-  });
-
-  test('the window is capped at the schema maximum', () => {
-    expect(widenToEarliestWrite(8, daysAgo(365 * 200), NOW)).toBe(365 * 100);
-  });
-
   function processorEnqueuing(earliestWrittenAt: string | null) {
     const added: Array<{ requestId: string; lookbackDays: number }> = [];
     Container.set(TransactionImportCoordinator, {

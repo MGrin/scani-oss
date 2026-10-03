@@ -1112,4 +1112,108 @@ describe('FileImportProcessor', () => {
       warnings: [],
     });
   });
+  // SC-1529. An Activity Statement carries no transactions, only what the
+  // account held when the period ended, and the import used to write none of
+  // it: "Completed · Nothing was written" over seven parsed positions.
+  test('an IBKR activity statement writes its positions and its ending cash as statement checkpoints', async () => {
+    const fixture = await seed('C');
+    const [cash] = fixture.tokens;
+    const ticker = symbol('S');
+    const unknown = symbol('U');
+    const { stock, twin } = await getDb().transaction(async (tx) => {
+      const [stockType] = await tx
+        .select()
+        .from(schema.tokenTypes)
+        .where(eq(schema.tokenTypes.code, 'stock'));
+      return {
+        stock: await makeToken(tx, { symbol: ticker, name: 'Stock', typeId: stockType!.id }),
+        // A crypto token with the same ticker, newer, which a symbol-only lookup would take.
+        twin: await makeToken(tx, { symbol: ticker, name: 'Wrapped stock token' }),
+      };
+    });
+    created.tokens.push(stock.id, twin.id);
+    const csv = [
+      'Statement,Header,Field Name,Field Value',
+      'Statement,Data,BrokerName,Interactive Brokers LLC',
+      'Statement,Data,Title,Activity Statement',
+      'Statement,Data,Period,"January 1, 2026 - August 6, 2026"',
+      'Open Positions,Header,DataDiscriminator,Asset Category,Currency,Symbol,Quantity,Mult,Cost Price,Cost Basis,Close Price,Value,Unrealized P/L,Code',
+      `Open Positions,Data,Summary,Stocks,USD,${ticker},10.5,1,100,1050,120,1260,210,`,
+      `Open Positions,Data,Summary,Stocks,USD,${unknown},3,1,10,30,12,36,6,`,
+      'Cash Report,Header,Currency Summary,Currency,Total,Securities,Futures,Month to Date,Year to Date,',
+      'Cash Report,Data,Ending Cash,Base Currency Summary,1234.5,1234.5,0,,,',
+      `Cash Report,Data,Ending Cash,${cash.symbol},1234.5,1234.5,0,,,`,
+    ].join('\n');
+    const periodEnd = new Date('2026-08-06T23:59:59.999Z');
+
+    const { result } = await run(upload(fixture, csv));
+
+    const held = await holdingsOf(fixture.accountId);
+    expect(held.map((h) => [h.tokenId, h.balance]).sort()).toEqual(
+      [
+        [stock.id, '10.5'],
+        [cash.id, '1234.5'],
+      ].sort()
+    );
+    expect(
+      (await observationsOf(fixture.userId))
+        .filter((o) => o.source === 'statement-close')
+        .map((o) => [o.holdingId, o.balance, o.observedAt])
+        .sort()
+    ).toEqual(
+      held.map((h) => [h.id, h.tokenId === stock.id ? '10.5' : '1234.5', periodEnd]).sort()
+    );
+    expect(await ledgerOf(fixture.userId)).toEqual([]);
+    expect(result).toMatchObject({
+      format: 'ib-csv',
+      transactionCount: 0,
+      observationCount: 2,
+      warnings: [`Unknown symbol '${unknown}' — this position was not imported`],
+    });
+    expect(
+      result.holdingsTouched
+        .map((h) => [h.symbol, h.closingBalance, h.balanceFrom, h.transactionCount])
+        .sort()
+    ).toEqual(
+      [
+        [ticker, '10.5', 'statement-close', 0],
+        [cash.symbol, '1234.5', 'statement-close', 0],
+      ].sort()
+    );
+  });
+  // SC-1529, feeds' review: a ticker two catalog listings share is not guessed
+  // between. A wrong listing is a wrong price (SC-1510).
+  test('a ticker two catalog stocks share is skipped as ambiguous, and nothing is written for it', async () => {
+    const fixture = await seed('C');
+    const [cash] = fixture.tokens;
+    const ticker = symbol('S');
+    const listings = await getDb().transaction(async (tx) => {
+      const [stockType] = await tx
+        .select()
+        .from(schema.tokenTypes)
+        .where(eq(schema.tokenTypes.code, 'stock'));
+      return [
+        await makeToken(tx, { symbol: ticker, typeId: stockType!.id, marketSegment: 'XNAS' }),
+        await makeToken(tx, { symbol: ticker, typeId: stockType!.id, marketSegment: 'XTSE' }),
+      ];
+    });
+    created.tokens.push(...listings.map((t) => t.id));
+    const csv = [
+      'Statement,Header,Field Name,Field Value',
+      'Statement,Data,BrokerName,Interactive Brokers LLC',
+      'Statement,Data,Period,"August 6, 2026"',
+      'Open Positions,Header,DataDiscriminator,Asset Category,Currency,Symbol,Quantity,Mult,Cost Price,Cost Basis,Close Price,Value,Unrealized P/L,Code',
+      `Open Positions,Data,Summary,Stocks,USD,${ticker},10.5,1,100,1050,120,1260,210,`,
+      'Cash Report,Header,Currency Summary,Currency,Total,Securities,Futures,Month to Date,Year to Date,',
+      `Cash Report,Data,Ending Cash,${cash.symbol},50,50,0,,,`,
+    ].join('\n');
+
+    const { result } = await run(upload(fixture, csv));
+
+    expect((await holdingsOf(fixture.accountId)).map((h) => h.tokenId)).toEqual([cash.id]);
+    expect(result.warnings).toEqual([
+      `Ambiguous ticker '${ticker}' — more than one listing has it, so this position was not imported`,
+    ]);
+    expect(result.observationCount).toBe(1);
+  });
 });

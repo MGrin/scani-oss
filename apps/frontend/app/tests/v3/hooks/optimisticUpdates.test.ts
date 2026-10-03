@@ -31,6 +31,7 @@ function makeHolding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDe
     isActive: true,
     isHidden: false,
     source: 'manual',
+    refreshable: false,
     ...overrides,
   };
 }

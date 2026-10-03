@@ -2,6 +2,7 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy
 
 import { describe, expect, test } from 'bun:test';
 import { ProviderRegistry } from '@scani/providers/core/registry';
+import { ETHERSCAN_CHAINS } from '@scani/providers/providers/etherscan';
 import { Container } from 'typedi';
 import { WalletDiscoveryService } from '../../../src/services/users/WalletDiscoveryService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
@@ -72,5 +73,39 @@ describe('WalletDiscoveryService.detectWalletChains', () => {
 
     expect(empty.detected).toEqual(broken.detected);
     expect(empty.failures).not.toEqual(broken.failures);
+  });
+});
+
+// The UI catalog and the detection probe set are a second copy of the
+// Etherscan provider's chain list. A chain kept here after the provider drops
+// it is offered in the picker and probed on every import, and fails every
+// time (SC-1524).
+describe('WalletDiscoveryService EVM catalog', () => {
+  const etherscanIds = ETHERSCAN_CHAINS.map((c) => c.chainId).sort((a, b) => a - b);
+  const etherscanCodes = ETHERSCAN_CHAINS.map((c) => c.institutionCode).sort();
+
+  test('lists exactly the chains the Etherscan provider serves', () => {
+    const listed = new WalletDiscoveryService()
+      .getAllSupportedChains()
+      .filter((c) => c.type === 'evm')
+      .map((c) => Number(c.chainId))
+      .sort((a, b) => a - b);
+    expect(listed).toEqual(etherscanIds);
+  });
+
+  test('probes exactly the Etherscan institution codes', async () => {
+    const asked: string[] = [];
+    Container.set(ProviderRegistry, {
+      getAllAddressValidators: () => [],
+      getAddressValidator: (code: string) => {
+        asked.push(code);
+        return null;
+      },
+    });
+    await new WalletDiscoveryService().detectWalletChains(
+      '0x0000000000000000000000000000000000000001'
+    );
+    const nonEvm = new Set(['bitcoin', 'solana', 'tron', 'ton']);
+    expect(asked.filter((c) => !nonEvm.has(c)).sort()).toEqual(etherscanCodes);
   });
 });

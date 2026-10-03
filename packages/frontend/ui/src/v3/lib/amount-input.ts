@@ -29,9 +29,25 @@
  * groups with a space, so a Russian reader's `1,234` is one-point-two-three-
  * four and nothing else, and Spanish groups with `.`, so theirs is the other
  * character. See `couldBeGrouping`.
+ *
+ * **Two inputs are refused outright, and say so** (SC-1527). Both used to come
+ * out as a number nobody typed:
+ *
+ * - **An exponent.** `1e5` stripped its `e` and closed the gap into `15` — a
+ *   rejected character changing the magnitude, which is the one thing this
+ *   module promises never happens. It is refused rather than evaluated: a
+ *   statement never prints one, and the blur echo is not a place to discover
+ *   that a keystroke was read as "times ten to the fifth".
+ * - **More integer digits than any amount has** (`AMOUNT_MAX_INTEGER_DIGITS`).
+ *   A 21-digit balance was stored and priced into a net worth of $162T.
+ *
+ * Either one keeps the text on screen, submits no value, and names itself in
+ * `rejected` so the field can say why it is empty. Digits past the scale are
+ * the third case and are not refused — the value is truncated as before — but
+ * `truncated` says so, so the field can say that too.
  */
 
-import { getFormatLocale } from '@scani/shared';
+import { AMOUNT_MAX_INTEGER_DIGITS, getFormatLocale } from '@scani/shared';
 
 /** Characters that only ever group digits, never separate a decimal: ASCII
  *  space, NBSP, narrow NBSP, thin space, figure space, and the apostrophes
@@ -59,7 +75,13 @@ export interface AmountRules {
    *  which also makes every separator in it grouping. */
   decimalScale?: number;
   allowNegative?: boolean;
+  /** Digits allowed before it. Defaults to `AMOUNT_MAX_INTEGER_DIGITS`, the
+   *  bound the server holds every amount to. */
+  maxIntegerDigits?: number;
 }
+
+/** Why a non-empty input produced no value. */
+export type AmountRejection = 'exponent' | 'tooLarge';
 
 export interface ParsedAmount {
   /** What the field shows: the reader's own separator, kept verbatim. */
@@ -69,11 +91,27 @@ export interface ParsedAmount {
   /** The input was read one of two defensible ways and we picked one. The
    *  caller must surface this; see the note above about `1,234`. */
   ambiguous: boolean;
+  /** Set when the input is refused rather than read — `value` is then `''`
+   *  while `text` is not, and the caller must say why. */
+  rejected: AmountRejection | null;
+  /** Non-zero digits past `decimalScale` were dropped from the value. */
+  truncated: boolean;
   /** A minus was typed into a field that refuses one, and dropped. */
   negativeRefused?: boolean;
 }
 
-const EMPTY: ParsedAmount = { text: '', value: '', ambiguous: false };
+const EMPTY: ParsedAmount = {
+  text: '',
+  value: '',
+  ambiguous: false,
+  rejected: null,
+  truncated: false,
+};
+
+/** A digit, then `e`, then an optional sign and a digit — or the end, so the
+ *  keystroke that starts an exponent is refused as it is typed rather than
+ *  swallowed until the digit after it closes the gap. `12EUR` is not one. */
+const EXPONENT = /\d[eE][+\-\u2212]?(?:\d|$)/;
 
 /**
  * Reads one candidate string — a keystroke's worth of new input, a paste, or a
@@ -90,9 +128,16 @@ export function parseAmountInput(raw: string, rules: AmountRules = {}): ParsedAm
 }
 
 function readAmount(raw: string, rules: AmountRules): ParsedAmount {
-  const { decimalScale = 2, allowNegative = false } = rules;
+  const {
+    decimalScale = 2,
+    allowNegative = false,
+    maxIntegerDigits = AMOUNT_MAX_INTEGER_DIGITS,
+  } = rules;
 
-  const stripped = toAsciiFigures(raw).replace(GROUPING_ONLY, '');
+  const ascii = toAsciiFigures(raw);
+  if (EXPONENT.test(ascii.trim())) return refused(ascii, 'exponent');
+
+  const stripped = ascii.replace(GROUPING_ONLY, '');
   if (stripped === '') return EMPTY;
 
   const negative = allowNegative && MINUS_SIGN.test(stripped);
@@ -103,7 +148,14 @@ function readAmount(raw: string, rules: AmountRules): ParsedAmount {
   if (decimalScale === 0 && isGrouped(body)) {
     const whole = body.replace(/[.,]/g, '');
     const sign = negative ? '-' : '';
-    return { text: `${sign}${whole}`, value: `${sign}${whole}`, ambiguous: false };
+    if (integerDigits(whole) > maxIntegerDigits) return refused(`${sign}${whole}`, 'tooLarge');
+    return {
+      text: `${sign}${whole}`,
+      value: `${sign}${whole}`,
+      ambiguous: false,
+      rejected: null,
+      truncated: false,
+    };
   }
 
   const decimalAt = findDecimalSeparator(body);
@@ -146,14 +198,28 @@ function readAmount(raw: string, rules: AmountRules): ParsedAmount {
   if (whole === '' && (textFraction ?? '') === '') {
     // `,` or `.` alone: not a number yet, but dropping the keystroke would be
     // the exact swallow this module exists to prevent, so it stays on screen.
-    return { text, value: '', ambiguous: false };
+    return { ...EMPTY, text };
   }
+
+  if (integerDigits(whole) > maxIntegerDigits) return refused(text, 'tooLarge');
 
   const value = `${sign}${whole === '' ? '0' : whole}${
     fraction !== null && fraction !== '' ? `.${fraction}` : ''
   }`;
+  // An integer field already says it dropped the fraction, through `ambiguous`.
+  const truncated =
+    decimalScale > 0 && typedFraction !== null && /[1-9]/.test(typedFraction.slice(decimalScale));
 
-  return { text, value, ambiguous };
+  return { text, value, ambiguous, rejected: null, truncated };
+}
+
+function refused(text: string, rejected: AmountRejection): ParsedAmount {
+  return { ...EMPTY, text, rejected };
+}
+
+/** Leading zeros say nothing about magnitude. */
+function integerDigits(whole: string): number {
+  return whole.replace(/^0+/, '').length;
 }
 
 /**

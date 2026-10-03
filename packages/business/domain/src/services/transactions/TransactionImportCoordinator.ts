@@ -23,6 +23,7 @@ import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { ProviderError } from '@scani/providers/core/errors';
 import { type JobNotice, type NoticeInput, toJobNotice } from '@scani/providers/core/types';
+import { ETHERSCAN_CHAINS } from '@scani/providers/providers/etherscan';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import {
@@ -130,36 +131,12 @@ export class TransactionImportUnrecoverableError extends Error {
 }
 
 /**
- * EVM chain id → institution code mapping for the chains the new
- * Etherscan provider claims. Mirrors `ETHERSCAN_CHAINS` in
- * `@scani/providers/providers/etherscan/chains.ts`. A duplicate-of-
- * truth here is awkward but cheap; the only alternative is reaching
- * into the providers package's catalog at runtime, and a small inline
- * map keeps the coordinator decoupled from any one provider's
- * internal data structures.
+ * EVM chain id → institution code for the chains the Etherscan provider
+ * claims, read off its own catalog so the two cannot disagree (SC-1524).
  */
-const EVM_CHAIN_ID_TO_INSTITUTION: Record<string, string> = {
-  '1': 'ethereum',
-  '56': 'bsc',
-  '137': 'polygon',
-  '43114': 'avalanche',
-  '42161': 'arbitrum',
-  '10': 'optimism',
-  '8453': 'base',
-  '250': 'fantom',
-  '25': 'cronos',
-  '42170': 'arbitrum-nova',
-  '324': 'zksync-era',
-  '534352': 'scroll',
-  '59144': 'linea',
-  '81457': 'blast',
-  '5000': 'mantle',
-  '204': 'opbnb',
-  '100': 'gnosis',
-  '42220': 'celo',
-  '1284': 'moonbeam',
-  '1285': 'moonriver',
-};
+const EVM_CHAIN_ID_TO_INSTITUTION: Record<string, string> = Object.fromEntries(
+  ETHERSCAN_CHAINS.map((c) => [String(c.chainId), c.institutionCode])
+);
 
 /**
  * Map a source tag to the institution code the provider registry filter
@@ -403,7 +380,6 @@ export class TransactionImportCoordinator {
         accountId,
         institutionId,
         institutionCode,
-        source,
         since,
         baseCurrency: usdToken,
         resolveCredentials: async (ref) => {

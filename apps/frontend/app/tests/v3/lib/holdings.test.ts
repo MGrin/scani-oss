@@ -35,7 +35,6 @@ import {
   holdingsDebt,
   holdingsValue,
   isStalePricedInTotal,
-  isSynced,
   payoutScheduleLabel,
   stalePricedInTotal,
   stalePriceSearch,
@@ -83,6 +82,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
     isActive: true,
     isHidden: false,
     source: 'import_wallet',
+    refreshable: true,
     ...overrides,
   };
 }
@@ -540,12 +540,6 @@ describe('capability gates', () => {
     expect(supportsApy(holding({ account: { ...holding().account, typeCode: 'savings' } }))).toBe(
       true
     );
-  });
-
-  test('only a holding that came from somewhere can be re-synced', () => {
-    expect(isSynced(holding())).toBe(true);
-    expect(isSynced(holding({ source: 'manual' }))).toBe(false);
-    expect(isSynced(holding({ source: '' }))).toBe(false);
   });
 });
 

@@ -42,7 +42,7 @@ src/
 
 **When to add a new tRPC router vs. extend an existing one** — one router per top-level resource (`accounts`, `holdings`, `vaults`, …). New conceptual entity = new router. New action on an existing entity = new procedure on that router.
 
-**When to call a use-case directly vs. wrap it** — a procedure that's pure CRUD on a single entity goes straight to the appropriate `@scani/domain/services` (e.g. `Container.get(HoldingService).updateHolding(...)`). A procedure that orchestrates multiple services + lifecycle events (creating an account + the institution it belongs to + initial holdings) goes through a `@scani/domain/use-cases` use case (e.g. `CreateHoldingsWithDependenciesUseCase`).
+**When to call a use-case directly vs. wrap it** — a procedure that's pure CRUD on a single entity goes straight to the appropriate `@scani/domain/services` (e.g. `holdings.restore` calls `Container.get(HoldingService).unhideHoldingWithEvent(...)`). A procedure that orchestrates multiple services + lifecycle events (creating an account + the institution it belongs to + initial holdings) goes through a `@scani/domain/use-cases` use case (e.g. `CreateHoldingsWithDependenciesUseCase`).
 
 **Where business logic does NOT belong** — never in the routers themselves. The router validates input via zod, calls a service or use case, emits a `realtime` event, and returns. If you find yourself writing `if`-branches over domain state inside a router, that logic belongs in `@scani/domain`.
 

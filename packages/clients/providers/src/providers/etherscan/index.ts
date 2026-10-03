@@ -55,7 +55,14 @@ import type {
 } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
 import { WALLET_TOKEN_DISCOVERY_CAP } from '../../core/wallet-limits';
+import {
+  balanceMovesWithoutTransfers,
+  type CachedBalance,
+  SETTLE_SECONDS,
+  TokenBalanceCache,
+} from './balance-cache';
 import { ETHERSCAN_CHAINS, findChainConfig } from './chains';
+import { type DiscoveredToken, OVERLAP_BLOCKS, TokenDiscoveryCache } from './discovery-cache';
 import { resolveEnsName } from './ens';
 import { isLikelySpamToken } from './spam-filter';
 
@@ -118,7 +125,9 @@ export class EtherscanProvider
   constructor(
     chains: readonly EvmChainConfig[],
     private readonly limiter: OutflowRateLimiter,
-    private readonly defaultApiKey: string | undefined
+    private readonly defaultApiKey: string | undefined,
+    private readonly balanceCache: TokenBalanceCache = new TokenBalanceCache(null),
+    private readonly discoveryCache: TokenDiscoveryCache = new TokenDiscoveryCache(null)
   ) {
     super(chains);
   }
@@ -682,48 +691,102 @@ export class EtherscanProvider
     };
   }
 
+  /**
+   * The tokens this address has transferred, newest first (SC-1535). With a
+   * remembered set, only the transfers from just before its newest block are
+   * read; anything that makes that unsafe falls through to the whole history.
+   */
+  private async discoverTokens(
+    chain: EvmChainConfig,
+    address: string,
+    apiKey: string
+  ): Promise<{ tokens: DiscoveredToken[]; rows: number; mode: 'full' | 'incremental' } | null> {
+    const key = this.discoveryCache.key(chain.chainId, address);
+    const cached = await this.discoveryCache.read(key);
+    if (cached.entry) {
+      const startBlock = Math.max(0, cached.entry.lastBlock - OVERLAP_BLOCKS);
+      const rows = await this.readTokenTx(chain, address, apiKey, startBlock);
+      // A full page may have cut off transfers between the start block and its last row.
+      if (rows && rows.length < TOKENTX_PAGE_ROWS) {
+        const tokens = mergeDiscovered(cached.entry.tokens, rows);
+        await this.discoveryCache.write(key, {
+          sweptAt: cached.entry.sweptAt,
+          lastBlock: Math.max(cached.entry.lastBlock, newestBlock(rows)),
+          tokens,
+        });
+        return { tokens, rows: rows.length, mode: 'incremental' };
+      }
+    }
+    const rows = await this.readTokenTx(chain, address, apiKey);
+    if (!rows) return null;
+    const tokens = mergeDiscovered([], rows);
+    if (cached.available) {
+      await this.discoveryCache.write(key, {
+        sweptAt: Math.floor(this.discoveryCache.now()),
+        lastBlock: newestBlock(rows),
+        tokens,
+      });
+    }
+    return { tokens, rows: rows.length, mode: 'full' };
+  }
+
+  /**
+   * One page of `tokentx`, newest first, from `startBlock` when given.
+   * `null` when Etherscan did not answer with a list; an address with no
+   * transfers in range is an empty list. Retries transient rate-limit /
+   * upstream errors so a single 429 doesn't blank discovery, which would make
+   * every ERC-20 silently absent from the snapshots.
+   */
+  private async readTokenTx(
+    chain: EvmChainConfig,
+    address: string,
+    apiKey: string,
+    startBlock?: number
+  ): Promise<TokenTxResultRow[] | null> {
+    const url = this.buildUrl(chain.chainId, {
+      module: 'account',
+      action: 'tokentx',
+      address,
+      ...(startBlock === undefined ? {} : { startblock: String(startBlock) }),
+      page: '1',
+      offset: String(TOKENTX_PAGE_ROWS),
+      sort: 'desc',
+      apikey: apiKey,
+    });
+    const data = await withRetry(() => this.callJson<EtherscanResponse<TokenTxResultRow[]>>(url), {
+      attempts: 3,
+      baseDelayMs: 500,
+      maxDelayMs: 4000,
+    });
+    if (!data) return null;
+    if (data.status === '1') return data.result ?? [];
+    if (data.message === 'No transactions found') return [];
+    return null;
+  }
+
   private async fetchErc20Balances(
     chain: EvmChainConfig,
     address: string,
     apiKey: string
   ): Promise<HoldingSnapshot[]> {
-    // Discovery: pull the most recent page of tokentx and dedup
-    // contracts. Etherscan caps at 10,000 rows; descending sort puts
-    // the freshest activity first. Retry transient rate-limit /
-    // upstream-error responses so a single 429 doesn't blank the
-    // whole discovery (which then makes every ERC-20 silently absent
-    // from the snapshots).
-    const discoverUrl = this.buildUrl(chain.chainId, {
-      module: 'account',
-      action: 'tokentx',
-      address,
-      page: '1',
-      offset: '10000',
-      sort: 'desc',
-      apikey: apiKey,
-    });
-    const discoverData = await withRetry(
-      () => this.callJson<EtherscanResponse<TokenTxResultRow[]>>(discoverUrl),
-      { attempts: 3, baseDelayMs: 500, maxDelayMs: 4000 }
-    );
-    if (!discoverData || discoverData.status !== '1') return [];
+    const startedAt = Date.now();
+    const discovered = await this.discoverTokens(chain, address, apiKey);
+    if (!discovered) return [];
+    const uniqueTokens = new Map(discovered.tokens.map((t) => [t.contract, t]));
 
-    const uniqueTokens = new Map<string, { name: string; symbol: string; decimals: number }>();
-    for (const tx of discoverData.result ?? []) {
-      // One balance call per token, all at once below: a wallet that touched
-      // thousands of tokens would otherwise hold the worker for an hour
-      // (SC-1271). Newest first, so the cap keeps the recent ones.
-      if (uniqueTokens.size >= WALLET_TOKEN_DISCOVERY_CAP) break;
-      const contract = tx.contractAddress.toLowerCase();
-      if (uniqueTokens.has(contract)) continue;
-      const info = {
-        name: tx.tokenName,
-        symbol: tx.tokenSymbol,
-        decimals: Number.parseInt(tx.tokenDecimal, 10),
-      };
-      if (isLikelySpamToken(info)) continue;
-      uniqueTokens.set(contract, info);
-    }
+    // A token whose newest transfer is the one its cached balance was read
+    // under has not moved since, so that balance is still the answer (SC-1513).
+    const keyOf = (contract: string) => this.balanceCache.key(chain.chainId, address, contract);
+    const cacheable = [...uniqueTokens].filter(
+      ([, info]) => !balanceMovesWithoutTransfers(info.symbol, info.name)
+    );
+    const discoveryMs = Date.now() - startedAt;
+    const cacheReadStartedAt = Date.now();
+    const cache = await this.balanceCache.read(cacheable.map(([contract]) => keyOf(contract)));
+    const cacheReadMs = Date.now() - cacheReadStartedAt;
+    const settledBefore = Date.now() / 1000 - SETTLE_SECONDS;
+    const toCache: Array<readonly [string, CachedBalance]> = [];
+    const stats = { fromCache: 0, fetched: 0 };
 
     // Per-token current balance. Etherscan's tokenbalance is one call
     // per (contract, address). Each call is wrapped in `withRetry` so
@@ -732,11 +795,29 @@ export class EtherscanProvider
     // snapshot — which used to drop the legitimate USDC for users
     // with many ERC-20s in their tokentx history.
     const tasks = [...uniqueTokens.entries()].map(async ([contract, info]) => {
-      // `null` covers both "unreachable even after retries" and "the endpoint
-      // answered but not with a balance". Either way there is no snapshot to
-      // make: the user's other holdings still resolve, and the next refresh /
-      // cron re-checks this one.
-      const raw = await this.fetchTokenBalanceRaw(chain, contract, address, apiKey);
+      const fingerprint = `${info.newest.blockNumber}:${info.newest.hash}`;
+      const cached = cache.hits.get(keyOf(contract));
+      let raw: Decimal | null;
+      if (cached && cached.fingerprint === fingerprint) {
+        raw = new Decimal(cached.raw);
+        stats.fromCache += 1;
+      } else {
+        // `null` covers both "unreachable even after retries" and "the endpoint
+        // answered but not with a balance". Either way there is no snapshot to
+        // make: the user's other holdings still resolve, and the next refresh /
+        // cron re-checks this one.
+        raw = await this.fetchTokenBalanceRaw(chain, contract, address, apiKey);
+        stats.fetched += 1;
+        const settled = Number(info.newest.timeStamp) < settledBefore;
+        if (
+          raw &&
+          cache.available &&
+          settled &&
+          !balanceMovesWithoutTransfers(info.symbol, info.name)
+        ) {
+          toCache.push([keyOf(contract), { fingerprint, raw: raw.toFixed() }]);
+        }
+      }
       if (!raw || raw.isZero()) return null;
       const balance = raw.div(new Decimal(10).pow(info.decimals));
       const tokenIdentity: Partial<NewToken> = {
@@ -755,7 +836,26 @@ export class EtherscanProvider
       };
       return snapshot;
     });
+    const balancesStartedAt = Date.now();
     const results = await Promise.all(tasks);
+    const balancesMs = Date.now() - balancesStartedAt;
+    await this.balanceCache.write(toCache);
+    this.logger.info(
+      {
+        chain: chain.institutionCode,
+        lookedUp: uniqueTokens.size,
+        fromCache: stats.fromCache,
+        fetched: stats.fetched,
+        cacheAvailable: cache.available,
+        discoveryMode: discovered.mode,
+        discoveryRows: discovered.rows,
+        discoveryMs,
+        cacheReadMs,
+        balancesMs,
+        totalMs: Date.now() - startedAt,
+      },
+      'ERC-20 balance calls'
+    );
     return results.filter((r): r is HoldingSnapshot => r !== null);
   }
 
@@ -814,6 +914,48 @@ export class EtherscanProvider
   }
 }
 
+/** Etherscan's largest `tokentx` page. */
+const TOKENTX_PAGE_ROWS = 10_000;
+
+function newestBlock(rows: readonly TokenTxResultRow[]): number {
+  return rows.reduce((max, tx) => Math.max(max, Number(tx.blockNumber) || 0), 0);
+}
+
+/**
+ * Folds `rows` (newest first) into `known`, keeping each token's newest
+ * transfer. One balance call per token follows, so the set is capped newest
+ * first: a wallet that touched thousands of tokens would otherwise hold the
+ * worker for an hour (SC-1271).
+ */
+function mergeDiscovered(
+  known: readonly DiscoveredToken[],
+  rows: readonly TokenTxResultRow[]
+): DiscoveredToken[] {
+  const byContract = new Map(known.map((t) => [t.contract, t]));
+  const seen = new Set<string>();
+  for (const tx of rows) {
+    const contract = tx.contractAddress.toLowerCase();
+    if (seen.has(contract)) continue;
+    seen.add(contract);
+    const prior = byContract.get(contract);
+    if (prior && Number(prior.newest.blockNumber) > Number(tx.blockNumber)) continue;
+    const info = {
+      name: tx.tokenName,
+      symbol: tx.tokenSymbol,
+      decimals: Number.parseInt(tx.tokenDecimal, 10),
+    };
+    if (isLikelySpamToken(info)) continue;
+    byContract.set(contract, {
+      contract,
+      ...info,
+      newest: { blockNumber: tx.blockNumber, hash: tx.hash, timeStamp: tx.timeStamp },
+    });
+  }
+  return [...byContract.values()]
+    .sort((a, b) => Number(b.newest.blockNumber) - Number(a.newest.blockNumber))
+    .slice(0, WALLET_TOKEN_DISCOVERY_CAP);
+}
+
 export const etherscanFactory: ProviderFactory = async (deps) => {
   // Etherscan V2 free tier: 5 calls/sec across all chains globally.
   const limiter = createOutflowLimiter({
@@ -837,7 +979,13 @@ export const etherscanFactory: ProviderFactory = async (deps) => {
     keyed: Boolean(deps.env.ETHERSCAN_API_KEY),
     degradedBehaviour: 'calls go out unauthenticated, sharing the anonymous free-tier budget',
   });
-  return new EtherscanProvider(ETHERSCAN_CHAINS, registered, deps.env.ETHERSCAN_API_KEY);
+  return new EtherscanProvider(
+    ETHERSCAN_CHAINS,
+    registered,
+    deps.env.ETHERSCAN_API_KEY,
+    new TokenBalanceCache(deps.redis),
+    new TokenDiscoveryCache(deps.redis)
+  );
 };
 
 export { ETHERSCAN_CHAINS, findChainConfig } from './chains';

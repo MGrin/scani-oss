@@ -1,4 +1,32 @@
-import type { ExtractedHolding, ParseResult } from './types';
+import type { ExtractedHolding, ParseResult, StatementPositions } from './types';
+
+const MONTHS = [
+  'january',
+  'february',
+  'march',
+  'april',
+  'may',
+  'june',
+  'july',
+  'august',
+  'september',
+  'october',
+  'november',
+  'december',
+];
+
+/**
+ * The last day a `Period` names ("April 15, 2026", or "January 1, 2026 - March
+ * 31, 2026"), at its final instant: positions are what was held when it ended.
+ */
+function periodEnd(period: string): Date | null {
+  const last = period.split(' - ').at(-1)?.trim() ?? '';
+  const match = /^([A-Za-z]+) (\d{1,2}), (\d{4})$/.exec(last);
+  if (!match) return null;
+  const month = MONTHS.indexOf(match[1]!.toLowerCase());
+  if (month === -1) return null;
+  return new Date(Date.UTC(Number(match[3]), month, Number(match[2]), 23, 59, 59, 999));
+}
 
 /**
  * Parse an Interactive Brokers Activity Statement CSV.
@@ -13,6 +41,7 @@ import type { ExtractedHolding, ParseResult } from './types';
 export function parseIbCsvStatement(content: string): ParseResult {
   const warnings: string[] = [];
   const holdings: ExtractedHolding[] = [];
+  const positions: StatementPositions = { asOf: null, cash: [], securities: [] };
 
   const lines = content
     .split('\n')
@@ -28,6 +57,11 @@ export function parseIbCsvStatement(content: string): ParseResult {
     const section = parts[0];
     const rowType = parts[1];
 
+    if (section === 'Statement' && rowType === 'Data' && parts[2] === 'Period' && parts[3]) {
+      positions.asOf = periodEnd(parts[3]);
+      continue;
+    }
+
     // Capture Open Positions header to know column indices
     if (section === 'Open Positions' && rowType === 'Header') {
       positionHeaders = parts;
@@ -40,6 +74,7 @@ export function parseIbCsvStatement(content: string): ParseResult {
       // Only parse Summary rows (individual positions)
       if (dataDiscriminator !== 'Summary') continue;
 
+      const categoryIdx = positionHeaders.indexOf('Asset Category');
       const symbolIdx = positionHeaders.indexOf('Symbol');
       const quantityIdx = positionHeaders.indexOf('Quantity');
       const currencyIdx = positionHeaders.indexOf('Currency');
@@ -64,6 +99,14 @@ export function parseIbCsvStatement(content: string): ParseResult {
         confidence: 1.0,
         notes: currency ? `${currency} position` : 'Stock position',
       });
+      const category = categoryIdx === -1 ? undefined : parts[categoryIdx];
+      if (category === 'Stocks') {
+        positions.securities.push({ symbol: symbol!, quantity: quantityStr.replace(/,/g, '') });
+      } else {
+        warnings.push(
+          `Open Positions: ${symbol} (${category || 'no asset category'}) is not a stock, so it was not imported`
+        );
+      }
     }
 
     // Parse Cash Report for ending cash balances per currency
@@ -92,6 +135,10 @@ export function parseIbCsvStatement(content: string): ParseResult {
                 confidence: 1.0,
                 notes: `${currencySummary} cash balance`,
               });
+              positions.cash.push({
+                currency: currencySummary,
+                balance: totalStr.replace(/,/g, ''),
+              });
             }
           }
         }
@@ -106,6 +153,7 @@ export function parseIbCsvStatement(content: string): ParseResult {
   return {
     transactions: [],
     holdings,
+    ...(positions.cash.length + positions.securities.length > 0 ? { positions } : {}),
     format: 'ib-csv',
     bankTemplate: 'interactive-brokers',
     warnings,

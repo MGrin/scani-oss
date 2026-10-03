@@ -241,3 +241,43 @@ describe('statementWarnings', () => {
     ]);
   });
 });
+
+// SC-1529: a positions statement anchors what it held, at its period end.
+describe('StatementTransactionIngester — positions', () => {
+  const asOf = new Date('2026-04-15T23:59:59.999Z');
+  const positions = {
+    asOf,
+    cash: [{ currency: 'usd', balance: '10901.116301185' }],
+    securities: [{ symbol: 'aapl', quantity: '10.0545' }],
+  };
+
+  it('turns ending cash into closes and securities into positions', () => {
+    const result = ingest([], { format: 'ib-csv', positions });
+    expect(result.lines).toEqual([]);
+    expect(result.closes).toEqual([{ currency: 'USD', at: asOf, balance: '10901.116301185' }]);
+    expect(result.positions).toEqual([{ symbol: 'AAPL', at: asOf, quantity: '10.0545' }]);
+  });
+
+  it('imports no position from an undated statement, and says so', () => {
+    const result = ingest([], { format: 'ib-csv', positions: { ...positions, asOf: null } });
+    expect(result.closes).toEqual([]);
+    expect(result.positions).toEqual([]);
+    expect(result.warnings).toEqual([
+      'The statement names no period end, so the 2 positions it lists were not imported',
+    ]);
+  });
+
+  it('names an ambiguous ticker as ambiguous, not unknown', () => {
+    const result = ingest([], { format: 'ib-csv', positions });
+    expect(statementWarnings(result, new Set(['AAPL']), new Set(['AAPL']))).toEqual([
+      "Ambiguous ticker 'AAPL' — more than one listing has it, so this position was not imported",
+    ]);
+  });
+
+  it('warns once for each position whose symbol is unknown', () => {
+    const result = ingest([], { format: 'ib-csv', positions });
+    expect(statementWarnings(result, new Set(['AAPL']))).toEqual([
+      "Unknown symbol 'AAPL' — this position was not imported",
+    ]);
+  });
+});

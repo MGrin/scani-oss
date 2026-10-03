@@ -22,6 +22,10 @@ export const USER_JOB_FAILURE_REASONS = [
   /** Classified by-design failure (bad credentials, unsupported file) —
    *  BullMQ's `UnrecoverableError`. Retrying changes nothing on its own. */
   'unrecoverable',
+  /** Stopped early because what it reads from could not be reached — every
+   *  chain a wallet import probed was down or rate-limited (SC-1527). Spending
+   *  the attempts against the outage would not help; a retry later can. */
+  'source_unavailable',
   /** The mirror row was written but the job never reached the queue. It did not
    *  run, and nothing it would have touched was touched. */
   'never_delivered',
@@ -86,6 +90,8 @@ type JobFailureNaming =
   | { code: 'neverDelivered' }
   /** `UnrecoverableError` — another attempt on its own changes nothing. */
   | { code: 'unrecoverable' }
+  /** Stopped because a source was unreachable — try again later. */
+  | { code: 'sourceUnavailable' }
   /** Dead after more than one attempt, all of which failed. */
   | { code: 'exhausted'; attemptsAllowed: number }
   /** Dead, and only ever entitled to the one attempt. */
@@ -104,7 +110,8 @@ export type JobFailureDescription = JobFailureNaming & {
    *  single question the old red chip could not answer. */
   willRetry: boolean;
   /** Whether re-running it is a sensible thing to offer at all. False for a
-   *  cancellation (the user meant it) — separate from whether the queue still
+   *  cancellation (the user meant it) and for an unrecoverable failure (the
+   *  worker said another attempt will not help) — separate from whether the queue still
    *  holds the payload, which only the server can answer. */
   retryWorthOffering: boolean;
 };
@@ -126,8 +133,12 @@ export function describeJobFailure(job: JobFailureFacts): JobFailureDescription 
         return { code: 'cancelled', willRetry: false, retryWorthOffering: false };
       case 'never_delivered':
         return { code: 'neverDelivered', willRetry: false, retryWorthOffering: true };
+      // The worker's own verdict is that another attempt changes nothing, so
+      // offering one contradicts the chip beside it (SC-1527).
       case 'unrecoverable':
-        return { code: 'unrecoverable', willRetry: false, retryWorthOffering: true };
+        return { code: 'unrecoverable', willRetry: false, retryWorthOffering: false };
+      case 'source_unavailable':
+        return { code: 'sourceUnavailable', willRetry: false, retryWorthOffering: true };
       default:
         return attemptsAllowed > 1
           ? { code: 'exhausted', attemptsAllowed, willRetry: false, retryWorthOffering: true }

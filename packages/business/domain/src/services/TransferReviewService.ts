@@ -41,6 +41,7 @@ import {
 import Decimal from 'decimal.js';
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
+import { movedBalance } from '../lib/balances/moved-balance';
 import {
   arrivalMetadata,
   readAdoptedBalanceEdit,
@@ -76,6 +77,7 @@ import {
 } from '../lib/transfer-unlink';
 import { upstreamEventKey } from '../lib/upstream-event';
 import { HoldingCoverageRepository } from '../repositories/HoldingCoverageRepository';
+import { HoldingRepository } from '../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../repositories/HoldingTransactionRepository';
 // A service reaching for a use case, which nothing else in this layer does.
 // The alternative was a second writer of `holdings.balance` for the undo in
@@ -89,10 +91,10 @@ import {
   BalanceSyncOwnershipService,
   type SyncOwnableAccount,
 } from './accounts/BalanceSyncOwnershipService';
-import { HOLDING_OPEN_OBSERVATION_SOURCE, HoldingService } from './holdings/HoldingService';
 import { manualEditFeeExternalId } from './holdings/ManualBalanceEditService';
 import { PriceGraphService } from './pricing/PriceGraphService';
-import { adoptTypedDeposit, anchorIsUnobserved, openingOf } from './transfer-arrival';
+import { TransferDestinationOpener } from './TransferDestinationOpener';
+import { adoptTypedDeposit, anchorIsUnobserved } from './transfer-arrival';
 
 /**
  * Why an answer was refused, in terms the API can turn into the right status.
@@ -366,6 +368,11 @@ export class MalformedCursorError extends Error {
 @Service()
 export class TransferReviewService {
   private readonly priceGraphService = Container.get(PriceGraphService);
+  private readonly ledger = Container.get(HoldingTransactionRepository);
+  private readonly holdings = Container.get(HoldingRepository);
+  private readonly coverage = Container.get(HoldingCoverageRepository);
+  private readonly syncOwnership = Container.get(BalanceSyncOwnershipService);
+  private readonly opener = Container.get(TransferDestinationOpener);
 
   /**
    * How many outflows are waiting, and when the queue last gained one.
@@ -776,7 +783,7 @@ export class TransferReviewService {
         groupId = crypto.randomUUID();
         const also = opts.alsoMatchTransactionIds ?? [];
         if (also.length > 0) {
-          const refused = await claimInflowSet(
+          const refused = await this.claimInflowSet(
             tx,
             userId,
             outflow,
@@ -785,14 +792,20 @@ export class TransferReviewService {
           );
           if (refused) return refused;
         } else {
-          const linked = await claimInflow(tx, userId, outflow, opts.matchTransactionId, groupId);
+          const linked = await this.claimInflow(
+            tx,
+            userId,
+            outflow,
+            opts.matchTransactionId,
+            groupId
+          );
           if (!linked) return { ok: false, reason: 'partner_gone' } as const;
         }
       }
 
       if (decision === 'internal' && opts.destination) {
         groupId = crypto.randomUUID();
-        const written = await writeInflow(tx, userId, outflow, {
+        const written = await this.writeInflow(tx, userId, outflow, {
           destination: opts.destination,
           observedEvent: opts.observedEvent,
           receivedQuantity: opts.receivedQuantity,
@@ -817,7 +830,7 @@ export class TransferReviewService {
           updatedAt: sql`now()`,
         })
         .where(eq(schema.holdingTransactions.id, outflow.id));
-      if (groupId) await relabelLegs(tx, userId, [outflow.id]);
+      if (groupId) await this.ledger.relabelEntries(userId, [outflow.id], tx);
 
       return { ok: true } as const;
     };
@@ -964,6 +977,18 @@ export class TransferReviewService {
       else byAccount.set(holding.accountId, [holding]);
     }
 
+    // Asked through the service the WRITE path asks, once for the whole list,
+    // rather than reconstructed here from `user_wallets` and
+    // `user_integration_credentials` (SC-856). A query of this method's own
+    // would be a second implementation of "does a sync own this account", and
+    // the whole value of this field is that the sentence over the button and
+    // the write agree.
+    const syncSources = await this.syncOwnership.resolveSyncSources(
+      userId,
+      accounts.map((account) => ({ ...account, id: account.accountId })),
+      database
+    );
+
     const destinations: TransferDestination[] = [];
     for (const account of accounts) {
       // NO ENTITY NARROWING HERE (SC-1151, reversing the offer half of SC-859).
@@ -980,16 +1005,7 @@ export class TransferReviewService {
       const onSourceChain = Boolean(
         sourceChainKey && account.chainKey && account.chainKey === sourceChainKey
       );
-      // Asked through the service the WRITE path asks, once per account, rather
-      // than reconstructed in bulk from `user_wallets` and
-      // `user_integration_credentials` (SC-856). A bulk query would be a second
-      // implementation of "does a sync own this account", and the whole value
-      // of this field is that the sentence over the button and the write agree.
-      // The cost is bounded by the account count, and this is a picker.
-      const accountSyncSource = await Container.get(BalanceSyncOwnershipService).resolveSyncSource(
-        { ...account, id: account.accountId },
-        database
-      );
+      const accountSyncSource = syncSources.get(account.accountId) ?? null;
       const existing = byAccount.get(account.accountId) ?? [];
       if (existing.length === 0) {
         if (account.accountId === sourceAccountId) continue;
@@ -1000,7 +1016,7 @@ export class TransferReviewService {
           institutionName: account.institutionName,
           source: null,
           balance: null,
-          // `openingOf`: an unsynced account gets the row AT the moved amount,
+          // `TransferDestinationOpener`: an unsynced account gets the row AT the moved amount,
           // a sync-owned one gets it at zero for the sync to restate.
           movesBalance: accountSyncSource === null,
           relevance: onSourceChain ? 'same_network' : 'other',
@@ -1072,7 +1088,13 @@ export class TransferReviewService {
       let groupId: string | null = null;
       if (paired?.matchTransactionId) {
         groupId = crypto.randomUUID();
-        const linked = await claimInflow(tx, userId, outflow, paired.matchTransactionId, groupId);
+        const linked = await this.claimInflow(
+          tx,
+          userId,
+          outflow,
+          paired.matchTransactionId,
+          groupId
+        );
         if (!linked) return { ok: false, reason: 'partner_gone' } as const;
       }
       // The share that moved to a holding the user maintains by hand, and the
@@ -1082,7 +1104,7 @@ export class TransferReviewService {
       // trade an overstated gain for an overstated balance.
       if (internal?.destination) {
         groupId = crypto.randomUUID();
-        const written = await writeInflow(tx, userId, outflow, {
+        const written = await this.writeInflow(tx, userId, outflow, {
           destination: internal.destination,
           quantity: new Decimal(internal.quantity).abs(),
           groupId,
@@ -1101,7 +1123,7 @@ export class TransferReviewService {
           updatedAt: sql`now()`,
         })
         .where(eq(schema.holdingTransactions.id, outflow.id));
-      if (groupId) await relabelLegs(tx, userId, [outflow.id]);
+      if (groupId) await this.ledger.relabelEntries(userId, [outflow.id], tx);
 
       return { ok: true } as const;
     });
@@ -1314,21 +1336,7 @@ export class TransferReviewService {
       );
 
       if (row.transferGroupId) {
-        const unpaired = await tx
-          .update(schema.holdingTransactions)
-          .set({ transferGroupId: null, updatedAt: sql`now()` })
-          .where(
-            and(
-              eq(schema.holdingTransactions.userId, userId),
-              eq(schema.holdingTransactions.transferGroupId, row.transferGroupId)
-            )
-          )
-          .returning({ id: schema.holdingTransactions.id });
-        await relabelLegs(
-          tx,
-          userId,
-          unpaired.map((r) => r.id)
-        );
+        await this.ledger.releaseTransferGroup(userId, row.transferGroupId, tx);
       }
 
       return true;
@@ -1501,7 +1509,7 @@ export class TransferReviewService {
 
       await updateHolding.execute(
         leg.holdingId,
-        { balance: new Decimal(holding.balance).sub(leg.quantity).toString() },
+        { balance: movedBalance(holding.balance, new Decimal(leg.quantity).neg()) },
         userId,
         tx
       );
@@ -1983,19 +1991,29 @@ export class TransferReviewService {
       }
       const adoptedEdit = readAdoptedBalanceEdit(row.sourceMetadata);
       if (adoptedEdit) {
-        await tx.insert(schema.holdingTransactions).values({
+        const putBack = await tx
+          .insert(schema.holdingTransactions)
+          .values({
+            userId,
+            holdingId: adoptedEdit.holdingId,
+            tokenId: adoptedEdit.tokenId,
+            kind: adoptedEdit.kind as HoldingTransaction['kind'],
+            quantity: adoptedEdit.quantity,
+            occurredAt: new Date(adoptedEdit.occurredAt),
+            source: adoptedEdit.source,
+            externalId: adoptedEdit.externalId,
+            counterparty: adoptedEdit.counterparty,
+            description: adoptedEdit.description,
+            sourceMetadata: adoptedEdit.sourceMetadata as Record<string, unknown>,
+          })
+          .returning({ id: schema.holdingTransactions.id });
+        // The adoption kept the row's facts and not its labels, so it is
+        // labelled as a row just written is (D-5).
+        await this.ledger.relabelEntries(
           userId,
-          holdingId: adoptedEdit.holdingId,
-          tokenId: adoptedEdit.tokenId,
-          kind: adoptedEdit.kind as HoldingTransaction['kind'],
-          quantity: adoptedEdit.quantity,
-          occurredAt: new Date(adoptedEdit.occurredAt),
-          source: adoptedEdit.source,
-          externalId: adoptedEdit.externalId,
-          counterparty: adoptedEdit.counterparty,
-          description: adoptedEdit.description,
-          sourceMetadata: adoptedEdit.sourceMetadata as Record<string, unknown>,
-        });
+          putBack.map((r) => r.id),
+          tx
+        );
       }
     }
     // After the delete loop, so `holdingIsUntouched` above judges the holding
@@ -2010,7 +2028,7 @@ export class TransferReviewService {
       if (!holding) continue;
       await Container.get(UpdateHoldingUseCase).execute(
         entry.holdingId,
-        { balance: new Decimal(holding.balance).sub(entry.quantity).toString() },
+        { balance: movedBalance(holding.balance, new Decimal(entry.quantity).neg()) },
         userId,
         tx
       );
@@ -2108,21 +2126,7 @@ export class TransferReviewService {
       const refusal = unlinkPairRefusal(legs);
       if (refusal) return { ok: false, reason: refusal.reason } as const;
 
-      const unpaired = await tx
-        .update(schema.holdingTransactions)
-        .set({ transferGroupId: null, updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(schema.holdingTransactions.userId, userId),
-            eq(schema.holdingTransactions.transferGroupId, row.transferGroupId)
-          )
-        )
-        .returning({ id: schema.holdingTransactions.id });
-      await relabelLegs(
-        tx,
-        userId,
-        unpaired.map((r) => r.id)
-      );
+      await this.ledger.releaseTransferGroup(userId, row.transferGroupId, tx);
 
       return { ok: true, unlinked: legs.map((leg) => leg.id) } as const;
     });
@@ -2186,21 +2190,7 @@ export class TransferReviewService {
         await this.clearAnswer(tx, userId, leg.id, 'repair');
       }
 
-      const unpaired = await tx
-        .update(schema.holdingTransactions)
-        .set({ transferGroupId: null, updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(schema.holdingTransactions.userId, userId),
-            eq(schema.holdingTransactions.transferGroupId, row.transferGroupId)
-          )
-        )
-        .returning({ id: schema.holdingTransactions.id });
-      await relabelLegs(
-        tx,
-        userId,
-        unpaired.map((r) => r.id)
-      );
+      await this.ledger.releaseTransferGroup(userId, row.transferGroupId, tx);
 
       return {
         ok: true,
@@ -2528,139 +2518,367 @@ export class TransferReviewService {
       .limit(1);
     return row?.symbol ?? '';
   }
-}
 
-/**
- * Claim an existing inflow as this outflow's partner — the `paired` answer's
- * write, shared by `resolve` and `resolveSplit`.
- *
- * The partner must still be unclaimed, must be an inflow belonging to the same
- * user, and must be able to be the same money — the same token row, or the same
- * asset on another chain (SC-336), on exactly the rule the matcher uses.
- * Re-checked here rather than trusted from the listing: the candidate list the
- * user chose from may be minutes old, and in between a nightly run can have
- * paired that very inflow to something else.
- *
- * The identity check is not a formality about a list the caller already saw. It
- * is the one place a `paired` answer is written, so dropping it in favour of
- * "the client sent an id" would make the API the way to merge the lot chains of
- * two unrelated assets — the exact damage the matcher's tolerances exist to
- * avoid, arriving through the door marked "a person decided".
- */
-async function claimInflow(
-  tx: DatabaseTransaction,
-  userId: string,
-  outflow: { id: string },
-  matchTransactionId: string,
-  groupId: string
-): Promise<boolean> {
-  const [inflow] = await tx
-    .select()
-    .from(schema.holdingTransactions)
-    .where(
-      and(
-        eq(schema.holdingTransactions.id, matchTransactionId),
-        eq(schema.holdingTransactions.userId, userId),
-        inArray(schema.holdingTransactions.kind, [...INFLOW_KINDS]),
-        isNull(schema.holdingTransactions.transferGroupId)
-      )
-    )
-    .limit(1);
-  if (!inflow) return false;
-
-  const [outflowLeg, inflowLeg] = await Promise.all([
-    legFacts(tx, outflow.id),
-    legFacts(tx, inflow.id),
-  ]);
-  if (!outflowLeg || !inflowLeg) return false;
-  if (reviewPairClass(outflowLeg, inflowLeg) === null) return false;
-
-  await tx
-    .update(schema.holdingTransactions)
-    .set({ transferGroupId: groupId, updatedAt: sql`now()` })
-    .where(eq(schema.holdingTransactions.id, inflow.id));
-  await relabelLegs(tx, userId, [inflow.id]);
-  return true;
-}
-
-/**
- * Re-labels the rows whose transfer group a queue write just set or cleared,
- * since D-5 maps a paired leg to `transfer_out`/`transfer_in` (A2 D-5).
- */
-function relabelLegs(
-  tx: DatabaseTransaction,
-  userId: string,
-  ids: readonly string[]
-): Promise<number> {
-  return Container.get(HoldingTransactionRepository).relabelEntries(userId, ids, tx);
-}
-
-/**
- * Claim SEVERAL inflows as one outflow's arrival (SC-1365) — the money landed
- * in parts. Null on success; otherwise the refusal to return, and the caller's
- * transaction rolls back whatever was claimed before it.
- *
- * Each part passes `claimInflow`'s own checks. Beyond them: no part may
- * predate the withdrawal, because the cost walk hands buffered lots only to
- * arrivals it reaches after the departure; and the parts must total the
- * withdrawal within the net the candidate list is drawn from, since a
- * combination is only ever offered inside it.
- */
-async function claimInflowSet(
-  tx: DatabaseTransaction,
-  userId: string,
-  outflow: HoldingTransaction,
-  inflowIds: readonly string[],
-  groupId: string
-): Promise<Extract<TransferResolveResult, { ok: false }> | null> {
-  if (new Set(inflowIds).size !== inflowIds.length || inflowIds.length > MAX_COMBINED_ARRIVALS) {
-    return { ok: false, reason: 'partner_gone' };
-  }
-  const parts = await tx
-    .select({
-      quantity: schema.holdingTransactions.quantity,
-      occurredAt: schema.holdingTransactions.occurredAt,
-    })
-    .from(schema.holdingTransactions)
-    .where(
-      and(
-        inArray(schema.holdingTransactions.id, [...inflowIds]),
-        eq(schema.holdingTransactions.userId, userId)
-      )
-    );
-  if (parts.length !== inflowIds.length) return { ok: false, reason: 'partner_gone' };
-  if (parts.some((p) => p.occurredAt.getTime() < outflow.occurredAt.getTime())) {
-    return { ok: false, reason: 'partner_gone' };
-  }
-  const expected = new Decimal(outflow.quantity).abs();
-  const total = parts.reduce((sum, p) => sum.add(new Decimal(p.quantity).abs()), new Decimal(0));
-  if (total.minus(expected).abs().gt(expected.mul(CANDIDATE_QTY_EPSILON))) {
-    return { ok: false, reason: 'sum', expected: expected.toString() };
-  }
-  for (const id of inflowIds) {
-    if (!(await claimInflow(tx, userId, outflow, id, groupId))) {
-      // A refusal is RETURNED, and the transaction around it commits — so the
-      // parts claimed before this one are released here, or they would stay
-      // linked to an outflow that was never answered.
-      const released = await tx
-        .update(schema.holdingTransactions)
-        .set({ transferGroupId: null, updatedAt: sql`now()` })
-        .where(
-          and(
-            eq(schema.holdingTransactions.userId, userId),
-            eq(schema.holdingTransactions.transferGroupId, groupId)
-          )
+  /**
+   * Claim an existing inflow as this outflow's partner — the `paired` answer's
+   * write, shared by `resolve` and `resolveSplit`.
+   *
+   * The partner must still be unclaimed, must be an inflow belonging to the same
+   * user, and must be able to be the same money — the same token row, or the same
+   * asset on another chain (SC-336), on exactly the rule the matcher uses.
+   * Re-checked here rather than trusted from the listing: the candidate list the
+   * user chose from may be minutes old, and in between a nightly run can have
+   * paired that very inflow to something else.
+   *
+   * The identity check is not a formality about a list the caller already saw. It
+   * is the one place a `paired` answer is written, so dropping it in favour of
+   * "the client sent an id" would make the API the way to merge the lot chains of
+   * two unrelated assets — the exact damage the matcher's tolerances exist to
+   * avoid, arriving through the door marked "a person decided".
+   */
+  private async claimInflow(
+    tx: DatabaseTransaction,
+    userId: string,
+    outflow: { id: string },
+    matchTransactionId: string,
+    groupId: string
+  ): Promise<boolean> {
+    const [inflow] = await tx
+      .select()
+      .from(schema.holdingTransactions)
+      .where(
+        and(
+          eq(schema.holdingTransactions.id, matchTransactionId),
+          eq(schema.holdingTransactions.userId, userId),
+          inArray(schema.holdingTransactions.kind, [...INFLOW_KINDS]),
+          isNull(schema.holdingTransactions.transferGroupId)
         )
-        .returning({ id: schema.holdingTransactions.id });
-      await relabelLegs(
-        tx,
-        userId,
-        released.map((r) => r.id)
-      );
+      )
+      .limit(1);
+    if (!inflow) return false;
+
+    const [outflowLeg, inflowLeg] = await Promise.all([
+      legFacts(tx, outflow.id),
+      legFacts(tx, inflow.id),
+    ]);
+    if (!outflowLeg || !inflowLeg) return false;
+    if (reviewPairClass(outflowLeg, inflowLeg) === null) return false;
+
+    await tx
+      .update(schema.holdingTransactions)
+      .set({ transferGroupId: groupId, updatedAt: sql`now()` })
+      .where(eq(schema.holdingTransactions.id, inflow.id));
+    await this.ledger.relabelEntries(userId, [inflow.id], tx);
+    return true;
+  }
+
+  /**
+   * Claim SEVERAL inflows as one outflow's arrival (SC-1365) — the money landed
+   * in parts. Null on success; otherwise the refusal to return, and the caller's
+   * transaction rolls back whatever was claimed before it.
+   *
+   * Each part passes `claimInflow`'s own checks. Beyond them: no part may
+   * predate the withdrawal, because the cost walk hands buffered lots only to
+   * arrivals it reaches after the departure; and the parts must total the
+   * withdrawal within the net the candidate list is drawn from, since a
+   * combination is only ever offered inside it.
+   */
+  private async claimInflowSet(
+    tx: DatabaseTransaction,
+    userId: string,
+    outflow: HoldingTransaction,
+    inflowIds: readonly string[],
+    groupId: string
+  ): Promise<Extract<TransferResolveResult, { ok: false }> | null> {
+    if (new Set(inflowIds).size !== inflowIds.length || inflowIds.length > MAX_COMBINED_ARRIVALS) {
       return { ok: false, reason: 'partner_gone' };
     }
+    const parts = await tx
+      .select({
+        quantity: schema.holdingTransactions.quantity,
+        occurredAt: schema.holdingTransactions.occurredAt,
+      })
+      .from(schema.holdingTransactions)
+      .where(
+        and(
+          inArray(schema.holdingTransactions.id, [...inflowIds]),
+          eq(schema.holdingTransactions.userId, userId)
+        )
+      );
+    if (parts.length !== inflowIds.length) return { ok: false, reason: 'partner_gone' };
+    if (parts.some((p) => p.occurredAt.getTime() < outflow.occurredAt.getTime())) {
+      return { ok: false, reason: 'partner_gone' };
+    }
+    const expected = new Decimal(outflow.quantity).abs();
+    const total = parts.reduce((sum, p) => sum.add(new Decimal(p.quantity).abs()), new Decimal(0));
+    if (total.minus(expected).abs().gt(expected.mul(CANDIDATE_QTY_EPSILON))) {
+      return { ok: false, reason: 'sum', expected: expected.toString() };
+    }
+    for (const id of inflowIds) {
+      if (!(await this.claimInflow(tx, userId, outflow, id, groupId))) {
+        // A refusal is RETURNED, and the transaction around it commits — so the
+        // parts claimed before this one are released here, or they would stay
+        // linked to an outflow that was never answered.
+        await this.ledger.releaseTransferGroup(userId, groupId, tx);
+        return { ok: false, reason: 'partner_gone' };
+      }
+    }
+    return null;
   }
-  return null;
+
+  private async writeInflow(
+    tx: DatabaseTransaction,
+    userId: string,
+    outflow: HoldingTransaction,
+    opts: {
+      destination: TransferDestinationRef;
+      quantity: Decimal;
+      groupId: string;
+      observedEvent?: boolean;
+      receivedQuantity?: string;
+    }
+  ): Promise<InflowWriteResult> {
+    const { destination, groupId } = opts;
+    let quantity = opts.quantity;
+    let arrivalTokenId = outflow.tokenId;
+    if (opts.receivedQuantity && (!opts.observedEvent || !destination.holdingId))
+      return { ok: false, reason: 'destination_gone' };
+
+    const [account] = await tx
+      .select({
+        id: schema.accounts.id,
+        userId: schema.accounts.userId,
+        institutionId: schema.accounts.institutionId,
+        metadata: schema.accounts.metadata,
+        isActive: schema.accounts.isActive,
+      })
+      .from(schema.accounts)
+      .where(and(eq(schema.accounts.id, destination.accountId), eq(schema.accounts.userId, userId)))
+      .limit(1);
+    if (!account) return { ok: false, reason: 'destination_gone' };
+
+    let holdingId = destination.holdingId;
+    // Recorded on the arrival row below, on EVERY branch. See
+    // `created-destination.ts`: `false` is written as deliberately as `true`,
+    // because a reopen has to tell "this answer did not create it" from "nobody
+    // said", and only one of those may delete a holding (SC-631).
+    let createdDestination = false;
+    // The destination this answer REUSED, or null where it opened one. Only a
+    // reused row can have an anchor to move: a created one was opened at the
+    // figure the opener chose, which already accounts for the arrival wherever
+    // it is the user's number to state (SC-856).
+    let reused: { id: string; source: string; balance: string } | null = null;
+    if (holdingId) {
+      const [holding] = await tx
+        .select({
+          id: schema.holdings.id,
+          tokenId: schema.holdings.tokenId,
+          source: schema.holdings.source,
+          balance: schema.holdings.balance,
+        })
+        .from(schema.holdings)
+        .where(
+          and(
+            eq(schema.holdings.id, holdingId),
+            eq(schema.holdings.userId, userId),
+            eq(schema.holdings.accountId, destination.accountId),
+            opts.receivedQuantity ? undefined : eq(schema.holdings.tokenId, outflow.tokenId),
+            // Sending a transfer to the holding it left is not a destination,
+            // it is a no-op that would leave the lots parked in a group with
+            // both legs on one holding.
+            ne(schema.holdings.id, outflow.holdingId)
+          )
+        )
+        .limit(1);
+      if (!holding) return { ok: false, reason: 'destination_gone' };
+      if (opts.receivedQuantity) {
+        const received = new Decimal(opts.receivedQuantity);
+        if (!received.isFinite() || !received.gt(0) || holding.tokenId === outflow.tokenId)
+          return { ok: false, reason: 'destination_gone' };
+        quantity = received;
+        arrivalTokenId = holding.tokenId;
+      }
+      reused = holding;
+    } else {
+      // "This account tracks no position in that token yet." Between the picker
+      // rendering and this write, one may have appeared — an import ran, another
+      // tab created it — and using it is the honest resolution of that race:
+      // the reader chose the account, and a second holding for the same token in
+      // it would be a duplicate nobody asked for.
+      const [existing] = await tx
+        .select({
+          id: schema.holdings.id,
+          source: schema.holdings.source,
+          balance: schema.holdings.balance,
+        })
+        .from(schema.holdings)
+        .where(
+          and(
+            eq(schema.holdings.userId, userId),
+            eq(schema.holdings.accountId, destination.accountId),
+            eq(schema.holdings.tokenId, outflow.tokenId),
+            ne(schema.holdings.id, outflow.holdingId)
+          )
+        )
+        .limit(1);
+      if (existing) {
+        holdingId = existing.id;
+        reused = existing;
+      } else {
+        holdingId = await this.opener.open(
+          { userId, account, tokenId: outflow.tokenId, quantity, at: outflow.occurredAt },
+          tx
+        );
+        createdDestination = true;
+      }
+    }
+
+    // **A deposit the person already typed is the same money** (SC-1474). Where
+    // they recorded the arrival themselves on this holding, writing another one
+    // beside it counts the move twice. The answer takes their row over instead:
+    // it is removed here and kept whole on the arrival, so a reopen puts it back.
+    // The balance already includes it, so the anchor does not move either.
+    const adopted =
+      reused && !opts.observedEvent
+        ? await adoptTypedDeposit(
+            tx,
+            userId,
+            reused.id,
+            arrivalTokenId,
+            quantity,
+            outflow.occurredAt
+          )
+        : null;
+
+    const movedAnchor =
+      reused && !opts.observedEvent && !adopted
+        ? await this.moveUnobservedAnchor(tx, userId, account, reused, quantity)
+        : false;
+
+    // The arrival is dated at the withdrawal, which can predate a reused
+    // destination's start (D-6). Lowered before the INSERT, so where the anchor
+    // did not move this row lock comes before the arrival's foreign-key share
+    // lock rather than upgrading it (R79).
+    if (reused) await this.holdings.lowerStartsAt(userId, reused.id, outflow.occurredAt, tx);
+
+    const arrival = await tx
+      .insert(schema.holdingTransactions)
+      .values({
+        userId,
+        holdingId,
+        tokenId: arrivalTokenId,
+        kind: CREATED_INFLOW_KIND,
+        quantity: quantity.toFixed(),
+        occurredAt: outflow.occurredAt,
+        source: TRANSFER_REVIEW_CREATED_SOURCE,
+        externalId: outflow.id,
+        transferGroupId: groupId,
+        counterparty: outflow.counterparty,
+        description: 'Arrival you recorded when reviewing the transfer it came from',
+        sourceMetadata: arrivalMetadata({
+          outflowTransactionId: outflow.id,
+          createdDestination,
+          movedDestinationAnchor: movedAnchor,
+          outflowAt: outflow.occurredAt,
+          adoptedBalanceEdit: adopted ?? undefined,
+        }),
+        // A person's answer, not a feed's row (D-5).
+        inputId: null,
+      })
+      // Re-answering after a reopen deletes the previous row first, so a
+      // conflict here means two writers for one question. The later one wins on
+      // the fields that can differ — the amount, when a split was re-divided.
+      .onConflictDoUpdate({
+        target: [
+          schema.holdingTransactions.holdingId,
+          schema.holdingTransactions.source,
+          schema.holdingTransactions.externalId,
+        ],
+        // `source_metadata` is deliberately NOT in this set. On a conflict the
+        // destination necessarily exists NOW, so recomputing the marker here
+        // would write `false` over the `true` left by the write that created
+        // it, and the undo would then strand the holding this answer opened.
+        // The FIRST write is the one that describes what the answer did.
+        set: {
+          quantity: quantity.toFixed(),
+          occurredAt: outflow.occurredAt,
+          transferGroupId: groupId,
+          updatedAt: sql`now()`,
+        },
+      })
+      .returning({ id: schema.holdingTransactions.id });
+    // The row was inserted, or updated on its conflict, just above, so this
+    // transaction holds it while it is re-labelled.
+    await this.ledger.relabelEntries(
+      userId,
+      arrival.map((r) => r.id),
+      tx
+    );
+
+    // This is the one ledger write in the codebase that doesn't go through
+    // `HoldingTransactionRepository.bulkUpsert`, so it states the coverage
+    // bound itself. An arrival recorded here can predate everything else on
+    // a freshly created destination holding (SC-307).
+    await this.coverage.syncTxBoundsFromLedger([holdingId], tx);
+
+    return { ok: true };
+  }
+
+  /**
+   * The same question with the account half still to resolve — what the WRITE
+   * path asks, one destination at a time.
+   *
+   * `destinationsFor` calls `anchorIsUnobserved` directly instead, because it has
+   * already resolved the account's sync source once for a whole page of
+   * candidates. Both go through that one function on purpose: the sentence over
+   * the button and the write behind it are the two things that must never
+   * disagree, and two spellings of this rule is how they come to.
+   */
+  private async arrivalMovesTheAnchor(
+    tx: DatabaseTransaction,
+    userId: string,
+    account: SyncOwnableAccount,
+    holding: { source: string }
+  ): Promise<boolean> {
+    const syncSource = await this.syncOwnership.resolveSyncSource(userId, account, tx);
+    return anchorIsUnobserved(holding, syncSource);
+  }
+
+  /**
+   * Move a destination anchor nobody else will, and say whether it did (SC-856).
+   *
+   * **Through `UpdateHoldingUseCase`, for the reason `undoDeclaredTransfer` gives
+   * at length**: a second writer with its own `UPDATE holdings SET balance` is
+   * what SC-245 was, and a balance moved without an observation does not degrade
+   * `BalanceAtTimeService`, it makes it confidently wrong on every date after the
+   * gap. `editCause` is omitted deliberately — that is what keeps this from
+   * synthesizing a ledger row, which would be the double-count arriving by the
+   * other door: the arrival row this answer writes IS the ledger entry.
+   *
+   * `balance + quantity` reads TODAY's anchor rather than the balance at the
+   * transfer's date, and that is correct for the same reason the undo reads it:
+   * `holdings.balance` is an anchor, not a sum, and any restatement made since
+   * stands. Only this transfer's own contribution is added.
+   *
+   * The return value is what the arrival row records, so a reopen reverses
+   * exactly what happened rather than re-deriving a predicate whose inputs move.
+   */
+  private async moveUnobservedAnchor(
+    tx: DatabaseTransaction,
+    userId: string,
+    account: SyncOwnableAccount,
+    holding: { id: string; source: string; balance: string },
+    quantity: Decimal
+  ): Promise<boolean> {
+    if (!(await this.arrivalMovesTheAnchor(tx, userId, account, holding))) return false;
+    await Container.get(UpdateHoldingUseCase).execute(
+      holding.id,
+      { balance: movedBalance(holding.balance, quantity) },
+      userId,
+      tx
+    );
+    return true;
+  }
 }
 
 /**
@@ -2672,275 +2890,6 @@ async function claimInflowSet(
  * straight to a reader.
  */
 type InflowWriteResult = { ok: true } | { ok: false; reason: 'destination_gone' };
-
-async function writeInflow(
-  tx: DatabaseTransaction,
-  userId: string,
-  outflow: HoldingTransaction,
-  opts: {
-    destination: TransferDestinationRef;
-    quantity: Decimal;
-    groupId: string;
-    observedEvent?: boolean;
-    receivedQuantity?: string;
-  }
-): Promise<InflowWriteResult> {
-  const { destination, groupId } = opts;
-  let quantity = opts.quantity;
-  let arrivalTokenId = outflow.tokenId;
-  if (opts.receivedQuantity && (!opts.observedEvent || !destination.holdingId))
-    return { ok: false, reason: 'destination_gone' };
-
-  const [account] = await tx
-    .select({
-      id: schema.accounts.id,
-      userId: schema.accounts.userId,
-      institutionId: schema.accounts.institutionId,
-      metadata: schema.accounts.metadata,
-      isActive: schema.accounts.isActive,
-    })
-    .from(schema.accounts)
-    .where(and(eq(schema.accounts.id, destination.accountId), eq(schema.accounts.userId, userId)))
-    .limit(1);
-  if (!account) return { ok: false, reason: 'destination_gone' };
-
-  let holdingId = destination.holdingId;
-  // Recorded on the arrival row below, on EVERY branch. See
-  // `created-destination.ts`: `false` is written as deliberately as `true`,
-  // because a reopen has to tell "this answer did not create it" from "nobody
-  // said", and only one of those may delete a holding (SC-631).
-  let createdDestination = false;
-  // The destination this answer REUSED, or null where it opened one. Only a
-  // reused row can have an anchor to move: a created one was opened at the
-  // figure `openingOf` chose, which already accounts for the arrival wherever
-  // it is the user's number to state (SC-856).
-  let reused: { id: string; source: string; balance: string } | null = null;
-  if (holdingId) {
-    const [holding] = await tx
-      .select({
-        id: schema.holdings.id,
-        tokenId: schema.holdings.tokenId,
-        source: schema.holdings.source,
-        balance: schema.holdings.balance,
-      })
-      .from(schema.holdings)
-      .where(
-        and(
-          eq(schema.holdings.id, holdingId),
-          eq(schema.holdings.userId, userId),
-          eq(schema.holdings.accountId, destination.accountId),
-          opts.receivedQuantity ? undefined : eq(schema.holdings.tokenId, outflow.tokenId),
-          // Sending a transfer to the holding it left is not a destination,
-          // it is a no-op that would leave the lots parked in a group with
-          // both legs on one holding.
-          ne(schema.holdings.id, outflow.holdingId)
-        )
-      )
-      .limit(1);
-    if (!holding) return { ok: false, reason: 'destination_gone' };
-    if (opts.receivedQuantity) {
-      const received = new Decimal(opts.receivedQuantity);
-      if (!received.isFinite() || !received.gt(0) || holding.tokenId === outflow.tokenId)
-        return { ok: false, reason: 'destination_gone' };
-      quantity = received;
-      arrivalTokenId = holding.tokenId;
-    }
-    reused = holding;
-  } else {
-    // "This account tracks no position in that token yet." Between the picker
-    // rendering and this write, one may have appeared — an import ran, another
-    // tab created it — and using it is the honest resolution of that race:
-    // the reader chose the account, and a second holding for the same token in
-    // it would be a duplicate nobody asked for.
-    const [existing] = await tx
-      .select({
-        id: schema.holdings.id,
-        source: schema.holdings.source,
-        balance: schema.holdings.balance,
-      })
-      .from(schema.holdings)
-      .where(
-        and(
-          eq(schema.holdings.userId, userId),
-          eq(schema.holdings.accountId, destination.accountId),
-          eq(schema.holdings.tokenId, outflow.tokenId),
-          ne(schema.holdings.id, outflow.holdingId)
-        )
-      )
-      .limit(1);
-    if (existing) {
-      holdingId = existing.id;
-      reused = existing;
-    } else {
-      const opening = await openingOf(tx, account, quantity);
-      // **Through the service, not a direct insert** (SC-641). This was the
-      // last caller in the tree writing `holdings` itself, and it is the one
-      // `HoldingService`'s docblock warned about — *"nothing stops the next
-      // caller writing `holdings` directly"*. Going the long way is what
-      // gets the opening on the record instead of a balance appearing with
-      // nothing saying it had.
-      const created = await Container.get(HoldingService).createHoldingWithEvent(
-        {
-          userId,
-          accountId: destination.accountId,
-          tokenId: outflow.tokenId,
-          balance: opening.balance,
-          source: opening.source,
-          // A person was shown this account and picked it. That is the whole
-          // of what `user_confirmed` claims, and it is true of the row on
-          // either branch — only the balance's owner differs.
-          arrival: 'user_confirmed',
-          // **The two branches are asymmetric on purpose.** On a sync-owned
-          // account the row opens at ZERO and the sync writes the real figure
-          // on its next pass. An opening observation of 0 would pair with that
-          // first sync observation into a gap the ledger cannot explain: the
-          // arrival is dated at the TRANSFER's time, before the opening, and
-          // `findGapCandidatesForUser` bridges only transactions occurring
-          // INSIDE the interval. The owner would be asked to account for money
-          // the ledger already accounts for. Where nobody syncs, the opening
-          // IS a claim about the balance and belongs on the record.
-          skipSyncCapture: opening.balance === '0',
-          observationSource: HOLDING_OPEN_OBSERVATION_SOURCE,
-        },
-        tx
-      );
-      if (!created) return { ok: false, reason: 'destination_gone' };
-      holdingId = created.id;
-      createdDestination = true;
-    }
-  }
-
-  // **A deposit the person already typed is the same money** (SC-1474). Where
-  // they recorded the arrival themselves on this holding, writing another one
-  // beside it counts the move twice. The answer takes their row over instead:
-  // it is removed here and kept whole on the arrival, so a reopen puts it back.
-  // The balance already includes it, so the anchor does not move either.
-  const adopted =
-    reused && !opts.observedEvent
-      ? await adoptTypedDeposit(tx, userId, reused.id, arrivalTokenId, quantity, outflow.occurredAt)
-      : null;
-
-  const movedAnchor =
-    reused && !opts.observedEvent && !adopted
-      ? await moveUnobservedAnchor(tx, userId, account, reused, quantity)
-      : false;
-
-  const arrival = await tx
-    .insert(schema.holdingTransactions)
-    .values({
-      userId,
-      holdingId,
-      tokenId: arrivalTokenId,
-      kind: CREATED_INFLOW_KIND,
-      quantity: quantity.toString(),
-      occurredAt: outflow.occurredAt,
-      source: TRANSFER_REVIEW_CREATED_SOURCE,
-      externalId: outflow.id,
-      transferGroupId: groupId,
-      counterparty: outflow.counterparty,
-      description: 'Arrival you recorded when reviewing the transfer it came from',
-      sourceMetadata: arrivalMetadata({
-        outflowTransactionId: outflow.id,
-        createdDestination,
-        movedDestinationAnchor: movedAnchor,
-        outflowAt: outflow.occurredAt,
-        adoptedBalanceEdit: adopted ?? undefined,
-      }),
-    })
-    // Re-answering after a reopen deletes the previous row first, so a
-    // conflict here means two writers for one question. The later one wins on
-    // the fields that can differ — the amount, when a split was re-divided.
-    .onConflictDoUpdate({
-      target: [
-        schema.holdingTransactions.holdingId,
-        schema.holdingTransactions.source,
-        schema.holdingTransactions.externalId,
-      ],
-      // `source_metadata` is deliberately NOT in this set. On a conflict the
-      // destination necessarily exists NOW, so recomputing the marker here
-      // would write `false` over the `true` left by the write that created
-      // it, and the undo would then strand the holding this answer opened.
-      // The FIRST write is the one that describes what the answer did.
-      set: {
-        quantity: quantity.toString(),
-        occurredAt: outflow.occurredAt,
-        transferGroupId: groupId,
-        updatedAt: sql`now()`,
-      },
-    })
-    .returning({ id: schema.holdingTransactions.id });
-  await relabelLegs(
-    tx,
-    userId,
-    arrival.map((r) => r.id)
-  );
-
-  // This is the one ledger write in the codebase that doesn't go through
-  // `HoldingTransactionRepository.bulkUpsert`, so it states the coverage
-  // bound itself. An arrival recorded here can predate everything else on
-  // a freshly created destination holding (SC-307).
-  await Container.get(HoldingCoverageRepository).syncTxBoundsFromLedger([holdingId], tx);
-
-  return { ok: true };
-}
-
-/**
- * The same question with the account half still to resolve — what the WRITE
- * path asks, one destination at a time.
- *
- * `destinationsFor` calls `anchorIsUnobserved` directly instead, because it has
- * already resolved the account's sync source once for a whole page of
- * candidates. Both go through that one function on purpose: the sentence over
- * the button and the write behind it are the two things that must never
- * disagree, and two spellings of this rule is how they come to.
- */
-async function arrivalMovesTheAnchor(
-  tx: DatabaseTransaction,
-  account: SyncOwnableAccount,
-  holding: { source: string }
-): Promise<boolean> {
-  const syncSource = await Container.get(BalanceSyncOwnershipService).resolveSyncSource(
-    account,
-    tx
-  );
-  return anchorIsUnobserved(holding, syncSource);
-}
-
-/**
- * Move a destination anchor nobody else will, and say whether it did (SC-856).
- *
- * **Through `UpdateHoldingUseCase`, for the reason `undoDeclaredTransfer` gives
- * at length**: a second writer with its own `UPDATE holdings SET balance` is
- * what SC-245 was, and a balance moved without an observation does not degrade
- * `BalanceAtTimeService`, it makes it confidently wrong on every date after the
- * gap. `editCause` is omitted deliberately — that is what keeps this from
- * synthesizing a ledger row, which would be the double-count arriving by the
- * other door: the arrival row this answer writes IS the ledger entry.
- *
- * `balance + quantity` reads TODAY's anchor rather than the balance at the
- * transfer's date, and that is correct for the same reason the undo reads it:
- * `holdings.balance` is an anchor, not a sum, and any restatement made since
- * stands. Only this transfer's own contribution is added.
- *
- * The return value is what the arrival row records, so a reopen reverses
- * exactly what happened rather than re-deriving a predicate whose inputs move.
- */
-async function moveUnobservedAnchor(
-  tx: DatabaseTransaction,
-  userId: string,
-  account: SyncOwnableAccount,
-  holding: { id: string; source: string; balance: string },
-  quantity: Decimal
-): Promise<boolean> {
-  if (!(await arrivalMovesTheAnchor(tx, account, holding))) return false;
-  await Container.get(UpdateHoldingUseCase).execute(
-    holding.id,
-    { balance: new Decimal(holding.balance).add(quantity).toString() },
-    userId,
-    tx
-  );
-  return true;
-}
 
 /**
  * Does this row realize anything? — the `isConfirmedDisposal` question, plus

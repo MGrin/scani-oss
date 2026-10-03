@@ -284,6 +284,10 @@ export const holdingTransactions = pgTable(
   },
   (table) => ({
     dedup: unique('holding_tx_dedup').on(table.holdingId, table.source, table.externalId),
+    // A feed input states an external id once, whichever holding the row sits
+    // in; a NULL input (person and system rows) is exempt. Its index leads on
+    // `input_id`, so it is also the one a deleted input's SET NULL walks.
+    inputExternalUq: unique('holding_tx_input_external_uq').on(table.inputId, table.externalId),
     userOccurredIdx: index('idx_holding_tx_user_occurred').on(
       table.userId,
       table.occurredAt.desc()
@@ -315,9 +319,8 @@ export const holdingTransactions = pgTable(
     counterpartyIdx: index('idx_holding_tx_counterparty')
       .on(table.userId, table.counterparty)
       .where(sql`${table.counterparty} IS NOT NULL`),
-    // A deleted input, decision or token clears its rows' reference by SET
-    // NULL, which walks the table by that column.
-    inputIdIdx: index('idx_holding_tx_input_id').on(table.inputId).where(sql`input_id IS NOT NULL`),
+    // A deleted decision or token clears its rows' reference by SET NULL,
+    // which walks the table by that column.
     decisionIdIdx: index('idx_holding_tx_decision_id')
       .on(table.decisionId)
       .where(sql`decision_id IS NOT NULL`),

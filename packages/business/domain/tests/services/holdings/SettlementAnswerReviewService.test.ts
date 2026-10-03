@@ -14,9 +14,10 @@ import * as schema from '@scani/db/schema';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { HoldingBalanceObservationRepository } from '../../../src/repositories/HoldingBalanceObservationRepository';
 import { BalanceGapService } from '../../../src/services/holdings/BalanceGapService';
+import { EXCHANGE_BALANCE_SYNC_SOURCE } from '../../../src/services/holdings/balance-sync-sources';
 import { SettlementAnswerReviewService } from '../../../src/services/holdings/SettlementAnswerReviewService';
 import { withTestDb } from '../../../test/helpers/db';
-import { makeInstitution, makeUser } from '../../../test/helpers/factories';
+import { makeCredential, makeInstitution, makeUser } from '../../../test/helpers/factories';
 import { makeAccount, makeHolding, makeToken } from '../../../test/helpers/factories-extra';
 
 const T0 = new Date('2026-06-01T00:00:00Z');
@@ -148,13 +149,25 @@ async function fixture(tx: DatabaseTransaction, opts: { writeSettlements?: boole
   };
 }
 
-/** A second cash holding whose withdrawal the answer sent to another account. */
-async function movedFixture(tx: DatabaseTransaction, opts: { createDestination: boolean }) {
+/**
+ * A second cash holding whose withdrawal the answer sent to another account.
+ * With `destinationSynced` that account is one a sync owns: it sits at an
+ * institution the user holds a live credential for.
+ */
+async function movedFixture(
+  tx: DatabaseTransaction,
+  opts: { createDestination: boolean; destinationSynced?: boolean }
+) {
   const user = await makeUser(tx);
   const usd = await makeToken(tx);
   const institution = await makeInstitution(tx);
   const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
-  const elsewhere = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+  const synced = opts.destinationSynced ? await makeInstitution(tx) : null;
+  if (synced) await makeCredential(tx, { userId: user.id, institutionId: synced.id });
+  const elsewhere = await makeAccount(tx, {
+    userId: user.id,
+    institutionId: (synced ?? institution).id,
+  });
   const cash = await makeHolding(tx, {
     userId: user.id,
     accountId: account.id,
@@ -211,6 +224,78 @@ async function observationRow(tx: DatabaseTransaction, id: string) {
     .from(schema.holdingBalanceObservations)
     .where(eq(schema.holdingBalanceObservations.id, id));
   return row?.row;
+}
+
+async function observationsOf(tx: DatabaseTransaction, userId: string) {
+  const rows = await tx
+    .select({
+      row: sql<Record<string, unknown>>`to_jsonb(${schema.holdingBalanceObservations})`,
+    })
+    .from(schema.holdingBalanceObservations)
+    .where(eq(schema.holdingBalanceObservations.userId, userId))
+    .orderBy(schema.holdingBalanceObservations.id);
+  return rows.map(({ row }) => row);
+}
+
+const HOLDING_LABELS = ['kind', 'starts_at'];
+const OBSERVATION_LABELS = ['role', 'authority', 'input_id', 'cause'];
+const ENTRY_LABELS = [
+  'ledger_kind',
+  'kind_subtype',
+  'group_id',
+  'fee_of',
+  'input_id',
+  'execution_price',
+  'execution_price_token_id',
+  'kind_origin',
+  'decision_id',
+];
+
+type Captured = Record<string, unknown>;
+
+function without(row: Captured, columns: readonly string[]): Captured {
+  return Object.fromEntries(Object.entries(row).filter(([column]) => !columns.includes(column)));
+}
+
+/**
+ * Rewrites a retirement's copy into what one taken before A1 holds: the rows
+ * as `to_jsonb` rendered them when the label columns did not exist.
+ */
+async function captureAsBeforeA1(tx: DatabaseTransaction, retiredId: string) {
+  await rewriteCopy(tx, retiredId, (retired) => ({
+    rows: retired.rows.map((row) => without(row, ENTRY_LABELS)),
+    removedHoldings: retired.removedHoldings.map((bundle) => ({
+      holding: without(bundle.holding, HOLDING_LABELS),
+      observations: bundle.observations.map((row) => without(row, OBSERVATION_LABELS)),
+      coverage: bundle.coverage,
+    })),
+  }));
+}
+
+interface RetiredCopy {
+  rows: Captured[];
+  removedHoldings: Array<{ holding: Captured; observations: Captured[]; coverage: Captured[] }>;
+}
+
+async function rewriteCopy(
+  tx: DatabaseTransaction,
+  retiredId: string,
+  rewrite: (copy: RetiredCopy) => RetiredCopy
+) {
+  const [retired] = await tx
+    .select()
+    .from(schema.retiredGapAnswers)
+    .where(eq(schema.retiredGapAnswers.id, retiredId));
+  if (!retired) throw new Error('no retirement to rewrite');
+  await tx
+    .update(schema.retiredGapAnswers)
+    .set(
+      rewrite({
+        rows: retired.rows as Captured[],
+        removedHoldings: retired.removedHoldings as RetiredCopy['removedHoldings'],
+      })
+    )
+    .where(eq(schema.retiredGapAnswers.id, retiredId));
 }
 
 async function candidateFor(tx: DatabaseTransaction, userId: string, observationId: string) {
@@ -428,7 +513,15 @@ describe('SettlementAnswerReviewService — an answer given as a balance edit', 
       expect(await service.undoRetire(user.id, outcome.retired.id, T3, tx)).toEqual({
         restored: { rows: 1, observation: 'restamped' },
       });
-      expect(await ledger(tx, user.id)).toEqual(before);
+      // The fixture wrote the edit's row with no label, as a row from before
+      // A1 has none. It comes back labelled (D-5) and otherwise as it was.
+      expect(await ledger(tx, user.id)).toEqual(
+        before.map((row) =>
+          row.source === 'user-balance-edit'
+            ? { ...row, ledger_kind: 'outflow', kind_origin: 'person' }
+            : row
+        )
+      );
       expect(cash.id).toBe(group!.holdingId);
     });
   });
@@ -561,6 +654,126 @@ describe('SettlementAnswerReviewService.undoRetire', () => {
       );
       expect(await holdingsOf(tx, user.id)).toEqual(holdingsBefore);
       expect(await ledger(tx, user.id)).toEqual(ledgerBefore);
+    });
+  });
+
+  test('a destination captured before A1 comes back classified as the backfill would', async () => {
+    await withTestDb(async (tx) => {
+      const { user, cash, closing } = await movedFixture(tx, { createDestination: true });
+      const ledgerBefore = await ledger(tx, user.id);
+      const holdingsBefore = await holdingsOf(tx, user.id);
+      const observationsBefore = await observationsOf(tx, user.id);
+
+      const service = new SettlementAnswerReviewService();
+      const outcome = await service.retire(user.id, closing.id, { confirmOtherHolding: true }, tx);
+      if (!('retired' in outcome)) throw new Error('not retired');
+      await captureAsBeforeA1(tx, outcome.retired.id);
+
+      expect(await service.undoRetire(user.id, outcome.retired.id, new Date(), tx)).toHaveProperty(
+        'restored'
+      );
+      const holdings = await holdingsOf(tx, user.id);
+      const destination = holdings.find((row) => row.id !== cash.id);
+      // A person's holding on an account nobody syncs, holding one arrival
+      // dated at the transfer: rule K4, starting at that arrival.
+      expect(destination?.kind).toBe('snapshot');
+      expect(new Date(String(destination?.starts_at))).toEqual(T1);
+      const opening = (await observationsOf(tx, user.id)).find(
+        (row) => row.holding_id === destination?.id
+      );
+      expect(opening).toMatchObject({ role: 'snapshot', authority: 'person', input_id: null });
+      // Nothing is left for the backfill: every label the copy lacked is back.
+      expect(holdings).toEqual(holdingsBefore);
+      expect(await ledger(tx, user.id)).toEqual(ledgerBefore);
+      expect(await observationsOf(tx, user.id)).toEqual(observationsBefore);
+    });
+  });
+
+  test('a destination whose copy states a kind keeps it', async () => {
+    await withTestDb(async (tx) => {
+      // The control: the classifier gives this holding `snapshot`, the copy
+      // says `feed`, and a kind the copy states is not replaced.
+      const { user, cash, closing } = await movedFixture(tx, { createDestination: true });
+      const service = new SettlementAnswerReviewService();
+      const outcome = await service.retire(user.id, closing.id, { confirmOtherHolding: true }, tx);
+      if (!('retired' in outcome)) throw new Error('not retired');
+      await rewriteCopy(tx, outcome.retired.id, (copy) => ({
+        rows: copy.rows,
+        removedHoldings: copy.removedHoldings.map((bundle) => ({
+          ...bundle,
+          holding: { ...bundle.holding, kind: 'feed' },
+        })),
+      }));
+
+      expect(await service.undoRetire(user.id, outcome.retired.id, new Date(), tx)).toHaveProperty(
+        'restored'
+      );
+      const destination = (await holdingsOf(tx, user.id)).find((row) => row.id !== cash.id);
+      expect(destination?.kind).toBe('feed');
+      expect(new Date(String(destination?.starts_at))).toEqual(T1);
+    });
+  });
+
+  // Where the classifier and the live opener have to agree (D-6). The opener
+  // made this destination a feed holding because a sync owns its account, and
+  // a copy from before A1 says nothing of that: rule K1 reads it back from the
+  // source the sync writes under.
+  test('a destination in a sync-owned account, captured before A1, comes back a feed holding', async () => {
+    await withTestDb(async (tx) => {
+      const { user, cash, closing } = await movedFixture(tx, {
+        createDestination: true,
+        destinationSynced: true,
+      });
+      const holdingsBefore = await holdingsOf(tx, user.id);
+      const opened = holdingsBefore.find((row) => row.id !== cash.id);
+      // The control: what the opener made of it, with no observation of its own.
+      expect({ kind: opened?.kind, source: opened?.source, balance: opened?.balance }).toEqual({
+        kind: 'feed',
+        source: EXCHANGE_BALANCE_SYNC_SOURCE,
+        balance: '0',
+      });
+      const observationsBefore = await observationsOf(tx, user.id);
+      expect(observationsBefore.filter((row) => row.holding_id === opened?.id)).toEqual([]);
+
+      const service = new SettlementAnswerReviewService();
+      const outcome = await service.retire(user.id, closing.id, { confirmOtherHolding: true }, tx);
+      if (!('retired' in outcome)) throw new Error('not retired');
+      expect(await holdingsOf(tx, user.id)).toHaveLength(1);
+      await captureAsBeforeA1(tx, outcome.retired.id);
+
+      expect(await service.undoRetire(user.id, outcome.retired.id, new Date(), tx)).toHaveProperty(
+        'restored'
+      );
+      const holdings = await holdingsOf(tx, user.id);
+      const destination = holdings.find((row) => row.id !== cash.id);
+      expect(destination?.kind).toBe('feed');
+      expect(new Date(String(destination?.starts_at))).toEqual(T1);
+      expect(holdings).toEqual(holdingsBefore);
+    });
+  });
+
+  test('a destination whose copy states a kind and no start keeps the kind and is given its start', async () => {
+    await withTestDb(async (tx) => {
+      // The classifier gives this holding `snapshot`. The copy says `feed` and
+      // carries no start, so the kind stands and only the start is filled.
+      const { user, cash, closing } = await movedFixture(tx, { createDestination: true });
+      const service = new SettlementAnswerReviewService();
+      const outcome = await service.retire(user.id, closing.id, { confirmOtherHolding: true }, tx);
+      if (!('retired' in outcome)) throw new Error('not retired');
+      await rewriteCopy(tx, outcome.retired.id, (copy) => ({
+        rows: copy.rows,
+        removedHoldings: copy.removedHoldings.map((bundle) => ({
+          ...bundle,
+          holding: { ...without(bundle.holding, ['starts_at']), kind: 'feed' },
+        })),
+      }));
+
+      expect(await service.undoRetire(user.id, outcome.retired.id, new Date(), tx)).toHaveProperty(
+        'restored'
+      );
+      const destination = (await holdingsOf(tx, user.id)).find((row) => row.id !== cash.id);
+      expect(destination?.kind).toBe('feed');
+      expect(new Date(String(destination?.starts_at))).toEqual(T1);
     });
   });
 

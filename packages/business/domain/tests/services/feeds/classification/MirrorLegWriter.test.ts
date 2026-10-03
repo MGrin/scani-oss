@@ -17,6 +17,7 @@ import { and, asc, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { pendingPredicate } from '../../../../src/lib/transfer-review-queue';
 import { FeedInputRepository } from '../../../../src/repositories/FeedInputRepository';
+import { HoldingCoverageRepository } from '../../../../src/repositories/HoldingCoverageRepository';
 import { MirrorLegWriter } from '../../../../src/services/feeds/classification/MirrorLegWriter';
 import { deterministicUuid } from '../../../../src/services/feeds/deterministic-id';
 import { FeedIngestService } from '../../../../src/services/feeds/FeedIngestService';
@@ -151,6 +152,12 @@ function batchOf(w: World, entries: FeedEntry[]): FeedBatch {
       cacheObservation: null,
       derivesTradeLegs: false,
       holdingFailure: 'skip-entry',
+      absence: null,
+      clearsAbsenceTally: false,
+      createdCheckpointMeta: null,
+      unhideOnNonZero: false,
+      unchangedCheckpoint: 'append',
+      zeroOpensHolding: true,
     },
     notices: [],
   };
@@ -252,6 +259,102 @@ describe('a mirror leg into an account nothing feeds', () => {
       expect((await holdingsIn(tx, w.savingsAccountId))[0]!.balance).toBe('250');
     });
   });
+
+  test('an opening below 1e-6 is written in plain notation on the cache and its copy, as the leg is (N6)', async () => {
+    await withTestDb(async (tx) => {
+      const w = await world(tx);
+      await ingest(
+        batchOf(w, [entry(w, 'out-dust', '-0.00000005', { description: 'To Savings' })]),
+        tx
+      );
+
+      const [opened] = await holdingsIn(tx, w.savingsAccountId);
+      const [copy] = await observationsOf(tx, opened!.id);
+      const [leg] = legsOf(await ledgerOf(tx, w.userId));
+      expect({
+        balance: opened?.balance,
+        observation: copy?.balance,
+        leg: leg?.quantity,
+      }).toEqual({ balance: '0.00000005', observation: '0.00000005', leg: '0.00000005' });
+    });
+  });
+
+  // `transfer-arrival.ts` says a mirror leg and the queue's `internal` answer
+  // apply one rule to a destination. Held to it row for row: the same amount
+  // leaves twice, once matched by the rule and once answered in the queue, each
+  // into an account nothing feeds and that holds no position yet.
+  test.each([['250'], ['0.00000005']])(
+    "a mirror leg opens the holding and the opening the queue's internal answer opens, column for column (%s)",
+    async (amount) => {
+      await withTestDb(async (tx) => {
+        const w = await world(tx);
+        const answered = await makeAccount(tx, {
+          userId: w.userId,
+          institutionId: w.savingsInstitutionId,
+        });
+        await ingest(
+          batchOf(w, [
+            entry(w, 'out-leg', `-${amount}`, { description: 'To Savings' }),
+            entry(w, 'out-queue', `-${amount}`, { description: 'Groceries' }),
+          ]),
+          tx
+        );
+        const question = (await ledgerOf(tx, w.userId)).find((r) => r.externalId === 'out-queue');
+        expect(
+          await Container.get(TransferReviewService).resolve(w.userId, question!.id, 'internal', {
+            destination: { accountId: answered.id, holdingId: null },
+            transaction: tx,
+          })
+        ).toEqual({ ok: true });
+
+        const [byLeg, ...restByLeg] = await holdingsIn(tx, w.savingsAccountId);
+        const [byAnswer, ...restByAnswer] = await holdingsIn(tx, answered.id);
+        expect([restByLeg, restByAnswer]).toEqual([[], []]);
+        // Which row it is, and the two instants each write reads off its own clock.
+        const holdingAsOpened = ({
+          id: _id,
+          accountId: _accountId,
+          lastUpdated: _lastUpdated,
+          createdAt: _createdAt,
+          ...columns
+        }: typeof schema.holdings.$inferSelect) => columns;
+        expect(holdingAsOpened(byLeg!)).toEqual(holdingAsOpened(byAnswer!));
+        // Stated as well as compared: two rows that agree can both be wrong (R84).
+        expect(holdingAsOpened(byLeg!)).toMatchObject({
+          kind: 'snapshot',
+          startsAt: T1,
+          balance: amount,
+          source: 'manual',
+          arrival: 'user_confirmed',
+          externalId: null,
+          label: null,
+        });
+
+        const openingAsWritten = ({
+          id: _id,
+          holdingId: _holdingId,
+          observedAt: _observedAt,
+          createdAt: _createdAt,
+          ...columns
+        }: typeof schema.holdingBalanceObservations.$inferSelect) => columns;
+        const openingsByLeg = (await observationsOf(tx, byLeg!.id)).map(openingAsWritten);
+        const openingsByAnswer = (await observationsOf(tx, byAnswer!.id)).map(openingAsWritten);
+        expect(openingsByLeg).toEqual(openingsByAnswer);
+        expect(openingsByLeg).toHaveLength(1);
+        expect(openingsByLeg[0]).toMatchObject({
+          balance: amount,
+          source: 'holding-open',
+          sourceMetadata: { origin: 'createHoldingWithEvent', source: 'manual' },
+          role: 'snapshot',
+          authority: 'person',
+          inputId: null,
+          cause: 'flow',
+          supersededAt: null,
+          gapReview: null,
+        });
+      });
+    }
+  );
 
   test('the source row and the mirror leg share group_id and read transfer_out / transfer_in', async () => {
     await withTestDb(async (tx) => {
@@ -656,6 +759,144 @@ describe('classification through ingest', () => {
         'source',
         null,
       ]);
+    });
+  });
+
+  // m5 (R51, Task 13): the leg is keyed like every feed row, by (input,
+  // external_id). A replay that finds it on another holding updates it there,
+  // where the old target (holding, source, external_id) would have inserted a
+  // second leg, which the key refuses. The holding it left is summarized again
+  // (review M1), so its coverage no longer claims the leg.
+  test('a mirror leg replayed under the new key writes no second leg, and the holding it left is re-summarized (m5)', async () => {
+    await withTestDb(async (tx) => {
+      const w = await world(tx);
+      await ingest(payments(w), tx);
+      const [opened] = await holdingsIn(tx, w.savingsAccountId);
+      const elsewhereAccount = await makeAccount(tx, {
+        userId: w.userId,
+        institutionId: (await makeInstitution(tx)).id,
+      });
+      const elsewhere = await makeHolding(tx, {
+        userId: w.userId,
+        accountId: elsewhereAccount.id,
+        tokenId: w.tokenId,
+        kind: 'snapshot',
+      });
+      const mine = eq(schema.holdingTransactions.userId, w.userId);
+      await tx
+        .update(schema.holdingTransactions)
+        .set({ holdingId: elsewhere.id })
+        .where(and(mine, eq(schema.holdingTransactions.source, 'feed-mirror')));
+      await tx
+        .delete(schema.holdingTransactions)
+        .where(and(mine, eq(schema.holdingTransactions.externalId, 'out-1')));
+      const coverage = Container.get(HoldingCoverageRepository);
+      await coverage.syncTxBoundsFromLedger([elsewhere.id], tx);
+      const boundsOf = async (holdingId: string) => {
+        const [row] = await tx
+          .select()
+          .from(schema.holdingCoverage)
+          .where(eq(schema.holdingCoverage.holdingId, holdingId));
+        return [row?.firstTxAt ?? null, row?.lastTxAt ?? null];
+      };
+      expect(await boundsOf(elsewhere.id)).toEqual([T1, T1]);
+
+      await ingest(payments(w), tx);
+
+      expect(
+        legsOf(await ledgerOf(tx, w.userId)).map((r) => [r.externalId, r.holdingId, r.inputId])
+      ).toEqual([['out-1:mirror', opened!.id, w.inputId]]);
+      expect([await boundsOf(elsewhere.id), await boundsOf(opened!.id)]).toEqual([
+        [null, null],
+        [T1, T1],
+      ]);
+    });
+  });
+
+  /**
+   * R58's state in the feed account: `out-1` is the input's row on the
+   * holding ingest created, and an imported holding the next run resolves to
+   * holds an older copy of it with no input, an outflow "to savings" too.
+   */
+  async function copiedOutflow(tx: DatabaseTransaction, w: World) {
+    await ingest(payments(w), tx);
+    const [created] = await holdingsIn(tx, w.sourceAccountId);
+    const imported = await makeHolding(tx, {
+      userId: w.userId,
+      accountId: w.sourceAccountId,
+      tokenId: w.tokenId,
+      externalId: `${w.symbol}-sync`,
+      kind: 'feed',
+    });
+    await tx.insert(schema.holdingTransactions).values({
+      userId: w.userId,
+      holdingId: imported.id,
+      tokenId: w.tokenId,
+      kind: 'withdraw',
+      quantity: '-250',
+      occurredAt: T1,
+      source: SOURCE,
+      externalId: 'out-1',
+      description: 'To Savings',
+      counterparty: 'Savings account',
+      ledgerKind: 'outflow',
+    });
+    const names = new Map([
+      [created!.id, 'input row'],
+      [imported.id, 'copy'],
+    ]);
+    // `out-1` on both holdings, and every leg, with what classification wrote.
+    return async () => {
+      const rows = await ledgerOf(tx, w.userId);
+      const inputRow = rows.find((r) => r.externalId === 'out-1' && r.inputId !== null)!;
+      return {
+        group: deterministicUuid(w.inputId, `mirror:${inputRow.id}`),
+        outflows: rows
+          .filter((r) => r.externalId === 'out-1')
+          .map((r) => [names.get(r.holdingId), r.inputId, r.ledgerKind, r.transferGroupId])
+          .sort((x, y) => String(x).localeCompare(String(y))),
+        legs: legsOf(rows).map((r) => [r.externalId, r.transferGroupId]),
+      };
+    };
+  }
+
+  // R59: classification reads only rows that carry an input. The R58 copy is
+  // never decided; the run decides the input's own row in its place, and the
+  // next run finds nothing left to decide.
+  test("an R58 copy is never classified: the input's own row is, and gets the one leg (R59)", async () => {
+    await withTestDb(async (tx) => {
+      const w = await world(tx, { rule: null });
+      const state = await copiedOutflow(tx, w);
+      await addRule(tx, w, TO_SAVINGS);
+
+      await ingest(payments(w), tx);
+      const decided = await state();
+      await ingest(payments(w), tx);
+
+      expect(decided).toEqual({
+        group: decided.group,
+        outflows: [
+          ['copy', null, 'outflow', null],
+          ['input row', w.inputId, 'transfer_out', decided.group],
+        ],
+        legs: [['out-1:mirror', decided.group]],
+      });
+      expect(await state()).toEqual(decided);
+    });
+  });
+
+  // R59, the other half: the input's row already has its leg, and a copy
+  // with no input cannot take it over.
+  test('an R58 copy does not re-point the leg the input row already has (R59)', async () => {
+    await withTestDb(async (tx) => {
+      const w = await world(tx);
+      const state = await copiedOutflow(tx, w);
+      const before = await state();
+      expect(before.legs).toEqual([['out-1:mirror', before.group]]);
+
+      await ingest(payments(w), tx);
+
+      expect(await state()).toEqual(before);
     });
   });
 

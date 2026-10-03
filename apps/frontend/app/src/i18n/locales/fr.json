@@ -1032,7 +1032,10 @@
     },
     "amountInput": {
       "readAsWhole": "Lu comme {{amount}} — ce champ n’accepte que des nombres entiers.",
-      "readAsDecimal": "Lu comme {{amount}} — la virgule et le point signifient tous deux la virgule décimale ici. Supprimez le séparateur si vous vouliez dire un millier."
+      "readAsDecimal": "Lu comme {{amount}} — la virgule et le point signifient tous deux la virgule décimale ici. Supprimez le séparateur si vous vouliez dire un millier.",
+      "exponent": "La notation scientifique comme 1e5 n'est pas lue ici — saisissez le nombre en entier, par exemple 100000.",
+      "tooLarge": "Cela fait plus de {{max}} chiffres avant la virgule, ce qu'aucun solde n'atteint — vérifiez le montant.",
+      "truncated": "Lu comme {{amount}} — ce champ ne garde pas plus de décimales."
     },
     "theme": {
       "label": "Thème",

@@ -19,13 +19,15 @@
  * would be vacuous.
  */
 
-import { describe, expect, test } from 'bun:test';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { MANUAL_EDIT_FLOW_SOURCE } from '../../src/lib/person-authored-sources';
 import { pendingPredicate } from '../../src/lib/transfer-review-queue';
+import { FoundationClassificationService } from '../../src/services/foundation/FoundationClassificationService';
 import { ManualEditFeeRefused } from '../../src/services/holdings/ManualBalanceEditService';
 import {
   MovementExceedsBalanceError,
@@ -33,9 +35,20 @@ import {
   RecordHoldingMovementUseCase,
 } from '../../src/use-cases/RecordHoldingMovementUseCase';
 import { UpdateHoldingUseCase } from '../../src/use-cases/UpdateHoldingUseCase';
+import { committedRows } from '../../test/helpers/committed-rows';
 import { withTestDb } from '../../test/helpers/db';
-import { makeInstitution, makeUser } from '../../test/helpers/factories';
-import { makeAccount, makeHolding, makeToken } from '../../test/helpers/factories-extra';
+import { makeCredential, makeInstitution, makeUser } from '../../test/helpers/factories';
+import {
+  makeAccount,
+  makeHolding,
+  makeToken,
+  makeWalletAccount,
+} from '../../test/helpers/factories-extra';
+import { expectHistoryUnchanged, type HistoryReading } from '../../test/helpers/history-neutrality';
+import {
+  expectLabelsSettled,
+  expectPersonRolesAsClassified,
+} from '../../test/helpers/labels-settled';
 
 const useCase = () => Container.get(RecordHoldingMovementUseCase);
 
@@ -199,6 +212,85 @@ describe('an inflow', () => {
       // `answerIsOwedFor` covers withdraw and transfer_out only, so an
       // arrival is never a queue row whatever it carries.
       expect(await reviewPrompts(tx, user.id)).toBe(0);
+    });
+  });
+});
+
+/**
+ * D-1 exception U4. A balance this path computes from the stored one is
+ * written as a plain decimal: `Decimal`'s own text turns to exponent notation
+ * below 1e-6, and the cache, its copy and the export would carry `5e-8`.
+ */
+describe('a movement that leaves dust (U4)', () => {
+  /** Two manual holdings of one token, in two accounts of one person. */
+  async function dust(tx: Tx, balances: { source: string; destination: string }) {
+    const { user, institution, token } = await scaffold(tx);
+    const holdingAt = async (balance: string) => {
+      const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      return await makeHolding(tx, {
+        userId: user.id,
+        accountId: account.id,
+        tokenId: token.id,
+        balance,
+        source: 'manual',
+      });
+    };
+    return {
+      user,
+      source: await holdingAt(balances.source),
+      destination: await holdingAt(balances.destination),
+    };
+  }
+
+  async function copiesOf(tx: Tx, holdingId: string): Promise<string[]> {
+    const rows = await tx
+      .select({ balance: schema.holdingBalanceObservations.balance })
+      .from(schema.holdingBalanceObservations)
+      .where(eq(schema.holdingBalanceObservations.holdingId, holdingId));
+    return rows.map((row) => row.balance);
+  }
+
+  test('an inflow below 1e-6 is written in plain notation, on the cache and on its copy', async () => {
+    await withTestDb(async (tx) => {
+      const { user, source } = await dust(tx, { source: '0', destination: '0' });
+
+      await useCase().execute(
+        { direction: 'inflow', holdingId: source.id, amount: '0.00000005', occurredAt: MOVED_AT },
+        user.id,
+        tx
+      );
+
+      expect(await balanceOf(tx, source.id)).toBe('0.00000005');
+      expect(await copiesOf(tx, source.id)).toEqual(['0.00000005']);
+    });
+  });
+
+  test('a declared transfer below 1e-6 leaves both balances in plain notation', async () => {
+    await withTestDb(async (tx) => {
+      const { user, source, destination } = await dust(tx, {
+        source: '0.0000001',
+        destination: '0',
+      });
+
+      await useCase().execute(
+        {
+          direction: 'transfer',
+          holdingId: source.id,
+          amount: '0.00000005',
+          occurredAt: MOVED_AT,
+          destinationAccountId: destination.accountId,
+          destinationHoldingId: destination.id,
+        },
+        user.id,
+        tx
+      );
+
+      expect({
+        source: await balanceOf(tx, source.id),
+        destination: await balanceOf(tx, destination.id),
+      }).toEqual({ source: '0.00000005', destination: '0.00000005' });
+      expect(await copiesOf(tx, source.id)).toEqual(['0.00000005']);
+      expect(await copiesOf(tx, destination.id)).toEqual(['0.00000005']);
     });
   });
 });
@@ -561,5 +653,417 @@ describe('a declared transfer that cost something (SC-889)', () => {
       expect(await balanceOf(tx, destination.id)).toBe('261.33');
       expect(await ledger(tx, holding.id)).toHaveLength(1);
     });
+  });
+});
+
+/** Rows a test committed, deleted after it: history and labels read committed rows only. */
+const created = committedRows();
+
+/**
+ * An account the exchange sync owns. Its own institution: the credential is
+ * per (user, institution), so one on the scaffold's would make every account
+ * there sync-owned.
+ */
+async function exchangeAccount(tx: Tx, userId: string) {
+  const institution = await makeInstitution(tx);
+  await makeCredential(tx, { userId, institutionId: institution.id });
+  return await makeAccount(tx, { userId, institutionId: institution.id });
+}
+
+async function transferInto(
+  tx: Tx,
+  from: { userId: string; holdingId: string },
+  destinationAccountId: string,
+  amount: string
+) {
+  const result = await useCase().execute(
+    {
+      direction: 'transfer',
+      holdingId: from.holdingId,
+      amount,
+      occurredAt: MOVED_AT,
+      destinationAccountId,
+    },
+    from.userId,
+    tx
+  );
+  if (!result.destinationHoldingId) throw new Error('no destination');
+  return result.destinationHoldingId;
+}
+
+async function holdingRow(tx: Tx, holdingId: string) {
+  const [row] = await tx.select().from(schema.holdings).where(eq(schema.holdings.id, holdingId));
+  if (!row) throw new Error(`holding ${holdingId} is gone`);
+  return row;
+}
+
+function observationsOf(tx: Tx, holdingId: string) {
+  return tx
+    .select()
+    .from(schema.holdingBalanceObservations)
+    .where(eq(schema.holdingBalanceObservations.holdingId, holdingId));
+}
+
+/**
+ * Where a declared transfer opens its destination (`DeclaredTransferService`),
+ * pinned on today's code before that INSERT moves onto `HoldingResolver`
+ * (foundation A2). Every assertion here reads the same after the move (D-1).
+ */
+describe('a declared transfer’s created destination, pinned before it moves (foundation A2)', () => {
+  afterEach(created.drop);
+
+  /** What the destination row, its ledger and its observations hold after the transfer. */
+  async function openedDestination(tx: Tx, holdingId: string) {
+    const row = await holdingRow(tx, holdingId);
+    return {
+      row: {
+        accountId: row.accountId,
+        tokenId: row.tokenId,
+        balance: row.balance,
+        source: row.source,
+        arrival: row.arrival,
+        externalId: row.externalId,
+        label: row.label,
+        isActive: row.isActive,
+        isHidden: row.isHidden,
+        manualEditCause: row.manualEditCause,
+      },
+      lastUpdated: row.lastUpdated,
+      ledger: (await ledger(tx, holdingId)).map((r) => ({
+        kind: r.kind,
+        quantity: r.quantity,
+        occurredAt: r.occurredAt.toISOString(),
+        source: r.source,
+      })),
+      observations: (await observationsOf(tx, holdingId)).map((o) => ({
+        balance: o.balance,
+        source: o.source,
+        sourceMetadata: o.sourceMetadata,
+        gapReview: o.gapReview,
+        authority: o.authority,
+        inputId: o.inputId,
+        cause: o.cause,
+      })),
+    };
+  }
+
+  /** The one observation the arrival leg writes, and none at the zero the row opened at. */
+  const arrivalObservation = (balance: string) => ({
+    balance,
+    source: 'sync-capture',
+    sourceMetadata: { origin: 'updateHolding' },
+    gapReview: 'flow',
+    authority: 'person' as const,
+    inputId: null,
+    cause: 'flow' as const,
+  });
+
+  const arrivalRow = (quantity: string) => ({
+    kind: 'deposit',
+    quantity,
+    occurredAt: MOVED_AT,
+    source: MANUAL_EDIT_FLOW_SOURCE,
+  });
+
+  test('an unsynced account’s destination opens as a manual row at zero and the arrival moves it: one deposit, one observation', async () => {
+    await withTestDb(async (tx) => {
+      const { user, institution, token, holding } = await scaffold(tx);
+      const fresh = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+
+      const opened = await transferInto(
+        tx,
+        { userId: user.id, holdingId: holding.id },
+        fresh.id,
+        '2000'
+      );
+
+      const destination = await openedDestination(tx, opened);
+      expect(destination.row).toEqual({
+        accountId: fresh.id,
+        tokenId: token.id,
+        balance: '2000',
+        source: 'manual',
+        arrival: 'user_confirmed',
+        externalId: null,
+        label: null,
+        isActive: true,
+        isHidden: false,
+        manualEditCause: 'flow',
+      });
+      // Both legs share the movement's one edit instant (`editedAt`).
+      expect(destination.lastUpdated).toEqual((await holdingRow(tx, holding.id)).lastUpdated);
+      expect(destination.ledger).toEqual([arrivalRow('2000')]);
+      expect(destination.observations).toEqual([arrivalObservation('2000')]);
+    });
+  });
+
+  test('a sync-owned account’s destination opens under the sync’s source (SC-356): blockchain for a wallet, sync_exchange_balances for an exchange', async () => {
+    await withTestDb(async (tx) => {
+      const { user, institution, token, holding } = await scaffold(tx);
+      const wallet = await makeWalletAccount(tx, {
+        userId: user.id,
+        institutionId: institution.id,
+      });
+      const exchange = await exchangeAccount(tx, user.id);
+      const from = { userId: user.id, holdingId: holding.id };
+
+      const intoWallet = await openedDestination(
+        tx,
+        await transferInto(tx, from, wallet.id, '1000')
+      );
+      const intoExchange = await openedDestination(
+        tx,
+        await transferInto(tx, from, exchange.id, '1500')
+      );
+
+      const common = {
+        tokenId: token.id,
+        arrival: 'user_confirmed',
+        externalId: null,
+        label: null,
+        isActive: true,
+        isHidden: false,
+        manualEditCause: 'flow',
+      };
+      expect(intoWallet.row).toEqual({
+        ...common,
+        accountId: wallet.id,
+        balance: '1000',
+        source: 'blockchain',
+      });
+      expect(intoExchange.row).toEqual({
+        ...common,
+        accountId: exchange.id,
+        balance: '1500',
+        source: 'sync_exchange_balances',
+      });
+      expect(intoWallet.ledger).toEqual([arrivalRow('1000')]);
+      expect(intoExchange.ledger).toEqual([arrivalRow('1500')]);
+      expect(intoWallet.observations).toEqual([arrivalObservation('1000')]);
+      expect(intoExchange.observations).toEqual([arrivalObservation('1500')]);
+      expect(await balanceOf(tx, holding.id)).toBe('1500');
+    });
+  });
+
+  test('history across a declared transfer into a created destination reads as it did before the move', async () => {
+    const at = (iso: string) => new Date(iso);
+    const fixture = await getDb().transaction(async (tx) => {
+      const user = await makeUser(tx);
+      const institution = await makeInstitution(tx);
+      const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      // One source per destination, each observed once: a second transfer
+      // dated before the first one's observation would leave drift in the
+      // first interval, spread over a span that ends at the wall clock.
+      const observedSource = async () => {
+        const token = await makeToken(tx);
+        created.tokens.push(token.id);
+        const holding = await makeHolding(tx, {
+          userId: user.id,
+          accountId: account.id,
+          tokenId: token.id,
+          balance: '4000',
+          source: 'manual',
+          createdAt: at('2026-06-01T00:00:00.000Z'),
+          lastUpdated: at('2026-06-01T00:00:00.000Z'),
+        });
+        await tx.insert(schema.holdingBalanceObservations).values({
+          userId: user.id,
+          holdingId: holding.id,
+          balance: '4000',
+          observedAt: at('2026-06-01T00:00:00.000Z'),
+          source: 'sync-capture',
+          sourceMetadata: { origin: 'updateHolding' },
+        });
+        return holding.id;
+      };
+      const fresh = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const wallet = await makeWalletAccount(tx, {
+        userId: user.id,
+        institutionId: institution.id,
+      });
+      created.users.push(user.id);
+      created.institutions.push(institution.id);
+      return {
+        userId: user.id,
+        manualSourceId: await observedSource(),
+        walletSourceId: await observedSource(),
+        freshId: fresh.id,
+        walletId: wallet.id,
+      };
+    });
+    const { userId, manualSourceId, walletSourceId } = fixture;
+
+    const intoManual = await getDb().transaction((tx) =>
+      transferInto(tx, { userId, holdingId: manualSourceId }, fixture.freshId, '2000')
+    );
+    const intoWallet = await getDb().transaction((tx) =>
+      transferInto(tx, { userId, holdingId: walletSourceId }, fixture.walletId, '500')
+    );
+
+    // Read on the path before the move. The source falls by exactly what
+    // left, so no drift is spread; each destination reads zero before the
+    // arrival and the arrival after it.
+    const now = new Date();
+    const golden: Array<[string, Date, string | null]> = [
+      [manualSourceId, at('2026-05-15T00:00:00.000Z'), '4000'],
+      [manualSourceId, at('2026-08-19T00:00:00.000Z'), '4000'],
+      [manualSourceId, at('2026-08-21T00:00:00.000Z'), '2000'],
+      [manualSourceId, now, '2000'],
+      [walletSourceId, at('2026-08-19T00:00:00.000Z'), '4000'],
+      [walletSourceId, at('2026-08-21T00:00:00.000Z'), '3500'],
+      [walletSourceId, now, '3500'],
+      [intoManual, at('2026-08-19T00:00:00.000Z'), '0'],
+      [intoManual, at('2026-08-21T00:00:00.000Z'), '2000'],
+      [intoManual, now, '2000'],
+      [intoWallet, at('2026-08-19T00:00:00.000Z'), '0'],
+      [intoWallet, at('2026-08-21T00:00:00.000Z'), '500'],
+      [intoWallet, now, '500'],
+    ];
+    const readings: HistoryReading[] = golden.map(([holdingId, instant, balance]) => ({
+      holdingId,
+      at: instant,
+      balance,
+      anchor: null,
+    }));
+
+    await expectHistoryUnchanged(readings);
+    // The control: a figure the walk does not give is caught.
+    await expect(
+      expectHistoryUnchanged(readings.map((r, i) => (i === 8 ? { ...r, balance: '0' } : r)))
+    ).rejects.toThrow();
+  });
+});
+
+/**
+ * The destination comes from `HoldingResolver` (foundation A2, D-4, D-6): a
+ * feed holding when a sync owns the account, else a snapshot one, starting at
+ * the arrival's date and opened with no observation. The row, the ledger, the
+ * cache and history are the characterization's above (D-1).
+ */
+describe('a declared transfer’s created destination comes from HoldingResolver (foundation A2)', () => {
+  afterEach(created.drop);
+
+  /** The arrival leg's observation, with its labels. */
+  async function labelledObservations(tx: Tx, holdingId: string) {
+    return (await observationsOf(tx, holdingId)).map((o) => ({
+      balance: o.balance,
+      role: o.role,
+      authority: o.authority,
+      inputId: o.inputId,
+      cause: o.cause,
+      supersededAt: o.supersededAt,
+    }));
+  }
+
+  test('an unsynced account’s destination is a snapshot holding starting at the transfer’s date, and the arrival is its first snapshot', async () => {
+    await withTestDb(async (tx) => {
+      const { user, institution, holding } = await scaffold(tx);
+      const fresh = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+
+      const opened = await transferInto(
+        tx,
+        { userId: user.id, holdingId: holding.id },
+        fresh.id,
+        '2000'
+      );
+
+      const row = await holdingRow(tx, opened);
+      expect({ kind: row.kind, startsAt: row.startsAt }).toEqual({
+        kind: 'snapshot',
+        startsAt: new Date(MOVED_AT),
+      });
+      expect(await labelledObservations(tx, opened)).toEqual([
+        {
+          balance: '2000',
+          role: 'snapshot',
+          authority: 'person',
+          inputId: null,
+          cause: 'flow',
+          supersededAt: null,
+        },
+      ]);
+    });
+  });
+
+  // Rule P (D7, R85): the feed has produced no evidence yet, so the arrival a
+  // person declared is a snapshot, as the backfill would label it.
+  test('a sync-owned account’s destination is a feed holding starting at the transfer’s date, and the arrival, before its feed’s first evidence, is a snapshot', async () => {
+    await withTestDb(async (tx) => {
+      const { user, institution, holding } = await scaffold(tx);
+      const from = { userId: user.id, holdingId: holding.id };
+      const wallet = await makeWalletAccount(tx, {
+        userId: user.id,
+        institutionId: institution.id,
+      });
+      const exchange = await exchangeAccount(tx, user.id);
+
+      for (const [accountId, amount] of [
+        [wallet.id, '1000'],
+        [exchange.id, '1500'],
+      ] as const) {
+        const opened = await transferInto(tx, from, accountId, amount);
+        const row = await holdingRow(tx, opened);
+        expect({ kind: row.kind, startsAt: row.startsAt }).toEqual({
+          kind: 'feed',
+          startsAt: new Date(MOVED_AT),
+        });
+        expect(await labelledObservations(tx, opened)).toEqual([
+          {
+            balance: amount,
+            role: 'snapshot',
+            authority: 'person',
+            inputId: null,
+            cause: 'flow',
+            supersededAt: null,
+          },
+        ]);
+      }
+      await expectPersonRolesAsClassified(user.id, tx);
+    });
+  });
+
+  test('expectLabelsSettled after declared transfers open a snapshot and a feed destination', async () => {
+    const fixture = await getDb().transaction(async (tx) => {
+      const user = await makeUser(tx);
+      const institution = await makeInstitution(tx);
+      const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const sources: string[] = [];
+      for (let i = 0; i < 2; i++) {
+        const token = await makeToken(tx);
+        created.tokens.push(token.id);
+        const holding = await makeHolding(tx, {
+          userId: user.id,
+          accountId: account.id,
+          tokenId: token.id,
+          balance: '4000',
+          source: 'manual',
+        });
+        sources.push(holding.id);
+      }
+      const fresh = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const wallet = await makeWalletAccount(tx, {
+        userId: user.id,
+        institutionId: institution.id,
+      });
+      created.users.push(user.id);
+      created.institutions.push(institution.id);
+      return { userId: user.id, sources, freshId: fresh.id, walletId: wallet.id };
+    });
+    // The sources settled first, as the backfill leaves them.
+    await Container.get(FoundationClassificationService).classify({
+      apply: true,
+      userId: fixture.userId,
+    });
+
+    const [intoManual, intoWallet] = fixture.sources;
+    if (!intoManual || !intoWallet) throw new Error('two sources');
+    await getDb().transaction((tx) =>
+      transferInto(tx, { userId: fixture.userId, holdingId: intoManual }, fixture.freshId, '2000')
+    );
+    await getDb().transaction((tx) =>
+      transferInto(tx, { userId: fixture.userId, holdingId: intoWallet }, fixture.walletId, '500')
+    );
+
+    await expectLabelsSettled(fixture.userId);
   });
 });

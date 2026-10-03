@@ -8,16 +8,22 @@
  * anchors on it until A5 (ruling R11).
  */
 
-import { describe, expect, test } from 'bun:test';
-import type { DatabaseTransaction } from '@scani/db';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { type DatabaseTransaction, getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
-import { asc, eq } from 'drizzle-orm';
+import { asc, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWriter';
 import { type SnapshotEntry, SnapshotWriter } from '../../../src/services/feeds/SnapshotWriter';
 import { withTestDb } from '../../../test/helpers/db';
-import { makeInstitution, makeUser } from '../../../test/helpers/factories';
-import { makeAccount, makeHolding, makeToken } from '../../../test/helpers/factories-extra';
+import { makeInstitution, makeInstitutionType, makeUser } from '../../../test/helpers/factories';
+import {
+  makeAccount,
+  makeHolding,
+  makeHoldingTransaction,
+  makeToken,
+} from '../../../test/helpers/factories-extra';
+import { backendPid, outcomeOf, waitUntilBlocked } from '../../../test/helpers/lock-wait';
 
 const writer = () => Container.get(SnapshotWriter);
 const cacheWriter = () => Container.get(HoldingCacheWriter);
@@ -350,6 +356,129 @@ describe('SnapshotWriter.recordEntries', () => {
   });
 });
 
+/**
+ * The two-connection half: committed fixtures, because a lock is only seen
+ * from a second transaction.
+ */
+describe('SnapshotWriter.recordEntries locks its holding at the level its upsert takes (R81)', () => {
+  const created = { users: [] as string[], tokens: [] as string[], institutions: [] as string[] };
+
+  afterEach(async () => {
+    const db = getDb();
+    const users = created.users.splice(0);
+    const tokens = created.tokens.splice(0);
+    const institutions = created.institutions.splice(0);
+    // Users first: their holdings are what keep the tokens restricted.
+    if (users.length) await db.delete(schema.users).where(inArray(schema.users.id, users));
+    if (tokens.length) await db.delete(schema.tokens).where(inArray(schema.tokens.id, tokens));
+    if (institutions.length) {
+      await db.delete(schema.institutions).where(inArray(schema.institutions.id, institutions));
+    }
+  });
+
+  async function committedSnapshotHolding() {
+    return await getDb().transaction(async (tx) => {
+      const user = await makeUser(tx);
+      const bank = await makeInstitutionType(tx, { code: 'bank' });
+      const institution = await makeInstitution(tx, { typeId: bank.id });
+      const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const token = await makeToken(tx);
+      const holding = await makeHolding(tx, {
+        userId: user.id,
+        accountId: account.id,
+        tokenId: token.id,
+        balance: '100',
+        kind: 'snapshot',
+        startsAt: LONG_AGO,
+        lastUpdated: LONG_AGO,
+      });
+      created.users.push(user.id);
+      created.tokens.push(token.id);
+      created.institutions.push(institution.id);
+      return holding;
+    });
+  }
+
+  /**
+   * A writer that names the holding, then writes it, with an APY-shaped
+   * `recordEntries` arriving in between. Released once the call waits on the
+   * writer, or once it has settled without waiting.
+   */
+  async function recordEntriesBesideAWriter(entries: readonly SnapshotEntry[]) {
+    const holding = await committedSnapshotHolding();
+    let inserted!: () => void;
+    let proceed!: () => void;
+    const rowInserted = new Promise<void>((resolve) => {
+      inserted = resolve;
+    });
+    const proceeded = new Promise<void>((resolve) => {
+      proceed = resolve;
+    });
+    let rowPid: number | undefined;
+    let callPid: number | undefined;
+
+    const rowWriter = getDb().transaction(async (tx) => {
+      rowPid = await backendPid(tx);
+      await makeHoldingTransaction(tx, {
+        userId: holding.userId,
+        holdingId: holding.id,
+        kind: 'deposit',
+        quantity: '5',
+        occurredAt: daysAfterT0(1),
+        source: 'user-entered',
+      });
+      inserted();
+      await proceeded;
+      await cacheWriter().apply(holding.userId, [{ holdingId: holding.id, balance: '200' }], tx);
+    });
+    let call: Promise<unknown> = Promise.resolve();
+    let blocked = false;
+    try {
+      await Promise.race([rowInserted, rowWriter]);
+      call = getDb().transaction(async (tx) => {
+        callPid = await backendPid(tx);
+        await writer().recordEntries(
+          {
+            userId: holding.userId,
+            holdingId: holding.id,
+            entries,
+            cache: { holdingId: holding.id, balance: '101' },
+            legacyObservation: {
+              source: 'sync-capture',
+              sourceMetadata: { origin: 'updateHoldingBalance' },
+            },
+          },
+          tx
+        );
+      });
+      blocked = await waitUntilBlocked({ pid: () => callPid, settled: call }, rowPid!);
+    } finally {
+      proceed();
+    }
+    const outcomes = await Promise.allSettled([rowWriter, call]);
+    return { blocked, outcomes: outcomes.map(outcomeOf) };
+  }
+
+  /**
+   * FOR UPDATE waits on every uncommitted row naming the holding (KEY SHARE),
+   * so taking NO KEY UPDATE first and the upsert's FOR UPDATE after would be
+   * an upgrade: the call would hold the row while waiting on the writer, whose
+   * balance write then waits on the call.
+   */
+  test('with entries, it waits out a writer that names the holding and then writes it: both commit (no 40P01)', async () => {
+    expect(
+      await recordEntriesBesideAWriter([apyEntry('apy:c-1:2026-07-02', '1', daysAfterT0(1))])
+    ).toEqual({ blocked: true, outcomes: ['fulfilled', 'fulfilled'] });
+  });
+
+  test('with no entries it upserts nothing, so it takes NO KEY UPDATE and does not wait', async () => {
+    expect(await recordEntriesBesideAWriter([])).toEqual({
+      blocked: false,
+      outcomes: ['fulfilled', 'fulfilled'],
+    });
+  });
+});
+
 describe('HoldingCacheWriter.apply', () => {
   test("HoldingCacheWriter refuses another user's holding", async () => {
     await withTestDb(async (tx) => {
@@ -364,6 +493,35 @@ describe('HoldingCacheWriter.apply', () => {
       // The control: the same write as the holding's own user lands.
       await cacheWriter().apply(theirs.userId, [{ holdingId: theirs.id, balance: '5' }], tx);
       expect((await holdingRow(tx, theirs.id)).balance).toBe('5');
+    });
+  });
+
+  test('last_updated is the instant the caller states, and now when it states none', async () => {
+    // D-1: a balance edit stamps last_updated with the edit's own instant, and
+    // legacy history walks the ledger back to that column (anchor 2).
+    await withTestDb(async (tx) => {
+      const stated = await holdingOf(tx, { balance: '100' });
+      const unstated = await holdingOf(tx, { balance: '100' });
+      const editedAt = new Date('2026-03-01T09:30:00.000Z');
+      const before = Date.now();
+
+      await cacheWriter().apply(
+        stated.userId,
+        [{ holdingId: stated.id, balance: '7', lastUpdated: editedAt }],
+        tx
+      );
+      await cacheWriter().apply(unstated.userId, [{ holdingId: unstated.id, balance: '8' }], tx);
+
+      const after = Date.now();
+      const statedRow = await holdingRow(tx, stated.id);
+      expect({ balance: statedRow.balance, lastUpdated: statedRow.lastUpdated }).toEqual({
+        balance: '7',
+        lastUpdated: editedAt,
+      });
+      const unstatedRow = await holdingRow(tx, unstated.id);
+      expect(unstatedRow.balance).toBe('8');
+      expect(unstatedRow.lastUpdated.getTime()).toBeGreaterThanOrEqual(before);
+      expect(unstatedRow.lastUpdated.getTime()).toBeLessThanOrEqual(after);
     });
   });
 });

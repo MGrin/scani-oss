@@ -108,7 +108,6 @@ describe('TokenIdentityService — lookalike identities', () => {
     Container.set(TokenTypeRepository, {
       findByCode: async (code: string) => ({ id: `${code}-type-id`, code }) as never,
       findById: async (id: string) => ({ id, code: 'crypto' }) as never,
-      findByCodes: async () => [] as never,
     } as unknown as TokenTypeRepository);
     Container.set(TokenRepository, {
       findByEvmContract: async () => null,
@@ -199,9 +198,8 @@ describe('TokenIdentityService — lookalike identities', () => {
  * The guard, at the boundary rather than at the view (SC-276).
  *
  * `findOrCreateByIdentity` is where every provider's token identity is
- * normalised — balance imports reach it through
- * `TokenService.findOrCreateTokenFromIntegration`, transaction imports through
- * `TransactionRouter` — so decoding here covers both without either knowing
+ * normalised — balance and transaction imports both reach it through
+ * `AssetResolver` — so decoding here covers both without either knowing
  * about it, and without an IBKR special case.
  *
  * These assert on what the repository is ASKED for, which is what gets stored.

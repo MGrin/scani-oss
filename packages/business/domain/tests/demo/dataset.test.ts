@@ -2,6 +2,12 @@ import { describe, expect, it } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { buildDemoDataset } from '../../src/demo/dataset';
 import { DEMO_ANCHOR_DATE, DEMO_HISTORY_DAYS } from '../../src/demo/persona';
+import {
+  classifyHoldingEvidence,
+  type EvidenceObservation,
+  type EvidenceTransaction,
+  type LegacyHoldingEvidence,
+} from '../../src/services/foundation/legacy-classification';
 import { sourceForChainId } from '../../src/services/transactions/transaction-source';
 
 const dataset = buildDemoDataset();
@@ -359,5 +365,127 @@ describe('demo dataset — a wallet account is shaped like an imported one', () 
         .map((account) => `${tx.symbol} from ${source.accountKey} -> ${account.key}`);
     });
     expect(offered).toEqual(['BTC from btc-wallet -> btc-hot-wallet']);
+  });
+});
+
+describe('demo dataset — kind and starts_at are written with the holding (A2 D-6)', () => {
+  // The database stamps `created_at` on the seeded evidence. The classifier
+  // reads it only to place statement and APY balance copies and edit causes,
+  // and the demo writes none of those, so one instant after the anchor stands
+  // in for the seeding run.
+  const seededAt = new Date(`${dataset.anchorDate}T23:59:59.000Z`);
+
+  /** The rows the seeder writes for one holding, as the O2 backfill reads them. */
+  const evidenceOf = (holding: (typeof dataset.holdings)[number]): LegacyHoldingEvidence => ({
+    holding: {
+      id: holding.id,
+      accountId: holding.accountKey,
+      tokenId: holding.symbol,
+      source: holding.source,
+      externalId: null,
+      kind: null,
+      startsAt: null,
+      balance: holding.balance,
+      lastUpdated: holding.lastUpdated,
+      createdAt: holding.createdAt,
+    },
+    observations: dataset.observations
+      .filter((row) => row.holdingKey === holding.key)
+      .map(
+        (row): EvidenceObservation => ({
+          id: row.id,
+          holdingId: holding.id,
+          balance: row.balance,
+          observedAt: row.observedAt,
+          source: row.source,
+          gapReview: null,
+          role: null,
+          authority: null,
+          inputId: null,
+          cause: null,
+          supersededAt: null,
+          createdAt: seededAt,
+          metadataOrigin: null,
+          metadataSource: null,
+          metadataLegacyAnchor: null,
+        })
+      ),
+    transactions: dataset.transactions
+      .filter((row) => row.holdingKey === holding.key)
+      .map(
+        (row): EvidenceTransaction => ({
+          id: row.id,
+          holdingId: holding.id,
+          kind: row.kind,
+          quantity: row.quantity,
+          occurredAt: row.occurredAt,
+          externalId: row.externalId,
+          source: row.source,
+          transferGroupId: row.transferGroupId,
+          swapGroupId: row.swapGroupId,
+          settlesTransactionId: null,
+          priceNative: row.priceNative,
+          priceNativeTokenId: row.priceNativeSymbol,
+          ledgerKind: null,
+          kindSubtype: null,
+          groupId: null,
+          feeOf: null,
+          inputId: null,
+          executionPrice: null,
+          executionPriceTokenId: null,
+          kindOrigin: null,
+          decisionId: null,
+          createdAt: seededAt,
+        })
+      ),
+    inputs: [],
+    windows: [],
+  });
+
+  it('gives every holding the kind and starts_at the backfill derives from its own rows', () => {
+    // Equal to O2's classifier, so a seeded demo reads as production does
+    // after the backfill, with no NULL kind left for one to fill.
+    for (const holding of dataset.holdings) {
+      const derived = classifyHoldingEvidence(evidenceOf(holding)).evidence;
+      expect({ key: holding.key, kind: holding.kind, startsAt: holding.startsAt }).toEqual({
+        key: holding.key,
+        kind: derived.kind,
+        startsAt: derived.startsAt,
+      });
+    }
+  });
+
+  it('states both kinds: the IBKR positions a person types are snapshots, the rest feeds', () => {
+    // Explicit, because a wrong non-NULL kind is invisible to a check that
+    // fills only NULLs (R84). The three bank cash rows are `manual` and still
+    // feeds: their statement rows make them K3.
+    expect(dataset.holdings.filter((h) => h.kind === 'snapshot').map((h) => h.key)).toEqual([
+      'ibkr-usd-cash',
+      'ibkr-voo',
+      'ibkr-aapl',
+      'ibkr-msft',
+      'ibkr-nvda',
+    ]);
+    expect(dataset.holdings.filter((h) => h.kind === 'feed').map((h) => h.key)).toEqual([
+      'wise-eur-cash',
+      'wise-gbp-cash',
+      'revolut-gbp-cash',
+      'kraken-btc',
+      'kraken-eth',
+      'kraken-usdc',
+      'eth-wallet-eth',
+      'eth-wallet-usdc',
+      'btc-wallet-btc',
+      'sol-wallet-sol',
+    ]);
+  });
+
+  it('starts every holding at its creation, ahead of all the evidence the engine counts', () => {
+    for (const holding of dataset.holdings) {
+      expect({ key: holding.key, startsAt: holding.startsAt }).toEqual({
+        key: holding.key,
+        startsAt: holding.createdAt,
+      });
+    }
   });
 });

@@ -1,4 +1,5 @@
 import { ScaniLogo } from '@scani/ui/components/ScaniLogo';
+import { buildIdentity } from '@scani/ui/lib/build-identity';
 import { Button } from '@scani/ui/ui/button';
 import { PeekSheet } from '@scani/ui/v3/components/PeekSheet';
 import type { PeekFact, PeekSection } from '@scani/ui/v3/lib/peek';
@@ -7,8 +8,7 @@ import { useTranslation } from 'react-i18next';
 
 export function ScaniBrand() {
   const { t } = useTranslation();
-  const build = typeof __SCANI_CORE_BUILD__ === 'undefined' ? null : __SCANI_CORE_BUILD__;
-  const commit = typeof __SCANI_BUILD_COMMIT__ === 'undefined' ? null : __SCANI_BUILD_COMMIT__;
+  const { coreBuild: build, commit } = buildIdentity();
   const [open, setOpen] = useState(false);
   const releaseVersion =
     typeof __SCANI_RELEASE_VERSION__ === 'undefined' ? null : __SCANI_RELEASE_VERSION__;

@@ -6,7 +6,7 @@ import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import type { MovementForm } from '../../hooks/useMovementForm';
-import { amountDecimals } from '../../lib/holdings';
+import { amountDecimals, BALANCE_EDIT_SCALE } from '../../lib/holdings';
 import {
   MOVEMENT_OUTFLOW_OPTIONS,
   type MovementHolding,
@@ -97,6 +97,8 @@ export function MovementWhatFields({ form, holding, holdings, disabled }: Moveme
           id="movement-amount"
           value={form.amount}
           onValueChange={form.setAmount}
+          // A holding's own scale: at the default two, 0.005 BTC was 0.00.
+          decimalScale={BALANCE_EDIT_SCALE}
           className="text-body"
           disabled={disabled}
           // Only where the holding is already known. On the page the picker is
@@ -134,6 +136,7 @@ export function MovementWhatFields({ form, holding, holdings, disabled }: Moveme
             id="movement-fee"
             value={form.fee}
             onValueChange={form.setFee}
+            decimalScale={BALANCE_EDIT_SCALE}
             className="text-body"
             disabled={disabled}
           />

@@ -22,6 +22,7 @@
         "addHolding": "añade una posición con un token y una cantidad",
         "chooseAccount": "elige una cuenta",
         "chooseFile": "elige un archivo para subir",
+        "chooseIntent": "indica qué contiene el archivo",
         "chooseInstitution": "elige dónde está la cuenta",
         "chooseInvoice": "elige la factura que quieres subir",
         "duplicateToken": "dale a cada fila que nombre el mismo token su propio nombre, o fusiónalas",
@@ -30,7 +31,10 @@
         "nameInstitution": "ponle nombre a la institución nueva",
         "walletEmpty": "introduce la dirección del monedero",
         "walletIncomplete": "completa la dirección del monedero",
-        "walletUnrecognised": "revisa la dirección del monedero"
+        "walletUnrecognised": "revisa la dirección del monedero",
+        "alreadyHeld": "{{account}} ya tiene {{tokens}}: ponle nombre a la fila nueva para guardarla como un bote aparte, o cambia el saldo de la posición existente",
+        "zeroAmount": "introduce un importe mayor que cero para {{tokens}}, o elimina esa fila",
+        "unreadableAmount": "corrige el importe de {{tokens}}: no es un número que Scani pueda leer"
       },
       "category": {
         "bank": "Banco",
@@ -97,7 +101,7 @@
         "allServices": "Todos los servicios",
         "connectNamed": "Conectar {{name}}",
         "credentials": "Credenciales",
-        "listSubtitle": "Claves de API de solo lectura, cifradas en reposo. Los saldos se sincronizan cada hora, y puedes mantener varias conexiones al mismo servicio.",
+        "listSubtitle": "Claves de API de solo lectura, cifradas en reposo. Los saldos se sincronizan cada hora. Conectar de nuevo el mismo servicio sustituye sus claves.",
         "notFoundBody": "Scani no tiene ninguna integración con ese nombre. Puede que se haya cambiado de nombre, o que el enlace ya no esté actualizado.",
         "notFoundTitle": "No es una de las nuestras",
         "ownDocs": "la documentación de {{name}}",
@@ -138,7 +142,9 @@
           "subject": "estas posiciones",
           "title": "Añadir posiciones a mano",
           "token": "Token",
-          "tokenFor": "token de la posición {{index}}"
+          "tokenFor": "token de la posición {{index}}",
+          "potNameHeldHint": "{{account}} ya tiene {{symbol}}. Ponle a esta un nombre propio para conservar ambas como botes separados o, si es el mismo dinero, cambia el saldo de esa posición en lugar de añadir una fila.",
+          "alreadyHeldError": "No se ha guardado: la cuenta ya tiene uno de estos tokens con el mismo nombre. No se ha añadido nada; las filas están marcadas arriba."
         },
         "uploadAndRead": "Subirlo y leerlo",
         "wallet": {
@@ -221,7 +227,9 @@
           "ton": "EQ o UQ seguido de 46 caracteres, 48 en total",
           "tron": "T seguido de 33 caracteres más, 34 en total"
         },
-        "unrecognised": "Scani no lee ninguna cadena cuyas direcciones se parezcan a eso. {{shapes}}"
+        "unrecognised": "Scani no lee ninguna cadena cuyas direcciones se parezcan a eso. {{shapes}}",
+        "innerSpace": "Hay un espacio dentro de esta dirección. Quítalo: una dirección es una sola secuencia de caracteres sin cortes.",
+        "ensName": "Eso es un nombre ENS. Scani sigue direcciones, no nombres: pega la dirección 0x a la que apunta."
       },
       "backChoices": "Volver a las opciones",
       "choice": {
@@ -827,7 +835,8 @@
           "amount": "introduce cuánto se movió",
           "holding": "elige la posición que se movió",
           "where": "di adónde fue el dinero",
-          "fee": "la comisión tiene que ser menor que el importe que se movió"
+          "fee": "la comisión tiene que ser menor que el importe que se movió",
+          "exceedsBalance": "en esta posición solo hay {{available}} {{symbol}}: introduce esa cantidad o menos"
         },
         "busyLabel": "el registro",
         "currentBalance": "Actualmente {{amount}} {{symbol}}",
@@ -867,7 +876,11 @@
             "title": "Movido a un sitio que Scani no ve"
           }
         },
-        "whereLabel": "¿Adónde fue?"
+        "whereLabel": "¿Adónde fue?",
+        "error": {
+          "exceedsBalance": "No se ha registrado: {{amount}} {{symbol}} es más de lo que tiene ahora esta posición. Revisa su saldo e introduce un importe menor."
+        },
+        "subject": "este movimiento"
       },
       "page": {
         "title": "Posiciones"
@@ -996,6 +1009,25 @@
       "edit": {
         "title": "Editar posición",
         "description": "Cambia cuánto tienes y, si sigues más de uno, qué bolsillo es este."
+      },
+      "activity": {
+        "heading": "Actividad reciente",
+        "kind": {
+          "moneyIn": "Dinero que entra",
+          "moneyOut": "Dinero que sale",
+          "transferIn": "Transferencia recibida",
+          "transferOut": "Transferencia enviada",
+          "bought": "Compra",
+          "sold": "Venta",
+          "swap": "Intercambio",
+          "settlement": "Liquidación de operación",
+          "fee": "Comisión",
+          "reward": "Recompensa",
+          "interest": "Intereses",
+          "airdrop": "Airdrop",
+          "openingBalance": "Saldo inicial",
+          "correction": "Corrección"
+        }
       }
     },
     "home": {
@@ -1327,10 +1359,13 @@
           "label": "Con error — no se reintentará",
           "sentence": "Esto ha fallado por un motivo que otro intento no va a corregir, y no se ha registrado nada que podamos enseñarte. Volver a ejecutarlo sin cambios fallará igual.",
           "sentenceWithDetail": "Esto ha fallado por un motivo que otro intento no va a corregir. Revisa los detalles de abajo, corrígelos y vuelve a lanzarlo."
+        },
+        "sourceUnavailable": {
+          "label": "Con error — inténtalo más tarde",
+          "sentence": "No se pudo conectar con un servicio del que depende esto, así que se detuvo antes de tiempo. Vuelve a intentarlo más tarde."
         }
       },
       "file": {
-        "balanceAnchors": "Referencias de saldo",
         "currency": {
           "apply": "Importar con esta divisa",
           "applying": "Reimportando…",
@@ -1390,6 +1425,11 @@
           "fee": "Comisión separada",
           "none": "Sin asignar",
           "apply": "Aplicar e importar"
+        },
+        "balancesRecorded": "Saldos registrados",
+        "columnsRow": {
+          "label": "Columnas",
+          "matchedAutomatically": "Detectadas automáticamente"
         }
       },
       "fileCount_many": "{{count}} archivos",
@@ -1458,9 +1498,9 @@
       },
       "kind": {
         "deleteAllData": "Eliminación de todos los datos de la cuenta",
-        "fileEnriched": "{{type}} · enriquecido",
         "fileFallback": "archivo",
-        "holdingPriceRefresh": "Actualización del precio de una posición"
+        "holdingPriceRefresh": "Actualización del precio de una posición",
+        "fileOfType": "Archivo {{type}}"
       },
       "label": {
         "accountDeletion": "Eliminación de la cuenta",
@@ -2387,6 +2427,7 @@
         "needsDateOrder_one": "{{count}} transacción — falta el orden de las fechas",
         "needsDateOrder_other": "{{count}} transacciones — falta el orden de las fechas",
         "nothingFound": "no se ha encontrado nada",
+        "couldNotRead": "no se ha podido leer — no se encontró nada porque nada respondió",
         "symbolsOverflow": "{{symbols}} +{{hidden}}",
         "transfersToConfirm": "Pagos salientes por clasificar",
         "unexplainedBalanceChanges_many": "{{count}} variaciones de saldo que no podemos explicar",
@@ -3004,9 +3045,7 @@
         "priceFrom": "Precio procedente de",
         "priceUpdated": "Precio actualizado",
         "pricedIn": "Valorado en",
-        "setManually": "Fijado a mano",
-        "type": "Tipo",
-        "unknownSource": "Fuente desconocida"
+        "type": "Tipo"
       },
       "hidden": {
         "account": "Cuenta",
@@ -3176,6 +3215,13 @@
       "pending": "Archivos compartidos pendientes",
       "pendingSection": "Cambios pendientes",
       "fingerprint": "Huella de Core"
+    },
+    "priceSource": {
+      "frankfurter": "Frankfurter (tipos del BCE)",
+      "manual": "Fijado a mano",
+      "baseCurrency": "Tu moneda base",
+      "siblingFallback": "El mismo activo, otra cotización",
+      "unknown": "Fuente desconocida"
     }
   }
 }

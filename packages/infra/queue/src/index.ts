@@ -26,6 +26,7 @@ export type {
   ScheduledJobDescriptor,
   UserJobDescriptor,
 } from './core/job-descriptor';
+export { jobDeathReason, sourceUnavailable } from './core/source-unavailable';
 export type {
   EnqueuedJobMeta,
   LifecycleEvent,

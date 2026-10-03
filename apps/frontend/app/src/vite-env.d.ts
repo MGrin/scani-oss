@@ -17,11 +17,4 @@ declare module '*.svg' {
   export default content;
 }
 
-declare const __SCANI_CORE_BUILD__: {
-  productVersion: string;
-  releaseCommit: string;
-  coreFingerprint: string;
-  pendingChangeCount: number;
-} | null;
-declare const __SCANI_BUILD_COMMIT__: string | null;
 declare const __SCANI_RELEASE_VERSION__: string | null;

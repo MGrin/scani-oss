@@ -14,6 +14,7 @@ export * from './holding-movement';
 export * from './holdingApy';
 export * from './institution';
 export * from './job-failure';
+export * from './job-outcome';
 export * from './period-disposals';
 export * from './realized-ledger';
 export * from './review';

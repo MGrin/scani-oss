@@ -29,6 +29,7 @@
 
 import type { HoldingTransactionKind } from '@scani/db/schema';
 import type { AnswerSource, CostBasisMethodDto, TransferReviewDecision } from '@scani/shared';
+import type { HoldingKind } from '../engine/types';
 import {
   addDays,
   addMonths,
@@ -101,6 +102,8 @@ interface DemoHoldingRow {
   readonly symbol: string;
   readonly balance: string;
   readonly source: string;
+  readonly kind: HoldingKind;
+  readonly startsAt: Date;
   readonly arrival: string;
   readonly label: string | null;
   readonly createdAt: Date;
@@ -1332,6 +1335,7 @@ export function buildDemoDataset(options: BuildDemoDatasetOptions = {}): DemoDat
   const holdings: DemoHoldingRow[] = DEMO_HOLDINGS.map((spec) => {
     const state = series.get(spec.key) as HoldingSeries;
     const first = Math.max(state.firstIndex, 0);
+    const createdAt = atHour(addDays(startDate, first), 6);
     return {
       id: demoUuid('holding', spec.key),
       key: spec.key,
@@ -1339,9 +1343,13 @@ export function buildDemoDataset(options: BuildDemoDatasetOptions = {}): DemoDat
       symbol: spec.symbol,
       balance: quantity(spec.symbol, state.balance[days - 1] as number),
       source: spec.source,
+      kind: spec.kind,
+      // Created ahead of every row the engine counts for it: only the opening
+      // balance is earlier, and that is not evidence.
+      startsAt: createdAt,
       arrival: spec.arrival,
       label: spec.label ?? null,
-      createdAt: atHour(addDays(startDate, first), 6),
+      createdAt,
       lastUpdated: atHour(anchorDate, 23, 45),
       firstTxAt: atHour(addDays(startDate, first), 6),
       lastTxAt: atHour(addDays(startDate, state.lastIndex), 20),

@@ -268,6 +268,12 @@ describe('a verdict through ingest', () => {
           cacheObservation: null,
           derivesTradeLegs: false,
           holdingFailure: 'skip-entry',
+          absence: null,
+          clearsAbsenceTally: false,
+          createdCheckpointMeta: null,
+          unhideOnNonZero: false,
+          unchangedCheckpoint: 'append',
+          zeroOpensHolding: true,
         },
         notices: [],
       };

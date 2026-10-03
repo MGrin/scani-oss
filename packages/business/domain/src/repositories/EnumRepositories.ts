@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { AccountType, InstitutionType, TokenType } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 // Enum-table TTL. These tables (institution_types, account_types, token_types)
@@ -123,28 +123,6 @@ export class TokenTypeRepository extends BaseRepository<TokenType, Partial<Token
       return value;
     } catch (error) {
       this.logger.error({ code, error }, 'Failed to find token type by code');
-      throw error;
-    }
-  }
-
-  /**
-   * Find multiple token types by their codes
-   */
-  async findByCodes(codes: string[], transaction?: DatabaseTransaction): Promise<TokenType[]> {
-    try {
-      if (codes.length === 0) {
-        return [];
-      }
-
-      const database = this.getDb(transaction);
-      const results = await database
-        .select()
-        .from(schema.tokenTypes)
-        .where(inArray(schema.tokenTypes.code, codes));
-
-      return results;
-    } catch (error) {
-      this.logger.error({ codes, error }, 'Failed to find token types by codes');
       throw error;
     }
   }

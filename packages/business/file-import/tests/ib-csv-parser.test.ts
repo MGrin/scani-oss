@@ -82,4 +82,45 @@ describe('parseIbCsvStatement', () => {
     expect(result.holdings).toHaveLength(0);
     expect(result.warnings.length).toBeGreaterThan(0);
   });
+
+  // SC-1529: the positions are what the account held when the period ended.
+  it('reports its positions dated at the end of the period it names', () => {
+    const result = parseIbCsvStatement(IB_CSV_SAMPLE);
+    expect(result.positions?.asOf).toEqual(new Date('2026-04-15T23:59:59.999Z'));
+    expect(result.positions?.securities.map((s) => s.symbol)).toEqual([
+      'XEQT',
+      'XUU',
+      'AAPL',
+      'AMZN',
+      'VOO',
+    ]);
+    expect(result.positions?.cash).toEqual([
+      { currency: 'CAD', balance: '29.209999525' },
+      { currency: 'USD', balance: '10901.116301185' },
+    ]);
+  });
+
+  it('dates a ranged period by its last day', () => {
+    const ranged = IB_CSV_SAMPLE.replace(
+      'Statement,Data,Period,"April 15, 2026"',
+      'Statement,Data,Period,"January 1, 2026 - March 31, 2026"'
+    );
+    expect(parseIbCsvStatement(ranged).positions?.asOf).toEqual(
+      new Date('2026-03-31T23:59:59.999Z')
+    );
+  });
+
+  it('leaves the positions undated when the statement names no period', () => {
+    const undated = IB_CSV_SAMPLE.replace('Statement,Data,Period,"April 15, 2026"\n', '');
+    expect(parseIbCsvStatement(undated).positions?.asOf).toBeNull();
+  });
+
+  it('names a position it does not import because it is not a stock', () => {
+    const option = `${IB_CSV_SAMPLE}\nOpen Positions,Data,Summary,Equity and Index Options,USD,AAPL 260116C00250000,1,100,5,500,6,600,100,`;
+    const result = parseIbCsvStatement(option);
+    expect(result.positions?.securities).toHaveLength(5);
+    expect(result.warnings).toContain(
+      'Open Positions: AAPL 260116C00250000 (Equity and Index Options) is not a stock, so it was not imported'
+    );
+  });
 });

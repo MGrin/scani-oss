@@ -170,6 +170,22 @@ describe('reviewDetailText — wallet-import', () => {
   test('falls back to the counts when the wallet has no label', () => {
     expect(wallet(3, 1)).toBe('3 candidates across 1 chain');
   });
+
+  // SC-1519: the job page said "not a reading of an empty wallet" while this
+  // row said "nothing found" about the same sweep.
+  test('a sweep nothing answered says it could not be read, not that it was empty', () => {
+    const text = detail((texts) =>
+      reviewDetailText(texts, {
+        code: 'walletCandidates',
+        candidates: 0,
+        chains: 1,
+        unreadChains: 20,
+        walletLabel: 'Vitalik',
+      })
+    );
+    expect(text).toStartWith('Vitalik · could not be read');
+    expect(text).not.toContain('nothing found');
+  });
 });
 
 describe('reviewDetailText — the other producers', () => {

@@ -1,10 +1,20 @@
 import { describe, expect, it, mock } from 'bun:test';
 import { IntegrationCredentialsService } from '@scani/domain/services';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
+import { ImportIbkrAccountsUseCase } from '@scani/domain/use-cases';
+import type { ExchangeImportJob } from '@scani/jobs';
+import { IbkrProvider } from '@scani/providers/providers/ibkr';
+import {
+  BullMqEnqueueService,
+  type ProcessorContext,
+  UnrecoverableError,
+  userFacingMessage,
+} from '@scani/queue';
 import { Container } from 'typedi';
 import {
   __test_markCredentialFailed,
   __test_isUnrecoverableExchangeError as classify,
+  ExchangeImportProcessor,
 } from '../../src/processors/exchange-import';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -16,6 +26,10 @@ describe('isUnrecoverableExchangeError', () => {
     expect(classify(new Error('IBKR Flex Query error (code 1010): Invalid token'))).toBe(true);
     expect(classify(new Error('IBKR Flex Query error (code 1012): Expired token'))).toBe(true);
     expect(classify(new Error('IBKR Flex Query error (code 1018): Too many requests'))).toBe(true);
+    expect(classify(new Error('IBKR Flex Query error (code 1014): Query is invalid.'))).toBe(true);
+    expect(classify(new Error('IBKR Flex Query error (code 1015): Token is invalid.'))).toBe(true);
+    // The lockout: each retry is another failed attempt against IBKR's counter.
+    expect(classify(new Error('IBKR Flex Query error (code 1025): Too many failed'))).toBe(true);
   });
 
   it('leaves IBKR poll exhaustion alone so the descriptor budget can retry it', () => {
@@ -155,5 +169,140 @@ describe('markCredentialFailed', () => {
     ).resolves.toBeUndefined();
 
     expect(captureException).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * SC-1524, measured on a local stack: IBKR connect skips server validation, so
+ * a fake Flex token "connected" in 0.3s and the import job then failed ~2.5
+ * minutes later with "tried 3 times and failed every time" and no reason —
+ * IBKR's 1015 ("Token is invalid") was retried as though it were transient,
+ * and the credential row was left `enqueued` once the retries ran out.
+ */
+describe('ExchangeImportProcessor — IBKR failures', () => {
+  const data: ExchangeImportJob = {
+    userId: 'u1',
+    requestId: 'r1',
+    institutionId: 'i1',
+    provider: 'Interactive Brokers',
+  };
+
+  function ctxFor(attemptsMade: number, attempts = 3): ProcessorContext {
+    return {
+      job: { id: 'job-1', attemptsMade, opts: { attempts } },
+      reportProgress: async () => undefined,
+      reportStatus: async () => undefined,
+    } as unknown as ProcessorContext;
+  }
+
+  class TestableProcessor extends ExchangeImportProcessor {
+    // `handle` is protected; the failure classification is the subject here,
+    // not BullMQ's dispatch around it.
+    run(job: ExchangeImportJob, ctx: ProcessorContext) {
+      return this.handle(job, ctx);
+    }
+  }
+
+  // The real provider against a fake SendRequest, so the error under test is
+  // the one IBKR's reply actually produces rather than a hand-written string.
+  async function ibkrFailure(code: string, ibkrMessage: string): Promise<Error> {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        `<FlexStatementResponse><Status>Fail</Status><ErrorCode>${code}</ErrorCode><ErrorMessage>${ibkrMessage}</ErrorMessage></FlexStatementResponse>`,
+        { status: 200 }
+      )) as unknown as typeof fetch;
+    try {
+      const limiter = { execute: async <T>(fn: () => Promise<T>) => fn() };
+      await new IbkrProvider(limiter as never, async () => {}).fetchBalances({
+        institutionCode: 'ibkr',
+        credentialsRef: { userId: 'u1', institutionId: 'i1' },
+        resolveCredentials: async () => ({ flexQueryToken: 'fake', flexQueryId: '1' }),
+      } as never);
+      throw new Error('expected the provider to throw');
+    } catch (error) {
+      return error as Error;
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  }
+
+  function setup(thrown: Error) {
+    const markImportFailed = mock(async (_id: string, _reason: string) => {});
+    const getCredentials = mock(async () => ({ id: 'cred-1' }));
+    Container.set(IntegrationCredentialsService, { getCredentials, markImportFailed });
+    Container.set(BullMqEnqueueService, { add: mock(async () => undefined) });
+    // Wrapped the way ImportIbkrAccountsUseCase wraps a per-account failure.
+    Container.set(ImportIbkrAccountsUseCase, {
+      execute: async () => {
+        throw new Error(`IBKR import failed: ${thrown.message}`, { cause: thrown });
+      },
+    });
+    return { markImportFailed, processor: new TestableProcessor() };
+  }
+
+  async function failureOf(promise: Promise<unknown>): Promise<Error> {
+    try {
+      await promise;
+    } catch (error) {
+      return error as Error;
+    }
+    throw new Error('expected the job to fail');
+  }
+
+  it.each([
+    ['1015', 'Token is invalid.', 'IBKR rejected this Flex token'],
+    ['1014', 'Query is invalid.', 'IBKR has no Flex Query with this id'],
+  ])(
+    'fails %s on the first attempt, names it, and marks the credential failed',
+    async (code, ibkrMessage, sentence) => {
+      const { markImportFailed, processor } = setup(await ibkrFailure(code, ibkrMessage));
+
+      const error = await failureOf(processor.run(data, ctxFor(0)));
+
+      expect(error).toBeInstanceOf(UnrecoverableError);
+      expect(userFacingMessage(error)).toStartWith(sentence);
+      expect(markImportFailed).toHaveBeenCalledTimes(1);
+      expect(markImportFailed.mock.calls[0]?.[1]).toContain(`code ${code}`);
+    }
+  );
+
+  it('marks the credential failed when retries run out, and names the last reason', async () => {
+    // 1019 throughout: IBKR still generating after the provider's whole poll
+    // budget — retryable, so the descriptor's 3 attempts are spent first.
+    const providerError = await ibkrFailure('1019', 'Statement generation in progress.');
+    const { markImportFailed, processor } = setup(providerError);
+
+    const error = await failureOf(processor.run(data, ctxFor(2)));
+
+    // Still an exhaustion, not an UnrecoverableError: the chip must read
+    // "tried 3 times", which is what happened.
+    expect(error).not.toBeInstanceOf(UnrecoverableError);
+    expect(userFacingMessage(error)).toBe(providerError.message);
+    expect(markImportFailed).toHaveBeenCalledTimes(1);
+    expect(markImportFailed.mock.calls[0]?.[1]).toContain('code 1019');
+  });
+
+  it('leaves the credential alone while a retry is still coming', async () => {
+    const { markImportFailed, processor } = setup(
+      await ibkrFailure('1019', 'Statement generation in progress.')
+    );
+
+    const error = await failureOf(processor.run(data, ctxFor(0)));
+
+    expect(error).not.toBeInstanceOf(UnrecoverableError);
+    expect(userFacingMessage(error)).toBeNull();
+    expect(markImportFailed).not.toHaveBeenCalled();
+  });
+
+  it('shows the owner nothing it was not written for when the last attempt fails internally', async () => {
+    const { markImportFailed, processor } = setup(
+      new Error('select "id" from "holdings" where "user_id" = $1')
+    );
+
+    const error = await failureOf(processor.run(data, ctxFor(2)));
+
+    expect(userFacingMessage(error)).toBeNull();
+    expect(markImportFailed).toHaveBeenCalledTimes(1);
   });
 });

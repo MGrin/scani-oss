@@ -11,7 +11,7 @@
     "lint:fix": "biome check --write .",
     "type-check": "tsgo --noEmit -p tsconfig.test.json"
   },
-  "description": "Transaction-ingester registry + statement/screenshot ingesters. Leaf package: callers inject the AI screenshot-parser callback at construction so this package never imports @scani/domain.",
+  "description": "The statement ingester: a parsed bank statement as ledger rows. Leaf package: it never imports @scani/domain.",
   "dependencies": {
     "@scani/db": "workspace:*",
     "@scani/file-import": "workspace:*",

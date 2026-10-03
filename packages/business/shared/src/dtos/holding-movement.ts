@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { AMOUNT_MAX_INTEGER_DIGITS, amountWithinIntegerDigits } from '../decimal';
 import { movementOutflowRefusesInternal } from '../lib/holding-movement';
 import { manualOutflowDestinationSchema } from './transfer-review';
 
@@ -33,6 +34,9 @@ const movementAmount = z
   })
   .refine((value) => Number.parseFloat(value) > 0, {
     message: 'Amount must be greater than zero — a movement of nothing is not a movement',
+  })
+  .refine(amountWithinIntegerDigits, {
+    message: `Amount must have at most ${AMOUNT_MAX_INTEGER_DIGITS} digits before the decimal point`,
   });
 
 /**

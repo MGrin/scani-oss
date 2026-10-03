@@ -149,6 +149,9 @@ export const reviewDetailSchema = z.discriminatedUnion('code', [
     walletLabel: z.string().min(1).optional(),
     candidates: z.number().int().nonnegative(),
     chains: z.number().int().nonnegative(),
+    /** Chains whose read failed. With no candidates, the sweep is not a
+     *  reading of an empty wallet (SC-1519). */
+    unreadChains: z.number().int().nonnegative().optional(),
   }),
   z.object({ code: z.literal('vendor'), name: z.string().min(1) }),
   z.object({

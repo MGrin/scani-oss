@@ -29,7 +29,11 @@ import { TRPCError } from '@trpc/server';
 import { eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { z } from 'zod';
-import { toCredentialCheckError, toTRPCError } from '../../utils/error-mapping';
+import {
+  credentialRejectedMessage,
+  toCredentialCheckError,
+  toTRPCError,
+} from '../../utils/error-mapping';
 import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
 
@@ -247,7 +251,7 @@ export const integrationsRouter = router({
           if (!result.valid) {
             throw new TRPCError({
               code: 'BAD_REQUEST',
-              message: result.message ?? `Invalid ${manifest.institutionName} credentials`,
+              message: credentialRejectedMessage(manifest.institutionName, result.message),
             });
           }
         } catch (error) {

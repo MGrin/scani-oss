@@ -3,7 +3,10 @@
  *
  * Etherscan V2 (`https://api.etherscan.io/v2/api?chainid={id}&...`)
  * exposes every supported chain through a single endpoint, so adding
- * a new chain is just a row here.
+ * a new chain is just a row here — but only for a chain id listed by
+ * `https://api.etherscan.io/v2/chainlist`. Any other id is refused before
+ * the key is read, so the chain fails on every import and every sync
+ * (SC-1524); `tests/providers/etherscan/chains.test.ts` holds the snapshot.
  *
  * Pre-refactor source: `packages/integrations/src/blockchain-services/chain-config.ts`.
  * Same content, scoped down to the fields the provider actually uses
@@ -76,42 +79,7 @@ export const ETHERSCAN_CHAINS: readonly EvmChainConfig[] = [
     nativeName: 'Ethereum',
     nativeDecimals: 18,
   },
-  {
-    chainId: 250,
-    institutionCode: 'fantom',
-    nativeSymbol: 'FTM',
-    nativeName: 'Fantom',
-    nativeDecimals: 18,
-  },
-  {
-    chainId: 25,
-    institutionCode: 'cronos',
-    nativeSymbol: 'CRO',
-    nativeName: 'Cronos',
-    nativeDecimals: 18,
-  },
   // Tier 2 / L2s
-  {
-    chainId: 42170,
-    institutionCode: 'arbitrum-nova',
-    nativeSymbol: 'ETH',
-    nativeName: 'Ethereum',
-    nativeDecimals: 18,
-  },
-  {
-    chainId: 324,
-    institutionCode: 'zksync-era',
-    nativeSymbol: 'ETH',
-    nativeName: 'Ethereum',
-    nativeDecimals: 18,
-  },
-  {
-    chainId: 534352,
-    institutionCode: 'scroll',
-    nativeSymbol: 'ETH',
-    nativeName: 'Ethereum',
-    nativeDecimals: 18,
-  },
   {
     chainId: 59144,
     institutionCode: 'linea',
@@ -153,20 +121,6 @@ export const ETHERSCAN_CHAINS: readonly EvmChainConfig[] = [
     institutionCode: 'celo',
     nativeSymbol: 'CELO',
     nativeName: 'Celo',
-    nativeDecimals: 18,
-  },
-  {
-    chainId: 1284,
-    institutionCode: 'moonbeam',
-    nativeSymbol: 'GLMR',
-    nativeName: 'Glimmer',
-    nativeDecimals: 18,
-  },
-  {
-    chainId: 1285,
-    institutionCode: 'moonriver',
-    nativeSymbol: 'MOVR',
-    nativeName: 'Moonriver',
     nativeDecimals: 18,
   },
 ];

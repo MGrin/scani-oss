@@ -1,14 +1,15 @@
+import { assetKey } from '../asset-key';
 import type { FeedBatch } from '../feed-batch';
 
 type BatchProblemCode =
   | 'invalid-date'
   | 'empty-external-id'
+  | 'duplicate-external-id'
   | 'checkpoint-outside-window'
   | 'unbounded-incomplete-window'
   | 'window-inverted'
   | 'checkpoint-in-future'
-  | 'settles-unknown-entry'
-  | 'absences-not-supported';
+  | 'settles-unknown-entry';
 
 export interface BatchProblem {
   code: BatchProblemCode;
@@ -66,6 +67,32 @@ export function validateBatch(batch: FeedBatch, now: Date): BatchProblem[] {
     }
   });
 
+  // An input states each external id once (A2 D-7), so one id sent for two
+  // rows, another asset, holding key or source, would keep only the last of
+  // them: a ledger row dropped in silence, so the batch is refused (R57). The
+  // same row sent twice is a re-send, which the write merges and reports
+  // (SC-349). Counted, never named.
+  const rowsOf = new Map<string, Set<string>>();
+  const entriesOf = new Map<string, number>();
+  for (const entry of batch.entries) {
+    if (entry.externalId === '') continue;
+    const row = JSON.stringify([
+      assetKey(entry.asset),
+      entry.asset.key ?? null,
+      entry.legacy.source,
+    ]);
+    rowsOf.set(entry.externalId, (rowsOf.get(entry.externalId) ?? new Set()).add(row));
+    entriesOf.set(entry.externalId, (entriesOf.get(entry.externalId) ?? 0) + 1);
+  }
+  const duplicated = [...rowsOf].filter(([, rows]) => rows.size > 1).map(([id]) => id);
+  if (duplicated.length > 0) {
+    const entries = duplicated.reduce((sum, id) => sum + (entriesOf.get(id) ?? 0), 0);
+    problems.push({
+      code: 'duplicate-external-id',
+      detail: `${duplicated.length} external id(s) are each sent for more than one asset or source, by ${entries} entries in all`,
+    });
+  }
+
   if (window.from !== null && isInvalid(window.from))
     invalidDate('the window starts at an invalid date');
   if (isInvalid(window.to)) invalidDate('the window ends at an invalid date');
@@ -109,15 +136,6 @@ export function validateBatch(batch: FeedBatch, now: Date): BatchProblem[] {
       });
     }
   });
-
-  // Not written until the absence block exists; dropped, an absence would read
-  // as "nothing is absent" (ruling R30).
-  if (batch.absences.length > 0) {
-    problems.push({
-      code: 'absences-not-supported',
-      detail: `the batch carries ${batch.absences.length} absence(s), and absences are not written yet`,
-    });
-  }
 
   return problems;
 }

@@ -1,10 +1,12 @@
+import { ETHERSCAN_CHAINS } from '@scani/providers/providers/etherscan';
+
 // Single source of truth mapping an exchange/broker/bank provider name
-// to the stable `source` tag the transaction-import pipeline routes by.
-// These match the `readonly source = '…'` fields on the CEX
-// TransactionIngester classes. Providers without an ingester return
-// null — the transaction-import chain is skipped (balance-only sync
-// still works). Consumed by the initial exchange-import chain AND the
-// recurring transaction-sync job, so the mapping never drifts.
+// to the stable `source` tag the transaction-import pipeline routes by,
+// which is the tag that provider's ledger rows carry. A provider not
+// listed returns null — the transaction-import chain is skipped
+// (balance-only sync still works). Consumed by the initial
+// exchange-import chain AND the recurring transaction-sync job, so the
+// mapping never drifts.
 const PROVIDER_SOURCE_MAP: Record<string, string> = {
   kraken: 'kraken-api',
   binance: 'binance-api',
@@ -39,10 +41,7 @@ export function sourceForProvider(provider: string): string | null {
 // (0 for Bitcoin, which predates the convention).
 export const EVM_WALLET_SOURCE = 'etherscan';
 
-const EVM_CHAIN_IDS: ReadonlySet<number> = new Set([
-  1, 56, 137, 43114, 42161, 10, 8453, 250, 25, 42170, 324, 534352, 59144, 81457, 5000, 204, 100,
-  42220, 1284, 1285,
-]);
+const EVM_CHAIN_IDS: ReadonlySet<number> = new Set(ETHERSCAN_CHAINS.map((c) => c.chainId));
 
 // Mirrors `NON_EVM_CHAIN_ID_TO_INSTITUTION_CODE` in `WalletDiscoveryService`:
 // for a non-EVM chain the source tag and the institution code its provider

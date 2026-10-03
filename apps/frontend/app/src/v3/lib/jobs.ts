@@ -1,4 +1,11 @@
-import { describeJobFailure, isReviewableJobName, type JobFailureDescription } from '@scani/shared';
+import {
+  describeJobFailure,
+  isReviewableJobName,
+  type JobFailureDescription,
+  type JobOutcome,
+  outcomeState,
+  readJobOutcome,
+} from '@scani/shared';
 import type { TFunction } from 'i18next';
 
 /**
@@ -30,6 +37,9 @@ export interface JobRow {
   failureReason?: string | null;
   attemptsMade?: number | null;
   attemptsAllowed?: number | null;
+  /** What a completed run produced, as counts — the list row's stand-in for
+   *  the `result` it does not carry (SC-1527). */
+  outcome?: JobOutcome | null;
 }
 
 /** BullMQ's own states, in the order a run moves through them. */
@@ -143,6 +153,12 @@ export function isJobRunning(job: JobRow): boolean {
   return RUNNING_STATES.has(job.state);
 }
 
+/** The state a row shows: the same outcome-derived state the job page's chip
+ *  shows, read off the row's counts instead of the full result (SC-1527). */
+export function jobOutcomeState(job: JobRow): string {
+  return outcomeState(job.state, job.outcome);
+}
+
 /**
  * A finished job whose result the user still has to confirm before its
  * holdings count toward the portfolio. `REVIEWABLE_JOB_NAMES` in
@@ -150,7 +166,9 @@ export function isJobRunning(job: JobRow): boolean {
  * shared with the server's own review feed so the two cannot disagree.
  */
 export function jobNeedsAction(job: JobRow): boolean {
-  return job.state === 'completed' && isReviewableJobName(job.jobName) && !job.actionTakenAt;
+  return (
+    jobOutcomeState(job) === 'completed' && isReviewableJobName(job.jobName) && !job.actionTakenAt
+  );
 }
 
 /**
@@ -170,7 +188,7 @@ export function jobBucket(job: JobRow): JobBucket {
   // wrong, and — the half that matters — leaves the section unable to mean
   // "these are dead" (SC-153).
   if (describeJobFailure(job)?.willRetry) return 'running';
-  return job.state === 'failed' ? 'failed' : 'completed';
+  return jobOutcomeState(job) === 'failed' ? 'failed' : 'completed';
 }
 
 interface BucketDef {
@@ -231,32 +249,16 @@ export function compareJobs(a: JobRow, b: JobRow, field: string, direction: stri
  * reported, so the chip reads the result. The framework state is left alone for
  * everything still running and for results we cannot introspect.
  *
+ * The reading itself is `readJobOutcome` in `@scani/shared`, which the server
+ * also runs for every list row — so `jobOutcomeState` badges the list the way
+ * this badges the page (SC-1527).
+ *
  * Only the chip uses this. The body still renders on the framework state,
  * because it has to show the result as soon as the worker finishes regardless
  * of what is in it.
  */
 export function deriveJobOutcomeState(jobName: string, state: string, result: unknown): string {
-  if (state !== 'completed' || !result || typeof result !== 'object') return state;
-  const record = result as Record<string, unknown>;
-
-  if (jobName === 'screenshot-parse' || jobName === 'file-import') {
-    const summary = (record.summary ?? {}) as Record<string, unknown>;
-    const successes = Number(summary.successCount ?? 0);
-    const failures = Number(summary.failureCount ?? 0);
-    if (successes === 0 && failures > 0) return 'failed';
-  }
-
-  if (jobName === 'manual-holdings-create') {
-    const holdings = Array.isArray(record.holdings) ? record.holdings : [];
-    if (
-      holdings.length > 0 &&
-      holdings.every((holding) => Boolean((holding as Record<string, unknown>).error))
-    ) {
-      return 'failed';
-    }
-  }
-
-  return state;
+  return outcomeState(state, readJobOutcome(jobName, result));
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -290,11 +292,12 @@ export function summariseJobPayload(
     }
     case 'exchange-import':
       return typeof summary.provider === 'string' ? summary.provider : null;
-    case 'file-import': {
-      const type =
-        typeof summary.fileType === 'string' ? summary.fileType : t('v3.jobs.kind.fileFallback');
-      return summary.enrich ? t('v3.jobs.kind.fileEnriched', { type }) : type;
-    }
+    // `enrich` is a pipeline stage every upload passes through, so it is not
+    // named (SC-1527): "csv · enriched" told a reader nothing they could use.
+    case 'file-import':
+      return typeof summary.fileType === 'string' && summary.fileType.length > 0
+        ? t('v3.jobs.kind.fileOfType', { type: summary.fileType.toUpperCase() })
+        : t('v3.jobs.kind.fileFallback');
     case 'holding-price-update':
       return t('v3.jobs.kind.holdingPriceRefresh');
     case 'user-data-delete':

@@ -3,6 +3,7 @@ import { decryptCredentials, encryptCredentials } from '@scani/security';
 import { Container, Service } from 'typedi';
 import { UserIntegrationCredentialsRepository } from '../../repositories/UserIntegrationCredentialsRepository';
 import { BaseService } from '../BaseService';
+import { FeedInputFollower } from '../feeds/FeedInputFollower';
 
 export class ExpiredCredentialsError extends Error {
   readonly userId: string;
@@ -25,6 +26,7 @@ export class ExpiredCredentialsError extends Error {
 @Service()
 export class IntegrationCredentialsService extends BaseService {
   private readonly credentialsRepository = Container.get(UserIntegrationCredentialsRepository);
+  private readonly feedInputs = Container.get(FeedInputFollower);
 
   constructor() {
     super('IntegrationCredentialsService');
@@ -150,6 +152,7 @@ export class IntegrationCredentialsService extends BaseService {
         });
         this.assertExists(updated, 'Failed to update credentials');
         this.logDebug('Credentials updated successfully', { credentialsId: updated.id });
+        await this.feedInputs.follow(userId, { institutionId });
         return updated;
       }
 
@@ -168,6 +171,7 @@ export class IntegrationCredentialsService extends BaseService {
       this.assertExists(created, 'Failed to create credentials');
 
       this.logDebug('Credentials stored successfully', { credentialsId: created.id });
+      await this.feedInputs.follow(userId, { institutionId });
       return created;
     } catch (error) {
       throw this.handleError(error, 'storeCredentials');
@@ -299,6 +303,7 @@ export class IntegrationCredentialsService extends BaseService {
       this.assertExists(existing, 'Credentials not found');
 
       await this.credentialsRepository.update(existing.id, { isActive: false });
+      await this.feedInputs.follow(userId, { institutionId });
 
       this.logInfo('Credentials deleted successfully', { credentialsId: existing.id });
     } catch (error) {

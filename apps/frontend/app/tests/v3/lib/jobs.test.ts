@@ -215,6 +215,25 @@ describe('deriveJobOutcomeState', () => {
   });
 });
 
+// SC-1527. The list row carries the counts the page derives from the full
+// result, so a run that produced nothing is Failed on both surfaces.
+describe('a list row with an outcome', () => {
+  const emptyParse = job({ outcome: { succeeded: 0, failed: 1 } });
+
+  test('is filed under Failed, not Needs review or Completed', () => {
+    expect(jobBucket(emptyParse)).toBe('failed');
+    expect(jobBucket({ ...emptyParse, actionTakenAt: '2026-08-10T10:00:00.000Z' })).toBe('failed');
+  });
+
+  test('does not ask for a review of a result that holds nothing', () => {
+    expect(jobNeedsAction(emptyParse)).toBe(false);
+  });
+
+  test('CONTROL: a partial success is still waiting on the user', () => {
+    expect(jobBucket(job({ outcome: { succeeded: 1, failed: 2 } }))).toBe('review');
+  });
+});
+
 describe('summariseJobPayload', () => {
   test('names what a wallet import was pointed at', () => {
     expect(
@@ -236,10 +255,13 @@ describe('summariseJobPayload', () => {
     expect(summariseJobPayload(t, 'screenshot-parse', {})).toBeNull();
   });
 
-  test('marks an enriched file import', () => {
+  test('names a file import by its format, not by a pipeline stage (SC-1527)', () => {
+    // "csv · enriched" was the worker's flag printed as copy: `enrich` is an
+    // internal stage every upload goes through and means nothing to a reader.
     expect(summariseJobPayload(t, 'file-import', { fileType: 'csv', enrich: true })).toBe(
-      'csv · enriched'
+      'CSV file'
     );
+    expect(summariseJobPayload(t, 'file-import', { fileType: 'ofx' })).toBe('OFX file');
   });
 
   test('a job name with nothing to say says nothing', () => {
