@@ -31,7 +31,7 @@
       "unreachable": "No hemos podido contactar con Scani. Comprueba tu conexión y vuelve a pulsar Continuar."
     },
     "linkSent": {
-      "body": "Haz clic en el enlace de tu correo para acceder a tu cuenta. Si es tu primera vez, crearemos una cuenta automáticamente.",
+      "body": "Haz clic en el enlace de tu correo para acceder a tu cuenta. Si es tu primera vez, crearemos una cuenta automáticamente. Ábrelo en este mismo navegador: en el móvil, el correo puede abrir otro.",
       "resend": "Enviar otro correo",
       "subtitle": "Te hemos enviado un enlace mágico para iniciar sesión",
       "title": "Revisa tu correo"
@@ -48,7 +48,10 @@
       "submit": "Continuar con el correo",
       "subtitle": "Introduce tu correo para iniciar sesión o crear una cuenta",
       "title": "Bienvenido",
-      "humanCheckFailed": "No se pudo cargar la verificación humana. Desactiva cualquier bloqueador para challenges.cloudflare.com y recarga."
+      "humanCheckFailed": "No se pudo cargar la verificación humana. Desactiva cualquier bloqueador para challenges.cloudflare.com y recarga.",
+      "cloudTitle": "Inicia sesión en Scani Cloud",
+      "cloudSubtitle": "Tus claves de API están en la consola de Scani Cloud. Introduce tu correo para iniciar sesión o crear una cuenta.",
+      "cloudNewAccount": "¿Nuevo en Scani Cloud? Tu cuenta se crea automáticamente y vuelves directamente a la consola."
     },
     "exits": {
       "label": "Más sobre Scani"
@@ -994,7 +997,8 @@
     "loadingRamp": {
       "loading": "Cargando {{label}}",
       "retry": "Inténtalo de nuevo",
-      "stalled": "Seguimos esperando al servidor. No se ha modificado nada."
+      "stalled": "Seguimos esperando al servidor. No se ha modificado nada.",
+      "offline": "Estás sin conexión. No se ha cambiado nada; se cargará cuando vuelvas a estar en línea."
     },
     "magicCode": {
       "digit": "Dígito {{index}}",

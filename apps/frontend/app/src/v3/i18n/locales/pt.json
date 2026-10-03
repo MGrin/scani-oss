@@ -127,6 +127,7 @@
         "manual": {
           "addAnother": "Adicionar outra",
           "amount": "Quantidade",
+          "negativeRefused": "Ainda não são suportados saldos negativos. Para uma conta em dívida, introduza 0 — o pagamento pode ir para Contas.",
           "description": "Diga onde estão detidas e o que têm dentro. Apuramos o preço de cada uma depois de guardar.",
           "fieldset": "O quê",
           "potName": "Qual delas é esta?",
@@ -830,7 +831,9 @@
         },
         "busyLabel": "o registo",
         "currentBalance": "Neste momento {{amount}} {{symbol}}",
+        "belowZero": "Atualmente {{amount}} {{symbol}} — ficariam {{after}} {{symbol}}, abaixo de zero",
         "dateLabel": "Quando é que o dinheiro se mexeu?",
+        "futureDate": "Essa data está no futuro. Confirme-a antes de guardar.",
         "description": "Diga o que fez e o Scani apura o saldo — em vez do contrário.",
         "destinationTitle": "Para onde foi",
         "direction": {
@@ -2801,7 +2804,7 @@
       "dataQuality": {
         "duplicateChip": "{{symbol}}×{{count}}",
         "duplicateChipLookalike": "{{symbol}}×{{count}} (aparece como {{lookalikeOf}})",
-        "duplicateRows": "Posições mostradas que partilham o símbolo com outra linha de token",
+        "duplicateRows": "Posições que partilham o símbolo com outro token",
         "flagged": "Sinalizado",
         "hiddenNextSweep_many": "Dessas, ocultadas na próxima passagem de {{count}} dias",
         "hiddenNextSweep_one": "Dessas, ocultadas na próxima passagem de {{count}} dia",
@@ -2811,8 +2814,8 @@
         "intro": "Recontado a cada visita. Tudo o que estiver marcado como “{{flag}}” merece ser visto.",
         "lookalikeChip": "{{symbol}} (aparece como {{lookalikeOf}})",
         "lookalikeRows": "Posições mostradas cujo símbolo imita outro",
-        "missingCoverage": "Posições sem linha de cobertura",
-        "negativeOpening": "Saldo de abertura sintetizado negativo",
+        "missingCoverage": "Posições ainda sem histórico de valor",
+        "negativeOpening": "Posições cujo histórico começa abaixo de zero",
         "negativeOpeningHint": "Uma importação que não recuou até antes da primeira operação",
         "noPriceSource": "Posições mostradas sem uma fonte de preços que possamos usar",
         "noPriceSourceHint": "{{symbols}} — é a nossa configuração, não o mercado",

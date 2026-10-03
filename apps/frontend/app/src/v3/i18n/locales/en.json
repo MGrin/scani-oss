@@ -1078,7 +1078,9 @@
         },
         "amountLabel": "How much moved",
         "currentBalance": "Currently {{amount}} {{symbol}}",
+        "belowZero": "Currently {{amount}} {{symbol}} — this leaves {{after}} {{symbol}}, below zero",
         "dateLabel": "When did the money move?",
+        "futureDate": "That date is in the future. Check it before saving.",
         "whereLabel": "Where did it go?",
         "where": {
           "left_control": {
@@ -1314,7 +1316,7 @@
       "dataQuality": {
         "title": "Data quality",
         "flagged": "Flagged",
-        "duplicateRows": "Shown positions sharing a symbol with another token row",
+        "duplicateRows": "Holdings that share a symbol with another token",
         "duplicateChip": "{{symbol}}×{{count}}",
         "duplicateChipLookalike": "{{symbol}}×{{count}} (displays as {{lookalikeOf}})",
         "lookalikeRows": "Shown positions whose symbol imitates another",
@@ -1329,9 +1331,9 @@
         "noPriceSourceHint": "{{symbols}} — our configuration, not the market",
         "nothingCanPrice": "Shown positions nothing can price",
         "nothingCanPriceHint": "Airdropped or delisted tokens with no market — excluded from chart coverage",
-        "negativeOpening": "Negative synthesised opening balance",
+        "negativeOpening": "Holdings whose history starts below zero",
         "negativeOpeningHint": "An import that did not reach back before the first trade",
-        "missingCoverage": "Holdings with no coverage row",
+        "missingCoverage": "Holdings with no value history yet",
         "intro": "Recounted on every visit. Anything marked “{{flag}}” is worth looking into.",
         "rowLink": "{{label}}: {{count}} — show in Holdings"
       },
@@ -2087,6 +2089,7 @@
           "fieldset": "What",
           "token": "Token",
           "amount": "Amount",
+          "negativeRefused": "Negative balances aren't supported yet. For an account in debt, enter 0 — a repayment can go under Bills.",
           "removeHolding": "Remove holding {{index}}",
           "save": "Save holdings",
           "tokenFor": "token for holding {{index}}",

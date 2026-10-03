@@ -406,3 +406,19 @@ describe('round trip', () => {
     expect(parsed.ambiguous).toBe(false);
   });
 });
+
+describe('parseAmountInput — a refused minus is reported (SC-1530)', () => {
+  it('flags a minus the field refuses', () => {
+    const parsed = parseAmountInput('-5');
+    expect(parsed.value).toBe('5');
+    expect(parsed.negativeRefused).toBe(true);
+  });
+
+  it('does not flag a minus the field accepts', () => {
+    expect(parseAmountInput('-5', { allowNegative: true }).negativeRefused).toBeUndefined();
+  });
+
+  it('does not flag a plain amount', () => {
+    expect(parseAmountInput('5').negativeRefused).toBeUndefined();
+  });
+});

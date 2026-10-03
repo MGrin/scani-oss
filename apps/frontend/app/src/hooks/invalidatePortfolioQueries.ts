@@ -83,3 +83,17 @@ export async function invalidateVaultQueries(
     utils.holdings.invalidate(undefined, { refetchType }),
   ]);
 }
+
+/**
+ * After the base currency changes, every figure is re-denominated — including
+ * the Home hero, which reads `portfolio.*` and is not in the portfolio set
+ * above, so it kept the old currency's total until a reload (SC-1530).
+ * `portfolio.*` stays out of that set on purpose: it is the whole-history
+ * valuation, too heavy to refetch on every holding edit.
+ */
+export async function invalidateAfterCurrencyChange(utils: TrpcUtils): Promise<void> {
+  await Promise.all([
+    invalidatePortfolioQueries(utils, { refetchType: 'all' }),
+    utils.portfolio.invalidate(undefined, { refetchType: 'all' }),
+  ]);
+}

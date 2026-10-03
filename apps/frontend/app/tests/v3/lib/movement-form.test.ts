@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
   type MovementHolding,
   matchMovementHoldings,
+  movementBalanceBelowZero,
   movementBlockerKeys,
   movementFeeArrival,
   movementHoldingAccount,
@@ -317,5 +318,23 @@ describe('the transfer fee', () => {
     expect(movementFeeArrival({ ...transfer, amount: '', fee: '1.33' })).toBeNull();
     expect(movementFeeArrival({ ...transfer, amount: 'abc', fee: '1.33' })).toBeNull();
     expect(movementFeeArrival({ ...transfer, amount: '251.33', fee: 'abc' })).toBeNull();
+  });
+});
+
+describe('a movement that takes the holding below zero says so (SC-1518)', () => {
+  test('money out larger than the balance names what it leaves', () => {
+    expect(movementBalanceBelowZero('2500', { direction: 'outflow', amount: '99999' })).toBe(
+      '-97499'
+    );
+    expect(movementBalanceBelowZero('2500', { direction: 'transfer', amount: '2500.01' })).toBe(
+      '-0.01'
+    );
+  });
+
+  test('the controls: within the balance, exactly the balance, money in, no amount', () => {
+    expect(movementBalanceBelowZero('2500', { direction: 'outflow', amount: '200' })).toBeNull();
+    expect(movementBalanceBelowZero('2500', { direction: 'outflow', amount: '2500' })).toBeNull();
+    expect(movementBalanceBelowZero('2500', { direction: 'inflow', amount: '99999' })).toBeNull();
+    expect(movementBalanceBelowZero('2500', { direction: 'outflow', amount: '' })).toBeNull();
   });
 });

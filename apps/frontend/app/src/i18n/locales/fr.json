@@ -16,7 +16,10 @@
       "hintCode": "Nous vous enverrons un code à 6 chiffres pour vous connecter.",
       "hintLink": "Nous vous enverrons un lien magique sécurisé pour vous connecter.",
       "newAccount": "Nouveau sur Scani ? Votre compte sera créé automatiquement.",
-      "humanCheckFailed": "La vérification humaine n'a pas pu se charger. Désactivez tout bloqueur pour challenges.cloudflare.com, puis rechargez."
+      "humanCheckFailed": "La vérification humaine n'a pas pu se charger. Désactivez tout bloqueur pour challenges.cloudflare.com, puis rechargez.",
+      "cloudTitle": "Connexion à Scani Cloud",
+      "cloudSubtitle": "Vos clés d'API se trouvent dans la console Scani Cloud. Saisissez votre e-mail pour vous connecter ou créer un compte.",
+      "cloudNewAccount": "Nouveau sur Scani Cloud ? Votre compte est créé automatiquement et vous revenez directement à la console."
     },
     "code": {
       "title": "Saisissez le code de vérification",
@@ -26,7 +29,7 @@
     "linkSent": {
       "title": "Consultez vos e-mails",
       "subtitle": "Nous vous avons envoyé un lien magique pour vous connecter",
-      "body": "Cliquez sur le lien dans votre e-mail pour accéder à votre compte. Si c’est votre première visite, nous créerons un compte pour vous automatiquement.",
+      "body": "Cliquez sur le lien dans votre e-mail pour accéder à votre compte. Si c’est votre première visite, nous créerons un compte pour vous automatiquement. Ouvrez-le dans ce même navigateur — sur un téléphone, l’app Mail peut en ouvrir un autre.",
       "resend": "Envoyer un autre e-mail"
     },
     "callback": {
@@ -1015,6 +1018,7 @@
     },
     "loadingRamp": {
       "stalled": "Toujours en attente du serveur. Rien n’a été modifié.",
+      "offline": "Vous êtes hors ligne. Rien n’a été modifié — le chargement reprendra une fois la connexion revenue.",
       "retry": "Réessayer",
       "loading": "Chargement : {{label}}"
     },

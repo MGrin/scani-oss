@@ -3,12 +3,17 @@ import { Input } from '@scani/ui/ui/input';
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { AmountInput } from '@scani/ui/v3/components/AmountInput';
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
+import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import type { MovementForm } from '../../hooks/useMovementForm';
 import { amountDecimals } from '../../lib/holdings';
-import { MOVEMENT_OUTFLOW_OPTIONS, type MovementHolding } from '../../lib/movement-form';
+import {
+  MOVEMENT_OUTFLOW_OPTIONS,
+  type MovementHolding,
+  movementBalanceBelowZero,
+} from '../../lib/movement-form';
 import { AccountTargetFields } from '../capture/AccountTargetFields';
-import { DateField } from '../form/DateField';
+import { DateField, todayIso } from '../form/DateField';
 import { Field } from '../form/Field';
 import { HoldingField } from './HoldingField';
 
@@ -32,6 +37,24 @@ interface MovementFieldsProps {
   holding: MovementHolding | null;
   holdings: readonly MovementHolding[];
   disabled: boolean;
+}
+
+// Formatted as the holdings table shows it, so the reader can match the
+// figures.
+function plain(amount: string): string {
+  return resolveNumeric(amount, { format: 'plain', decimals: amountDecimals(amount) }).text;
+}
+
+function balanceHint(form: MovementForm, selected: MovementHolding, t: TFunction): string {
+  const symbol = selected.token.symbol;
+  const after = movementBalanceBelowZero(selected.amount, form);
+  return after === null
+    ? t('v3.holdings.movement.currentBalance', { amount: plain(selected.amount), symbol })
+    : t('v3.holdings.movement.belowZero', {
+        amount: plain(selected.amount),
+        after: plain(after),
+        symbol,
+      });
 }
 
 export function MovementWhatFields({ form, holding, holdings, disabled }: MovementFieldsProps) {
@@ -68,19 +91,7 @@ export function MovementWhatFields({ form, holding, holdings, disabled }: Moveme
       <Field
         label={t('v3.holdings.movement.amountLabel', { symbol: form.selected?.token.symbol ?? '' })}
         htmlFor="movement-amount"
-        hint={
-          form.selected
-            ? t('v3.holdings.movement.currentBalance', {
-                // Formatted as the holdings table shows it, so the reader can
-                // match the two figures.
-                amount: resolveNumeric(form.selected.amount, {
-                  format: 'plain',
-                  decimals: amountDecimals(form.selected.amount),
-                }).text,
-                symbol: form.selected.token.symbol,
-              })
-            : undefined
-        }
+        hint={form.selected ? balanceHint(form, form.selected, t) : undefined}
       >
         <AmountInput
           id="movement-amount"
@@ -129,7 +140,11 @@ export function MovementWhatFields({ form, holding, holdings, disabled }: Moveme
         </Field>
       ) : null}
 
-      <Field label={t('v3.holdings.movement.dateLabel')} htmlFor="movement-date">
+      <Field
+        label={t('v3.holdings.movement.dateLabel')}
+        htmlFor="movement-date"
+        hint={form.date > todayIso() ? t('v3.holdings.movement.futureDate') : undefined}
+      >
         <DateField id="movement-date" value={form.date} onChange={form.setDate} />
       </Field>
 

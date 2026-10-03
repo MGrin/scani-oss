@@ -2004,7 +2004,9 @@
         },
         "amountLabel": "المبلغ الذي انتقل",
         "currentBalance": "حاليًا {{amount}} {{symbol}}",
+        "belowZero": "حاليًا {{amount}} {{symbol}} — سيبقى بعد ذلك {{after}} {{symbol}}، أي أقل من الصفر",
         "dateLabel": "متى انتقل المال؟",
+        "futureDate": "هذا التاريخ في المستقبل. تحقّق منه قبل الحفظ.",
         "whereLabel": "إلى أين ذهب؟",
         "where": {
           "left_control": {
@@ -2143,7 +2145,7 @@
       "dataQuality": {
         "title": "جودة البيانات",
         "flagged": "مُعلَّم",
-        "duplicateRows": "حيازات معروضة يشترك رمزها مع صف توكن آخر",
+        "duplicateRows": "أصول تشترك في الرمز مع رمز مميز آخر",
         "duplicateChip": "{{symbol}}×{{count}}",
         "duplicateChipLookalike": "{{symbol}}×{{count}} (يظهر كأنه {{lookalikeOf}})",
         "lookalikeRows": "حيازات معروضة يحاكي رمزها رمزًا آخر",
@@ -2162,9 +2164,9 @@
         "noPriceSourceHint": "{{symbols}} — المشكلة في إعداداتنا، لا في السوق",
         "nothingCanPrice": "حيازات معروضة تعذّر تسعيرها",
         "nothingCanPriceHint": "توكنات وُزّعت مجانًا أو شُطبت من الإدراج ولا سوق لها — مستبعدة من تغطية المخططات",
-        "negativeOpening": "رصيد افتتاحي مُستنتَج سالب",
+        "negativeOpening": "أصول يبدأ سجلها تحت الصفر",
         "negativeOpeningHint": "عملية استيراد لم تبلغ ما قبل أول صفقة تداول",
-        "missingCoverage": "حيازات بلا صف تغطية",
+        "missingCoverage": "أصول بلا سجل قيمة بعد",
         "intro": "يُعاد العدّ في كل زيارة. كل ما عليه علامة «{{flag}}» يستحق الفحص.",
         "rowLink": "{{label}}: {{count}} — عرض في الحيازات"
       },
@@ -2400,6 +2402,7 @@
           "fieldset": "المحتوى",
           "token": "التوكن",
           "amount": "الكمية",
+          "negativeRefused": "الأرصدة السالبة غير مدعومة بعد. لحساب عليه دين، أدخل 0 — ويمكن إضافة السداد في الفواتير.",
           "removeHolding": "إزالة الحيازة {{index}}",
           "save": "حفظ الحيازات",
           "tokenFor": "توكن الحيازة {{index}}",

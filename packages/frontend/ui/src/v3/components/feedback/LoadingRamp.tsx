@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { useUiTranslation } from '../../../i18n';
+import { useOnline } from '../../hooks/useOnline';
 import type { LoadingPhase } from '../../lib/loading';
 
 /**
@@ -30,6 +31,7 @@ interface LoadingRampProps {
 
 export function LoadingRamp({ phase, skeleton, label, onRetry }: LoadingRampProps) {
   const { t } = useUiTranslation();
+  const online = useOnline();
   if (phase === 'idle') return null;
 
   return (
@@ -50,7 +52,9 @@ export function LoadingRamp({ phase, skeleton, label, onRetry }: LoadingRampProp
 
       {phase === 'stalled' ? (
         <div className="flex flex-wrap items-center gap-3 px-4">
-          <p className="text-caption text-muted-foreground">{t('ui.loadingRamp.stalled')}</p>
+          <p className="text-caption text-muted-foreground">
+            {t(online ? 'ui.loadingRamp.stalled' : 'ui.loadingRamp.offline')}
+          </p>
           {onRetry ? (
             <button
               type="button"

@@ -994,7 +994,9 @@
         },
         "amountLabel": "Berapa yang berpindah",
         "currentBalance": "Saat ini {{amount}} {{symbol}}",
+        "belowZero": "Saat ini {{amount}} {{symbol}} — sisanya menjadi {{after}} {{symbol}}, di bawah nol",
         "dateLabel": "Kapan uang itu berpindah?",
+        "futureDate": "Tanggal itu ada di masa depan. Periksa sebelum menyimpan.",
         "whereLabel": "Ke mana perginya?",
         "where": {
           "left_control": {
@@ -1221,7 +1223,7 @@
       "dataQuality": {
         "title": "Kualitas data",
         "flagged": "Ditandai",
-        "duplicateRows": "Posisi yang ditampilkan yang berbagi simbol dengan baris token lain",
+        "duplicateRows": "Aset yang simbolnya sama dengan token lain",
         "duplicateChip": "{{symbol}}×{{count}}",
         "duplicateChipLookalike": "{{symbol}}×{{count}} (tampil sebagai {{lookalikeOf}})",
         "lookalikeRows": "Posisi yang ditampilkan yang simbolnya meniru simbol lain",
@@ -1235,9 +1237,9 @@
         "noPriceSourceHint": "{{symbols}} — konfigurasi kami, bukan pasarnya",
         "nothingCanPrice": "Posisi yang ditampilkan yang tidak bisa dihargai oleh apa pun",
         "nothingCanPriceHint": "Token hasil airdrop atau yang sudah didelisting tanpa pasar — dikeluarkan dari cakupan grafik",
-        "negativeOpening": "Saldo awal sintetis yang negatif",
+        "negativeOpening": "Aset yang riwayatnya dimulai di bawah nol",
         "negativeOpeningHint": "Impor yang tidak mencapai riwayat sebelum transaksi pertama",
-        "missingCoverage": "Kepemilikan tanpa baris cakupan",
+        "missingCoverage": "Aset yang belum punya riwayat nilai",
         "intro": "Dihitung ulang setiap kunjungan. Apa pun yang ditandai “{{flag}}” layak ditelusuri.",
         "rowLink": "{{label}}: {{count}} — tampilkan di Kepemilikan"
       },
@@ -1934,6 +1936,7 @@
           "fieldset": "Apa",
           "token": "Token",
           "amount": "Jumlah",
+          "negativeRefused": "Saldo negatif belum didukung. Untuk akun yang berutang, masukkan 0 — cicilannya bisa dicatat di Tagihan.",
           "removeHolding": "Hapus kepemilikan {{index}}",
           "save": "Simpan kepemilikan",
           "tokenFor": "token untuk kepemilikan {{index}}",

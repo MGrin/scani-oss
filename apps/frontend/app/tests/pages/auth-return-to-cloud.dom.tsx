@@ -296,3 +296,37 @@ describe('the magic link carries the returnTo through the email', () => {
     expect(callbackURL).toBe('https://app.scani.xyz/auth/callback');
   });
 });
+
+// SC-1520: "Get an API key" on the console lands here, and the generic
+// "Welcome" card never said this was the way into Scani Cloud.
+describe('sign-in says where it is taking you', () => {
+  function signedOutAt(location: string): Promise<string> {
+    return mount(
+      <AuthContext.Provider value={signedOut}>
+        <MemoryRouter initialEntries={[location]}>
+          <Routes>
+            <Route path="/auth" element={<Auth />} />
+          </Routes>
+        </MemoryRouter>
+      </AuthContext.Provider>
+    );
+  }
+
+  test('a console returnTo names Scani Cloud', async () => {
+    const html = await signedOutAt(`/auth?returnTo=${encodeURIComponent(CONSOLE_KEYS)}`);
+    expect(html).toContain('Sign in to Scani Cloud');
+    expect(html).not.toContain('Welcome');
+  });
+
+  test('a plain sign-in, and the admin app, keep the generic card', async () => {
+    expect(await signedOutAt('/auth')).toContain('Welcome');
+    const admin = await signedOutAt(`/auth?returnTo=${encodeURIComponent(ADMIN_ROLLOUTS)}`);
+    expect(admin).toContain('Welcome');
+    expect(admin).not.toContain('Scani Cloud');
+  });
+
+  test('a rejected returnTo that only looks like the console keeps it too', async () => {
+    const html = await signedOutAt('/auth?returnTo=https://cloud.scani.xyz.evil.example/keys');
+    expect(html).toContain('Welcome');
+  });
+});

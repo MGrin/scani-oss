@@ -16,7 +16,10 @@
       "hintCode": "Kami akan mengirimkan kode 6 digit untuk masuk.",
       "hintLink": "Kami akan mengirimkan tautan masuk yang aman.",
       "newAccount": "Baru di Scani? Akun Anda akan dibuat secara otomatis.",
-      "humanCheckFailed": "Pemeriksaan manusia tidak dapat dimuat. Nonaktifkan pemblokir untuk challenges.cloudflare.com, lalu muat ulang."
+      "humanCheckFailed": "Pemeriksaan manusia tidak dapat dimuat. Nonaktifkan pemblokir untuk challenges.cloudflare.com, lalu muat ulang.",
+      "cloudTitle": "Masuk ke Scani Cloud",
+      "cloudSubtitle": "Kunci API Anda ada di konsol Scani Cloud. Masukkan email Anda untuk masuk atau membuat akun.",
+      "cloudNewAccount": "Baru di Scani Cloud? Akun Anda dibuat otomatis, dan Anda langsung kembali ke konsol."
     },
     "code": {
       "title": "Masukkan kode verifikasi",
@@ -26,7 +29,7 @@
     "linkSent": {
       "title": "Periksa email Anda",
       "subtitle": "Kami telah mengirimkan tautan masuk kepada Anda",
-      "body": "Klik tautan di email Anda untuk mengakses akun Anda. Jika ini pertama kalinya, kami akan membuatkan akun untuk Anda secara otomatis.",
+      "body": "Klik tautan di email Anda untuk mengakses akun Anda. Jika ini pertama kalinya, kami akan membuatkan akun untuk Anda secara otomatis. Buka di browser yang sama ini — di ponsel, aplikasi email bisa membuka browser lain.",
       "resend": "Kirim email lagi"
     },
     "callback": {
@@ -933,6 +936,7 @@
     },
     "loadingRamp": {
       "stalled": "Masih menunggu server. Tidak ada yang diubah.",
+      "offline": "Kamu sedang offline. Tidak ada yang diubah — data akan dimuat saat kamu online lagi.",
       "retry": "Coba lagi",
       "loading": "Memuat {{label}}"
     },
