@@ -3453,9 +3453,7 @@
           "bulkDeletedWithFailures_other": "حُذف {{count}} حساب، وتعذّر حذف {{failed}}",
           "bulkDeletingContext": "تعذّر حذف الحسابات",
           "updated": "تم تحديث الحساب بنجاح",
-          "updatingContext": "تعذّر تحديث الحساب",
-          "syncing": "جارٍ مزامنة الحساب — ستُحدَّث الأرصدة قريبًا",
-          "syncingContext": "تعذّر بدء مزامنة الحساب"
+          "updatingContext": "تعذّر تحديث الحساب"
         }
       },
       "institution": {

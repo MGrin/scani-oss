@@ -2314,9 +2314,7 @@
           "bulkDeletedWithFailures_other": "{{count}} accounts deleted, {{failed}} failed",
           "bulkDeletingContext": "Failed to delete accounts",
           "updated": "Account updated successfully",
-          "updatingContext": "Failed to update account",
-          "syncing": "Syncing account — balances will refresh shortly",
-          "syncingContext": "Failed to start account sync"
+          "updatingContext": "Failed to update account"
         }
       },
       "institution": {

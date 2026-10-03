@@ -2157,9 +2157,7 @@
           "bulkDeletedWithFailures_other": "已删除 {{count}} 个账户，{{failed}} 个失败",
           "bulkDeletingContext": "删除账户失败",
           "updated": "账户已成功更新",
-          "updatingContext": "更新账户失败",
-          "syncing": "正在同步账户——余额稍后会刷新",
-          "syncingContext": "无法启动账户同步"
+          "updatingContext": "更新账户失败"
         }
       },
       "institution": {

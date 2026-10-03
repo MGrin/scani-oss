@@ -79,21 +79,6 @@ export function useAccountActions() {
     },
   });
 
-  // Account-level "Sync now": enqueue a balance refresh for the whole
-  // account. Results arrive asynchronously via the WS pipe, so there's
-  // no optimistic patch — just fire the job and toast.
-  const refreshBalancesMutation = trpc.accounts.refreshBalances.useMutation({
-    onSuccess: () => {
-      showSuccess(t('v3.entities.account.toast.syncing'));
-    },
-    onError: (error) => {
-      showError(error, t('v3.entities.account.toast.syncingContext'));
-    },
-    onSettled: () => {
-      void invalidatePortfolioQueries(utils);
-    },
-  });
-
   return {
     deleteAccount: (id: string, options?: { onSuccess?: () => void }) =>
       deleteMutation.mutate({ id }, { onSuccess: options?.onSuccess }),
@@ -103,11 +88,8 @@ export function useAccountActions() {
       id: string,
       data: { name?: string; description?: string | null; typeId?: string }
     ) => updateMutation.mutate({ id, data }),
-    refreshAccountBalances: (accountId: string) =>
-      refreshBalancesMutation.mutate({ accountId, requestId: crypto.randomUUID() }),
     isDeleting: deleteMutation.isPending,
     isBulkDeleting: bulkDeleteMutation.isPending,
     isUpdating: updateMutation.isPending,
-    isRefreshing: refreshBalancesMutation.isPending,
   };
 }

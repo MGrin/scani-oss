@@ -53,7 +53,7 @@ describe('bulk-delete toasts', () => {
 /**
  * The remaining toasts move one file without moving one letter. Asserted
  * because a key that does not resolve renders as itself, and a toast reading
- * `v3.entities.account.toast.syncing` is exactly as silent as the mixed-
+ * `v3.entities.account.toast.updated` is exactly as silent as the mixed-
  * language list this ticket exists to fix.
  */
 describe('the toasts whose English is unchanged', () => {
@@ -70,8 +70,6 @@ describe('the toasts whose English is unchanged', () => {
     ['v3.entities.account.toast.bulkDeletingContext', 'Failed to delete accounts'],
     ['v3.entities.account.toast.updated', 'Account updated successfully'],
     ['v3.entities.account.toast.updatingContext', 'Failed to update account'],
-    ['v3.entities.account.toast.syncing', 'Syncing account — balances will refresh shortly'],
-    ['v3.entities.account.toast.syncingContext', 'Failed to start account sync'],
     ['v3.documents.toast.downloadingContext', 'Downloading file'],
   ])('%s reads %p', (key, expected) => {
     expect(t(key)).toBe(expected);

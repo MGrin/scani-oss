@@ -447,8 +447,6 @@
           "bulkDeletingContext": "Não foi possível eliminar as contas",
           "deleted": "Conta eliminada com sucesso",
           "deletingContext": "Não foi possível eliminar a conta",
-          "syncing": "A sincronizar a conta — os saldos serão atualizados dentro de momentos",
-          "syncingContext": "Não foi possível iniciar a sincronização da conta",
           "updated": "Conta atualizada com sucesso",
           "updatingContext": "Não foi possível atualizar a conta"
         },
