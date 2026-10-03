@@ -577,6 +577,8 @@ function checkEnvVarCoverage(): void {
     'DEBUG',
     'NPM_CONFIG_USERCONFIG',
     'BUN_INSTALL',
+    // Set by the test preload for the gates its tests spawn (SC-1512).
+    'SCANI_GATE_NESTED_IN',
     // Vite's built-in `import.meta.env.{MODE,DEV,PROD,SSR,BASE_URL}`
     'MODE',
     'DEV',
