@@ -950,7 +950,10 @@
     },
     "amountInput": {
       "readAsWhole": "按 {{amount}} 处理——此字段只接受整数。",
-      "readAsDecimal": "按 {{amount}} 处理——在这里逗号和句点都表示小数点。如果你想输入千位分隔，请删除该符号。"
+      "readAsDecimal": "按 {{amount}} 处理——在这里逗号和句点都表示小数点。如果你想输入千位分隔，请删除该符号。",
+      "exponent": "这里不识别 1e5 这样的科学计数法——请完整输入数字，例如 100000。",
+      "tooLarge": "小数点前超过 {{max}} 位，没有哪个余额有这么大——请检查金额。",
+      "truncated": "按 {{amount}} 处理——此字段不保留更多小数位。"
     },
     "accountPicker": {
       "loading": "正在加载你的账户…",

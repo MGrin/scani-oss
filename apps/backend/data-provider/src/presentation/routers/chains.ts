@@ -18,6 +18,7 @@ import type { Token } from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { ProviderContext } from '@scani/providers/core/types';
+import { ETHERSCAN_CHAINS } from '@scani/providers/providers/etherscan';
 import { createOutflowLimiter, getSharedRedis } from '@scani/rate-limiter';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
@@ -44,35 +45,10 @@ const chainsAddressProbeLimiter = createOutflowLimiter({
 
 const log = createComponentLogger('data-provider:chains');
 
-/**
- * `chainId` → registry institutionCode. Mirror of the catalog in
- * `WalletDiscoveryService` / `ETHERSCAN_CHAINS`. Inlined for the same
- * reason as in the worker's wallet-import processor: the list is
- * stable and depending on the providers package's chain catalog at
- * runtime is awkward (each provider doesn't expose its catalog).
- */
-const EVM_CHAIN_ID_TO_INSTITUTION_CODE: Record<string, string> = {
-  '1': 'ethereum',
-  '56': 'bsc',
-  '137': 'polygon',
-  '43114': 'avalanche',
-  '42161': 'arbitrum',
-  '10': 'optimism',
-  '8453': 'base',
-  '250': 'fantom',
-  '25': 'cronos',
-  '42170': 'arbitrum-nova',
-  '324': 'zksync-era',
-  '534352': 'scroll',
-  '59144': 'linea',
-  '81457': 'blast',
-  '5000': 'mantle',
-  '204': 'opbnb',
-  '100': 'gnosis',
-  '42220': 'celo',
-  '1284': 'moonbeam',
-  '1285': 'moonriver',
-};
+/** `chainId` → registry institutionCode, read off the Etherscan catalog. */
+const EVM_CHAIN_ID_TO_INSTITUTION_CODE: Record<string, string> = Object.fromEntries(
+  ETHERSCAN_CHAINS.map((c) => [String(c.chainId), c.institutionCode])
+);
 
 const NON_EVM_CHAIN_ID_TO_INSTITUTION_CODE: Record<string, string> = {
   '0': 'bitcoin',
@@ -132,7 +108,9 @@ interface ChainConfig {
 
 /**
  * Static chain catalog mirroring `WalletDiscoveryService` —
- * frontend-facing list of chains the data-provider can talk to.
+ * frontend-facing list of chains the data-provider can talk to. Its
+ * EVM rows must be exactly `ETHERSCAN_CHAINS` (SC-1524);
+ * `tests/presentation/routers/chains.test.ts` fails when they are not.
  */
 const CHAIN_CATALOG: ChainConfig[] = [
   {
@@ -192,46 +170,6 @@ const CHAIN_CATALOG: ChainConfig[] = [
     isActive: true,
   },
   {
-    chainId: 250,
-    name: 'Fantom',
-    type: 'evm',
-    nativeSymbol: 'FTM',
-    nativeName: 'Fantom',
-    isActive: true,
-  },
-  {
-    chainId: 25,
-    name: 'Cronos',
-    type: 'evm',
-    nativeSymbol: 'CRO',
-    nativeName: 'Cronos',
-    isActive: true,
-  },
-  {
-    chainId: 42170,
-    name: 'Arbitrum Nova',
-    type: 'evm',
-    nativeSymbol: 'ETH',
-    nativeName: 'Ethereum',
-    isActive: true,
-  },
-  {
-    chainId: 324,
-    name: 'zkSync Era',
-    type: 'evm',
-    nativeSymbol: 'ETH',
-    nativeName: 'Ethereum',
-    isActive: true,
-  },
-  {
-    chainId: 534352,
-    name: 'Scroll',
-    type: 'evm',
-    nativeSymbol: 'ETH',
-    nativeName: 'Ethereum',
-    isActive: true,
-  },
-  {
     chainId: 59144,
     name: 'Linea',
     type: 'evm',
@@ -277,22 +215,6 @@ const CHAIN_CATALOG: ChainConfig[] = [
     type: 'evm',
     nativeSymbol: 'CELO',
     nativeName: 'Celo',
-    isActive: true,
-  },
-  {
-    chainId: 1284,
-    name: 'Moonbeam',
-    type: 'evm',
-    nativeSymbol: 'GLMR',
-    nativeName: 'Glimmer',
-    isActive: true,
-  },
-  {
-    chainId: 1285,
-    name: 'Moonriver',
-    type: 'evm',
-    nativeSymbol: 'MOVR',
-    nativeName: 'Moonriver',
     isActive: true,
   },
   {

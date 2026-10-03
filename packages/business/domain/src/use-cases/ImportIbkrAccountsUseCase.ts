@@ -140,6 +140,7 @@ export class ImportIbkrAccountsUseCase {
 
     const targetsRaw: Array<{ accountInfo: DiscoveredAccountInfo; snapshots: HoldingSnapshot[] }> =
       [];
+    let lastFailure: unknown;
 
     // IBKR's BalanceProvider doesn't filter by sub-account (the Flex
     // Query returns the full portfolio in one shot). Run fetchBalances
@@ -156,6 +157,7 @@ export class ImportIbkrAccountsUseCase {
         await safeStatus(input.onStatus, 'Requesting Flex Query report from IBKR…');
         snapshots = await provider.fetchBalances(ctx);
       } catch (err) {
+        lastFailure = err;
         result.errors.push({
           accountType: accountInfo.accountType,
           error: err instanceof Error ? err.message : String(err),
@@ -167,7 +169,9 @@ export class ImportIbkrAccountsUseCase {
     const totalSnapshots = targetsRaw.reduce((sum, a) => sum + a.snapshots.length, 0);
     if (totalSnapshots === 0 && result.errors.length > 0) {
       const reason = result.errors.map((e) => e.error).join('; ');
-      throw new Error(`IBKR import failed: ${reason}`);
+      // The provider's own error rides along as `cause`: its kind and wording
+      // are what the worker may show the user, and this message is not (SC-1524).
+      throw new Error(`IBKR import failed: ${reason}`, { cause: lastFailure });
     }
 
     const [institution] = await db

@@ -18,3 +18,11 @@ export const CsvMappingDto = z
     'Choose an amount column or credit/debit columns'
   );
 export type CsvMapping = z.infer<typeof CsvMappingDto>;
+
+/**
+ * Appended to a CSV parse's warnings when the column mapping came from the AI
+ * detector. A note about how the file was read rather than a problem with it,
+ * so the job page shows it as a fact and keeps it out of the warning count
+ * (SC-1527).
+ */
+export const AI_COLUMN_MAPPING_WARNING = 'Column mapping detected by AI';

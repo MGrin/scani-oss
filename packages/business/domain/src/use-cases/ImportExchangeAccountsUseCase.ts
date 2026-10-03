@@ -146,6 +146,7 @@ export class ImportExchangeAccountsUseCase {
 
     const targetsRaw: Array<{ accountInfo: DiscoveredAccountInfo; snapshots: HoldingSnapshot[] }> =
       [];
+    let lastFailure: unknown;
     let accountIndex = 0;
     for (const accountInfo of discoveredAccountInfos) {
       accountIndex++;
@@ -157,6 +158,7 @@ export class ImportExchangeAccountsUseCase {
       try {
         snapshots = await provider.fetchBalances(ctx);
       } catch (err) {
+        lastFailure = err;
         result.errors.push({
           accountType: accountInfo.accountType,
           error: err instanceof Error ? err.message : String(err),
@@ -168,7 +170,9 @@ export class ImportExchangeAccountsUseCase {
     const totalHoldings = targetsRaw.reduce((sum, a) => sum + a.snapshots.length, 0);
     if (totalHoldings === 0 && result.errors.length > 0) {
       const reason = result.errors.map((e) => e.error).join('; ');
-      throw new Error(`Exchange import failed: ${reason}`);
+      // The provider's own error rides along as `cause`: its kind and wording
+      // are what the worker may show the user, and this message is not (SC-1524).
+      throw new Error(`Exchange import failed: ${reason}`, { cause: lastFailure });
     }
 
     const [institution] = await db
@@ -286,19 +290,12 @@ const BLOCKCHAIN_INSTITUTION_CODES = new Set([
   'arbitrum',
   'optimism',
   'base',
-  'fantom',
-  'cronos',
-  'arbitrum-nova',
-  'zksync-era',
-  'scroll',
   'linea',
   'blast',
   'mantle',
   'opbnb',
   'gnosis',
   'celo',
-  'moonbeam',
-  'moonriver',
   'bitcoin',
   'solana',
   'tron',

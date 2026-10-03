@@ -54,6 +54,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { scratchGitEnv } from './lib/scratch-git';
 
 /** Whether the branch being committed to is bound for the public mirror. */
 export type Boundness =
@@ -654,19 +655,6 @@ function gitPaths(args: string[]): string[] | null {
  * Three git calls, measured at ~150ms total against a 2680-path tree, against
  * a hook that already runs `bun run type-check`.
  */
-/**
- * The environment for a git command run in a scratch directory. A hook runs
- * with `GIT_DIR` (and in pre-commit `GIT_INDEX_FILE`) exported, so an
- * inherited `git init` re-initialises the SHARED repository instead of the
- * scratch one, and as bare: that flipped `core.bare` for every scani checkout
- * on this machine (SC-1515).
- */
-export function scratchGitEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
-  return Object.fromEntries(
-    Object.entries(env).filter(([k]) => !k.startsWith('GIT_'))
-  ) as NodeJS.ProcessEnv;
-}
-
 /**
  * Run `oss-classify` as `origin/main` has it over `paths`, from a scratch copy
  * of that commit's `scripts/` and `.gitattributes`, so the rules are the

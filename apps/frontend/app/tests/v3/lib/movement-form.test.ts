@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import i18n from 'i18next';
 import {
+  describeMovementBlockers,
+  describeMovementFailure,
   type MovementHolding,
   matchMovementHoldings,
   movementBalanceBelowZero,
@@ -9,6 +12,8 @@ import {
   movementHoldingLabel,
   movementHoldingSelectedLabel,
 } from '@/v3/lib/movement-form';
+
+const t = i18n.t.bind(i18n);
 
 /**
  * The searched holding field and the submit gate (SC-619).
@@ -318,6 +323,76 @@ describe('the transfer fee', () => {
     expect(movementFeeArrival({ ...transfer, amount: '', fee: '1.33' })).toBeNull();
     expect(movementFeeArrival({ ...transfer, amount: 'abc', fee: '1.33' })).toBeNull();
     expect(movementFeeArrival({ ...transfer, amount: '251.33', fee: 'abc' })).toBeNull();
+  });
+});
+
+/**
+ * SC-1527 — more leaving a holding than it holds.
+ *
+ * The form printed "Currently 0.4 BTC" under the field and let 0.5 through;
+ * the server refused it, and the page said "Something went wrong". The rule is
+ * the server's (`MovementExceedsBalanceError`: what is left may not be
+ * negative), asked here first so the button can say it.
+ */
+describe('a movement larger than the holding (SC-1527)', () => {
+  const outflow = {
+    holdingId: 'kraken-btc',
+    direction: 'outflow' as const,
+    amount: '0.5',
+    destination: 'left_control' as const,
+    available: '0.4',
+  };
+
+  test('money out cannot take more than is there', () => {
+    expect(movementBlockerKeys(outflow)).toEqual(['v3.holdings.movement.blocker.exceedsBalance']);
+  });
+
+  test('nor can a transfer', () => {
+    expect(
+      movementBlockerKeys({ ...outflow, direction: 'transfer', destination: 'transfer' })
+    ).toEqual(['v3.holdings.movement.blocker.exceedsBalance']);
+  });
+
+  test('all of it may leave — the server refuses only a negative remainder', () => {
+    expect(movementBlockerKeys({ ...outflow, amount: '0.4' })).toEqual([]);
+    expect(movementBlockerKeys({ ...outflow, amount: '0.40000000' })).toEqual([]);
+  });
+
+  test('money in is not limited by what is there', () => {
+    expect(movementBlockerKeys({ ...outflow, direction: 'inflow', destination: null })).toEqual([]);
+  });
+
+  test('the reason names the amount that is available', () => {
+    expect(describeMovementBlockers(t, outflow, { available: '0.4', symbol: 'BTC' })).toEqual([
+      'only 0.4 BTC is in this holding — enter that much or less',
+    ]);
+  });
+});
+
+describe('describeMovementFailure (SC-1527)', () => {
+  const movement = { amount: '0.5', symbol: 'BTC' };
+
+  test('the server refusing an overdraw says what was refused, in the reader’s language', () => {
+    const refusal = {
+      data: { httpStatus: 409 },
+      message: 'This holding holds 0.4, so 0.5 cannot leave it.',
+    };
+    expect(describeMovementFailure(t, refusal, movement)).toBe(
+      'Not recorded: 0.5 BTC is more than this holding holds now. Check its balance and enter a smaller amount.'
+    );
+    expect(describeMovementFailure(i18n.getFixedT('ru'), refusal, movement)).not.toContain(
+      'Not recorded'
+    );
+  });
+
+  test('any other refusal still carries the server’s own sentence, not "something went wrong"', () => {
+    const other = {
+      data: { httpStatus: 400 },
+      message: 'A transfer has to go to a different holding.',
+    };
+    const copy = describeMovementFailure(t, other, movement);
+    expect(copy).toContain('A transfer has to go to a different holding');
+    expect(copy.toLowerCase()).not.toContain('something went wrong');
   });
 });
 

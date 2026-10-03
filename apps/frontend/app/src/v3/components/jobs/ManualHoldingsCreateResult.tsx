@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { readManualHoldings } from '../../lib/job-results';
+import { priceSourceLabel } from '../../lib/price-source';
 import { V3_CAPTURE_ROUTES, V3_ROUTES } from '../../lib/routes';
 
 /**
@@ -87,7 +88,9 @@ export function ManualHoldingsCreateResult({ result }: { result: unknown }) {
                 row.pricingFailed ? (
                   <span className="text-muted-foreground">{t('v3.jobs.manual.row.noPrice')}</span>
                 ) : row.priceSource ? (
-                  <span className="text-muted-foreground">{row.priceSource}</span>
+                  <span className="text-muted-foreground">
+                    {priceSourceLabel(t, row.priceSource)}
+                  </span>
                 ) : undefined
               }
             />

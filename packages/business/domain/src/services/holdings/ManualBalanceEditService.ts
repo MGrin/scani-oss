@@ -14,10 +14,16 @@ import {
   MANUAL_EDIT_FLOW_SOURCE,
 } from '../../lib/person-authored-sources';
 import { HoldingBalanceObservationRepository } from '../../repositories/HoldingBalanceObservationRepository';
+import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
 import { DEFAULT_OPENING_EPSILON } from './OpeningBalanceReconciliationService';
 
 const logger = createComponentLogger('service:ManualBalanceEditService');
+
+/** Signed, `newBalance - previousBalance`. */
+function deltaOf(edit: Pick<ManualBalanceEditInput, 'previousBalance' | 'newBalance'>): Decimal {
+  return new Decimal(edit.newBalance).sub(new Decimal(edit.previousBalance));
+}
 
 /** The dedup key every row this service writes is addressed by. */
 function manualEditExternalId(editedAt: Date): string {
@@ -212,6 +218,7 @@ export interface ManualBalanceEditResult {
 export class ManualBalanceEditService {
   private readonly transactionRepository = Container.get(HoldingTransactionRepository);
   private readonly observationRepository = Container.get(HoldingBalanceObservationRepository);
+  private readonly holdingRepository = Container.get(HoldingRepository);
 
   /**
    * Which cause applies to this edit, or a refusal.
@@ -248,29 +255,32 @@ export class ManualBalanceEditService {
     return null;
   }
 
-  async record(
-    input: ManualBalanceEditInput,
-    transaction?: DatabaseTransaction
-  ): Promise<ManualBalanceEditResult> {
-    const { holding, cause, editedAt } = input;
-    const delta = new Decimal(input.newBalance).sub(new Decimal(input.previousBalance));
-
+  /**
+   * Why `record` writes no ledger row for this edit, or null when it writes
+   * one. A caller that has to lock the holding at the level the ledger upsert
+   * takes, before it writes anything else, asks here, so the two read one rule
+   * (R82).
+   */
+  skipReason(
+    edit: Pick<ManualBalanceEditInput, 'cause' | 'previousBalance' | 'newBalance'>
+  ): ManualBalanceEditResult['skipped'] {
     // The same floor the reconciler uses, imported rather than copied so the
     // two cannot drift: a diff this service calls rounding must be one the
     // reconciler also declines to synthesize an opening for.
-    if (delta.abs().lte(DEFAULT_OPENING_EPSILON)) {
-      return {
-        cause,
-        delta,
-        kind: null,
-        occurredAt: null,
-        transactionId: null,
-        fee: null,
-        skipped: 'no-delta',
-      };
-    }
+    if (deltaOf(edit).abs().lte(DEFAULT_OPENING_EPSILON)) return 'no-delta';
+    if (edit.cause === 'growth') return 'growth-needs-no-row';
+    return null;
+  }
 
-    if (cause === 'growth') {
+  async record(
+    input: ManualBalanceEditInput,
+    transaction: DatabaseTransaction
+  ): Promise<ManualBalanceEditResult> {
+    const { holding, cause, editedAt } = input;
+    const delta = deltaOf(input);
+
+    const skipped = this.skipReason(input);
+    if (skipped) {
       return {
         cause,
         delta,
@@ -278,7 +288,7 @@ export class ManualBalanceEditService {
         occurredAt: null,
         transactionId: null,
         fee: null,
-        skipped: 'growth-needs-no-row',
+        skipped,
       };
     }
 
@@ -318,7 +328,7 @@ export class ManualBalanceEditService {
           holdingId: holding.id,
           tokenId: holding.tokenId,
           kind,
-          quantity: movement.toString(),
+          quantity: movement.toFixed(),
           occurredAt,
           source: cause === 'correction' ? MANUAL_EDIT_CORRECTION_SOURCE : MANUAL_EDIT_FLOW_SOURCE,
           // Keyed on the EDIT instant, not on the date the user gave. The
@@ -360,7 +370,7 @@ export class ManualBalanceEditService {
                 holdingId: holding.id,
                 tokenId: holding.tokenId,
                 kind: 'fee' as const,
-                quantity: fee.neg().toString(),
+                quantity: fee.neg().toFixed(),
                 // Same instant as the movement it was charged on. The ledger
                 // is ordered by `occurred_at`, and a fee that sorts away from
                 // the payment that incurred it reads as an unexplained charge.
@@ -381,6 +391,10 @@ export class ManualBalanceEditService {
       ],
       transaction
     );
+    // D-6: any write lowers the holding's start, and a flow is dated when the
+    // money moved, which can be before it (R86). The upsert above already holds
+    // the row FOR UPDATE, so this waits on nothing.
+    await this.holdingRepository.lowerStartsAt(holding.userId, holding.id, occurredAt, transaction);
 
     // By key, never by index. `returning()` on a multi-row insert makes no
     // promise about order, and reading `rows[0]` as "the movement" would put

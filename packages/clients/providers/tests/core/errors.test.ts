@@ -71,7 +71,10 @@ describe('classifyError', () => {
 
   test('catches IBKR Flex Query auth + rate-limit codes', () => {
     expect(classifyError(new Error('IBKR Flex Query error (code 1010)'))).toBe('auth-failed');
+    expect(classifyError(new Error('IBKR Flex Query error (code 1014)'))).toBe('auth-failed');
+    expect(classifyError(new Error('IBKR Flex Query error (code 1015)'))).toBe('auth-failed');
     expect(classifyError(new Error('IBKR Flex Query error (code 1018)'))).toBe('rate-limited');
+    expect(classifyError(new Error('IBKR Flex Query error (code 1019)'))).toBe('retryable');
   });
 
   test('defaults unknown errors to retryable', () => {

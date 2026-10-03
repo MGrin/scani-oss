@@ -15,9 +15,12 @@ import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { type DatabaseTransaction, getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
+import type { StatementIngesterResult } from '@scani/ingesters';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
+import { FeedInputRepository } from '../../../src/repositories/FeedInputRepository';
+import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
 import { deterministicUuid } from '../../../src/services/feeds/deterministic-id';
 import {
   FeedBatchRejected,
@@ -31,11 +34,14 @@ import type {
   LegacyEntryColumns,
   TokenIdentity,
 } from '../../../src/services/feeds/feed-batch';
+import { LandingPlanner } from '../../../src/services/feeds/ingest/LandingPlanner';
+import { legacyStatementBatch } from '../../../src/services/feeds/legacy/statement-batch';
 import { TokenIdentityService } from '../../../src/services/tokens/TokenIdentityService';
 import { withTestDb } from '../../../test/helpers/db';
 import { makeInstitution, makeUser } from '../../../test/helpers/factories';
 import { makeAccount, makeHolding, makeToken } from '../../../test/helpers/factories-extra';
 import { expectLabelsSettled } from '../../../test/helpers/labels-settled';
+import { withLockWatch } from '../../../test/helpers/lock-watch';
 
 const ingest = (batch: FeedBatch, tx?: DatabaseTransaction) =>
   Container.get(FeedIngestService).ingest(batch, tx);
@@ -49,6 +55,8 @@ const ORPHAN_NOTICE =
   'Recorded 1 swap leg(s) as plain transfers: the other side of the swap has no holding on this account, so nothing could be linked or priced.';
 const skippedNotice = (events: number, tokens: number) =>
   `Skipped ${events} tx event(s) referencing ${tokens} token(s) the user didn't keep during wallet review.`;
+const duplicatePlacementNotice = (events: number) =>
+  `duplicate-placement: ${events} event(s) were placed on a holding that already holds an older copy of them, while this feed records each on another holding. Each copy was updated in place and nothing was moved, so each of these events is on two holdings.`;
 
 /** A symbol no other test and no seed holds. */
 const freshSymbol = () => `T${randomUUID().replace(/-/g, '').toUpperCase()}`;
@@ -98,6 +106,12 @@ function txBatch(
       cacheObservation: null,
       derivesTradeLegs: false,
       holdingFailure: 'skip-entry',
+      absence: null,
+      clearsAbsenceTally: false,
+      createdCheckpointMeta: null,
+      unhideOnNonZero: false,
+      unchangedCheckpoint: 'append',
+      zeroOpensHolding: true,
     },
     notices: [],
   };
@@ -398,9 +412,11 @@ describe('FeedIngestService.ingest — settlement legs', () => {
     });
   });
 
-  // Two rows answer to the leg's external id, on two holdings: the batch does
-  // not choose between them, and leaves the leg for the settlement sweep.
-  test('a leg whose external id two written rows answer to is left unlinked', async () => {
+  // One input states an external id once (Task 13), so two rows under one id
+  // on two holdings cannot both be kept. Merging them would drop a ledger row
+  // in silence, so the batch is refused before anything is read (R57). Before
+  // the key both landed, and the leg was left for the settlement sweep.
+  test('a batch naming one external id for two assets is refused, and writes nothing', async () => {
     await withTestDb(async (tx) => {
       const fixture = await owner(tx);
       const [base, quote] = [
@@ -408,7 +424,7 @@ describe('FeedIngestService.ingest — settlement legs', () => {
         await makeToken(tx, { symbol: freshSymbol() }),
       ];
 
-      await ingest(
+      const refused = await ingest(
         txBatch(
           fixture,
           'create',
@@ -426,18 +442,46 @@ describe('FeedIngestService.ingest — settlement legs', () => {
           'bybit-api'
         ),
         tx
+      ).catch((error: unknown) => error);
+
+      expect(refused).toBeInstanceOf(FeedBatchRejected);
+      expect((refused as FeedBatchRejected).problems).toEqual([
+        {
+          code: 'duplicate-external-id',
+          detail:
+            '1 external id(s) are each sent for more than one asset or source, by 2 entries in all',
+        },
+      ]);
+      expect(await ledgerOf(tx, fixture.userId)).toEqual([]);
+      expect(await holdingsOf(tx, fixture.accountId)).toEqual([]);
+      expect(
+        await tx
+          .select()
+          .from(schema.feedInputs)
+          .where(eq(schema.feedInputs.accountId, fixture.accountId))
+      ).toEqual([]);
+    });
+  });
+
+  // The control: the same event sent twice is a re-send, merged and reported
+  // as it always was (SC-349).
+  test('the same event sent twice in one batch is merged and reported, not refused', async () => {
+    await withTestDb(async (tx) => {
+      const fixture = await owner(tx);
+      const token = await makeToken(tx, { symbol: freshSymbol() });
+
+      const result = await ingest(
+        txBatch(fixture, 'create', [
+          entry(coin(token.symbol), 'd1', '1', { kind: 'deposit' }),
+          entry(coin(token.symbol), 'd1', '1', { kind: 'deposit' }),
+        ]),
+        tx
       );
 
-      const order = (r: { externalId: string | null; kind: string }) => `${r.externalId} ${r.kind}`;
-      const rows = (await ledgerOf(tx, fixture.userId)).sort((a, b) =>
-        order(a) < order(b) ? -1 : order(a) > order(b) ? 1 : 0
-      );
-      expect(
-        rows.map((r) => [r.externalId, r.kind, r.settlesTransactionId, r.ledgerKind, r.feeOf])
-      ).toEqual([
-        ['x1', 'buy', null, 'trade_leg', null],
-        ['x1', 'sell', null, 'trade_leg', null],
-        ['x1:fee', 'fee', null, 'fee', null],
+      const rows = await ledgerOf(tx, fixture.userId);
+      expect(rows.map((r) => r.externalId)).toEqual(['d1']);
+      expect(result.merges).toEqual([
+        { holdingId: rows[0]!.holdingId, source: 'test-feed', externalId: 'd1', dropped: 1 },
       ]);
     });
   });
@@ -744,26 +788,564 @@ describe('FeedIngestService.ingest — holdings by ingest order', () => {
   });
 });
 
-describe('FeedIngestService.ingest — absences', () => {
-  // Absence confirmation is not written yet (ruling R30); dropping one would
-  // read as "nothing is absent", so the batch is refused instead.
-  test('a batch carrying absences is refused, and writes nothing', async () => {
+/**
+ * The entry key (A2 D-7, Task 13): ingest arbitrates on (input_id,
+ * external_id), so an event its input states again updates its one row,
+ * wherever the import now places it.
+ */
+describe('FeedIngestService.ingest — the entry key (input, external_id)', () => {
+  const coverageOf = async (tx: DatabaseTransaction, holdingId: string) => {
+    const [row] = await tx
+      .select()
+      .from(schema.holdingCoverage)
+      .where(eq(schema.holdingCoverage.holdingId, holdingId));
+    return row ? [row.firstTxAt, row.lastTxAt] : null;
+  };
+
+  test('ingest moves a re-imported row to the holding it now resolves to instead of inserting a second', async () => {
     await withTestDb(async (tx) => {
       const fixture = await owner(tx);
       const token = await makeToken(tx, { symbol: freshSymbol() });
-      const batch: FeedBatch = {
-        ...txBatch(fixture, 'create', [entry(coin(token.symbol), 'a1', '1', { kind: 'deposit' })]),
-        absences: [{ asset: coin(token.symbol), confirmedAt: FETCHED }],
+      const batch = txBatch(fixture, 'create', [
+        entry(coin(token.symbol), 'p1', '1', { kind: 'deposit' }),
+      ]);
+      const first = await ingest(batch, tx);
+      const [created] = first.createdHoldingIds;
+      // An imported row outranks the one ingest created (`findForIngest`).
+      const imported = await makeHolding(tx, {
+        userId: fixture.userId,
+        accountId: fixture.accountId,
+        tokenId: token.id,
+        externalId: `${token.symbol}-sync`,
+        kind: 'feed',
+      });
+
+      const second = await ingest(batch, tx);
+
+      expect(
+        (await ledgerOf(tx, fixture.userId)).map((r) => [
+          r.externalId,
+          r.holdingId,
+          r.tokenId,
+          r.inputId,
+        ])
+      ).toEqual([['p1', imported.id, token.id, first.inputId]]);
+      expect(second.earliestChangedAt).toEqual(T1);
+      // The holding it left summarizes a ledger with nothing in it now.
+      expect(await coverageOf(tx, created!)).toEqual([null, null]);
+      expect(await coverageOf(tx, imported.id)).toEqual([T1, T1]);
+    });
+  });
+
+  test('a re-imported row whose asset now resolves to another token moves with its token', async () => {
+    await withTestDb(async (tx) => {
+      const fixture = await owner(tx);
+      const [was, now] = [
+        await makeToken(tx, { symbol: freshSymbol() }),
+        await makeToken(tx, { symbol: freshSymbol() }),
+      ];
+      await ingest(
+        txBatch(fixture, 'create', [entry(coin(was.symbol), 'r1', '1', { kind: 'deposit' })]),
+        tx
+      );
+      const second = await ingest(
+        txBatch(fixture, 'create', [entry(coin(now.symbol), 'r1', '1', { kind: 'deposit' })]),
+        tx
+      );
+
+      const [moved] = second.createdHoldingIds;
+      expect(
+        (await ledgerOf(tx, fixture.userId)).map((r) => [r.externalId, r.holdingId, r.tokenId])
+      ).toEqual([['r1', moved!, now.id]]);
+    });
+  });
+
+  test('a statement re-upload in another format with the same synthetic id updates instead of duplicating', async () => {
+    await withTestDb(async (tx) => {
+      const fixture = await owner(tx);
+      const currency = await makeToken(tx, { symbol: freshSymbol() });
+      const externalId = 'synthetic:2026-07-01T10:00:00:-12.5:Coffee:1';
+      const upload = (format: string, fetchedAt: Date) =>
+        legacyStatementBatch({
+          userId: fixture.userId,
+          accountId: fixture.accountId,
+          result: {
+            format,
+            bankTemplate: null,
+            lines: [
+              {
+                currency: currency.symbol,
+                rows: [
+                  {
+                    kind: 'withdraw',
+                    quantity: '-12.5',
+                    occurredAt: T1,
+                    externalId,
+                    source: `statement-${format}`,
+                    counterparty: null,
+                    sourceMetadata: { description: 'Coffee', format },
+                    rawPayload: null,
+                  },
+                ],
+              },
+            ],
+            closes: [],
+            positions: [],
+            warnings: [],
+          } as StatementIngesterResult,
+          uploadRef: `uploads/statement.${format}`,
+          fetchedAt,
+        });
+
+      const first = await ingest(upload('csv', FETCHED), tx);
+      await ingest(upload('xlsx', new Date(FETCHED.getTime() + 60_000)), tx);
+
+      // The key does not take the source, so the row keeps the first upload's.
+      expect(
+        (await ledgerOf(tx, fixture.userId)).map((r) => [
+          r.externalId,
+          r.source,
+          (r.sourceMetadata as { format?: string }).format,
+          r.inputId,
+        ])
+      ).toEqual([[externalId, 'statement-csv', 'xlsx', first.inputId]]);
+    });
+  });
+
+  test("a taken-over row carries the batch's input_id (R54)", async () => {
+    await withTestDb(async (tx) => {
+      const fixture = await owner(tx);
+      const token = await makeToken(tx, { symbol: freshSymbol() });
+      const holding = await makeHolding(tx, {
+        userId: fixture.userId,
+        accountId: fixture.accountId,
+        tokenId: token.id,
+      });
+      // The arrival a person's queue answer wrote for this money.
+      const [answered] = await tx
+        .insert(schema.holdingTransactions)
+        .values({
+          userId: fixture.userId,
+          holdingId: holding.id,
+          tokenId: token.id,
+          kind: 'transfer_in',
+          quantity: '1000',
+          occurredAt: T1,
+          source: 'transfer-review',
+          externalId: 'review-0',
+        })
+        .returning();
+
+      const result = await ingest(
+        txBatch(fixture, 'create', [
+          entry(coin(token.symbol), 'in-1', '1000', { kind: 'transfer_in' }),
+        ]),
+        tx
+      );
+
+      expect(
+        (await ledgerOf(tx, fixture.userId)).map((r) => [r.id, r.source, r.externalId, r.inputId])
+      ).toEqual([[answered!.id, 'test-feed', 'in-1', result.inputId]]);
+    });
+  });
+
+  /**
+   * R55's starting point: `a1` and `b1` written by the input and then
+   * unstamped, as rows written before PR-3 are, and a newer copy of `a1` with
+   * no input on an imported holding of `a`, which the next run resolves to.
+   */
+  async function unstampedAcrossHoldings(tx: DatabaseTransaction) {
+    const fixture = await owner(tx);
+    const [a, b] = [
+      await makeToken(tx, { symbol: freshSymbol() }),
+      await makeToken(tx, { symbol: freshSymbol() }),
+    ];
+    const batch = txBatch(fixture, 'create', [
+      entry(coin(a.symbol), 'a1', '1', { kind: 'deposit' }),
+      entry(coin(b.symbol), 'b1', '2', { kind: 'deposit' }),
+    ]);
+    const first = await ingest(batch, tx);
+    await tx
+      .update(schema.holdingTransactions)
+      .set({ inputId: null })
+      .where(eq(schema.holdingTransactions.userId, fixture.userId));
+    const [aCreated, bCreated] = first.createdHoldingIds;
+    // The copy is the newer of the two, so only preferring the batch's own
+    // holding stamps it.
+    const aImported = await makeHolding(tx, {
+      userId: fixture.userId,
+      accountId: fixture.accountId,
+      tokenId: a.id,
+      externalId: `${a.symbol}-sync`,
+      kind: 'feed',
+    });
+    await tx.insert(schema.holdingTransactions).values({
+      userId: fixture.userId,
+      holdingId: aImported.id,
+      tokenId: a.id,
+      kind: 'deposit',
+      quantity: '1',
+      occurredAt: T1,
+      source: 'test-feed',
+      externalId: 'a1',
+      createdAt: new Date(Date.now() + 86_400_000),
+    });
+    const names = new Map([
+      [aCreated, 'a-created'],
+      [aImported.id, 'a-imported'],
+      [bCreated, 'b-created'],
+    ]);
+    const ledger = async () =>
+      (await ledgerOf(tx, fixture.userId))
+        .map((r) => [r.externalId, names.get(r.holdingId), r.inputId, r.quantity])
+        .sort((x, y) => String(x).localeCompare(String(y)));
+    return { fixture, batch, inputId: first.inputId, aImported, ledger };
+  }
+
+  /**
+   * R55: a feed row with no input (written before PR-3, or taken over by it)
+   * is the row its re-send updates. Without the stamp the re-send would not
+   * meet it on (input, external_id) and would insert beside it, refused by
+   * `holding_tx_dedup`. The batch's rows span two holdings, and an older copy
+   * of one event sits on a third: each event's stamp goes to one row, the one
+   * on the holding the batch writes into, so nothing is refused.
+   */
+  test('a NULL-input feed row re-sent is stamped and updated, on every holding the batch spans', async () => {
+    await withTestDb(async (tx) => {
+      const { batch, inputId, ledger } = await unstampedAcrossHoldings(tx);
+
+      await ingest(batch, tx);
+
+      expect(await ledger()).toEqual([
+        ['a1', 'a-created', null, '1'],
+        ['a1', 'a-imported', inputId, '1'],
+        ['b1', 'b-created', inputId, '2'],
+      ]);
+    });
+  });
+
+  // R58, on the copy R55 leaves behind: once the event is placed back on that
+  // copy's holding, the input already states it on another, so the copy is
+  // updated where it is, on this run and every one after it.
+  test('the copy R55 leaves is updated where it is when the event is placed back on its holding (R58)', async () => {
+    await withTestDb(async (tx) => {
+      const { batch, inputId, aImported, ledger } = await unstampedAcrossHoldings(tx);
+      await ingest(batch, tx);
+      // The imported holding stops outranking the one ingest created.
+      await tx
+        .update(schema.holdings)
+        .set({ externalId: null, createdAt: new Date(Date.now() + 86_400_000) })
+        .where(eq(schema.holdings.id, aImported.id));
+      const resent = {
+        ...batch,
+        entries: batch.entries.map((e) => (e.externalId === 'a1' ? { ...e, amount: '3' } : e)),
       };
 
-      const refused = await ingest(batch, tx).catch((error: unknown) => error);
+      const runs = [await ingest(resent, tx), await ingest(resent, tx)];
 
-      expect(refused).toBeInstanceOf(FeedBatchRejected);
-      expect((refused as FeedBatchRejected).problems.map((p) => p.code)).toEqual([
-        'absences-not-supported',
+      expect(runs.map((r) => [r.notices, r.earliestChangedAt])).toEqual([
+        [[duplicatePlacementNotice(1)], T1],
+        [[duplicatePlacementNotice(1)], null],
       ]);
-      expect(await ledgerOf(tx, fixture.userId)).toEqual([]);
-      expect(await holdingsOf(tx, fixture.accountId)).toEqual([]);
+      expect(await ledger()).toEqual([
+        ['a1', 'a-created', null, '3'],
+        ['a1', 'a-imported', inputId, '1'],
+        ['b1', 'b-created', inputId, '2'],
+      ]);
+    });
+  });
+
+  /**
+   * R58 (review I1): the input states `p1` on the holding ingest created, and
+   * the imported holding the event now resolves to holds an older copy with no
+   * input, as PR-3's (holding, source, external_id) arbiter left one. Moving
+   * the input's row there would break `holding_tx_dedup`, so the run writes
+   * what that arbiter wrote, onto the copy, moves nothing, and says so. Which
+   * of the two rows is the event is A5's figure decision.
+   */
+  test('an event placed on a holding holding a NULL-input copy of it updates the copy and moves nothing, on every run (R58)', async () => {
+    await withTestDb(async (tx) => {
+      const fixture = await owner(tx);
+      const token = await makeToken(tx, { symbol: freshSymbol() });
+      const batch = txBatch(fixture, 'create', [
+        entry(coin(token.symbol), 'p1', '1', { kind: 'deposit' }),
+      ]);
+      const first = await ingest(batch, tx);
+      const [created] = first.createdHoldingIds;
+      const imported = await makeHolding(tx, {
+        userId: fixture.userId,
+        accountId: fixture.accountId,
+        tokenId: token.id,
+        externalId: `${token.symbol}-sync`,
+        kind: 'feed',
+      });
+      await tx.insert(schema.holdingTransactions).values({
+        userId: fixture.userId,
+        holdingId: imported.id,
+        tokenId: token.id,
+        kind: 'deposit',
+        quantity: '0.5',
+        occurredAt: T1,
+        source: 'test-feed',
+        externalId: 'p1',
+      });
+
+      const runs = [await ingest(batch, tx), await ingest(batch, tx)];
+
+      expect(runs.map((r) => [r.notices, r.earliestChangedAt])).toEqual([
+        [[duplicatePlacementNotice(1)], T1],
+        [[duplicatePlacementNotice(1)], null],
+      ]);
+      const names = new Map([
+        [created, 'created'],
+        [imported.id, 'imported'],
+      ]);
+      expect(
+        (await ledgerOf(tx, fixture.userId))
+          .map((r) => [names.get(r.holdingId), r.inputId, r.quantity])
+          .sort((x, y) => String(x).localeCompare(String(y)))
+      ).toEqual([
+        ['created', first.inputId, '1'],
+        ['imported', null, '1'],
+      ]);
+    });
+  });
+
+  // SC-1528: a batch too large for one statement is written in parts, and a
+  // placement R58 finds in a later part is reported like one in the first.
+  test('an R58 placement past the first statement of a large batch is still reported', async () => {
+    await withTestDb(async (tx) => {
+      await withLockWatch(tx, 'FeedIngest R58 1,700', async () => {
+        const fixture = await owner(tx);
+        const token = await makeToken(tx, { symbol: freshSymbol() });
+        const ids = Array.from({ length: 1700 }, (_, i) => `p${i}`);
+        const last = ids.at(-1)!;
+        const batch = txBatch(
+          fixture,
+          'create',
+          ids.map((id) => entry(coin(token.symbol), id, '1', { kind: 'deposit' }))
+        );
+        const first = await ingest(batch, tx);
+        const imported = await makeHolding(tx, {
+          userId: fixture.userId,
+          accountId: fixture.accountId,
+          tokenId: token.id,
+          externalId: `${token.symbol}-sync`,
+          kind: 'feed',
+        });
+        await tx.insert(schema.holdingTransactions).values({
+          userId: fixture.userId,
+          holdingId: imported.id,
+          tokenId: token.id,
+          kind: 'deposit',
+          quantity: '0.5',
+          occurredAt: T1,
+          source: 'test-feed',
+          externalId: last,
+        });
+
+        const again = await ingest(batch, tx);
+
+        expect(again.notices).toEqual([duplicatePlacementNotice(1)]);
+        const copies = (await ledgerOf(tx, fixture.userId)).filter((r) => r.externalId === last);
+        const names = new Map([
+          [first.createdHoldingIds[0], 'created'],
+          [imported.id, 'imported'],
+        ]);
+        expect(
+          copies
+            .map((r) => [names.get(r.holdingId), r.inputId, r.quantity])
+            .sort((x, y) => String(x).localeCompare(String(y)))
+        ).toEqual([
+          ['created', first.inputId, '1'],
+          ['imported', null, '1'],
+        ]);
+      });
+    });
+  }, 120_000); // Thousands of rows, on a CI box several times slower than a laptop (SC-1528).
+
+  // SC-1528, the whole path at the size that failed: the TON Foundation wallet's
+  // 7,182 events. Every statement ingest runs on the batch, not only the
+  // ledger upsert, has to fit Postgres's parameter limit.
+  test('a batch of 7,200 events lands whole, first time and re-sent', async () => {
+    await withTestDb(async (tx) => {
+      await withLockWatch(tx, 'FeedIngest 7,200', async () => {
+        const fixture = await owner(tx);
+        const token = await makeToken(tx, { symbol: freshSymbol() });
+        const batch = txBatch(
+          fixture,
+          'create',
+          Array.from({ length: 7200 }, (_, i) =>
+            entry(
+              coin(token.symbol),
+              `ton-${i}`,
+              i % 2 ? '-1' : '2',
+              {
+                kind: i % 2 ? 'withdraw' : 'deposit',
+              },
+              { occurredAt: new Date(T1.getTime() + i * 60_000) }
+            )
+          )
+        );
+
+        const first = await ingest(batch, tx);
+        const again = await ingest(batch, tx);
+
+        expect(first.entryOutcomes.filter((o) => o === 'landed')).toHaveLength(7200);
+        expect(first.earliestChangedAt).toEqual(T1);
+        expect(again.earliestChangedAt).toBeNull();
+        expect(await ledgerOf(tx, fixture.userId)).toHaveLength(7200);
+      });
+    });
+  }, 120_000); // Thousands of rows, on a CI box several times slower than a laptop (SC-1528).
+
+  // The stamp is scoped by user as well as by account (review M3): another
+  // user's row in the account is never stamped, so never moved.
+  test("the stamp leaves another user's row in the account alone", async () => {
+    await withTestDb(async (tx) => {
+      const fixture = await owner(tx);
+      const stranger = (await makeUser(tx)).id;
+      const token = await makeToken(tx, { symbol: freshSymbol() });
+      const theirs = await makeHolding(tx, {
+        userId: stranger,
+        accountId: fixture.accountId,
+        tokenId: token.id,
+      });
+      const [copy] = await tx
+        .insert(schema.holdingTransactions)
+        .values({
+          userId: stranger,
+          holdingId: theirs.id,
+          tokenId: token.id,
+          kind: 'deposit',
+          quantity: '1',
+          occurredAt: T1,
+          source: 'test-feed',
+          externalId: 'u1',
+        })
+        .returning();
+
+      const result = await ingest(
+        txBatch(fixture, 'create', [entry(coin(token.symbol), 'u1', '1', { kind: 'deposit' })]),
+        tx
+      );
+
+      const [after] = await tx
+        .select()
+        .from(schema.holdingTransactions)
+        .where(eq(schema.holdingTransactions.id, copy!.id));
+      expect([after!.holdingId, after!.inputId]).toEqual([theirs.id, null]);
+      const [created] = result.createdHoldingIds;
+      expect(
+        (await ledgerOf(tx, fixture.userId)).map((r) => [r.externalId, r.holdingId, r.inputId])
+      ).toEqual([['u1', created!, result.inputId]]);
+    });
+  });
+
+  // The control for the stamp's guard: the input already states the event on
+  // another holding, so a stamp would collide with it on the key.
+  test('a NULL-input copy of an event the input already holds is left as it is', async () => {
+    await withTestDb(async (tx) => {
+      const fixture = await owner(tx);
+      const token = await makeToken(tx, { symbol: freshSymbol() });
+      const batch = txBatch(fixture, 'create', [
+        entry(coin(token.symbol), 'c1', '1', { kind: 'deposit' }),
+      ]);
+      const first = await ingest(batch, tx);
+      // Created later, so `findForIngest` keeps choosing the holding ingest made.
+      const later = await makeHolding(tx, {
+        userId: fixture.userId,
+        accountId: fixture.accountId,
+        tokenId: token.id,
+        createdAt: new Date(Date.now() + 86_400_000),
+      });
+      await tx.insert(schema.holdingTransactions).values({
+        userId: fixture.userId,
+        holdingId: later.id,
+        tokenId: token.id,
+        kind: 'deposit',
+        quantity: '1',
+        occurredAt: T1,
+        source: 'test-feed',
+        externalId: 'c1',
+      });
+
+      await ingest(batch, tx);
+
+      expect(
+        (await ledgerOf(tx, fixture.userId))
+          .map((r) => [r.holdingId === later.id ? 'copy' : 'held', r.inputId])
+          .sort((x, y) => String(x).localeCompare(String(y)))
+      ).toEqual([
+        ['copy', null],
+        ['held', first.inputId],
+      ]);
+    });
+  });
+});
+
+/**
+ * R56: migrations run before the new code is live, and a rollback keeps the
+ * migration, so PR-3's write must hold against the key. It arbitrated on
+ * (holding, source, external_id) and stamped the batch's input on insert. A
+ * re-import meets its row on that key and never changes `input_id`, so it
+ * cannot break the new one. The exception: a row that re-resolves to another
+ * holding is a fresh insert there, under an (input, external_id) its first
+ * holding already has, and that run fails until the new code is live.
+ */
+describe('version skew: the previous arbiter against the key (R56)', () => {
+  test("PR-3's writes hold, and a row it re-resolves to another holding is refused", async () => {
+    await withTestDb(async (tx) => {
+      const fixture = await owner(tx);
+      const token = await makeToken(tx, { symbol: freshSymbol() });
+      const { userId, accountId } = fixture;
+      const [first, other] = [
+        await makeHolding(tx, { userId, accountId, tokenId: token.id }),
+        await makeHolding(tx, { userId, accountId, tokenId: token.id }),
+      ];
+      const input = await Container.get(FeedInputRepository).findOrCreate(
+        { userId, accountId, source: 'test-feed', credentialId: null, walletId: null },
+        tx
+      );
+      const row = (holdingId: string, externalId: string, quantity = '1') => ({
+        userId: fixture.userId,
+        holdingId,
+        tokenId: token.id,
+        kind: 'deposit',
+        quantity,
+        occurredAt: T1,
+        source: 'test-feed',
+        externalId,
+        inputId: input.id,
+      });
+      const ledger = Container.get(HoldingTransactionRepository);
+
+      await ledger.bulkUpsert([row(first.id, 'e1'), row(first.id, 'e2')], tx);
+      await ledger.bulkUpsert([row(first.id, 'e1', '5'), row(first.id, 'e3')], tx);
+      expect(
+        (await ledgerOf(tx, fixture.userId)).map((r) => [r.externalId, r.quantity, r.inputId])
+      ).toEqual([
+        ['e1', '5', input.id],
+        ['e2', '1', input.id],
+        ['e3', '1', input.id],
+      ]);
+
+      const refusal = (rows: ReturnType<typeof row>[]) =>
+        tx
+          .transaction((inner) => ledger.bulkUpsert(rows, inner))
+          .then(
+            () => null,
+            (error: unknown) => {
+              const cause = (error as { cause?: { code?: string; constraint_name?: string } })
+                .cause;
+              return [cause?.code, cause?.constraint_name];
+            }
+          );
+      const refusedByKey = ['23505', 'holding_tx_input_external_uq'];
+      expect(await refusal([row(other.id, 'e1')])).toEqual(refusedByKey);
+      // The same exception inside one batch: one external id sent for two
+      // holdings is two keys to the old arbiter and one to the new.
+      expect(await refusal([row(first.id, 'e4'), row(other.id, 'e4')])).toEqual(refusedByKey);
     });
   });
 });
@@ -854,6 +1436,84 @@ describe('FeedIngestService.ingest, committed', () => {
     expect(after).toEqual(before);
   });
 
+  // R55: the stamp writes `input_id` and nothing else, so a re-send that
+  // changes nothing bumps no `updated_at` and moves no label.
+  test('a NULL-input feed row re-sent is stamped, and moves no updated_at or label', async () => {
+    const symbolName = freshSymbol();
+    const fixture = await seed([symbolName]);
+    const batch = txBatch(fixture, 'create', [
+      entry(coin(symbolName), 'n1', '-3', { kind: 'withdraw' }),
+    ]);
+    const first = await ingest(batch);
+    await getDb()
+      .update(schema.holdingTransactions)
+      .set({ inputId: null })
+      .where(eq(schema.holdingTransactions.userId, fixture.userId));
+    const snapshot = () =>
+      read(async (tx) =>
+        (await ledgerOf(tx, fixture.userId)).map((r) => ({
+          id: r.id,
+          inputId: r.inputId,
+          updatedAt: r.updatedAt,
+          ledgerKind: r.ledgerKind,
+          kindSubtype: r.kindSubtype,
+          groupId: r.groupId,
+          feeOf: r.feeOf,
+          kindOrigin: r.kindOrigin,
+        }))
+      );
+    const before = await snapshot();
+
+    await ingest(batch);
+
+    expect(before.map((r) => r.inputId)).toEqual([null]);
+    expect(await snapshot()).toEqual(before.map((r) => ({ ...r, inputId: first.inputId })));
+    await expectLabelsSettled(fixture.userId);
+  });
+
+  // N2: a second write of an input waits for the first, so it finds the
+  // holding the first created. Unlocked, it would create its own while the
+  // first's was uncommitted, and the key would then move the row onto it,
+  // leaving the first holding empty beside it.
+  test('two writes of one input that meet a new token make one holding', async () => {
+    const symbolName = freshSymbol();
+    const fixture = await seed([symbolName]);
+    const { userId, accountId } = fixture;
+    await getDb().transaction((tx) =>
+      Container.get(FeedInputRepository).findOrCreate(
+        { userId, accountId, source: 'test-feed', credentialId: null, walletId: null },
+        tx
+      )
+    );
+    const batch = txBatch(fixture, 'create', [
+      entry(coin(symbolName), 'z1', '1', { kind: 'deposit' }),
+    ]);
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let wrote = () => {};
+    const firstWrote = new Promise<void>((resolve) => {
+      wrote = resolve;
+    });
+    const first = getDb().transaction(async (tx) => {
+      await ingest(batch, tx);
+      wrote();
+      await held;
+    });
+    await firstWrote;
+    const second = ingest(batch);
+    await Bun.sleep(300);
+    release();
+    await Promise.all([first, second]);
+
+    const holdings = await read((tx) => holdingsOf(tx, fixture.accountId));
+    expect(holdings).toHaveLength(1);
+    expect(
+      (await read((tx) => ledgerOf(tx, fixture.userId))).map((r) => [r.externalId, r.holdingId])
+    ).toEqual([['z1', holdings[0]!.id]]);
+  });
+
   /**
    * Records, at each identity lookup and each provider call, how many
    * transactions are open; `failing` names symbols whose create-on-miss lookup
@@ -908,19 +1568,19 @@ describe('FeedIngestService.ingest, committed', () => {
       })
     );
     // The one decision of which entries land, read before and inside the transaction (R34b).
-    const ingestService = Container.get(FeedIngestService) as unknown as {
-      planLanding: (...args: unknown[]) => Promise<{ landed: FeedEntry[] }>;
-    };
-    const plan = ingestService.planLanding.bind(ingestService);
+    const planner = Container.get(LandingPlanner);
+    const plan = planner.plan.bind(planner);
     restores.push(
-      spyOn(ingestService, 'planLanding').mockImplementation(async (...args: unknown[]) => {
+      spyOn(planner, 'plan').mockImplementation((async (
+        ...args: Parameters<LandingPlanner['plan']>
+      ) => {
         const planned = await plan(...args);
         state.landings.push({
           open: state.open,
-          landed: planned.landed.map((e) => e.externalId).sort(),
+          landed: planned.landed.map(({ entry }) => entry.externalId).sort(),
         });
         return planned;
-      })
+      }) as LandingPlanner['plan'])
     );
     return state;
   }

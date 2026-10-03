@@ -7,6 +7,7 @@ import { assertFrontendEnv } from '@scani/ui';
 import { ErrorBoundary } from '@scani/ui/components/ErrorBoundary';
 import { UpdateBanner } from '@scani/ui/components/UpdateBanner';
 import { ThemeProvider } from '@scani/ui/contexts/ThemeContext';
+import { buildIdentity } from '@scani/ui/lib/build-identity';
 import {
   listenForServiceWorkerReports,
   registerServiceWorker,
@@ -51,7 +52,7 @@ if (SENTRY_DSN) {
   Sentry.init({
     dsn: SENTRY_DSN,
     environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE,
-    release: import.meta.env.VITE_SENTRY_RELEASE || undefined,
+    release: buildIdentity().sentryRelease ?? undefined,
     // Performance tracing, which a deployed build reported ZERO of for a month
     // while reporting errors normally (SC-822) — a `pageload` and a
     // `navigation` transaction, on top of the default integrations

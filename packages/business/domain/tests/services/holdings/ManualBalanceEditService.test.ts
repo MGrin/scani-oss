@@ -16,6 +16,7 @@
 
 import { describe, expect, test } from 'bun:test';
 import * as schema from '@scani/db/schema';
+import { Decimal } from '@scani/shared';
 import { asc, eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { ManualBalanceEditService } from '../../../src/services/holdings/ManualBalanceEditService';
@@ -121,6 +122,58 @@ describe('ManualBalanceEditService.record', () => {
     });
   });
 
+  // D-6: any write lowers the holding's start, never raises it (R86).
+  test('a flow dated before the holding’s start moves the start back to it, and a later one leaves it', async () => {
+    await withTestDb(async (tx) => {
+      const { holding } = await scaffold(tx, '1000');
+      const unstarted = await makeHolding(tx, {
+        userId: holding.userId,
+        accountId: holding.accountId,
+        tokenId: (await makeToken(tx)).id,
+        balance: '1000',
+      });
+      await tx
+        .update(schema.holdings)
+        .set({ startsAt: new Date('2026-08-01T00:00:00Z') })
+        .where(eq(schema.holdings.id, holding.id));
+      const movedAt = new Date('2026-06-15T00:00:00Z');
+      const flow = (
+        on: { id: string; userId: string; tokenId: string; lastUpdated: Date },
+        newBalance: string,
+        occurredAt: Date,
+        editedAt: string
+      ) =>
+        service().record(
+          {
+            holding: on,
+            previousBalance: '1000',
+            newBalance,
+            cause: 'flow',
+            occurredAt,
+            editedAt: new Date(editedAt),
+          },
+          tx
+        );
+      const startOf = async (holdingId: string) =>
+        (
+          await tx
+            .select({ startsAt: schema.holdings.startsAt })
+            .from(schema.holdings)
+            .where(eq(schema.holdings.id, holdingId))
+        )[0]?.startsAt;
+
+      await flow(holding, '6000', movedAt, '2026-08-21T10:00:00Z');
+      expect(await startOf(holding.id)).toEqual(movedAt);
+
+      await flow(holding, '1500', new Date('2026-07-01T00:00:00Z'), '2026-08-22T10:00:00Z');
+      expect(await startOf(holding.id)).toEqual(movedAt);
+
+      // A NULL start stays NULL, for the classification backfill to derive.
+      await flow(unstarted, '6000', movedAt, '2026-08-21T10:00:00Z');
+      expect(await startOf(unstarted.id)).toBeNull();
+    });
+  });
+
   test('money removed is a withdraw carrying a negative quantity', async () => {
     await withTestDb(async (tx) => {
       const { holding } = await scaffold(tx, '1000');
@@ -140,6 +193,39 @@ describe('ManualBalanceEditService.record', () => {
       const rows = await ledgerFor(tx, holding.id);
       expect(rows[0]!.kind).toBe('withdraw');
       expect(rows[0]!.quantity).toBe('-750');
+    });
+  });
+
+  // A2 D-1 exception U4 (R100 m4): the rows of a dust movement state their
+  // quantities as plain decimals, as the balance beside them is written.
+  test('a dust movement writes its quantity and its fee in plain notation', async () => {
+    await withTestDb(async (tx) => {
+      const { holding } = await scaffold(tx, '0.0000002');
+
+      await service().record(
+        {
+          holding,
+          previousBalance: '0.0000002',
+          newBalance: '0',
+          cause: 'flow',
+          occurredAt: new Date('2026-07-01T00:00:00Z'),
+          editedAt: new Date('2026-08-21T10:00:00Z'),
+          fee: new Decimal('0.00000005'),
+        },
+        tx
+      );
+
+      const rows = await ledgerFor(tx, holding.id);
+      expect(rows.map((row) => [row.kind, row.quantity]).sort()).toEqual([
+        ['fee', '-0.00000005'],
+        ['withdraw', '-0.00000015'],
+      ]);
+      // The control: these are the values `Decimal` computes, in the text it
+      // gives them itself. Only the text differs.
+      expect([
+        new Decimal('-0.00000005').toString(),
+        new Decimal('-0.00000015').toString(),
+      ]).toEqual(['-5e-8', '-1.5e-7']);
     });
   });
 

@@ -16,7 +16,12 @@ import { Container } from 'typedi';
 import { HoldingBalanceObservationRepository } from '../../src/repositories/HoldingBalanceObservationRepository';
 import { withTestDb } from '../../test/helpers/db';
 import { makeInstitution, makeInstitutionType, makeUser } from '../../test/helpers/factories';
-import { makeAccount, makeHolding, makeToken } from '../../test/helpers/factories-extra';
+import {
+  makeAccount,
+  makeHolding,
+  makeObservations,
+  makeToken,
+} from '../../test/helpers/factories-extra';
 
 const repo = () => Container.get(HoldingBalanceObservationRepository);
 const HOUR = 3_600_000;
@@ -67,18 +72,19 @@ describe('HoldingBalanceObservationRepository.findAnchorsForInstants', () => {
       });
 
       // Hourly for 60 days, like a synced wallet.
-      await repo().bulkAppend(
+      await makeObservations(
+        tx,
         Array.from({ length: 60 * 24 }, (_, i) => ({
           userId: user.id,
           holdingId: dense.id,
           balance: String(i),
           observedAt: new Date(START + i * HOUR),
           source: 'sync-capture',
-        })),
-        tx
+        }))
       );
       // Three observations weeks apart, one of them twice at the same instant.
-      await repo().bulkAppend(
+      await makeObservations(
+        tx,
         [
           { at: START + 5 * DAY, source: 'manual', balance: '1' },
           { at: START + 30 * DAY, source: 'manual', balance: '2' },
@@ -90,8 +96,7 @@ describe('HoldingBalanceObservationRepository.findAnchorsForInstants', () => {
           balance: o.balance,
           observedAt: new Date(o.at),
           source: o.source,
-        })),
-        tx
+        }))
       );
 
       const ids = [dense.id, sparse.id, empty.id];
@@ -171,26 +176,26 @@ describe('HoldingBalanceObservationRepository.findAnchorsForInstants', () => {
       const dense = await holding();
       const tied = await holding();
       const empty = await holding();
-      await repo().bulkAppend(
+      await makeObservations(
+        tx,
         Array.from({ length: 20 * 24 }, (_, i) => ({
           userId: user.id,
           holdingId: dense.id,
           balance: String(i),
           observedAt: new Date(START + i * HOUR),
           source: 'sync-capture',
-        })),
-        tx
+        }))
       );
       // Ties on the first row, on a row an instant lands on, and on the last.
-      await repo().bulkAppend(
+      await makeObservations(
+        tx,
         [0, 0, 7, 7, 7, 15, 15].map((day, i) => ({
           userId: user.id,
           holdingId: tied.id,
           balance: String(i),
           observedAt: new Date(START + day * DAY),
           source: ['manual', 'sync-capture', 'statement'][i % 3] as string,
-        })),
-        tx
+        }))
       );
       const ids = [dense.id, tied.id, empty.id];
       const instants = [

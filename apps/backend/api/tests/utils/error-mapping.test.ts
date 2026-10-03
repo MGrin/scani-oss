@@ -2,7 +2,11 @@ import { describe, expect, test } from 'bun:test';
 import { ExpiredCredentialsError } from '@scani/domain/services';
 import { ProviderError } from '@scani/providers/core/errors';
 import { TRPCError } from '@trpc/server';
-import { toCredentialCheckError, toTRPCError } from '../../src/utils/error-mapping';
+import {
+  credentialRejectedMessage,
+  toCredentialCheckError,
+  toTRPCError,
+} from '../../src/utils/error-mapping';
 
 const ctx = {
   fallbackCode: 'BAD_REQUEST' as const,
@@ -173,5 +177,37 @@ describe('toCredentialCheckError', () => {
   test('an existing TRPCError passes through', () => {
     const original = new TRPCError({ code: 'TOO_MANY_REQUESTS', message: 'slow down' });
     expect(toCredentialCheckError(original, 'Kraken')).toBe(original);
+  });
+});
+
+describe('credentialRejectedMessage', () => {
+  test('a JSON body yields the venue’s own message, not the transport', () => {
+    const out = credentialRejectedMessage(
+      'Gate.io',
+      'gate HTTP 401 — {"message":"Invalid key provided","label":"INVALID_KEY"}'
+    );
+    expect(out).toStartWith('Gate.io turned these keys down. It said: “Invalid key provided”.');
+    expect(out).not.toContain('HTTP');
+    expect(out).not.toContain('{');
+  });
+
+  test('a bare status names the venue and what to check', () => {
+    const out = credentialRejectedMessage('Wise', 'wise HTTP 401');
+    expect(out).toBe(
+      'Wise turned these keys down. Check that you pasted each value in full, and that the key is allowed to read balances.'
+    );
+  });
+
+  test('a provider’s own verdict is quoted under the venue’s name', () => {
+    const out = credentialRejectedMessage('HTX', 'Signature not valid: Incorrect Access key.');
+    expect(out).toStartWith(
+      'HTX turned these keys down. It said: “Signature not valid: Incorrect Access key”.'
+    );
+  });
+
+  test('no message at all still says something a reader can act on', () => {
+    expect(credentialRejectedMessage('Kraken', undefined)).toStartWith(
+      'Kraken turned these keys down.'
+    );
   });
 });

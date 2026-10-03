@@ -72,8 +72,10 @@ const RETRY_UNAVAILABLE_KEYS: Record<string, string> = {
 
 /** Reasons whose own failure sentence already tells the reader what to do.
  *  Repeating "start it again from where you began it" twice in one card is
- *  noise, and noise is what taught people to skim this block. */
-const SENTENCE_SAYS_IT = new Set(['never_delivered', 'cancelled']);
+ *  noise, and noise is what taught people to skim this block. An unrecoverable
+ *  failure's sentence already says re-running it unchanged fails the same way
+ *  (SC-1527). */
+const SENTENCE_SAYS_IT = new Set(['never_delivered', 'cancelled', 'unrecoverable']);
 
 export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
   const { t } = useTranslation();
@@ -218,7 +220,9 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
         {job.startedAt ? (
           <span>{t('v3.jobs.detail.startedAt', { when: formatRelative(t, job.startedAt) })}</span>
         ) : null}
-        {job.finishedAt ? (
+        {/* A failed attempt stamps `finishedAt` before the next one starts, so
+            a running job read "Attempt 2 of 3 · Finished just now" (SC-1519). */}
+        {job.finishedAt && !running ? (
           <span>{t('v3.jobs.detail.finishedAt', { when: formatRelative(t, job.finishedAt) })}</span>
         ) : null}
       </dl>

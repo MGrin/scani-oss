@@ -47,21 +47,6 @@ export interface ExtractedHolding {
   notes?: string;
 }
 
-export const CreateHoldingDto = z.object({
-  accountId: z.string().uuid(),
-  tokenId: z.string().uuid(),
-  balance: z.string().refine(
-    (val) => {
-      if (!isValidDecimalString(val)) return false;
-      return new Decimal(val).greaterThanOrEqualTo(0);
-    },
-    {
-      message: 'Balance must be a valid decimal number string that is non-negative',
-    }
-  ),
-  lastUpdated: z.date().optional(),
-});
-
 export const UpdateHoldingDto = z.object({
   balance: z
     .string()
@@ -219,6 +204,20 @@ export type HoldingWithDetails = {
   isActive: boolean;
   isHidden: boolean;
   source: string;
+  /**
+   * Whether a refresh would re-fetch this holding's balance: a feed states
+   * it, the balance sync can write this row, and a live wallet or credential
+   * is there to ask. The server's own answer, the one
+   * `holdings.refreshBalance` refuses on, so the button and the refusal
+   * cannot disagree.
+   *
+   * Not derivable from `source`, which is provenance: a row whose exchange
+   * was disconnected still names the sync, and a statement-fed row names an
+   * import nobody can be asked about. A row at the `manual` source is never
+   * refreshable, even once an import has written into it: the sync does not
+   * write a row a person keeps, so a refresh would leave it as it stands.
+   */
+  refreshable: boolean;
   apyConfig?: {
     id: string;
     annualRatePct: string;
@@ -365,5 +364,3 @@ export type HoldingsWithSummary = {
     totalValue: string;
   };
 };
-
-export type CreateHoldingInput = z.infer<typeof CreateHoldingDto>;

@@ -6,6 +6,11 @@
  * the lot. Re-running therefore rebuilds rather than accumulating, which is
  * what makes "reset the demo" a single command SC-467 can put on a schedule.
  *
+ * **One transaction**: the wipe, the rewrite and the classification commit
+ * together or not at all. A seed that fails, at its classification or
+ * anywhere before it, leaves the database as it found it: the demo that was
+ * there, or none, and never a rewritten one that carries no labels.
+ *
  * Two catalogs are shared with every other user in the database and are
  * treated as read-mostly:
  *
@@ -26,11 +31,13 @@
  * series is written.
  */
 
+import type { DatabaseTransaction } from '@scani/db';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { Service } from 'typedi';
+import { Container, Service } from 'typedi';
+import { FoundationClassificationService } from '../services/foundation/FoundationClassificationService';
 import { type BuildDemoDatasetOptions, buildDemoDataset, type DemoDataset } from './dataset';
 
 const logger = createComponentLogger('demo-dataset-seeder');
@@ -55,24 +62,39 @@ export interface DemoSeedSummary {
 
 @Service()
 export class DemoDatasetSeeder {
+  private readonly classification = Container.get(FoundationClassificationService);
+
   async seed(options: BuildDemoDatasetOptions = {}): Promise<DemoSeedSummary> {
     const dataset = buildDemoDataset(options);
     return this.write(dataset);
   }
 
-  async write(dataset: DemoDataset): Promise<DemoSeedSummary> {
-    const tokenTypes = await this.codeMap(schema.tokenTypes);
-    const accountTypes = await this.codeMap(schema.accountTypes);
-    const institutionTypes = await this.codeMap(schema.institutionTypes);
+  /**
+   * `handle` is the process-wide handle, or a transaction a test rolls back;
+   * the seed is a transaction of its own inside either.
+   */
+  async write(dataset: DemoDataset, handle: DatabaseTransaction = db): Promise<DemoSeedSummary> {
+    const summary = await handle.transaction((tx) => this.writeIn(dataset, tx));
+    logger.info(summary, 'demo dataset written');
+    return summary;
+  }
+
+  private async writeIn(
+    dataset: DemoDataset,
+    database: DatabaseTransaction
+  ): Promise<DemoSeedSummary> {
+    const tokenTypes = await this.codeMap(database, schema.tokenTypes);
+    const accountTypes = await this.codeMap(database, schema.accountTypes);
+    const institutionTypes = await this.codeMap(database, schema.institutionTypes);
 
     const tokenIds = new Map<string, string>();
     for (const symbol of ['GBP', 'USD', 'EUR']) {
-      tokenIds.set(symbol, await this.fiatTokenId(symbol, tokenTypes));
+      tokenIds.set(symbol, await this.fiatTokenId(database, symbol, tokenTypes));
     }
     for (const token of dataset.tokens) {
       tokenIds.set(
         token.symbol,
-        await this.ensureToken(token, tokenTypes.get(token.typeCode) as string)
+        await this.ensureToken(database, token, tokenTypes.get(token.typeCode) as string)
       );
     }
 
@@ -81,6 +103,7 @@ export class DemoDatasetSeeder {
       institutionIds.set(
         institution.name,
         await this.ensureInstitution(
+          database,
           institution.name,
           institutionTypes.get(institution.typeCode) as string
         )
@@ -90,10 +113,12 @@ export class DemoDatasetSeeder {
     // Wipe first: the user cascade takes accounts, holdings, transactions,
     // observations, rollups, groups, vaults, vendors, payments and documents
     // with it, and the price rows are reclaimed by their source tag.
-    await db.delete(schema.users).where(eq(schema.users.email, dataset.user.email));
-    await db.delete(schema.tokenPrices).where(eq(schema.tokenPrices.source, DEMO_PRICE_SOURCE));
+    await database.delete(schema.users).where(eq(schema.users.email, dataset.user.email));
+    await database
+      .delete(schema.tokenPrices)
+      .where(eq(schema.tokenPrices.source, DEMO_PRICE_SOURCE));
 
-    await db.insert(schema.users).values({
+    await database.insert(schema.users).values({
       id: dataset.user.id,
       email: dataset.user.email,
       name: dataset.user.name,
@@ -106,7 +131,7 @@ export class DemoDatasetSeeder {
     });
 
     await insertChunked(dataset.prices, async (batch) => {
-      await db
+      await database
         .insert(schema.tokenPrices)
         .values(
           batch.map((row) => ({
@@ -123,7 +148,7 @@ export class DemoDatasetSeeder {
 
     const accountIds = new Map<string, string>();
     for (const account of dataset.accounts) accountIds.set(account.key, account.id);
-    await db.insert(schema.accounts).values(
+    await database.insert(schema.accounts).values(
       dataset.accounts.map((account) => ({
         id: account.id,
         userId: dataset.user.id,
@@ -139,7 +164,7 @@ export class DemoDatasetSeeder {
 
     const holdingIds = new Map<string, string>();
     for (const holding of dataset.holdings) holdingIds.set(holding.key, holding.id);
-    await db.insert(schema.holdings).values(
+    await database.insert(schema.holdings).values(
       dataset.holdings.map((holding) => ({
         id: holding.id,
         userId: dataset.user.id,
@@ -147,6 +172,8 @@ export class DemoDatasetSeeder {
         tokenId: tokenIds.get(holding.symbol) as string,
         balance: holding.balance,
         source: holding.source,
+        kind: holding.kind,
+        startsAt: holding.startsAt,
         arrival: holding.arrival,
         label: holding.label,
         createdAt: holding.createdAt,
@@ -154,7 +181,7 @@ export class DemoDatasetSeeder {
       }))
     );
 
-    await db.insert(schema.holdingCoverage).values(
+    await database.insert(schema.holdingCoverage).values(
       dataset.holdings.map((holding) => ({
         holdingId: holding.id,
         firstTxAt: holding.firstTxAt,
@@ -166,7 +193,7 @@ export class DemoDatasetSeeder {
     );
 
     await insertChunked(dataset.transactions, async (batch) => {
-      await db.insert(schema.holdingTransactions).values(
+      await database.insert(schema.holdingTransactions).values(
         batch.map((tx) => ({
           id: tx.id,
           userId: dataset.user.id,
@@ -193,7 +220,7 @@ export class DemoDatasetSeeder {
     });
 
     await insertChunked(dataset.observations, async (batch) => {
-      await db
+      await database
         .insert(schema.holdingBalanceObservations)
         .values(
           batch.map((observation) => ({
@@ -222,7 +249,7 @@ export class DemoDatasetSeeder {
       }
     };
     await insertChunked(dataset.rollups, async (batch) => {
-      await db.insert(schema.portfolioValueDaily).values(
+      await database.insert(schema.portfolioValueDaily).values(
         batch.map((row) => ({
           userId: dataset.user.id,
           scopeKind: row.scopeKind,
@@ -248,7 +275,7 @@ export class DemoDatasetSeeder {
       );
     });
 
-    await db.insert(schema.groups).values(
+    await database.insert(schema.groups).values(
       dataset.groups.map((group) => ({
         id: group.id,
         userId: dataset.user.id,
@@ -258,7 +285,7 @@ export class DemoDatasetSeeder {
         displayOrder: group.displayOrder,
       }))
     );
-    await db.insert(schema.holdingGroups).values(
+    await database.insert(schema.holdingGroups).values(
       dataset.groups.flatMap((group) =>
         group.holdingKeys.map((key) => ({
           holdingId: holdingIds.get(key) as string,
@@ -266,7 +293,7 @@ export class DemoDatasetSeeder {
         }))
       )
     );
-    await db.insert(schema.accountGroups).values(
+    await database.insert(schema.accountGroups).values(
       dataset.groups.flatMap((group) =>
         group.accountKeys.map((key) => ({
           accountId: accountIds.get(key) as string,
@@ -275,7 +302,7 @@ export class DemoDatasetSeeder {
       )
     );
 
-    await db.insert(schema.vaults).values(
+    await database.insert(schema.vaults).values(
       dataset.vaults.map((vault) => ({
         id: vault.id,
         userId: dataset.user.id,
@@ -288,7 +315,7 @@ export class DemoDatasetSeeder {
         iconName: vault.iconName,
       }))
     );
-    await db.insert(schema.vaultHoldings).values(
+    await database.insert(schema.vaultHoldings).values(
       dataset.vaults.flatMap((vault) =>
         vault.allocations.map((allocation) => ({
           vaultId: vault.id,
@@ -298,7 +325,7 @@ export class DemoDatasetSeeder {
       )
     );
 
-    await db.insert(schema.userWallets).values(
+    await database.insert(schema.userWallets).values(
       dataset.wallets.map((wallet) => ({
         id: wallet.id,
         userId: dataset.user.id,
@@ -308,7 +335,7 @@ export class DemoDatasetSeeder {
       }))
     );
 
-    await db.insert(schema.holdingApyConfigs).values(
+    await database.insert(schema.holdingApyConfigs).values(
       dataset.apyConfigs.map((config) => ({
         holdingId: holdingIds.get(config.holdingKey) as string,
         annualRatePct: config.annualRatePct,
@@ -320,7 +347,7 @@ export class DemoDatasetSeeder {
 
     const vendorIds = new Map<string, string>();
     for (const vendor of dataset.vendors) vendorIds.set(vendor.key, vendor.id);
-    await db.insert(schema.vendors).values(
+    await database.insert(schema.vendors).values(
       dataset.vendors.map((vendor) => ({
         id: vendor.id,
         userId: dataset.user.id,
@@ -330,7 +357,7 @@ export class DemoDatasetSeeder {
         website: vendor.website,
       }))
     );
-    await db.insert(schema.vendorAliases).values(
+    await database.insert(schema.vendorAliases).values(
       dataset.vendors.flatMap((vendor) =>
         vendor.aliases.map((rawName) => ({
           vendorId: vendor.id,
@@ -342,7 +369,7 @@ export class DemoDatasetSeeder {
 
     const paymentIds = new Map<string, string>();
     for (const payment of dataset.payments) paymentIds.set(payment.key, payment.id);
-    await db.insert(schema.payments).values(
+    await database.insert(schema.payments).values(
       dataset.payments.map((payment) => ({
         id: payment.id,
         userId: dataset.user.id,
@@ -362,7 +389,7 @@ export class DemoDatasetSeeder {
       }))
     );
     await insertChunked(dataset.occurrences, async (batch) => {
-      await db.insert(schema.paymentOccurrences).values(
+      await database.insert(schema.paymentOccurrences).values(
         batch.map((occurrence) => ({
           id: occurrence.id,
           paymentId: paymentIds.get(occurrence.paymentKey) as string,
@@ -375,7 +402,7 @@ export class DemoDatasetSeeder {
       );
     });
 
-    await db.insert(schema.documents).values(
+    await database.insert(schema.documents).values(
       dataset.documents.map((document) => ({
         id: document.id,
         userId: dataset.user.id,
@@ -391,7 +418,7 @@ export class DemoDatasetSeeder {
         createdAt: document.createdAt,
       }))
     );
-    await db.insert(schema.documentExtractions).values(
+    await database.insert(schema.documentExtractions).values(
       dataset.extractions.map((extraction) => ({
         id: extraction.id,
         documentId: extraction.documentId,
@@ -414,7 +441,9 @@ export class DemoDatasetSeeder {
       }))
     );
 
-    const summary: DemoSeedSummary = {
+    await this.classify(dataset.user.id, database);
+
+    return {
       userId: dataset.user.id,
       anchorDate: dataset.anchorDate,
       startDate: dataset.startDate,
@@ -435,14 +464,26 @@ export class DemoDatasetSeeder {
         wallets: dataset.wallets.length,
       },
     };
-    logger.info(summary, 'demo dataset written');
-    return summary;
+  }
+
+  /**
+   * The dataset states `kind` and `starts_at` and leaves every other label
+   * NULL. The classifier fills those from the rows just written, and creates
+   * each account's feed inputs, so the demo reads as a deployment does once
+   * its own backfill has run. A failed classification throws, which rolls the
+   * seed back.
+   */
+  private async classify(userId: string, database: DatabaseTransaction): Promise<void> {
+    const report = await this.classification.classify({ apply: true, userId }, database);
+    const [failed] = report.failedUsers;
+    if (failed) throw new Error(`demo dataset: classification failed — ${failed.error}`);
   }
 
   private async codeMap(
+    database: DatabaseTransaction,
     table: typeof schema.tokenTypes | typeof schema.accountTypes | typeof schema.institutionTypes
   ): Promise<Map<string, string>> {
-    const rows = await db.select({ id: table.id, code: table.code }).from(table);
+    const rows = await database.select({ id: table.id, code: table.code }).from(table);
     return new Map(rows.map((row) => [row.code, row.id]));
   }
 
@@ -452,8 +493,12 @@ export class DemoDatasetSeeder {
    * the newest row, which for `USD` and `EUR` is a memecoin rather than the
    * currency (SC-223/SC-315) — the same trap `price-hubs.ts` documents.
    */
-  private async fiatTokenId(symbol: string, tokenTypes: Map<string, string>): Promise<string> {
-    const [row] = await db
+  private async fiatTokenId(
+    database: DatabaseTransaction,
+    symbol: string,
+    tokenTypes: Map<string, string>
+  ): Promise<string> {
+    const [row] = await database
       .select({ id: schema.tokens.id })
       .from(schema.tokens)
       .where(
@@ -472,10 +517,11 @@ export class DemoDatasetSeeder {
   }
 
   private async ensureToken(
+    database: DatabaseTransaction,
     token: { symbol: string; name: string; decimals: number; marketSegment: string | null },
     typeId: string
   ): Promise<string> {
-    const [existing] = await db
+    const [existing] = await database
       .select({ id: schema.tokens.id })
       .from(schema.tokens)
       .where(
@@ -486,7 +532,7 @@ export class DemoDatasetSeeder {
         )
       );
     if (existing) return existing.id;
-    const [created] = await db
+    const [created] = await database
       .insert(schema.tokens)
       .values({
         symbol: token.symbol,
@@ -499,13 +545,17 @@ export class DemoDatasetSeeder {
     return (created as { id: string }).id;
   }
 
-  private async ensureInstitution(name: string, typeId: string): Promise<string> {
-    const [existing] = await db
+  private async ensureInstitution(
+    database: DatabaseTransaction,
+    name: string,
+    typeId: string
+  ): Promise<string> {
+    const [existing] = await database
       .select({ id: schema.institutions.id })
       .from(schema.institutions)
       .where(eq(schema.institutions.name, name));
     if (existing) return existing.id;
-    const [created] = await db
+    const [created] = await database
       .insert(schema.institutions)
       // The demo's catalogue, shared by every demo visitor.
       .values({ name, typeId, hasIntegration: false, isVerified: true })

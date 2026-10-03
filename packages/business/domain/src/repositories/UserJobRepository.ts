@@ -2,7 +2,13 @@ import type { DatabaseTransaction } from '@scani/db';
 import { getDb as getDbConnection } from '@scani/db/connection';
 import type { UserJob, UserJobState } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { REVIEWABLE_JOB_NAMES, type ReviewOutcome } from '@scani/shared';
+import {
+  type JobOutcome,
+  OUTCOME_JOB_NAMES,
+  REVIEWABLE_JOB_NAMES,
+  type ReviewOutcome,
+  readJobOutcome,
+} from '@scani/shared';
 import {
   aliasedTable,
   and,
@@ -387,12 +393,20 @@ export class UserJobRepository {
    * needs a column list rather than a second datastore — see the ticket's
    * resolution. `findOneMine` and `findPendingReview` still select `result`
    * because both actually read it.
+   *
+   * **Except where it decides the outcome (SC-1527).** A completed screenshot
+   * parse that read none of its files is a failure, and only its `result` says
+   * so — without it the list badged "Completed" over a page that said
+   * "Failed". So the result is read for completed rows of the job names in
+   * `OUTCOME_JOB_NAMES` only, reduced to two counts here, and never returned.
+   * A wallet import — the payload SC-145 measured — is not among them and
+   * stays unread.
    */
   async findMine(
     userId: string,
     options: { state?: UserJobState; limit?: number; offset?: number },
     transaction?: DatabaseTransaction
-  ): Promise<Omit<UserJob, 'result'>[]> {
+  ): Promise<Array<Omit<UserJob, 'result'> & { outcome: JobOutcome | null }>> {
     const db = this.getDb(transaction);
     // A dismissed row is hidden, not gone. The user asked for it out of their
     // list and that is honoured here; `findOneMine` still returns it (SC-292).
@@ -402,13 +416,19 @@ export class UserJobRepository {
     }
     const { result: _result, ...columns } = getTableColumns(schema.userJobs);
     const rows = await db
-      .select(columns)
+      .select({
+        ...columns,
+        outcomeResult: sql<unknown>`CASE WHEN ${schema.userJobs.state} = 'completed' AND ${inArray(schema.userJobs.jobName, [...OUTCOME_JOB_NAMES])} THEN ${schema.userJobs.result} END`,
+      })
       .from(schema.userJobs)
       .where(and(...conditions))
       .orderBy(desc(schema.userJobs.createdAt))
       .limit(options.limit ?? 50)
       .offset(options.offset ?? 0);
-    return rows as Omit<UserJob, 'result'>[];
+    return rows.map(({ outcomeResult, ...row }) => ({
+      ...(row as Omit<UserJob, 'result'>),
+      outcome: readJobOutcome(row.jobName, outcomeResult),
+    }));
   }
 
   /** Ownership-gated single-row lookup — for the /jobs/:jobId detail page. */

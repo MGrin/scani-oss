@@ -52,6 +52,7 @@ const statement = (fields: Partial<StatementIngesterResult> = {}): StatementInge
     },
   ],
   closes: [{ currency: 'USD', at: D3, balance: '855' }],
+  positions: [],
   warnings: [],
   ...fields,
 });
@@ -182,6 +183,12 @@ describe('legacyStatementBatch', () => {
       },
       derivesTradeLegs: false,
       holdingFailure: 'fail-batch',
+      absence: null,
+      clearsAbsenceTally: false,
+      createdCheckpointMeta: null,
+      unhideOnNonZero: false,
+      unchangedCheckpoint: 'append',
+      zeroOpensHolding: true,
     });
   });
 
@@ -213,6 +220,47 @@ describe('legacyStatementBatch', () => {
       entries: ['e1'],
     });
     expect(validateBatch(batch, NOW)).toEqual([]);
+  });
+
+  // SC-1529, an exception to D-1 by the feeds owner's ruling: a positions
+  // statement's holdings become statement checkpoints, a security found by its
+  // ticker within the stock type, and its date alone bounds the window.
+  test('a positions statement: ending cash and securities are statement checkpoints at the period end', () => {
+    const asOf = new Date('2026-04-15T23:59:59.999Z');
+    const batch = batchOf(
+      statement({
+        format: 'ib-csv',
+        bankTemplate: 'interactive-brokers',
+        lines: [],
+        closes: [{ currency: 'USD', at: asOf, balance: '10901.12' }],
+        positions: [{ symbol: 'AAPL', at: asOf, quantity: '10.0545' }],
+      })
+    );
+    const meta = { format: 'ib-csv', bankTemplate: 'interactive-brokers' };
+    expect(batch.checkpoints).toEqual([
+      {
+        asset: catalog('USD'),
+        at: asOf,
+        amount: '10901.12',
+        authority: 'statement',
+        legacySource: 'statement-close',
+        legacyMeta: meta,
+      },
+      {
+        asset: {
+          identity: { symbol: 'AAPL', name: 'AAPL' },
+          typeCode: 'stock',
+          lookup: 'catalog-symbol-of-type',
+        },
+        at: asOf,
+        amount: '10.0545',
+        authority: 'statement',
+        legacySource: 'statement-close',
+        legacyMeta: meta,
+      },
+    ]);
+    expect(batch.entries).toEqual([]);
+    expect(batch.window).toMatchObject({ from: asOf, to: asOf });
   });
 
   test('a statement with no row at all has no window to declare', () => {

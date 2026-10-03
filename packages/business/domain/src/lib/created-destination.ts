@@ -5,7 +5,7 @@
  *
  * Answering an outflow `internal` at an account that tracks no position in the
  * token makes `writeInflow` create a holding, opened at the amount that moved
- * when nobody syncs that account (`openingOf`). Reopening deletes the arrival
+ * when nobody syncs that account (`TransferDestinationOpener`). Reopening deletes the arrival
  * row — correctly, SC-187 — and used to leave the holding standing: an account
  * showing 250 of a token it held none of, no ledger row explaining it, and the
  * answer that put it there withdrawn. `HoldingsSyncHelper` skips `manual`

@@ -472,6 +472,32 @@ describe('IbkrProvider — Flex error classification', () => {
     }
   );
 
+  /**
+   * SC-1524. Connect skips server validation for IBKR, so a mistyped token or
+   * query id is first seen by the import job — and 1014/1015 used to leave the
+   * provider as an anonymous `unrecoverable` that the worker retried three
+   * times and then reported with no reason. These are IBKR's answer about the
+   * credential (https://www.ibkrguides.com/clientportal/flex3.htm), so they
+   * carry the sentence the user acts on.
+   */
+  test.each([
+    ['1011', 'Service account is inactive.', 'IBKR reports the account behind this Flex token'],
+    ['1012', 'Token has expired.', 'This IBKR Flex token has expired'],
+    ['1013', 'IP restriction.', 'IBKR refused this Flex token from this server'],
+    ['1014', 'Query is invalid.', 'IBKR has no Flex Query with this id'],
+    ['1015', 'Token is invalid.', 'IBKR rejected this Flex token'],
+  ])('%s names what the user got wrong, as auth-failed', async (code, ibkrMessage, sentence) => {
+    const error = await classify(code, ibkrMessage);
+
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error?.kind).toBe('auth-failed');
+    expect(error?.retryAfterMs).toBeUndefined();
+    expect(error?.message).toStartWith(sentence);
+    // The code and IBKR's own words stay, for support and for the worker's
+    // terminal-code match.
+    expect(error?.message).toContain(`IBKR Flex Query error (code ${code}): ${ibkrMessage}`);
+  });
+
   test('an unmapped code is unrecoverable rather than silently retryable', async () => {
     const error = await classify('1099', 'Something else entirely');
 

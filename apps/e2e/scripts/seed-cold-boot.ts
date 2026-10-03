@@ -20,6 +20,7 @@
 import { getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { eq, sql } from 'drizzle-orm';
+import { coldBootHolding } from '../lib/cold-boot-holding';
 
 const HARNESS_EMAIL = 'cold-boot@scani.local';
 
@@ -94,13 +95,15 @@ for (let i = 0; i < HOLDINGS; i++) {
     .returning();
   const [holding] = await db
     .insert(schema.holdings)
-    .values({
-      userId: user!.id,
-      accountId: account!.id,
-      tokenId: token!.id,
-      balance: String(10 + i),
-      source: 'manual',
-    })
+    .values(
+      coldBootHolding({
+        userId: user!.id,
+        accountId: account!.id,
+        tokenId: token!.id,
+        index: i,
+        at: new Date(),
+      })
+    )
     .returning();
   holdingIds.push(holding!.id);
   await db.insert(schema.tokenPrices).values({

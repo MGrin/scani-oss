@@ -205,35 +205,6 @@ export class HoldingBalanceObservationRepository extends BaseRepository<
       .where(and(eq(obs.userId, userId), inArray(obs.id, [...ids]), eq(obs.role, 'snapshot')));
   }
 
-  async bulkAppend(
-    rows: NewHoldingBalanceObservation[],
-    transaction?: DatabaseTransaction
-  ): Promise<HoldingBalanceObservation[]> {
-    try {
-      if (rows.length === 0) return [];
-      const database = this.getDb(transaction);
-      const results = await database
-        .insert(schema.holdingBalanceObservations)
-        // biome-ignore lint/suspicious/noExplicitAny: Drizzle array insert type
-        .values(rows as any[])
-        .onConflictDoNothing({
-          target: [
-            schema.holdingBalanceObservations.holdingId,
-            schema.holdingBalanceObservations.observedAt,
-            schema.holdingBalanceObservations.source,
-          ],
-        })
-        .returning();
-      return results as HoldingBalanceObservation[];
-    } catch (error) {
-      this.logger.error(
-        { count: rows.length, error: error instanceof Error ? error.message : error },
-        'Failed to bulk append balance observations'
-      );
-      throw error;
-    }
-  }
-
   // Nearest observation at or after `at` for a given holding. Preferred
   // anchor when computing balance at a past `at` — more trustworthy than
   // walking txs from "now" all the way back.

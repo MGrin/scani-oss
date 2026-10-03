@@ -2,7 +2,12 @@ import { randomUUID } from 'node:crypto';
 import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
 import { getDb } from '@scani/db';
 import type { Document, Token } from '@scani/db/schema';
-import { describeMergedRows, TokenRepository, UserJobRepository } from '@scani/domain/repositories';
+import {
+  describeMergedRows,
+  TokenRepository,
+  TokenTypeRepository,
+  UserJobRepository,
+} from '@scani/domain/repositories';
 import {
   CsvColumnDetectionService,
   FeedIngestService,
@@ -15,6 +20,7 @@ import { parseStatement } from '@scani/file-import';
 import {
   type StatementClose,
   type StatementLine,
+  type StatementPosition,
   StatementTransactionIngester,
   statementWarnings,
 } from '@scani/ingesters';
@@ -29,7 +35,7 @@ import { BullMqEnqueueService, type ProcessorContext, UserJobProcessor } from '@
 import type { CsvMapping } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { readUpload } from '../lib/read-upload';
-import { widenToEarliestWrite } from './ingest-transactions';
+import { widenToEarliestWrite } from '../lib/rebuild-window';
 
 const logger = createComponentLogger('processor:file-import');
 
@@ -226,7 +232,13 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
       defaultCurrency: fallbackCurrency || undefined,
     });
     const lines = statement.lines.filter((line): line is StatementLine => !('skipped' in line));
-    const currencies = [...new Set(lines.map((line) => line.currency))];
+    const currencies = [
+      ...new Set([
+        ...lines.map((line) => line.currency),
+        ...statement.closes.map((close) => close.currency),
+      ]),
+    ];
+    const securities = statement.positions.map((position) => position.symbol);
 
     if (currencies.length > 0) {
       await ctx.reportStatus(
@@ -248,7 +260,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     // after the commit, a failure would fail a job whose import had landed,
     // and the retry would find nothing changed and rebuild 400 days over rows
     // older than that (ruling R26).
-    const imported = (await this.knowsAny(currencies))
+    const imported = (await this.knowsAny(currencies, securities))
       ? await getDb().transaction(async (tx) => {
           const ingested = await Container.get(FeedIngestService).ingest(
             legacyStatementBatch({
@@ -277,7 +289,10 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
         'Statement currency not found in tokens table; rows for this currency will be skipped'
       );
     }
-    const warnings = statementWarnings(statement, unknown);
+    const ambiguous = new Set(
+      (ingested?.skippedAssets ?? []).filter((a) => a.ambiguous).map((a) => a.symbol)
+    );
+    const warnings = statementWarnings(statement, unknown, ambiguous);
     // A statement's synthetic externalId is built from the parsed row, so
     // two rows a bank genuinely repeated on one day collapse into one and
     // the import used to report only the surviving count (SC-349). The
@@ -304,9 +319,11 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     // Counted as sent, a re-sent row included, as they always were.
     const written = lines.filter((line) => !unknown.has(line.currency));
     const closes = statement.closes.filter((close) => !unknown.has(close.currency));
+    const positions = statement.positions.filter((position) => !unknown.has(position.symbol));
     const transactionCount = written.reduce((count, line) => count + line.rows.length, 0);
+    const observationCount = closes.length + positions.length;
     const holdingsTouched = imported
-      ? this.summarize(imported.ingested, imported.tokens, written, closes)
+      ? this.summarize(imported.ingested, imported.tokens, written, closes, positions)
       : [];
 
     // Auto-stamp `action_taken_at` — structured CSV imports have no
@@ -324,7 +341,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
       }
     }
 
-    if (transactionCount > 0) {
+    if (transactionCount > 0 || positions.length > 0) {
       const tokenIds = [...new Set(holdingsTouched.map((h) => h.tokenId))];
       try {
         await Container.get(BullMqEnqueueService).add(PORTFOLIO_HISTORY_BACKFILL, {
@@ -350,17 +367,26 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
       format: parsed.format,
       accountId: data.accountId,
       transactionCount,
-      observationCount: closes.length,
+      observationCount,
       holdingsCreated: ingested?.createdHoldingIds ?? [],
       holdingsTouched,
       warnings,
     };
   }
 
-  private async knowsAny(currencies: readonly string[]): Promise<boolean> {
+  private async knowsAny(
+    currencies: readonly string[],
+    securities: readonly string[]
+  ): Promise<boolean> {
     const tokens = Container.get(TokenRepository);
     for (const currency of currencies) {
       if (await tokens.findBySymbol(currency)) return true;
+    }
+    if (securities.length === 0) return false;
+    const stock = await Container.get(TokenTypeRepository).findByCode('stock');
+    if (!stock) return false;
+    for (const symbol of securities) {
+      if ((await tokens.findCatalogListingsOfType(symbol, stock.id)).length > 0) return true;
     }
     return false;
   }
@@ -370,14 +396,19 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     ingested: IngestResult,
     tokens: readonly Token[],
     written: readonly StatementLine[],
-    closes: readonly StatementClose[]
+    closes: readonly StatementClose[],
+    positions: readonly StatementPosition[]
   ): FileImportSummary['holdingsTouched'] {
+    const anchors = [
+      ...closes.map((close) => ({ symbol: close.currency, balance: close.balance })),
+      ...positions.map((position) => ({ symbol: position.symbol, balance: position.quantity })),
+    ];
     const created = new Set(ingested.createdHoldingIds);
     return ingested.holdings.flatMap((holding) => {
       const token = tokens.find((t) => t.id === holding.tokenId);
       if (!token) return [];
-      // A statement currency is its catalog token's symbol.
-      const close = closes.find((c) => c.currency === token.symbol);
+      // A statement currency or ticker is its catalog token's symbol.
+      const close = anchors.find((anchor) => anchor.symbol === token.symbol);
       // A holding this import created, from a file with no balance column, has
       // no close to take. Its own rows are then the only evidence (SC-1324); a
       // holding that already existed keeps whatever its balance was.

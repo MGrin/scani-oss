@@ -12,6 +12,7 @@ import { PortfolioValueDailyRepository } from '../../repositories/PortfolioValue
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { BaseService } from '../BaseService';
 import { PortfolioValuationService } from '../portfolio/PortfolioValuationService';
+import { BalanceRefreshabilityService } from './BalanceRefreshabilityService';
 
 /** A holding hidden from the dashboard, plus why it's hidden. */
 interface HiddenHoldingRow {
@@ -33,9 +34,9 @@ interface HiddenHoldingRow {
   institution: { id: string; name: string };
 }
 
-// HoldingQueryService — read-only queries against holdings. Mutations
-// live in HoldingService; splitting them keeps each class focused on a
-// single responsibility (CLAUDE.md / SOLID).
+// HoldingQueryService — read-only queries against holdings. Writes live in
+// the feeds writers and the holding use cases; splitting them keeps each
+// class focused on a single responsibility (CLAUDE.md / SOLID).
 @Service()
 export class HoldingQueryService extends BaseService {
   private readonly holdingRepository = Container.get(HoldingRepository);
@@ -45,6 +46,7 @@ export class HoldingQueryService extends BaseService {
   private readonly portfolioValuationService = Container.get(PortfolioValuationService);
   private readonly portfolioValueDailyRepository = Container.get(PortfolioValueDailyRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly balanceRefreshability = Container.get(BalanceRefreshabilityService);
 
   constructor() {
     super('HoldingQueryService');
@@ -90,17 +92,22 @@ export class HoldingQueryService extends BaseService {
     // the rows themselves can say which ones were set aside. One indexed query
     // over the tokens already in hand — not per holding.
     const heldTokenIds = [...new Set(holdingsWithFullDetails.map(({ token }) => token.id))];
-    const [groupsMap, apyConfigsMap, coverageMap, unpriceableTokenIds] = await Promise.all([
-      this.groupRepository.findGroupsForHoldings(
-        holdingsWithFullDetails.map(({ holding, account }) => ({
-          id: holding.id,
-          accountId: account.id,
-        }))
-      ),
-      this.holdingApyConfigRepository.findByHoldingIds(holdingIds),
-      this.holdingCoverageRepository.findManyByHoldingIds(holdingIds),
-      this.tokenRepository.findNeverPricedInCooldownTokenIds(heldTokenIds, new Date()),
-    ]);
+    const [groupsMap, apyConfigsMap, coverageMap, unpriceableTokenIds, refreshability] =
+      await Promise.all([
+        this.groupRepository.findGroupsForHoldings(
+          holdingsWithFullDetails.map(({ holding, account }) => ({
+            id: holding.id,
+            accountId: account.id,
+          }))
+        ),
+        this.holdingApyConfigRepository.findByHoldingIds(holdingIds),
+        this.holdingCoverageRepository.findManyByHoldingIds(holdingIds),
+        this.tokenRepository.findNeverPricedInCooldownTokenIds(heldTokenIds, new Date()),
+        this.balanceRefreshability.forHoldings(
+          user.id,
+          holdingsWithFullDetails.map(({ holding }) => holding)
+        ),
+      ]);
 
     // All three maps below are keyed on the TOKEN ID, never the symbol.
     // A symbol is not unique — a `private-company` token and a crypto token
@@ -232,6 +239,7 @@ export class HoldingQueryService extends BaseService {
           isActive: holding.isActive,
           isHidden: holding.isHidden,
           source: holding.source,
+          refreshable: refreshability.get(holding.id) === 'refreshable',
           // The last answer this holding's owner gave to "what did that edit
           // mean" (SC-510), so the edit control can pre-select it. Null until
           // somebody has answered, and the client must ask when it is null and
@@ -402,24 +410,6 @@ export class HoldingQueryService extends BaseService {
         };
       })
       .filter((r): r is HiddenHoldingRow => r !== null);
-  }
-
-  async findByAccount(
-    accountId: string,
-    transaction?: DatabaseTransaction,
-    includeHidden = false,
-    includeScamTokens = false
-  ): Promise<Holding[]> {
-    try {
-      return await this.holdingRepository.findByAccount(
-        accountId,
-        transaction,
-        includeHidden,
-        includeScamTokens
-      );
-    } catch (error) {
-      throw this.handleError(error, 'findByAccount');
-    }
   }
 
   async getDistinctTokenIds(transaction?: DatabaseTransaction): Promise<string[]> {

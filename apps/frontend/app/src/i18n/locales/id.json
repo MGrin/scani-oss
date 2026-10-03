@@ -950,7 +950,10 @@
     },
     "amountInput": {
       "readAsWhole": "Dibaca sebagai {{amount}} — kolom ini hanya menerima bilangan bulat.",
-      "readAsDecimal": "Dibaca sebagai {{amount}} — koma maupun titik sama-sama berarti tanda desimal di sini. Hapus pemisahnya jika yang Anda maksud adalah ribuan."
+      "readAsDecimal": "Dibaca sebagai {{amount}} — koma maupun titik sama-sama berarti tanda desimal di sini. Hapus pemisahnya jika yang Anda maksud adalah ribuan.",
+      "exponent": "Notasi ilmiah seperti 1e5 tidak dibaca di sini — ketik angkanya secara lengkap, misalnya 100000.",
+      "tooLarge": "Itu lebih dari {{max}} digit sebelum tanda desimal, dan tidak ada saldo sebesar itu — periksa jumlahnya.",
+      "truncated": "Dibaca sebagai {{amount}} — kolom ini tidak menyimpan desimal lebih dari itu."
     },
     "accountPicker": {
       "loading": "Memuat akun Anda…",

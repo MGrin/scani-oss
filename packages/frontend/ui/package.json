@@ -14,6 +14,7 @@
     "./styles/v3-tokens.css": "./src/styles/v3-tokens.css",
     "./styles/v3-tokens-root.css": "./src/styles/v3-tokens-root.css",
     "./i18n": "./src/i18n/index.ts",
+    "./lib/build-identity": "./src/lib/build-identity.ts",
     "./lib/cn": "./src/lib/cn.ts",
     "./lib/direction": "./src/lib/direction.ts",
     "./lib/lazy-chunk": "./src/lib/lazy-chunk.ts",

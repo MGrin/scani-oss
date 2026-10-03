@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { FeedInput, NewFeedInput } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, eq, exists, inArray, type SQL, sql } from 'drizzle-orm';
+import { and, asc, eq, exists, inArray, isNull, ne, or, type SQL, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 // Type-only, so nothing links the repository to the contract or the planner at runtime.
 import type { FeedBatch, FeedWindow } from '../services/feeds/feed-batch';
@@ -23,6 +23,16 @@ import { CEX_SOURCE_TO_INSTITUTION } from '../services/transactions/transaction-
 const CEX_LEDGER_SOURCES = Object.keys(CEX_SOURCE_TO_INSTITUTION);
 const WALLET_LEDGER_SOURCES = [EVM_WALLET_SOURCE, ...NON_EVM_WALLET_SOURCES];
 
+/**
+ * Which of a user's accounts to read: the ones given, the ones at an
+ * institution (a credential's, which is per user and institution), or the
+ * ones whose `metadata.userWalletId` names a wallet.
+ */
+export type InputAccountScope =
+  | { accountIds: readonly string[] }
+  | { institutionId: string }
+  | { walletId: string };
+
 /** The feed inputs of D-7: one row per (account, source). */
 @Service()
 export class FeedInputRepository extends BaseRepository<FeedInput, NewFeedInput> {
@@ -37,8 +47,10 @@ export class FeedInputRepository extends BaseRepository<FeedInput, NewFeedInput>
    */
   async findAccountInputFacts(
     userId: string,
-    tx?: DatabaseTransaction
+    tx?: DatabaseTransaction,
+    scope?: InputAccountScope
   ): Promise<AccountInputFacts[]> {
+    if (scope && 'accountIds' in scope && scope.accountIds.length === 0) return [];
     const database = this.getDb(tx);
     const accounts = schema.accounts;
     const holdings = schema.holdings;
@@ -111,7 +123,7 @@ export class FeedInputRepository extends BaseRepository<FeedInput, NewFeedInput>
           eq(credentials.institutionId, accounts.institutionId)
         )
       )
-      .where(eq(accounts.userId, userId))
+      .where(and(eq(accounts.userId, userId), scope ? inScope(scope) : undefined))
       .orderBy(asc(accounts.id));
 
     return rows.map((r) => ({
@@ -177,9 +189,63 @@ export class FeedInputRepository extends BaseRepository<FeedInput, NewFeedInput>
   }
 
   /**
+   * Brings each planned input that exists up to its plan (D-11): a NULL
+   * credential or wallet is linked (R39) and the status becomes the plan's.
+   * A reference already set is kept, and an input the plan does not name is
+   * not touched. Returns how many inputs changed; one already current is not
+   * written, so its `updated_at` stays.
+   *
+   * One statement per input, in the plan's order, so two callers lock an
+   * account's inputs in the same order.
+   */
+  async linkAndSetStatus(
+    planned: readonly PlannedFeedInput[],
+    tx: DatabaseTransaction
+  ): Promise<number> {
+    const inputs = schema.feedInputs;
+    let changed = 0;
+    for (const p of planned) {
+      const updated = await this.getDb(tx)
+        .update(inputs)
+        .set({
+          credentialId: sql`COALESCE(${inputs.credentialId}, ${p.credentialId}::uuid)`,
+          walletId: sql`COALESCE(${inputs.walletId}, ${p.walletId}::uuid)`,
+          status: p.status,
+          updatedAt: sql`now()`,
+        })
+        .where(behindItsPlan(p))
+        .returning({ id: inputs.id });
+      changed += updated.length;
+    }
+    return changed;
+  }
+
+  /** How many inputs `linkAndSetStatus` would change, for a run that writes nothing. */
+  async countBehindTheirPlan(
+    planned: readonly PlannedFeedInput[],
+    tx: DatabaseTransaction
+  ): Promise<number> {
+    let behind = 0;
+    for (const p of planned) {
+      const found = await this.getDb(tx)
+        .select({ id: schema.feedInputs.id })
+        .from(schema.feedInputs)
+        .where(behindItsPlan(p));
+      behind += found.length;
+    }
+    return behind;
+  }
+
+  /**
    * The account's input for `source`, created active when it has none (D-11).
    * An input is the account's, so one that belongs to another user means the
    * batch named an account that is not its user's, and nothing is written.
+   *
+   * Locked until the caller's transaction ends, so two writes of one input run
+   * one after the other: the second then finds the holdings the first created
+   * rather than creating its own beside them (A2 N2). NO KEY UPDATE, because
+   * every ledger row naming the input takes a KEY SHARE lock on it for its
+   * foreign key, and those must not wait on this.
    */
   async findOrCreate(
     input: FeedBatch['input'] & { userId: string },
@@ -194,7 +260,8 @@ export class FeedInputRepository extends BaseRepository<FeedInput, NewFeedInput>
           eq(schema.feedInputs.accountId, input.accountId),
           eq(schema.feedInputs.source, input.source)
         )
-      );
+      )
+      .for('no key update');
     if (!found || found.userId !== input.userId) {
       throw new Error(
         `FeedInputRepository: user ${input.userId} has no input ${input.source} on account ${input.accountId}`
@@ -224,4 +291,25 @@ export class FeedInputRepository extends BaseRepository<FeedInput, NewFeedInput>
       .returning({ id: schema.feedInputWindows.id });
     return inserted.length > 0;
   }
+}
+
+/** The planned input as stored, where its status differs or it lacks a reference the plan has. */
+function behindItsPlan(p: PlannedFeedInput): SQL | undefined {
+  const inputs = schema.feedInputs;
+  return and(
+    eq(inputs.userId, p.userId),
+    eq(inputs.accountId, p.accountId),
+    eq(inputs.source, p.source),
+    or(
+      ne(inputs.status, p.status),
+      p.credentialId === null ? undefined : isNull(inputs.credentialId),
+      p.walletId === null ? undefined : isNull(inputs.walletId)
+    )
+  );
+}
+
+function inScope(scope: InputAccountScope): SQL {
+  if ('accountIds' in scope) return inArray(schema.accounts.id, [...scope.accountIds]);
+  if ('institutionId' in scope) return eq(schema.accounts.institutionId, scope.institutionId);
+  return sql`${schema.accounts.metadata}->>'userWalletId' = ${scope.walletId}`;
 }

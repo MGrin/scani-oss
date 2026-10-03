@@ -1,5 +1,6 @@
 import type { NewHoldingTransaction, NewToken, TokenType } from '@scani/db/schema';
 import type { HoldingArrival } from '@scani/shared';
+import type { AbsencePolicy } from './blocks/absence-confirmer';
 
 export type DecimalString = string;
 
@@ -12,7 +13,7 @@ export interface AssetRef {
   key?: string;
   identity: TokenIdentity;
   typeCode: TokenType['code'];
-  lookup?: 'identity' | 'catalog-symbol';
+  lookup?: 'identity' | 'catalog-symbol' | 'catalog-symbol-of-type';
 }
 
 export interface FeedWindow {
@@ -93,7 +94,8 @@ export interface FeedEntry {
   legacy: LegacyEntryColumns;
 }
 
-interface FeedAbsence {
+/** A position the source measured as gone (a probe's exit): its holding is zeroed, never created. */
+export interface FeedAbsence {
   asset: AssetRef;
   confirmedAt: Date;
 }
@@ -105,14 +107,32 @@ export interface LegacyBatchOptions {
    * holding of the token. `ingest-order` is the transaction import's
    * (`HoldingRepository.findForIngest`): a row an import created, then the
    * oldest, hidden ones included, a person's row as the fallback (D-4).
+   * `external-id` is the integration import's: the account's holding of the
+   * token at the asset's key, hidden ones included, so a person's row, which
+   * has no key, is never it (F3).
+   *
+   * The balance syncs read the account's holdings other than a person's,
+   * hidden ones included, and kept the last one read of each token (F4).
+   * `token-id` is the exchange cron's, whose read left out a token its owner
+   * holds as scam; `token-id-with-scam` the exchange refresh's, whose read kept
+   * it. `external-id-then-token-id` is the wallet syncs': the holding at the
+   * asset's key, else the token's, scam ones included.
    */
-  holdingMatch: 'account-token' | 'ingest-order';
+  holdingMatch:
+    | 'account-token'
+    | 'ingest-order'
+    | 'external-id'
+    | 'token-id'
+    | 'token-id-with-scam'
+    | 'external-id-then-token-id';
   /**
    * `find-only` is a review-gated wallet's: an entry whose primary asset the
    * catalog lacks, or whose holding the account lacks, is skipped and counted,
-   * and nothing is created for it (SC-343).
+   * and nothing is created for it (SC-343). `update-only` is a balance refresh's:
+   * a token is found or created, a holding never, and a balance the account
+   * holds no position for is dropped and named.
    */
-  holdingPolicy: 'create' | 'find-only';
+  holdingPolicy: 'create' | 'find-only' | 'update-only';
   /** `holdings.source` on create. */
   holdingSource: string;
   arrival: HoldingArrival | null;
@@ -141,6 +161,43 @@ export interface LegacyBatchOptions {
    * one and failed the upload.
    */
   holdingFailure: 'skip-entry' | 'fail-batch';
+  /**
+   * Which holdings the batch's silence zeroes, and how: `confirmed` is the
+   * exchange sync's, `immediate` an import's. Null: an asset the batch does not
+   * mention is not absent. An explicit `absences` entry zeroes either way.
+   */
+  absence: AbsencePolicy | null;
+  /**
+   * A holding the batch reports again forgets the statement days it was
+   * missing from, as the balance syncs and refresh do today; the imports do not.
+   */
+  clearsAbsenceTally: boolean;
+  /**
+   * The `source_metadata` of the first checkpoint on a holding the batch
+   * creates, in place of the checkpoint's own: today's balance writers stamp a
+   * create apart from an update, and A1's rule O4 reads both. Null: every
+   * checkpoint keeps its own.
+   */
+  createdCheckpointMeta: Record<string, unknown> | null;
+  /**
+   * A hidden holding the batch reports at a nonzero balance is shown again, as
+   * the integration import does: `is_hidden` and `last_updated`, and nothing else.
+   */
+  unhideOnNonZero: boolean;
+  /**
+   * `skip` is the exchange sync's: a checkpoint equal to the balance its holding
+   * held when the batch found it is neither appended nor written to the cache.
+   * It is dropped after placement, so the holding still counts as reported
+   * (R62 Q2).
+   */
+  unchangedCheckpoint: 'append' | 'skip';
+  /**
+   * Whether a checkpoint at zero opens a holding under `holdingPolicy: 'create'`.
+   * The balance syncs never opened one for a zero: the checkpoint is dropped
+   * where the account holds no position, its token still found or created. An
+   * exited position kept at wallet review does open one (SC-398).
+   */
+  zeroOpensHolding: boolean;
 }
 
 export interface FeedBatch {

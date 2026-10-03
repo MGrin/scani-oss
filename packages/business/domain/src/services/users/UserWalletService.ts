@@ -2,10 +2,12 @@ import type { NewUserWallet, UserWallet } from '@scani/db/schema';
 import { Container, Service } from 'typedi';
 import { UserWalletRepository } from '../../repositories/UserWalletRepository';
 import { BaseService } from '../BaseService';
+import { FeedInputFollower } from '../feeds/FeedInputFollower';
 
 @Service()
 export class UserWalletService extends BaseService {
   private readonly userWalletRepository = Container.get(UserWalletRepository);
+  private readonly feedInputs = Container.get(FeedInputFollower);
 
   constructor() {
     super('UserWalletService');
@@ -87,6 +89,9 @@ export class UserWalletService extends BaseService {
 
       const updatedWallet = await this.userWalletRepository.update(walletId, data);
       this.assertExists(updatedWallet, 'Failed to update wallet');
+      if (data.isActive !== undefined) {
+        await this.feedInputs.follow(updatedWallet.userId, { walletId });
+      }
 
       this.logInfo('Wallet updated successfully', { walletId: updatedWallet.id });
       return updatedWallet;
@@ -155,6 +160,7 @@ export class UserWalletService extends BaseService {
       this.assertExists(wallet, `Wallet with ID ${walletId} not found`);
 
       await this.userWalletRepository.update(walletId, { isActive: false });
+      await this.feedInputs.follow(wallet.userId, { walletId });
 
       this.logInfo('Wallet deleted successfully', { walletId });
     } catch (error) {
@@ -185,6 +191,8 @@ export class UserWalletService extends BaseService {
       }
 
       await this.userWalletRepository.delete(walletId);
+      // The inputs' link is cleared by the foreign key; their status follows here.
+      await this.feedInputs.follow(userId, { walletId });
 
       this.logInfo('Wallet hard-deleted successfully', { walletId });
     } catch (error) {

@@ -92,7 +92,7 @@ export function RecordMovementPage() {
         stage={movement.isSaving ? 'enqueue' : null}
         busyLabel={t('v3.holdings.movement.busyLabel')}
         cancelTo={V3_BASE}
-        error={null}
+        error={movement.error}
       />
     </PageLayout>
   );

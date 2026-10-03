@@ -14,6 +14,7 @@ import {
 } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { captureException } from '@scani/logging/sentry';
+import { ProviderError } from '@scani/providers/core/errors';
 import {
   BullMqEnqueueService,
   type ProcessorContext,
@@ -46,7 +47,10 @@ function isUnrecoverableExchangeError(err: unknown): boolean {
     // correct. The provider now raises that as a `retryable` ProviderError and
     // this function must not override it — the retry budget on the descriptor
     // is what bounds it.
-    /IBKR Flex Query error \(code 10(10|12|18)\)/.test(msg) ||
+    // 1010–1015 are IBKR's verdict on the token or query (SC-1524); 1018 and
+    // 1025 are limits a retry only feeds — 1025 is a lockout that every
+    // further attempt renews.
+    /IBKR Flex Query error \(code 10(1[0-5]|18|25)\)/.test(msg) ||
     /HTTP 40[13]/.test(msg) ||
     /EAPI:Invalid (signature|nonce|key)/.test(msg) ||
     /rejected request: retCode (10003|10004|10005|10006|33004)/.test(msg) ||
@@ -63,6 +67,19 @@ function isUnrecoverableExchangeError(err: unknown): boolean {
 
 // Exported for unit tests.
 export const __test_isUnrecoverableExchangeError = isUnrecoverableExchangeError;
+
+// A use case wraps a per-account failure in its own summary and keeps the
+// provider's error as `cause`. Only a ProviderError's message was written by a
+// provider about the venue's answer; anything else may be internal text
+// (SC-551), so it is never what the job's owner is shown.
+function providerErrorIn(err: unknown): ProviderError | null {
+  let current: unknown = err;
+  for (let depth = 0; depth < 5 && current instanceof Error; depth++) {
+    if (current instanceof ProviderError) return current;
+    current = current.cause;
+  }
+  return null;
+}
 
 // A terminal import failure must be reflected on the credential row —
 // otherwise it stays `enqueued` and looks healthy forever. Best-effort:
@@ -141,8 +158,21 @@ export class ExchangeImportProcessor extends UserJobProcessor<ExchangeImportJob,
         // key". It is the only place the reader can learn WHICH thing they got
         // wrong, which is the whole finding of SC-140, so it is marked
         // `userFacing` rather than collapsed into "the import failed".
-        throw userFacing(new UnrecoverableError(msg));
+        throw userFacing(new UnrecoverableError(providerErrorIn(error)?.message ?? msg));
       }
+      const lastAttempt = ctx.job.attemptsMade + 1 >= (ctx.job.opts?.attempts ?? 1);
+      if (!lastAttempt) throw error;
+      // Out of retries: without this the credential stays `enqueued` and looks
+      // healthy, and the job page says "tried 3 times" with no reason (SC-1524).
+      // Thrown as-is rather than as UnrecoverableError so it still reads as an
+      // exhaustion, which is what happened.
+      const msg = error instanceof Error ? error.message : String(error);
+      // The worker's `onTerminalFailure` hook already reports this one to Sentry.
+      await markCredentialFailed(data.userId, data.institutionId, msg, {
+        captureException: () => {},
+      });
+      const providerError = providerErrorIn(error);
+      if (providerError) throw userFacing(providerError);
       throw error;
     }
 

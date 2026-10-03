@@ -11,6 +11,7 @@ import { CoinbaseProvider } from '../../src/providers/coinbase';
 import { GeminiProvider } from '../../src/providers/gemini';
 import { HuobiProvider } from '../../src/providers/huobi';
 import { KucoinProvider } from '../../src/providers/kucoin';
+import { throwawayCdpKey } from '../helpers/cdp-key';
 import {
   declaredHorizon,
   pageCapLoops,
@@ -106,7 +107,11 @@ async function coinbaseRun(
   transactionsEndless: boolean
 ): Promise<{ events: TransactionEvent[]; retractions: string[] }> {
   const provider = new CoinbaseProvider(passthroughLimiter());
-  const { ctx, retractions } = contextWithSink('coinbase', { apiKey: 'k', apiSecret: 's' });
+  const cdpKey = throwawayCdpKey();
+  const { ctx, retractions } = contextWithSink('coinbase', {
+    apiKey: cdpKey.name,
+    apiSecret: cdpKey.privateKeyPem,
+  });
   let accountPage = 0;
   const events = await withRoutes(
     [

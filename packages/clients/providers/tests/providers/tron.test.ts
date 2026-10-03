@@ -44,57 +44,6 @@ describe('TronProvider', () => {
     expect(p.isValidAddress(VALID_TRX)).toBe(true);
     expect(p.isValidAddress('NotATronAddress')).toBe(false);
   });
-
-  test('fetchBalances merges native TRX + TRC20 tokens', async () => {
-    const p = new TronProvider(passthroughLimiter(), 'http://api');
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async (url: string) => {
-      if (url.endsWith(`/v1/accounts/${VALID_TRX}`)) {
-        return new Response(
-          JSON.stringify({ data: [{ balance: 5_000_000 }] }), // 5 TRX
-          { status: 200 }
-        );
-      }
-      if (url.endsWith(`/v1/accounts/${VALID_TRX}/tokens`)) {
-        return new Response(
-          JSON.stringify({
-            success: true,
-            data: [
-              {
-                tokenId: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
-                tokenAbbr: 'usdt',
-                tokenName: 'Tether',
-                tokenDecimal: 6,
-                tokenType: 'trc20',
-                balance: '1000000',
-              },
-              {
-                tokenId: 'NOT_TRC20',
-                tokenAbbr: 'fake',
-                tokenName: 'Fake',
-                tokenDecimal: 6,
-                tokenType: 'trc10',
-                balance: '50000',
-              },
-            ],
-          }),
-          { status: 200 }
-        );
-      }
-      throw new Error(`Unexpected url: ${url}`);
-    }) as unknown as typeof fetch;
-    try {
-      const out = await p.fetchBalances(ctx as never);
-      const trx = out.find((h) => h.tokenIdentity.symbol === 'TRX');
-      const usdt = out.find((h) => h.tokenIdentity.symbol === 'USDT');
-      expect(trx?.balance).toBe('5');
-      expect(usdt?.balance).toBe('1');
-      // trc10 entry filtered out
-      expect(out.find((h) => h.tokenIdentity.symbol === 'FAKE')).toBeUndefined();
-    } finally {
-      globalThis.fetch = originalFetch;
-    }
-  });
 });
 
 describe('tronBase58ToHex', () => {

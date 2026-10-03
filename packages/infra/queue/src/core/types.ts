@@ -81,10 +81,12 @@ export type LifecycleEvent =
  * Why the queue stopped trying. `unrecoverable` is BullMQ's
  * `UnrecoverableError` — a by-design failure the processor classified itself,
  * where the remaining attempts were deliberately skipped rather than used up.
- * Downstream vocabulary (`@scani/shared`) has more reasons than these two;
- * these are the only two the queue itself can observe.
+ * `source_unavailable` is the same skip, branded by the processor as an outage
+ * a later retry can get past (`sourceUnavailable`, SC-1527).
+ * Downstream vocabulary (`@scani/shared`) has more reasons than these; these
+ * are the only ones the queue itself can observe.
  */
-type JobDeathReason = 'retries_exhausted' | 'unrecoverable';
+export type JobDeathReason = 'retries_exhausted' | 'unrecoverable' | 'source_unavailable';
 
 export interface EnqueuedJobMeta {
   jobId: string;

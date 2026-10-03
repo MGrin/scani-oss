@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { ETHERSCAN_CHAINS } from '@scani/providers/providers/etherscan';
 import {
   NON_EVM_WALLET_SOURCES,
   sourceForChainId,
@@ -23,9 +24,14 @@ describe('sourceForProvider', () => {
 // copies these replaced disagreed, and the disagreement was SC-360.
 describe('sourceForChainId', () => {
   test('every EVM chain shares the etherscan source', () => {
-    for (const chainId of [1, 56, 137, 43114, 42161, 10, 8453, 324, 59144, 1285]) {
+    for (const { chainId } of ETHERSCAN_CHAINS) {
       expect(sourceForChainId(chainId)).toBe('etherscan');
     }
+  });
+
+  test('a chain Etherscan V2 does not serve has no source (SC-1524)', () => {
+    expect(sourceForChainId(250)).toBeNull();
+    expect(sourceForChainId(324)).toBeNull();
   });
 
   test('accepts a chain id as a string — metadata stores it either way', () => {

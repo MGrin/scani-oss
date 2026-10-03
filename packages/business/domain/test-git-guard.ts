@@ -1,6 +1,8 @@
 import { afterAll } from 'bun:test';
 import { join } from 'node:path';
 
+export { scrubGitLocation } from '../../../scripts/lib/scratch-git';
+
 /**
  * SC-1512. Keep a test run from writing the real repository's git state.
  *
@@ -16,22 +18,6 @@ import { join } from 'node:path';
 function git(args: readonly string[], cwd?: string): { rc: number; out: string } {
   const r = Bun.spawnSync(['git', ...args], { cwd, stdout: 'pipe', stderr: 'pipe' });
   return { rc: r.exitCode, out: r.stdout.toString().trim() };
-}
-
-/** The variables git uses to locate a repository, by git's own list. */
-export function localGitEnvVars(): string[] {
-  const r = git(['rev-parse', '--local-env-vars']);
-  return r.rc === 0 ? r.out.split('\n').filter(Boolean) : [];
-}
-
-/** Removes them from `env`, so nothing spawned later inherits a repository. */
-export function scrubGitLocation(env: Record<string, string | undefined>): string[] {
-  const removed: string[] = [];
-  for (const name of localGitEnvVars()) {
-    if (env[name] !== undefined) removed.push(name);
-    delete env[name];
-  }
-  return removed;
 }
 
 /** The config file every worktree of the repository at `cwd` reads. */

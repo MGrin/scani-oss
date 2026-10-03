@@ -1027,13 +1027,37 @@
           "holding": "pilih kepemilikan yang berpindah",
           "amount": "masukkan berapa yang berpindah",
           "where": "sebutkan ke mana uangnya pergi",
-          "fee": "biayanya harus lebih kecil daripada jumlah yang berpindah"
-        }
+          "fee": "biayanya harus lebih kecil daripada jumlah yang berpindah",
+          "exceedsBalance": "aset ini hanya berisi {{available}} {{symbol}} — masukkan jumlah itu atau kurang"
+        },
+        "error": {
+          "exceedsBalance": "Tidak dicatat: {{amount}} {{symbol}} lebih besar dari isi aset ini sekarang. Periksa saldonya dan masukkan jumlah yang lebih kecil."
+        },
+        "subject": "pergerakan ini"
       },
       "trendCaption": "{{period}} terakhir",
       "edit": {
         "title": "Edit aset",
         "description": "Mengubah jumlah yang Anda miliki dan, jika Anda melacak lebih dari satu, nama kantong ini."
+      },
+      "activity": {
+        "heading": "Aktivitas terbaru",
+        "kind": {
+          "moneyIn": "Uang masuk",
+          "moneyOut": "Uang keluar",
+          "transferIn": "Transfer masuk",
+          "transferOut": "Transfer keluar",
+          "bought": "Beli",
+          "sold": "Jual",
+          "swap": "Tukar",
+          "settlement": "Penyelesaian transaksi",
+          "fee": "Biaya",
+          "reward": "Hadiah",
+          "interest": "Bunga",
+          "airdrop": "Airdrop",
+          "openingBalance": "Saldo awal",
+          "correction": "Koreksi"
+        }
       }
     },
     "export": {
@@ -1320,6 +1344,7 @@
         "chains_other": "{{count}} rantai",
         "candidatesAcross_other": "{{count}} kandidat di {{chains}}",
         "nothingFound": "tidak ada yang ditemukan",
+        "couldNotRead": "tidak bisa dibaca — tidak ada yang ditemukan karena tidak ada yang menjawab",
         "labelled": "{{label}} · {{body}}",
         "unpairedTransfers_other": "{{count}} pembayaran keluar untuk diklasifikasikan",
         "balanceChangesToExplain": "Perubahan saldo yang perlu dijelaskan",
@@ -1836,6 +1861,7 @@
       },
       "blocker": {
         "chooseFile": "pilih berkas untuk diunggah",
+        "chooseIntent": "pilih isi berkas",
         "chooseInvoice": "pilih faktur untuk diunggah",
         "chooseInstitution": "pilih di mana akun itu disimpan",
         "nameInstitution": "beri nama institusi barunya",
@@ -1847,7 +1873,10 @@
         "duplicateToken": "beri nama sendiri pada setiap baris yang menyebut token yang sama, atau gabungkan",
         "walletEmpty": "masukkan alamat dompetnya",
         "walletIncomplete": "lengkapi alamat dompetnya",
-        "walletUnrecognised": "periksa alamat dompetnya"
+        "walletUnrecognised": "periksa alamat dompetnya",
+        "alreadyHeld": "{{account}} sudah memiliki {{tokens}} — beri nama baris baru agar disimpan sebagai pos terpisah, atau ubah saldo aset yang sudah ada",
+        "zeroAmount": "masukkan jumlah lebih dari nol untuk {{tokens}}, atau hapus baris itu",
+        "unreadableAmount": "perbaiki jumlah untuk {{tokens}} — itu bukan angka yang bisa dibaca Scani"
       },
       "category": {
         "cryptoExchange": "Bursa kripto",
@@ -1866,7 +1895,9 @@
         },
         "everyShape": "Ethereum dan rantai EVM lainnya memakai 0x dan 40 karakter heksadesimal; Bitcoin diawali 1, 3, atau bc1; Solana 32 sampai 44 huruf dan angka; Tron diawali T; TON diawali EQ atau UQ.",
         "incomplete_other": "Itu bukan alamat {{chain}} yang lengkap — bentuknya {{shape}}, sedangkan ini {{count}} karakter.",
-        "unrecognised": "Scani tidak membaca rantai mana pun yang alamatnya berbentuk seperti itu. {{shapes}}"
+        "unrecognised": "Scani tidak membaca rantai mana pun yang alamatnya berbentuk seperti itu. {{shapes}}",
+        "innerSpace": "Ada spasi di dalam alamat ini. Hapus spasinya — alamat adalah satu rangkaian karakter tanpa jeda.",
+        "ensName": "Itu nama ENS. Scani memantau alamat, bukan nama — tempelkan alamat 0x yang dirujuknya."
       },
       "institution": {
         "lookUpName": "Ambil namanya dari situs web",
@@ -1943,7 +1974,9 @@
           "addAnother": "Tambah lagi",
           "potName": "Yang ini yang mana?",
           "potNameHint": "Anda menyebut token ini di lebih dari satu baris. Beri masing-masing nama sendiri dan kami akan menyimpannya sebagai posisi terpisah.",
-          "potNamePlaceholder": "Tabungan, Deposito, Hadiah pernikahan…"
+          "potNamePlaceholder": "Tabungan, Deposito, Hadiah pernikahan…",
+          "potNameHeldHint": "{{account}} sudah memiliki {{symbol}}. Beri baris ini nama sendiri agar keduanya disimpan sebagai pos terpisah — atau, jika uangnya sama, ubah saldo aset itu alih-alih menambah baris.",
+          "alreadyHeldError": "Tidak disimpan: akun ini sudah memiliki salah satu token ini dengan nama yang sama. Tidak ada yang ditambahkan — baris terkait ditandai di atas."
         },
         "wallet": {
           "subject": "dompet ini",
@@ -1962,7 +1995,7 @@
       "integration": {
         "title": "Hubungkan sebuah layanan",
         "subtitle": "Satu set kunci hanya-baca, terenkripsi saat disimpan.",
-        "listSubtitle": "Kunci API hanya-baca, terenkripsi saat disimpan. Saldo disinkronkan setiap jam, dan Anda bisa memiliki beberapa koneksi ke layanan yang sama.",
+        "listSubtitle": "Kunci API hanya-baca, terenkripsi saat disimpan. Saldo disinkronkan setiap jam. Menghubungkan layanan yang sama lagi akan mengganti kuncinya.",
         "allServices": "Semua layanan",
         "thisService": "layanan ini",
         "notFoundTitle": "Bukan milik kami",
@@ -2007,8 +2040,6 @@
     "tokens": {
       "custom": {
         "nothingRecorded": "Tidak ada yang tercatat",
-        "unknownSource": "Sumber tidak dikenal",
-        "setManually": "Ditetapkan manual",
         "neverPriced": "Belum pernah dihargai",
         "newToken": "Token khusus baru",
         "type": "Tipe",
@@ -2348,8 +2379,8 @@
       "kind": {
         "holdingPriceRefresh": "Penyegaran harga kepemilikan",
         "fileFallback": "berkas",
-        "fileEnriched": "{{type}} · diperkaya",
-        "deleteAllData": "Hapus semua data akun"
+        "deleteAllData": "Hapus semua data akun",
+        "fileOfType": "Berkas {{type}}"
       },
       "fileCount_other": "{{count}} berkas",
       "page": {
@@ -2612,7 +2643,6 @@
         "format": "Format",
         "transactions": "Transaksi",
         "newHoldings": "Kepemilikan baru",
-        "balanceAnchors": "Acuan saldo",
         "holdingsTitle": "Kepemilikan yang tersentuh",
         "row": {
           "new": "Baru",
@@ -2658,6 +2688,11 @@
           "fee": "Biaya terpisah",
           "none": "Tidak dipetakan",
           "apply": "Terapkan dan impor"
+        },
+        "balancesRecorded": "Saldo tercatat",
+        "columnsRow": {
+          "label": "Kolom",
+          "matchedAutomatically": "Dicocokkan otomatis"
         }
       },
       "manual": {
@@ -2696,6 +2731,10 @@
           "label": "Gagal — tidak akan diulang",
           "sentence": "Ini gagal karena alasan yang tidak akan teratasi oleh percobaan lain, dan tidak ada yang tercatat yang bisa kami tunjukkan kepada Anda. Menjalankannya ulang tanpa perubahan akan gagal dengan cara yang sama.",
           "sentenceWithDetail": "Ini gagal karena alasan yang tidak akan teratasi oleh percobaan lain. Periksa detail di bawah, perbaiki, lalu mulai lagi."
+        },
+        "sourceUnavailable": {
+          "label": "Gagal — coba lagi nanti",
+          "sentence": "Layanan yang dibutuhkan tugas ini tidak dapat dihubungi, jadi tugas ini berhenti lebih awal. Coba lagi nanti."
         },
         "exhausted": {
           "label": "Gagal — tidak akan diulang",
@@ -2786,6 +2825,13 @@
       "pending": "Berkas bersama yang tertunda",
       "pendingSection": "Perubahan tertunda",
       "fingerprint": "Sidik jari Core"
+    },
+    "priceSource": {
+      "frankfurter": "Frankfurter (kurs ECB)",
+      "manual": "Ditetapkan manual",
+      "baseCurrency": "Mata uang dasar Anda",
+      "siblingFallback": "Aset yang sama, listing lain",
+      "unknown": "Sumber tidak dikenal"
     }
   }
 }

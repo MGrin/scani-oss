@@ -22,15 +22,16 @@ import {
   holdingGainLoss,
   holdingPrice,
   isBaseCurrencyHolding,
-  isSynced,
   payoutScheduleLabel,
   supportsApy,
 } from '../../lib/holdings';
+import { priceSourceLabel } from '../../lib/price-source';
 import { formatRelative } from '../../lib/relative-time';
 import { groupDetailPath } from '../../lib/routes';
 import { tokenTypeLabel } from '../../lib/tokens';
 import { InstitutionMark } from '../entities/InstitutionMark';
 import { EditAction } from '../form/FormSheet';
+import { HoldingActivity } from './HoldingActivity';
 import { HoldingAmountFact } from './HoldingAmountFact';
 import { HoldingDeleteAction } from './HoldingDeleteAction';
 import { HoldingScamAction } from './HoldingScamAction';
@@ -146,7 +147,7 @@ function PriceFact({
         // thing that decides whether to trust the figure above it.
         <span className="text-caption text-muted-foreground">
           {formatRelative(t, holding.price.timestamp)}
-          {holding.price.source ? ` · ${holding.price.source}` : ''}
+          {holding.price.source ? ` · ${priceSourceLabel(t, holding.price.source)}` : ''}
         </span>
       ) : null}
     </span>
@@ -459,7 +460,7 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
             {priceBusy ? t('v3.holdings.peek.refreshing') : t('v3.holdings.peek.refreshPrice')}
           </Button>
         )}
-        {isSynced(holding) ? (
+        {holding.refreshable ? (
           <Button
             variant="outline"
             onClick={() => ctx.onRefreshBalance(holding)}
@@ -539,17 +540,22 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     ],
     // The `content` slot rather than a section, because a ledger of disposals
     // each with its own lots under it is not a run of label/value pairs — the
-    // same reason the transfer-review chooser is here (SC-150). It renders
-    // itself away on the holdings that never disposed of anything, which is
-    // most of them.
-    //
+    // same reason the transfer-review chooser is here (SC-150). Both render
+    // themselves away when there is nothing to list.
     content: (
-      <RealizedLedger
-        holdingId={holding.id}
-        currency={ctx.currency}
-        symbol={holding.token.symbol}
-        tokenTypeCode={holding.token.typeCode}
-      />
+      <>
+        <HoldingActivity
+          holdingId={holding.id}
+          symbol={holding.token.symbol}
+          tokenTypeCode={holding.token.typeCode}
+        />
+        <RealizedLedger
+          holdingId={holding.id}
+          currency={ctx.currency}
+          symbol={holding.token.symbol}
+          tokenTypeCode={holding.token.typeCode}
+        />
+      </>
     ),
     sections,
     // Rare (scam airdrops), so the body's last row rather than a header action:

@@ -63,11 +63,12 @@ identically in the TypeScript read path
 A holding is created in one of four ways:
 
 1. **A sync discovers a position** the user didn't have before. The
-   relevant ingester (`exchange-import`, `wallet-import`, the
-   per-provider sync jobs) calls into
-   `HoldingsSyncHelper` / `HoldingService`, which creates the account if
-   needed, then the holding, then the initial `kind='deposit'` ledger
-   entry and a `'sync-capture'` observation.
+   connect-time imports (`exchange-import`, `wallet-import`), which
+   create the account if needed, and the balance syncs each hand one
+   account's answer to `FeedIngestService` as a snapshot batch. It
+   creates the holding at the reported balance and records that balance
+   as a `'sync-capture'` observation. A snapshot batch carries no ledger
+   entry.
 2. **A screenshot is parsed** via OpenAI Vision and the resulting rows
    are written under a synthetic
    ["manual" institution](/concepts/manual-assets/).

@@ -499,8 +499,8 @@ discovery flow.
 ### EVM
 *Ethereum Virtual Machine.* The execution environment shared by
 Ethereum and many compatible chains (Polygon, Arbitrum, Optimism,
-Base, …). *In Scani:* Etherscan V2 covers every EVM chain with
-one API key.
+Base, …). *In Scani:* Etherscan V2 covers every EVM chain Scani
+reads with one API key.
 
 ### Gas
 The fee paid to execute a transaction on a blockchain. *In

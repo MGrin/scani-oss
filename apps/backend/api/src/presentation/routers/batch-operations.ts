@@ -1,20 +1,38 @@
-import { AccountRepository } from '@scani/domain/repositories';
+import { AccountRepository, HoldingRepository } from '@scani/domain/repositories';
 import { CreateHoldingsWithDependenciesUseCase } from '@scani/domain/use-cases';
 import { MANUAL_HOLDINGS_CREATE } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
-import { CreateAccountDto, CreateInstitutionDto, HOLDING_LABEL_MAX_LENGTH } from '@scani/shared';
+import {
+  AMOUNT_MAX_INTEGER_DIGITS,
+  amountWithinIntegerDigits,
+  CreateAccountDto,
+  CreateInstitutionDto,
+  HOLDING_LABEL_MAX_LENGTH,
+} from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import Container from 'typedi';
 import { z } from 'zod';
+import { refuseHeldDuplicates } from '../lib/held-duplicates';
 import { strictInput } from '../lib/strict-input';
 import { assertTokensVisible } from '../lib/token-visibility';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
+// A number, and one no holding is too large for (SC-1527): a 21-digit balance
+// went through as `min(1)` and was priced into a $162T net worth. The sign is
+// not judged here — a parsed statement can carry a negative card balance, and
+// refusing it is not this ticket's call.
+const balanceInputSchema = z
+  .string()
+  .min(1)
+  .refine(amountWithinIntegerDigits, {
+    message: `Balance must be a number with at most ${AMOUNT_MAX_INTEGER_DIGITS} digits before the decimal point`,
+  });
+
 const newHoldingInputSchema = z.object({
   tokenId: z.string().uuid(),
-  balance: z.string().min(1),
+  balance: balanceInputSchema,
   // What the user calls this pot. Present only when the client had to ask —
   // one account, several rows, one token (SC-330).
   label: z.string().trim().max(HOLDING_LABEL_MAX_LENGTH).optional(),
@@ -22,7 +40,7 @@ const newHoldingInputSchema = z.object({
 
 const updateHoldingInputSchema = z.object({
   holdingId: z.string().uuid(),
-  balance: z.string().min(1),
+  balance: balanceInputSchema,
 });
 
 const CreateHoldingsBatchInputSchema = z
@@ -69,6 +87,9 @@ export const batchOperationsRouter = router({
         dbUser.id,
         input.newHoldings.map((h) => h.tokenId)
       );
+      if (input.accountId) {
+        await refuseHeldDuplicates(dbUser.id, input.accountId, input.newHoldings);
+      }
       const jobId = await Container.get(BullMqEnqueueService).add(MANUAL_HOLDINGS_CREATE, {
         userId: dbUser.id,
         requestId: input.requestId,
@@ -81,6 +102,35 @@ export const batchOperationsRouter = router({
         parentJobIdToStampOnSuccess: input.parentJobIdToStampOnSuccess,
       });
       return { jobId };
+    }),
+
+  /**
+   * The account's hand-entered positions for these tokens — the `held` half of
+   * the duplicate rule, so the manual-entry form can name a second BTC in
+   * place instead of submitting a job that fails on it (SC-1527).
+   *
+   * Exactly the rows `CreateHoldingsWithDependenciesUseCase` checks against
+   * (`findUnsyncedByAccountAndTokens`), hidden ones included, so the form and
+   * the worker cannot disagree about what a duplicate is. Scoped by user: an
+   * account that is not the caller's reads as holding nothing.
+   */
+  heldPositions: protectedProcedure
+    .input(
+      strictInput(
+        z.object({
+          accountId: z.string().uuid(),
+          tokenIds: z.array(z.string().uuid()).max(200),
+        })
+      )
+    )
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const rows = await Container.get(HoldingRepository).findUnsyncedByAccountAndTokens(
+        input.accountId,
+        input.tokenIds,
+        dbUser.id
+      );
+      return rows.map((row) => ({ tokenId: row.tokenId, label: row.label }));
     }),
 
   /**

@@ -303,6 +303,7 @@
       "dependencies": {
         "@noble/hashes": "^1.8.0",
         "@scani/db": "workspace:*",
+        "@scani/deadline": "workspace:*",
         "@scani/logging": "workspace:*",
         "@scani/rate-limiter": "workspace:*",
         "decimal.js": "^10.6.0",

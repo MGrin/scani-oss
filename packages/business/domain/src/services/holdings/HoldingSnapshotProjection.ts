@@ -6,8 +6,8 @@
  *
  * The wider `HoldingSnapshot` carries `tokenIdentity: Partial<NewToken>`
  * with provider-namespaced metadata. The `IntegrationHolding` shape is
- * what the use cases pass downstream to `findOrCreateTokenFromIntegrationMapping`
- * and the holding write path: a flat
+ * what the integration import and the balance syncs read each row from
+ * before it becomes a feed batch's checkpoint: a flat
  * `{symbol, name, balance, decimals, externalTokenId, contractAddress?, iconUrl?}`
  * row. This file owns the small extraction logic that picks the right
  * external id (CoinGecko id vs Kraken asset vs Binance symbol vs IBKR
@@ -16,6 +16,7 @@
 
 import type { TokenMetadata } from '@scani/db/schema';
 import type { HoldingSnapshot } from '@scani/providers/core/types';
+import type { TokenIdentity } from '../feeds/feed-batch';
 
 export interface TokenMappingResult {
   token: {
@@ -176,11 +177,11 @@ export function projectSnapshotsToHoldings(
 
 /**
  * Project a single `HoldingSnapshot.tokenIdentity` into the
- * `TokenMappingResult` shape `tokenService.findOrCreateTokenFromIntegrationMapping`
- * consumes. The tokenIdentity is already normalized — we just pick
- * and pass through the providerMetadata blob (the contract accepts
- * either string or TokenMetadata; blockchain-origin token mappings
- * carry a JSON string).
+ * `TokenMappingResult` shape `integrationTokenIdentity` turns into the
+ * identity a feed batch's asset is resolved by. The tokenIdentity is
+ * already normalized — we just pick and pass through the providerMetadata
+ * blob (`integrationTokenIdentity` accepts either string or TokenMetadata;
+ * blockchain-origin token mappings carry a JSON string).
  */
 export function projectSnapshotToTokenMapping(snapshot: HoldingSnapshot): TokenMappingResult {
   const ti = snapshot.tokenIdentity;
@@ -203,5 +204,26 @@ export function projectSnapshotToTokenMapping(snapshot: HoldingSnapshot): TokenM
     },
     isNew: false, // service layer determines
     confidence: 1.0, // high confidence — provider gave us normalized data
+  };
+}
+
+/**
+ * The identity a provider's token is found or created by, as the integration
+ * paths have always built it: the symbol upper-cased, a metadata blob sent as
+ * a string parsed (a malformed one throws), and an absent scale or icon null.
+ */
+export function integrationTokenIdentity(token: TokenMappingResult['token']): TokenIdentity {
+  const providerMetadata = token.providerMetadata
+    ? typeof token.providerMetadata === 'string'
+      ? (JSON.parse(token.providerMetadata) as TokenMetadata)
+      : token.providerMetadata
+    : ({} as TokenMetadata);
+  return {
+    symbol: token.symbol.toUpperCase(),
+    name: token.name,
+    decimals: token.decimals ?? null,
+    iconUrl: token.iconUrl ?? null,
+    marketSegment: token.marketSegment ?? undefined,
+    providerMetadata,
   };
 }

@@ -59,6 +59,7 @@ function holding(
     isActive: true,
     isHidden: false,
     source: 'import_wallet',
+    refreshable: true,
     ...overrides,
   };
 }

@@ -131,7 +131,10 @@
     },
     "amountInput": {
       "readAsDecimal": "Se lee como {{amount}} — aquí tanto la coma como el punto significan el separador decimal. Borra el separador si querías decir un millar.",
-      "readAsWhole": "Se lee como {{amount}} — este campo solo admite números enteros."
+      "readAsWhole": "Se lee como {{amount}} — este campo solo admite números enteros.",
+      "exponent": "Aquí no se lee la notación científica como 1e5: escribe el número completo, por ejemplo 100000.",
+      "tooLarge": "Son más de {{max}} dígitos antes del separador decimal, y ningún saldo los tiene: revisa el importe.",
+      "truncated": "Se lee como {{amount}}: este campo no guarda más decimales."
     },
     "brand": {
       "logoAlt": "Logotipo de {{name}}"

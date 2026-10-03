@@ -1,13 +1,15 @@
 import type { HoldingMovementDirection } from '@scani/shared';
+import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
 import type { TFunction } from 'i18next';
 import { useState } from 'react';
 import { dateFieldInstant, todayIso } from '../components/form/DateField';
+import { amountDecimals } from '../lib/holdings';
 import { buildEnsureAccountInput, describeAccountTargetBlockers } from '../lib/manual-entry';
 import {
+  describeMovementBlockers,
   type MovementHolding,
   type MovementOutflowOption,
   type MovementSubmission,
-  movementBlockerKeys,
   movementFeeArrival,
   movementFeeStated,
 } from '../lib/movement-form';
@@ -95,8 +97,19 @@ export function useMovementForm(
     amount,
     destination,
     fee,
+    available: selected?.amount,
   };
-  const blockers = movementBlockerKeys(draft).map((key) => t(key));
+  // Formatted as the field's "Currently …" hint is, so the refusal and the
+  // hint above it show one figure.
+  const blockers = describeMovementBlockers(t, draft, {
+    available: selected
+      ? resolveNumeric(selected.amount, {
+          format: 'plain',
+          decimals: amountDecimals(selected.amount),
+        }).text
+      : '',
+    symbol: selected?.token.symbol ?? '',
+  });
   // One draft answers both, so the figure shown beside the field and the
   // button's enabled state cannot come from different readings of the form.
   const feeArrives = movementFeeArrival(draft);
@@ -128,6 +141,7 @@ export function useMovementForm(
     if (!selected || blockers.length > 0) return null;
     return {
       holdingId: selected.id,
+      symbol: selected.token.symbol,
       direction,
       amount: amount.trim(),
       occurredAt: dateFieldInstant(date),

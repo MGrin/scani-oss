@@ -14,6 +14,7 @@ import {
   MEMORY_DEFER_DELAY_MS,
   MEMORY_DEFER_MAX,
   MEMORY_DEFER_REQUEST_PREFIX,
+  newerBackfillPending,
   nextMemoryDeferRequestId,
   RollupMemoryStop,
   resumableProgress,
@@ -240,6 +241,104 @@ describe('runChunkedRollup (SC-1283)', () => {
         }
       )
     ).rejects.toThrow('stopped at day offset 0 of 40');
+  });
+});
+
+// SC-1513: one user's 1,861-day backfill kept a shared-cpu worker over its CPU
+// baseline for three hours, and the throttle doubled every scheduled job.
+describe('runChunkedRollup pacing (SC-1513)', () => {
+  const anchor = '2026-10-03T10:07:44.840Z';
+  const CHUNK_MS = 10_000;
+
+  function clockedRollup() {
+    let clock = 0;
+    const rollup = async (o: { dayOffsets: { from: number; to: number } }) => {
+      clock += CHUNK_MS;
+      const days = o.dayOffsets.to - o.dayOffsets.from;
+      return { usersProcessed: 1, daysComputed: days, usersSkipped: 0, errors: [], durationMs: 0 };
+    };
+    return { rollup, now: () => clock };
+  }
+
+  it('rests between chunks for the pace factor times the chunk it just ran, and not after the last', async () => {
+    const { rollup, now } = clockedRollup();
+    const sleeps: number[] = [];
+    await runChunkedRollup(
+      'user-1',
+      3 * PORTFOLIO_HISTORY_CHUNK_DAYS,
+      { anchor, nextDayOffset: 0 },
+      {
+        rollup,
+        saveProgress: async () => {},
+        onChunk: async () => {},
+        sleep: async (ms) => void sleeps.push(ms),
+        now,
+        pace: { factor: 2, newerRequestPending: async () => false },
+      }
+    );
+    expect(sleeps).toEqual([2 * CHUNK_MS, 2 * CHUNK_MS]);
+  });
+
+  it('stops resting once a newer request for the user is waiting, so it is not held behind the pace', async () => {
+    const { rollup, now } = clockedRollup();
+    const sleeps: number[] = [];
+    let asked = 0;
+    await runChunkedRollup(
+      'user-1',
+      4 * PORTFOLIO_HISTORY_CHUNK_DAYS,
+      { anchor, nextDayOffset: 0 },
+      {
+        rollup,
+        saveProgress: async () => {},
+        onChunk: async () => {},
+        sleep: async (ms) => void sleeps.push(ms),
+        now,
+        pace: { factor: 2, newerRequestPending: async () => ++asked > 1 },
+      }
+    );
+    expect(sleeps).toEqual([2 * CHUNK_MS]);
+  });
+
+  it('does not rest at all without a pace', async () => {
+    const { rollup, now } = clockedRollup();
+    const sleeps: number[] = [];
+    await runChunkedRollup(
+      'user-1',
+      3 * PORTFOLIO_HISTORY_CHUNK_DAYS,
+      { anchor, nextDayOffset: 0 },
+      {
+        rollup,
+        saveProgress: async () => {},
+        onChunk: async () => {},
+        sleep: async (ms) => void sleeps.push(ms),
+        now,
+      }
+    );
+    expect(sleeps).toEqual([]);
+  });
+});
+
+describe('newerBackfillPending (SC-1513)', () => {
+  const name = PORTFOLIO_HISTORY_BACKFILL.name;
+  const queue = (jobs: Array<{ id: string; name: string; data: unknown }>) => ({
+    getJobs: async (types: Array<'waiting' | 'delayed'>) => {
+      expect(types).toEqual(['waiting', 'delayed']);
+      return jobs;
+    },
+  });
+
+  it('finds a newer backfill for the same user', async () => {
+    const q = queue([{ id: 'retry', name, data: { userId: 'u1' } }]);
+    expect(await newerBackfillPending(q, 'u1', 'own')).toBe(true);
+  });
+
+  it('ignores the running job itself, other users and other jobs', async () => {
+    const q = queue([
+      { id: 'own', name, data: { userId: 'u1' } },
+      { id: 'other-user', name, data: { userId: 'u2' } },
+      { id: 'other-job', name: 'wallet-balances', data: { userId: 'u1' } },
+    ]);
+    expect(await newerBackfillPending(q, 'u1', 'own')).toBe(false);
   });
 });
 

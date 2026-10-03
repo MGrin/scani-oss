@@ -73,7 +73,7 @@ export function FileImportPage() {
   const parseStatement = trpc.fileImport.parseAndEnrich.useMutation();
 
   const blockers = invoice ? [] : describeImportBlockers(t, target.draft, file);
-  if (aiNeeded && !intent) blockers.push(t('v3.capture.chooseIntent'));
+  if (aiNeeded && !intent) blockers.push(t('v3.capture.blocker.chooseIntent'));
   if (!usable)
     blockers.push(
       t(capabilities.isLoading ? 'v3.capture.ai.blockerLoading' : 'v3.capture.ai.blocker')
@@ -90,8 +90,23 @@ export function FileImportPage() {
     if (!file || !plan || (!invoice && !ensure) || stage || blockers.length) return;
 
     setError(null);
-    setStage('account');
+    setStage('upload');
     try {
+      // The file goes up before any account is created: a refused upload
+      // used to leave an empty account behind under an error that said the
+      // reader's data was untouched (SC-1519).
+      const upload = await getUploadUrl.mutateAsync({
+        purpose: invoice ? 'document' : plan.purpose,
+        contentType: plan.contentType,
+        filename: file.name,
+        sizeBytes: file.size,
+      });
+      await uploadToR2(file, {
+        uploadUrl: upload.uploadUrl,
+        requiredHeaders: upload.headers,
+      });
+
+      setStage('account');
       let accountId = ensure?.accountId;
       if (!invoice && !accountId && ensure) {
         const created = await ensureAccount.mutateAsync(ensure);
@@ -106,18 +121,6 @@ export function FileImportPage() {
           institutionId: created.institutionId ?? target.draft.institutionId,
         });
       }
-
-      setStage('upload');
-      const upload = await getUploadUrl.mutateAsync({
-        purpose: invoice ? 'document' : plan.purpose,
-        contentType: plan.contentType,
-        filename: file.name,
-        sizeBytes: file.size,
-      });
-      await uploadToR2(file, {
-        uploadUrl: upload.uploadUrl,
-        requiredHeaders: upload.headers,
-      });
 
       setStage('parse');
       // A fresh id per attempt, unlike manual entry's form-lifetime one: the

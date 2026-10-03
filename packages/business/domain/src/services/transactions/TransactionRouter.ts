@@ -27,8 +27,6 @@ export interface TransactionRouterRequest {
   institutionId: string;
   /** Institution code the registry filter dispatches by. */
   institutionCode: string;
-  /** Source tag stored on every transaction row for dedup + audit. */
-  source: string;
   /** Optional incremental cutoff. */
   since?: Date;
   /** Optional upper bound (rare; balance-snapshot use case). */

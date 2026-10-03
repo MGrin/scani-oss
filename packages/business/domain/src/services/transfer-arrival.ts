@@ -2,20 +2,16 @@ import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { Decimal } from '@scani/shared';
 import { and, eq, gte, isNull, lte } from 'drizzle-orm';
-import Container from 'typedi';
 import type { AdoptedBalanceEdit } from '../lib/created-destination';
 import { MANUAL_EDIT_FLOW_SOURCE } from '../lib/person-authored-sources';
-import {
-  BalanceSyncOwnershipService,
-  type SyncOwnableAccount,
-} from './accounts/BalanceSyncOwnershipService';
 import { type BalanceSyncSource, MANUAL_HOLDING_SOURCE } from './holdings/balance-sync-sources';
 
 /**
- * How an arrival written for a transfer meets its destination: the queue's
- * `internal` answer (`TransferReviewService`) and a feed's mirror leg
- * (`MirrorLegWriter`) apply this one rule, so the two cannot come to disagree
- * about what the destination's balance does.
+ * How an arrival written for a transfer meets a destination that is already
+ * there: the queue's `internal` answer (`TransferReviewService`) and a feed's
+ * mirror leg (`MirrorLegWriter`) apply this one rule, so the two cannot come
+ * to disagree about what the destination's balance does. A destination that
+ * is not there yet is opened by `TransferDestinationOpener`, for both.
  */
 
 /** How far a typed deposit may sit from the transfer and still be its arrival. */
@@ -71,20 +67,4 @@ export function anchorIsUnobserved(
   accountSyncSource: BalanceSyncSource | null
 ): boolean {
   return holding.source === MANUAL_HOLDING_SOURCE || accountSyncSource === null;
-}
-
-export async function openingOf(
-  tx: DatabaseTransaction,
-  account: SyncOwnableAccount,
-  quantity: Decimal
-): Promise<{ balance: string; source: string }> {
-  const syncSource = await Container.get(BalanceSyncOwnershipService).resolveSyncSource(
-    account,
-    tx
-  );
-  if (syncSource) return { balance: '0', source: syncSource };
-  // Nobody syncs this account, so the amount that just moved in is the best
-  // fact anyone has — and a holding at zero holding a 250 deposit would read
-  // as 250 short from the day it was made.
-  return { balance: quantity.toString(), source: 'manual' };
 }

@@ -40,6 +40,7 @@ type RetryUnavailableReason =
   | 'not_failed'
   | 'cancelled'
   | 'never_delivered'
+  | 'unrecoverable'
   | 'still_retrying'
   | 'evicted';
 
@@ -67,6 +68,11 @@ const RETRY_REFUSALS: Record<
     message:
       'This job never reached the queue, so there is nothing to re-run. Start it again from where you began it.',
   },
+  unrecoverable: {
+    code: 'BAD_REQUEST',
+    message:
+      'This failed for a reason another attempt will not fix. Correct what it reported and start it again from where you began it.',
+  },
   still_retrying: {
     code: 'BAD_REQUEST',
     message: 'This job is already queued for another attempt — no need to retry it.',
@@ -86,6 +92,13 @@ async function describeRetryAvailability(row: UserJob): Promise<RetryAvailabilit
   // not by lookup.
   if (row.failureReason === 'never_delivered') {
     return { available: false, reason: 'never_delivered' };
+  }
+  // The worker classified it as one another attempt will not fix, and the
+  // page says "won't retry" beside the button this would offer (SC-1527). An
+  // outage the worker stopped early for is `source_unavailable` instead, and
+  // keeps its retry.
+  if (row.failureReason === 'unrecoverable') {
+    return { available: false, reason: 'unrecoverable' };
   }
 
   const job = await getQueue().getJob(row.jobId);
@@ -149,7 +162,9 @@ export const jobsRouter = router({
    * The full job `result` payload never arrives here: `findMine` leaves it
    * out of the SELECT (SC-155). It can be 258 KB for a large wallet import,
    * and the list view — badge count, jobs page row — renders none of it, so
-   * per-job detail pages fetch the full row via `getMine` instead.
+   * per-job detail pages fetch the full row via `getMine` instead. What a row
+   * does carry is `outcome` — the two counts that decide whether a completed
+   * run is shown as failed, so the list and the page agree (SC-1527).
    *
    * This used to be a `.map` that dropped the field after the query had
    * already read it, which saved the wire bytes and none of the database

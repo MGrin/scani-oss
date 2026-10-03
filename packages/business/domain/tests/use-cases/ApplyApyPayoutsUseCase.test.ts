@@ -254,6 +254,27 @@ describe('ApplyApyPayoutsUseCase', () => {
     expect(holding.lastUpdated.getTime()).toBeLessThanOrEqual(after);
   });
 
+  test('the balance written is the round8 total itself, whatever the stored balance carries below 8 dp', async () => {
+    // One yearly payout at 300% on a 28-digit stored balance. Written as
+    // stored + (total - stored), the sum rounds twice at 28 digits and keeps a
+    // 1e-17 tail the round8 total does not have.
+    const { holdingId, config } = await seed(2, '5000000000.000000000000000005');
+    const today = new Date();
+    await getDb()
+      .update(schema.holdingApyConfigs)
+      .set({
+        annualRatePct: '300',
+        payoutFrequency: 'yearly',
+        payoutMonth: today.getUTCMonth() + 1,
+        payoutDayOfMonth: today.getUTCDate(),
+      })
+      .where(eq(schema.holdingApyConfigs.id, config.id));
+
+    await run();
+
+    expect((await holdingOf(holdingId)).balance).toBe('20000000000');
+  });
+
   test('a second run the same day writes no row and leaves the balance', async () => {
     const { holdingId } = await seed();
     await run();

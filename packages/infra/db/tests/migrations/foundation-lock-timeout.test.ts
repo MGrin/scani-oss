@@ -18,6 +18,7 @@ const FOUNDATION_MIGRATIONS = [
   '20261001082312_foundation_engine_writer_guard_disabled.sql',
   '20261001142145_foundation_engine_shadow_reports.sql',
   '20261002114109_feed_input_windows_unique_per_fetch.sql',
+  '20261002220617_holding_transactions_unique_per_input.sql',
 ];
 const BOUND = "SET LOCAL lock_timeout = '5s';";
 const EVIDENCE_COLUMNS = FOUNDATION_MIGRATIONS[1] as string;

@@ -18,7 +18,7 @@
  * for why 1025 carries a day-long window rather than a retry hint:
  *   - 1025        → rate-limited, 24h lockout (SC-279)
  *   - 1018        → rate-limited, 60s
- *   - 1010, 1012  → auth-failed, no window
+ *   - 1010–1015   → auth-failed, no window, with a sentence naming the fix (SC-1524)
  *   - 1001, 1019  → "still generating" — poll loop with delay, and
  *                   `retryable` once the budget runs out (SC-443)
  *   - anything else → unrecoverable
@@ -129,6 +129,30 @@ const IBKR_LOCKOUT_MS = 24 * 60 * 60 * 1000;
 // on its own in seconds. A minute is generous and still same-run recoverable.
 const IBKR_RATE_LIMIT_MS = 60_000;
 
+/**
+ * The codes that are IBKR's answer about the token or the query, each with the
+ * sentence that tells the user what to change (SC-1524). Meanings are IBKR's
+ * own: https://www.ibkrguides.com/clientportal/flex3.htm
+ *
+ * Connect skips server validation for IBKR, so the import job is the first
+ * thing to hear a mistyped token or query id — and its failure is the only
+ * place the user can learn which of the two they got wrong.
+ */
+const FLEX_CREDENTIAL_REJECTIONS: Record<string, string> = {
+  '1010':
+    'IBKR no longer runs legacy Flex Queries. Recreate this query as an Activity Flex Query in IBKR Client Portal and reconnect with its new Query ID.',
+  '1011':
+    'IBKR reports the account behind this Flex token is inactive. Reactivate it with IBKR, or reconnect with a token from an active account.',
+  '1012':
+    'This IBKR Flex token has expired. Generate a new one in IBKR Client Portal (Performance & Reports → Flex Queries → Flex Web Service Configuration) and reconnect.',
+  '1013':
+    'IBKR refused this Flex token from this server because the token is restricted to other IP addresses. Remove or widen the IP restriction in IBKR’s Flex Web Service Configuration and reconnect.',
+  '1014':
+    'IBKR has no Flex Query with this id. Check the Query ID under Performance & Reports → Flex Queries in IBKR Client Portal and reconnect.',
+  '1015':
+    'IBKR rejected this Flex token as invalid. Copy the current token from IBKR Client Portal (Performance & Reports → Flex Queries → Flex Web Service Configuration) and reconnect.',
+};
+
 function classifyFlexError(code: string, message: string): ProviderError {
   const full = `IBKR Flex Query error (code ${code}): ${message}`;
   if (code === '1025') {
@@ -137,10 +161,11 @@ function classifyFlexError(code: string, message: string): ProviderError {
   if (code === '1018') {
     return new ProviderError(full, 'rate-limited', 'ibkr', { retryAfterMs: IBKR_RATE_LIMIT_MS });
   }
-  if (code === '1010' || code === '1012') {
+  const rejection = FLEX_CREDENTIAL_REJECTIONS[code];
+  if (rejection) {
     // No window: time does not fix a bad token. It needs the user, and
     // `syncBlockedUntil` would only postpone telling them.
-    return new ProviderError(full, 'auth-failed', 'ibkr');
+    return new ProviderError(`${rejection} — ${full}`, 'auth-failed', 'ibkr');
   }
   return new ProviderError(full, 'unrecoverable', 'ibkr');
 }
@@ -1002,7 +1027,7 @@ export class IbkrProvider
    *
    * It still has to be right for the day that flag flips, and for anything
    * that reaches a validator through the registry. Only IBKR's documented
-   * bad-token codes (1010, 1012) are an answer about the credential; a
+   * credential codes (1010–1015) are an answer about the credential; a
    * lockout, a throughput limit, a report IBKR has not finished generating
    * and a network failure all leave the token's validity unknown, and
    * `credentialRejection` re-throws them rather than blaming it (SC-445).

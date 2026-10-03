@@ -152,6 +152,25 @@ describe('describePendingReview — wallet-import', () => {
       describePendingReview('wallet-import', { chainsDetected: 1, candidateCount: 3 })
     ).toEqual({ code: 'walletCandidates', walletLabel: undefined, candidates: 3, chains: 1 });
   });
+
+  test('carries how many chains failed to answer (SC-1519)', () => {
+    expect(
+      describePendingReview('wallet-import', {
+        chainsDetected: 1,
+        candidateCount: 0,
+        errors: [
+          { chain: 'ethereum', error: 'x' },
+          { chain: 'base', error: 'y' },
+        ],
+      })
+    ).toEqual({
+      code: 'walletCandidates',
+      walletLabel: undefined,
+      candidates: 0,
+      chains: 1,
+      unreadChains: 2,
+    });
+  });
 });
 
 describe('describePendingReview — what it returns is on the wire contract', () => {

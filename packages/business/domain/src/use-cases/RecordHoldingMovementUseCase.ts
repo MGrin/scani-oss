@@ -10,6 +10,7 @@ import type {
 import Decimal from 'decimal.js';
 import { and, eq } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
+import { movedBalance } from '../lib/balances/moved-balance';
 import { DeclaredTransferService } from '../services/holdings/DeclaredTransferService';
 import { manualEditFlowLeg } from '../services/holdings/ManualBalanceEditService';
 import { LinkTransferPairsUseCase } from './LinkTransferPairsUseCase';
@@ -151,7 +152,7 @@ export class RecordHoldingMovementUseCase {
 
       if (input.direction === 'outflow') return this.result(after, null, null);
 
-      const destination = await this.destinationHolding(input, source, userId, tx);
+      const destination = await this.destinationHolding(input, source, occurredAt, userId, tx);
       if (destination.id === source.id) throw new MovementSameHoldingError(source.id);
 
       // What ARRIVED. Computed from this use case's own input rather than read
@@ -224,7 +225,7 @@ export class RecordHoldingMovementUseCase {
     return await this.updateHolding.execute(
       holding.id,
       {
-        balance: new Decimal(holding.balance).add(delta).toString(),
+        balance: movedBalance(holding.balance, delta),
         editCause: 'flow',
         editOccurredAt: occurredAt,
         editedAt,
@@ -258,6 +259,7 @@ export class RecordHoldingMovementUseCase {
   private async destinationHolding(
     input: Extract<RecordHoldingMovementInput, { direction: 'transfer' }>,
     source: { id: string; tokenId: string },
+    occurredAt: Date,
     userId: string,
     tx: DatabaseTransaction
   ): Promise<{ id: string; balance: string }> {
@@ -268,6 +270,7 @@ export class RecordHoldingMovementUseCase {
       },
       source,
       userId,
+      occurredAt,
       tx
     );
     if (!destination) {

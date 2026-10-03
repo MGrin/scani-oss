@@ -80,7 +80,11 @@ export function TransferReviewList({ items, query }: TransferReviewListProps) {
     defaultSort: { field: 'occurred', direction: 'desc' },
     renderRow: (item) => ({
       label: transferAmountLabel(item),
-      sublabel: `${pendingLocation(item)} · ${candidateHint(t, item)}`,
+      // The payee, when the importer recorded one: two bank debits of 4.50
+      // were otherwise told apart only by their dates (SC-1519).
+      sublabel: [item.counterparty, pendingLocation(item), candidateHint(t, item)]
+        .filter(Boolean)
+        .join(' · '),
       value: item.marketValueInBase ? (
         <Numeric value={Number(item.marketValueInBase)} currency={item.baseCurrencyCode} />
       ) : null,
@@ -102,6 +106,11 @@ export function TransferReviewList({ items, query }: TransferReviewListProps) {
           // the From column is hidden, so it is on screen once at every width.
           <span className="flex min-w-0 flex-col">
             <span className="truncate text-label">{transferAmountLabel(item)}</span>
+            {item.counterparty ? (
+              <span className="truncate text-caption text-muted-foreground">
+                {item.counterparty}
+              </span>
+            ) : null}
             <span className="truncate text-caption text-muted-foreground xl:hidden">
               {pendingLocation(item)}
             </span>

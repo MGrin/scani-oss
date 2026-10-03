@@ -11,7 +11,7 @@ traditional assets. One database, one ledger, one dashboard across:
 - **Exchanges** — Binance, Kraken, Bybit, OKX, Coinbase, KuCoin, Gate.io,
   HTX (Huobi), Bitstamp, Bitget, Gemini, MEXC.
 - **Brokerages & banks** — Interactive Brokers (via Flex Web Service), Wise.
-- **On-chain wallets** — Ethereum and every EVM chain Etherscan V2 supports
+- **On-chain wallets** — Ethereum and the other EVM chains Scani reads through Etherscan V2
   (Polygon, Arbitrum, Optimism, Base, …), Solana (via Helius), Bitcoin, Tron,
   TON, plus ENS resolution.
 - **Pricing** — CoinGecko, Finnhub, DeFiLlama, Frankfurter (FX), Yahoo

@@ -14,6 +14,7 @@ import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
 
 const ListInput = z.object({
+  holdingId: z.string().uuid().optional(),
   accountId: z.string().uuid().optional(),
   tokenId: z.string().uuid().optional(),
   from: z.coerce.date().optional(),
@@ -30,6 +31,7 @@ export const transactionsRouter = router({
     const repo = Container.get(HoldingTransactionRepository);
     const rows = await repo.findByRange({
       userId: dbUser.id,
+      holdingId: input.holdingId,
       accountId: input.accountId,
       tokenId: input.tokenId,
       from: input.from,

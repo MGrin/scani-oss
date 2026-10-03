@@ -55,7 +55,7 @@ alone would leave four other settings wrong.
 
 | Variable | Provider | What it unlocks |
 |---|---|---|
-| `ETHERSCAN_API_KEY` | [Etherscan V2](https://etherscan.io/apis) | EVM wallet balances + transactions for **every** EVM chain V2 supports — Ethereum, Polygon, Arbitrum, Optimism, Base, BNB, etc. One key covers all of them. |
+| `ETHERSCAN_API_KEY` | [Etherscan V2](https://etherscan.io/apis) | EVM wallet balances + transactions for the EVM chains Scani reads — Ethereum, Polygon, Arbitrum, Optimism, Base, BNB, etc. One key covers all of them. |
 | `HELIUS_API_KEY` | [Helius](https://www.helius.dev/) | Solana balances and SPL token transactions. |
 
 Bitcoin, Tron, TON, and ENS resolution use public RPCs without

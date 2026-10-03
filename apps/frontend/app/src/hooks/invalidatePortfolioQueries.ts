@@ -28,7 +28,7 @@ type TrpcUtils = ReturnType<typeof trpc.useUtils>;
  * -----------------------
  * - `'active'` (default): only refetch queries currently visible to the user.
  *   This is the right default for same-page mutations — we don't need to
- *   eagerly refetch pages the user can't see. Each of the six routers covers
+ *   eagerly refetch pages the user can't see. Each of these routers covers
  *   many queries; with `'all'` a single mutation can fan out into a dozen
  *   refetches, which was making dialogs feel sluggish because they blocked
  *   on the full invalidation before closing.
@@ -58,6 +58,10 @@ export async function invalidatePortfolioQueries(
     utils.dashboard.invalidate(undefined, { refetchType }),
     utils.vaults.invalidate(undefined, { refetchType }),
     utils.groups.invalidate(undefined, { refetchType }),
+    // The holding peek's activity list (SC-1527): a recorded movement or a
+    // balance edit writes ledger rows, and without this the peek kept its
+    // cached list until a reload.
+    utils.transactions.invalidate(undefined, { refetchType }),
   ]);
 }
 

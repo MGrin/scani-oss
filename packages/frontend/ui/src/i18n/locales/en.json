@@ -248,7 +248,10 @@
     },
     "amountInput": {
       "readAsWhole": "Read as {{amount}} — this field takes whole numbers only.",
-      "readAsDecimal": "Read as {{amount}} — a comma and a full stop both mean a decimal point here. Delete the separator if you meant a thousand."
+      "readAsDecimal": "Read as {{amount}} — a comma and a full stop both mean a decimal point here. Delete the separator if you meant a thousand.",
+      "exponent": "Scientific notation like 1e5 isn't read here — type the number in full, such as 100000.",
+      "tooLarge": "That is more than {{max}} digits before the decimal point, which no balance has — check the amount.",
+      "truncated": "Read as {{amount}} — this field keeps no more decimals than that."
     },
     "accountPicker": {
       "loading": "Loading your accounts…",

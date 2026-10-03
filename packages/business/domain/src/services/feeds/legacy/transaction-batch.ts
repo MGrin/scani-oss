@@ -145,6 +145,12 @@ export function legacyTransactionBatch(input: {
       cacheObservation: null,
       derivesTradeLegs: true,
       holdingFailure: 'skip-entry',
+      absence: null,
+      clearsAbsenceTally: false,
+      createdCheckpointMeta: null,
+      unhideOnNonZero: false,
+      unchangedCheckpoint: 'append',
+      zeroOpensHolding: true,
     },
     notices: [],
   };

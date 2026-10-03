@@ -29,6 +29,7 @@
  */
 
 import type { CostBasisMethodDto } from '@scani/shared';
+import type { HoldingKind } from '../engine/types';
 
 export const DEMO_USER_EMAIL = 'ivy.calder@demo.scani.xyz';
 export const DEMO_USER_NAME = 'Ivy Calder';
@@ -360,6 +361,12 @@ export interface HoldingSpec {
   readonly accountKey: string;
   readonly symbol: string;
   readonly source: 'manual' | 'blockchain' | 'exchange';
+  /**
+   * What the foundation classifier derives from the rows the dataset writes for
+   * this holding, which `tests/demo/dataset.test.ts` holds it to. A `manual`
+   * row a statement or an exchange feeds is a feed all the same.
+   */
+  readonly kind: HoldingKind;
   readonly arrival: 'unattributed' | 'auto_discovered' | 'user_confirmed';
   readonly label?: string;
 }
@@ -370,6 +377,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'wise-eur',
     symbol: 'EUR',
     source: 'manual',
+    kind: 'feed',
     arrival: 'user_confirmed',
   },
   {
@@ -377,6 +385,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'wise-gbp',
     symbol: 'GBP',
     source: 'manual',
+    kind: 'feed',
     arrival: 'user_confirmed',
   },
   {
@@ -384,6 +393,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'revolut-savings',
     symbol: 'GBP',
     source: 'manual',
+    kind: 'feed',
     arrival: 'user_confirmed',
     label: 'Corporation tax',
   },
@@ -392,6 +402,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'ibkr',
     symbol: 'USD',
     source: 'manual',
+    kind: 'snapshot',
     arrival: 'user_confirmed',
   },
   {
@@ -399,6 +410,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'ibkr',
     symbol: 'VOO',
     source: 'manual',
+    kind: 'snapshot',
     arrival: 'user_confirmed',
   },
   {
@@ -406,6 +418,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'ibkr',
     symbol: 'AAPL',
     source: 'manual',
+    kind: 'snapshot',
     arrival: 'user_confirmed',
   },
   {
@@ -413,6 +426,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'ibkr',
     symbol: 'MSFT',
     source: 'manual',
+    kind: 'snapshot',
     arrival: 'user_confirmed',
   },
   {
@@ -420,6 +434,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'ibkr',
     symbol: 'NVDA',
     source: 'manual',
+    kind: 'snapshot',
     arrival: 'user_confirmed',
   },
   {
@@ -427,6 +442,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'kraken',
     symbol: 'BTC',
     source: 'exchange',
+    kind: 'feed',
     arrival: 'user_confirmed',
   },
   {
@@ -434,6 +450,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'kraken',
     symbol: 'ETH',
     source: 'exchange',
+    kind: 'feed',
     arrival: 'user_confirmed',
   },
   {
@@ -441,6 +458,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'kraken',
     symbol: 'USDC',
     source: 'exchange',
+    kind: 'feed',
     arrival: 'user_confirmed',
   },
   {
@@ -448,6 +466,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'eth-wallet',
     symbol: 'ETH',
     source: 'blockchain',
+    kind: 'feed',
     arrival: 'user_confirmed',
   },
   {
@@ -455,6 +474,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'eth-wallet',
     symbol: 'USDC',
     source: 'blockchain',
+    kind: 'feed',
     arrival: 'auto_discovered',
   },
   {
@@ -462,6 +482,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'btc-wallet',
     symbol: 'BTC',
     source: 'blockchain',
+    kind: 'feed',
     arrival: 'user_confirmed',
   },
   {
@@ -469,6 +490,7 @@ export const DEMO_HOLDINGS: readonly HoldingSpec[] = [
     accountKey: 'sol-wallet',
     symbol: 'SOL',
     source: 'blockchain',
+    kind: 'feed',
     arrival: 'user_confirmed',
   },
 ];

@@ -39,6 +39,7 @@ function classified(
     labels: { holdingId: holdingEvidence.holdingId, holding: {}, observations: [], entries: [] },
     unlabelled: { holding: false, observations: 0, entries: 0 },
     notes: {},
+    feedBeganAt: undefined,
   };
 }
 

@@ -6,6 +6,7 @@ import {
   and,
   asc,
   eq,
+  getTableColumns,
   gt,
   gte,
   inArray,
@@ -16,6 +17,7 @@ import {
   ne,
   notInArray,
   or,
+  type SQL,
   sql,
 } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
@@ -26,10 +28,10 @@ import { PERSON_AUTHORED_SOURCES } from '../lib/person-authored-sources';
 import { isSettlementLeg } from '../lib/transactions/trade-settlement';
 import { ruleDecidablePredicate } from '../lib/transfer-review-queue';
 import {
-  type LedgerMapping,
   mapLegacyEntry,
   UNDERIVABLE_KIND_ORIGINS,
 } from '../services/foundation/legacy-ledger-kinds';
+import { LABEL_BATCH_SIZE, MAPPED_ENTRY_LABELS } from './entry-labels';
 import { HoldingCoverageRepository } from './HoldingCoverageRepository';
 import { describeMergedBatch, type MergedRowSubject } from './merged-rows';
 
@@ -186,9 +188,18 @@ export interface BulkUpsertResult {
    * change is not stale (SC-1459).
    */
   earliestChangedAt: Date | null;
+  /**
+   * Events written onto a copy with no input on the holding they were placed
+   * on, because the input states them on another holding (R58), each as the
+   * input's own row there. The event is then on two holdings until A5 decides
+   * between them, and classification reads that row, not the copy (R59).
+   */
+  duplicatePlacements: string[];
 }
 
 const VALUATION_FIELDS = [
+  // Only the input arbiter can change it: a re-resolved row moves (A2 D-7).
+  'holdingId',
   'kind',
   'tokenId',
   'feeTokenId',
@@ -216,6 +227,39 @@ function changesValuation(stored: Record<string, unknown>, sent: Record<string, 
   for (const f of VALUATION_FIELDS) if ((stored[f] ?? null) !== (sent[f] ?? null)) return true;
   for (const f of VALUATION_AMOUNTS) if (!sameAmount(stored[f], sent[f])) return true;
   return false;
+}
+
+/**
+ * The oldest date a batch moves in the ledger: each row with nothing stored
+ * under its key, and both dates of one whose valuation it changes.
+ */
+function earliestChangeIn(
+  rows: readonly NewHoldingTransaction[],
+  stored: ReadonlyMap<string, HoldingTransaction>,
+  keyOf: (row: NewHoldingTransaction) => string
+): Date | null {
+  let earliest: Date | null = null;
+  const consider = (d: Date) => {
+    if (!earliest || d < earliest) earliest = d;
+  };
+  for (const row of rows) {
+    const sentAt = new Date(row.occurredAt);
+    const prior = row.externalId ? stored.get(keyOf(row)) : undefined;
+    if (!prior) {
+      consider(sentAt);
+      continue;
+    }
+    if (
+      !changesValuation(
+        prior as unknown as Record<string, unknown>,
+        row as unknown as Record<string, unknown>
+      )
+    )
+      continue;
+    consider(sentAt);
+    consider(new Date(prior.occurredAt));
+  }
+  return earliest;
 }
 
 /**
@@ -249,20 +293,78 @@ const REIMPORTED = {
   description: sql`EXCLUDED.description`,
 };
 
-/**
- * Whether a re-import moves any of `REIMPORTED`. A replay of rows already held
- * as sent bumps no `updated_at` (A2 D-7), so a re-import that changed nothing
- * reads as one.
- */
-const REIMPORT_CHANGES = sql`(${sql.join(
-  (Object.keys(REIMPORTED) as Array<keyof typeof REIMPORTED>).map(
-    (key) => schema.holdingTransactions[key]
-  ),
-  sql`, `
-)}) IS DISTINCT FROM (${sql.join(Object.values(REIMPORTED), sql`, `)})`;
+type Overwrites = Partial<Record<keyof NewHoldingTransaction, SQL>>;
 
-/** Rows per read and per `UPDATE … FROM (VALUES …)` statement in `relabelEntries`. */
-const RELABEL_BATCH_SIZE = 500;
+/**
+ * Whether a re-import moves any column of its SET. A replay of rows already
+ * held as sent bumps no `updated_at` (A2 D-7), so a re-import that changed
+ * nothing reads as one.
+ */
+function reimportChanges(set: Overwrites): SQL {
+  const columns = Object.keys(set) as Array<keyof NewHoldingTransaction>;
+  return sql`(${sql.join(
+    columns.map((key) => schema.holdingTransactions[key]),
+    sql`, `
+  )}) IS DISTINCT FROM (${sql.join(
+    columns.map((key) => set[key] as SQL),
+    sql`, `
+  )})`;
+}
+
+type KeyedRow = Pick<NewHoldingTransaction, 'holdingId' | 'source' | 'externalId' | 'inputId'>;
+
+/**
+ * Which row a written one is, and what a re-import of it overwrites.
+ *
+ * `holding-source` is `holding_tx_dedup`, the key every person and system
+ * writer still upserts on. `input` is ingest's (A2 D-7): one input states an
+ * event once, so a re-import that places it on another holding or token moves
+ * the row there instead of writing a second. `source` stays out of its SET:
+ * one input can state an event under two sources, a statement uploaded again
+ * in another format, and the row keeps the one it was first written under.
+ */
+const ARBITERS = {
+  'holding-source': {
+    target: [
+      schema.holdingTransactions.holdingId,
+      schema.holdingTransactions.source,
+      schema.holdingTransactions.externalId,
+    ],
+    set: REIMPORTED as Overwrites,
+    keyOf: (row: KeyedRow) => JSON.stringify([row.holdingId, row.source, row.externalId]),
+  },
+  input: {
+    target: [schema.holdingTransactions.inputId, schema.holdingTransactions.externalId],
+    set: {
+      ...REIMPORTED,
+      holdingId: sql`EXCLUDED.holding_id`,
+      tokenId: sql`EXCLUDED.token_id`,
+    } as Overwrites,
+    keyOf: (row: KeyedRow) => JSON.stringify([row.inputId ?? null, row.externalId]),
+  },
+};
+
+type BulkUpsertArbiter = keyof typeof ARBITERS;
+
+// postgres.js binds at most 65,534 parameters per statement, and an inserted
+// ledger row can bind one per column (SC-1528).
+const ROWS_PER_STATEMENT = Math.floor(
+  65_534 / Object.keys(getTableColumns(schema.holdingTransactions)).length
+);
+
+type ArrivalKey = Pick<NewHoldingTransaction, 'holdingId' | 'source' | 'externalId' | 'inputId'>;
+
+const heldKey = (row: ArrivalKey) =>
+  JSON.stringify(['holding', row.holdingId, row.source, row.externalId]);
+const statedKey = (row: ArrivalKey) => JSON.stringify(['input', row.inputId, row.externalId]);
+
+function inStatements<T>(rows: readonly T[]): T[][] {
+  const parts: T[][] = [];
+  for (let start = 0; start < rows.length; start += ROWS_PER_STATEMENT) {
+    parts.push(rows.slice(start, start + ROWS_PER_STATEMENT));
+  }
+  return parts;
+}
 
 // What `mapLegacyEntry` reads, and nothing more.
 const LEGACY_ENTRY_FACTS = {
@@ -275,25 +377,6 @@ const LEGACY_ENTRY_FACTS = {
   priceNative: schema.holdingTransactions.priceNative,
   priceNativeTokenId: schema.holdingTransactions.priceNativeTokenId,
 };
-
-type MappedEntry = Extract<LedgerMapping, { excluded: null }>;
-
-// Every label `relabelEntries` overwrites. `input_id` is not one: the writer states it.
-const RELABELLED_COLUMNS: readonly {
-  column: PgColumn;
-  value: (m: MappedEntry) => string | null;
-}[] = [
-  { column: schema.holdingTransactions.ledgerKind, value: (m) => m.ledgerKind },
-  { column: schema.holdingTransactions.kindSubtype, value: (m) => m.kindSubtype },
-  { column: schema.holdingTransactions.groupId, value: (m) => m.groupId },
-  { column: schema.holdingTransactions.feeOf, value: (m) => m.feeOf },
-  { column: schema.holdingTransactions.executionPrice, value: (m) => m.executionPrice },
-  {
-    column: schema.holdingTransactions.executionPriceTokenId,
-    value: (m) => m.executionPriceTokenId,
-  },
-  { column: schema.holdingTransactions.kindOrigin, value: (m) => m.kindOrigin },
-];
 
 const TRANSACTION_ROWS: MergedRowSubject = {
   row: 'transaction',
@@ -323,78 +406,249 @@ export class HoldingTransactionRepository extends BaseRepository<
   protected readonly tableName = 'holding_transactions';
   private readonly coverageRepository = Container.get(HoldingCoverageRepository);
 
-  // Idempotent bulk insert. Ingesters re-run safely because dedup unique
-  // constraint (holding_id, source, external_id) rejects duplicates.
-  // For rows without an external_id (some manual entries, screenshot
-  // extractions), callers should provide a stable synthetic external_id
-  // before passing to this method — otherwise every re-ingest creates
-  // duplicates.
-  private async earliestChangeIn(
-    rows: NewHoldingTransaction[],
+  /** The rows already stored under `rows`' keys: what an upsert of each overwrites. */
+  private async storedUnderKeys(
+    rows: readonly NewHoldingTransaction[],
+    arbiter: BulkUpsertArbiter,
     database: DatabaseTransaction
-  ): Promise<Date | null> {
-    const keyed = rows.filter((r) => r.externalId);
-    const stored = keyed.length
-      ? await database
-          .select()
-          .from(schema.holdingTransactions)
-          .where(
-            and(
-              inArray(schema.holdingTransactions.holdingId, [
-                ...new Set(keyed.map((r) => r.holdingId)),
-              ]),
-              inArray(schema.holdingTransactions.source, [...new Set(keyed.map((r) => r.source))]),
-              inArray(schema.holdingTransactions.externalId, [
-                ...new Set(keyed.map((r) => r.externalId as string)),
-              ])
-            )
-          )
-      : [];
-    const byKey = new Map(stored.map((r) => [`${r.holdingId}|${r.source}|${r.externalId}`, r]));
-    let earliest: Date | null = null;
-    const consider = (d: Date) => {
-      if (!earliest || d < earliest) earliest = d;
-    };
-    for (const row of rows) {
-      const sentAt = new Date(row.occurredAt);
-      const prior = row.externalId
-        ? byKey.get(`${row.holdingId}|${row.source}|${row.externalId}`)
-        : undefined;
-      if (!prior) {
-        consider(sentAt);
-        continue;
-      }
-      if (
-        !changesValuation(
-          prior as unknown as Record<string, unknown>,
-          row as unknown as Record<string, unknown>
-        )
-      )
-        continue;
-      consider(sentAt);
-      consider(new Date(prior.occurredAt));
+  ): Promise<Map<string, HoldingTransaction>> {
+    const t = schema.holdingTransactions;
+    const distinct = <T>(values: T[]) => [...new Set(values)];
+    const { keyOf } = ARBITERS[arbiter];
+    const found = new Map<string, HoldingTransaction>();
+    for (const keyed of inStatements(rows.filter((r) => r.externalId))) {
+      const externalIds = inArray(t.externalId, distinct(keyed.map((r) => r.externalId)));
+      const stored = await database
+        .select()
+        .from(t)
+        .where(
+          arbiter === 'input'
+            ? and(inArray(t.inputId, distinct(keyed.map((r) => r.inputId as string))), externalIds)
+            : and(
+                inArray(t.holdingId, distinct(keyed.map((r) => r.holdingId))),
+                inArray(t.source, distinct(keyed.map((r) => r.source))),
+                externalIds
+              )
+        );
+      for (const r of stored) found.set(keyOf(r), r);
     }
-    return earliest;
+    return found;
   }
 
+  /**
+   * The `heldKey` and, under the input arbiter, the `statedKey` of every row
+   * already stored under one of `rows`' keys.
+   */
+  private async keysAlreadyStored(
+    rows: readonly NewHoldingTransaction[],
+    arbiter: BulkUpsertArbiter,
+    tx: DatabaseTransaction
+  ): Promise<Set<string>> {
+    const found = new Set<string>();
+    for (const part of inStatements(rows)) {
+      const onHolding = sql.join(
+        part.map((r) => sql`(${r.holdingId}::uuid, ${r.source}::text, ${r.externalId}::text)`),
+        sql`, `
+      );
+      const held = (await tx.execute(sql`
+        SELECT t.holding_id, t.source, t.external_id
+        FROM holding_transactions t
+        JOIN (VALUES ${onHolding}) AS v (holding_id, source, external_id)
+          ON t.holding_id = v.holding_id AND t.source = v.source AND t.external_id = v.external_id
+      `)) as unknown as Array<{ holding_id: string; source: string; external_id: string }>;
+      for (const r of held) {
+        found.add(
+          heldKey({ holdingId: r.holding_id, source: r.source, externalId: r.external_id })
+        );
+      }
+      const withInput = part.filter((r) => r.inputId);
+      if (arbiter !== 'input' || withInput.length === 0) continue;
+      const onInput = sql.join(
+        withInput.map((r) => sql`(${r.inputId}::uuid, ${r.externalId}::text)`),
+        sql`, `
+      );
+      const stated = (await tx.execute(sql`
+        SELECT t.input_id, t.external_id
+        FROM holding_transactions t
+        JOIN (VALUES ${onInput}) AS v (input_id, external_id)
+          ON t.input_id = v.input_id AND t.external_id = v.external_id
+      `)) as unknown as Array<{ input_id: string; external_id: string }>;
+      for (const r of stated) {
+        found.add(
+          statedKey({ holdingId: '', source: '', inputId: r.input_id, externalId: r.external_id })
+        );
+      }
+    }
+    return found;
+  }
+
+  /**
+   * The holdings among `rows`' that hold an answer an arrival could take over:
+   * a person's gap balance edit or a transfer review's row. Most hold none, and
+   * a row on one of those needs no search for its candidate.
+   */
+  private async holdingsWithAnswers(
+    rows: readonly NewHoldingTransaction[],
+    tx: DatabaseTransaction
+  ): Promise<Set<string>> {
+    const t = schema.holdingTransactions;
+    const found = new Set<string>();
+    for (const part of inStatements([...new Set(rows.map((row) => row.holdingId))])) {
+      const holding = await tx
+        .selectDistinct({ id: t.holdingId })
+        .from(t)
+        .where(
+          and(
+            inArray(t.holdingId, part),
+            or(
+              eq(t.source, 'transfer-review'),
+              and(
+                eq(t.source, 'user-balance-edit'),
+                sql`${t.sourceMetadata}->>'gapObservationId' IS NOT NULL`
+              )
+            )
+          )
+        );
+      for (const { id } of holding) found.add(id);
+    }
+    return found;
+  }
+
+  /**
+   * Stamps the batch's input on the account's feed rows that carry none
+   * (ruling R55): one written before inputs existed, or taken over by a writer
+   * that stamped none. The input arbiter meets a re-sent event only on
+   * (input, external_id), so without the stamp the re-send would insert beside
+   * that row and `holding_tx_dedup` would refuse it.
+   *
+   * A row answers a batch row by (user, account, source, external_id). One
+   * event takes one stamp, on its copy in the holding the batch writes into
+   * when there is one, else on its oldest copy, which the upsert then moves;
+   * and none where the input already states the event, since the key would
+   * refuse a second. Only `input_id` is written: the upsert after it decides
+   * whether the row changed, so `updated_at` and the labels move only if it did.
+   */
+  private async stampInputOnFeedRows(
+    rows: readonly NewHoldingTransaction[],
+    tx: DatabaseTransaction
+  ): Promise<void> {
+    for (const part of inStatements(rows)) {
+      await this.stampInputPart(part, tx);
+    }
+  }
+
+  private async stampInputPart(
+    rows: readonly NewHoldingTransaction[],
+    tx: DatabaseTransaction
+  ): Promise<void> {
+    const values = sql.join(
+      rows.map(
+        (r) =>
+          sql`(${r.inputId}::uuid, ${r.userId}::uuid, ${r.holdingId}::uuid, ${r.source}::text, ${r.externalId}::text)`
+      ),
+      sql`, `
+    );
+    await tx.execute(sql`
+      UPDATE holding_transactions t
+      SET input_id = c.input_id
+      FROM (
+        SELECT DISTINCT ON (v.input_id, v.external_id) o.id, v.input_id
+        FROM (VALUES ${values}) AS v (input_id, user_id, holding_id, source, external_id)
+        JOIN holdings vh ON vh.id = v.holding_id
+        JOIN holdings oh ON oh.account_id = vh.account_id
+        JOIN holding_transactions o
+          ON o.holding_id = oh.id AND o.source = v.source AND o.external_id = v.external_id
+        WHERE o.input_id IS NULL
+          AND o.user_id = v.user_id
+          AND NOT EXISTS (
+            SELECT 1 FROM holding_transactions x
+            WHERE x.input_id = v.input_id AND x.external_id = v.external_id
+          )
+        ORDER BY v.input_id, v.external_id, (o.holding_id = v.holding_id) DESC, o.created_at, o.id
+      ) c
+      WHERE t.id = c.id
+    `);
+  }
+
+  /**
+   * The batch rows whose move `holding_tx_dedup` would refuse (ruling R58):
+   * the input states the event on another holding, and the holding the batch
+   * places it on holds a copy with no input. Each is returned with the
+   * input's row and the source of that copy, which is the source the input's
+   * row keeps and so the key the move collides on. Run after the stamp, which
+   * settles which row is the input's.
+   */
+  private async placedOntoCopies(
+    rows: readonly NewHoldingTransaction[],
+    tx: DatabaseTransaction
+  ): Promise<Map<NewHoldingTransaction, { source: string; inputRowId: string }>> {
+    const placed = new Map<NewHoldingTransaction, { source: string; inputRowId: string }>();
+    for (const part of inStatements(rows)) {
+      for (const [row, copy] of await this.placedOntoCopiesIn(part, tx)) placed.set(row, copy);
+    }
+    return placed;
+  }
+
+  private async placedOntoCopiesIn(
+    rows: readonly NewHoldingTransaction[],
+    tx: DatabaseTransaction
+  ): Promise<Map<NewHoldingTransaction, { source: string; inputRowId: string }>> {
+    const values = sql.join(
+      rows.map(
+        (r, i) => sql`(${i}::int, ${r.inputId}::uuid, ${r.holdingId}::uuid, ${r.externalId}::text)`
+      ),
+      sql`, `
+    );
+    const found = (await tx.execute(sql`
+      SELECT v.i, own.source, own.id
+      FROM (VALUES ${values}) AS v (i, input_id, holding_id, external_id)
+      JOIN holding_transactions own
+        ON own.input_id = v.input_id AND own.external_id = v.external_id
+      JOIN holding_transactions copied
+        ON copied.holding_id = v.holding_id
+        AND copied.source = own.source
+        AND copied.external_id = v.external_id
+      WHERE copied.input_id IS NULL
+    `)) as unknown as Array<{ i: number; source: string; id: string }>;
+    return new Map(found.map(({ i, source, id }) => [rows[i]!, { source, inputRowId: id }]));
+  }
+
+  /**
+   * Writes `rows`, re-imports included, idempotently: a row the arbiter's key
+   * already holds is overwritten with the re-import's derived fields, never
+   * inserted twice (see `ARBITERS`). Every row needs a stable `external_id`;
+   * a source without one must synthesize it, or each re-run duplicates.
+   * Under the input arbiter every row carries its input.
+   */
   async bulkUpsert(
     rows: NewHoldingTransaction[],
-    transaction?: DatabaseTransaction
+    transaction?: DatabaseTransaction,
+    options: { arbiter?: BulkUpsertArbiter } = {}
   ): Promise<BulkUpsertResult> {
+    const arbiterName = options.arbiter ?? 'holding-source';
+    const arbiter = ARBITERS[arbiterName];
     try {
-      if (rows.length === 0) return { rows: [], merges: [], earliestChangedAt: null };
-      if (!transaction) return this.getDb().transaction((tx) => this.bulkUpsert(rows, tx));
+      if (rows.length === 0) {
+        return { rows: [], merges: [], earliestChangedAt: null, duplicatePlacements: [] };
+      }
+      if (!transaction) {
+        return this.getDb().transaction((tx) => this.bulkUpsert(rows, tx, options));
+      }
       const database = transaction;
+      if (arbiterName === 'input' && rows.some((row) => !row.inputId)) {
+        throw new Error('bulkUpsert: the input arbiter needs every row to carry its input_id');
+      }
 
-      // Dedupe by the conflict target `(holding_id, source, external_id)`
-      // before sending to Postgres. ON CONFLICT DO UPDATE rejects a
-      // single statement with two rows that share the conflict key
-      // ("cannot affect row a second time", SQLSTATE 21000) — and EVM
-      // providers occasionally emit two events sharing the same
-      // (hash, contract): a self-transfer where the wallet is both
-      // sender and receiver, or a token-transfer plus a internal-tx
-      // shadow row. The last occurrence wins, matching the upstream
-      // ordering semantics that "later events overwrite earlier".
+      // Dedupe by the arbiter's conflict target before sending to Postgres.
+      // ON CONFLICT DO UPDATE rejects a single statement with two rows that
+      // share the conflict key ("cannot affect row a second time", SQLSTATE
+      // 21000) — and EVM providers occasionally emit two events sharing the
+      // same (hash, contract): a self-transfer where the wallet is both
+      // sender and receiver, or a token-transfer plus a internal-tx shadow
+      // row. The last occurrence wins, matching the upstream ordering
+      // semantics that "later events overwrite earlier". Under the input
+      // arbiter that includes one external id sent for two holdings, which
+      // the key cannot hold twice.
       //
       // What each key cost is carried alongside it, because that count is
       // the only evidence a leg ever existed. A source whose `externalId`
@@ -405,7 +659,7 @@ export class HoldingTransactionRepository extends BaseRepository<
       // batch is legitimate, so this is an audit trail, not a refusal.
       const deduped = new Map<string, { row: NewHoldingTransaction; dropped: number }>();
       for (const row of rows) {
-        const key = `${row.holdingId}|${row.source}|${row.externalId}`;
+        const key = arbiter.keyOf(row);
         const seen = deduped.get(key);
         deduped.set(key, { row, dropped: seen ? seen.dropped + 1 : 0 });
       }
@@ -448,26 +702,35 @@ export class HoldingTransactionRepository extends BaseRepository<
         )
         .orderBy(schema.holdings.id)
         .for('update');
-      for (const row of inputRows) {
-        if (!row.externalId || row.source.startsWith('user-') || row.source === 'transfer-review')
+      if (arbiterName === 'input') await this.stampInputOnFeedRows(inputRows, database);
+      const arrivals = inputRows.filter(
+        (row) =>
+          row.externalId &&
+          !row.source.startsWith('user-') &&
+          row.source !== 'transfer-review' &&
+          // A settlement leg is derived, not reported, so an equal amount is no
+          // evidence it is the money a person's answer described. Retiring that
+          // answer is the person's call, through the settlement review (SC-858,
+          // SC-1453).
+          !isSettlementLeg(row)
+      );
+      // Read once per statement rather than once per row: a 7,182-row history
+      // spent most of its write here, two round trips a row (SC-1528). A
+      // takeover below adds its row's keys, so each row still sees what the
+      // rows before it wrote.
+      const stored = await this.keysAlreadyStored(arrivals, arbiterName, database);
+      const answered = await this.holdingsWithAnswers(arrivals, database);
+      for (const row of arrivals) {
+        // A row the upsert will update is no arrival to take over: one on
+        // this holding's key, or, under the input arbiter, one its input
+        // already states anywhere.
+        if (
+          stored.has(heldKey(row)) ||
+          (arbiterName === 'input' && row.inputId && stored.has(statedKey(row)))
+        ) {
           continue;
-        // A settlement leg is derived, not reported, so an equal amount is no
-        // evidence it is the money a person's answer described. Retiring that
-        // answer is the person's call, through the settlement review (SC-858,
-        // SC-1453).
-        if (isSettlementLeg(row)) continue;
-        const known = await database
-          .select({ id: schema.holdingTransactions.id })
-          .from(schema.holdingTransactions)
-          .where(
-            and(
-              eq(schema.holdingTransactions.holdingId, row.holdingId),
-              eq(schema.holdingTransactions.source, row.source),
-              eq(schema.holdingTransactions.externalId, row.externalId)
-            )
-          )
-          .limit(1);
-        if (known.length) continue;
+        }
+        if (!answered.has(row.holdingId)) continue;
         const kinds = ['deposit', 'transfer_in'].includes(row.kind)
           ? ['deposit', 'transfer_in']
           : ['withdraw', 'transfer_out'].includes(row.kind)
@@ -500,32 +763,70 @@ export class HoldingTransactionRepository extends BaseRepository<
             fallsInArrivalWindow(candidate, other.occurredAt)
         );
         if (competing.length !== 1) continue;
+        // The row becomes the feed's, so it carries the feed's input (R54).
         const takenOver = await database
           .update(schema.holdingTransactions)
-          .set({ source: row.source, externalId: row.externalId, updatedAt: sql`now()` })
+          .set({
+            source: row.source,
+            externalId: row.externalId,
+            ...(row.inputId ? { inputId: row.inputId } : {}),
+            updatedAt: sql`now()`,
+          })
           .where(eq(schema.holdingTransactions.id, candidate.id))
           .returning({ id: schema.holdingTransactions.id });
         for (const { id } of takenOver) relabelLater(row.userId, id);
+        stored.add(heldKey(row));
+        if (row.inputId) stored.add(statedKey(row));
       }
 
-      const earliestChangedAt = await this.earliestChangeIn(inputRows, database);
+      // R58: where the input's row cannot move onto the holding the batch
+      // places it on, the run writes what the (holding, source, external_id)
+      // arbiter wrote, onto the copy already there, and leaves the input's row
+      // where it is. Which of the two is the event is A5's figure decision.
+      const ontoCopies =
+        arbiterName === 'input'
+          ? await this.placedOntoCopies(inputRows, database)
+          : new Map<NewHoldingTransaction, { source: string; inputRowId: string }>();
+      const writes = [
+        { arbiter: arbiterName, rows: inputRows.filter((row) => !ontoCopies.has(row)) },
+        {
+          arbiter: 'holding-source' as const,
+          rows: [...ontoCopies].map(([row, { source }]) => ({ ...row, source })),
+        },
+      ].filter((write) => write.rows.length > 0);
 
-      const results = await database
-        .insert(schema.holdingTransactions)
-        // biome-ignore lint/suspicious/noExplicitAny: Drizzle array insert type
-        .values(inputRows as any[])
-        .onConflictDoUpdate({
-          target: [
-            schema.holdingTransactions.holdingId,
-            schema.holdingTransactions.source,
-            schema.holdingTransactions.externalId,
-          ],
-          set: {
-            ...REIMPORTED,
-            updatedAt: sql`CASE WHEN ${REIMPORT_CHANGES} THEN now() ELSE ${schema.holdingTransactions.updatedAt} END`,
-          },
-        })
-        .returning();
+      let earliestChangedAt: Date | null = null;
+      const storedRows: HoldingTransaction[] = [];
+      for (const write of writes) {
+        const stored = await this.storedUnderKeys(write.rows, write.arbiter, database);
+        const earliest = earliestChangeIn(write.rows, stored, ARBITERS[write.arbiter].keyOf);
+        if (earliest && (!earliestChangedAt || earliest < earliestChangedAt)) {
+          earliestChangedAt = earliest;
+        }
+        storedRows.push(...stored.values());
+      }
+
+      const results: HoldingTransaction[] = [];
+      // One transaction, the holdings already locked above: a batch too large
+      // for one statement is written in parts, and lands or fails whole.
+      for (const write of writes) {
+        const { target, set } = ARBITERS[write.arbiter];
+        for (const part of inStatements(write.rows)) {
+          results.push(
+            ...(await database
+              .insert(schema.holdingTransactions)
+              .values(part)
+              .onConflictDoUpdate({
+                target,
+                set: {
+                  ...set,
+                  updatedAt: sql`CASE WHEN ${reimportChanges(set)} THEN now() ELSE ${schema.holdingTransactions.updatedAt} END`,
+                },
+              })
+              .returning())
+          );
+        }
+      }
 
       // A re-import can rewrite a row's kind or swap group, and a takeover its
       // source, so every row written here is re-labelled from what it now holds.
@@ -540,14 +841,19 @@ export class HoldingTransactionRepository extends BaseRepository<
       // to write no coverage at all (SC-307); the seventh reported the
       // whole run's bounds to every holding it touched (SC-308). Doing
       // it at the write is what makes the summary unable to drift from
-      // what it summarizes.
+      // what it summarizes. A holding a row moved out of is one of them.
       await this.coverageRepository.syncTxBoundsFromLedger(
-        inputRows.map((r) => r.holdingId),
+        [...inputRows, ...storedRows].map((r) => r.holdingId),
         transaction
       );
 
       this.logger.debug({ count: results.length }, 'Bulk upserted holding transactions');
-      return { rows: results as HoldingTransaction[], merges, earliestChangedAt };
+      return {
+        rows: results,
+        merges,
+        earliestChangedAt,
+        duplicatePlacements: [...ontoCopies.values()].map((copy) => copy.inputRowId),
+      };
     } catch (error) {
       // postgres-js error shape varies: sometimes plain Error with
       // pg fields siblings, sometimes `cause` wraps the actual DB
@@ -653,6 +959,57 @@ export class HoldingTransactionRepository extends BaseRepository<
   }
 
   /**
+   * Takes every one of `userId`'s rows out of transfer group `groupId` and
+   * re-labels them, since D-5 maps an unpaired leg differently from a paired
+   * one.
+   */
+  async releaseTransferGroup(
+    userId: string,
+    groupId: string,
+    tx: DatabaseTransaction
+  ): Promise<void> {
+    const t = schema.holdingTransactions;
+    const released = await tx
+      .update(t)
+      .set({ transferGroupId: null, updatedAt: sql`now()` })
+      .where(and(eq(t.userId, userId), eq(t.transferGroupId, groupId)))
+      .returning({ id: t.id });
+    await this.relabelEntries(
+      userId,
+      released.map((r) => r.id),
+      tx
+    );
+  }
+
+  /**
+   * The user's ledger rows, each locked until the transaction ends. NO KEY
+   * UPDATE is the lock a label's UPDATE takes: it is how a caller that did not
+   * write the rows holds them for `relabelEntries`.
+   *
+   * They are taken in ascending id order, which keeps two callers of this
+   * method from deadlocking on each other and does nothing more: no other
+   * ledger writer takes its rows in id order, so one that takes two of these
+   * rows in another order can still deadlock with this, and Postgres aborts
+   * one of the two.
+   */
+  async lockInIdOrder(
+    userId: string,
+    rowIds: readonly string[],
+    tx: DatabaseTransaction
+  ): Promise<void> {
+    const t = schema.holdingTransactions;
+    const ids = [...new Set(rowIds)].sort();
+    for (let start = 0; start < ids.length; start += LABEL_BATCH_SIZE) {
+      await tx
+        .select({ id: t.id })
+        .from(t)
+        .where(and(eq(t.userId, userId), inArray(t.id, ids.slice(start, start + LABEL_BATCH_SIZE))))
+        .orderBy(asc(t.id))
+        .for('no key update');
+    }
+  }
+
+  /**
    * Overwrites every label with `mapLegacyEntry` of the row as stored, so a
    * label follows its row when a re-import or a linker changes the facts it
    * was mapped from (A2 D-5). An excluded row has every label cleared.
@@ -661,6 +1018,11 @@ export class HoldingTransactionRepository extends BaseRepository<
    * left alone: today's legacy facts cannot re-derive that label. Only
    * `userId`'s rows are written, whatever ids are passed, and `input_id` never
    * is. Returns the rows whose labels changed.
+   *
+   * The facts are read without a lock, so the caller must already hold every
+   * row it passes, by having written it in `tx` or through `lockInIdOrder`;
+   * otherwise a write committed between the read and this UPDATE is labelled
+   * from the facts it replaced.
    */
   async relabelEntries(
     userId: string,
@@ -674,7 +1036,7 @@ export class HoldingTransactionRepository extends BaseRepository<
       or(isNull(t.kindOrigin), notInArray(t.kindOrigin, [...UNDERIVABLE_KIND_ORIGINS]))
     );
     const name = (c: PgColumn) => sql.identifier(c.name);
-    const columns = RELABELLED_COLUMNS.map((c) => c.column);
+    const columns = MAPPED_ENTRY_LABELS.map((c) => c.column);
     const set = sql.join(
       columns.map((c) => sql`${name(c)} = v.${name(c)}`),
       sql`, `
@@ -687,17 +1049,17 @@ export class HoldingTransactionRepository extends BaseRepository<
 
     const ids = [...new Set(rowIds)];
     let changed = 0;
-    for (let start = 0; start < ids.length; start += RELABEL_BATCH_SIZE) {
+    for (let start = 0; start < ids.length; start += LABEL_BATCH_SIZE) {
       const rows = await tx
         .select(LEGACY_ENTRY_FACTS)
         .from(t)
-        .where(and(inArray(t.id, ids.slice(start, start + RELABEL_BATCH_SIZE)), relabellable));
+        .where(and(inArray(t.id, ids.slice(start, start + LABEL_BATCH_SIZE)), relabellable));
       if (rows.length === 0) continue;
       const values = rows.map((row) => {
         const mapping = mapLegacyEntry(row);
-        const cells = RELABELLED_COLUMNS.map(
-          ({ column, value }) =>
-            sql`${mapping.excluded === null ? value(mapping) : null}::${sql.raw(column.getSQLType())}`
+        const cells = MAPPED_ENTRY_LABELS.map(
+          ({ key, column }) =>
+            sql`${mapping.excluded === null ? mapping[key] : null}::${sql.raw(column.getSQLType())}`
         );
         return sql`(${sql.join([sql`${row.id}::uuid`, ...cells], sql`, `)})`;
       });
@@ -717,7 +1079,9 @@ export class HoldingTransactionRepository extends BaseRepository<
    * Of `rowIds`, the user's rows classification may still decide (A2 D-10):
    * `ruleDecidablePredicate` (unpaired, unanswered, non-zero, not taken back
    * from a rule), with a ledger kind that names no destination, and no
-   * decision and no rule, mirror or Jev label on them already.
+   * decision and no rule, mirror or Jev label on them already. Only a row
+   * that carries an input: a copy with none (R58) is never decided, so it can
+   * neither get a mirror leg nor re-point the input row's (R59).
    */
   async findUnclassified(
     userId: string,
@@ -727,13 +1091,14 @@ export class HoldingTransactionRepository extends BaseRepository<
     const t = schema.holdingTransactions;
     const ids = [...new Set(rowIds)];
     const found: HoldingTransaction[] = [];
-    for (let start = 0; start < ids.length; start += RELABEL_BATCH_SIZE) {
+    for (let start = 0; start < ids.length; start += LABEL_BATCH_SIZE) {
       const rows = await tx
         .select()
         .from(t)
         .where(
           and(
-            inArray(t.id, ids.slice(start, start + RELABEL_BATCH_SIZE)),
+            inArray(t.id, ids.slice(start, start + LABEL_BATCH_SIZE)),
+            isNotNull(t.inputId),
             ruleDecidablePredicate(userId),
             isNull(t.decisionId),
             or(isNull(t.kindOrigin), notInArray(t.kindOrigin, [...UNDERIVABLE_KIND_ORIGINS])),

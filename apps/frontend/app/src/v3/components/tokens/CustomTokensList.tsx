@@ -9,6 +9,7 @@ import type { TFunction } from 'i18next';
 import { Coins, Pencil, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { amountDecimals } from '../../lib/holdings';
+import { priceSourceLabel } from '../../lib/price-source';
 import { formatRelative } from '../../lib/relative-time';
 import { V3_ROUTES } from '../../lib/routes';
 
@@ -50,9 +51,7 @@ export interface CustomTokenRow {
 export function priceOrigin(t: TFunction, token: CustomTokenRow): string {
   if (!token.latestPriceAt) return t('v3.tokens.custom.nothingRecorded');
   const source = token.latestPriceSource;
-  if (!source) return t('v3.tokens.custom.unknownSource');
-  // The raw source is a provider key — an identifier, never translated.
-  return source.startsWith('manual') ? t('v3.tokens.custom.setManually') : source;
+  return source ? priceSourceLabel(t, source) : t('v3.priceSource.unknown');
 }
 
 interface CustomTokensListProps {

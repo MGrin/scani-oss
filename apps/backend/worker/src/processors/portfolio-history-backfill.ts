@@ -15,7 +15,12 @@ import {
   type PortfolioHistoryRollupProgress,
 } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
-import { BullMqEnqueueService, type ProcessorContext, UserJobProcessor } from '@scani/queue';
+import {
+  BullMqEnqueueService,
+  type ProcessorContext,
+  QueueClient,
+  UserJobProcessor,
+} from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
@@ -162,9 +167,43 @@ export interface ChunkedRollupDeps {
   saveProgress: (progress: PortfolioHistoryRollupProgress) => Promise<void>;
   onChunk: (daysDone: number, lookbackDays: number) => Promise<void>;
   sleep?: (ms: number) => Promise<void>;
+  now?: () => number;
   // Why the next chunk must not start, or null to go ahead. Asked before
   // every chunk, the first included.
   memoryStopReason?: (fromDayOffset: number) => string | null;
+  pace?: ChunkPace;
+}
+
+// A rest of `factor` times each chunk's own duration before the next (SC-1513).
+// One 1,861-day backfill held a shared-cpu worker over its CPU baseline for
+// three hours, and Fly's throttle doubled every scheduled job on the box. A
+// rest skipped while a newer request for the user waits keeps that request from
+// queueing behind the pace: it only ever waits as long as it did unpaced.
+interface ChunkPace {
+  factor: number;
+  newerRequestPending: () => Promise<boolean>;
+}
+
+const BACKFILL_PACE_FACTOR = 2;
+
+// Any other backfill for this user waiting or delayed: a fresh mutation's job,
+// or the lock-held retry one schedules when it finds this run holding the lock.
+export async function newerBackfillPending(
+  queue: {
+    getJobs(
+      types: Array<'waiting' | 'delayed'>
+    ): Promise<Array<{ id?: string; name: string; data: unknown }>>;
+  },
+  userId: string,
+  ownJobId: string | undefined
+): Promise<boolean> {
+  const jobs = await queue.getJobs(['waiting', 'delayed']);
+  return jobs.some(
+    (job) =>
+      job.name === PORTFOLIO_HISTORY_BACKFILL.name &&
+      job.id !== ownJobId &&
+      (job.data as { userId?: string } | undefined)?.userId === userId
+  );
 }
 
 // Thrown between chunks when the worker is too close to the VM's limit to
@@ -201,6 +240,7 @@ export async function runChunkedRollup(
   deps: ChunkedRollupDeps
 ): Promise<{ usersProcessed: number; daysComputed: number; errors: RollupSummary['errors'] }> {
   const sleep = deps.sleep ?? ((ms: number) => Bun.sleep(ms));
+  const now = deps.now ?? Date.now;
   const runStart = new Date(start.anchor);
   const out = { usersProcessed: 0, daysComputed: 0, errors: [] as RollupSummary['errors'] };
   let from = start.nextDayOffset;
@@ -213,6 +253,7 @@ export async function runChunkedRollup(
         from
       );
     }
+    let chunkStart = now();
     let summary = await deps.rollup({ userId, lookbackDays, runStart, dayOffsets: { from, to } });
     for (let waits = 0; summary.usersSkipped > 0; waits++) {
       if (waits >= CHUNK_LOCK_MAX_WAITS) {
@@ -221,6 +262,7 @@ export async function runChunkedRollup(
         );
       }
       await sleep(CHUNK_LOCK_WAIT_MS);
+      chunkStart = now();
       summary = await deps.rollup({ userId, lookbackDays, runStart, dayOffsets: { from, to } });
     }
     out.usersProcessed = Math.max(out.usersProcessed, summary.usersProcessed);
@@ -228,7 +270,11 @@ export async function runChunkedRollup(
     out.errors.push(...summary.errors);
     await deps.saveProgress({ anchor: start.anchor, nextDayOffset: to });
     await deps.onChunk(to, lookbackDays);
+    const chunkMs = now() - chunkStart;
     from = to;
+    if (deps.pace && from < lookbackDays && !(await deps.pace.newerRequestPending())) {
+      await sleep(Math.round(chunkMs * deps.pace.factor));
+    }
   }
   return out;
 }
@@ -394,6 +440,11 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
         rollup: (opts) => rollup.execute(opts),
         saveProgress: (progress) => this.saveProgress(data, ctx, progress),
         onChunk: (daysDone, total) => ctx.reportProgress(0.55 + 0.4 * (daysDone / total)),
+        pace: {
+          factor: BACKFILL_PACE_FACTOR,
+          newerRequestPending: () =>
+            newerBackfillPending(Container.get(QueueClient).get(), data.userId, ctx.job.id),
+        },
         memoryStopReason: (fromDayOffset) => {
           const reading = readMemory();
           const reason = memoryStopReason(reading);

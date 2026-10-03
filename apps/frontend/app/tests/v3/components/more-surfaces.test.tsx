@@ -663,7 +663,11 @@ describe('CustomTokensList', () => {
       latestPriceAt: '2026-05-02T09:00:00.000Z',
     };
     expect(priceOrigin(t, { ...base, latestPriceSource: 'manual' })).toBe('Set manually');
-    expect(priceOrigin(t, { ...base, latestPriceSource: 'coingecko' })).toBe('coingecko');
+    // A provider by its name, never by the pricing service's key (SC-1527).
+    expect(priceOrigin(t, { ...base, latestPriceSource: 'coingecko' })).toBe('CoinGecko');
+    expect(priceOrigin(t, { ...base, latestPriceSource: 'frankfurter_historical' })).toBe(
+      'Frankfurter (ECB rates)'
+    );
     expect(priceOrigin(t, { ...base, latestPriceSource: null })).toBe('Unknown source');
     expect(
       priceOrigin(t, { ...base, latestPriceAt: null, latestPrice: null, latestPriceSource: null })

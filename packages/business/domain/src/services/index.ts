@@ -27,13 +27,21 @@ export { legacyStatementBatch } from './feeds/legacy/statement-batch';
 export {
   type ClassificationReport,
   FoundationClassificationService,
+  type StaleLabel,
+  type StaleLabelList,
+  type StaleRelabelReport,
 } from './foundation/FoundationClassificationService';
 export { failureOf } from './foundation/failure-message';
+export { staleLabelExitCode } from './foundation/stale-label-exit-code';
 export {
   BalanceGapAnswerRejected,
   BalanceGapService,
 } from './holdings/BalanceGapService';
 // holdings/
+export {
+  type BalanceRefreshability,
+  BalanceRefreshabilityService,
+} from './holdings/BalanceRefreshabilityService';
 export {
   EXCHANGE_BALANCE_SYNC_SOURCE,
   WALLET_BALANCE_SYNC_SOURCE,

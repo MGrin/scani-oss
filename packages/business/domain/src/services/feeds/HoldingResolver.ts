@@ -3,13 +3,14 @@ import type { Holding } from '@scani/db/schema';
 import type { HoldingArrival } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
+import { MANUAL_HOLDING_SOURCE } from '../holdings/balance-sync-sources';
 import type { LegacyBatchOptions } from './feed-batch';
 
 interface FeedHoldingRequest {
   userId: string;
   accountId: string;
   tokenId: string;
-  /** `holdings.external_id` on create. */
+  /** `holdings.external_id` on create, and what `external-id` finds a holding by. */
   key: string | null;
   match: LegacyBatchOptions['holdingMatch'];
   /** Null finds only. A null `arrival` leaves the column's own default. */
@@ -70,30 +71,91 @@ export class HoldingResolver {
     const found = await this.findFeedHolding(req, tx);
     if (found) return { holding: found, created: false };
     if (req.create === null) return null;
-    const holding = await this.holdingRepository.create(
+    const holding = await this.createFeedHolding(
       {
         userId: req.userId,
         accountId: req.accountId,
         tokenId: req.tokenId,
-        source: req.create.source,
-        ...(req.create.arrival === null ? {} : { arrival: req.create.arrival }),
-        externalId: req.key,
-        balance: '0',
-        kind: 'feed',
-        startsAt: req.at,
-        lastUpdated: new Date(),
+        key: req.key,
+        ...req.create,
+        at: req.at,
       },
       tx
     );
     return { holding, created: true };
   }
 
+  /** A feed position starting at the write's earliest instant (D-6), without looking for one first. */
+  async createFeedHolding(
+    input: {
+      userId: string;
+      accountId: string;
+      tokenId: string;
+      /** `holdings.external_id`. */
+      key: string | null;
+      source: string;
+      /** Null leaves the column's own default. */
+      arrival: HoldingArrival | null;
+      at: Date;
+    },
+    tx: DatabaseTransaction
+  ): Promise<Holding> {
+    return await this.holdingRepository.create(
+      {
+        userId: input.userId,
+        accountId: input.accountId,
+        tokenId: input.tokenId,
+        source: input.source,
+        ...(input.arrival === null ? {} : { arrival: input.arrival }),
+        externalId: input.key,
+        balance: '0',
+        kind: 'feed',
+        startsAt: input.at,
+        lastUpdated: new Date(),
+      },
+      tx
+    );
+  }
+
   /** The holding a feed writes into, by the path's own matching (D-4); never one it creates. */
-  findFeedHolding(
-    req: Pick<FeedHoldingRequest, 'userId' | 'accountId' | 'tokenId' | 'match'>,
+  async findFeedHolding(
+    req: Pick<FeedHoldingRequest, 'userId' | 'accountId' | 'tokenId' | 'key' | 'match'>,
     tx: DatabaseTransaction | undefined
   ): Promise<Holding | null> {
+    const lastSyncHolding = (externalId: string | null, scamFree: boolean) =>
+      this.holdingRepository.findLastSyncHolding(
+        {
+          userId: req.userId,
+          accountId: req.accountId,
+          tokenId: req.tokenId,
+          exceptSource: MANUAL_HOLDING_SOURCE,
+          externalId,
+          scamFree,
+        },
+        tx
+      );
     switch (req.match) {
+      // F4, the balance syncs': a person's row is never theirs to write.
+      case 'token-id':
+        return lastSyncHolding(null, true);
+      case 'token-id-with-scam':
+        return lastSyncHolding(null, false);
+      case 'external-id-then-token-id':
+        return (
+          (req.key === null ? null : await lastSyncHolding(req.key, false)) ??
+          lastSyncHolding(null, false)
+        );
+      // F3, the integration import's: the row at the key, hidden ones included.
+      case 'external-id':
+        if (req.key === null) return Promise.resolve(null);
+        return this.holdingRepository.findByAccountTokenAndExternalId(
+          req.accountId,
+          req.tokenId,
+          req.key,
+          req.userId,
+          tx,
+          true
+        );
       // F1, the statement import's: the account's oldest visible holding of the token.
       case 'account-token':
         return this.holdingRepository.findByAccountAndToken(

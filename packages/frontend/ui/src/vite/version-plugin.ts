@@ -67,7 +67,35 @@ export function versionPayload(
  */
 export const VERSION_PLACEHOLDER = 'SCANI_BUILD_VER_';
 
-/** A hash of every file the build emits, placeholder included. */
+/**
+ * Per-commit values are read from `index.html` at runtime, never compiled
+ * into a chunk (SC-1521). The commit, the Sentry release and the core-release
+ * count and fingerprint move on EVERY merge. Compiled in, they made a
+ * backend-only deploy a new app version AND a new entry-chunk name, so the
+ * update banner fired after almost every deploy; swapped in after hashing,
+ * they kept the name and changed the bytes, and `/assets/*` is cached
+ * immutable for a year, so a returning browser could keep an older commit.
+ * `index.html` is `no-store`, so it is the one file that may differ per
+ * commit, and its placeholder is what the version hash covers.
+ */
+const IDENTITY_META = 'scani-build';
+const IDENTITY_PLACEHOLDER = 'SCANI_BUILD_IDENTITY_PH';
+
+interface Identity {
+  readonly commit: string | null;
+  readonly coreBuild: CoreBuild | null;
+  readonly sentryRelease: string | null;
+}
+
+function htmlAttribute(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('"', '&quot;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;');
+}
+
+/** A hash of every file the build emits, placeholders included. */
 function contentVersion(bundle: Rollup.OutputBundle): string {
   const hash = createHash('sha256');
   for (const fileName of Object.keys(bundle).sort()) {
@@ -93,6 +121,7 @@ export function viteVersion(): Plugin {
   let commit: string | undefined;
   let coreBuild: CoreBuild | undefined;
   let releaseVersion: string | undefined;
+  let identity: Identity = { commit: null, coreBuild: null, sentryRelease: null };
 
   return {
     name: 'vite-version',
@@ -102,14 +131,31 @@ export function viteVersion(): Plugin {
       commit = readCommit(process.env.SCANI_COMMIT);
       coreBuild = readCoreBuild(process.env.SCANI_CORE_BUILD, commit);
       releaseVersion = readReleaseVersion(process.env.SCANI_RELEASE_VERSION);
+      identity = {
+        commit: commit ?? null,
+        coreBuild: coreBuild ?? null,
+        sentryRelease: process.env.VITE_SENTRY_RELEASE || null,
+      };
       return {
         define: {
           __SCANI_BUILD_VERSION__: JSON.stringify(told),
-          __SCANI_CORE_BUILD__: JSON.stringify(coreBuild ?? null),
           __SCANI_RELEASE_VERSION__: JSON.stringify(releaseVersion ?? null),
-          __SCANI_BUILD_COMMIT__: JSON.stringify(commit ?? null),
         },
       };
+    },
+    transformIndexHtml: {
+      order: 'post',
+      handler(_html, ctx) {
+        // A dev server hashes nothing, so it can name its commit outright.
+        const content = ctx.server ? JSON.stringify(identity) : IDENTITY_PLACEHOLDER;
+        return [
+          {
+            tag: 'meta',
+            attrs: { name: IDENTITY_META, content },
+            injectTo: 'head-prepend',
+          },
+        ];
+      },
     },
     buildStart() {
       commit = readCommit(process.env.SCANI_COMMIT);
@@ -119,9 +165,14 @@ export function viteVersion(): Plugin {
       order: 'post',
       handler(_options, bundle) {
         buildHash = contentVersion(bundle);
+        const meta = htmlAttribute(JSON.stringify(identity));
         for (const item of Object.values(bundle)) {
-          if (item.type === 'chunk' && item.code.includes(VERSION_PLACEHOLDER)) {
-            item.code = item.code.replaceAll(VERSION_PLACEHOLDER, buildHash);
+          if (item.type === 'chunk') {
+            if (item.code.includes(VERSION_PLACEHOLDER)) {
+              item.code = item.code.replaceAll(VERSION_PLACEHOLDER, buildHash);
+            }
+          } else if (item.fileName.endsWith('.html') && typeof item.source === 'string') {
+            item.source = item.source.replaceAll(IDENTITY_PLACEHOLDER, meta);
           }
         }
       },

@@ -1,7 +1,12 @@
 import { ImportWalletAddressUseCase } from '@scani/domain/use-cases';
 import { WALLET_IMPORT, type WalletImportJob } from '@scani/jobs';
 import { isBurnAddress } from '@scani/providers/core';
-import { type ProcessorContext, UnrecoverableError, UserJobProcessor } from '@scani/queue';
+import {
+  type ProcessorContext,
+  sourceUnavailable,
+  UnrecoverableError,
+  UserJobProcessor,
+} from '@scani/queue';
 import { Container, Service } from 'typedi';
 
 @Service()
@@ -40,9 +45,14 @@ export class WalletImportProcessor extends UserJobProcessor<WalletImportJob, unk
     );
 
     const totalSnapshots = review.chains.reduce((acc, c) => acc + c.snapshots.length, 0);
+    // Every chain probe failed, so the wallet was unreadable because the
+    // networks were. Stopped now rather than retried into the outage, and
+    // branded so its page still offers Retry for later (SC-1527).
     if (review.chainsDetected === 0 && review.errors.length > 0) {
       const summary = review.errors.map((e) => e.error).join('; ');
-      throw new UnrecoverableError(`Wallet import produced no chains; errors: ${summary}`);
+      throw sourceUnavailable(
+        new UnrecoverableError(`Wallet import produced no chains; errors: ${summary}`)
+      );
     }
 
     return {

@@ -223,7 +223,13 @@ describe('parseAmountInput — scale and sign', () => {
   });
 
   it('holds a lone separator on screen instead of deleting the keystroke', () => {
-    expect(parseAmountInput(',')).toEqual({ text: ',', value: '', ambiguous: false });
+    expect(parseAmountInput(',')).toEqual({
+      text: ',',
+      value: '',
+      ambiguous: false,
+      rejected: null,
+      truncated: false,
+    });
   });
 
   it('reads a leading separator as a leading zero', () => {
@@ -406,6 +412,113 @@ describe('round trip', () => {
     expect(parsed.ambiguous).toBe(false);
   });
 });
+
+/**
+ * SC-1527 — four readings a new user produced on the manual-entry form, each
+ * of which put a number in the portfolio that nobody typed.
+ *
+ * The component's own contract is the spec: "a rejected character is never
+ * allowed to change the magnitude". `1e5` read as `15` is that rule broken in
+ * the one direction it exists to forbid — the `e` was refused and the digits
+ * either side of it closed over the gap.
+ */
+describe('parseAmountInput — scientific notation is refused, not closed over (SC-1527)', () => {
+  it('does not read 1e5 as fifteen', () => {
+    const parsed = parseAmountInput('1e5', { decimalScale: 8 });
+    expect(parsed.value).toBe('');
+    expect(parsed.rejected).toBe('exponent');
+    // What was typed stays on screen, so the notice has something to point at.
+    expect(parsed.text).toBe('1e5');
+  });
+
+  it('refuses every spelling of an exponent', () => {
+    for (const typed of ['1E5', '1.5e-3', '2,5e+2', '1e−9']) {
+      expect({ typed, ...pick(parseAmountInput(typed, { decimalScale: 8 })) }).toEqual({
+        typed,
+        value: '',
+        rejected: 'exponent',
+      });
+    }
+  });
+
+  it('says so on the keystroke, rather than swallowing the e and taking the next digit', () => {
+    const states = type('1e5', { decimalScale: 8 });
+    expect(states.map((s) => s.text)).toEqual(['1', '1e', '1e5']);
+    expect(states.map((s) => s.value)).toEqual(['1', '', '']);
+  });
+
+  it('leaves a currency code after the figure alone', () => {
+    // The control: an `E` that is not followed by a digit is not an exponent.
+    expect(pick(parseAmountInput('12EUR', { decimalScale: 8 }))).toEqual({
+      value: '12',
+      rejected: null,
+    });
+    expect(pick(parseAmountInput('12 EUR', { decimalScale: 8 }))).toEqual({
+      value: '12',
+      rejected: null,
+    });
+  });
+});
+
+describe('parseAmountInput — an amount no holding can hold is refused (SC-1527)', () => {
+  it('does not accept a 21-digit amount', () => {
+    // Measured: this produced a net worth of $162,975,307.2T.
+    const parsed = parseAmountInput('123456789012345678901', { decimalScale: 8 });
+    expect(parsed.value).toBe('');
+    expect(parsed.rejected).toBe('tooLarge');
+    expect(parsed.text).toBe('123456789012345678901');
+  });
+
+  it('takes the largest amount the cap allows, and refuses one digit more', () => {
+    expect(pick(parseAmountInput('999999999999999.5', { decimalScale: 8 }))).toEqual({
+      value: '999999999999999.5',
+      rejected: null,
+    });
+    expect(pick(parseAmountInput('1,000,000,000,000,000', { decimalScale: 8 }))).toEqual({
+      value: '',
+      rejected: 'tooLarge',
+    });
+  });
+
+  it('does not count leading zeros as digits', () => {
+    expect(parseAmountInput('0000000000000000001', { decimalScale: 8 }).rejected).toBeNull();
+  });
+});
+
+describe('parseAmountInput — digits past the scale are reported, not dropped in silence (SC-1527)', () => {
+  it('flags 0.000000001 in an eight-decimal field', () => {
+    const parsed = parseAmountInput('0.000000001', { decimalScale: 8 });
+    expect(parsed.value).toBe('0.00000000');
+    expect(parsed.truncated).toBe(true);
+  });
+
+  it('does not flag dropped zeros, which change nothing', () => {
+    expect(parseAmountInput('12.9900', { decimalScale: 2 }).truncated).toBe(false);
+    expect(parseAmountInput('12.99', { decimalScale: 2 }).truncated).toBe(false);
+  });
+
+  it('leaves an integer field to the notice it already has', () => {
+    const parsed = parseAmountInput('12,99', { decimalScale: 0 });
+    expect(parsed.ambiguous).toBe(true);
+    expect(parsed.truncated).toBe(false);
+  });
+});
+
+describe('parseAmountInput — the locale readings that already worked still do (SC-1527)', () => {
+  it('reads each one the way it did before', () => {
+    setFormatLocale('en');
+    expect(parseAmountInput('1250,5', { decimalScale: 8 }).value).toBe('1250.5');
+    expect(parseAmountInput('1,5', { decimalScale: 8 }).value).toBe('1.5');
+    expect(parseAmountInput('1.500,25', { decimalScale: 8 }).value).toBe('1500.25');
+    const ambiguous = parseAmountInput('1,500', { decimalScale: 8 });
+    expect(ambiguous.ambiguous).toBe(true);
+    expect(ambiguous.rejected).toBeNull();
+  });
+});
+
+function pick(parsed: ReturnType<typeof parseAmountInput>) {
+  return { value: parsed.value, rejected: parsed.rejected };
+}
 
 describe('parseAmountInput — a refused minus is reported (SC-1530)', () => {
   it('flags a minus the field refuses', () => {

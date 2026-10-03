@@ -7,6 +7,8 @@ import {
   TokenRepository,
 } from '@scani/domain/repositories';
 import {
+  type BalanceRefreshability,
+  BalanceRefreshabilityService,
   HoldingQueryService,
   HoldingService,
   KeptHoldingNotFoundError,
@@ -48,6 +50,20 @@ import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
 import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
+
+const MANUAL_HOLDING_REFUSAL =
+  'This holding is manual — edit the balance directly. Refresh is only for wallet / exchange / broker holdings.';
+
+/** One short line each: the client shows the sentence as it arrives. */
+const REFRESH_REFUSALS: Record<Exclude<BalanceRefreshability, 'refreshable'>, string> = {
+  'not-a-feed': MANUAL_HOLDING_REFUSAL,
+  // A person's row a feed has written entries into: the balance sync never
+  // writes it (D-4), so it keeps the sentence it always had. A5 lifts D-4,
+  // and this entry goes with the answer.
+  'sync-cannot-write': MANUAL_HOLDING_REFUSAL,
+  'no-live-sync':
+    'There is no active connection to refresh this holding from — connect or re-authorise the integration.',
+};
 
 export const holdingsRouter = router({
   // Get all holdings with full details (for Holdings page)
@@ -284,9 +300,13 @@ export const holdingsRouter = router({
             if (error instanceof MovementHoldingNotFoundError) {
               throw new TRPCError({ code: 'NOT_FOUND', message: 'Holding not found' });
             }
+            // CONFLICT, not BAD_REQUEST: the request is well-formed and the
+            // stored balance is what refuses it — and the status is how the
+            // client tells this one from the others and says it in the
+            // reader's language (SC-1527).
             if (error instanceof MovementExceedsBalanceError) {
               throw new TRPCError({
-                code: 'BAD_REQUEST',
+                code: 'CONFLICT',
                 message: `This holding holds ${error.balance}, so ${error.amount} cannot leave it.`,
               });
             }
@@ -441,11 +461,13 @@ export const holdingsRouter = router({
   // Per-holding "Refresh balance" trigger. Looks up the holding, finds
   // the underlying account, and enqueues a balance refresh that hits
   // the same chain / CEX / brokerage provider the hourly cron does.
-  // Manual-source holdings have no integration to refresh — the
-  // endpoint rejects them with PRECONDITION_FAILED so the frontend can
-  // surface a clean "edit the balance manually" message instead of
-  // queuing a no-op job. The job's BullMQ id is per-(user, account)
-  // so a flurry of clicks collapses to one in-flight refresh.
+  // A holding no feed states, one on a row the sync never writes, or one
+  // whose feed has no live wallet or credential left to ask, is refused
+  // with PRECONDITION_FAILED and a sentence, instead of queuing a job
+  // that cannot refresh it. It is the answer the list ships as
+  // `refreshable` (R95, R97). The job's
+  // BullMQ id is per-(user, account) so a flurry of clicks collapses to
+  // one in-flight refresh.
   refreshBalance: protectedProcedure
     .input(
       strictInput(
@@ -462,11 +484,14 @@ export const holdingsRouter = router({
       if (!holding || holding.userId !== dbUser.id) {
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Holding not found' });
       }
-      if (!holding.source || holding.source === 'manual') {
+      const refreshability = await Container.get(BalanceRefreshabilityService).forHolding(
+        dbUser.id,
+        holding
+      );
+      if (refreshability !== 'refreshable') {
         throw new TRPCError({
           code: 'PRECONDITION_FAILED',
-          message:
-            'This holding is manual — edit the balance directly. Refresh is only for wallet / exchange / broker holdings.',
+          message: REFRESH_REFUSALS[refreshability],
         });
       }
       const jobId = await Container.get(BullMqEnqueueService).add(REFRESH_ACCOUNT_BALANCE, {

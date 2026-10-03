@@ -186,7 +186,9 @@ function persistWithStubs(
       checkpointsWritten: 0,
       windowRecorded: true,
       mirrorHoldingIds: [],
+      zeroedHoldingIds: [],
       skippedAssets: [],
+      checkpointOutcomes: [],
       holdings: [],
     };
     return afterIngest(userId, accountId, source, fetched, ingested, since);

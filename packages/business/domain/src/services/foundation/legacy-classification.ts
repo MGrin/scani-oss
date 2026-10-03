@@ -34,11 +34,13 @@ import {
   APY_LEGACY_ANCHOR,
   APY_PAYOUT_SOURCE,
   BALANCE_COPY_ORIGIN,
+  CREATED_WITH_EVENT_ORIGIN,
   FILE_IMPORT_LEGACY_ANCHOR,
   type InputSourceClass,
   inputSourceClass,
   type LedgerMapping,
   mapLegacyEntry,
+  PROVIDER_SYNC_ORIGIN,
   SYNC_CAPTURE_SOURCE,
   UNDERIVABLE_KIND_ORIGINS,
 } from './legacy-ledger-kinds';
@@ -170,6 +172,12 @@ export interface ClassifiedHolding {
    * decision or classification result behind it that its row has moved away from.
    */
   notes: Record<string, number>;
+  /**
+   * When the holding's feed began: its first checkpoint or feed-sourced entry,
+   * undefined while it has produced neither (D7). Rule P reads it, and so does
+   * the writer that labels a person value as it writes one (R85).
+   */
+  feedBeganAt: Date | undefined;
 }
 
 export const STALE_LABEL_NOTE = 'stale-label';
@@ -183,10 +191,6 @@ const FEED_HOLDING_SOURCES: ReadonlySet<string> = new Set([
 ]);
 
 const STATEMENT_CLOSE_SOURCE = 'statement-close';
-
-// The `source_metadata.origin` stamps of the other `HoldingService` writers D-6 reads.
-const PROVIDER_SYNC_ORIGIN = 'updateHoldingBalanceWithEvent';
-const CREATED_WITH_EVENT_ORIGIN = 'createHoldingWithEvent';
 
 /** O2: a file import writes its "now" copy within this long after the statement it read. */
 const FILE_IMPORT_COPY_WINDOW_MS = 120_000;
@@ -229,7 +233,7 @@ export function classifyHoldingEvidence(raw: LegacyHoldingEvidence): ClassifiedH
         mapping.unmappedKind === null ? 'kind-unknown' : `unmapped-kind:${mapping.unmappedKind}`
       );
     }
-    if (isStaleLabel(row, mapping)) count(notes, STALE_LABEL_NOTE);
+    if (staleLabelFields(row, mapping).length > 0) count(notes, STALE_LABEL_NOTE);
     return classifyEntry(row, mapping, inputs);
   });
   const entries = classifiedEntries.filter((c) => c.exclusion === null);
@@ -324,6 +328,7 @@ export function classifyHoldingEvidence(raw: LegacyHoldingEvidence): ClassifiedH
       entries: entryLabels.length,
     },
     notes,
+    feedBeganAt,
   };
 }
 
@@ -366,25 +371,34 @@ function classifyEntry(
   return { exclusion: null, entry, label, feedSourced };
 }
 
+const MAPPED_LABEL_FIELDS = [
+  'ledgerKind',
+  'kindSubtype',
+  'groupId',
+  'feeOf',
+  'executionPrice',
+  'executionPriceTokenId',
+] as const;
+
 /**
- * A label D-5 wrote that it would no longer write: since then the transfer
- * linker paired the row, or a re-import rewrote its kind, group or price. A
- * `person` label counts, since it is as mapping-derived as a `source` one
- * (D-5). The persisted label still wins (D-4), so this only counts it. A label
- * with a `decision_id` is a decision about the row, and one from a rule, a
- * mirror leg or Jev a classification result, and neither is ever stale.
+ * The fields of a label D-5 wrote that it would no longer write: since then
+ * the transfer linker paired the row, or a re-import rewrote its kind, group
+ * or price. Empty when the label is current. A row the mapping now excludes
+ * should carry no label, so every field it still carries is one.
+ *
+ * A `person` label counts, since it is as mapping-derived as a `source` one
+ * (D-5). The persisted label still wins (D-4), so this only reports it. A
+ * label with a `decision_id` is a decision about the row, and one from a rule,
+ * a mirror leg or Jev a classification result, and neither is ever stale.
  */
-function isStaleLabel(row: EvidenceTransaction, mapping: LedgerMapping): boolean {
-  if (row.ledgerKind === null || row.decisionId !== null) return false;
-  if (row.kindOrigin !== null && UNDERIVABLE_KIND_ORIGINS.includes(row.kindOrigin)) return false;
-  if (mapping.excluded !== null) return true;
-  return (
-    mapping.ledgerKind !== row.ledgerKind ||
-    mapping.kindSubtype !== row.kindSubtype ||
-    mapping.groupId !== row.groupId ||
-    mapping.feeOf !== row.feeOf ||
-    mapping.executionPrice !== row.executionPrice ||
-    mapping.executionPriceTokenId !== row.executionPriceTokenId
+export function staleLabelFields(
+  row: EvidenceTransaction,
+  mapping: LedgerMapping
+): Array<(typeof MAPPED_LABEL_FIELDS)[number]> {
+  if (row.ledgerKind === null || row.decisionId !== null) return [];
+  if (row.kindOrigin !== null && UNDERIVABLE_KIND_ORIGINS.includes(row.kindOrigin)) return [];
+  return MAPPED_LABEL_FIELDS.filter(
+    (field) => row[field] !== (mapping.excluded === null ? mapping[field] : null)
   );
 }
 
@@ -487,8 +501,8 @@ function sourceRuleOf(row: EvidenceObservation, facts: SourceFacts): SourceRule 
   }
   if (origin === PROVIDER_SYNC_ORIGIN) return 'O4';
   if (origin === CREATED_WITH_EVENT_ORIGIN) {
-    // Blank reads as manual, as `holdings.source = input.source || 'manual'` does
-    // (`HoldingService.createHoldingWithEvent`); the stamp's `??` keeps `''`.
+    // Blank reads as manual, as the `holdings.source = input.source || 'manual'`
+    // beside the stamp did where both were written; the stamp's `??` kept `''`.
     const createdBy = row.metadataSource || MANUAL_HOLDING_SOURCE;
     if (createdBy !== MANUAL_HOLDING_SOURCE) return 'O4';
   }
@@ -531,8 +545,12 @@ function ruleInput(rule: SourceRule, inputs: readonly EvidenceInput[]): string |
  * Rule P. A value typed before the feed's first evidence was typed on what was
  * then a snapshot holding (D7); a feed that has never produced evidence has not
  * begun. A persisted role moves only from snapshot to verification.
+ *
+ * `SnapshotWriter` labels a person value through this same function, with the
+ * kind and `feedBeganAt` this classifier derives, so a role written at write is
+ * the one a backfill would derive (R85).
  */
-function personValueRole(
+export function personValueRole(
   persisted: ObservationRole | null,
   kind: HoldingKind,
   at: Date,

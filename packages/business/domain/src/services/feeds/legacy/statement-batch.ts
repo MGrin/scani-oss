@@ -18,6 +18,14 @@ function currencyAsset(currency: string): AssetRef {
   };
 }
 
+function securityAsset(symbol: string): AssetRef {
+  return {
+    identity: { symbol, name: symbol },
+    typeCode: 'stock',
+    lookup: 'catalog-symbol-of-type',
+  };
+}
+
 function entryOf(asset: AssetRef, row: StatementRow): FeedEntry {
   const legacy: LegacyEntryColumns = {
     kind: row.kind,
@@ -42,12 +50,15 @@ function entryOf(asset: AssetRef, row: StatementRow): FeedEntry {
  * the upload creates, to the sum of its rows, and the balance copy beside each
  * cache write (rulings R19, R21).
  *
+ * A positions statement (IB) is the exception: its holdings at the period end
+ * become statement checkpoints, securities found by ticker within their type.
+ *
  * The window is what the file covered, so every parsed row bounds it, the ones
- * it could not import included (ruling R25).
+ * it could not import included (ruling R25), and so does a positions date.
  *
  * `fetchedAt` has to be the same for the same file, because it is what keeps a
  * second upload of it from recording a second window. Throws when the
- * statement has no row to bound a window with.
+ * statement has no row and no position to bound a window with.
  */
 export function legacyStatementBatch(input: {
   userId: string;
@@ -71,16 +82,32 @@ export function legacyStatementBatch(input: {
     fetchedAt: input.fetchedAt,
     window: declareWindow({
       shape: 'statement-upload',
-      rowDates: result.lines.flatMap((line) =>
-        'skipped' in line ? [line.at] : line.rows.map((row) => row.occurredAt)
-      ),
+      rowDates: [
+        ...result.lines.flatMap((line) =>
+          'skipped' in line ? [line.at] : line.rows.map((row) => row.occurredAt)
+        ),
+        ...result.positions.map((position) => position.at),
+        ...result.closes.map((close) => close.at),
+      ],
       uploadRef: input.uploadRef,
     }),
-    checkpoints: result.closes.map((close) => ({
-      asset: currencyAsset(close.currency),
-      at: close.at,
-      amount: close.balance,
-      authority: 'statement',
+    checkpoints: [
+      ...result.closes.map((close) => ({
+        asset: currencyAsset(close.currency),
+        at: close.at,
+        amount: close.balance,
+      })),
+      // An exception to D-1, by the feeds owner's ruling on SC-1529: the file
+      // import before the move wrote nothing for a positions statement, so
+      // these checkpoints set figures today's path never set.
+      ...result.positions.map((position) => ({
+        asset: securityAsset(position.symbol),
+        at: position.at,
+        amount: position.quantity,
+      })),
+    ].map((checkpoint) => ({
+      ...checkpoint,
+      authority: 'statement' as const,
       legacySource: 'statement-close',
       legacyMeta: { format: result.format, bankTemplate: result.bankTemplate },
     })),
@@ -99,6 +126,12 @@ export function legacyStatementBatch(input: {
       },
       derivesTradeLegs: false,
       holdingFailure: 'fail-batch',
+      absence: null,
+      clearsAbsenceTally: false,
+      createdCheckpointMeta: null,
+      unhideOnNonZero: false,
+      unchangedCheckpoint: 'append',
+      zeroOpensHolding: true,
     },
     notices: [],
   };

@@ -1,73 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { CreateHoldingsWithDependenciesDto } from '../../src/dtos/batch';
-import { CreateHoldingDto, UpdateHoldingDto } from '../../src/dtos/holding';
-
-describe('CreateHoldingDto validation', () => {
-  test('should accept valid holding data', () => {
-    const validData = {
-      accountId: '550e8400-e29b-41d4-a716-446655440000',
-      tokenId: '550e8400-e29b-41d4-a716-446655440001',
-      balance: '123.45',
-    };
-
-    const result = CreateHoldingDto.safeParse(validData);
-    expect(result.success).toBe(true);
-  });
-
-  test('should accept valid holding with various balance formats', () => {
-    const validBalances = ['0', '1.0', '123.456', '0.001', '1000000'];
-
-    for (const balance of validBalances) {
-      const data = {
-        accountId: '550e8400-e29b-41d4-a716-446655440000',
-        tokenId: '550e8400-e29b-41d4-a716-446655440001',
-        balance,
-      };
-
-      const result = CreateHoldingDto.safeParse(data);
-      expect(result.success).toBe(true);
-    }
-  });
-
-  test('should reject invalid balance values', () => {
-    const invalidBalances = [
-      'abc', // Not a number
-      'NaN', // Special value
-      'Infinity', // Special value
-      '-Infinity', // Special value
-      '12.34.56', // Multiple decimal points
-      '1,000', // Comma separator
-      '123abc', // Trailing letters
-      '', // Empty string
-      '  ', // Whitespace only
-    ];
-
-    for (const balance of invalidBalances) {
-      const data = {
-        accountId: '550e8400-e29b-41d4-a716-446655440000',
-        tokenId: '550e8400-e29b-41d4-a716-446655440001',
-        balance,
-      };
-
-      const result = CreateHoldingDto.safeParse(data);
-      expect(result.success).toBe(false);
-      if (!result.success) {
-        expect(result.error.issues[0]?.path).toContain('balance');
-      }
-    }
-  });
-
-  test('should reject negative balance', () => {
-    const data = {
-      accountId: '550e8400-e29b-41d4-a716-446655440000',
-      tokenId: '550e8400-e29b-41d4-a716-446655440001',
-      balance: '-5',
-    };
-
-    const result = CreateHoldingDto.safeParse(data);
-    expect(result.success).toBe(false);
-  });
-});
+import { UpdateHoldingDto } from '../../src/dtos/holding';
 
 describe('UpdateHoldingDto validation', () => {
   test('should accept valid balance', () => {
@@ -137,10 +70,6 @@ describe('user-entered balances still refuse a negative (SC-1462)', () => {
     tokenId: '550e8400-e29b-41d4-a716-446655440001',
   };
 
-  test('create', () => {
-    expect(CreateHoldingDto.safeParse({ ...ids, balance: margin }).success).toBe(false);
-  });
-
   test('edit', () => {
     expect(UpdateHoldingDto.safeParse({ balance: margin }).success).toBe(false);
   });
@@ -157,7 +86,6 @@ describe('user-entered balances still refuse a negative (SC-1462)', () => {
   // The control: the same payload at zero passes, so the refusals above are
   // about the sign and nothing else.
   test('the same payloads at zero pass', () => {
-    expect(CreateHoldingDto.safeParse({ ...ids, balance: '0' }).success).toBe(true);
     expect(UpdateHoldingDto.safeParse({ balance: '0' }).success).toBe(true);
     expect(
       CreateHoldingsWithDependenciesDto.safeParse({

@@ -5,7 +5,7 @@ import type { TransferDestinationRef } from '@scani/shared';
 import { and, eq } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
-import { BalanceSyncOwnershipService } from '../accounts/BalanceSyncOwnershipService';
+import { TransferDestinationOpener } from '../TransferDestinationOpener';
 
 /**
  * Where a transfer the OWNER declared arrives (SC-614).
@@ -46,7 +46,7 @@ import { BalanceSyncOwnershipService } from '../accounts/BalanceSyncOwnershipSer
 @Service()
 export class DeclaredTransferService {
   private readonly holdingRepository = Container.get(HoldingRepository);
-  private readonly syncOwnership = Container.get(BalanceSyncOwnershipService);
+  private readonly opener = Container.get(TransferDestinationOpener);
 
   /**
    * The holding a declared transfer arrives in — named, found, or opened.
@@ -69,7 +69,11 @@ export class DeclaredTransferService {
    * created row opens under is `BalanceSyncOwnershipService`'s answer and not
    * a constant (SC-356): a row opened `manual` inside a sync-owned account is
    * one `HoldingsSyncHelper` may never correct, and the next sync then creates
-   * a SECOND holding for the same (account, token).
+   * a SECOND holding for the same (account, token). The same answer decides
+   * its kind: a feed holding where a sync owns the account and a snapshot one
+   * elsewhere, starting at `arrivedAt` (A2 D-4, D-6). Both are
+   * `TransferDestinationOpener`'s to decide, as for the queue's answer and a
+   * mirror leg.
    *
    * **CROSSING AN ENTITY BOUNDARY HERE IS INTENDED, NOT AN OVERSIGHT**
    * (SC-929, mgrin, 2026-09-12). This path has never consulted
@@ -90,6 +94,8 @@ export class DeclaredTransferService {
     destination: TransferDestinationRef,
     source: { id: string; tokenId: string },
     userId: string,
+    /** When the arrival is dated: where a holding opened here starts (D-6). */
+    arrivedAt: Date,
     tx: DatabaseTransaction
   ): Promise<Holding | null> {
     if (destination.holdingId) {
@@ -136,21 +142,9 @@ export class DeclaredTransferService {
       .limit(1);
     if (!account) return null;
 
-    const syncSource = await this.syncOwnership.resolveSyncSource(account, tx);
-    const [created] = await tx
-      .insert(schema.holdings)
-      .values({
-        userId,
-        accountId: account.id,
-        tokenId: source.tokenId,
-        balance: '0',
-        source: syncSource ?? 'manual',
-        // The owner named this account as where their money went. That is
-        // exactly what `user_confirmed` claims, and it is true on either
-        // branch above — only who owns the balance differs.
-        arrival: 'user_confirmed',
-      })
-      .returning();
-    return created ?? null;
+    return await this.opener.openEmpty(
+      { userId, account, tokenId: source.tokenId, at: arrivedAt },
+      tx
+    );
   }
 }

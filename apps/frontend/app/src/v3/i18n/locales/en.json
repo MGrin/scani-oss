@@ -1111,13 +1111,37 @@
           "holding": "pick the holding that moved",
           "amount": "enter how much moved",
           "where": "say where the money went",
-          "fee": "the fee has to be smaller than the amount that moved"
-        }
+          "fee": "the fee has to be smaller than the amount that moved",
+          "exceedsBalance": "only {{available}} {{symbol}} is in this holding — enter that much or less"
+        },
+        "error": {
+          "exceedsBalance": "Not recorded: {{amount}} {{symbol}} is more than this holding holds now. Check its balance and enter a smaller amount."
+        },
+        "subject": "this movement"
       },
       "trendCaption": "Last {{period}}",
       "edit": {
         "title": "Edit holding",
         "description": "Changes how much you hold and, where you track more than one, which pot this is."
+      },
+      "activity": {
+        "heading": "Recent activity",
+        "kind": {
+          "moneyIn": "Money in",
+          "moneyOut": "Money out",
+          "transferIn": "Transfer in",
+          "transferOut": "Transfer out",
+          "bought": "Bought",
+          "sold": "Sold",
+          "swap": "Swap",
+          "settlement": "Trade settlement",
+          "fee": "Fee",
+          "reward": "Reward",
+          "interest": "Interest",
+          "airdrop": "Airdrop",
+          "openingBalance": "Opening balance",
+          "correction": "Correction"
+        }
       }
     },
     "export": {
@@ -1424,6 +1448,7 @@
         "candidatesAcross_one": "{{count}} candidate across {{chains}}",
         "candidatesAcross_other": "{{count}} candidates across {{chains}}",
         "nothingFound": "nothing found",
+        "couldNotRead": "could not be read — nothing was found because nothing answered",
         "labelled": "{{label}} · {{body}}",
         "unpairedTransfers_one": "{{count}} payment out to classify",
         "unpairedTransfers_other": "{{count}} payments out to classify",
@@ -1988,6 +2013,7 @@
       },
       "blocker": {
         "chooseFile": "choose a file to upload",
+        "chooseIntent": "say what the file contains",
         "chooseInvoice": "choose the invoice to upload",
         "chooseInstitution": "choose where the account is held",
         "nameInstitution": "name the new institution",
@@ -1999,7 +2025,10 @@
         "duplicateToken": "give each row that names the same token its own name, or merge them",
         "walletEmpty": "enter the wallet address",
         "walletIncomplete": "finish the wallet address",
-        "walletUnrecognised": "check the wallet address"
+        "walletUnrecognised": "check the wallet address",
+        "alreadyHeld": "{{account}} already holds {{tokens}} — name the new row to keep it as a separate pot, or change the existing holding's balance instead",
+        "zeroAmount": "enter an amount above zero for {{tokens}}, or remove that row",
+        "unreadableAmount": "correct the amount for {{tokens}} — it is not a number Scani can read"
       },
       "category": {
         "cryptoExchange": "Crypto exchange",
@@ -2019,7 +2048,9 @@
         "everyShape": "Ethereum and the other EVM chains are 0x and 40 hexadecimal characters; Bitcoin starts 1, 3 or bc1; Solana is 32 to 44 letters and digits; Tron starts T; TON starts EQ or UQ.",
         "incomplete_one": "That is not a complete {{chain}} address — one is {{shape}}, and this is {{count}} character.",
         "incomplete_other": "That is not a complete {{chain}} address — one is {{shape}}, and this is {{count}} characters.",
-        "unrecognised": "Scani does not read any chain whose addresses look like that. {{shapes}}"
+        "unrecognised": "Scani does not read any chain whose addresses look like that. {{shapes}}",
+        "innerSpace": "There is a space inside this address. Remove it — an address is one unbroken run of characters.",
+        "ensName": "That is an ENS name. Scani watches addresses, not names — paste the 0x address it points to."
       },
       "institution": {
         "lookUpName": "Look up the name from the website",
@@ -2096,7 +2127,9 @@
           "addAnother": "Add another",
           "potName": "Which one is this?",
           "potNameHint": "You have named this token on more than one row. Give each one its own name and we will keep them as separate positions.",
-          "potNamePlaceholder": "Savings, Deposit, Wedding gift…"
+          "potNamePlaceholder": "Savings, Deposit, Wedding gift…",
+          "potNameHeldHint": "{{account}} already holds {{symbol}}. Give this one its own name to keep both as separate pots — or, if it is the same money, change that holding's balance instead of adding a row.",
+          "alreadyHeldError": "Not saved: the account already holds one of these tokens under the same name. Nothing was added — the rows are marked above."
         },
         "wallet": {
           "subject": "this wallet",
@@ -2115,7 +2148,7 @@
       "integration": {
         "title": "Connect a service",
         "subtitle": "One set of read-only keys, encrypted at rest.",
-        "listSubtitle": "Read-only API keys, encrypted at rest. Balances are synced hourly, and you can hold several connections to the same service.",
+        "listSubtitle": "Read-only API keys, encrypted at rest. Balances are synced hourly. Connecting the same service again replaces its keys.",
         "allServices": "All services",
         "thisService": "this service",
         "notFoundTitle": "Not one of ours",
@@ -2160,8 +2193,6 @@
     "tokens": {
       "custom": {
         "nothingRecorded": "Nothing recorded",
-        "unknownSource": "Unknown source",
-        "setManually": "Set manually",
         "neverPriced": "Never priced",
         "newToken": "New custom token",
         "type": "Type",
@@ -2511,8 +2542,8 @@
       "kind": {
         "holdingPriceRefresh": "Holding price refresh",
         "fileFallback": "file",
-        "fileEnriched": "{{type}} · enriched",
-        "deleteAllData": "Delete all account data"
+        "deleteAllData": "Delete all account data",
+        "fileOfType": "{{type}} file"
       },
       "fileCount_one": "{{count}} file",
       "fileCount_other": "{{count}} files",
@@ -2793,7 +2824,6 @@
         "format": "Format",
         "transactions": "Transactions",
         "newHoldings": "New holdings",
-        "balanceAnchors": "Balance anchors",
         "holdingsTitle": "Holdings touched",
         "row": {
           "new": "New",
@@ -2842,6 +2872,11 @@
           "fee": "Fee charged separately",
           "none": "Not mapped",
           "apply": "Apply mapping and import"
+        },
+        "balancesRecorded": "Balances recorded",
+        "columnsRow": {
+          "label": "Columns",
+          "matchedAutomatically": "Matched automatically"
         }
       },
       "manual": {
@@ -2883,6 +2918,10 @@
           "label": "Failed — won't retry",
           "sentence": "This failed for a reason another attempt will not fix, and nothing was recorded that we can show you. Re-running it unchanged will fail the same way.",
           "sentenceWithDetail": "This failed for a reason another attempt will not fix. Check the details below, correct them, and start it again."
+        },
+        "sourceUnavailable": {
+          "label": "Failed — try again later",
+          "sentence": "A service this job depends on could not be reached, so it stopped early. Try it again later."
         },
         "exhausted": {
           "label": "Failed — won't retry",
@@ -2984,6 +3023,13 @@
       "pending": "Pending shared files",
       "pendingSection": "Pending changes",
       "fingerprint": "Core fingerprint"
+    },
+    "priceSource": {
+      "frankfurter": "Frankfurter (ECB rates)",
+      "manual": "Set manually",
+      "baseCurrency": "Your base currency",
+      "siblingFallback": "Same asset, another listing",
+      "unknown": "Unknown source"
     }
   }
 }

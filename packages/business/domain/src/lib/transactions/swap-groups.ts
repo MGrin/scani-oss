@@ -1,7 +1,7 @@
 import type { NewHoldingTransaction } from '@scani/db/schema';
 
-/** What settling a swap group reads and writes on a leg. */
-export type SwapLeg = Pick<
+/** What undoing a swap reads and writes on a leg. */
+type SwapLeg = Pick<
   NewHoldingTransaction,
   | 'kind'
   | 'quantity'
@@ -13,8 +13,11 @@ export type SwapLeg = Pick<
 >;
 
 /**
- * Turn each provider swap-group key into one `swap_group_id`, or undo the
- * swap where the group did not survive (SC-332). Returns the legs it undid.
+ * The legs that are alone under their provider swap-group key: the swaps that
+ * did not survive (SC-332). A leg with no key is not a swap leg and is not one
+ * of them; the legs of a group that did survive share one `swap_group_id`,
+ * which feed ingest derives from its input and the key, so a re-import keeps
+ * it (A2 D-7).
  *
  * A provider knows two legs are one swap. It cannot know whether both
  * reach the ledger: wallet-derived sources resolve holdings FIND-ONLY, so
@@ -42,35 +45,32 @@ export type SwapLeg = Pick<
  *
  * Both remaining reasons are this repo's documented failure shape — a value
  * that reads as an answer nobody gave. So the leg goes back to being exactly
- * the transfer it was, and the caller says out loud that it did
- * (`orphanedSwapLegsNotice`).
- *
- * `groupIdOf` mints the id of a group that survived: the transaction router a
- * random one per run, feed ingest one derived from its input and the key, so
- * a re-import keeps it (A2 D-7).
+ * the transfer it was (`demoteSwapLeg`), and the caller says out loud that it
+ * did (`orphanedSwapLegsNotice`).
  */
-export function settleSwapGroups<T extends SwapLeg>(
-  groups: ReadonlyMap<string, T[]>,
-  groupIdOf: (key: string) => string
-): T[] {
-  const orphans: T[] = [];
-  for (const [key, legs] of groups) {
-    if (legs.length > 1) {
-      const swapGroupId = groupIdOf(key);
-      for (const leg of legs) leg.swapGroupId = swapGroupId;
-      continue;
-    }
-    const orphan = legs[0];
-    if (!orphan) continue;
-    orphans.push(orphan);
-    orphan.kind = orphan.quantity.trimStart().startsWith('-') ? 'transfer_out' : 'transfer_in';
-    orphan.swapGroupId = null;
-    orphan.counterTokenId = null;
-    orphan.counterQuantity = null;
-    orphan.priceNative = null;
-    orphan.priceNativeTokenId = null;
+export function loneSwapLegs<T>(
+  legs: readonly T[],
+  groupKeyOf: (leg: T) => string | undefined
+): Set<T> {
+  const groups = new Map<string, T[]>();
+  for (const leg of legs) {
+    const key = groupKeyOf(leg);
+    if (!key) continue;
+    const siblings = groups.get(key);
+    if (siblings) siblings.push(leg);
+    else groups.set(key, [leg]);
   }
-  return orphans;
+  return new Set([...groups.values()].flatMap((group) => (group.length === 1 ? group : [])));
+}
+
+/** Turns a lone swap leg back into the transfer it was. */
+export function demoteSwapLeg(leg: SwapLeg): void {
+  leg.kind = leg.quantity.trimStart().startsWith('-') ? 'transfer_out' : 'transfer_in';
+  leg.swapGroupId = null;
+  leg.counterTokenId = null;
+  leg.counterQuantity = null;
+  leg.priceNative = null;
+  leg.priceNativeTokenId = null;
 }
 
 export function orphanedSwapLegsNotice(orphaned: number): string {

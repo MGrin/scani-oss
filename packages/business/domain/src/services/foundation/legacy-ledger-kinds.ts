@@ -60,6 +60,21 @@ export const SYNC_CAPTURE_SOURCE = 'sync-capture';
 export const BALANCE_COPY_ORIGIN = 'updateHoldingBalance';
 
 /**
+ * The `source_metadata.origin` of a balance a sync or an import wrote, a zero
+ * for an absence included: rule O4 reads it as the provider's checkpoint, so
+ * the absence writer stamps it (A2 Task 14, R60).
+ */
+export const PROVIDER_SYNC_ORIGIN = 'updateHoldingBalanceWithEvent';
+
+/**
+ * The `source_metadata.origin` of a holding's first balance, written as the
+ * holding was created; rule O4 reads it as the provider's checkpoint unless
+ * the `source` beside it is manual. The snapshot adapter stamps it on the
+ * holdings its batches open (A2 Task 15).
+ */
+export const CREATED_WITH_EVENT_ORIGIN = 'createHoldingWithEvent';
+
+/**
  * The `source_metadata` key on a balance copy a moved path keeps writing for
  * legacy history, naming the run it anchors. An APY run that books no row
  * leaves no payout row for rule O3 to find beside its copy (ruling R12), and a

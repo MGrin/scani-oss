@@ -42,6 +42,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
     isActive: true,
     isHidden: false,
     source: 'import_wallet',
+    refreshable: true,
     ...overrides,
   };
 }

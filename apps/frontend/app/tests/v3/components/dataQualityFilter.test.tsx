@@ -57,6 +57,7 @@ function holding(id: string, symbol: string): HoldingWithDetails {
     isActive: true,
     isHidden: false,
     source: 'import_wallet',
+    refreshable: true,
   };
 }
 

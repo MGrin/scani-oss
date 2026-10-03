@@ -49,6 +49,7 @@ import { withTestDb } from '../../test/helpers/db';
 import { makeInstitution, makeInstitutionType, makeUser } from '../../test/helpers/factories';
 import {
   makeAccount,
+  makeCheckpoint,
   makeHolding,
   makeHoldingTransaction,
   makeToken,
@@ -416,7 +417,7 @@ describe('CreateHoldingsWithDependenciesUseCase writes through SnapshotWriter (f
     });
   });
 
-  test('an update on a feed holding writes a verification and sets the balance', async () => {
+  test('an update on a feed holding whose feed has begun writes a verification and sets the balance', async () => {
     await withTestDb(async (tx) => {
       const user = await makeUser(tx, { baseCurrencyId: (await makeToken(tx)).id });
       const institution = await makeInstitution(tx);
@@ -433,6 +434,8 @@ describe('CreateHoldingsWithDependenciesUseCase writes through SnapshotWriter (f
         startsAt: LONG_AGO,
         lastUpdated: LONG_AGO,
       });
+      // Its feed's first evidence, so a value after it is a verification (Rule P).
+      await makeCheckpoint(tx, { userId: user.id, holdingId: feed.id, observedAt: LONG_AGO });
       const before = Date.now();
 
       const result = await useCase().execute(
@@ -454,7 +457,7 @@ describe('CreateHoldingsWithDependenciesUseCase writes through SnapshotWriter (f
       expect(row.kind).toBe('feed');
       expect(row.startsAt).toEqual(LONG_AGO);
 
-      const rows = await observationsOf(tx, feed.id);
+      const rows = (await observationsOf(tx, feed.id)).filter((o) => o.authority === 'person');
       expect(rows).toHaveLength(1);
       expect(rows[0]).toMatchObject({
         balance: '175',

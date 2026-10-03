@@ -120,6 +120,11 @@ export function toCredentialCheckError(error: unknown, institutionName: string):
     const detail = `${institutionName}: ${error.message}`;
     switch (error.kind) {
       case 'auth-failed':
+        return new TRPCError({
+          code: 'BAD_REQUEST',
+          message: credentialRejectedMessage(institutionName, error.message),
+          cause: error,
+        });
       case 'unrecoverable':
       case 'not-supported':
         return new TRPCError({ code: 'BAD_REQUEST', message: detail, cause: error });
@@ -162,4 +167,49 @@ export function toCredentialCheckError(error: unknown, institutionName: string):
     message: `Couldn't reach ${institutionName} to check these credentials`,
     cause: error,
   });
+}
+
+const HTTP_REJECTION = /^\S+ HTTP \d{3}(?: — ([\s\S]*))?$/;
+const VENUE_MESSAGE_FIELDS = ['message', 'msg', 'retMsg', 'error_description', 'err-msg', 'error'];
+
+/**
+ * The venue's own reason, out of `ProviderError.fromHttp`'s
+ * `<providerKey> HTTP <status> — <body>` — or `null` when there is none worth
+ * showing. A JSON body yields its message field; anything else is shown as is.
+ */
+function venueReason(body: string | undefined): string | null {
+  const text = body?.trim();
+  if (!text) return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (parsed && typeof parsed === 'object') {
+      for (const field of VENUE_MESSAGE_FIELDS) {
+        const value = (parsed as Record<string, unknown>)[field];
+        if (typeof value === 'string' && value.trim()) return value.trim();
+      }
+      return null;
+    }
+  } catch {
+    // Not JSON: the body is already the venue's sentence.
+  }
+  return text;
+}
+
+/**
+ * What the connect form says when a venue refused the keys (SC-1519).
+ *
+ * A rejection used to reach the reader as `gate HTTP 401 — {"message":"Invalid
+ * key provided","label":"INVALID_KEY"}`, a bare `wise HTTP 401` or `Huobi:
+ * error`: the transport's words, naming neither the venue as the reader knows
+ * it nor what to check. The venue's own reason is kept, inside a sentence that
+ * names the venue and the next step.
+ */
+export function credentialRejectedMessage(
+  institutionName: string,
+  providerMessage: string | undefined
+): string {
+  const http = providerMessage === undefined ? null : HTTP_REJECTION.exec(providerMessage);
+  const reason = (http ? venueReason(http[1]) : providerMessage?.trim())?.replace(/\.$/, '');
+  const said = reason ? ` It said: \u201c${reason}\u201d.` : '';
+  return `${institutionName} turned these keys down.${said} Check that you pasted each value in full, and that the key is allowed to read balances.`;
 }

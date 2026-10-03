@@ -52,7 +52,10 @@ const uploadBudget = new UserBudget({
 // and explicit — broaden only with a security review.
 const ALLOWED_CONTENT_TYPES: Record<'screenshot' | 'file-import' | 'document', readonly string[]> =
   {
-    screenshot: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'],
+    // PDF too: `/import` sends a statement PDF here, and `screenshots.parse`
+    // reads a `.pdf` key as text. Leaving it out refused every bank-statement
+    // PDF at the upload (SC-1519).
+    screenshot: ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'],
     'file-import': [
       'text/csv',
       'text/plain',
@@ -76,7 +79,7 @@ const ALLOWED_CONTENT_TYPES: Record<'screenshot' | 'file-import' | 'document', r
 // from ever landing on R2 even if the bucket's object metadata is
 // later mishandled.
 const ALLOWED_EXTENSIONS: Record<'screenshot' | 'file-import' | 'document', readonly string[]> = {
-  screenshot: ['png', 'jpg', 'jpeg', 'webp', 'gif'],
+  screenshot: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf'],
   'file-import': ['csv', 'txt', 'ofx', 'qfx', 'qif', 'xls'],
   document: ['pdf', 'png', 'jpg', 'jpeg', 'webp'],
 };

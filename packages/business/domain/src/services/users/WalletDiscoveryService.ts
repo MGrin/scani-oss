@@ -23,6 +23,7 @@ import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { ProviderContext } from '@scani/providers/core/types';
+import { ETHERSCAN_CHAINS } from '@scani/providers/providers/etherscan';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { InstitutionBlockchainMappingRepository } from '../../repositories/InstitutionBlockchainMappingRepository';
@@ -83,8 +84,9 @@ export interface SupportedChain {
  * Static EVM chain catalog for the UI's "list of supported chains".
  * The Etherscan provider has its own internal catalog at
  * `packages/clients/providers/src/providers/etherscan/chains.ts`;
- * this one is the public/UI surface — keep them in sync when
- * adding a new chain.
+ * this one is the public/UI surface and adds display names. The two
+ * must list the same chain ids (SC-1524) — `WalletDiscoveryService.test.ts`
+ * fails when they do not.
  */
 const EVM_CHAINS: SupportedChain[] = [
   {
@@ -151,51 +153,6 @@ const EVM_CHAINS: SupportedChain[] = [
     isActive: true,
   },
   {
-    chainId: 250,
-    name: 'Fantom',
-    type: 'evm',
-    nativeSymbol: 'FTM',
-    nativeName: 'Fantom',
-    explorerApiUrl: 'https://api.etherscan.io/v2/api',
-    isActive: true,
-  },
-  {
-    chainId: 25,
-    name: 'Cronos',
-    type: 'evm',
-    nativeSymbol: 'CRO',
-    nativeName: 'Cronos',
-    explorerApiUrl: 'https://api.etherscan.io/v2/api',
-    isActive: true,
-  },
-  {
-    chainId: 42170,
-    name: 'Arbitrum Nova',
-    type: 'evm',
-    nativeSymbol: 'ETH',
-    nativeName: 'Ethereum',
-    explorerApiUrl: 'https://api.etherscan.io/v2/api',
-    isActive: true,
-  },
-  {
-    chainId: 324,
-    name: 'zkSync Era',
-    type: 'evm',
-    nativeSymbol: 'ETH',
-    nativeName: 'Ethereum',
-    explorerApiUrl: 'https://api.etherscan.io/v2/api',
-    isActive: true,
-  },
-  {
-    chainId: 534352,
-    name: 'Scroll',
-    type: 'evm',
-    nativeSymbol: 'ETH',
-    nativeName: 'Ethereum',
-    explorerApiUrl: 'https://api.etherscan.io/v2/api',
-    isActive: true,
-  },
-  {
     chainId: 59144,
     name: 'Linea',
     type: 'evm',
@@ -249,24 +206,6 @@ const EVM_CHAINS: SupportedChain[] = [
     explorerApiUrl: 'https://api.etherscan.io/v2/api',
     isActive: true,
   },
-  {
-    chainId: 1284,
-    name: 'Moonbeam',
-    type: 'evm',
-    nativeSymbol: 'GLMR',
-    nativeName: 'Glimmer',
-    explorerApiUrl: 'https://api.etherscan.io/v2/api',
-    isActive: true,
-  },
-  {
-    chainId: 1285,
-    name: 'Moonriver',
-    type: 'evm',
-    nativeSymbol: 'MOVR',
-    nativeName: 'Moonriver',
-    explorerApiUrl: 'https://api.etherscan.io/v2/api',
-    isActive: true,
-  },
 ];
 
 /**
@@ -309,32 +248,13 @@ const NON_EVM_CHAINS: SupportedChain[] = [
 ];
 
 /**
- * Mapping from EVM chainId → institutionCode (matches the
- * `etherscan/chains.ts` catalog). Non-EVM chains use the type as
- * their institutionCode.
+ * Mapping from EVM chainId → institutionCode, read off the Etherscan
+ * provider's catalog. Non-EVM chains use the type as their
+ * institutionCode.
  */
-const EVM_CHAIN_ID_TO_INSTITUTION_CODE: Record<number, string> = {
-  1: 'ethereum',
-  56: 'bsc',
-  137: 'polygon',
-  43114: 'avalanche',
-  42161: 'arbitrum',
-  10: 'optimism',
-  8453: 'base',
-  250: 'fantom',
-  25: 'cronos',
-  42170: 'arbitrum-nova',
-  324: 'zksync-era',
-  534352: 'scroll',
-  59144: 'linea',
-  81457: 'blast',
-  5000: 'mantle',
-  204: 'opbnb',
-  100: 'gnosis',
-  42220: 'celo',
-  1284: 'moonbeam',
-  1285: 'moonriver',
-};
+const EVM_CHAIN_ID_TO_INSTITUTION_CODE: Record<number, string> = Object.fromEntries(
+  ETHERSCAN_CHAINS.map((c) => [c.chainId, c.institutionCode])
+);
 
 const NON_EVM_CHAIN_ID_TO_INSTITUTION_CODE: Record<string, string> = {
   '0': 'bitcoin',

@@ -56,6 +56,8 @@ interface RecordMovementSheetProps {
   /** The holding this sheet was opened from — always set on this surface. */
   holding: MovementHolding;
   isSaving: boolean;
+  /** Why the last submit was refused, from `useRecordMovement`. */
+  error: string | null;
   onSubmit: (movement: MovementSubmission) => void;
 }
 
@@ -64,6 +66,7 @@ export function RecordMovementSheet({
   onOpenChange,
   holding,
   isSaving,
+  error,
   onSubmit,
 }: RecordMovementSheetProps) {
   const { t } = useTranslation();
@@ -88,7 +91,7 @@ export function RecordMovementSheet({
           onCancel={() => onOpenChange(false)}
           blockers={form.blockers}
           pending={isSaving}
-          error={null}
+          error={error}
         />
       }
     >

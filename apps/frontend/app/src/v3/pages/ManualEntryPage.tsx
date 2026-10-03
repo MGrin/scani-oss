@@ -5,7 +5,6 @@ import { Input } from '@scani/ui/ui/input';
 import { AmountInput } from '@scani/ui/v3/components/AmountInput';
 import { Block } from '@scani/ui/v3/components/Block';
 import { PageLayout } from '@scani/ui/v3/components/PageLayout';
-import { describeQueryError } from '@scani/ui/v3/lib/errors';
 import { Plus, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -17,12 +16,15 @@ import { CaptureSubmit } from '../components/capture/CaptureSubmit';
 import { TokenField } from '../components/capture/TokenField';
 import { Field, FieldRow, FieldSet } from '../components/form/Field';
 import { useAccountTarget } from '../hooks/useAccountTarget';
+import { BALANCE_EDIT_SCALE } from '../lib/holdings';
 import {
   buildHoldingsBatchInput,
   contestedHoldingTokenIds,
   describeManualEntryBlockers,
+  describeManualEntryFailure,
   emptyHolding,
   type HoldingDraft,
+  holdingSymbol,
 } from '../lib/manual-entry';
 import { jobDetailPath } from '../lib/routes';
 import { V3_BASE } from '../lib/ui-version';
@@ -72,19 +74,38 @@ export function ManualEntryPage() {
    */
   const requestId = useMemo(() => crypto.randomUUID(), []);
 
+  const utils = trpc.useUtils();
   const createMutation = trpc.batchOperations.createHoldingsBatch.useMutation({
     // The job's own page is where "did it work" is answered.
     onSuccess: ({ jobId }) => navigate(jobDetailPath(jobId)),
     onError: (err) => {
-      const copy = describeQueryError(err, t('v3.capture.page.manual.subject'), 'create');
-      setError(`${copy.title}. ${copy.detail}`);
+      setError(describeManualEntryFailure(t, err));
+      // A 409 means the account gained a position since it was read; reading
+      // it again is what marks the row it collides with.
+      void utils.batchOperations.heldPositions.invalidate();
     },
   });
 
-  const isSaving = createMutation.isPending;
-  const draft = { ...target.draft, holdings };
+  // What the chosen account already holds for the tokens on the form, so a
+  // second BTC is named here rather than failing the whole job (SC-1527).
+  const accounts = trpc.accounts.getAll.useQuery();
+  const heldAccountId = target.draft.accountMode === 'existing' ? target.draft.accountId : '';
+  const heldTokenIds = [...new Set(holdings.map((row) => row.tokenId).filter(Boolean))].sort();
+  const heldQuery = trpc.batchOperations.heldPositions.useQuery(
+    { accountId: heldAccountId, tokenIds: heldTokenIds },
+    { enabled: Boolean(heldAccountId) && heldTokenIds.length > 0 }
+  );
+  const heldAccountName = accounts.data?.find((account) => account.id === heldAccountId)?.name;
+  const held =
+    heldAccountName && heldQuery.data
+      ? { accountName: heldAccountName, positions: heldQuery.data }
+      : undefined;
+  const heldTokens = new Set(held?.positions.map((position) => position.tokenId));
 
-  const contestedTokens = contestedHoldingTokenIds(holdings);
+  const isSaving = createMutation.isPending;
+  const draft = { ...target.draft, holdings, held };
+
+  const contestedTokens = contestedHoldingTokenIds(holdings, held?.positions);
 
   const patchHolding = (uid: string, next: Partial<HoldingDraft>) =>
     setHoldings((current) =>
@@ -126,10 +147,16 @@ export function ManualEntryPage() {
                     value={
                       holding.tokenId ? { id: holding.tokenId, label: holding.tokenLabel } : null
                     }
-                    onSelect={(tokenId, tokenLabel) =>
-                      patchHolding(holding.uid, { tokenId, tokenLabel })
+                    onSelect={(tokenId, tokenLabel, details) =>
+                      patchHolding(holding.uid, {
+                        tokenId,
+                        tokenLabel,
+                        tokenSymbol: details.symbol,
+                      })
                     }
-                    onClear={() => patchHolding(holding.uid, { tokenId: '', tokenLabel: '' })}
+                    onClear={() =>
+                      patchHolding(holding.uid, { tokenId: '', tokenLabel: '', tokenSymbol: '' })
+                    }
                     disabled={isSaving}
                   />
                 </Field>
@@ -142,9 +169,13 @@ export function ManualEntryPage() {
                     <AmountInput
                       id={`manual-balance-${holding.uid}`}
                       value={holding.balance}
-                      onValueChange={(balance) => patchHolding(holding.uid, { balance })}
+                      onValueChange={(balance, { rejected }) =>
+                        patchHolding(holding.uid, { balance, balanceRejected: rejected !== null })
+                      }
                       placeholder="0.00"
-                      decimalScale={8}
+                      // A token balance carries up to 18 decimals; at 8 a real
+                      // 0.000000001 was saved as 0.00000000 (SC-1527).
+                      decimalScale={BALANCE_EDIT_SCALE}
                       negativeNotice={t('v3.capture.page.manual.negativeRefused')}
                       disabled={isSaving}
                       wrapperClassName="min-w-0 flex-1"
@@ -168,14 +199,22 @@ export function ManualEntryPage() {
                 </Field>
 
                 {/* Only on rows whose token this form names more than once —
-                    a bank screen with several pots of one currency. Every
-                    other entry is untouched, so this is not a field everyone
-                    learns to scroll past (SC-63, SC-73). */}
+                    a bank screen with several pots of one currency — or that
+                    the account already holds (SC-1527). Every other entry is
+                    untouched, so this is not a field everyone learns to scroll
+                    past (SC-63, SC-73). */}
                 {contestedTokens.has(holding.tokenId) ? (
                   <Field
                     label={t('v3.capture.page.manual.potName')}
                     htmlFor={`manual-label-${holding.uid}`}
-                    hint={t('v3.capture.page.manual.potNameHint')}
+                    hint={
+                      held && heldTokens.has(holding.tokenId)
+                        ? t('v3.capture.page.manual.potNameHeldHint', {
+                            account: held.accountName,
+                            symbol: holdingSymbol(holding),
+                          })
+                        : t('v3.capture.page.manual.potNameHint')
+                    }
                   >
                     <Input
                       id={`manual-label-${holding.uid}`}

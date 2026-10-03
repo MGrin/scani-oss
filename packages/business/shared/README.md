@@ -41,11 +41,11 @@ export function HoldingRow({ item }: { item: HoldingWithDetails }) {
 ### From a tRPC router input
 
 ```ts
-import { CreateHoldingDto } from '@scani/shared';
+import { UpdateHoldingDto } from '@scani/shared';
 
 export const holdingsRouter = router({
-  create: protectedProcedure
-    .input(CreateHoldingDto)        // zod schema, validates at the boundary
+  update: protectedProcedure
+    .input(z.object({ id: z.string().uuid(), data: UpdateHoldingDto })) // zod schema, validates at the boundary
     .mutation(async ({ input }) => {
       //                ^ TypeScript narrows from the schema
     }),

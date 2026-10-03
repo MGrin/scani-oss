@@ -17,6 +17,7 @@ import {
   jobBucketOptions,
   jobFailureLabel,
   jobNeedsAction,
+  jobOutcomeState,
   jobStateLabel,
   summariseJobPayload,
 } from '../../lib/jobs';
@@ -102,9 +103,11 @@ export function JobsList({ jobs, query }: JobsListProps) {
         leading: <Icon className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />,
         label,
         sublabel: summariseJobPayload(t, job.jobName, job.payloadSummary) ?? undefined,
-        value: <JobStateBadge state={job.state} needsAction={needsAction} failure={job} />,
+        value: (
+          <JobStateBadge state={jobOutcomeState(job)} needsAction={needsAction} failure={job} />
+        ),
         delta: <span className="text-muted-foreground">{formatRelative(t, job.createdAt)}</span>,
-        ariaLabel: `${label}, ${needsAction ? t('v3.jobs.state.needsReviewSpoken') : failure ? jobFailureLabel(t, failure) : jobStateLabel(t, job.state)}`,
+        ariaLabel: `${label}, ${needsAction ? t('v3.jobs.state.needsReviewSpoken') : failure ? jobFailureLabel(t, failure) : jobStateLabel(t, jobOutcomeState(job))}`,
       };
     },
     columns: [
@@ -138,14 +141,20 @@ export function JobsList({ jobs, query }: JobsListProps) {
         sortable: true,
         width: 'w-40',
         render: (job) => (
-          <JobStateBadge state={job.state} needsAction={jobNeedsAction(job)} failure={job} />
+          <JobStateBadge
+            state={jobOutcomeState(job)}
+            needsAction={jobNeedsAction(job)}
+            failure={job}
+          />
         ),
         // The export carries the description rather than the raw state, for the
         // same reason the chip does: `failed` in a spreadsheet cell is the
         // ambiguity this ticket is about, one medium further from help.
         exportValue: (job) => {
           const failure = describeJobFailure(job);
-          return exportText(failure ? jobFailureLabel(t, failure) : jobStateLabel(t, job.state));
+          return exportText(
+            failure ? jobFailureLabel(t, failure) : jobStateLabel(t, jobOutcomeState(job))
+          );
         },
       },
       {

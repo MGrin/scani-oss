@@ -17,6 +17,7 @@ export {
   getActiveConnectionsCount,
   getConnectionStats,
   getDb,
+  STATEMENT_TIMEOUT_MS,
 } from './connection';
 export {
   endConnectionTracking,

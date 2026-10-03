@@ -39,7 +39,6 @@ import {
   ExitedPositionProbe,
   type ExitedPositionProbeResult,
   type HoldingProbeCandidate,
-  HoldingQueryService,
   HoldingsSyncHelper,
   PriceWarmupService,
   SCAM_SCORE_VERSION,
@@ -48,6 +47,7 @@ import {
   WALLET_BALANCE_SYNC_SOURCE,
   WalletDiscoveryService,
 } from '../services';
+import { accountChainId, walletInputSource } from '../services/foundation/plan-feed-inputs';
 
 const logger = createComponentLogger('use-case:sync-wallet-balances');
 
@@ -92,7 +92,6 @@ export interface SyncWalletBalancesResult {
 export class SyncWalletBalancesUseCase {
   private readonly userWalletService = Container.get(UserWalletService);
   private readonly accountService = Container.get(AccountService);
-  private readonly holdingQueryService = Container.get(HoldingQueryService);
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
   private readonly walletDiscovery = Container.get(WalletDiscoveryService);
   private readonly holdingsSyncHelper = Container.get(HoldingsSyncHelper);
@@ -146,7 +145,7 @@ export class SyncWalletBalancesUseCase {
 
       // Sync wallets from user_wallets table
       logger.debug('Syncing wallets from user_wallets table');
-      const result = await this.syncUserWallets(cryptoTokenType.id);
+      const result = await this.syncUserWallets(cryptoTokenType.code);
 
       accountsSynced += result.accountsSynced;
       accountsFailed += result.accountsFailed;
@@ -201,7 +200,7 @@ export class SyncWalletBalancesUseCase {
   /**
    * Sync wallets from user_wallets table (new format)
    */
-  private async syncUserWallets(cryptoTokenTypeId: string): Promise<{
+  private async syncUserWallets(cryptoTypeCode: string): Promise<{
     accountsSynced: number;
     accountsFailed: number;
     holdingsUpdated: number;
@@ -237,6 +236,10 @@ export class SyncWalletBalancesUseCase {
       institution: Institution;
       account: Account;
       snapshots: HoldingSnapshot[];
+      /** Positions this run measured at zero, written as absences. */
+      exits: HoldingSnapshot[];
+      /** When the chain was read, and the instant each exit was measured at. */
+      fetchedAt: Date;
       /** Symbols this run measured at zero — counted only once the write commits. */
       exitedSymbols: string[];
     }> = [];
@@ -450,11 +453,12 @@ export class SyncWalletBalancesUseCase {
               // manual refresh has asked the chain directly since SC-852;
               // nobody presses that button on a wallet they have stopped
               // looking at, so the correction had to reach the cron (SC-872).
+              const fetchedAt = new Date();
               const probed = await this.probeExitsForAccount({
                 provider,
                 ctx,
                 snapshots: keptSnapshots,
-                capturedAt: new Date(),
+                capturedAt: fetchedAt,
                 loadCandidates: () =>
                   this.holdingRepository.findByUserWithFullDetails(
                     user.id,
@@ -471,7 +475,9 @@ export class SyncWalletBalancesUseCase {
                 institutionId,
                 institution,
                 account: syncAccount,
-                snapshots: [...keptSnapshots, ...probed.snapshots],
+                snapshots: keptSnapshots,
+                exits: probed.snapshots,
+                fetchedAt,
                 exitedSymbols: probed.exitedSymbols,
               });
               pairTimings.push({
@@ -506,37 +512,28 @@ export class SyncWalletBalancesUseCase {
       }
     } while (pageUsers.length === USER_PAGE_SIZE);
 
-    // STEP 3: Process ALL updates in a SINGLE TRANSACTION
-    // This dramatically reduces connection usage from N*M operations to 1 transaction
+    // STEP 3: each wallet account in its own transaction (A2 Task 16), so one
+    // that fails costs itself; in one transaction for all of them, a SQL error
+    // aborted every account after it (25P02).
     const createdTokenIdsByUser = new Map<string, Set<string>>();
     const fetchPhaseMs = Date.now() - runStartedAt.getTime();
     const writeStartedAt = Date.now();
-    await withTransaction(
-      async (tx) => {
-        for (const walletData of walletDataToSync) {
-          try {
-            const { user, account, snapshots } = walletData;
-
-            // Include hidden + scam-flagged holdings so the dedup map sees
-            // every existing row; otherwise the helper would create
-            // duplicates for tokens the user has explicitly hidden.
-            const existingHoldings = await this.holdingQueryService.findByAccount(
-              account.id,
-              tx,
-              true,
-              true
-            );
-
-            const result = await this.holdingsSyncHelper.processSnapshotsForAccount({
-              account,
+    for (const walletData of walletDataToSync) {
+      try {
+        const { user, account, snapshots } = walletData;
+        const metadata = account.metadata as Record<string, unknown>;
+        const result = await withTransaction(
+          (tx) =>
+            this.holdingsSyncHelper.processSnapshotsForAccount({
               userId: user.id,
-              userBaseCurrencyId: user.baseCurrencyId ?? null,
+              accountId: account.id,
+              inputSource: walletInputSource(accountChainId(metadata)),
               snapshots,
-              cryptoTokenTypeId,
-              tokenTypeMap: { crypto: cryptoTokenTypeId },
-              existingHoldings,
+              exits: walletData.exits,
+              fetchedAt: walletData.fetchedAt,
+              typeCodes: new Set([cryptoTypeCode]),
+              holdingMatch: 'external-id-then-token-id',
               staleStrategy: 'preserve',
-              dedupStrategy: 'externalId',
               sourceTag: WALLET_BALANCE_SYNC_SOURCE,
               respectHiddenForCounts: true,
               skipUnchangedUpdates: false,
@@ -549,53 +546,49 @@ export class SyncWalletBalancesUseCase {
               // `auto_discovered` claims (SC-277).
               arrival: 'auto_discovered',
               tx,
-            });
-            holdingsUpdated += result.updated;
-            holdingsCreated += result.created;
-            holdingsRemoved += result.removed;
-            // Claimed after the write, not after the probe: a row whose
-            // persistence threw below still holds the old number.
-            exitedSymbols.push(...walletData.exitedSymbols);
-
-            if (result.createdTokenIds.length > 0) {
-              const set = createdTokenIdsByUser.get(user.id) ?? new Set<string>();
-              for (const id of result.createdTokenIds) set.add(id);
-              createdTokenIdsByUser.set(user.id, set);
-            }
-
-            // Update account metadata with last sync time (within transaction)
-            const metadata = account.metadata as Record<string, unknown>;
-            await this.accountService.updateAccountMetadata(
-              account.id,
-              {
-                ...metadata,
-                lastSync: new Date().toISOString(),
-              },
-              tx
-            );
-
-            accountsSynced++;
-          } catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            logger.error(
-              {
-                accountId: walletData.account.id,
-                walletAddress: walletData.userWallet.walletAddress,
-                error: errorMessage,
-              },
-              'Failed to process wallet in transaction'
-            );
+            }),
+          {
+            name: 'sync-wallet-balances',
+            timeout: 120000, // 120s timeout for potentially large sync operations
           }
+        );
+        holdingsUpdated += result.updated;
+        holdingsCreated += result.created;
+        holdingsRemoved += result.removed;
+        // Claimed after the write, not after the probe: a row whose
+        // persistence threw below still holds the old number.
+        exitedSymbols.push(...walletData.exitedSymbols);
+
+        if (result.createdTokenIds.length > 0) {
+          const set = createdTokenIdsByUser.get(user.id) ?? new Set<string>();
+          for (const id of result.createdTokenIds) set.add(id);
+          createdTokenIdsByUser.set(user.id, set);
         }
-      },
-      {
-        name: 'sync-wallet-balances',
-        timeout: 120000, // 120s timeout for potentially large sync operations
+
+        // The last sync time, once the balances have committed and outside
+        // their transaction, so the account row is never locked after the
+        // input an import locks after it (R68).
+        await this.accountService.updateAccountMetadata(account.id, {
+          ...metadata,
+          lastSync: new Date().toISOString(),
+        });
+
+        accountsSynced++;
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error(
+          {
+            accountId: walletData.account.id,
+            walletAddress: walletData.userWallet.walletAddress,
+            error: errorMessage,
+          },
+          'Failed to process wallet in transaction'
+        );
       }
-    );
+    }
 
     // STEP 4: Scam-score + warm prices for tokens auto-discovered this run.
-    // Runs after the transaction commits (warm-up does its own network I/O
+    // Runs after every account's transaction commits (warm-up does its own network I/O
     // under a time budget). Non-fatal — the hourly pricing cron backfills.
     const writePhaseMs = Date.now() - writeStartedAt;
     const warmStartedAt = Date.now();
@@ -687,7 +680,7 @@ export class SyncWalletBalancesUseCase {
    * re-scored below the scam threshold and stay visible.
    *
    * CRITICAL: `createdTokenIdsByUser` holds the token id of every holding
-   * created this run — but `findOrCreateTokenFromIntegration` returns the
+   * created this run — but the token identity lookup returns the
    * pre-existing token row when a wallet receives an already-known token
    * (e.g. USDC) for the first time. Scoring those would overwrite a
    * shared, global `isScamProbability` — silently un-hiding scam tokens

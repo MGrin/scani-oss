@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Holding, NewHolding, Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import { includedInTotalSql } from '../lib/holding-inclusion';
 import { effectiveScamProbability, notScamFor } from '../lib/scam-verdict';
@@ -281,6 +281,91 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   }
 
   /**
+   * The holdings a feed's silence may zero, by today's two scopes (A2 Task 14,
+   * R62), hidden and inactive rows included, oldest first. The exchange sync's
+   * is every holding not at `exceptSource`, its token no scam to its owner; an
+   * import's is every holding at `source`, scam tokens included.
+   */
+  async findAbsenceCandidates(
+    userId: string,
+    accountId: string,
+    scope: { exceptSource: string; scamFree: true } | { source: string; scamFree: false },
+    transaction: DatabaseTransaction
+  ): Promise<
+    Array<
+      Pick<Holding, 'id' | 'tokenId' | 'externalId' | 'balance' | 'absentFromStatements'> & {
+        typeCode: string;
+      }
+    >
+  > {
+    const { holdings, tokens, tokenTypes } = schema;
+    return await this.getDb(transaction)
+      .select({
+        id: holdings.id,
+        tokenId: holdings.tokenId,
+        externalId: holdings.externalId,
+        balance: holdings.balance,
+        absentFromStatements: holdings.absentFromStatements,
+        typeCode: tokenTypes.code,
+      })
+      .from(holdings)
+      .innerJoin(tokens, eq(holdings.tokenId, tokens.id))
+      .innerJoin(tokenTypes, eq(tokens.typeId, tokenTypes.id))
+      .where(
+        and(
+          eq(holdings.userId, userId),
+          eq(holdings.accountId, accountId),
+          scope.scamFree
+            ? and(ne(holdings.source, scope.exceptSource), notScamFor())
+            : eq(holdings.source, scope.source)
+        )
+      )
+      .orderBy(asc(holdings.createdAt), asc(holdings.id));
+  }
+
+  /**
+   * The holding a balance sync writes into (A2 Task 16): of the token's
+   * holdings not at `exceptSource`, hidden ones included, the newest by
+   * `created_at`, then `id`. Where an account held two such rows of one token,
+   * the syncs' map kept whichever their unordered read returned last, heap
+   * order that an UPDATE moves; this pick is deterministic, and it is the one
+   * `findAbsenceCandidates` keeps for the token, so a reported token's holding
+   * is never the one zeroed. `externalId` narrows it to the holdings at that
+   * key; `scamFree` to a token its owner does not hold as scam, as the
+   * exchange cron's read did.
+   */
+  async findLastSyncHolding(
+    match: {
+      userId: string;
+      accountId: string;
+      tokenId: string;
+      exceptSource: string;
+      externalId: string | null;
+      scamFree: boolean;
+    },
+    transaction: DatabaseTransaction | undefined
+  ): Promise<Holding | null> {
+    const { holdings, tokens } = schema;
+    const [row] = await this.getDb(transaction)
+      .select({ holding: holdings })
+      .from(holdings)
+      .innerJoin(tokens, eq(holdings.tokenId, tokens.id))
+      .where(
+        and(
+          eq(holdings.userId, match.userId),
+          eq(holdings.accountId, match.accountId),
+          eq(holdings.tokenId, match.tokenId),
+          ne(holdings.source, match.exceptSource),
+          match.externalId === null ? undefined : eq(holdings.externalId, match.externalId),
+          match.scamFree ? notScamFor() : undefined
+        )
+      )
+      .orderBy(desc(holdings.createdAt), desc(holdings.id))
+      .limit(1);
+    return row?.holding ?? null;
+  }
+
+  /**
    * Find a holding by account, token, and external ID.
    * Used by sync/import flows to match synced holdings precisely
    * without conflicting with manual holdings (which have NULL externalId).
@@ -460,46 +545,6 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   }
 
   /**
-   * Find all holdings for a specific account
-   * @param accountId - The account ID to find holdings for
-   * @param transaction - Optional database transaction
-   * @param includeHidden - Whether to include hidden holdings (default: false)
-   * @param includeScamTokens - Whether to include tokens marked as potential scams (default: false)
-   */
-  async findByAccount(
-    accountId: string,
-    transaction?: DatabaseTransaction,
-    includeHidden = false,
-    includeScamTokens = false
-  ): Promise<Holding[]> {
-    try {
-      const database = this.getDb(transaction);
-      const conditions = [eq(schema.holdings.accountId, accountId)];
-      if (!includeScamTokens) {
-        conditions.push(notScamFor());
-      }
-      if (!includeHidden) {
-        conditions.push(eq(schema.holdings.isHidden, false));
-      }
-      const whereConditions = and(...conditions);
-
-      const results = await database
-        .select({
-          holding: schema.holdings,
-        })
-        .from(schema.holdings)
-        .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
-        .where(whereConditions);
-
-      // Return only the holding objects (scam tokens already filtered at database level)
-      return results.map((r) => r.holding);
-    } catch (error) {
-      this.logger.error({ accountId, error }, 'Failed to find holdings by account');
-      throw error;
-    }
-  }
-
-  /**
    * Just the ids of this user's holdings, optionally narrowed to one account
    * or one institution (SC-457).
    *
@@ -569,25 +614,6 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         );
     } catch (error) {
       this.logger.error({ userId, holdingIds, error }, 'Failed to mark holdings user-confirmed');
-      throw error;
-    }
-  }
-
-  /**
-   * Mark a holding as hidden (soft delete for blockchain holdings)
-   */
-  async markAsHidden(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
-    try {
-      const database = this.getDb(transaction);
-      await database
-        .update(schema.holdings)
-        .set({
-          isHidden: true,
-          hiddenBy: 'user',
-        })
-        .where(eq(schema.holdings.id, holdingId));
-    } catch (error) {
-      this.logger.error({ holdingId, error }, 'Failed to mark holding as hidden');
       throw error;
     }
   }
@@ -662,6 +688,66 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   }
 
   /**
+   * The user's holding, its row locked until the transaction ends; null for
+   * another user's. NO KEY UPDATE is the lock an UPDATE of the row takes, and
+   * the one to take unless the transaction will upsert ledger rows into the
+   * holding: every ledger row and observation naming it holds KEY SHARE on it
+   * for its foreign key, and those must not wait on this. FOR UPDATE is the
+   * level that upsert takes, and a caller that will run it takes it here, as
+   * NO KEY UPDATE first would make the upsert's lock an upgrade (R79, R81).
+   */
+  async lockOwned(
+    userId: string,
+    holdingId: string,
+    level: 'no key update' | 'update',
+    transaction: DatabaseTransaction
+  ): Promise<Holding | null> {
+    const [row] = await this.getDb(transaction)
+      .select()
+      .from(schema.holdings)
+      .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
+      .for(level);
+    return row ?? null;
+  }
+
+  /**
+   * The user's holdings, each row locked until the transaction ends, taken in
+   * ascending id order: two writers that lock overlapping sets in one order
+   * cannot each hold a row the other waits on. NO KEY UPDATE, as `lockOwned`,
+   * except the ids in `forUpdate`, which are locked FOR UPDATE: the level the
+   * ledger upsert takes on a holding it writes into. Taking NO KEY UPDATE and
+   * that later would be an upgrade, which waits on every uncommitted row naming
+   * the holding while holding the row that row's writer may update next.
+   */
+  async lockInIdOrder(
+    userId: string,
+    holdingIds: readonly string[],
+    forUpdate: ReadonlySet<string>,
+    transaction: DatabaseTransaction
+  ): Promise<void> {
+    const ids = [...new Set(holdingIds)].sort();
+    const levelOf = (id: string) => (forUpdate.has(id) ? 'update' : 'no key update');
+    // One statement per run of one level, so the rows are still taken in id order.
+    for (let start = 0; start < ids.length; ) {
+      const level = levelOf(ids[start]!);
+      let end = start + 1;
+      while (end < ids.length && levelOf(ids[end]!) === level) end += 1;
+      await this.getDb(transaction)
+        .select({ id: schema.holdings.id })
+        .from(schema.holdings)
+        .where(
+          and(
+            eq(schema.holdings.userId, userId),
+            inArray(schema.holdings.id, ids.slice(start, end))
+          )
+        )
+        .orderBy(asc(schema.holdings.id))
+        .for(level);
+      start = end;
+    }
+  }
+
+  /**
    * Update holding balance
    */
   async updateBalance(
@@ -732,16 +818,20 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   }
 
   /**
-   * Delete a holding by ID
+   * Shows these holdings again because their source reports them, as the
+   * integration import does: `hidden_by` is left as it was, unlike
+   * `unhideHolding`, which is a person's.
    */
-  async deleteById(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
-    try {
-      const database = this.getDb(transaction);
-      await database.delete(schema.holdings).where(eq(schema.holdings.id, holdingId));
-    } catch (error) {
-      this.logger.error({ holdingId, error }, 'Failed to delete holding');
-      throw error;
-    }
+  async markShown(
+    userId: string,
+    holdingIds: readonly string[],
+    transaction: DatabaseTransaction
+  ): Promise<void> {
+    if (holdingIds.length === 0) return;
+    await this.getDb(transaction)
+      .update(schema.holdings)
+      .set({ isHidden: false, lastUpdated: new Date() })
+      .where(and(eq(schema.holdings.userId, userId), inArray(schema.holdings.id, [...holdingIds])));
   }
 
   /**

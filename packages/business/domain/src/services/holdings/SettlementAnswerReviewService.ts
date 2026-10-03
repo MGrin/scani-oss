@@ -16,6 +16,8 @@ import { unexplainedDrift } from '../../lib/balances/unexplained-drift';
 import { readCreatedDestination, readMovedDestinationAnchor } from '../../lib/created-destination';
 import { HoldingBalanceObservationRepository } from '../../repositories/HoldingBalanceObservationRepository';
 import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRepository';
+import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
+import { FoundationClassificationService } from '../foundation/FoundationClassificationService';
 import { BalanceGapService } from './BalanceGapService';
 
 type Database = DatabaseTransaction | ReturnType<typeof getDb>;
@@ -103,6 +105,8 @@ export class SettlementAnswerReviewService {
   private readonly observations = Container.get(HoldingBalanceObservationRepository);
   private readonly gaps = Container.get(BalanceGapService);
   private readonly coverage = Container.get(HoldingCoverageRepository);
+  private readonly ledger = Container.get(HoldingTransactionRepository);
+  private readonly classification = Container.get(FoundationClassificationService);
 
   async listPending(
     userId: string,
@@ -322,6 +326,7 @@ export class SettlementAnswerReviewService {
       if (present.length !== needed.length) return { refusal: 'holding-gone' };
     }
 
+    const unclassified: string[] = [];
     for (const bundle of bundles) {
       const [exists] = await transaction
         .select({ id: schema.holdings.id })
@@ -331,9 +336,22 @@ export class SettlementAnswerReviewService {
       await restoreRows(transaction, schema.holdings, [bundle.holding]);
       await restoreRows(transaction, schema.holdingBalanceObservations, bundle.observations);
       await restoreRows(transaction, schema.holdingCoverage, bundle.coverage);
+      if (bundle.holding.kind == null || bundle.holding.starts_at == null) {
+        unclassified.push(String(bundle.holding.id));
+      }
     }
     await restoreRows(transaction, schema.holdingTransactions, rows);
     await this.coverage.syncTxBoundsFromLedger(needed, transaction);
+    // A copy taken before A1 carries no label, and a row comes back as it was
+    // copied. The ledger rows are labelled as any written row is (D-5), and a
+    // holding that came back with no kind or start is classified as the
+    // backfill would, once its rows are all in place for the classifier to read.
+    await this.ledger.relabelEntries(
+      userId,
+      rows.map((row) => String(row.id)),
+      transaction
+    );
+    await this.classification.labelHoldings(userId, unclassified, transaction);
 
     let outcome: RestoredObservation = 'gone';
     if (observation) {

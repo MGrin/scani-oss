@@ -529,8 +529,6 @@
     "tokens": {
       "custom": {
         "nothingRecorded": "Rien d’enregistré",
-        "unknownSource": "Source inconnue",
-        "setManually": "Défini à la main",
         "neverPriced": "Jamais valorisé",
         "newToken": "Nouveau jeton personnalisé",
         "type": "Type",
@@ -1511,13 +1509,37 @@
           "holding": "choisissez la position qui a bougé",
           "amount": "indiquez combien a bougé",
           "where": "dites où l’argent est allé",
-          "fee": "les frais doivent être inférieurs au montant déplacé"
-        }
+          "fee": "les frais doivent être inférieurs au montant déplacé",
+          "exceedsBalance": "cette position ne contient que {{available}} {{symbol}} — saisissez ce montant ou moins"
+        },
+        "error": {
+          "exceedsBalance": "Non enregistré : {{amount}} {{symbol}} dépasse ce que contient désormais cette position. Vérifiez son solde et saisissez un montant plus petit."
+        },
+        "subject": "ce mouvement"
       },
       "trendCaption": "Derniers {{period}}",
       "edit": {
         "title": "Modifier la position",
         "description": "Modifie la quantité détenue et, si vous en suivez plusieurs, le nom de cette réserve."
+      },
+      "activity": {
+        "heading": "Activité récente",
+        "kind": {
+          "moneyIn": "Argent entrant",
+          "moneyOut": "Argent sortant",
+          "transferIn": "Transfert reçu",
+          "transferOut": "Transfert envoyé",
+          "bought": "Achat",
+          "sold": "Vente",
+          "swap": "Échange",
+          "settlement": "Règlement d’opération",
+          "fee": "Frais",
+          "reward": "Récompense",
+          "interest": "Intérêts",
+          "airdrop": "Airdrop",
+          "openingBalance": "Solde d’ouverture",
+          "correction": "Correction"
+        }
       }
     },
     "capture": {
@@ -1601,6 +1623,7 @@
       },
       "blocker": {
         "chooseFile": "choisissez un fichier à envoyer",
+        "chooseIntent": "indiquez ce que contient le fichier",
         "chooseInvoice": "choisissez la facture à envoyer",
         "chooseInstitution": "choisissez où le compte est tenu",
         "nameInstitution": "nommez le nouvel établissement",
@@ -1612,7 +1635,10 @@
         "duplicateToken": "donnez à chaque ligne qui nomme le même jeton son propre nom, ou fusionnez-les",
         "walletEmpty": "saisissez l’adresse du portefeuille",
         "walletIncomplete": "complétez l’adresse du portefeuille",
-        "walletUnrecognised": "vérifiez l’adresse du portefeuille"
+        "walletUnrecognised": "vérifiez l’adresse du portefeuille",
+        "alreadyHeld": "{{account}} détient déjà {{tokens}} — nommez la nouvelle ligne pour la garder comme une poche distincte, ou modifiez plutôt le solde de la position existante",
+        "zeroAmount": "saisissez un montant supérieur à zéro pour {{tokens}}, ou supprimez cette ligne",
+        "unreadableAmount": "corrigez le montant de {{tokens}} — ce n'est pas un nombre que Scani peut lire"
       },
       "category": {
         "cryptoExchange": "Plateforme d’échange crypto",
@@ -1633,7 +1659,9 @@
         "incomplete_one": "Ce n’est pas une adresse {{chain}} complète — une adresse est {{shape}}, et celle-ci fait {{count}} caractère.",
         "incomplete_many": "Ce n’est pas une adresse {{chain}} complète — une adresse est {{shape}}, et celle-ci fait {{count}} caractères.",
         "incomplete_other": "Ce n’est pas une adresse {{chain}} complète — une adresse est {{shape}}, et celle-ci fait {{count}} caractères.",
-        "unrecognised": "Scani ne lit aucune chaîne dont les adresses ressemblent à cela. {{shapes}}"
+        "unrecognised": "Scani ne lit aucune chaîne dont les adresses ressemblent à cela. {{shapes}}",
+        "innerSpace": "Il y a une espace à l’intérieur de cette adresse. Supprimez-la : une adresse est une suite de caractères sans coupure.",
+        "ensName": "C’est un nom ENS. Scani suit des adresses, pas des noms : collez l’adresse 0x vers laquelle il pointe."
       },
       "institution": {
         "lookUpName": "Retrouver le nom à partir du site web",
@@ -1710,7 +1738,9 @@
           "addAnother": "En ajouter une autre",
           "potName": "Laquelle est-ce ?",
           "potNameHint": "Vous avez nommé ce jeton sur plusieurs lignes. Donnez à chacune son propre nom et nous les conserverons comme des positions distinctes.",
-          "potNamePlaceholder": "Épargne, Apport, Cadeau de mariage…"
+          "potNamePlaceholder": "Épargne, Apport, Cadeau de mariage…",
+          "potNameHeldHint": "{{account}} détient déjà {{symbol}}. Donnez à celle-ci son propre nom pour garder les deux comme poches distinctes — ou, s'il s'agit du même argent, modifiez le solde de cette position au lieu d'ajouter une ligne.",
+          "alreadyHeldError": "Non enregistré : le compte détient déjà l'un de ces jetons sous le même nom. Rien n'a été ajouté — les lignes concernées sont signalées ci-dessus."
         },
         "wallet": {
           "subject": "ce portefeuille",
@@ -1729,7 +1759,7 @@
       "integration": {
         "title": "Connecter un service",
         "subtitle": "Un seul jeu de clés en lecture seule, chiffrées au repos.",
-        "listSubtitle": "Clés d’API en lecture seule, chiffrées au repos. Les soldes sont synchronisés toutes les heures, et vous pouvez conserver plusieurs connexions au même service.",
+        "listSubtitle": "Clés d’API en lecture seule, chiffrées au repos. Les soldes sont synchronisés toutes les heures. Connecter à nouveau le même service remplace ses clés.",
         "allServices": "Tous les services",
         "thisService": "ce service",
         "notFoundTitle": "Ce n’est pas l’un des nôtres",
@@ -1782,8 +1812,8 @@
       "kind": {
         "holdingPriceRefresh": "Actualisation du prix d’une position",
         "fileFallback": "fichier",
-        "fileEnriched": "{{type}} · enrichi",
-        "deleteAllData": "Suppression de toutes les données du compte"
+        "deleteAllData": "Suppression de toutes les données du compte",
+        "fileOfType": "Fichier {{type}}"
       },
       "fileCount_one": "{{count}} fichier",
       "fileCount_many": "{{count}} fichiers",
@@ -2082,7 +2112,6 @@
         "format": "Format",
         "transactions": "Transactions",
         "newHoldings": "Nouvelles positions",
-        "balanceAnchors": "Points d’ancrage des soldes",
         "holdingsTitle": "Positions concernées",
         "row": {
           "new": "Nouvelle",
@@ -2134,6 +2163,11 @@
           "fee": "Frais séparés",
           "none": "Non associé",
           "apply": "Appliquer et importer"
+        },
+        "balancesRecorded": "Soldes enregistrés",
+        "columnsRow": {
+          "label": "Colonnes",
+          "matchedAutomatically": "Reconnues automatiquement"
         }
       },
       "manual": {
@@ -2178,6 +2212,10 @@
           "label": "En échec — pas de nouvelle tentative",
           "sentence": "L’échec vient d’une cause qu’une nouvelle tentative ne corrigera pas, et rien n’a été enregistré que nous puissions vous montrer. La relancer telle quelle échouera de la même façon.",
           "sentenceWithDetail": "L’échec vient d’une cause qu’une nouvelle tentative ne corrigera pas. Consultez les détails ci-dessous, corrigez-les, et relancez-la."
+        },
+        "sourceUnavailable": {
+          "label": "En échec — réessayez plus tard",
+          "sentence": "Un service dont dépend cette tâche était injoignable, elle s’est donc arrêtée plus tôt. Réessayez plus tard."
         },
         "exhausted": {
           "label": "En échec — pas de nouvelle tentative",
@@ -2251,6 +2289,7 @@
         "candidatesAcross_many": "{{count}} candidats sur {{chains}}",
         "candidatesAcross_other": "{{count}} candidats sur {{chains}}",
         "nothingFound": "rien trouvé",
+        "couldNotRead": "illisible — rien n’a été trouvé parce que rien n’a répondu",
         "labelled": "{{label}} · {{body}}",
         "unpairedTransfers_one": "{{count}} paiement sortant à classer",
         "unpairedTransfers_many": "{{count}} paiements sortants à classer",
@@ -3179,6 +3218,13 @@
       "pending": "Fichiers partagés en attente",
       "pendingSection": "Modifications en attente",
       "fingerprint": "Empreinte Core"
+    },
+    "priceSource": {
+      "frankfurter": "Frankfurter (taux de la BCE)",
+      "manual": "Défini à la main",
+      "baseCurrency": "Votre devise de référence",
+      "siblingFallback": "Même actif, autre cotation",
+      "unknown": "Source inconnue"
     }
   }
 }

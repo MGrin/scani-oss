@@ -661,6 +661,8 @@ describe('observations', () => {
       ['p2', 'verification'],
       ['p3', 'verification'],
     ]);
+    // The instant Rule P reads, returned so a writer labels by the same one (R85).
+    expect(byCheckpoint.feedBeganAt).toEqual(utc('2026-01-10'));
 
     const byLedger = classify({
       holding: holding({ source: 'blockchain' }),
@@ -674,6 +676,7 @@ describe('observations', () => {
       ['p1', 'snapshot'],
       ['p2', 'verification'],
     ]);
+    expect(byLedger.feedBeganAt).toEqual(utc('2026-01-08'));
   });
 
   test('P: a person value is a snapshot on a snapshot holding, and on a feed holding whose feed never began', () => {
@@ -687,6 +690,7 @@ describe('observations', () => {
       observations: [personValue('p1', utc('2026-01-05'), '90')],
     });
     expect(rolesOf(silentFeed)).toEqual([['p1', 'snapshot']]);
+    expect([snapshotHolding.feedBeganAt, silentFeed.feedBeganAt]).toEqual([undefined, undefined]);
   });
 
   test('P: a persisted person-value role moves only from snapshot to verification', () => {

@@ -3,9 +3,9 @@
  * the public TronGrid API.
  *
  * Capabilities:
- *  - `current-balances`: native TRX via `/v1/accounts/{addr}`,
- *    TRC20 tokens via `/v1/accounts/{addr}/tokens`. Both fetched in
- *    parallel.
+ *  - `current-balances`: one `/v1/accounts/{addr}` read carries both the
+ *    TRX balance and the TRC-20 balances (`data[0].trc20`, raw amounts
+ *    keyed by contract); symbols and decimals come from `/v1/trc20/info`.
  *  - `transactions`: native + TRC20 in parallel via
  *    `/v1/accounts/{addr}/transactions` and
  *    `/v1/accounts/{addr}/transactions/trc20`. Both endpoints paginate
@@ -26,6 +26,7 @@ import type {
   Capability,
   TransactionsProvider,
 } from '../../core/capabilities';
+import { ProviderError } from '../../core/errors';
 import type {
   HoldingSnapshot,
   ProviderContext,
@@ -42,18 +43,19 @@ import { tronBase58ToHex } from './address';
 const TRON_INSTITUTION_CODE = 'tron';
 const SUN_PER_TRX = 1_000_000;
 const TX_PAGE_LIMIT = 200;
+// `/v1/trc20/info` answers 400 "A valid limit by parameter is required" above 20.
+const TRC20_INFO_BATCH = 20;
 
 interface TronAccountInfo {
   balance?: number;
+  trc20?: Array<Record<string, string>>;
 }
 
-interface TronTRC20Token {
-  balance: string;
-  tokenId: string;
-  tokenAbbr: string;
-  tokenName: string;
-  tokenDecimal: number;
-  tokenType: string;
+interface TronTrc20Info {
+  contract_address: string;
+  symbol?: string;
+  name?: string;
+  decimals?: string | number;
 }
 
 interface TronNativeTxRow {
@@ -152,16 +154,7 @@ export class TronProvider
     _ctx: ProviderContext
   ): Promise<boolean> {
     if (!this.isValidAddress(address)) return false;
-    const url = `${this.apiUrl}/v1/accounts/${encodeURIComponent(address)}`;
-    const response = await this.callJson(url);
-    if (!response) {
-      throw new Error(`trongrid: /v1/accounts request failed for ${address}`);
-    }
-    const data = response as { data?: unknown[]; success?: boolean };
-    if (!Array.isArray(data.data)) {
-      throw new Error('trongrid: /v1/accounts returned no data array');
-    }
-    return data.data.length > 0;
+    return (await this.fetchAccount(address)) !== null;
   }
 
   async fetchBalances(
@@ -172,12 +165,18 @@ export class TronProvider
       (creds.walletAddress as string | undefined) ?? (creds.address as string | undefined);
     if (!address || !this.isValidAddress(address)) return [];
 
-    const [trx, trc20] = await Promise.all([this.fetchNative(address), this.fetchTrc20(address)]);
+    const account = await this.fetchAccount(address);
+    if (!account) return [];
     const out: HoldingSnapshot[] = [];
-    if (trx && new Decimal(trx.balance).gt(0)) out.push(trx);
-    for (const t of trc20) {
-      if (new Decimal(t.balance).gt(0)) out.push(t);
+    if (typeof account.balance === 'number' && account.balance > 0) {
+      out.push({
+        externalId: 'native',
+        tokenIdentity: { symbol: 'TRX', name: 'Tron', decimals: 6, providerMetadata: {} },
+        balance: new Decimal(account.balance).div(SUN_PER_TRX).toString(),
+        capturedAt: new Date(),
+      });
     }
+    out.push(...(await this.trc20Holdings(account.trc20 ?? [])));
     return out;
   }
 
@@ -216,44 +215,68 @@ export class TronProvider
   // Internals — balances
   // ============================================================
 
-  private async fetchNative(address: string): Promise<HoldingSnapshot | null> {
-    const url = `${this.apiUrl}/v1/accounts/${address}`;
-    const data = (await this.callJson(url)) as { data?: TronAccountInfo[] } | null;
-    const sun = data?.data?.[0]?.balance;
-    if (typeof sun !== 'number') return null;
-    const trx = new Decimal(sun).div(SUN_PER_TRX).toString();
-    return {
-      externalId: 'native',
-      tokenIdentity: { symbol: 'TRX', name: 'Tron', decimals: 6, providerMetadata: {} },
-      balance: trx,
-      capturedAt: new Date(),
-    };
+  /** `null` for an address the chain has never seen: TronGrid answers 200 with `data: []`. */
+  private async fetchAccount(address: string): Promise<TronAccountInfo | null> {
+    const body = (await this.callJson(
+      `${this.apiUrl}/v1/accounts/${encodeURIComponent(address)}`
+    )) as { data?: TronAccountInfo[] };
+    if (!Array.isArray(body.data)) {
+      throw new ProviderError(
+        'trongrid: /v1/accounts returned no data array',
+        'retryable',
+        this.providerKey
+      );
+    }
+    return body.data[0] ?? null;
   }
 
-  private async fetchTrc20(address: string): Promise<HoldingSnapshot[]> {
-    const url = `${this.apiUrl}/v1/accounts/${address}/tokens`;
-    const data = (await this.callJson(url)) as {
-      data?: TronTRC20Token[];
-      success?: boolean;
-    } | null;
-    if (!data?.success || !data.data) return [];
+  private async trc20Holdings(entries: Array<Record<string, string>>): Promise<HoldingSnapshot[]> {
+    const raw = new Map<string, Decimal>();
+    for (const entry of entries) {
+      for (const [contract, amount] of Object.entries(entry)) {
+        const value = new Decimal(amount);
+        if (value.gt(0)) raw.set(contract, value);
+      }
+    }
 
+    const contracts = [...raw.keys()];
     const out: HoldingSnapshot[] = [];
-    for (const t of data.data) {
-      if (t.tokenType !== 'trc20') continue;
-      const balance = new Decimal(t.balance).div(new Decimal(10).pow(t.tokenDecimal)).toString();
-      const identity: Partial<NewToken> = {
-        symbol: t.tokenAbbr.toUpperCase(),
-        name: t.tokenName,
-        decimals: t.tokenDecimal,
-        providerMetadata: { tron: { contract: t.tokenId } },
-      };
-      out.push({
-        externalId: t.tokenId,
-        tokenIdentity: identity,
-        balance,
-        capturedAt: new Date(),
-      });
+    for (let i = 0; i < contracts.length; i += TRC20_INFO_BATCH) {
+      const batch = contracts.slice(i, i + TRC20_INFO_BATCH);
+      const body = (await this.callJson(
+        `${this.apiUrl}/v1/trc20/info?contract_list=${batch.join(',')}`
+      )) as { data?: TronTrc20Info[] };
+      if (!Array.isArray(body.data)) {
+        throw new ProviderError(
+          'trongrid: /v1/trc20/info returned no data array',
+          'retryable',
+          this.providerKey
+        );
+      }
+      for (const info of body.data) {
+        const amount = raw.get(info.contract_address);
+        const decimals = Number(info.decimals);
+        if (!amount || !Number.isInteger(decimals)) continue;
+        raw.delete(info.contract_address);
+        const identity: Partial<NewToken> = {
+          symbol: (info.symbol ?? '').toUpperCase(),
+          name: info.name,
+          decimals,
+          providerMetadata: { tron: { contract: info.contract_address } },
+        };
+        out.push({
+          externalId: info.contract_address,
+          tokenIdentity: identity,
+          balance: amount.div(new Decimal(10).pow(decimals)).toString(),
+          capturedAt: new Date(),
+        });
+      }
+    }
+    if (raw.size > 0) {
+      this.logger.warn(
+        { providerKey: this.providerKey, contracts: [...raw.keys()].slice(0, 10), count: raw.size },
+        'TRC-20 balances with no token metadata from TronGrid were left out'
+      );
     }
     return out;
   }
@@ -318,14 +341,20 @@ export class TronProvider
       });
       if (fingerprint) params.set('fingerprint', fingerprint);
       const url = `${baseUrl}?${params.toString()}`;
-      const response = (await this.callJson(url)) as TronPaginatedResponse<T> | null;
-      // A refused page is not the end of the feed: `callJson` reads every
-      // non-2xx as null, and treating that as "no more rows" let a 500 on the
-      // first page claim a complete, empty history (SC-1481).
-      if (!response || response.success === false) {
-        failures.note(
-          walk.kind === 'trxTransfers' ? 'the TRX transfer walk' : 'the TRC-20 transfer walk'
-        );
+      const walkName =
+        walk.kind === 'trxTransfers' ? 'the TRX transfer walk' : 'the TRC-20 transfer walk';
+      // A refused page is not the end of the feed: treating it as "no more
+      // rows" let a 500 on the first page claim a complete, empty history
+      // (SC-1481).
+      let response: TronPaginatedResponse<T>;
+      try {
+        response = (await this.callJson(url)) as TronPaginatedResponse<T>;
+      } catch (err) {
+        failures.note(walkName, err);
+        break;
+      }
+      if (response.success === false) {
+        failures.note(walkName);
         break;
       }
       const rows = response.data ?? [];
@@ -417,21 +446,27 @@ export class TronProvider
   // HTTP plumbing
   // ============================================================
 
-  private async callJson(url: string): Promise<unknown | null> {
+  private async callJson(url: string): Promise<unknown> {
     const headers: Record<string, string> = {};
     if (this.apiKey) headers['TRON-PRO-API-KEY'] = this.apiKey;
     const response = await this.limiter.execute(async () =>
       fetchWithTimeout(url, this.apiKey ? { headers } : undefined)
     );
-    if (!response.ok) return null;
+    if (!response.ok) {
+      throw ProviderError.fromHttp(this.providerKey, response, await response.text());
+    }
     return await response.json();
   }
 }
 
 export const tronFactory: ProviderFactory = async (deps) => {
-  // TronGrid free tier: ~15 req/s. Conservative 10/s.
+  const apiKey = deps.env.TRON_PRO_API_KEY;
+  // Keyless TronGrid refuses the second request in a second
+  // (`exceeded the allowed_rps(1)`) and then suspends the caller for a while.
+  // 10/s was budgeted for every caller; it holds only for a keyed one.
+  const maxRequests = apiKey ? 10 : 1;
   const limiter = createOutflowLimiter({
-    maxRequests: 10,
+    maxRequests,
     windowMs: 1000,
     redis: deps.redis ?? undefined,
     namespace: 'tron',
@@ -440,11 +475,7 @@ export const tronFactory: ProviderFactory = async (deps) => {
     namespace: 'tron',
     limiter,
     registeredFrom: 'providers/tron',
-    description: 'TronGrid: 10 req / 1s',
+    description: `TronGrid ${apiKey ? 'with' : 'without'} an API key: ${maxRequests} req / 1s`,
   });
-  return new TronProvider(
-    registered,
-    deps.env.TRON_API_URL ?? 'https://api.trongrid.io',
-    deps.env.TRON_PRO_API_KEY
-  );
+  return new TronProvider(registered, deps.env.TRON_API_URL ?? 'https://api.trongrid.io', apiKey);
 };

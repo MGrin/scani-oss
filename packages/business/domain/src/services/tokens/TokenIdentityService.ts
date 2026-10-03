@@ -139,9 +139,8 @@ export class TokenIdentityService extends BaseService {
 
     // Provider display text is decoded HERE, beside the uppercasing, because
     // this is the one place every provider's token identity is normalised —
-    // balance imports arrive through `TokenService.findOrCreateTokenFromIntegration`
-    // and transaction imports through `FeedIngestService`'s `AssetResolver`, and both land on
-    // this method. IBKR serves an HTML-derived instrument description, so
+    // balance syncs and imports, and transaction imports, arrive through
+    // `FeedIngestService`'s `AssetResolver`, and all of them land on this method. IBKR serves an HTML-derived instrument description, so
     // `S&P 500` reached the database as `S&amp;P 500` and every consumer saw
     // it: the phone, the exports, the PDF, and search — where somebody typing
     // `S&P` matches nothing at all (SC-276).

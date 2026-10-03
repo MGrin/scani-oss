@@ -7,6 +7,7 @@ import {
   contestedHoldingTokenIds,
   defaultAccountTypeCode,
   describeManualEntryBlockers,
+  describeManualEntryFailure,
   emptyAccountTarget,
   emptyDraft,
   emptyHolding,
@@ -366,5 +367,150 @@ describe('defaultAccountTypeCode (SC-1327)', () => {
     expect(defaultAccountTypeCode('bank')).toBeNull();
     expect(defaultAccountTypeCode('other')).toBeNull();
     expect(defaultAccountTypeCode(undefined)).toBeNull();
+  });
+});
+
+/**
+ * SC-1527 — a token the chosen account ALREADY holds.
+ *
+ * The form passed it, the worker refused the whole batch as "won't retry", the
+ * valid rows went down with it, and the advice — "give each one a name" — named
+ * a field this form only showed for repeats WITHIN itself. The account's own
+ * hand-entered positions are the other half of the server's rule
+ * (`collidingHoldingTokens(creating, held)`), so the form now asks it too.
+ */
+describe('a token the account already holds (SC-1527)', () => {
+  const kraken = {
+    accountName: 'Kraken Spot',
+    positions: [{ tokenId: 'tok-1', label: null }],
+  };
+  const btcRow = {
+    uid: 'a',
+    tokenId: 'tok-1',
+    tokenLabel: 'BTC — Bitcoin',
+    tokenSymbol: 'BTC',
+    balance: '0.5',
+    label: '',
+  };
+  const ethRow = {
+    uid: 'b',
+    tokenId: 'tok-2',
+    tokenLabel: 'ETH — Ether',
+    tokenSymbol: 'ETH',
+    balance: '2',
+    label: '',
+  };
+
+  test('names the account and the token, and says what to do instead', () => {
+    const blockers = describeManualEntryBlockers(
+      t,
+      draft({ holdings: [btcRow, ethRow], held: kraken })
+    );
+    expect(blockers).toEqual([
+      "Kraken Spot already holds BTC — name the new row to keep it as a separate pot, or change the existing holding's balance instead",
+    ]);
+  });
+
+  test('nothing is sent while it stands, so no job can fail on it', () => {
+    expect(
+      buildHoldingsBatchInput(draft({ holdings: [btcRow], held: kraken }), 'req-1')
+    ).toBeNull();
+  });
+
+  test('the name field is asked for on that row, and only that row', () => {
+    const contested = contestedHoldingTokenIds([btcRow, ethRow], kraken.positions);
+    expect(contested.has('tok-1')).toBe(true);
+    expect(contested.has('tok-2')).toBe(false);
+  });
+
+  test('naming the new row is the way through, and the name is sent', () => {
+    const named = draft({
+      holdings: [{ ...btcRow, label: 'Cold storage' }, ethRow],
+      held: kraken,
+    });
+    expect(describeManualEntryBlockers(t, named)).toEqual([]);
+    expect(buildHoldingsBatchInput(named, 'req-1')?.newHoldings).toEqual([
+      { tokenId: 'tok-1', label: 'Cold storage', balance: '0.5' },
+      { tokenId: 'tok-2', label: undefined, balance: '2' },
+    ]);
+  });
+
+  test('a held position under a name does not block an unnamed new one — the server agrees', () => {
+    const savings = {
+      accountName: 'Tinkoff',
+      positions: [{ tokenId: 'tok-1', label: 'Savings' }],
+    };
+    expect(describeManualEntryBlockers(t, draft({ holdings: [btcRow], held: savings }))).toEqual(
+      []
+    );
+  });
+
+  test('a new account holds nothing, whatever was loaded for the last one chosen', () => {
+    const fresh = draft({
+      accountMode: 'new',
+      accountId: '',
+      newAccount: { name: 'ISA', typeId: 'type-1' },
+      holdings: [btcRow],
+      held: kraken,
+    });
+    expect(describeManualEntryBlockers(t, fresh)).toEqual([]);
+  });
+
+  test('the copy is translated, not English everywhere', () => {
+    const ru = i18n.getFixedT('ru');
+    const [blocker] = describeManualEntryBlockers(ru, draft({ holdings: [btcRow], held: kraken }));
+    expect(blocker).toContain('Kraken Spot');
+    expect(blocker).toContain('BTC');
+    expect(blocker).not.toContain('already holds');
+  });
+
+  test('the server still refusing it (a holding added since the form loaded) reads as what happened', () => {
+    const refusal = {
+      data: { httpStatus: 409 },
+      message: 'This account already holds BTC under the same name.',
+    };
+    expect(describeManualEntryFailure(t, refusal)).toBe(
+      'Not saved: the account already holds one of these tokens under the same name. Nothing was added — the rows are marked above.'
+    );
+    expect(describeManualEntryFailure(i18n.getFixedT('ru'), refusal)).not.toContain('Not saved');
+  });
+});
+
+/**
+ * SC-1527 — an amount the form must not send: zero, or one the field could
+ * not read. Both left Save enabled — zero as a "completed" row, an unreadable
+ * one dropped as though it were still being typed.
+ */
+describe('amounts a new holding cannot have (SC-1527)', () => {
+  const row = { tokenLabel: 'BTC — Bitcoin', label: '' };
+
+  test('a zero amount is refused, naming the row', () => {
+    const zero = draft({
+      holdings: [{ ...row, uid: 'a', tokenId: 'tok-1', tokenSymbol: 'BTC', balance: '0.00' }],
+    });
+    expect(describeManualEntryBlockers(t, zero)).toEqual([
+      'enter an amount above zero for BTC, or remove that row',
+    ]);
+    expect(buildHoldingsBatchInput(zero, 'req-1')).toBeNull();
+  });
+
+  test('an amount the field refused is named, not dropped as a half-typed row', () => {
+    const unreadable = draft({
+      holdings: [
+        { ...row, uid: 'a', tokenId: 'tok-1', tokenSymbol: 'BTC', balance: '0.4' },
+        {
+          ...row,
+          uid: 'b',
+          tokenId: 'tok-2',
+          tokenSymbol: 'ETH',
+          balance: '',
+          balanceRejected: true,
+        },
+      ],
+    });
+    expect(describeManualEntryBlockers(t, unreadable)).toEqual([
+      'correct the amount for ETH — it is not a number Scani can read',
+    ]);
+    expect(buildHoldingsBatchInput(unreadable, 'req-1')).toBeNull();
   });
 });

@@ -1,92 +1,9 @@
 import type { DatabaseTransaction } from '@scani/db';
 import type { Holding } from '@scani/db/schema';
-import type { CreateHoldingInput, HoldingArrivalAttribution } from '@scani/shared';
-import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
-import { AccountRepository } from '../../repositories/AccountRepository';
 import { HoldingBalanceObservationRepository } from '../../repositories/HoldingBalanceObservationRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { BaseService } from '../BaseService';
-
-/**
- * Input for creating a holding with full context for event tracking
- */
-export interface CreateHoldingWithEventInput {
-  accountId: string;
-  tokenId: string;
-  balance: string;
-  userId: string;
-  source?: string;
-  // Required rather than defaulted: every caller knows whether a human
-  // picked this position, and a default would let the one that never
-  // thought about it inherit `unattributed` while looking deliberate.
-  arrival: HoldingArrivalAttribution;
-  externalId?: string; // Exchange-specific identifier for synced holdings
-  // What the user calls this pot, when one account holds several rows for one
-  // token (SC-330). Importers leave it null — they address a position by
-  // `externalId`, and a name is a thing only a human can supply.
-  label?: string | null;
-  lastUpdated?: Date;
-  // Event context (optional - if not provided, events won't be created)
-  eventContext?: {
-    baseCurrencyId: string;
-    price?: string; // If not provided, will use "0"
-  };
-  // Suppress the create-time sync-capture observation. Use when the caller
-  // is about to call `updateHoldingBalance` with the real balance: writing
-  // a placeholder 0 obs and then a real obs <50ms later produces two rows
-  // with the same `observed_at` second, and `findLatestAtOrAfter` (used by
-  // BalanceAtTimeService) picks the earlier one — anchoring all past-date
-  // reconstructions on the bogus 0. File-import is the canonical case.
-  skipSyncCapture?: boolean;
-  /**
-   * The `source` for the create-time observation. Defaults to today's
-   * `sync-capture`; `writeInflow` passes `HOLDING_OPEN_OBSERVATION_SOURCE`
-   * because the figure is the row's opening and because SC-631 has to be able
-   * to tell that observation from one a person caused (SC-641).
-   */
-  observationSource?: string;
-  /** When the source says this balance was true; see `recordBalanceObservation`. */
-  observedAt?: Date;
-}
-
-/**
- * The person said what this balance change was, at the moment they made it
- * (SC-606).
- *
- * Stamped into the observation's OWN insert rather than updated onto it a
- * moment later, so there is never an instant where the row exists unanswered:
- * `BalanceGapService.listPending` is computed on read, and a queue read
- * landing in that window would show a gap the user has already explained.
- *
- * The value is a `BalanceGapAnswer` — the same vocabulary the queue writes,
- * because SC-501 already made `BALANCE_GAP_ANSWERS` `MANUAL_EDIT_CAUSES` plus
- * `unknown` precisely so the two paths could not drift. `gapReviewSource` is
- * always `'user'`: nothing else may claim this, since the whole content of the
- * marker is that a person was present and spoke.
- */
-export interface BalanceObservationAttestation {
-  /** What they said it was. A `BalanceGapAnswer`, not a free string. */
-  answer: string;
-  /** When they said it. Defaults to the observation's own instant. */
-  at?: Date;
-}
-
-/**
- * Input for updating a holding balance with event tracking
- */
-export interface UpdateHoldingBalanceInput {
-  holdingId: string;
-  balance: string;
-  // Event context (optional - if not provided, events won't be created)
-  eventContext?: {
-    userId: string;
-    baseCurrencyId: string;
-    price?: string;
-  };
-  /** When the source says this balance was true; see `recordBalanceObservation`. */
-  observedAt?: Date;
-}
 
 /**
  * The `source` of the observation that records a holding's OPENING balance —
@@ -111,15 +28,15 @@ export interface UpdateHoldingBalanceInput {
  *
  * ## Why this is a declared constant and not the value already lying around
  *
- * `createHoldingWithEvent` already writes `sourceMetadata.origin =
+ * The opening already carries `sourceMetadata.origin =
  * 'createHoldingWithEvent'`, and excluding on THAT would have been a one-line
  * diff: no new constant, no signature change, nothing threaded through. It was
  * rejected, and the reason generalises past this file.
  *
  * That option was cheap *because it was incidental*. Nobody chose the string
  * `'createHoldingWithEvent'` as a contract — it is there because the method
- * happens to write its own name. Building the exclusion on it would make a
- * later rename silently stop matching, at which point `holdingIsUntouched`
+ * that first wrote it stamped its own name. Building the exclusion on it would
+ * make a later rename silently stop matching, at which point `holdingIsUntouched`
  * answers "touched" for every holding it is asked about and SC-631 deletes
  * nothing, with every test green except the one that checks the money.
  *
@@ -128,18 +45,19 @@ export interface UpdateHoldingBalanceInput {
  * agreed to.** Cheapness that comes from reusing something incidental is a
  * loan against a promise nobody made.
  *
- * So: one exported constant, imported by the writer (`writeInflow`, via
- * `observationSource`) and by the reader (`holding-untouched.ts`). A rename
- * moves both ends together and a typo does not compile.
+ * So: one exported constant, imported by the writers (`writeInflow` and
+ * `MirrorLegWriter`, as the opening observation's source) and by the reader
+ * (`holding-untouched.ts`). A rename moves both ends together and a typo does
+ * not compile.
  */
 export const HOLDING_OPEN_OBSERVATION_SOURCE = 'holding-open';
 
-// HoldingService — all holding *mutations*. Reads live in
-// HoldingQueryService.
+// HoldingService — the two holding writes left outside the feeds writers and
+// the holding use cases: a repair script's balance write and the restore of a
+// hidden holding. Reads live in HoldingQueryService.
 @Service()
 export class HoldingService extends BaseService {
   private readonly holdingRepository = Container.get(HoldingRepository);
-  private readonly accountRepository = Container.get(AccountRepository);
   // Every balance mutation appends a 'sync-capture' observation, giving
   // the historical-PnL subsystem a forward-history floor for every account
   // whether or not a transaction-ingester is wired for its source.
@@ -153,68 +71,43 @@ export class HoldingService extends BaseService {
   // drift. A clean
   // partition along the one write path that skipped the service (SC-245).
   //
-  // `recordBalanceObservation` below is public so that path can satisfy
-  // the invariant without duplicating it. The invariant is still
-  // convention rather than enforcement — nothing stops the next caller
-  // writing `holdings` directly — but there is now exactly one
-  // implementation of it to call.
+  // That path now records through `SnapshotWriter.record`, and every sync,
+  // import and create through the feeds writers (foundation A2), so
+  // `recordBalanceObservation` below serves `updateHoldingBalance` only. The
+  // invariant is still convention rather than enforcement: nothing stops the
+  // next caller writing `holdings` directly.
   private readonly observationRepository = Container.get(HoldingBalanceObservationRepository);
 
   constructor() {
     super('HoldingService');
   }
 
-  // Append a sync-capture balance observation. Best-effort — any failure
-  // must NOT cause the originating holding mutation to fail, because the
-  // observation table is a pure additive side effect.
+  // Append a sync-capture balance observation.
+  //
+  // A failure is logged and swallowed here, and that spares the holding
+  // mutation only outside a transaction. Inside one it never did: postgres.js
+  // `begin()` keeps the scope's first failed query and rethrows it when the
+  // scope ends, so the mutation rolls back with the append whatever this
+  // catch does (foundation A2 N-3).
   //
   // The dedup key is (holding, observed_at, source); using a fresh Date
   // per call means we rarely collide in practice. On the off-chance of a
   // sub-millisecond collision, the unique constraint turns the second
-  // write into a no-op and we log-and-continue.
-  //
-  // Public because callers that must scope their own write by `userId`
-  // cannot go through `updateHoldingBalance`, which keys on `holdingId`
-  // alone. They do the ownership-scoped update themselves and then call
-  // this with the row it returned — no second round-trip, and no second
-  // copy of the observation logic (SC-245).
-  async recordBalanceObservation(
+  // write into a no-op.
+  private async recordBalanceObservation(
     holding: { id: string; userId: string; accountId: string; tokenId: string; balance: string },
-    transaction?: DatabaseTransaction,
-    meta?: Record<string, unknown>,
-    attestation?: BalanceObservationAttestation,
-    /** Defaults to `sync-capture`, which is what every caller before SC-641
-     *  meant. Pass `HOLDING_OPEN_OBSERVATION_SOURCE` when the figure is a
-     *  row's opening rather than a balance somebody observed. */
-    source: string = 'sync-capture',
-    /** When the SOURCE says the balance was true (SC-1427). A reporting
-     *  interface such as IBKR's Flex answers with a close one or two
-     *  business days old; stamped at fetch time, a trade in between sits
-     *  before an observation that does not include it and reads as drift.
-     *  A future or unreadable value is a source clock error and becomes
-     *  now, since a future observation would outrank every real one. */
-    observedAt?: Date
+    transaction: DatabaseTransaction | undefined,
+    meta: Record<string, unknown>
   ): Promise<void> {
     try {
-      const now = new Date();
-      const asOf = observedAt ? new Date(observedAt) : undefined;
-      const stampedAt =
-        asOf && !Number.isNaN(asOf.getTime()) && asOf.getTime() < now.getTime() ? asOf : now;
       await this.observationRepository.append(
         {
           userId: holding.userId,
           holdingId: holding.id,
           balance: holding.balance,
-          observedAt: stampedAt,
-          source,
-          sourceMetadata: meta ?? {},
-          ...(attestation
-            ? {
-                gapReview: attestation.answer,
-                gapReviewSource: 'user',
-                gapReviewedAt: attestation.at ?? now,
-              }
-            : {}),
+          observedAt: new Date(),
+          source: 'sync-capture',
+          sourceMetadata: meta,
         },
         transaction
       );
@@ -230,147 +123,7 @@ export class HoldingService extends BaseService {
     }
   }
 
-  // ============================================
-  // HOLDING MUTATIONS (with event tracking)
-  // ============================================
-
-  /**
-   * Create a single holding with optional event tracking
-   * Use this for user-initiated holding creation
-   */
-  async createHolding(data: CreateHoldingInput, userId: string): Promise<Holding> {
-    try {
-      this.logDebug('Creating holding', {
-        accountId: data.accountId,
-        tokenId: data.tokenId,
-        balance: data.balance,
-      });
-
-      this.validateRequiredFields(data, ['accountId', 'tokenId', 'balance']);
-
-      // Validate balance
-      const balance = new Decimal(data.balance);
-      if (balance.isNegative()) {
-        throw new Error('Balance cannot be negative');
-      }
-
-      // Verify account exists and belongs to user
-      const account = await this.accountRepository.findById(data.accountId);
-      this.assertExists(account, `Account with ID ${data.accountId} not found`);
-
-      if (account.userId !== userId) {
-        throw new Error('Unauthorized: Account does not belong to user');
-      }
-
-      // Create the holding (multiple holdings of same token in same account are allowed)
-      const holding = await this.holdingRepository.create({
-        accountId: data.accountId,
-        tokenId: data.tokenId,
-        balance: data.balance,
-        userId,
-        lastUpdated: data.lastUpdated || new Date(),
-      });
-
-      this.assertExists(holding, 'Failed to create holding');
-
-      await this.recordBalanceObservation(
-        {
-          id: holding.id,
-          userId,
-          accountId: data.accountId,
-          tokenId: data.tokenId,
-          balance: data.balance,
-        },
-        undefined,
-        { origin: 'createHolding' }
-      );
-
-      this.logDebug('Holding created successfully', { holdingId: holding.id });
-      return holding;
-    } catch (error) {
-      throw this.handleError(error, 'createHolding');
-    }
-  }
-
-  /**
-   * Create a holding with full event context
-   * This is the preferred method for sync/import operations
-   */
-  async createHoldingWithEvent(
-    input: CreateHoldingWithEventInput,
-    transaction?: DatabaseTransaction
-  ): Promise<Holding> {
-    try {
-      // Create the holding (multiple same-token holdings per account are allowed)
-      const holding = await this.holdingRepository.create(
-        {
-          accountId: input.accountId,
-          tokenId: input.tokenId,
-          balance: input.balance,
-          userId: input.userId,
-          source: input.source || 'manual',
-          arrival: input.arrival,
-          externalId: input.externalId || null,
-          label: input.label || null,
-          lastUpdated: input.lastUpdated || new Date(),
-        },
-        transaction
-      );
-      if (!input.skipSyncCapture) {
-        await this.recordBalanceObservation(
-          {
-            id: holding.id,
-            userId: input.userId,
-            accountId: input.accountId,
-            tokenId: input.tokenId,
-            balance: input.balance,
-          },
-          transaction,
-          { origin: 'createHoldingWithEvent', source: input.source ?? 'manual' },
-          undefined,
-          input.observationSource,
-          input.observedAt
-        );
-      }
-      this.logDebug('Holding created', { holdingId: holding.id });
-      return holding;
-    } catch (error) {
-      throw this.handleError(error, 'createHoldingWithEvent');
-    }
-  }
-
-  /**
-   * Create multiple holdings (batch operation)
-   * Events are created for each holding if eventContext is provided in individual items
-   */
-  async createManyHoldings(
-    data: CreateHoldingInput[],
-    userId: string,
-    tx?: DatabaseTransaction
-  ): Promise<Holding[]> {
-    try {
-      this.logDebug('Creating multiple holdings', { count: data.length });
-
-      const createdHoldings: Holding[] = await this.holdingRepository.createMany(
-        data.map((holdingInput) => ({
-          ...holdingInput,
-          userId,
-        })),
-        tx
-      );
-
-      this.logDebug('Multiple holdings created successfully', {
-        count: createdHoldings.length,
-      });
-      return createdHoldings;
-    } catch (error) {
-      throw this.handleError(error, 'createManyHoldings');
-    }
-  }
-
-  /**
-   * Update holding balance with optional event tracking
-   */
+  /** Set a holding's balance and append the `sync-capture` copy of it. */
   async updateHoldingBalance(
     holdingId: string,
     balance: string,
@@ -378,10 +131,7 @@ export class HoldingService extends BaseService {
   ): Promise<void> {
     try {
       await this.holdingRepository.updateBalance(holdingId, balance, transaction);
-      // Look up the holding post-update to get the userId/accountId/tokenId
-      // we need for the observation. One extra round-trip — acceptable
-      // given this path is called from sync jobs that already spend
-      // serious time per holding.
+      // Read back for the owner, account and token the observation is filed under.
       const holding = await this.holdingRepository.findById(holdingId, transaction);
       if (holding) {
         await this.recordBalanceObservation(
@@ -398,141 +148,6 @@ export class HoldingService extends BaseService {
       }
     } catch (error) {
       throw this.handleError(error, 'updateHoldingBalance');
-    }
-  }
-
-  /**
-   * Update holding balance with event tracking
-   * This is the preferred method for sync operations that need event tracking
-   */
-  async updateHoldingBalanceWithEvent(
-    input: UpdateHoldingBalanceInput,
-    transaction?: DatabaseTransaction
-  ): Promise<void> {
-    try {
-      // Get holding details for event
-      const holding = await this.holdingRepository.findById(input.holdingId, transaction);
-      if (!holding) {
-        throw new Error(`Holding not found: ${input.holdingId}`);
-      }
-
-      // Update the balance
-      await this.holdingRepository.updateBalance(input.holdingId, input.balance, transaction);
-      await this.recordBalanceObservation(
-        {
-          id: holding.id,
-          userId: holding.userId,
-          accountId: holding.accountId,
-          tokenId: holding.tokenId,
-          balance: input.balance,
-        },
-        transaction,
-        { origin: 'updateHoldingBalanceWithEvent' },
-        undefined,
-        undefined,
-        input.observedAt
-      );
-    } catch (error) {
-      throw this.handleError(error, 'updateHoldingBalanceWithEvent');
-    }
-  }
-
-  /**
-   * Update holding fields (balance, isActive, isHidden, etc.)
-   */
-  async updateHolding(
-    holdingId: string,
-    updates: Partial<Pick<Holding, 'balance' | 'isActive' | 'isHidden' | 'lastUpdated'>>,
-    transaction?: DatabaseTransaction
-  ): Promise<Holding | null> {
-    try {
-      return await this.holdingRepository.update(holdingId, updates, transaction);
-    } catch (error) {
-      throw this.handleError(error, 'updateHolding');
-    }
-  }
-
-  /**
-   * Update holding fields. Originally named `WithEvent` because this was
-   * going to emit portfolio events — that wiring never landed and the
-   * name was a lie. Kept as a lightweight wrapper over the repository
-   * update that surfaces the "not found" case as an error (important
-   * for sync paths that must abort on missing rows).
-   */
-  async updateHoldingWithEvent(
-    holdingId: string,
-    updates: Partial<Pick<Holding, 'balance' | 'isActive' | 'isHidden' | 'lastUpdated'>>,
-    transaction?: DatabaseTransaction
-  ): Promise<Holding | null> {
-    try {
-      const updated = await this.holdingRepository.update(holdingId, updates, transaction);
-      if (!updated) {
-        throw new Error(`Holding not found: ${holdingId}`);
-      }
-      return updated;
-    } catch (error) {
-      throw this.handleError(error, 'updateHoldingWithEvent');
-    }
-  }
-
-  /**
-   * Delete holding (hard delete)
-   */
-  async deleteHolding(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
-    try {
-      this.logDebug('Deleting holding', { holdingId });
-      await this.holdingRepository.deleteById(holdingId, transaction);
-    } catch (error) {
-      throw this.handleError(error, 'deleteHolding');
-    }
-  }
-
-  /**
-   * Delete holding with event tracking
-   */
-  async deleteHoldingWithEvent(
-    holdingId: string,
-    transaction?: DatabaseTransaction
-  ): Promise<void> {
-    try {
-      await this.holdingRepository.deleteById(holdingId, transaction);
-      this.logDebug('Holding deleted', { holdingId });
-    } catch (error) {
-      throw this.handleError(error, 'deleteHoldingWithEvent');
-    }
-  }
-
-  /**
-   * Hide holding (soft delete for blockchain holdings)
-   */
-  async hideHolding(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
-    try {
-      await this.holdingRepository.markAsHidden(holdingId, transaction);
-    } catch (error) {
-      throw this.handleError(error, 'hideHolding');
-    }
-  }
-
-  /**
-   * Hide holding with event tracking
-   */
-  async hideHoldingWithEvent(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
-    try {
-      await this.holdingRepository.markAsHidden(holdingId, transaction);
-      this.logDebug('Holding hidden', { holdingId });
-    } catch (error) {
-      throw this.handleError(error, 'hideHoldingWithEvent');
-    }
-  }
-
-  /**
-   * Unhide/restore a holding
-   */
-  async unhideHolding(holdingId: string, transaction?: DatabaseTransaction): Promise<void> {
-    try {
-      await this.holdingRepository.unhideHolding(holdingId, transaction);
-    } catch (error) {
-      throw this.handleError(error, 'unhideHolding');
     }
   }
 

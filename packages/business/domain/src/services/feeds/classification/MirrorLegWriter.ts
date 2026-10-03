@@ -4,9 +4,9 @@ import * as schema from '@scani/db/schema';
 import { Decimal } from '@scani/shared';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { movedBalance } from '../../../lib/balances/moved-balance';
 import { type AdoptedBalanceEdit, arrivalMetadata } from '../../../lib/created-destination';
 import { AccountRepository } from '../../../repositories/AccountRepository';
-import { EngineEvidenceRepository } from '../../../repositories/EngineEvidenceRepository';
 import { FeedInputRepository } from '../../../repositories/FeedInputRepository';
 import { HoldingBalanceObservationRepository } from '../../../repositories/HoldingBalanceObservationRepository';
 import { HoldingCoverageRepository } from '../../../repositories/HoldingCoverageRepository';
@@ -15,14 +15,13 @@ import {
   BalanceSyncOwnershipService,
   type SyncOwnableAccount,
 } from '../../accounts/BalanceSyncOwnershipService';
-import { classifyHoldingEvidence } from '../../foundation/legacy-classification';
 import { SYNC_CAPTURE_SOURCE } from '../../foundation/legacy-ledger-kinds';
+import { ObservationLabeller } from '../../foundation/ObservationLabeller';
 import type { BalanceSyncSource } from '../../holdings/balance-sync-sources';
-import { HOLDING_OPEN_OBSERVATION_SOURCE } from '../../holdings/HoldingService';
-import { adoptTypedDeposit, anchorIsUnobserved, openingOf } from '../../transfer-arrival';
+import { TransferDestinationOpener } from '../../TransferDestinationOpener';
+import { adoptTypedDeposit, anchorIsUnobserved } from '../../transfer-arrival';
 import { deterministicUuid } from '../deterministic-id';
 import { HoldingCacheWriter } from '../HoldingCacheWriter';
-import { HoldingResolver } from '../HoldingResolver';
 
 const MIRROR_LEG_SOURCE = 'feed-mirror';
 
@@ -51,11 +50,11 @@ interface EligibleDestination {
 
 /** Where the leg landed and what it did to the destination, as today's arrival records it. */
 interface Landing {
-  holding: Holding;
+  holdingId: string;
   created: boolean;
   movedAnchor: boolean;
   adopted: AdoptedBalanceEdit | null;
-  /** The balance copy written beside the cache, which takes its labels last. */
+  /** A reused destination's balance copy, which takes its labels once the leg is in place. */
   observationId: string | null;
 }
 
@@ -72,11 +71,11 @@ export class MirrorLegWriter {
   private readonly inputs = Container.get(FeedInputRepository);
   private readonly syncOwnership = Container.get(BalanceSyncOwnershipService);
   private readonly holdings = Container.get(HoldingRepository);
-  private readonly resolver = Container.get(HoldingResolver);
+  private readonly opener = Container.get(TransferDestinationOpener);
   private readonly cacheWriter = Container.get(HoldingCacheWriter);
   private readonly observations = Container.get(HoldingBalanceObservationRepository);
   private readonly coverage = Container.get(HoldingCoverageRepository);
-  private readonly evidence = Container.get(EngineEvidenceRepository);
+  private readonly labeller = Container.get(ObservationLabeller);
 
   /**
    * The user's account, when a mirror leg may land in it (R47): nothing feeds
@@ -95,7 +94,7 @@ export class MirrorLegWriter {
     const walletId = metadata?.userWalletId;
     if (typeof walletId === 'string' && walletId.length > 0) return null;
     if (await this.inputs.accountHasInput(userId, accountId, tx)) return null;
-    const syncSource = await this.syncOwnership.resolveSyncSource(account, tx);
+    const syncSource = await this.syncOwnership.resolveSyncSource(userId, account, tx);
     if (syncSource !== null) return null;
     return { account, syncSource };
   }
@@ -148,8 +147,20 @@ export class MirrorLegWriter {
     const landing = existing
       ? await this.reuse(existing, source, quantity, destination.syncSource, tx)
       : await this.open(destination.account, source, quantity, tx);
-    const holdingId = landing.holding.id;
+    const { holdingId } = landing;
     const groupId = deterministicUuid(source.inputId, `mirror:${source.rowId}`);
+    const externalId = `${source.externalId}:mirror`;
+    // Where a replay finds the leg, so the holding it leaves is summarized
+    // again too (review M1).
+    const prior = await tx
+      .select({ holdingId: schema.holdingTransactions.holdingId })
+      .from(schema.holdingTransactions)
+      .where(
+        and(
+          eq(schema.holdingTransactions.inputId, source.inputId),
+          eq(schema.holdingTransactions.externalId, externalId)
+        )
+      );
 
     await tx
       .insert(schema.holdingTransactions)
@@ -161,7 +172,7 @@ export class MirrorLegWriter {
         quantity: quantity.toFixed(),
         occurredAt: source.occurredAt,
         source: MIRROR_LEG_SOURCE,
-        externalId: `${source.externalId}:mirror`,
+        externalId,
         transferGroupId: groupId,
         counterparty: source.counterparty,
         sourceMetadata: arrivalMetadata({
@@ -176,13 +187,15 @@ export class MirrorLegWriter {
         groupId,
         kindOrigin: 'mirror',
       })
+      // Keyed as every feed row is, by its input (D-7): a replay that finds
+      // the leg on another holding moves it to the one it wrote into now,
+      // where a (holding, source, external_id) target would insert a second
+      // leg the key refuses.
       .onConflictDoUpdate({
-        target: [
-          schema.holdingTransactions.holdingId,
-          schema.holdingTransactions.source,
-          schema.holdingTransactions.externalId,
-        ],
+        target: [schema.holdingTransactions.inputId, schema.holdingTransactions.externalId],
         set: {
+          holdingId,
+          tokenId: source.tokenId,
           quantity: quantity.toFixed(),
           occurredAt: source.occurredAt,
           transferGroupId: groupId,
@@ -190,7 +203,10 @@ export class MirrorLegWriter {
           updatedAt: sql`now()`,
         },
       });
-    await this.coverage.syncTxBoundsFromLedger([holdingId], tx);
+    await this.coverage.syncTxBoundsFromLedger(
+      [holdingId, ...prior.map((leg) => leg.holdingId)],
+      tx
+    );
 
     await tx
       .update(schema.holdingTransactions)
@@ -208,8 +224,9 @@ export class MirrorLegWriter {
         )
       );
 
+    // The copy's labels, read with the leg in place (D-5).
     if (landing.observationId !== null) {
-      await this.labelObservation(source.userId, holdingId, landing.observationId, tx);
+      await this.labeller.labelAsClassified(source.userId, holdingId, landing.observationId, tx);
     }
     return { holdingId, created: landing.created };
   }
@@ -238,7 +255,7 @@ export class MirrorLegWriter {
     const movedAnchor = adopted === null && anchorIsUnobserved(holding, syncSource);
     let observationId: string | null = null;
     if (movedAnchor) {
-      const balance = new Decimal(holding.balance).add(quantity).toFixed();
+      const balance = movedBalance(holding.balance, quantity);
       await this.cacheWriter.apply(userId, [{ holdingId: holding.id, balance }], tx);
       const copy = await this.observations.append(
         {
@@ -255,83 +272,26 @@ export class MirrorLegWriter {
       observationId = copy?.id ?? null;
     }
     await this.holdings.lowerStartsAt(userId, holding.id, source.occurredAt, tx);
-    return { holding, created: false, movedAnchor, adopted, observationId };
+    return { holdingId: holding.id, created: false, movedAnchor, adopted, observationId };
   }
 
-  /**
-   * Today's opened destination: the opening `openingOf` chooses, set as the
-   * cache, with the `holding-open` copy `createHoldingWithEvent` writes beside
-   * a non-zero one.
-   */
+  /** The destination the queue's own answer would open (`TransferDestinationOpener`). */
   private async open(
     account: SyncOwnableAccount,
     source: MirrorSource,
     quantity: Decimal,
     tx: DatabaseTransaction
   ): Promise<Landing> {
-    const { userId } = source;
-    const opening = await openingOf(tx, account, quantity);
-    const holding = await this.resolver.createSnapshotHolding(
+    const holdingId = await this.opener.open(
       {
-        userId,
-        accountId: account.id,
+        userId: source.userId,
+        account,
         tokenId: source.tokenId,
-        label: null,
-        source: opening.source,
-        arrival: 'user_confirmed',
+        quantity,
         at: source.occurredAt,
       },
       tx
     );
-    await this.cacheWriter.apply(userId, [{ holdingId: holding.id, balance: opening.balance }], tx);
-    const copy =
-      opening.balance === '0'
-        ? null
-        : await this.observations.append(
-            {
-              userId,
-              holdingId: holding.id,
-              balance: opening.balance,
-              observedAt: new Date(),
-              source: HOLDING_OPEN_OBSERVATION_SOURCE,
-              // The origin `HoldingService.createHoldingWithEvent` stamps on its copy.
-              sourceMetadata: { origin: 'createHoldingWithEvent', source: opening.source },
-            },
-            tx
-          );
-    return {
-      holding,
-      created: true,
-      movedAnchor: false,
-      adopted: null,
-      observationId: copy?.id ?? null,
-    };
-  }
-
-  /**
-   * The copy's labels, read off A1's classifier with the leg in place rather
-   * than restated, so they are the ones the backfill derives (D-5).
-   */
-  private async labelObservation(
-    userId: string,
-    holdingId: string,
-    observationId: string,
-    tx: DatabaseTransaction
-  ): Promise<void> {
-    const [raw] = await this.evidence.findHoldingEvidence({ userId, holdingIds: [holdingId] }, tx);
-    if (raw === undefined) return;
-    const { labels } = classifyHoldingEvidence(raw);
-    await this.evidence.fillMissingLabels(
-      userId,
-      [
-        {
-          holdingId,
-          holding: {},
-          observations: labels.observations.filter((label) => label.id === observationId),
-          entries: [],
-        },
-      ],
-      tx
-    );
+    return { holdingId, created: true, movedAnchor: false, adopted: null, observationId: null };
   }
 }

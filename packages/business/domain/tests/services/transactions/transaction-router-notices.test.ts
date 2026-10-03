@@ -82,7 +82,6 @@ function run(opts: Opts) {
     accountId: 'a1',
     institutionId: 'inst-1',
     institutionCode: 'binance',
-    source: 'binance-api',
     baseCurrency: baseCurrency(),
     since: opts.since,
     resolveCredentials: (async () => ({

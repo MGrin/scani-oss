@@ -1,5 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { Decimal, isValidDecimalString } from '../src/decimal';
+import {
+  AMOUNT_MAX_INTEGER_DIGITS,
+  amountWithinIntegerDigits,
+  Decimal,
+  isValidDecimalString,
+} from '../src/decimal';
 
 describe('Decimal — project-wide configuration', () => {
   test('has 28-digit precision', () => {
@@ -32,5 +37,29 @@ describe('isValidDecimalString', () => {
     expect(isValidDecimalString('not-a-number')).toBe(false);
     expect(isValidDecimalString('')).toBe(false);
     expect(isValidDecimalString('1.2.3')).toBe(false);
+  });
+});
+
+describe('amountWithinIntegerDigits (SC-1527)', () => {
+  test('the cap is fifteen digits before the point', () => {
+    expect(AMOUNT_MAX_INTEGER_DIGITS).toBe(15);
+  });
+
+  test('accepts the largest amount under the cap, in any spelling Decimal reads', () => {
+    expect(amountWithinIntegerDigits('999999999999999.99999999')).toBe(true);
+    expect(amountWithinIntegerDigits('0')).toBe(true);
+    // A screenshot parse can hand over a dust balance as JS prints it.
+    expect(amountWithinIntegerDigits('1e-7')).toBe(true);
+  });
+
+  test('refuses the 21-digit amount that became a $162T net worth', () => {
+    expect(amountWithinIntegerDigits('123456789012345678901')).toBe(false);
+    expect(amountWithinIntegerDigits('1000000000000000')).toBe(false);
+    expect(amountWithinIntegerDigits('-1000000000000000')).toBe(false);
+  });
+
+  test('refuses what is not a number at all', () => {
+    expect(amountWithinIntegerDigits('abc')).toBe(false);
+    expect(amountWithinIntegerDigits('Infinity')).toBe(false);
   });
 });

@@ -48,6 +48,10 @@ const CASES: Array<{ code: JobFailureCode; facts: Parameters<typeof describeJobF
     facts: { state: 'failed', deadAt: new Date(), failureReason: 'unrecoverable' },
   },
   {
+    code: 'sourceUnavailable',
+    facts: { state: 'failed', deadAt: new Date(), failureReason: 'source_unavailable' },
+  },
+  {
     code: 'exhausted',
     facts: { state: 'failed', deadAt: new Date(), attemptsMade: 3, attemptsAllowed: 3 },
   },
@@ -122,6 +126,16 @@ describe('a failure is named, not rendered', () => {
     expect(jobFailureLabel(t, describedFor('neverDelivered'))).toBe('Never started');
     expect(jobFailureLabel(t, describedFor('exhausted'))).toBe("Failed — won't retry");
     expect(jobFailureLabel(t, describedFor('settling'))).toBe('Failed');
+  });
+
+  // SC-1527. The one dead job whose chip must not say "won't retry": the
+  // worker stopped it because what it reads from was down, and its page
+  // offers Retry.
+  test('a source that could not be reached says to try again later', () => {
+    expect(jobFailureLabel(t, describedFor('sourceUnavailable'))).toBe('Failed — try again later');
+    expect(jobFailureSentence(t, describedFor('sourceUnavailable'))).toBe(
+      'A service this job depends on could not be reached, so it stopped early. Try it again later.'
+    );
   });
 
   /**

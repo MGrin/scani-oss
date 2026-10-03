@@ -1,4 +1,11 @@
-import { collidingHoldingTokens, contestedHoldingTokens } from '@scani/shared';
+import {
+  collidingHoldingTokens,
+  contestedHoldingTokens,
+  Decimal,
+  holdingPositionKey,
+} from '@scani/shared';
+import { httpStatus } from '@scani/ui/lib/user-facing-error';
+import { describeQueryError } from '@scani/ui/v3/lib/errors';
 import type { TFunction } from 'i18next';
 /**
  * The pure half of manual entry — what a half-filled form is still missing,
@@ -24,7 +31,13 @@ export interface HoldingDraft {
   tokenId: string;
   /** Display only, so a chosen token reads back before `tokens.getAll` lands. */
   tokenLabel: string;
+  /** The bare symbol, for copy that names the row. Falls back to `tokenLabel`. */
+  tokenSymbol?: string;
   balance: string;
+  /** The amount field holds text it refused to read — an exponent, or more
+   *  digits than any balance has — so `balance` is empty for a reason rather
+   *  than because the row is still being typed (SC-1527). */
+  balanceRejected?: boolean;
   /**
    * What the user calls this pot. Asked for only when the form names one token
    * on more than one row — four RUB rows off one Tinkoff screen are four real
@@ -83,8 +96,23 @@ export interface AccountTargetDraft {
   newAccount: NewAccountDraft;
 }
 
+/** A position the chosen account already holds by hand — the `held` half of
+ *  `collidingHoldingTokens`, as `batchOperations.heldPositions` returns it. */
+export interface HeldPosition {
+  tokenId: string;
+  label?: string | null;
+}
+
 export interface ManualEntryDraft extends AccountTargetDraft {
   holdings: HoldingDraft[];
+  /**
+   * What the chosen EXISTING account already holds for the tokens on the form
+   * (SC-1527). Without it the form could only see repeats within itself, while
+   * the worker refuses a repeat of a held position too — and refused the whole
+   * batch, valid rows included, after the form had said Save was fine.
+   * Ignored for a new account, which holds nothing.
+   */
+  held?: { accountName: string; positions: readonly HeldPosition[] };
 }
 
 /** The `batchOperations.ensureAccount` payload — an id when the account already
@@ -188,8 +216,37 @@ export function describeAccountTargetBlockers(t: TFunction, draft: AccountTarget
   return accountTargetBlockerKeys(draft).map((key) => t(key));
 }
 
-export function contestedHoldingTokenIds(holdings: readonly HoldingDraft[]): Set<string> {
-  return contestedHoldingTokens(completedHoldings(holdings));
+/**
+ * Tokens whose rows must say which pot they are: named on more than one row,
+ * or already held by the account (SC-1527) — the second is where the name
+ * field used to be missing while the refusal told the user to fill it in.
+ */
+export function contestedHoldingTokenIds(
+  holdings: readonly HoldingDraft[],
+  held: readonly HeldPosition[] = []
+): Set<string> {
+  return contestedHoldingTokens(completedHoldings(holdings), held);
+}
+
+function heldPositions(draft: ManualEntryDraft): readonly HeldPosition[] {
+  return draft.accountMode === 'existing' ? (draft.held?.positions ?? []) : [];
+}
+
+/** Rows whose position key the account already holds — what the worker
+ *  refuses with `DuplicateHoldingTokenError`. */
+function alreadyHeldTokenIds(draft: ManualEntryDraft): Set<string> {
+  const taken = new Set(
+    heldPositions(draft).map((row) => holdingPositionKey(row.tokenId, row.label))
+  );
+  return new Set(
+    completedHoldings(draft.holdings)
+      .filter((row) => taken.has(holdingPositionKey(row.tokenId, row.label)))
+      .map((row) => row.tokenId)
+  );
+}
+
+export function holdingSymbol(holding: HoldingDraft): string {
+  return holding.tokenSymbol || holding.tokenLabel;
 }
 
 /**
@@ -201,23 +258,82 @@ export function repeatedHoldingTokenIds(holdings: readonly HoldingDraft[]): stri
   return [...collidingHoldingTokens(completedHoldings(holdings))];
 }
 
+interface Blocker {
+  key: string;
+  vars?: Record<string, string>;
+}
+
+function isZeroAmount(balance: string): boolean {
+  try {
+    return new Decimal(balance.trim()).isZero();
+  } catch {
+    return false;
+  }
+}
+
+function symbolsOf(rows: readonly HoldingDraft[]): string {
+  return [...new Set(rows.map(holdingSymbol))].join(', ');
+}
+
 /**
  * What is still missing, in the order the form asks for it, phrased as the
  * thing to do. Empty means submittable.
  */
-function manualEntryBlockerKeys(draft: ManualEntryDraft): string[] {
-  const blockers = accountTargetBlockerKeys(draft);
-  if (completedHoldings(draft.holdings).length === 0) {
-    blockers.push('v3.capture.blocker.addHolding');
+function manualEntryBlockers(draft: ManualEntryDraft): Blocker[] {
+  const blockers: Blocker[] = accountTargetBlockerKeys(draft).map((key) => ({ key }));
+  const completed = completedHoldings(draft.holdings);
+  // A row the amount field refused is not "still being typed": it was typed,
+  // and nothing reached the value. Dropping it as unfinished is how a row
+  // vanished from the save with Save enabled.
+  const unreadable = draft.holdings.filter((row) => row.tokenId && row.balanceRejected);
+  if (completed.length === 0 && unreadable.length === 0) {
+    blockers.push({ key: 'v3.capture.blocker.addHolding' });
+  }
+  if (unreadable.length > 0) {
+    blockers.push({
+      key: 'v3.capture.blocker.unreadableAmount',
+      vars: { tokens: symbolsOf(unreadable) },
+    });
+  }
+  // A new holding of nothing writes a row that only ever reads zero, and is
+  // almost always a field left at its placeholder.
+  const zero = completed.filter((row) => isZeroAmount(row.balance));
+  if (zero.length > 0) {
+    blockers.push({ key: 'v3.capture.blocker.zeroAmount', vars: { tokens: symbolsOf(zero) } });
   }
   if (repeatedHoldingTokenIds(draft.holdings).length > 0) {
-    blockers.push('v3.capture.blocker.duplicateToken');
+    blockers.push({ key: 'v3.capture.blocker.duplicateToken' });
+  }
+  const held = alreadyHeldTokenIds(draft);
+  if (held.size > 0 && draft.held) {
+    blockers.push({
+      key: 'v3.capture.blocker.alreadyHeld',
+      vars: {
+        account: draft.held.accountName,
+        tokens: symbolsOf(completed.filter((row) => held.has(row.tokenId))),
+      },
+    });
   }
   return blockers;
 }
 
 export function describeManualEntryBlockers(t: TFunction, draft: ManualEntryDraft): string[] {
-  return manualEntryBlockerKeys(draft).map((key) => t(key));
+  return manualEntryBlockers(draft).map(({ key, vars }) => t(key, vars));
+}
+
+/**
+ * The sentence for a save the server refused.
+ *
+ * A 409 is `createHoldingsBatch` finding a held position the form did not know
+ * about — one added in another tab since the form loaded (SC-1527). It is
+ * refused before anything is enqueued, so nothing was written and the rows are
+ * still on the form; the caller refetches what the account holds, and the
+ * rows it names are marked. Anything else is `describeQueryError`'s.
+ */
+export function describeManualEntryFailure(t: TFunction, error: unknown): string {
+  if (httpStatus(error) === 409) return t('v3.capture.page.manual.alreadyHeldError');
+  const copy = describeQueryError(error, t('v3.capture.page.manual.subject'), 'create');
+  return `${copy.title}. ${copy.detail}`;
 }
 
 /**
@@ -268,7 +384,7 @@ export function buildHoldingsBatchInput(
   draft: ManualEntryDraft,
   requestId: string
 ): HoldingsBatchInput | null {
-  if (manualEntryBlockerKeys(draft).length > 0) return null;
+  if (manualEntryBlockers(draft).length > 0) return null;
 
   const creatingInstitution = draft.institutionMode === 'new';
   const creatingAccount = draft.accountMode === 'new';
@@ -294,7 +410,7 @@ export function buildHoldingsBatchInput(
       tokenId: holding.tokenId,
       // Only sent when the form actually asked. A name left on a row whose
       // token stopped repeating is not one the user chose to keep.
-      label: contestedHoldingTokenIds(draft.holdings).has(holding.tokenId)
+      label: contestedHoldingTokenIds(draft.holdings, heldPositions(draft)).has(holding.tokenId)
         ? holding.label.trim() || undefined
         : undefined,
       balance: holding.balance.trim(),
