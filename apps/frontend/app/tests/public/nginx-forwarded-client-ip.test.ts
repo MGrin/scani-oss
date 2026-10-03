@@ -20,7 +20,7 @@ function locationBlock(path: string): string {
 }
 
 describe('nginx names the visitor to the api', () => {
-  for (const path of ['/api/auth/', '/api/', '/ws']) {
+  for (const path of ['/api/auth/', '= /api/', '/api/']) {
     test(`${path} forwards the Fly-Client-IP it received`, () => {
       expect(locationBlock(path)).toMatch(
         /proxy_set_header\s+X-Scani-Forwarded-Client-IP\s+\$http_fly_client_ip;/

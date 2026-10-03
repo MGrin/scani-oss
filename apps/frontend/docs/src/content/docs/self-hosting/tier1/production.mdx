@@ -125,9 +125,9 @@ another orchestrator:
 | `frontend-app` | `scani/frontend-app:${SCANI_IMAGE_TAG:-latest}` | host `${FRONTEND_PORT:-8080}` | **Public internet** (behind your TLS proxy). |
 
 Only `frontend-app` needs to be reachable from the public internet.
-nginx inside the `frontend-app` container reverse-proxies `/api` and
-`/ws` to `api:3001` over the compose network — no extra wiring on
-your side.
+nginx inside the `frontend-app` container reverse-proxies `/api` —
+the realtime WebSocket included — to `api:3001` over the compose
+network, with no extra wiring on your side.
 
 ## Boot order
 
@@ -247,7 +247,7 @@ Graviton machines work out of the box.
 ```
 Internet ─→ Your reverse proxy (TLS) ─→ localhost:8080 (frontend-app)
                                               │
-                                              │ /api, /ws
+                                              │ /api
                                               ▼
                                             api:3001 ─→ data-provider:8082
                                               │              │
