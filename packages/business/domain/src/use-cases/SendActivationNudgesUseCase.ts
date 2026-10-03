@@ -99,7 +99,7 @@ export class SendActivationNudgesUseCase {
           name: candidate.name,
           language: candidate.language,
           appUrl: options.appUrl,
-          unsubscribeUrl: `${options.unsubscribeBaseUrl.replace(/\/+$/, '')}/e/n/${candidate.unsubscribeToken}`,
+          unsubscribeUrl: `${withoutTrailingSlashes(options.unsubscribeBaseUrl)}/e/n/${candidate.unsubscribeToken}`,
           privacyUrl: options.privacyUrl,
         }),
       });
@@ -113,4 +113,14 @@ export class SendActivationNudgesUseCase {
       return 'failed';
     }
   }
+}
+
+/**
+ * Scanned rather than `.replace(/\/+$/, '')`, which backtracks quadratically on
+ * a run of slashes (js/polynomial-redos, SC-483).
+ */
+function withoutTrailingSlashes(url: string): string {
+  let end = url.length;
+  while (end > 0 && url[end - 1] === '/') end--;
+  return url.slice(0, end);
 }
