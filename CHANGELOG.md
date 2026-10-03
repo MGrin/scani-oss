@@ -19,6 +19,14 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.51.2](https://github.com/MGrin/scani-oss/compare/v0.51.1...v0.51.2) (2026-10-03)
+
+
+### Bug Fixes
+
+* **app:** new-user journey fixes for money out, dates, sign-in and offline ([9f0d464](https://github.com/MGrin/scani-oss/commit/9f0d464e5aa956fcf466701b6a3d67de4f7e19ec))
+* Solana tokens resolve by mint, the installer explains a taken port, and the demo opens on a complete portfolio ([740e34f](https://github.com/MGrin/scani-oss/commit/740e34fb97cca296745081ae3e9a35e99a799593))
+
 ## [0.51.1](https://github.com/MGrin/scani-oss/compare/v0.51.0...v0.51.1) (2026-10-03)
 
 
