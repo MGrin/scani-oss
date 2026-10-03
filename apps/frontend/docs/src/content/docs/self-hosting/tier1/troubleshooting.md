@@ -49,6 +49,25 @@ password nobody has any more.
 `<project>` is the install directory's name unless you set
 `COMPOSE_PROJECT_NAME`. `docker volume ls` will show them.
 
+## The installer says a port is already in use
+
+**Symptom.** `scripts/self-host.sh` stops before writing anything with
+`port 8080 is already in use on this machine, and Scani needs it for the
+web app` (or the mail catcher's `8026`, or file storage's `9000`).
+
+**Fix.** Pick a free port and pass the setting the message names:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/MGrin/scani-oss/main/scripts/self-host.sh | SCANI_PORT=8081 bash
+```
+
+`SCANI_PORT` moves the web app, `SCANI_MAIL_PORT` the mail catcher and
+`SEAWEEDFS_S3_HOST_PORT` file storage. On a re-run in a directory that
+already has a `.env`, change `FRONTEND_PORT`, `MAILPIT_UI_PORT` or
+`SEAWEEDFS_S3_HOST_PORT` there instead, because the installer reuses
+that file as it is. `lsof -nP -iTCP:8080 -sTCP:LISTEN` shows what holds
+the port.
+
 ## Running two scani checkouts in parallel
 
 `bun run dev:stack` already gives each checkout a stack of its own. It

@@ -6,6 +6,14 @@ import { sourceForChainId } from '../../src/services/transactions/transaction-so
 
 const dataset = buildDemoDataset();
 
+/** The three outflows that once stood unanswered in the demo's review queue:
+ *  a payment to a person, a move to a bank Scani cannot see, and a chain
+ *  withdrawal with no matching deposit. */
+const SHOWCASE_OUTFLOWS = (externalId: string | null): boolean =>
+  externalId === 'demo-unanswered-eur' ||
+  externalId === 'demo-unanswered-gbp' ||
+  (externalId?.startsWith('demo-move-out-orphan-') ?? false);
+
 describe('demo dataset — determinism', () => {
   it('produces a byte-identical plan on a second build', () => {
     // The whole contract of this dataset in one assertion. A visual baseline
@@ -80,17 +88,44 @@ describe('demo dataset — the ledger is the source of truth', () => {
 });
 
 describe('demo dataset — every surface has something on it', () => {
-  it('leaves exactly the transfers meant to be unanswered in the queue', () => {
-    // `/review` counts outflows with no pair and no answer. Zero makes the
-    // queue look like a feature nobody uses; a hundred buries it.
+  it('leaves no transfer unanswered, so Returns covers every holding (SC-1526)', () => {
+    // An unanswered outflow excludes its whole holding from Returns, and the
+    // three this queue used to hold left out GBP 65K of a GBP 220K portfolio:
+    // a visitor's first screen read "4 items need your review" over a returns
+    // figure marked incomplete. The invoice below is what keeps /review from
+    // being empty.
     const queued = dataset.transactions.filter(
       (tx) =>
         (tx.kind === 'withdraw' || tx.kind === 'transfer_out') &&
         !tx.transferGroupId &&
         !tx.transferReview
     );
-    expect(queued.length).toBe(3);
-    expect(new Set(queued.map((tx) => tx.symbol)).size).toBe(3);
+    expect(queued).toHaveLength(0);
+
+    const showcase = dataset.transactions.filter((tx) => SHOWCASE_OUTFLOWS(tx.externalId));
+    expect(showcase).toHaveLength(3);
+    expect(new Set(showcase.map((tx) => tx.symbol)).size).toBe(3);
+    expect(new Set(showcase.map((tx) => tx.transferReview))).toEqual(
+      new Set(['left_control', 'untracked'])
+    );
+    for (const tx of showcase) expect(tx.transferReviewSource).toBe('user');
+  });
+
+  it('spends weekly, so the net-worth chart has no monthly dip-and-recover (SC-1526)', () => {
+    // One month of card spending leaving the day before the retainer lands
+    // drew a GBP 6K dip that recovered overnight, every month, on the chart a
+    // visitor sees first.
+    const spends = dataset.transactions.filter((tx) =>
+      tx.externalId.startsWith('demo-card-spend-')
+    );
+    const byMonth = new Map<string, number>();
+    for (const tx of spends) {
+      const month = tx.externalId.slice('demo-card-spend-'.length, -3);
+      byMonth.set(month, (byMonth.get(month) ?? 0) + 1);
+      expect(-Number(tx.quantity)).toBeLessThanOrEqual(1500);
+    }
+    const complete = [...byMonth.values()].filter((n) => n === 4);
+    expect(complete.length).toBeGreaterThan(12);
   });
 
   it('answers the settled bills so they do not crowd the queue', () => {
@@ -288,7 +323,7 @@ describe('demo dataset — a wallet account is shaped like an imported one', () 
     for (const account of others) expect(account.metadata).toEqual({});
   });
 
-  it('gives an unanswered outflow a same_network destination to offer', () => {
+  it('gives a showcase outflow a same_network destination to offer', () => {
     // SC-961. `TransferReviewService.destinationsFor` bands an account
     // `same_network` when its chainId equals the SOURCE account's and it holds
     // none of the token. Before this the band was unreachable on seeded data
@@ -304,14 +339,10 @@ describe('demo dataset — a wallet account is shaped like an imported one', () 
     const chainOf = (accountKey: string): string | undefined =>
       (accountByKey.get(accountKey)?.metadata as { chainId?: string } | undefined)?.chainId;
 
-    const unanswered = dataset.transactions.filter(
-      (tx) =>
-        (tx.kind === 'withdraw' || tx.kind === 'transfer_out') &&
-        tx.transferGroupId === null &&
-        tx.transferReview === null
-    );
-    // Control: the queue the demo shows. Zero here would pass the search below
-    // vacuously.
+    // Answered since SC-1526, so the band is reached by reopening an answer
+    // rather than from the queue; the outflows are the same three.
+    const unanswered = dataset.transactions.filter((tx) => SHOWCASE_OUTFLOWS(tx.externalId));
+    // Control: zero here would pass the search below vacuously.
     expect(unanswered).toHaveLength(3);
 
     const offered = unanswered.flatMap((tx) => {

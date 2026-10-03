@@ -509,6 +509,9 @@ const GBP_CARRY_TARGET = 7500;
  *  and a thin one cannot produce a negative withdrawal. */
 const GBP_CARD_MIN = 900;
 const GBP_CARD_MAX = 5500;
+/** The days of the month that spending leaves on, the last being the day the
+ *  month's total is sized. */
+const CARD_SPEND_DAYS = [6, 13, 20, 27] as const;
 
 /** EUR converted to GBP at the start of every month. */
 const MONTHLY_EUR_CONVERSION = 12_900;
@@ -716,6 +719,7 @@ function buildCashFlows(
     externalId: 'demo-unanswered-eur',
     counterparty: 'L. Vasseur',
     description: 'Subcontracted design work',
+    transferReview: 'left_control',
   });
   events.push({
     holdingKey: 'wise-gbp-cash',
@@ -728,6 +732,7 @@ function buildCashFlows(
     source: 'statement-csv',
     externalId: 'demo-unanswered-gbp',
     counterparty: 'MONZO BANK',
+    transferReview: 'untracked',
   });
 
   // Card spending last, because it is what is left. Walking the account's own
@@ -749,19 +754,32 @@ function buildCashFlows(
       Math.min(GBP_CARD_MAX, Math.max(GBP_CARD_MIN, balance - GBP_CARRY_TARGET))
     );
     balance -= spent;
-    events.push({
-      holdingKey: 'wise-gbp-cash',
-      day,
-      hour: 20,
-      kind: 'withdraw',
-      delta: -spent,
-      priceNativeSymbol: 'GBP',
-      priceNative: 1,
-      source: 'statement-csv',
-      externalId: `demo-card-spend-${day}`,
-      transferReview: 'left_control',
-      counterparty: 'Card spending and cash',
-      description: 'Groceries, travel, everything uncategorised',
+    // Paid out weekly rather than in one row: a month of spending leaving on
+    // the 27th and the retainer landing on the 28th drew a net-worth dip of
+    // about GBP 6K that recovered the next day, every month, and read as a
+    // glitch on the chart a visitor sees first (SC-1526).
+    const weekly = roundQuantity('GBP', spent / CARD_SPEND_DAYS.length);
+    CARD_SPEND_DAYS.forEach((dayOfMonth, index) => {
+      const spendDay = monthDay(ctx.startDate, month, dayOfMonth);
+      if (spendDay < ctx.startDate) return;
+      const last = index === CARD_SPEND_DAYS.length - 1;
+      const amount = last
+        ? roundQuantity('GBP', spent - weekly * (CARD_SPEND_DAYS.length - 1))
+        : weekly;
+      events.push({
+        holdingKey: 'wise-gbp-cash',
+        day: spendDay,
+        hour: 20,
+        kind: 'withdraw',
+        delta: -amount,
+        priceNativeSymbol: 'GBP',
+        priceNative: 1,
+        source: 'statement-csv',
+        externalId: `demo-card-spend-${spendDay}`,
+        transferReview: 'left_control',
+        counterparty: 'Card spending and cash',
+        description: 'Groceries, travel, everything uncategorised',
+      });
     });
   }
 
@@ -1037,6 +1055,7 @@ function buildInvestmentFlows(ctx: LedgerContext): {
     externalId: `demo-move-out-orphan-${orphanDay}`,
     counterparty: 'bc1q...8f2a',
     description: 'Withdrawal, destination unrecorded',
+    transferReview: 'untracked',
   });
 
   // Bitcoin bought before the exchange account existed, and Solana staked.

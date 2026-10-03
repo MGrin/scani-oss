@@ -475,9 +475,9 @@ describe('FeedIngestService.ingest — settlement legs', () => {
 });
 
 describe('FeedIngestService.ingest — identities', () => {
-  // `TokenIdentityService` has no mint lookup, so it decides what two mints
-  // with one symbol become; ingest asks it once per identity and writes where
-  // it answers (ruling R31). Teaching it mints is filed separately.
+  // `TokenIdentityService` decides what two mints with one symbol become;
+  // ingest asks it once per identity and writes where it answers (ruling R31).
+  // Since SC-1510 it resolves an SPL token by its mint, so the answers differ.
   test('two identities with one symbol and different mints each go to TokenIdentityService, and land on the token it gives them', async () => {
     const service = Container.get(TokenIdentityService);
     const original = service.findOrCreateByIdentity.bind(service);
@@ -505,6 +505,7 @@ describe('FeedIngestService.ingest — identities', () => {
         );
 
         expect([...answers.keys()].sort()).toEqual(['synthetic-mint-a', 'synthetic-mint-b']);
+        expect(answers.get('synthetic-mint-a')).not.toBe(answers.get('synthetic-mint-b'));
         const rows = await ledgerOf(tx, fixture.userId);
         expect(rows.map((r) => [r.externalId, r.tokenId])).toEqual([
           ['m1', answers.get('synthetic-mint-a')!],
