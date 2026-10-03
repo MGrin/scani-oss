@@ -283,7 +283,7 @@ describe('nginx add_header inheritance is replace, not merge', () => {
    * one with the other. Adding the include there would silently tighten
    * whatever policy the api chose.
    */
-  const PROXY_EXEMPT = new Set(['/api/', '/ws']);
+  const PROXY_EXEMPT = new Set(['/api/auth/', '/api/', '/ws']);
 
   test('every location that sets a header of its own also pulls the include', () => {
     const offenders = parseLocations(NGINX_SITE)

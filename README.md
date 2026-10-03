@@ -51,7 +51,7 @@ You need [Bun](https://bun.sh) ≥ 1.3 and Docker (Docker Desktop, OrbStack,
 or any compatible runtime).
 
 ```bash
-git clone git@github.com:MGrin/scani-oss.git
+git clone https://github.com/MGrin/scani-oss.git
 cd scani-oss
 bun install
 bun run dev:stack        # boots Postgres, Redis, SeaweedFS, Mailpit, api, worker, data-provider, frontend

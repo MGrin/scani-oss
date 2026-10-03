@@ -347,9 +347,9 @@ ok "Scani is running at http://localhost:${SCANI_PORT}"
 echo
 echo "  Sign up:   http://localhost:${SCANI_PORT}"
 if [ "$INSTALL_TIER" = 2 ]; then
-  echo "  Your code: delivered by Scani Cloud to your email inbox"
+  echo "  Sign-in:   a link from Scani Cloud, in your email inbox"
 else
-  echo "  Your code: http://localhost:${SCANI_MAIL_PORT}   (sign-in is passwordless — read the code here)"
+  echo "  Sign-in:   http://localhost:${SCANI_MAIL_PORT}   (passwordless — open the link in the mail there)"
 fi
 echo "  Logs:      docker compose logs -f api worker"
 echo "  Stop:      docker compose down"

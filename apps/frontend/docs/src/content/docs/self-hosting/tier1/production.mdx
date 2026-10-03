@@ -26,8 +26,8 @@ curl -fsSL https://raw.githubusercontent.com/MGrin/scani-oss/main/scripts/self-h
 That is the whole install. `scripts/self-host.sh` fetches this compose file,
 generates a `.env` full of real secrets, pulls the images, applies migrations
 and brings the stack up, then waits for it to answer HTTP before saying so.
-Scani is on [http://localhost:8080](http://localhost:8080); your sign-in code
-is at [http://localhost:8026](http://localhost:8026).
+Scani is on [http://localhost:8080](http://localhost:8080); your sign-in link
+arrives at [http://localhost:8026](http://localhost:8026).
 
 Knobs, all optional: `SCANI_IMAGE_TAG` (pin a release), `SCANI_PORT`,
 `SCANI_MAIL_PORT`, `SCANI_REF`, and `SCANI_SKIP_UP=1` to write `.env` and stop
@@ -94,7 +94,8 @@ another orchestrator:
    docker compose -f docker-compose.prod.yml logs -f frontend-app api worker
    ```
 
-5. Put a TLS-terminating reverse proxy in front of `frontend-app:8080`.
+5. Put a TLS-terminating reverse proxy in front of `localhost:8080`, where
+   `frontend-app` is published.
 
    See [TLS & reverse proxy](/self-hosting/tier1/tls-reverse-proxy/)
    for Caddy and nginx examples.
@@ -116,7 +117,7 @@ another orchestrator:
 | `postgres` | `postgres:16-alpine` | (internal) | Other compose services. |
 | `redis` | `redis:7-alpine` | (internal) | Other compose services. |
 | `seaweedfs` | `chrislusf/seaweedfs:4.47` (digest pinned) | `127.0.0.1:9000` | Authenticated S3; reverse proxy for browser uploads. |
-| `mailpit` | `axllent/mailpit:latest` | `127.0.0.1:8026` | You, to read your own sign-in code. Replace with real SMTP before anyone else signs in. |
+| `mailpit` | `axllent/mailpit:latest` | `127.0.0.1:8026` | You, to read your own sign-in link. Replace with real SMTP before anyone else signs in. |
 | `migrate` (profile-gated) | `scani/migrate:${SCANI_IMAGE_TAG:-latest}` | (none) | One-shot; exits after applying migrations. |
 | `data-provider` | `scani/data-provider:${SCANI_IMAGE_TAG:-latest}` | (internal) | `api`, `worker`. |
 | `api` | `scani/api:${SCANI_IMAGE_TAG:-latest}` | (internal) | `frontend-app` via nginx reverse proxy. |
@@ -244,7 +245,7 @@ Graviton machines work out of the box.
 ## Public-internet shape
 
 ```
-Internet ─→ Your reverse proxy (TLS) ─→ frontend-app:8080
+Internet ─→ Your reverse proxy (TLS) ─→ localhost:8080 (frontend-app)
                                               │
                                               │ /api, /ws
                                               ▼
