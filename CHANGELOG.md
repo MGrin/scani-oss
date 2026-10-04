@@ -19,6 +19,18 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.52.2](https://github.com/MGrin/scani-oss/compare/v0.52.1...v0.52.2) (2026-10-04)
+
+
+### Bug Fixes
+
+* **account:** deleting an account clears its id from cloud usage rows ([21f9b30](https://github.com/MGrin/scani-oss/commit/21f9b30cdb04cd3f7429ea48e285662ad1e92cef))
+* **jobs:** a finished deletion job removes itself, and a gone import target ends the import ([9765ca8](https://github.com/MGrin/scani-oss/commit/9765ca88dcf6d1a4b45240dae561d4e2272e5c89))
+* **worker:** a refused request ends the job and is not dead-lettered ([9c31c1f](https://github.com/MGrin/scani-oss/commit/9c31c1f406491dba0604ef1bb39945440ea3091b))
+* **worker:** a row the queue refuses to remove no longer stops the dead-letter probe ([9d9ef7b](https://github.com/MGrin/scani-oss/commit/9d9ef7b46dfbdab9d393b7f09c1515a7b25d1c63))
+* **worker:** alert on each new dead letter, and expire old ones ([989ea70](https://github.com/MGrin/scani-oss/commit/989ea704add4e365338f10edce26fcfab774d1e0))
+* **worker:** end a manual entry naming a gone institution or user without a dead letter ([b19fbe1](https://github.com/MGrin/scani-oss/commit/b19fbe117412e584667b8920751604036546ef00))
+
 ## [0.52.1](https://github.com/MGrin/scani-oss/compare/v0.52.0...v0.52.1) (2026-10-03)
 
 
