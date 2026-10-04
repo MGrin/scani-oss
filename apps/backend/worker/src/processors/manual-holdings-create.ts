@@ -398,9 +398,22 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
     return rows.length === tokenIds.length ? rows.map((r) => r.symbol).sort() : tokenIds;
   }
 
-  protected async loadUser(userId: string) {
+  protected async findUser(userId: string) {
     const [user] = await db.select().from(schema.users).where(eq(schema.users.id, userId)).limit(1);
-    if (!user) throw new Error(`User ${userId} not found`);
+    return user;
+  }
+
+  protected async loadUser(userId: string) {
+    const user = await this.findUser(userId);
+    if (!user) {
+      // The account was deleted between the request and this run. No retry
+      // brings it back and nobody is left to read a sentence, so the job ends
+      // here with the words it always had — and is not dead-lettered or
+      // alerted on (SC-1558). A rise in this line would mean an enqueue-order
+      // bug rather than deletions.
+      logger.warn({ userId }, 'Manual holdings create refused: the user it names is gone');
+      throw new UnrecoverableError(`User ${userId} not found`);
+    }
     if (!user.baseCurrencyId) throw new Error(`User ${userId} has no base currency configured`);
     return user;
   }

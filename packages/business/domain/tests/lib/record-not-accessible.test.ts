@@ -24,6 +24,7 @@ import { RecordNotAccessibleError } from '../../src/lib/record-not-accessible';
 import { AccountRepository } from '../../src/repositories/AccountRepository';
 import { HoldingCoverageRepository } from '../../src/repositories/HoldingCoverageRepository';
 import { HoldingRepository } from '../../src/repositories/HoldingRepository';
+import { InstitutionRepository } from '../../src/repositories/InstitutionRepository';
 import { AccountService } from '../../src/services/accounts/AccountService';
 import { FeedIngestService } from '../../src/services/feeds/FeedIngestService';
 import { legacyStatementBatch } from '../../src/services/feeds/legacy/statement-batch';
@@ -93,6 +94,40 @@ describe('AccountService.getAccountById', () => {
   test("CONTROL: the requester's own account is returned", async () => {
     const own = { id: ACCOUNT, userId: USER };
     expect(await serviceOver(own).getAccountById(USER, ACCOUNT)).toBe(own as never);
+  });
+});
+
+// SC-1558. A manual entry that names an institution which is gone, or is
+// another user's own, was a plain Error out of `createAccount`: the job has no
+// retries, so it was dead-lettered and alerted on as a defect.
+describe('AccountService.createAccount', () => {
+  const INSTITUTION = 'inst-1';
+  const NEW_ACCOUNT = { institutionId: INSTITUTION, name: 'Everyday', typeId: 'type-1' };
+  const serviceOver = (isVisibleTo: () => Promise<boolean>) => {
+    Container.set(InstitutionRepository, { isVisibleTo } as unknown as InstitutionRepository);
+    return new AccountService();
+  };
+
+  test('an institution that is gone, or is not theirs', async () => {
+    const refusal = await refusalOf(() =>
+      serviceOver(async () => false).createAccount(NEW_ACCOUNT as never, USER)
+    );
+    expect(refusal.record).toBe('institution');
+    expect(refusal.message).toBe(`Institution with ID ${INSTITUTION} not found`);
+  });
+
+  test('CONTROL: a visibility lookup that fails is not a refusal', async () => {
+    const lookupFailed = new Error('Failed query: select from "institutions"');
+    const failure = await serviceOver(async () => {
+      throw lookupFailed;
+    })
+      .createAccount(NEW_ACCOUNT as never, USER)
+      .then(
+        () => null,
+        (error: unknown) => error
+      );
+    expect(failure).toBe(lookupFailed);
+    expect(failure).not.toBeInstanceOf(RecordNotAccessibleError);
   });
 });
 
