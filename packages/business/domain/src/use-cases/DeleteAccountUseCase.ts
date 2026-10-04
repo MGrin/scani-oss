@@ -54,6 +54,16 @@ export class DeleteAccountUseCase {
             )
           );
         await tx.delete(schema.users).where(eq(schema.users.id, userId));
+        // Usage rows have no foreign key and stay as the metering record, so
+        // the two columns naming the account are cleared by hand (SC-1554).
+        await tx
+          .update(schema.cloudUsageEvents)
+          .set({ subject: null })
+          .where(eq(schema.cloudUsageEvents.subject, userId));
+        await tx
+          .update(schema.cloudUsageEvents)
+          .set({ tenantId: null })
+          .where(eq(schema.cloudUsageEvents.tenantId, userId));
         return true;
       },
       { name: 'deleteAccount', timeout: 30000 }

@@ -100,7 +100,9 @@ These are **never updated, never deleted** in normal operation:
 - `holding_balance_observations`.
 - `token_price_edit_history`.
 - `admin_audit_log`.
-- `cloud_usage_events`.
+- `cloud_usage_events` (one exception: deleting an account clears
+  `subject` and `tenant_id` on its rows, which stay as the metering
+  record with no account id on them).
 
 See [Why an append-only ledger](/decisions/append-only-ledger/).
 

@@ -44,7 +44,10 @@ The cloud-management surface
 - A Better-Auth cookie session for the management console.
 - Postgres-backed per-request metering
   (`cloud_usage_events` table) so the operator knows what to bill /
-  rate-limit / shut down.
+  rate-limit / shut down. Deleting an account clears its id from that
+  account's rows (`subject` and `tenant_id`) and keeps the rows, so
+  totals hold but a deleted account's usage can no longer be billed to
+  it by id.
 
 If you're considering **running** a Tier-3 deployment for others
 (rather than using one), the operator-side documentation isn't part

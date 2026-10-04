@@ -24,6 +24,7 @@ restoreContainerAfterAll();
 const createdUsers: string[] = [];
 const createdTokens: string[] = [];
 const createdInstitutions: string[] = [];
+const createdUsageRequests: string[] = [];
 
 interface Seeded {
   userId: string;
@@ -107,6 +108,11 @@ afterAll(async () => {
   for (const userId of createdUsers) {
     await Container.get(DeleteAccountUseCase).execute(userId);
   }
+  if (createdUsageRequests.length > 0) {
+    await db
+      .delete(schema.cloudUsageEvents)
+      .where(inArray(schema.cloudUsageEvents.requestId, createdUsageRequests));
+  }
   if (createdTokens.length > 0) {
     await db.delete(schema.tokens).where(inArray(schema.tokens.id, createdTokens));
   }
@@ -152,6 +158,41 @@ test('deleting a user deletes its Cloud API keys', async () => {
       .from(schema.cloudApiKeys)
       .where(eq(schema.cloudApiKeys.ownerUserId, target.userId))
   ).toEqual([]);
+});
+
+test('a deleted account is named by no Cloud usage row, and the rows stay (SC-1554)', async () => {
+  const target = await seedAccount(`metered-${randomUUID().slice(0, 8)}@example.invalid`);
+  const control = await seedAccount(`metering-${randomUUID().slice(0, 8)}@example.invalid`);
+  const usage = (userId: string) => ({
+    subject: userId,
+    tenantId: userId,
+    requestId: randomUUID(),
+    route: 'processing.v1.price',
+    provider: 'fixture',
+    outcome: 'ok',
+    durationMs: 1,
+  });
+  const rows = [usage(target.userId), usage(target.userId), usage(control.userId)];
+  createdUsageRequests.push(...rows.map((row) => row.requestId));
+  await getDb().insert(schema.cloudUsageEvents).values(rows);
+
+  await Container.get(DeleteAccountUseCase).execute(target.userId);
+
+  const after = await getDb()
+    .select({
+      subject: schema.cloudUsageEvents.subject,
+      tenantId: schema.cloudUsageEvents.tenantId,
+    })
+    .from(schema.cloudUsageEvents)
+    .where(inArray(schema.cloudUsageEvents.requestId, createdUsageRequests));
+  expect(after).toHaveLength(3);
+  expect(after.filter((row) => row.subject === null && row.tenantId === null)).toHaveLength(2);
+  expect(
+    after.filter((row) => row.subject === target.userId || row.tenantId === target.userId)
+  ).toEqual([]);
+  expect(after.filter((row) => row.subject === control.userId)).toEqual([
+    { subject: control.userId, tenantId: control.userId },
+  ]);
 });
 
 test('an id with no user reads as not deleted, so a re-run is harmless', async () => {
