@@ -5,7 +5,13 @@ export { BACKFILL_COUNTERPARTY_SCHEDULE } from './backfill-counterparty';
 export { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from './backfill-token-identity';
 export { DB_BACKUP_SCHEDULE } from './db-backup';
 export { DEMO_RESET_SCHEDULE } from './demo-reset';
-export { DLQ_DEPTH_PROBE_SCHEDULE } from './dlq-depth-probe';
+export {
+  DEAD_LETTER_ALARM,
+  DEAD_LETTER_MAX_AGE_MS,
+  DEAD_LETTER_RENOTIFY_MS,
+  DLQ_DEPTH_PROBE_SCHEDULE,
+  FAILED_JOB_MAX_AGE_MS,
+} from './dlq-depth-probe';
 export { ENGINE_SHADOW_SCHEDULE } from './engine-shadow';
 export { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 export { EXCHANGE_TRANSACTIONS_SCHEDULE } from './exchange-transactions';

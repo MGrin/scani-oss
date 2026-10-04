@@ -36,6 +36,7 @@ import type { CsvMapping } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { readUpload } from '../lib/read-upload';
 import { widenToEarliestWrite } from '../lib/rebuild-window';
+import { asJobFailure } from '../lib/request-refusal';
 
 const logger = createComponentLogger('processor:file-import');
 
@@ -261,25 +262,31 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     // and the retry would find nothing changed and rebuild 400 days over rows
     // older than that (ruling R26).
     const imported = (await this.knowsAny(currencies, securities))
-      ? await getDb().transaction(async (tx) => {
-          const ingested = await Container.get(FeedIngestService).ingest(
-            legacyStatementBatch({
-              userId: data.userId,
-              accountId: data.accountId,
-              result: statement,
-              uploadRef: data.r2Key,
-              // The same file is the same document, so it is the same fetch and
-              // a second upload of it records no second window.
-              fetchedAt: document?.createdAt ?? new Date(),
-            }),
-            tx
-          );
-          const tokens = await Container.get(TokenRepository).findByIds(
-            ingested.holdings.map((h) => h.tokenId),
-            tx
-          );
-          return { ingested, tokens };
-        })
+      ? await getDb()
+          .transaction(async (tx) => {
+            const ingested = await Container.get(FeedIngestService).ingest(
+              legacyStatementBatch({
+                userId: data.userId,
+                accountId: data.accountId,
+                result: statement,
+                uploadRef: data.r2Key,
+                // The same file is the same document, so it is the same fetch and
+                // a second upload of it records no second window.
+                fetchedAt: document?.createdAt ?? new Date(),
+              }),
+              tx
+            );
+            const tokens = await Container.get(TokenRepository).findByIds(
+              ingested.holdings.map((h) => h.tokenId),
+              tx
+            );
+            return { ingested, tokens };
+          })
+          // The feed write refuses an account the user does not have, and
+          // refuses it again on the retry RETRY_HEAVY allows (SC-1545).
+          .catch((error: unknown) => {
+            throw asJobFailure(error, ctx.job.id);
+          })
       : null;
     const ingested = imported?.ingested ?? null;
     const unknown = new Set(ingested ? ingested.skippedAssets.map((a) => a.symbol) : currencies);

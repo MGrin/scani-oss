@@ -1,7 +1,7 @@
 import { describe, expect, it, mock } from 'bun:test';
-import { IntegrationCredentialsService } from '@scani/domain/services';
+import { ImportTargetGoneError, IntegrationCredentialsService } from '@scani/domain/services';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
-import { ImportIbkrAccountsUseCase } from '@scani/domain/use-cases';
+import { ImportExchangeAccountsUseCase, ImportIbkrAccountsUseCase } from '@scani/domain/use-cases';
 import type { ExchangeImportJob } from '@scani/jobs';
 import { IbkrProvider } from '@scani/providers/providers/ibkr';
 import {
@@ -304,5 +304,83 @@ describe('ExchangeImportProcessor — IBKR failures', () => {
 
     expect(userFacingMessage(error)).toBeNull();
     expect(markImportFailed).toHaveBeenCalledTimes(1);
+  });
+
+  // SC-1545. The job is enqueued after its credential row is committed, so a
+  // user, credential or institution missing at run time was removed in between
+  // and a retry reads the same absence. As plain Errors these were retried,
+  // then filed in the dead-letter queue as failures.
+  describe('a request naming something that is gone', () => {
+    function setupRefusal(thrown: Error) {
+      const markImportFailed = mock(async (_id: string, _reason: string) => {});
+      const getCredentials = mock(async () => ({ id: 'cred-1' }));
+      Container.set(IntegrationCredentialsService, { getCredentials, markImportFailed });
+      Container.set(BullMqEnqueueService, { add: mock(async () => undefined) });
+      // Thrown bare, the way both use cases raise it: nothing wraps a refusal.
+      const useCase = {
+        execute: async () => {
+          throw thrown;
+        },
+      };
+      Container.set(ImportIbkrAccountsUseCase, useCase);
+      Container.set(ImportExchangeAccountsUseCase, useCase);
+      return { markImportFailed, processor: new TestableProcessor() };
+    }
+
+    const refusals = [
+      ['a user', new ImportTargetGoneError('user', 'User not found')],
+      [
+        'a credential',
+        new ImportTargetGoneError('credentials', 'No credentials found for this institution'),
+      ],
+      ['an institution', new ImportTargetGoneError('institution', 'Institution not found: i1')],
+    ] as const;
+
+    describe.each([
+      ['IBKR', 'Interactive Brokers'],
+      ['exchange', 'Kraken'],
+    ])('%s import', (_name, provider) => {
+      it.each(refusals)('%s that is gone fails once, with no retry', async (_what, refused) => {
+        const { processor } = setupRefusal(refused);
+
+        // First of three attempts: a plain Error here is rethrown and retried.
+        const error = await failureOf(processor.run({ ...data, provider }, ctxFor(0)));
+
+        expect(error).toBeInstanceOf(UnrecoverableError);
+      });
+
+      it.each(refusals)(
+        '%s that is gone shows the owner what it did before',
+        async (_what, refused) => {
+          const { processor } = setupRefusal(refused);
+
+          const error = await failureOf(processor.run({ ...data, provider }, ctxFor(0)));
+
+          // Same words, and still not marked for the owner: no sentence is added.
+          expect(error.message).toBe(refused.message);
+          expect(userFacingMessage(error)).toBeNull();
+        }
+      );
+
+      it('marks the credential failed once, as an exhausted import did', async () => {
+        const { markImportFailed, processor } = setupRefusal(refusals[2][1]);
+
+        await failureOf(processor.run({ ...data, provider }, ctxFor(0)));
+
+        expect(markImportFailed).toHaveBeenCalledTimes(1);
+        expect(markImportFailed.mock.calls[0]?.[1]).toBe('Institution not found: i1');
+      });
+
+      it('CONTROL: a lookup that fails is rethrown as it came, and retried', async () => {
+        const lookupFailed = new Error('Failed query: select from "institutions"');
+        const { markImportFailed, processor } = setupRefusal(lookupFailed);
+
+        const error = await failureOf(processor.run({ ...data, provider }, ctxFor(0)));
+
+        expect(error).toBe(lookupFailed);
+        expect(error).not.toBeInstanceOf(UnrecoverableError);
+        expect(markImportFailed).not.toHaveBeenCalled();
+      });
+    });
   });
 });

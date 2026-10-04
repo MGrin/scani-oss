@@ -124,11 +124,14 @@ export const cloudApiKeys = pgTable(
 // dashboard. The data-provider inserts rows and aggregates in SQL (no
 // third-party meter SaaS). `subject` is the billable id (e.g.
 // users.id). Migration: 0051_cloud_usage_events.sql
+// No foreign key to the account on purpose: the rows outlive it as the
+// metering record, and account deletion clears `subject` and `tenant_id`,
+// the two columns that name it (SC-1554).
 export const cloudUsageEvents = pgTable(
   'cloud_usage_events',
   {
     id: uuid('id').defaultRandom().primaryKey(),
-    subject: text('subject').notNull(),
+    subject: text('subject'),
     apiKeyId: text('api_key_id'),
     tenantId: text('tenant_id'),
     requestId: text('request_id'),

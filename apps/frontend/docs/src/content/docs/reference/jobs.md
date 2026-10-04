@@ -40,7 +40,7 @@ four times an hour.
 | `engine-shadow` | Nightly, 05:45 UTC (`45 5 * * *`) | Foundation shadow (A1): compute every holding's balance and every held token's price with the new engine beside today's stored balances and both of today's price resolvers, and store each difference with a cause category in `engine_shadow_differences`. Writes only its report tables, plus any exchange rate the live price resolver fetches into `token_prices`, as a dashboard read does. A failed attempt is retried, and a retry runs only the kinds no earlier attempt recorded. Removed at the flip (A5). |
 | `reconcile-pending-credentials` | Every 15 minutes (`*/15 * * * *`) | Sweep stuck `pending` integration-credential rows (UI flow interruptions). |
 | `reconcile-orphaned-user-jobs` | Every 15 minutes (`*/15 * * * *`) | Sweep stuck `running` user-job rows whose worker process died. |
-| `dlq-depth-probe` | Every 15 minutes (`*/15 * * * *`) | Read the dead-letter queue depth; emit a warn log when it crosses thresholds. |
+| `dlq-depth-probe` | Every 15 minutes (`*/15 * * * *`) | Sweep the dead-letter queue: alert once for each new entry, remove entries older than 14 days and failed jobs older than 30, and alert when the depth crosses a threshold. |
 | `job-heartbeat-probe` | Every 15 minutes (`*/15 * * * *`) | Detect jobs whose heartbeat went silent; mark them stuck. |
 | `stale-sync-probe` | Hourly (`0 * * * *`) | Detect active, credentialed integrations that have silently stopped syncing — stale `lastSync` or zero accounts — and escalate. **Fires on ENTERING that condition, not on every probe that observes it.** `operator_alarms` holds which conditions are already open: entering escalates, recovery deletes the row and is logged rather than escalated, and a condition still true after `STALE_SYNC_RENOTIFY_MS` (7 days) is re-stated as a distinct event so it cannot go silent forever. A per-probe alarm is not merely noisy — it outnumbers every low-frequency signal the service produces and makes a once-a-day failure unreadable for as long as it lasts. Re-entry after a recovery is a fresh escalation, which is why this is a ledger rather than a rate limit or a grouping rule. |
 | `hide-closed-holdings` | Nightly, 04:30 UTC (`30 4 * * *`) | Auto-hide holdings that have been at zero balance for the configured window. |
@@ -115,8 +115,9 @@ Defined in `packages/business/jobs/src/retry-policies.ts`:
 
 ## DLQ (dead-letter queue)
 
-Jobs that exhaust their retries land in `scani-dlq`. The
-`dlq-depth-probe` job alarms when depth grows.
+Jobs that exhaust their retries land in `scani-dlq`. Nothing consumes that
+queue: the `dlq-depth-probe` job alerts once for each new entry and removes it
+14 days after it arrived.
 
 ## Adding a job
 

@@ -16,11 +16,16 @@
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
-import { CreateHoldingsWithDependenciesUseCase, DuplicateHoldingTokenError } from '@scani/domain';
+import {
+  CreateHoldingsWithDependenciesUseCase,
+  DuplicateHoldingTokenError,
+  RecordNotAccessibleError,
+} from '@scani/domain';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import type { ManualHoldingsCreateJob } from '@scani/jobs';
-import { type ProcessorContext, UnrecoverableError } from '@scani/queue';
+import { type ProcessorContext, UnrecoverableError, userFacingMessage } from '@scani/queue';
 import { Container } from 'typedi';
+import { describeRefusedRecord } from '../../src/lib/request-refusal';
 import {
   describeDuplicateHoldingTokens,
   ManualHoldingsCreateProcessor,
@@ -112,6 +117,29 @@ describe('ManualHoldingsCreateProcessor error classification', () => {
     const err = await failureOf(new Error('socket hang up'));
     expect(err).not.toBeInstanceOf(UnrecoverableError);
     expect((err as Error).message).toBe('socket hang up');
+  });
+
+  // SC-1545. Both of these reached the dead-letter queue in production as
+  // plain Errors, with the domain layer's own words as the failure reason.
+  // This descriptor is RETRY_NONE, so what is pinned is the class (no page, no
+  // dead letter) and the sentence (no id, and not the domain message).
+  test.each([
+    ['an account that is not theirs', 'Access denied to this account'],
+    ['an account that is gone', 'Account with ID acct-1 not found'],
+  ])('%s fails terminally, in words written for the owner', async (_name, domainMessage) => {
+    const err = await failureOf(new RecordNotAccessibleError('account', domainMessage));
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect(userFacingMessage(err)).toBe(describeRefusedRecord('account'));
+    expect((err as Error).message).not.toContain('acct-1');
+  });
+
+  test('a balance update naming a holding that is gone fails terminally too', async () => {
+    const err = await failureOf(
+      new RecordNotAccessibleError('holding', 'Holding holding-1 not found')
+    );
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect(userFacingMessage(err)).toBe(describeRefusedRecord('holding'));
+    expect((err as Error).message).not.toContain('holding-1');
   });
 });
 

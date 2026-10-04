@@ -1,6 +1,8 @@
 // Flat re-exports — consumers import from `@scani/domain/services`
 // regardless of the underlying cluster directory.
 
+export { ImportTargetGoneError } from '../lib/import-target-gone';
+export { RecordNotAccessibleError } from '../lib/record-not-accessible';
 // accounts/
 export { AccountService } from './accounts/AccountService';
 export { InstitutionService } from './accounts/InstitutionService';

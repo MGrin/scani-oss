@@ -8,6 +8,7 @@ import { PostgresResourceLock, type ProcessorContext, UserJobProcessor } from '@
 import { emitEntityChange } from '@scani/realtime';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { asJobFailure } from '../lib/request-refusal';
 
 const logger = createComponentLogger('processor:holding-price-update');
 
@@ -28,7 +29,7 @@ export class HoldingPriceUpdateProcessor extends UserJobProcessor<HoldingPriceUp
   readonly descriptor = HOLDING_PRICE_UPDATE;
   private readonly resourceLock = Container.get(PostgresResourceLock);
 
-  protected async handle(data: HoldingPriceUpdateJob, _ctx: ProcessorContext): Promise<unknown> {
+  protected async handle(data: HoldingPriceUpdateJob, ctx: ProcessorContext): Promise<unknown> {
     const lockKey = `lock:holding-price:${data.holdingId}`;
     const lock = await this.resourceLock.acquire(lockKey, PRICE_LOCK_TTL_MS);
     if (!lock.ok) {
@@ -57,12 +58,16 @@ export class HoldingPriceUpdateProcessor extends UserJobProcessor<HoldingPriceUp
         userId: data.userId,
       });
       return result;
+    } catch (error) {
+      // A holding deleted since the click will not come back on the two
+      // attempts RETRY_FAST has left (SC-1545).
+      throw asJobFailure(error, ctx.job.id);
     } finally {
       await lock.release();
     }
   }
 
-  private async resolveBaseCurrencySymbol(userId: string): Promise<string> {
+  protected async resolveBaseCurrencySymbol(userId: string): Promise<string> {
     const [user] = await db
       .select({ baseCurrencyId: schema.users.baseCurrencyId })
       .from(schema.users)

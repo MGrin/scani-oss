@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import {
+  ImportTargetGoneError,
   IntegrationCredentialsService,
   PortfolioValueCache,
   sourceForProvider,
@@ -149,6 +150,29 @@ export class ExchangeImportProcessor extends UserJobProcessor<ExchangeImportJob,
         onStatus: (message) => ctx.reportStatus(message),
       });
     } catch (error) {
+      if (error instanceof ImportTargetGoneError) {
+        // The user, credential or institution was removed after the job was
+        // enqueued, so a retry reads the same absence (SC-1545). Logged at
+        // warn: a rise in these would mean something enqueues before its row
+        // is committed. Not marked `userFacing` — the owner reads what an
+        // exhausted import showed them.
+        logger.warn(
+          {
+            jobId: ctx.job.id,
+            userId: data.userId,
+            institutionId: data.institutionId,
+            missing: error.missing,
+            reason: error.message,
+          },
+          'Exchange import refused: what it names is gone'
+        );
+        // No Sentry capture: a removed record is not a defect to page on, and
+        // the warn line above is the trace.
+        await markCredentialFailed(data.userId, data.institutionId, error.message, {
+          captureException: () => {},
+        });
+        throw new UnrecoverableError(error.message);
+      }
       if (isUnrecoverableExchangeError(error)) {
         // BullMQ UnrecoverableError short-circuits the retry policy —
         // the job goes to `failed` immediately instead of re-running.

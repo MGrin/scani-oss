@@ -1,6 +1,7 @@
 import { type DatabaseTransaction, getDb } from '@scani/db';
 import { type JobNotice, toJobNotice } from '@scani/providers/core/types';
 import { Container, Service } from 'typedi';
+import { RecordNotAccessibleError } from '../../lib/record-not-accessible';
 import { orphanedSwapLegsNotice } from '../../lib/transactions/swap-groups';
 import { AccountRepository } from '../../repositories/AccountRepository';
 import { EngineEvidenceRepository } from '../../repositories/EngineEvidenceRepository';
@@ -158,7 +159,10 @@ export class FeedIngestService {
     const { userId } = batch;
     const { accountId } = batch.input;
     if ((await this.accounts.findByIdAndUser(accountId, userId, tx)) === null) {
-      throw new Error(`FeedIngestService: user ${userId} has no account ${accountId}`);
+      throw new RecordNotAccessibleError(
+        'account',
+        `FeedIngestService: user ${userId} has no account ${accountId}`
+      );
     }
     const tokens = new BatchTokens(this.assets);
     if (tx) return await this.write(batch, tx, tokens);

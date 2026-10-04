@@ -9,6 +9,7 @@ import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { deriveBalancesAsOf, withBalancesAsOf } from '../lib/balances-as-of';
 import { SCAM_PROBABILITY_THRESHOLD } from '../lib/constants';
+import { RecordNotAccessibleError } from '../lib/record-not-accessible';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { FeedInputRepository } from '../repositories/FeedInputRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
@@ -383,7 +384,7 @@ export class RefreshAccountBalanceUseCase {
     if (!accountId && input.holdingId) {
       const holding = await this.holdingRepository.findById(input.holdingId);
       if (!holding || holding.userId !== input.userId) {
-        throw new Error(`Holding not found or not owned by user`);
+        throw new RecordNotAccessibleError('holding', 'Holding not found or not owned by user');
       }
       accountId = holding.accountId;
     }
@@ -397,7 +398,10 @@ export class RefreshAccountBalanceUseCase {
       .where(and(eq(schema.accounts.id, accountId), eq(schema.accounts.userId, input.userId)))
       .limit(1);
     if (!account) {
-      throw new Error(`Account ${accountId} not found or not owned by user`);
+      throw new RecordNotAccessibleError(
+        'account',
+        `Account ${accountId} not found or not owned by user`
+      );
     }
 
     // Hidden and scam-flagged rows included: the exit probe asks about a

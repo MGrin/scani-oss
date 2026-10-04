@@ -95,3 +95,25 @@ test('an account with no recorded jobs still has its dead letters removed', asyn
 
   expect(await present(id)).toBe(false);
 });
+
+/**
+ * SC-1545. The main queue was purged by the ids `user_jobs` recorded, so a job
+ * with no such row kept its payload: production held five `failed` rows for
+ * two accounts that no longer existed.
+ */
+test('a main-queue job that names the deleted account is removed without a user_jobs row', async () => {
+  const deleted = randomUUID();
+  const other = randomUUID();
+  const theirs = await jobs.get().add('manual-holdings-create', { userId: deleted });
+  const someoneElses = await jobs.get().add('manual-holdings-create', { userId: other });
+  const onMainQueue = async (id: string | undefined) => Boolean(await jobs.get().getJob(id ?? ''));
+
+  // CONTROL: both are readable before the purge.
+  expect([await onMainQueue(theirs.id), await onMainQueue(someoneElses.id)]).toEqual([true, true]);
+
+  await new DeleteAllUserDataUseCase().purgeAfterCommit(deleted, new Map());
+
+  expect(await onMainQueue(theirs.id)).toBe(false);
+  expect(await onMainQueue(someoneElses.id)).toBe(true);
+  await someoneElses.remove();
+});

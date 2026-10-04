@@ -25,6 +25,7 @@ import {
 import { emitEntityChange } from '@scani/realtime';
 import { eq, inArray } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { asJobFailure } from '../lib/request-refusal';
 
 // Days of history to materialize after manual-create. 365 keeps the
 // follow-up job fast (one provider call per token per ~year of data)
@@ -140,7 +141,9 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
           )
         );
       }
-      throw error;
+      // An account or holding the payload names that is gone, or was never
+      // this user's (SC-1545).
+      throw asJobFailure(error, ctx.job.id);
     }
 
     await ctx.reportProgress(PHASE_DB_DONE);

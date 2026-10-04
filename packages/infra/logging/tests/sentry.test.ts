@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import {
   addBreadcrumb,
+  captureContext,
   captureException,
   flushSentry,
   initSentry,
@@ -88,5 +89,19 @@ describe('prepareSentryEvent (SC-1350)', () => {
   test('control: with no scrubber the event is returned unchanged', () => {
     const event = { message: 'plain' };
     expect(prepareSentryEvent(event)).toEqual({ message: 'plain' });
+  });
+});
+
+describe('captureContext (SC-1545)', () => {
+  test('a fingerprint travels to Sentry beside the tags', () => {
+    expect(captureContext({ kind: 'dead-letter-alert' }, ['dead-letter', 'file-import'])).toEqual({
+      tags: { kind: 'dead-letter-alert' },
+      fingerprint: ['dead-letter', 'file-import'],
+    });
+  });
+
+  test('control: with none, Sentry is left to group the event itself', () => {
+    expect('fingerprint' in captureContext({ kind: 'dlq-depth-alert' })).toBe(false);
+    expect('fingerprint' in captureContext({ kind: 'dlq-depth-alert' }, [])).toBe(false);
   });
 });

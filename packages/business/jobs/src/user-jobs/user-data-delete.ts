@@ -23,7 +23,10 @@ export const USER_DATA_DELETE: UserJobDescriptor<UserDataDeleteJob> = {
     // Destructive: RETRY_NONE so a failure surfaces immediately
     // rather than getting auto-replayed against partially-deleted data.
     ...RETRY_NONE,
-    removeOnComplete: 100,
+    // This job names the user in its payload AND in its id, and the purge it
+    // runs cannot remove it: BullMQ refuses to remove a job a worker holds.
+    // Kept by count, the row outlived the user it deleted (SC-1545).
+    removeOnComplete: true,
     removeOnFail: 500,
   },
   computeJobId: (d) => [JOB_NAMES.userDataDelete, d.userId, d.requestId].join(JOB_ID_SEP),
