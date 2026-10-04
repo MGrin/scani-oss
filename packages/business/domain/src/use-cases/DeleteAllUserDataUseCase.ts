@@ -198,6 +198,7 @@ export class DeleteAllUserDataUseCase {
           );
         }
       }
+      removed += await this.purgeJobsNamingUser(client, userId);
       const deadLetters = await this.purgeDeadLetters(client, userId, new Set(jobIds));
       logger.info(
         { userId, totalJobIds: jobIds.length, removed, deadLetters },
@@ -211,6 +212,29 @@ export class DeleteAllUserDataUseCase {
         'QueueClient unavailable; skipping BullMQ payload purge'
       );
     }
+  }
+
+  /**
+   * The ids above are the ones `user_jobs` recorded, and a job with no such
+   * row kept its payload: production held five `failed` rows for two accounts
+   * that no longer existed (SC-1545). Matched on the payload, as the dead
+   * letters below are.
+   */
+  private async purgeJobsNamingUser(client: QueueClient, userId: string): Promise<number> {
+    let removed = 0;
+    for (const job of await client.get().getJobs()) {
+      if ((job.data as { userId?: unknown } | null)?.userId !== userId) continue;
+      try {
+        await job.remove();
+        removed++;
+      } catch (err) {
+        logger.warn(
+          { userId, jobId: job.id, error: err instanceof Error ? err.message : String(err) },
+          'Failed to remove BullMQ payload during user-data-delete (non-fatal)'
+        );
+      }
+    }
+    return removed;
   }
 
   /**

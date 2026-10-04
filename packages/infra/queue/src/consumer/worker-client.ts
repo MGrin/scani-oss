@@ -299,12 +299,12 @@ export class WorkerClient {
       // DLQ push — generic infra; preserves the failure for later replay
       // even after BullMQ's removeOnFail truncates the original.
       //
-      // 14-day age cap on both completed + failed: prod hit a 1671-row
-      // DLQ in two weeks under `removeOnComplete:false, removeOnFail:false`
-      // (one busted reconciler firing every minute), which made the
-      // admin UI unusable and saturated Upstash storage. The DLQ is for
-      // post-mortem of recent failures, not historical archival — older
-      // entries are noise.
+      // No `removeOnFail` / `removeOnComplete` age here: both apply when a
+      // job finishes, and nothing consumes the DLQ, so an entry never does.
+      // The two this line carried for 14 days never removed anything
+      // (SC-1545). The DLQ is for post-mortem of recent failures, not
+      // historical archival, and the worker's `dlq-depth-probe` is what
+      // removes an old entry.
       //
       // Gated on `retriesExhausted` rather than on terminality so this
       // stays exactly what it was before SC-153: a by-design
@@ -313,22 +313,15 @@ export class WorkerClient {
       // wrong API key.
       if (retriesExhausted && this.dlq) {
         try {
-          await this.dlq.add(
-            job.name,
-            {
-              originalJobId: job.id,
-              originalName: job.name,
-              data: job.data,
-              failedReason: err instanceof Error ? err.message : String(err),
-              stack: err instanceof Error ? err.stack : undefined,
-              attemptsMade: job.attemptsMade,
-              timestamp: Date.now(),
-            },
-            {
-              removeOnComplete: { age: 14 * 24 * 60 * 60 },
-              removeOnFail: { age: 14 * 24 * 60 * 60 },
-            }
-          );
+          await this.dlq.add(job.name, {
+            originalJobId: job.id,
+            originalName: job.name,
+            data: job.data,
+            failedReason: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined,
+            attemptsMade: job.attemptsMade,
+            timestamp: Date.now(),
+          });
           log.warn({ jobId: job.id, name: job.name }, '☠️ Job pushed to DLQ');
         } catch (dlqErr) {
           log.error({ error: dlqErr }, '⚠️ Failed to write to DLQ');
@@ -484,15 +477,5 @@ export class WorkerClient {
   /** Poll now instead of at the idle timer — the api's ping after an enqueue (SC-1144). */
   wake(): void {
     if (this.worker) interruptIdleWait(this.worker);
-  }
-
-  // Total DLQ entries (waiting / delayed / active; failed jobs land in 'waiting'
-  // since the DLQ has no consumer). Used by the DLQ-depth probe to
-  // surface backlogs that would otherwise silently accumulate until
-  // someone notices in the admin UI.
-  async getDlqDepth(): Promise<number> {
-    if (!this.dlq) return 0;
-    const counts = await this.dlq.getJobCounts('waiting', 'delayed', 'active');
-    return Object.values(counts).reduce((sum, n) => sum + (typeof n === 'number' ? n : 0), 0);
   }
 }
