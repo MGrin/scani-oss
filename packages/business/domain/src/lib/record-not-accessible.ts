@@ -1,6 +1,6 @@
 /**
- * The request named an account or a holding the requester cannot act on: it
- * does not exist, or it is somebody else's.
+ * The request named an account, a holding or an institution the requester
+ * cannot act on: it does not exist, or it is somebody else's.
  *
  * Typed because the two readers of this failure need different things from it
  * and neither can get them from the words. An API caller shows `message`, so
@@ -10,7 +10,7 @@
  */
 export class RecordNotAccessibleError extends Error {
   constructor(
-    readonly record: 'account' | 'holding',
+    readonly record: 'account' | 'holding' | 'institution',
     message: string
   ) {
     super(message);

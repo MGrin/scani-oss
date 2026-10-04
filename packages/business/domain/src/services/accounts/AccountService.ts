@@ -50,12 +50,15 @@ export class AccountService extends BaseService {
       this.validateNonEmptyString(data.name, 'name');
 
       // Another user's own institution reads as missing, the same as one that
-      // does not exist (SC-1354).
+      // does not exist (SC-1354). Typed, because a worker job reaches this too
+      // and has to know a retry cannot change the answer (SC-1558).
       const visible = await this.institutionRepository.isVisibleTo(data.institutionId!, userId, tx);
-      this.assertExists(
-        visible ? true : null,
-        `Institution with ID ${data.institutionId} not found`
-      );
+      if (!visible) {
+        throw new RecordNotAccessibleError(
+          'institution',
+          `Institution with ID ${data.institutionId} not found`
+        );
+      }
 
       const account = await this.accountRepository.create(
         {

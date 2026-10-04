@@ -5,18 +5,23 @@ import { UnrecoverableError, userFacing } from '@scani/queue';
 const logger = createComponentLogger('worker:request-refusal');
 
 /**
- * What a job's owner reads when the account or holding it named is gone, or
- * was never theirs.
+ * What a job's owner reads when the account, holding or institution it named
+ * is gone, or was never theirs.
  *
- * One sentence for both, on purpose: another user's record reads as missing,
+ * One sentence per record for both cases, on purpose: another user's record reads as missing,
  * so the answer says nothing about an id that is not the requester's
  * (SC-1336). And no id at all — the domain message carries a uuid, and this
  * string is shown to a person on the Jobs page (SC-1527).
  */
 export function describeRefusedRecord(record: RecordNotAccessibleError['record']): string {
-  return record === 'account'
-    ? 'The account this was for could not be found. It may have been deleted. Choose another account and try again.'
-    : 'The holding this was for could not be found. It may have been deleted. Reload the page and try again.';
+  switch (record) {
+    case 'account':
+      return 'The account this was for could not be found. It may have been deleted. Choose another account and try again.';
+    case 'holding':
+      return 'The holding this was for could not be found. It may have been deleted. Reload the page and try again.';
+    case 'institution':
+      return 'The institution this was for could not be found. It may have been removed. Choose another institution and try again.';
+  }
 }
 
 /**

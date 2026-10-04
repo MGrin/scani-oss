@@ -8,12 +8,18 @@ import { asJobFailure, describeRefusedRecord } from '../../src/lib/request-refus
 const ACCESS_DENIED = new RecordNotAccessibleError('account', 'Access denied to this account');
 const ACCOUNT_GONE = new RecordNotAccessibleError('account', 'Account with ID acct-1 not found');
 const HOLDING_GONE = new RecordNotAccessibleError('holding', 'Holding not found');
+// SC-1558: a manual entry naming an institution that is gone or not theirs.
+const INSTITUTION_GONE = new RecordNotAccessibleError(
+  'institution',
+  'Institution with ID inst-1 not found'
+);
 
 describe('asJobFailure', () => {
   test.each([
     ['an account that is not theirs', ACCESS_DENIED],
     ['an account that is gone', ACCOUNT_GONE],
     ['a holding that is gone', HOLDING_GONE],
+    ['an institution that is gone', INSTITUTION_GONE],
   ])('%s ends the job without a retry', (_name, refused) => {
     // A plain Error would be retried, then copied to the dead-letter queue.
     expect(asJobFailure(refused, 'job-1')).toBeInstanceOf(UnrecoverableError);
@@ -26,6 +32,14 @@ describe('asJobFailure', () => {
     expect(userFacingMessage(asJobFailure(HOLDING_GONE, 'job-1'))).toBe(
       'The holding this was for could not be found. It may have been deleted. Reload the page and try again.'
     );
+  });
+
+  test('an institution refusal has its own sentence, with no id in it', () => {
+    const message = userFacingMessage(asJobFailure(INSTITUTION_GONE, 'job-1'));
+    expect(message).toBe(
+      'The institution this was for could not be found. It may have been removed. Choose another institution and try again.'
+    );
+    expect(message).not.toContain('inst-1');
   });
 
   test('the id the domain message carries does not reach the owner', () => {

@@ -141,6 +141,60 @@ describe('ManualHoldingsCreateProcessor error classification', () => {
     expect(userFacingMessage(err)).toBe(describeRefusedRecord('holding'));
     expect((err as Error).message).not.toContain('holding-1');
   });
+
+  // SC-1558. The two refusals SC-1545 left: both were still plain Errors, so
+  // still dead-lettered and alerted on.
+  test('an institution that is gone fails terminally, in words written for the owner', async () => {
+    const err = await failureOf(
+      new RecordNotAccessibleError('institution', 'Institution with ID inst-1 not found')
+    );
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect(userFacingMessage(err)).toBe(describeRefusedRecord('institution'));
+    expect(userFacingMessage(err)).toContain('institution');
+    expect((err as Error).message).not.toContain('inst-1');
+  });
+});
+
+describe('ManualHoldingsCreateProcessor, the user the job was for', () => {
+  /** The real `loadUser` over a stubbed lookup, so the classification is the subject. */
+  class OverUserLookup extends ManualHoldingsCreateProcessor {
+    constructor(private readonly lookup: () => Promise<unknown>) {
+      super();
+    }
+
+    run(data: ManualHoldingsCreateJob, ctx: ProcessorContext) {
+      return this.handle(data, ctx);
+    }
+
+    protected override async findUser() {
+      return (await this.lookup()) as Awaited<
+        ReturnType<ManualHoldingsCreateProcessor['findUser']>
+      >;
+    }
+  }
+
+  const failureWith = (lookup: () => Promise<unknown>) =>
+    new OverUserLookup(lookup).run(JOB, makeCtx()).then(
+      () => null,
+      (error: unknown) => error
+    );
+
+  test('a user that is gone ends the job terminally, with the words it always had', async () => {
+    const err = await failureWith(async () => undefined);
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect((err as Error).message).toBe(`User ${JOB.userId} not found`);
+    // Nobody is left to read it, so nothing is written for an owner.
+    expect(userFacingMessage(err)).toBeNull();
+  });
+
+  test('CONTROL: a user lookup that fails is rethrown as it came', async () => {
+    const lookupFailed = new Error('Failed query: select from "users"');
+    const err = await failureWith(async () => {
+      throw lookupFailed;
+    });
+    expect(err).toBe(lookupFailed);
+    expect(err).not.toBeInstanceOf(UnrecoverableError);
+  });
 });
 
 describe('describeDuplicateHoldingTokens', () => {
