@@ -49,6 +49,22 @@ function describeDeadLetter(job: {
 }
 
 /**
+ * Housekeeping must not cost the alert. BullMQ refuses to remove a row its
+ * scheduler owns, and that throw ended this probe's first production run
+ * before it had looked at a single dead letter: three attempts, then the probe
+ * itself was dead-lettered (SC-1545). A row that will not go is named in the
+ * run's summary line and left.
+ */
+async function removed(job: { remove: () => Promise<unknown> }): Promise<boolean> {
+  try {
+    await job.remove();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * The dead-letter queue has no consumer, so this probe is the only thing that
  * ever looks at it (SC-1545). Each run:
  *
@@ -85,6 +101,7 @@ async function runDeadLetterProbe(
   const nowMs = now.getTime();
 
   const live: DeadLetter[] = [];
+  const unremovable: string[] = [];
   let expired = 0;
   for (const job of await queues.deadLetter().getJobs(['waiting', 'delayed', 'active'])) {
     const letter = describeDeadLetter(job);
@@ -92,7 +109,11 @@ async function runDeadLetterProbe(
       live.push(letter);
       continue;
     }
-    await job.remove();
+    if (!(await removed(job))) {
+      unremovable.push(letter.id);
+      live.push(letter);
+      continue;
+    }
     expired += 1;
     logger.warn(
       {
@@ -107,8 +128,8 @@ async function runDeadLetterProbe(
   let failedExpired = 0;
   for (const job of await queues.get().getJobs(['failed'])) {
     if (nowMs - (job.finishedOn ?? job.timestamp) <= FAILED_JOB_MAX_AGE_MS) continue;
-    await job.remove();
-    failedExpired += 1;
+    if (await removed(job)) failedExpired += 1;
+    else unremovable.push(String(job.id));
   }
 
   const byId = new Map(live.map((letter) => [letter.id, letter]));
@@ -125,6 +146,7 @@ async function runDeadLetterProbe(
       threshold: depthThreshold,
       expired,
       failedExpired,
+      unremovable,
       entered: entered.length,
       restated: restated.length,
       cleared: cleared.length,

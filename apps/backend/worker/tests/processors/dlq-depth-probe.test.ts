@@ -284,4 +284,63 @@ describe('dead-letter probe', () => {
     await probeAfter(FAILED_JOB_MAX_AGE_MS + DAY);
     expect(await failed()).toBe(0);
   });
+
+  /**
+   * Production, 2026-10-03T23:30Z, the first run after this probe shipped: a
+   * `db-backup` row that had failed 35 days earlier belonged to its scheduler,
+   * BullMQ refused to remove it, and the throw ended the probe before it had
+   * looked at a single dead letter. Three attempts, then the probe itself was
+   * dead-lettered. Housekeeping that cannot finish must not cost the alert.
+   */
+  test('a row the queue refuses to remove does not stop the probe from reporting', async () => {
+    const { captured, probeAfter } = harness();
+    const schedulerId = `sc1545-scheduler-${randomUUID()}`;
+    const worker = new WorkerClient();
+    workers.push(worker);
+    worker.configure({ connection: databaseUrl, queueName, dlqName });
+    worker.register({
+      descriptor: { name: 'scheduled-fails' },
+      process: async () => {
+        throw new Error('synthetic scheduled failure');
+      },
+    } as never);
+    const running = await worker.start();
+    running.on('error', () => undefined);
+    await running.waitUntilReady();
+    try {
+      await queues
+        .get()
+        .upsertJobScheduler(
+          schedulerId,
+          { every: 60 * MINUTE },
+          { name: 'scheduled-fails', opts: { attempts: 1 } }
+        );
+      const failedRows = async () => queues.get().getJobs(['failed']);
+      const deadline = Date.now() + 10_000;
+      while ((await failedRows()).length === 0 && Date.now() < deadline) await Bun.sleep(25);
+      const [owned] = await failedRows();
+      // CONTROL: the row is the kind production held, and removing it does throw.
+      expect(String(owned?.id)).toContain(schedulerId);
+      await expect(owned?.remove()).rejects.toThrow(/belongs to a job scheduler/);
+
+      const past = FAILED_JOB_MAX_AGE_MS + DAY;
+      await deadLetter(
+        'document-parse',
+        'the provider refused the file',
+        Date.now() + past - MINUTE
+      );
+      await probeAfter(past);
+
+      expect(captured.map((c) => c.tags?.kind)).toContain('dead-letter-alert');
+      expect(captured.some((c) => c.message.includes('document-parse'))).toBe(true);
+    } finally {
+      await queues
+        .get()
+        .removeJobScheduler(schedulerId)
+        .catch(() => undefined);
+      for (const job of await queues.get().getJobs(['failed', 'delayed', 'waiting'])) {
+        await job.remove().catch(() => undefined);
+      }
+    }
+  });
 });
