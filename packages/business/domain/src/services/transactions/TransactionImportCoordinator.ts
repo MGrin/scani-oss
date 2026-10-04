@@ -26,6 +26,7 @@ import { type JobNotice, type NoticeInput, toJobNotice } from '@scani/providers/
 import { ETHERSCAN_CHAINS } from '@scani/providers/providers/etherscan';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { RecordNotAccessibleError } from '../../lib/record-not-accessible';
 import {
   describeMergedCoverageRows,
   HoldingCoverageRepository,
@@ -301,10 +302,16 @@ export class TransactionImportCoordinator {
       .limit(1);
     const account = accountRow[0];
     if (!account) {
-      throw new Error(`TransactionImport: account ${accountId} not found`);
+      throw new RecordNotAccessibleError(
+        'account',
+        `TransactionImport: account ${accountId} not found`
+      );
     }
     if (account.userId !== userId) {
-      throw new Error(`TransactionImport: account ${accountId} does not belong to user ${userId}`);
+      throw new RecordNotAccessibleError(
+        'account',
+        `TransactionImport: account ${accountId} does not belong to user ${userId}`
+      );
     }
 
     const institutionCode = resolveInstitutionCode(source, account.metadata);

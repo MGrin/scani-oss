@@ -5,6 +5,7 @@ import { createComponentLogger } from '@scani/logging';
 import { PostgresResourceLock, type ProcessorContext, UserJobProcessor } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { Container, Service } from 'typedi';
+import { asJobFailure } from '../lib/request-refusal';
 
 const logger = createComponentLogger('processor:refresh-account-balance');
 
@@ -26,7 +27,7 @@ export class RefreshAccountBalanceProcessor extends UserJobProcessor<
   readonly descriptor = REFRESH_ACCOUNT_BALANCE;
   private readonly resourceLock = Container.get(PostgresResourceLock);
 
-  protected async handle(data: RefreshAccountBalanceJob, _ctx: ProcessorContext): Promise<unknown> {
+  protected async handle(data: RefreshAccountBalanceJob, ctx: ProcessorContext): Promise<unknown> {
     const lockKey = `lock:refresh-balance:${data.accountId}`;
     const lock = await this.resourceLock.acquire(lockKey, REFRESH_LOCK_TTL_MS);
     if (!lock.ok) {
@@ -61,6 +62,9 @@ export class RefreshAccountBalanceProcessor extends UserJobProcessor<
       });
 
       return result;
+    } catch (error) {
+      // An account or holding deleted since the click (SC-1545).
+      throw asJobFailure(error, ctx.job.id);
     } finally {
       await lock.release();
     }

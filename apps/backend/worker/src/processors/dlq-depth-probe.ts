@@ -57,7 +57,13 @@ function describeDeadLetter(job: {
  *      a job nothing consumes never does — production held one for 35 days;
  *   2. removes `failed` rows on the main queue older than `FAILED_JOB_MAX_AGE_MS`;
  *   3. escalates each dead letter ONCE, on arrival, through the alarm ledger
- *      `stale-sync-probe` uses, and restates one still there a week later;
+ *      `stale-sync-probe` uses, and restates one still there a week later.
+ *      One event per job name and arrival day, fingerprinted as such: the
+ *      machine's `sentry watch` files a task per Sentry ISSUE it has not seen,
+ *      and every event thrown from this one line would otherwise be one issue
+ *      for ever — the first dead letter filed and no later one. The day bounds
+ *      a flood to one issue per job, and a restatement lands on the issue the
+ *      entry arrived under rather than opening a second;
  *   4. escalates the depth at `depthThreshold`, the flood alarm.
  *
  * Before (3) the probe spoke only at a depth of 50, so a failure that happens
@@ -66,9 +72,13 @@ function describeDeadLetter(job: {
 async function runDeadLetterProbe(
   depthThreshold: number,
   now: Date,
-  deps: { captureException: (err: unknown, tags?: Record<string, string>) => void } = {
-    captureException,
-  }
+  deps: {
+    captureException: (
+      err: unknown,
+      tags?: Record<string, string>,
+      fingerprint?: readonly string[]
+    ) => void;
+  } = { captureException }
 ): Promise<void> {
   const queues = Container.get(QueueClient);
   const alarms = Container.get(OperatorAlarmRepository);
@@ -146,38 +156,50 @@ async function runDeadLetterProbe(
   }
 
   function escalate(transition: 'entered' | 'restated', ids: string[]): void {
-    const fired = ids.flatMap((id) => {
-      const found = byId.get(id);
-      return found ? [found] : [];
-    });
-    if (fired.length === 0) return;
-    const listed = fired
-      .map((l) => `${l.name} after ${l.attempts} attempt(s): ${l.reason}`)
-      .join(' | ');
-    logger.error(
-      {
-        transition,
-        count: fired.length,
-        ids: fired.map((l) => l.id),
-        names: fired.map((l) => l.name),
-      },
-      '🚨 Dead letters need triage'
-    );
-    deps.captureException(
-      new Error(
-        transition === 'entered'
-          ? `${fired.length} job(s) dead-lettered: ${listed}. ` +
-              'Triage on the admin /jobs/dlq page: replay it, remove it, or file the bug it shows.'
-          : `${fired.length} dead letter(s) still untriaged: ${listed}. ` +
-              `Each is removed ${DEAD_LETTER_MAX_AGE_MS / DAY_MS} days after it arrived.`
-      ),
-      {
-        component: 'worker',
-        kind: 'dead-letter-alert',
-        count: String(fired.length),
-        transition,
-      }
-    );
+    const groups = new Map<string, { fingerprint: string[]; fired: DeadLetter[] }>();
+    for (const id of ids) {
+      const letter = byId.get(id);
+      if (!letter) continue;
+      const fingerprint = [
+        DEAD_LETTER_ALARM,
+        letter.name,
+        new Date(letter.addedAtMs).toISOString().slice(0, 10),
+      ];
+      const key = fingerprint.join('/');
+      const group = groups.get(key) ?? { fingerprint, fired: [] };
+      group.fired.push(letter);
+      groups.set(key, group);
+    }
+    for (const { fingerprint, fired } of groups.values()) {
+      const listed = fired
+        .map((l) => `${l.name} after ${l.attempts} attempt(s): ${l.reason}`)
+        .join(' | ');
+      logger.error(
+        {
+          transition,
+          count: fired.length,
+          ids: fired.map((l) => l.id),
+          names: fired.map((l) => l.name),
+        },
+        '🚨 Dead letters need triage'
+      );
+      deps.captureException(
+        new Error(
+          transition === 'entered'
+            ? `${fired.length} job(s) dead-lettered: ${listed}. ` +
+                'Triage on the admin /jobs/dlq page: replay it, remove it, or file the bug it shows.'
+            : `${fired.length} dead letter(s) still untriaged: ${listed}. ` +
+                `Each is removed ${DEAD_LETTER_MAX_AGE_MS / DAY_MS} days after it arrived.`
+        ),
+        {
+          component: 'worker',
+          kind: 'dead-letter-alert',
+          count: String(fired.length),
+          transition,
+        },
+        fingerprint
+      );
+    }
   }
 }
 

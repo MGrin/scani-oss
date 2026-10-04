@@ -122,10 +122,25 @@ export function withSpan<T>(
   );
 }
 
-export function captureException(err: unknown, tags?: Record<string, string>): void {
+/**
+ * A fingerprint REPLACES Sentry's own grouping, so it is passed only when the
+ * caller has one: every other capture keeps grouping by stack trace.
+ */
+export function captureContext(
+  tags?: Record<string, string>,
+  fingerprint?: readonly string[]
+): { tags?: Record<string, string>; fingerprint?: string[] } {
+  return fingerprint?.length ? { tags, fingerprint: [...fingerprint] } : { tags };
+}
+
+export function captureException(
+  err: unknown,
+  tags?: Record<string, string>,
+  fingerprint?: readonly string[]
+): void {
   if (!initialized) return;
   try {
-    Sentry.captureException(err, { tags });
+    Sentry.captureException(err, captureContext(tags, fingerprint));
   } catch {
     // A failing Sentry capture must not bubble into the caller's error path.
   }

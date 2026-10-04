@@ -265,8 +265,14 @@ export class WorkerClient {
       );
       // Two ways the queue stops trying, and they are not the same event.
       // `UnrecoverableError` skips the remaining attempts by design, so
-      // `attemptsMade` never reaches the ceiling — which is why terminality
-      // cannot be read off the counter alone.
+      // `attemptsMade` can stop short of the ceiling — which is why
+      // terminality cannot be read off the counter alone.
+      //
+      // Nor can the reason: BullMQ counts the failing attempt before this
+      // listener runs, so an `UnrecoverableError` on a job's last allowed
+      // attempt — its only one, under RETRY_NONE — is `retriesExhausted` as
+      // well. Everything below that must tell the two apart asks
+      // `unrecoverable` (SC-1545).
       const unrecoverable = err instanceof UnrecoverableError;
       const retriesExhausted = job.attemptsMade >= (job.opts.attempts ?? 1);
       if (!unrecoverable && !retriesExhausted) return;
@@ -306,12 +312,12 @@ export class WorkerClient {
       // historical archival, and the worker's `dlq-depth-probe` is what
       // removes an old entry.
       //
-      // Gated on `retriesExhausted` rather than on terminality so this
-      // stays exactly what it was before SC-153: a by-design
-      // `UnrecoverableError` is not a post-mortem candidate, and putting
-      // one in here would raise the DLQ-depth alert for a user typing the
-      // wrong API key.
-      if (retriesExhausted && this.dlq) {
+      // A by-design `UnrecoverableError` is not a post-mortem candidate, and
+      // putting one in here would raise the DLQ-depth alert for a user typing
+      // the wrong API key. Until SC-1545 this asked `retriesExhausted`, which
+      // let through every refusal thrown on a job's last allowed attempt — so
+      // all of them, for a single-attempt job.
+      if (!unrecoverable && this.dlq) {
         try {
           await this.dlq.add(job.name, {
             originalJobId: job.id,

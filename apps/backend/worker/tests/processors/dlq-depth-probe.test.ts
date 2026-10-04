@@ -74,22 +74,38 @@ afterAll(async () => {
 });
 
 /** The shape `WorkerClient` writes when a job's retries are exhausted. */
-async function deadLetter(name: string, failedReason: string): Promise<string> {
-  const job = await queues.deadLetter().add(name, {
-    originalJobId: `${name}-original`,
-    originalName: name,
-    data: { note: PAYLOAD_MARKER },
-    failedReason,
-    attemptsMade: 2,
-    timestamp: Date.now(),
-  });
+async function deadLetter(name: string, failedReason: string, arrivedAt?: number): Promise<string> {
+  const job = await queues.deadLetter().add(
+    name,
+    {
+      originalJobId: `${name}-original`,
+      originalName: name,
+      data: { note: PAYLOAD_MARKER },
+      failedReason,
+      attemptsMade: 2,
+      timestamp: Date.now(),
+    },
+    arrivedAt === undefined ? undefined : { timestamp: arrivedAt }
+  );
   return job.id as string;
 }
 
 function harness() {
-  const captured: Array<{ message: string; tags?: Record<string, string> }> = [];
-  const captureException = (err: unknown, tags?: Record<string, string>) => {
-    captured.push({ message: err instanceof Error ? err.message : String(err), tags });
+  const captured: Array<{
+    message: string;
+    tags?: Record<string, string>;
+    fingerprint?: readonly string[];
+  }> = [];
+  const captureException = (
+    err: unknown,
+    tags?: Record<string, string>,
+    fingerprint?: readonly string[]
+  ) => {
+    captured.push({
+      message: err instanceof Error ? err.message : String(err),
+      tags,
+      fingerprint,
+    });
   };
   const started = Date.now();
   const probeAfter = (ms: number, depthThreshold = NO_DEPTH_ALARM) =>
@@ -142,6 +158,66 @@ describe('dead-letter probe', () => {
     await probeAfter(DEAD_LETTER_RENOTIFY_MS + 2 * MINUTE);
 
     expect(captured.map((c) => c.tags?.transition)).toEqual(['entered', 'restated']);
+  });
+
+  // `sentry watch` files a task for a Sentry ISSUE it has not seen, and Sentry
+  // groups by fingerprint. One throw site for every alert meant one issue for
+  // ever: the first dead letter would be filed and no later one.
+  test('dead letters of two jobs are two alerts, each with its own fingerprint', async () => {
+    const { captured, probeAfter } = harness();
+    await deadLetter('document-parse', 'the provider refused the file');
+    await deadLetter('file-import', 'the statement had no rows');
+
+    await probeAfter(MINUTE);
+
+    expect(captured).toHaveLength(2);
+    const byJob = new Map(captured.map((c) => [c.fingerprint?.[1], c]));
+    expect([...byJob.keys()].sort()).toEqual(['document-parse', 'file-import']);
+    expect(byJob.get('document-parse')?.message).not.toContain('file-import');
+    expect(byJob.get('file-import')?.message).not.toContain('document-parse');
+    expect(new Set(captured.map((c) => c.fingerprint?.join('/'))).size).toBe(2);
+  });
+
+  test('a dead letter stated again carries the fingerprint it arrived with', async () => {
+    const { captured, probeAfter } = harness();
+    await deadLetter('file-import', 'still here');
+
+    await probeAfter(MINUTE);
+    await probeAfter(DEAD_LETTER_RENOTIFY_MS + 2 * MINUTE);
+
+    expect(captured.map((c) => c.tags?.transition)).toEqual(['entered', 'restated']);
+    expect(captured[0]?.fingerprint).toBeDefined();
+    expect(captured[1]?.fingerprint).toEqual(captured[0]?.fingerprint);
+  });
+
+  // The bound on a flood: a job failing a hundred times in a day is one issue
+  // and one task, and its next bad day is a new one.
+  test('two of one job on one day are one alert, and one arriving another day is its own', async () => {
+    // Pinned to a date: the harness runs from the wall clock, which may be a minute from midnight.
+    const dayOne = Date.UTC(2026, 9, 3, 12);
+    const captured: Array<{ message: string; fingerprint?: readonly string[] }> = [];
+    const probeAt = (at: number) =>
+      __test_runDeadLetterProbe(NO_DEPTH_ALARM, new Date(at), {
+        captureException: (err, _tags, fingerprint) => {
+          captured.push({ message: err instanceof Error ? err.message : String(err), fingerprint });
+        },
+      });
+    await deadLetter('wallet-import', 'first of the day', dayOne);
+    await deadLetter('wallet-import', 'second of the day', dayOne + MINUTE);
+
+    await probeAt(dayOne + 2 * MINUTE);
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.message).toContain('first of the day');
+    expect(captured[0]?.message).toContain('second of the day');
+    expect(captured[0]?.fingerprint).toEqual(['dead-letter', 'wallet-import', '2026-10-03']);
+
+    await deadLetter('wallet-import', 'the next day', dayOne + DAY);
+    await probeAt(dayOne + DAY + 2 * MINUTE);
+
+    expect(captured).toHaveLength(2);
+    expect(captured[1]?.message).not.toContain('first of the day');
+    expect(captured[1]?.fingerprint).toEqual(['dead-letter', 'wallet-import', '2026-10-04']);
   });
 
   test('once one is removed, the next dead letter is news again', async () => {

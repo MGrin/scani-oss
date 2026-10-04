@@ -8,6 +8,7 @@ import {
   collidingHoldingTokens,
 } from '@scani/shared';
 import Container, { Service } from 'typedi';
+import { RecordNotAccessibleError } from '../lib/record-not-accessible';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { AccountService, InstitutionService, PortfolioValuationService } from '../services';
 import { HoldingResolver } from '../services/feeds/HoldingResolver';
@@ -281,10 +282,13 @@ export class CreateHoldingsWithDependenciesUseCase {
       for (const update of input.updateHoldings ?? []) {
         const existing = await this.holdingRepository.findById(update.holdingId, tx);
         if (!existing) {
-          throw new Error(`Holding ${update.holdingId} not found`);
+          throw new RecordNotAccessibleError('holding', `Holding ${update.holdingId} not found`);
         }
         if (existing.userId !== userId) {
-          throw new Error(`Holding ${update.holdingId} does not belong to the user`);
+          throw new RecordNotAccessibleError(
+            'holding',
+            `Holding ${update.holdingId} does not belong to the user`
+          );
         }
         await this.snapshotWriter.record(
           {

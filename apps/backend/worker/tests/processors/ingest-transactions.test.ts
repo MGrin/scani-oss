@@ -1,12 +1,22 @@
 import { describe, expect, test } from 'bun:test';
 import { TransactionImportCoordinator, TransactionImportUnrecoverableError } from '@scani/domain';
 import { HoldingRepository, PortfolioValueDailyRepository } from '@scani/domain/repositories';
-import { FeedBatchRejected, PortfolioValueCache } from '@scani/domain/services';
+import {
+  FeedBatchRejected,
+  PortfolioValueCache,
+  RecordNotAccessibleError,
+} from '@scani/domain/services';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import type { TransactionImportJob } from '@scani/jobs';
 import { ProviderError } from '@scani/providers/core/errors';
-import { BullMqEnqueueService, type ProcessorContext, UnrecoverableError } from '@scani/queue';
+import {
+  BullMqEnqueueService,
+  type ProcessorContext,
+  UnrecoverableError,
+  userFacingMessage,
+} from '@scani/queue';
 import { Container } from 'typedi';
+import { describeRefusedRecord } from '../../src/lib/request-refusal';
 import { IngestTransactionsProcessor } from '../../src/processors/ingest-transactions';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -130,6 +140,21 @@ describe('IngestTransactionsProcessor error classification', () => {
     );
     expect(err).toBeInstanceOf(UnrecoverableError);
     expect((err as Error).message).toBe('No stored credentials');
+  });
+
+  // SC-1545. This descriptor allows four attempts, and an account that is gone
+  // is gone on each of them.
+  test.each([
+    ['an account that is gone', 'TransactionImport: account acct-1 not found'],
+    [
+      'an account that is not theirs',
+      'TransactionImport: account acct-1 does not belong to user user-1',
+    ],
+  ])('%s fails immediately, in words written for the owner', async (_name, domainMessage) => {
+    const err = await failureOf(new RecordNotAccessibleError('account', domainMessage));
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect(userFacingMessage(err)).toBe(describeRefusedRecord('account'));
+    expect((err as Error).message).not.toContain('acct-1');
   });
 });
 

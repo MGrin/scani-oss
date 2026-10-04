@@ -1,5 +1,6 @@
 import { createComponentLogger } from '@scani/logging';
 import { Container, Service } from 'typedi';
+import { RecordNotAccessibleError } from '../lib/record-not-accessible';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { PricingService, VaultService } from '../services';
 
@@ -33,10 +34,13 @@ export class UpdateHoldingPriceUseCase {
   }> {
     const holding = await this.holdingRepository.findById(holdingId);
     if (!holding) {
-      throw new Error('Holding not found');
+      throw new RecordNotAccessibleError('holding', 'Holding not found');
     }
     if (holding.userId !== userId) {
-      throw new Error('Unauthorized: Holding does not belong to user');
+      throw new RecordNotAccessibleError(
+        'holding',
+        'Unauthorized: Holding does not belong to user'
+      );
     }
 
     try {

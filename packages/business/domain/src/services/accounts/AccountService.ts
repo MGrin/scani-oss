@@ -3,6 +3,7 @@ import type { Account } from '@scani/db/schema';
 import type { AccountWihSumaryDTO, CreateAccountInput } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import { RecordNotAccessibleError } from '../../lib/record-not-accessible';
 import { AccountRepository } from '../../repositories/AccountRepository';
 import { AccountTypeRepository } from '../../repositories/EnumRepositories';
 import { GroupRepository } from '../../repositories/GroupRepository';
@@ -83,10 +84,11 @@ export class AccountService extends BaseService {
   ): Promise<Account> {
     try {
       const account = await this.accountRepository.findById(accountId, tx);
-      this.assertExists(account, `Account with ID ${accountId} not found`);
-
+      if (!account) {
+        throw new RecordNotAccessibleError('account', `Account with ID ${accountId} not found`);
+      }
       if (account.userId !== userId) {
-        throw new Error('Access denied to this account');
+        throw new RecordNotAccessibleError('account', 'Access denied to this account');
       }
       return account;
     } catch (error) {

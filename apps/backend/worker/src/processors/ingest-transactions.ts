@@ -20,6 +20,7 @@ import {
 import { emitEntityChange } from '@scani/realtime';
 import { Container, Service } from 'typedi';
 import { LOOKBACK_SAFETY_PAD_DAYS, widenToEarliestWrite } from '../lib/rebuild-window';
+import { asJobFailure } from '../lib/request-refusal';
 
 const logger = createComponentLogger('processor:ingest-transactions');
 
@@ -81,7 +82,7 @@ function describeTerminalProviderFailure(error: unknown): string | null {
 export class IngestTransactionsProcessor extends UserJobProcessor<TransactionImportJob, unknown> {
   readonly descriptor = TRANSACTION_IMPORT;
 
-  protected async handle(data: TransactionImportJob, _ctx: ProcessorContext): Promise<unknown> {
+  protected async handle(data: TransactionImportJob, ctx: ProcessorContext): Promise<unknown> {
     const coordinator = Container.get(TransactionImportCoordinator);
     let result: Awaited<ReturnType<typeof coordinator.execute>>;
     try {
@@ -107,7 +108,9 @@ export class IngestTransactionsProcessor extends UserJobProcessor<TransactionImp
       }
       const terminal = describeTerminalProviderFailure(error);
       if (terminal) throw userFacing(new UnrecoverableError(terminal));
-      throw error;
+      // The account was deleted, or was never this user's, and is the same
+      // on each of the four attempts this descriptor allows (SC-1545).
+      throw asJobFailure(error, ctx.job.id);
     }
 
     // If the ingester actually produced rows, enqueue a per-user
