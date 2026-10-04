@@ -175,9 +175,10 @@ export class DeleteAllUserDataUseCase {
    * gone; without this the payloads (wallet addresses, exchange names,
    * sometimes a file's r2Key) linger until BullMQ's own cleanup ages them out.
    * `queue.getJob(id)` returns null for ids never enqueued (inline-completed
-   * jobs), so missing is a no-op. Removing the currently-executing self-delete
-   * job is fine: BullMQ marks it failed and the user-facing delete has already
-   * happened.
+   * jobs), so missing is a no-op. The currently-executing self-delete job is
+   * NOT removed here: BullMQ refuses to remove a job a worker holds, so each
+   * attempt logs the warning below and the row stays. That job removes itself
+   * on completion instead (`removeOnComplete: true` on its descriptor, SC-1545).
    */
   private async purgeQueuePayloads(userId: string, jobIds: string[]): Promise<void> {
     try {

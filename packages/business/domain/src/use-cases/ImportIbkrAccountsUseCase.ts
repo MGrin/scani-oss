@@ -14,6 +14,7 @@ import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { HoldingSnapshot } from '@scani/providers/core/types';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { ImportTargetGoneError } from '../lib/import-target-gone';
 import { makeProviderContext } from '../lib/provider-context';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { TokenRepository } from '../repositories/TokenRepository';
@@ -91,13 +92,15 @@ export class ImportIbkrAccountsUseCase {
       .from(schema.users)
       .where(eq(schema.users.id, input.userId))
       .limit(1);
-    if (!user) throw new Error('User not found');
+    if (!user) throw new ImportTargetGoneError('user', 'User not found');
 
     const credentials = await this.integrationCredentialsService.getDecryptedCredentials(
       input.userId,
       input.institutionId
     );
-    if (!credentials) throw new Error('No credentials found for this institution');
+    if (!credentials) {
+      throw new ImportTargetGoneError('credentials', 'No credentials found for this institution');
+    }
 
     const institutionCode =
       (await this.walletDiscovery.resolveInstitutionCode(input.institutionId)) ?? 'ibkr';
@@ -179,7 +182,12 @@ export class ImportIbkrAccountsUseCase {
       .from(schema.institutions)
       .where(eq(schema.institutions.id, input.institutionId))
       .limit(1);
-    if (!institution) throw new Error(`Institution not found: ${input.institutionId}`);
+    if (!institution) {
+      throw new ImportTargetGoneError(
+        'institution',
+        `Institution not found: ${input.institutionId}`
+      );
+    }
 
     const [investmentAccountType] = await db
       .select()
