@@ -32,8 +32,6 @@ const STATEMENT_ALLOWED = [
   'packages/infra/db/src/migrations/0016_ibkr_segment_token_dedup.sql',
   'packages/infra/db/src/migrations/0017_purge_crosstype_price_pollution.sql',
   'packages/infra/db/src/migrations/0028_restore_downsampled_manual_price_source.sql',
-  // A finished repair (SC-389): deletes the rows written under a wrong id.
-  'scripts/lib/sc389-contradicted-ids.ts',
 ];
 
 const REPOSITORY_CALL_ALLOWED = [

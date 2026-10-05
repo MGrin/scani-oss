@@ -9,10 +9,12 @@ import { Container, Service } from 'typedi';
 export class UserDataDeleteProcessor extends UserJobProcessor<UserDataDeleteJob, unknown> {
   readonly descriptor = USER_DATA_DELETE;
 
-  protected async handle(data: UserDataDeleteJob, _ctx: ProcessorContext): Promise<unknown> {
+  protected async handle(data: UserDataDeleteJob, ctx: ProcessorContext): Promise<unknown> {
+    // The purge runs inside this job and cannot remove it, so it is told which
+    // job to leave alone (SC-1560).
     const result = data.deleteAccount
-      ? await this.deleteAccount(data.userId)
-      : await Container.get(DeleteAllUserDataUseCase).execute(data.userId);
+      ? await this.deleteAccount(data.userId, ctx.job.id)
+      : await Container.get(DeleteAllUserDataUseCase).execute(data.userId, ctx.job.id);
     emitEntityChange({
       entityType: 'user',
       operationType: 'delete',
@@ -24,9 +26,9 @@ export class UserDataDeleteProcessor extends UserJobProcessor<UserDataDeleteJob,
 
   // The one refusal is an attribution the product keeps (a global price edit);
   // without `userFacing` the browser would toast "Unknown error" over it.
-  private async deleteAccount(userId: string) {
+  private async deleteAccount(userId: string, runningJobId: string | undefined) {
     try {
-      return await Container.get(DeleteAccountUseCase).execute(userId);
+      return await Container.get(DeleteAccountUseCase).execute(userId, runningJobId);
     } catch (err) {
       // The owner was signed out when this was queued and believes the account
       // is gone; the notice on their next sign-in is not an operator signal.
