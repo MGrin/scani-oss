@@ -41,6 +41,11 @@ comment is deliberately in that position; explanatory prose should not be.
 * **rollup:** a sweep-hidden holding is costed from its ledger and stored with rows of its own (SC-1546) ([a7cc20c](https://github.com/MGrin/scani-oss/commit/a7cc20c92f491da288bcae67b8b5f9adc52ba842))
 * **worker:** the deletion purge skips its own running job instead of warning twice (SC-1560) ([8614175](https://github.com/MGrin/scani-oss/commit/8614175d70019dff5c3706e577f2928fca1e0ff6))
 
+### Before you upgrade
+
+* **New outbound host:** exchange rates now come from `api.frankfurter.dev` (the old `api.frankfurter.app` only redirects there). If your install restricts outbound traffic, allow it first. No new key or environment variable.
+* **Migration `20261004084212` can stop this upgrade:** it adds a check that every stored price in `token_prices` is a positive plain decimal. If any stored row is zero, negative or written another way, the migrate step fails with `23514` naming `token_prices_price_positive_decimal_chk`. Nothing is applied and the new version does not start. Run the check in the [upgrade guide](https://docs.scani.xyz/self-hosting/tier1/upgrades/#0530) first; if it is not `0`, back up `token_prices` with `pg_dump` and delete those rows as the guide shows.
+
 ## [0.52.2](https://github.com/MGrin/scani-oss/compare/v0.52.1...v0.52.2) (2026-10-04)
 
 
