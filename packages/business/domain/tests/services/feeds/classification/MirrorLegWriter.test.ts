@@ -448,6 +448,53 @@ describe('a mirror leg into an account nothing feeds', () => {
     });
   });
 
+  /**
+   * SC-1559 on the transfer's own path. A closed position the sweep hid is
+   * shown again when a transfer lands on it; one its owner hid is not. Both
+   * take the leg and the same balance, so the two differ only in who hid them.
+   */
+  async function arrivalOnHidden(hiddenBy: 'auto' | 'user') {
+    return await withTestDb(async (tx) => {
+      const w = await world(tx);
+      const hidden = await makeHolding(tx, {
+        userId: w.userId,
+        accountId: w.savingsAccountId,
+        tokenId: w.tokenId,
+        balance: '0',
+        kind: 'snapshot',
+        startsAt: new Date('2026-08-01T00:00:00Z'),
+        isHidden: true,
+        hiddenBy,
+      });
+      const result = await ingest(payments(w), tx);
+
+      const rows = await holdingsIn(tx, w.savingsAccountId);
+      return {
+        tookTheLeg:
+          result.mirrorHoldingIds.length === 1 && result.mirrorHoldingIds[0] === hidden.id,
+        holdings: rows.map((h) => ({
+          balance: h.balance,
+          isHidden: h.isHidden,
+          hiddenBy: h.hiddenBy,
+        })),
+      };
+    });
+  }
+
+  test('a transfer arriving on a holding the sweep hid shows it again, and it still reads as swept', async () => {
+    expect(await arrivalOnHidden('auto')).toEqual({
+      tookTheLeg: true,
+      holdings: [{ balance: '250', isHidden: false, hiddenBy: 'auto' }],
+    });
+  });
+
+  test('a transfer arriving on a holding its owner hid leaves it hidden', async () => {
+    expect(await arrivalOnHidden('user')).toEqual({
+      tookTheLeg: true,
+      holdings: [{ balance: '250', isHidden: true, hiddenBy: 'user' }],
+    });
+  });
+
   test('a typed deposit of the same amount within a day is taken over, and the anchor stays', async () => {
     await withTestDb(async (tx) => {
       const w = await world(tx);
