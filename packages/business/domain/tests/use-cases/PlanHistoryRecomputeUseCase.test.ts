@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { DatabaseTransaction } from '@scani/db';
 import type { UserJobState } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
+import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { SCAM_PROBABILITY_THRESHOLD } from '../../src/lib/constants';
 import { PlanHistoryRecomputeUseCase } from '../../src/use-cases/PlanHistoryRecomputeUseCase';
@@ -352,6 +353,120 @@ describe('PlanHistoryRecomputeUseCase — sweep-hidden (SC-1546)', () => {
       const other = await userWithHoldings(tx, [{ isHidden: true, hiddenBy: 'user' }]);
       await userWithHoldings(tx, [SWEPT]);
       expect((await planSwept(tx, other)).toEnqueue).toEqual([]);
+    });
+  });
+});
+
+const planFees = (tx: DatabaseTransaction, userId?: string) =>
+  Container.get(PlanHistoryRecomputeUseCase).execute(
+    { cohort: 'fee-rows', jobIdFor, since: SINCE, userId },
+    tx
+  );
+
+type FeeShape = 'standalone' | 'own-holding' | 'other-holding' | 'positive';
+
+// One user with a trade and a fee row of the given shape. `own-holding` is a
+// commission paid from the trade's holding; `other-holding` settles a trade on
+// a second holding, which is that trade's fee and moved nothing.
+async function userWithFeeRow(
+  tx: DatabaseTransaction,
+  shape: FeeShape,
+  opts: { baseCurrency?: boolean } = {}
+): Promise<string> {
+  const currency = await makeToken(tx);
+  const user = await makeUser(
+    tx,
+    opts.baseCurrency === false ? {} : { baseCurrencyId: currency.id }
+  );
+  const accountId = (
+    await makeAccount(tx, { userId: user.id, institutionId: (await makeInstitution(tx)).id })
+  ).id;
+  const cash = await makeHolding(tx, { userId: user.id, accountId, tokenId: currency.id });
+  const other = await makeHolding(tx, {
+    userId: user.id,
+    accountId,
+    tokenId: (await makeToken(tx)).id,
+  });
+  const trade = await makeHoldingTransaction(tx, {
+    userId: user.id,
+    holdingId: shape === 'other-holding' ? other.id : cash.id,
+    kind: 'buy',
+    quantity: '10',
+  });
+  await makeHoldingTransaction(tx, {
+    userId: user.id,
+    holdingId: cash.id,
+    kind: 'fee',
+    quantity: shape === 'positive' ? '1' : '-1',
+    settlesTransactionId: shape === 'standalone' ? null : trade.id,
+  });
+  return user.id;
+}
+
+describe('PlanHistoryRecomputeUseCase — fee-rows (SC-1561)', () => {
+  test('selects a user with a fee that leaves the pool, and only those', async () => {
+    await withTestDb(async (tx) => {
+      const standalone = await userWithFeeRow(tx, 'standalone');
+      const ownHolding = await userWithFeeRow(tx, 'own-holding');
+      const otherHolding = await userWithFeeRow(tx, 'other-holding');
+      const positive = await userWithFeeRow(tx, 'positive');
+      const noBase = await userWithFeeRow(tx, 'standalone', { baseCurrency: false });
+
+      const { toEnqueue } = await planFees(tx);
+      expect(toEnqueue).toContain(standalone);
+      expect(toEnqueue).toContain(ownHolding);
+      expect(toEnqueue).not.toContain(otherHolding);
+      expect(toEnqueue).not.toContain(positive);
+      expect(toEnqueue).not.toContain(noBase);
+    });
+  });
+
+  test('a user with several such fees is selected once', async () => {
+    await withTestDb(async (tx) => {
+      const user = await userWithFeeRow(tx, 'standalone');
+      const holdingId = (
+        await tx
+          .select({ id: schema.holdingTransactions.holdingId })
+          .from(schema.holdingTransactions)
+          .where(eq(schema.holdingTransactions.userId, user))
+          .limit(1)
+      )[0]?.id;
+      await makeHoldingTransaction(tx, { userId: user, holdingId, kind: 'fee', quantity: '-2' });
+      expect((await planFees(tx)).toEnqueue.filter((id) => id === user)).toEqual([user]);
+    });
+  });
+
+  test('skips a user already recomputed or in flight, and retries one that failed', async () => {
+    await withTestDb(async (tx) => {
+      const done = await userWithFeeRow(tx, 'standalone');
+      const running = await userWithFeeRow(tx, 'standalone');
+      const failed = await userWithFeeRow(tx, 'standalone');
+      await recordJob(tx, done, 'completed');
+      await recordJob(tx, running, 'progress');
+      await recordJob(tx, failed, 'failed');
+
+      const result = await planFees(tx);
+      expect(result.completed).toContain(done);
+      expect(result.inFlight).toContain(running);
+      expect(result.toEnqueue).toContain(failed);
+      expect(result.toEnqueue).not.toContain(done);
+      expect(result.toEnqueue).not.toContain(running);
+    });
+  });
+
+  test('--user narrows the plan to that one user', async () => {
+    await withTestDb(async (tx) => {
+      const one = await userWithFeeRow(tx, 'own-holding');
+      await userWithFeeRow(tx, 'standalone');
+      expect((await planFees(tx, one)).toEnqueue).toEqual([one]);
+    });
+  });
+
+  test('--user naming someone whose fees moved nothing selects nobody', async () => {
+    await withTestDb(async (tx) => {
+      const other = await userWithFeeRow(tx, 'other-holding');
+      await userWithFeeRow(tx, 'standalone');
+      expect((await planFees(tx, other)).toEnqueue).toEqual([]);
     });
   });
 });

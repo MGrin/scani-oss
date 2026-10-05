@@ -12,7 +12,7 @@
 // Enqueues one PORTFOLIO_HISTORY_BACKFILL per selected user with no price
 // backfill (`tokenIds: []`), which the worker runs under its per-user lock.
 // The window is per cohort: `trade-fees` and `stored-history` rewrite the full
-// 400-day window, and `sweep-hidden` each user's whole history, back to their
+// 400-day window, and `sweep-hidden` and `fee-rows` each user's whole history, back to their
 // earliest ledger row, balance reading or stored day. Every
 // `portfolio_value_daily` row in that window is recomputed for every selected
 // user — against production that is a production data rewrite.
@@ -39,7 +39,12 @@ const REQUEST_IDS: Record<HistoryRecomputeCohort, string> = {
   'trade-fees': 'sc1142-trade-fees',
   'stored-history': 'sc1323-evidence-absent',
   'sweep-hidden': 'sc1546-sweep-hidden-ledger',
+  'fee-rows': 'sc1561-fee-rows',
 };
+
+// A change to how the walk treats a ledger row moves every day after that
+// row's first, so these cohorts rewrite each user's whole history.
+const WHOLE_HISTORY: ReadonlySet<HistoryRecomputeCohort> = new Set(['sweep-hidden', 'fee-rows']);
 
 const args = process.argv.slice(2);
 const apply = args.includes('--apply');
@@ -97,7 +102,7 @@ const plan = await Container.get(PlanHistoryRecomputeUseCase).execute({
 // The job id is the user and the request id, so the window can be read after
 // the plan, and only for the users about to be enqueued.
 const lookbackByUser = new Map<string, number>();
-if (cohort === 'sweep-hidden') {
+if (WHOLE_HISTORY.has(cohort)) {
   const dailyRepository = Container.get(PortfolioValueDailyRepository);
   for (const id of plan.toEnqueue) {
     lookbackByUser.set(

@@ -29,6 +29,9 @@ import { UserJobRepository } from '../repositories/UserJobRepository';
  *     costed from its ledger and keeps rows of its own; every user with an
  *     active holding the sweep hid, whether or not it has been shown again
  *     since, on a token that is not a scam for them.
+ *   - `fee-rows` (SC-1561) — a fee row's units leave the cost-basis pool;
+ *     every user with a fee that settles nothing or settles a trade on its own
+ *     holding.
  *
  * This decides who and does not enqueue — enqueueing, and how far back each
  * job reaches, belong to a process holding a queue client
@@ -43,7 +46,7 @@ import { UserJobRepository } from '../repositories/UserJobRepository';
  *   - `queued` / `active` / `progress` — in flight. Skipped.
  *   - no row, `failed`, `dead` or `cancelled` — enqueued, again if need be.
  */
-export type HistoryRecomputeCohort = 'trade-fees' | 'stored-history' | 'sweep-hidden';
+export type HistoryRecomputeCohort = 'trade-fees' | 'stored-history' | 'sweep-hidden' | 'fee-rows';
 
 export interface HistoryRecomputePlan {
   completed: string[];
@@ -97,6 +100,8 @@ export class PlanHistoryRecomputeUseCase {
         return this.dailyRepository.findUserIdsWithHistorySince(input.since, opts, transaction);
       case 'sweep-hidden':
         return this.holdingRepository.findUserIdsWithSweepHiddenHoldings(opts, transaction);
+      case 'fee-rows':
+        return this.txRepository.findUserIdsWithPoolLeavingFees(opts, transaction);
     }
   }
 }
