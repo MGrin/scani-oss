@@ -76,3 +76,41 @@ export function outcomeOf(settled: PromiseSettledResult<unknown>): string {
   if (database) return `${database.code} ${database.message}`;
   return settled.reason instanceof Error ? settled.reason.message : String(settled.reason);
 }
+
+/**
+ * Two committed transactions on two connections: `holder` runs and keeps its
+ * transaction open, `waiter` starts once it has, and the holder commits only
+ * after the waiter is seen blocked on it or has settled. Says whether the
+ * waiter was blocked, so the interleave is the race rather than a sequence
+ * that happened to be safe. A holder that throws fails the race instead of
+ * leaving it waiting for a write that never comes.
+ */
+export async function raceBehind(
+  holder: (tx: DatabaseTransaction) => Promise<unknown>,
+  waiter: (tx: DatabaseTransaction) => Promise<unknown>
+): Promise<boolean> {
+  const wrote = latch();
+  const release = latch();
+  let holderPid: number | undefined;
+  let waiterPid: number | undefined;
+  const first = getDb().transaction(async (tx) => {
+    holderPid = await backendPid(tx);
+    await holder(tx);
+    wrote.open();
+    await release.passed;
+  });
+  let second: Promise<unknown> = Promise.resolve();
+  let blocked = false;
+  try {
+    await Promise.race([wrote.passed, first]);
+    second = getDb().transaction(async (tx) => {
+      waiterPid = await backendPid(tx);
+      await waiter(tx);
+    });
+    blocked = await waitUntilBlocked({ pid: () => waiterPid, settled: second }, holderPid!);
+  } finally {
+    release.open();
+  }
+  await Promise.all([first, second]);
+  return blocked;
+}

@@ -98,6 +98,9 @@ export class DeclaredTransferService {
     arrivedAt: Date,
     tx: DatabaseTransaction
   ): Promise<Holding | null> {
+    // An existing destination is returned locked FOR UPDATE, the level the
+    // caller's flow edit takes next: its balance is what the arrival is added
+    // to, and has to be the one standing when that edit writes (SC-1525).
     if (destination.holdingId) {
       const [named] = await tx
         .select()
@@ -111,7 +114,8 @@ export class DeclaredTransferService {
             eq(schema.holdings.isHidden, false)
           )
         )
-        .limit(1);
+        .limit(1)
+        .for('update');
       return named ?? null;
     }
 
@@ -127,7 +131,7 @@ export class DeclaredTransferService {
       source.id,
       tx
     );
-    if (existing) return existing;
+    if (existing) return await this.holdingRepository.lockOwned(userId, existing.id, 'update', tx);
 
     const [account] = await tx
       .select({

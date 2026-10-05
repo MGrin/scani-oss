@@ -38,6 +38,7 @@ import { UpdateHoldingUseCase } from '../../src/use-cases/UpdateHoldingUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
 import { expectHistoryUnchanged, type HistoryReading } from '../../test/helpers/history-neutrality';
 import { expectLabelsSettled } from '../../test/helpers/labels-settled';
+import { raceBehind } from '../../test/helpers/lock-wait';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -5539,5 +5540,106 @@ describe('the queue writes amounts below 1e-6 in plain notation (foundation A2, 
 
     expect(await balanceOf(f.inHoldingId)).toBe(DUST);
     expect(await balanceOf(f.outHoldingId)).toBe('4000');
+  });
+});
+
+/**
+ * The queue's three anchor moves read the destination's balance and write it
+ * back moved by one transfer (SC-1525). Read before the row lock, that is the
+ * balance before a concurrent edit committed, and the edit is lost. Committed,
+ * on two connections; the answer is seen blocked by the edit before it lands.
+ */
+describe('TransferReviewService — an anchor move racing an edit of the holding (SC-1525)', () => {
+  async function setBalance(holdingId: string, balance: string): Promise<void> {
+    await db.update(schema.holdings).set({ balance }).where(eq(schema.holdings.id, holdingId));
+  }
+
+  async function balance(holdingId: string): Promise<string | undefined> {
+    const [row] = await db
+      .select({ balance: schema.holdings.balance })
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, holdingId));
+    return row?.balance;
+  }
+
+  const editTo =
+    (f: Fixture, holdingId: string, to: string) =>
+    (tx: Parameters<Parameters<typeof raceBehind>[0]>[0]) =>
+      Container.get(UpdateHoldingUseCase).execute(holdingId, { balance: to }, f.userId, tx);
+
+  test('an internal answer of 2000 into a holding being edited 1000 -> 1200 lands on 3200', async () => {
+    const f = fixture!;
+    await setBalance(f.inHoldingId, '1000');
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'sc1525-a',
+    });
+
+    const blocked = await raceBehind(editTo(f, f.inHoldingId, '1200'), (tx) =>
+      service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+        transaction: tx,
+      })
+    );
+
+    expect(blocked).toBe(true);
+    expect(await balance(f.inHoldingId)).toBe('3200');
+  });
+
+  test('reopening that answer while the holding is edited 3000 -> 3100 puts back 2000, to 1100', async () => {
+    const f = fixture!;
+    await setBalance(f.inHoldingId, '1000');
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'sc1525-b',
+    });
+    await service().resolve(f.userId, outId, 'internal', {
+      destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+    });
+    expect(await balance(f.inHoldingId)).toBe('3000');
+
+    const blocked = await raceBehind(editTo(f, f.inHoldingId, '3100'), (tx) =>
+      service().reopen(f.userId, outId, tx)
+    );
+
+    expect(blocked).toBe(true);
+    expect(await balance(f.inHoldingId)).toBe('1100');
+  });
+
+  test('reopening a declared transfer while its destination is edited 2500 -> 2600 lands on 600', async () => {
+    const f = fixture!;
+    await setBalance(f.outHoldingId, '4000');
+    await setBalance(f.inHoldingId, '500');
+    await new RecordHoldingMovementUseCase().execute(
+      {
+        holdingId: f.outHoldingId,
+        direction: 'transfer',
+        amount: '2000',
+        occurredAt: anchor().toISOString(),
+        destinationAccountId: f.inAccountId,
+        destinationHoldingId: f.inHoldingId,
+      },
+      f.userId
+    );
+    const [outflow] = await db
+      .select({ id: schema.holdingTransactions.id })
+      .from(schema.holdingTransactions)
+      .where(
+        and(
+          eq(schema.holdingTransactions.userId, f.userId),
+          eq(schema.holdingTransactions.holdingId, f.outHoldingId)
+        )
+      );
+    expect(await balance(f.inHoldingId)).toBe('2500');
+
+    const blocked = await raceBehind(editTo(f, f.inHoldingId, '2600'), (tx) =>
+      service().reopen(f.userId, outflow!.id, tx)
+    );
+
+    expect(blocked).toBe(true);
+    expect(await balance(f.outHoldingId)).toBe('4000');
+    expect(await balance(f.inHoldingId)).toBe('600');
   });
 });

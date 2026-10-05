@@ -288,6 +288,10 @@ export class RecordHoldingMovementUseCase {
    * not `HoldingRepository.findByIdVisible`, which takes no owner — a
    * mismatched owner has to read as "not found" rather than as a balance the
    * caller then compares against.
+   *
+   * Read FOR UPDATE, the level the flow edit takes next: the balance this
+   * movement is added to has to be the one standing when it writes, not one a
+   * concurrent edit is about to replace (SC-1525).
    */
   private async ownedHolding(
     holdingId: string,
@@ -304,7 +308,8 @@ export class RecordHoldingMovementUseCase {
           eq(schema.holdings.isHidden, false)
         )
       )
-      .limit(1);
+      .limit(1)
+      .for('update');
     return row ?? null;
   }
 
