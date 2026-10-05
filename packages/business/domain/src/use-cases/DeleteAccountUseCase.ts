@@ -28,7 +28,10 @@ export class DeleteAccountUseCase {
    * `email` is the address the account had, for erasures that key on it
    * after the row is gone (SC-1509).
    */
-  async execute(userId: string): Promise<{ deleted: boolean; email?: string }> {
+  async execute(
+    userId: string,
+    runningJobId?: string
+  ): Promise<{ deleted: boolean; email?: string }> {
     let echoed = new Map<PgTable, string[]>();
     let email: string | undefined;
 
@@ -70,7 +73,7 @@ export class DeleteAccountUseCase {
     );
 
     if (!deleted) return { deleted: false };
-    await this.data.purgeAfterCommit(userId, echoed);
+    await this.data.purgeAfterCommit(userId, echoed, runningJobId);
     logger.warn({ userId }, 'Account deleted');
     return { deleted: true, email };
   }

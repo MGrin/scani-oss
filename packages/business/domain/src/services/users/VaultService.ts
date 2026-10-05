@@ -1,5 +1,5 @@
 import type { VaultHoldingDetail, VaultWithProgress } from '@scani/shared';
-import Decimal from 'decimal.js';
+import { Decimal } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
@@ -68,11 +68,7 @@ export class VaultService extends BaseService {
           } else {
             // Try to fetch via pricing service
             try {
-              price = await this.pricingService.getTokenPrice(
-                token,
-                vaultCurrency.symbol,
-                new Date()
-              );
+              price = await this.pricingService.getTokenPrice(token, vaultCurrency, new Date());
             } catch {
               price = null;
             }
@@ -206,11 +202,7 @@ export class VaultService extends BaseService {
           price = latestPrice.price;
         } else {
           try {
-            price = await this.pricingService.getTokenPrice(
-              token,
-              vaultCurrency.symbol,
-              new Date()
-            );
+            price = await this.pricingService.getTokenPrice(token, vaultCurrency, new Date());
           } catch {
             price = null;
           }

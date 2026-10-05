@@ -631,7 +631,7 @@ describe('RollupPortfolioValueDailyUseCase', () => {
   test('a holding we could not value is excluded even without the unpriceable flag', async () => {
     // SC-505. `unpriceable` is the narrow "never had a price row AND is in a
     // cooldown" flag. A USD cash balance held by a GBP-base user fails none
-    // of that and still resolves to no value, because `forex-backfill`
+    // of that and still resolves to no value, because `historical-price-backfill`
     // quotes every edge against USD and so never writes USD as the priced
     // token. Gated on the flag alone its £9,576 basis stayed in a total its
     // value never reached, and the row was persisted at exactly -100%.

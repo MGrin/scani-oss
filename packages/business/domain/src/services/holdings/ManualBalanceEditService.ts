@@ -268,8 +268,13 @@ export class ManualBalanceEditService {
     // two cannot drift: a diff this service calls rounding must be one the
     // reconciler also declines to synthesize an opening for.
     if (deltaOf(edit).abs().lte(DEFAULT_OPENING_EPSILON)) return 'no-delta';
-    if (edit.cause === 'growth') return 'growth-needs-no-row';
+    if (!this.causeCanWriteRow(edit.cause)) return 'growth-needs-no-row';
     return null;
+  }
+
+  /** Whether an edit with this cause can write a ledger row at all, asked before its balances are known. */
+  causeCanWriteRow(cause: ManualBalanceEditInput['cause']): boolean {
+    return cause !== 'growth';
   }
 
   async record(

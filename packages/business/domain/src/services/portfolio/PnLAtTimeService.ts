@@ -1,5 +1,6 @@
 import type { DatabaseTransaction } from '@scani/db';
 import type { CoverageQuality, HoldingCoverage, HoldingTransaction } from '@scani/db/schema';
+import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { flowRoleOfRow } from '../../lib/returns/flow-classification';
@@ -21,6 +22,8 @@ import {
   PortfolioValuationAtTimeService,
   type PortfolioValueScope,
 } from './PortfolioValuationAtTimeService';
+
+type LedgerByHolding = ReadonlyMap<string, ReadonlyArray<HoldingTransaction>>;
 
 export interface PnLAtTimePerHolding {
   holdingId: string;
@@ -170,6 +173,10 @@ export class PnLAtTimeService {
   // opens are answering to one predicate (SC-1067).
   private readonly transferReviewService = Container.get(TransferReviewService);
   private readonly driftLedgerService = Container.get(DriftLedgerService);
+  private readonly logger = createComponentLogger('portfolio:pnl-at-time');
+  // A handed ledger with the holdings it lacked read in, kept per handed map
+  // so every day of one rollup gets the same object back.
+  private readonly completedLedgers = new WeakMap<object, LedgerByHolding>();
 
   async getPnL(
     userId: string,
@@ -216,8 +223,10 @@ export class PnLAtTimeService {
     // Cost basis needs every holding's full tx history — both to detect
     // transfer-linked components and to cost-walk them together. The
     // rollup hands these in via caches; ad-hoc callers pay one bulk read.
-    const ledgerByHolding: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>> = opts.caches
-      ?.transactions ?? (await this.txRepository.findForHoldingsAll(holdingIds, opts.tx));
+    const handed = opts.caches?.transactions;
+    const ledgerByHolding = handed
+      ? await this.completeLedger(handed, holdingIds, opts.tx)
+      : await this.txRepository.findForHoldingsAll(holdingIds, opts.tx);
     // Unexplained balance changes walk as money in or out, so a balance that
     // moved with no transaction is never PnL (SC-1470, mgrin 2026-10-01).
     const txsByHolding = withDrift(
@@ -316,7 +325,9 @@ export class PnLAtTimeService {
       const realizedPnl = costUnknown
         ? new Decimal(0)
         : atPar
-          ? rawRealized.add(baseCashFees(txsByHolding.get(ph.holdingId) ?? [], at))
+          ? rawRealized.add(
+              baseCashFees(txsByHolding.get(ph.holdingId) ?? [], at, cost?.feesRealized)
+            )
           : rawRealized;
       // A holding kept out of the value side stays out of the cost side.
       //
@@ -396,19 +407,59 @@ export class PnLAtTimeService {
       perHolding,
     };
   }
+
+  /**
+   * `handed`, with the ledger of every holding in `holdingIds` it lacks read
+   * from the database. A holding absent from a handed map is one nobody
+   * preloaded, never one with no transactions: read as the latter, every one
+   * of its balance readings became drift and its cost was walked from those
+   * alone (SC-1546).
+   *
+   * A complete map is returned as it came. `DriftLedgerService` memoises on
+   * that object, so a copy per call would re-read every reading of every
+   * holding once per day of a rollup.
+   */
+  private async completeLedger(
+    handed: LedgerByHolding,
+    holdingIds: string[],
+    tx: DatabaseTransaction | undefined
+  ): Promise<LedgerByHolding> {
+    const known = this.completedLedgers.get(handed) ?? handed;
+    const missing = holdingIds.filter((holdingId) => !known.has(holdingId));
+    if (missing.length === 0) return known;
+    if (known === handed) {
+      this.logger.warn(
+        { holdingsMissing: missing.length },
+        'The ledger handed to getPnL lacks holdings its valuation counts; theirs were read from the database'
+      );
+    }
+    const completed = new Map([
+      ...known,
+      ...(await this.txRepository.findForHoldingsAll(missing, tx)),
+    ]);
+    this.completedLedgers.set(handed, completed);
+    return completed;
+  }
 }
 
 /**
  * What base-currency cash paid up to `at` that the cost walk does not book:
  * its fees, the negative rows Returns counts as return (`flowRoleOfRow`). The
  * walk books income at receipt for every holding (SC-1470); base cash carries
- * its own value as cost basis, so without this its fees reached no PnL.
+ * its own value as cost basis, so without this its fees reached no PnL. A fee
+ * the walk already realized (`feesRealized`, SC-1561) is skipped, or it would
+ * count twice.
  */
-function baseCashFees(txs: ReadonlyArray<HoldingTransaction>, at: Date): Decimal {
+function baseCashFees(
+  txs: ReadonlyArray<HoldingTransaction>,
+  at: Date,
+  realizedByWalk: ReadonlySet<string> = new Set()
+): Decimal {
   let fees = new Decimal(0);
   const ids = new Set(txs.map((tx) => tx.id));
   for (const tx of txs) {
     if (tx.occurredAt > at || flowRoleOfRow(tx, ids) !== 'return') continue;
+    if (realizedByWalk.has(tx.id)) continue;
     const quantity = new Decimal(tx.quantity);
     if (quantity.isNegative()) fees = fees.add(quantity);
   }

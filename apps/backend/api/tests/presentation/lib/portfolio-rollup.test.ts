@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
+import { PortfolioValueDailyRepository } from '@scani/domain/repositories';
 import { PortfolioValueCache } from '@scani/domain/services';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
@@ -37,5 +38,28 @@ describe('enqueuePortfolioRollup', () => {
 
   test('a failed history query resolves instead of rejecting', async () => {
     await expect(enqueuePortfolioRollup('not-a-uuid')).resolves.toBeUndefined();
+  });
+
+  // The window is the repository's answer, the same one the history recompute
+  // script reads (SC-1546), so the two cannot come to different windows.
+  test('a user with history older than the default is enqueued with the lookback the repository answers', async () => {
+    const userId = randomUUID();
+    const wholeHistory = PORTFOLIO_HISTORY_LOOKBACK_DAYS + 331;
+    const asked: unknown[][] = [];
+    const repository = Container.get(PortfolioValueDailyRepository);
+    Container.set(PortfolioValueDailyRepository, {
+      findHistoryLookbackDays: async (...args: unknown[]) => {
+        asked.push(args);
+        return wholeHistory;
+      },
+    } as unknown as PortfolioValueDailyRepository);
+    try {
+      await enqueuePortfolioRollup(userId);
+    } finally {
+      Container.set(PortfolioValueDailyRepository, repository);
+    }
+
+    expect(added).toEqual([expect.objectContaining({ userId, lookbackDays: wholeHistory })]);
+    expect(asked).toEqual([[userId, PORTFOLIO_HISTORY_LOOKBACK_DAYS]]);
   });
 });

@@ -44,7 +44,7 @@ function makeService(
 }
 
 /**
- * SC-505. `forex-backfill` quotes every currency against the hub — `GBP -> USD`,
+ * SC-505. `historical-price-backfill` quotes every currency against the hub — `GBP -> USD`,
  * `EUR -> USD` — so USD is never itself the priced token and a USD cash balance
  * has no `token_prices` row a GBP-base user can be valued from. The price graph
  * answers it by inverting the row that does exist; this is the seam that asks.

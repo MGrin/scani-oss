@@ -34,7 +34,6 @@ describe('DEMO_RESET_SCHEDULE', () => {
     // half-applied config, a rollback) must not reset into the chain's teeth.
     const CHAIN = [
       'historical-price-backfill',
-      'forex-backfill',
       'transfer-linking',
       'portfolio-value-rollup',
       'hide-closed-holdings',

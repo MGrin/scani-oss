@@ -1,10 +1,10 @@
-import type { NewTokenPrice, Token } from '@scani/db/schema';
+import type { Token } from '@scani/db/schema';
 import { createComponentLogger, logger } from '@scani/logging';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { pricingCircuitBreaker } from '@scani/rate-limiter';
 import { Container, Service } from 'typedi';
-import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
+import { type CurrentPriceWrite, PriceWriter } from './PriceWriter';
 import { PricingFailureCacher } from './PricingFailureCacher';
 import {
   PRICING_PROVIDER_REGISTRY_KEYS,
@@ -48,7 +48,7 @@ type ProviderAdapterMap = Record<PricingProviderKey, PricingProvider>;
 @Service()
 export class PricingProviderRouter {
   private readonly tokenRepository = Container.get(TokenRepository);
-  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
+  private readonly priceWriter = Container.get(PriceWriter);
   private readonly failureCacher = Container.get(PricingFailureCacher);
 
   private readonly providers: ProviderAdapterMap;
@@ -119,125 +119,6 @@ export class PricingProviderRouter {
     if (tokens.length === 0) return [];
     const tokensByProvider = await this.groupTokensByProvider(tokens);
     return await this.fetchFromAllProviders(tokensByProvider, baseCurrencyToken, timestamp);
-  }
-
-  async canTokenBePriced(
-    tokenData: {
-      symbol: string;
-      name: string;
-      metadata: Record<string, unknown>;
-      typeCode: string;
-    },
-    baseCurrency = 'USD'
-  ): Promise<{ canBePriced: boolean; provider?: string; reason?: string }> {
-    if (tokenData.typeCode.toLowerCase() !== 'crypto') {
-      return {
-        canBePriced: true,
-        provider: 'other',
-        reason: 'Non-crypto token type',
-      };
-    }
-
-    try {
-      const baseCurrencyToken = await this.tokenRepository.findBySymbol(baseCurrency);
-      if (!baseCurrencyToken) {
-        logger.warn({ baseCurrency }, 'Base currency token not found in validation');
-        return { canBePriced: false, reason: 'Base currency not found' };
-      }
-
-      const context: PricingExecutionContext = {
-        baseCurrency: baseCurrencyToken,
-        timestamp: new Date(),
-      };
-
-      const tempToken = (providerTokenId: string, provider: PricingProviderKey): RoutedToken => ({
-        token: {
-          id: 'temp-validation-id',
-          symbol: tokenData.symbol,
-          name: tokenData.name,
-          typeId: 'temp',
-          // Never persisted — this row exists to satisfy the provider
-          // context while a routing decision is validated. No authority
-          // answered for it, so it says so rather than guessing 18 (SC-544).
-          decimals: null,
-          decimalsSource: null,
-          iconUrl: null,
-          marketSegment: null,
-          providerMetadata: tokenData.metadata,
-          isScamProbability: 0,
-          scamScoreVersion: null,
-          scamScoreSource: 'heuristic',
-          isActive: true,
-          lookalikeOf: null,
-          createdByUserId: null,
-          unpriceableUntil: null,
-          lastPricingAttemptAt: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        provider,
-        providerTokenId,
-      });
-
-      const coinGeckoId =
-        (tokenData.metadata.coingecko as { id?: string })?.id || tokenData.symbol.toLowerCase();
-      const coinGeckoProvider = this.providers.coinGecko;
-
-      if (coinGeckoProvider) {
-        try {
-          const coinGeckoResults = await coinGeckoProvider.fetchPrices(
-            [tempToken(coinGeckoId, 'coinGecko')],
-            context
-          );
-          const r = coinGeckoResults[0];
-          if (r && r.price !== '0' && !r.source?.includes('empty')) {
-            return {
-              canBePriced: true,
-              provider: 'CoinGecko',
-              reason: 'Found on CoinGecko',
-            };
-          }
-        } catch (error) {
-          logger.debug(
-            { error, symbol: tokenData.symbol },
-            'CoinGecko validation failed, trying DeFiLlama'
-          );
-        }
-      }
-
-      const contractAddress = tokenData.metadata.contractAddress as string | undefined;
-      const chainId = tokenData.metadata.chainId as number | undefined;
-
-      if (contractAddress && chainId) {
-        const defiLlamaProvider = this.providers.defiLlama;
-        if (defiLlamaProvider) {
-          try {
-            const defiLlamaResults = await defiLlamaProvider.fetchPrices(
-              [tempToken(`${chainId}:${contractAddress}`, 'defiLlama')],
-              context
-            );
-            const r = defiLlamaResults[0];
-            if (r && r.price !== '0' && !r.source?.includes('empty')) {
-              return {
-                canBePriced: true,
-                provider: 'DeFiLlama',
-                reason: 'Found on DeFiLlama',
-              };
-            }
-          } catch (error) {
-            logger.debug({ error, symbol: tokenData.symbol }, 'DeFiLlama validation failed');
-          }
-        }
-      }
-
-      return {
-        canBePriced: false,
-        reason: 'Not found on CoinGecko or DeFiLlama',
-      };
-    } catch (error) {
-      logger.error({ error, symbol: tokenData.symbol }, 'Token pricing validation failed');
-      return { canBePriced: false, reason: 'Validation error' };
-    }
   }
 
   private async groupTokensByProvider(
@@ -694,10 +575,13 @@ export class PricingProviderRouter {
         tokensWithResults: allResults.length,
         tokensStillNeeding: tokensStillNeedingPrices.length,
         googleSheetsAvailable: this.googleSheetsAvailable,
+        // The one place a provider's own stamp is kept: the stored row
+        // carries the instant the call asked for.
         resultsBreakdown: allResults.map((r) => ({
           tokenId: r.tokenId,
           price: r.price,
           source: r.source,
+          providerStamp: r.timestamp,
         })),
       },
       'Checking tokens for Google Sheets fallback'
@@ -743,7 +627,7 @@ export class PricingProviderRouter {
       }
     }
 
-    await this.cachePriceResults(allResults, baseCurrencyToken.id);
+    await this.cachePriceResults(allResults, baseCurrencyToken.id, timestamp);
 
     return allResults;
   }
@@ -804,71 +688,30 @@ export class PricingProviderRouter {
     });
   }
 
-  private async cachePriceResults(results: PricingResult[], baseCurrencyId: string): Promise<void> {
+  // Each quote at the instant the call asked for, whatever stamp its provider
+  // gave it, in the base the call asked for. A failed quote is the failure
+  // cacher's '0', which the writer drops and counts with anything else that is
+  // not a positive decimal. A failed write costs the cache only: the quotes
+  // still go back to the caller.
+  private async cachePriceResults(
+    results: PricingResult[],
+    baseCurrencyId: string,
+    at: Date
+  ): Promise<void> {
     if (results.length === 0) return;
 
-    logger.debug(
-      {
-        resultCount: results.length,
-        sources: results.map((r) => r.source),
-        baseCurrencyId,
-      },
-      'Caching price results to database'
-    );
-
-    // Zero prices indicate failures and must never be persisted; the
-    // failure-cacher already stamped a recognizable source tag on
-    // them so the upstream router can decide whether to retry.
-    const validPriceResults = results.filter((result) => {
-      const price = parseFloat(result.price);
-      if (price === 0 || Number.isNaN(price)) {
-        logger.debug(
-          {
-            tokenId: result.tokenId,
-            price: result.price,
-            source: result.source,
-          },
-          'Skipping cache of zero/invalid price - failures should not be persisted'
-        );
-        return false;
-      }
-      return true;
-    });
-
-    if (validPriceResults.length === 0) {
-      logger.debug('No valid prices to cache after filtering out zeros');
-      return;
-    }
-
-    const priceRecords: NewTokenPrice[] = validPriceResults.map((result) => ({
+    const rows: CurrentPriceWrite[] = results.map((result) => ({
       tokenId: result.tokenId,
       baseTokenId: baseCurrencyId,
       price: result.price,
-      timestamp: result.timestamp,
       source: result.source,
     }));
 
-    logger.debug(
-      {
-        priceRecords: priceRecords.map((p) => ({
-          tokenId: p.tokenId,
-          price: p.price,
-          source: p.source,
-          timestamp: p.timestamp.toISOString(),
-        })),
-        filteredOut: results.length - validPriceResults.length,
-      },
-      'Price records to be cached (after filtering)'
-    );
-
     try {
-      await this.tokenPriceRepository.bulkUpsert(priceRecords);
-      logger.debug(
-        { cachedCount: priceRecords.length },
-        'Successfully cached price results to database'
-      );
+      const { written, dropped } = await this.priceWriter.writeCurrent(rows, at);
+      logger.debug({ written, dropped, baseCurrencyId }, 'Cached price results to database');
     } catch (error) {
-      logger.error({ error, priceRecords }, 'Failed to cache price results');
+      logger.error({ error, at, priceRecords: rows }, 'Failed to cache price results');
     }
   }
 }

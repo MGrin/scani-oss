@@ -162,7 +162,7 @@ describe('cash spent below zero is a short, closed by the cash that comes back (
       occurredAt: '2026-01-01',
       priceNative: '0.7',
     });
-    const r = await walk([
+    const rows = [
       tx({ tokenId: CAD, kind: 'settle_in', quantity: '0.0001', occurredAt: '2025-12-31' }),
       leg,
       tx({
@@ -172,10 +172,14 @@ describe('cash spent below zero is a short, closed by the cash that comes back (
         occurredAt: '2026-01-01',
         settlesTransactionId: leg.id,
       }),
-    ]);
-    // Not spent like a settlement: nothing realized, the 10 stays in the pool's cost.
+    ];
+    const r = await walk(rows);
+    const withoutFee = await walk(rows.slice(0, 2));
+    // Not spent like a settlement: nothing realized, the 10's cost stays in the
+    // pool. Its units leave, so the pool matches the balance (SC-1561).
     expect(r.realizedPnl.toString()).toBe('0');
-    expect(r.openQty.toString()).toBe('100.0001');
+    expect(r.openQty.toString()).toBe('90.0001');
+    expect(r.costBasis.toString()).toBe(withoutFee.costBasis.toString());
   });
 
   // SC-1486: IBKR reports a conversion's commission twice — on the trade row
@@ -220,7 +224,9 @@ describe('cash spent below zero is a short, closed by the cash that comes back (
     expect(r.costBasis.toString()).toBe('77');
   });
 
-  test('control: a fee nothing settles stays in the pool, a cost of the cash', async () => {
+  // Until SC-1561 a fee nothing settles stayed in the pool as a cost of the
+  // cash. It leaves at zero proceeds now, and its cost is a realized loss.
+  test('control: a fee nothing settles leaves the pool, its cost a realized loss', async () => {
     const r = await walk([
       tx({
         tokenId: CAD,
@@ -231,7 +237,8 @@ describe('cash spent below zero is a short, closed by the cash that comes back (
       }),
       tx({ tokenId: CAD, kind: 'fee', quantity: '-10', occurredAt: '2026-02-01' }),
     ]);
-    expect(r.openQty.toString()).toBe('100');
-    expect(r.realizedPnl.toString()).toBe('0');
+    expect(r.openQty.toString()).toBe('90');
+    expect(r.costBasis.toString()).toBe('63');
+    expect(r.realizedPnl.toString()).toBe('-7');
   });
 });

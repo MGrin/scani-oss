@@ -22,6 +22,10 @@
  *    unscoped. Reading the real table would make every count below a fact
  *    about whatever else lives in the shared dev database, which is exactly
  *    how SC-272 cost two threads a day each.
+ *  - the run's other tokens, for the same reason: the currencies in use
+ *    (`TokenRepository.findCurrencyTokenIdsInUse`) and the hubs and FX baseline
+ *    (`PriceHubResolver`). Here the run has none, so every count is about the
+ *    four tokens of the fixture.
  *  - `PricingService.getTokenPrices`, so no HTTP leaves the suite and so the
  *    test can assert *which tokens were asked about* — the actual claim.
  */
@@ -34,6 +38,7 @@ import { inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { TokenRepository } from '../../src/repositories/TokenRepository';
 import { HoldingQueryService, PricingService, VaultService } from '../../src/services';
+import { PriceHubResolver } from '../../src/services/pricing/PriceHubResolver';
 import { UpdateTokenPricesUseCase } from '../../src/use-cases/UpdateTokenPricesUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
 
@@ -126,14 +131,23 @@ function makeUseCase(order: string[]): UpdateTokenPricesUseCase {
       asked = tokens.map((token) => token.id);
       return new Map(tokens.map((token) => [token.id, '100']));
     },
+    // The base the run prices in; these tests never read it.
+    baseToken: async () => ({ id: 'usd' }),
   } as unknown as PricingService);
 
   Container.set(VaultService, {
     recalculateVaultsForToken: async () => undefined,
   } as unknown as VaultService);
 
-  // Real, on purpose — the conjunction is SQL.
-  Container.set(TokenRepository, new TokenRepository());
+  // Real, on purpose — the conjunction is SQL. Only its discovery edge is not.
+  const tokens = new TokenRepository();
+  tokens.findCurrencyTokenIdsInUse = async () => [];
+  Container.set(TokenRepository, tokens);
+
+  Container.set(PriceHubResolver, {
+    hubTokenIds: async () => [],
+    tokenIdsOf: async () => [],
+  } as unknown as PriceHubResolver);
 
   const instance = new UpdateTokenPricesUseCase();
   Container.set(UpdateTokenPricesUseCase, instance);
@@ -159,7 +173,7 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
     const f = fixture as Fixture;
     const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh]);
 
-    const result = await useCase.execute('USD');
+    const result = await useCase.execute();
 
     // The claim. On the old behaviour this token was asked about every hour.
     expect(asked).not.toContain(f.suppressed);
@@ -170,7 +184,7 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
     const f = fixture as Fixture;
     const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh]);
 
-    await useCase.execute('USD');
+    await useCase.execute();
 
     // The half a flag-only filter would get wrong: a stale mark from before
     // SC-232 sits on a token we can price perfectly well.
@@ -181,7 +195,7 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
     const f = fixture as Fixture;
     const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh]);
 
-    await useCase.execute('USD');
+    await useCase.execute();
 
     // `fresh` is what a holding added minutes ago looks like: no mark, so
     // nothing here can suppress it.
@@ -194,7 +208,7 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
     const f = fixture as Fixture;
     const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh]);
 
-    const result = await useCase.execute('USD');
+    const result = await useCase.execute();
 
     // The reported defect: "13 failed" when the truth was "13 suppressed on
     // purpose". Those are different sentences and only one is worth looking at.
@@ -208,7 +222,7 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
     const f = fixture as Fixture;
     const useCase = makeUseCase([f.suppressed]);
 
-    const result = await useCase.execute('USD');
+    const result = await useCase.execute();
 
     // Before the split this path returned `tokensFailed = tokensFound` and
     // warned — the fix would have become a louder version of the bug.

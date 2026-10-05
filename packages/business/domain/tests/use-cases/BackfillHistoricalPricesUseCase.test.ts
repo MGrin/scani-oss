@@ -22,12 +22,13 @@ import * as schema from '@scani/db/schema';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
-import {
-  type BackfillOneResult,
-  HistoricalPriceBackfillService,
-} from '../../src/services/pricing/HistoricalPriceBackfillService';
+import { HistoricalPriceBackfillService } from '../../src/services/pricing/HistoricalPriceBackfillService';
+import { PriceHubResolver } from '../../src/services/pricing/PriceHubResolver';
+import { FX_BASELINE, type PriceHub, priceHubKey } from '../../src/services/pricing/price-hubs';
 import { BackfillHistoricalPricesUseCase } from '../../src/use-cases/BackfillHistoricalPricesUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
+import { makeUser } from '../../test/helpers/factories';
+import { makePayment } from '../../test/helpers/factories-extra';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -49,10 +50,21 @@ interface Fixture {
 }
 
 let fixture: Fixture | null = null;
+// What a test makes beyond the fixture. Neither hangs off the fixture user, so
+// the cascade does not reach them.
+let extraTokenIds: string[] = [];
+let extraUserIds: string[] = [];
+// The run's token for each FX baseline member, by `priceHubKey`. Empty unless a
+// test fills it, so the seeded currencies are in no run here and every count
+// stays about the fixture's own tokens.
+let baseline = new Map<string, string>();
 let backfillCalls: Array<{ tokenId: string; at: Date; baseTokenId: string }> = [];
 // Stands in for a provider that ERRORED rather than answering — the
 // distinction `attemptFailed` exists to carry (SC-171).
 let nextAttemptFailed = false;
+// Bars the stubbed provider answers on days the run did not ask for, all of
+// which the writer drops. They are bars, never needed days.
+let nextDroppedBarsOutsideNeededDays = 0;
 // Per-call result the stubbed service returns. Tests can override.
 /**
  * SC-449. Hoisted out of `nextResult` so `beforeEach` has something to put
@@ -60,7 +72,16 @@ let nextAttemptFailed = false;
  * the test that made it — the test asserting `summary.inserted === 4` then
  * runs against a sibling's stub that returns no insert, and reads 0.
  */
-const DEFAULT_RESULT: (tokenId: string, at: Date, baseTokenId: string) => BackfillOneResult = (
+interface DayResult {
+  tokenId: string;
+  baseTokenId: string;
+  at: Date;
+  status: 'inserted' | 'dropped' | 'already-have' | 'provider-missing' | 'no-provider';
+  priceStored?: string;
+  providerUsed?: string;
+}
+
+const DEFAULT_RESULT: (tokenId: string, at: Date, baseTokenId: string) => DayResult = (
   tokenId,
   at,
   baseTokenId
@@ -189,8 +210,8 @@ async function cleanupFixture(f: Fixture): Promise<void> {
   // historical prices for our tokens-as-base have to clear the price
   // rows before the token rows, so we wipe both base_token and token
   // references regardless of which test wrote them.
-  await db.delete(schema.users).where(eq(schema.users.id, f.userId));
-  const tokenIds = [f.usdTokenId, f.btcTokenId];
+  await db.delete(schema.users).where(inArray(schema.users.id, [f.userId, ...extraUserIds]));
+  const tokenIds = [f.usdTokenId, f.btcTokenId, ...extraTokenIds];
   await db.delete(schema.tokenPrices).where(inArray(schema.tokenPrices.baseTokenId, tokenIds));
   await db.delete(schema.tokenPrices).where(inArray(schema.tokenPrices.tokenId, tokenIds));
   await db.delete(schema.tokens).where(inArray(schema.tokens.id, tokenIds));
@@ -204,8 +225,12 @@ async function cleanupFixture(f: Fixture): Promise<void> {
 
 beforeEach(async () => {
   fixture = await setupFixture();
+  extraTokenIds = [];
+  extraUserIds = [];
+  baseline = new Map();
   backfillCalls = [];
   nextAttemptFailed = false;
+  nextDroppedBarsOutsideNeededDays = 0;
   // SC-449. The two above were already reset here; this one was missed, and it
   // is the one that decides what the use case reports as inserted.
   nextResult = DEFAULT_RESULT;
@@ -224,14 +249,11 @@ beforeEach(async () => {
   // outcomes into the new return shape — keeps the existing scenario
   // helpers (nextResult queue) working without rewriting every test.
   const stub = {
-    backfillOne: async (tokenId: string, at: Date, baseTokenId: string) => {
-      backfillCalls.push({ tokenId, at, baseTokenId });
-      return nextResult(tokenId, at, baseTokenId);
-    },
     backfillTokenRange: async (tokenId: string, baseTokenId: string, neededDays: Date[]) => {
       let inserted = 0;
       let alreadyHad = 0;
       let providerMissing = 0;
+      let droppedDays = 0;
       let providerUsed: string | null = null;
       for (const day of neededDays) {
         backfillCalls.push({ tokenId, at: day, baseTokenId });
@@ -246,6 +268,8 @@ beforeEach(async () => {
             providerUsed = result.providerUsed ?? providerUsed;
           } else if (result.status === 'already-have') {
             alreadyHad++;
+          } else if (result.status === 'dropped') {
+            droppedDays++;
           } else {
             providerMissing++;
           }
@@ -257,12 +281,19 @@ beforeEach(async () => {
         inserted,
         alreadyHad,
         providerMissing,
+        droppedDays,
+        droppedBars: droppedDays + nextDroppedBarsOutsideNeededDays,
         providerUsed,
         attemptFailed: nextAttemptFailed,
       };
     },
   } as unknown as HistoricalPriceBackfillService;
   Container.set(HistoricalPriceBackfillService, stub);
+
+  Container.set(PriceHubResolver, {
+    tokenIdsOf: async (hubs: readonly PriceHub[]) =>
+      hubs.flatMap((hub) => baseline.get(priceHubKey(hub)) ?? []),
+  } as unknown as PriceHubResolver);
 
   // Reset use case so its class-field initializer captures the stub.
   Container.set(BackfillHistoricalPricesUseCase, new BackfillHistoricalPricesUseCase());
@@ -272,6 +303,31 @@ afterEach(async () => {
   if (fixture) await cleanupFixture(fixture);
   fixture = null;
 });
+
+const DAY_MS = 86_400_000;
+const utcDay = (offsetDays: number): Date => {
+  const at = new Date(Date.now() - offsetDays * DAY_MS);
+  return new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
+};
+
+/** A ledger row on the fixture's BTC holding, or on `holding` when one is given. */
+async function addTransaction(
+  f: Fixture,
+  occurredAt: Date,
+  externalId: string,
+  holding: { id: string; tokenId: string } = { id: f.holdingId, tokenId: f.btcTokenId }
+): Promise<void> {
+  await db.insert(schema.holdingTransactions).values({
+    userId: f.userId,
+    holdingId: holding.id,
+    tokenId: holding.tokenId,
+    kind: 'buy',
+    quantity: '1',
+    occurredAt,
+    externalId,
+    source: 'statement-csv',
+  });
+}
 
 describe('BackfillHistoricalPricesUseCase', () => {
   test('throws when called without usdTokenId', async () => {
@@ -663,10 +719,113 @@ describe('BackfillHistoricalPricesUseCase', () => {
     expect(token?.unpriceableUntil).toBeNull();
   });
 
+  // Foundation A3, Task 6. A bar the writer refuses is not inserted, and it is
+  // not missing either: the provider answered that day. The flag reads as it
+  // did when such a bar still counted as inserted, so a provider that answers
+  // only refused bars clears a cooldown rather than starting one.
+  test('a range answered only with bars the writer dropped clears the cooldown and is counted dropped', async () => {
+    const f = fixture!;
+    const past = new Date(Date.now() - 1000);
+    await db
+      .update(schema.tokens)
+      .set({ unpriceableUntil: past })
+      .where(eq(schema.tokens.id, f.btcTokenId));
+    nextResult = (tokenId, at, baseTokenId) => ({
+      tokenId,
+      baseTokenId,
+      at,
+      status: 'dropped',
+      providerUsed: 'stub',
+    });
+    // Above the floor, so a run read as "nobody has this" would mark the token.
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 60,
+    });
+    expect(summary.inserted).toBe(0);
+    expect(summary.providerMissing).toBe(0);
+    expect(summary.droppedDays).toBe(summary.attempted);
+    const [token] = await db
+      .select({ unpriceableUntil: schema.tokens.unpriceableUntil })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.id, f.btcTokenId));
+    expect(token?.unpriceableUntil).toBeNull();
+  });
+
+  // The cooldown reads needed days. Before PriceWriter a bad bar on a day
+  // nobody asked for was stored, so `withoutStoredPrices` kept a token with
+  // no other price unmarked. Now nothing is stored, and the token is marked.
+  test('bars dropped only on days the run did not need clear no cooldown: the token is marked', async () => {
+    const f = fixture!;
+    nextResult = (tokenId, at, baseTokenId) => ({
+      tokenId,
+      baseTokenId,
+      at,
+      status: 'provider-missing',
+    });
+    nextDroppedBarsOutsideNeededDays = 2;
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      // Above the floor, so only a cleared cooldown would keep the mark off.
+      lookbackDays: 60,
+    });
+    expect(summary.inserted).toBe(0);
+    expect(summary.droppedDays).toBe(0);
+    expect(summary.droppedBars).toBe(2);
+    expect(summary.providerMissing).toBe(summary.attempted);
+    const [token] = await db
+      .select({ unpriceableUntil: schema.tokens.unpriceableUntil })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.id, f.btcTokenId));
+    expect(token?.unpriceableUntil).toBeInstanceOf(Date);
+  });
+
+  test('every attempted day is inserted, missing or dropped; a day already priced is not attempted', async () => {
+    const f = fixture!;
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    await db.insert(schema.tokenPrices).values({
+      tokenId: f.btcTokenId,
+      baseTokenId: f.usdTokenId,
+      price: '42000',
+      timestamp: today,
+      source: 'preseeded',
+      granularity: 'daily',
+    });
+    const statuses: DayResult['status'][] = ['inserted', 'dropped', 'provider-missing'];
+    let call = 0;
+    nextResult = (tokenId, at, baseTokenId) => ({
+      tokenId,
+      baseTokenId,
+      at,
+      status: statuses[call++ % statuses.length] ?? 'inserted',
+    });
+    nextDroppedBarsOutsideNeededDays = 3;
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 6,
+    });
+    // Seven candidate days, one already priced: six attempted, two of each.
+    expect(summary).toMatchObject({
+      attempted: 6,
+      alreadyHad: 1,
+      inserted: 2,
+      providerMissing: 2,
+      droppedDays: 2,
+      droppedBars: 5,
+    });
+    expect(summary.inserted + summary.providerMissing + summary.droppedDays).toBe(
+      summary.attempted
+    );
+  });
+
   test('continues past per-candidate exceptions (counts them as provider-missing)', async () => {
     const f = fixture!;
     let counter = 0;
-    nextResult = ((_tokenId, _at, _baseTokenId): BackfillOneResult => {
+    nextResult = ((_tokenId, _at, _baseTokenId): DayResult => {
       counter += 1;
       if (counter === 2) throw new Error('upstream 500');
       return {
@@ -703,25 +862,6 @@ describe('BackfillHistoricalPricesUseCase', () => {
  * these tokens at all.
  */
 describe('BackfillHistoricalPricesUseCase — start date with no coverage row', () => {
-  const DAY_MS = 86_400_000;
-  const utcDay = (offsetDays: number): Date => {
-    const at = new Date(Date.now() - offsetDays * DAY_MS);
-    return new Date(Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate()));
-  };
-
-  async function addTransaction(f: Fixture, occurredAt: Date, externalId: string): Promise<void> {
-    await db.insert(schema.holdingTransactions).values({
-      userId: f.userId,
-      holdingId: f.holdingId,
-      tokenId: f.btcTokenId,
-      kind: 'buy',
-      quantity: '1',
-      occurredAt,
-      externalId,
-      source: 'statement-csv',
-    });
-  }
-
   test('starts at the earliest transaction, not the lookback floor', async () => {
     const f = fixture!;
     await addTransaction(f, utcDay(10), 'sc229-first');
@@ -810,6 +950,326 @@ describe('BackfillHistoricalPricesUseCase — start date with no coverage row', 
     expect(summary.alreadyHad).toBe(1);
     const [entry] = summary.plan ?? [];
     expect(entry?.from).toEqual(utcDay(69));
+  });
+});
+
+/**
+ * Foundation A3, Task 10. The forex job priced currencies nobody holds: base
+ * and payment currencies, and a fixed baseline. This run takes them over, so
+ * a currency is in its set by being used, each from the first day its users
+ * have anything to value.
+ */
+describe('BackfillHistoricalPricesUseCase: currencies in use and the FX baseline', () => {
+  /** A token nobody holds or uses yet. */
+  async function addToken(f: Fixture): Promise<string> {
+    const [token] = await db
+      .insert(schema.tokens)
+      .values({
+        symbol: `BHPCUR${randomUUID().toUpperCase()}`,
+        name: 'BHP currency',
+        typeId: f.tokenTypeId,
+      })
+      .returning();
+    if (!token) throw new Error('token insert failed');
+    extraTokenIds.push(token.id);
+    return token.id;
+  }
+
+  async function setBaseCurrency(f: Fixture, tokenId: string): Promise<void> {
+    await db
+      .update(schema.users)
+      .set({ baseCurrencyId: tokenId })
+      .where(eq(schema.users.id, f.userId));
+  }
+
+  /** The fixture user's holding of `tokenId`, in the fixture account. */
+  async function hold(
+    f: Fixture,
+    tokenId: string,
+    balance = '1'
+  ): Promise<{ id: string; tokenId: string }> {
+    const [holding] = await db
+      .insert(schema.holdings)
+      .values({ userId: f.userId, accountId: f.accountId, tokenId, balance })
+      .returning();
+    if (!holding) throw new Error('holding insert failed');
+    return { id: holding.id, tokenId };
+  }
+
+  async function payIn(userId: string, currencyTokenId: string): Promise<void> {
+    await db.transaction((tx) => makePayment(tx, { userId, currencyTokenId }));
+  }
+
+  /** Makes `tokenId` this run's token for the FX baseline member of that symbol. */
+  function asBaseline(symbol: string, tokenId: string): void {
+    const member = FX_BASELINE.find((hub) => hub.symbol === symbol);
+    if (!member) throw new Error(`${symbol} is not in the FX baseline`);
+    baseline.set(priceHubKey(member), tokenId);
+  }
+
+  /** The windows the run would ask for, by token. */
+  async function planned(f: Fixture, lookbackDays = 60) {
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays,
+      planOnly: true,
+    });
+    return new Map((summary.plan ?? []).map((entry) => [entry.tokenId, entry]));
+  }
+
+  /** The days the run asked the backfill service for, oldest first. */
+  function daysAsked(tokenId: string): Date[] {
+    return backfillCalls
+      .filter((call) => call.tokenId === tokenId)
+      .map((call) => call.at)
+      .sort((a, b) => a.getTime() - b.getTime());
+  }
+
+  async function cooldownOf(tokenId: string): Promise<Date | null> {
+    const [token] = await db
+      .select({ unpriceableUntil: schema.tokens.unpriceableUntil })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.id, tokenId));
+    return token?.unpriceableUntil ?? null;
+  }
+
+  type Planned = Awaited<ReturnType<typeof planned>>;
+
+  // `toMatchObject` passes over two different dates, so each field is compared on its own.
+  function expectWindow(
+    plan: Planned,
+    tokenId: string,
+    expected: { from: Date; to: Date; missingDays?: number }
+  ): void {
+    const entry = plan.get(tokenId);
+    expect(entry?.from).toEqual(expected.from);
+    expect(entry?.to).toEqual(expected.to);
+    if (expected.missingDays !== undefined) expect(entry?.missingDays).toBe(expected.missingDays);
+  }
+
+  const lastSevenDays = { from: utcDay(6), to: utcDay(0), missingDays: 7 };
+
+  test('a base currency nobody holds is backfilled from its user’s first evidence day', async () => {
+    const f = fixture!;
+    const base = await addToken(f);
+    await setBaseCurrency(f, base);
+    await addTransaction(f, utcDay(12), 'a3-first-ledger-row');
+    await db.insert(schema.holdingBalanceObservations).values({
+      userId: f.userId,
+      holdingId: f.holdingId,
+      balance: '1',
+      observedAt: utcDay(20),
+      source: 'user-entered',
+    });
+
+    await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 60,
+    });
+
+    // The observation is the earlier of the two, 20 days back through today.
+    const asked = daysAsked(base);
+    expect(asked).toHaveLength(21);
+    expect(asked[0]).toEqual(utcDay(20));
+    expect(asked[20]).toEqual(utcDay(0));
+  });
+
+  test('a currency in use reaches back no further than the lookback', async () => {
+    const f = fixture!;
+    const base = await addToken(f);
+    await setBaseCurrency(f, base);
+    await addTransaction(f, utcDay(40), 'a3-before-the-lookback');
+
+    const plan = await planned(f, 10);
+
+    expectWindow(plan, base, { from: utcDay(10), to: utcDay(0), missingDays: 11 });
+  });
+
+  // The fixture user has a holding and nothing dated: no ledger row and no
+  // observation. So each currency takes the window the forex job gave it.
+  test('a payment currency, a vault currency and a manual price’s quote currency are in the set', async () => {
+    const f = fixture!;
+    const payment = await addToken(f);
+    const vault = await addToken(f);
+    const manualQuote = await addToken(f);
+    await payIn(f.userId, payment);
+    await db.insert(schema.vaults).values({
+      userId: f.userId,
+      name: 'A vault',
+      targetAmount: '1000',
+      currencyId: vault,
+      color: '#3b82f6',
+    });
+    await db.insert(schema.tokenPrices).values({
+      tokenId: f.btcTokenId,
+      baseTokenId: manualQuote,
+      price: '10',
+      timestamp: utcDay(1),
+      source: 'manual',
+    });
+
+    const plan = await planned(f);
+
+    expectWindow(plan, payment, lastSevenDays);
+    expectWindow(plan, vault, lastSevenDays);
+    expectWindow(plan, manualQuote, lastSevenDays);
+  });
+
+  test('a baseline currency nobody uses is in the set', async () => {
+    const f = fixture!;
+    const jpy = await addToken(f);
+    asBaseline('JPY', jpy);
+
+    const plan = await planned(f);
+
+    expectWindow(plan, jpy, lastSevenDays);
+  });
+
+  test('USDT is in the set', async () => {
+    const f = fixture!;
+    const usdt = await addToken(f);
+    asBaseline('USDT', usdt);
+
+    const plan = await planned(f);
+
+    expectWindow(plan, usdt, lastSevenDays);
+  });
+
+  test('CONTROL: USD is not', async () => {
+    const f = fixture!;
+    const payment = await addToken(f);
+    await setBaseCurrency(f, f.usdTokenId);
+    await payIn(f.userId, f.usdTokenId);
+    await payIn(f.userId, payment);
+
+    const plan = await planned(f);
+
+    expect(plan.has(payment)).toBe(true);
+    expect(plan.has(f.usdTokenId)).toBe(false);
+  });
+
+  test('CONTROL: a currency nobody uses and not in the baseline is not in the set', async () => {
+    const f = fixture!;
+    const base = await addToken(f);
+    const unused = await addToken(f);
+    await setBaseCurrency(f, base);
+
+    const plan = await planned(f);
+
+    expect(plan.has(base)).toBe(true);
+    expect(plan.has(unused)).toBe(false);
+  });
+
+  test('under a user id the set is that user’s and the baseline', async () => {
+    const f = fixture!;
+    const base = await addToken(f);
+    const jpy = await addToken(f);
+    const theirBase = await addToken(f);
+    const theirPayment = await addToken(f);
+    await setBaseCurrency(f, base);
+    asBaseline('JPY', jpy);
+    const other = await db.transaction((tx) => makeUser(tx, { baseCurrencyId: theirBase }));
+    extraUserIds.push(other.id);
+    await payIn(other.id, theirPayment);
+
+    const plan = await planned(f);
+
+    expect(new Set(plan.keys())).toEqual(new Set([f.btcTokenId, base, jpy]));
+  });
+
+  test('a currency held and in use starts from the earlier of its two days', async () => {
+    const f = fixture!;
+    // In use before it was held: the user's first ledger row is on BTC.
+    const base = await addToken(f);
+    await setBaseCurrency(f, base);
+    await addTransaction(f, utcDay(15), 'a3-first-evidence');
+    await addTransaction(f, utcDay(5), 'a3-base-first-held', await hold(f, base));
+    // Held before any evidence: its coverage row reaches further back.
+    const payment = await addToken(f);
+    await payIn(f.userId, payment);
+    await db.insert(schema.holdingCoverage).values({
+      holdingId: (await hold(f, payment)).id,
+      firstTxAt: utcDay(25),
+      lastTxAt: utcDay(25),
+      txSources: ['statement-csv'],
+      hasCompleteTxHistory: true,
+    });
+
+    const plan = await planned(f);
+
+    expect(plan.get(base)?.from).toEqual(utcDay(15));
+    expect(plan.get(payment)?.from).toEqual(utcDay(25));
+  });
+
+  test('a currency in use ends today even when its position is closed', async () => {
+    const f = fixture!;
+    const base = await addToken(f);
+    await setBaseCurrency(f, base);
+    const closed = await hold(f, base, '0');
+    await addTransaction(f, utcDay(20), 'a3-opened', closed);
+    await addTransaction(f, utcDay(10), 'a3-closed', closed);
+
+    const plan = await planned(f);
+
+    expectWindow(plan, base, { from: utcDay(20), to: utcDay(0) });
+  });
+
+  /**
+   * One run in which no provider has anything, over ranges past the cooldown
+   * floor: a base currency nobody holds, a payment currency that is also
+   * held, a baseline member that is also held, and BTC, which is only held.
+   */
+  async function emptyAnswerRun(f: Fixture) {
+    const base = await addToken(f);
+    const heldPayment = await addToken(f);
+    const heldBaseline = await addToken(f);
+    await setBaseCurrency(f, base);
+    await payIn(f.userId, heldPayment);
+    asBaseline('JPY', heldBaseline);
+    await addTransaction(f, utcDay(45), 'a3-empty-btc');
+    await addTransaction(f, utcDay(45), 'a3-empty-payment', await hold(f, heldPayment));
+    await addTransaction(f, utcDay(45), 'a3-empty-baseline', await hold(f, heldBaseline));
+    nextResult = (tokenId, at, baseTokenId) => ({
+      tokenId,
+      baseTokenId,
+      at,
+      status: 'provider-missing',
+    });
+
+    await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 60,
+    });
+
+    return { base, heldPayment, heldBaseline };
+  }
+
+  test('an empty answer for a currency in use leaves no cooldown mark', async () => {
+    const f = fixture!;
+    const { base, heldPayment } = await emptyAnswerRun(f);
+
+    expect(await cooldownOf(heldPayment)).toBeNull();
+    // Asked over a range past the floor, so only the rule keeps the mark off.
+    expect(daysAsked(base).length).toBeGreaterThanOrEqual(30);
+    expect(await cooldownOf(base)).toBeNull();
+  });
+
+  test('an empty answer for a baseline member that is also held leaves no cooldown mark', async () => {
+    const f = fixture!;
+    const { heldBaseline } = await emptyAnswerRun(f);
+
+    expect(daysAsked(heldBaseline).length).toBeGreaterThanOrEqual(30);
+    expect(await cooldownOf(heldBaseline)).toBeNull();
+  });
+
+  test('CONTROL: an empty answer for a token that is only held is marked as before', async () => {
+    const f = fixture!;
+    await emptyAnswerRun(f);
+
+    expect(await cooldownOf(f.btcTokenId)).toBeInstanceOf(Date);
   });
 });
 

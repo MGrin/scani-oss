@@ -122,7 +122,6 @@ import { ExchangeBalancesProcessor } from './processors/exchange-balances';
 import { ExchangeImportProcessor } from './processors/exchange-import';
 import { ExchangeTransactionsProcessor } from './processors/exchange-transactions';
 import { FileImportProcessor } from './processors/file-import';
-import { ForexBackfillProcessor } from './processors/forex-backfill';
 import { HideClosedHoldingsProcessor } from './processors/hide-closed-holdings';
 import { HistoricalPriceBackfillProcessor } from './processors/historical-price-backfill';
 import { HoldingPriceUpdateProcessor } from './processors/holding-price-update';
@@ -163,7 +162,6 @@ function resolveProcessors() {
     Container.get(ExchangeTransactionsProcessor),
     Container.get(ApyPayoutsProcessor),
     Container.get(HistoricalPriceBackfillProcessor),
-    Container.get(ForexBackfillProcessor),
     Container.get(TokenPricesDownsampleProcessor),
     Container.get(PortfolioValueRollupProcessor),
     Container.get(TransferLinkingProcessor),

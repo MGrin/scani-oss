@@ -1,10 +1,15 @@
 import { describe, expect, test } from 'bun:test';
+import { ExchangeRateApiClient } from '@scani/providers/providers/exchangerate-api';
 import { Container, Service, Token } from 'typedi';
 import {
   containerRegistrations,
   restoreContainerAfterAll,
   snapshotContainer,
 } from '../../test/helpers/container';
+
+// Resolved before this file's snapshot, as a file with no restore scope
+// leaves it for every file that runs after.
+const clientTheProcessHad = Container.get(ExchangeRateApiClient);
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -76,5 +81,13 @@ describe('snapshotContainer', () => {
     restore();
     expect(containerRegistrations().length).toBe(before);
     expect(Container.get(RealDependency).answer()).toBe('real');
+  });
+});
+
+describe('restoreContainerAfterAll', () => {
+  // The client keeps the table it fetched for an hour, so one that outlived
+  // a file would carry that table into the next.
+  test('gives the file an exchangerate-api client of its own', () => {
+    expect(Container.get(ExchangeRateApiClient)).not.toBe(clientTheProcessHad);
   });
 });

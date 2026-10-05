@@ -195,9 +195,10 @@ The merged `TokenMetadata` is written back to
 <Aside type="tip" title="Rate limiting">
   Every outbound provider call goes through
   `@scani/rate-limiter`'s per-provider buckets. Configure your
-  provider's limits in
-  `packages/business/domain/src/services/pricing/upstream-rate-limits.ts`
-  so noisy backfills don't blow past the upstream's quota.
+  provider's limit in its own boot factory: create the limiter there
+  and register it under the provider's namespace on
+  `deps.rateLimiterRegistry`, as `frankfurter/index.ts` does, so noisy
+  backfills don't blow past the upstream's quota.
 </Aside>
 
 ## What we'll likely close

@@ -406,6 +406,47 @@ describe('HoldingsSyncHelper — only broker cash may go negative (SC-1462)', ()
 // makes `resolveApiCreds` return null, and every HMAC provider turns that
 // into `return []` — the same value a genuinely-empty account produces.
 // Under `staleStrategy: 'zero'` the second reading wiped the account, hourly.
+describe('HoldingsSyncHelper — a hidden holding the sync gives a balance (SC-1557)', () => {
+  async function hidden(seeded: Seeded, hiddenBy: 'auto' | 'user') {
+    const coin = await token(fresh('ZSWP'), 'crypto');
+    const row = await holding(seeded, {
+      tokenId: coin.id,
+      source: 'import_kraken',
+      externalId: coin.symbol,
+      balance: '0',
+    });
+    await getDb()
+      .update(schema.holdings)
+      .set({ isHidden: true, hiddenBy })
+      .where(eq(schema.holdings.id, row.id));
+    return { id: row.id, symbol: coin.symbol };
+  }
+
+  const shape = async (holdingId: string) => {
+    const row = await holdingRow(holdingId);
+    return { balance: row.balance, isHidden: row.isHidden, hiddenBy: row.hiddenBy };
+  };
+
+  test('one the sweep hid is shown again, and still reads as swept', async () => {
+    const seeded = await seed();
+    const swept = await hidden(seeded, 'auto');
+
+    await sync(seeded, { snapshots: [snapshot(swept.symbol, '4.2', 'crypto')] });
+
+    expect(await shape(swept.id)).toEqual({ balance: '4.2', isHidden: false, hiddenBy: 'auto' });
+  });
+
+  // The control: the same sync, the same balance, and its owner's choice holds.
+  test('one its owner hid stays hidden', async () => {
+    const seeded = await seed();
+    const mine = await hidden(seeded, 'user');
+
+    await sync(seeded, { snapshots: [snapshot(mine.symbol, '4.2', 'crypto')] });
+
+    expect(await shape(mine.id)).toEqual({ balance: '4.2', isHidden: true, hiddenBy: 'user' });
+  });
+});
+
 describe('HoldingsSyncHelper — an empty snapshot never zeroes anything', () => {
   test('refuses to zero holdings when the provider returned nothing at all', async () => {
     const seeded = await seed();

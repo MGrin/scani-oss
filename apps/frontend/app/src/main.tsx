@@ -7,6 +7,7 @@ import { assertFrontendEnv } from '@scani/ui';
 import { ErrorBoundary } from '@scani/ui/components/ErrorBoundary';
 import { UpdateBanner } from '@scani/ui/components/UpdateBanner';
 import { ThemeProvider } from '@scani/ui/contexts/ThemeContext';
+import { setUpdateOfferReporter } from '@scani/ui/hooks/useAppUpdate';
 import { buildIdentity } from '@scani/ui/lib/build-identity';
 import {
   listenForServiceWorkerReports,
@@ -179,6 +180,22 @@ if (import.meta.env.PROD) {
       level: 'error',
       tags: { area: 'service-worker' },
       extra: { detail },
+    });
+  });
+
+  // Every banner raised names its route and the two versions it compared, so
+  // a banner a user reports can be traced to its cause (SC-1562).
+  setUpdateOfferReporter(({ route, served, bundle }) => {
+    Sentry.captureMessage('update-banner-offered', {
+      level: 'info',
+      // One issue per route: the daily Sentry watch files each new issue as a task.
+      fingerprint: ['update-banner', route],
+      tags: { area: 'update-banner', route },
+      extra: {
+        served,
+        bundle,
+        standalone: window.matchMedia('(display-mode: standalone)').matches,
+      },
     });
   });
 

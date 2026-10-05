@@ -32,7 +32,7 @@ export interface PriceHub {
 
 /**
  * Evaluated in order; the first hub whose two legs both resolve wins.
- * USD first because every forex-backfill edge is anchored on it, which
+ * USD first because every historical-price-backfill edge is anchored on it, which
  * is also why the two positions behind it are nearly unreachable for
  * fiat pairs. This is the order `PriceGraphService` and the nightly
  * rollup already used; `CurrencyConverter` listed EUR second, and now
@@ -42,6 +42,23 @@ export const PRICE_HUBS: readonly PriceHub[] = [
   { symbol: 'USD', typeCode: 'fiat' },
   { symbol: 'USDT', typeCode: 'crypto' },
   { symbol: 'EUR', typeCode: 'fiat' },
+];
+
+/**
+ * The currencies priced whether or not anyone uses them, all against USD, so
+ * a user switching to one has a rate at once. The floor, not the list: every
+ * currency in use is priced beside them. Each is one token, named by symbol
+ * and type: a symbol alone also names every other token that carries it.
+ */
+export const FX_BASELINE: readonly PriceHub[] = [
+  { symbol: 'EUR', typeCode: 'fiat' },
+  { symbol: 'GBP', typeCode: 'fiat' },
+  { symbol: 'JPY', typeCode: 'fiat' },
+  { symbol: 'RUB', typeCode: 'fiat' },
+  { symbol: 'CHF', typeCode: 'fiat' },
+  { symbol: 'CAD', typeCode: 'fiat' },
+  { symbol: 'AUD', typeCode: 'fiat' },
+  { symbol: 'USDT', typeCode: 'crypto' },
 ];
 
 export function priceHubKey(hub: PriceHub): string {

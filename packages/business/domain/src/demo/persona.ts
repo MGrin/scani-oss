@@ -182,10 +182,9 @@ export const DEMO_ASSETS: readonly AssetSpec[] = [
 ];
 
 /**
- * The two forex legs, quoted the way `forex-backfill` quotes them — the price
+ * The two forex legs, quoted the way `historical-price-backfill` quotes them — the price
  * of one unit of the named currency *in USD*, because every hub edge in
- * `PRICE_HUBS` is anchored on USD (see `forex-backfill.ts`, which calls
- * `backfillOne(tokenId, at, usdTokenId)`). Seeding them the other way round
+ * `PRICE_HUBS` is anchored on USD. Seeding them the other way round
  * would still resolve, by inversion, and would be a lie about where the rows
  * came from.
  */
@@ -206,7 +205,7 @@ export const DEMO_FOREX: readonly ForexSpec[] = [
  * the convention above renders a USD cash holding as **unpriceable** for a
  * GBP-base user.
  *
- * `forex-backfill` never writes a row whose `token_id` is USD — every edge it
+ * `historical-price-backfill` never writes a row whose `token_id` is USD — every edge it
  * fetches is `X -> USD`. `PriceGraphService` copes: it inverts the `GBP -> USD`
  * row and answers `USD -> GBP` correctly, measured at rate 0.789266 against
  * this very seed. But `HoldingQueryService` does not value a holding through

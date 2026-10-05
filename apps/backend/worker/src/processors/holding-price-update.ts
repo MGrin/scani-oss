@@ -1,6 +1,7 @@
 import { db } from '@scani/db/connection';
+import type { Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { PortfolioValueCache } from '@scani/domain/services';
+import { PortfolioValueCache, PricingService } from '@scani/domain/services';
 import { UpdateHoldingPriceUseCase } from '@scani/domain/use-cases';
 import { HOLDING_PRICE_UPDATE, type HoldingPriceUpdateJob } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
@@ -40,11 +41,11 @@ export class HoldingPriceUpdateProcessor extends UserJobProcessor<HoldingPriceUp
       return { skipped: true, reason: 'lock-contention' };
     }
     try {
-      const baseCurrency = await this.resolveBaseCurrencySymbol(data.userId);
+      const base = await this.resolveBaseToken(data.userId);
       const result = await Container.get(UpdateHoldingPriceUseCase).execute(
         data.holdingId,
         data.userId,
-        baseCurrency
+        base
       );
 
       // The holding's price (and thus value) changed — drop the user's
@@ -67,21 +68,12 @@ export class HoldingPriceUpdateProcessor extends UserJobProcessor<HoldingPriceUp
     }
   }
 
-  protected async resolveBaseCurrencySymbol(userId: string): Promise<string> {
+  protected async resolveBaseToken(userId: string): Promise<Token> {
     const [user] = await db
       .select({ baseCurrencyId: schema.users.baseCurrencyId })
       .from(schema.users)
       .where(eq(schema.users.id, userId))
       .limit(1);
-
-    if (!user?.baseCurrencyId) return 'USD';
-
-    const [token] = await db
-      .select({ symbol: schema.tokens.symbol })
-      .from(schema.tokens)
-      .where(eq(schema.tokens.id, user.baseCurrencyId))
-      .limit(1);
-
-    return token?.symbol || 'USD';
+    return Container.get(PricingService).baseToken(user?.baseCurrencyId);
   }
 }

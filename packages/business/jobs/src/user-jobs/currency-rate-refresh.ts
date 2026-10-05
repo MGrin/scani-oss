@@ -24,8 +24,7 @@ import { RETRY_EXTERNAL } from '../retry-policies';
  * it.
  *
  * **The pair is identified by token id** (SC-223). The symbols ride along
- * because the upstream call is symbol-addressed
- * (`exchangerate-api.com/v4/latest/GBP`) and because a queue dashboard showing
+ * because a queue dashboard showing
  * `GBP->USD` is readable where one showing two uuids is not — but they never
  * select a row. Eight tickers have more than one `tokens` row in production,
  * and refreshing the memecoin `SOS` rather than the Somali shilling stores the

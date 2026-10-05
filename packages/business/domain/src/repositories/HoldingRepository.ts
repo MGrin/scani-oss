@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Holding, NewHolding, Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, desc, eq, gt, inArray, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import { includedInTotalSql } from '../lib/holding-inclusion';
 import { effectiveScamProbability, notScamFor } from '../lib/scam-verdict';
@@ -596,6 +596,43 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
       .where(and(inArray(schema.holdings.id, [...holdingIds]), includedInTotalSql()));
     return new Set(rows.map((row) => row.id));
+  }
+
+  // Every user with a base currency and an active holding the closed-position
+  // sweep hid: the users whose stored history moves when such a holding is
+  // costed from its ledger and given rows of its own (SC-1546). One an import
+  // has shown again still selects (`markShown` leaves `hidden_by`): the days
+  // stored while it was hidden stand as they were written. One whose token is
+  // a scam for its owner does not: the rollup never lists it.
+  async findUserIdsWithSweepHiddenHoldings(
+    opts: { userId?: string } = {},
+    transaction?: DatabaseTransaction
+  ): Promise<string[]> {
+    try {
+      const database = this.getDb(transaction);
+      const holdings = schema.holdings;
+      const conditions = [
+        eq(holdings.hiddenBy, 'auto'),
+        eq(holdings.isActive, true),
+        notScamFor(),
+        isNotNull(schema.users.baseCurrencyId),
+      ];
+      if (opts.userId) conditions.push(eq(holdings.userId, opts.userId));
+      const rows = await database
+        .selectDistinct({ userId: holdings.userId })
+        .from(holdings)
+        .innerJoin(schema.users, eq(schema.users.id, holdings.userId))
+        .innerJoin(schema.tokens, eq(schema.tokens.id, holdings.tokenId))
+        .where(and(...conditions))
+        .orderBy(asc(holdings.userId));
+      return rows.map((r) => r.userId);
+    } catch (error) {
+      this.logger.error(
+        { opts, error: error instanceof Error ? error.message : error },
+        'Failed to find users with sweep-hidden holdings'
+      );
+      throw error;
+    }
   }
 
   /** A human was shown these positions (`HoldingArrival`), scoped to their owner. */

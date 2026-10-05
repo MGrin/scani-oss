@@ -38,7 +38,11 @@ interface ShadowRunSpec<U> {
   /** Names a unit in a failed run's error, as `user <id>`. */
   describe: (unit: U) => string;
   compare: (unit: U, tx: DatabaseTransaction) => Promise<ShadowTally>;
+  /** What one kind adds to its summary, from the run's differences. */
+  summarize?: (differences: ShadowTally['differences']) => ShadowSummaryExtras;
 }
+
+type ShadowSummaryExtras = Pick<ShadowRunSummary, 'byInstant' | 'valueImpactByBase'>;
 
 /**
  * What every foundation shadow does around its comparisons (D-10): one unit
@@ -131,6 +135,7 @@ export class ShadowRunService {
             staleLabels: tally.classified.staleLabels,
           }
         : {}),
+      ...spec.summarize?.(tally.differences),
       durationMs: finishedAt.getTime() - startedAt.getTime(),
     };
     const runId = await this.reports.recordRun(

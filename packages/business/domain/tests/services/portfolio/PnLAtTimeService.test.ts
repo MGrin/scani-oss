@@ -1,6 +1,6 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import type { HoldingTransaction } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
@@ -77,6 +77,7 @@ function costResult(p: Partial<CostBasisAtTime> & { hasTransactions: boolean }):
     hasTransactions: p.hasTransactions,
     basisQuality: p.basisQuality ?? (p.hasTransactions ? 'known' : 'unknown'),
     transfersUnreviewed: p.transfersUnreviewed ?? 0,
+    feesRealized: p.feesRealized ?? new Set(),
   };
 }
 
@@ -108,13 +109,17 @@ function makeService(
   return instance;
 }
 
-// No DB behind these tests: hand in empty caches so the service takes its
-// pre-loaded path rather than reaching for a repository.
-const EMPTY_CACHES: BalanceAtTimeCaches = {
-  holdings: new Map(),
-  observations: new Map(),
-  transactions: new Map(),
-};
+// No DB behind these tests: hand in a ledger, an empty one, for every holding
+// the valuation stub names, so the service takes its pre-loaded path rather
+// than reaching for a repository. A holding left out of the map is read from
+// the database (SC-1546).
+function noLedgers(...holdingIds: string[]): BalanceAtTimeCaches {
+  return {
+    holdings: new Map(),
+    observations: new Map(),
+    transactions: new Map(holdingIds.map((id) => [id, []])),
+  };
+}
 
 // Minimal tx for component detection — buildTransferComponents only
 // reads `transferGroupId`.
@@ -270,7 +275,7 @@ describe('PnLAtTimeService.getPnL — unpriceable holdings', () => {
     // SC-505. `unpriceable` means "never had a price row AND is inside a
     // cooldown", which is one of several reasons a value comes back null.
     // A USD cash balance held by a GBP-base user has thousands of price
-    // rows and still resolves to nothing, because `forex-backfill` quotes
+    // rows and still resolves to nothing, because `historical-price-backfill` quotes
     // every edge against USD and so never writes USD itself as the priced
     // token. Gated on the flag alone, its whole cost basis stayed in a
     // total its value never reached — drawn as a -100% loss on a cash
@@ -341,7 +346,7 @@ describe('PnLAtTimeService.getPnL — quality counts', () => {
         }),
     } as unknown as CostBasisService;
     const result = await makeService(valuation, costBasis).getPnL('u', new Date(), USD, {
-      caches: EMPTY_CACHES,
+      caches: noLedgers('h1', 'h2'),
       coverageByHolding: new Map(),
       tx: undefined,
     });
@@ -364,7 +369,7 @@ describe('PnLAtTimeService.getPnL — quality counts', () => {
       getCostBasis: async () => costResult({ hasTransactions: false }),
     } as unknown as CostBasisService;
     const result = await makeService(valuation, costBasis).getPnL('u', new Date(), USD, {
-      caches: EMPTY_CACHES,
+      caches: noLedgers('h1', 'spam'),
       coverageByHolding: new Map(),
       tx: undefined,
     });
@@ -386,7 +391,7 @@ describe('PnLAtTimeService.getPnL — quality counts', () => {
       getCostBasis: async () => costResult({ hasTransactions: true, costBasis: new Decimal(100) }),
     } as unknown as CostBasisService;
     const result = await makeService(valuation, costBasis).getPnL('u', new Date(), USD, {
-      caches: EMPTY_CACHES,
+      caches: noLedgers('h1', 'h2'),
       coverageByHolding: new Map(),
       tx: undefined,
     });
@@ -416,7 +421,7 @@ describe('PnLAtTimeService.getPnL — quality counts', () => {
       getCostBasis: async () => costResult({ hasTransactions: true, costBasis: new Decimal(100) }),
     } as unknown as CostBasisService;
     const result = await makeService(valuation, costBasis).getPnL('u', new Date(), USD, {
-      caches: EMPTY_CACHES,
+      caches: noLedgers('h-awx', 'h2'),
       coverageByHolding: new Map(),
       tx: undefined,
     });
@@ -459,7 +464,10 @@ describe('PnLAtTimeService.getPnL — unreviewed transfers (SC-160)', () => {
     } as unknown as CostBasisService;
     const svc = makeService(valuation, costBasis);
 
-    const r = await svc.getPnL('u', new Date(), USD, { caches: EMPTY_CACHES, tx: undefined });
+    const r = await svc.getPnL('u', new Date(), USD, {
+      caches: noLedgers('a', 'b'),
+      tx: undefined,
+    });
     expect(r.transfersUnreviewed).toBe(3);
     expect(r.perHolding.find((p) => p.holdingId === 'a')?.transfersUnreviewed).toBe(2);
     expect(r.perHolding.find((p) => p.holdingId === 'b')?.transfersUnreviewed).toBe(1);
@@ -476,7 +484,10 @@ describe('PnLAtTimeService.getPnL — unreviewed transfers (SC-160)', () => {
     } as unknown as CostBasisService;
     const svc = makeService(valuation, costBasis);
 
-    const r = await svc.getPnL('u', new Date(), USD, { caches: EMPTY_CACHES, tx: undefined });
+    const r = await svc.getPnL('u', new Date(), USD, {
+      caches: noLedgers('real', 'dust'),
+      tx: undefined,
+    });
     // 5 from `real`; `dust` contributes nothing to the total it would caveat.
     expect(r.transfersUnreviewed).toBe(5);
     // Still reported on the holding itself — the rollup's per-scope writer
@@ -523,15 +534,17 @@ describe('PnLAtTimeService.getPnL — base-currency cash (SC-1467)', () => {
 });
 
 describe('PnLAtTimeService.getPnL — base-currency cash income (SC-1470)', () => {
-  const row = (kind: string, quantity: string, occurredAt: string) =>
+  const row = (kind: string, quantity: string, occurredAt: string, id = `${kind}-${occurredAt}`) =>
     ({
+      id,
       kind,
       quantity,
       occurredAt: new Date(occurredAt),
       transferGroupId: null,
+      settlesTransactionId: null,
     }) as unknown as HoldingTransaction;
 
-  test('income the walk booked is gain on every holding; base cash adds its fees as cost', async () => {
+  test('income the walk booked is gain on every holding; base cash counts its fee once', async () => {
     const valuation = makeValuationStub([
       { holdingId: 'usd', tokenId: USD, valueInBase: new Decimal(500) },
       { holdingId: 'cad', tokenId: 'token-CAD', valueInBase: new Decimal(54) },
@@ -541,7 +554,9 @@ describe('PnLAtTimeService.getPnL — base-currency cash income (SC-1470)', () =
         costResult({
           hasTransactions: true,
           costBasis: new Decimal(holdingId === 'usd' ? 480 : 50),
-          realizedPnl: new Decimal(holdingId === 'usd' ? -16 : 3),
+          // The walk realizes the -2 fee itself since SC-1561: -16 and the fee.
+          realizedPnl: new Decimal(holdingId === 'usd' ? -18 : 3),
+          feesRealized: new Set(holdingId === 'usd' ? ['fee-2026-04-01'] : []),
           // What the walk booked at receipt: 10 interest + 3 reward, and 5 CAD-worth.
           income: new Decimal(holdingId === 'usd' ? 13 : 5),
         }),
@@ -573,12 +588,44 @@ describe('PnLAtTimeService.getPnL — base-currency cash income (SC-1470)', () =
       }
     );
     const usd = r.perHolding.find((p) => p.holdingId === 'usd');
-    // -16 walked, +13 income the walk booked, -2 fee the walk leaves to base cash.
+    // -18 walked (the fee included), +13 income. baseCashFees adding the fee
+    // again read -7: one fee counted twice (SC-1561).
     expect(usd?.realizedPnl.toString()).toBe('-5');
     expect(usd?.unrealizedPnl?.toString()).toBe('0');
     // Foreign cash's income is gain too; it used to sit only in its lots' cost.
     const cad = r.perHolding.find((p) => p.holdingId === 'cad');
     expect(cad?.realizedPnl.toString()).toBe('8');
+  });
+
+  test('a commission the walk had to realize is not added again (SC-1561)', async () => {
+    // A same-holding commission keeps its cost on the lots left, but with no
+    // lot left the walk realizes it. Whatever the walk realized, it reports.
+    const valuation = makeValuationStub([
+      { holdingId: 'usd', tokenId: USD, valueInBase: new Decimal(0) },
+    ]);
+    const trade = row('sell', '-100', '2026-04-01', 'trade');
+    const commission = {
+      ...row('fee', '-3', '2026-04-01', 'commission'),
+      settlesTransactionId: 'trade',
+    } as HoldingTransaction;
+    const costBasis = {
+      getCostBasis: async () =>
+        costResult({
+          hasTransactions: true,
+          realizedPnl: new Decimal(-3),
+          feesRealized: new Set(['commission']),
+        }),
+      walkComponent: async () => {
+        throw new Error('walkComponent should not run — no transfers');
+      },
+    } as unknown as CostBasisService;
+    const r = await makeService(valuation, costBasis).getPnL(
+      'u',
+      new Date('2026-06-30T23:59:59Z'),
+      USD,
+      { caches: { transactions: new Map([['usd', [trade, commission]]]) }, tx: undefined }
+    );
+    expect(r.perHolding.find((p) => p.holdingId === 'usd')?.realizedPnl.toString()).toBe('-3');
   });
 });
 
@@ -681,6 +728,177 @@ describe('PnLAtTimeService.getPnL — an unexplained balance change walks as mon
       ['deposit', '4'],
       ['deposit', '1'],
     ]);
+  });
+});
+
+/**
+ * SC-1546. The rollup handed a ledger map listing visible holdings only, the
+ * valuation also counted the ones the closed-position sweep hid, and a holding
+ * absent from the map was read as having no transactions: its readings became
+ * drift and its cost was walked from those alone.
+ */
+describe('PnLAtTimeService.getPnL: a handed ledger narrower than the valuation (SC-1546)', () => {
+  const at = new Date('2026-10-01T23:59:59.999Z');
+  const valuation = makeValuationStub([
+    { holdingId: 'listed', tokenId: 't', valueInBase: new Decimal(100) },
+    { holdingId: 'unlisted', tokenId: 't', valueInBase: new Decimal(0) },
+  ]);
+  // What the database holds. `unlisted` bought 10 and sold them, and its two
+  // readings say the same: with its ledger in hand nothing is unexplained.
+  const stored = new Map<string, HoldingTransaction[]>([
+    ['listed', [ledgerRow('listed', 'buy', '1', '2026-03-01T00:00:00Z')]],
+    [
+      'unlisted',
+      [
+        ledgerRow('unlisted', 'buy', '10', '2026-03-01T00:00:00Z'),
+        ledgerRow('unlisted', 'sell', '-10', '2026-03-05T00:00:00Z'),
+      ],
+    ],
+    ['late', [ledgerRow('late', 'buy', '2', '2026-03-01T00:00:00Z')]],
+  ]);
+  const readings = [
+    { observedAt: new Date('2026-03-02T10:00:00Z'), balance: '10', gapReview: null },
+    { observedAt: new Date('2026-03-09T10:00:00Z'), balance: '0', gapReview: null },
+  ];
+
+  // The warning is the subject of two tests below and noise in the third.
+  function muteWarnings(service: PnLAtTimeService) {
+    const { logger } = service as unknown as {
+      logger: { warn: (context: unknown, message: string) => void };
+    };
+    return spyOn(logger, 'warn').mockImplementation(() => {});
+  }
+
+  function harness(valued: PortfolioValuationAtTimeService = valuation) {
+    const bulkReads: string[][] = [];
+    let readingReads = 0;
+    const walked = new Map<string, string[]>();
+    // Answers from the rows it is handed, so a wrong walk is a wrong figure.
+    const costBasis = {
+      getCostBasis: async (
+        holdingId: string,
+        _at: Date,
+        _b: string,
+        o: { txs?: HoldingTransaction[] }
+      ) => {
+        const kinds = (o.txs ?? []).map((t) => t.kind);
+        walked.set(holdingId, kinds);
+        return costResult({
+          hasTransactions: kinds.length > 0,
+          realizedPnl: new Decimal(500).mul(kinds.filter((k) => k === 'sell').length),
+        });
+      },
+    } as unknown as CostBasisService;
+    makeService(valued, costBasis);
+    Container.set(HoldingTransactionRepository, {
+      findForHoldingsAll: async (ids: string[]) => {
+        bulkReads.push(ids);
+        return new Map(ids.map((id) => [id, stored.get(id) ?? []]));
+      },
+    } as unknown as HoldingTransactionRepository);
+    Container.set(HoldingBalanceObservationRepository, {
+      findReadingsForHoldings: async () => {
+        readingReads += 1;
+        return new Map([['unlisted', readings]]);
+      },
+    } as unknown as HoldingBalanceObservationRepository);
+    Container.set(DriftLedgerService, new DriftLedgerService());
+    const service = new PnLAtTimeService();
+    const ask = async (transactions?: Map<string, HoldingTransaction[]>) => {
+      const r = await service.getPnL('u', at, USD, {
+        ...(transactions ? { caches: { transactions } } : {}),
+        tx: undefined,
+      });
+      return {
+        walked: new Map(walked),
+        realized: r.perHolding.map((p) => [p.holdingId, p.realizedPnl.toString()]),
+      };
+    };
+    return { service, ask, bulkReads, readingReads: () => readingReads };
+  }
+
+  test('a holding the handed ledger lacks is walked from its own ledger, as with no caches at all', async () => {
+    const adHoc = await harness().ask();
+    expect(adHoc.walked.get('unlisted')).toEqual(['buy', 'sell']);
+
+    const narrow = harness();
+    const warned = muteWarnings(narrow.service);
+    try {
+      const handed = await narrow.ask(new Map([['listed', stored.get('listed') ?? []]]));
+      expect(handed).toEqual(adHoc);
+      // One bulk read, for the missing holding and nothing else.
+      expect(narrow.bulkReads).toEqual([['unlisted']]);
+    } finally {
+      warned.mockRestore();
+    }
+  });
+
+  test('a complete handed ledger is passed on as the same object, and nothing is read', async () => {
+    const h = harness();
+    let passedOn: unknown;
+    Container.set(DriftLedgerService, {
+      forHoldings: async (_u: string, _t: unknown, o: { transactions?: unknown }) => {
+        passedOn = o.transactions;
+        return new Map();
+      },
+    } as unknown as DriftLedgerService);
+    const handed = new Map(stored);
+    await new PnLAtTimeService().getPnL('u', at, USD, {
+      caches: { transactions: handed },
+      tx: undefined,
+    });
+    expect(passedOn).toBe(handed);
+    expect(h.bulkReads).toEqual([]);
+  });
+
+  test('a narrow ledger handed for several days is completed once and warned about once, by count', async () => {
+    const h = harness();
+    const warned = muteWarnings(h.service);
+    try {
+      const handed = new Map([['listed', stored.get('listed') ?? []]]);
+      for (let day = 0; day < 3; day += 1) await h.ask(handed);
+      expect(h.bulkReads).toEqual([['unlisted']]);
+      expect(h.readingReads()).toBe(1);
+      // The count and nothing else: a holding id never reaches a log line.
+      expect(warned.mock.calls.map(([context]) => context)).toEqual([{ holdingsMissing: 1 }]);
+    } finally {
+      warned.mockRestore();
+    }
+  });
+
+  // The holdings a valuation counts can grow between days handed one map: a
+  // completed ledger is itself checked against each day's holdings.
+  test('a holding first counted on a later day is read then, and only then', async () => {
+    const days = [
+      ['listed', 'unlisted'],
+      ['listed', 'unlisted', 'late'],
+      ['listed', 'unlisted'],
+    ].map((counted) =>
+      makeValuationStub(
+        counted.map((holdingId) => ({ holdingId, tokenId: 't', valueInBase: new Decimal(0) }))
+      )
+    );
+    let day = 0;
+    const h = harness({
+      getPortfolioValue: (
+        ...args: Parameters<PortfolioValuationAtTimeService['getPortfolioValue']>
+      ) => days[day++]!.getPortfolioValue(...args),
+    } as unknown as PortfolioValuationAtTimeService);
+    const warned = muteWarnings(h.service);
+    try {
+      const handed = new Map([['listed', stored.get('listed') ?? []]]);
+      await h.ask(handed);
+      const second = await h.ask(handed);
+      expect(h.bulkReads).toEqual([['unlisted'], ['late']]);
+      expect(second.walked.get('late')).toEqual(['buy']);
+
+      await h.ask(handed);
+      expect(h.bulkReads).toEqual([['unlisted'], ['late']]);
+      // Warned about the map once, not once per holding it turned out to lack.
+      expect(warned.mock.calls.map(([context]) => context)).toEqual([{ holdingsMissing: 1 }]);
+    } finally {
+      warned.mockRestore();
+    }
   });
 });
 

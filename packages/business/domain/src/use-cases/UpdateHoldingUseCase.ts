@@ -343,7 +343,16 @@ export class UpdateHoldingUseCase {
       // previous value is gone the moment the UPDATE lands. Scoped by userId
       // like the update itself, so a mismatched owner reads nothing rather
       // than leaking a balance.
-      const [previous] = await tx
+      //
+      // A balance edit reads it under the row lock, so a concurrent edit of
+      // the holding commits before this one reads (SC-1525). An edit whose
+      // cause can write a ledger row takes FOR UPDATE, the level that row's
+      // upsert takes, so that lock is never an upgrade (R82). Asked of the
+      // cause alone, because the rest of `record`'s rule needs the balance this
+      // read returns: an edit that turns out to move nothing holds FOR UPDATE
+      // it did not need. Any other balance edit takes the cache write's
+      // NO KEY UPDATE (R76).
+      const previousQuery = tx
         .select({
           balance: schema.holdings.balance,
           lastUpdated: schema.holdings.lastUpdated,
@@ -353,6 +362,14 @@ export class UpdateHoldingUseCase {
         .from(schema.holdings)
         .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
         .limit(1);
+      const [previous] =
+        balance === undefined
+          ? await previousQuery
+          : await previousQuery.for(
+              editCause && this.manualBalanceEditService.causeCanWriteRow(editCause)
+                ? 'update'
+                : 'no key update'
+            );
       if (!previous) {
         throw new Error('Holding not found');
       }
@@ -383,26 +400,9 @@ export class UpdateHoldingUseCase {
 
       // The balance through the one A2 writer of the cache (D-1), and BEFORE
       // the observation below on every path that writes one: concurrent edits
-      // of one holding serialize on this row lock, so the second one's
-      // snapshot sees the first's once it commits (R72).
+      // of one holding serialize on the row lock `previous` was read under,
+      // so the second one's snapshot sees the first's once it commits (R72).
       if (balance !== undefined) {
-        // An edit whose cause `record` will write a ledger row for takes the
-        // row FOR UPDATE first, the level that row's upsert takes. The cache
-        // write's NO KEY UPDATE and then that would be an upgrade: it waits on
-        // any writer naming the holding while holding the row that writer may
-        // write next (R82). Asked of `record`'s own rule, on the balance it
-        // will read back off the row; any other edit keeps the cache write's
-        // lock (R76).
-        if (
-          editCause &&
-          this.manualBalanceEditService.skipReason({
-            cause: editCause,
-            previousBalance: previous.balance,
-            newBalance: balance,
-          }) === null
-        ) {
-          await this.holdingRepository.lockOwned(userId, holdingId, 'update', tx);
-        }
         await this.cacheWriter.apply(userId, [{ holdingId, balance, lastUpdated }], tx);
       }
 

@@ -2,6 +2,7 @@ import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { NewToken, Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { and, asc, desc, eq, gt, inArray, isNotNull, like, or, sql } from 'drizzle-orm';
+import { type PgColumn, union } from 'drizzle-orm/pg-core';
 import { Service } from 'typedi';
 import { catalogTokenOnly, customTokenVisibleTo } from '../lib/custom-token-visibility';
 
@@ -507,6 +508,55 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
       throw new Error(`updateMarketSegment: token ${tokenId} not found`);
     }
     return updated as Token;
+  }
+
+  /**
+   * Each currency in use beside each user using it: a user's base currency, a
+   * payment's and a vault's currency, and the currency a held token's manual
+   * price is quoted in, for each holder. One user's when `userId` is given.
+   */
+  async findCurrencyUses(
+    opts: { userId?: string } = {},
+    transaction?: DatabaseTransaction
+  ): Promise<Array<{ currencyTokenId: string; userId: string }>> {
+    const database = this.getDb(transaction);
+    const ofUser = (userColumn: PgColumn) =>
+      opts.userId ? eq(userColumn, opts.userId) : undefined;
+    return union(
+      database
+        .select({
+          currencyTokenId: schema.payments.currencyTokenId,
+          userId: schema.payments.userId,
+        })
+        .from(schema.payments)
+        .where(ofUser(schema.payments.userId)),
+      database
+        .select({ currencyTokenId: schema.vaults.currencyId, userId: schema.vaults.userId })
+        .from(schema.vaults)
+        .where(ofUser(schema.vaults.userId)),
+      database
+        .select({
+          // Typed as the others are: the rows without one are filtered out below.
+          currencyTokenId: sql<string>`${schema.users.baseCurrencyId}`,
+          userId: schema.users.id,
+        })
+        .from(schema.users)
+        .where(and(isNotNull(schema.users.baseCurrencyId), ofUser(schema.users.id))),
+      database
+        .select({
+          currencyTokenId: schema.tokenPrices.baseTokenId,
+          userId: schema.holdings.userId,
+        })
+        .from(schema.tokenPrices)
+        .innerJoin(schema.holdings, eq(schema.holdings.tokenId, schema.tokenPrices.tokenId))
+        .where(and(like(schema.tokenPrices.source, 'manual%'), ofUser(schema.holdings.userId)))
+    );
+  }
+
+  /** Base, payment and vault currencies, and every currency a held token's manual price is quoted in. */
+  async findCurrencyTokenIdsInUse(transaction?: DatabaseTransaction): Promise<string[]> {
+    const uses = await this.findCurrencyUses({}, transaction);
+    return [...new Set(uses.map((use) => use.currencyTokenId))];
   }
 
   // Token IDs whose `unpriceable_until` is still in the future. The

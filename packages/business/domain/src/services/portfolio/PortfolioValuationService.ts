@@ -1,7 +1,7 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
-import Decimal from 'decimal.js';
+import { Decimal } from '@scani/shared';
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { isIncludedInTotal } from '../../lib/holding-inclusion';
@@ -263,11 +263,20 @@ export class PortfolioValuationService {
         : `Processing portfolio value: ${tokensToPrice.length} tokens need pricing`
     );
 
+    // The base as a token, by its id: a symbol names whichever token was
+    // created last under it. Read once, and only when something below asks
+    // for it, so a portfolio with nothing to price reads nothing.
+    let baseTokenRead: ReturnType<TokenRepository['findById']> | undefined;
+    const readBaseToken = () => {
+      baseTokenRead ??= this.tokenRepository.findById(baseCurrency.id);
+      return baseTokenRead;
+    };
+
     // Fetch all prices at once using cached-only pricing (no external API calls)
-    const priceResults =
-      tokensToPrice.length > 0
-        ? await this.pricingService.getCachedTokenPrices(tokensToPrice, baseCurrency.symbol, now)
-        : new Map<string, string>();
+    const priceBase = tokensToPrice.length > 0 ? await readBaseToken() : null;
+    const priceResults = priceBase
+      ? await this.pricingService.getCachedTokenPrices(tokensToPrice, priceBase, now)
+      : new Map<string, string>();
 
     this.logger.info(
       {
@@ -323,21 +332,19 @@ export class PortfolioValuationService {
       .filter((h) => !priceMetadata.has(h.tokenId))
       .map((h) => h.token)
       .filter((token, index, self) => self.findIndex((t) => t.id === token.id) === index);
-    if (fiatWithoutMetadata.length > 0) {
-      const baseToken = await this.tokenRepository.findById(baseCurrency.id);
-      if (baseToken) {
-        const fiatRates = await this.pricingService.resolveFiatRatesToBase(
-          fiatWithoutMetadata,
-          baseToken,
-          now
-        );
-        for (const [tokenId, rate] of fiatRates.entries()) {
-          priceMetadata.set(tokenId, {
-            timestamp: rate.timestamp,
-            source: rate.source,
-            granularity: null,
-          });
-        }
+    const fiatBase = fiatWithoutMetadata.length > 0 ? await readBaseToken() : null;
+    if (fiatBase) {
+      const fiatRates = await this.pricingService.resolveFiatRatesToBase(
+        fiatWithoutMetadata,
+        fiatBase,
+        now
+      );
+      for (const [tokenId, rate] of fiatRates.entries()) {
+        priceMetadata.set(tokenId, {
+          timestamp: rate.timestamp,
+          source: rate.source,
+          granularity: null,
+        });
       }
     }
 

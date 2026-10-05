@@ -20,7 +20,7 @@ import {
   type SQL,
   sql,
 } from 'drizzle-orm';
-import type { PgColumn } from 'drizzle-orm/pg-core';
+import { alias, type PgColumn } from 'drizzle-orm/pg-core';
 import { Container, Service } from 'typedi';
 import type { LedgerKind } from '../engine/types';
 import { ledgerOrderBy } from '../lib/ledger-order';
@@ -1637,6 +1637,46 @@ export class HoldingTransactionRepository extends BaseRepository<
       this.logger.error(
         { opts, error: error instanceof Error ? error.message : error },
         'Failed to find users with trade fees'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Every user with a base currency whose ledger carries a `fee` row the
+   * cost-basis walk takes out of the pool (SC-1561, `feeLeavingPool`): a
+   * negative fee that settles nothing, or settles a trade on its own holding.
+   * A fee settling a trade on another holding is that trade's and moved
+   * nothing, so it does not select.
+   */
+  async findUserIdsWithPoolLeavingFees(
+    opts: { userId?: string } = {},
+    transaction?: DatabaseTransaction
+  ): Promise<string[]> {
+    try {
+      const database = this.getDb(transaction);
+      const ht = schema.holdingTransactions;
+      const settled = alias(schema.holdingTransactions, 'settled');
+      const conditions = [
+        eq(ht.kind, 'fee'),
+        sql`${ht.quantity} ~ '^\\s*-'`,
+        sql`${ht.quantity} !~ '^\\s*-0*\\.?0*\\s*$'`,
+        isNotNull(schema.users.baseCurrencyId),
+        or(isNull(ht.settlesTransactionId), eq(settled.holdingId, ht.holdingId)),
+      ];
+      if (opts.userId) conditions.push(eq(ht.userId, opts.userId));
+      const rows = await database
+        .selectDistinct({ userId: ht.userId })
+        .from(ht)
+        .innerJoin(schema.users, eq(schema.users.id, ht.userId))
+        .leftJoin(settled, eq(settled.id, ht.settlesTransactionId))
+        .where(and(...conditions))
+        .orderBy(asc(ht.userId));
+      return rows.map((r) => r.userId);
+    } catch (error) {
+      this.logger.error(
+        { opts, error: error instanceof Error ? error.message : error },
+        'Failed to find users with pool-leaving fees'
       );
       throw error;
     }

@@ -1,6 +1,6 @@
 import { getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
-import { inArray } from 'drizzle-orm';
+import { inArray, or } from 'drizzle-orm';
 
 export interface CommittedRows {
   users: string[];
@@ -37,4 +37,20 @@ export function committedRows(): CommittedRows {
       }
     },
   };
+}
+
+/**
+ * Deletes every `token_prices` row naming one of `tokenIds` as its token or
+ * its base. Call it before the tokens go: a base is held by its price rows.
+ */
+export async function dropPricesOf(tokenIds: readonly string[]): Promise<void> {
+  if (tokenIds.length === 0) return;
+  await getDb()
+    .delete(schema.tokenPrices)
+    .where(
+      or(
+        inArray(schema.tokenPrices.tokenId, [...tokenIds]),
+        inArray(schema.tokenPrices.baseTokenId, [...tokenIds])
+      )
+    );
 }

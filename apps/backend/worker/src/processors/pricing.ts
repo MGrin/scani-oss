@@ -15,7 +15,7 @@ export class PricingProcessor extends ScheduledJobProcessor {
     logger.info('🕐 Starting pricing run');
     try {
       const useCase = Container.get(UpdateTokenPricesUseCase);
-      const result = await useCase.execute('USD');
+      const result = await useCase.execute();
       logger.info(
         {
           tokensFound: result.tokensFound,

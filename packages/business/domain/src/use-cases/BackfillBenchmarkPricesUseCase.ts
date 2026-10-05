@@ -27,6 +27,8 @@ export interface BenchmarkBackfillResult {
   tokenId: string;
   requestedDays: number;
   inserted: number;
+  /** Requested days the provider answered only with bars the writer does not store. */
+  droppedDays: number;
   providerUsed: string | null;
   attemptFailed: boolean;
 }
@@ -84,6 +86,7 @@ export class BackfillBenchmarkPricesUseCase {
         tokenId,
         requestedDays: days.length,
         inserted: outcome.inserted,
+        droppedDays: outcome.droppedDays,
         providerUsed: outcome.providerUsed,
         attemptFailed: outcome.attemptFailed,
       };

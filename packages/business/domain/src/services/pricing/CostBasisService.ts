@@ -109,6 +109,9 @@ export interface CostBasisAtTime {
   // at what it was worth then (SC-1470). Apart from `realizedPnl`, which is the
   // sum of the walk's disposal rows and must stay so (SC-90).
   income?: Decimal;
+  // The `fee` rows whose cost this walk booked as realized (SC-1561), so
+  // `PnLAtTimeService.baseCashFees` adds only the fees it did not.
+  feesRealized?: ReadonlySet<string>;
   // Outflows at or before `at` whose lots left with no gain booked because
   // nobody has answered them yet (SC-160). Exactly the rows the review
   // queue holds — see `countsAsUnreviewed`. `realizedPnl` above understates
@@ -343,6 +346,30 @@ const OUTFLOW_SELL_KINDS = new Set(['sell', 'swap_out', 'settle_out']);
 const INCOME_KINDS = new Set(['reward', 'interest', 'airdrop', DRIFT_GROWTH_KIND]);
 function isSettlingFee(tx: HoldingTransaction, sameHoldingRowIds: ReadonlySet<string>): boolean {
   return tx.kind === 'fee' && flowRoleOfRow(tx, sameHoldingRowIds) === 'external';
+}
+
+/**
+ * What a `fee` row's units do to the holding's pool (SC-1561), or null where
+ * the walk handles the row elsewhere. What it realizes is reported as
+ * `feesRealized`, the one source `baseCashFees` reads.
+ *
+ * - `realize`: a fee that settles nothing (a withdrawal or network charge).
+ *   Its units leave at zero proceeds and their cost is a realized loss.
+ * - `cut`: a commission paid from the same holding as its trade. SC-1464 keeps
+ *   it a cost of the cash and SC-1486 keeps it off the trade, so its units
+ *   leave and their cost stays on the lots left, nothing realized. Base cash
+ *   is the exception: it is valued at par, so the walk realizes it there.
+ *
+ * A fee settling a trade on ANOTHER holding is the trade's (`isSettlingFee`).
+ */
+function feeLeavingPool(
+  tx: HoldingTransaction,
+  sameHoldingRowIds: ReadonlySet<string>
+): 'realize' | 'cut' | null {
+  if (tx.kind !== 'fee' || !new Decimal(tx.quantity).isNegative()) return null;
+  if (!tx.settlesTransactionId) return 'realize';
+  if (isSettlingFee(tx, sameHoldingRowIds)) return null;
+  return sameHoldingRowIds.has(tx.settlesTransactionId) ? 'cut' : null;
 }
 
 function isConfirmedDisposal(tx: HoldingTransaction): boolean {
@@ -584,8 +611,8 @@ const OUTFLOW_NEUTRAL_KINDS = new Set(['withdraw', 'transfer_out']);
 // accounts and an outflow that books nothing are neither, so their fee is not
 // applied — the quantity side of a transfer's fee is `rehome`'s (SC-506), and
 // the review queue's `fee` answer is SC-888's. A standalone `kind = 'fee'` row
-// is not a trade fee either, and is still skipped with the other unknown kinds
-// (SC-857 states what that leaves in the pool).
+// is not a trade fee either: it leaves at zero proceeds and its cost is a loss
+// (SC-1561, `feeLeavingPool`).
 //
 // A fee paid in a THIRD token is valued, and nothing is taken out of that
 // token's holding. Whether spending BNB on a fee is itself a disposal of BNB is
@@ -828,7 +855,7 @@ export class CostBasisService {
       hasTxByHolding.set(h, txs.length > 0);
       for (const tx of txs) events.push(tx);
     }
-    const ordered = deferEarlyArrivals(sortLedgerEvents(events));
+    const ordered = deferEarlyArrivals(unlinkedArrivalsFirst(sortLedgerEvents(events)));
     const idsByHolding = rowIdsByHolding(ordered);
     const settlesTrade = (t: HoldingTransaction) =>
       isSettlingFee(t, idsByHolding.get(t.holdingId) ?? new Set());
@@ -970,6 +997,7 @@ export class CostBasisService {
       }>
     >();
     const incomeByHolding = new Map<string, Decimal>();
+    const feesRealizedByHolding = new Map<string, Set<string>>();
     const addRealized = (holdingId: string, amount: Decimal): void => {
       realizedByHolding.set(
         holdingId,
@@ -1192,6 +1220,28 @@ export class CostBasisService {
         continue;
       }
 
+      const feeOutcome = feeLeavingPool(tx, idsByHolding.get(holdingId) ?? new Set());
+      if (feeOutcome) {
+        // Skipped as an unknown kind until SC-1561, which left a lot behind for
+        // every fee a holding ever paid. Either way total PnL is unchanged.
+        // Past the lots, base cash leaves at par: feesRealized makes
+        // baseCashFees skip the WHOLE fee, so the shortfall is realized here.
+        const popped = atPar(holdingId, qtyAbs, popHolding(holdingId, qtyAbs), tx.occurredAt);
+        const cost = popped.reduce((sum, l) => sum.add(l.cost), new Decimal(0));
+        // Base cash carries its value as cost basis (SC-1467), so a commission's
+        // cost kept on its lots would reach PnL on the next spend and again
+        // through baseCashFees: there it is realized, once.
+        const baseCash = heldTokenByHolding.get(holdingId) === baseCurrencyId;
+        if (feeOutcome === 'realize' || baseCash || !keepCostOnLots(lots, holdingId, cost)) {
+          addRealized(holdingId, cost.neg());
+          const realized = feesRealizedByHolding.get(holdingId) ?? new Set<string>();
+          realized.add(tx.id);
+          feesRealizedByHolding.set(holdingId, realized);
+        }
+        record(tx, qtyAbs, null, popped, 'fee');
+        continue;
+      }
+
       if (OUTFLOW_NEUTRAL_KINDS.has(tx.kind)) {
         const tgid = tx.transferGroupId;
         // One share at a time since SC-181, popping off the shared component
@@ -1406,6 +1456,7 @@ export class CostBasisService {
           .minus(open.reduce((s, o) => s.add(o.value), new Decimal(0))),
         realizedPnl: realizedByHolding.get(h) ?? new Decimal(0),
         income: incomeByHolding.get(h) ?? new Decimal(0),
+        feesRealized: feesRealizedByHolding.get(h) ?? new Set(),
         lots: holdingLots.map((l) => ({
           qty: l.qty,
           cost: l.cost,
@@ -1464,9 +1515,9 @@ export class CostBasisService {
    * prefetch does not cover the pair (SC-1145). The answer is remembered, not
    * approximated: a remembered fee is the value the first walk computed.
    *
-   * Bypassed under a database transaction, for the reason
-   * `PriceGraphService.resolveHubTokenIds` bypasses its cache: a value read
-   * through a transaction must not answer for a later read that is not in it.
+   * Bypassed under a database transaction, for the reason `PriceHubResolver`
+   * bypasses its cache (SC-600): a value read through a transaction must not
+   * answer for a later read that is not in it.
    */
   private async tradeFeeInBase(
     dbTx: DatabaseTransaction | undefined,
@@ -1650,6 +1701,66 @@ function deferEarlyArrivals(ordered: HoldingTransaction[]): HoldingTransaction[]
   for (const [position, tx] of ordered.entries()) {
     if (!deferred.has(tx)) out.push(tx);
     for (const arrival of deferredAfter.get(position) ?? []) out.push(arrival);
+  }
+  return out;
+}
+
+/**
+ * Spreads `cost` over `holdingId`'s open lots pro rata to quantity, so units
+ * that left without proceeds leave their cost on the units that stayed
+ * (SC-1561). False when no lot is left to carry it.
+ */
+function keepCostOnLots(lots: ComponentLot[], holdingId: string, cost: Decimal): boolean {
+  const open = lots.filter((l) => l.holdingId === holdingId && l.qty.gt(0));
+  const qty = open.reduce((sum, l) => sum.add(l.qty), new Decimal(0));
+  if (qty.isZero()) return cost.isZero();
+  let left = cost;
+  open.forEach((lot, k) => {
+    const share = k === open.length - 1 ? left : cost.mul(lot.qty).div(qty);
+    lot.cost = lot.cost.add(share);
+    left = left.minus(share);
+  });
+  return true;
+}
+
+const isUnlinkedLeg = (tx: HoldingTransaction) =>
+  tx.transferGroupId === null && (tx.kind === 'transfer_in' || tx.kind === 'transfer_out');
+
+/**
+ * At one instant on one holding, walks an unlinked `transfer_in` before an
+ * unlinked `transfer_out` (SC-1561). The ledger order puts outflows first so a
+ * linked departure buffers its lots before its arrival claims them; two legs
+ * with no group have nothing to pair, and outflow-first had the departure find
+ * the pool short and the arrival open a lot nothing consumed. Only those two
+ * kinds move, into the slots they already held: trades keep outflow-first, so
+ * a sale still cannot spend a buy stamped with it.
+ */
+function unlinkedArrivalsFirst(ordered: HoldingTransaction[]): HoldingTransaction[] {
+  const out = ordered.slice();
+  let start = 0;
+  while (start < out.length) {
+    const at = out[start]?.occurredAt.getTime();
+    let end = start;
+    while (end < out.length && out[end]?.occurredAt.getTime() === at) end += 1;
+    const slotsByHolding = new Map<string, number[]>();
+    for (let i = start; i < end; i += 1) {
+      const row = out[i];
+      if (!row || !isUnlinkedLeg(row)) continue;
+      const slots = slotsByHolding.get(row.holdingId) ?? [];
+      slots.push(i);
+      slotsByHolding.set(row.holdingId, slots);
+    }
+    for (const slots of slotsByHolding.values()) {
+      const legs = slots.map((i) => out[i] as HoldingTransaction);
+      const reordered = [
+        ...legs.filter((t) => t.kind === 'transfer_in'),
+        ...legs.filter((t) => t.kind === 'transfer_out'),
+      ];
+      slots.forEach((slot, k) => {
+        out[slot] = reordered[k] as HoldingTransaction;
+      });
+    }
+    start = end;
   }
   return out;
 }

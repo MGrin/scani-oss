@@ -51,6 +51,11 @@ These two flags do different things and matter for both the UI and the
 | `isHidden = true` | Hidden from dashboards and lists. | **Yes** — still kept up to date. | No, if you hid it. Yes, if Scani hid it as a closed position (`hiddenBy = 'auto'`): it stays in value history, PnL, returns and flows. |
 | `isActive = false` | Visible (greyed). | **No** — left alone. | No. |
 
+A holding Scani hid as a closed position is shown again the next time
+anything writes a non-zero balance to it: a sync, an edit or a transfer. One
+you hid yourself is not shown by a sync, an edit or a transfer. An integration
+import shows either kind when it reports a balance for it.
+
 The [holding-inclusion rule](/decisions/holding-inclusion-rule/)
 combines these with the token's `isScamProbability` to decide whether
 a holding contributes to a portfolio total. The rule is enforced

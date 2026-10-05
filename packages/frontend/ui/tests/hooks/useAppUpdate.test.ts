@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { bundleVersion, deployedVersion, offersOnFirstRead } from '@scani/ui/hooks/useAppUpdate';
+import {
+  bundleVersion,
+  deployedVersion,
+  offersOnFirstRead,
+  serviceWorkerRouteOffers,
+} from '@scani/ui/hooks/useAppUpdate';
 import { versionPayload } from '@scani/ui/vite/version-plugin';
 
 /**
@@ -92,5 +97,29 @@ describe('bundleVersion', () => {
   test('a dev bundle is not a version', () => {
     g.__SCANI_BUILD_VERSION__ = 'dev';
     expect(bundleVersion()).toBeNull();
+  });
+});
+
+/**
+ * A waiting worker is not evidence of a newer build: an installed iPhone app
+ * offered the update again straight after Update, while it already ran the
+ * served build (SC-1562). The host decides.
+ */
+describe('serviceWorkerRouteOffers', () => {
+  test('a worker signal while the host serves the running build offers nothing', () => {
+    expect(serviceWorkerRouteOffers('1-aaa', '1-aaa')).toBe(false);
+  });
+
+  test('a worker signal while the host serves another build offers it', () => {
+    expect(serviceWorkerRouteOffers('2-bbb', '1-aaa')).toBe(true);
+  });
+
+  test('an unread host offers nothing', () => {
+    expect(serviceWorkerRouteOffers(null, '1-aaa')).toBe(false);
+    expect(serviceWorkerRouteOffers(null, null)).toBe(false);
+  });
+
+  test('a bundle that cannot say takes the host read as news', () => {
+    expect(serviceWorkerRouteOffers('2-bbb', null)).toBe(true);
   });
 });

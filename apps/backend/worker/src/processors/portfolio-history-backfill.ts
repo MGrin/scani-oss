@@ -1,6 +1,4 @@
-import { db } from '@scani/db/connection';
-import * as schema from '@scani/db/schema';
-import { OpeningBalanceReconciliationService } from '@scani/domain/services';
+import { OpeningBalanceReconciliationService, PriceHubResolver } from '@scani/domain/services';
 import type { RollupSummary } from '@scani/domain/use-cases';
 import {
   BackfillHistoricalPricesUseCase,
@@ -22,7 +20,6 @@ import {
   UserJobProcessor,
 } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
-import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { withJobLock } from '../lib/cron-lock';
 import { memoryStopReason, readMemory } from '../lib/memory-budget';
@@ -136,7 +133,13 @@ const logger = createComponentLogger('processor:portfolio-history-backfill');
 
 // A resumed attempt reports zeros for the phases a previous attempt finished.
 const SKIPPED_RECONCILIATION = { holdingsTouched: 0, openingsSynthesized: 0 };
-const SKIPPED_PRICES = { attempted: 0, inserted: 0, alreadyHad: 0, providerMissing: 0 };
+const SKIPPED_PRICES = {
+  attempted: 0,
+  inserted: 0,
+  alreadyHad: 0,
+  providerMissing: 0,
+  droppedDays: 0,
+};
 
 // A saved position is only worth resuming on the UTC day it was laid out on.
 // A retry pressed the next day would otherwise skip today's row entirely, and
@@ -283,7 +286,14 @@ interface PortfolioHistoryBackfillResult {
   tokenCount: number;
   lookbackDays: number;
   reconciliation: { holdingsTouched: number; openingsSynthesized: number };
-  prices: { attempted: number; inserted: number; alreadyHad: number; providerMissing: number };
+  prices: {
+    attempted: number;
+    inserted: number;
+    alreadyHad: number;
+    providerMissing: number;
+    // Attempted days a provider answered only with bars the writer does not store.
+    droppedDays: number;
+  };
   rollup: { usersProcessed: number; daysComputed: number; errorCount: number };
   // The day offset a memory stop deferred the rest of the window at, or null
   // where the window finished. A deferred run is a SUCCESS with work queued,
@@ -366,7 +376,8 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
       return this.rollupPhase(data, ctx, resume, SKIPPED_RECONCILIATION, SKIPPED_PRICES);
     }
 
-    const usdTokenId = await this.resolveUsdTokenId();
+    // The base every backfilled price is stored against.
+    const usdTokenId = await Container.get(PriceHubResolver).usdTokenId();
     await ctx.reportProgress(0.05);
 
     // Re-reconcile every holding's opening balance BEFORE pricing/rollup.
@@ -414,6 +425,7 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
       inserted: priceSummary.inserted,
       alreadyHad: priceSummary.alreadyHad,
       providerMissing: priceSummary.providerMissing,
+      droppedDays: priceSummary.droppedDays,
     });
   }
 
@@ -527,18 +539,5 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
       );
       return { holdingsTouched: 0, openingsSynthesized: 0 };
     }
-  }
-
-  // BackfillHistoricalPricesUseCase requires the USD token id as the
-  // base-currency anchor. Look it up at job start (one cheap query) so
-  // the use case stays pure.
-  private async resolveUsdTokenId(): Promise<string> {
-    const [row] = await db
-      .select({ id: schema.tokens.id })
-      .from(schema.tokens)
-      .where(eq(schema.tokens.symbol, 'USD'))
-      .limit(1);
-    if (!row) throw new Error('USD token not found in tokens table — seeds may be missing');
-    return row.id;
   }
 }

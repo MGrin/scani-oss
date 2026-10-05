@@ -25,19 +25,18 @@ four times an hour.
 
 | Name | Frequency | Purpose |
 |---|---|---|
-| `pricing` | Hourly (`0 * * * *`) | Refresh current prices for every token referenced by an active holding. |
+| `pricing` | Hourly (`0 * * * *`) | Fetch a current price, against USD, for every held token a provider prices, every currency in use, the routing hubs and the FX baseline. Every run asks the providers; no stored row is reused. |
 | `wallet-balances` | Hourly (`0 * * * *`) | Re-sync on-chain wallet balances + transactions across Etherscan, Helius, Bitcoin, Tron, TON. |
 | `exchange-balances` | Hourly (`0 * * * *`) | Re-sync exchange holdings + recent trades for every connected exchange integration. |
 | `exchange-transactions` | Daily (`0 1 * * *`) | Refresh the transaction ledger for every connected exchange/broker/bank integration — fans out a `transaction-import` per account with a 30-day rolling window. |
 | `apy-payouts` | Daily, 00:00 UTC (`0 0 * * *`) | Apply accrued interest to holdings with an [APY config](/concepts/apy/) due for payout. |
 | `historical-price-backfill` | Nightly, 03:00 UTC (`0 3 * * *`) | Fill `daily`-granularity price history for tokens with holdings; respects `unpriceableUntil` cooldown. |
-| `forex-backfill` | Nightly, 03:30 UTC (`30 3 * * *`) | Fill historical FX pairs (via Frankfurter) needed by the rollup. |
 | `token-prices-downsample` | Nightly, 05:00 UTC (`0 5 * * *`) | Collapse `intraday` prices older than 7 days into one `daily` row per token/base/day (keeps the day's last reading); preserves existing `daily` and `tx-exact` rows. Caps `token_prices` growth. |
 | `portfolio-value-rollup` | Nightly, 04:00 UTC (`0 4 * * *`) | Recompute `portfolio_value_daily` for every user at user / institution / account / holding scope. |
 | `transfer-linking` | Nightly, 03:45 UTC (`45 3 * * *`) | Pair CEX withdrawals with wallet deposits via `LinkTransferPairsUseCase`. |
 | `backfill-token-identity` | Weekly, Sunday 02:00 UTC (`0 2 * * 0`) | Re-enrich tokens whose `providerMetadata` hasn't been touched lately. |
 | `backfill-counterparty` | Nightly, 05:30 UTC (`30 5 * * *`) | Extract a counterparty + description onto `holding_transactions` rows that predate the per-provider extractors. |
-| `engine-shadow` | Nightly, 05:45 UTC (`45 5 * * *`) | Foundation shadow (A1): compute every holding's balance and every held token's price with the new engine beside today's stored balances and both of today's price resolvers, and store each difference with a cause category in `engine_shadow_differences`. Writes only its report tables, plus any exchange rate the live price resolver fetches into `token_prices`, as a dashboard read does. A failed attempt is retried, and a retry runs only the kinds no earlier attempt recorded. Removed at the flip (A5). |
+| `engine-shadow` | Nightly, 05:45 UTC (`45 5 * * *`) | Foundation shadow (A1): compute every holding's balance and every held token's price with the new engine beside today's stored balances and both of today's price resolvers, and at five past day closes (1, 3, 7, 30 and 365 days back) the price against the graph asked for daily, and store each difference with a cause category in `engine_shadow_differences`. Writes only its report tables, plus any exchange rate the live price resolver fetches into `token_prices`, as a dashboard read does. A failed attempt is retried, and a retry runs only the kinds no earlier attempt recorded. Removed at the flip (A5). |
 | `reconcile-pending-credentials` | Every 15 minutes (`*/15 * * * *`) | Sweep stuck `pending` integration-credential rows (UI flow interruptions). |
 | `reconcile-orphaned-user-jobs` | Every 15 minutes (`*/15 * * * *`) | Sweep stuck `running` user-job rows whose worker process died. |
 | `dlq-depth-probe` | Every 15 minutes (`*/15 * * * *`) | Sweep the dead-letter queue: alert once for each new entry, remove entries older than 14 days and failed jobs older than 30, and alert when the depth crosses a threshold. |
@@ -98,7 +97,7 @@ per-user job ID so the user can see "in flight" status in the SPA.
 | `refresh-account-balance` | User triggers a manual sync | Force-refresh one account's balances + transactions. |
 | `manual-holdings-create` | User creates a manual holding | Insert under the manual institution; seed observation. |
 | `portfolio-history-backfill` | After import / manual edit | Rebuild `portfolio_value_daily` for the affected date range for one user. |
-| `currency-rate-refresh` | A read path needed a currency pair storage could not answer | Fetch the pair off the request. The upstream call sits behind a two-per-sixty-seconds limiter whose acquire *sleeps*, so on a read path the third uncovered currency waited ~26 s; here nobody waits. The figure renders without the pair and says so, and the next read has it (SC-222). |
+| `currency-rate-refresh` | A read path needed a currency pair storage could not answer | Ask the provider registry for each currency against USD, off the request path; stored conversion derives the pair through USD. The figure renders without the missing rate and the next read can use the refreshed prices (SC-222). |
 | `transaction-import` | (Reserved) | One-off transaction-only import flow. |
 | `user-data-delete` | User requests account / data deletion | Delete all user data per GDPR-style flow. |
 

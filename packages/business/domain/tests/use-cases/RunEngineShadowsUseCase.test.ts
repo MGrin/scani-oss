@@ -52,7 +52,7 @@ function harness(fails: { balance?: Error; price?: Error } = {}) {
 }
 
 describe('RunEngineShadowsUseCase', () => {
-  test('runs both shadows with past instants 7 and 30 days back', async () => {
+  test('runs both shadows: the balance shadow 7 and 30 days back too, the price shadow at five past day closes', async () => {
     const { useCase, events, balanceInputs, priceInputs } = harness();
     const asOf = new Date('2026-03-01T00:00:00.000Z');
 
@@ -66,7 +66,19 @@ describe('RunEngineShadowsUseCase', () => {
         userId: undefined,
       },
     ]);
-    expect(priceInputs).toEqual([{ asOf, userId: undefined }]);
+    expect(priceInputs).toEqual([
+      {
+        asOf,
+        pastInstants: [
+          new Date('2026-02-28T23:59:59.999Z'),
+          new Date('2026-02-26T23:59:59.999Z'),
+          new Date('2026-02-22T23:59:59.999Z'),
+          new Date('2026-01-30T23:59:59.999Z'),
+          new Date('2025-03-01T23:59:59.999Z'),
+        ],
+        userId: undefined,
+      },
+    ]);
     expect(runs).toEqual([
       { kind: 'price', runId: 'price-run', summary: summary(2) },
       { kind: 'balance', runId: 'balance-run', summary: summary(3) },
@@ -79,7 +91,9 @@ describe('RunEngineShadowsUseCase', () => {
     const price = harness();
     const priceRuns = await price.useCase.execute({ asOf, userId: 'user-1', kinds: ['price'] });
     expect(price.events).toEqual(['ran price']);
-    expect(price.priceInputs).toEqual([{ asOf, userId: 'user-1' }]);
+    expect(price.priceInputs).toEqual([
+      { asOf, pastInstants: expect.any(Array), userId: 'user-1' },
+    ]);
     expect(priceRuns.map((r) => r.kind)).toEqual(['price']);
 
     const balance = harness();

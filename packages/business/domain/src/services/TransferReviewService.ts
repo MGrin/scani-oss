@@ -1500,11 +1500,14 @@ export class TransferReviewService {
     const feeRows = await this.declaredFeeRows(tx, userId, legs);
 
     for (const leg of [...legs, ...feeRows]) {
+      // Under the lock the edit below takes, so the balance put back is the
+      // one standing when it writes (SC-1525).
       const [holding] = await tx
         .select({ balance: schema.holdings.balance })
         .from(schema.holdings)
         .where(and(eq(schema.holdings.id, leg.holdingId), eq(schema.holdings.userId, userId)))
-        .limit(1);
+        .limit(1)
+        .for('no key update');
       if (!holding) throw new Error(`Declared transfer leg ${leg.id} has no holding to restore`);
 
       await updateHolding.execute(
@@ -2020,11 +2023,13 @@ export class TransferReviewService {
     // as the answer left it — the observation this write records would read as
     // somebody having touched the row.
     for (const entry of restore) {
+      // Under the lock the edit below takes, as in `undoDeclaredTransfer`.
       const [holding] = await tx
         .select({ balance: schema.holdings.balance })
         .from(schema.holdings)
         .where(and(eq(schema.holdings.id, entry.holdingId), eq(schema.holdings.userId, userId)))
-        .limit(1);
+        .limit(1)
+        .for('no key update');
       if (!holding) continue;
       await Container.get(UpdateHoldingUseCase).execute(
         entry.holdingId,
@@ -2871,9 +2876,18 @@ export class TransferReviewService {
     quantity: Decimal
   ): Promise<boolean> {
     if (!(await this.arrivalMovesTheAnchor(tx, userId, account, holding))) return false;
+    // Re-read under the lock the edit below takes: the caller's read is from
+    // before it, and a concurrent edit of the holding may have committed since
+    // (SC-1525).
+    const [locked] = await tx
+      .select({ balance: schema.holdings.balance })
+      .from(schema.holdings)
+      .where(and(eq(schema.holdings.id, holding.id), eq(schema.holdings.userId, userId)))
+      .for('no key update');
+    if (!locked) return false;
     await Container.get(UpdateHoldingUseCase).execute(
       holding.id,
-      { balance: movedBalance(holding.balance, quantity) },
+      { balance: movedBalance(locked.balance, quantity) },
       userId,
       tx
     );

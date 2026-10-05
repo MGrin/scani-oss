@@ -1,14 +1,14 @@
 /**
  * UpdateTokenPricesUseCase
  *
- * Updates prices for all tokens that are currently held in at least one holding.
- * This use case is designed to be called by scheduled cron jobs.
+ * The scheduled hourly price run. Every run asks the providers for a current
+ * price of each of its tokens against the fiat USD, reads no stored row first,
+ * and stamps every row it writes at its own instant.
  *
- * Responsibilities:
- * - Find all unique tokens that have active holdings
- * - Fetch fresh prices for those tokens from pricing providers
- * - Respect rate limits of external APIs
- * - Log progress and errors
+ * Its tokens: every held token, every currency in use, the routing hubs and
+ * the FX baseline. Not the custom class, which a person prices by hand, and
+ * never USD. A holding of either still has its vaults recalculated and its
+ * holder told, as a holding of a priced token does.
  */
 
 import { db } from '@scani/db/connection';
@@ -17,13 +17,23 @@ import { createComponentLogger } from '@scani/logging';
 import { emitEntityChange } from '@scani/realtime';
 import { inArray } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { assetClassOf } from '../engine/price-at';
 import { TokenRepository } from '../repositories/TokenRepository';
-import { HoldingQueryService, PricingService, VaultService } from '../services';
+import {
+  FX_BASELINE,
+  HoldingQueryService,
+  PriceHubResolver,
+  PricingService,
+  VaultService,
+} from '../services';
 
 const logger = createComponentLogger('use-case:update-token-prices');
 
 export interface UpdateTokenPricesResult {
-  /** Total number of unique tokens with holdings */
+  /**
+   * The tokens the run prices: held ones, currencies in use, the hubs and the
+   * FX baseline. Never USD or the custom class, held or not.
+   */
   tokensFound: number;
   /** Number of tokens successfully priced */
   tokensUpdated: number;
@@ -57,19 +67,24 @@ export class UpdateTokenPricesUseCase {
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly holdingQueryService = Container.get(HoldingQueryService);
   private readonly vaultService = Container.get(VaultService);
+  private readonly priceHubs = Container.get(PriceHubResolver);
 
-  async execute(baseCurrencySymbol = 'USD'): Promise<UpdateTokenPricesResult> {
+  async execute(): Promise<UpdateTokenPricesResult> {
     const startTime = Date.now();
-    logger.info({ baseCurrencySymbol }, 'Starting token price update for all tokens with holdings');
+    // The run's clock, read once: the cooldown is judged at it and every row
+    // the run writes carries it.
+    const runAt = new Date(startTime);
+    logger.info('Starting the hourly token price update');
 
     const errors: UpdateTokenPricesResult['errors'] = [];
 
     try {
-      // Find all unique token IDs from holdings using service
-      const uniqueTokenIds = await this.holdingQueryService.getDistinctTokenIds();
+      const usd = await this.pricingService.baseToken();
+      const { toPrice: uniqueTokenIds, heldUnasked } = await this.runTokenIds(usd.id);
 
       if (uniqueTokenIds.length === 0) {
-        logger.info('No tokens with holdings found');
+        logger.info('No tokens to price');
+        await this.fanOut(heldUnasked, 0);
         return {
           tokensFound: 0,
           tokensUpdated: 0,
@@ -84,7 +99,7 @@ export class UpdateTokenPricesUseCase {
         {
           tokenCount: uniqueTokenIds.length,
         },
-        'Found tokens with holdings'
+        'Found tokens to price'
       );
 
       /**
@@ -114,13 +129,13 @@ export class UpdateTokenPricesUseCase {
        * token's first transaction, so a holding added minutes ago has no such
        * range to fail. Beyond that, both the mark (SC-232) and this filter
        * require **zero** stored price rows — and a successful fetch here
-       * writes one (`PricingProviderRouter` → `bulkUpsert`). So the first
-       * time any price lands, the token stops being suppressible and stops
-       * being markable, permanently and with no intervention.
+       * writes one (`PricingProviderRouter` → `PriceWriter.writeCurrent`).
+       * So the first time any price lands, the token stops being suppressible
+       * and stops being markable, permanently and with no intervention.
        */
       const suppressedIds = await this.tokenRepository.findNeverPricedInCooldownTokenIds(
         uniqueTokenIds,
-        new Date()
+        runAt
       );
       const priceableIds = uniqueTokenIds.filter((id) => !suppressedIds.has(id));
 
@@ -148,11 +163,12 @@ export class UpdateTokenPricesUseCase {
               tokensSuppressed: suppressedIds.size,
               durationMs: Date.now() - startTime,
             },
-            'Every held token is inside an unpriceable cooldown — nothing to ask'
+            'Every token of the run is inside an unpriceable cooldown — nothing to ask'
           );
         } else {
           logger.warn('No valid tokens found');
         }
+        await this.fanOut(heldUnasked, 0);
         return {
           tokensFound: uniqueTokenIds.length,
           tokensUpdated: 0,
@@ -178,13 +194,10 @@ export class UpdateTokenPricesUseCase {
         'Fetching prices for tokens'
       );
 
-      // Fetch prices for all tokens (batched internally by PricingService)
-      const timestamp = new Date();
-      const prices = await this.pricingService.getTokenPrices(
-        tokens,
-        baseCurrencySymbol,
-        timestamp
-      );
+      // Against the fiat USD, and with no reuse window: every run asks the
+      // providers. A run that reused a row under an hour old reused the row of
+      // the run before, so production fetched in 14 to 17 hours of 24.
+      const prices = await this.pricingService.getTokenPrices(tokens, usd, runAt);
 
       // Count successful and failed updates
       let tokensUpdated = 0;
@@ -226,74 +239,7 @@ export class UpdateTokenPricesUseCase {
         })
         .map((t) => t.id);
 
-      // Holdings touched by this price run — used both to recalculate
-      // vaults and to notify the users who hold those tokens.
-      let holdingsForUpdatedTokens: Array<{ id: string; tokenId: string; userId: string }> = [];
-      if (updatedTokenIds.length > 0) {
-        holdingsForUpdatedTokens = await db
-          .select({
-            id: schema.holdings.id,
-            tokenId: schema.holdings.tokenId,
-            userId: schema.holdings.userId,
-          })
-          .from(schema.holdings)
-          .where(inArray(schema.holdings.tokenId, updatedTokenIds));
-      }
-
-      // Recalculate vaults for all tokens that had price updates (best-effort)
-      try {
-        if (holdingsForUpdatedTokens.length > 0) {
-          // Group by tokenId
-          const holdingsByToken = new Map<string, string[]>();
-          for (const h of holdingsForUpdatedTokens) {
-            const ids = holdingsByToken.get(h.tokenId);
-            if (ids) {
-              ids.push(h.id);
-            } else {
-              holdingsByToken.set(h.tokenId, [h.id]);
-            }
-          }
-
-          // Bounded fan-out: each token's vault recalculation is
-          // independent, so batch them instead of one-at-a-time.
-          const VAULT_CONCURRENCY = 10;
-          for (let i = 0; i < updatedTokenIds.length; i += VAULT_CONCURRENCY) {
-            const batch = updatedTokenIds.slice(i, i + VAULT_CONCURRENCY);
-            await Promise.all(
-              batch.map((tokenId) => {
-                const holdingIds = holdingsByToken.get(tokenId);
-                if (holdingIds && holdingIds.length > 0) {
-                  return this.vaultService.recalculateVaultsForToken(tokenId, holdingIds);
-                }
-                return Promise.resolve();
-              })
-            );
-          }
-        }
-      } catch (vaultError) {
-        logger.warn({ error: vaultError }, 'Failed to recalculate vaults after token price update');
-      }
-
-      // Notify every user holding a repriced token so their dashboard /
-      // holdings views refresh — without this the hourly price refresh
-      // is invisible until the next mutation or page remount. One
-      // coalesced event per user keeps the broadcast bounded.
-      try {
-        const affectedUserIds = new Set(holdingsForUpdatedTokens.map((h) => h.userId));
-        for (const affectedUserId of affectedUserIds) {
-          emitEntityChange({
-            entityType: 'holding',
-            operationType: 'sync',
-            userId: affectedUserId,
-            data: { reason: 'price_refresh', tokensUpdated: updatedTokenIds.length },
-          });
-        }
-      } catch (emitError) {
-        logger.warn(
-          { error: emitError },
-          'Failed to emit price-refresh realtime events after token price update'
-        );
-      }
+      await this.fanOut([...updatedTokenIds, ...heldUnasked], updatedTokenIds.length);
 
       const durationMs = Date.now() - startTime;
 
@@ -350,6 +296,106 @@ export class UpdateTokenPricesUseCase {
       );
 
       throw error;
+    }
+  }
+
+  /**
+   * The run's tokens to price: every held token, every currency in use, the
+   * hubs and the FX baseline. Without the custom class, which no provider
+   * prices: a person's price for one stands until the next. And without USD,
+   * which the rest are priced in.
+   *
+   * Beside them, the held tokens it does not ask about: the fiat USD and the
+   * custom class. A vault's stored total moves only when something
+   * recalculates it, and neither a balance sync nor a manual price edit does:
+   * this run is what carries a synced USD balance or a retyped manual price
+   * into it, every hour.
+   */
+  private async runTokenIds(
+    usdTokenId: string
+  ): Promise<{ toPrice: string[]; heldUnasked: string[] }> {
+    const held = await this.holdingQueryService.getDistinctTokenIds();
+    const ids = new Set([
+      ...held,
+      ...(await this.tokenRepository.findCurrencyTokenIdsInUse()),
+      ...(await this.priceHubs.hubTokenIds()),
+      ...(await this.priceHubs.tokenIdsOf(FX_BASELINE)),
+    ]);
+    ids.delete(usdTokenId);
+    const custom = new Set<string>();
+    for (const token of await this.tokenRepository.findManyWithTypes([...ids])) {
+      if (assetClassOf(token.typeCode) === 'custom') custom.add(token.id);
+    }
+    return {
+      toPrice: [...ids].filter((id) => !custom.has(id)),
+      heldUnasked: held.filter((id) => id === usdTokenId || custom.has(id)),
+    };
+  }
+
+  /**
+   * Recalculates every vault attached to a holding of `tokenIds`, and sends
+   * each holder one `price_refresh` event carrying `tokensUpdated`, the count
+   * of tokens the run priced. Without the event the hourly refresh is invisible
+   * until the next mutation or page remount. Neither failure fails the run.
+   */
+  private async fanOut(tokenIds: readonly string[], tokensUpdated: number): Promise<void> {
+    if (tokenIds.length === 0) return;
+
+    const holdings = await db
+      .select({
+        id: schema.holdings.id,
+        tokenId: schema.holdings.tokenId,
+        userId: schema.holdings.userId,
+      })
+      .from(schema.holdings)
+      .where(inArray(schema.holdings.tokenId, [...tokenIds]));
+    if (holdings.length === 0) return;
+
+    try {
+      const holdingsByToken = new Map<string, string[]>();
+      for (const h of holdings) {
+        const ids = holdingsByToken.get(h.tokenId);
+        if (ids) {
+          ids.push(h.id);
+        } else {
+          holdingsByToken.set(h.tokenId, [h.id]);
+        }
+      }
+
+      // Bounded fan-out: each token's vault recalculation is
+      // independent, so batch them instead of one-at-a-time.
+      const VAULT_CONCURRENCY = 10;
+      for (let i = 0; i < tokenIds.length; i += VAULT_CONCURRENCY) {
+        const batch = tokenIds.slice(i, i + VAULT_CONCURRENCY);
+        await Promise.all(
+          batch.map((tokenId) => {
+            const holdingIds = holdingsByToken.get(tokenId);
+            if (holdingIds && holdingIds.length > 0) {
+              return this.vaultService.recalculateVaultsForToken(tokenId, holdingIds);
+            }
+            return Promise.resolve();
+          })
+        );
+      }
+    } catch (vaultError) {
+      logger.warn({ error: vaultError }, 'Failed to recalculate vaults after token price update');
+    }
+
+    // One coalesced event per user keeps the broadcast bounded.
+    try {
+      for (const userId of new Set(holdings.map((h) => h.userId))) {
+        emitEntityChange({
+          entityType: 'holding',
+          operationType: 'sync',
+          userId,
+          data: { reason: 'price_refresh', tokensUpdated },
+        });
+      }
+    } catch (emitError) {
+      logger.warn(
+        { error: emitError },
+        'Failed to emit price-refresh realtime events after token price update'
+      );
     }
   }
 }

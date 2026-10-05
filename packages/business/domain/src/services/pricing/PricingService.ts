@@ -5,6 +5,7 @@ import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { CurrencyConverter } from './CurrencyConverter';
+import { PriceHubResolver } from './PriceHubResolver';
 import { PricingProviderRouter } from './PricingProviderRouter';
 import { LIVE_PRICE_WINDOW_MS } from './price-windows';
 
@@ -43,36 +44,43 @@ export class PricingService {
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly providerRouter = Container.get(PricingProviderRouter);
   private readonly currencyConverter = Container.get(CurrencyConverter);
+  private readonly priceHubs = Container.get(PriceHubResolver);
+
+  /**
+   * The token prices are asked in: the one with this id, or the fiat USD when
+   * no id is given or no token carries it. An id no token carries is logged,
+   * because it is a reference to a row that is gone. Never resolved from a
+   * symbol, which names whichever token was created last under it.
+   */
+  async baseToken(baseCurrencyId?: string | null): Promise<Token> {
+    if (baseCurrencyId) {
+      const own = await this.tokenRepository.findById(baseCurrencyId);
+      if (own) return own;
+      logger.warn({ baseCurrencyId }, 'Base currency id names no token, pricing in the fiat USD');
+    }
+    const usd = await this.tokenRepository.findById(await this.priceHubs.usdTokenId());
+    if (!usd) throw new Error('the catalogue has no fiat USD token');
+    return usd;
+  }
 
   /**
    * Resolve a single token's price in the requested base currency.
    * Returns `null` when:
-   *   - the base currency is unknown,
    *   - no cached price exists and no provider returned one,
    *   - the cached price's source currency can't be converted to the
    *     requested base currency (Frankfurter / exchangerate-api miss).
    *
    * Callers MUST treat `null` as "no price"; never coerce to `'0'`.
    */
-  async getTokenPrice(
-    token: Token,
-    baseCurrencySymbol: string,
-    timestamp: Date
-  ): Promise<string | null> {
-    const baseCurrencyToken = await this.tokenRepository.findBySymbol(baseCurrencySymbol);
-    if (!baseCurrencyToken) {
-      pricingLogger.debug({ baseCurrencySymbol }, 'Base currency token not found in getTokenPrice');
-      return null;
-    }
-
-    if (token.id === baseCurrencyToken.id) {
+  async getTokenPrice(token: Token, base: Token, timestamp: Date): Promise<string | null> {
+    if (token.id === base.id) {
       return '1';
     }
 
-    const cached = await this.getCachedPrice(token.id, baseCurrencyToken.id, timestamp);
+    const cached = await this.getCachedPrice(token.id, base.id, timestamp);
 
     if (cached && cached.price !== '0') {
-      if (cached.baseTokenId !== baseCurrencyToken.id) {
+      if (cached.baseTokenId !== base.id) {
         const cachedBaseCurrencyToken = await this.tokenRepository.findById(cached.baseTokenId);
 
         if (cachedBaseCurrencyToken) {
@@ -81,7 +89,7 @@ export class PricingService {
               tokenId: token.id,
               symbol: token.symbol,
               fromCurrency: cachedBaseCurrencyToken.symbol,
-              toCurrency: baseCurrencyToken.symbol,
+              toCurrency: base.symbol,
               originalPrice: cached.price,
             },
             'Converting cached price to requested base currency'
@@ -90,7 +98,7 @@ export class PricingService {
           return await this.currencyConverter.convert(
             cached.price,
             cachedBaseCurrencyToken,
-            baseCurrencyToken,
+            base,
             timestamp
           );
         }
@@ -114,11 +122,7 @@ export class PricingService {
       );
     }
 
-    const freshPrices = await this.providerRouter.routeAndFetch(
-      [token],
-      baseCurrencyToken,
-      timestamp
-    );
+    const freshPrices = await this.providerRouter.routeAndFetch([token], base, timestamp);
 
     const priceResult = freshPrices.find((p) => p.tokenId === token.id);
     // PricingProviderRouter still uses '0' as an internal failure
@@ -128,15 +132,15 @@ export class PricingService {
       priceResult?.price && priceResult.price !== '0' ? priceResult.price : null;
 
     if (finalPrice === null) {
-      const lastSuccessfulPrice = await this.getLastSuccessfulPrice(token.id, baseCurrencyToken.id);
+      const lastSuccessfulPrice = await this.getLastSuccessfulPrice(token.id, base.id);
 
       if (lastSuccessfulPrice) {
         finalPrice = await this.convertCachedPriceIfNeeded(
           lastSuccessfulPrice,
-          baseCurrencyToken.id,
+          base.id,
           timestamp,
           undefined,
-          baseCurrencyToken
+          base
         );
 
         pricingLogger.info(
@@ -160,9 +164,9 @@ export class PricingService {
     return finalPrice;
   }
 
-  // Ask for a price for `tokenId` against `baseCurrencySymbol` and return the
-  // latest stored metadata, so callers (e.g. UpdateHoldingPriceUseCase) don't
-  // re-query the repository themselves.
+  // Ask for a price for `token` against `base` and return the latest stored
+  // metadata, so callers (e.g. UpdateHoldingPriceUseCase) don't re-query the
+  // repository themselves.
   //
   // Despite the name it does NOT guarantee a network call: `getTokenPrice`
   // serves anything inside `LIVE_PRICE_WINDOW_MS` from `token_prices` without
@@ -177,9 +181,8 @@ export class PricingService {
   // clock is Postgres's on both sides, which is what makes the comparison
   // exact rather than a guess about how long a fetch should take.
   async fetchAndStoreFreshPrice(
-    tokenId: string,
-    baseCurrencySymbol: string,
-    timestamp?: Date
+    token: Token,
+    base: Token
   ): Promise<{
     price: string | null;
     source: string;
@@ -187,25 +190,10 @@ export class PricingService {
     /** False when the price returned is the one that was already stored. */
     fetched: boolean;
   }> {
-    const now = timestamp ?? new Date();
-    const token = await this.tokenRepository.findById(tokenId);
-    if (!token) {
-      throw new Error(`Token not found: ${tokenId}`);
-    }
-
-    // Resolved before the price call rather than after, so an unknown base
-    // currency fails without first spending a provider request on it.
-    const baseCurrencyToken = await this.tokenRepository.findBySymbol(baseCurrencySymbol);
-    if (!baseCurrencyToken) {
-      throw new Error(`Base currency token not found: ${baseCurrencySymbol}`);
-    }
-
-    const before = await this.tokenPriceRepository.findLatestPrice(token.id, baseCurrencyToken.id);
-    const price = await this.getTokenPrice(token, baseCurrencySymbol, now);
-    const metadata = await this.tokenPriceRepository.findLatestPrice(
-      token.id,
-      baseCurrencyToken.id
-    );
+    const now = new Date();
+    const before = await this.tokenPriceRepository.findLatestPrice(token.id, base.id);
+    const price = await this.getTokenPrice(token, base, now);
+    const metadata = await this.tokenPriceRepository.findLatestPrice(token.id, base.id);
 
     const fetched =
       metadata !== null &&
@@ -219,10 +207,22 @@ export class PricingService {
     };
   }
 
+  /**
+   * A price for each token against `base`, asked of the providers. A token no
+   * provider answers for falls back to its last stored reading, and is absent
+   * from the map when it has none.
+   *
+   * With `reuseStoredWithinMs`, a row stamped at most that long before
+   * `timestamp`, or a manual row of any age, answers without a provider call.
+   * Without it nothing stored is read before the fetch. The hourly run gives
+   * none: the run before it stamped its rows exactly an hour earlier, so a
+   * window of an hour served those rows back in place of a fetch.
+   */
   async getTokenPrices(
     tokensToPrice: Token[],
-    baseCurrencySymbol: string,
-    timestamp: Date
+    base: Token,
+    timestamp: Date,
+    options: { reuseStoredWithinMs?: number } = {}
   ): Promise<Map<string, string>> {
     const results = new Map<string, string>();
 
@@ -233,7 +233,8 @@ export class PricingService {
       .sort()
       .join(',');
     const timestampMinute = Math.floor(timestamp.getTime() / (60 * 1000)) * 60 * 1000;
-    const deduplicationKey = `getTokenPrices:${tokenIds}:${baseCurrencySymbol}:${timestampMinute}`;
+    const reuse = options.reuseStoredWithinMs ?? 'none';
+    const deduplicationKey = `getTokenPrices:${tokenIds}:${base.id}:${timestampMinute}:${reuse}`;
 
     const ongoingRequest = this.ongoingRequests.get(deduplicationKey);
     if (ongoingRequest) {
@@ -243,16 +244,8 @@ export class PricingService {
 
     const requestPromise = (async (): Promise<Map<string, string>> => {
       try {
-        const baseCurrencyToken = await this.tokenRepository.findBySymbol(baseCurrencySymbol);
-        if (!baseCurrencyToken) {
-          // Same map-invariant as getCachedTokenPrices: present = priced.
-          // Unknown base currency → no token can be priced → empty map.
-          logger.warn({ baseCurrencySymbol }, 'Base currency token not found in getTokenPrices');
-          return results;
-        }
-
         const tokensToProcess = tokensToPrice.filter((token) => {
-          if (token.id === baseCurrencyToken.id) {
+          if (token.id === base.id) {
             results.set(token.id, '1');
             return false;
           }
@@ -261,20 +254,24 @@ export class PricingService {
 
         if (tokensToProcess.length === 0) return results;
 
-        const cachedPrices = await this.getBatchCachedPrices(
-          tokensToProcess.map((t) => t.id),
-          baseCurrencyToken.id,
-          timestamp
-        );
+        const cachedPrices =
+          options.reuseStoredWithinMs === undefined
+            ? new Map<string, CachedPrice>()
+            : await this.getBatchCachedPrices(
+                tokensToProcess.map((t) => t.id),
+                base.id,
+                timestamp,
+                options.reuseStoredWithinMs
+              );
 
         const uniqueBaseCurrencyIds = new Set<string>();
         for (const cached of cachedPrices.values()) {
-          if (cached.baseTokenId !== baseCurrencyToken.id) {
+          if (cached.baseTokenId !== base.id) {
             uniqueBaseCurrencyIds.add(cached.baseTokenId);
           }
         }
 
-        const baseCurrencyTokensMap = new Map<string, typeof baseCurrencyToken>();
+        const baseCurrencyTokensMap = new Map<string, Token>();
         if (uniqueBaseCurrencyIds.size > 0) {
           const baseCurrencyTokens = await this.tokenRepository.findByIds(
             Array.from(uniqueBaseCurrencyIds)
@@ -295,7 +292,7 @@ export class PricingService {
         for (const token of tokensToProcess) {
           const cached = cachedPrices.get(token.id);
           if (cached) {
-            if (cached.baseTokenId !== baseCurrencyToken.id) {
+            if (cached.baseTokenId !== base.id) {
               const cachedBaseCurrencyToken = baseCurrencyTokensMap.get(cached.baseTokenId);
 
               if (cachedBaseCurrencyToken) {
@@ -318,7 +315,7 @@ export class PricingService {
           pricingLogger.debug(
             {
               count: tokensNeedingConversion.length,
-              toCurrency: baseCurrencyToken.symbol,
+              toCurrency: base.symbol,
             },
             'Batch converting cached prices to requested base currency'
           );
@@ -328,7 +325,7 @@ export class PricingService {
               const convertedPrice = await this.currencyConverter.convert(
                 cachedPrice,
                 fromCurrency,
-                baseCurrencyToken,
+                base,
                 timestamp
               );
               return { tokenId: token.id, convertedPrice };
@@ -348,7 +345,7 @@ export class PricingService {
             {
               tokenCount: tokensNeedingPrices.length,
               cachedCount: tokensToProcess.length - tokensNeedingPrices.length,
-              baseCurrency: baseCurrencySymbol,
+              baseCurrency: base.symbol,
             },
             'Fetching prices from external providers'
           );
@@ -368,7 +365,7 @@ export class PricingService {
           try {
             const freshPrices = await this.providerRouter.routeAndFetch(
               tokensNeedingPrices,
-              baseCurrencyToken,
+              base,
               timestamp
             );
             // Provider router still uses '0' as an internal failure
@@ -392,7 +389,7 @@ export class PricingService {
             try {
               const retryPrices = await this.providerRouter.routeAndFetch(
                 stillMissing,
-                baseCurrencyToken,
+                base,
                 timestamp
               );
               for (const priceResult of retryPrices) {
@@ -422,17 +419,17 @@ export class PricingService {
             // a non-base-currency price to the user's base.
             const fallbackPrices = await this.tokenPriceRepository.findLatestPricesForTokensAnyBase(
               uniqueTokenIds,
-              baseCurrencyToken.id
+              base.id
             );
 
             const uniqueFallbackBaseCurrencyIds = new Set<string>();
             for (const price of fallbackPrices.values()) {
-              if (price.baseTokenId !== baseCurrencyToken.id) {
+              if (price.baseTokenId !== base.id) {
                 uniqueFallbackBaseCurrencyIds.add(price.baseTokenId);
               }
             }
 
-            const fallbackBaseCurrencyTokensMap = new Map<string, typeof baseCurrencyToken>();
+            const fallbackBaseCurrencyTokensMap = new Map<string, Token>();
             if (uniqueFallbackBaseCurrencyIds.size > 0) {
               const fallbackBaseCurrencyTokens = await this.tokenRepository.findByIds(
                 Array.from(uniqueFallbackBaseCurrencyIds)
@@ -461,10 +458,10 @@ export class PricingService {
 
                   const fallbackPrice = await this.convertCachedPriceIfNeeded(
                     lastSuccessfulPrice,
-                    baseCurrencyToken.id,
+                    base.id,
                     timestamp,
                     fallbackBaseCurrencyTokensMap,
-                    baseCurrencyToken
+                    base
                   );
 
                   if (fallbackPrice !== null) {
@@ -512,29 +509,21 @@ export class PricingService {
    * bug that zeroed every dashboard after a base-currency switch.
    *
    * Cache-cold currency pairs are warmed up-front via
-   * `CurrencyConverter.prewarmRates` (one live exchangerate-api call
-   * per pair, deduplicated and rate-limited). Per-token conversions
-   * then run cache-only and resolve from memory.
+   * `CurrencyConverter.prewarmRates`: a pair with no fresh stored rate
+   * is derived from exchangerate-api's one USD table. Per-token
+   * conversions then run cache-only and resolve from memory.
    */
   async getCachedTokenPrices(
     tokensToPrice: Token[],
-    baseCurrencySymbol: string,
+    base: Token,
     timestamp: Date
   ): Promise<Map<string, string>> {
     const results = new Map<string, string>();
 
     if (tokensToPrice.length === 0) return results;
 
-    const baseCurrencyToken = await this.tokenRepository.findBySymbol(baseCurrencySymbol);
-    if (!baseCurrencyToken) {
-      // Unknown base currency: nothing can be priced. Return empty map;
-      // callers see absent keys and treat the holdings as unpriceable.
-      logger.warn({ baseCurrencySymbol }, 'Base currency token not found in getCachedTokenPrices');
-      return results;
-    }
-
     const tokensToProcess = tokensToPrice.filter((token) => {
-      if (token.id === baseCurrencyToken.id) {
+      if (token.id === base.id) {
         results.set(token.id, '1');
         return false;
       }
@@ -545,18 +534,19 @@ export class PricingService {
 
     const cachedPrices = await this.getBatchCachedPrices(
       tokensToProcess.map((t) => t.id),
-      baseCurrencyToken.id,
-      timestamp
+      base.id,
+      timestamp,
+      this.storedWindowMs(timestamp)
     );
 
     const uniqueBaseCurrencyIds = new Set<string>();
     for (const cached of cachedPrices.values()) {
-      if (cached.baseTokenId !== baseCurrencyToken.id) {
+      if (cached.baseTokenId !== base.id) {
         uniqueBaseCurrencyIds.add(cached.baseTokenId);
       }
     }
 
-    const baseCurrencyTokensMap = new Map<string, typeof baseCurrencyToken>();
+    const baseCurrencyTokensMap = new Map<string, Token>();
     if (uniqueBaseCurrencyIds.size > 0) {
       const baseCurrencyTokens = await this.tokenRepository.findByIds(
         Array.from(uniqueBaseCurrencyIds)
@@ -568,12 +558,12 @@ export class PricingService {
 
     // A fiat token's price in the user's base currency IS an exchange rate,
     // and `token_prices` is not where that rate lives for every currency.
-    // `forex-backfill` quotes every edge against the hub — `GBP -> USD`,
+    // `historical-price-backfill` quotes every edge against the hub — `GBP -> USD`,
     // `EUR -> USD` — so USD is never itself the priced token, and a USD cash
     // balance is unpriceable for anyone whose base is not USD (SC-505).
     //
     // The graph already answers this: it inverts the `GBP -> USD` row and
-    // returns `USD -> GBP`. Ask it, rather than having forex-backfill write
+    // returns `USD -> GBP`. Ask it, rather than having historical-price-backfill write
     // rows for a fact that is derivable from the rows it already writes —
     // n² pairs of stored data that can disagree with each other.
     //
@@ -585,7 +575,7 @@ export class PricingService {
     for (const [tokenId, rate] of (
       await this.resolveFiatRatesToBase(
         tokensToProcess.filter((t) => !cachedPrices.has(t.id)),
-        baseCurrencyToken,
+        base,
         timestamp
       )
     ).entries()) {
@@ -601,10 +591,10 @@ export class PricingService {
       // Any-base lookup so a USD-priced holding has a fallback when
       // the user's base is EUR (or anything else). The downstream
       // `tokensNeedingFallbackConversion` branch translates these via
-      // CurrencyConverter when `baseTokenId !== baseCurrencyToken.id`.
+      // CurrencyConverter when `baseTokenId !== base.id`.
       const latestPrices = await this.tokenPriceRepository.findLatestPricesForTokensAnyBase(
         uniqueTokenIds,
-        baseCurrencyToken.id
+        base.id
       );
 
       for (const [tokenId, price] of latestPrices.entries()) {
@@ -650,7 +640,7 @@ export class PricingService {
       if (donorIds.length > 0) {
         const donorPrices = await this.tokenPriceRepository.findLatestPricesForTokensAnyBase(
           donorIds,
-          baseCurrencyToken.id
+          base.id
         );
         for (const token of stillUnpriced) {
           const siblings = siblingsByToken.get(token.id);
@@ -686,12 +676,12 @@ export class PricingService {
 
     const uniqueFallbackBaseCurrencyIds = new Set<string>();
     for (const fallbackPrice of fallbackPrices.values()) {
-      if (fallbackPrice.baseTokenId !== baseCurrencyToken.id) {
+      if (fallbackPrice.baseTokenId !== base.id) {
         uniqueFallbackBaseCurrencyIds.add(fallbackPrice.baseTokenId);
       }
     }
 
-    const fallbackBaseCurrencyTokensMap = new Map<string, typeof baseCurrencyToken>();
+    const fallbackBaseCurrencyTokensMap = new Map<string, Token>();
     if (uniqueFallbackBaseCurrencyIds.size > 0) {
       const fallbackBaseCurrencyTokens = await this.tokenRepository.findByIds(
         Array.from(uniqueFallbackBaseCurrencyIds)
@@ -714,7 +704,7 @@ export class PricingService {
     for (const token of tokensToProcess) {
       const cached = cachedPrices.get(token.id);
       if (cached) {
-        if (cached.baseTokenId !== baseCurrencyToken.id) {
+        if (cached.baseTokenId !== base.id) {
           const cachedBaseCurrencyToken = baseCurrencyTokensMap.get(cached.baseTokenId);
 
           if (cachedBaseCurrencyToken) {
@@ -750,17 +740,17 @@ export class PricingService {
     // every conversion returns null → silent unpriced holdings.
     const pairsToWarm: Array<{ from: Token; to: Token }> = [];
     for (const { fromCurrency } of tokensNeedingConversion) {
-      if (fromCurrency.id !== baseCurrencyToken.id) {
-        pairsToWarm.push({ from: fromCurrency, to: baseCurrencyToken });
+      if (fromCurrency.id !== base.id) {
+        pairsToWarm.push({ from: fromCurrency, to: base });
       }
     }
     for (const { fallbackPrice } of tokensNeedingFallbackConversion) {
-      if (fallbackPrice.baseTokenId !== baseCurrencyToken.id) {
+      if (fallbackPrice.baseTokenId !== base.id) {
         const fallbackBaseCurrency = fallbackBaseCurrencyTokensMap.get(fallbackPrice.baseTokenId);
         if (fallbackBaseCurrency) {
           pairsToWarm.push({
             from: fallbackBaseCurrency,
-            to: baseCurrencyToken,
+            to: base,
           });
         }
       }
@@ -786,7 +776,7 @@ export class PricingService {
     for (const { tokenId, price, fromCurrency } of tokensNeedingConversion) {
       conversionPromises.push(
         this.currencyConverter
-          .convert(price, fromCurrency, baseCurrencyToken, timestamp, true)
+          .convert(price, fromCurrency, base, timestamp, true)
           .then((convertedPrice) => ({ tokenId, price: convertedPrice }))
       );
     }
@@ -795,10 +785,10 @@ export class PricingService {
       conversionPromises.push(
         this.convertCachedPriceIfNeeded(
           fallbackPrice,
-          baseCurrencyToken.id,
+          base.id,
           timestamp,
           fallbackBaseCurrencyTokensMap,
-          baseCurrencyToken
+          base
         ).then((convertedPrice) => ({ tokenId, price: convertedPrice }))
       );
     }
@@ -824,31 +814,16 @@ export class PricingService {
     await this.currencyConverter.preWarm();
   }
 
-  async canTokenBePriced(
-    tokenData: {
-      symbol: string;
-      name: string;
-      metadata: Record<string, unknown>;
-      typeCode: string;
-    },
-    baseCurrency = 'USD'
-  ): Promise<{ canBePriced: boolean; provider?: string; reason?: string }> {
-    return await this.providerRouter.canTokenBePriced(tokenData, baseCurrency);
-  }
-
   private async getCachedPrice(
     tokenId: string,
     baseCurrencyId: string,
     timestamp: Date
   ): Promise<CachedPrice | null> {
-    const isLive = this.isLivePrice(timestamp);
-    const maxAge = isLive ? LIVE_PRICE_WINDOW_MS : this.HISTORICAL_PRICE_WINDOW_MS;
-
     const price = await this.tokenPriceRepository.findPriceAtTimestamp(
       tokenId,
       baseCurrencyId,
       timestamp,
-      maxAge
+      this.storedWindowMs(timestamp)
     );
 
     if (price) {
@@ -1025,7 +1000,8 @@ export class PricingService {
   private async getBatchCachedPrices(
     tokenIds: string[],
     baseCurrencyId: string,
-    timestamp: Date
+    timestamp: Date,
+    maxAgeMs: number
   ): Promise<Map<string, CachedPrice>> {
     const results = new Map<string, CachedPrice>();
 
@@ -1039,16 +1015,14 @@ export class PricingService {
     // currency was different from the base every cached price was
     // stored against (every USD-priced holding for an EUR user → empty
     // map → dashboard silently zeroed). The downstream conversion
-    // branch reconciles `baseTokenId !== baseCurrencyToken.id` via
+    // branch reconciles `baseTokenId !== base.id` via
     // CurrencyConverter.
     const latestPrices = await this.tokenPriceRepository.findLatestPricesForTokensAnyBase(
       uniqueTokenIds,
       baseCurrencyId
     );
 
-    const isLive = this.isLivePrice(timestamp);
-    const maxAge = isLive ? LIVE_PRICE_WINDOW_MS : this.HISTORICAL_PRICE_WINDOW_MS;
-    const minTimestamp = new Date(timestamp.getTime() - maxAge);
+    const minTimestamp = new Date(timestamp.getTime() - maxAgeMs);
 
     for (const [tokenId, price] of latestPrices.entries()) {
       if (price.timestamp >= minTimestamp || price.source?.startsWith('manual')) {
@@ -1075,7 +1049,7 @@ export class PricingService {
     // up the latest manual price in ANY base currency. Custom tokens
     // may be priced in EUR / GBP / etc. — the caller's conversion
     // path will convert to the requested base when
-    // `baseTokenId !== baseCurrencyToken.id`.
+    // `baseTokenId !== base.id`.
     const missingIds = uniqueTokenIds.filter((id) => !results.has(id));
     if (missingIds.length > 0) {
       const manualAnyBase =
@@ -1100,6 +1074,11 @@ export class PricingService {
     }
 
     return results;
+  }
+
+  /** How far from the time asked a stored row still answers a read. */
+  private storedWindowMs(timestamp: Date): number {
+    return this.isLivePrice(timestamp) ? LIVE_PRICE_WINDOW_MS : this.HISTORICAL_PRICE_WINDOW_MS;
   }
 
   private isLivePrice(timestamp: Date): boolean {

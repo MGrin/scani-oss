@@ -5,6 +5,7 @@ import type { PriceQuote, ProviderContext } from '@scani/providers/core/types';
 import { Container, Service } from 'typedi';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
+import { isStorablePrice, PriceWriter } from './PriceWriter';
 import { hasExternalPricingAuthority } from './token-type-pricing';
 
 // Providers whose universe is equities + fiat — they MUST NOT be
@@ -23,41 +24,6 @@ const EQUITY_ONLY_PROVIDER_KEYS = new Set(['yahoo-finance', 'finnhub']);
 // only cover exchange-listed crypto pairs.
 const CRYPTO_ONLY_PROVIDER_KEYS = new Set(['defillama', 'coingecko', 'kraken', 'binance']);
 
-export interface BackfillOneResult {
-  tokenId: string;
-  baseTokenId: string;
-  at: Date;
-  status: 'inserted' | 'already-have' | 'provider-missing' | 'no-provider';
-  priceStored?: string;
-  providerUsed?: string;
-}
-
-export interface BackfillManyRequest {
-  tokenId: string;
-  at: Date;
-  // Optional explicit base; default = user's display base or USD.
-  baseTokenId?: string;
-}
-
-/**
- * Central service for writing historical price rows. Walks the registry's
- * `HistoricalPriceProvider` list (priority order = registration order),
- * picks the first one that satisfies `canPrice(token)`, and asks for a
- * historical close at `at`.
- *
- * Writes land in `token_prices` with `granularity='daily'` and
- * `source='<provider>_historical'`. Idempotent via the table's unique
- * constraint on (token_id, base_token_id, timestamp) — re-running the
- * backfill for the same date is a no-op unless the provider returned
- * a materially different price (in which case it overwrites, matching
- * the existing bulkUpsert semantics).
- *
- * Providers come from `ProviderRegistry.getHistoricalPricers(token)`;
- * provider boot wiring lives in `apps/{worker,cron,backend}/src/index.ts`'s
- * `buildProviderRegistry` call. CEX providers like Kraken are wired
- * here too — their public OHLC endpoint covers exchange-native asset
- * codes (XXBT, ZUSD, …) that DeFiLlama/CoinGecko can't see.
- */
 @Service()
 export class HistoricalPriceBackfillService {
   private readonly logger = createComponentLogger('service:HistoricalPriceBackfillService');
@@ -65,116 +31,7 @@ export class HistoricalPriceBackfillService {
   // Class-field DI — see note in BalanceAtTimeService.ts.
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
-
-  // Backfill a single (token, at) against a specific base. Stores if any
-  // provider returned a value. Idempotent across re-runs for the same
-  // (token, base, provider-timestamp) — the DB unique constraint wins.
-  async backfillOne(tokenId: string, at: Date, baseTokenId: string): Promise<BackfillOneResult> {
-    const token = await this.tokenRepository.findWithType(tokenId);
-    const baseToken = await this.tokenRepository.findById(baseTokenId);
-    if (!token || !baseToken) {
-      return {
-        tokenId,
-        baseTokenId,
-        at,
-        status: 'no-provider',
-      };
-    }
-
-    // Fast path: already have a daily price on this token for this date.
-    const existing = await this.tokenPriceRepository.findLatestDailyAtOrBefore(
-      tokenId,
-      baseTokenId,
-      at
-    );
-    if (existing && Math.abs(existing.timestamp.getTime() - at.getTime()) < 24 * 60 * 60 * 1000) {
-      return {
-        tokenId,
-        baseTokenId,
-        at,
-        status: 'already-have',
-        priceStored: existing.price,
-        providerUsed: existing.source ?? undefined,
-      };
-    }
-
-    const ctx: ProviderContext = { baseCurrency: baseToken, timestamp: at };
-    const registry = Container.get(ProviderRegistry);
-    const providers = filterProvidersByTokenType(
-      registry.getHistoricalPricers(token),
-      token.typeCode
-    );
-
-    if (providers.length === 0) {
-      return {
-        tokenId,
-        baseTokenId,
-        at,
-        status: 'provider-missing',
-      };
-    }
-
-    for (const provider of providers) {
-      try {
-        const result = await provider.fetchHistoricalPrice(token, at, ctx);
-        if (!result) continue;
-
-        await this.tokenPriceRepository.bulkUpsertDailyBackfill([
-          {
-            tokenId,
-            baseTokenId,
-            price: result.price,
-            timestamp: result.timestamp,
-            source: result.source,
-          },
-        ]);
-
-        return {
-          tokenId,
-          baseTokenId,
-          at,
-          status: 'inserted',
-          priceStored: result.price,
-          providerUsed: provider.providerKey,
-        };
-      } catch (error) {
-        this.logger.warn(
-          {
-            provider: provider.providerKey,
-            tokenId,
-            baseTokenId,
-            at,
-            error: error instanceof Error ? error.message : error,
-          },
-          'Historical provider threw during backfill; trying next'
-        );
-      }
-    }
-
-    return {
-      tokenId,
-      baseTokenId,
-      at,
-      status: 'provider-missing',
-    };
-  }
-
-  // Backfill a batch. Serial on purpose — DeFiLlama's free tier is
-  // generous but a burst of 500 parallel requests can still 429 us. If
-  // a single lookup returns 'provider-missing' we just continue; the
-  // caller can retry those later.
-  async backfillMany(
-    items: BackfillManyRequest[],
-    defaultBaseTokenId: string
-  ): Promise<BackfillOneResult[]> {
-    const results: BackfillOneResult[] = [];
-    for (const item of items) {
-      const baseId = item.baseTokenId ?? defaultBaseTokenId;
-      const r = await this.backfillOne(item.tokenId, item.at, baseId);
-      results.push(r);
-    }
-    return results;
-  }
+  private readonly priceWriter = Container.get(PriceWriter);
 
   /**
    * Backfill a contiguous range for ONE token in as few HTTP calls as
@@ -188,9 +45,9 @@ export class HistoricalPriceBackfillService {
    *
    * Caller passes the SET of `neededDays` (already deduped against
    * `token_prices`) — the method asks the provider for the spanning
-   * range, then bulk-upserts every quote that falls inside neededDays.
-   * Quotes outside neededDays (provider returned more days than asked)
-   * are still persisted because they're free coverage.
+   * range, then fills only UTC days with no stored row. Quotes outside the
+   * requested days can fill empty days too: DeFiLlama can stamp a point on
+   * the day before the midnight asked for.
    *
    * Returns counts so the use-case can aggregate into BackfillSummary.
    */
@@ -202,6 +59,12 @@ export class HistoricalPriceBackfillService {
     inserted: number;
     alreadyHad: number;
     providerMissing: number;
+    // Needed days a provider answered only with bars the writer does not
+    // store. Neither inserted nor missing, so with those two and `alreadyHad`
+    // they add up to the days asked.
+    droppedDays: number;
+    // Bars the writer did not store, on any day the provider returned.
+    droppedBars: number;
     providerUsed: string | null;
     // True when a provider attempt FAILED rather than answering with an
     // empty range. The caller must not conclude anything about the
@@ -213,6 +76,8 @@ export class HistoricalPriceBackfillService {
       inserted: 0,
       alreadyHad: 0,
       providerMissing: 0,
+      droppedDays: 0,
+      droppedBars: 0,
       providerUsed: null,
       attemptFailed: false,
     };
@@ -259,29 +124,50 @@ export class HistoricalPriceBackfillService {
       const quotes = attempt.quotes;
       if (quotes.length === 0) continue;
 
-      await this.tokenPriceRepository.bulkUpsertDailyBackfill(
-        quotes.map((q) => ({
+      const dayOf = (at: Date) => at.toISOString().slice(0, 10);
+      const earliest = Math.min(from.getTime(), ...quotes.map((q) => q.timestamp.getTime()));
+      const existingDays = await this.tokenPriceRepository.findPricedDayKeys({
+        baseTokenId,
+        tokenIds: [tokenId],
+        since: new Date(`${dayOf(new Date(earliest))}T00:00:00.000Z`),
+      });
+      const missingQuotes = quotes.filter(
+        (q) => !existingDays.has(`${tokenId}:${dayOf(q.timestamp)}`)
+      );
+      const written = await this.priceWriter.writeHistory(
+        missingQuotes.map((q) => ({
           tokenId,
           baseTokenId,
           price: q.price,
-          timestamp: q.timestamp,
+          at: q.timestamp,
+          granularity: 'daily',
           source: q.source,
         }))
       );
 
-      // Days from neededDays that the provider covered (within ±24h).
-      const coveredDayKeys = new Set(quotes.map((q) => q.timestamp.toISOString().slice(0, 10)));
+      // Days from neededDays that the provider covered, and of
+      // those the ones it covered with a bar the writer stored.
+      const coveredDayKeys = new Set(missingQuotes.map((q) => dayOf(q.timestamp)));
+      const storedDayKeys = new Set(
+        missingQuotes.filter((q) => isStorablePrice(q.price)).map((q) => dayOf(q.timestamp))
+      );
       let inserted = 0;
+      let alreadyHad = 0;
       let providerMissing = 0;
+      let droppedDays = 0;
       for (const day of neededDays) {
-        const key = day.toISOString().slice(0, 10);
-        if (coveredDayKeys.has(key)) inserted++;
+        const key = dayOf(day);
+        if (existingDays.has(`${tokenId}:${key}`)) alreadyHad++;
+        else if (storedDayKeys.has(key)) inserted++;
+        else if (coveredDayKeys.has(key)) droppedDays++;
         else providerMissing++;
       }
       return {
         inserted,
-        alreadyHad: 0,
+        alreadyHad,
         providerMissing,
+        droppedDays,
+        droppedBars: written.dropped,
         providerUsed: provider.providerKey,
         attemptFailed,
       };

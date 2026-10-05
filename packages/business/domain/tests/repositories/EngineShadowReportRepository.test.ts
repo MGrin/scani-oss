@@ -345,7 +345,7 @@ describe('recordRun', () => {
 });
 
 describe('findDifferences', () => {
-  test('returns at most perCategory rows per category, ordered by at then id', async () => {
+  test('returns at most perCategory rows per category, the latest at first, then by id', async () => {
     await withTestDb(async (tx) => {
       const base = Date.parse('2026-02-01T00:00:00Z');
       // Ten distinct instants for 25 rows, so ties on `at` exist and only the
@@ -370,12 +370,13 @@ describe('findDifferences', () => {
       expect(found['starts-at']).toHaveLength(2);
 
       const stored = await differencesOf(tx, runId);
-      const byAtThenId = (a: { at: Date; id: string }, b: { at: Date; id: string }) =>
-        a.at.getTime() - b.at.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+      // A price run's rows at now, the ones with the value at stake, before its past closes.
+      const latestAtThenId = (a: { at: Date; id: string }, b: { at: Date; id: string }) =>
+        b.at.getTime() - a.at.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
       const expected = (category: string, n: number) =>
         stored
           .filter((r) => r.category === category)
-          .sort(byAtThenId)
+          .sort(latestAtThenId)
           .slice(0, n)
           .map((r) => r.id);
       expect(found.unexplained!.map((r) => r.id)).toEqual(expected('unexplained', 20));

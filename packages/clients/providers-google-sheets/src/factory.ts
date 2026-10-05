@@ -18,6 +18,7 @@
 import type { DbType } from '@scani/db/connection';
 import { createComponentLogger } from '@scani/logging';
 import type { RateLimiterRegistry } from '@scani/providers/core/rate-limiter-registry';
+import { exchangeRateApi } from '@scani/providers/providers/exchangerate-api';
 import { createOutflowLimiter, type OutflowRateLimiter } from '@scani/rate-limiter';
 import type Redis from 'ioredis';
 import { GoogleSheetsCurrencyConverter } from './currency-converter';
@@ -38,7 +39,6 @@ export interface GoogleSheetsFactoryDeps {
 
 const GOOGLE_SHEETS_NAMESPACE = 'google-sheets';
 const FINNHUB_NAMESPACE = 'finnhub';
-const EXCHANGERATE_NAMESPACE = 'exchangerate-api';
 
 function getOrRegister(
   registry: RateLimiterRegistry,
@@ -78,18 +78,8 @@ export function googleSheetsFactory(deps: GoogleSheetsFactoryDeps): GoogleSheets
     windowMs: 60 * 1000,
     description: 'Finnhub: 50 req / 60s',
   });
-  const exchangeLimiter = getOrRegister(
-    deps.rateLimiterRegistry,
-    EXCHANGERATE_NAMESPACE,
-    deps.redis,
-    {
-      maxRequests: 30,
-      windowMs: 1000,
-      description: 'ExchangeRate-API: ~30 rps',
-    }
-  );
 
-  const converter = new GoogleSheetsCurrencyConverter(exchangeLimiter);
+  const converter = new GoogleSheetsCurrencyConverter(exchangeRateApi());
 
   return new GoogleSheetsProvider({
     db: deps.db,

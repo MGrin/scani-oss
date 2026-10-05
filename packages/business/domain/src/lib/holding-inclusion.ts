@@ -32,6 +32,15 @@ export function holdingCountsInTotal(holding: InclusionHolding): boolean {
   return holding.isActive;
 }
 
+// The holdings the rollup lists for a user: every one a total counts, and the
+// visible ones it does not, which keep a row of their own. Defined on the rule
+// above so the rollup can never preload fewer holdings than the valuation
+// prices: a sweep-hidden one it left out was costed from its balance readings
+// alone, with its ledger never read (SC-1546).
+export function holdingIsRolledUp(holding: InclusionHolding): boolean {
+  return !holding.isHidden || holdingCountsInTotal(holding);
+}
+
 // True when a holding should count toward a portfolio total. Owner-hidden
 // holdings, inactive holdings, and scam tokens never count.
 //

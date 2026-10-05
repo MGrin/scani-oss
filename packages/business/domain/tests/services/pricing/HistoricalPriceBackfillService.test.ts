@@ -12,6 +12,7 @@ import {
   filterProvidersByTokenType,
   HistoricalPriceBackfillService,
 } from '../../../src/services/pricing/HistoricalPriceBackfillService';
+import { type PriceWrite, PriceWriter } from '../../../src/services/pricing/PriceWriter';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -48,22 +49,10 @@ interface CapturedUpsert {
   price: string;
   timestamp: Date;
   source: string;
+  granularity?: string;
 }
 
-function makeService(opts: {
-  tokens: Map<string, Token>;
-  existingPriceForToken?: {
-    tokenId: string;
-    baseTokenId: string;
-    at: Date;
-    price: string;
-    source: string;
-  };
-  // What the readers' nearest-reading lookup would answer for this token: an
-  // intraday row. The backfill must not ask it (SC-1543).
-  nearestIntradayReading?: { at: Date; price: string };
-  pricers: HistoricalPriceProvider[];
-}): {
+function makeService(opts: { tokens: Map<string, Token>; pricers: HistoricalPriceProvider[] }): {
   service: HistoricalPriceBackfillService;
   captured: CapturedUpsert[];
 } {
@@ -90,39 +79,15 @@ function makeService(opts: {
   } as unknown as TokenRepository);
 
   Container.set(TokenPriceRepository, {
-    findLatestDailyAtOrBefore: async (tokenId: string, baseTokenId: string, at: Date) => {
-      const e = opts.existingPriceForToken;
-      if (!e) return null;
-      if (e.tokenId !== tokenId || e.baseTokenId !== baseTokenId) return null;
-      // Only return when the cached price is within 24h of `at` (mirrors
-      // the service's freshness gate).
-      if (Math.abs(e.at.getTime() - at.getTime()) > 24 * 60 * 60 * 1000) return null;
-      return {
-        tokenId,
-        baseTokenId,
-        price: e.price,
-        timestamp: e.at,
-        source: e.source,
-        granularity: 'daily',
-      } as never;
-    },
-    findClosestPriceByGranularity: async (tokenId: string, baseTokenId: string) => {
-      const n = opts.nearestIntradayReading;
-      if (!n) return null;
-      return {
-        tokenId,
-        baseTokenId,
-        price: n.price,
-        timestamp: n.at,
-        source: 'hourly-job',
-        granularity: 'intraday',
-      } as never;
-    },
-    bulkUpsertDailyBackfill: async (rows: CapturedUpsert[]) => {
-      captured.push(...rows);
-      return rows as never;
-    },
+    findPricedDayKeys: async () => new Set<string>(),
   } as unknown as TokenPriceRepository);
+
+  Container.set(PriceWriter, {
+    writeHistory: async (rows: PriceWrite[]) => {
+      captured.push(...rows.map(({ at, ...row }) => ({ ...row, timestamp: at })));
+      return { written: rows.length, dropped: 0, changed: [], seriesChanged: [] };
+    },
+  } as unknown as PriceWriter);
 
   const registry = new ProviderRegistry();
   for (const p of opts.pricers) registry.register(p);
@@ -132,164 +97,6 @@ function makeService(opts: {
   Container.set(HistoricalPriceBackfillService, service);
   return { service, captured };
 }
-
-function makePricer(opts: {
-  providerKey: string;
-  matches: (t: Token) => boolean;
-  result: PriceQuote | null;
-}): HistoricalPriceProvider {
-  return {
-    providerKey: opts.providerKey,
-    capabilities: ['historical-price'],
-    canPrice: opts.matches,
-    fetchCurrentPrice: async () => null,
-    fetchHistoricalPrice: async () => opts.result,
-  };
-}
-
-describe('HistoricalPriceBackfillService.backfillOne', () => {
-  test('returns no-provider when token or baseToken cannot be resolved', async () => {
-    const { service } = makeService({ tokens: new Map(), pricers: [] });
-    const r = await service.backfillOne('missing', new Date(), 'usd');
-    expect(r.status).toBe('no-provider');
-  });
-
-  test('returns already-have when a recent daily price is cached', async () => {
-    const tokens = new Map<string, Token>();
-    tokens.set('btc', makeToken('btc', 'BTC'));
-    tokens.set('usd', makeToken('usd', 'USD'));
-    const at = new Date('2024-01-15T00:00:00Z');
-    const { service, captured } = makeService({
-      tokens,
-      existingPriceForToken: {
-        tokenId: 'btc',
-        baseTokenId: 'usd',
-        at,
-        price: '42000',
-        source: 'coingecko_cached',
-      },
-      pricers: [],
-    });
-    const r = await service.backfillOne('btc', at, 'usd');
-    expect(r.status).toBe('already-have');
-    expect(r.priceStored).toBe('42000');
-    expect(captured).toHaveLength(0);
-  });
-
-  // SC-1543. The readers' lookup answers the nearest reading of any
-  // granularity. The backfill asks a different question, whether a DAILY row
-  // is stored, and an intraday reading an hour before T must not answer it.
-  test('an intraday reading within 24h is not a stored daily price', async () => {
-    const tokens = new Map<string, Token>();
-    tokens.set('eur', makeToken('eur', 'EUR'));
-    tokens.set('usd', makeToken('usd', 'USD'));
-    const at = new Date('2024-03-10T00:00:00Z');
-    const quote: PriceQuote = {
-      tokenId: 'eur',
-      baseTokenId: 'usd',
-      price: '1.09',
-      timestamp: at,
-      source: 'frankfurter_historical',
-    };
-    const { service, captured } = makeService({
-      tokens,
-      nearestIntradayReading: { at: new Date('2024-03-09T23:00:00Z'), price: '1.08' },
-      pricers: [
-        makePricer({ providerKey: 'fx', matches: (t) => t.symbol === 'EUR', result: quote }),
-      ],
-    });
-    const r = await service.backfillOne('eur', at, 'usd');
-    expect(r.status).toBe('inserted');
-    expect(captured).toHaveLength(1);
-    expect(captured[0]?.price).toBe('1.09');
-  });
-
-  test('returns provider-missing when no historical pricer claims the token', async () => {
-    const tokens = new Map<string, Token>();
-    tokens.set('btc', makeToken('btc', 'BTC'));
-    tokens.set('usd', makeToken('usd', 'USD'));
-    const { service, captured } = makeService({
-      tokens,
-      pricers: [
-        makePricer({
-          providerKey: 'pricer-eth-only',
-          matches: (t) => t.symbol === 'ETH',
-          result: null,
-        }),
-      ],
-    });
-    const r = await service.backfillOne('btc', new Date('2024-01-01'), 'usd');
-    expect(r.status).toBe('provider-missing');
-    expect(captured).toHaveLength(0);
-  });
-
-  test('inserts the first non-null price and returns inserted', async () => {
-    const tokens = new Map<string, Token>();
-    tokens.set('btc', makeToken('btc', 'BTC'));
-    tokens.set('usd', makeToken('usd', 'USD'));
-    const at = new Date('2024-02-01T00:00:00Z');
-    const winnerQuote: PriceQuote = {
-      tokenId: 'btc',
-      baseTokenId: 'usd',
-      price: '40000',
-      timestamp: at,
-      source: 'defillama_historical',
-    };
-    const { service, captured } = makeService({
-      tokens,
-      pricers: [
-        makePricer({ providerKey: 'p1', matches: (t) => t.symbol === 'BTC', result: null }),
-        makePricer({ providerKey: 'p2', matches: (t) => t.symbol === 'BTC', result: winnerQuote }),
-        // p3 would also match but the service short-circuits on the first non-null.
-        makePricer({
-          providerKey: 'p3',
-          matches: (t) => t.symbol === 'BTC',
-          result: { ...winnerQuote, price: '99999', source: 'should-not-be-called' },
-        }),
-      ],
-    });
-    const r = await service.backfillOne('btc', at, 'usd');
-    expect(r.status).toBe('inserted');
-    expect(r.priceStored).toBe('40000');
-    expect(r.providerUsed).toBe('p2');
-    expect(captured).toHaveLength(1);
-    expect(captured[0]?.price).toBe('40000');
-    expect(captured[0]?.source).toBe('defillama_historical');
-  });
-
-  test('continues past pricers that throw and tries the next one', async () => {
-    const tokens = new Map<string, Token>();
-    tokens.set('btc', makeToken('btc', 'BTC'));
-    tokens.set('usd', makeToken('usd', 'USD'));
-    const at = new Date('2024-03-01T00:00:00Z');
-    const winnerQuote: PriceQuote = {
-      tokenId: 'btc',
-      baseTokenId: 'usd',
-      price: '50000',
-      timestamp: at,
-      source: 'fallback',
-    };
-    const { service, captured } = makeService({
-      tokens,
-      pricers: [
-        {
-          providerKey: 'throws',
-          capabilities: ['historical-price'],
-          canPrice: () => true,
-          fetchCurrentPrice: async () => null,
-          fetchHistoricalPrice: async () => {
-            throw new Error('upstream 500');
-          },
-        },
-        makePricer({ providerKey: 'fallback', matches: () => true, result: winnerQuote }),
-      ],
-    });
-    const r = await service.backfillOne('btc', at, 'usd');
-    expect(r.status).toBe('inserted');
-    expect(r.providerUsed).toBe('fallback');
-    expect(captured).toHaveLength(1);
-  });
-});
 
 /**
  * SC-171. `backfillTokenRange` returning `[]` for both "the provider
@@ -411,7 +218,17 @@ describe('HistoricalPriceBackfillService.backfillTokenRange', () => {
     const result = await service.backfillTokenRange('btc', 'usd', days);
     expect(result.attemptFailed).toBe(false);
     expect(result.inserted).toBe(days.length);
-    expect(captured).toHaveLength(days.length);
+    // Each bar a daily row at the provider's own stamp, under its own source.
+    expect(captured).toEqual(
+      days.map((d) => ({
+        tokenId: 'btc',
+        baseTokenId: 'usd',
+        price: '100',
+        timestamp: d,
+        source: 'defillama_historical',
+        granularity: 'daily',
+      }))
+    );
   });
 });
 

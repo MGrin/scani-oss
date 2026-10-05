@@ -851,6 +851,42 @@ describe('TransactionImportCoordinator.execute — a run with something it canno
     expect(windows.map((w) => [w.fromAt, w.complete])).toEqual([[null, true]]);
     expect(await ledgerOf(owner.userId)).toEqual([]);
   });
+
+  // Foundation A3, Task 7: a bare symbol names the newest token that carries it.
+  test('the provider is handed the fiat USD as its base, not a newer token named USD', async () => {
+    const owner = await seed();
+    const [fiat] = await getDb()
+      .select({ id: schema.tokens.id })
+      .from(schema.tokens)
+      .innerJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+      .where(sql`${schema.tokens.symbol} = 'USD' AND ${schema.tokenTypes.code} = 'fiat'`);
+    const coin = await getDb().transaction((tx) =>
+      makeToken(tx, { symbol: 'USD', name: 'A coin named USD' })
+    );
+    const bases: string[] = [];
+    const provider: TransactionsProvider = {
+      providerKey: 'stub',
+      capabilities: ['transactions'],
+      canFetchTransactions: (code: string) => code === 'binance',
+      fetchTransactions: async (ctx) => {
+        bases.push(ctx.baseCurrency.id);
+        return [];
+      },
+    };
+    const registry = new ProviderRegistry();
+    registry.register(provider);
+    Container.set(ProviderRegistry, registry);
+
+    try {
+      await run({ ...owner, source: 'binance-api' });
+    } finally {
+      // By id: `created.symbols` deletes by symbol, and would take the fiat too.
+      await getDb().delete(schema.tokens).where(eq(schema.tokens.id, coin.id));
+    }
+
+    expect(fiat?.id).toBeDefined();
+    expect(bases).toEqual([fiat?.id as string]);
+  });
 });
 
 // R38: today an empty external id was written. The feed write refuses the

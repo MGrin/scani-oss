@@ -1,7 +1,9 @@
+import type { Token } from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { Container, Service } from 'typedi';
 import { RecordNotAccessibleError } from '../lib/record-not-accessible';
 import { HoldingRepository } from '../repositories/HoldingRepository';
+import { TokenRepository } from '../repositories/TokenRepository';
 import { PricingService, VaultService } from '../services';
 
 const logger = createComponentLogger('use-case:update-holding-price');
@@ -9,13 +11,14 @@ const logger = createComponentLogger('use-case:update-holding-price');
 @Service()
 export class UpdateHoldingPriceUseCase {
   private readonly holdingRepository = Container.get(HoldingRepository);
+  private readonly tokenRepository = Container.get(TokenRepository);
   private readonly pricingService = Container.get(PricingService);
   private readonly vaultService = Container.get(VaultService);
 
   async execute(
     holdingId: string,
     userId: string,
-    baseCurrencySymbol: string
+    base: Token
   ): Promise<{
     // "The job ran without error" — NOT "the price moved". The two were
     // conflated into one green toast that claimed a refresh over a price line
@@ -26,7 +29,11 @@ export class UpdateHoldingPriceUseCase {
     // limit) but produced no price; the UI shows "—" rather than $0.
     price: string | null;
     source: string;
-    /** When the price being returned was recorded — not when this job ran. */
+    /**
+     * When the price being returned was stamped: the instant this refresh
+     * asked, for a quote it fetched; the stored row's own time, for one it
+     * reused or fell back to.
+     */
     timestamp: string;
     /** False when the stored price was already current and nothing was
         fetched. The caller owes the user a different sentence for each. */
@@ -44,8 +51,10 @@ export class UpdateHoldingPriceUseCase {
     }
 
     try {
+      const token = await this.tokenRepository.findById(holding.tokenId);
+      if (!token) throw new Error(`Token not found: ${holding.tokenId}`);
       const { price, source, timestamp, fetched } =
-        await this.pricingService.fetchAndStoreFreshPrice(holding.tokenId, baseCurrencySymbol);
+        await this.pricingService.fetchAndStoreFreshPrice(token, base);
 
       // Vault recalc is best-effort — a stale vault total is preferable
       // to failing the price update the user explicitly requested.

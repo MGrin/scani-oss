@@ -20,9 +20,33 @@ const summary = (compared: number, byCategory: Record<string, number>): ShadowRu
   durationMs: 5,
 });
 
-const RUNS: Record<'price' | 'balance', EngineShadowRunResult> = {
-  price: { kind: 'price', runId: 'run-p', summary: summary(4, {}) },
-  balance: { kind: 'balance', runId: 'run-b', summary: summary(10, { unexplained: 2 }) },
+const PAST_CLOSE = '2026-02-28T23:59:59.999Z';
+
+/** A price run with one difference at `asOf` and two at a past close. */
+const priceRun = (asOf: Date): EngineShadowRunResult => ({
+  kind: 'price',
+  runId: 'run-p',
+  summary: {
+    ...summary(4, { 'fresher-price': 1, unexplained: 2 }),
+    byInstant: {
+      [asOf.toISOString()]: { 'fresher-price': 1 },
+      [PAST_CLOSE]: { unexplained: 2 },
+    },
+  },
+});
+const BALANCE_RUN: EngineShadowRunResult = {
+  kind: 'balance',
+  runId: 'run-b',
+  summary: summary(10, { unexplained: 2 }),
+};
+
+const PRICE_LINE = {
+  kind: 'price',
+  runId: 'run-p',
+  compared: 4,
+  matched: 1,
+  byCategory: { 'fresher-price': 1, unexplained: 2 },
+  byCategoryAtAsOf: { 'fresher-price': 1 },
 };
 
 /** A use case that reports each kind it is asked for, failing those named in `fails`. */
@@ -34,7 +58,7 @@ function harness(fails: ReadonlyArray<'price' | 'balance'> = []) {
       const failures: unknown[] = [];
       for (const kind of input.kinds ?? ['price', 'balance']) {
         if (fails.includes(kind)) failures.push(new Error(`${kind} broke`));
-        else await input.onRecorded?.(RUNS[kind]);
+        else await input.onRecorded?.(kind === 'price' ? priceRun(input.asOf) : BALANCE_RUN);
       }
       if (failures.length > 0) throw failures[0];
       return [];
@@ -100,15 +124,17 @@ describe('EngineShadowProcessor', () => {
     expect(input?.kinds).toEqual(['price', 'balance']);
   });
 
-  test('logs one line per run: kind, run id, compared, matched and byCategory', async () => {
+  test("logs one line per run: kind, run id, compared, matched, byCategory and a price run's categories at asOf", async () => {
     const { processor, logger } = harness();
 
     const { logged } = await handle(processor, logger, fakeJob().job);
 
+    // byCategory sums every instant, so the line also says what differed at asOf alone.
     expect(logged).toEqual([
-      { kind: 'price', runId: 'run-p', compared: 4, matched: 4, byCategory: {} },
+      PRICE_LINE,
       { kind: 'balance', runId: 'run-b', compared: 10, matched: 8, byCategory: { unexplained: 2 } },
     ]);
+    expect(logged[1]).not.toHaveProperty('byCategoryAtAsOf');
   });
 
   test('a run that completed is logged and saved on the job when its sibling fails', async () => {
@@ -118,9 +144,7 @@ describe('EngineShadowProcessor', () => {
     const { logged, error } = await handle(processor, logger, job);
 
     expect((error as Error).message).toBe('balance broke');
-    expect(logged).toEqual([
-      { kind: 'price', runId: 'run-p', compared: 4, matched: 4, byCategory: {} },
-    ]);
+    expect(logged).toEqual([PRICE_LINE]);
     expect(saved).toEqual([{ engineShadowKindsDone: { jobId: 'job-1', kinds: ['price'] } }]);
   });
 

@@ -12,14 +12,17 @@ type ByHolding<T> = ReadonlyMap<string, ReadonlyArray<T>>;
  * for the readers of money (SC-1470). `drift-rows.ts` says what they are and
  * why the balance walk must never be handed them.
  *
- * Memoised per preloaded transaction map, because the rollup asks once per day
- * with the same caches and the answer does not depend on the day.
+ * Memoised per holding within a preloaded transaction map, because the rollup
+ * asks once per day with the same caches and a holding's answer does not depend
+ * on the day. The answer is exactly the holdings asked about: a caller spreads
+ * every value it gets, so another holding's rows would count as its money in
+ * or out (SC-1553).
  */
 @Service()
 export class DriftLedgerService {
   private readonly observationRepository = Container.get(HoldingBalanceObservationRepository);
   private readonly txRepository = Container.get(HoldingTransactionRepository);
-  private readonly memo = new WeakMap<object, Map<string, HoldingTransaction[]>>();
+  private readonly memo = new WeakMap<object, Map<string, HoldingTransaction[] | null>>();
 
   async forHoldings(
     userId: string,
@@ -30,26 +33,32 @@ export class DriftLedgerService {
     }
   ): Promise<Map<string, HoldingTransaction[]>> {
     const memoKey = opts.transactions;
-    const hit = memoKey ? this.memo.get(memoKey) : undefined;
-    if (hit) return hit;
-    const holdingIds = [...tokenByHolding.keys()];
-    const [transactions, observations] = await Promise.all([
-      opts.transactions ?? this.txRepository.findForHoldingsAll(holdingIds, opts.tx),
-      this.observationRepository.findReadingsForHoldings(holdingIds, opts.tx),
-    ]);
-    const out = new Map<string, HoldingTransaction[]>();
-    for (const [holdingId, tokenId] of tokenByHolding) {
-      const readings = observations.get(holdingId) ?? [];
-      if (readings.length === 0) continue;
-      const ledger = transactions.get(holdingId) ?? [];
-      const rows = driftRows(
-        { holdingId, tokenId },
-        readings.map((r) => ({ ...r, gapReview: r.gapReview ?? null })),
-        ledger
-      );
-      if (rows.length > 0) out.set(holdingId, asLedgerRows(rows, userId));
+    const known = memoKey ? (this.memo.get(memoKey) ?? new Map()) : new Map();
+    if (memoKey) this.memo.set(memoKey, known);
+    const missing = [...tokenByHolding.keys()].filter((holdingId) => !known.has(holdingId));
+    if (missing.length > 0) {
+      const [transactions, observations] = await Promise.all([
+        opts.transactions ?? this.txRepository.findForHoldingsAll(missing, opts.tx),
+        this.observationRepository.findReadingsForHoldings(missing, opts.tx),
+      ]);
+      for (const holdingId of missing) {
+        const readings = observations.get(holdingId) ?? [];
+        const rows =
+          readings.length === 0
+            ? []
+            : driftRows(
+                { holdingId, tokenId: tokenByHolding.get(holdingId) as string },
+                readings.map((r) => ({ ...r, gapReview: r.gapReview ?? null })),
+                transactions.get(holdingId) ?? []
+              );
+        known.set(holdingId, rows.length > 0 ? asLedgerRows(rows, userId) : null);
+      }
     }
-    if (memoKey) this.memo.set(memoKey, out);
+    const out = new Map<string, HoldingTransaction[]>();
+    for (const holdingId of tokenByHolding.keys()) {
+      const rows = known.get(holdingId);
+      if (rows) out.set(holdingId, rows);
+    }
     return out;
   }
 }

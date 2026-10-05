@@ -296,44 +296,6 @@ describe('TokenPriceRepository', () => {
     });
   });
 
-  // The backfill's question, which is not the readers': "is a DAILY row
-  // already stored near T". A nearer intraday reading must not answer it,
-  // or the backfill stops writing the daily row it exists to write (SC-1543).
-  describe('findLatestDailyAtOrBefore', () => {
-    test('the latest daily row, past a nearer intraday reading', async () => {
-      await withTestDb(async (tx) => {
-        const { tokenId, baseId } = await seed(tx, [
-          { price: '100', at: '2026-09-25T00:00:00Z', granularity: 'daily' },
-          { price: '110', at: '2026-10-01T23:00:00Z', granularity: 'intraday' },
-        ]);
-        const found = await repo().findLatestDailyAtOrBefore(tokenId, baseId, CLOSE_OF_OCT_1, tx);
-        expect(found?.price).toBe('100');
-        expect(found?.granularity).toBe('daily');
-      });
-    });
-
-    test('intraday rows only: nothing', async () => {
-      await withTestDb(async (tx) => {
-        const { tokenId, baseId } = await seed(tx, [
-          { price: '110', at: '2026-10-01T23:00:00Z', granularity: 'intraday' },
-        ]);
-        const found = await repo().findLatestDailyAtOrBefore(tokenId, baseId, CLOSE_OF_OCT_1, tx);
-        expect(found).toBeNull();
-      });
-    });
-
-    test('a daily row after T is never read', async () => {
-      await withTestDb(async (tx) => {
-        const { tokenId, baseId } = await seed(tx, [
-          { price: '100', at: '2026-09-25T00:00:00Z', granularity: 'daily' },
-          { price: '130', at: '2026-10-02T00:00:00Z', granularity: 'daily' },
-        ]);
-        const found = await repo().findLatestDailyAtOrBefore(tokenId, baseId, CLOSE_OF_OCT_1, tx);
-        expect(found?.price).toBe('100');
-      });
-    });
-  });
-
   // findLatestPricesForTokensAnyBase is the dashboard hot-path read for
   // users whose base currency differs from the base every cached price
   // is stored against (the EUR-user-with-USD-priced-holdings case that

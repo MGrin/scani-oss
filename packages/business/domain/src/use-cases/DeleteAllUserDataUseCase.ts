@@ -12,8 +12,6 @@ import {
   USER_ROW_COLUMN_DISPOSITIONS,
 } from './user-data-deletion-manifest';
 
-const logger = createComponentLogger('use-case:delete-all-user-data');
-
 /**
  * The TypeScript property name a drizzle column is reachable under, which is
  * what `.set()` keys on — `column.name` is the SQL name and silently updates
@@ -27,8 +25,14 @@ function columnKey(table: PgTable, column: AnyPgColumn): string {
 
 @Service()
 export class DeleteAllUserDataUseCase {
-  async execute(userId: string): Promise<{ success: true }> {
-    logger.warn({ userId }, 'User requested deletion of all data');
+  private readonly logger = createComponentLogger('use-case:delete-all-user-data');
+
+  /**
+   * `runningJobId` is the `user-data-delete` job this is running inside, when
+   * there is one; the queue purge leaves that job alone (see below).
+   */
+  async execute(userId: string, runningJobId?: string): Promise<{ success: true }> {
+    this.logger.warn({ userId }, 'User requested deletion of all data');
 
     // Captured inside the transaction, consumed after it commits. The DB rows
     // go via the tx; BullMQ payloads live in the `bullmq` schema and R2
@@ -43,7 +47,7 @@ export class DeleteAllUserDataUseCase {
       },
       { name: 'deleteAllUserData', timeout: 30000 }
     );
-    await this.purgeAfterCommit(userId, echoed);
+    await this.purgeAfterCommit(userId, echoed, runningJobId);
 
     return { success: true };
   }
@@ -97,7 +101,7 @@ export class DeleteAllUserDataUseCase {
         .where(eq(schema.users.id, userId));
     }
 
-    logger.info(
+    this.logger.info(
       {
         userId,
         removed: Object.fromEntries(
@@ -111,9 +115,13 @@ export class DeleteAllUserDataUseCase {
   }
 
   /** The object-store and queue half; see the purges below for why it follows the commit. */
-  async purgeAfterCommit(userId: string, echoed: Map<PgTable, string[]>): Promise<void> {
+  async purgeAfterCommit(
+    userId: string,
+    echoed: Map<PgTable, string[]>,
+    runningJobId?: string
+  ): Promise<void> {
     await this.purgeStoredObjects(userId, echoed.get(schema.documents) ?? []);
-    await this.purgeQueuePayloads(userId, echoed.get(schema.userJobs) ?? []);
+    await this.purgeQueuePayloads(userId, echoed.get(schema.userJobs) ?? [], runningJobId);
   }
 
   /**
@@ -142,7 +150,7 @@ export class DeleteAllUserDataUseCase {
     try {
       storage = Container.get(StorageFacade);
     } catch (err) {
-      logger.error(
+      this.logger.error(
         { userId, objects: r2Keys.length, error: err instanceof Error ? err.message : String(err) },
         'Storage unavailable; document rows are deleted but their stored objects remain'
       );
@@ -157,13 +165,13 @@ export class DeleteAllUserDataUseCase {
       } catch (err) {
         // One unreachable object must not strip the rest. It is logged with
         // its key because that is the only thing left that can find it.
-        logger.warn(
+        this.logger.warn(
           { userId, r2Key: key, error: err instanceof Error ? err.message : String(err) },
           'Document row deleted but its stored object could not be removed'
         );
       }
     }
-    logger.info(
+    this.logger.info(
       { userId, objects: r2Keys.length, removed },
       'Stored objects purged for deleted user'
     );
@@ -176,16 +184,23 @@ export class DeleteAllUserDataUseCase {
    * sometimes a file's r2Key) linger until BullMQ's own cleanup ages them out.
    * `queue.getJob(id)` returns null for ids never enqueued (inline-completed
    * jobs), so missing is a no-op. The currently-executing self-delete job is
-   * NOT removed here: BullMQ refuses to remove a job a worker holds, so each
-   * attempt logs the warning below and the row stays. That job removes itself
-   * on completion instead (`removeOnComplete: true` on its descriptor, SC-1545).
+   * NOT removed here: BullMQ refuses to remove a job a worker holds, and that
+   * job removes itself on completion instead (`removeOnComplete: true` on its
+   * descriptor, SC-1545). So it is skipped by id rather than tried: it matches
+   * twice, by the id `user_jobs` recorded and by its payload, and each attempt
+   * logged the warning below on every deletion (SC-1560).
    */
-  private async purgeQueuePayloads(userId: string, jobIds: string[]): Promise<void> {
+  private async purgeQueuePayloads(
+    userId: string,
+    jobIds: string[],
+    runningJobId?: string
+  ): Promise<void> {
     try {
       const client = Container.get(QueueClient);
       const queue = client.get();
       let removed = 0;
       for (const jobId of jobIds) {
+        if (jobId === runningJobId) continue;
         try {
           const job = await queue.getJob(jobId);
           if (job) {
@@ -193,22 +208,22 @@ export class DeleteAllUserDataUseCase {
             removed++;
           }
         } catch (err) {
-          logger.warn(
+          this.logger.warn(
             { userId, jobId, error: err instanceof Error ? err.message : String(err) },
             'Failed to remove BullMQ payload during user-data-delete (non-fatal)'
           );
         }
       }
-      removed += await this.purgeJobsNamingUser(client, userId);
+      removed += await this.purgeJobsNamingUser(client, userId, runningJobId);
       const deadLetters = await this.purgeDeadLetters(client, userId, new Set(jobIds));
-      logger.info(
+      this.logger.info(
         { userId, totalJobIds: jobIds.length, removed, deadLetters },
         'BullMQ payloads purged for deleted user'
       );
     } catch (err) {
       // QueueClient not configured — likely a test context where the queue
       // isn't wired. The DB delete already happened; surface it, don't fail.
-      logger.warn(
+      this.logger.warn(
         { userId, error: err instanceof Error ? err.message : String(err) },
         'QueueClient unavailable; skipping BullMQ payload purge'
       );
@@ -221,15 +236,20 @@ export class DeleteAllUserDataUseCase {
    * that no longer existed (SC-1545). Matched on the payload, as the dead
    * letters below are.
    */
-  private async purgeJobsNamingUser(client: QueueClient, userId: string): Promise<number> {
+  private async purgeJobsNamingUser(
+    client: QueueClient,
+    userId: string,
+    runningJobId?: string
+  ): Promise<number> {
     let removed = 0;
     for (const job of await client.get().getJobs()) {
       if ((job.data as { userId?: unknown } | null)?.userId !== userId) continue;
+      if (runningJobId !== undefined && job.id === runningJobId) continue;
       try {
         await job.remove();
         removed++;
       } catch (err) {
-        logger.warn(
+        this.logger.warn(
           { userId, jobId: job.id, error: err instanceof Error ? err.message : String(err) },
           'Failed to remove BullMQ payload during user-data-delete (non-fatal)'
         );
@@ -261,7 +281,7 @@ export class DeleteAllUserDataUseCase {
         await dead.remove();
         removed++;
       } catch (err) {
-        logger.warn(
+        this.logger.warn(
           { userId, jobId: dead.id, error: err instanceof Error ? err.message : String(err) },
           'Failed to remove a dead-lettered payload during user-data-delete (non-fatal)'
         );

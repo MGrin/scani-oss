@@ -326,6 +326,34 @@ describe('UpdateHoldingUseCase', () => {
   });
 });
 
+describe('UpdateHoldingUseCase — a hidden holding given a balance (SC-1557)', () => {
+  async function editHidden(hiddenBy: 'auto' | 'user') {
+    return await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx);
+      await tx
+        .update(schema.holdings)
+        .set({ balance: '0', isHidden: true, hiddenBy })
+        .where(eq(schema.holdings.id, holding.id));
+
+      await useCase().execute(holding.id, { balance: '55' }, user.id, tx);
+
+      const [row] = await tx
+        .select()
+        .from(schema.holdings)
+        .where(eq(schema.holdings.id, holding.id));
+      return { balance: row!.balance, isHidden: row!.isHidden, hiddenBy: row!.hiddenBy };
+    });
+  }
+
+  test('one the sweep hid is shown again, and still reads as swept', async () => {
+    expect(await editHidden('auto')).toEqual({ balance: '55', isHidden: false, hiddenBy: 'auto' });
+  });
+
+  test('one its owner hid stays hidden', async () => {
+    expect(await editHidden('user')).toEqual({ balance: '55', isHidden: true, hiddenBy: 'user' });
+  });
+});
+
 describe('UpdateHoldingUseCase — pot names (SC-564)', () => {
   test('a name can be set on a holding that already exists', async () => {
     await withTestDb(async (tx) => {
