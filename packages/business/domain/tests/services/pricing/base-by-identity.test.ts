@@ -31,7 +31,7 @@ import { committedRows, dropPricesOf } from '../../../test/helpers/committed-row
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 import { makeInstitution, makeInstitutionType, makeUser } from '../../../test/helpers/factories';
 import { makeAccount, makeHolding, makeToken } from '../../../test/helpers/factories-extra';
-import { withoutFiatUsd } from '../../../test/helpers/price-hubs';
+import { withoutCurrenciesToPrice, withoutFiatUsd } from '../../../test/helpers/price-hubs';
 import { pricingStack } from '../../../test/helpers/pricing-stack';
 
 restoreContainerAfterAll();
@@ -124,20 +124,26 @@ describe('a base is a token, never a symbol', () => {
     const usd = await fiatUsd();
     await commitCryptoNamedUsd();
     const token = await commitToken();
-    const asks = pricingStack();
-    // The run prices every held token in the database; here, this one.
-    Container.set(HoldingQueryService, {
-      getDistinctTokenIds: async () => [token.id],
-    } as unknown as HoldingQueryService);
-    Container.set(VaultService, {
-      recalculateVaultsForToken: async () => {},
-    } as unknown as VaultService);
+    // The run prices every held token in the database, and every currency in
+    // use, hub and baseline currency; here, this one token.
+    const restore = withoutCurrenciesToPrice();
+    try {
+      const asks = pricingStack();
+      Container.set(HoldingQueryService, {
+        getDistinctTokenIds: async () => [token.id],
+      } as unknown as HoldingQueryService);
+      Container.set(VaultService, {
+        recalculateVaultsForToken: async () => {},
+      } as unknown as VaultService);
 
-    const result = await new UpdateTokenPricesUseCase().execute();
+      const result = await new UpdateTokenPricesUseCase().execute();
 
-    expect(result).toMatchObject({ tokensFound: 1, tokensUpdated: 1, tokensFailed: 0 });
-    expect(asks).toEqual([{ tokenId: token.id, baseId: usd.id }]);
-    expect(await basesStoredFor(token.id)).toEqual([usd.id]);
+      expect(result).toMatchObject({ tokensFound: 1, tokensUpdated: 1, tokensFailed: 0 });
+      expect(asks).toEqual([{ tokenId: token.id, baseId: usd.id }]);
+      expect(await basesStoredFor(token.id)).toEqual([usd.id]);
+    } finally {
+      restore();
+    }
   });
 
   // A catalogue with no fiat USD is a broken install. The run counted every

@@ -4,7 +4,7 @@ import { ProviderRegistry } from '@scani/providers/core/registry';
 import { pricingCircuitBreaker } from '@scani/rate-limiter';
 import { Container, Service } from 'typedi';
 import { TokenRepository } from '../../repositories/TokenRepository';
-import { type PriceWrite, PriceWriter } from './PriceWriter';
+import { type CurrentPriceWrite, PriceWriter } from './PriceWriter';
 import { PricingFailureCacher } from './PricingFailureCacher';
 import {
   PRICING_PROVIDER_REGISTRY_KEYS,
@@ -575,10 +575,13 @@ export class PricingProviderRouter {
         tokensWithResults: allResults.length,
         tokensStillNeeding: tokensStillNeedingPrices.length,
         googleSheetsAvailable: this.googleSheetsAvailable,
+        // The one place a provider's own stamp is kept: the stored row
+        // carries the instant the call asked for.
         resultsBreakdown: allResults.map((r) => ({
           tokenId: r.tokenId,
           price: r.price,
           source: r.source,
+          providerStamp: r.timestamp,
         })),
       },
       'Checking tokens for Google Sheets fallback'
@@ -624,7 +627,7 @@ export class PricingProviderRouter {
       }
     }
 
-    await this.cachePriceResults(allResults, baseCurrencyToken.id);
+    await this.cachePriceResults(allResults, baseCurrencyToken.id, timestamp);
 
     return allResults;
   }
@@ -685,27 +688,30 @@ export class PricingProviderRouter {
     });
   }
 
-  // Each quote at its provider's stamp, in the base the call asked for. A
-  // failed quote is the failure cacher's '0', which the writer drops and
-  // counts with anything else that is not a positive decimal. A failed write
-  // costs the cache only: the quotes still go back to the caller.
-  private async cachePriceResults(results: PricingResult[], baseCurrencyId: string): Promise<void> {
+  // Each quote at the instant the call asked for, whatever stamp its provider
+  // gave it, in the base the call asked for. A failed quote is the failure
+  // cacher's '0', which the writer drops and counts with anything else that is
+  // not a positive decimal. A failed write costs the cache only: the quotes
+  // still go back to the caller.
+  private async cachePriceResults(
+    results: PricingResult[],
+    baseCurrencyId: string,
+    at: Date
+  ): Promise<void> {
     if (results.length === 0) return;
 
-    const rows: PriceWrite[] = results.map((result) => ({
+    const rows: CurrentPriceWrite[] = results.map((result) => ({
       tokenId: result.tokenId,
       baseTokenId: baseCurrencyId,
       price: result.price,
-      at: result.timestamp,
-      granularity: 'intraday',
       source: result.source,
     }));
 
     try {
-      const { written, dropped } = await this.priceWriter.writeCurrent(rows);
+      const { written, dropped } = await this.priceWriter.writeCurrent(rows, at);
       logger.debug({ written, dropped, baseCurrencyId }, 'Cached price results to database');
     } catch (error) {
-      logger.error({ error, priceRecords: rows }, 'Failed to cache price results');
+      logger.error({ error, at, priceRecords: rows }, 'Failed to cache price results');
     }
   }
 }

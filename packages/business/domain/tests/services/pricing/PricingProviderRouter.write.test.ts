@@ -1,6 +1,7 @@
 /**
- * Characterization (foundation A3, Task 5): what the router's write-back
- * stores today, before Task 6 moves it onto `PriceWriter`.
+ * What the router's write-back stores (foundation A3, Tasks 5, 6 and 8): each
+ * quote through `PriceWriter`, at the instant the call asked for and in the
+ * base it asked in, whatever stamp and base the provider gave it (D-4).
  *
  * The router writes through the global connection, so every row here is
  * committed and removed after each test.
@@ -67,7 +68,7 @@ function routerAnswering(answer: (token: Token) => PriceQuote | null): {
 }
 
 describe('PricingProviderRouter write-back', () => {
-  test('a quote lands with its provider’s stamp, the call’s base and no granularity given', async () => {
+  test('a quote lands at the instant the call asked for, in the call’s base, intraday', async () => {
     const token = await commitToken();
     const base = await commitToken();
     const otherBase = await commitToken();
@@ -88,8 +89,8 @@ describe('PricingProviderRouter write-back', () => {
     const stored = await storedFor([token.id]);
     expect(stored).toHaveLength(1);
     expect(stored[0]?.baseTokenId).toBe(base.id);
-    expect(stored[0]?.timestamp.getTime()).toBe(providerStamp.getTime());
-    expect(stored[0]?.timestamp.getTime()).not.toBe(callAt.getTime());
+    expect(stored[0]?.timestamp.getTime()).toBe(callAt.getTime());
+    expect(stored[0]?.timestamp.getTime()).not.toBe(providerStamp.getTime());
     expect(stored[0]?.price).toBe('100');
     expect(stored[0]?.source).toBe('coingecko');
     expect(stored[0]?.granularity).toBe('intraday');
@@ -136,10 +137,11 @@ describe('PricingProviderRouter write-back', () => {
     ]);
   });
 
-  test('a re-quote at the same provider stamp overwrites the price and the source', async () => {
+  test('a re-quote at the same call instant overwrites the price and the source', async () => {
     const token = await commitToken();
     const base = await commitToken();
-    const stamp = new Date(Date.now() - 2 * 60 * 60 * 1000);
+    const callAt = new Date();
+    const stamp = new Date(callAt.getTime() - 2 * 60 * 60 * 1000);
     const first = routerAnswering((t) => ({
       tokenId: t.id,
       baseTokenId: base.id,
@@ -147,7 +149,7 @@ describe('PricingProviderRouter write-back', () => {
       timestamp: stamp,
       source: 'coingecko',
     }));
-    await first.router.routeAndFetch([token], base, new Date());
+    await first.router.routeAndFetch([token], base, callAt);
     const second = routerAnswering((t) => ({
       tokenId: t.id,
       baseTokenId: base.id,
@@ -156,11 +158,39 @@ describe('PricingProviderRouter write-back', () => {
       source: 'coingecko-requote',
     }));
 
-    await second.router.routeAndFetch([token], base, new Date());
+    await second.router.routeAndFetch([token], base, callAt);
 
     const stored = await storedFor([token.id]);
     expect(stored.map((r) => [r.price, r.source, r.timestamp.getTime()])).toEqual([
-      ['101', 'coingecko-requote', stamp.getTime()],
+      ['101', 'coingecko-requote', callAt.getTime()],
+    ]);
+  });
+
+  // A provider that dates its quote by the day (Frankfurter: the ECB date at
+  // 00:00Z) answered every call of that day with one stamp, so each hour's row
+  // overwrote the last.
+  test('one provider stamp asked for at two instants is two rows', async () => {
+    const token = await commitToken();
+    const base = await commitToken();
+    const secondCall = new Date();
+    const firstCall = new Date(secondCall.getTime() - 60 * 60 * 1000);
+    const stamp = new Date(secondCall.getTime() - 5 * 60 * 60 * 1000);
+    const prices = ['100', '101'];
+    const { router } = routerAnswering((t) => ({
+      tokenId: t.id,
+      baseTokenId: base.id,
+      price: prices.shift() ?? '',
+      timestamp: stamp,
+      source: 'frankfurter',
+    }));
+
+    await router.routeAndFetch([token], base, firstCall);
+    await router.routeAndFetch([token], base, secondCall);
+
+    const stored = await storedFor([token.id]);
+    expect(stored.map((r) => [r.price, r.timestamp.getTime()])).toEqual([
+      ['100', firstCall.getTime()],
+      ['101', secondCall.getTime()],
     ]);
   });
 
@@ -195,5 +225,39 @@ describe('PricingProviderRouter write-back', () => {
       .from(schema.tokenPrices)
       .where(eq(schema.tokenPrices.tokenId, token.id));
     expect(stored).toHaveLength(0);
+  });
+
+  // The row carries the instant asked, so the log is the one place a
+  // provider's own stamp is kept.
+  test('the log carries each quote’s provider stamp, and a failed write the instant its rows were to carry', async () => {
+    const token = await commitToken();
+    const base = await commitToken();
+    // A base with no `tokens` row: the insert fails on its foreign key.
+    const missingBase: Token = { ...base, id: randomUUID() };
+    const callAt = new Date();
+    const providerStamp = new Date(callAt.getTime() - 15 * 60 * 60 * 1000);
+    const { router } = routerAnswering((t) => ({
+      tokenId: t.id,
+      baseTokenId: missingBase.id,
+      price: '100',
+      timestamp: providerStamp,
+      source: 'coingecko',
+    }));
+    const informed = spyOn(logger, 'info').mockImplementation(() => {});
+    const logged = spyOn(logger, 'error').mockImplementation(() => {});
+    const fieldsOf = (calls: unknown[][], message: string) =>
+      calls.find(([, said]) => said === message)?.[0] as Record<string, unknown> | undefined;
+    try {
+      await router.routeAndFetch([token], missingBase, callAt);
+
+      expect(
+        fieldsOf(informed.mock.calls, 'Checking tokens for Google Sheets fallback')
+          ?.resultsBreakdown
+      ).toEqual([{ tokenId: token.id, price: '100', source: 'coingecko', providerStamp }]);
+      expect(fieldsOf(logged.mock.calls, 'Failed to cache price results')?.at).toEqual(callAt);
+    } finally {
+      informed.mockRestore();
+      logged.mockRestore();
+    }
   });
 });

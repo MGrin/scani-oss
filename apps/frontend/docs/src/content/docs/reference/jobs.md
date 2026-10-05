@@ -25,7 +25,7 @@ four times an hour.
 
 | Name | Frequency | Purpose |
 |---|---|---|
-| `pricing` | Hourly (`0 * * * *`) | Refresh current prices for every token referenced by an active holding. |
+| `pricing` | Hourly (`0 * * * *`) | Fetch a current price, against USD, for every held token a provider prices, every currency in use, the routing hubs and the FX baseline. Every run asks the providers; no stored row is reused. |
 | `wallet-balances` | Hourly (`0 * * * *`) | Re-sync on-chain wallet balances + transactions across Etherscan, Helius, Bitcoin, Tron, TON. |
 | `exchange-balances` | Hourly (`0 * * * *`) | Re-sync exchange holdings + recent trades for every connected exchange integration. |
 | `exchange-transactions` | Daily (`0 1 * * *`) | Refresh the transaction ledger for every connected exchange/broker/bank integration — fans out a `transaction-import` per account with a 30-day rolling window. |

@@ -29,7 +29,11 @@ export class UpdateHoldingPriceUseCase {
     // limit) but produced no price; the UI shows "—" rather than $0.
     price: string | null;
     source: string;
-    /** When the price being returned was recorded — not when this job ran. */
+    /**
+     * When the price being returned was stamped: the instant this refresh
+     * asked, for a quote it fetched; the stored row's own time, for one it
+     * reused or fell back to.
+     */
     timestamp: string;
     /** False when the stored price was already current and nothing was
         fetched. The caller owes the user a different sentence for each. */

@@ -230,16 +230,17 @@ export class CurrencyConverter {
       });
 
       try {
-        await this.priceWriter.writeCurrent([
-          {
-            tokenId: fromCurrency.id,
-            baseTokenId: toCurrency.id,
-            price: rateString,
-            at: new Date(),
-            granularity: 'intraday',
-            source: 'exchangerate-api',
-          },
-        ]);
+        await this.priceWriter.writeCurrent(
+          [
+            {
+              tokenId: fromCurrency.id,
+              baseTokenId: toCurrency.id,
+              price: rateString,
+              source: 'exchangerate-api',
+            },
+          ],
+          new Date()
+        );
 
         currencyLogger.debug(
           { fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol, rate: rateString },
@@ -275,12 +276,13 @@ export class CurrencyConverter {
    *    measured at tens of seconds in production. Refreshing is the
    *    worker's job; this returns what is known now and the caller enqueues.
    * 2. **It has no maximum age.** A rate from 30 hours ago is a far better
-   *    answer than no rate: the wire carries `asOf`, and every surface that
-   *    prints a converted figure already dates a stale one rather than
-   *    presenting it as current. Refusing it — which `getRateDetail` does at
-   *    24 h, correctly, because it can go and get a better one — would put
-   *    "rates unavailable" under a total every night between the moment the
-   *    day's rows age out and the moment forex-backfill writes new ones.
+   *    answer than no rate, and the wire carries `asOf`, the stamp of the row
+   *    it came from. That stamp is when Scani last asked, not the age of the
+   *    fixing behind it: the hourly run stamps a rate at its own instant, so a
+   *    fixing days old reads as this hour's. Refusing an old row — which
+   *    `getRateDetail` does at 24 h, correctly, because it can go and get a
+   *    better one — would put "rates unavailable" under a total whenever the
+   *    providers had not answered for a day.
    */
   async getStoredRateDetail(
     fromCurrency: CurrencyRef,

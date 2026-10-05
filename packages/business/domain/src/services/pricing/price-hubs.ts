@@ -44,6 +44,23 @@ export const PRICE_HUBS: readonly PriceHub[] = [
   { symbol: 'EUR', typeCode: 'fiat' },
 ];
 
+/**
+ * The currencies priced whether or not anyone uses them, all against USD, so
+ * a user switching to one has a rate at once. The floor, not the list: every
+ * currency in use is priced beside them. Each is one token, named by symbol
+ * and type: a symbol alone also names every other token that carries it.
+ */
+export const FX_BASELINE: readonly PriceHub[] = [
+  { symbol: 'EUR', typeCode: 'fiat' },
+  { symbol: 'GBP', typeCode: 'fiat' },
+  { symbol: 'JPY', typeCode: 'fiat' },
+  { symbol: 'RUB', typeCode: 'fiat' },
+  { symbol: 'CHF', typeCode: 'fiat' },
+  { symbol: 'CAD', typeCode: 'fiat' },
+  { symbol: 'AUD', typeCode: 'fiat' },
+  { symbol: 'USDT', typeCode: 'crypto' },
+];
+
 export function priceHubKey(hub: PriceHub): string {
   return `${hub.typeCode}:${hub.symbol}`;
 }

@@ -1,12 +1,12 @@
 /**
- * Characterization (foundation A3, Task 5): the refresh button, before
- * Tasks 6 and 7 move the write under it.
+ * The refresh button (foundation A3, Tasks 5 and 8).
  *
  * `fetched` compares the pair's latest stored row before and after the
- * price call (SC-148). The holding is read and the price written through the
- * global connection, so every row here is committed and removed after each
- * test. The vault recalculation is best-effort and not the subject; it is
- * stubbed.
+ * price call (SC-148). A quote lands at the instant the refresh asked, never
+ * at its provider's stamp (D-4), so a quote that lands is always the newer
+ * row. The holding is read and the price written through the global
+ * connection, so every row here is committed and removed after each test.
+ * The vault recalculation is best-effort and not the subject; it is stubbed.
  */
 
 import { afterEach, beforeAll, describe, expect, test } from 'bun:test';
@@ -132,26 +132,33 @@ describe('refresh reports fetched: true when a newer row landed, false when none
       timestamp: new Date(Date.now() - 3 * HOUR),
       source: 'coingecko',
     });
-    const stamp = new Date();
+    const providerStamp = new Date(Date.now() - 20 * MINUTE);
     const { useCase, asked } = refresh((t) => ({
       tokenId: t.id,
       baseTokenId: base.id,
       price: '100',
-      timestamp: stamp,
+      timestamp: providerStamp,
       source: 'coingecko',
     }));
 
+    const before = Date.now();
     const result = await useCase.execute(holding.id, userId, base);
+    const after = Date.now();
 
     expect(asked).toEqual([token.id]);
+    const stored = await storedFor(token.id, base.id);
+    expect(stored.map((r) => r.price)).toEqual(['90', '100']);
+    // The quote's row carries the instant the refresh asked, not the provider's.
+    const landed = stored[1]?.timestamp ?? new Date(0);
+    expect(landed.getTime()).toBeGreaterThanOrEqual(before);
+    expect(landed.getTime()).toBeLessThanOrEqual(after);
     expect(result).toEqual({
       success: true,
       price: '100',
       source: 'coingecko',
-      timestamp: stamp.toISOString(),
+      timestamp: landed.toISOString(),
       fetched: true,
     });
-    expect((await storedFor(token.id, base.id)).map((r) => r.price)).toEqual(['90', '100']);
   });
 
   test('a row ten minutes old is reused: no provider call, fetched is false', async () => {
@@ -210,11 +217,12 @@ describe('refresh reports fetched: true when a newer row landed, false when none
   });
 });
 
-// The provider's stamp is what lands (see the router's write-back test), so a
-// quote dated before the stored row is written and is not "newer". The price
-// returned is the new quote's; the source and time are the row that was
-// already there, which is still the pair's latest.
-test('a quote stamped before the stored row lands, and fetched is still false', async () => {
+// The instant asked is what lands (see the router's write-back test), so a
+// quote its provider dated before the stored row is still the pair's newest
+// row. While the provider's stamp landed, such a quote was written behind the
+// stored row and the refresh reported the old row's source and time over the
+// new price.
+test('a quote its provider dated before the stored row lands at the instant asked, and fetched is true', async () => {
   const { userId, token, base, holding } = await commitHolding();
   const storedAt = new Date(Date.now() - 2 * HOUR);
   const providerStamp = new Date(Date.now() - 5 * HOUR);
@@ -233,15 +241,21 @@ test('a quote stamped before the stored row lands, and fetched is still false', 
     source: 'coingecko',
   }));
 
+  const before = Date.now();
   const result = await useCase.execute(holding.id, userId, base);
+  const after = Date.now();
 
   expect(asked).toEqual([token.id]);
+  const stored = await storedFor(token.id, base.id);
+  expect(stored.map((r) => r.price)).toEqual(['90', '100']);
+  const landed = stored[1]?.timestamp ?? new Date(0);
+  expect(landed.getTime()).toBeGreaterThanOrEqual(before);
+  expect(landed.getTime()).toBeLessThanOrEqual(after);
   expect(result).toEqual({
     success: true,
     price: '100',
-    source: 'stored-source',
-    timestamp: storedAt.toISOString(),
-    fetched: false,
+    source: 'coingecko',
+    timestamp: landed.toISOString(),
+    fetched: true,
   });
-  expect((await storedFor(token.id, base.id)).map((r) => r.price)).toEqual(['100', '90']);
 });

@@ -1,9 +1,12 @@
 /**
- * Characterization (foundation A3, Task 5): the one-hour reuse in
- * `PricingService.getTokenPrices`, the batch path the hourly run and the
- * import warm-up both take, before Tasks 6 to 8 move it. And the single-token
- * path, `getTokenPrice`, which the refresh button and the vault take: a window
- * of an hour either side of the time asked (Task 6, Step 0).
+ * What `PricingService` reads from `token_prices` before it asks a provider
+ * (foundation A3, Tasks 5 and 8).
+ *
+ * `getTokenPrices`, the batch path, reuses a stored row only inside the window
+ * its caller gives: the import warm-up gives one hour, and the hourly run
+ * gives none, so it reads nothing stored (D-6). The single-token path,
+ * `getTokenPrice`, which the refresh button and the vault take, keeps a window
+ * of an hour either side of the time asked.
  *
  * The service reads and writes through the global connection, so every row
  * here is committed and removed after each test.
@@ -20,6 +23,7 @@ import { Container } from 'typedi';
 import { CurrencyConverter } from '../../../src/services/pricing/CurrencyConverter';
 import { PricingProviderRouter } from '../../../src/services/pricing/PricingProviderRouter';
 import { PricingService } from '../../../src/services/pricing/PricingService';
+import { LIVE_PRICE_WINDOW_MS } from '../../../src/services/pricing/price-windows';
 import { committedRows, dropPricesOf } from '../../../test/helpers/committed-rows';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 import { makeToken } from '../../../test/helpers/factories-extra';
@@ -28,6 +32,8 @@ restoreContainerAfterAll();
 
 const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
+/** What the import warm-up passes. */
+const WARM_UP = { reuseStoredWithinMs: LIVE_PRICE_WINDOW_MS };
 
 const rows = committedRows();
 let fiatTypeId: string;
@@ -98,7 +104,7 @@ function pricingService(): { service: PricingService; asked: string[] } {
   return { service: new PricingService(), asked };
 }
 
-describe('PricingService.getTokenPrices one-hour reuse', () => {
+describe('PricingService.getTokenPrices one-hour reuse, for a caller that asks for it', () => {
   test('a row stamped one hour before the run is reused: no provider call', async () => {
     const token = await commitToken();
     const base = await commitToken('fiat');
@@ -114,7 +120,7 @@ describe('PricingService.getTokenPrices one-hour reuse', () => {
     ]);
     const { service, asked } = pricingService();
 
-    const prices = await service.getTokenPrices([token], base, run);
+    const prices = await service.getTokenPrices([token], base, run, WARM_UP);
 
     expect(prices.get(token.id)).toBe('100');
     expect(asked).toEqual([]);
@@ -136,7 +142,7 @@ describe('PricingService.getTokenPrices one-hour reuse', () => {
     ]);
     const { service, asked } = pricingService();
 
-    const prices = await service.getTokenPrices([token], base, run);
+    const prices = await service.getTokenPrices([token], base, run, WARM_UP);
 
     expect(prices.get(token.id)).toBe('200');
     expect(asked).toEqual([token.id]);
@@ -170,7 +176,7 @@ describe('PricingService.getTokenPrices one-hour reuse', () => {
     ]);
     const { service, asked } = pricingService();
 
-    const prices = await service.getTokenPrices([manual, marketPriced], base, run);
+    const prices = await service.getTokenPrices([manual, marketPriced], base, run, WARM_UP);
 
     expect(prices.get(manual.id)).toBe('100');
     expect(prices.get(marketPriced.id)).toBe('200');
@@ -204,12 +210,92 @@ describe('PricingService.getTokenPrices one-hour reuse', () => {
     ]);
     const { service, asked } = pricingService();
 
-    const prices = await service.getTokenPrices([token], requested, run);
+    const prices = await service.getTokenPrices([token], requested, run, WARM_UP);
 
     expect(prices.get(token.id)).toBe('300');
     expect(asked).toEqual([]);
     expect(await storedFor(token.id, requested.id)).toHaveLength(0);
     expect(await storedFor(token.id, other.id)).toHaveLength(1);
+  });
+});
+
+// The hourly run's call: no window, so nothing stored is read before the fetch.
+describe('PricingService.getTokenPrices with no reuse window', () => {
+  test('a row stamped one minute before the run is not read: the provider is asked', async () => {
+    const token = await commitToken();
+    const base = await commitToken('fiat');
+    const run = new Date();
+    await commitPrices([
+      {
+        tokenId: token.id,
+        baseTokenId: base.id,
+        price: '100',
+        timestamp: new Date(run.getTime() - MINUTE),
+        source: 'coingecko',
+      },
+    ]);
+    const { service, asked } = pricingService();
+
+    const prices = await service.getTokenPrices([token], base, run);
+
+    expect(prices.get(token.id)).toBe('200');
+    expect(asked).toEqual([token.id]);
+    const stored = await storedFor(token.id, base.id);
+    expect(stored.map((r) => r.price)).toEqual(['100', '200']);
+    expect(stored[1]?.timestamp.getTime()).toBe(run.getTime());
+  });
+
+  test('a manual row is not read either', async () => {
+    const token = await commitToken();
+    const base = await commitToken('fiat');
+    const run = new Date();
+    await commitPrices([
+      {
+        tokenId: token.id,
+        baseTokenId: base.id,
+        price: '100',
+        timestamp: new Date(run.getTime() - 30 * DAY),
+        source: 'manual',
+      },
+    ]);
+    const { service, asked } = pricingService();
+
+    const prices = await service.getTokenPrices([token], base, run);
+
+    expect(prices.get(token.id)).toBe('200');
+    expect(asked).toEqual([token.id]);
+  });
+
+  test('a fresh row in another base is not converted: the provider is asked in the base given', async () => {
+    const token = await commitToken();
+    const requested = await commitToken('fiat');
+    const other = await commitToken('fiat');
+    const run = new Date();
+    const tenMinutesAgo = new Date(run.getTime() - 10 * MINUTE);
+    await commitPrices([
+      {
+        tokenId: token.id,
+        baseTokenId: other.id,
+        price: '100',
+        timestamp: tenMinutesAgo,
+        source: 'coingecko',
+      },
+      // The rate a conversion would read, so 300 would be the converted answer.
+      {
+        tokenId: other.id,
+        baseTokenId: requested.id,
+        price: '3',
+        timestamp: tenMinutesAgo,
+        source: 'frankfurter',
+      },
+    ]);
+    const { service, asked } = pricingService();
+
+    const prices = await service.getTokenPrices([token], requested, run);
+
+    expect(prices.get(token.id)).toBe('200');
+    expect(asked).toEqual([token.id]);
+    expect((await storedFor(token.id, requested.id)).map((r) => r.price)).toEqual(['200']);
   });
 });
 

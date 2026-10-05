@@ -1,6 +1,10 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
-import { HistoricalPriceBackfillService, PriceHubResolver } from '@scani/domain/services';
+import {
+  FX_BASELINE,
+  HistoricalPriceBackfillService,
+  PriceHubResolver,
+} from '@scani/domain/services';
 import { FOREX_BACKFILL_SCHEDULE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { ScheduledJobProcessor } from '@scani/queue';
@@ -8,21 +12,6 @@ import { inArray, isNotNull, or } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 
 const logger = createComponentLogger('processor:forex-backfill');
-
-// Hub edges we keep current no matter who is on the platform, all priced
-// against USD. The floor, not the list — see `hubEdgeTokens()`. Each is one
-// token, named by symbol and type: a symbol alone also names every other
-// token that carries it.
-const BASELINE_HUB_EDGES = [
-  { symbol: 'EUR', typeCode: 'fiat' },
-  { symbol: 'GBP', typeCode: 'fiat' },
-  { symbol: 'JPY', typeCode: 'fiat' },
-  { symbol: 'RUB', typeCode: 'fiat' },
-  { symbol: 'CHF', typeCode: 'fiat' },
-  { symbol: 'CAD', typeCode: 'fiat' },
-  { symbol: 'AUD', typeCode: 'fiat' },
-  { symbol: 'USDT', typeCode: 'crypto' },
-] as const;
 
 const LOOKBACK_DAYS = 7;
 
@@ -53,7 +42,7 @@ export class ForexBackfillProcessor extends ScheduledJobProcessor {
    * budget on pairs exchangerate-api cannot answer anyway.
    */
   private async hubEdgeTokens(usdTokenId: string): Promise<{ symbol: string; id: string }[]> {
-    const baselineIds = await Container.get(PriceHubResolver).tokenIdsOf(BASELINE_HUB_EDGES);
+    const baselineIds = await Container.get(PriceHubResolver).tokenIdsOf(FX_BASELINE);
     const inUse = await db
       .selectDistinct({ id: schema.tokens.id, symbol: schema.tokens.symbol })
       .from(schema.tokens)
@@ -104,7 +93,7 @@ export class ForexBackfillProcessor extends ScheduledJobProcessor {
       const hubTokens = await this.hubEdgeTokens(usdTokenId);
       if (hubTokens.length === 0) {
         logger.warn(
-          { baselineHubEdges: BASELINE_HUB_EDGES.map((edge) => edge.symbol) },
+          { baselineHubEdges: FX_BASELINE.map((edge) => edge.symbol) },
           'No hub-edge tokens in database; skipping forex backfill'
         );
         return;

@@ -14,7 +14,11 @@ import type { Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { CANONICAL_PRICE_TEXT, positivePrice } from '../../../src/engine/price-index';
-import { type PriceWrite, PriceWriter } from '../../../src/services/pricing/PriceWriter';
+import {
+  type CurrentPriceWrite,
+  type PriceWrite,
+  PriceWriter,
+} from '../../../src/services/pricing/PriceWriter';
 import { committedRows, dropPricesOf } from '../../../test/helpers/committed-rows';
 import { withTestDb } from '../../../test/helpers/db';
 import { makeToken } from '../../../test/helpers/factories-extra';
@@ -45,6 +49,11 @@ function reading(
     source: 'test',
     ...overrides,
   };
+}
+
+/** A current quote: the writer is told its instant, and its granularity is not a choice. */
+function quote(token: Token, base: Token, price: string): CurrentPriceWrite {
+  return { tokenId: token.id, baseTokenId: base.id, price, source: 'test' };
 }
 
 function storedFor(tx: DatabaseTransaction, tokenIds: string[]) {
@@ -89,7 +98,7 @@ describe('PriceWriter.writeCurrent', () => {
       const { token, base } = await pair(tx);
       const at = new Date('2026-03-01T10:00:00Z');
 
-      const outcome = await new PriceWriter().writeCurrent([reading(token, base, '100', at)], tx);
+      const outcome = await new PriceWriter().writeCurrent([quote(token, base, '100')], at, tx);
 
       expect(outcome).toEqual({
         written: 1,
@@ -104,16 +113,47 @@ describe('PriceWriter.writeCurrent', () => {
     });
   });
 
+  // A history row carries its own instant and granularity, and its type lets
+  // it through here. Neither is read: a current quote is intraday at the
+  // instant its caller asked for (D-4).
+  test('writeCurrent: every row is intraday at the instant given, whatever a row carries', async () => {
+    await withTestDb(async (tx) => {
+      const { token, base } = await pair(tx);
+      const other = await makeToken(tx);
+      const at = new Date('2026-03-01T10:00:00Z');
+      const providerStamp = new Date('2026-02-27T00:00:00Z');
+
+      const outcome = await new PriceWriter().writeCurrent(
+        [
+          reading(token, base, '100', providerStamp, { granularity: 'daily' }),
+          quote(other, base, '7'),
+        ],
+        at,
+        tx
+      );
+
+      expect(outcome.changed.map((c) => c.at)).toEqual([at, at]);
+      const stored = await storedFor(tx, [token.id, other.id]);
+      expect(stored.map((r) => [r.price, r.timestamp.getTime(), r.granularity]).sort()).toEqual(
+        [
+          ['100', at.getTime(), 'intraday'],
+          ['7', at.getTime(), 'intraday'],
+        ].sort()
+      );
+    });
+  });
+
   test('writeCurrent: the same price an hour later is written and is not a change', async () => {
     await withTestDb(async (tx) => {
       const { token, base } = await pair(tx);
       const writer = new PriceWriter();
       const at = new Date('2026-03-01T10:00:00Z');
-      await writer.writeCurrent([reading(token, base, '100.0', at)], tx);
+      await writer.writeCurrent([quote(token, base, '100.0')], at, tx);
 
       // '100' reads as the stored '100.0': a change is a different number, not different text.
       const outcome = await writer.writeCurrent(
-        [reading(token, base, '100', new Date(at.getTime() + HOUR))],
+        [quote(token, base, '100')],
+        new Date(at.getTime() + HOUR),
         tx
       );
 
@@ -128,9 +168,9 @@ describe('PriceWriter.writeCurrent', () => {
       const writer = new PriceWriter();
       const at = new Date('2026-03-01T10:00:00Z');
       const later = new Date(at.getTime() + HOUR);
-      await writer.writeCurrent([reading(token, base, '100', at)], tx);
+      await writer.writeCurrent([quote(token, base, '100')], at, tx);
 
-      const outcome = await writer.writeCurrent([reading(token, base, '101', later)], tx);
+      const outcome = await writer.writeCurrent([quote(token, base, '101')], later, tx);
 
       expect(outcome.changed).toEqual([{ tokenId: token.id, baseTokenId: base.id, at: later }]);
     });
@@ -141,19 +181,16 @@ describe('PriceWriter.writeCurrent', () => {
       const { token, base } = await pair(tx);
       const writer = new PriceWriter();
       const at = new Date('2026-03-01T10:00:00Z');
-      await writer.writeCurrent([reading(token, base, '100', at)], tx);
-      await writer.writeCurrent(
-        [reading(token, base, '200', new Date(at.getTime() + 2 * HOUR))],
-        tx
-      );
+      await writer.writeCurrent([quote(token, base, '100')], at, tx);
+      await writer.writeCurrent([quote(token, base, '200')], new Date(at.getTime() + 2 * HOUR), tx);
 
       // Between the two: compared with 100, so the same price is no change.
       const between = new Date(at.getTime() + HOUR);
-      const same = await writer.writeCurrent([reading(token, base, '100', between)], tx);
+      const same = await writer.writeCurrent([quote(token, base, '100')], between, tx);
       // Re-sent at the instant it is stored: compared with itself.
-      const again = await writer.writeCurrent([reading(token, base, '100', at)], tx);
+      const again = await writer.writeCurrent([quote(token, base, '100')], at, tx);
       // Repriced in place: the row it replaces had another price.
-      const repriced = await writer.writeCurrent([reading(token, base, '150', at)], tx);
+      const repriced = await writer.writeCurrent([quote(token, base, '150')], at, tx);
 
       expect(same.changed).toEqual([]);
       expect(again.changed).toEqual([]);
@@ -171,11 +208,8 @@ describe('PriceWriter.writeCurrent', () => {
 
       await expect(
         new PriceWriter().writeCurrent(
-          [
-            reading(other, base, '7', at),
-            reading(token, base, '100', at),
-            reading(token, base, '101', new Date(at.getTime() + HOUR)),
-          ],
+          [quote(other, base, '7'), quote(token, base, '100'), quote(token, base, '101')],
+          at,
           tx
         )
       ).rejects.toThrow('two readings for one pair in one call');
@@ -193,7 +227,8 @@ describe('PriceWriter.writeCurrent', () => {
       // The router's failure sentinel is a '0' quote; with a fallback's real
       // quote for the same pair it must not fail the batch.
       const outcome = await new PriceWriter().writeCurrent(
-        [reading(token, base, '0', at), reading(token, base, '100', at)],
+        [quote(token, base, '0'), quote(token, base, '100')],
+        at,
         tx
       );
 
@@ -209,7 +244,7 @@ describe('PriceWriter.writeCurrent', () => {
       rows.tokens.push(token.id, base.id);
       const at = new Date('2026-03-01T10:00:00Z');
 
-      const outcome = await new PriceWriter().writeCurrent([reading(token, base, '100', at)]);
+      const outcome = await new PriceWriter().writeCurrent([quote(token, base, '100')], at);
 
       expect(outcome.written).toBe(1);
       const stored = await getDb()
@@ -296,7 +331,7 @@ describe('PriceWriter.writeHistory', () => {
       const { token, base } = await pair(tx);
       const writer = new PriceWriter();
       const at = new Date('2026-02-02T00:00:00Z');
-      await writer.writeCurrent([reading(token, base, '10', at)], tx);
+      await writer.writeCurrent([quote(token, base, '10')], at, tx);
 
       const outcome = await writer.writeHistory(
         [reading(token, base, '10', at, { granularity: 'daily' })],
@@ -434,7 +469,8 @@ describe('the column refuses what the writer drops', () => {
       const at = new Date('2026-03-01T10:00:00Z');
 
       const current = await new PriceWriter().writeCurrent(
-        tokens.map(({ token, price }) => reading(token, base, price, at)),
+        tokens.map(({ token, price }) => quote(token, base, price)),
+        at,
         tx
       );
       const history = await new PriceWriter().writeHistory(

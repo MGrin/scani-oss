@@ -155,6 +155,65 @@ a token off the `unpriceableUntil` cooldown exactly as a stored day
 does; a bar dropped on a day the run did not ask for does not. A manual
 price that would be dropped is refused with the positive-price error.
 
+## When a current price is stamped
+
+A current quote is stored at the instant Scani asked for it, as an
+`intraday` row, whichever provider answered. A provider's own date is
+not used: Frankfurter dates its latest rate by the ECB day at 00:00 UTC,
+and a row stamped that way was overwritten in place by every later ask
+of the same day.
+
+So the age of a current price is the time since the last successful
+fetch, not the age of the provider's data, and the staleness caps
+measure that. Three other readers change with it:
+
+- **The converter's 24-hour gate.** `CurrencyConverter.getRateDetail`
+  takes a stored rate only when its row is less than 24 hours old, and
+  otherwise asks exchangerate-api and stores what it answers. A row
+  dated by the ECB day was past that gate for most of every weekday and
+  all weekend; a row the hourly run writes never is while its provider
+  answers. So a conversion into USD reads the stored rate, which for an
+  ECB currency is the ECB fixing, and no longer goes to exchangerate-api
+  for it. The other direction does not always: a stored direct pair
+  answers first at any age, and exchangerate-api wrote one for every
+  pair the converter fetched before. Where such a row exists, a USD to X
+  conversion finds it, finds it too old, and still goes upstream.
+- **The Money tab's rates, for a person whose base is USD.** Each is
+  the newest stored rate, dated by its row. It picks up a new fixing
+  within the hour, and its date is the hour Scani last asked, not the
+  ECB day: on a Sunday, Friday's fixing reads as this hour's. On another
+  base a stored direct pair answers first, as above, and keeps its own
+  date.
+- **Reuse for a token Frankfurter prices.** The import warm-up, the
+  refresh button and `getTokenPrice` answer from a stored row under an
+  hour old. For such a token that now happens. Before, its row sat at
+  the ECB day's midnight and never fell inside the hour, so each of them
+  asked Frankfurter every time.
+
+The hourly `pricing` job asks the providers on every run and reads no
+stored row first, so each pair it prices gains one row an hour. It
+prices, each against USD:
+
+- every held token a provider prices;
+- every currency in use: base, payment and vault currencies, and the
+  currency a held token's manual price is quoted in;
+- the routing hubs and the FX baseline (EUR, GBP, JPY, RUB, CHF, CAD,
+  AUD, USDT).
+
+A token priced by hand (`private-company`, `other`) is not sent to a
+provider: its last manual price stands.
+
+The other callers read a stored row first, and ask a provider only when
+none answers:
+
+- the import warm-up: the token's newest row in any base, converted to
+  the user's, when it is under an hour old, or its latest manual price
+  of any age;
+- the refresh button and `getTokenPrice`: a row in the base asked, within
+  an hour either side of the instant asked, or the latest manual price;
+- a vault: the pair's latest row, of any age. It reaches
+  `getTokenPrice` only when the pair has no row at all.
+
 ## Provider routing
 
 `PricingProviderRouter` decides which upstream to ask. Adapters

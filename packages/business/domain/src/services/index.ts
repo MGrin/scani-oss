@@ -103,6 +103,7 @@ export { HistoricalPriceBackfillService } from './pricing/HistoricalPriceBackfil
 export { PriceHubResolver } from './pricing/PriceHubResolver';
 export { PriceWarmupService } from './pricing/PriceWarmupService';
 export { PricingService } from './pricing/PricingService';
+export { FX_BASELINE } from './pricing/price-hubs';
 // review/
 export { ReviewFeedService } from './ReviewFeedService';
 // returns/

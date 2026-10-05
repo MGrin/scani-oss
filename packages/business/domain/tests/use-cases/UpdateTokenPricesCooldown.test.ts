@@ -22,6 +22,10 @@
  *    unscoped. Reading the real table would make every count below a fact
  *    about whatever else lives in the shared dev database, which is exactly
  *    how SC-272 cost two threads a day each.
+ *  - the run's other tokens, for the same reason: the currencies in use
+ *    (`TokenRepository.findCurrencyTokenIdsInUse`) and the hubs and FX baseline
+ *    (`PriceHubResolver`). Here the run has none, so every count is about the
+ *    four tokens of the fixture.
  *  - `PricingService.getTokenPrices`, so no HTTP leaves the suite and so the
  *    test can assert *which tokens were asked about* — the actual claim.
  */
@@ -34,6 +38,7 @@ import { inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { TokenRepository } from '../../src/repositories/TokenRepository';
 import { HoldingQueryService, PricingService, VaultService } from '../../src/services';
+import { PriceHubResolver } from '../../src/services/pricing/PriceHubResolver';
 import { UpdateTokenPricesUseCase } from '../../src/use-cases/UpdateTokenPricesUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
 
@@ -134,8 +139,15 @@ function makeUseCase(order: string[]): UpdateTokenPricesUseCase {
     recalculateVaultsForToken: async () => undefined,
   } as unknown as VaultService);
 
-  // Real, on purpose — the conjunction is SQL.
-  Container.set(TokenRepository, new TokenRepository());
+  // Real, on purpose — the conjunction is SQL. Only its discovery edge is not.
+  const tokens = new TokenRepository();
+  tokens.findCurrencyTokenIdsInUse = async () => [];
+  Container.set(TokenRepository, tokens);
+
+  Container.set(PriceHubResolver, {
+    hubTokenIds: async () => [],
+    tokenIdsOf: async () => [],
+  } as unknown as PriceHubResolver);
 
   const instance = new UpdateTokenPricesUseCase();
   Container.set(UpdateTokenPricesUseCase, instance);

@@ -509,6 +509,49 @@ export class TokenRepository extends BaseRepository<Token, NewToken> {
     return updated as Token;
   }
 
+  /** Base, payment and vault currencies, and every currency a held token's manual price is quoted in. */
+  async findCurrencyTokenIdsInUse(transaction?: DatabaseTransaction): Promise<string[]> {
+    const database = this.getDb(transaction);
+    const rows = await database
+      .select({ id: schema.tokens.id })
+      .from(schema.tokens)
+      .where(
+        or(
+          inArray(
+            schema.tokens.id,
+            database
+              .select({ id: schema.users.baseCurrencyId })
+              .from(schema.users)
+              .where(isNotNull(schema.users.baseCurrencyId))
+          ),
+          inArray(
+            schema.tokens.id,
+            database.select({ id: schema.payments.currencyTokenId }).from(schema.payments)
+          ),
+          inArray(
+            schema.tokens.id,
+            database.select({ id: schema.vaults.currencyId }).from(schema.vaults)
+          ),
+          inArray(
+            schema.tokens.id,
+            database
+              .select({ id: schema.tokenPrices.baseTokenId })
+              .from(schema.tokenPrices)
+              .where(
+                and(
+                  like(schema.tokenPrices.source, 'manual%'),
+                  inArray(
+                    schema.tokenPrices.tokenId,
+                    database.select({ id: schema.holdings.tokenId }).from(schema.holdings)
+                  )
+                )
+              )
+          )
+        )
+      );
+    return rows.map((row) => row.id);
+  }
+
   // Token IDs whose `unpriceable_until` is still in the future. The
   // historical-price-backfill skips these so we don't re-ask providers
   // for tokens (typically obscure SPL memes, low-liquidity custom

@@ -19,6 +19,9 @@ export interface PriceWrite {
   source: string;
 }
 
+/** A current quote. Its instant is the call's, and it is always intraday. */
+export type CurrentPriceWrite = Omit<PriceWrite, 'at' | 'granularity'>;
+
 interface PairAt {
   tokenId: string;
   baseTokenId: string;
@@ -54,14 +57,28 @@ export class PriceWriter {
   private readonly prices = Container.get(TokenPriceRepository);
 
   /**
-   * One reading per pair. Upsert on the table's key. A second reading for a
-   * pair in one call throws; a dropped row is not a reading, so it never counts.
+   * One reading per pair, each intraday at `at`: the instant the caller asked
+   * for, whatever stamp a provider gave its quote. Upsert on the table's key. A
+   * second reading for a pair in one call throws; a dropped row is not a
+   * reading, so it never counts.
    */
   async writeCurrent(
-    rows: readonly PriceWrite[],
+    rows: readonly CurrentPriceWrite[],
+    at: Date,
     tx?: DatabaseTransaction
   ): Promise<PriceWriteOutcome> {
-    const { kept, dropped } = this.readings(rows);
+    const { kept, dropped } = this.readings(
+      rows.map(
+        ({ tokenId, baseTokenId, price, source }): PriceWrite => ({
+          tokenId,
+          baseTokenId,
+          price,
+          at,
+          granularity: 'intraday',
+          source,
+        })
+      )
+    );
     const pairs = new Set<string>();
     for (const { row } of kept) {
       const pair = pairKey(row);

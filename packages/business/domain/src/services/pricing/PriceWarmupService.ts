@@ -6,6 +6,7 @@ import { Container, Service } from 'typedi';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { BaseService } from '../BaseService';
 import { PricingService } from './PricingService';
+import { LIVE_PRICE_WINDOW_MS } from './price-windows';
 
 const DEFAULT_BUDGET_MS = 15_000;
 
@@ -69,7 +70,11 @@ export class PriceWarmupService extends BaseService {
       'Warming prices for tokens'
     );
 
-    const prices = await this.pricingService.getTokenPrices(tokens, base, new Date());
+    // A row under an hour old answers: an import must not spend the providers'
+    // budget on a price the hourly run has just fetched.
+    const prices = await this.pricingService.getTokenPrices(tokens, base, new Date(), {
+      reuseStoredWithinMs: LIVE_PRICE_WINDOW_MS,
+    });
 
     const pricedCount = Array.from(prices.values()).filter((p) => p && p !== '0').length;
     this.logger.info(

@@ -207,10 +207,22 @@ export class PricingService {
     };
   }
 
+  /**
+   * A price for each token against `base`, asked of the providers. A token no
+   * provider answers for falls back to its last stored reading, and is absent
+   * from the map when it has none.
+   *
+   * With `reuseStoredWithinMs`, a row stamped at most that long before
+   * `timestamp`, or a manual row of any age, answers without a provider call.
+   * Without it nothing stored is read before the fetch. The hourly run gives
+   * none: the run before it stamped its rows exactly an hour earlier, so a
+   * window of an hour served those rows back in place of a fetch.
+   */
   async getTokenPrices(
     tokensToPrice: Token[],
     base: Token,
-    timestamp: Date
+    timestamp: Date,
+    options: { reuseStoredWithinMs?: number } = {}
   ): Promise<Map<string, string>> {
     const results = new Map<string, string>();
 
@@ -221,7 +233,8 @@ export class PricingService {
       .sort()
       .join(',');
     const timestampMinute = Math.floor(timestamp.getTime() / (60 * 1000)) * 60 * 1000;
-    const deduplicationKey = `getTokenPrices:${tokenIds}:${base.id}:${timestampMinute}`;
+    const reuse = options.reuseStoredWithinMs ?? 'none';
+    const deduplicationKey = `getTokenPrices:${tokenIds}:${base.id}:${timestampMinute}:${reuse}`;
 
     const ongoingRequest = this.ongoingRequests.get(deduplicationKey);
     if (ongoingRequest) {
@@ -241,11 +254,15 @@ export class PricingService {
 
         if (tokensToProcess.length === 0) return results;
 
-        const cachedPrices = await this.getBatchCachedPrices(
-          tokensToProcess.map((t) => t.id),
-          base.id,
-          timestamp
-        );
+        const cachedPrices =
+          options.reuseStoredWithinMs === undefined
+            ? new Map<string, CachedPrice>()
+            : await this.getBatchCachedPrices(
+                tokensToProcess.map((t) => t.id),
+                base.id,
+                timestamp,
+                options.reuseStoredWithinMs
+              );
 
         const uniqueBaseCurrencyIds = new Set<string>();
         for (const cached of cachedPrices.values()) {
@@ -518,7 +535,8 @@ export class PricingService {
     const cachedPrices = await this.getBatchCachedPrices(
       tokensToProcess.map((t) => t.id),
       base.id,
-      timestamp
+      timestamp,
+      this.storedWindowMs(timestamp)
     );
 
     const uniqueBaseCurrencyIds = new Set<string>();
@@ -801,14 +819,11 @@ export class PricingService {
     baseCurrencyId: string,
     timestamp: Date
   ): Promise<CachedPrice | null> {
-    const isLive = this.isLivePrice(timestamp);
-    const maxAge = isLive ? LIVE_PRICE_WINDOW_MS : this.HISTORICAL_PRICE_WINDOW_MS;
-
     const price = await this.tokenPriceRepository.findPriceAtTimestamp(
       tokenId,
       baseCurrencyId,
       timestamp,
-      maxAge
+      this.storedWindowMs(timestamp)
     );
 
     if (price) {
@@ -985,7 +1000,8 @@ export class PricingService {
   private async getBatchCachedPrices(
     tokenIds: string[],
     baseCurrencyId: string,
-    timestamp: Date
+    timestamp: Date,
+    maxAgeMs: number
   ): Promise<Map<string, CachedPrice>> {
     const results = new Map<string, CachedPrice>();
 
@@ -1006,9 +1022,7 @@ export class PricingService {
       baseCurrencyId
     );
 
-    const isLive = this.isLivePrice(timestamp);
-    const maxAge = isLive ? LIVE_PRICE_WINDOW_MS : this.HISTORICAL_PRICE_WINDOW_MS;
-    const minTimestamp = new Date(timestamp.getTime() - maxAge);
+    const minTimestamp = new Date(timestamp.getTime() - maxAgeMs);
 
     for (const [tokenId, price] of latestPrices.entries()) {
       if (price.timestamp >= minTimestamp || price.source?.startsWith('manual')) {
@@ -1060,6 +1074,11 @@ export class PricingService {
     }
 
     return results;
+  }
+
+  /** How far from the time asked a stored row still answers a read. */
+  private storedWindowMs(timestamp: Date): number {
+    return this.isLivePrice(timestamp) ? LIVE_PRICE_WINDOW_MS : this.HISTORICAL_PRICE_WINDOW_MS;
   }
 
   private isLivePrice(timestamp: Date): boolean {
