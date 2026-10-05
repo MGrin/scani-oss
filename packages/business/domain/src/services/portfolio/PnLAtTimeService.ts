@@ -325,7 +325,9 @@ export class PnLAtTimeService {
       const realizedPnl = costUnknown
         ? new Decimal(0)
         : atPar
-          ? rawRealized.add(baseCashFees(txsByHolding.get(ph.holdingId) ?? [], at))
+          ? rawRealized.add(
+              baseCashFees(txsByHolding.get(ph.holdingId) ?? [], at, cost?.feesRealized)
+            )
           : rawRealized;
       // A holding kept out of the value side stays out of the cost side.
       //
@@ -444,13 +446,20 @@ export class PnLAtTimeService {
  * What base-currency cash paid up to `at` that the cost walk does not book:
  * its fees, the negative rows Returns counts as return (`flowRoleOfRow`). The
  * walk books income at receipt for every holding (SC-1470); base cash carries
- * its own value as cost basis, so without this its fees reached no PnL.
+ * its own value as cost basis, so without this its fees reached no PnL. A fee
+ * the walk already realized (`feesRealized`, SC-1561) is skipped, or it would
+ * count twice.
  */
-function baseCashFees(txs: ReadonlyArray<HoldingTransaction>, at: Date): Decimal {
+function baseCashFees(
+  txs: ReadonlyArray<HoldingTransaction>,
+  at: Date,
+  realizedByWalk: ReadonlySet<string> = new Set()
+): Decimal {
   let fees = new Decimal(0);
   const ids = new Set(txs.map((tx) => tx.id));
   for (const tx of txs) {
     if (tx.occurredAt > at || flowRoleOfRow(tx, ids) !== 'return') continue;
+    if (realizedByWalk.has(tx.id)) continue;
     const quantity = new Decimal(tx.quantity);
     if (quantity.isNegative()) fees = fees.add(quantity);
   }

@@ -77,6 +77,7 @@ function costResult(p: Partial<CostBasisAtTime> & { hasTransactions: boolean }):
     hasTransactions: p.hasTransactions,
     basisQuality: p.basisQuality ?? (p.hasTransactions ? 'known' : 'unknown'),
     transfersUnreviewed: p.transfersUnreviewed ?? 0,
+    feesRealized: p.feesRealized ?? new Set(),
   };
 }
 
@@ -533,15 +534,17 @@ describe('PnLAtTimeService.getPnL — base-currency cash (SC-1467)', () => {
 });
 
 describe('PnLAtTimeService.getPnL — base-currency cash income (SC-1470)', () => {
-  const row = (kind: string, quantity: string, occurredAt: string) =>
+  const row = (kind: string, quantity: string, occurredAt: string, id = `${kind}-${occurredAt}`) =>
     ({
+      id,
       kind,
       quantity,
       occurredAt: new Date(occurredAt),
       transferGroupId: null,
+      settlesTransactionId: null,
     }) as unknown as HoldingTransaction;
 
-  test('income the walk booked is gain on every holding; base cash adds its fees as cost', async () => {
+  test('income the walk booked is gain on every holding; base cash counts its fee once', async () => {
     const valuation = makeValuationStub([
       { holdingId: 'usd', tokenId: USD, valueInBase: new Decimal(500) },
       { holdingId: 'cad', tokenId: 'token-CAD', valueInBase: new Decimal(54) },
@@ -551,7 +554,9 @@ describe('PnLAtTimeService.getPnL — base-currency cash income (SC-1470)', () =
         costResult({
           hasTransactions: true,
           costBasis: new Decimal(holdingId === 'usd' ? 480 : 50),
-          realizedPnl: new Decimal(holdingId === 'usd' ? -16 : 3),
+          // The walk realizes the -2 fee itself since SC-1561: -16 and the fee.
+          realizedPnl: new Decimal(holdingId === 'usd' ? -18 : 3),
+          feesRealized: new Set(holdingId === 'usd' ? ['fee-2026-04-01'] : []),
           // What the walk booked at receipt: 10 interest + 3 reward, and 5 CAD-worth.
           income: new Decimal(holdingId === 'usd' ? 13 : 5),
         }),
@@ -583,12 +588,44 @@ describe('PnLAtTimeService.getPnL — base-currency cash income (SC-1470)', () =
       }
     );
     const usd = r.perHolding.find((p) => p.holdingId === 'usd');
-    // -16 walked, +13 income the walk booked, -2 fee the walk leaves to base cash.
+    // -18 walked (the fee included), +13 income. baseCashFees adding the fee
+    // again read -7: one fee counted twice (SC-1561).
     expect(usd?.realizedPnl.toString()).toBe('-5');
     expect(usd?.unrealizedPnl?.toString()).toBe('0');
     // Foreign cash's income is gain too; it used to sit only in its lots' cost.
     const cad = r.perHolding.find((p) => p.holdingId === 'cad');
     expect(cad?.realizedPnl.toString()).toBe('8');
+  });
+
+  test('a commission the walk had to realize is not added again (SC-1561)', async () => {
+    // A same-holding commission keeps its cost on the lots left, but with no
+    // lot left the walk realizes it. Whatever the walk realized, it reports.
+    const valuation = makeValuationStub([
+      { holdingId: 'usd', tokenId: USD, valueInBase: new Decimal(0) },
+    ]);
+    const trade = row('sell', '-100', '2026-04-01', 'trade');
+    const commission = {
+      ...row('fee', '-3', '2026-04-01', 'commission'),
+      settlesTransactionId: 'trade',
+    } as HoldingTransaction;
+    const costBasis = {
+      getCostBasis: async () =>
+        costResult({
+          hasTransactions: true,
+          realizedPnl: new Decimal(-3),
+          feesRealized: new Set(['commission']),
+        }),
+      walkComponent: async () => {
+        throw new Error('walkComponent should not run — no transfers');
+      },
+    } as unknown as CostBasisService;
+    const r = await makeService(valuation, costBasis).getPnL(
+      'u',
+      new Date('2026-06-30T23:59:59Z'),
+      USD,
+      { caches: { transactions: new Map([['usd', [trade, commission]]]) }, tx: undefined }
+    );
+    expect(r.perHolding.find((p) => p.holdingId === 'usd')?.realizedPnl.toString()).toBe('-3');
   });
 });
 
