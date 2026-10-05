@@ -37,7 +37,6 @@ export const HEARTBEAT_TOLERANCE_MS: Readonly<Record<string, number>> = {
   // Daily cadence — alert at 36h (gives a missed run + the next one).
   [JOB_NAMES.apyPayouts]: 36 * 60 * 60 * 1000,
   [JOB_NAMES.historicalPriceBackfill]: 36 * 60 * 60 * 1000,
-  [JOB_NAMES.forexBackfill]: 36 * 60 * 60 * 1000,
   [JOB_NAMES.portfolioValueRollup]: 36 * 60 * 60 * 1000,
   [JOB_NAMES.transferLinking]: 36 * 60 * 60 * 1000,
   [JOB_NAMES.hideClosedHoldings]: 36 * 60 * 60 * 1000,

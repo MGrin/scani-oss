@@ -35,7 +35,6 @@ src/
 │   ├── reconcile-pending-credentials.ts   (no lock — idempotent re-scan)
 │   ├── reconcile-orphaned-user-jobs.ts    (no lock — idempotent re-scan)
 │   ├── historical-price-backfill.ts
-│   ├── forex-backfill.ts
 │   ├── portfolio-value-rollup.ts
 │   ├── transfer-linking.ts
 │   ├── backfill-token-identity.ts

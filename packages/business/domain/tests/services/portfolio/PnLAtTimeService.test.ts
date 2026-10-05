@@ -275,7 +275,7 @@ describe('PnLAtTimeService.getPnL — unpriceable holdings', () => {
     // SC-505. `unpriceable` means "never had a price row AND is inside a
     // cooldown", which is one of several reasons a value comes back null.
     // A USD cash balance held by a GBP-base user has thousands of price
-    // rows and still resolves to nothing, because `forex-backfill` quotes
+    // rows and still resolves to nothing, because `historical-price-backfill` quotes
     // every edge against USD and so never writes USD itself as the priced
     // token. Gated on the flag alone, its whole cost basis stayed in a
     // total its value never reached — drawn as a -100% loss on a cash

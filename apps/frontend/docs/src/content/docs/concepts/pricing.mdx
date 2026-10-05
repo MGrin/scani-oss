@@ -155,6 +155,40 @@ a token off the `unpriceableUntil` cooldown exactly as a stored day
 does; a bar dropped on a day the run did not ask for does not. A manual
 price that would be dropped is refused with the positive-price error.
 
+## How an exchange rate is asked
+
+There are three FX sources. Two of them are asked for the table the
+vendor publishes, never for the pair itself, and the pair is divided
+here. A vendor asked for a pair derives and rounds it: for a low-value
+currency in USD (RUB, JPY, IDR) that leaves two or three digits.
+
+- **Frankfurter**: latest, a day and a range are each requested as
+  `from=EUR&to=X,B`, without whichever side is EUR. EUR is the base the
+  ECB publishes, so EUR into another currency is the ECB fixing as sent,
+  a currency into EUR is one fixing inverted, and a pair with no EUR side
+  is derived from two: the stored price of X in B is
+  `rate(EUR to B) / rate(EUR to X)`.
+- **exchangerate-api** is asked only for its USD table
+  (`/v4/latest/USD`), by one client. Frankfurter's fallback, the Google
+  Sheets converter and `CurrencyConverter` all read that table, and
+  take a pair as `rates[to] / rates[from]`. The fallback answers for
+  fiat the ECB does not publish, and for an ECB pair when Frankfurter
+  gave no answer.
+- **Yahoo Finance** prices the fiat Frankfurter does not cover, and is
+  asked for the pair itself (`<FROM><TO>=X`).
+
+The division is decimal, at 28 significant digits, and the stored text
+is its result. A rate counts only when it is a number above zero. A
+currency missing from the answer gives no price, and nothing is
+written. An answer in a base other than the one asked is refused whole.
+
+The client keeps a table it fetched for 60 minutes in each process. It
+does not keep a failed request, or an answer with no usable rate. Its
+requests share one limiter namespace, `exchangerate-api`, at 10 a
+minute, and one 8-second bound covers both the wait for a slot and the
+request. A row written from a kept table is still stamped at the
+instant Scani asked.
+
 ## When a current price is stamped
 
 A current quote is stored at the instant Scani asked for it, as an
@@ -169,15 +203,17 @@ measure that. Three other readers change with it:
 
 - **The converter's 24-hour gate.** `CurrencyConverter.getRateDetail`
   takes a stored rate only when its row is less than 24 hours old, and
-  otherwise asks exchangerate-api and stores what it answers. A row
+  otherwise derives the pair from exchangerate-api's USD table and
+  stores that rate. A row
   dated by the ECB day was past that gate for most of every weekday and
   all weekend; a row the hourly run writes never is while its provider
   answers. So a conversion into USD reads the stored rate, which for an
-  ECB currency is the ECB fixing, and no longer goes to exchangerate-api
-  for it. The other direction does not always: a stored direct pair
-  answers first at any age, and exchangerate-api wrote one for every
-  pair the converter fetched before. Where such a row exists, a USD to X
-  conversion finds it, finds it too old, and still goes upstream.
+  ECB currency is derived from the ECB fixing as above, and no longer
+  goes to exchangerate-api for it. The other direction does not always:
+  a stored direct pair answers first at any age, and the converter wrote
+  one for every pair it took from exchangerate-api before. Where such a
+  row exists, a USD to X conversion finds it, finds it too old, and
+  still goes to the table.
 - **The Money tab's rates, for a person whose base is USD.** Each is
   the newest stored rate, dated by its row. It picks up a new fixing
   within the hour, and its date is the hour Scani last asked, not the
@@ -213,6 +249,17 @@ none answers:
   an hour either side of the instant asked, or the latest manual price;
 - a vault: the pair's latest row, of any age. It reaches
   `getTokenPrice` only when the pair has no row at all.
+
+The nightly `historical-price-backfill` also writes FX history: currencies in use
+start at their users' earliest ledger or observation day within the lookback,
+and unused baseline currencies cover the last seven days. USD is the base,
+so it needs no row. The backfill fills empty UTC days and leaves every day
+that already holds a price unchanged. An empty history response for a currency
+in use or a baseline member never gives it an unpriceable cooldown.
+
+`currency-rate-refresh` asks the provider registry for both currencies against
+USD (only the other currency when one is USD); stored conversion then derives
+the requested pair through USD.
 
 ## Provider routing
 

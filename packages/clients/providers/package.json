@@ -25,6 +25,7 @@
     "./providers/defillama": "./src/providers/defillama/index.ts",
     "./providers/bls": "./src/providers/bls/index.ts",
     "./providers/frankfurter": "./src/providers/frankfurter/index.ts",
+    "./providers/exchangerate-api": "./src/providers/exchangerate-api/client.ts",
     "./providers/finnhub": "./src/providers/finnhub/index.ts",
     "./providers/bitcoin": "./src/providers/bitcoin/index.ts",
     "./providers/solana": "./src/providers/solana/index.ts",

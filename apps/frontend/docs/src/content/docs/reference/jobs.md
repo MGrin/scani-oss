@@ -31,7 +31,6 @@ four times an hour.
 | `exchange-transactions` | Daily (`0 1 * * *`) | Refresh the transaction ledger for every connected exchange/broker/bank integration — fans out a `transaction-import` per account with a 30-day rolling window. |
 | `apy-payouts` | Daily, 00:00 UTC (`0 0 * * *`) | Apply accrued interest to holdings with an [APY config](/concepts/apy/) due for payout. |
 | `historical-price-backfill` | Nightly, 03:00 UTC (`0 3 * * *`) | Fill `daily`-granularity price history for tokens with holdings; respects `unpriceableUntil` cooldown. |
-| `forex-backfill` | Nightly, 03:30 UTC (`30 3 * * *`) | Fill historical FX pairs (via Frankfurter) needed by the rollup. |
 | `token-prices-downsample` | Nightly, 05:00 UTC (`0 5 * * *`) | Collapse `intraday` prices older than 7 days into one `daily` row per token/base/day (keeps the day's last reading); preserves existing `daily` and `tx-exact` rows. Caps `token_prices` growth. |
 | `portfolio-value-rollup` | Nightly, 04:00 UTC (`0 4 * * *`) | Recompute `portfolio_value_daily` for every user at user / institution / account / holding scope. |
 | `transfer-linking` | Nightly, 03:45 UTC (`45 3 * * *`) | Pair CEX withdrawals with wallet deposits via `LinkTransferPairsUseCase`. |
@@ -98,7 +97,7 @@ per-user job ID so the user can see "in flight" status in the SPA.
 | `refresh-account-balance` | User triggers a manual sync | Force-refresh one account's balances + transactions. |
 | `manual-holdings-create` | User creates a manual holding | Insert under the manual institution; seed observation. |
 | `portfolio-history-backfill` | After import / manual edit | Rebuild `portfolio_value_daily` for the affected date range for one user. |
-| `currency-rate-refresh` | A read path needed a currency pair storage could not answer | Fetch the pair off the request. The upstream call sits behind a two-per-sixty-seconds limiter whose acquire *sleeps*, so on a read path the third uncovered currency waited ~26 s; here nobody waits. The figure renders without the pair and says so, and the next read has it (SC-222). |
+| `currency-rate-refresh` | A read path needed a currency pair storage could not answer | Ask the provider registry for each currency against USD, off the request path; stored conversion derives the pair through USD. The figure renders without the missing rate and the next read can use the refreshed prices (SC-222). |
 | `transaction-import` | (Reserved) | One-off transaction-only import flow. |
 | `user-data-delete` | User requests account / data deletion | Delete all user data per GDPR-style flow. |
 

@@ -15,7 +15,6 @@ export {
 export { ENGINE_SHADOW_SCHEDULE } from './engine-shadow';
 export { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 export { EXCHANGE_TRANSACTIONS_SCHEDULE } from './exchange-transactions';
-export { FOREX_BACKFILL_SCHEDULE } from './forex-backfill';
 export { HIDE_CLOSED_HOLDINGS_SCHEDULE } from './hide-closed-holdings';
 export { HISTORICAL_PRICE_BACKFILL_SCHEDULE } from './historical-price-backfill';
 export {
@@ -53,7 +52,6 @@ import { DLQ_DEPTH_PROBE_SCHEDULE } from './dlq-depth-probe';
 import { ENGINE_SHADOW_SCHEDULE } from './engine-shadow';
 import { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 import { EXCHANGE_TRANSACTIONS_SCHEDULE } from './exchange-transactions';
-import { FOREX_BACKFILL_SCHEDULE } from './forex-backfill';
 import { HIDE_CLOSED_HOLDINGS_SCHEDULE } from './hide-closed-holdings';
 import { HISTORICAL_PRICE_BACKFILL_SCHEDULE } from './historical-price-backfill';
 import { JOB_HEARTBEAT_PROBE_SCHEDULE } from './job-heartbeat-probe';
@@ -96,7 +94,6 @@ export const SCHEDULED_JOB_DESCRIPTORS = [
   RECONCILE_PENDING_CREDENTIALS_SCHEDULE,
   RECONCILE_ORPHANED_USER_JOBS_SCHEDULE,
   HISTORICAL_PRICE_BACKFILL_SCHEDULE,
-  FOREX_BACKFILL_SCHEDULE,
   TOKEN_PRICES_DOWNSAMPLE_SCHEDULE,
   PORTFOLIO_VALUE_ROLLUP_SCHEDULE,
   TRANSFER_LINKING_SCHEDULE,

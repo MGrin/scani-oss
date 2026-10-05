@@ -1,5 +1,5 @@
 import { createComponentLogger, logger } from '@scani/logging';
-import { OutflowRateLimiterRegistry } from '@scani/rate-limiter';
+import { ExchangeRateApiClient, rateBetween } from '@scani/providers/providers/exchangerate-api';
 import { Decimal } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { TokenTypeRepository } from '../../repositories/EnumRepositories';
@@ -7,16 +7,8 @@ import { TokenRepository } from '../../repositories/TokenRepository';
 import { PriceGraphService } from './PriceGraphService';
 import { PriceWriter } from './PriceWriter';
 import { PRICE_HUBS } from './price-hubs';
-import { EXCHANGERATE_LIMIT } from './upstream-rate-limits';
 
 const currencyLogger = createComponentLogger('pricing:currency');
-
-// `https://api.exchangerate-api.com/v4/latest/{base}` — the `/latest/`
-// segment is required; the previous `/v4/{base}` form silently 404'd
-// in production, leaving every CAD/EUR/GBP/etc. holding stranded with
-// price=0 because every conversion call returned `'0'`.
-const EXCHANGERATE_BASE_URL = 'https://api.exchangerate-api.com/v4/latest';
-const EXCHANGERATE_FETCH_TIMEOUT_MS = 8000;
 
 // Currencies warmed from one upstream response at api boot. All fiat, so
 // they resolve unambiguously by (symbol, fiat type) — unlike `PRICE_HUBS`,
@@ -54,7 +46,7 @@ export interface CurrencyRef {
  * DB lookup is delegated to `PriceGraphService` so the same direct +
  * inverse + one-hop routing the historical-chart path uses is also
  * available here. That's what fixes the "switched to EUR, everything
- * shows zero" failure mode: forex-backfill only stores
+ * shows zero" failure mode: historical-price-backfill only stores
  * `(EUR → USD = 1.08)` rows, never `(USD → EUR)`. The historical
  * path inverted automatically; this path didn't, so cross-base
  * conversions on a cold exchangerate-api fell off a cliff. Now both
@@ -69,14 +61,16 @@ export class CurrencyConverter {
   // so the live API still gets a chance to refresh a stale row.
   private readonly DB_RATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
-  private readonly limiterRegistry = Container.get(OutflowRateLimiterRegistry);
-  private readonly exchangeRateLimiter = this.limiterRegistry.get(EXCHANGERATE_LIMIT);
+  private readonly exchangeRates = Container.get(ExchangeRateApiClient);
 
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
   private readonly priceWriter = Container.get(PriceWriter);
   private readonly priceGraphService = Container.get(PriceGraphService);
 
+  // Rates per pair, from whichever source answered: a stored row, the
+  // upstream table, or the boot warm-up. It is what a cache-only caller reads,
+  // so it stays beside the client's own cache of the upstream table.
   private readonly currencyRateCache = new Map<
     string,
     { rate: string; expiresAt: number; asOf: number }
@@ -198,69 +192,52 @@ export class CurrencyConverter {
       return null;
     }
 
-    try {
-      const url = `${EXCHANGERATE_BASE_URL}/${fromCurrency.symbol}`;
-      const response = await this.exchangeRateFetch(url);
-
-      if (!response.ok) {
-        throw new Error(
-          `ExchangeRate-API responded with ${response.status}: ${response.statusText}`
-        );
-      }
-
-      const data = (await response.json()) as { rates: Record<string, number> };
-      const rate = data.rates?.[toCurrency.symbol];
-      if (!rate) {
-        throw new Error(
-          `No conversion rate available from ${fromCurrency.symbol} to ${toCurrency.symbol}`
-        );
-      }
-
-      const rateString = rate.toString();
-
-      logger.debug(
-        { fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol, rate, apiUrl: url },
-        'Currency conversion rate fetched from external API'
-      );
-
-      this.currencyRateCache.set(cacheKey, {
-        rate: rateString,
-        expiresAt: now + this.CURRENCY_CONVERSION_TTL_MS,
-        asOf: now,
-      });
-
-      try {
-        await this.priceWriter.writeCurrent(
-          [
-            {
-              tokenId: fromCurrency.id,
-              baseTokenId: toCurrency.id,
-              price: rateString,
-              source: 'exchangerate-api',
-            },
-          ],
-          new Date()
-        );
-
-        currencyLogger.debug(
-          { fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol, rate: rateString },
-          'Stored conversion rate in database'
-        );
-      } catch (dbError) {
-        currencyLogger.warn(
-          { dbError, fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol },
-          'Failed to store conversion rate in database'
-        );
-      }
-
-      return { rate: rateString, asOf: new Date(now) };
-    } catch (error) {
+    const table = await this.exchangeRates.fetchUsdRates();
+    const rate = table && rateBetween(table.rates, fromCurrency.symbol, toCurrency.symbol);
+    if (!rate) {
       logger.warn(
-        { fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol, error },
+        { fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol },
         'Failed to get currency conversion rate'
       );
       return null;
     }
+
+    logger.debug(
+      { fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol, rate },
+      'Currency conversion rate derived from the exchangerate-api USD table'
+    );
+
+    this.currencyRateCache.set(cacheKey, {
+      rate,
+      expiresAt: now + this.CURRENCY_CONVERSION_TTL_MS,
+      asOf: now,
+    });
+
+    try {
+      await this.priceWriter.writeCurrent(
+        [
+          {
+            tokenId: fromCurrency.id,
+            baseTokenId: toCurrency.id,
+            price: rate,
+            source: 'exchangerate-api',
+          },
+        ],
+        new Date()
+      );
+
+      currencyLogger.debug(
+        { fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol, rate },
+        'Stored conversion rate in database'
+      );
+    } catch (dbError) {
+      currencyLogger.warn(
+        { dbError, fromCurrency: fromCurrency.symbol, toCurrency: toCurrency.symbol },
+        'Failed to store conversion rate in database'
+      );
+    }
+
+    return { rate, asOf: new Date(now) };
   }
 
   /**
@@ -269,12 +246,13 @@ export class CurrencyConverter {
    *
    * Two rules, and both are about the person waiting:
    *
-   * 1. **It never fetches.** `exchangeRateFetch` goes through an outflow
-   *    limiter of 2 requests per 60 seconds whose `execute` *sleeps* until a
-   *    slot frees. That is correct for a nightly job and catastrophic on a
-   *    request someone is watching a skeleton for: several uncovered currencies
-   *    measured at tens of seconds in production. Refreshing is the
-   *    worker's job; this returns what is known now and the caller enqueues.
+   * 1. **It never fetches.** The upstream table sits behind an outflow limiter
+   *    whose `execute` *sleeps* until a slot frees, and then behind a request
+   *    that may take eight seconds. That is correct for a job and catastrophic
+   *    on a request someone is watching a skeleton for: several uncovered
+   *    currencies were measured at tens of seconds in production, when each
+   *    pair cost a request of its own. Refreshing is the worker's job; this
+   *    returns what is known now and the caller enqueues.
    * 2. **It has no maximum age.** A rate from 30 hours ago is a far better
    *    answer than no rate, and the wire carries `asOf`, the stamp of the row
    *    it came from. That stamp is when Scani last asked, not the age of the
@@ -337,8 +315,8 @@ export class CurrencyConverter {
    *
    * This is the right hook for callers that need to convert many prices
    * to one base currency — the dashboard pricing path being the obvious
-   * one. Without this, a base-currency switch forces dozens of serial
-   * exchangerate-api calls on the first dashboard fetch.
+   * one. Without this, every holding on the first dashboard fetch after a
+   * base-currency switch resolves its pair from scratch.
    *
    * Returns the set of pairs that could NOT be resolved so callers can
    * decide what to do with the affected holdings (skip from a sum,
@@ -379,36 +357,31 @@ export class CurrencyConverter {
         return;
       }
 
-      const url = `${EXCHANGERATE_BASE_URL}/USD`;
-      const response = await this.exchangeRateFetch(url);
-
-      if (response.ok) {
-        const data = (await response.json()) as { rates: Record<string, number> };
-        const now = Date.now();
-
-        for (const [symbol, token] of fiat) {
-          if (token.id === usd.id) continue;
-
-          const rate = data.rates?.[symbol];
-          if (rate) {
-            this.currencyRateCache.set(this.cacheKey(usd, token), {
-              rate: rate.toString(),
-              expiresAt: now + this.CURRENCY_CONVERSION_TTL_MS,
-              asOf: now,
-            });
-            this.currencyRateCache.set(this.cacheKey(token, usd), {
-              rate: (1 / rate).toString(),
-              expiresAt: now + this.CURRENCY_CONVERSION_TTL_MS,
-              asOf: now,
-            });
-          }
-        }
-
-        currencyLogger.info(
-          { cachedPairs: this.currencyRateCache.size },
-          'Currency conversion cache pre-warmed successfully'
+      const table = await this.exchangeRates.fetchUsdRates();
+      if (!table) {
+        currencyLogger.warn(
+          'No exchangerate-api table; currency conversion cache will fill on demand'
         );
+        return;
       }
+
+      const now = Date.now();
+      for (const [symbol, token] of fiat) {
+        if (token.id === usd.id) continue;
+
+        const fromUsd = rateBetween(table.rates, usd.symbol, symbol);
+        const toUsd = rateBetween(table.rates, symbol, usd.symbol);
+        if (fromUsd === null || toUsd === null) continue;
+
+        const entry = { expiresAt: now + this.CURRENCY_CONVERSION_TTL_MS, asOf: now };
+        this.currencyRateCache.set(this.cacheKey(usd, token), { rate: fromUsd, ...entry });
+        this.currencyRateCache.set(this.cacheKey(token, usd), { rate: toUsd, ...entry });
+      }
+
+      currencyLogger.info(
+        { cachedPairs: this.currencyRateCache.size },
+        'Currency conversion cache pre-warmed successfully'
+      );
     } catch (error) {
       currencyLogger.warn(
         { error },
@@ -438,24 +411,12 @@ export class CurrencyConverter {
     return `${fromCurrency.id}->${toCurrency.id}`;
   }
 
-  private exchangeRateFetch(url: string): Promise<Response> {
-    return this.exchangeRateLimiter.execute(async () => {
-      const ctrl = new AbortController();
-      const timer = setTimeout(() => ctrl.abort(), EXCHANGERATE_FETCH_TIMEOUT_MS);
-      try {
-        return await fetch(url, { signal: ctrl.signal });
-      } finally {
-        clearTimeout(timer);
-      }
-    });
-  }
-
   /**
    * Resolve a fiat-pair rate from anything already stored in
    * `token_prices`. Delegates to `PriceGraphService` so we get:
    *
    *   1. Direct (A → B) — the simple case.
-   *   2. Inverse (B → A) → `1 / price`. This is the case forex-backfill
+   *   2. Inverse (B → A) → `1 / price`. This is the case historical-price-backfill
    *      actually produces: every hub edge is stored as `(<edge> → USD)`,
    *      never `(USD → <edge>)`. The previous unidirectional lookup
    *      always missed and forced a live exchangerate-api call; when
@@ -491,7 +452,7 @@ export class CurrencyConverter {
         toCurrency.id,
         timestamp,
         {
-          // forex-backfill writes `granularity: 'daily'` rows; preferring
+          // historical-price-backfill writes `granularity: 'daily'` rows; preferring
           // daily here lets PriceGraphService pick the cron-fresh edge
           // over any intraday noise from on-demand caching.
           preferGranularity: 'daily',

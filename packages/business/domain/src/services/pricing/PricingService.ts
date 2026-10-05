@@ -509,9 +509,9 @@ export class PricingService {
    * bug that zeroed every dashboard after a base-currency switch.
    *
    * Cache-cold currency pairs are warmed up-front via
-   * `CurrencyConverter.prewarmRates` (one live exchangerate-api call
-   * per pair, deduplicated and rate-limited). Per-token conversions
-   * then run cache-only and resolve from memory.
+   * `CurrencyConverter.prewarmRates`: a pair with no fresh stored rate
+   * is derived from exchangerate-api's one USD table. Per-token
+   * conversions then run cache-only and resolve from memory.
    */
   async getCachedTokenPrices(
     tokensToPrice: Token[],
@@ -558,12 +558,12 @@ export class PricingService {
 
     // A fiat token's price in the user's base currency IS an exchange rate,
     // and `token_prices` is not where that rate lives for every currency.
-    // `forex-backfill` quotes every edge against the hub — `GBP -> USD`,
+    // `historical-price-backfill` quotes every edge against the hub — `GBP -> USD`,
     // `EUR -> USD` — so USD is never itself the priced token, and a USD cash
     // balance is unpriceable for anyone whose base is not USD (SC-505).
     //
     // The graph already answers this: it inverts the `GBP -> USD` row and
-    // returns `USD -> GBP`. Ask it, rather than having forex-backfill write
+    // returns `USD -> GBP`. Ask it, rather than having historical-price-backfill write
     // rows for a fact that is derivable from the rows it already writes —
     // n² pairs of stored data that can disagree with each other.
     //

@@ -2,6 +2,7 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy
 
 import { describe, expect, test } from 'bun:test';
 import type { TokenPriceGranularity } from '@scani/db/schema';
+import type { ExchangeRateApiClient } from '@scani/providers/providers/exchangerate-api';
 import { Container } from 'typedi';
 import { TokenTypeRepository } from '../../../src/repositories/EnumRepositories';
 import { TokenPriceRepository } from '../../../src/repositories/TokenPriceRepository';
@@ -13,6 +14,7 @@ import {
 import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
 import { PriceHubResolver } from '../../../src/services/pricing/PriceHubResolver';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { freshExchangeRateApiClient } from '../../../test/helpers/exchangerate-api';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -85,6 +87,11 @@ function makeTokenStub(bySymbol: Record<string, string>): TokenRepository {
         ? (row(symbol, id) as never)
         : null;
     },
+    findBySymbolTypePairs: async (pairs: Array<{ symbol: string; typeId: string }>) =>
+      pairs.flatMap(({ symbol, typeId }) => {
+        const id = bySymbol[symbol];
+        return id && typeOf(symbol) === typeId ? [row(symbol, id) as never] : [];
+      }),
   } as unknown as TokenRepository;
 }
 
@@ -121,8 +128,8 @@ describe('CurrencyConverter.getRate — DB lookup via PriceGraphService', () => 
     expect(await c.getRate(ref(SYMBOLS, 'USD'), ref(SYMBOLS, 'USD'), new Date(), true)).toBe('1');
   });
 
-  test('resolves the reverse direction that forex-backfill actually stores', async () => {
-    // forex-backfill stores `(EUR -> USD = 1.08)` — never the reverse.
+  test('resolves the reverse direction that historical-price-backfill actually stores', async () => {
+    // historical-price-backfill stores `(EUR -> USD = 1.08)` — never the reverse.
     // The old `findLatestPrice(USD, EUR)` lookup always missed and forced
     // a live exchangerate-api call. This is the regression test for that
     // failure mode: cacheOnly=true must succeed off the DB alone.
@@ -297,10 +304,13 @@ describe('CurrencyConverter.getStoredRateDetail — the user read path', () => {
    *  path is the bug, and a stub that throws says so at the point of the call
    *  instead of leaving a 26-second timing to be noticed in production. */
   function forbidUpstream(converter: CurrencyConverter): void {
-    (converter as unknown as { exchangeRateFetch: () => Promise<Response> }).exchangeRateFetch =
-      () => {
+    (
+      converter as unknown as { exchangeRates: Pick<ExchangeRateApiClient, 'fetchUsdRates'> }
+    ).exchangeRates = {
+      fetchUsdRates: () => {
         throw new Error('a user read path must never call exchangerate-api');
-      };
+      },
+    };
   }
 
   test('serves a stored rate without going upstream', async () => {
@@ -323,7 +333,7 @@ describe('CurrencyConverter.getStoredRateDetail — the user read path', () => {
   });
 
   /**
-   * The daily hole this closes. forex-backfill writes rows timestamped at
+   * The daily hole this closes. historical-price-backfill writes rows timestamped at
    * midnight and runs at 03:30, so a row is past `DB_RATE_MAX_AGE_MS` for the
    * three and a half hours between the two — and EUR->USD was measured well
    * over a day old in production, a missed night on top of that. Under the
@@ -481,5 +491,43 @@ describe('CurrencyConverter — a duplicated symbol addresses different price ro
     // A direct edge, so PriceGraphService never reaches hub resolution —
     // which since SC-315 does not take a bare symbol either.
     expect(await c.getRate(sosFiat, usd, NOW, true)).toBe('0.00175');
+  });
+});
+
+/**
+ * `preWarm` fills the pair cache at api boot from the one USD table. Each
+ * direction is the division's own text. The float `1 / rate` it used to keep
+ * stops at about sixteen digits, so it was a different number from the one the
+ * same pair gets everywhere else.
+ */
+describe('CurrencyConverter.preWarm', () => {
+  const SYMBOLS = { USD: 'tok-USD', EUR: 'tok-EUR', JPY: 'tok-JPY' };
+  // Invented: units of each currency per one USD.
+  const USD_TABLE = { USD: 1, EUR: 0.8, JPY: 160.25 };
+
+  test('warms both directions from the one USD table, with no float arithmetic', async () => {
+    const requested: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      requested.push(String(url));
+      return Response.json({ base: 'USD', rates: USD_TABLE });
+    }) as unknown as typeof fetch;
+    freshExchangeRateApiClient();
+
+    try {
+      const c = makeConverter([], SYMBOLS);
+      await c.preWarm();
+
+      const now = new Date();
+      // 1 / 160.25 at 28 significant digits.
+      expect(await c.getRate(ref(SYMBOLS, 'JPY'), ref(SYMBOLS, 'USD'), now, true)).toBe(
+        '0.006240249609984399375975039002'
+      );
+      expect(await c.getRate(ref(SYMBOLS, 'USD'), ref(SYMBOLS, 'JPY'), now, true)).toBe('160.25');
+      expect(await c.getRate(ref(SYMBOLS, 'EUR'), ref(SYMBOLS, 'USD'), now, true)).toBe('1.25');
+      expect(requested).toEqual(['https://api.exchangerate-api.com/v4/latest/USD']);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });

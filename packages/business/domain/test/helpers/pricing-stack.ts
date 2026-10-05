@@ -12,10 +12,11 @@ export interface PriceAsk {
 
 /**
  * Registers the real pricing stack over one provider, CoinGecko, which answers
- * 100 in whatever base it is asked and records each ask. The stack reads the
- * container when it is built, so call this after any stub it must see.
+ * `priceOf` the token's id, 100 unless told otherwise, in whatever base it is
+ * asked and records each ask. The stack reads the container when it is built, so
+ * call this after any stub it must see.
  */
-export function pricingStack(): PriceAsk[] {
+export function pricingStack(priceOf: (tokenId: string) => string = () => '100'): PriceAsk[] {
   const asks: PriceAsk[] = [];
   const coingecko: CurrentPriceProvider = {
     providerKey: 'coingecko',
@@ -26,7 +27,7 @@ export function pricingStack(): PriceAsk[] {
       return {
         tokenId: token.id,
         baseTokenId: ctx.baseCurrency.id,
-        price: '100',
+        price: priceOf(token.id),
         timestamp: ctx.timestamp ?? new Date(),
         source: 'coingecko',
       };

@@ -1,10 +1,10 @@
 /**
  * BackfillHistoricalPricesUseCase
  *
- * Identifies (token, date) pairs that need a daily-close price and runs
- * them through HistoricalPriceBackfillService. Scoped deliberately to
- * only the tokens users actually hold, in the user's base currency(s),
- * to keep request volume proportional to value delivered.
+ * Identifies (token, day) pairs with no stored price against USD and runs
+ * them through HistoricalPriceBackfillService. Scoped deliberately to the
+ * tokens users hold or have transacted, the currencies in use and the FX
+ * baseline, to keep request volume proportional to value delivered.
  *
  * Called from:
  *  - apps/backend/worker/src/processors/historical-price-backfill.ts (nightly)
@@ -21,7 +21,7 @@ import { eq, inArray, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
-import { HistoricalPriceBackfillService } from '../services';
+import { FX_BASELINE, HistoricalPriceBackfillService, PriceHubResolver } from '../services';
 import { rollupLockKey } from './RollupPortfolioValueDailyUseCase';
 
 const logger = createComponentLogger('use-case:backfill-historical-prices');
@@ -36,15 +36,27 @@ const UNPRICEABLE_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
 // a week. 30 days of consecutive misses is the floor.
 const UNPRICEABLE_MIN_RANGE_DAYS = 30;
 
+// How far back a currency is priced when nothing dates its use: a baseline
+// member, or a currency whose users have no ledger row and no observation.
+// With today, the seven days the forex job this run replaced kept filled.
+const CURRENCY_FLOOR_DAYS = 6;
+
+const DAY_MS = 86_400_000;
+
+function utcDayStart(at: Date): number {
+  return Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate());
+}
+
 export interface BackfillSummary {
   attempted: number;
   inserted: number;
   alreadyHad: number;
   providerMissing: number;
   // Attempted days a provider answered only with bars the price writer does
-  // not store. `attempted` is `inserted + providerMissing + droppedDays`: a
-  // day already priced is filtered out before the attempt, so `alreadyHad`
-  // is no part of it. Per token range, in the service, it is and reads 0.
+  // not store. A day already priced is filtered out before the attempt, so
+  // `attempted` is `inserted + providerMissing + droppedDays`, plus any day
+  // that gained a row between the plan and the write: the service counts
+  // those, and they are added to `alreadyHad`.
   droppedDays: number;
   // Bars the price writer did not store, on any day a provider returned.
   droppedBars: number;
@@ -107,18 +119,18 @@ export class BackfillHistoricalPricesUseCase {
   private readonly backfillService = Container.get(HistoricalPriceBackfillService);
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
+  private readonly priceHubs = Container.get(PriceHubResolver);
 
-  // Walks every user's held tokens, identifies dates where we have a
-  // transaction but no nearby daily price, and runs the backfill.
-  // Idempotent — re-running does no harm because the service short-circuits
-  // on existing daily prices within a 24h window.
+  // Walks every user's tokens and currencies, identifies the days with no
+  // stored price, and runs the backfill. Idempotent: a day that holds a row
+  // is neither asked for again nor written to.
   async execute(
     opts: {
       usdTokenId: string;
       lookbackDays?: number;
-      // Scope to a single user — when set, both the holdings and
-      // transactions discovery queries filter by user_id, so the
-      // candidate set covers only this user's tokens.
+      // Scope to a single user — when set, the holdings, transactions and
+      // currency discovery queries filter by user_id, so the candidate set
+      // covers only this user's tokens and currencies, and the FX baseline.
       userId?: string;
       // Restrict to specific tokens — applied after the held/tx union,
       // before the existing-price-dedup. Useful for the manual-create
@@ -176,9 +188,10 @@ export class BackfillHistoricalPricesUseCase {
     // Identify (token, date) pairs we need.
     //
     // Strategy: cross-product every token the user *has ever held*
-    // (union of `holdings.token_id` with `holding_transactions.token_id`)
-    // against every day in the lookback window, MINUS days that already
-    // have a daily price within ±24h.
+    // (union of `holdings.token_id` with `holding_transactions.token_id`),
+    // every currency in use and the FX baseline against every day in each
+    // one's window, MINUS the UTC days that already hold a price row against
+    // USD, whatever its granularity or source.
     //
     // Why not just tx-days? The rollup prices the portfolio at every
     // day in the lookback window, not just days the user transacted.
@@ -201,7 +214,7 @@ export class BackfillHistoricalPricesUseCase {
     // thousand rows.
     //   1. Every token the user has ever held (union of holdings
     //      + holding_transactions).
-    //   2. Existing daily-granularity price rows in the lookback
+    //   2. Existing price rows of any granularity in the lookback
     //      window (so we can skip candidates we already priced).
     //   3. generate_series in JS for the date list.
     // Per-token lifetime, derived from `holding_coverage`. Lets the
@@ -273,19 +286,27 @@ export class BackfillHistoricalPricesUseCase {
       if (!existing.lastTxAt) existing.lastTxAt = toDate(row.lastTxAt);
     }
 
+    // `since` is already the instant the lookback reaches; its UTC day is
+    // the first day of the series for a token with nothing to date it.
+    const sinceDay = utcDayStart(since);
+    const todayDay = utcDayStart(new Date());
+    const currencyStartDay = await this.currencyStartDays(opts.userId, sinceDay, todayDay);
+
     // Earliest day any candidate token can need. `since` is the default
     // for tokens with neither a coverage row nor a transaction; a token
     // whose first transaction predates it reaches back to that transaction
-    // instead, so discovery and the existing-price dedup below have to
-    // reach at least as far back as the earliest per-token start or they
-    // would re-request days we already hold.
-    let earliestFirstTx: Date | null = null;
+    // instead, and a currency can start before it on a short lookback, so
+    // discovery and the existing-price dedup below have to reach at least
+    // as far back as the earliest per-token start or they would re-request
+    // days we already hold.
+    let discoverySince = since;
     for (const lifetime of tokenLifetime.values()) {
       const first = lifetime.firstTxAt;
-      if (!first) continue;
-      if (earliestFirstTx === null || first < earliestFirstTx) earliestFirstTx = first;
+      if (first && first < discoverySince) discoverySince = first;
     }
-    const discoverySince = earliestFirstTx && earliestFirstTx < since ? earliestFirstTx : since;
+    for (const startDay of currencyStartDay.values()) {
+      if (startDay < discoverySince.getTime()) discoverySince = new Date(startDay);
+    }
 
     const heldTokens = await db
       .select({ tokenId: schema.holdings.tokenId })
@@ -295,6 +316,7 @@ export class BackfillHistoricalPricesUseCase {
     const userTokenSet = new Set<string>();
     for (const r of heldTokens) userTokenSet.add(r.tokenId);
     for (const r of txLifetimeRows) userTokenSet.add(r.tokenId);
+    for (const tokenId of currencyStartDay.keys()) userTokenSet.add(tokenId);
     userTokenSet.delete(opts.usdTokenId); // base → identity; skip
     if (opts.tokenIds && opts.tokenIds.length > 0) {
       const restrict = new Set(opts.tokenIds);
@@ -329,16 +351,7 @@ export class BackfillHistoricalPricesUseCase {
       ...(opts.userId ? { tokenIds: [...userTokenSet] } : {}),
     });
 
-    // Day series in JS. `since` is already midnight UTC of the earliest
-    // day we want to cover; step by 86400000ms until today inclusive.
-    const sinceDay = new Date(
-      Date.UTC(since.getUTCFullYear(), since.getUTCMonth(), since.getUTCDate())
-    );
-    const today = new Date();
-    const todayDay = new Date(
-      Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate())
-    );
-    const dayMs = 86_400_000;
+    // Day series in JS: step by a day until each token's last day inclusive.
     const normalized: Array<{ tokenId: string; day: Date }> = [];
     let alreadyHadCount = 0;
     for (const tokenId of userTokenSet) {
@@ -355,24 +368,21 @@ export class BackfillHistoricalPricesUseCase {
       // floor sat within weeks of cutting the oldest receipt in
       // production (SC-171). `sinceDay` now applies only to a token with
       // neither a coverage row nor a transaction to read (SC-229).
-      let tokenStart = sinceDay.getTime();
-      let tokenEnd = todayDay.getTime();
-      if (lifetime?.firstTxAt) {
-        tokenStart = Date.UTC(
-          lifetime.firstTxAt.getUTCFullYear(),
-          lifetime.firstTxAt.getUTCMonth(),
-          lifetime.firstTxAt.getUTCDate()
-        );
-      }
+      let tokenStart = sinceDay;
+      let tokenEnd = todayDay;
+      if (lifetime?.firstTxAt) tokenStart = utcDayStart(lifetime.firstTxAt);
       if (!lifetime?.stillHeld && lifetime?.lastTxAt) {
-        const lastDay = Date.UTC(
-          lifetime.lastTxAt.getUTCFullYear(),
-          lifetime.lastTxAt.getUTCMonth(),
-          lifetime.lastTxAt.getUTCDate()
-        );
-        tokenEnd = Math.min(tokenEnd, lastDay);
+        tokenEnd = Math.min(tokenEnd, utcDayStart(lifetime.lastTxAt));
       }
-      for (let t = tokenStart; t <= tokenEnd; t += dayMs) {
+      // A currency is valued every day its users have anything, so it takes
+      // the earlier of its two starts when it is also held, and is priced
+      // through today whether or not a position in it is closed.
+      const currencyStart = currencyStartDay.get(tokenId);
+      if (currencyStart !== undefined) {
+        tokenStart = lifetime ? Math.min(tokenStart, currencyStart) : currencyStart;
+        tokenEnd = todayDay;
+      }
+      for (let t = tokenStart; t <= tokenEnd; t += DAY_MS) {
         const dayAt = new Date(t);
         const key = `${tokenId}:${dayAt.toISOString().slice(0, 10)}`;
         if (havePriced.has(key)) {
@@ -487,6 +497,7 @@ export class BackfillHistoricalPricesUseCase {
         const tokenId = batch[j];
         if (result?.status === 'fulfilled') {
           summary.inserted += result.value.inserted;
+          summary.alreadyHad += result.value.alreadyHad;
           summary.providerMissing += result.value.providerMissing;
           summary.droppedDays += result.value.droppedDays;
           summary.droppedBars += result.value.droppedBars;
@@ -506,7 +517,13 @@ export class BackfillHistoricalPricesUseCase {
               // provider that answered — cleanly, with nothing — may
               // count toward this decision.
               summary.attemptsFailed++;
-            } else if (canAsk && requested >= UNPRICEABLE_MIN_RANGE_DAYS) {
+            } else if (
+              canAsk &&
+              requested >= UNPRICEABLE_MIN_RANGE_DAYS &&
+              // An empty history answer must not stop the hourly price of a
+              // currency somebody uses, held or not.
+              !currencyStartDay.has(tokenId)
+            ) {
               markUnpriceable.push(tokenId);
             }
           }
@@ -561,6 +578,67 @@ export class BackfillHistoricalPricesUseCase {
       'Historical price backfill complete'
     );
     return summary;
+  }
+
+  /**
+   * Every currency in use and every FX baseline member, with the UTC day its
+   * prices start from. A currency in use starts on the earliest evidence day
+   * of the users using it, their first ledger row or first balance
+   * observation, and no further back than the lookback. One whose users have
+   * neither, and a baseline member nobody uses, starts at the floor.
+   */
+  private async currencyStartDays(
+    userId: string | undefined,
+    sinceDay: number,
+    todayDay: number
+  ): Promise<Map<string, number>> {
+    const floorDay = todayDay - CURRENCY_FLOOR_DAYS * DAY_MS;
+    const startDay = new Map<string, number>();
+    const startNoLaterThan = (tokenId: string, day: number) => {
+      const known = startDay.get(tokenId);
+      if (known === undefined || day < known) startDay.set(tokenId, day);
+    };
+
+    const firstEvidence = await this.firstEvidenceByUser(userId);
+    for (const use of await this.tokenRepository.findCurrencyUses({ userId })) {
+      const first = firstEvidence.get(use.userId);
+      startNoLaterThan(
+        use.currencyTokenId,
+        first ? Math.max(utcDayStart(first), sinceDay) : floorDay
+      );
+    }
+    for (const tokenId of await this.priceHubs.tokenIdsOf(FX_BASELINE)) {
+      startNoLaterThan(tokenId, floorDay);
+    }
+    return startDay;
+  }
+
+  /** Each user's first ledger row or balance observation, whichever is earlier. */
+  private async firstEvidenceByUser(userId: string | undefined): Promise<Map<string, Date>> {
+    const ledger = await db
+      .select({
+        userId: schema.holdingTransactions.userId,
+        first: sql<Date | string | null>`MIN(${schema.holdingTransactions.occurredAt})`,
+      })
+      .from(schema.holdingTransactions)
+      .where(userId ? eq(schema.holdingTransactions.userId, userId) : undefined)
+      .groupBy(schema.holdingTransactions.userId);
+    const observed = await db
+      .select({
+        userId: schema.holdingBalanceObservations.userId,
+        first: sql<Date | string | null>`MIN(${schema.holdingBalanceObservations.observedAt})`,
+      })
+      .from(schema.holdingBalanceObservations)
+      .where(userId ? eq(schema.holdingBalanceObservations.userId, userId) : undefined)
+      .groupBy(schema.holdingBalanceObservations.userId);
+
+    const first = new Map<string, Date>();
+    for (const row of [...ledger, ...observed]) {
+      const at = toDate(row.first);
+      const known = first.get(row.userId);
+      if (at && (!known || at < known)) first.set(row.userId, at);
+    }
+    return first;
   }
 
   /** The subset with no `token_prices` row at all — the only tokens a

@@ -24,6 +24,12 @@ describe('SCHEDULED_JOB_DESCRIPTORS registry', () => {
     }
   });
 
+  // Foundation A3, Task 10: the historical price backfill prices every
+  // currency in use, so nothing is left for a forex job to do.
+  test('no descriptor is named forex-backfill', () => {
+    expect(SCHEDULED_JOB_DESCRIPTORS.map((d) => d.name)).not.toContain('forex-backfill');
+  });
+
   test('descriptor names are unique', () => {
     const names = SCHEDULED_JOB_DESCRIPTORS.map((d) => d.name);
     expect(new Set(names).size).toBe(names.length);

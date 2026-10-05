@@ -7,6 +7,7 @@
 export { dropPricesOf } from './committed-rows';
 export { restoreContainerAfterAll } from './container';
 export { withTestDb } from './db';
+export { freshExchangeRateApiClient } from './exchangerate-api';
 export { makeCredential, makeInstitution, makeInstitutionType, makeUser } from './factories';
 export { makeAccount, makeHolding, makeToken } from './factories-extra';
 export { captureHistory } from './history-neutrality';

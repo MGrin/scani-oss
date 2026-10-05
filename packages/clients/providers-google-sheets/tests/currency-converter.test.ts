@@ -1,37 +1,40 @@
-import { describe, expect, it } from 'bun:test';
+import { afterEach, describe, expect, it } from 'bun:test';
+import { restoreContainerAfterAll } from '../../../business/domain/test/helpers/container';
+import { freshExchangeRateApiClient } from '../../../business/domain/test/helpers/exchangerate-api';
 import { GoogleSheetsCurrencyConverter } from '../src/currency-converter';
 
+// The client under each converter is installed in the process-global
+// container; put back whatever this file changes (SC-448).
+restoreContainerAfterAll();
+
+const realFetch = globalThis.fetch;
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+
 /**
- * A limiter that just runs the work — the real one is Redis-backed.
+ * A converter over an exchangerate-api client that has asked nothing, whose
+ * upstream is `upstream`, and every URL that client asked.
  */
-const passthroughLimiter = {
-  execute: async <T>(fn: () => Promise<T>): Promise<T> => fn(),
-} as unknown as ConstructorParameters<typeof GoogleSheetsCurrencyConverter>[0];
-
-/** Bun's `fetch` type carries a `preconnect` member a stub has no use for. */
-type FetchImpl = () => Promise<Response>;
-
-function withFetch<T>(impl: FetchImpl, run: () => Promise<T>): Promise<T> {
-  const original = globalThis.fetch;
-  globalThis.fetch = impl as unknown as typeof fetch;
-  return run().finally(() => {
-    globalThis.fetch = original;
-  });
+function converterOver(upstream: () => Promise<Response>) {
+  const asked: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    asked.push(String(input));
+    return upstream();
+  }) as unknown as typeof fetch;
+  return { converter: new GoogleSheetsCurrencyConverter(freshExchangeRateApiClient()), asked };
 }
 
-const rateResponse = (rates: Record<string, number>) =>
-  new Response(JSON.stringify({ rates }), { status: 200 });
+/** The upstream's table: units of each currency per one USD. Invented figures. */
+const usdTable = (rates: Record<string, number>) => Response.json({ base: 'USD', rates });
 
 describe('GoogleSheetsCurrencyConverter', () => {
   it('reports a rate lookup that throws as a refusal, never as a number', async () => {
-    const converter = new GoogleSheetsCurrencyConverter(passthroughLimiter);
+    const { converter } = converterOver(async () => {
+      throw new Error('The operation was aborted.');
+    });
 
-    const outcome = await withFetch(
-      async () => {
-        throw new Error('The operation was aborted.');
-      },
-      () => converter.convert('50', 'CAD', 'USD', new Date())
-    );
+    const outcome = await converter.convert('50', 'CAD', 'USD', new Date());
 
     expect(outcome.ok).toBe(false);
     // The refusal must not carry a price at all — the shape is what stops
@@ -40,49 +43,68 @@ describe('GoogleSheetsCurrencyConverter', () => {
   });
 
   it('reports a non-ok upstream response as a refusal', async () => {
-    const converter = new GoogleSheetsCurrencyConverter(passthroughLimiter);
+    const { converter } = converterOver(async () => new Response('nope', { status: 503 }));
 
-    const outcome = await withFetch(
-      async () => new Response('nope', { status: 503 }),
-      () => converter.convert('50', 'CAD', 'USD', new Date())
-    );
+    const outcome = await converter.convert('50', 'CAD', 'USD', new Date());
 
     expect(outcome.ok).toBe(false);
   });
 
-  it('reports a payload missing the requested pair as a refusal', async () => {
-    const converter = new GoogleSheetsCurrencyConverter(passthroughLimiter);
+  it('reports a table missing the requested currency as a refusal', async () => {
+    const { converter } = converterOver(async () => usdTable({ USD: 1, EUR: 0.8 }));
 
-    const outcome = await withFetch(
-      async () => rateResponse({ EUR: 0.68 }),
-      () => converter.convert('50', 'CAD', 'USD', new Date())
-    );
+    const outcome = await converter.convert('50', 'CAD', 'USD', new Date());
 
     expect(outcome.ok).toBe(false);
+  });
+
+  it('reports a price that is not a number as a refusal that says so', async () => {
+    const { converter } = converterOver(async () => usdTable({ USD: 1, CAD: 1.25 }));
+
+    const outcome = await converter.convert('#N/A', 'CAD', 'USD', new Date());
+
+    expect(outcome).toEqual({
+      ok: false,
+      reason: "the price '#N/A' is not a number, so it cannot be expressed in USD",
+    });
   });
 
   it('converts when upstream answers', async () => {
-    const converter = new GoogleSheetsCurrencyConverter(passthroughLimiter);
+    const { converter } = converterOver(async () => usdTable({ USD: 1, CAD: 1.25 }));
 
-    const outcome = await withFetch(
-      async () => rateResponse({ USD: 0.72 }),
-      () => converter.convert('50', 'CAD', 'USD', new Date())
+    const outcome = await converter.convert('50', 'CAD', 'USD', new Date());
+
+    expect(outcome).toEqual({ ok: true, price: '40' });
+  });
+
+  it('asks for the USD table whatever the pair, and one table answers every pair', async () => {
+    const { converter, asked } = converterOver(async () =>
+      usdTable({ USD: 1, CAD: 1.25, EUR: 0.8, GBP: 0.64 })
     );
 
-    expect(outcome).toEqual({ ok: true, price: '36' });
+    const outcomes = [
+      await converter.convert('50', 'CAD', 'USD', new Date()),
+      await converter.convert('10', 'EUR', 'GBP', new Date()),
+      await converter.convert('8', 'USD', 'CAD', new Date()),
+    ];
+
+    expect(asked).toEqual(['https://api.exchangerate-api.com/v4/latest/USD']);
+    expect(outcomes).toEqual([
+      { ok: true, price: '40' },
+      { ok: true, price: '8' },
+      { ok: true, price: '10' },
+    ]);
   });
 
   it('passes a same-currency price through without an upstream call', async () => {
-    const converter = new GoogleSheetsCurrencyConverter(passthroughLimiter);
+    const { converter, asked } = converterOver(async () => {
+      throw new Error('must not be called');
+    });
 
-    const outcome = await withFetch(
-      async () => {
-        throw new Error('must not be called');
-      },
-      () => converter.convert('36', 'USD', 'USD', new Date())
-    );
+    const outcome = await converter.convert('36', 'USD', 'USD', new Date());
 
     expect(outcome).toEqual({ ok: true, price: '36' });
+    expect(asked).toEqual([]);
   });
 
   /**
@@ -94,43 +116,37 @@ describe('GoogleSheetsCurrencyConverter', () => {
    * it. Both shapes were observed in production.
    */
   it('does not let one failure decide the next caller (no negative caching)', async () => {
-    const converter = new GoogleSheetsCurrencyConverter(passthroughLimiter);
     let call = 0;
+    const { converter } = converterOver(async () => {
+      call += 1;
+      if (call === 1) return new Response('nope', { status: 503 });
+      return usdTable({ USD: 1, CAD: 1.25 });
+    });
 
-    const outcomes = await withFetch(
-      async () => {
-        call += 1;
-        if (call === 1) return new Response('nope', { status: 503 });
-        return rateResponse({ USD: 0.72 });
-      },
-      async () => [
-        await converter.convert('50', 'CAD', 'USD', new Date()),
-        await converter.convert('25', 'CAD', 'USD', new Date()),
-      ]
-    );
+    const outcomes = [
+      await converter.convert('50', 'CAD', 'USD', new Date()),
+      await converter.convert('25', 'CAD', 'USD', new Date()),
+    ];
 
     expect(outcomes[0]!.ok).toBe(false);
-    expect(outcomes[1]).toEqual({ ok: true, price: '18' });
+    expect(outcomes[1]).toEqual({ ok: true, price: '20' });
     expect(call).toBe(2);
   });
 
   it('caches a successful rate so a second token costs no upstream call', async () => {
-    const converter = new GoogleSheetsCurrencyConverter(passthroughLimiter);
     let call = 0;
+    const { converter } = converterOver(async () => {
+      call += 1;
+      return usdTable({ USD: 1, CAD: 1.25 });
+    });
 
-    const outcomes = await withFetch(
-      async () => {
-        call += 1;
-        return rateResponse({ USD: 0.72 });
-      },
-      async () => [
-        await converter.convert('50', 'CAD', 'USD', new Date()),
-        await converter.convert('25', 'CAD', 'USD', new Date()),
-      ]
-    );
+    const outcomes = [
+      await converter.convert('50', 'CAD', 'USD', new Date()),
+      await converter.convert('25', 'CAD', 'USD', new Date()),
+    ];
 
-    expect(outcomes[0]).toEqual({ ok: true, price: '36' });
-    expect(outcomes[1]).toEqual({ ok: true, price: '18' });
+    expect(outcomes[0]).toEqual({ ok: true, price: '40' });
+    expect(outcomes[1]).toEqual({ ok: true, price: '20' });
     expect(call).toBe(1);
   });
 });

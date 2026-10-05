@@ -29,7 +29,7 @@ enabled](#how-to-tell-whats-enabled) is the check.
 | `COINGECKO_API_KEY` | [CoinGecko](https://www.coingecko.com/en/api) | Paid-tier crypto prices (current + historical). Without a key, falls back to the public CoinGecko tier (rate-limited). |
 | `FINNHUB_API_KEY` | [Finnhub](https://finnhub.io/) | Public-equity prices (NYSE, NASDAQ, LSE, …). |
 
-Note: fiat / FX pricing uses [Frankfurter](https://frankfurter.app/),
+Note: fiat / FX pricing uses [Frankfurter](https://frankfurter.dev/docs/),
 which requires no key.
 
 ## AI / parsing

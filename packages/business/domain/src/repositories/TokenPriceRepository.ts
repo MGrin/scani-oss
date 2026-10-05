@@ -650,38 +650,6 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
     }
   }
 
-  // The backfill's question: is a DAILY row stored at or before T. Not the
-  // readers' lookup above, which a nearer intraday reading answers (SC-1543).
-  async findLatestDailyAtOrBefore(
-    tokenId: string,
-    baseTokenId: string,
-    timestamp: Date,
-    transaction?: DatabaseTransaction
-  ): Promise<TokenPrice | null> {
-    try {
-      const results = await this.getDb(transaction)
-        .select()
-        .from(schema.tokenPrices)
-        .where(
-          and(
-            eq(schema.tokenPrices.tokenId, tokenId),
-            eq(schema.tokenPrices.baseTokenId, baseTokenId),
-            eq(schema.tokenPrices.granularity, 'daily'),
-            lte(schema.tokenPrices.timestamp, timestamp)
-          )
-        )
-        .orderBy(desc(schema.tokenPrices.timestamp))
-        .limit(1);
-      return results[0] ?? null;
-    } catch (error) {
-      this.logger.error(
-        { tokenId, baseTokenId, timestamp, error },
-        'Failed to find latest daily price'
-      );
-      throw error;
-    }
-  }
-
   // Collapse intraday prices older than `retentionDays` whole UTC days into a
   // single 'daily' row per (token, base, day): the last intraday reading of
   // each day becomes a synthesized daily close, then the collapsed intraday

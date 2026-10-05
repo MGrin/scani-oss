@@ -32,7 +32,7 @@ export interface PriceHub {
 
 /**
  * Evaluated in order; the first hub whose two legs both resolve wins.
- * USD first because every forex-backfill edge is anchored on it, which
+ * USD first because every historical-price-backfill edge is anchored on it, which
  * is also why the two positions behind it are nearly unreachable for
  * fiat pairs. This is the order `PriceGraphService` and the nightly
  * rollup already used; `CurrencyConverter` listed EUR second, and now

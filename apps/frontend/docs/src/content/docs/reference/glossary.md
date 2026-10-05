@@ -398,7 +398,7 @@ and two-hop routing.
 
 ### FX
 *Foreign Exchange.* Conversion between fiat currencies. *In
-Scani:* supplied by [Frankfurter](https://frankfurter.app/) with
+Scani:* supplied by [Frankfurter](https://frankfurter.dev/docs/) with
 no key required.
 
 ### Granularity

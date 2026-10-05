@@ -1,6 +1,6 @@
 /**
  * Characterization (foundation A3, Task 6): the rows the historical backfill
- * stores, through a real database, before and after its two writes move onto
+ * stores, through a real database, through
  * `PriceWriter`. The unit tests beside this stub the write; these do not.
  *
  * The service writes through the global connection, so every row here is
@@ -114,36 +114,6 @@ describe('HistoricalPriceBackfillService writes', () => {
     );
   });
 
-  test('a single day lands as a daily row at the provider’s stamp, and is already-have the next time', async () => {
-    const currency = await commitFiat();
-    const base = await commitFiat();
-    const day = new Date('2026-02-02T00:00:00.000Z');
-    let asked = 0;
-    const service = backfill({
-      quote: (token, at) => {
-        asked += 1;
-        return {
-          tokenId: token.id,
-          baseTokenId: base.id,
-          price: '2.5',
-          timestamp: at,
-          source: 'test-fx_historical',
-        };
-      },
-    });
-
-    const first = await service.backfillOne(currency.id, day, base.id);
-    const second = await service.backfillOne(currency.id, day, base.id);
-
-    expect(first).toMatchObject({ status: 'inserted', priceStored: '2.5' });
-    expect(second).toMatchObject({ status: 'already-have', priceStored: '2.5' });
-    expect(asked).toBe(1);
-    const stored = await storedFor(currency.id);
-    expect(stored.map((r) => [r.price, r.timestamp.getTime(), r.granularity, r.source])).toEqual([
-      ['2.5', day.getTime(), 'daily', 'test-fx_historical'],
-    ]);
-  });
-
   // A dropped bar's day is neither inserted nor missing: the provider answered
   // it, so the unpriceable flag, which reads `providerMissing`, sees what it did.
   test('a bar the writer drops is counted dropped, never inserted, and its day is not missing', async () => {
@@ -216,36 +186,98 @@ describe('HistoricalPriceBackfillService writes', () => {
     );
   });
 
-  test('a single day whose bar the writer drops is dropped, not inserted, and is asked again next time', async () => {
+  // Foundation A3, Task 10. The backfill fills empty days. A day that holds a
+  // row of any kind keeps it as it is, whatever the provider answers for it.
+  describe('a day that already holds a row', () => {
+    const first = new Date('2026-02-02T00:00:00.000Z');
+    const [before, covered, after] = [0, 1, 2].map((k) => new Date(first.getTime() + k * DAY)) as [
+      Date,
+      Date,
+      Date,
+    ];
+
+    /** A provider with a bar at each of the three midnights, asked for the two around `covered`. */
+    async function runSpanning(stored: { timestamp: Date; granularity: 'daily' | 'intraday' }) {
+      const currency = await commitFiat();
+      const base = await commitFiat();
+      await getDb()
+        .insert(schema.tokenPrices)
+        .values({
+          tokenId: currency.id,
+          baseTokenId: base.id,
+          price: '1.25',
+          source: 'stored-before',
+          ...stored,
+        });
+      const service = backfill({
+        range: (token) =>
+          [before, covered, after].map((day) => ({
+            tokenId: token.id,
+            baseTokenId: base.id,
+            price: '1.75',
+            timestamp: day,
+            source: 'test-fx_historical',
+          })),
+      });
+
+      const result = await service.backfillTokenRange(currency.id, base.id, [before, after]);
+
+      expect(result).toMatchObject({ inserted: 2, providerMissing: 0 });
+      return (await storedFor(currency.id)).map((r) => [
+        r.timestamp.toISOString(),
+        r.price,
+        r.source,
+        r.granularity,
+      ]);
+    }
+
+    test('CONTROL: a stored row on a covered day keeps its price and its source after a run that spans it', async () => {
+      // The provider's bar has the stored row's own key, so an upsert replaces it.
+      const stored = await runSpanning({ timestamp: covered, granularity: 'daily' });
+
+      expect(stored).toEqual([
+        [before.toISOString(), '1.75', 'test-fx_historical', 'daily'],
+        [covered.toISOString(), '1.25', 'stored-before', 'daily'],
+        [after.toISOString(), '1.75', 'test-fx_historical', 'daily'],
+      ]);
+    });
+
+    test('a quote on a day that already holds a row is not written', async () => {
+      // The provider's bar has a key of its own, so an upsert adds it beside the row.
+      const afternoon = new Date(covered.getTime() + 14 * 60 * 60 * 1000);
+      const stored = await runSpanning({ timestamp: afternoon, granularity: 'intraday' });
+
+      expect(stored).toEqual([
+        [before.toISOString(), '1.75', 'test-fx_historical', 'daily'],
+        [afternoon.toISOString(), '1.25', 'stored-before', 'intraday'],
+        [after.toISOString(), '1.75', 'test-fx_historical', 'daily'],
+      ]);
+    });
+  });
+
+  // DeFiLlama stamps a daily point at the price's own time, which for a
+  // midnight asked is often the last hour of the day before.
+  test('the point stamped before the first day asked is written when that day holds no row', async () => {
     const currency = await commitFiat();
     const base = await commitFiat();
-    const day = new Date('2026-02-02T00:00:00.000Z');
-    let asked = 0;
+    const first = new Date('2026-02-02T00:00:00.000Z');
+    const days = [first, new Date(first.getTime() + DAY)];
+    const anHourBefore = (day: Date) => new Date(day.getTime() - 60 * 60 * 1000);
     const service = backfill({
-      quote: (token, at) => {
-        asked += 1;
-        return {
+      range: (token) =>
+        days.map((day) => ({
           tokenId: token.id,
           baseTokenId: base.id,
-          price: '0',
-          timestamp: at,
+          price: '1.75',
+          timestamp: anHourBefore(day),
           source: 'test-fx_historical',
-        };
-      },
+        })),
     });
 
-    const first = await service.backfillOne(currency.id, day, base.id);
-    const second = await service.backfillOne(currency.id, day, base.id);
+    await service.backfillTokenRange(currency.id, base.id, days);
 
-    expect(first).toEqual({
-      tokenId: currency.id,
-      baseTokenId: base.id,
-      at: day,
-      status: 'dropped',
-      providerUsed: 'test-fx',
-    });
-    expect(second.status).toBe('dropped');
-    expect(asked).toBe(2);
-    expect(await storedFor(currency.id)).toEqual([]);
+    expect((await storedFor(currency.id)).map((r) => r.timestamp.toISOString())).toEqual(
+      days.map((day) => anHourBefore(day).toISOString())
+    );
   });
 });

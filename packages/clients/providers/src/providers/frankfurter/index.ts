@@ -7,11 +7,13 @@
  * on Kraken or IBKR still needs each fiat balance valued in their
  * display base currency for the historical net-worth chart.
  *
- * The provider implements `HistoricalPriceProvider` only; the
- * existing `ExchangeRateProvider` covers live rates so we don't
- * duplicate that path here.
+ * Live rates come from `/latest`. A pair the ECB does not publish, or
+ * one Frankfurter did not answer, comes from the exchangerate-api client.
  *
- * API: `https://api.frankfurter.app/{date}?from={FROM}&to={TO}`
+ * API: `https://api.frankfurter.dev/v1/{date}?from=EUR&to={CCY}[,{CCY}]`
+ *  - Always asked from EUR, the base the ECB publishes, and the pair is
+ *    divided here: asked from another base, Frankfurter serves a table
+ *    it derived and rounded itself (SC-1565).
  *  - Date format: YYYY-MM-DD.
  *  - Resolves to the previous business day on weekends/holidays;
  *    we preserve the resolved date in `PriceQuote.timestamp` so the
@@ -28,6 +30,15 @@ import type { ProviderFactory } from '../../core/boot';
 import type { Capability, HistoricalPriceProvider } from '../../core/capabilities';
 import type { PriceQuote, ProviderContext } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
+import {
+  type ExchangeRateApiClient,
+  exchangeRateApi,
+  rateBetween,
+  rateTable,
+} from '../exchangerate-api/client';
+
+const API = 'https://api.frankfurter.dev/v1';
+const BASE = 'EUR';
 
 interface FrankfurterResponse {
   amount?: number;
@@ -36,9 +47,21 @@ interface FrankfurterResponse {
   rates?: Record<string, number>;
 }
 
+/** The query that asks EUR for both sides of a pair. EUR itself is never a target. */
+function fromEurQuery(fromSymbol: string, toSymbol: string): string {
+  const targets = [fromSymbol, toSymbol].filter((symbol) => symbol !== BASE);
+  return `from=${BASE}&to=${targets.join(',')}`;
+}
+
+/** Price of one `fromSymbol` in `toSymbol` from one day's EUR rates, or null when they do not give one. */
+function priceFromEurRates(rates: unknown, fromSymbol: string, toSymbol: string): string | null {
+  const table = rateTable(rates, BASE);
+  return table && rateBetween(table, fromSymbol, toSymbol);
+}
+
 /**
  * Currencies Frankfurter publishes rates for.
- * Source: https://www.frankfurter.app/docs/#currencies.
+ * Source: https://frankfurter.dev/docs/#currencies.
  *
  * Frankfurter's data comes from the ECB; the ECB stopped publishing RUB
  * in 2022 and never carried smaller-economy currencies (KZT, GEL, …).
@@ -84,44 +107,148 @@ const SUPPORTED_FIAT = new Set([
  * Used as a live-rate fallback only — exchangerate-api has no historical
  * endpoint on the free tier, so historical pricing remains Frankfurter-only.
  *
- * The list is conservative; expand it as users surface holdings in
- * additional fiat. Source: https://www.exchangerate-api.com/docs/supported-currencies
+ * Every non-ECB code in the USD table, verified 2026-10-05. Keeping only
+ * common currencies here would strand refresh jobs for seeded fiat such as
+ * ETB before the client can answer. A missing table entry still gives no price.
+ * Source: https://api.exchangerate-api.com/v4/latest/USD
  */
 const EXCHANGERATE_FALLBACK_FIAT = new Set([
-  'RUB',
-  'KZT',
-  'UAH',
-  'GEL',
+  'AED',
+  'AFN',
+  'ALL',
   'AMD',
+  'ANG',
+  'AOA',
+  'ARS',
+  'AWG',
   'AZN',
+  'BAM',
+  'BBD',
+  'BDT',
+  'BHD',
+  'BIF',
+  'BMD',
+  'BND',
+  'BOB',
+  'BSD',
+  'BTN',
+  'BWP',
   'BYN',
+  'BZD',
+  'CDF',
+  'CLF',
+  'CLP',
+  'CNH',
+  'COP',
+  'CRC',
+  'CUP',
+  'CVE',
+  'DJF',
+  'DOP',
+  'DZD',
+  'EGP',
+  'ERN',
+  'ETB',
+  'FJD',
+  'FKP',
+  'FOK',
+  'GEL',
+  'GGP',
+  'GHS',
+  'GIP',
+  'GMD',
+  'GNF',
+  'GTQ',
+  'GYD',
+  'HNL',
+  'HRK',
+  'HTG',
+  'IMP',
+  'IQD',
+  'IRR',
+  'JEP',
+  'JMD',
+  'JOD',
+  'KES',
   'KGS',
+  'KHR',
+  'KID',
+  'KMF',
+  'KWD',
+  'KYD',
+  'KZT',
+  'LAK',
+  'LBP',
+  'LKR',
+  'LRD',
+  'LSL',
+  'LYD',
+  'MAD',
+  'MDL',
+  'MGA',
+  'MKD',
+  'MMK',
+  'MNT',
+  'MOP',
+  'MRU',
+  'MUR',
+  'MVR',
+  'MWK',
+  'MZN',
+  'NAD',
+  'NGN',
+  'NIO',
+  'NPR',
+  'OMR',
+  'PAB',
+  'PEN',
+  'PGK',
+  'PKR',
+  'PYG',
+  'QAR',
+  'RSD',
+  'RUB',
+  'RWF',
+  'SAR',
+  'SBD',
+  'SCR',
+  'SDG',
+  'SHP',
+  'SLE',
+  'SLL',
+  'SOS',
+  'SRD',
+  'SSP',
+  'STN',
+  'SYP',
+  'SZL',
   'TJS',
   'TMT',
-  'UZS',
-  'MNT',
-  'AED',
-  'SAR',
-  'QAR',
-  'KWD',
-  'BHD',
-  'OMR',
-  'JOD',
-  'LBP',
-  'EGP',
-  'NGN',
-  'KES',
-  'GHS',
   'TND',
-  'MAD',
-  'PKR',
-  'BDT',
-  'LKR',
-  'VND',
+  'TOP',
+  'TTD',
+  'TVD',
   'TWD',
+  'TZS',
+  'UAH',
+  'UGX',
+  'UYU',
+  'UZS',
+  'VES',
+  'VND',
+  'VUV',
+  'WST',
+  'XAF',
+  'XCD',
+  'XCG',
+  'XDR',
+  'XOF',
+  'XPF',
+  'YER',
+  'ZMW',
+  'ZWG',
+  'ZWL',
 ]);
-
-const EXCHANGERATE_API_BASE_URL = 'https://api.exchangerate-api.com/v4/latest';
 
 export class FrankfurterProvider implements HistoricalPriceProvider {
   readonly providerKey = 'frankfurter';
@@ -129,7 +256,10 @@ export class FrankfurterProvider implements HistoricalPriceProvider {
 
   private readonly logger: CustomLogger;
 
-  constructor(private readonly limiter: OutflowRateLimiter) {
+  constructor(
+    private readonly limiter: OutflowRateLimiter,
+    private readonly exchangeRates: ExchangeRateApiClient
+  ) {
     this.logger = createComponentLogger('provider:frankfurter');
   }
 
@@ -187,22 +317,23 @@ export class FrankfurterProvider implements HistoricalPriceProvider {
     fromSymbol: string,
     toSymbol: string
   ): Promise<PriceQuote | null> {
-    const url = `https://api.frankfurter.app/latest?from=${fromSymbol}&to=${toSymbol}`;
+    const url = `${API}/latest?${fromEurQuery(fromSymbol, toSymbol)}`;
     try {
       const response = await this.limiter.execute(async () =>
         fetchWithTimeout(url, { headers: { 'Content-Type': 'application/json' } })
       );
       if (!response.ok) return null;
       const data = (await response.json()) as FrankfurterResponse;
-      const rate = data.rates?.[toSymbol];
-      if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) return null;
+      if (data.base !== BASE) return null;
+      const price = priceFromEurRates(data.rates, fromSymbol, toSymbol);
+      if (price === null) return null;
       const effective = data.date
         ? new Date(`${data.date}T00:00:00Z`)
         : (ctx.timestamp ?? new Date());
       return {
         tokenId: t.id,
         baseTokenId: ctx.baseCurrency.id,
-        price: String(rate),
+        price,
         timestamp: effective,
         source: 'frankfurter',
       };
@@ -218,26 +349,16 @@ export class FrankfurterProvider implements HistoricalPriceProvider {
     fromSymbol: string,
     toSymbol: string
   ): Promise<PriceQuote | null> {
-    const url = `${EXCHANGERATE_API_BASE_URL}/${fromSymbol}`;
-    try {
-      const response = await this.limiter.execute(async () =>
-        fetchWithTimeout(url, { headers: { 'Content-Type': 'application/json' } })
-      );
-      if (!response.ok) return null;
-      const data = (await response.json()) as { rates?: Record<string, number> };
-      const rate = data.rates?.[toSymbol];
-      if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) return null;
-      return {
-        tokenId: t.id,
-        baseTokenId: ctx.baseCurrency.id,
-        price: String(rate),
-        timestamp: ctx.timestamp ?? new Date(),
-        source: 'exchangerate-api',
-      };
-    } catch (err) {
-      this.logger.debug({ err, fromSymbol, toSymbol }, 'exchangerate-api /latest request failed');
-      return null;
-    }
+    const table = await this.exchangeRates.fetchUsdRates();
+    const price = table && rateBetween(table.rates, fromSymbol, toSymbol);
+    if (!price) return null;
+    return {
+      tokenId: t.id,
+      baseTokenId: ctx.baseCurrency.id,
+      price,
+      timestamp: ctx.timestamp ?? new Date(),
+      source: 'exchangerate-api',
+    };
   }
 
   async fetchHistoricalPrice(t: Token, at: Date, ctx: ProviderContext): Promise<PriceQuote | null> {
@@ -262,7 +383,7 @@ export class FrankfurterProvider implements HistoricalPriceProvider {
     }
 
     const dateStr = at.toISOString().slice(0, 10);
-    const url = `https://api.frankfurter.app/${dateStr}?from=${fromSymbol}&to=${toSymbol}`;
+    const url = `${API}/${dateStr}?${fromEurQuery(fromSymbol, toSymbol)}`;
 
     try {
       const response = await this.limiter.execute(async () =>
@@ -270,8 +391,9 @@ export class FrankfurterProvider implements HistoricalPriceProvider {
       );
       if (!response.ok) return null;
       const data = (await response.json()) as FrankfurterResponse;
-      const rate = data.rates?.[toSymbol];
-      if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) return null;
+      if (data.base !== BASE) return null;
+      const price = priceFromEurRates(data.rates, fromSymbol, toSymbol);
+      if (price === null) return null;
 
       // Resolved business-day date — may be 1-3 days before `at` on
       // weekends / ECB holidays. The balance-at-time service treats
@@ -280,7 +402,7 @@ export class FrankfurterProvider implements HistoricalPriceProvider {
       return {
         tokenId: t.id,
         baseTokenId: ctx.baseCurrency.id,
-        price: String(rate),
+        price,
         timestamp: effective,
         source: 'frankfurter_historical',
       };
@@ -314,22 +436,23 @@ export class FrankfurterProvider implements HistoricalPriceProvider {
 
     const fromStr = from.toISOString().slice(0, 10);
     const toStr = to.toISOString().slice(0, 10);
-    const url = `https://api.frankfurter.app/${fromStr}..${toStr}?from=${fromSymbol}&to=${toSymbol}`;
+    const url = `${API}/${fromStr}..${toStr}?${fromEurQuery(fromSymbol, toSymbol)}`;
     try {
       const response = await this.limiter.execute(async () =>
         fetchWithTimeout(url, { headers: { 'Content-Type': 'application/json' } })
       );
       if (!response.ok) return [];
       const data = (await response.json()) as FrankfurterRangeResponse;
+      if (data.base !== BASE) return [];
       const rates = data.rates ?? {};
       const out: PriceQuote[] = [];
       for (const [dateStr, ratesAtDay] of Object.entries(rates)) {
-        const rate = ratesAtDay?.[toSymbol];
-        if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) continue;
+        const price = priceFromEurRates(ratesAtDay, fromSymbol, toSymbol);
+        if (price === null) continue;
         out.push({
           tokenId: t.id,
           baseTokenId: ctx.baseCurrency.id,
-          price: String(rate),
+          price,
           timestamp: new Date(`${dateStr}T00:00:00Z`),
           source: 'frankfurter_historical',
         });
@@ -350,7 +473,7 @@ interface FrankfurterRangeResponse {
   base?: string;
   start_date?: string;
   end_date?: string;
-  // Map of YYYY-MM-DD → { TARGET_CCY: rate }
+  // Map of YYYY-MM-DD → { CCY: units per one EUR }
   rates?: Record<string, Record<string, number>>;
 }
 
@@ -371,5 +494,5 @@ export const frankfurterFactory: ProviderFactory = async (deps) => {
     registeredFrom: 'providers/frankfurter',
     description: 'Frankfurter ECB rates: 10 req / 1s',
   });
-  return new FrankfurterProvider(registered);
+  return new FrankfurterProvider(registered, exchangeRateApi());
 };
