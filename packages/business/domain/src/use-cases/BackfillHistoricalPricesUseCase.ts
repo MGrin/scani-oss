@@ -41,6 +41,13 @@ export interface BackfillSummary {
   inserted: number;
   alreadyHad: number;
   providerMissing: number;
+  // Attempted days a provider answered only with bars the price writer does
+  // not store. `attempted` is `inserted + providerMissing + droppedDays`: a
+  // day already priced is filtered out before the attempt, so `alreadyHad`
+  // is no part of it. Per token range, in the service, it is and reads 0.
+  droppedDays: number;
+  // Bars the price writer did not store, on any day a provider returned.
+  droppedBars: number;
   // Tokens we skipped entirely because they're inside an unpriceable
   // cooldown window from a previous failed backfill.
   skippedUnpriceable: number;
@@ -144,6 +151,8 @@ export class BackfillHistoricalPricesUseCase {
         inserted: 0,
         alreadyHad: 0,
         providerMissing: 0,
+        droppedDays: 0,
+        droppedBars: 0,
         skippedUnpriceable: 0,
         attemptsFailed: 0,
         skippedDueToLock: true,
@@ -389,6 +398,8 @@ export class BackfillHistoricalPricesUseCase {
       inserted: 0,
       alreadyHad: alreadyHadCount,
       providerMissing: 0,
+      droppedDays: 0,
+      droppedBars: 0,
       skippedUnpriceable,
       attemptsFailed: 0,
       durationMs: 0,
@@ -477,9 +488,14 @@ export class BackfillHistoricalPricesUseCase {
         if (result?.status === 'fulfilled') {
           summary.inserted += result.value.inserted;
           summary.providerMissing += result.value.providerMissing;
+          summary.droppedDays += result.value.droppedDays;
+          summary.droppedBars += result.value.droppedBars;
           if (tokenId) {
             const requested = daysByToken.get(tokenId)?.length ?? 0;
-            if (result.value.inserted > 0) {
+            // A needed day whose bar the writer drops was written, and so
+            // counted inserted, before PriceWriter: it clears the cooldown as
+            // it did then. A dropped bar on a day nobody asked for does not.
+            if (result.value.inserted > 0 || result.value.droppedDays > 0) {
               clearUnpriceable.push(tokenId);
             } else if (result.value.attemptFailed) {
               // A run that never got an answer has established nothing.

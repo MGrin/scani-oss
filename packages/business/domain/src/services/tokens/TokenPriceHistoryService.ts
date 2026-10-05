@@ -13,6 +13,7 @@ import {
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { BaseService } from '../BaseService';
+import { PriceWriter } from '../pricing/PriceWriter';
 
 // TokenPriceHistoryService — custom-token (private-company / other) CRUD
 // plus manual price-edit-log persistence and audit reads.
@@ -22,6 +23,7 @@ export class TokenPriceHistoryService extends BaseService {
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly tokenPriceEditHistoryRepository = Container.get(TokenPriceEditHistoryRepository);
+  private readonly priceWriter = Container.get(PriceWriter);
 
   constructor() {
     super('TokenPriceHistoryService');
@@ -126,16 +128,20 @@ export class TokenPriceHistoryService extends BaseService {
         this.assertExists(createdToken, 'Failed to create custom token');
 
         const priceStr = data.manualPrice.toString();
-        await this.tokenPriceRepository.create(
+        const { written } = await this.priceWriter.writeManual(
           {
             tokenId: createdToken.id,
             baseTokenId: baseCurrencyToken.id,
             price: priceStr,
-            timestamp: new Date(),
+            at: new Date(),
+            granularity: 'intraday',
             source: 'manual',
           },
           tx
         );
+        // Positive is checked above; the writer also refuses what the column
+        // would, such as Infinity. No token is created without its price.
+        if (written !== 1) throw new Error('manualPrice must be a positive number');
 
         await this.tokenPriceEditHistoryRepository.create(
           {
@@ -231,16 +237,18 @@ export class TokenPriceHistoryService extends BaseService {
         const previousBaseCurrencyId = latest?.baseTokenId ?? null;
         const newPriceStr = input.newPrice.toString();
 
-        await this.tokenPriceRepository.create(
+        const { written } = await this.priceWriter.writeManual(
           {
             tokenId: token.id,
             baseTokenId: baseCurrencyToken.id,
             price: newPriceStr,
-            timestamp: new Date(),
+            at: new Date(),
+            granularity: 'intraday',
             source: 'manual',
           },
           tx
         );
+        if (written !== 1) throw new Error('newPrice must be a positive number');
 
         const historyRow = await this.tokenPriceEditHistoryRepository.create(
           {

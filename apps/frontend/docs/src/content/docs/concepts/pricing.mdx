@@ -128,6 +128,33 @@ The composite unique key on `token_prices` is
 timestamp can carry both a daily close and an intraday candle without
 collision.
 
+## What a stored price is
+
+`token_prices.price` is text. A price fetched from a provider,
+backfilled or entered by hand is written through `PriceWriter`; the
+intraday downsampler and the demo and end-to-end seeders still write
+the table themselves. `PriceWriter` sends a price only when the text is
+a canonical positive decimal:
+
+- digits, optionally a point and more digits — at most 64 on each side;
+- optionally an exponent of at most three digits (`9.9e-9`, `1E3`);
+- greater than zero once read.
+
+A text that does not qualify is dropped and counted, never stored:
+`'0'`, `'-5'`, `' 1.5'`, `'+1'`, `'NaN'`, `'Infinity'`, `'0x1A'`,
+`'1_000'`, `'12abc'`. The rest of its batch is still written. The
+column's `CHECK` refuses the same texts, so a write that bypasses the
+writer fails with `23514` rather than storing one.
+
+A backfill counts what the writer drops in two units. `droppedBars` is
+every bar it did not store. `droppedDays` is the days the run asked for
+that a provider answered only with such bars, separate from `inserted`
+and `providerMissing`: nothing was stored, so the day is not inserted,
+and the provider did answer, so it is not missing. A dropped day keeps
+a token off the `unpriceableUntil` cooldown exactly as a stored day
+does; a bar dropped on a day the run did not ask for does not. A manual
+price that would be dropped is refused with the positive-price error.
+
 ## Provider routing
 
 `PricingProviderRouter` decides which upstream to ask. Adapters

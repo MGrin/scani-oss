@@ -126,6 +126,8 @@ function makeUseCase(order: string[]): UpdateTokenPricesUseCase {
       asked = tokens.map((token) => token.id);
       return new Map(tokens.map((token) => [token.id, '100']));
     },
+    // The base the run prices in; these tests never read it.
+    baseToken: async () => ({ id: 'usd' }),
   } as unknown as PricingService);
 
   Container.set(VaultService, {
@@ -159,7 +161,7 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
     const f = fixture as Fixture;
     const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh]);
 
-    const result = await useCase.execute('USD');
+    const result = await useCase.execute();
 
     // The claim. On the old behaviour this token was asked about every hour.
     expect(asked).not.toContain(f.suppressed);
@@ -170,7 +172,7 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
     const f = fixture as Fixture;
     const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh]);
 
-    await useCase.execute('USD');
+    await useCase.execute();
 
     // The half a flag-only filter would get wrong: a stale mark from before
     // SC-232 sits on a token we can price perfectly well.
@@ -181,7 +183,7 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
     const f = fixture as Fixture;
     const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh]);
 
-    await useCase.execute('USD');
+    await useCase.execute();
 
     // `fresh` is what a holding added minutes ago looks like: no mark, so
     // nothing here can suppress it.
@@ -194,7 +196,7 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
     const f = fixture as Fixture;
     const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh]);
 
-    const result = await useCase.execute('USD');
+    const result = await useCase.execute();
 
     // The reported defect: "13 failed" when the truth was "13 suppressed on
     // purpose". Those are different sentences and only one is worth looking at.
@@ -208,7 +210,7 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
     const f = fixture as Fixture;
     const useCase = makeUseCase([f.suppressed]);
 
-    const result = await useCase.execute('USD');
+    const result = await useCase.execute();
 
     // Before the split this path returned `tokensFailed = tokensFound` and
     // warned — the fix would have become a louder version of the bug.

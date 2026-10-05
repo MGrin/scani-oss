@@ -100,6 +100,7 @@ export { RealizedLedgerService } from './portfolio/RealizedLedgerService';
 // pricing/
 export { CurrencyConverter, type CurrencyRef } from './pricing/CurrencyConverter';
 export { HistoricalPriceBackfillService } from './pricing/HistoricalPriceBackfillService';
+export { PriceHubResolver } from './pricing/PriceHubResolver';
 export { PriceWarmupService } from './pricing/PriceWarmupService';
 export { PricingService } from './pricing/PricingService';
 // review/

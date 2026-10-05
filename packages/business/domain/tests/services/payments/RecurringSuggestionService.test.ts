@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import {
   RecurringSuggestionService,
@@ -219,6 +219,46 @@ describe('RecurringSuggestionService', () => {
         expect(s?.evidence.map((e) => e.currencyTokenId)).toEqual(
           [usdt, usdc, usdt, usdc].map((c) => c?.token.id as string)
         );
+      });
+    });
+
+    // Foundation A3, Task 7: the coins are compared in the fiat USD their
+    // prices are stored against, whatever else carries that symbol.
+    test('a newer crypto token named USD does not become the currency the coins are compared in', async () => {
+      await withTestDb(async (tx) => {
+        const { user } = await seed(tx);
+        const [usdt, usdc] = await coins(tx, user.id, ['0.995', '1.005']);
+        await makeToken(tx, { symbol: 'USD', name: 'A coin named USD' });
+        for (const [i, d] of MONTHS.entries()) {
+          await payIn(tx, user.id, (i % 2 ? usdc : usdt)?.holding.id as string, d);
+        }
+
+        const [s, ...rest] = await service().list(user.id, AS_OF, tx);
+        expect(rest).toEqual([]);
+        expect(s).toMatchObject({ amount: '120', currencyTokenId: usdc?.token.id });
+      });
+    });
+
+    // A catalogue with no fiat USD is a broken install. The coins went
+    // uncompared, which hid it.
+    test('with no fiat USD in the catalogue the comparison throws, naming the token', async () => {
+      await withTestDb(async (tx) => {
+        const { user } = await seed(tx);
+        const [usdt, usdc] = await coins(tx, user.id, ['0.995', '1.005']);
+        for (const [i, d] of MONTHS.entries()) {
+          await payIn(tx, user.id, (i % 2 ? usdc : usdt)?.holding.id as string, d);
+        }
+        // Renamed, not deleted: the coins' prices are stored against it.
+        const fiat = tx
+          .select({ id: schema.tokenTypes.id })
+          .from(schema.tokenTypes)
+          .where(eq(schema.tokenTypes.code, 'fiat'));
+        await tx
+          .update(schema.tokens)
+          .set({ symbol: 'USDGONE' })
+          .where(and(eq(schema.tokens.symbol, 'USD'), inArray(schema.tokens.typeId, fiat)));
+
+        await expect(service().list(user.id, AS_OF, tx)).rejects.toThrow('no fiat USD token');
       });
     });
 

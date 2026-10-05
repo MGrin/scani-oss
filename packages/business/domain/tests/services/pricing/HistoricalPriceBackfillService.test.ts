@@ -12,6 +12,7 @@ import {
   filterProvidersByTokenType,
   HistoricalPriceBackfillService,
 } from '../../../src/services/pricing/HistoricalPriceBackfillService';
+import { type PriceWrite, PriceWriter } from '../../../src/services/pricing/PriceWriter';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -48,6 +49,7 @@ interface CapturedUpsert {
   price: string;
   timestamp: Date;
   source: string;
+  granularity?: string;
 }
 
 function makeService(opts: {
@@ -118,11 +120,14 @@ function makeService(opts: {
         granularity: 'intraday',
       } as never;
     },
-    bulkUpsertDailyBackfill: async (rows: CapturedUpsert[]) => {
-      captured.push(...rows);
-      return rows as never;
-    },
   } as unknown as TokenPriceRepository);
+
+  Container.set(PriceWriter, {
+    writeHistory: async (rows: PriceWrite[]) => {
+      captured.push(...rows.map(({ at, ...row }) => ({ ...row, timestamp: at })));
+      return { written: rows.length, dropped: 0, changed: [], seriesChanged: [] };
+    },
+  } as unknown as PriceWriter);
 
   const registry = new ProviderRegistry();
   for (const p of opts.pricers) registry.register(p);
@@ -252,9 +257,16 @@ describe('HistoricalPriceBackfillService.backfillOne', () => {
     expect(r.status).toBe('inserted');
     expect(r.priceStored).toBe('40000');
     expect(r.providerUsed).toBe('p2');
-    expect(captured).toHaveLength(1);
-    expect(captured[0]?.price).toBe('40000');
-    expect(captured[0]?.source).toBe('defillama_historical');
+    expect(captured).toEqual([
+      {
+        tokenId: 'btc',
+        baseTokenId: 'usd',
+        price: '40000',
+        timestamp: at,
+        source: 'defillama_historical',
+        granularity: 'daily',
+      },
+    ]);
   });
 
   test('continues past pricers that throw and tries the next one', async () => {
@@ -411,7 +423,17 @@ describe('HistoricalPriceBackfillService.backfillTokenRange', () => {
     const result = await service.backfillTokenRange('btc', 'usd', days);
     expect(result.attemptFailed).toBe(false);
     expect(result.inserted).toBe(days.length);
-    expect(captured).toHaveLength(days.length);
+    // Each bar a daily row at the provider's own stamp, under its own source.
+    expect(captured).toEqual(
+      days.map((d) => ({
+        tokenId: 'btc',
+        baseTokenId: 'usd',
+        price: '100',
+        timestamp: d,
+        source: 'defillama_historical',
+        granularity: 'daily',
+      }))
+    );
   });
 });
 

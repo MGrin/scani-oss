@@ -25,17 +25,24 @@ Container.set(BlsClient, {
   },
 } as unknown as BlsClient);
 
+type RangeOutcome = Awaited<ReturnType<HistoricalPriceBackfillService['backfillTokenRange']>>;
+
+/** A range in which the provider answered three days only with bars the writer does not store. */
+const THREE_DAYS_DROPPED: RangeOutcome = {
+  inserted: 0,
+  alreadyHad: 0,
+  providerMissing: 0,
+  droppedDays: 3,
+  droppedBars: 5,
+  providerUsed: null,
+  attemptFailed: false,
+};
+
 const calls: Array<{ tokenId: string; baseTokenId: string; days: Date[] }> = [];
 Container.set(HistoricalPriceBackfillService, {
   backfillTokenRange: async (tokenId: string, baseTokenId: string, days: Date[]) => {
     calls.push({ tokenId, baseTokenId, days });
-    return {
-      inserted: 0,
-      alreadyHad: 0,
-      providerMissing: 0,
-      providerUsed: null,
-      attemptFailed: false,
-    };
+    return THREE_DAYS_DROPPED;
   },
 } as unknown as HistoricalPriceBackfillService);
 
@@ -121,6 +128,11 @@ describe('BackfillBenchmarkPricesUseCase (SC-464)', () => {
     expect(results.map((r) => r.key)).toEqual(['btc', 'sp500']);
     expect(calls.map((c) => c.baseTokenId)).toEqual([USD, USD]);
     expect(calls.map((c) => c.tokenId)).toEqual(results.map((r) => r.tokenId));
+    // What the writer dropped reaches the result, per benchmark.
+    expect(results.map((r) => [r.inserted, r.droppedDays])).toEqual([
+      [0, 3],
+      [0, 3],
+    ]);
     // SC-1255: US CPI is read in the same run, for the same span.
     expect(inflation?.seriesId).toBe('CUUR0000SA0');
     expect(blsAsked.at(-1)?.seriesId).toBe('CUUR0000SA0');

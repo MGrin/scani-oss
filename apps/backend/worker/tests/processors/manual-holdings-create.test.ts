@@ -16,6 +16,7 @@
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
+import type { Token } from '@scani/db/schema';
 import {
   CreateHoldingsWithDependenciesUseCase,
   DuplicateHoldingTokenError,
@@ -71,8 +72,8 @@ class TestableProcessor extends ManualHoldingsCreateProcessor {
     >;
   }
 
-  protected override async resolveBaseCurrencySymbol(): Promise<string> {
-    return 'USD';
+  protected override async resolveBaseToken(): Promise<Token> {
+    return { id: 'token-usd', symbol: 'USD' } as Token;
   }
 
   protected override async labelTokens(tokenIds: string[]): Promise<string[]> {

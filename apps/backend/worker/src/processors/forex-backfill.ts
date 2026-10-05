@@ -1,26 +1,28 @@
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
-import { HistoricalPriceBackfillService } from '@scani/domain/services';
+import { HistoricalPriceBackfillService, PriceHubResolver } from '@scani/domain/services';
 import { FOREX_BACKFILL_SCHEDULE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { ScheduledJobProcessor } from '@scani/queue';
-import { eq, inArray, isNotNull, or } from 'drizzle-orm';
+import { inArray, isNotNull, or } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 
 const logger = createComponentLogger('processor:forex-backfill');
 
 // Hub edges we keep current no matter who is on the platform, all priced
-// against USD. The floor, not the list — see `hubEdgeTokens()`.
-const BASELINE_HUB_EDGE_SYMBOLS: readonly string[] = [
-  'EUR',
-  'GBP',
-  'JPY',
-  'RUB',
-  'CHF',
-  'CAD',
-  'AUD',
-  'USDT',
-];
+// against USD. The floor, not the list — see `hubEdgeTokens()`. Each is one
+// token, named by symbol and type: a symbol alone also names every other
+// token that carries it.
+const BASELINE_HUB_EDGES = [
+  { symbol: 'EUR', typeCode: 'fiat' },
+  { symbol: 'GBP', typeCode: 'fiat' },
+  { symbol: 'JPY', typeCode: 'fiat' },
+  { symbol: 'RUB', typeCode: 'fiat' },
+  { symbol: 'CHF', typeCode: 'fiat' },
+  { symbol: 'CAD', typeCode: 'fiat' },
+  { symbol: 'AUD', typeCode: 'fiat' },
+  { symbol: 'USDT', typeCode: 'crypto' },
+] as const;
 
 const LOOKBACK_DAYS = 7;
 
@@ -51,6 +53,7 @@ export class ForexBackfillProcessor extends ScheduledJobProcessor {
    * budget on pairs exchangerate-api cannot answer anyway.
    */
   private async hubEdgeTokens(usdTokenId: string): Promise<{ symbol: string; id: string }[]> {
+    const baselineIds = await Container.get(PriceHubResolver).tokenIdsOf(BASELINE_HUB_EDGES);
     const inUse = await db
       .selectDistinct({ id: schema.tokens.id, symbol: schema.tokens.symbol })
       .from(schema.tokens)
@@ -67,7 +70,7 @@ export class ForexBackfillProcessor extends ScheduledJobProcessor {
             schema.tokens.id,
             db.selectDistinct({ id: schema.payments.currencyTokenId }).from(schema.payments)
           ),
-          inArray(schema.tokens.symbol, [...BASELINE_HUB_EDGE_SYMBOLS])
+          inArray(schema.tokens.id, baselineIds)
         )
       );
 
@@ -97,20 +100,11 @@ export class ForexBackfillProcessor extends ScheduledJobProcessor {
     const startTime = Date.now();
     logger.info('🕐 Starting forex backfill');
     try {
-      const usdRow = await db
-        .select({ id: schema.tokens.id })
-        .from(schema.tokens)
-        .where(eq(schema.tokens.symbol, 'USD'))
-        .limit(1);
-      const usdTokenId = usdRow[0]?.id;
-      if (!usdTokenId) {
-        logger.warn('No USD token in database; skipping forex backfill');
-        return;
-      }
+      const usdTokenId = await Container.get(PriceHubResolver).usdTokenId();
       const hubTokens = await this.hubEdgeTokens(usdTokenId);
       if (hubTokens.length === 0) {
         logger.warn(
-          { baselineHubEdgeSymbols: BASELINE_HUB_EDGE_SYMBOLS },
+          { baselineHubEdges: BASELINE_HUB_EDGES.map((edge) => edge.symbol) },
           'No hub-edge tokens in database; skipping forex backfill'
         );
         return;
@@ -122,6 +116,7 @@ export class ForexBackfillProcessor extends ScheduledJobProcessor {
       let inserted = 0;
       let alreadyHad = 0;
       let providerMissing = 0;
+      let droppedDays = 0;
       const pairs: { tokenId: string; symbol: string; at: Date }[] = [];
       for (let dayOffset = 0; dayOffset < LOOKBACK_DAYS; dayOffset++) {
         const at = new Date(today);
@@ -145,6 +140,7 @@ export class ForexBackfillProcessor extends ScheduledJobProcessor {
           attempted++;
           if (result.status === 'inserted') inserted++;
           else if (result.status === 'already-have') alreadyHad++;
+          else if (result.status === 'dropped') droppedDays++;
           else if (result.status === 'provider-missing') {
             providerMissing++;
             logger.debug({ symbol, at }, 'No provider could price this hub edge');
@@ -159,6 +155,7 @@ export class ForexBackfillProcessor extends ScheduledJobProcessor {
           inserted,
           alreadyHad,
           providerMissing,
+          droppedDays,
           totalMs: Date.now() - startTime,
         },
         '✅ Forex backfill complete'

@@ -58,9 +58,9 @@ export class UpdateTokenPricesUseCase {
   private readonly holdingQueryService = Container.get(HoldingQueryService);
   private readonly vaultService = Container.get(VaultService);
 
-  async execute(baseCurrencySymbol = 'USD'): Promise<UpdateTokenPricesResult> {
+  async execute(): Promise<UpdateTokenPricesResult> {
     const startTime = Date.now();
-    logger.info({ baseCurrencySymbol }, 'Starting token price update for all tokens with holdings');
+    logger.info('Starting token price update for all tokens with holdings');
 
     const errors: UpdateTokenPricesResult['errors'] = [];
 
@@ -178,13 +178,11 @@ export class UpdateTokenPricesUseCase {
         'Fetching prices for tokens'
       );
 
-      // Fetch prices for all tokens (batched internally by PricingService)
+      // Fetch prices for all tokens (batched internally by PricingService),
+      // against the fiat USD.
       const timestamp = new Date();
-      const prices = await this.pricingService.getTokenPrices(
-        tokens,
-        baseCurrencySymbol,
-        timestamp
-      );
+      const usd = await this.pricingService.baseToken();
+      const prices = await this.pricingService.getTokenPrices(tokens, usd, timestamp);
 
       // Count successful and failed updates
       let tokensUpdated = 0;

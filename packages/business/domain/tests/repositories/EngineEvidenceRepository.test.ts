@@ -18,6 +18,7 @@ import {
   makeHoldingTransaction,
   makeToken,
 } from '../../test/helpers/factories-extra';
+import { liftPriceCheck } from '../../test/helpers/price-check';
 
 const repo = () => Container.get(EngineEvidenceRepository);
 const at = (iso: string) => new Date(iso);
@@ -570,6 +571,7 @@ describe('findPriceReadingsAtInstants', () => {
 
   test('a NaN row at the nearest stamp is not a reading, and the older one answers', async () => {
     await withTestDb(async (tx) => {
+      await liftPriceCheck(tx);
       expect(await besideAnOlderReading(tx, 'NaN', 'intraday')).toEqual(OLDER);
       // CONTROL: a reading there is the one loaded, so the older one answers only for want of it.
       expect(await besideAnOlderReading(tx, '11', 'intraday')).toEqual({
@@ -581,6 +583,7 @@ describe('findPriceReadingsAtInstants', () => {
 
   test('an Infinity row at the nearest stamp is not a reading, and the older one answers', async () => {
     await withTestDb(async (tx) => {
+      await liftPriceCheck(tx);
       expect(await besideAnOlderReading(tx, 'Infinity', 'intraday')).toEqual(OLDER);
     });
   });
@@ -593,6 +596,7 @@ describe('findPriceReadingsAtInstants', () => {
 
   test('a padded row at the nearest stamp is not a reading, and the older one answers', async () => {
     await withTestDb(async (tx) => {
+      await liftPriceCheck(tx);
       // Postgres reads ' 11' as 11, skipping the space; the engine reads no number in it.
       expect(await besideAnOlderReading(tx, ' 11', 'intraday')).toEqual(OLDER);
     });
@@ -600,12 +604,14 @@ describe('findPriceReadingsAtInstants', () => {
 
   test('a row Postgres cannot read as a number at the nearest stamp is not a reading, and the older one answers', async () => {
     await withTestDb(async (tx) => {
+      await liftPriceCheck(tx);
       expect(await besideAnOlderReading(tx, 'abc', 'intraday')).toEqual(OLDER);
     });
   });
 
   test('a row Postgres cannot read as a number in one pair fails no other pair of the load', async () => {
     await withTestDb(async (tx) => {
+      await liftPriceCheck(tx);
       const [x, y, usd] = [await makeToken(tx), await makeToken(tx), await makeToken(tx)];
       await addPrice(tx, x.id, usd.id, at('2026-03-10T08:00:00Z'), '10', 'intraday');
       await addPrice(tx, y.id, usd.id, at('2026-03-10T08:00:00Z'), '7', 'intraday');

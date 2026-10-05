@@ -2,8 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { Container } from 'typedi';
 import { TokenTypeRepository } from '../../../src/repositories/EnumRepositories';
 import { TokenPriceEditHistoryRepository } from '../../../src/repositories/TokenPriceEditHistoryRepository';
-import { TokenPriceRepository } from '../../../src/repositories/TokenPriceRepository';
 import { TokenRepository } from '../../../src/repositories/TokenRepository';
+import { PriceWriter } from '../../../src/services/pricing/PriceWriter';
 import { TokenPriceHistoryService } from '../../../src/services/tokens/TokenPriceHistoryService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
@@ -47,9 +47,9 @@ function makeService(): { service: TokenPriceHistoryService; created: CreateArgs
     },
   } as unknown as TokenRepository);
 
-  Container.set(TokenPriceRepository, {
-    create: async (row: unknown) => row,
-  } as unknown as TokenPriceRepository);
+  Container.set(PriceWriter, {
+    writeManual: async () => ({ written: 1, dropped: 0, changed: [], seriesChanged: [] }),
+  } as unknown as PriceWriter);
 
   Container.set(TokenPriceEditHistoryRepository, {
     create: async (row: unknown) => row,

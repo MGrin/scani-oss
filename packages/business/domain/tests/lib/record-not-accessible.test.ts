@@ -16,7 +16,7 @@
 import { afterEach, describe, expect, spyOn, test } from 'bun:test';
 import type { DatabaseTransaction } from '@scani/db';
 import { db } from '@scani/db/connection';
-import type { User } from '@scani/db/schema';
+import type { Token, User } from '@scani/db/schema';
 import { parseStatement } from '@scani/file-import';
 import { StatementTransactionIngester } from '@scani/ingesters';
 import { Container } from 'typedi';
@@ -40,6 +40,8 @@ const USER = 'user-1';
 const STRANGER = 'user-2';
 const ACCOUNT = 'acct-1';
 const HOLDING = 'holding-1';
+// The base a refresh is asked in; a refused request never reads it.
+const BASE = { id: 'token-usd', symbol: 'USD' } as Token;
 
 const restores: Array<{ mockRestore: () => void }> = [];
 afterEach(() => {
@@ -138,14 +140,14 @@ describe('UpdateHoldingPriceUseCase', () => {
   };
 
   test('a holding that does not exist', async () => {
-    const refusal = await refusalOf(() => useCaseOver(null).execute(HOLDING, USER, 'USD'));
+    const refusal = await refusalOf(() => useCaseOver(null).execute(HOLDING, USER, BASE));
     expect(refusal.record).toBe('holding');
     expect(refusal.message).toBe('Holding not found');
   });
 
   test("somebody else's holding", async () => {
     const refusal = await refusalOf(() =>
-      useCaseOver({ id: HOLDING, userId: STRANGER }).execute(HOLDING, USER, 'USD')
+      useCaseOver({ id: HOLDING, userId: STRANGER }).execute(HOLDING, USER, BASE)
     );
     expect(refusal.record).toBe('holding');
     expect(refusal.message).toBe('Unauthorized: Holding does not belong to user');

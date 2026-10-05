@@ -53,6 +53,9 @@ let backfillCalls: Array<{ tokenId: string; at: Date; baseTokenId: string }> = [
 // Stands in for a provider that ERRORED rather than answering — the
 // distinction `attemptFailed` exists to carry (SC-171).
 let nextAttemptFailed = false;
+// Bars the stubbed provider answers on days the run did not ask for, all of
+// which the writer drops. They are bars, never needed days.
+let nextDroppedBarsOutsideNeededDays = 0;
 // Per-call result the stubbed service returns. Tests can override.
 /**
  * SC-449. Hoisted out of `nextResult` so `beforeEach` has something to put
@@ -206,6 +209,7 @@ beforeEach(async () => {
   fixture = await setupFixture();
   backfillCalls = [];
   nextAttemptFailed = false;
+  nextDroppedBarsOutsideNeededDays = 0;
   // SC-449. The two above were already reset here; this one was missed, and it
   // is the one that decides what the use case reports as inserted.
   nextResult = DEFAULT_RESULT;
@@ -232,6 +236,7 @@ beforeEach(async () => {
       let inserted = 0;
       let alreadyHad = 0;
       let providerMissing = 0;
+      let droppedDays = 0;
       let providerUsed: string | null = null;
       for (const day of neededDays) {
         backfillCalls.push({ tokenId, at: day, baseTokenId });
@@ -246,6 +251,8 @@ beforeEach(async () => {
             providerUsed = result.providerUsed ?? providerUsed;
           } else if (result.status === 'already-have') {
             alreadyHad++;
+          } else if (result.status === 'dropped') {
+            droppedDays++;
           } else {
             providerMissing++;
           }
@@ -257,6 +264,8 @@ beforeEach(async () => {
         inserted,
         alreadyHad,
         providerMissing,
+        droppedDays,
+        droppedBars: droppedDays + nextDroppedBarsOutsideNeededDays,
         providerUsed,
         attemptFailed: nextAttemptFailed,
       };
@@ -661,6 +670,109 @@ describe('BackfillHistoricalPricesUseCase', () => {
       .from(schema.tokens)
       .where(eq(schema.tokens.id, f.btcTokenId));
     expect(token?.unpriceableUntil).toBeNull();
+  });
+
+  // Foundation A3, Task 6. A bar the writer refuses is not inserted, and it is
+  // not missing either: the provider answered that day. The flag reads as it
+  // did when such a bar still counted as inserted, so a provider that answers
+  // only refused bars clears a cooldown rather than starting one.
+  test('a range answered only with bars the writer dropped clears the cooldown and is counted dropped', async () => {
+    const f = fixture!;
+    const past = new Date(Date.now() - 1000);
+    await db
+      .update(schema.tokens)
+      .set({ unpriceableUntil: past })
+      .where(eq(schema.tokens.id, f.btcTokenId));
+    nextResult = (tokenId, at, baseTokenId) => ({
+      tokenId,
+      baseTokenId,
+      at,
+      status: 'dropped',
+      providerUsed: 'stub',
+    });
+    // Above the floor, so a run read as "nobody has this" would mark the token.
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 60,
+    });
+    expect(summary.inserted).toBe(0);
+    expect(summary.providerMissing).toBe(0);
+    expect(summary.droppedDays).toBe(summary.attempted);
+    const [token] = await db
+      .select({ unpriceableUntil: schema.tokens.unpriceableUntil })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.id, f.btcTokenId));
+    expect(token?.unpriceableUntil).toBeNull();
+  });
+
+  // The cooldown reads needed days. Before PriceWriter a bad bar on a day
+  // nobody asked for was stored, so `withoutStoredPrices` kept a token with
+  // no other price unmarked. Now nothing is stored, and the token is marked.
+  test('bars dropped only on days the run did not need clear no cooldown: the token is marked', async () => {
+    const f = fixture!;
+    nextResult = (tokenId, at, baseTokenId) => ({
+      tokenId,
+      baseTokenId,
+      at,
+      status: 'provider-missing',
+    });
+    nextDroppedBarsOutsideNeededDays = 2;
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      // Above the floor, so only a cleared cooldown would keep the mark off.
+      lookbackDays: 60,
+    });
+    expect(summary.inserted).toBe(0);
+    expect(summary.droppedDays).toBe(0);
+    expect(summary.droppedBars).toBe(2);
+    expect(summary.providerMissing).toBe(summary.attempted);
+    const [token] = await db
+      .select({ unpriceableUntil: schema.tokens.unpriceableUntil })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.id, f.btcTokenId));
+    expect(token?.unpriceableUntil).toBeInstanceOf(Date);
+  });
+
+  test('every attempted day is inserted, missing or dropped; a day already priced is not attempted', async () => {
+    const f = fixture!;
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    await db.insert(schema.tokenPrices).values({
+      tokenId: f.btcTokenId,
+      baseTokenId: f.usdTokenId,
+      price: '42000',
+      timestamp: today,
+      source: 'preseeded',
+      granularity: 'daily',
+    });
+    const statuses: BackfillOneResult['status'][] = ['inserted', 'dropped', 'provider-missing'];
+    let call = 0;
+    nextResult = (tokenId, at, baseTokenId) => ({
+      tokenId,
+      baseTokenId,
+      at,
+      status: statuses[call++ % statuses.length] ?? 'inserted',
+    });
+    nextDroppedBarsOutsideNeededDays = 3;
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 6,
+    });
+    // Seven candidate days, one already priced: six attempted, two of each.
+    expect(summary).toMatchObject({
+      attempted: 6,
+      alreadyHad: 1,
+      inserted: 2,
+      providerMissing: 2,
+      droppedDays: 2,
+      droppedBars: 5,
+    });
+    expect(summary.inserted + summary.providerMissing + summary.droppedDays).toBe(
+      summary.attempted
+    );
   });
 
   test('continues past per-candidate exceptions (counts them as provider-missing)', async () => {

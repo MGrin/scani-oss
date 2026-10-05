@@ -1,8 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
+import type { Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { UserJobRepository } from '@scani/domain/repositories';
-import { PortfolioValuationService, PortfolioValueCache } from '@scani/domain/services';
+import {
+  PortfolioValuationService,
+  PortfolioValueCache,
+  PricingService,
+} from '@scani/domain/services';
 import {
   CreateHoldingsWithDependenciesUseCase,
   DuplicateHoldingTokenError,
@@ -98,7 +103,7 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
     ctx: ProcessorContext
   ): Promise<ManualHoldingsCreateResult> {
     const user = await this.loadUser(data.userId);
-    const baseCurrencySymbol = await this.resolveBaseCurrencySymbol(data.baseCurrencyId);
+    const base = await this.resolveBaseToken(data.baseCurrencyId);
 
     await ctx.reportProgress(0.05);
     await ctx.reportStatus('Saving institution, account and holdings…');
@@ -234,7 +239,7 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
 
     // Skip pricing for the user's base currency (priced 1:1 by definition)
     // and for any holding that is its own base — saves a round-trip per row.
-    const baseCurrencyTokenId = data.baseCurrencyId;
+    const baseCurrencyTokenId = base.id;
 
     type SettlementRow = HoldingResultRow;
     const initialBalanceById = new Map<string, string>();
@@ -266,11 +271,7 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
           return { ...baseRow, priceUsd: '1', priceSource: 'base-currency' };
         }
         try {
-          const priceResult = await updatePriceUseCase.execute(
-            holdingId,
-            data.userId,
-            baseCurrencySymbol
-          );
+          const priceResult = await updatePriceUseCase.execute(holdingId, data.userId, base);
           // Emit per-holding update so the UI can repaint the row as soon
           // as a single price settles, instead of waiting for the entire
           // batch.
@@ -418,12 +419,7 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
     return user;
   }
 
-  protected async resolveBaseCurrencySymbol(baseCurrencyId: string): Promise<string> {
-    const [token] = await db
-      .select({ symbol: schema.tokens.symbol })
-      .from(schema.tokens)
-      .where(eq(schema.tokens.id, baseCurrencyId))
-      .limit(1);
-    return token?.symbol || 'USD';
+  protected async resolveBaseToken(baseCurrencyId: string): Promise<Token> {
+    return Container.get(PricingService).baseToken(baseCurrencyId);
   }
 }

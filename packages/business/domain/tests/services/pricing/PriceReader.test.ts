@@ -19,6 +19,7 @@ import { PriceHubResolver } from '../../../src/services/pricing/PriceHubResolver
 import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { withTestDb } from '../../../test/helpers/db';
 import { makeToken } from '../../../test/helpers/factories-extra';
+import { liftPriceCheck } from '../../../test/helpers/price-check';
 
 const reader = () => Container.get(PriceReader);
 const evidence = () => Container.get(EngineEvidenceRepository);
@@ -376,6 +377,7 @@ describe('PriceReader.at', () => {
 
   test('a zero row nearer than a positive one does not hide it', async () => {
     await withTestDb(async (tx) => {
+      await liftPriceCheck(tx);
       const { usd } = await currencies(tx);
       const x = await makeToken(tx);
       await addPrices(tx, [

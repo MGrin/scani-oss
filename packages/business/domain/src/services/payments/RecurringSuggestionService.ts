@@ -1,7 +1,6 @@
 import type { DatabaseTransaction } from '@scani/db';
 import type { Payment } from '@scani/db/schema';
-import { ANSWERABLE_OUTFLOW_KINDS } from '@scani/shared';
-import Decimal from 'decimal.js';
+import { ANSWERABLE_OUTFLOW_KINDS, Decimal } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { vendorMatchKey } from '../../lib/vendor-match-key';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
@@ -13,8 +12,8 @@ import {
   RecurringSuggestionDismissalRepository,
 } from '../../repositories/RecurringSuggestionDismissalRepository';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
-import { TokenRepository } from '../../repositories/TokenRepository';
 import { VendorRepository } from '../../repositories/VendorRepository';
+import { PriceHubResolver } from '../pricing/PriceHubResolver';
 import {
   currencyClasses,
   detectMonthlyRecurrences,
@@ -69,7 +68,7 @@ export class RecurringSuggestionService {
   private readonly vendorRepository = Container.get(VendorRepository);
   private readonly dismissals = Container.get(RecurringSuggestionDismissalRepository);
   private readonly paymentService = Container.get(PaymentService);
-  private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly priceHubs = Container.get(PriceHubResolver);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
 
   async list(
@@ -228,18 +227,17 @@ export class RecurringSuggestionService {
     );
     if (mixed.size === 0) return new Map();
 
-    const usd = await this.tokenRepository.findBySymbol('USD', transaction);
-    if (!usd) return new Map();
+    const usdId = await this.priceHubs.usdTokenId(transaction);
     const latest = await this.tokenPriceRepository.findLatestPricesForTokensAnyBase(
       [...mixed],
-      usd.id,
+      usdId,
       transaction
     );
     const prices = new Map<string, string>();
     for (const [tokenId, row] of latest) {
-      if (row.baseTokenId === usd.id) prices.set(tokenId, row.price);
+      if (row.baseTokenId === usdId) prices.set(tokenId, row.price);
     }
-    if (mixed.has(usd.id)) prices.set(usd.id, '1');
+    if (mixed.has(usdId)) prices.set(usdId, '1');
     return currencyClasses(mixed, prices);
   }
 

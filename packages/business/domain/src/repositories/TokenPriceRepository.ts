@@ -4,6 +4,35 @@ import * as schema from '@scani/db/schema';
 import { and, asc, desc, eq, gte, inArray, like, lt, lte, ne, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
+/** A row's place in the table's unique key. */
+export interface PriceKey {
+  tokenId: string;
+  baseTokenId: string;
+  at: Date;
+  granularity: string;
+}
+
+// The `i` column carries each key's position, so no timestamp is parsed back.
+// Instants go as ISO text: a raw template would send `Date.toString()`.
+function keyValues(keys: readonly PriceKey[]) {
+  return sql.join(
+    keys.map(
+      (key, i) =>
+        sql`(${i}::int, ${key.tokenId}::uuid, ${key.baseTokenId}::uuid, ${key.at.toISOString()}::timestamptz, ${key.granularity}::text)`
+    ),
+    sql`, `
+  );
+}
+
+function byPosition(
+  keys: readonly PriceKey[],
+  rows: ReadonlyArray<{ i: number; price: string }>
+): Array<string | undefined> {
+  const prices: Array<string | undefined> = keys.map(() => undefined);
+  for (const row of rows) prices[Number(row.i)] = row.price;
+  return prices;
+}
+
 @Service()
 export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPrice> {
   protected readonly table = schema.tokenPrices;
@@ -233,6 +262,46 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
       this.logger.error({ count: prices.length, error }, 'Failed to bulk upsert prices');
       throw error;
     }
+  }
+
+  /**
+   * For each key, the price of its pair's latest row at or before its
+   * instant; at one instant, the row of the key's own granularity first,
+   * being the one an upsert of the key replaces. Answers by position.
+   */
+  async findLatestPricesAtOrBefore(
+    keys: readonly PriceKey[],
+    transaction?: DatabaseTransaction
+  ): Promise<Array<string | undefined>> {
+    if (keys.length === 0) return [];
+    const rows = (await this.getDb(transaction).execute(sql`
+      SELECT a.i, latest.price
+        FROM (VALUES ${keyValues(keys)}) AS a(i, token_id, base_token_id, at, granularity)
+        CROSS JOIN LATERAL (
+          SELECT p.price FROM token_prices p
+           WHERE p.token_id = a.token_id AND p.base_token_id = a.base_token_id
+             AND p."timestamp" <= a.at
+           ORDER BY p."timestamp" DESC, (p.granularity = a.granularity) DESC
+           LIMIT 1
+        ) latest
+    `)) as unknown as Array<{ i: number; price: string }>;
+    return byPosition(keys, rows);
+  }
+
+  /** For each key, the price stored at exactly that key, if any. Answers by position. */
+  async findPricesAtKeys(
+    keys: readonly PriceKey[],
+    transaction?: DatabaseTransaction
+  ): Promise<Array<string | undefined>> {
+    if (keys.length === 0) return [];
+    const rows = (await this.getDb(transaction).execute(sql`
+      SELECT a.i, p.price
+        FROM (VALUES ${keyValues(keys)}) AS a(i, token_id, base_token_id, at, granularity)
+        JOIN token_prices p
+          ON p.token_id = a.token_id AND p.base_token_id = a.base_token_id
+         AND p."timestamp" = a.at AND p.granularity = a.granularity
+    `)) as unknown as Array<{ i: number; price: string }>;
+    return byPosition(keys, rows);
   }
 
   async findPriceAtTimestamp(
@@ -608,45 +677,6 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
       this.logger.error(
         { tokenId, baseTokenId, timestamp, error },
         'Failed to find latest daily price'
-      );
-      throw error;
-    }
-  }
-
-  // Bulk insert daily-close backfill rows. Matches `bulkUpsert` but sets
-  // granularity='daily' on every row. Used by HistoricalPriceBackfillService.
-  async bulkUpsertDailyBackfill(
-    prices: NewTokenPrice[],
-    transaction?: DatabaseTransaction
-  ): Promise<TokenPrice[]> {
-    try {
-      if (prices.length === 0) return [];
-      const database = this.getDb(transaction);
-      const rows = prices.map((p) => ({ ...p, granularity: 'daily' as const }));
-
-      const results = await database
-        .insert(schema.tokenPrices)
-        // biome-ignore lint/suspicious/noExplicitAny: Drizzle array insert type
-        .values(rows as any[])
-        .onConflictDoUpdate({
-          target: [
-            schema.tokenPrices.tokenId,
-            schema.tokenPrices.baseTokenId,
-            schema.tokenPrices.timestamp,
-            schema.tokenPrices.granularity,
-          ],
-          set: {
-            price: sql`EXCLUDED.price`,
-            source: sql`EXCLUDED.source`,
-          },
-        })
-        .returning();
-      this.logger.debug({ count: results.length }, 'Bulk upserted daily-backfill token prices');
-      return results;
-    } catch (error) {
-      this.logger.error(
-        { count: prices.length, error: error instanceof Error ? error.message : error },
-        'Failed to bulk upsert daily-backfill prices'
       );
       throw error;
     }

@@ -180,7 +180,7 @@ export class PriceShadowService {
     const tokenIds = assets.map((token) => token.id);
     // A token's newest row in ANY base, as the live resolver chooses among them.
     const own = byToken(await this.evidence.findLatestReadingsInAnyBase(tokenIds, asOf, tx));
-    const live = await this.pricing.getCachedTokenPrices(assets, baseToken.symbol, asOf);
+    const live = await this.pricing.getCachedTokenPrices(assets, baseToken, asOf);
     const lookup = await this.graph.buildPriceLookup(tokenIds, baseToken.id, asOf, tx, asOf);
     const balances = await this.balancesOf(userIds, tx);
     const result: Compared = { compared: 0, differences: [] };

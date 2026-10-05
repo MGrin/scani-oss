@@ -1,11 +1,11 @@
 import { createComponentLogger, logger } from '@scani/logging';
 import { OutflowRateLimiterRegistry } from '@scani/rate-limiter';
-import Decimal from 'decimal.js';
+import { Decimal } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { TokenTypeRepository } from '../../repositories/EnumRepositories';
-import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { PriceGraphService } from './PriceGraphService';
+import { PriceWriter } from './PriceWriter';
 import { PRICE_HUBS } from './price-hubs';
 import { EXCHANGERATE_LIMIT } from './upstream-rate-limits';
 
@@ -74,7 +74,7 @@ export class CurrencyConverter {
 
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
-  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
+  private readonly priceWriter = Container.get(PriceWriter);
   private readonly priceGraphService = Container.get(PriceGraphService);
 
   private readonly currencyRateCache = new Map<
@@ -230,12 +230,13 @@ export class CurrencyConverter {
       });
 
       try {
-        await this.tokenPriceRepository.bulkUpsert([
+        await this.priceWriter.writeCurrent([
           {
             tokenId: fromCurrency.id,
             baseTokenId: toCurrency.id,
             price: rateString,
-            timestamp: new Date(),
+            at: new Date(),
+            granularity: 'intraday',
             source: 'exchangerate-api',
           },
         ]);

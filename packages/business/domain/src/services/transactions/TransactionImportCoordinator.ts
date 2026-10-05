@@ -40,6 +40,7 @@ import { FeedIngestService, type IngestResult } from '../feeds/FeedIngestService
 import { legacyTransactionBatch } from '../feeds/legacy/transaction-batch';
 import { ManualEditSupersessionService } from '../holdings/ManualEditSupersessionService';
 import { OpeningBalanceReconciliationService } from '../holdings/OpeningBalanceReconciliationService';
+import { PriceHubResolver } from '../pricing/PriceHubResolver';
 import { TransferReviewService } from '../TransferReviewService';
 import { IntegrationCredentialsService } from '../users/IntegrationCredentialsService';
 import { TransactionRouter, type TransactionRouterResult } from './TransactionRouter';
@@ -232,6 +233,7 @@ export class TransactionImportCoordinator {
   private readonly reconciliation = Container.get(OpeningBalanceReconciliationService);
   private readonly credentialsService = Container.get(IntegrationCredentialsService);
   private readonly tokenRepo = Container.get(TokenRepository);
+  private readonly priceHubs = Container.get(PriceHubResolver);
   private readonly router = Container.get(TransactionRouter);
   private readonly transferReviews = Container.get(TransferReviewService);
   private readonly editSupersession = Container.get(ManualEditSupersessionService);
@@ -375,7 +377,7 @@ export class TransactionImportCoordinator {
     // resolution — it only matters for `priceNative` events, where
     // the quote token comes from the event's `priceNative.quoteIdentity`
     // rather than the context. We still need a Token row though.
-    const usdToken = await this.tokenRepo.findBySymbol('USD');
+    const usdToken = await this.tokenRepo.findById(await this.priceHubs.usdTokenId());
     if (!usdToken) {
       throw new Error('TransactionImport: USD token not seeded');
     }

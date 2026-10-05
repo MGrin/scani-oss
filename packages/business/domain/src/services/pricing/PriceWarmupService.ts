@@ -1,4 +1,5 @@
 import { db } from '@scani/db/connection';
+import type { Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
@@ -61,14 +62,14 @@ export class PriceWarmupService extends BaseService {
     const tokens = await this.tokenRepository.findByIds(uniqueTokenIds);
     if (tokens.length === 0) return new Map<string, string>();
 
-    const baseCurrencySymbol = await this.resolveBaseCurrencySymbol(input.userId);
+    const base = await this.resolveBaseToken(input.userId);
 
     this.logger.info(
-      { userId: input.userId, tokenCount: tokens.length, baseCurrencySymbol },
+      { userId: input.userId, tokenCount: tokens.length, baseCurrencySymbol: base.symbol },
       'Warming prices for tokens'
     );
 
-    const prices = await this.pricingService.getTokenPrices(tokens, baseCurrencySymbol, new Date());
+    const prices = await this.pricingService.getTokenPrices(tokens, base, new Date());
 
     const pricedCount = Array.from(prices.values()).filter((p) => p && p !== '0').length;
     this.logger.info(
@@ -97,21 +98,12 @@ export class PriceWarmupService extends BaseService {
     return prices;
   }
 
-  private async resolveBaseCurrencySymbol(userId: string): Promise<string> {
+  private async resolveBaseToken(userId: string): Promise<Token> {
     const [user] = await db
       .select({ baseCurrencyId: schema.users.baseCurrencyId })
       .from(schema.users)
       .where(eq(schema.users.id, userId))
       .limit(1);
-
-    if (!user?.baseCurrencyId) return 'USD';
-
-    const [baseToken] = await db
-      .select({ symbol: schema.tokens.symbol })
-      .from(schema.tokens)
-      .where(eq(schema.tokens.id, user.baseCurrencyId))
-      .limit(1);
-
-    return baseToken?.symbol ?? 'USD';
+    return this.pricingService.baseToken(user?.baseCurrencyId);
   }
 }

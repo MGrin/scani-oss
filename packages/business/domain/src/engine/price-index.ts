@@ -122,8 +122,21 @@ function readingsByPair(
   return byToken;
 }
 
-/** The price a text reads as, or null when it is not a positive finite number. */
-function positivePrice(text: string): Decimal | null {
+/**
+ * The text form `token_prices.price` accepts: plain decimal notation, at most
+ * 64 digits either side of the point, with an optional exponent of at most
+ * three digits. Each bound keeps the column's cast from overflowing. Its CHECK
+ * carries this pattern verbatim, and the writer sends only a text that matches
+ * it and that `positivePrice` reads. That second test is what the CHECK's
+ * `> 0` is.
+ */
+export const CANONICAL_PRICE_TEXT = /^[0-9]{1,64}(\.[0-9]{1,64})?([eE][-+]?[0-9]{1,3})?$/;
+
+/**
+ * The price a text reads as, or null when it is not a positive finite number.
+ * Wider than the column: decimal.js also reads '+1', '0x1A' and '1_000'.
+ */
+export function positivePrice(text: string): Decimal | null {
   let price: Decimal;
   try {
     price = new Decimal(text);

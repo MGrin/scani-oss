@@ -253,7 +253,9 @@ export const tokenPrices = pgTable(
     baseTokenId: uuid('base_token_id')
       .notNull()
       .references(() => tokens.id, { onDelete: 'restrict' }), // Prevent base token deletion
-    price: text('price').notNull(), // Store as string for Decimal.js precision
+    // Decimal text. A CHECK refuses any that is not plain decimal notation,
+    // positive and finite (migration 20261004084212).
+    price: text('price').notNull(),
     timestamp: timestamp('timestamp', { withTimezone: true }).notNull(),
     source: text('source'),
     // Migration 0053 adds this column; default 'intraday' preserves existing rows.

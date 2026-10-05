@@ -5,6 +5,7 @@ import type { PriceQuote, ProviderContext } from '@scani/providers/core/types';
 import { Container, Service } from 'typedi';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
+import { isStorablePrice, PriceWriter } from './PriceWriter';
 import { hasExternalPricingAuthority } from './token-type-pricing';
 
 // Providers whose universe is equities + fiat — they MUST NOT be
@@ -27,7 +28,9 @@ export interface BackfillOneResult {
   tokenId: string;
   baseTokenId: string;
   at: Date;
-  status: 'inserted' | 'already-have' | 'provider-missing' | 'no-provider';
+  // 'dropped': a provider answered with a price the writer does not store, so
+  // nothing was written and the day is asked again next run.
+  status: 'inserted' | 'dropped' | 'already-have' | 'provider-missing' | 'no-provider';
   priceStored?: string;
   providerUsed?: string;
 }
@@ -65,6 +68,7 @@ export class HistoricalPriceBackfillService {
   // Class-field DI — see note in BalanceAtTimeService.ts.
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly priceWriter = Container.get(PriceWriter);
 
   // Backfill a single (token, at) against a specific base. Stores if any
   // provider returned a value. Idempotent across re-runs for the same
@@ -119,15 +123,25 @@ export class HistoricalPriceBackfillService {
         const result = await provider.fetchHistoricalPrice(token, at, ctx);
         if (!result) continue;
 
-        await this.tokenPriceRepository.bulkUpsertDailyBackfill([
+        const written = await this.priceWriter.writeHistory([
           {
             tokenId,
             baseTokenId,
             price: result.price,
-            timestamp: result.timestamp,
+            at: result.timestamp,
+            granularity: 'daily',
             source: result.source,
           },
         ]);
+        if (written.written === 0) {
+          return {
+            tokenId,
+            baseTokenId,
+            at,
+            status: 'dropped',
+            providerUsed: provider.providerKey,
+          };
+        }
 
         return {
           tokenId,
@@ -202,6 +216,12 @@ export class HistoricalPriceBackfillService {
     inserted: number;
     alreadyHad: number;
     providerMissing: number;
+    // Needed days a provider answered only with bars the writer does not
+    // store. Neither inserted nor missing, so with those two and `alreadyHad`
+    // they add up to the days asked.
+    droppedDays: number;
+    // Bars the writer did not store, on any day the provider returned.
+    droppedBars: number;
     providerUsed: string | null;
     // True when a provider attempt FAILED rather than answering with an
     // empty range. The caller must not conclude anything about the
@@ -213,6 +233,8 @@ export class HistoricalPriceBackfillService {
       inserted: 0,
       alreadyHad: 0,
       providerMissing: 0,
+      droppedDays: 0,
+      droppedBars: 0,
       providerUsed: null,
       attemptFailed: false,
     };
@@ -259,29 +281,39 @@ export class HistoricalPriceBackfillService {
       const quotes = attempt.quotes;
       if (quotes.length === 0) continue;
 
-      await this.tokenPriceRepository.bulkUpsertDailyBackfill(
+      const written = await this.priceWriter.writeHistory(
         quotes.map((q) => ({
           tokenId,
           baseTokenId,
           price: q.price,
-          timestamp: q.timestamp,
+          at: q.timestamp,
+          granularity: 'daily',
           source: q.source,
         }))
       );
 
-      // Days from neededDays that the provider covered (within ±24h).
-      const coveredDayKeys = new Set(quotes.map((q) => q.timestamp.toISOString().slice(0, 10)));
+      // Days from neededDays that the provider covered (within ±24h), and of
+      // those the ones it covered with a bar the writer stored.
+      const dayOf = (at: Date) => at.toISOString().slice(0, 10);
+      const coveredDayKeys = new Set(quotes.map((q) => dayOf(q.timestamp)));
+      const storedDayKeys = new Set(
+        quotes.filter((q) => isStorablePrice(q.price)).map((q) => dayOf(q.timestamp))
+      );
       let inserted = 0;
       let providerMissing = 0;
+      let droppedDays = 0;
       for (const day of neededDays) {
-        const key = day.toISOString().slice(0, 10);
-        if (coveredDayKeys.has(key)) inserted++;
+        const key = dayOf(day);
+        if (storedDayKeys.has(key)) inserted++;
+        else if (coveredDayKeys.has(key)) droppedDays++;
         else providerMissing++;
       }
       return {
         inserted,
         alreadyHad: 0,
         providerMissing,
+        droppedDays,
+        droppedBars: written.dropped,
         providerUsed: provider.providerKey,
         attemptFailed,
       };

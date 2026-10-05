@@ -56,8 +56,12 @@ let beforeConvert: ((to: string, options: PriceGraphOptions) => Promise<void>) |
 let realGraph = false;
 
 Container.set(PricingService, {
-  getCachedTokenPrices: async (tokens: Token[], baseSymbol: string, timestamp: Date) => {
-    liveCalls.push({ tokenIds: tokens.map((t) => t.id).sort(), baseSymbol, at: timestamp });
+  getCachedTokenPrices: async (tokens: Token[], base: Token, timestamp: Date) => {
+    liveCalls.push({
+      tokenIds: tokens.map((t) => t.id).sort(),
+      baseSymbol: base.symbol,
+      at: timestamp,
+    });
     const prices = new Map<string, string>();
     for (const token of tokens) {
       const price = live.get(token.id);
