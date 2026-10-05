@@ -136,6 +136,46 @@ multi-arch images on every push to main; production images are only
 tagged from semver-tag pushes, which only happen after the
 release-please PR merges (which itself only fires on green CI).
 
+## Notes for specific versions
+
+### 0.53.0
+
+**New outbound host.** Exchange rates are now read from
+`api.frankfurter.dev`; the old `api.frankfurter.app` only redirects there. If
+your install restricts outbound traffic, allow `api.frankfurter.dev` before
+upgrading. No new key and no new environment variable.
+
+**A migration can stop this upgrade, and it changes nothing when it does.**
+`20261004084212` adds a check that every stored price in `token_prices` is a
+positive number in plain decimal notation. If any stored row is zero,
+negative or written another way, the migrate step (step 5) fails with
+`23514` naming `token_prices_price_positive_decimal_chk`. Nothing is applied
+and the new version does not start. Check before you upgrade; the answer
+must be `0`:
+
+```sh
+docker compose -f docker-compose.prod.yml exec -T postgres psql -U scani -d scani -c "
+  SELECT count(*) FROM token_prices
+   WHERE NOT (CASE WHEN price ~ '^[0-9]{1,64}(\.[0-9]{1,64})?([eE][-+]?[0-9]{1,3})?\$'
+                   THEN price::numeric > 0 ELSE false END);"
+```
+
+If it is not `0`, back the table up first, then delete those rows. Scani
+already ignores a price that is not positive, so nothing reads them:
+
+```sh
+docker compose -f docker-compose.prod.yml exec -T postgres \
+  pg_dump -U scani --format=custom --no-owner --table=token_prices scani \
+  > token_prices-before-0.53.0.dump
+
+docker compose -f docker-compose.prod.yml exec -T postgres psql -U scani -d scani -c "
+  DELETE FROM token_prices
+   WHERE NOT (CASE WHEN price ~ '^[0-9]{1,64}(\.[0-9]{1,64})?([eE][-+]?[0-9]{1,3})?\$'
+                   THEN price::numeric > 0 ELSE false END);"
+```
+
+Then run the check again and continue from step 5.
+
 ## See also
 
 - [Backup & restore](/self-hosting/tier1/backup-restore/)
