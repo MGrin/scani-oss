@@ -1117,6 +1117,52 @@ describe('FoundationClassificationService.relabelStaleLabels', () => {
     });
   });
 
+  // SC-1539. A price is text in both columns, and the listing and the write both
+  // compare it as text: a label holding another spelling of the same number is
+  // listed, re-written to the row's own spelling, and not listed again. Were the
+  // write to compare it as a number, the label would be listed for ever and an
+  // apply would exit 2 every run.
+  test('a price label in another text form of the same number is re-written, then not listed', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const type = await makeInstitutionType(tx, { code: 'crypto_exchange' });
+      const institution = await makeInstitution(tx, { typeId: type.id });
+      const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const token = await makeToken(tx);
+      const holding = await makeHolding(tx, {
+        userId: user.id,
+        accountId: account.id,
+        tokenId: token.id,
+      });
+      const leg = await entry(tx, holding, {
+        kind: 'buy',
+        quantity: '2',
+        source: 'kraken',
+        priceNative: '1.50',
+        ledgerKind: 'trade_leg',
+        kindOrigin: 'source',
+        executionPrice: '1.5',
+      });
+      // A buy with no swap or settle group is its own group.
+      await tx.update(ledger).set({ groupId: leg.id }).where(eq(ledger.id, leg.id));
+
+      const listed = await staleOf(user.id, tx);
+      // The control: only the price's spelling differs.
+      expect(listed.map((label) => [label.entryId, label.differs])).toEqual([
+        [leg.id, ['executionPrice']],
+      ]);
+
+      const report = await service().relabelStaleLabels({ apply: true, userId: user.id }, tx);
+
+      expect({ relabelled: report.relabelled, stale: report.stale }).toEqual({
+        relabelled: 1,
+        stale: [],
+      });
+      expect((await entryRow(tx, leg.id)).executionPrice).toBe('1.50');
+      expect(await staleOf(user.id, tx)).toEqual([]);
+    });
+  });
+
   test('a dry run writes nothing, and reports the stale list as it read it', async () => {
     await withTestDb(async (tx) => {
       const { s } = await staleSeed(tx);
@@ -1425,6 +1471,177 @@ describe('relabelStaleLabels beside a writer that holds a listed row', () => {
       groupId: row?.groupId,
     };
   };
+
+  /**
+   * A stale deposit and a current one on one holding, committed: both paired,
+   * and only the first still labelled `inflow`.
+   */
+  const staleAndCurrent = () =>
+    getDb().transaction(async (tx) => {
+      const user = await makeUser(tx);
+      rows.users.push(user.id);
+      const type = await makeInstitutionType(tx, { code: 'crypto_exchange' });
+      const institution = await makeInstitution(tx, { typeId: type.id });
+      rows.institutions.push(institution.id);
+      const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const token = await makeToken(tx);
+      rows.tokens.push(token.id);
+      const holding = await makeHolding(tx, {
+        userId: user.id,
+        accountId: account.id,
+        tokenId: token.id,
+      });
+      const deposit = () =>
+        entry(tx, holding, {
+          kind: 'deposit',
+          quantity: '5',
+          source: 'etherscan',
+          transferGroupId: randomUUID(),
+          ledgerKind: 'inflow',
+          kindOrigin: 'source',
+        });
+      const stale = await deposit();
+      const current = await deposit();
+      await Container.get(HoldingTransactionRepository).relabelEntries(user.id, [current.id], tx);
+      return { stale, current };
+    });
+
+  // SC-1539. The pass takes the rows it listed, then lists again and re-labels
+  // only those it took: a label that goes stale meanwhile on another row is on
+  // a row it does not hold, so it is left for the next run.
+  test('leaves a label that went stale on a row it did not take while it waited', async () => {
+    const { stale, current } = await staleAndCurrent();
+    // The control: only the first is stale before the writer moves the second.
+    expect((await staleOf(stale.userId)).map((label) => label.entryId)).toEqual([stale.id]);
+
+    // The writer holds the stale row, and unpairs the current one so its label goes stale.
+    const held = latch();
+    const release = latch();
+    let writerPid: number | undefined;
+    const writer = getDb().transaction(async (tx) => {
+      writerPid = await backendPid(tx);
+      await tx.select({ id: ledger.id }).from(ledger).where(eq(ledger.id, stale.id)).for('update');
+      await tx.update(ledger).set({ transferGroupId: null }).where(eq(ledger.id, current.id));
+      held.open();
+      await release.passed;
+    });
+
+    let pass: ReturnType<FoundationClassificationService['relabelStaleLabels']> | undefined;
+    let blocked = false;
+    try {
+      await Promise.race([held.passed, writer]);
+      const passPid = watchingThePass();
+      pass = service().relabelStaleLabels({ apply: true, userId: stale.userId });
+      blocked = await waitUntilBlocked({ pid: passPid, settled: pass }, writerPid!);
+    } finally {
+      release.open();
+    }
+    const outcomes = await Promise.allSettled([writer, pass]);
+    const report = await pass!;
+    const ids = (labels: readonly { entryId: string }[]) => labels.map((label) => label.entryId);
+
+    expect({
+      blocked,
+      outcomes: outcomes.map(outcomeOf),
+      relabelled: report.relabelled,
+      held: ids(report.held),
+      stale: ids(report.stale),
+    }).toEqual({
+      blocked: true,
+      outcomes: ['fulfilled', 'fulfilled'],
+      relabelled: 1,
+      held: [stale.id],
+      stale: [current.id],
+    });
+    expect(await committedLabel(stale.id)).toEqual({
+      transferGroupId: stale.transferGroupId,
+      ledgerKind: 'transfer_in',
+      groupId: stale.transferGroupId,
+    });
+    // Unpaired by the writer and still labelled as the pair it was.
+    expect(await committedLabel(current.id)).toEqual({
+      transferGroupId: null,
+      ledgerKind: 'transfer_in',
+      groupId: current.transferGroupId,
+    });
+  }, 30_000);
+
+  // SC-1539. A pass given up at its lock timeout after it wrote is rolled back.
+  // The other test of the timeout blocks before any write, so it reads the same
+  // with or without a rollback; here the re-label is written first and a later
+  // statement of the same transaction waits on the writer.
+  test('rolls back what it wrote when a later statement gives the user up at its lock timeout', async () => {
+    const { stale, current } = await staleAndCurrent();
+    const asStored = await committedLabel(stale.id);
+
+    const held = latch();
+    const release = latch();
+    let writerPid: number | undefined;
+    const writer = getDb().transaction(async (tx) => {
+      writerPid = await backendPid(tx);
+      await tx
+        .select({ id: ledger.id })
+        .from(ledger)
+        .where(eq(ledger.id, current.id))
+        .for('update');
+      held.open();
+      await release.passed;
+    });
+
+    // The re-label runs as written, and then the pass's transaction reaches for the writer's row.
+    const repository = Container.get(HoldingTransactionRepository);
+    const relabelEntries = repository.relabelEntries.bind(repository);
+    const written: Array<{ relabelled: number; label: unknown }> = [];
+    spies.push(
+      spyOn(repository, 'relabelEntries').mockImplementation(async (userId, ids, tx) => {
+        const relabelled = await relabelEntries(userId, ids, tx);
+        const [row] = await tx.select().from(ledger).where(eq(ledger.id, stale.id));
+        written.push({ relabelled, label: row?.ledgerKind });
+        await tx
+          .select({ id: ledger.id })
+          .from(ledger)
+          .where(eq(ledger.id, current.id))
+          .for('update');
+        return relabelled;
+      })
+    );
+
+    const over = service();
+    let pass: ReturnType<typeof capturingErrors<StaleRelabelReport>> | undefined;
+    let blocked = false;
+    let ended = false;
+    try {
+      await Promise.race([held.passed, writer]);
+      const passPid = watchingThePass();
+      pass = capturingErrors(over, () =>
+        over.relabelStaleLabels({ apply: true, userId: stale.userId })
+      );
+      blocked = await waitUntilBlocked({ pid: passPid, settled: pass }, writerPid!);
+      // Four times the bound, so a loaded box still ends inside it.
+      ended = await settlesWithin(pass, 20_000);
+    } finally {
+      release.open();
+    }
+    await writer;
+    const { result: report } = await pass!;
+
+    expect({ blocked, ended, written, report }).toEqual({
+      blocked: true,
+      ended: true,
+      // The control: the pass did write before it waited.
+      written: [{ relabelled: 1, label: 'transfer_in' }],
+      report: {
+        apply: true,
+        users: 1,
+        relabelled: 0,
+        held: [],
+        stale: [],
+        failedUsers: [{ userId: stale.userId, error: 'canceling statement due to lock timeout' }],
+      },
+    });
+    expect(asStored.ledgerKind).toBe('inflow');
+    expect(await committedLabel(stale.id)).toEqual(asStored);
+  }, 30_000);
 
   test('waits for the writer, then labels the row from the facts the writer committed, and reports what it wrote', async () => {
     const stale = await staleDeposit();
