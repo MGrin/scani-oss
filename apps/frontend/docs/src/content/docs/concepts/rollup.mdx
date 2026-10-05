@@ -80,22 +80,43 @@ just overwrites.
 
 ## The holding-inclusion rule
 
-The rollup applies the canonical
-[holding-inclusion rule](/decisions/holding-inclusion-rule/):
+A holding counts toward a total when it is shown or was hidden by the
+closed-position sweep, it is active, and its token is not a scam for its
+owner. That is the canonical
+[holding-inclusion rule](/decisions/holding-inclusion-rule/). The scam
+check is in the query that loads a user's holdings; the rest is
+`holdingCountsInTotal`:
 
 ```ts
-function isIncludedInTotal(holding, token) {
-  if (holding.isHidden) return false;
-  if (!holding.isActive) return false;
-  if (token.isScamProbability >= SCAM_PROBABILITY_THRESHOLD) return false;
-  return true;
+export function holdingCountsInTotal(holding: InclusionHolding): boolean {
+  if (holding.isHidden && holding.hiddenBy !== 'auto') return false;
+  return holding.isActive;
 }
 ```
 
-The same rule is duplicated in SQL, in the one inclusion clause
-(`includedHoldingRows`) that every per-holding reader in
+The user, institution and account rows total the holdings that count.
+The rollup stores `holding` rows for more than those: every holding that
+counts, plus the shown holdings that do not count because they are
+inactive (`holdingIsRolledUp`). A shown inactive holding keeps a row with
+nothing in it; a holding its owner hid gets no row. Neither does a shown
+holding whose token is a scam for its owner: the query that lists a
+user's holdings leaves it out, so the rollup never sees it.
+
+```ts
+export function holdingIsRolledUp(holding: InclusionHolding): boolean {
+  return !holding.isHidden || holdingCountsInTotal(holding);
+}
+```
+
+The readers that add `holding` rows up across holdings (the chart
+series, a day's total, returns) apply the counting rule to the rows they
+read. It is duplicated in SQL, in the one inclusion clause
+(`includedHoldingRows`) that each of those readers in
 `PortfolioValueDailyRepository` filters through, so the chart read path
-and the dashboard headline always agree. Keeping the
+and the dashboard headline always agree. A reader that returns a
+holding's own figures applies no rule: `findLatestHoldingCostBasis`, and
+`findRange` asked for a `holding` scope, return whatever the rollup
+stored for that holding. Keeping the
 two definitions in sync is the *point* — that's what makes the
 chart's latest point reconcile with the headline.
 

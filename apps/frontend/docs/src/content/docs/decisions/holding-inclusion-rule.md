@@ -13,13 +13,16 @@ portfolio total lives in **two** places:
 - TypeScript, in `packages/business/domain/src/lib/holding-inclusion.ts`,
   consumed by `PortfolioValuationService` for the dashboard headline.
 - SQL, in `PortfolioValueDailyRepository`'s `includedHoldingRows` clause,
-  which every per-holding reader filters through, the historical chart's
-  per-day totals included.
+  which every reader that adds per-holding rows up filters through, the
+  historical chart's per-day totals included.
 
-Both express the same predicate: a holding is included if and only if
+The two functions, `isIncludedInTotal` and `includedInTotalSql`, express
+the same predicate: a holding is included if and only if
 it is not hidden by its owner (`isHidden = false`, or `hiddenBy = 'auto'`
 when the closed-position sweep hid it), `isActive = true`, and
-`token.isScamProbability < SCAM_PROBABILITY_THRESHOLD`. The flow side of
+`token.isScamProbability < SCAM_PROBABILITY_THRESHOLD`. `isIncludedInTotal`
+and `holdingCountsInTotal` read a hidden holding handed with no `hiddenBy`
+as hidden by its owner. The flow side of
 returns applies the same rule, so a holding's flows count exactly when its
 value and PnL do.
 
@@ -57,14 +60,34 @@ both implementations agreed on.
 
 - The TypeScript predicate is the canonical reference.
   `holding-inclusion.ts` documents the rule and provides the
-  function:
+  functions:
 
   ```ts
-  export function isIncludedInTotal(holding, token) {
-    if (holding.isHidden) return false;
-    if (!holding.isActive) return false;
+  export function holdingCountsInTotal(holding: InclusionHolding): boolean {
+    if (holding.isHidden && holding.hiddenBy !== 'auto') return false;
+    return holding.isActive;
+  }
+
+  export function isIncludedInTotal(holding: InclusionHolding, token: InclusionToken): boolean {
+    if (!holdingCountsInTotal(holding)) return false;
     if (token.isScamProbability >= SCAM_PROBABILITY_THRESHOLD) return false;
     return true;
+  }
+  ```
+
+- The [rollup](/concepts/rollup/) writes the rows the SQL readers filter.
+  It lists holdings by `holdingIsRolledUp`, defined on the same predicate:
+  every holding that counts, plus the shown inactive ones, which do not
+  count and keep a row of their own. A shown holding whose token is a scam
+  for its owner gets no row: the query that lists a user's holdings leaves
+  it out before `holdingIsRolledUp` is asked. The readers that add
+  per-holding rows up apply the counting rule to those rows; a reader that
+  returns a holding's own figures (`findLatestHoldingCostBasis`, `findRange`
+  with a `holding` scope) applies none.
+
+  ```ts
+  export function holdingIsRolledUp(holding: InclusionHolding): boolean {
+    return !holding.isHidden || holdingCountsInTotal(holding);
   }
   ```
 
@@ -90,10 +113,10 @@ nice-to-have list.
 
 ## What the design costs
 
-- **Two places to update** when the rule changes. In practice the
-  rule has changed exactly once (the addition of the
-  `isScamProbability` clause), and both sites were updated in the
-  same PR.
+- **Two places to update** when the rule changes.
+  `packages/business/domain/tests/lib/holding-inclusion.parity.test.ts`
+  puts every combination of hidden, who hid it, active and scam to both
+  and fails when they disagree.
 
 ## What this rules out
 

@@ -327,10 +327,11 @@ export class PortfolioValueDailyRepository {
     }
   }
 
-  // The inclusion contract over `scope_kind='holding'` rows: every reader of
-  // per-holding rows filters through this one clause, so a day's sum and the
-  // rows it sums cannot disagree about which holdings count. Assumes the
-  // `holdings` and `tokens` joins.
+  // The inclusion contract over `scope_kind='holding'` rows: every reader that
+  // adds per-holding rows up filters through this one clause, so a day's sum
+  // and the rows it sums cannot disagree about which holdings count. A reader
+  // asking for one holding's rows applies none. Assumes the `holdings` and
+  // `tokens` joins.
   //
   // NOTE: the same predicate is TypeScript in `lib/holding-inclusion.ts`, which
   // the dashboard headline uses. The two must stay aligned, or the chart's
@@ -600,6 +601,29 @@ export class PortfolioValueDailyRepository {
       );
       throw error;
     }
+  }
+
+  /**
+   * How many days back a rebuild of this user's whole stored history has to
+   * reach: to their earliest ledger row, balance reading or stored day, plus
+   * two, and never fewer than `atLeastDays`.
+   *
+   * A failure is the caller's to handle and is not logged here: the api asks
+   * on every holding and account mutation and carries on without an answer.
+   */
+  async findHistoryLookbackDays(
+    userId: string,
+    atLeastDays: number,
+    transaction?: DatabaseTransaction
+  ): Promise<number> {
+    const [history] = await this.getDb(transaction).execute<{ days: number }>(sql`
+      SELECT greatest(${atLeastDays}, coalesce(current_date - min(day)::date + 2, 0))::integer AS days FROM (
+        SELECT occurred_at::date AS day FROM holding_transactions WHERE user_id = ${userId}
+        UNION ALL SELECT observed_at::date FROM holding_balance_observations WHERE user_id = ${userId}
+        UNION ALL SELECT snapshot_date FROM portfolio_value_daily WHERE user_id = ${userId}
+      ) history
+    `);
+    return Number(history?.days ?? atLeastDays);
   }
 
   /** Null when the row already held these values, so nothing was written. */

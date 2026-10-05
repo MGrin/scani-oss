@@ -941,9 +941,10 @@ both. See [Groups](/concepts/groups/).
 
 ### Holding-inclusion rule
 **Scani term of art.** The canonical predicate for whether a
-holding contributes to a portfolio total
-(`!isHidden && isActive && token.isScamProbability < THRESHOLD`).
-Implemented in TS and SQL. See
+holding contributes to a portfolio total: it is shown or was hidden by
+the closed-position sweep, it is active, and its token is not a scam
+for its owner. Implemented in TS (`isIncludedInTotal`) and SQL
+(`includedInTotalSql`). See
 [Why the holding-inclusion rule lives twice](/decisions/holding-inclusion-rule/).
 
 ### Institution

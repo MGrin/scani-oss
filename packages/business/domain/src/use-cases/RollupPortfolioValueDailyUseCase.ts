@@ -22,6 +22,7 @@ import { parseCostBasisMethod } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { and, eq, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { holdingIsRolledUp } from '../lib/holding-inclusion';
 import { AccountRepository } from '../repositories/AccountRepository';
 import { HoldingBalanceObservationRepository } from '../repositories/HoldingBalanceObservationRepository';
 import { HoldingCoverageRepository } from '../repositories/HoldingCoverageRepository';
@@ -185,7 +186,14 @@ export class RollupPortfolioValueDailyUseCase {
             // front replace ~350k per-(holding, day) DB reads. Falls
             // through silently to the per-call DB path for anything
             // a future code path needs but the prefetch missed.
-            const userHoldings = await this.holdingRepository.findByUser(user.id);
+            //
+            // Hidden holdings are fetched and `holdingIsRolledUp` decides,
+            // because the valuation counts the ones the closed-position sweep
+            // hid (SC-1486). Listed here as visible-only, such a holding was
+            // priced with no ledger, coverage or row of its own (SC-1546).
+            const userHoldings = (
+              await this.holdingRepository.findByUser(user.id, undefined, true)
+            ).filter(holdingIsRolledUp);
             const holdingIds = userHoldings.map((h) => h.id);
             // Coverage joins the same prefetch: `has_complete_tx_history`
             // is a property of the import, not of the snapshot date, so

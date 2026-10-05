@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import type { DatabaseTransaction } from '@scani/db';
+import * as schema from '@scani/db/schema';
+import { eq, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { PortfolioValueDailyRepository } from '../../src/repositories/PortfolioValueDailyRepository';
 import { withTestDb } from '../../test/helpers/db';
 import { makeUser } from '../../test/helpers/factories';
-import { makeToken } from '../../test/helpers/factories-extra';
+import { makeHoldingTransaction, makeToken } from '../../test/helpers/factories-extra';
 
 const repo = () => Container.get(PortfolioValueDailyRepository);
 
@@ -293,6 +296,79 @@ describe('PortfolioValueDailyRepository', () => {
       expect(allDeleted).toBe(1);
       const gone = await repo().findLatest(user.id, eur.id, tx);
       expect(gone).toBeNull();
+    });
+  });
+});
+
+describe('PortfolioValueDailyRepository.findHistoryLookbackDays', () => {
+  const FLOOR = 400;
+  // Stamped by the database's own calendar, at noon. The method counts in the
+  // database's days, and `current_date` holds still for the one transaction a
+  // test runs in, so the distance is exact whenever the test runs.
+  const daysBack = (days: number) => sql`(current_date - ${days}::integer) + interval '12 hours'`;
+
+  /** A user whose one ledger row is `days` back; the holding it sits on. */
+  async function userWithLedgerRow(tx: DatabaseTransaction, days: number) {
+    const user = await makeUser(tx);
+    const row = await makeHoldingTransaction(tx, { userId: user.id });
+    await tx
+      .update(schema.holdingTransactions)
+      .set({ occurredAt: daysBack(days) })
+      .where(eq(schema.holdingTransactions.id, row.id));
+    return { userId: user.id, holdingId: row.holdingId };
+  }
+
+  test('a ledger row 500 days back reaches 502 days', async () => {
+    await withTestDb(async (tx) => {
+      const { userId } = await userWithLedgerRow(tx, 500);
+      expect(await repo().findHistoryLookbackDays(userId, FLOOR, tx)).toBe(502);
+    });
+  });
+
+  test('history no older than the floor gets the floor', async () => {
+    await withTestDb(async (tx) => {
+      const recent = await userWithLedgerRow(tx, 100);
+      const justInside = await userWithLedgerRow(tx, 398);
+      const justOutside = await userWithLedgerRow(tx, 399);
+      expect(await repo().findHistoryLookbackDays(recent.userId, FLOOR, tx)).toBe(400);
+      expect(await repo().findHistoryLookbackDays(justInside.userId, FLOOR, tx)).toBe(400);
+      expect(await repo().findHistoryLookbackDays(justOutside.userId, FLOOR, tx)).toBe(401);
+    });
+  });
+
+  test('no history at all gets the floor, whatever anyone else has', async () => {
+    await withTestDb(async (tx) => {
+      await userWithLedgerRow(tx, 900);
+      const fresh = await makeUser(tx);
+      expect(await repo().findHistoryLookbackDays(fresh.id, FLOOR, tx)).toBe(400);
+    });
+  });
+
+  test('a balance reading or a stored day older than the ledger sets it', async () => {
+    await withTestDb(async (tx) => {
+      const read = await userWithLedgerRow(tx, 410);
+      await tx.insert(schema.holdingBalanceObservations).values({
+        userId: read.userId,
+        holdingId: read.holdingId,
+        balance: '1',
+        observedAt: daysBack(450),
+        source: 'sync-capture',
+      });
+      expect(await repo().findHistoryLookbackDays(read.userId, FLOOR, tx)).toBe(452);
+
+      const stored = await userWithLedgerRow(tx, 410);
+      await tx.insert(schema.portfolioValueDaily).values({
+        userId: stored.userId,
+        scopeKind: 'user',
+        scopeId: stored.userId,
+        snapshotDate: sql`current_date - 600`,
+        baseCurrencyId: (await makeToken(tx)).id,
+        totalValue: '1',
+        coverageQuality: 'full',
+        holdingsWithKnownValue: 1,
+        holdingsTotal: 1,
+      });
+      expect(await repo().findHistoryLookbackDays(stored.userId, FLOOR, tx)).toBe(602);
     });
   });
 });
