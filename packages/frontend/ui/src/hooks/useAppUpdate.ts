@@ -69,12 +69,71 @@ export function offersOnFirstRead(
   return lastKnown !== null && lastKnown !== served;
 }
 
+/** Which detection route raised the banner. */
+export type UpdateRoute =
+  | 'first-read'
+  | 'version-poll'
+  | 'sw-waiting'
+  | 'sw-installed'
+  | 'sw-message';
+
+export interface UpdateOffer {
+  route: UpdateRoute;
+  /** What `/version.json` named, or `null` when the route did not read it. */
+  served: string | null;
+  bundle: string | null;
+}
+
+export type UpdateOfferReporter = (offer: UpdateOffer) => void;
+
+let offerReporter: UpdateOfferReporter | null = null;
+
+/**
+ * Wire the host app's reporter for every banner raised, so a banner a user
+ * reports names the route that raised it and the two versions it compared
+ * (SC-1562). Shared code stays free of `@sentry/react`, as with
+ * `setServiceWorkerReporter`.
+ */
+export function setUpdateOfferReporter(report: UpdateOfferReporter | null): void {
+  offerReporter = report;
+}
+
+/**
+ * Whether a service-worker signal offers the update, given a fresh read of
+ * `/version.json`.
+ *
+ * A waiting worker says only that the browser holds a worker it has not
+ * activated, which iOS standalone apps were seen to report again on every
+ * load while the page already ran the served build (SC-1562). The host is
+ * the authority on which build is current, so an unread host offers nothing;
+ * the version poll still finds a real deploy.
+ */
+export function serviceWorkerRouteOffers(served: string | null, bundle: string | null): boolean {
+  if (served === null) return false;
+  if (bundle === null) return true;
+  return served !== bundle;
+}
+
+async function fetchServedVersion(): Promise<string | null> {
+  try {
+    const response = await fetch(VERSION_URL, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (!response.ok) return null;
+    return deployedVersion(await response.json());
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Hook that detects when a new version of the app is deployed.
  *
  * Two detection mechanisms:
  * 1. Polls /version.json periodically and compares with the initial version
- * 2. Listens for service worker state changes (waiting → update available)
+ * 2. Listens for service worker state changes (waiting → update available),
+ *    offered only when a fresh /version.json differs from the running bundle
  *
  * When an update is detected, shows a banner. When the user clicks "Update",
  * hands the page to the waiting SW and reloads it. Dismissals are
@@ -88,15 +147,28 @@ export function useAppUpdate(): AppUpdateState {
   // poll). `null` for service-worker-only updates with no version string.
   const offeredVersion = useRef<string | null>(null);
 
+  const showing = useRef(false);
+
   // Surface an update unless the user already dismissed this exact version.
-  const offerUpdate = useCallback((version: string | null) => {
+  const offerUpdate = useCallback((version: string | null, route: UpdateRoute) => {
     if (version && version === localStorage.getItem(DISMISSED_VERSION_STORAGE_KEY)) {
       return;
     }
+    if (showing.current && offeredVersion.current === version) return;
+    showing.current = true;
     offeredVersion.current = version;
     setUpdateAvailable(true);
     setDismissed(false);
+    offerReporter?.({ route, served: version, bundle: bundleVersion() });
   }, []);
+
+  const confirmAndOffer = useCallback(
+    async (route: UpdateRoute) => {
+      const served = await fetchServedVersion();
+      if (serviceWorkerRouteOffers(served, bundleVersion())) offerUpdate(served, route);
+    },
+    [offerUpdate]
+  );
 
   // Listen for SW messages
   useEffect(() => {
@@ -105,7 +177,7 @@ export function useAppUpdate(): AppUpdateState {
     const handleMessage = (event: MessageEvent) => {
       const action = interpretServiceWorkerMessage(event.data, wasDocumentControlledAtLoad());
       if (action.offerUpdate) {
-        offerUpdate(offeredVersion.current);
+        void confirmAndOffer('sw-message');
       }
       if (action.reload) {
         // A newer SW took over from the one this page was running under —
@@ -116,7 +188,7 @@ export function useAppUpdate(): AppUpdateState {
 
     navigator.serviceWorker.addEventListener('message', handleMessage);
     return () => navigator.serviceWorker.removeEventListener('message', handleMessage);
-  }, [offerUpdate]);
+  }, [confirmAndOffer]);
 
   // Monitor SW registration for waiting workers
   useEffect(() => {
@@ -124,7 +196,7 @@ export function useAppUpdate(): AppUpdateState {
 
     const checkWaiting = (registration: ServiceWorkerRegistration) => {
       if (registration.waiting) {
-        offerUpdate(offeredVersion.current);
+        void confirmAndOffer('sw-waiting');
       }
     };
 
@@ -148,7 +220,7 @@ export function useAppUpdate(): AppUpdateState {
         newWorker.addEventListener('statechange', () => {
           if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
             // New SW installed while old one is still controlling — update available
-            offerUpdate(offeredVersion.current);
+            void confirmAndOffer('sw-installed');
           }
         });
       });
@@ -159,7 +231,7 @@ export function useAppUpdate(): AppUpdateState {
     return () => {
       cancelled = true;
     };
-  }, [offerUpdate]);
+  }, [confirmAndOffer]);
 
   // Poll version.json for changes
   useEffect(() => {
@@ -181,7 +253,7 @@ export function useAppUpdate(): AppUpdateState {
           initialVersion.current = version;
           const lastKnown = localStorage.getItem(VERSION_STORAGE_KEY);
           if (active && offersOnFirstRead(version, bundleVersion(), lastKnown)) {
-            offerUpdate(version);
+            offerUpdate(version, 'first-read');
           }
           localStorage.setItem(VERSION_STORAGE_KEY, version);
         } else if (version !== initialVersion.current) {
@@ -190,7 +262,7 @@ export function useAppUpdate(): AppUpdateState {
           if (active) {
             // Offer the banner first: it is the user's route off a stale
             // bundle and must not depend on the service worker succeeding.
-            offerUpdate(version);
+            offerUpdate(version, 'version-poll');
 
             // Then try to pull the new worker down. `requestServiceWorkerUpdate`
             // owns the failure — an un-awaited `update()` here escaped this
@@ -269,6 +341,7 @@ export function useAppUpdate(): AppUpdateState {
     if (offeredVersion.current) {
       localStorage.setItem(DISMISSED_VERSION_STORAGE_KEY, offeredVersion.current);
     }
+    showing.current = false;
     setDismissed(true);
   }, []);
 
