@@ -19,6 +19,33 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.53.0](https://github.com/MGrin/scani-oss/compare/v0.52.2...v0.53.0) (2026-10-05)
+
+
+### Features
+
+* **history:** a fee-rows cohort for the SC-1561 recompute ([4faae88](https://github.com/MGrin/scani-oss/commit/4faae8860dfc20f8820ccd8807552e54df24a24e))
+* **pricing:** one writer for prices, and a base that is a token (foundation A3 PR-2) ([fa646e2](https://github.com/MGrin/scani-oss/commit/fa646e2cc006e6c22fbbf018094b8a3b83d7b4e3))
+* **shadow:** the engine reads prices, and the shadow measures it (foundation A3 PR-1) ([9cebfac](https://github.com/MGrin/scani-oss/commit/9cebfacfd020bd4ecbb97712a03590fa58a1687d))
+
+
+### Bug Fixes
+
+* **cost-basis:** fee rows leave the pool they paid from (SC-1561) ([ad8370a](https://github.com/MGrin/scani-oss/commit/ad8370a4064b8085653cc3a56788d57414f6a1e0))
+* **fx:** full fiat precision, and one currency history backfill (foundation A3 PR-4) ([26fa001](https://github.com/MGrin/scani-oss/commit/26fa0012039fdc73599af55b936ae4c633ab9378))
+* **holdings:** a balance shows a holding the sweep hid again (SC-1557) ([2491deb](https://github.com/MGrin/scani-oss/commit/2491deb6a69e75fba26cd2b54818358ba64941c3))
+* **holdings:** a concurrent edit of one holding no longer mis-sizes the next (SC-1525) ([99bcc08](https://github.com/MGrin/scani-oss/commit/99bcc0850b35e5cfb14c09e1b76edfcd7f10372b))
+* **pricing:** the hourly price run always fetches (foundation A3 PR-3) ([d7a7a56](https://github.com/MGrin/scani-oss/commit/d7a7a56515d59cd73a9d1fffc510107f14ab8570))
+* **pwa:** a service-worker signal offers the update only when the host serves another build (SC-1562) ([5ae5b2b](https://github.com/MGrin/scani-oss/commit/5ae5b2ba108f6f91304757647b469a48a3e899d2))
+* **returns:** key the drift memo on the holdings asked, not only the ledger map (SC-1553) ([e5efeb5](https://github.com/MGrin/scani-oss/commit/e5efeb59e9f53123e5bc47549359b3d6d6292551))
+* **rollup:** a sweep-hidden holding is costed from its ledger and stored with rows of its own (SC-1546) ([a7cc20c](https://github.com/MGrin/scani-oss/commit/a7cc20c92f491da288bcae67b8b5f9adc52ba842))
+* **worker:** the deletion purge skips its own running job instead of warning twice (SC-1560) ([8614175](https://github.com/MGrin/scani-oss/commit/8614175d70019dff5c3706e577f2928fca1e0ff6))
+
+### Before you upgrade
+
+* **New outbound host:** exchange rates now come from `api.frankfurter.dev` (the old `api.frankfurter.app` only redirects there). If your install restricts outbound traffic, allow it first. No new key or environment variable.
+* **Migration `20261004084212` can stop this upgrade:** it adds a check that every stored price in `token_prices` is a positive plain decimal. If any stored row is zero, negative or written another way, the migrate step fails with `23514` naming `token_prices_price_positive_decimal_chk`. Nothing is applied and the new version does not start. Run the check in the [upgrade guide](https://docs.scani.xyz/self-hosting/tier1/upgrades/#0530) first; if it is not `0`, back up `token_prices` with `pg_dump` and delete those rows as the guide shows.
+
 ## [0.52.2](https://github.com/MGrin/scani-oss/compare/v0.52.1...v0.52.2) (2026-10-04)
 
 
