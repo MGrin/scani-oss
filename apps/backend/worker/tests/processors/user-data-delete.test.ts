@@ -52,6 +52,39 @@ function stub(account: () => Promise<{ deleted: boolean }> = async () => ({ dele
   return calls;
 }
 
+// SC-1560. The purge runs inside this job and skips it by id; without the id it
+// tries to remove a job a worker holds and warns twice on every deletion.
+describe('the delete job names itself to the purge', () => {
+  function stubRecordingJobId() {
+    const calls: string[] = [];
+    Container.set(DeleteAllUserDataUseCase, {
+      execute: async (userId: string, runningJobId?: string) => {
+        calls.push(`data:${userId}:${runningJobId}`);
+        return { success: true };
+      },
+    } as unknown as DeleteAllUserDataUseCase);
+    Container.set(DeleteAccountUseCase, {
+      execute: async (userId: string, runningJobId?: string) => {
+        calls.push(`account:${userId}:${runningJobId}`);
+        return { deleted: true };
+      },
+    } as unknown as DeleteAccountUseCase);
+    return calls;
+  }
+
+  test('a plain job', async () => {
+    const calls = stubRecordingJobId();
+    await new TestableProcessor().run({ userId: 'u1', requestId: 'r1' });
+    expect(calls).toEqual(['data:u1:job-1']);
+  });
+
+  test('an account job', async () => {
+    const calls = stubRecordingJobId();
+    await new TestableProcessor().run({ userId: 'u1', requestId: 'r1', deleteAccount: true });
+    expect(calls).toEqual(['account:u1:job-1']);
+  });
+});
+
 describe('the delete job runs the scope it was asked for', () => {
   test('a plain job empties the data and keeps the account', async () => {
     const calls = stub();
