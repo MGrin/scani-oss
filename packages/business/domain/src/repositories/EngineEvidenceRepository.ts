@@ -2,9 +2,8 @@ import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Holding, NewHolding, Token, TokenPrice } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { and, asc, desc, eq, exists, getTableName, inArray, lte, type SQL, sql } from 'drizzle-orm';
-import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
-import { Container, Service } from 'typedi';
-import { compareText } from '../engine/order';
+import { makePgArray, type PgColumn, type PgTable } from 'drizzle-orm/pg-core';
+import { Service } from 'typedi';
 import { PRICE_GRANULARITIES, type PriceGranularity, type PriceReading } from '../engine/types';
 import { includedInTotalSql } from '../lib/holding-inclusion';
 // Type-only, so nothing links the repository to the classifier at runtime.
@@ -18,7 +17,6 @@ import type {
 } from '../services/foundation/legacy-classification';
 import { LEGACY_ANCHOR_KEY } from '../services/foundation/legacy-ledger-kinds';
 import { LABEL_BATCH_SIZE, MAPPED_ENTRY_LABELS } from './entry-labels';
-import { TokenPriceRepository } from './TokenPriceRepository';
 
 /**
  * Rows per read of observations or ledger rows. A heavy holding's history is
@@ -27,12 +25,21 @@ import { TokenPriceRepository } from './TokenPriceRepository';
  */
 const EVIDENCE_PAGE_ROWS = 5_000;
 
+/** Written into the statement, not bound: its parameters are the asks' three arrays alone. */
+const RANKED_GRANULARITIES = sql.raw(PRICE_GRANULARITIES.map((g) => `'${g}'`).join(', '));
+
 type LabelValue = string | Date | undefined;
 
 interface LabelColumn<L> {
   column: PgColumn;
   value: (label: L) => LabelValue;
 }
+
+/** What a reading is made of. */
+type PriceRow = Pick<
+  TokenPrice,
+  'tokenId' | 'baseTokenId' | 'price' | 'timestamp' | 'granularity' | 'source'
+>;
 
 type HoldingLabel = HoldingLabels['holding'] & { id: string };
 type ObservationLabel = HoldingLabels['observations'][number];
@@ -129,7 +136,6 @@ const ENTRY_LABEL_COLUMNS: readonly LabelColumn<EntryLabel>[] = [
 export class EngineEvidenceRepository extends BaseRepository<Holding, NewHolding> {
   protected readonly table = schema.holdings;
   protected readonly tableName = 'holdings';
-  private readonly tokenPrices = Container.get(TokenPriceRepository);
 
   /**
    * Hidden and inactive holdings included: the engine derives every holding.
@@ -276,25 +282,6 @@ export class EngineEvidenceRepository extends BaseRepository<Holding, NewHolding
     return rows.map((r) => r.id);
   }
 
-  /** Per pair and granularity, the latest row at or before `at`. */
-  async findPriceReadings(
-    pairs: ReadonlyArray<{ tokenId: string; baseTokenId: string }>,
-    at: Date,
-    tx?: DatabaseTransaction
-  ): Promise<PriceReading[]> {
-    // `since = at` keeps only rows AT `at`, plus each pair and granularity's
-    // latest row before it; the newer of the two wins below.
-    const rows = await this.tokenPrices.findManyForPairsUpTo(pairs, at, tx, at);
-    const latest = new Map<string, PriceReading>();
-    for (const reading of this.readingsOf(rows)) {
-      const key = `${reading.tokenId}|${reading.baseTokenId}|${reading.granularity}`;
-      const held = latest.get(key);
-      if (held !== undefined && held.at >= reading.at) continue;
-      latest.set(key, reading);
-    }
-    return [...latest.values()].sort(compareReadings);
-  }
-
   /**
    * Per token and base, whatever the base, the latest row at or before `at`:
    * the rows the live resolver chooses a token's price among.
@@ -319,8 +306,124 @@ export class EngineEvidenceRepository extends BaseRepository<Holding, NewHolding
     return this.readingsOf(rows);
   }
 
+  /**
+   * Per pair and instant: the rows at the latest stamp at or before it. The
+   * filter sits inside the seek, because after it a row that is not a reading
+   * would hide an older one that is. A row passes when the engine ranks its
+   * granularity and its text, unpadded, reads as a positive finite numeric.
+   * Unpadded, because Postgres skips the whitespace around a number and the
+   * engine does not. NaN orders above Infinity in Postgres, so the upper bound
+   * leaves out both. The cast waits behind `pg_input_is_valid` in a CASE, so a
+   * text Postgres cannot read is skipped rather than failing the statement and
+   * every ask in it.
+   *
+   * That is the engine's rule on every text measured except two kinds. Postgres
+   * reads an underscore in a hex, octal or binary integer (`0x1A_2B`) and the
+   * engine does not, so such a row still hides an older one. The engine reads a
+   * fraction or exponent in those bases (`0x1.8`, `0x1p3`) and a magnitude
+   * numeric cannot hold (`1e131072`, `1e-16384`), which the seek leaves out, so
+   * an older reading answers in their place.
+   *
+   * One statement, and one index seek per ask: a pair's history is never read.
+   * The asks travel as three arrays, a parameter each, because a ledger walk
+   * asks tens of thousands of them and a parameter per ask would pass the
+   * protocol's limit of 65,535.
+   */
+  async findPriceReadingsAtInstants(
+    asks: ReadonlyArray<{ tokenId: string; baseTokenId: string; at: Date }>,
+    tx?: DatabaseTransaction
+  ): Promise<PriceReading[]> {
+    const distinct = new Map<string, { tokenId: string; baseTokenId: string; at: Date }>();
+    for (const ask of asks) {
+      distinct.set(`${ask.tokenId}|${ask.baseTokenId}|${ask.at.getTime()}`, ask);
+    }
+    if (distinct.size === 0) return [];
+    const unique = [...distinct.values()];
+    const rows = (await this.getDb(tx).execute(sql`
+      SELECT DISTINCT nearest.token_id, nearest.base_token_id, nearest.price,
+             nearest.timestamp, nearest.source, nearest.granularity
+        FROM unnest(
+               ${makePgArray(unique.map((ask) => ask.tokenId))}::uuid[],
+               ${makePgArray(unique.map((ask) => ask.baseTokenId))}::uuid[],
+               ${makePgArray(unique.map((ask) => ask.at.toISOString()))}::timestamptz[]
+             ) AS ask (token_id, base_token_id, at)
+       CROSS JOIN LATERAL (
+             SELECT p.token_id, p.base_token_id, p.price, p.timestamp, p.source, p.granularity
+               FROM token_prices p
+              WHERE p.token_id = ask.token_id AND p.base_token_id = ask.base_token_id
+                AND p.timestamp <= ask.at
+                AND CASE WHEN p.price !~ '^\\s|\\s$' AND pg_input_is_valid(p.price, 'numeric')
+                         THEN p.price::numeric > 0 AND p.price::numeric < 'Infinity'::numeric
+                         ELSE false END
+                AND p.granularity IN (${RANKED_GRANULARITIES})
+              ORDER BY p.timestamp DESC
+              FETCH FIRST 1 ROWS WITH TIES
+             ) nearest`)) as unknown as PriceRowText[];
+    return this.readingsOf(rows.map(priceRowOf));
+  }
+
+  /**
+   * Per token, the bases it has a forward row in at or before `until`. One
+   * index probe per distinct base, never a scan of the token's rows.
+   *
+   * Postgres 16 has no skip scan, so a DISTINCT over a token visits every one
+   * of its index entries. This steps the index instead: each step seeks the
+   * next base above the last. The step carries no time filter, because the
+   * index holds each base newest first and a filter there would walk every
+   * entry newer than `until`; a second seek per base finds a row at or before
+   * it.
+   *
+   * That seek is a lateral with a limit and not an EXISTS, which the planner
+   * turns into a join against a scan of the whole table. And it is ordered by
+   * time, so that only an index holding a pair by time answers it: unordered,
+   * the planner may take the index that holds the granularity before the
+   * time, where `until` bounds nothing and the pair's entries are walked.
+   */
+  async findQuoteTokenIds(
+    tokenIds: readonly string[],
+    until: Date,
+    tx?: DatabaseTransaction
+  ): Promise<Map<string, string[]>> {
+    const quotes = new Map<string, string[]>();
+    if (tokenIds.length === 0) return quotes;
+    const rows = (await this.getDb(tx).execute(sql`
+      WITH RECURSIVE quoted AS (
+        SELECT asked.token_id,
+               (SELECT p.base_token_id FROM token_prices p
+                 WHERE p.token_id = asked.token_id
+                 ORDER BY p.base_token_id LIMIT 1) AS base_token_id
+          FROM unnest(${makePgArray([...new Set(tokenIds)])}::uuid[]) AS asked (token_id)
+        UNION ALL
+        SELECT quoted.token_id,
+               (SELECT p.base_token_id FROM token_prices p
+                 WHERE p.token_id = quoted.token_id AND p.base_token_id > quoted.base_token_id
+                 ORDER BY p.base_token_id LIMIT 1)
+          FROM quoted
+         WHERE quoted.base_token_id IS NOT NULL
+      )
+      SELECT quoted.token_id, quoted.base_token_id
+        FROM quoted
+       CROSS JOIN LATERAL (
+             SELECT 1 FROM token_prices p
+              WHERE p.token_id = quoted.token_id AND p.base_token_id = quoted.base_token_id
+                AND p.timestamp <= ${until.toISOString()}::timestamptz
+              ORDER BY p.timestamp DESC
+              LIMIT 1
+             ) reading
+       WHERE quoted.base_token_id IS NOT NULL`)) as unknown as Array<{
+      token_id: string;
+      base_token_id: string;
+    }>;
+    for (const row of rows) {
+      const bases = quotes.get(row.token_id);
+      if (bases) bases.push(row.base_token_id);
+      else quotes.set(row.token_id, [row.base_token_id]);
+    }
+    return quotes;
+  }
+
   /** `token_prices.granularity` is text: a value the engine does not rank is skipped and logged, never cast. */
-  private readingsOf(rows: readonly TokenPrice[]): PriceReading[] {
+  private readingsOf(rows: readonly PriceRow[]): PriceReading[] {
     const readings: PriceReading[] = [];
     const unknown = new Set<string>();
     for (const row of rows) {
@@ -334,6 +437,7 @@ export class EngineEvidenceRepository extends BaseRepository<Holding, NewHolding
         price: row.price,
         at: row.timestamp,
         granularity: row.granularity,
+        source: row.source,
       });
     }
     if (unknown.size > 0) {
@@ -539,14 +643,27 @@ function parameter(value: LabelValue): string | null {
   return value instanceof Date ? value.toISOString() : value;
 }
 
-function isPriceGranularity(value: string): value is PriceGranularity {
-  return (PRICE_GRANULARITIES as readonly string[]).includes(value);
+/** A `token_prices` row as a statement sent through `execute` returns it. */
+interface PriceRowText {
+  token_id: string;
+  base_token_id: string;
+  price: string;
+  timestamp: string;
+  source: string | null;
+  granularity: string;
 }
 
-function compareReadings(a: PriceReading, b: PriceReading): number {
-  return (
-    compareText(a.tokenId, b.tokenId) ||
-    compareText(a.baseTokenId, b.baseTokenId) ||
-    PRICE_GRANULARITIES.indexOf(a.granularity) - PRICE_GRANULARITIES.indexOf(b.granularity)
-  );
+function priceRowOf(row: PriceRowText): PriceRow {
+  return {
+    tokenId: row.token_id,
+    baseTokenId: row.base_token_id,
+    price: row.price,
+    timestamp: schema.tokenPrices.timestamp.mapFromDriverValue(row.timestamp) as Date,
+    granularity: row.granularity,
+    source: row.source,
+  };
+}
+
+function isPriceGranularity(value: string): value is PriceGranularity {
+  return (PRICE_GRANULARITIES as readonly string[]).includes(value);
 }

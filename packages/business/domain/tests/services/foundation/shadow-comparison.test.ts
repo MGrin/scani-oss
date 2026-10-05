@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { TokenPrice } from '@scani/db/schema';
 import type { HoldingEvidence, PriceAt } from '../../../src/engine/types';
 import type { ClassifiedHolding } from '../../../src/services/foundation/legacy-classification';
 import {
@@ -6,13 +7,17 @@ import {
   type BalanceComparator,
   compareBalance,
   comparePrice,
+  graphTypedIn,
   type LegacyBalanceReading,
   type LegacyPriceReading,
+  liveTypedIn,
   PRICE_DIFF_CATEGORIES,
   type PriceComparator,
   readingTimes,
   type ShadowDifference,
+  valueAtStake,
 } from '../../../src/services/foundation/shadow-comparison';
+import { PriceLookup } from '../../../src/services/pricing/PriceLookup';
 import {
   checkpoint,
   entry,
@@ -355,27 +360,37 @@ const ago = (ms: number) => new Date(T.getTime() - ms);
 
 interface PriceInput {
   at: Date;
+  baseTokenId: string;
   engine: PriceAt | null;
   legacy: LegacyPriceReading;
   directReadingAt: Date | null;
   newestReadingAt: Date | null;
+  finerTie?: LegacyPriceReading;
 }
 
 function legacyPrice(
   comparator: PriceComparator,
   price: string | null,
   readingAt: Date | null = null,
-  path: string | null = null
+  path: string | null = null,
+  typedIn: string | null = null
 ): LegacyPriceReading {
-  return { comparator, price, readingAt, path };
+  return { comparator, price, readingAt, path, typedIn };
 }
 
-const live = (price: string | null) => legacyPrice('live-resolver', price);
-const graph = (price: string | null, readingAt: Date | null, path: string | null) =>
-  legacyPrice('price-graph', price, readingAt, path);
+const live = (price: string | null, typedIn: string | null = null) =>
+  legacyPrice('live-resolver', price, null, null, typedIn);
+const graph = (
+  price: string | null,
+  readingAt: Date | null,
+  path: string | null,
+  typedIn: string | null = null
+) => legacyPrice('price-graph', price, readingAt, path, typedIn);
+const graphDaily = (price: string | null, readingAt: Date | null, path: string | null) =>
+  legacyPrice('price-graph-daily', price, readingAt, path);
 
 function priceInput(fields: Partial<PriceInput> & Pick<PriceInput, 'engine' | 'legacy'>) {
-  return { at: T, directReadingAt: T, newestReadingAt: T, ...fields };
+  return { at: T, baseTokenId: 'EUR', directReadingAt: T, newestReadingAt: T, ...fields };
 }
 
 interface PriceCase {
@@ -420,6 +435,27 @@ const PRICE_CASES: PriceCase[] = [
     input: priceInput({
       engine: quoted('8', JAN_10, 'hub:USD'),
       legacy: graph('9', utc('2026-01-01'), 'direct'),
+    }),
+    engineValue: '8',
+    legacyValue: '9',
+  },
+  {
+    category: 'quote-route',
+    name: 'the engine goes through a currency the asset is quoted in, the graph through a hub',
+    input: priceInput({
+      engine: quoted('110', JAN_10, 'quote:CHF'),
+      legacy: graph('100', JAN_10, 'one-hop-USD'),
+    }),
+    engineValue: '110',
+    legacyValue: '100',
+  },
+  {
+    category: 'same-instant-granularity',
+    name: 'the engine read the intraday row, the daily graph the daily row at the same instant',
+    input: priceInput({
+      engine: quoted('8', JAN_10, 'direct'),
+      legacy: graphDaily('9', JAN_10, 'direct'),
+      finerTie: graphDaily('8', JAN_10, 'direct'),
     }),
     engineValue: '8',
     legacyValue: '9',
@@ -483,6 +519,70 @@ describe('comparePrice', () => {
       newestReadingAt: ago(HOUR_MS / 2),
     });
     expect(comparePrice(input)?.category).toBe('fresher-price');
+  });
+
+  test('a quote route against a graph that cannot route it is quote-route', () => {
+    const engine = quoted('110', JAN_10, 'quote:CHF:USD');
+    // The graph routes only through the hubs, so it read X another way.
+    for (const legacy of [
+      graph('100', JAN_10, 'one-hop-USD'),
+      graphDaily('100', utc('2026-01-10', '06:00'), 'direct'),
+    ]) {
+      expect(comparePrice(priceInput({ engine, legacy }))?.category).toBe('quote-route');
+    }
+    // Before fx-leg for the live resolver too: the engine's path is all it takes.
+    expect(
+      comparePrice(
+        priceInput({ engine: quoted('110', ago(HOUR_MS / 2), 'quote:CHF'), legacy: live('100') })
+      )?.category
+    ).toBe('quote-route');
+    // After the categories tried before it: a graph that prices nothing, or reads older.
+    expect(comparePrice(priceInput({ engine, legacy: graph(null, null, null) }))?.category).toBe(
+      'legacy-unpriced'
+    );
+    expect(
+      comparePrice(priceInput({ engine, legacy: graph('100', utc('2026-01-01'), 'direct') }))
+        ?.category
+    ).toBe('fresher-price');
+  });
+
+  test('daily and intraday at one instant: same-instant-granularity', () => {
+    const engine = quoted('8', JAN_10, 'direct');
+    const legacy = graphDaily('9', JAN_10, 'direct');
+    expect(
+      comparePrice(priceInput({ engine, legacy, finerTie: graphDaily('8', JAN_10, 'direct') }))
+        ?.category
+    ).toBe('same-instant-granularity');
+    // CONTROL: nothing asked again, or asked and still disagreeing, is not this category.
+    expect(comparePrice(priceInput({ engine, legacy }))?.category).toBe('unexplained');
+    expect(
+      comparePrice(priceInput({ engine, legacy, finerTie: graphDaily('9', JAN_10, 'direct') }))
+        ?.category
+    ).toBe('unexplained');
+    // Both must read the engine's instant: a newer graph reading stays unexplained.
+    const newer = graphDaily('9', utc('2026-01-10', '06:00'), 'direct');
+    expect(
+      comparePrice(
+        priceInput({ engine, legacy: newer, finerTie: graphDaily('8', JAN_10, 'direct') })
+      )?.category
+    ).toBe('unexplained');
+    // Before route: the hub the graph took is not what made the difference.
+    expect(
+      comparePrice(
+        priceInput({
+          engine: quoted('8', JAN_10, 'hub:USD'),
+          legacy: graph('9', JAN_10, 'direct'),
+          finerTie: graph('8', JAN_10, 'one-hop-USD'),
+        })
+      )?.category
+    ).toBe('same-instant-granularity');
+  });
+
+  test('the value at stake: balance × (engine − legacy), an unpriced side counting 0', () => {
+    expect(valueAtStake(['3', '2'], '10', '11')).toEqual({ valueImpact: '-5', holders: 2 });
+    expect(valueAtStake(['3'], '10', null)).toEqual({ valueImpact: '30', holders: 1 });
+    expect(valueAtStake(['3', '0.5'], null, '11')).toEqual({ valueImpact: '-38.5', holders: 2 });
+    expect(valueAtStake(['0.1', '0.2'], '3', '1')).toEqual({ valueImpact: '0.6', holders: 2 });
   });
 
   test("the engine's inverse is the graph's direct, so the same route is unexplained", () => {
@@ -558,11 +658,185 @@ describe('comparePrice', () => {
       enginePath: 'hub:USD',
       engineReadingAt: '2026-01-10T00:00:00.000Z',
       engineStale: true,
+      engineTypedIn: null,
       legacyPath: 'one-hop-USD',
       legacyReadingAt: '2026-01-10T00:00:00.000Z',
+      legacyTypedIn: null,
       directReadingAt: '2026-01-01T00:00:00.000Z',
       newestReadingAt: '2026-01-10T00:00:00.000Z',
     });
+  });
+
+  test("a person's price one side answers from and the other does not is unexplained, whatever else holds", () => {
+    // Typed in USD on Jan 1 and again in CHF: the engine drops the USD price
+    // and goes through CHF, the graph still reads the USD row.
+    const typedAgain = (engineReadingAt: Date) =>
+      priceInput({
+        baseTokenId: 'USD',
+        engine: quoted('22', engineReadingAt, 'quote:CHF', false, 'manual'),
+        legacy: graph('10', utc('2026-01-01'), 'direct', 'USD'),
+      });
+    // Through a CHF rate newer than the USD price (today fresher-price), and older (today quote-route).
+    expect(comparePrice(typedAgain(utc('2026-01-08')))?.category).toBe('unexplained');
+    expect(comparePrice(typedAgain(utc('2025-12-31')))?.category).toBe('unexplained');
+    // Passed over: the engine answers a newer provider reading in CHF, the live
+    // resolver the USD price a person typed (today fresher-price).
+    const passedOver = (engine: PriceAt, newestReadingAt: Date) =>
+      priceInput({
+        baseTokenId: 'USD',
+        engine,
+        legacy: live('10', 'USD'),
+        directReadingAt: utc('2026-01-01'),
+        newestReadingAt,
+      });
+    expect(
+      comparePrice(passedOver(quoted('22', ago(HOUR_MS / 2), 'quote:CHF'), ago(HOUR_MS / 2)))
+        ?.category
+    ).toBe('unexplained');
+    // The live resolver serves a typed row at any age, so not stale-fallback either.
+    expect(
+      comparePrice(passedOver(quoted('8', ago(3 * HOUR_MS), 'hub:EUR'), ago(3 * HOUR_MS)))?.category
+    ).toBe('unexplained');
+    expect(comparePrice(typedAgain(utc('2026-01-08')))?.detail).toMatchObject({
+      engineTypedIn: 'CHF',
+      legacyTypedIn: 'USD',
+    });
+  });
+
+  test("CONTROL: the same person's price on both sides, or a person's price on neither, keeps today's categories", () => {
+    const usdBase = (engine: PriceAt, legacy: LegacyPriceReading) =>
+      priceInput({ baseTokenId: 'USD', engine, legacy });
+    // Both on the one typed price: no difference at all.
+    expect(
+      comparePrice(
+        usdBase(
+          quoted('10', utc('2026-01-01'), 'direct', false, 'manual'),
+          graph('10', utc('2026-01-01'), 'direct', 'USD')
+        )
+      )
+    ).toBeNull();
+    // Both on prices typed in USD, read at different times.
+    expect(
+      comparePrice(
+        usdBase(
+          quoted('11', JAN_10, 'direct', false, 'manual'),
+          graph('10', utc('2026-01-01'), 'direct', 'USD')
+        )
+      )?.category
+    ).toBe('fresher-price');
+    // Both on the one price typed in EUR, through different EUR rates: the rate differs.
+    expect(
+      comparePrice(
+        usdBase(
+          quoted('11', JAN_10, 'hub:EUR', false, 'manual'),
+          graph('12', utc('2026-01-01'), 'one-hop-EUR', 'EUR')
+        )
+      )?.category
+    ).toBe('fresher-price');
+    // The superseded shape with no typed row on either side.
+    expect(
+      comparePrice(
+        usdBase(
+          quoted('22', utc('2026-01-08'), 'quote:CHF'),
+          graph('10', utc('2026-01-01'), 'direct')
+        )
+      )?.category
+    ).toBe('fresher-price');
+    expect(
+      comparePrice(
+        usdBase(
+          quoted('22', utc('2025-12-31'), 'quote:CHF'),
+          graph('10', utc('2026-01-01'), 'direct')
+        )
+      )?.category
+    ).toBe('quote-route');
+  });
+});
+
+describe('liveTypedIn', () => {
+  const at = (source: string, base: string, when: Date) =>
+    priceReading('X', base, '10', when, 'intraday', source);
+  const LONG_AGO = utc('2026-01-01');
+  const LIVE = ago(HOUR_MS / 2);
+
+  test('the row the live resolver serves: its newest in the base, else its newest anywhere, else its newest typed row', () => {
+    // A row in the base is served before a newer one elsewhere, a typed one at any age.
+    expect(
+      liveTypedIn([at('manual', 'USD', LONG_AGO), at('kraken', 'CHF', LIVE)], 'X', 'USD', T)
+    ).toBe('USD');
+    expect(
+      liveTypedIn([at('kraken', 'USD', LIVE), at('manual', 'CHF', LONG_AGO)], 'X', 'USD', T)
+    ).toBeNull();
+    // No row in the base: the newest anywhere.
+    expect(liveTypedIn([at('manual', 'CHF', LONG_AGO)], 'X', 'USD', T)).toBe('CHF');
+    expect(liveTypedIn([at('kraken', 'CHF', LIVE)], 'X', 'USD', T)).toBeNull();
+    // A provider row past the live window gives way to the newest typed row.
+    expect(
+      liveTypedIn([at('kraken', 'USD', LONG_AGO), at('manual', 'CHF', LONG_AGO)], 'X', 'USD', T)
+    ).toBe('CHF');
+    expect(
+      liveTypedIn([at('kraken', 'USD', LONG_AGO), at('kraken', 'CHF', LIVE)], 'X', 'USD', T)
+    ).toBeNull();
+    // Another token's rows, and rows after the instant, are not read.
+    const other = priceReading('Y', 'USD', '1', LONG_AGO, 'intraday', 'manual');
+    expect(liveTypedIn([other, at('manual', 'USD', utc('2026-01-11'))], 'X', 'USD', T)).toBeNull();
+  });
+});
+
+describe('graphTypedIn', () => {
+  const row = (
+    tokenId: string,
+    baseTokenId: string,
+    timestamp: Date,
+    source: string | null,
+    granularity = 'intraday'
+  ): TokenPrice => ({
+    id: `${tokenId}|${baseTokenId}|${timestamp.toISOString()}|${granularity}`,
+    tokenId,
+    baseTokenId,
+    price: '1',
+    timestamp,
+    source,
+    granularity,
+    createdAt: timestamp,
+  });
+  const ask = { tokenId: 'X', baseTokenId: 'USD', at: T };
+  const LONG_AGO = utc('2026-01-01');
+
+  test("the currency of the asset's own leg, when a person typed the row the graph read for it", () => {
+    const typed = new PriceLookup([
+      row('X', 'USD', LONG_AGO, 'manual'),
+      row('X', 'EUR', LONG_AGO, 'manual'),
+      row('EUR', 'USD', LONG_AGO, 'manual'),
+    ]);
+    expect(graphTypedIn(typed, ask, 'direct', null)).toBe('USD');
+    expect(graphTypedIn(typed, ask, 'one-hop-EUR', null)).toBe('EUR');
+    expect(graphTypedIn(typed, ask, 'identity', null)).toBeNull();
+    // With no forward row, the reverse one the graph inverted.
+    const reverseOnly = new PriceLookup(
+      [row('USD', 'X', LONG_AGO, 'manual')],
+      [
+        { tokenId: 'X', baseTokenId: 'USD' },
+        { tokenId: 'USD', baseTokenId: 'X' },
+      ]
+    );
+    expect(graphTypedIn(reverseOnly, ask, 'direct', null)).toBe('USD');
+    expect(
+      graphTypedIn(new PriceLookup([row('X', 'USD', LONG_AGO, 'kraken')]), ask, 'direct', null)
+    ).toBeNull();
+    // At a tie, the row the preferred granularity gives.
+    const tie = new PriceLookup([
+      row('X', 'USD', JAN_10, 'manual', 'intraday'),
+      row('X', 'USD', JAN_10, 'kraken', 'daily'),
+    ]);
+    expect(graphTypedIn(tie, ask, 'direct', 'daily')).toBeNull();
+    expect(graphTypedIn(tie, ask, 'direct', 'intraday')).toBe('USD');
+    // A leg the lookup was not built to cover was read elsewhere, so it is not known.
+    const narrow = new PriceLookup(
+      [row('X', 'USD', LONG_AGO, 'manual')],
+      [{ tokenId: 'X', baseTokenId: 'EUR' }]
+    );
+    expect(graphTypedIn(narrow, ask, 'direct', null)).toBeNull();
   });
 });
 

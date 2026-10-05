@@ -1464,9 +1464,9 @@ export class CostBasisService {
    * prefetch does not cover the pair (SC-1145). The answer is remembered, not
    * approximated: a remembered fee is the value the first walk computed.
    *
-   * Bypassed under a database transaction, for the reason
-   * `PriceGraphService.resolveHubTokenIds` bypasses its cache: a value read
-   * through a transaction must not answer for a later read that is not in it.
+   * Bypassed under a database transaction, for the reason `PriceHubResolver`
+   * bypasses its cache (SC-600): a value read through a transaction must not
+   * answer for a later read that is not in it.
    */
   private async tradeFeeInBase(
     dbTx: DatabaseTransaction | undefined,

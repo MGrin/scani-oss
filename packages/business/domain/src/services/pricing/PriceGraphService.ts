@@ -4,11 +4,10 @@ import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { isPriceStale } from '../../lib/price-freshness';
-import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
-import { TokenRepository } from '../../repositories/TokenRepository';
+import { PriceHubResolver } from './PriceHubResolver';
 import { PriceLookup } from './PriceLookup';
-import { PRICE_HUBS, type PriceHub, priceHubKey } from './price-hubs';
+import { PRICE_HUBS, type PriceHub } from './price-hubs';
 
 export interface PriceGraphConversion {
   // The resulting amount, already denominated in toTokenId.
@@ -59,17 +58,9 @@ export interface PriceGraphOptions {
 @Service()
 export class PriceGraphService {
   private readonly logger = createComponentLogger('service:PriceGraphService');
-  // Small cache scoped to the service instance for the hub → token-id
-  // lookup. Invalidated on process restart; that's fine — tokens are seeded
-  // by migration and stable for the process lifetime. `null` is cached too:
-  // a hub that does not resolve used to re-query on every single convert()
-  // call, which is the hot path.
-  private hubIdCache = new Map<string, string | null>();
-
   // Class-field DI — see note in BalanceAtTimeService.ts.
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
-  private readonly tokenRepository = Container.get(TokenRepository);
-  private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
+  private readonly hubResolver = Container.get(PriceHubResolver);
 
   async convert(
     amount: Decimal | string,
@@ -297,62 +288,10 @@ export class PriceGraphService {
     return null;
   }
 
-  async resolveHubTokenIds(
+  resolveHubTokenIds(
     tx: DatabaseTransaction | undefined,
     hubs: readonly PriceHub[] = PRICE_HUBS
   ): Promise<string[]> {
-    const ids: string[] = [];
-    for (const hub of hubs) {
-      const key = priceHubKey(hub);
-      // The cache is BYPASSED under a transaction, in both directions, and
-      // that is not caution — either direction is a wrong answer (SC-600).
-      // Reading it would let a `null` resolved against the pool suppress a
-      // hub the transaction has just seeded, taking that whole lane out of
-      // service silently; writing it would leave an id from a rolled-back
-      // transaction answering for every later pool read on this instance.
-      // The cache exists because `convert` is the rollup's hot path, and
-      // that path passes no transaction, so it is untouched.
-      if (tx === undefined) {
-        const cached = this.hubIdCache.get(key);
-        if (cached !== undefined) {
-          if (cached) ids.push(cached);
-          continue;
-        }
-      }
-      const id = await this.resolveHub(hub, tx);
-      if (tx === undefined) this.hubIdCache.set(key, id);
-      if (id) ids.push(id);
-    }
-    return ids;
-  }
-
-  private async resolveHub(
-    hub: PriceHub,
-    tx: DatabaseTransaction | undefined
-  ): Promise<string | null> {
-    const type = await this.tokenTypeRepository.findByCode(hub.typeCode, tx);
-    if (!type) {
-      this.logger.warn({ hub }, 'PriceGraphService: hub token type is not seeded, hub disabled');
-      return null;
-    }
-
-    const canonical = await this.tokenRepository.findByIdentityTuple(hub.symbol, type.id, null, tx);
-    if (canonical) return canonical.id;
-
-    // No un-segmented row. Every hub is expected to have one, so this is
-    // a database we don't recognise rather than a routing decision —
-    // fall back to the type-scoped lookup so an existing lane keeps
-    // working, but say out loud that the row was picked by a tiebreak.
-    const segmented = await this.tokenRepository.findBySymbolAndType(hub.symbol, type.id, tx);
-    if (segmented) {
-      this.logger.warn(
-        { hub, tokenId: segmented.id, marketSegment: segmented.marketSegment },
-        'PriceGraphService: no canonical hub row, falling back to a tie-broken match'
-      );
-      return segmented.id;
-    }
-
-    this.logger.warn({ hub }, 'PriceGraphService: hub token not found, hub disabled');
-    return null;
+    return this.hubResolver.tokenIdsOf(hubs, tx);
   }
 }

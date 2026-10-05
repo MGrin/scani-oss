@@ -37,6 +37,13 @@ export type ShadowRunSummary = {
    * changed since the backfill: the drift A2's writers re-label (plan D-4).
    */
   staleLabels?: number;
+  /** Price runs: per instant compared, its differences by category; `{}` where all matched. */
+  byInstant?: Record<string, Record<string, number>>;
+  /**
+   * Price runs: per base and comparator, the signed sum of the value at stake
+   * of the differences at `asOf`, a decimal string in that base.
+   */
+  valueImpactByBase?: Record<string, Record<string, string>>;
   durationMs: number;
 };
 
@@ -194,8 +201,10 @@ export class EngineShadowReportRepository extends BaseRepository<
   }
 
   /**
-   * A run's differences by category, at most `perCategory` of each, in
-   * (`at`, `id`) order. Categories with no difference are absent.
+   * A run's differences by category, at most `perCategory` of each, the latest
+   * `at` first and then by `id`: a price run's rows at `asOf`, the ones with
+   * the value at stake, before its past closes. Categories with no difference
+   * are absent.
    */
   async findDifferences(
     runId: string,
@@ -207,7 +216,7 @@ export class EngineShadowReportRepository extends BaseRepository<
     const ranked = database
       .select({
         id: d.id,
-        rank: sql<number>`row_number() OVER (PARTITION BY ${d.category} ORDER BY ${d.at}, ${d.id})`.as(
+        rank: sql<number>`row_number() OVER (PARTITION BY ${d.category} ORDER BY ${d.at} DESC, ${d.id})`.as(
           'rank'
         ),
       })
@@ -224,7 +233,7 @@ export class EngineShadowReportRepository extends BaseRepository<
           database.select({ id: ranked.id }).from(ranked).where(lte(ranked.rank, opts.perCategory))
         )
       )
-      .orderBy(asc(d.category), asc(d.at), asc(d.id));
+      .orderBy(asc(d.category), desc(d.at), asc(d.id));
 
     const byCategory: Record<string, EngineShadowDifference[]> = {};
     for (const row of rows) {

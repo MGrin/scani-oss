@@ -17,7 +17,17 @@ export const ENGINE_SHADOW_KINDS: readonly EngineShadowRunKind[] = ['price', 'ba
 /** How far before `asOf` the balance shadow also compares, in days of 24 hours. */
 const SHADOW_PAST_OFFSETS_DAYS = [7, 30] as const;
 
+/** The UTC days before `asOf`'s whose closes the price shadow also compares. */
+const PRICE_PAST_DAYS = [1, 3, 7, 30, 365] as const;
+
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The last millisecond of the UTC day `days` before `asOf`'s. */
+function dayCloseBefore(asOf: Date, days: number): Date {
+  return new Date(
+    Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), asOf.getUTCDate() - days, 23, 59, 59, 999)
+  );
+}
 
 export interface EngineShadowRunResult {
   kind: EngineShadowRunKind;
@@ -78,7 +88,13 @@ export class RunEngineShadowsUseCase {
   }
 
   private run(kind: EngineShadowRunKind, input: RunEngineShadowsInput): Promise<ShadowRunResult> {
-    if (kind === 'price') return this.price.run({ asOf: input.asOf, userId: input.userId });
+    if (kind === 'price') {
+      return this.price.run({
+        asOf: input.asOf,
+        pastInstants: PRICE_PAST_DAYS.map((days) => dayCloseBefore(input.asOf, days)),
+        userId: input.userId,
+      });
+    }
     return this.balance.run({
       asOf: input.asOf,
       pastInstants: SHADOW_PAST_OFFSETS_DAYS.map(

@@ -89,25 +89,39 @@ export interface PriceReading {
   price: string;
   at: Date;
   granularity: PriceGranularity;
+  source: string | null;
 }
+
+export type AssetClass = 'crypto' | 'fiat' | 'stock' | 'custom' | 'unknown';
 
 export interface PriceEvidence {
   readings: readonly PriceReading[];
   hubTokenIds: readonly string[];
+  /** Per asset: the currencies it has a forward reading in, besides the base and the hubs. */
+  quoteTokenIds?: ReadonlyMap<string, readonly string[]>;
+  /** The class of each hub and quote token. A missing one is 'unknown'. */
+  assetClasses?: ReadonlyMap<string, AssetClass>;
 }
-
-export type AssetClass = 'crypto' | 'fiat' | 'stock' | 'custom' | 'unknown';
 
 export interface PriceAsset {
   tokenId: string;
   assetClass: AssetClass;
 }
 
-export type PricePath = 'identity' | 'direct' | 'inverse' | `hub:${string}`;
+/** A price asked for: one token at one instant. */
+export interface PriceAsk {
+  tokenId: string;
+  at: Date;
+}
 
+/** `quote:Q` when the second leg is direct, `quote:Q:H` when it goes through hub H. */
+export type PricePath = 'identity' | 'direct' | 'inverse' | `hub:${string}` | `quote:${string}`;
+
+/** `source` is the asset's own reading's: the first leg of a routed answer. Null for identity. */
 export interface PriceAt {
   price: Decimal;
   readingAt: Date;
   path: PricePath;
   stale: boolean;
+  source: string | null;
 }

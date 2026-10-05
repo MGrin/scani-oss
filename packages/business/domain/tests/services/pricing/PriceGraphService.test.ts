@@ -8,6 +8,7 @@ import { TokenTypeRepository } from '../../../src/repositories/EnumRepositories'
 import { TokenPriceRepository } from '../../../src/repositories/TokenPriceRepository';
 import { TokenRepository } from '../../../src/repositories/TokenRepository';
 import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceHubResolver } from '../../../src/services/pricing/PriceHubResolver';
 import { PriceLookup } from '../../../src/services/pricing/PriceLookup';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
@@ -161,6 +162,8 @@ function makePriceGraphService(
   Container.set(TokenPriceRepository, tpStub);
   Container.set(TokenRepository, tokStub);
   Container.set(TokenTypeRepository, makeTokenTypeStub());
+  // Fresh, so it reads the stubs above: one built earlier keeps its own repositories and cache.
+  Container.set(PriceHubResolver, new PriceHubResolver());
   const instance = new PriceGraphService();
   Container.set(PriceGraphService, instance);
   return instance;

@@ -104,14 +104,21 @@ export function priceReading(
   baseTokenId: string,
   price: string,
   at: Date,
-  granularity: PriceGranularity = 'intraday'
+  granularity: PriceGranularity = 'intraday',
+  source: string | null = null
 ): PriceReading {
-  return { tokenId, baseTokenId, price, at, granularity };
+  return { tokenId, baseTokenId, price, at, granularity, source };
 }
 
 /** A `priceAt` answer, for a test that starts from what the engine said. */
-export function quoted(price: string, readingAt: Date, path: PricePath, stale = false): PriceAt {
-  return { price: new Decimal(price), readingAt, path, stale };
+export function quoted(
+  price: string,
+  readingAt: Date,
+  path: PricePath,
+  stale = false,
+  source: string | null = null
+): PriceAt {
+  return { price: new Decimal(price), readingAt, path, stale, source };
 }
 
 /** Seeded Fisher–Yates (MINSTD), so a failing order reproduces. */

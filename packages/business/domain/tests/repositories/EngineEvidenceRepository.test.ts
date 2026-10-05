@@ -3,9 +3,10 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { eq, inArray, type SQL, sql } from 'drizzle-orm';
-import { PgDialect } from 'drizzle-orm/pg-core';
+import { PgDialect, parsePgArray } from 'drizzle-orm/pg-core';
 import { Container } from 'typedi';
-import { LEDGER_KINDS } from '../../src/engine/types';
+import { priceAt } from '../../src/engine/price-at';
+import { LEDGER_KINDS, type PriceReading } from '../../src/engine/types';
 import { SCAM_PROBABILITY_THRESHOLD } from '../../src/lib/constants';
 import { EngineEvidenceRepository } from '../../src/repositories/EngineEvidenceRepository';
 import type { HoldingLabels } from '../../src/services/foundation/legacy-classification';
@@ -164,11 +165,12 @@ async function addPrice(
   baseTokenId: string,
   timestamp: Date,
   price: string,
-  granularity: string
+  granularity: string,
+  source: string | null = null
 ) {
   await tx
     .insert(schema.tokenPrices)
-    .values({ tokenId, baseTokenId, timestamp, price, granularity });
+    .values({ tokenId, baseTokenId, timestamp, price, granularity, source });
 }
 
 function labels(
@@ -493,63 +495,6 @@ describe('findHoldingEvidence', () => {
   });
 });
 
-describe('findPriceReadings', () => {
-  test('gives the latest row per pair and granularity at or before T', async () => {
-    await withTestDb(async (tx) => {
-      const x = await makeToken(tx);
-      const usd = await makeToken(tx);
-      await addPrice(tx, x.id, usd.id, at('2026-03-10T09:00:00Z'), '100', 'intraday');
-      await addPrice(tx, x.id, usd.id, at('2026-03-10T11:00:00Z'), '110', 'intraday');
-      await addPrice(tx, x.id, usd.id, at('2026-03-10T00:00:00Z'), '95', 'daily');
-
-      const readings = await repo().findPriceReadings(
-        [{ tokenId: x.id, baseTokenId: usd.id }],
-        at('2026-03-10T10:00:00Z'),
-        tx
-      );
-
-      expect(readings).toEqual([
-        {
-          tokenId: x.id,
-          baseTokenId: usd.id,
-          price: '100',
-          at: at('2026-03-10T09:00:00Z'),
-          granularity: 'intraday',
-        },
-        {
-          tokenId: x.id,
-          baseTokenId: usd.id,
-          price: '95',
-          at: at('2026-03-10T00:00:00Z'),
-          granularity: 'daily',
-        },
-      ]);
-    });
-  });
-
-  test('a row exactly at T is the latest, and a granularity the engine does not know is not a reading', async () => {
-    await withTestDb(async (tx) => {
-      const x = await makeToken(tx);
-      const usd = await makeToken(tx);
-      await addPrice(tx, x.id, usd.id, at('2026-03-10T09:00:00Z'), '100', 'intraday');
-      await addPrice(tx, x.id, usd.id, at('2026-03-10T10:00:00Z'), '105', 'intraday');
-      await addPrice(tx, x.id, usd.id, at('2026-03-10T08:00:00Z'), '98', 'tx-exact');
-      await addPrice(tx, x.id, usd.id, at('2026-03-10T09:30:00Z'), '102', 'hourly');
-
-      const readings = await repo().findPriceReadings(
-        [{ tokenId: x.id, baseTokenId: usd.id }],
-        at('2026-03-10T10:00:00Z'),
-        tx
-      );
-
-      expect(readings.map((r) => [r.granularity, r.price, r.at.toISOString()])).toEqual([
-        ['tx-exact', '98', '2026-03-10T08:00:00.000Z'],
-        ['intraday', '105', '2026-03-10T10:00:00.000Z'],
-      ]);
-    });
-  });
-});
-
 describe('findLatestReadingsInAnyBase', () => {
   test('gives the latest row at or before T per token and base, in every base', async () => {
     await withTestDb(async (tx) => {
@@ -561,7 +506,7 @@ describe('findLatestReadingsInAnyBase', () => {
       await addPrice(tx, x.id, usd.id, at('2026-03-10T08:00:00Z'), '100', 'intraday');
       await addPrice(tx, x.id, usd.id, at('2026-03-10T09:00:00Z'), '101', 'daily');
       await addPrice(tx, x.id, usd.id, at('2026-03-10T11:00:00Z'), '110', 'intraday');
-      await addPrice(tx, x.id, gbp.id, at('2026-03-10T10:00:00Z'), '80', 'intraday');
+      await addPrice(tx, x.id, gbp.id, at('2026-03-10T10:00:00Z'), '80', 'intraday', 'manual');
       await addPrice(tx, y.id, gbp.id, at('2026-03-09T00:00:00Z'), '7', 'daily');
       await addPrice(tx, unasked.id, usd.id, at('2026-03-10T09:00:00Z'), '1', 'intraday');
 
@@ -574,14 +519,208 @@ describe('findLatestReadingsInAnyBase', () => {
       const key = (tokenId: string, baseTokenId: string) => `${tokenId}|${baseTokenId}`;
       expect(
         Object.fromEntries(
-          readings.map((r) => [key(r.tokenId, r.baseTokenId), [r.price, r.at.toISOString()]])
+          readings.map((r) => [
+            key(r.tokenId, r.baseTokenId),
+            [r.price, r.at.toISOString(), r.source],
+          ])
         )
       ).toEqual({
-        [key(x.id, usd.id)]: ['101', '2026-03-10T09:00:00.000Z'],
-        [key(x.id, gbp.id)]: ['80', '2026-03-10T10:00:00.000Z'],
-        [key(y.id, gbp.id)]: ['7', '2026-03-09T00:00:00.000Z'],
+        [key(x.id, usd.id)]: ['101', '2026-03-10T09:00:00.000Z', null],
+        [key(x.id, gbp.id)]: ['80', '2026-03-10T10:00:00.000Z', 'manual'],
+        [key(y.id, gbp.id)]: ['7', '2026-03-09T00:00:00.000Z', null],
       });
       expect(readings).toHaveLength(3);
+    });
+  });
+});
+
+describe('findPriceReadingsAtInstants', () => {
+  const ASKED_AT = at('2026-03-10T12:00:00Z');
+
+  /**
+   * A pair with a reading of 10 at 08:00 and a row at 11:00, asked at noon:
+   * what is loaded of it, and what the engine answers over that.
+   */
+  async function besideAnOlderReading(
+    tx: DatabaseTransaction,
+    price: string,
+    granularity: string
+  ): Promise<{ loaded: string[][]; answer: string | null }> {
+    const x = await makeToken(tx);
+    const usd = await makeToken(tx);
+    await addPrice(tx, x.id, usd.id, at('2026-03-10T08:00:00Z'), '10', 'intraday');
+    await addPrice(tx, x.id, usd.id, at('2026-03-10T11:00:00Z'), price, granularity);
+    const loaded = await repo().findPriceReadingsAtInstants(
+      [{ tokenId: x.id, baseTokenId: usd.id, at: ASKED_AT }],
+      tx
+    );
+    const answer = priceAt(
+      { readings: loaded, hubTokenIds: [] },
+      { tokenId: x.id, assetClass: 'crypto' },
+      usd.id,
+      ASKED_AT
+    );
+    return {
+      loaded: loaded.map((r) => [r.price, r.at.toISOString(), r.granularity]),
+      answer: answer?.price.toString() ?? null,
+    };
+  }
+
+  const OLDER = { loaded: [['10', '2026-03-10T08:00:00.000Z', 'intraday']], answer: '10' };
+
+  test('a NaN row at the nearest stamp is not a reading, and the older one answers', async () => {
+    await withTestDb(async (tx) => {
+      expect(await besideAnOlderReading(tx, 'NaN', 'intraday')).toEqual(OLDER);
+      // CONTROL: a reading there is the one loaded, so the older one answers only for want of it.
+      expect(await besideAnOlderReading(tx, '11', 'intraday')).toEqual({
+        loaded: [['11', '2026-03-10T11:00:00.000Z', 'intraday']],
+        answer: '11',
+      });
+    });
+  });
+
+  test('an Infinity row at the nearest stamp is not a reading, and the older one answers', async () => {
+    await withTestDb(async (tx) => {
+      expect(await besideAnOlderReading(tx, 'Infinity', 'intraday')).toEqual(OLDER);
+    });
+  });
+
+  test('a row of a granularity the engine does not rank is not a reading, and the older one answers', async () => {
+    await withTestDb(async (tx) => {
+      expect(await besideAnOlderReading(tx, '11', 'hourly')).toEqual(OLDER);
+    });
+  });
+
+  test('a padded row at the nearest stamp is not a reading, and the older one answers', async () => {
+    await withTestDb(async (tx) => {
+      // Postgres reads ' 11' as 11, skipping the space; the engine reads no number in it.
+      expect(await besideAnOlderReading(tx, ' 11', 'intraday')).toEqual(OLDER);
+    });
+  });
+
+  test('a row Postgres cannot read as a number at the nearest stamp is not a reading, and the older one answers', async () => {
+    await withTestDb(async (tx) => {
+      expect(await besideAnOlderReading(tx, 'abc', 'intraday')).toEqual(OLDER);
+    });
+  });
+
+  test('a row Postgres cannot read as a number in one pair fails no other pair of the load', async () => {
+    await withTestDb(async (tx) => {
+      const [x, y, usd] = [await makeToken(tx), await makeToken(tx), await makeToken(tx)];
+      await addPrice(tx, x.id, usd.id, at('2026-03-10T08:00:00Z'), '10', 'intraday');
+      await addPrice(tx, y.id, usd.id, at('2026-03-10T08:00:00Z'), '7', 'intraday');
+      await addPrice(tx, y.id, usd.id, at('2026-03-10T11:00:00Z'), 'abc', 'intraday');
+
+      const loaded = await repo().findPriceReadingsAtInstants(
+        [
+          { tokenId: x.id, baseTokenId: usd.id, at: ASKED_AT },
+          { tokenId: y.id, baseTokenId: usd.id, at: ASKED_AT },
+        ],
+        tx
+      );
+      const answer = (tokenId: string) =>
+        priceAt(
+          { readings: loaded, hubTokenIds: [] },
+          { tokenId, assetClass: 'crypto' },
+          usd.id,
+          ASKED_AT
+        )?.price.toString() ?? null;
+
+      expect(loaded.map((r) => r.price).sort()).toEqual(['10', '7']);
+      expect(answer(x.id)).toBe('10');
+      expect(answer(y.id)).toBe('7');
+    });
+  });
+
+  test('both rows at the nearest stamp are loaded, so the finer one answers', async () => {
+    await withTestDb(async (tx) => {
+      const x = await makeToken(tx);
+      const usd = await makeToken(tx);
+      await addPrice(tx, x.id, usd.id, at('2026-03-10T03:00:00Z'), '9', 'intraday');
+      await addPrice(tx, x.id, usd.id, at('2026-03-10T11:00:00Z'), '12', 'daily');
+      await addPrice(tx, x.id, usd.id, at('2026-03-10T11:00:00Z'), '11', 'intraday');
+
+      const loaded = await repo().findPriceReadingsAtInstants(
+        [{ tokenId: x.id, baseTokenId: usd.id, at: ASKED_AT }],
+        tx
+      );
+      const answer = priceAt(
+        { readings: loaded, hubTokenIds: [] },
+        { tokenId: x.id, assetClass: 'crypto' },
+        usd.id,
+        ASKED_AT
+      );
+
+      expect(loaded.map((reading) => `${reading.granularity} ${reading.price}`).sort()).toEqual([
+        'daily 12',
+        'intraday 11',
+      ]);
+      expect(answer?.price.toString()).toBe('11');
+    });
+  });
+
+  test('35,000 (pair, instant) asks load in one statement', async () => {
+    await withTestDb(async (tx) => {
+      const x = await makeToken(tx);
+      const usd = await makeToken(tx);
+      const closeOf = (day: number) => new Date(Date.UTC(2026, 0, day, 23, 59, 59, 999));
+      await addPrice(tx, x.id, usd.id, closeOf(1), '10', 'intraday');
+      await addPrice(tx, x.id, usd.id, closeOf(2), '11', 'intraday');
+      await addPrice(tx, x.id, usd.id, closeOf(3), '12', 'intraday');
+      // A minute apart from the first close: every one a different instant.
+      const asks = Array.from({ length: 35_000 }, (_, minute) => ({
+        tokenId: x.id,
+        baseTokenId: usd.id,
+        at: new Date(closeOf(1).getTime() + minute * 60_000),
+      }));
+      const repeated = [...asks, ...asks.slice(0, 5_000)];
+
+      const execute = spyOn(tx, 'execute');
+      let result: PriceReading[];
+      let statements: SQL[];
+      try {
+        result = await repo().findPriceReadingsAtInstants(repeated, tx);
+        statements = execute.mock.calls.map(([statement]) => statement as SQL);
+      } finally {
+        execute.mockRestore();
+      }
+
+      expect(statements).toHaveLength(1);
+      const { params } = new PgDialect().sqlToQuery(statements[0] as SQL);
+      expect(params).toHaveLength(3);
+      expect(params.map((param) => parsePgArray(param as string).length)).toEqual([
+        35_000, 35_000, 35_000,
+      ]);
+      expect(result.map((reading) => reading.price).sort()).toEqual(['10', '11', '12']);
+    });
+  });
+});
+
+describe('findQuoteTokenIds', () => {
+  test('per token, the bases it has a forward row in at or before `until`', async () => {
+    await withTestDb(async (tx) => {
+      const [usd, eur, chf] = [await makeToken(tx), await makeToken(tx), await makeToken(tx)];
+      const x = await makeToken(tx);
+      const reverseOnly = await makeToken(tx);
+      const unpriced = await makeToken(tx);
+      const until = at('2026-01-10T23:59:59.999Z');
+      await addPrice(tx, x.id, usd.id, at('2026-01-03T12:00:00Z'), '10', 'intraday');
+      await addPrice(tx, x.id, usd.id, at('2026-01-04T12:00:00Z'), '11', 'intraday');
+      await addPrice(tx, x.id, chf.id, until, '9', 'intraday');
+      // After `until`: not yet a currency X is quoted in.
+      await addPrice(tx, x.id, eur.id, at('2026-01-11T12:00:00Z'), '8', 'intraday');
+      // X priced in it is not it priced in X.
+      await addPrice(tx, x.id, reverseOnly.id, at('2026-01-03T12:00:00Z'), '2', 'intraday');
+
+      const quotes = await repo().findQuoteTokenIds(
+        [x.id, reverseOnly.id, unpriced.id, x.id],
+        until,
+        tx
+      );
+
+      expect([...quotes.keys()]).toEqual([x.id]);
+      expect([...(quotes.get(x.id) ?? [])].sort()).toEqual([usd.id, chf.id, reverseOnly.id].sort());
+      expect(await repo().findQuoteTokenIds([], until, tx)).toEqual(new Map());
     });
   });
 });

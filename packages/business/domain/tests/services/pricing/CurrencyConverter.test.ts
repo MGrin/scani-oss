@@ -11,6 +11,7 @@ import {
   type CurrencyRef,
 } from '../../../src/services/pricing/CurrencyConverter';
 import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceHubResolver } from '../../../src/services/pricing/PriceHubResolver';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -104,6 +105,8 @@ function makeConverter(edges: Edge[], symbols: Record<string, string>): Currency
   Container.set(TokenPriceRepository, makeTokenPriceStub(edges));
   Container.set(TokenRepository, makeTokenStub(symbols));
   Container.set(TokenTypeRepository, makeTokenTypeStub());
+  // Fresh, so it reads the stubs above: one built earlier keeps its own repositories and cache.
+  Container.set(PriceHubResolver, new PriceHubResolver());
   Container.set(PriceGraphService, new PriceGraphService());
   const instance = new CurrencyConverter();
   Container.set(CurrencyConverter, instance);
@@ -469,6 +472,8 @@ describe('CurrencyConverter — a duplicated symbol addresses different price ro
       },
     } as unknown as TokenRepository);
     Container.set(TokenTypeRepository, makeTokenTypeStub());
+    // Fresh, so it reads the stubs above: one built earlier keeps its own repositories and cache.
+    Container.set(PriceHubResolver, new PriceHubResolver());
     Container.set(PriceGraphService, new PriceGraphService());
     const c = new CurrencyConverter();
     Container.set(CurrencyConverter, c);
