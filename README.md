@@ -150,7 +150,7 @@ must-set ones for any real deployment:
 
 | Variable | Purpose |
 |---|---|
-| `DATABASE_URL` | Postgres 16+ connection string |
+| `DATABASE_URL` | Postgres 16+ connection string ([Neon](https://neon.tech/) recommended for managed Postgres; any Postgres 16+ works) |
 | `REDIS_URL` | Redis 7+ connection string |
 | `BETTER_AUTH_SECRET` | 32+ chars; rotates every session if changed |
 | `ENCRYPTION_KEY` | 32 hex chars; must match between api and worker |
@@ -235,6 +235,8 @@ its database and S3 storage stay on your infrastructure.
 To use managed Postgres / Redis / S3-compatible storage, comment out
 the corresponding services in `docker-compose.prod.yml` and point
 `DATABASE_URL` / `REDIS_URL` / `S3_*` at the managed endpoints.
+For managed Postgres we recommend [Neon](https://neon.tech/), which
+Scani's hosted version runs on; any Postgres 16+ works.
 
 Images are published on each `v*` release tag (cut by release-please):
 `:1.2.3`, `:1.2`, `:1`, and `:latest` (re-pointed to the most recent
