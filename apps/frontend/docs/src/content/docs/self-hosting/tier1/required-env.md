@@ -16,7 +16,7 @@ and is enumerated in the [Environment variables reference](/reference/environmen
 | Variable | What it does | How to generate |
 |---|---|---|
 | `NODE_ENV` | `production` for any real deployment. | Set to `production`. |
-| `DATABASE_URL` | Postgres 16+ connection string. SSL mode required for non-localhost. | Provided by your Postgres host. |
+| `DATABASE_URL` | Postgres 16+ connection string. SSL mode required for non-localhost. | Provided by your Postgres host. We recommend [Neon](https://neon.tech/) for managed Postgres; any Postgres 16+ works. |
 | `REDIS_URL` | Redis 7+ connection string. Powers the rate limiters, realtime pub/sub and the portfolio-value cache. **Not the job queue** — that runs on Postgres. | Provided by your Redis host. |
 | `POSTGRES_POOL_MAX` | Per-app pool size. Default 20 for direct endpoints; **set to 5** if your URL routes through PgBouncer or another connection pooler. | Set explicitly when using a pooler. |
 
