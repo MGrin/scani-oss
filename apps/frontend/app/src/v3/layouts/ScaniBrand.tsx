@@ -1,15 +1,30 @@
 import { ScaniLogo } from '@scani/ui/components/ScaniLogo';
-import { buildIdentity } from '@scani/ui/lib/build-identity';
+import {
+  type BuildIdentity,
+  buildIdentity,
+  servedBuildIdentity,
+} from '@scani/ui/lib/build-identity';
 import { Button } from '@scani/ui/ui/button';
 import { PeekSheet } from '@scani/ui/v3/components/PeekSheet';
 import type { PeekFact, PeekSection } from '@scani/ui/v3/lib/peek';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export function ScaniBrand() {
   const { t } = useTranslation();
-  const { coreBuild: build, commit } = buildIdentity();
   const [open, setOpen] = useState(false);
+  const [served, setServed] = useState<BuildIdentity | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    let current = true;
+    void servedBuildIdentity().then((identity) => {
+      if (current && identity) setServed(identity);
+    });
+    return () => {
+      current = false;
+    };
+  }, [open]);
+  const { coreBuild: build, commit } = served ?? buildIdentity();
   const releaseVersion =
     typeof __SCANI_RELEASE_VERSION__ === 'undefined' ? null : __SCANI_RELEASE_VERSION__;
   const productVersion = build?.productVersion ?? releaseVersion;

@@ -34,3 +34,29 @@ export function buildIdentity(): BuildIdentity {
     return NONE;
   }
 }
+
+/**
+ * The same facts as the host serves them now, from `/version.json` (SC-1588).
+ * A release that changes no app code keeps the page's `version`, so no update
+ * is offered and the page is not reloaded; the meta tag then names the release
+ * the page loaded with. `null` when the host cannot be read, so the caller
+ * keeps the page's own identity rather than claiming nothing.
+ */
+export async function servedBuildIdentity(): Promise<BuildIdentity | null> {
+  try {
+    const response = await fetch('/version.json', { cache: 'no-store' });
+    if (!response.ok) return null;
+    const served = (await response.json()) as {
+      commit?: string;
+      coreBuild?: CoreBuildIdentity;
+    };
+    if (!served.commit && !served.coreBuild) return null;
+    return {
+      commit: served.commit ?? null,
+      coreBuild: served.coreBuild ?? null,
+      sentryRelease: null,
+    };
+  } catch {
+    return null;
+  }
+}
