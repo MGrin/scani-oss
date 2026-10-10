@@ -117,7 +117,7 @@ describe('GateProvider', () => {
           body: [{ currency: 'btc', available: '0.5', locked: '0' }],
         };
       }
-      if (url.includes('/spot/accounts/ledger')) {
+      if (url.includes('/spot/account_book')) {
         return { body: [] };
       }
       if (url.includes('/spot/my_trades')) {
@@ -186,7 +186,7 @@ describe('GateProvider', () => {
     }
   });
 
-  test('fetchTransactions emits fee + transfer events from /spot/accounts/ledger', async () => {
+  test('fetchTransactions emits fee + transfer events from /spot/account_book', async () => {
     const p = new GateProvider(passthroughLimiter());
     const since = new Date('2024-01-01T00:00:00Z');
     const until = new Date('2024-01-05T00:00:00Z');
@@ -195,7 +195,7 @@ describe('GateProvider', () => {
       if (url.endsWith('/spot/accounts') || url.includes('/spot/accounts?')) {
         return { body: [{ currency: 'usdt', available: '100', locked: '0' }] };
       }
-      if (url.includes('/spot/accounts/ledger')) {
+      if (url.includes('/spot/account_book')) {
         const u = new URL(url);
         if (u.searchParams.get('page') === '1') {
           return {
@@ -217,6 +217,16 @@ describe('GateProvider', () => {
                 balance: '49.75',
                 type: 'transfer',
                 text: 'sub-account transfer',
+              },
+              {
+                // Gate documents `time` as integer milliseconds (SpotAccountBook).
+                id: 'L-4',
+                time: 1704240000456,
+                currency: 'USDT',
+                change: '-0.5',
+                balance: '49.25',
+                type: 'fee',
+                text: 'maker fee for trade #o-2',
               },
               {
                 id: 'L-3',
@@ -247,6 +257,9 @@ describe('GateProvider', () => {
       expect(fee?.primary.quantity).toBe('-0.25');
       expect(fee?.occurredAt.getTime()).toBe(1704067200123);
 
+      const msFee = events.find((e) => e.externalId === 'ledger-L-4');
+      expect(msFee?.occurredAt.getTime()).toBe(1704240000456);
+
       const transfer = events.find((e) => e.externalId === 'ledger-L-2');
       expect(transfer?.kind).toBe('unknown');
       expect(transfer?.primary.quantity).toBe('-50');
@@ -267,7 +280,7 @@ describe('GateProvider', () => {
       if (url.endsWith('/spot/accounts') || url.includes('/spot/accounts?')) {
         return { body: [{ currency: 'btc', available: '0.5', locked: '0' }] };
       }
-      if (url.includes('/spot/accounts/ledger')) return { body: [] };
+      if (url.includes('/spot/account_book')) return { body: [] };
       if (url.includes('/spot/my_trades')) return { body: [] };
       if (url.includes('/wallet/deposits')) {
         const u = new URL(url);
@@ -338,7 +351,7 @@ describe('GateProvider', () => {
       if (url.endsWith('/spot/accounts') || url.includes('/spot/accounts?')) {
         return { body: [{ currency: 'btc', available: '0.5', locked: '0' }] };
       }
-      if (url.includes('/spot/accounts/ledger')) return { body: [] };
+      if (url.includes('/spot/account_book')) return { body: [] };
       if (url.includes('/spot/my_trades')) {
         const u = new URL(url);
         if (u.searchParams.get('currency_pair') !== 'BTC_USDT') return { body: [] };
@@ -392,7 +405,7 @@ describe('GateProvider', () => {
     const p = new GateProvider(passthroughLimiter());
     const day = 24 * 60 * 60;
     const RANGED = [
-      '/spot/accounts/ledger',
+      '/spot/account_book',
       '/spot/my_trades',
       '/wallet/deposits',
       '/wallet/withdrawals',
@@ -492,7 +505,7 @@ describe('GateProvider.fetchTransactions — exited assets and failed walks', ()
     const pairs: string[] = [];
     const hook = queueFetch((url) => {
       const u = new URL(url);
-      if (u.pathname.endsWith('/spot/accounts/ledger')) return ledger();
+      if (u.pathname.endsWith('/spot/account_book')) return ledger();
       if (u.pathname.endsWith('/spot/accounts')) {
         return { body: [{ currency: 'USDT', available: '2000', locked: '0' }] };
       }
