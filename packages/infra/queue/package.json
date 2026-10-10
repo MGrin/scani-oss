@@ -16,7 +16,7 @@
     "@scani/config": "workspace:*",
     "@scani/deadline": "workspace:*",
     "@scani/logging": "workspace:*",
-    "bullmq": "^6.2.0",
+    "bullmq": "^6.3.12",
     "ioredis": "^5.11.1",
     "pg": "^8.23.0",
     "typedi": "^0.10.0",
