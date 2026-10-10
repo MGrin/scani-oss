@@ -108,6 +108,23 @@ const connectionConfig: postgres.Options<Record<string, postgres.PostgresType>> 
 
 const client = postgres(finalDatabaseUrl, connectionConfig);
 
+/**
+ * A client of exactly one connection, for one session advisory lock
+ * (SC-1613). A lock on a pooled connection that dies goes back into the pool
+ * dead, and the next query on it crashes the process from postgres.js's write
+ * timer. Its own client is ended instead, and it has no idle or lifetime
+ * timer, either of which would close the session and free the lock unseen.
+ */
+export function createSessionLockClient(onclose: () => void) {
+  return postgres(finalDatabaseUrl, {
+    ...connectionConfig,
+    max: 1,
+    idle_timeout: 0,
+    max_lifetime: 0,
+    onclose,
+  });
+}
+
 db = drizzlePostgres(client, {
   schema,
   logger: logConfig.logSqlQueries

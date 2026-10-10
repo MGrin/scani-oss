@@ -10,7 +10,12 @@
  * API surface, not a business-rules layer.
  */
 
-export { reserveForSessionLock, withAdvisoryLock } from './advisory-lock';
+export {
+  type AdvisoryLock,
+  AdvisoryLockLostError,
+  reserveForSessionLock,
+  withAdvisoryLock,
+} from './advisory-lock';
 export { BaseRepository, type DatabaseTransaction } from './base-repository';
 export {
   db,
