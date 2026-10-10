@@ -179,7 +179,15 @@ describe('tokenTypeLabel', () => {
     // The denominator, beside the result: a regex that stopped matching would
     // make this pass over an empty set, which is the one way it can lie.
     expect(scanned).toBeGreaterThan(20);
-    expect([...seeded].sort()).toEqual(['crypto', 'fiat', 'other', 'private-company', 'stock']);
+    expect([...seeded].sort()).toEqual([
+      'crypto',
+      'fiat',
+      'other',
+      'private-company',
+      'property',
+      'stock',
+      'vehicle',
+    ]);
 
     const mapped = new Set(TOKEN_TYPE_LABELS.map((entry) => entry.code));
     expect([...seeded].filter((code) => !mapped.has(code))).toEqual([]);

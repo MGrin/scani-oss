@@ -122,6 +122,17 @@ export const CreateHoldingsWithDependenciesDto = z.object({
       })
     )
     .min(1, 'At least one holding is required'),
+
+  // When the holdings were first held, if not now: a valued asset opens at
+  // its purchase date (SC-1643). Absent means now, as before.
+  openedAt: z
+    .string()
+    .datetime({ offset: true })
+    // A day ahead at most: a reader east of UTC opens on their local today.
+    .refine((value) => Date.parse(value) <= Date.now() + 86_400_000, {
+      message: 'A holding cannot open in the future',
+    })
+    .optional(),
 });
 
 export type CreateHoldingsWithDependenciesInput = z.infer<typeof CreateHoldingsWithDependenciesDto>;
