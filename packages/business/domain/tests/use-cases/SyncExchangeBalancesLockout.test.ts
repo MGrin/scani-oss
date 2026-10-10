@@ -116,7 +116,8 @@ describe('the refusal reaches the credential row', () => {
     await repo.markSyncRefused(
       credentialsId,
       'IBKR Flex Query error (code 1025): Too many failed attempts. Please review your configuration.',
-      until
+      until,
+      null
     );
 
     const row = await read();
@@ -132,7 +133,7 @@ describe('the refusal reaches the credential row', () => {
     // `importRetryCount` reaches its cap, so an hourly balance failure
     // spending that budget would abandon a later, unrelated import before it
     // had been tried once.
-    await repo.markSyncRefused(credentialsId, 'refused', new Date(Date.now() + HOUR));
+    await repo.markSyncRefused(credentialsId, 'refused', new Date(Date.now() + HOUR), null);
 
     const row = await read();
     expect(row?.importRetryCount).toBe(0);
@@ -141,8 +142,8 @@ describe('the refusal reaches the credential row', () => {
   });
 
   test('repeated refusals count up rather than overwrite', async () => {
-    await repo.markSyncRefused(credentialsId, 'first', null);
-    await repo.markSyncRefused(credentialsId, 'second', null);
+    await repo.markSyncRefused(credentialsId, 'first', null, null);
+    await repo.markSyncRefused(credentialsId, 'second', null, null);
 
     const row = await read();
     expect(row?.syncFailureCount).toBe(2);
@@ -152,7 +153,7 @@ describe('the refusal reaches the credential row', () => {
   });
 
   test('a success clears the refusal', async () => {
-    await repo.markSyncRefused(credentialsId, 'refused', new Date(Date.now() + 24 * HOUR));
+    await repo.markSyncRefused(credentialsId, 'refused', new Date(Date.now() + 24 * HOUR), null);
 
     await repo.clearSyncRefusal(credentialsId);
 

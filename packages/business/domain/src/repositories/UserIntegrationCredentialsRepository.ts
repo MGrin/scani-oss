@@ -276,6 +276,7 @@ export class UserIntegrationCredentialsRepository extends BaseRepository<
     id: string,
     errorMessage: string,
     blockedUntil: Date | null,
+    kind: string | null,
     transaction?: DatabaseTransaction
   ): Promise<UserIntegrationCredentials | undefined> {
     const database = this.getDb(transaction);
@@ -283,6 +284,7 @@ export class UserIntegrationCredentialsRepository extends BaseRepository<
       .update(schema.userIntegrationCredentials)
       .set({
         syncLastError: errorMessage.slice(0, 2000),
+        syncRefusalKind: kind,
         syncFailureCount: sql`${schema.userIntegrationCredentials.syncFailureCount} + 1`,
         ...(blockedUntil ? { syncBlockedUntil: blockedUntil } : {}),
         updatedAt: new Date(),
@@ -290,6 +292,30 @@ export class UserIntegrationCredentialsRepository extends BaseRepository<
       .where(eq(schema.userIntegrationCredentials.id, id))
       .returning();
     return results[0];
+  }
+
+  /** Institutions whose active credential the provider refused as a bad key (SC-1686). */
+  async findKeyRejected(
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Array<{ institutionId: string; institutionName: string }>> {
+    return await this.getDb(transaction)
+      .select({
+        institutionId: schema.institutions.id,
+        institutionName: schema.institutions.name,
+      })
+      .from(schema.userIntegrationCredentials)
+      .innerJoin(
+        schema.institutions,
+        eq(schema.institutions.id, schema.userIntegrationCredentials.institutionId)
+      )
+      .where(
+        and(
+          eq(schema.userIntegrationCredentials.userId, userId),
+          eq(schema.userIntegrationCredentials.isActive, true),
+          eq(schema.userIntegrationCredentials.syncRefusalKind, 'auth-failed')
+        )
+      );
   }
 
   /**
@@ -307,6 +333,7 @@ export class UserIntegrationCredentialsRepository extends BaseRepository<
       .set({
         syncBlockedUntil: null,
         syncLastError: null,
+        syncRefusalKind: null,
         syncFailureCount: 0,
         updatedAt: new Date(),
       })
@@ -316,6 +343,7 @@ export class UserIntegrationCredentialsRepository extends BaseRepository<
           or(
             isNotNull(schema.userIntegrationCredentials.syncBlockedUntil),
             isNotNull(schema.userIntegrationCredentials.syncLastError),
+            isNotNull(schema.userIntegrationCredentials.syncRefusalKind),
             gt(schema.userIntegrationCredentials.syncFailureCount, 0)
           )
         )
