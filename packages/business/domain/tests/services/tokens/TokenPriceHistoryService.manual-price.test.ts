@@ -4,6 +4,7 @@ import { TokenTypeRepository } from '../../../src/repositories/EnumRepositories'
 import { TokenPriceEditHistoryRepository } from '../../../src/repositories/TokenPriceEditHistoryRepository';
 import { TokenPriceRepository } from '../../../src/repositories/TokenPriceRepository';
 import { TokenRepository } from '../../../src/repositories/TokenRepository';
+import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWriter';
 import {
   type PriceWrite,
   type PriceWriteOutcome,
@@ -30,13 +31,23 @@ interface Handed {
   tx: unknown;
 }
 
+const MOVED = { tokenId: 'priced-token', baseTokenId: 'chf-token', at: new Date(0) };
+
 function makeService(written: 0 | 1): {
   service: TokenPriceHistoryService;
   handed: Handed[];
   history: unknown[];
+  revalued: Array<{ pairs: unknown; tx: unknown }>;
 } {
   const handed: Handed[] = [];
   const history: unknown[] = [];
+  const revalued: Array<{ pairs: unknown; tx: unknown }> = [];
+  Container.set(HoldingCacheWriter, {
+    revalueAffected: async (pairs: unknown, _at: Date, opts?: { tx?: unknown }) => {
+      revalued.push({ pairs, tx: opts?.tx });
+      return [];
+    },
+  } as unknown as HoldingCacheWriter);
   Container.set(TokenTypeRepository, {
     findByCode: async (code: string) => ({ id: `type-${code}`, code }),
     findById: async (id: string) => ({ id, code: id.replace(/^type-/, '') }),
@@ -58,7 +69,7 @@ function makeService(written: 0 | 1): {
   Container.set(PriceWriter, {
     writeManual: async (row: PriceWrite, tx: unknown): Promise<PriceWriteOutcome> => {
       handed.push({ row, tx });
-      return { written, dropped: 1 - written, changed: [], seriesChanged: [] };
+      return { written, dropped: 1 - written, changed: written ? [MOVED] : [], seriesChanged: [] };
     },
   } as unknown as PriceWriter);
   Container.set(TokenPriceEditHistoryRepository, {
@@ -75,7 +86,7 @@ function makeService(written: 0 | 1): {
   }
   const service = new TestableService();
   Container.set(TokenPriceHistoryService, service);
-  return { service, handed, history };
+  return { service, handed, history, revalued };
 }
 
 const CREATE = {
@@ -124,6 +135,14 @@ const REPRICE = {
 } as const;
 
 describe('updateCustomTokenPrice — the manual price', () => {
+  test('the changed pair revalues the cache inside the same transaction, as a custom price never refreshes (SC-1610)', async () => {
+    const { service, revalued } = makeService(1);
+
+    await service.updateCustomTokenPrice({ ...REPRICE });
+
+    expect(revalued).toEqual([{ pairs: [MOVED], tx: TX }]);
+  });
+
   test('the writer is handed the typed price in the typed fiat, stamped now, inside the service’s transaction', async () => {
     const { service, handed, history } = makeService(1);
     const before = Date.now();

@@ -4,7 +4,7 @@ import { ProviderRegistry } from '@scani/providers/core/registry';
 import { pricingCircuitBreaker } from '@scani/rate-limiter';
 import { Container, Service } from 'typedi';
 import { TokenRepository } from '../../repositories/TokenRepository';
-import { type CurrentPriceWrite, PriceWriter } from './PriceWriter';
+import { type CurrentPriceWrite, type PairAt, PriceWriter } from './PriceWriter';
 import { PricingFailureCacher } from './PricingFailureCacher';
 import {
   PRICING_PROVIDER_REGISTRY_KEYS,
@@ -111,14 +111,21 @@ export class PricingProviderRouter {
     this.googleSheetsAvailable = Boolean(gsKey && findByKey(gsKey));
   }
 
+  /** `changed`, when handed, receives the pairs whose written price moved (`PriceWriter`). */
   async routeAndFetch(
     tokens: Token[],
     baseCurrencyToken: Token,
-    timestamp: Date
+    timestamp: Date,
+    changed?: PairAt[]
   ): Promise<PricingResult[]> {
     if (tokens.length === 0) return [];
     const tokensByProvider = await this.groupTokensByProvider(tokens);
-    return await this.fetchFromAllProviders(tokensByProvider, baseCurrencyToken, timestamp);
+    return await this.fetchFromAllProviders(
+      tokensByProvider,
+      baseCurrencyToken,
+      timestamp,
+      changed
+    );
   }
 
   private async groupTokensByProvider(
@@ -358,7 +365,8 @@ export class PricingProviderRouter {
   private async fetchFromAllProviders(
     tokensByProvider: Map<PricingProviderKey, RoutedToken[]>,
     baseCurrencyToken: Token,
-    timestamp: Date
+    timestamp: Date,
+    changed?: PairAt[]
   ): Promise<PricingResult[]> {
     const context: PricingExecutionContext = {
       baseCurrency: baseCurrencyToken,
@@ -627,7 +635,7 @@ export class PricingProviderRouter {
       }
     }
 
-    await this.cachePriceResults(allResults, baseCurrencyToken.id, timestamp);
+    await this.cachePriceResults(allResults, baseCurrencyToken.id, timestamp, changed);
 
     return allResults;
   }
@@ -696,7 +704,8 @@ export class PricingProviderRouter {
   private async cachePriceResults(
     results: PricingResult[],
     baseCurrencyId: string,
-    at: Date
+    at: Date,
+    changed?: PairAt[]
   ): Promise<void> {
     if (results.length === 0) return;
 
@@ -708,7 +717,9 @@ export class PricingProviderRouter {
     }));
 
     try {
-      const { written, dropped } = await this.priceWriter.writeCurrent(rows, at);
+      const outcome = await this.priceWriter.writeCurrent(rows, at);
+      const { written, dropped } = outcome;
+      changed?.push(...outcome.changed);
       logger.debug({ written, dropped, baseCurrencyId }, 'Cached price results to database');
     } catch (error) {
       logger.error({ error, at, priceRecords: rows }, 'Failed to cache price results');

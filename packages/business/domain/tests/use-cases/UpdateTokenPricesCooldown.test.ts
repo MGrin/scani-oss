@@ -38,6 +38,8 @@ import { inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { TokenRepository } from '../../src/repositories/TokenRepository';
 import { HoldingQueryService, PricingService, VaultService } from '../../src/services';
+import { CacheWriteCounter } from '../../src/services/feeds/CacheWriteCounter';
+import { HoldingCacheWriter } from '../../src/services/feeds/HoldingCacheWriter';
 import { PriceHubResolver } from '../../src/services/pricing/PriceHubResolver';
 import { UpdateTokenPricesUseCase } from '../../src/use-cases/UpdateTokenPricesUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
@@ -59,11 +61,18 @@ interface Fixture {
   expired: string;
   /** Never marked at all — a token added minutes ago looks like this. */
   fresh: string;
+  /** The run's base: never held, so never asked about (SC-1610). */
+  base: string;
 }
 
 let fixture: Fixture | null = null;
 /** Token ids the stubbed PricingService was actually asked about. */
 let asked: string[] = [];
+/** Token ids the run handed the value cache to revalue after (SC-1610). */
+let revalued: string[] | null = null;
+let counted: Array<[string, number]> = [];
+/** Tokens the stubbed provider prices at the price they already had: no changed pair. */
+let unmoved: string[] = [];
 
 async function setupFixture(): Promise<Fixture> {
   const [tokenType] = await db
@@ -92,6 +101,7 @@ async function setupFixture(): Promise<Fixture> {
     tokenTypeId: tokenType.id,
     suppressed: await mk('SUP', inCooldown),
     withPrices: await mk('PRC', inCooldown),
+    base: await mk('BASE', null),
     expired: await mk('EXP', new Date(now - DAY)),
     fresh: await mk('NEW', null),
   };
@@ -111,14 +121,14 @@ async function setupFixture(): Promise<Fixture> {
 }
 
 async function cleanupFixture(f: Fixture): Promise<void> {
-  const ids = [f.suppressed, f.withPrices, f.expired, f.fresh];
+  const ids = [f.suppressed, f.withPrices, f.expired, f.fresh, f.base];
   await db.delete(schema.tokenPrices).where(inArray(schema.tokenPrices.tokenId, ids));
   await db.delete(schema.tokenPrices).where(inArray(schema.tokenPrices.baseTokenId, ids));
   await db.delete(schema.tokens).where(inArray(schema.tokens.id, ids));
   await db.delete(schema.tokenTypes).where(inArray(schema.tokenTypes.id, [f.tokenTypeId]));
 }
 
-function makeUseCase(order: string[]): UpdateTokenPricesUseCase {
+function makeUseCase(order: string[], baseTokenId: string): UpdateTokenPricesUseCase {
   Container.set(HoldingQueryService, {
     getDistinctTokenIds: async () => order,
     // The use case reads holdings for the vault/realtime steps; both are
@@ -127,13 +137,35 @@ function makeUseCase(order: string[]): UpdateTokenPricesUseCase {
   } as unknown as HoldingQueryService);
 
   Container.set(PricingService, {
-    getTokenPrices: async (tokens: Array<{ id: string }>) => {
+    getTokenPrices: async (
+      tokens: Array<{ id: string }>,
+      base: { id: string },
+      at: Date,
+      changed?: Array<{ tokenId: string; baseTokenId: string; at: Date }>
+    ) => {
       asked = tokens.map((token) => token.id);
+      for (const token of tokens) {
+        if (!unmoved.includes(token.id)) {
+          changed?.push({ tokenId: token.id, baseTokenId: base.id, at });
+        }
+      }
       return new Map(tokens.map((token) => [token.id, '100']));
     },
     // The base the run prices in; these tests never read it.
-    baseToken: async () => ({ id: 'usd' }),
+    baseToken: async () => ({ id: baseTokenId }),
   } as unknown as PricingService);
+
+  Container.set(HoldingCacheWriter, {
+    revalueAffected: async (pairs: ReadonlyArray<{ tokenId: string }>) => {
+      revalued = pairs.map((p) => p.tokenId);
+      return pairs.map((p) => `holding-of-${p.tokenId}`);
+    },
+  } as unknown as HoldingCacheWriter);
+  Container.set(CacheWriteCounter, {
+    add: async (trigger: string, writes: number) => {
+      counted.push([trigger, writes]);
+    },
+  } as unknown as CacheWriteCounter);
 
   Container.set(VaultService, {
     recalculateVaultsForToken: async () => undefined,
@@ -156,6 +188,9 @@ function makeUseCase(order: string[]): UpdateTokenPricesUseCase {
 
 beforeEach(async () => {
   asked = [];
+  revalued = null;
+  counted = [];
+  unmoved = [];
   fixture = await setupFixture();
 });
 
@@ -171,7 +206,7 @@ afterAll(async () => {
 describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
   test('does not ask about a token in cooldown that has never been priced', async () => {
     const f = fixture as Fixture;
-    const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh]);
+    const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh], f.base);
 
     const result = await useCase.execute();
 
@@ -182,7 +217,7 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
 
   test('still asks about a token in cooldown that HAS a price row', async () => {
     const f = fixture as Fixture;
-    const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh]);
+    const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh], f.base);
 
     await useCase.execute();
 
@@ -193,7 +228,7 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
 
   test('asks about an expired cooldown and about a token never marked', async () => {
     const f = fixture as Fixture;
-    const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh]);
+    const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh], f.base);
 
     await useCase.execute();
 
@@ -206,7 +241,7 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
 
   test('a suppressed token is not counted as a failure', async () => {
     const f = fixture as Fixture;
-    const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh]);
+    const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh], f.base);
 
     const result = await useCase.execute();
 
@@ -220,7 +255,7 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
 
   test('a run where every token is suppressed reports nothing failed', async () => {
     const f = fixture as Fixture;
-    const useCase = makeUseCase([f.suppressed]);
+    const useCase = makeUseCase([f.suppressed], f.base);
 
     const result = await useCase.execute();
 
@@ -230,5 +265,27 @@ describe('hourly pricing honours the unpriceable cooldown (SC-296)', () => {
     expect(result.tokensSuppressed).toBe(1);
     expect(result.tokensFailed).toBe(0);
     expect(result.errors).toHaveLength(0);
+  });
+
+  test('hands the value cache only the pairs whose price moved (SC-1610)', async () => {
+    const f = fixture as Fixture;
+    unmoved = [f.withPrices];
+    const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh], f.base);
+
+    await useCase.execute();
+
+    // Priced again at the price it had: PriceWriter reports no changed pair for it.
+    expect(revalued?.sort()).toEqual([f.expired, f.fresh].sort());
+  });
+
+  test('hands the value cache every pair whose price moved (SC-1610)', async () => {
+    const f = fixture as Fixture;
+    const useCase = makeUseCase([f.suppressed, f.withPrices, f.expired, f.fresh], f.base);
+
+    await useCase.execute();
+
+    expect(revalued?.sort()).toEqual([f.withPrices, f.expired, f.fresh].sort());
+    // Counted as the hourly run's, apart from the quarter-hour run's.
+    expect(counted).toEqual([['hourly', 3]]);
   });
 });
