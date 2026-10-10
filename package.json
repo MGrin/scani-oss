@@ -45,6 +45,7 @@
     "ci:gen": "bun scripts/generate-ci-filters.ts",
     "ci:gen:check": "bun scripts/generate-ci-filters.ts --check",
     "docs:check": "bun scripts/check-docs.ts",
+    "api:openapi": "bun scripts/write-rest-openapi.ts",
     "docs:check:soft": "bun scripts/check-docs.ts --soft",
     "db:migrate": "bun scripts/migrate.ts",
     "db:drift:check": "bun scripts/check-migration-drift-declared.ts",
@@ -75,7 +76,8 @@
   },
   "dependencies": {},
   "patchedDependencies": {
-    "bullmq@6.2.0": "patches/bullmq@6.2.0.patch"
+    "bullmq@6.3.12": "patches/bullmq@6.3.12.patch",
+    "@better-auth/oauth-provider@1.7.7": "patches/@better-auth%2Foauth-provider@1.7.7.patch"
   },
   "overrides": {
     "@emnapi/core": "^1.11.3",

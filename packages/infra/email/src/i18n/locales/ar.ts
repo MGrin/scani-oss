@@ -39,6 +39,17 @@ export const ar: EmailStrings = {
       'يُرجى فتح هذا الرابط في المتصفح نفسه الذي بدأت منه. وهو صالح لمرة واحدة وتنتهي صلاحيته خلال 15 دقيقة.',
     textIgnore: 'لم تطلب ذلك؟ يمكنك تجاهل هذه الرسالة بأمان.',
   },
+  householdInvite: {
+    subject: 'دعاك {inviter} إلى أسرة على {app}',
+    headline: 'انضم إلى {household}',
+    body: 'دعاك {inviter} لرؤية الحسابات التي يشاركها في {household} على {app}. تبقى حساباتك خاصة ما لم تختر مشاركتها.',
+    button: 'قبول الدعوة',
+    preheader: 'دعاك {inviter} إلى {household} على {app}.',
+    textIntro: 'دعاك {inviter} إلى {household} على {app}.',
+    textBody:
+      'سجّل الدخول بعنوان البريد الإلكتروني هذا، ثم اقبل الدعوة. تبقى حساباتك خاصة ما لم تشاركها.',
+    expiry: 'تنتهي صلاحية الدعوة خلال 7 أيام.',
+  },
   otp: {
     headline: {
       signIn: 'رمزك لتسجيل الدخول',

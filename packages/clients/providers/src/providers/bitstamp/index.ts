@@ -173,6 +173,16 @@ export function userTransactionToEvent(row: BitstampUserTransactionRow): Transac
   return null;
 }
 
+/** Replaces the deprecated flat `/api/v2/balance/` (SC-1574). */
+const ACCOUNT_BALANCES_PATH = '/api/v2/account_balances/';
+
+interface BitstampAccountBalance {
+  currency?: string;
+  total?: string;
+  available?: string;
+  reserved?: string;
+}
+
 export class BitstampProvider
   extends BaseHmacCexProvider
   implements BalanceProvider, TransactionsProvider, CredentialValidator
@@ -221,23 +231,26 @@ export class BitstampProvider
     const creds = await this.resolveApiCreds(ctx);
     if (!creds) return [];
 
-    const data = await this.signedJson<Record<string, string>>(
-      { method: 'POST', url: '/api/v2/balance/' },
+    const rows = await this.signedJson<BitstampAccountBalance[]>(
+      { method: 'POST', url: ACCOUNT_BALANCES_PATH },
       creds
     );
 
-    const balanceRegex = /^([a-z0-9]+)_balance$/;
     const out: HoldingSnapshot[] = [];
-    for (const [key, value] of Object.entries(data)) {
-      const match = key.match(balanceRegex);
-      if (!match?.[1] || typeof value !== 'string') continue;
-      const amount = new Decimal(value || '0');
+    for (const row of Array.isArray(rows) ? rows : []) {
+      if (typeof row?.currency !== 'string' || row.currency === '') continue;
+      let amount: Decimal;
+      try {
+        amount = new Decimal(row.total ?? '0');
+      } catch {
+        continue;
+      }
       if (amount.lte(0)) continue;
-      const currency = match[1].toUpperCase();
+      const currency = row.currency.toUpperCase();
       const identity: Partial<NewToken> = {
         symbol: currency,
         name: currency,
-        providerMetadata: { bitstamp: { currency: match[1] } },
+        providerMetadata: { bitstamp: { currency: row.currency } },
       };
       out.push({
         externalId: currency,
@@ -366,7 +379,7 @@ export class BitstampProvider
     const apiSecret = creds.apiSecret as string | undefined;
     if (!apiKey || !apiSecret) return { valid: false, message: 'apiKey + apiSecret required' };
     try {
-      await this.signedFetch({ method: 'POST', url: '/api/v2/balance/' }, { apiKey, apiSecret });
+      await this.signedFetch({ method: 'POST', url: ACCOUNT_BALANCES_PATH }, { apiKey, apiSecret });
       return { valid: true };
     } catch (err) {
       return credentialRejection(err);

@@ -13,6 +13,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import { formatRelative } from '../../lib/relative-time';
 import { TRANSFER_ANSWERED_PATH, TRANSFER_REVIEW_PATH } from '../../lib/routes';
 import {
@@ -66,6 +67,7 @@ interface AnsweredTransferListProps {
 }
 
 export function AnsweredTransferList({ items, query, onSearch }: AnsweredTransferListProps) {
+  useRelativeTimeTick();
   const { t } = useTranslation();
   const utils = trpc.useUtils();
 

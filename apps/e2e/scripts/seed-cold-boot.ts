@@ -11,16 +11,19 @@
  * and every parallelisation look better than it is.
  *
  *   DATABASE_URL=postgres://postgres@127.0.0.1:5497/scani_test \
- *     bun scripts/seed-cold-boot.ts
+ *     bun scripts/seed-cold-boot.ts --commit
  *
  * Idempotent: it deletes the harness user first, so re-running rebuilds rather
  * than accumulating.
  */
 
+import 'reflect-metadata';
+
 import { getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
+import { SnapshotWriter } from '@scani/domain/services/feeds/SnapshotWriter';
 import { eq, sql } from 'drizzle-orm';
-import { coldBootHolding } from '../lib/cold-boot-holding';
+import { coldBootBalance, coldBootHolding } from '../lib/cold-boot-holding';
 
 const HARNESS_EMAIL = 'cold-boot@scani.local';
 
@@ -87,25 +90,13 @@ const [account] = await db
   })
   .returning();
 
+const snapshots = new SnapshotWriter();
 const holdingIds: string[] = [];
 for (let i = 0; i < HOLDINGS; i++) {
   const [token] = await db
     .insert(schema.tokens)
     .values({ symbol: `CB${i}`, name: `Cold Boot ${i}`, typeId: tokenType!.id })
     .returning();
-  const [holding] = await db
-    .insert(schema.holdings)
-    .values(
-      coldBootHolding({
-        userId: user!.id,
-        accountId: account!.id,
-        tokenId: token!.id,
-        index: i,
-        at: new Date(),
-      })
-    )
-    .returning();
-  holdingIds.push(holding!.id);
   await db.insert(schema.tokenPrices).values({
     tokenId: token!.id,
     baseTokenId: usd!.id,
@@ -113,6 +104,38 @@ for (let i = 0; i < HOLDINGS; i++) {
     timestamp: new Date(),
     source: 'harness',
   });
+  // As the app creates a holding a person typed in: the row unfunded, then the
+  // person's value as a reading, which funds it through the calculator.
+  const holdingId = await db.transaction(async (tx) => {
+    const at = new Date();
+    const [holding] = await tx
+      .insert(schema.holdings)
+      .values(
+        coldBootHolding({
+          userId: user!.id,
+          accountId: account!.id,
+          tokenId: token!.id,
+          index: i,
+          at,
+        })
+      )
+      .returning();
+    await snapshots.record(
+      {
+        userId: user!.id,
+        holdingId: holding!.id,
+        amount: coldBootBalance(i),
+        at,
+        cause: 'flow',
+        legacySource: 'sync-capture',
+        legacyMeta: { origin: 'createHoldingWithEvent', source: 'manual' },
+      },
+      { cache: 'set' },
+      tx
+    );
+    return holding!.id;
+  });
+  holdingIds.push(holdingId);
 }
 
 const today = new Date();

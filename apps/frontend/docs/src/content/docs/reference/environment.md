@@ -111,6 +111,7 @@ Both optional; unset, sign-in and the contact form work with no check. Set the s
 | `LOG_COLORIZE` | package | Colourise pretty-printed logs. Default on in dev, off in prod. |
 | `LOG_TIMESTAMP` | package | Include timestamps. Default on. Set `false` to defer to the log aggregator. |
 | `LOG_SQL_QUERIES` | package | Log Drizzle queries. Default `false`. |
+| `SCANI_MIGRATE_DEBUG` | migrate | Set to `1` to print the stack under a refused migration. By default the migrate step prints one line: the Postgres message, its code, table and constraint. |
 | `LOG_REQUEST_BODIES` | package | Log inbound HTTP request bodies. Dev only — refuses to start with this on in production. |
 | `LOG_RESPONSE_BODIES` | package | Log outbound HTTP response bodies. Dev only. |
 | `LOG_WEBSOCKET_MESSAGES` | package | Log WebSocket frames. Default on. |
@@ -137,8 +138,6 @@ enabled](/self-hosting/tier1/optional-keys/#how-to-tell-whats-enabled).
 | `COINGECKO_API_KEY` | CoinGecko | Paid-tier crypto prices. |
 | `FINNHUB_API_KEY` | Finnhub | Public-equity prices. |
 | `OPENAI_API_KEY` | OpenAI | Screenshot and document parsing. Unset → starting a parse is refused with `PRECONDITION_FAILED`. |
-| `PERPLEXITY_API_KEY` | Perplexity | Read by `aiPerplexityFactory`, which **no backend service registers**. No effect today. |
-| `DEEPSEEK_API_KEY` | DeepSeek | Read by `aiDeepseekFactory`, which **no backend service registers**. No effect today. |
 | `ETHERSCAN_API_KEY` | Etherscan V2 | All EVM wallet balances + transactions. |
 | `HELIUS_API_KEY` | Helius | Solana balances + transactions. |
 | `GOOGLE_SHEETS_ID` | Google Sheets | Sheet ID for manual-asset pricing fallback. Optional. |
@@ -151,6 +150,7 @@ enabled](/self-hosting/tier1/optional-keys/#how-to-tell-whats-enabled).
 | `SENTRY_DSN` | app | Server-side Sentry. No DSN = no-op. |
 | `SENTRY_ENVIRONMENT` | app | Tag (`production`, `staging`). |
 | `SENTRY_RELEASE` | app | Release identifier. |
+| `FLY_MACHINE_ID` | package (`@scani/db`) | The machine name written into each `api_procedure_minutes` row, so a memory spike on one machine can be matched to the procedures that ran there. Fly.io sets it; you do not. Unset, the host name is used. |
 | `VITE_SENTRY_DSN` | app (frontend) | Browser-side Sentry. Baked at build time. |
 | `VITE_SENTRY_ENABLED` | app (frontend) | Enable client-side reporting. |
 | `VITE_API_URL` | app, cloud (frontend) | URL the SPA calls for `/api`. Bun-bundled image bakes `/api`. |

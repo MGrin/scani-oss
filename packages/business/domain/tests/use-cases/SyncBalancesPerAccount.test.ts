@@ -18,6 +18,7 @@ import { randomUUID } from 'node:crypto';
 import { getDb } from '@scani/db';
 import type { Institution } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
+import { ProviderError } from '@scani/providers/core/errors';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { HoldingSnapshot, PositionProbe } from '@scani/providers/core/types';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
@@ -432,10 +433,10 @@ describe('SyncExchangeBalancesUseCase — the hourly exchange sync', () => {
       },
     ]);
 
-    // Absent from a non-empty answer: zeroed at now.
+    // Absent from a non-empty answer: zeroed at the answer's statementAsOf (A5 D-22, R60).
     const goneObs = await observationsOf(rows.gone.id);
     expect((await holdingRow(rows.gone.id)).balance).toBe('0');
-    expect(within(goneObs[1]!.observedAt, before, after)).toBe(true);
+    expect(goneObs[1]!.observedAt).toEqual(CAPTURED);
     expect({ ...legacyColumns(goneObs[1]!), observedAt: null }).toEqual({
       balance: '0',
       observedAt: null,
@@ -473,6 +474,43 @@ describe('SyncExchangeBalancesUseCase — the hourly exchange sync', () => {
 
     const metadata = (await accountRow(owner.accountId)).metadata as Record<string, unknown>;
     expect(metadata.balancesAsOf).toEqual({ at: asOf.toISOString(), note: 'statement close' });
+  });
+});
+
+describe('a key the exchange refuses (SC-1686)', () => {
+  test('the refusal is recorded with the kind the provider gave it', async () => {
+    const exchange = await institution();
+    const owner = await exchangeOwner(exchange);
+    const refusals: unknown[][] = [];
+    Container.set(InstitutionRepository, {
+      findSyncableInstitutions: async () => [exchange],
+    } as unknown as InstitutionRepository);
+    stubInstitutionCode('zz-exchange');
+    Container.set(IntegrationCredentialsService, {
+      getDecryptedCredentials: async () => ({ apiKey: 'key', apiSecret: 'secret' }),
+      clearSyncRefusal: async () => {},
+      recordSyncRefusal: async (...args: unknown[]) => {
+        refusals.push(args);
+      },
+    } as unknown as IntegrationCredentialsService);
+    stubRegistry({
+      fetchBalances: async () => {
+        throw new ProviderError(
+          'Bybit retCode=33004: Your api key has expired.',
+          'auth-failed',
+          'bybit'
+        );
+      },
+    });
+    const result = await new SyncExchangeBalancesUseCase().execute();
+    expect(result.accountsFailed).toBe(1);
+    const [credential] = await getDb()
+      .select({ id: schema.userIntegrationCredentials.id })
+      .from(schema.userIntegrationCredentials)
+      .where(eq(schema.userIntegrationCredentials.userId, owner.userId));
+    expect(refusals).toEqual([
+      [credential?.id, 'Bybit retCode=33004: Your api key has expired.', null, 'auth-failed'],
+    ]);
   });
 });
 
@@ -549,7 +587,11 @@ describe('which holding a sync writes into', () => {
 });
 
 describe('the unchanged balance (exchange) and the hourly refresh of it (wallet)', () => {
-  test('an unchanged exchange poll writes no checkpoint, and a wallet poll writes one every hour', async () => {
+  // Changed on purpose (SC-1601 item 3): a wallet poll used to append a checkpoint
+  // every hour. The rehearsal on production's data showed those readings bound no
+  // interpolation and move no balance, while they were nearly all wallet rows; what
+  // they did carry is the peek's "Last updated", which the cache write keeps.
+  test('an unchanged poll writes no checkpoint; the wallet poll still advances last updated', async () => {
     const exchange = await institution();
     const exOwner = await exchangeOwner(exchange);
     const exToken = await token(fresh('USTAY'));
@@ -590,8 +632,30 @@ describe('the unchanged balance (exchange) and the hourly refresh of it (wallet)
     expect(wRowAfter.lastUpdated > T0).toBe(true);
     expect((await observationsOf(wRow.id)).map((o) => [o.balance, o.observedAt])).toEqual([
       ['7', T0],
-      ['7', new Date(CAPTURED.getTime() + 3_600_000)],
-      ['7', new Date(CAPTURED.getTime() + 2 * 3_600_000)],
+    ]);
+  });
+
+  test('a wallet poll of a moved balance still writes its checkpoint', async () => {
+    const chain = await institution();
+    const owner = await walletOwner(chain);
+    const moved = await token(fresh('WMOVE'));
+    const row = await holding(owner, {
+      tokenId: moved.id,
+      balance: '7',
+      source: WALLET_TAG,
+      externalId: 'WMV',
+    });
+    const capturedAt = new Date(CAPTURED.getTime() + 3_600_000);
+
+    await syncWallets(
+      [owner],
+      new Map([[owner.userId, [snapshot('WMV', moved.symbol, '8', { capturedAt })]]])
+    );
+
+    expect((await holdingRow(row.id)).balance).toBe('8');
+    expect((await observationsOf(row.id)).map((o) => [o.balance, o.observedAt])).toEqual([
+      ['7', T0],
+      ['8', capturedAt],
     ]);
   });
 });
@@ -759,8 +823,10 @@ describe('RefreshAccountBalanceUseCase — a person pressing Refresh', () => {
       holdingsCreated: 1,
       holdingsRemoved: 0,
     });
-    // A refresh rewrites an unchanged balance, as the wallet cron does.
-    expect((await observationsOf(row.id)).map((o) => o.observedAt)).toEqual([T0, CAPTURED]);
+    // An unchanged balance writes no observation, and the tap still reads
+    // "just now": last_updated advances (SC-1601, operator #23123).
+    expect((await observationsOf(row.id)).map((o) => o.observedAt)).toEqual([T0]);
+    expect((await holdingRow(row.id)).lastUpdated > T0).toBe(true);
     const depositToken = await tokenBySymbol(deposit);
     expect(
       (await holdingsOf(owner.accountId)).map((h) => [h.tokenId, h.balance, h.externalId])
@@ -770,7 +836,7 @@ describe('RefreshAccountBalanceUseCase — a person pressing Refresh', () => {
     ]);
   });
 
-  test("F1: a refresh leaves a person's row an import wrote into as it stands and opens a sync-owned row beside it, so that row is not refreshable (R97)", async () => {
+  test("F1 (A5 D-4): a refresh writes a person's row a feed took over, so that row is refreshable", async () => {
     const exchange = await institution();
     const owner = await exchangeOwner(exchange);
     const held = await token(fresh('RFONE'));
@@ -783,14 +849,15 @@ describe('RefreshAccountBalanceUseCase — a person pressing Refresh', () => {
 
     const { result } = await refresh(owner, [snapshot('K', held.symbol, '9')]);
 
-    // The provider returned the token, so the refresh reports it synced.
     expect(result).toMatchObject({
       source: 'exchange',
-      holdingsUpdated: 0,
-      holdingsCreated: 1,
+      holdingsUpdated: 1,
+      holdingsCreated: 0,
       syncedSymbols: [held.symbol],
       missingSymbols: [],
     });
+    // The feed is the truth for the row it took over: no second row opens
+    // beside it, and its source stays the person's.
     expect(
       (await holdingsOf(owner.accountId)).map((h) => ({
         personsRow: h.id === personsRow.id,
@@ -798,16 +865,12 @@ describe('RefreshAccountBalanceUseCase — a person pressing Refresh', () => {
         kind: h.kind,
         balance: h.balance,
       }))
-    ).toEqual([
-      { personsRow: true, source: MANUAL_HOLDING_SOURCE, kind: 'feed', balance: '2' },
-      { personsRow: false, source: EXCHANGE_TAG, kind: 'feed', balance: '9' },
-    ]);
-    expect(await observationsOf(personsRow.id)).toHaveLength(1);
+    ).toEqual([{ personsRow: true, source: MANUAL_HOLDING_SOURCE, kind: 'feed', balance: '9' }]);
+    expect(await observationsOf(personsRow.id)).toHaveLength(2);
 
-    // Which is why the answer the button and the refusal read is no.
     expect(
       await Container.get(BalanceRefreshabilityService).forHolding(owner.userId, personsRow)
-    ).toBe('sync-cannot-write');
+    ).toBe('refreshable');
   });
 
   test('an empty answer writes nothing and reports every holding missing', async () => {
@@ -890,29 +953,25 @@ describe('legacy history', () => {
 
 /**
  * Today's readings, holding-major: the exchange's updated, zeroed and created
- * holdings, then the wallet's exit, at the six instants. A zero's unexplained
- * drop is spread from its last observation to the zero, which is why the
- * zero's instant is part of the figure.
+ * holdings, then the wallet's exit, at the six instants.
+ *
+ * Since A5 PR-2 the engine reads them (D-10), and three things moved from the
+ * old walk's figures, each named:
+ *   - a day before a holding's start reads absent: T0 - 1 day for every
+ *     holding, and the created holding until its first checkpoint;
+ *   - nothing is spread: the old walk ramped the update from 10 to 12 and each
+ *     zero's drop from its last reading to the zero; the engine walks forward
+ *     from the latest reading, so each change is a step on its own instant;
+ *   - so the midpoints read the reading before them, 10, 5 and 4.
+ * Since A5 D-22 (R60) the exchange's zero sits at the answer's statementAsOf,
+ * CAPTURED, not at the write, so that holding reads 0 from there. The wallet's
+ * exit is measured and keeps its own instant.
  */
 const GOLDEN: Array<string | null> = [
-  ...['10', '10', '11', '12', '12', '12'],
-  ...[
-    '5',
-    '5',
-    '3.027210884353741496598639456',
-    '1.054421768707482993197278912',
-    '0.5272108843537414965986394558',
-    '0',
-  ],
-  ...['3', '3', '3', '3', '3', '3'],
-  ...[
-    '4',
-    '4',
-    '2.421768707482993197278911565',
-    '0.8435374149659863945578231293',
-    '0.4217687074829931972789115646',
-    '0',
-  ],
+  ...[null, '10', '10', '12', '12', '12'],
+  ...[null, '5', '5', '0', '0', '0'],
+  ...[null, null, null, '3', '3', '3'],
+  ...[null, '4', '4', '4', '4', '0'],
 ];
 
 const inputsOf = (accountId: string) =>
@@ -1148,12 +1207,11 @@ describe('the balance syncs through FeedIngestService (A2 Task 16)', () => {
     expect((await accountRow(first.accountId)).metadata).toEqual(metadataBefore);
   });
 
-  // R69 (I-1, a named D-1 exception): Kraken lists spot and earn balances
-  // apart (`XXBT`, `XBT.F`) and both resolve to one token. One holding opens,
-  // at the row sent last on a tie and at the later instant otherwise, and it
-  // stays there run after run. Today a first sync opened two, and later runs
-  // left one stale and flipped the other between the two rows.
-  test('one answer naming one token twice opens one holding, at the last sent or the later instant, and keeps it', async () => {
+  // R69: Kraken lists spot and earn balances apart (`XXBT`, `XBT.F`) and both
+  // resolve to one token. One holding opens, at the sum of its parts, and it
+  // stays there run after run (A5 D-22). Before A2 a first sync opened two;
+  // until A5 the holding took one part, the last sent or the later.
+  test('one answer naming one token twice opens one holding, at the sum of its rows, and keeps it', async () => {
     const exchange = await institution();
     const owner = await exchangeOwner(exchange);
     const [tied, later] = [fresh('DTIE'), fresh('DLATE')];
@@ -1183,10 +1241,21 @@ describe('the balance syncs through FeedIngestService (A2 Task 16)', () => {
     }
 
     expect(runs).toEqual([
-      { created: 2, tied: ['1.5'], later: ['5'] },
-      { created: 0, tied: ['1.5'], later: ['5'] },
-      { created: 0, tied: ['1.5'], later: ['5'] },
+      { created: 2, tied: ['2'], later: ['8'] },
+      { created: 0, tied: ['2'], later: ['8'] },
+      { created: 0, tied: ['2'], later: ['8'] },
     ]);
+    // The evidence holds one reading, the sum: the engine reads that and
+    // nothing else, so the figure stays put run after run (A5 D-21, D-22).
+    const readings = async (symbol: string) => {
+      const tokenId = (await tokenBySymbol(symbol))?.id;
+      const [row] = (await holdingsOf(owner.accountId)).filter((h) => h.tokenId === tokenId);
+      return (await observationsOf(row!.id)).map((o) => o.balance);
+    };
+    expect({ tied: await readings(tied), later: await readings(later) }).toEqual({
+      tied: ['2'],
+      later: ['8'],
+    });
   });
 
   // R70: an account fed only by statements is routed as today, by its

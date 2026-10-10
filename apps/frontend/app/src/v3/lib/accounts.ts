@@ -26,10 +26,14 @@ export interface AccountRow {
   name: string;
   typeId: string;
   institutionId: string;
+  /** SC-1645: the wrapper code; null or absent for an ordinary account. */
+  wrapper?: string | null;
   metadata?: unknown;
-  /** `totalValue` is net; `marginDebt` is signed, 0 or negative (SC-1463). */
-  summary: { holdingsCount: number; totalValue: string; marginDebt?: string };
+  /** `totalValue` is net; `totalDebt` is signed, 0 or negative (SC-1463). */
+  summary: { holdingsCount: number; totalValue: string; totalDebt?: string };
   groups: readonly { id: string; name: string }[];
+  /** The provider refused the key; null or absent when it did not (SC-1686). */
+  keyRejected?: { providerKey: string | null } | null;
 }
 
 export interface InstitutionRow {
@@ -38,7 +42,7 @@ export interface InstitutionRow {
   description: string | null;
   website: string | null;
   typeId: string;
-  summary?: { accountCount: number; totalValue: string; marginDebt?: string };
+  summary?: { accountCount: number; totalValue: string; totalDebt?: string };
 }
 
 /** The ISO timestamp an integration last wrote, or null for a manual account. */
@@ -96,6 +100,11 @@ export function balancesAsOfFact(metadata: unknown): string | null {
   return asOf ? `${formatDate(asOf.at)} — ${asOf.note}` : null;
 }
 
+/** Where a refused key is replaced: the provider's connect page, else the list of them. */
+export function reconnectHref(providerKey: string | null): string {
+  return providerKey ? `/integrations/${encodeURIComponent(providerKey)}` : '/integrations';
+}
+
 /** `now` is a parameter so the threshold is testable without freezing time. */
 export function isStaleSync(lastSync: string | null, now: number = Date.now()): boolean {
   if (!lastSync) return false;
@@ -128,16 +137,16 @@ export function institutionsValue(institutions: readonly InstitutionRow[]): numb
 }
 
 /**
- * Margin debt (SC-1463): signed, 0 or negative. `totalValue` already nets it,
+ * All debt — margin (SC-1463), loans and cards (SC-1640): signed, 0 or negative. `totalValue` already nets it,
  * so a row's gross assets — what the summary bar is made of — are the value
  * minus the debt. An account whose debt outweighs its assets is still a part.
  */
 export function accountDebt(account: AccountRow): number {
-  return toNumber(account.summary.marginDebt);
+  return toNumber(account.summary.totalDebt);
 }
 
 export function institutionDebt(institution: InstitutionRow): number {
-  return toNumber(institution.summary?.marginDebt);
+  return toNumber(institution.summary?.totalDebt);
 }
 
 export function accountAssets(account: AccountRow): number {

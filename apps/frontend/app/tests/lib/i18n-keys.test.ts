@@ -320,6 +320,8 @@ describe('i18n keys in the keyed roots', () => {
       'v3.entities.account.bulkDeleteConsequence_other',
       'v3.holdings.bulk.deleteConsequence_one',
       'v3.holdings.bulk.deleteConsequence_other',
+      'v3.holdings.bulk.hideConsequence_one',
+      'v3.holdings.bulk.hideConsequence_other',
       // Same shape in a job notice (SC-1028): the sections are printed as
       // `{{sections}}`, and the count picks "section"/"sections" and "it"/"them".
       'v3.jobs.notices.ibkrMissingSections_one',

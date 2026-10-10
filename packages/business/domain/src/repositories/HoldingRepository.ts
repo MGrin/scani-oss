@@ -1,10 +1,11 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Holding, NewHolding, Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, ne, type SQL, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import { includedInTotalSql } from '../lib/holding-inclusion';
 import { effectiveScamProbability, notScamFor } from '../lib/scam-verdict';
+import { MANUAL_HOLDING_SOURCE } from '../services/holdings/balance-sync-sources';
 
 /**
  * Type for holdings with full details including token, account, and institution info
@@ -21,6 +22,7 @@ export interface HoldingWithFullDetails {
     entityId: string | null;
     typeCode: string;
     typeName: string;
+    class: 'asset' | 'liability';
   };
   institution: {
     id: string;
@@ -50,6 +52,15 @@ export function ingestHoldingOrder() {
     asc(schema.holdings.createdAt),
     asc(schema.holdings.id),
   ];
+}
+
+/**
+ * A feed holding, as the balance syncs read one (A5 D-4): its kind, or for a row
+ * whose kind was never set, the kind its source implies. `holdingKindOf` is
+ * this rule in TypeScript; the two must agree.
+ */
+function isFeedHolding(): SQL {
+  return sql`coalesce(${schema.holdings.kind}, CASE WHEN ${schema.holdings.source} = ${MANUAL_HOLDING_SOURCE} THEN 'snapshot' ELSE 'feed' END) = 'feed'`;
 }
 
 @Service()
@@ -142,7 +153,13 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         // so this can match more than one row — and until SC-193 it took
         // whichever the plan reached first. Oldest-first, id as the tie-break:
         // the choice matters less than it being the same choice every time.
-        .orderBy(asc(schema.holdings.createdAt), asc(schema.holdings.id))
+        // A visible row before a hidden one, so `includeHidden` only ever
+        // falls back to a hidden row rather than taking data off a visible one.
+        .orderBy(
+          asc(schema.holdings.isHidden),
+          asc(schema.holdings.createdAt),
+          asc(schema.holdings.id)
+        )
         .limit(1);
 
       return results[0] || null;
@@ -283,13 +300,13 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   /**
    * The holdings a feed's silence may zero, by today's two scopes (A2 Task 14,
    * R62), hidden and inactive rows included, oldest first. The exchange sync's
-   * is every holding not at `exceptSource`, its token no scam to its owner; an
+   * is every feed holding (A5 D-4), its token no scam to its owner; an
    * import's is every holding at `source`, scam tokens included.
    */
   async findAbsenceCandidates(
     userId: string,
     accountId: string,
-    scope: { exceptSource: string; scamFree: true } | { source: string; scamFree: false },
+    scope: { kind: 'feed'; scamFree: true } | { source: string; scamFree: false },
     transaction: DatabaseTransaction
   ): Promise<
     Array<
@@ -315,17 +332,15 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         and(
           eq(holdings.userId, userId),
           eq(holdings.accountId, accountId),
-          scope.scamFree
-            ? and(ne(holdings.source, scope.exceptSource), notScamFor())
-            : eq(holdings.source, scope.source)
+          scope.scamFree ? and(isFeedHolding(), notScamFor()) : eq(holdings.source, scope.source)
         )
       )
       .orderBy(asc(holdings.createdAt), asc(holdings.id));
   }
 
   /**
-   * The holding a balance sync writes into (A2 Task 16): of the token's
-   * holdings not at `exceptSource`, hidden ones included, the newest by
+   * The holding a balance sync writes into (A2 Task 16): of the token's feed
+   * holdings (A5 D-4), hidden ones included, the newest by
    * `created_at`, then `id`. Where an account held two such rows of one token,
    * the syncs' map kept whichever their unordered read returned last, heap
    * order that an UPDATE moves; this pick is deterministic, and it is the one
@@ -339,7 +354,6 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       userId: string;
       accountId: string;
       tokenId: string;
-      exceptSource: string;
       externalId: string | null;
       scamFree: boolean;
     },
@@ -355,7 +369,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           eq(holdings.userId, match.userId),
           eq(holdings.accountId, match.accountId),
           eq(holdings.tokenId, match.tokenId),
-          ne(holdings.source, match.exceptSource),
+          isFeedHolding(),
           match.externalId === null ? undefined : eq(holdings.externalId, match.externalId),
           match.scamFree ? notScamFor() : undefined
         )
@@ -446,6 +460,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           holdingArrival: schema.holdings.arrival,
           holdingIsHidden: schema.holdings.isHidden,
           holdingHiddenBy: schema.holdings.hiddenBy,
+          holdingHiddenBalance: schema.holdings.hiddenBalance,
           holdingIsActive: schema.holdings.isActive,
           holdingExternalId: schema.holdings.externalId,
           holdingLabel: schema.holdings.label,
@@ -474,6 +489,8 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           accountEntityId: schema.accounts.entityId,
           accountTypeCode: schema.accountTypes.code,
           accountTypeName: schema.accountTypes.name,
+          accountClass: schema.accountTypes.class,
+          accountTreatment: schema.accountWrappers.treatment,
           // Institution data with type
           institutionId: schema.institutions.id,
           institutionName: schema.institutions.name,
@@ -486,6 +503,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
         .innerJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
         .innerJoin(schema.accounts, eq(schema.holdings.accountId, schema.accounts.id))
         .innerJoin(schema.accountTypes, eq(schema.accounts.typeId, schema.accountTypes.id))
+        .leftJoin(schema.accountWrappers, eq(schema.accountWrappers.code, schema.accounts.wrapper))
         .innerJoin(schema.institutions, eq(schema.accounts.institutionId, schema.institutions.id))
         .innerJoin(
           schema.institutionTypes,
@@ -505,6 +523,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           arrival: r.holdingArrival,
           isHidden: r.holdingIsHidden,
           hiddenBy: r.holdingHiddenBy,
+          hiddenBalance: r.holdingHiddenBalance,
           isActive: r.holdingIsActive,
           externalId: r.holdingExternalId,
           manualEditCause: r.holdingManualEditCause,
@@ -529,6 +548,8 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           entityId: r.accountEntityId,
           typeCode: r.accountTypeCode,
           typeName: r.accountTypeName,
+          class: r.accountClass,
+          treatment: r.accountTreatment,
         },
         institution: {
           id: r.institutionId,
@@ -557,13 +578,14 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
    */
   async findIdsForUser(
     userId: string,
-    filter?: { accountId?: string; institutionId?: string },
+    filter?: { accountId?: string; institutionId?: string; tokenId?: string },
     transaction?: DatabaseTransaction
   ): Promise<string[]> {
     try {
       const database = this.getDb(transaction);
       const conditions = [eq(schema.holdings.userId, userId)];
       if (filter?.accountId) conditions.push(eq(schema.holdings.accountId, filter.accountId));
+      if (filter?.tokenId) conditions.push(eq(schema.holdings.tokenId, filter.tokenId));
       if (filter?.institutionId) {
         conditions.push(eq(schema.accounts.institutionId, filter.institutionId));
       }
@@ -595,6 +617,29 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       .from(schema.holdings)
       .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
       .where(and(inArray(schema.holdings.id, [...holdingIds]), includedInTotalSql()));
+    return new Set(rows.map((row) => row.id));
+  }
+
+  /**
+   * The ids among `holdingIds` held on a liability (loan, card) account. Debt
+   * is not an investment, so Returns leaves these out and names why (SC-1640).
+   */
+  async findIdsOnLiabilityAccounts(
+    holdingIds: readonly string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Set<string>> {
+    if (holdingIds.length === 0) return new Set();
+    const rows = await this.getDb(transaction)
+      .select({ id: schema.holdings.id })
+      .from(schema.holdings)
+      .innerJoin(schema.accounts, eq(schema.accounts.id, schema.holdings.accountId))
+      .innerJoin(schema.accountTypes, eq(schema.accountTypes.id, schema.accounts.typeId))
+      .where(
+        and(
+          inArray(schema.holdings.id, [...holdingIds]),
+          eq(schema.accountTypes.class, 'liability')
+        )
+      );
     return new Set(rows.map((row) => row.id));
   }
 
@@ -681,10 +726,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       const database = this.getDb(transaction);
       await database
         .update(schema.holdings)
-        .set({
-          isHidden: false,
-          hiddenBy: null,
-        })
+        .set({ isHidden: false, hiddenBy: null, hiddenBalance: null })
         .where(eq(schema.holdings.id, holdingId));
     } catch (error) {
       this.logger.error({ holdingId, error }, 'Failed to unhide holding');
@@ -785,29 +827,6 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
   }
 
   /**
-   * Update holding balance
-   */
-  async updateBalance(
-    holdingId: string,
-    balance: string,
-    transaction?: DatabaseTransaction
-  ): Promise<void> {
-    try {
-      const database = this.getDb(transaction);
-      await database
-        .update(schema.holdings)
-        .set({
-          balance,
-          lastUpdated: new Date(),
-        })
-        .where(eq(schema.holdings.id, holdingId));
-    } catch (error) {
-      this.logger.error({ holdingId, balance, error }, 'Failed to update holding balance');
-      throw error;
-    }
-  }
-
-  /**
    * Moves `starts_at` back to `at` when the write reaches earlier, never later
    * (foundation A2 D-6). A NULL stays NULL for the classification backfill:
    * `LEAST` ignores NULL, so filling it here would cut off older evidence.
@@ -852,23 +871,6 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
       )
       .returning({ id: schema.holdings.id });
     return flipped.map((h) => h.id);
-  }
-
-  /**
-   * Shows these holdings again because their source reports them, as the
-   * integration import does: `hidden_by` is left as it was, unlike
-   * `unhideHolding`, which is a person's.
-   */
-  async markShown(
-    userId: string,
-    holdingIds: readonly string[],
-    transaction: DatabaseTransaction
-  ): Promise<void> {
-    if (holdingIds.length === 0) return;
-    await this.getDb(transaction)
-      .update(schema.holdings)
-      .set({ isHidden: false, lastUpdated: new Date() })
-      .where(and(eq(schema.holdings.userId, userId), inArray(schema.holdings.id, [...holdingIds])));
   }
 
   /**

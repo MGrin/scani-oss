@@ -52,6 +52,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
       name: 'Spot',
       type: 'Exchange',
       typeCode: 'exchange',
+      class: 'asset',
       institutionId: 'i1',
     },
     institution: { id: 'i1', name: 'Kraken', type: 'Exchange', typeCode: 'exchange' },
@@ -62,6 +63,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
     isHidden: false,
     source: 'import_wallet',
     refreshable: true,
+    deleteHides: false,
     ...overrides,
   };
 }
@@ -84,6 +86,8 @@ function configFor(holdings: HoldingWithDetails[]) {
       currency: '$',
       onEdit: () => undefined,
       onRecordMovement: () => undefined,
+      onUpdateValue: () => undefined,
+      onMoveMoney: () => undefined,
       onToggleActive: () => undefined,
       onMarkScam: () => undefined,
       onRefreshPrice: () => undefined,
@@ -307,5 +311,50 @@ describe('a balance below zero', () => {
     expect(amountFact(holding({ amount: '-0' }))).not.toContain(
       'nothing you can enter produces this'
     );
+  });
+});
+
+// SC-1640. A loan's balance is stored negative, and the peek used to print it
+// bare with the caption for a figure nobody can type. It is what is owed.
+describe('a loan or card balance', () => {
+  const loan = holding({
+    token: {
+      id: 'usd',
+      symbol: 'USD',
+      name: 'US Dollar',
+      type: 'Fiat',
+      typeCode: 'fiat',
+      isScamProbability: 0,
+      lookalikeOf: null,
+    },
+    amount: '-480000',
+    account: {
+      id: 'a9',
+      name: 'Mortgage',
+      type: 'Mortgage',
+      typeCode: 'mortgage',
+      class: 'liability',
+      institutionId: 'i1',
+    },
+  });
+
+  test('reads as the amount owed, positive, without the below-zero caption', () => {
+    const markup = amountFact(loan);
+    expect(markup).toContain('480,000');
+    expect(markup).not.toContain('-480');
+    expect(markup).toContain(t('v3.liabilities.owed'));
+    expect(markup).not.toContain(t('v3.holdings.amountFact.belowZero'));
+  });
+
+  // Review minor: a card paid past zero is in credit, and "50 owed" said the
+  // opposite. Owed is the balance with its sign flipped, as the edit sheet has it.
+  test('a card in credit reads as a negative amount owed', () => {
+    const markup = amountFact({ ...loan, amount: '50' });
+    expect(markup).toMatch(/[−-]50/);
+  });
+
+  test('a negative on an asset account still carries the below-zero caption', () => {
+    const markup = amountFact(holding({ amount: '-2' }));
+    expect(markup).toContain(t('v3.holdings.amountFact.belowZero'));
   });
 });

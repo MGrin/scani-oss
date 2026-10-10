@@ -5,6 +5,17 @@ export const STATEMENT_INPUT_SOURCE = 'statement';
 export const WALLET_FALLBACK_INPUT_SOURCE = 'wallet';
 export const PROVIDER_INPUT_SOURCE_PREFIX = 'provider:';
 
+/**
+ * A budget app's register (YNAB, Actual, Mint): one input per account and app, and
+ * statement-class evidence, since the person exported it (SC-1649). Not
+ * `import_`, which names a provider's holdings.
+ */
+export const BUDGET_APP_SOURCE_PREFIX = 'budget-';
+export type BudgetApp = 'ynab' | 'actual' | 'mint';
+export function budgetAppSource(app: BudgetApp): string {
+  return `${BUDGET_APP_SOURCE_PREFIX}${app}`;
+}
+
 export interface AccountInputFacts {
   userId: string;
   accountId: string;

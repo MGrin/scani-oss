@@ -3,7 +3,7 @@
  *
  * Every other test for this work stubs a seam. This one does not: real
  * `holding_coverage` rows, real `token_prices` rows, the real
- * `CostBasisService` / `PriceGraphService` / `PortfolioValuationAtTimeService`
+ * `CostBasisService` / `PriceReader` / `PortfolioValuationAtTimeService`
  * chain. That matters because both defects were *wiring* defects — each signal
  * was computed correctly and then dropped between two layers — and a suite
  * built entirely from stubs is the kind that would have passed on the broken
@@ -34,9 +34,10 @@ import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { PnLAtTimeService } from '../../../src/services/portfolio/PnLAtTimeService';
 import { withTestDb } from '../../../test/helpers/db';
+import { seedHoldingCache } from '../../../test/helpers/engine-guard';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-/** Older than MAX_INTRADAY_PRICE_AGE_MS (7d) and MAX_DAILY_PRICE_AGE_MS (45d). */
+/** Older than every finite `STALENESS_HORIZON_MS`. */
 const STALE_AGE_DAYS = 96;
 
 interface Fixture {
@@ -163,17 +164,19 @@ async function setupFixture(tx: DatabaseTransaction): Promise<Fixture> {
   const tokenBySymbol = new Map(tokenRows.map((t) => [t.symbol, t]));
   const tokenFor = (key: string) => tokenBySymbol.get(symbolFor.get(key)!)!;
 
-  const holdingRows = await tx
-    .insert(schema.holdings)
-    .values(
-      SPECS.map((spec) => ({
-        userId: user!.id,
-        accountId: account!.id,
-        tokenId: tokenFor(spec.key).id,
-        balance: '10',
-      }))
-    )
-    .returning();
+  const holdingRows = await seedHoldingCache(tx, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values(
+        SPECS.map((spec) => ({
+          userId: user!.id,
+          accountId: account!.id,
+          tokenId: tokenFor(spec.key).id,
+          balance: '10',
+        }))
+      )
+      .returning()
+  );
   const holdingByToken = new Map(holdingRows.map((h) => [h.tokenId, h]));
   const holdingFor = (key: string) => holdingByToken.get(tokenFor(key).id)!;
 

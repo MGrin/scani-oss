@@ -550,6 +550,47 @@ describe('PriceReader.series', () => {
       expect(corrected.fingerprint).not.toBe(first.fingerprint);
     });
   });
+
+  // The gap listing keys its cache on this fingerprint (Task 23), over every
+  // candidate's token at the candidate's close.
+  test('the gap listing’s key changes when a reading it prices from changes', async () => {
+    await withTestDb(async (tx) => {
+      const { usd } = await currencies(tx);
+      const x = await makeToken(tx);
+      await addPrices(tx, [
+        { tokenId: x.id, baseTokenId: usd, timestamp: closeOf(1), price: '10' },
+      ]);
+      const asks = [{ tokenId: x.id, at: closeOf(3) }];
+      const before = (await reader().series(asks, usd, tx)).fingerprint;
+
+      await addPrices(tx, [
+        { tokenId: x.id, baseTokenId: usd, timestamp: closeOf(2), price: '11' },
+      ]);
+
+      expect((await reader().series(asks, usd, tx)).fingerprint).not.toBe(before);
+    });
+  });
+
+  test('CONTROL: the key does not change when an unrelated pair gets a reading', async () => {
+    await withTestDb(async (tx) => {
+      const { usd } = await currencies(tx);
+      const x = await makeToken(tx);
+      const y = await makeToken(tx);
+      await addPrices(tx, [
+        { tokenId: x.id, baseTokenId: usd, timestamp: closeOf(1), price: '10' },
+      ]);
+      const asks = [{ tokenId: x.id, at: closeOf(3) }];
+      const before = (await reader().series(asks, usd, tx)).fingerprint;
+
+      // Another token, and this token after the instant asked: neither is read.
+      await addPrices(tx, [
+        { tokenId: y.id, baseTokenId: usd, timestamp: closeOf(2), price: '20' },
+        { tokenId: x.id, baseTokenId: usd, timestamp: closeOf(4), price: '12' },
+      ]);
+
+      expect((await reader().series(asks, usd, tx)).fingerprint).toBe(before);
+    });
+  });
 });
 
 describe('the load is bounded', () => {
@@ -666,6 +707,32 @@ describe('the load is bounded', () => {
       const pages = await pagesTouched(tx, statements[0] as SQL);
       expect(pages).toBeGreaterThan(0);
       expect(pages).toBeLessThanOrEqual(30);
+    });
+  });
+});
+
+describe('PriceReader.firstReadingAt', () => {
+  test("answers each token's earliest reading in any base, and omits an unpriced one (SC-1638)", async () => {
+    await withTestDb(async (tx) => {
+      const [token, other, unpriced, usd, eur] = await Promise.all([
+        makeToken(tx),
+        makeToken(tx),
+        makeToken(tx),
+        makeToken(tx),
+        makeToken(tx),
+      ]);
+      await addPrices(tx, [
+        { tokenId: token.id, baseTokenId: usd.id, timestamp: closeOf(10), price: '1' },
+        { tokenId: token.id, baseTokenId: eur.id, timestamp: closeOf(5), price: '1' },
+        { tokenId: token.id, baseTokenId: usd.id, timestamp: closeOf(20), price: '1' },
+        { tokenId: other.id, baseTokenId: usd.id, timestamp: closeOf(25), price: '1' },
+      ]);
+
+      const first = await reader().firstReadingAt([token.id, other.id, unpriced.id], tx);
+
+      expect(first.get(token.id)).toEqual(closeOf(5));
+      expect(first.get(other.id)).toEqual(closeOf(25));
+      expect(first.has(unpriced.id)).toBe(false);
     });
   });
 });

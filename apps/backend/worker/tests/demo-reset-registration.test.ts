@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DEMO_RESET_SCHEDULE, SCHEDULED_JOB_DESCRIPTORS } from '@scani/jobs';
+import { DEMO_RESET_SCHEDULE, SCHEDULED_JOB_DESCRIPTORS, SCHEDULED_JOB_STEPS } from '@scani/jobs';
 
 /**
  * SC-466. `demo-reset` is invisible to `scheduled-processor-coverage.test.ts`,
@@ -72,7 +72,13 @@ describe('the demo reset is wired even though the registry cannot see it', () =>
   });
 
   test('the two lists are disjoint, so the swap cannot be a no-op', () => {
-    expect(SCHEDULED_JOB_DESCRIPTORS.map((d) => d.name)).not.toContain(DEMO_RESET_SCHEDULE.name);
-    expect(SCHEDULED_JOB_DESCRIPTORS.length).toBeGreaterThan(10);
+    // Since SC-1688 the full list is six schedules, most of them groups, so
+    // the reset must be absent from the steps as well as the schedules.
+    const names = [
+      ...SCHEDULED_JOB_DESCRIPTORS.map((d) => d.name),
+      ...Object.keys(SCHEDULED_JOB_STEPS),
+    ];
+    expect(names).not.toContain(DEMO_RESET_SCHEDULE.name);
+    expect(names.length).toBeGreaterThan(10);
   });
 });

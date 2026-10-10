@@ -22,9 +22,11 @@ import { MirrorLegWriter } from '../../../../src/services/feeds/classification/M
 import { deterministicUuid } from '../../../../src/services/feeds/deterministic-id';
 import { FeedIngestService } from '../../../../src/services/feeds/FeedIngestService';
 import type { FeedBatch, FeedEntry } from '../../../../src/services/feeds/feed-batch';
+import { SnapshotWriter } from '../../../../src/services/feeds/SnapshotWriter';
 import { BalanceShadowService } from '../../../../src/services/foundation/BalanceShadowService';
 import { TransferReviewService } from '../../../../src/services/TransferReviewService';
 import { withTestDb } from '../../../../test/helpers/db';
+import { seedHoldingCache } from '../../../../test/helpers/engine-guard';
 import { makeCredential, makeInstitution, makeUser } from '../../../../test/helpers/factories';
 import { makeAccount, makeHolding, makeToken } from '../../../../test/helpers/factories-extra';
 import { expectLabelsSettled } from '../../../../test/helpers/labels-settled';
@@ -138,7 +140,7 @@ function batchOf(w: World, entries: FeedEntry[]): FeedBatch {
     userId: w.userId,
     input: { accountId: w.sourceAccountId, source: SOURCE, credentialId: null, walletId: null },
     fetchedAt: FETCHED,
-    window: { from: T1, to: FETCHED, complete: false },
+    window: { shape: 'transaction-run', from: T1, to: FETCHED, complete: false },
     checkpoints: [],
     entries,
     absences: [],
@@ -149,13 +151,11 @@ function batchOf(w: World, entries: FeedEntry[]): FeedBatch {
       arrival: null,
       writesCache: false,
       createdWithoutCheckpoint: 'zero',
-      cacheObservation: null,
       derivesTradeLegs: false,
       holdingFailure: 'skip-entry',
       absence: null,
       clearsAbsenceTally: false,
       createdCheckpointMeta: null,
-      unhideOnNonZero: false,
       unchangedCheckpoint: 'append',
       zeroOpensHolding: true,
     },
@@ -195,10 +195,7 @@ const legsOf = (rows: ReadonlyArray<typeof schema.holdingTransactions.$inferSele
   rows.filter((r) => r.source === 'feed-mirror');
 
 async function mirrorDifferences(tx: DatabaseTransaction, userId: string, holdingId: string) {
-  const { runId } = await Container.get(BalanceShadowService).run(
-    { asOf: new Date(), pastInstants: [], userId },
-    tx
-  );
+  const { runId } = await Container.get(BalanceShadowService).run({ asOf: new Date(), userId }, tx);
   return (await differencesOf(tx, runId)).filter((d) => d.holdingId === holdingId);
 }
 
@@ -422,6 +419,20 @@ describe('a mirror leg into an account nothing feeds', () => {
         kind: 'snapshot',
         startsAt: new Date('2026-08-01T00:00:00Z'),
       });
+      // The reading its 100 comes from: the anchor the leg moves (A5 D-15).
+      await Container.get(SnapshotWriter).record(
+        {
+          userId: w.userId,
+          holdingId: kept.id,
+          amount: '100',
+          at: new Date('2026-08-01T00:00:00Z'),
+          cause: 'flow',
+          legacySource: 'sync-capture',
+          legacyMeta: { origin: 'createHoldingWithEvent', source: 'manual' },
+        },
+        { cache: 'unchanged' },
+        tx
+      );
       const result = await ingest(payments(w), tx);
 
       const [holding] = await holdingsIn(tx, w.savingsAccountId);
@@ -432,7 +443,9 @@ describe('a mirror leg into an account nothing feeds', () => {
         startsAt: T1,
       });
       expect(result.mirrorHoldingIds).toEqual([kept.id]);
-      const [copy] = await observationsOf(tx, kept.id);
+      const [reading, copy, ...more] = await observationsOf(tx, kept.id);
+      expect(reading?.balance).toBe('100');
+      expect(more).toEqual([]);
       expect(copy).toMatchObject({
         balance: '350',
         source: 'sync-capture',
@@ -560,10 +573,12 @@ describe('a mirror leg into an account nothing feeds', () => {
       expect(await mirrorDifferences(tx, opened.userId, created!.id)).toEqual([]);
       expect(await mirrorDifferences(tx, reused.userId, kept.id)).toEqual([]);
       // The control: the same reading does see a destination whose cache is off.
-      await tx
-        .update(schema.holdings)
-        .set({ balance: '999' })
-        .where(eq(schema.holdings.id, kept.id));
+      await seedHoldingCache(tx, (calculator) =>
+        calculator
+          .update(schema.holdings)
+          .set({ balance: '999' })
+          .where(eq(schema.holdings.id, kept.id))
+      );
       expect(await mirrorDifferences(tx, reused.userId, kept.id)).not.toEqual([]);
     });
   });
@@ -907,10 +922,10 @@ describe('classification through ingest', () => {
     };
   }
 
-  // R59: classification reads only rows that carry an input. The R58 copy is
-  // never decided; the run decides the input's own row in its place, and the
-  // next run finds nothing left to decide.
-  test("an R58 copy is never classified: the input's own row is, and gets the one leg (R59)", async () => {
+  // R59, after A5 D-22: the R58 copy gives way, so the input's own row is the
+  // event's one row, on the holding the feed placed it on. That row is decided
+  // and gets the one leg, and the next run finds nothing left to decide.
+  test("an R58 copy gives way: the input's own row, moved onto its holding, gets the one leg (R59, A5 D-22)", async () => {
     await withTestDb(async (tx) => {
       const w = await world(tx, { rule: null });
       const state = await copiedOutflow(tx, w);
@@ -922,19 +937,16 @@ describe('classification through ingest', () => {
 
       expect(decided).toEqual({
         group: decided.group,
-        outflows: [
-          ['copy', null, 'outflow', null],
-          ['input row', w.inputId, 'transfer_out', decided.group],
-        ],
+        outflows: [['copy', w.inputId, 'transfer_out', decided.group]],
         legs: [['out-1:mirror', decided.group]],
       });
       expect(await state()).toEqual(decided);
     });
   });
 
-  // R59, the other half: the input's row already has its leg, and a copy
-  // with no input cannot take it over.
-  test('an R58 copy does not re-point the leg the input row already has (R59)', async () => {
+  // R59, the other half: the input's row already has its leg. When the copy
+  // gives way the row moves onto the copy's holding and keeps that leg.
+  test('an R58 copy gives way, and the input row keeps the leg it already has (R59, A5 D-22)', async () => {
     await withTestDb(async (tx) => {
       const w = await world(tx);
       const state = await copiedOutflow(tx, w);
@@ -943,7 +955,10 @@ describe('classification through ingest', () => {
 
       await ingest(payments(w), tx);
 
-      expect(await state()).toEqual(before);
+      expect(await state()).toEqual({
+        ...before,
+        outflows: [['copy', w.inputId, 'transfer_out', before.group]],
+      });
     });
   });
 

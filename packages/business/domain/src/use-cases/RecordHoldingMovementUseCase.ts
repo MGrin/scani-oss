@@ -11,8 +11,10 @@ import Decimal from 'decimal.js';
 import { and, eq } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
 import { movedBalance } from '../lib/balances/moved-balance';
+import { HoldingCacheWriter } from '../services/feeds/HoldingCacheWriter';
 import { DeclaredTransferService } from '../services/holdings/DeclaredTransferService';
 import { manualEditFlowLeg } from '../services/holdings/ManualBalanceEditService';
+import { AccountClassService } from '../services/liabilities/AccountClassService';
 import { LinkTransferPairsUseCase } from './LinkTransferPairsUseCase';
 import { UpdateHoldingUseCase } from './UpdateHoldingUseCase';
 
@@ -104,6 +106,8 @@ export class RecordHoldingMovementUseCase {
   private readonly updateHolding = Container.get(UpdateHoldingUseCase);
   private readonly linkTransferPairs = Container.get(LinkTransferPairsUseCase);
   private readonly declaredTransfers = Container.get(DeclaredTransferService);
+  private readonly cacheWriter = Container.get(HoldingCacheWriter);
+  private readonly accountClass = Container.get(AccountClassService);
 
   /**
    * `transaction` is accepted for the same reason `UpdateHoldingUseCase`
@@ -120,8 +124,14 @@ export class RecordHoldingMovementUseCase {
     const occurredAt = new Date(input.occurredAt);
 
     const run = async (tx: DatabaseTransaction) => {
-      const source = await this.ownedHolding(input.holdingId, userId, tx);
-      if (!source) throw new MovementHoldingNotFoundError(input.holdingId);
+      const owned = await this.ownedHolding(input.holdingId, userId, tx);
+      if (!owned) throw new MovementHoldingNotFoundError(input.holdingId);
+      // The engine's balance, which the flow edit sizes against, not the
+      // stored column (A5 D-15): a movement of 5 books 5.
+      const source = {
+        id: owned.id,
+        balance: await this.cacheWriter.engineBalance(userId, owned.id, tx),
+      };
 
       // One instant for the whole movement. `ManualBalanceEditService` keys
       // its dedup id on this, so both legs of a transfer share a key and a
@@ -135,7 +145,11 @@ export class RecordHoldingMovementUseCase {
       }
 
       const remaining = new Decimal(source.balance).sub(amount);
-      if (remaining.isNegative()) {
+      // Spending on a card or drawing a loan deepens what is owed (SC-1640).
+      if (
+        remaining.isNegative() &&
+        !(await this.accountClass.holdingMayOwe(userId, source.id, tx))
+      ) {
         throw new MovementExceedsBalanceError(source.balance, input.amount);
       }
 
@@ -152,7 +166,7 @@ export class RecordHoldingMovementUseCase {
 
       if (input.direction === 'outflow') return this.result(after, null, null);
 
-      const destination = await this.destinationHolding(input, source, occurredAt, userId, tx);
+      const destination = await this.destinationHolding(input, owned, occurredAt, userId, tx);
       if (destination.id === source.id) throw new MovementSameHoldingError(source.id);
 
       // What ARRIVED. Computed from this use case's own input rather than read
@@ -164,7 +178,10 @@ export class RecordHoldingMovementUseCase {
       // unreachable and the only other outcome is `ManualEditFeeRefused`
       // rolling the whole transaction back. Honoured or nothing was written.
       const arrived = await this.applyFlow(
-        destination,
+        {
+          id: destination.id,
+          balance: await this.cacheWriter.engineBalance(userId, destination.id, tx),
+        },
         fee ? amount.sub(fee) : amount,
         occurredAt,
         editedAt,

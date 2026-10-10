@@ -81,31 +81,20 @@ RUN bun build scripts/migrate.ts \
     --minify \
     --outfile=dist/migrate
 
-# SC-535, and SC-518 before it in the api and worker images. BullMQ v6's
-# Postgres migrator loads its schema SQL with `readFileSync` at RUNTIME
-# (`sql-loader.ts` joins `__dirname` with `migrations/`), and `bun build
-# --compile` bundles JavaScript but NOT data files. So the compiled binary
-# looks for these on disk, at a path under `node_modules/` that this runtime
-# image would otherwise not have at all.
+# SC-535, and SC-518 before it in the api and worker images. BullMQ 6.2's
+# Postgres migrator read its schema SQL with `readFileSync` at RUNTIME, which
+# `bun build --compile` does not bundle, so this image used to copy the .sql
+# files beside the binary. 6.3 inlines them into `sql-scripts.js`
+# (taskforcesh/bullmq#4603) and ships no .sql files at all (SC-1677).
 #
-# THIS ASSERTION IS A CONDITION, NOT A NICETY. It is the only thing standing
-# between a bullmq patch release relocating these files and a green image that
-# fails on first use: `COPY` does not fail when it matches an empty directory,
-# so without this the breakage is silent — the same silent shape as the bug it
-# fixes. Assert on the FILES THE MIGRATOR ACTUALLY READS, not on the directory
-# — a directory can exist and be empty. These two are exactly the `load()`
-# entries in bullmq's `postgres/migrations/index.js`.
-#
-# Unlike the api and worker images this one does NOT need `commands/`: those
-# are the runtime queries, and this binary only migrates. Adding a third
-# command file to the assertion would make it fail for something this image
-# does not use.
-#
-# Remove it only when bullmq inlines its SQL — upstream taskforcesh/bullmq#4603
-# (see also taskforcesh/bullmq#4601).
-RUN test -s node_modules/bullmq/dist/esm/postgres/migrations/0001_schema.sql \
-    && test -s node_modules/bullmq/dist/esm/postgres/migrations/0002_functions.sql \
-    || (echo "SC-535: bullmq Postgres migration SQL missing — the compiled binary cannot create the queue schema" && exit 1)
+# THIS ASSERTION IS STILL A CONDITION. Without the schema SQL this binary
+# cannot create the queue schema, from an image that builds cleanly. So assert
+# the loader reads no file, and that the compiled binary itself carries the
+# 0001_schema SQL. A release that goes back to reading files fails here.
+RUN grep -q "from './sql-scripts'" node_modules/bullmq/dist/esm/postgres/sql-loader.js \
+    && ! grep -q readFileSync node_modules/bullmq/dist/esm/postgres/sql-loader.js \
+    && grep -q 'CREATE TABLE job_dependency (' dist/migrate \
+    || (echo "SC-535: the compiled binary does not carry bullmq's migration SQL — it cannot create the queue schema" && exit 1)
 
 # ---------- runtime ----------
 FROM debian:bookworm-slim AS runtime
@@ -129,13 +118,5 @@ USER app
 # inside the compiled binary, matching the `/app/migrations` path below.
 COPY --from=build --chown=app:app /app/dist/migrate /app/migrate
 COPY --chown=app:app packages/infra/db/src/migrations /app/migrations
-
-# SC-535: BullMQ's own schema SQL, read at runtime by the compiled binary. The
-# path must match the build-time `__dirname` baked into the binary, which is
-# /app/node_modules/bullmq/dist/esm/postgres — not /app. The build stage
-# asserts these exist before we get here.
-COPY --from=build --chown=app:app \
-    /app/node_modules/bullmq/dist/esm/postgres/migrations \
-    /app/node_modules/bullmq/dist/esm/postgres/migrations
 
 CMD ["/app/migrate"]

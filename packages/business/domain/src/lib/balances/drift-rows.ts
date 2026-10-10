@@ -1,6 +1,7 @@
 import type { HoldingTransaction } from '@scani/db/schema';
 import Decimal from 'decimal.js';
-import { unexplainedDrift } from './unexplained-drift';
+import { residualSteps } from '../../engine/balance-at';
+import type { HoldingEvidence } from '../../engine/types';
 
 /**
  * A balance change no ledger row explains, as rows the money side can read
@@ -13,11 +14,12 @@ import { unexplainedDrift } from './unexplained-drift';
  * he said it was. `flow` and `correction` answers write their own ledger rows,
  * so whatever drift survives them is unexplained again and treated as above.
  *
- * The rows follow `BalanceAtTimeService.driftAhead` exactly: that spreads the
- * drift linearly between the two readings, and the value series is read at
- * day ends, so the drift is cut at every day end inside the gap and the last
- * piece lands on the later reading. Cut anywhere else, a window ending inside
- * a gap would hold value the flows never paid for.
+ * The rows are the engine's value less the ledger the money side reads, booked
+ * where that difference changes (SC-1637). So ledger plus drift equals the
+ * value series at every instant: a gap's change lands whole where the engine
+ * takes it, at the window its later anchor opens, never cut at the day ends
+ * inside the gap; a reading the engine does not anchor on moves nothing; and a
+ * ledger row the engine leaves out is undone by a row of drift beside it.
  *
  * These rows are never written. They are for readers of money (flows, cost
  * basis, income) only: the balance walk already carries the same drift, and
@@ -36,12 +38,8 @@ export interface DriftRow {
   kind: typeof DRIFT_IN_KIND | typeof DRIFT_OUT_KIND | typeof DRIFT_GROWTH_KIND;
   quantity: string;
   occurredAt: Date;
-}
-
-interface Reading {
-  observedAt: Date;
-  balance: string;
-  gapReview: string | null;
+  /** The row that opens the holding, as distinct from a gap's drift. */
+  opening?: true;
 }
 
 interface LedgerRow {
@@ -50,23 +48,30 @@ interface LedgerRow {
 }
 
 /**
- * The opening counts as well as the gaps (SC-1470). A holding is valued from
- * its first record, a ledger row or a reading, and what it held then is
- * whatever its first reading says less what the ledger explains up to that
- * reading. That unexplained opening is money in, booked just before the first
- * record and never before that record's own day: flows are counted by day, so
- * the money side sees it on the day the value series first counts the holding,
- * and the cost walk meets it before any row that draws on it. A holding whose
- * ledger explains its first reading opens with nothing.
+ * The opening counts as well as the gaps (SC-1470). The engine values a
+ * holding from `startsAt`, and what it held then less what the ledger explains
+ * by then is money in, booked just before `startsAt` and never before its own
+ * day: flows are counted by day, so the money side sees it on the day the value
+ * series first counts the holding, and the cost walk meets it before any row
+ * that draws on it. A holding whose ledger explains its value opens with nothing.
+ *
+ * `gapReviewOf` is each observation's gap answer, by id: a step at the window
+ * of an anchor answered `growth` is return.
+ *
+ * `pricedFrom` is the token's first stored price. An opening before it would
+ * cost nothing, and the whole position would read as gain (SC-1638), so the
+ * opening waits for it and books what is unexplained then. Before that day
+ * nothing can value the holding on either side.
  */
 export function driftRows(
   holding: { holdingId: string; tokenId: string },
-  readings: ReadonlyArray<Reading>,
-  ledger: ReadonlyArray<LedgerRow>
+  evidence: HoldingEvidence,
+  ledger: ReadonlyArray<LedgerRow>,
+  gapReviewOf: ReadonlyMap<string, string | null>,
+  pricedFrom: Date | null = null
 ): DriftRow[] {
-  const ordered = [...readings].sort((a, b) => a.observedAt.getTime() - b.observedAt.getTime());
   const rows: DriftRow[] = [];
-  const push = (kind: DriftRow['kind'], quantity: Decimal, at: Date) =>
+  const push = (kind: DriftRow['kind'], quantity: Decimal, at: Date, opening = false) =>
     rows.push({
       id: `drift:${holding.holdingId}:${rows.length}`,
       holdingId: holding.holdingId,
@@ -74,57 +79,82 @@ export function driftRows(
       kind,
       quantity: quantity.toString(),
       occurredAt: at,
+      ...(opening ? { opening: true as const } : {}),
     });
-  const first = ordered[0];
-  if (first) {
-    const upTo = first.observedAt.getTime();
-    const explained = ledger.filter((t) => t.occurredAt.getTime() <= upTo);
-    const opening = unexplainedDrift(
-      '0',
-      first.balance,
-      explained.map((t) => t.quantity)
-    );
-    if (!opening.isZero()) {
-      const earliest = Math.min(upTo, ...explained.map((t) => t.occurredAt.getTime()));
-      const at = Math.max(earliest - 1, Math.floor(earliest / DAY_MS) * DAY_MS);
-      push(opening.isNegative() ? DRIFT_OUT_KIND : DRIFT_IN_KIND, opening, new Date(at));
+
+  const start = evidence.startsAt.getTime();
+  const open = Math.max(start, pricedFrom?.getTime() ?? start);
+  const steps = residualSteps(evidence).map((step) => ({ ...step, t: step.at.getTime() }));
+  const byTime = (rows: ReadonlyArray<{ t: number; q: string }>) =>
+    [...rows].sort((a, b) => a.t - b.t);
+  const entries = byTime(evidence.entries.map((e) => ({ t: e.at.getTime(), q: e.quantity })));
+  const money = byTime(ledger.map((r) => ({ t: r.occurredAt.getTime(), q: r.quantity })));
+  const instants = [
+    ...new Set([
+      start,
+      open,
+      ...steps.map((s) => s.t),
+      ...entries.map((e) => e.t),
+      ...money.map((m) => m.t),
+    ]),
+  ].sort((a, b) => a - b);
+
+  // One sweep: each total moves forward with the instants, never re-summed.
+  let entryTotal = new Decimal(0);
+  let moneyTotal = new Decimal(0);
+  let e = 0;
+  let m = 0;
+  let k = -1;
+  let previous = new Decimal(0);
+  for (const t of instants) {
+    for (; e < entries.length && (entries[e] as { t: number }).t <= t; e += 1) {
+      entryTotal = entryTotal.add((entries[e] as { q: string }).q);
     }
-  }
-  for (let i = 1; i < ordered.length; i += 1) {
-    const before = ordered[i - 1] as Reading;
-    const after = ordered[i] as Reading;
-    const lo = before.observedAt.getTime();
-    const hi = after.observedAt.getTime();
-    if (hi <= lo) continue;
-    const bridge = ledger
-      .filter((t) => t.occurredAt.getTime() > lo && t.occurredAt.getTime() <= hi)
-      .map((t) => t.quantity);
-    const drift = unexplainedDrift(before.balance, after.balance, bridge);
+    for (; m < money.length && (money[m] as { t: number }).t <= t; m += 1) {
+      moneyTotal = moneyTotal.add((money[m] as { q: string }).q);
+    }
+    while (k + 1 < steps.length && (steps[k + 1] as { t: number }).t <= t) k += 1;
+    // A stored row before `startsAt` (an opening or a correction the engine
+    // leaves out) is explained by the opening, not undone and re-bought.
+    if (t < open) continue;
+    const step = steps[k];
+    const value = step === undefined ? new Decimal(0) : step.residual.add(entryTotal);
+    const unexplained = value.sub(moneyTotal);
+    const drift = unexplained.sub(previous);
+    previous = unexplained;
     if (drift.isZero()) continue;
-    const kind =
-      after.gapReview === GROWTH_ANSWER
-        ? DRIFT_GROWTH_KIND
-        : drift.isNegative()
-          ? DRIFT_OUT_KIND
-          : DRIFT_IN_KIND;
-    const cuts = dayEndsBetween(lo, hi);
-    cuts.push(hi);
-    let previous = lo;
-    let booked = new Decimal(0);
-    for (const [index, cut] of cuts.entries()) {
-      const piece =
-        index === cuts.length - 1
-          ? drift.sub(booked)
-          : drift
-              .mul(cut - previous)
-              .div(hi - lo)
-              .toDecimalPlaces(PIECE_PLACES);
-      booked = booked.add(piece);
-      previous = cut;
-      if (!piece.isZero()) push(kind, piece, new Date(cut));
+    if (t === open) {
+      const earliest = Math.min(start, money[0]?.t ?? start);
+      const at =
+        open > start ? open : Math.max(earliest - 1, Math.floor(earliest / DAY_MS) * DAY_MS);
+      push(drift.isNegative() ? DRIFT_OUT_KIND : DRIFT_IN_KIND, drift, new Date(at), true);
+      continue;
     }
+    const opens = step !== undefined && step.t === t ? step.anchorId : null;
+    const growth = opens !== null && gapReviewOf.get(opens) === GROWTH_ANSWER;
+    push(
+      growth ? DRIFT_GROWTH_KIND : drift.isNegative() ? DRIFT_OUT_KIND : DRIFT_IN_KIND,
+      drift,
+      new Date(t)
+    );
   }
   return rows;
+}
+
+/**
+ * A positive opening, in ledger shape. It is what the holding held before its
+ * first record, so a walk meets it before any row sharing its instant: a first
+ * record at 00:00Z puts the opening on that instant, and the ledger order would
+ * otherwise walk a same-instant sale first, from an empty pool (A5).
+ */
+export function isOpeningArrival(
+  row: Pick<HoldingTransaction, 'source' | 'kind' | 'sourceMetadata'>
+): boolean {
+  return (
+    row.source === 'drift' &&
+    row.kind === DRIFT_IN_KIND &&
+    (row.sourceMetadata as { opening?: unknown } | null)?.opening === true
+  );
 }
 
 /** The rows in the ledger's own shape, for readers that walk ledger rows. */
@@ -159,7 +189,7 @@ export function asLedgerRows(rows: ReadonlyArray<DriftRow>, userId: string): Hol
         counterparty: null,
         description: null,
         source: 'drift',
-        sourceMetadata: {},
+        sourceMetadata: row.opening ? { opening: true } : {},
         rawPayload: null,
         createdAt: row.occurredAt,
         updatedAt: row.occurredAt,
@@ -168,15 +198,3 @@ export function asLedgerRows(rows: ReadonlyArray<DriftRow>, userId: string): Hol
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-// Short enough that the pieces of a drift add back to it exactly at
-// decimal.js's 20 significant digits; the last piece takes the remainder.
-const PIECE_PLACES = 12;
-
-/** Every `T23:59:59.999Z` strictly between `lo` and `hi`. */
-function dayEndsBetween(lo: number, hi: number): number[] {
-  const out: number[] = [];
-  let end = Math.floor(lo / DAY_MS) * DAY_MS + DAY_MS - 1;
-  if (end <= lo) end += DAY_MS;
-  for (; end < hi; end += DAY_MS) out.push(end);
-  return out;
-}

@@ -7,7 +7,13 @@ import { HISTORY_REBUILD_JOB_NAME } from '@scani/shared';
 // These names are part of the wire contract with deployed BullMQ state —
 // renaming requires a coordinated rolling deploy.
 export const JOB_NAMES = {
+  // The grouped schedules (SC-1688); every job below them runs as a step.
+  housekeeping: 'housekeeping',
+  hourly: 'hourly',
+  nightly: 'nightly',
+  morning: 'morning',
   pricing: 'pricing',
+  activePricing: 'active-pricing',
   walletBalances: 'wallet-balances',
   exchangeBalances: 'exchange-balances',
   exchangeTransactions: 'exchange-transactions',
@@ -20,7 +26,6 @@ export const JOB_NAMES = {
   reconcilePendingCredentials: 'reconcile-pending-credentials',
   reconcileOrphanedUserJobs: 'reconcile-orphaned-user-jobs',
   historicalPriceBackfill: 'historical-price-backfill',
-  tokenPricesDownsample: 'token-prices-downsample',
   portfolioValueRollup: 'portfolio-value-rollup',
   transferLinking: 'transfer-linking',
   backfillTokenIdentity: 'backfill-token-identity',
@@ -34,7 +39,12 @@ export const JOB_NAMES = {
   portfolioHistoryBackfill: HISTORY_REBUILD_JOB_NAME,
   holdingPriceUpdate: 'holding-price-update',
   refreshAccountBalance: 'refresh-account-balance',
+  appOpenRefresh: 'app-open-refresh',
   userDataDelete: 'user-data-delete',
+  userBackup: 'user-backup',
+  userBackupRestore: 'user-backup-restore',
+  budgetAppImport: 'budget-app-import',
+  budgetAppImportUndo: 'budget-app-import-undo',
   transactionImport: 'transaction-import',
   hideClosedHoldings: 'hide-closed-holdings',
   currencyRateRefresh: 'currency-rate-refresh',

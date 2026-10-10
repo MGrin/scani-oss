@@ -168,10 +168,19 @@ async function whileLabelsAreRefused<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * The R97 cases ask what a failed classification leaves behind, which does not
+ * depend on how long the history is. 60 days instead of the persona's 549: two
+ * full seeds in one test read 18.3s of a 30s budget on main (SC-1593). Each
+ * case's control still requires labels to exist, so a set too small to test
+ * anything fails loudly.
+ */
+const short = buildDemoDataset({ days: 60 });
+
 const failedSeed = (tx: DatabaseTransaction) =>
   whileLabelsAreRefused(() =>
     Container.get(DemoDatasetSeeder)
-      .write(dataset, tx)
+      .write(short, tx)
       .then(
         () => null,
         (error: Error) => error.message
@@ -211,6 +220,43 @@ describe('DemoDatasetSeeder.write', () => {
   });
 });
 
+describe('DemoDatasetSeeder.write categories (SC-1652)', () => {
+  test('seeds the starter set in English and categorizes the fiat spending rows', () =>
+    withTestDb(async (tx) => {
+      await Container.get(DemoDatasetSeeder).write(short, tx);
+      const [user] = await tx
+        .select({ id: schema.users.id })
+        .from(schema.users)
+        .where(eq(schema.users.email, short.user.email));
+      const categories = await tx
+        .select()
+        .from(schema.transactionCategories)
+        .where(eq(schema.transactionCategories.userId, user!.id));
+      expect(categories.filter((c) => c.parentId === null)).toHaveLength(8);
+      expect(categories).toHaveLength(18);
+      const named = new Map(categories.map((c) => [c.id, c]));
+      const paths = await tx
+        .select({
+          description: schema.holdingTransactions.description,
+          categoryId: schema.holdingTransactions.categoryId,
+        })
+        .from(schema.holdingTransactions)
+        .where(
+          and(
+            eq(schema.holdingTransactions.userId, user!.id),
+            isNotNull(schema.holdingTransactions.categoryId)
+          )
+        );
+      const pathOf = (id: string) => {
+        const c = named.get(id)!;
+        return c.parentId ? `${named.get(c.parentId)!.name} › ${c.name}` : c.name;
+      };
+      const byDescription = new Map(paths.map((r) => [r.description, pathOf(r.categoryId!)]));
+      expect(byDescription.get('Monthly interest')).toBe('Income › Interest');
+      expect(byDescription.get('Groceries, travel, everything uncategorised')).toBe('Shopping');
+    }));
+});
+
 describe('DemoDatasetSeeder.write, when its classification fails (R97)', () => {
   test('on a database with no demo it leaves none, so the next boot seeds again', async () => {
     await withTestDb(async (tx) => {
@@ -224,7 +270,7 @@ describe('DemoDatasetSeeder.write, when its classification fails (R97)', () => {
 
   test('on a reseed it leaves the demo that was there, labelled as it was', async () => {
     await withTestDb(async (tx) => {
-      await Container.get(DemoDatasetSeeder).write(dataset, tx);
+      await Container.get(DemoDatasetSeeder).write(short, tx);
       const before = { kinds: await storedKinds(tx), labelled: await labelled(tx) };
       // The control: there are labels to lose.
       expect(before.labelled.observations).toBeGreaterThan(0);
@@ -234,6 +280,27 @@ describe('DemoDatasetSeeder.write, when its classification fails (R97)', () => {
 
       expect(await isDemoPersonaPresent(tx)).toBe(true);
       expect({ kinds: await storedKinds(tx), labelled: await labelled(tx) }).toEqual(before);
+    });
+  });
+});
+
+// Anchored in the past: the engine writes the balance as of now and never
+// counts a row dated after it (A5 D-1), and the default anchor is in the future.
+const settled = buildDemoDataset({ days: 60, anchorDate: '2026-09-01' });
+
+describe('DemoDatasetSeeder.write, with the engine writer guard on (A5 D-4)', () => {
+  test('funds every holding through the calculator, at the balance the plan states', async () => {
+    await withTestDb(async (tx) => {
+      await Container.get(DemoDatasetSeeder).write(settled, tx);
+
+      const rows = await tx
+        .select({ id: schema.holdings.id, balance: schema.holdings.balance })
+        .from(schema.holdings)
+        .where(eq(schema.holdings.userId, settled.user.id));
+      expect(rows).toHaveLength(settled.holdings.length);
+      expect(new Map(rows.map((row) => [row.id, row.balance]))).toEqual(
+        new Map(settled.holdings.map((holding) => [holding.id, holding.balance]))
+      );
     });
   });
 });

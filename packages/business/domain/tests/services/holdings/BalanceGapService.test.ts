@@ -6,6 +6,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import { setSharedRedis } from '@scani/rate-limiter';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
+import { FeedInputRepository } from '../../../src/repositories/FeedInputRepository';
 import type { BalanceGapCandidate } from '../../../src/repositories/HoldingBalanceObservationRepository';
 import { HoldingBalanceObservationRepository } from '../../../src/repositories/HoldingBalanceObservationRepository';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
@@ -13,7 +14,8 @@ import { TokenRepository } from '../../../src/repositories/TokenRepository';
 import { UserRepository } from '../../../src/repositories/UserRepository';
 import { BalanceGapService } from '../../../src/services/holdings/BalanceGapService';
 import { ManualBalanceEditService } from '../../../src/services/holdings/ManualBalanceEditService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { InTransitService } from '../../../src/services/portfolio/InTransitService';
+import { PriceReader, type PriceSeries } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
 // Container stubs are process-global; put back whatever this file changes so
@@ -60,13 +62,38 @@ interface Stamped {
   source: string | null;
 }
 
-const LOOKUP = { prefetched: true };
-let lookups: unknown[][] = [];
-let conversions: unknown[] = [];
-// What the price rows look like to the stubbed graph: the fingerprint the
-// cache keys on, and the rate every conversion applies.
+/** Each series load's asks, as `token@instant`. */
+let loads: string[][] = [];
+/** Every `priceAt` the listing made, as `token@instant`. */
+let reads: string[] = [];
+// What the price rows look like to the stubbed reader: the fingerprint the
+// cache keys on, and the price every read answers.
 let priceVersion = 'prices-v1';
-let rate = new Decimal(1);
+let rate: Decimal | null = new Decimal(1);
+/** Each holding's nightly-ledger read-through, as the repository would answer it. */
+let ledgerReadThrough = new Map<string, Date | null>();
+
+const askOf = (tokenId: string, at: Date) => `${tokenId}@${at.toISOString()}`;
+
+/** A reader whose every series answers `rate` and carries `priceVersion`. */
+function stubReader(): PriceReader {
+  return {
+    series: async (asks: ReadonlyArray<{ tokenId: string; at: Date }>): Promise<PriceSeries> => {
+      loads.push(asks.map((ask) => askOf(ask.tokenId, ask.at)));
+      const asked = new Set(asks.map((ask) => askOf(ask.tokenId, ask.at)));
+      return {
+        priceAt: (tokenId: string, at: Date) => {
+          if (!asked.has(askOf(tokenId, at))) throw new RangeError('not asked');
+          reads.push(askOf(tokenId, at));
+          return rate === null
+            ? null
+            : { price: rate, readingAt: at, path: 'direct', stale: false, source: 'stub' };
+        },
+        fingerprint: priceVersion,
+      };
+    },
+  } as unknown as PriceReader;
+}
 
 function seed(candidates: BalanceGapCandidate[]): {
   service: BalanceGapService;
@@ -75,10 +102,16 @@ function seed(candidates: BalanceGapCandidate[]): {
 } {
   const recorded: Recorded[] = [];
   const stamped: Stamped[] = [];
-  lookups = [];
-  conversions = [];
+  loads = [];
+  reads = [];
   priceVersion = 'prices-v1';
   rate = new Decimal(1);
+  ledgerReadThrough = new Map();
+
+  Container.set(FeedInputRepository, {
+    findLedgerReadThroughByHolding: async (holdingIds: readonly string[]) =>
+      new Map([...ledgerReadThrough].filter(([id]) => holdingIds.includes(id))),
+  } as unknown as FeedInputRepository);
 
   Container.set(HoldingBalanceObservationRepository, {
     findGapCandidatesForUser: async () => candidates,
@@ -113,24 +146,10 @@ function seed(candidates: BalanceGapCandidate[]): {
 
   // One unit of any token is worth one unit of base, so the priced threshold
   // is the quantity — which keeps every fixture below readable while still
-  // going through the real conversion call.
-  Container.set(PriceGraphService, {
-    buildPriceLookup: async (...args: unknown[]) => {
-      lookups.push(args);
-      return LOOKUP;
-    },
-    priceLookupFingerprint: async () => priceVersion,
-    convert: async (amount: Decimal, ...rest: unknown[]) => {
-      conversions.push(rest[3]);
-      return {
-        amount: new Decimal(amount).mul(rate),
-        rate,
-        effectiveAt: new Date(),
-        path: 'identity',
-        stale: false,
-      };
-    },
-  } as unknown as PriceGraphService);
+  // going through the real series read.
+  Container.set(PriceReader, stubReader());
+  // No transfer is in transit here; SC-1680's interaction has its own DB-backed file.
+  Container.set(InTransitService, { openTransits: async () => [] } as unknown as InTransitService);
 
   Container.set(ManualBalanceEditService, {
     record: async (input: Recorded) => {
@@ -262,14 +281,8 @@ describe('BalanceGapService.listPending', () => {
 
   test('a change no price can reach is suppressed as unpriceable, not as small', async () => {
     seed([candidate()]);
-    // Re-stubbed AFTER `seed`, then a fresh instance so the class-field DI
-    // picks the refusing converter up — the pattern the DI note in CLAUDE.md
-    // describes, applied to a stub that has to differ from the default.
-    Container.set(PriceGraphService, {
-      buildPriceLookup: async () => LOOKUP,
-      priceLookupFingerprint: async () => priceVersion,
-      convert: async () => null,
-    } as unknown as PriceGraphService);
+    // The stubbed reader answers no price for anything.
+    rate = null;
     const listing = await new BalanceGapService().listPending(USER);
     expect(listing.items).toHaveLength(0);
     // "We could not find out" resolves to its own name, never to the
@@ -279,7 +292,7 @@ describe('BalanceGapService.listPending', () => {
     expect(listing.suppressed['below-threshold']).toBe(0);
   });
 
-  test('every conversion shares ONE price prefetch spanning the candidates', async () => {
+  test('every price comes from ONE series over the candidates', async () => {
     const early = new Date('2026-03-01T00:00:00Z');
     const late = new Date('2026-06-10T00:00:00Z');
     const { service } = seed([
@@ -289,23 +302,17 @@ describe('BalanceGapService.listPending', () => {
     ]);
     await service.listPending(USER);
 
-    expect(lookups).toHaveLength(1);
-    const [tokenIds, base, until, , since] = lookups[0] as [string[], string, Date, unknown, Date];
-    expect(new Set(tokenIds)).toEqual(new Set(['btc', 'eth']));
-    expect(base).toBe(BASE);
-    expect(since).toEqual(early);
-    expect(until).toEqual(late);
-    expect(conversions).toHaveLength(3);
-    for (const options of conversions) {
-      expect((options as { priceLookup?: unknown }).priceLookup).toBe(LOOKUP);
-    }
+    // Each candidate's token at the candidate's own close, and nothing else.
+    expect(loads).toEqual([[askOf('btc', early), askOf('eth', late), askOf('btc', late)]]);
+    expect(reads.sort()).toEqual([...(loads[0] ?? [])].sort());
   });
 
-  test('no prefetch when nothing reaches the pricing step', async () => {
+  test('nothing is priced when nothing reaches the pricing step', async () => {
     const { service } = seed([candidate({ source: 'manual' })]);
     await service.listPending(USER);
-    expect(lookups).toHaveLength(0);
-    expect(conversions).toHaveLength(0);
+    // The series is still loaded: its fingerprint is the cache key.
+    expect(loads).toHaveLength(1);
+    expect(reads).toHaveLength(0);
   });
 
   test('there is no age gate — a change observed one second ago is still asked about', async () => {
@@ -374,13 +381,11 @@ describe('BalanceGapService.listPending cache (SC-1369)', () => {
     ]);
     const first = await service.listPending(USER);
     await flush();
-    lookups = [];
-    conversions = [];
+    reads = [];
 
     const second = await service.listPending(USER);
 
-    expect(lookups).toHaveLength(0);
-    expect(conversions).toHaveLength(0);
+    expect(reads).toHaveLength(0);
     expect(JSON.stringify(second)).toBe(JSON.stringify(first));
   });
 
@@ -392,12 +397,10 @@ describe('BalanceGapService.listPending cache (SC-1369)', () => {
     await flush();
 
     candidates[0] = candidate({ observationId: 'a', gapReview: 'growth' });
-    lookups = [];
-    conversions = [];
+    reads = [];
 
     expect((await service.listPending(USER)).items).toHaveLength(0);
-    expect(conversions).toHaveLength(0);
-    expect(lookups).toHaveLength(0);
+    expect(reads).toHaveLength(0);
   });
 
   test('a new observation changes the key, so the listing is priced again', async () => {
@@ -408,17 +411,17 @@ describe('BalanceGapService.listPending cache (SC-1369)', () => {
     await flush();
 
     candidates.push(candidate({ observationId: 'b', holdingId: 'h2' }));
-    lookups = [];
+    reads = [];
 
     expect((await service.listPending(USER)).items).toHaveLength(2);
-    expect(lookups).toHaveLength(1);
+    expect(reads).toHaveLength(2);
   });
 
   test('a failing Redis read degrades to computing, never to an error', async () => {
     fakeRedis(true);
     const { service } = seed([candidate()]);
     expect((await service.listPending(USER)).items).toHaveLength(1);
-    expect(lookups).toHaveLength(1);
+    expect(reads).toHaveLength(1);
   });
 
   const ids = async (service: BalanceGapService) =>
@@ -589,5 +592,50 @@ describe('BalanceGapService.answer', () => {
     const { service } = seed([candidate()]);
     const outcome = await service.answer(USER, { observationId: 'obs-missing', answer: 'unknown' });
     expect(outcome).toEqual({ refusal: 'no-longer-a-gap' });
+  });
+});
+
+/**
+ * SC-1665. A balance whose ledger is still read nightly, apart from it, is
+ * not asked about until that read has run, and never for longer than a day
+ * and two hours. A ledger read with its balance is never held.
+ */
+describe('BalanceGapService.listPending — a gap waiting for its nightly ledger', () => {
+  const to = new Date('2026-10-09T10:13:20Z');
+
+  test('held while the ledger has not been read since the balance landed', async () => {
+    const { service } = seed([candidate({ to })]);
+    ledgerReadThrough.set('holding-1', new Date('2026-10-09T01:00:00Z'));
+    const listing = await service.listPending(USER, new Date(to.getTime() + 2 * HOUR));
+    expect(listing.items).toHaveLength(0);
+    expect(listing.suppressed['awaiting-ledger']).toBe(1);
+  });
+
+  test('a ledger never read holds it too, until the bound', async () => {
+    const { service } = seed([candidate({ to })]);
+    ledgerReadThrough.set('holding-1', null);
+    const listing = await service.listPending(USER, new Date(to.getTime() + HOUR));
+    expect(listing.suppressed['awaiting-ledger']).toBe(1);
+  });
+
+  test('asked once a read has passed it and the rows still do not explain it', async () => {
+    const { service } = seed([candidate({ to })]);
+    ledgerReadThrough.set('holding-1', new Date('2026-10-10T01:00:00Z'));
+    const listing = await service.listPending(USER, new Date(to.getTime() + 16 * HOUR));
+    expect(listing.items).toHaveLength(1);
+  });
+
+  test('asked after a day and two hours even if no read ever came', async () => {
+    const { service } = seed([candidate({ to })]);
+    ledgerReadThrough.set('holding-1', new Date('2026-10-09T01:00:00Z'));
+    const listing = await service.listPending(USER, new Date(to.getTime() + 26 * HOUR + 1));
+    expect(listing.items).toHaveLength(1);
+    expect(listing.suppressed['awaiting-ledger']).toBe(0);
+  });
+
+  test('control: a holding with no nightly ledger is asked at once', async () => {
+    const { service } = seed([candidate({ to })]);
+    const listing = await service.listPending(USER, new Date(to.getTime() + HOUR));
+    expect(listing.items).toHaveLength(1);
   });
 });

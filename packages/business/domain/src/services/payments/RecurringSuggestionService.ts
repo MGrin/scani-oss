@@ -11,9 +11,9 @@ import {
   dismissalKey,
   RecurringSuggestionDismissalRepository,
 } from '../../repositories/RecurringSuggestionDismissalRepository';
-import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { VendorRepository } from '../../repositories/VendorRepository';
 import { PriceHubResolver } from '../pricing/PriceHubResolver';
+import { PriceReader } from '../pricing/PriceReader';
 import {
   currencyClasses,
   detectMonthlyRecurrences,
@@ -69,7 +69,7 @@ export class RecurringSuggestionService {
   private readonly dismissals = Container.get(RecurringSuggestionDismissalRepository);
   private readonly paymentService = Container.get(PaymentService);
   private readonly priceHubs = Container.get(PriceHubResolver);
-  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
+  private readonly priceReader = Container.get(PriceReader);
 
   async list(
     userId: string,
@@ -211,8 +211,10 @@ export class RecurringSuggestionService {
 
   /**
    * Priced only for a payee paid in more than one token, so the common case
-   * reads no prices at all. Prices are compared in USD because that is the
-   * base every stablecoin and forex edge is stored against.
+   * reads no prices at all. Prices are compared in USD, through `PriceReader`,
+   * so a rate stored the other way round or through a hub counts as a direct
+   * one does. Read now, whatever the list's as-of: what a coin is worth
+   * against another does not depend on the day it was paid.
    */
   private async currencyClassesOf(
     paid: { tokenId: string; counterparty: string }[],
@@ -228,16 +230,11 @@ export class RecurringSuggestionService {
     if (mixed.size === 0) return new Map();
 
     const usdId = await this.priceHubs.usdTokenId(transaction);
-    const latest = await this.tokenPriceRepository.findLatestPricesForTokensAnyBase(
-      [...mixed],
-      usdId,
-      transaction
-    );
+    const answers = await this.priceReader.at([...mixed], usdId, new Date(), transaction);
     const prices = new Map<string, string>();
-    for (const [tokenId, row] of latest) {
-      if (row.baseTokenId === usdId) prices.set(tokenId, row.price);
+    for (const [tokenId, answer] of answers) {
+      if (answer !== null) prices.set(tokenId, answer.price.toString());
     }
-    if (mixed.has(usdId)) prices.set(usdId, '1');
     return currencyClasses(mixed, prices);
   }
 

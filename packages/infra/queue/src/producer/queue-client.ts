@@ -1,10 +1,24 @@
 import { verifiedPgConnectionString } from '@scani/config';
 import { createComponentLogger } from '@scani/logging';
-import { createPostgresBackend, type PostgresQueueBackend, Queue } from 'bullmq';
+import {
+  createPostgresBackend,
+  type PostgresConnectionOptions,
+  type PostgresQueueBackend,
+  Queue,
+} from 'bullmq';
 
 // See the note in worker-client.ts: the backend is a type parameter and the
 // default is Redis, so the Postgres variant must be named.
-type PgQueue = Queue<any, any, string, any, any, string, PostgresQueueBackend>;
+type PgQueue = Queue<
+  any,
+  any,
+  string,
+  any,
+  any,
+  string,
+  PostgresQueueBackend,
+  PostgresConnectionOptions
+>;
 
 import { Service } from 'typedi';
 import { DEFAULT_DLQ_NAME, DEFAULT_QUEUE_NAME } from '../core/default-names';

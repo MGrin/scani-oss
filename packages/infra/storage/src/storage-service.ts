@@ -115,23 +115,10 @@ export class StorageService {
 
   presignUpload(opts: PresignUploadOptions): Promise<PresignedUpload> {
     const ttl = opts.ttlSeconds ?? DEFAULT_UPLOAD_TTL_SECONDS;
-    if (opts.keyPrefix.length > MAX_KEY_PREFIX_LENGTH || !KEY_PREFIX_PATTERN.test(opts.keyPrefix)) {
-      throw new Error(
-        `StorageService.presignUpload: invalid keyPrefix (${opts.keyPrefix.slice(0, 64)}). ` +
-          'Only alphanumerics, hyphens, underscores, and `/` between segments are allowed.'
-      );
-    }
-    const ext = opts.extension.replace(/^\./, '');
-    if (!EXTENSION_PATTERN.test(ext)) {
-      throw new Error(
-        `StorageService.presignUpload: invalid extension (${ext.slice(0, 16)}). ` +
-          'Only alphanumeric extensions ≤ 10 chars are allowed.'
-      );
-    }
+    const key = this.tempKey(opts, 'presignUpload');
     if (!Number.isSafeInteger(opts.contentLength) || opts.contentLength <= 0) {
       throw new Error('StorageService.presignUpload: contentLength must be a positive integer');
     }
-    const key = `${TEMP_PREFIX}${opts.keyPrefix}/${crypto.randomUUID()}.${ext}`;
     const cfg = this.requireConfig();
     const url = new URL(
       `${cfg.publicEndpoint.replace(/\/$/, '')}/${encodeURIComponent(cfg.bucket)}/${key}`
@@ -161,6 +148,38 @@ export class StorageService {
         expiresAt: new Date(Date.now() + ttl * 1000).toISOString(),
         requiredHeaders,
       }));
+  }
+
+  /**
+   * Write bytes a server process produced under a fresh `temp/<prefix>/<uuid>.<ext>`
+   * key, the same place a presigned upload lands, and return the key. `temp/`
+   * expires on its own (30 days on R2), so an object nobody fetches does not
+   * stay forever.
+   */
+  async writeTemp(
+    opts: { keyPrefix: string; extension: string; contentType: string },
+    bytes: Uint8Array
+  ): Promise<string> {
+    const key = this.tempKey(opts, 'writeTemp');
+    await this.write(key, bytes, opts.contentType);
+    return key;
+  }
+
+  private tempKey(opts: { keyPrefix: string; extension: string }, caller: string): string {
+    if (opts.keyPrefix.length > MAX_KEY_PREFIX_LENGTH || !KEY_PREFIX_PATTERN.test(opts.keyPrefix)) {
+      throw new Error(
+        `StorageService.${caller}: invalid keyPrefix (${opts.keyPrefix.slice(0, 64)}). ` +
+          'Only alphanumerics, hyphens, underscores, and `/` between segments are allowed.'
+      );
+    }
+    const ext = opts.extension.replace(/^\./, '');
+    if (!EXTENSION_PATTERN.test(ext)) {
+      throw new Error(
+        `StorageService.${caller}: invalid extension (${ext.slice(0, 16)}). ` +
+          'Only alphanumeric extensions ≤ 10 chars are allowed.'
+      );
+    }
+    return `${TEMP_PREFIX}${opts.keyPrefix}/${crypto.randomUUID()}.${ext}`;
   }
 
   presignDownload(key: string, ttlSeconds: number = DEFAULT_DOWNLOAD_TTL_SECONDS): string {

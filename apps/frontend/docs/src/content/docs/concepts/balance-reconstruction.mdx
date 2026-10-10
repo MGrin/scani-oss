@@ -1,6 +1,6 @@
 ---
 title: Balance reconstruction
-description: How Scani derives a holding's balance at any past time from observations, transactions, and current state — without ever mutating the ledger.
+description: How Scani derives a holding's balance at any past time from its readings and its ledger, without changing either.
 sidebar:
   order: 8
 ---
@@ -9,158 +9,97 @@ import { Aside } from '@astrojs/starlight/components';
 
 ## Summary
 
-`BalanceAtTimeService.getBalance(holdingId, at)` returns the
-reconstructed balance of one [holding](/concepts/holdings/) at any
-past time. It walks the [ledger](/concepts/transactions/) backward
-(or forward) from the most trustworthy [anchor](#anchor-priority)
-available — typically the nearest balance
-[observation](/concepts/observations/), falling back to the current
-state of the holding when no observation is near. The result is
-clamped non-negative because early imported history is frequently
-incomplete; you can't have negatively held an asset you can't short.
+A holding's past balance is not stored. It is computed on demand by
+the balance engine, `balanceAt(evidence, at)`, from two things the
+holding records:
 
-## Anchor priority
+- its **readings**: balances a feed or a person reported at an
+  instant ([observations](/concepts/observations/));
+- its **ledger**: the [transactions](/concepts/transactions/) that
+  moved it.
 
-For a given `(holdingId, at)`, the service picks the first available
-anchor from this ordered list:
+`BalanceAtTimeService.getBalance(holdingId, at)` is the entry point
+for one [holding](/concepts/holdings/) at one instant. The same engine
+writes today's `holdings.balance`, so the past and the present come
+from one rule.
 
-1. **Nearest observation at or after `at`.** Highest confidence.
-   Subtract the sum of transaction quantities between `at` and the
-   observation timestamp from the observed balance — that's the
-   balance at `at`.
-2. **Current `holdings.balance` at `holdings.lastUpdated`.** Fallback
-   when no observation is at or after the target time. Subtract the
-   sum of transactions between `at` and `holdings.lastUpdated`.
-3. **Nearest observation before `at`** — last-ditch anchor. Walk
-   *forward* by adding the sum of transactions between
-   `observation.observedAt` and `at`.
+## Which readings count
 
-If no anchor of any kind is reachable (no observation, no current
-holding, no transactions), the service returns `{ balance: null }` —
-honest "unknown" rather than a fabricated zero.
+Not every reading anchors a balance. Which ones do depends on the
+holding's kind:
+
+- **A feed holding** is one an exchange, wallet, broker or statement
+  feeds. Its feed's checkpoints anchor it. A value a person types on
+  it is kept as a *verification*: it is compared with the feed's
+  figure and never anchors.
+- **A snapshot holding** is one a person keeps. Their snapshots
+  anchor it.
+
+On a feed holding, a snapshot taken for a stretch no feed covers can
+still anchor that stretch.
+
+## How a balance is found
+
+For a holding and an instant `at`:
+
+1. **Before the holding starts, it is absent.** `balance` is null and
+   `beforeRecords` is true. The start is the earliest of the holding's
+   creation, its first kept reading and its first ledger entry.
+2. **After a reading, walk forward.** Take the latest anchoring reading
+   at or before `at` and add every ledger entry since it. This is the
+   usual case (`anchor: 'observation-before'`).
+3. **Before the first reading, walk back.** Take the first anchoring
+   reading and subtract the entries between `at` and it
+   (`anchor: 'observation-after'`). A snapshot holding holds its first
+   value back to its start instead, so its balance cannot jump where
+   its history begins.
+4. **With no reading at all, sum the ledger** from the start
+   (`anchor: null`).
 
 ```ts
-// Simplified shape of the return:
 interface BalanceAtTimeResult {
   balance: Decimal | null;
-  anchor: 'holdings' | 'observation-after' | 'observation-before' | null;
+  anchor: 'observation-after' | 'observation-before' | null;
   anchorAt: Date | null;
-  txApplied: number;
   beforeRecords: boolean;
 }
 ```
 
-`anchor` is reported back so callers can fold confidence into the
-displayed `coverageQuality` rather than blindly trust every point.
+## No line and no floor
 
-## The lower bound
-
-Every anchor above walks the ledger between `at` and the anchor's
-timestamp. Below a holding's **earliest evidence** that range covers
-the *entire* ledger, so all three reduce to the same expression:
-
-```
-current balance − sum(every transaction we know about)
-```
-
-That is zero only if the ledger is complete. As the clamp section
-below explains, imported histories frequently are not — so what the
-expression actually returns is the *unexplained opening balance*, and
-without a bound it is reported for every date before the ledger
-starts, forever. Production held a non-zero opening on a date a year
-before the holding's first transaction: the magnitude of one real
-withdrawal, attributed to all of time.
-
-Earliest evidence is the **oldest** of three timestamps:
-
-1. the holding's first transaction (`occurredAt`),
-2. its first balance observation (`observedAt`),
-3. `holdings.created_at` — the moment the row itself appeared.
-
-Oldest, not newest, so an imported wallet whose transactions reach
-back years is still answered from its first transaction rather than
-from the day Scani happened to learn of it. And it is resolved **once,
-above the anchor ladder**, because anchor 1 is tried first: bounding
-only the `holdings` anchor would leave every holding carrying
-observations answering exactly as before.
-
-Below that point `balance` is still returned. Propagating a balance
-backward is what the history chart is built on, and withholding the
-number would empty the chart for anyone who onboarded this week. What
-changes is the claim attached to it: `beforeRecords: true` travels
-with the figure, and
-[the rollup](/concepts/rollup/) downgrades the day's
-`coverage_quality` from `full` to `partial` rather than asserting full
-confidence about a period nothing in our data describes.
-
-## The non-negative clamp
-
-The service applies `clampNonNegative` to every reconstructed past
-balance — if the math produces a negative number, it's clamped to
-zero.
-
-Why: blockchain indexers, exchange CSVs, and manual entry frequently
-*start partway through* a holding's life. Helius's parsed-tx index
-has retention limits. An exchange CSV starts at export date, not
-account creation. A wallet imported mid-life has no events before
-the import. When the first transaction Scani knows about is a sell,
-naïve forward-walking math produces:
-
-```
-0 (assumed starting balance)
-- 0.5 BTC (the sell we have)
-= -0.5 BTC
-```
-
-That's nonsense; you can't have negatively held BTC. Clamping at
-zero keeps the chart sensible without rewriting the underlying
-ledger, which preserves signed quantities for cost-basis math.
-
-The [opening-balance reconciliation](/concepts/observations/#opening-balance-reconciliation)
-flow later synthesises the implied opening balance so the ledger
-becomes self-consistent.
+- **No line across a gap.** Between two readings only the ledger moves
+  the balance. When the second reading disagrees with the first plus
+  the ledger, the balance steps at the second reading. The money side
+  books that step as unexplained drift on the same instant, so flows
+  and the value history agree.
+- **No floor.** A balance goes negative when the ledger says so,
+  usually because an import starts partway through a holding's life.
+  It is shown as computed rather than clamped to zero, so the gap stays
+  visible and can be answered.
 
 ## How the rollup uses it
 
 The nightly [portfolio-value rollup](/concepts/rollup/) calls
-`getBalance` once per holding per snapshot date in the backfill
-window. To avoid a per-holding round-trip per day, callers can
-pre-load the per-user data and hand it in:
-
-```ts
-interface BalanceAtTimeCaches {
-  holdings?: ReadonlyMap<string, Holding>;
-  observations?: ReadonlyMap<string, ReadonlyArray<HoldingBalanceObservation>>;
-  transactions?: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>>;
-}
-```
-
-When a cache key is present, the service uses it; when absent (or
-`undefined` for that holding), it falls through to the repository.
-This lets the rollup hot-path do **one** bulk fetch of per-user data
-and feed millions of `getBalance` calls without further DB
-round-trips, while ad-hoc callers (the chart endpoint, an interactive
-valuation) just call `getBalance(holdingId, at)` and let the
-service handle the I/O.
+`balancesFor`. It loads each holding's readings and ledger once, 25
+holdings at a time, and answers every day of the window from memory.
+An ad-hoc caller, such as a chart request, calls `getBalance` and lets
+the service load what it needs.
 
 ## What it doesn't do
 
-- **It does not mutate the ledger.** Pure read.
-- **It does not mutate observations.** Pure read.
-- **It does not return PnL** — that's a separate concern computed by
-  the rollup against the reconstructed balance and the
+- **It does not write.** The ledger, the readings and the stored
+  balance are untouched.
+- **It does not price.** The balance is in the token's units (BTC,
+  AAPL, EUR, …); the rollup values it against the
   [price graph](/concepts/pricing/).
-- **It does not convert currencies.** The returned balance is in
-  the token's units (BTC, AAPL, EUR, …); pricing happens above.
 
-<Aside type="note" title="Why three anchor types instead of one">
-  Single-anchor designs (always-observation, always-current-balance,
-  always-replay-from-zero) each break for a realistic data class:
-  observation-only doesn't work for the first sync on a wallet
-  imported mid-life; replay-from-zero breaks every imported-mid-life
-  holding; current-balance-only requires recent observations that
-  may not exist. The three-anchor priority covers each case with the
-  most trustworthy data Scani has.
+<Aside type="note" title="Why the engine replaced the old walk">
+  Until October 2026 a past balance was walked from whichever balance
+  seemed most trustworthy, including today's stored one, then clamped
+  at zero and interpolated across gaps. Each of those choices could
+  disagree with the ledger and with the other screens. The engine has
+  one rule for every day, and the stored balance is its output, never
+  its input.
 </Aside>
 
 ## See also

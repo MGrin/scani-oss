@@ -17,7 +17,6 @@ import {
   formatDate,
   formatDateTime,
   formatNumber,
-  isLinkingDecision,
   moneyDecimals,
   quantityDecimals,
   TRANSFER_MATCH_WINDOW_LABEL,
@@ -412,6 +411,12 @@ function internalWriteClause(
  * `amount` is the reader's own text, not a Decimal, because `3.` and `` are
  * states a person passes through while typing a number.
  */
+/** What a split form needs of the thing it divides: a transfer, or a balance gap's drift. */
+export type SplitSubject = Pick<
+  PendingTransferReview,
+  'transactionId' | 'quantity' | 'tokenSymbol'
+>;
+
 export interface SplitDraftRow {
   decision: TransferReviewDecision;
   amount: string;
@@ -423,6 +428,58 @@ export interface SplitDraftRow {
 /** The rows that are actually part of the answer. */
 function filledRows(rows: readonly SplitDraftRow[]): SplitDraftRow[] {
   return rows.filter((row) => row.amount.trim() !== '');
+}
+
+/**
+ * Two moves to one holding are one move (SC-1665). Mirrors
+ * `transferReviewSplitSchema`, so the reader finds out while typing; a `null`
+ * holding counts as its account's, because both would open the same one.
+ */
+function sameDestinationTwice(filled: readonly SplitDraftRow[]): boolean {
+  const seen = new Set<string>();
+  for (const row of filled) {
+    if (row.decision !== 'internal' || !row.destination) continue;
+    const key = row.destination.holdingId ?? `new:${row.destination.accountId}`;
+    if (seen.has(key)) return true;
+    seen.add(key);
+  }
+  return false;
+}
+
+/** Where the draft's last move sits, or -1. */
+export function lastMoveIndex(rows: readonly SplitDraftRow[]): number {
+  let last = -1;
+  for (const [index, row] of rows.entries()) if (row.decision === 'internal') last = index;
+  return last;
+}
+
+/** A destination's identity: `accountId` alone is not unique. */
+export function destinationKey(destination: TransferDestination): string {
+  return `${destination.accountId}:${destination.holdingId ?? 'new'}`;
+}
+
+/**
+ * The holdings the OTHER moves already picked. Two moves may not arrive on
+ * one holding — the server refuses it — so the picker greys them out.
+ */
+export function takenDestinationKeys(rows: readonly SplitDraftRow[], index: number): Set<string> {
+  const taken = new Set<string>();
+  for (const [i, row] of rows.entries()) {
+    if (i !== index && row.decision === 'internal' && row.destination) {
+      taken.add(destinationKey(row.destination));
+    }
+  }
+  return taken;
+}
+
+/** The draft with one more empty move, right after the last one (SC-1665). */
+export function addDestinationRow(rows: readonly SplitDraftRow[]): SplitDraftRow[] {
+  const at = lastMoveIndex(rows) + 1;
+  return [
+    ...rows.slice(0, at),
+    { decision: 'internal', amount: '', matchTransactionId: null, destination: null },
+    ...rows.slice(at),
+  ];
 }
 
 /** Where a draft split stands against the transfer it divides. */
@@ -479,7 +536,7 @@ export function allocationOf(rows: readonly SplitDraftRow[], quantity: string): 
 export function allocationHint(
   t: TFunction,
   allocation: SplitAllocation,
-  item: PendingTransferReview
+  item: SplitSubject
 ): string | null {
   const symbol = item.tokenSymbol;
   switch (allocation.status) {
@@ -524,27 +581,22 @@ export function remainderFor(
 
 /**
  * A draft is committable when at least two outcomes carry an amount, every
- * amount is a positive number, each linking part has its target, no more than
- * one part links at all, and the whole thing adds up exactly.
+ * amount is a positive number, each linking part has its target, no two moves
+ * share a destination, and the whole thing adds up exactly.
  *
  * One filled row is a *whole* answer, not a split, and is refused here rather
  * than silently converted: the whole answers are one tap away and each states
  * its own consequence, so quietly turning "3,500 untracked" into "all of it
  * untracked" would commit a claim about 4,000 the reader made about 3,500.
  *
- * The one-linking-part rule mirrors `transferReviewSplitSchema` rather than
- * trusting it, so the reader finds out while typing rather than after a round
- * trip. It is not a form nicety: `transfer_group_id` is one column, and a
- * second link would leave the destination walked on its own with a fresh
- * market-value lot.
+ * The one-part-per-destination rule mirrors `transferReviewSplitSchema` rather
+ * than trusting it, so the reader finds out while typing rather than after a
+ * round trip.
  */
-export function splitIsCommittable(
-  rows: readonly SplitDraftRow[],
-  item: PendingTransferReview
-): boolean {
+export function splitIsCommittable(rows: readonly SplitDraftRow[], item: SplitSubject): boolean {
   const filled = filledRows(rows);
   if (filled.length < 2) return false;
-  if (filled.filter((r) => isLinkingDecision(r.decision)).length > 1) return false;
+  if (sameDestinationTwice(filled)) return false;
   if (filled.some((r) => r.decision === 'paired' && !r.matchTransactionId)) return false;
   if (filled.some((r) => r.decision === 'internal' && !r.destination)) return false;
   const allocation = allocationOf(filled, item.quantity);
@@ -566,13 +618,13 @@ export function splitIsCommittable(
 export function splitBlockers(
   t: TFunction,
   rows: readonly SplitDraftRow[],
-  item: PendingTransferReview
+  item: SplitSubject
 ): string[] {
   const filled = filledRows(rows);
   const blockers: string[] = [];
   if (filled.length < 2) blockers.push(t('v3.review.transfer.split.blocker.twoParts'));
-  if (filled.filter((r) => isLinkingDecision(r.decision)).length > 1) {
-    blockers.push(t('v3.review.transfer.split.blocker.oneLink'));
+  if (sameDestinationTwice(filled)) {
+    blockers.push(t('v3.review.transfer.split.blocker.oneDestination'));
   }
   if (filled.some((r) => r.decision === 'paired' && !r.matchTransactionId)) {
     blockers.push(
@@ -637,14 +689,11 @@ export function splitConsequence(
   candidateFor: (id: string | null) => TransferCandidate | null
 ): string {
   if (!splitIsCommittable(rows, item)) {
-    // The one-linking-part rule gets its own sentence, because "give two of
-    // these an amount" is not what is wrong and a reader who has given four of
-    // them an amount would read it as the form failing to notice.
-    if (filledRows(rows).filter((r) => isLinkingDecision(r.decision)).length > 1) {
-      return t('v3.review.transfer.split.oneLinkOnly', {
-        paired: t(DECISION_LABELS.paired.triggerKey),
-        internal: t(DECISION_LABELS.internal.triggerKey),
-      });
+    // Its own sentence, because "give two of these an amount" is not what is
+    // wrong and a reader who has filled four rows would read it as the form
+    // failing to notice.
+    if (sameDestinationTwice(filledRows(rows))) {
+      return t('v3.review.transfer.split.oneDestinationOnly');
     }
     return t('v3.review.transfer.split.needTwo', {
       amount: qty(new Decimal(item.quantity).abs()),
@@ -691,7 +740,7 @@ export function splitConsequence(
       ? ` ${t('v3.review.transfer.split.balanceNew', { symbol: item.tokenSymbol })}`
       : internal.destination?.movesBalance
         ? ` ${t('v3.review.transfer.split.balanceMoves')}`
-        : ` ${t('v3.review.transfer.split.balanceUnchanged')}`;
+        : ` ${t('v3.review.transfer.split.balanceFeed')}`;
   return `${t('v3.review.transfer.split.summary', { clauses: clauses.join('. ') })}${balanceNote}`;
 }
 

@@ -60,6 +60,11 @@ export interface BackfillSummary {
   droppedDays: number;
   // Bars the price writer did not store, on any day a provider returned.
   droppedBars: number;
+  // The earliest day this run may have written a price for, or null when it
+  // wrote none. A price moves every day from it, so a rebuild sized from an
+  // edit widens to it (SC-1607). Taken from the days asked for of each token
+  // that wrote, which can only be earlier than the true first write.
+  earliestWrittenDay: Date | null;
   // Tokens we skipped entirely because they're inside an unpriceable
   // cooldown window from a previous failed backfill.
   skippedUnpriceable: number;
@@ -115,7 +120,7 @@ interface BackfillPlanEntry {
 
 @Service()
 export class BackfillHistoricalPricesUseCase {
-  // Class-field DI — see note in BalanceAtTimeService.ts.
+  // Class-field DI — see `.claude/rules/typedi-di.md`.
   private readonly backfillService = Container.get(HistoricalPriceBackfillService);
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
@@ -165,6 +170,7 @@ export class BackfillHistoricalPricesUseCase {
         providerMissing: 0,
         droppedDays: 0,
         droppedBars: 0,
+        earliestWrittenDay: null,
         skippedUnpriceable: 0,
         attemptsFailed: 0,
         skippedDueToLock: true,
@@ -190,8 +196,10 @@ export class BackfillHistoricalPricesUseCase {
     // Strategy: cross-product every token the user *has ever held*
     // (union of `holdings.token_id` with `holding_transactions.token_id`),
     // every currency in use and the FX baseline against every day in each
-    // one's window, MINUS the UTC days that already hold a price row against
-    // USD, whatever its granularity or source.
+    // one's window, MINUS the UTC days already covered against USD
+    // (`TokenPriceRepository.findPricedDayKeys`): today by any reading, a past
+    // day by its close or a last-hour reading, and a day older than seven days
+    // by any reading.
     //
     // Why not just tx-days? The rollup prices the portfolio at every
     // day in the lookback window, not just days the user transacted.
@@ -214,8 +222,8 @@ export class BackfillHistoricalPricesUseCase {
     // thousand rows.
     //   1. Every token the user has ever held (union of holdings
     //      + holding_transactions).
-    //   2. Existing price rows of any granularity in the lookback
-    //      window (so we can skip candidates we already priced).
+    //   2. The days in the lookback window already covered, so we skip
+    //      candidates we already priced.
     //   3. generate_series in JS for the date list.
     // Per-token lifetime, derived from `holding_coverage`. Lets the
     // cross-product below walk only the days where the user actually
@@ -410,6 +418,7 @@ export class BackfillHistoricalPricesUseCase {
       providerMissing: 0,
       droppedDays: 0,
       droppedBars: 0,
+      earliestWrittenDay: null,
       skippedUnpriceable,
       attemptsFailed: 0,
       durationMs: 0,
@@ -508,6 +517,11 @@ export class BackfillHistoricalPricesUseCase {
             // it did then. A dropped bar on a day nobody asked for does not.
             if (result.value.inserted > 0 || result.value.droppedDays > 0) {
               clearUnpriceable.push(tokenId);
+              for (const day of daysByToken.get(tokenId) ?? []) {
+                if (!summary.earliestWrittenDay || day < summary.earliestWrittenDay) {
+                  summary.earliestWrittenDay = day;
+                }
+              }
             } else if (result.value.attemptFailed) {
               // A run that never got an answer has established nothing.
               // Marking here is how a 400 from a malformed request took

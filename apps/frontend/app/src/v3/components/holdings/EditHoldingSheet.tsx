@@ -8,7 +8,13 @@ import { Input } from '@scani/ui/ui/input';
 import { AmountInput } from '@scani/ui/v3/components/AmountInput';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BALANCE_EDIT_SCALE, balanceEditWrites } from '../../lib/holdings';
+import {
+  BALANCE_EDIT_SCALE,
+  balanceEditWrites,
+  balanceFromEditor,
+  holdingOwes,
+  seedForEditor,
+} from '../../lib/holdings';
 import { Field } from '../form/Field';
 import { FormActions, FormSheet } from '../form/FormSheet';
 import { type HoldingEditCauseAnswer, useHoldingEditCause } from './HoldingEditCause';
@@ -51,16 +57,20 @@ export function EditHoldingSheet({
   const holdingLabel = holding.label ?? holding.token.symbol;
   // `amount` itself, never `String(...)` of a number: `String(4.013e-10)` is an
   // exponent the field's parser does not read (SC-567).
-  const [amount, setAmount] = useState(holding.amount);
+  // A loan or card shows what is owed, positive (SC-1640).
+  const owes = holdingOwes(holding);
+  const [amount, setAmount] = useState(() => seedForEditor(holding, holding.amount));
   const [label, setLabel] = useState(holding.label ?? '');
 
   // `balanceEditWrites` is what keeps opening and saving a dust balance from
   // writing a rounded figure over it (SC-567): no keystroke, no write.
-  const amountChanged = balanceEditWrites(holding.amount, amount);
+  const balance = balanceFromEditor(holding, amount);
+  const amountChanged = balanceEditWrites(holding.amount, balance);
   const nextLabel = label.trim() ? label.trim() : null;
   const labelChanged = showPot && nextLabel !== (holding.label ?? null);
-  const asksCause = amountChanged && manualEditNeedsCause(holding.token.typeCode);
-  const isOutflow = amountChanged && new Decimal(amount.trim()).lt(holding.amount);
+  // An owed edit is a correction, with nothing to ask (feeds, SC-1640 F2).
+  const asksCause = amountChanged && !owes && manualEditNeedsCause(holding.token.typeCode);
+  const isOutflow = amountChanged && new Decimal(balance).lt(holding.amount);
 
   const cause = useHoldingEditCause({
     holdingLabel,
@@ -68,9 +78,7 @@ export function EditHoldingSheet({
     tokenSymbol: holding.token.symbol,
     isOutflow,
     // What left, unsigned — the bound a stated fee has to fit inside (SC-857).
-    outflowQuantity: isOutflow
-      ? new Decimal(holding.amount).minus(amount.trim()).toString()
-      : undefined,
+    outflowQuantity: isOutflow ? new Decimal(holding.amount).minus(balance).toString() : undefined,
     defaultCause: holding.manualEditCause ?? null,
   });
 
@@ -83,9 +91,10 @@ export function EditHoldingSheet({
       return;
     }
     onSave({
-      ...(amountChanged ? { balance: amount.trim() } : {}),
+      ...(amountChanged ? { balance } : {}),
       ...(labelChanged ? { label: nextLabel } : {}),
       ...(asksCause ? cause.answer() : {}),
+      ...(amountChanged && owes ? { editCause: 'correction' as const } : {}),
     });
     onOpenChange(false);
   };
@@ -109,7 +118,7 @@ export function EditHoldingSheet({
       }
     >
       <Field
-        label={t('v3.holdings.amountFact.amount')}
+        label={owes ? t('v3.liabilities.owed') : t('v3.holdings.amountFact.amount')}
         htmlFor="holding-edit-amount"
         hint={holding.token.symbol}
       >

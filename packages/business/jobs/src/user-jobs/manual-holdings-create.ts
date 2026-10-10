@@ -29,13 +29,14 @@ const accountInputSchema = z.object({
   name: z.string().min(1),
   typeId: z.string().uuid(),
   institutionId: z.string().uuid().optional(),
+  wrapper: z.string().min(1).nullable().optional(),
 });
 
 export interface ManualHoldingsCreateJob extends UserJobBase {
   baseCurrencyId: string;
   institution?: { name: string; typeId: string; website?: string };
   accountId?: string;
-  account?: { name: string; typeId: string; institutionId?: string };
+  account?: { name: string; typeId: string; institutionId?: string; wrapper?: string | null };
   newHoldings: Array<{ tokenId: string; balance: string; label?: string }>;
   updateHoldings: Array<{ holdingId: string; balance: string }>;
   parentJobIdToStampOnSuccess?: string;

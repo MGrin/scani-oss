@@ -5,6 +5,7 @@ import { and, eq } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
 import { VaultRepository } from '../repositories/VaultRepository';
 import { VaultService } from '../services';
+import { holdingKindOf } from '../services/holdings/balance-sync-sources';
 
 const logger = createComponentLogger('use-case:delete-holding');
 
@@ -19,18 +20,14 @@ export interface DeleteHoldingOptions {
 }
 
 /**
- * Use case for deleting a holding
+ * Deletes a holding, or hides it (A5 #9).
  *
- * This use case:
- * - Validates holding ownership
- * - For blockchain-sourced holdings: marks them as hidden (soft delete)
- * - For manually created holdings: permanently deletes them
- * - Creates portfolio event for the deletion
- * - Returns deletion information
- *
- * Blockchain holdings are marked as hidden instead of deleted because they
- * are automatically recreated by the cron job that syncs wallet balances.
- * Hidden holdings are still updated by the cron but excluded from queries.
+ * A feed holding is hidden by its owner rather than deleted: its feed would
+ * bring it back as an empty row, and the evidence behind its history would be
+ * gone. The hide is the owner's, so no feed shows it again; the balance it was
+ * hidden at is kept, and a hidden holding that later holds more is named on the
+ * data-quality page. A person's snapshot is theirs, and deleting it removes it
+ * with its ledger.
  */
 @Service()
 export class DeleteHoldingUseCase {
@@ -72,14 +69,10 @@ export class DeleteHoldingUseCase {
           throw new Error('Holding not found');
         }
 
-        // If the holding is from blockchain, mark as hidden instead of deleting
-        if (holding.source === 'blockchain') {
+        if (holdingKindOf(holding) === 'feed') {
           await tx
             .update(schema.holdings)
-            .set({
-              isHidden: true,
-              hiddenBy: 'user',
-            })
+            .set({ isHidden: true, hiddenBy: 'user', hiddenBalance: holding.balance })
             .where(eq(schema.holdings.id, holdingId));
 
           logger.info(
@@ -89,7 +82,7 @@ export class DeleteHoldingUseCase {
               tokenId: holding.tokenId,
               source: holding.source,
             },
-            'Blockchain holding marked as hidden'
+            'Feed holding hidden by its owner'
           );
 
           return {
@@ -99,7 +92,6 @@ export class DeleteHoldingUseCase {
           };
         }
 
-        // For manual holdings, permanently delete
         const [deletedHolding] = await tx
           .delete(schema.holdings)
           .where(and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId)))
@@ -123,7 +115,7 @@ export class DeleteHoldingUseCase {
             tokenId: deletedHolding.tokenId,
             source: deletedHolding.source,
           },
-          'Manual holding deleted successfully'
+          'Snapshot holding deleted'
         );
 
         return {

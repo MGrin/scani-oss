@@ -25,6 +25,7 @@ function recordingUtils(): { utils: Utils; calls: string[] } {
     'groups',
     'portfolio',
     'transactions',
+    'liabilities',
   ];
   const utils = Object.fromEntries(names.map((n) => [n, router(n)])) as unknown as Utils;
   return { utils, calls };

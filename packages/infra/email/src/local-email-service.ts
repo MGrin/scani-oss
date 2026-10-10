@@ -26,6 +26,11 @@ export class LocalEmailService extends EmailService {
     await this.delegate.send({ ...message, from }, signal);
   }
 
+  /** False when nothing is configured and mail only reaches the log (SC-1647). */
+  get sendsMail(): boolean {
+    return !(this.delegate instanceof LoggingEmailService);
+  }
+
   protected pickDelegate(): EmailService {
     const env = loadEmailConfig();
     if (env.FASTMAIL_API_TOKEN) {

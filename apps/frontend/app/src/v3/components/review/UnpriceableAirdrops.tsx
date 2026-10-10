@@ -1,13 +1,13 @@
 import { balanceDecimals } from '@scani/shared';
 import { userFacingMessage } from '@scani/ui/lib/user-facing-error';
 import { Button } from '@scani/ui/ui/button';
-import { ToastAction } from '@scani/ui/ui/toast';
 import { useToast } from '@scani/ui/ui/use-toast';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { FormSheet } from '../form/FormSheet';
+import { UndoHide } from '../holdings/UndoHide';
 import { PickRow } from '../membership/PickRow';
 
 /**
@@ -71,7 +71,7 @@ export function UnpriceableAirdropsSheet({ onClose }: { onClose: () => void }) {
     if (toHide.length > 0) {
       try {
         const result = await hide.mutateAsync({ ids: toHide.map((airdrop) => airdrop.holdingId) });
-        hidden = result.deletedIds;
+        hidden = result.hiddenIds;
         if (result.failedIds.length > 0) {
           problem = t('v3.review.unpriceable.partlyFailed', { count: result.failedIds.length });
         }
@@ -154,43 +154,5 @@ export function UnpriceableAirdropsSheet({ onClose }: { onClose: () => void }) {
         ))}
       </ul>
     </FormSheet>
-  );
-}
-
-/** "Undo" on the toast: every token it hid, back on the owner's lists. */
-function UndoHide({
-  hiddenIds,
-  onWritten,
-}: {
-  hiddenIds: string[];
-  onWritten: () => Promise<unknown>;
-}) {
-  const { t } = useTranslation();
-  const { toast } = useToast();
-  const restore = trpc.holdings.restore.useMutation();
-  const [pending, setPending] = useState(false);
-  return (
-    <ToastAction
-      altText={t('v3.review.unpriceable.undo')}
-      disabled={pending}
-      onClick={async () => {
-        setPending(true);
-        try {
-          for (const id of hiddenIds) await restore.mutateAsync({ id });
-          toast({ title: t('v3.review.unpriceable.toast.restored') });
-        } catch (error) {
-          toast({
-            title: t('v3.review.unpriceable.toast.restoreFailed'),
-            description: userFacingMessage(error) ?? undefined,
-            variant: 'destructive',
-          });
-        } finally {
-          await onWritten();
-          setPending(false);
-        }
-      }}
-    >
-      {t('v3.review.unpriceable.undo')}
-    </ToastAction>
   );
 }

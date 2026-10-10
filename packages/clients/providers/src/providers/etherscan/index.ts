@@ -612,6 +612,29 @@ export class EtherscanProvider
     return block;
   }
 
+  /** A rate limit throws from `callJson`; any other unreadable answer walks from block 0. */
+  protected override async fetchBlockAtOrBefore(
+    chain: EvmChainConfig,
+    at: Date,
+    apiKey: string
+  ): Promise<number | null> {
+    const url = this.buildUrl(chain.chainId, {
+      module: 'block',
+      action: 'getblocknobytime',
+      timestamp: String(Math.floor(at.getTime() / 1000)),
+      closest: 'before',
+      apikey: apiKey,
+    });
+    const data = await this.callJson<{ status?: string; result?: unknown }>(url);
+    const block = data?.status === '1' ? Number(data.result) : Number.NaN;
+    if (Number.isInteger(block) && block >= 0) return block;
+    this.logger.warn(
+      { chainId: chain.chainId, at: at.toISOString(), answer: data?.result },
+      'Block before `since` unreadable; walking from block 0'
+    );
+    return null;
+  }
+
   // ============================================================
   // Internals — balances
   // ============================================================

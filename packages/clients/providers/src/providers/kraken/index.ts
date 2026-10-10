@@ -33,7 +33,7 @@
 
 import type { NewToken, Token } from '@scani/db/schema';
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
-import { createOutflowLimiter } from '@scani/rate-limiter';
+import { createOutflowLimiter, type OutflowRateLimiter } from '@scani/rate-limiter';
 import Decimal from 'decimal.js';
 import {
   BaseCexProvider,
@@ -237,7 +237,10 @@ export class KrakenProvider
 
   protected readonly logger: CustomLogger;
 
-  constructor(private readonly api: KrakenApiService) {
+  constructor(
+    private readonly api: KrakenApiService,
+    private readonly publicLimiter?: OutflowRateLimiter
+  ) {
     super();
     this.logger = createComponentLogger('provider:kraken');
   }
@@ -542,7 +545,7 @@ export class KrakenProvider
   }
 
   async fetchHistoricalPrice(t: Token, at: Date, ctx: ProviderContext): Promise<PriceQuote | null> {
-    return fetchKrakenHistoricalPrice(t, at, ctx);
+    return fetchKrakenHistoricalPrice(t, at, ctx, this.publicLimiter);
   }
 
   // ============================================================
@@ -584,7 +587,18 @@ export const krakenFactory: ProviderFactory = async (deps) => {
     description: 'Kraken private API: 1 req / 2s per API key',
   });
   const api = new KrakenApiServiceClass(KRAKEN_BASE_URL, registered);
-  return new KrakenProvider(api);
+  const publicLimiter = deps.rateLimiterRegistry.register({
+    namespace: 'kraken-public',
+    limiter: createOutflowLimiter({
+      maxRequests: 1,
+      windowMs: 1000,
+      redis: deps.redis ?? undefined,
+      namespace: 'kraken-public',
+    }),
+    registeredFrom: 'providers/kraken',
+    description: 'Kraken public OHLC: 1 req / 1s',
+  });
+  return new KrakenProvider(api, publicLimiter);
 };
 
 export type { KrakenLedgerEntry } from './api-service';

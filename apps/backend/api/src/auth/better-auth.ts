@@ -1,26 +1,39 @@
+import { passkey } from '@better-auth/passkey';
 import { loadCloudClientConfig } from '@scani/cloud-client';
 import { EmailFacade } from '@scani/cloud-client/facades/email-facade';
 import { isNodeEnvProduction } from '@scani/config';
 import { db } from '@scani/db';
 import {
+  oauthAccessTokens,
+  oauthClientAssertions,
+  oauthClientResources,
+  oauthClients,
+  oauthConsents,
+  oauthRefreshTokens,
+  oauthResources,
   tokens,
   tokenTypes,
   userAccounts,
+  userPasskeys,
   userSessions,
   users,
+  userTwoFactors,
   userVerifications,
 } from '@scani/db/schema';
 import { SCANI_BRAND } from '@scani/email';
 import { createComponentLogger, pseudonymizeId } from '@scani/logging';
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
-import { emailOTP, magicLink } from 'better-auth/plugins';
+import { emailOTP, magicLink, twoFactor } from 'better-auth/plugins';
 import { and, eq, isNull } from 'drizzle-orm';
 import { Container } from 'typedi';
+import { oauthConnectorPlugin } from './oauth-connector';
+import { passkeyRelyingParty } from './passkey-config';
 import { languageFromAuthContext } from './request-language';
 import { screenshotBotPlugin } from './screenshot-bot-plugin';
 import { isSignInAllowed, SignInRefused } from './sign-in-guard';
 import { recordSignupSource, signupSourceFromAuthContext } from './signup-source';
+import { twoFactorGatePlugin } from './two-factor-gate';
 
 const authLogger = createComponentLogger('auth');
 
@@ -69,6 +82,9 @@ async function getDefaultBaseCurrencyId(): Promise<string | null> {
  */
 export const CLIENT_IP_HEADER = 'x-scani-client-ip';
 
+const TRUST_DEVICE_MAX_AGE = 30 * 24 * 60 * 60;
+const TWO_FACTOR_COOKIE_MAX_AGE = 10 * 60;
+
 export function createBetterAuth(opts: {
   baseURL: string;
   appUrl?: string;
@@ -116,6 +132,15 @@ export function createBetterAuth(opts: {
         session: userSessions,
         account: userAccounts,
         verification: userVerifications,
+        twoFactor: userTwoFactors,
+        passkey: userPasskeys,
+        oauthClient: oauthClients,
+        oauthResource: oauthResources,
+        oauthClientResource: oauthClientResources,
+        oauthRefreshToken: oauthRefreshTokens,
+        oauthAccessToken: oauthAccessTokens,
+        oauthConsent: oauthConsents,
+        oauthClientAssertion: oauthClientAssertions,
       },
     }),
     emailAndPassword: {
@@ -375,7 +400,27 @@ export function createBetterAuth(opts: {
           }
         },
       }),
+      // SC-1646. No otpOptions: an emailed code as the second factor would be
+      // the first factor again.
+      twoFactor({
+        issuer: 'Scani',
+        allowPasswordless: true,
+        backupCodeOptions: { amount: 10 },
+        trustDeviceMaxAge: TRUST_DEVICE_MAX_AGE,
+        twoFactorCookieMaxAge: TWO_FACTOR_COOKIE_MAX_AGE,
+      }),
+      twoFactorGatePlugin({
+        appUrl: opts.appUrl ?? opts.baseURL,
+        trustDeviceMaxAge: TRUST_DEVICE_MAX_AGE,
+        twoFactorCookieMaxAge: TWO_FACTOR_COOKIE_MAX_AGE,
+      }),
+      passkey({
+        rpName: 'Scani',
+        ...passkeyRelyingParty(opts.appUrl ?? opts.baseURL),
+        authenticatorSelection: { residentKey: 'preferred', userVerification: 'required' },
+      }),
       screenshotBotPlugin({ secret: opts.screenshotBotSecret }),
+      oauthConnectorPlugin({ apiBaseUrl: opts.baseURL, appUrl: opts.appUrl ?? opts.baseURL }),
     ],
   });
 }

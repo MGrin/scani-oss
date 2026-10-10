@@ -4,6 +4,7 @@ import { protectedProcedure, router } from '../trpc';
 
 export const accountTypesRouter = router({
   getAll: protectedProcedure.query(async () => {
-    return await Container.get(AccountTypeRepository).findAll();
+    // An inactive type is not offered.
+    return await Container.get(AccountTypeRepository).findAll({ isActive: true });
   }),
 });

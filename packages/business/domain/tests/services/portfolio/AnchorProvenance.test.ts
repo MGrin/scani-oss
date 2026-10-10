@@ -7,10 +7,12 @@ import { AccountRepository } from '../../../src/repositories/AccountRepository';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { TokenRepository } from '../../../src/repositories/TokenRepository';
 import { UserRepository } from '../../../src/repositories/UserRepository';
+import { InTransitService } from '../../../src/services/portfolio/InTransitService';
 import { PortfolioValuationAtTimeService } from '../../../src/services/portfolio/PortfolioValuationAtTimeService';
 import { BalanceAtTimeService } from '../../../src/services/pricing/BalanceAtTimeService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub } from '../../../test/helpers/price-series';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -28,7 +30,12 @@ restoreContainerAfterAll();
  * code — the totals were never wrong. What was missing is a count and a
  * timestamp, and only asserting those fails before the fix.
  *
- * The discriminating case is `oldestAnchorAt`. Production holds both extremes
+ * Since A5 PR-2 the engine answers every past balance, and a forward walk from
+ * an earlier reading is its ordinary method rather than a weak one, so the
+ * stale-anchor count is always 0 and only the per-holding provenance remains
+ * (D-14). The paragraph below describes the old walk.
+ *
+ * The discriminating case was `oldestAnchorAt`. Production holds both extremes
  * in one portfolio — a holding anchored seconds back and another months back
  * (SC-245) — and an implementation that recorded the FIRST backward
  * anchor it saw, or the most recent one, would satisfy every other assertion
@@ -69,11 +76,12 @@ function makeService(holdings: Fixture[]): PortfolioValuationAtTimeService {
     getBalance: async (holdingId: string) => {
       const h = holdings.find((x) => x.holdingId === holdingId);
       if (!h) throw new Error(`no fixture for ${holdingId}`);
-      return { balance: new Decimal(10), anchor: h.anchor, anchorAt: h.anchorAt, txApplied: 0 };
+      return { balance: new Decimal(10), anchor: h.anchor, anchorAt: h.anchorAt };
     },
   } as unknown as BalanceAtTimeService);
-  Container.set(PriceGraphService, {
-    convert: async (amount: Decimal, fromTokenId: string) => {
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal, fromTokenId: string) => {
       const h = holdings.find((x) => x.tokenId === fromTokenId);
       return {
         amount: amount.mul(2),
@@ -82,22 +90,25 @@ function makeService(holdings: Fixture[]): PortfolioValuationAtTimeService {
         path: 'direct',
         stale: h?.priceStale ?? false,
       };
-    },
-  } as unknown as PriceGraphService);
+    })
+  );
   Container.set(UserRepository, {} as unknown as UserRepository);
   Container.set(TokenRepository, {
     findNeverPricedInCooldownTokenIds: async () => new Set<string>(),
   } as unknown as TokenRepository);
+  // These portfolios hold no transfer in transit; the real read needs uuid ids.
+  Container.set(InTransitService, { amountsAt: async () => [] } as unknown as InTransitService);
   const instance = new PortfolioValuationAtTimeService();
   Container.set(PortfolioValuationAtTimeService, instance);
   return instance;
 }
 
 describe('anchor provenance reaches the result', () => {
-  test('oldestAnchorAt is the OLDEST backward anchor, not the first seen', async () => {
-    // Ordered so first-seen (54s) and oldest (71d) differ. An implementation
-    // that took whichever it met first would return SECONDS_BACK and read as
-    // "anchored a minute ago" on a portfolio anchored ten weeks ago.
+  test('an anchor before the date is not a stale anchor (A5 D-14)', async () => {
+    // The old walk reached `observation-before` only when nothing at or after
+    // the date existed, so it was extrapolation. The engine walks FORWARD from
+    // the latest reading on every ordinary day, so counting it would mark
+    // every day as degraded. A balance's staleness is A4's to report.
     const svc = makeService([
       {
         holdingId: 'h-recent',
@@ -106,36 +117,7 @@ describe('anchor provenance reaches the result', () => {
         anchorAt: SECONDS_BACK,
       },
       { holdingId: 'h-old', tokenId: 't2', anchor: 'observation-before', anchorAt: DAYS_BACK },
-    ]);
-
-    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
-
-    expect(r.holdingsStaleAnchored).toBe(2);
-    expect(r.oldestAnchorAt?.toISOString()).toBe(DAYS_BACK.toISOString());
-  });
-
-  test('only observation-before counts; a forward anchor is not a weak one', async () => {
-    // `holdings` and `observation-after` both anchor at or after the date and
-    // walk BACKWARD to it, which is the strong direction. Counting them would
-    // mark every ordinary day as degraded and make the number meaningless.
-    const svc = makeService([
-      { holdingId: 'h-cur', tokenId: 't1', anchor: 'holdings', anchorAt: AT },
-      { holdingId: 'h-aft', tokenId: 't2', anchor: 'observation-after', anchorAt: AT },
-      { holdingId: 'h-bef', tokenId: 't3', anchor: 'observation-before', anchorAt: DAYS_BACK },
-    ]);
-
-    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
-
-    expect(r.holdingsStaleAnchored).toBe(1);
-    expect(r.oldestAnchorAt?.toISOString()).toBe(DAYS_BACK.toISOString());
-  });
-
-  test('none backward-anchored reports a counted zero, not null', async () => {
-    // `0` and "not recorded" are different claims and the column that stores
-    // this is nullable so they stay different. The service always counts, so
-    // it must always produce a number.
-    const svc = makeService([
-      { holdingId: 'h-cur', tokenId: 't1', anchor: 'holdings', anchorAt: AT },
+      { holdingId: 'h-aft', tokenId: 't3', anchor: 'observation-after', anchorAt: AT },
     ]);
 
     const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
@@ -145,13 +127,32 @@ describe('anchor provenance reaches the result', () => {
     expect(r.coverageQuality).toBe('full');
   });
 
-  test('a stale anchor and a stale price are counted apart', async () => {
-    // Both land the day on 'partial'. Before SC-249 that single letter was
-    // the whole signal, so the two were indistinguishable — and their
-    // remedies are not: a stale price wants a quote, a stale anchor wants an
-    // observation.
+  test('none backward-anchored reports a counted zero, not null', async () => {
+    // `0` and "not recorded" are different claims and the column that stores
+    // this is nullable so they stay different. The service always counts, so
+    // it must always produce a number.
     const svc = makeService([
-      { holdingId: 'h-price', tokenId: 't1', anchor: 'holdings', anchorAt: AT, priceStale: true },
+      { holdingId: 'h-cur', tokenId: 't1', anchor: 'observation-after', anchorAt: AT },
+    ]);
+
+    const r = await svc.getPortfolioValue('u', AT, USD, { tx: undefined });
+
+    expect(r.holdingsStaleAnchored).toBe(0);
+    expect(r.oldestAnchorAt).toBeNull();
+    expect(r.coverageQuality).toBe('full');
+  });
+
+  test('a stale price still lands the day on partial; an anchor before it does not', async () => {
+    // A stale price wants a quote, and it is still the one signal that
+    // degrades the day (SC-249). The before-anchor beside it adds nothing.
+    const svc = makeService([
+      {
+        holdingId: 'h-price',
+        tokenId: 't1',
+        anchor: 'observation-after',
+        anchorAt: AT,
+        priceStale: true,
+      },
       { holdingId: 'h-anch', tokenId: 't2', anchor: 'observation-before', anchorAt: DAYS_BACK },
     ]);
 
@@ -159,7 +160,7 @@ describe('anchor provenance reaches the result', () => {
 
     expect(r.coverageQuality).toBe('partial');
     expect(r.holdingsStalePriced).toBe(1);
-    expect(r.holdingsStaleAnchored).toBe(1);
+    expect(r.holdingsStaleAnchored).toBe(0);
   });
 
   test('every per-holding row carries its own anchorAt', async () => {

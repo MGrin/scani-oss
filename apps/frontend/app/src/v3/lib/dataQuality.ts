@@ -33,6 +33,7 @@ export const DATA_QUALITY_KINDS = [
   'noPriceSource',
   'negativeOpening',
   'noCoverage',
+  'restoredUnmatched',
 ] as const;
 
 export type DataQualityKind = (typeof DATA_QUALITY_KINDS)[number];
@@ -64,6 +65,7 @@ const DATA_QUALITY_OPTION_KEYS: Record<DataQualityKind, UiTranslationKey> = {
   noPriceSource: 'ui.dataView.holdings.qualityOption.noPriceSource',
   negativeOpening: 'ui.dataView.holdings.qualityOption.negativeOpening',
   noCoverage: 'ui.dataView.holdings.qualityOption.noCoverage',
+  restoredUnmatched: 'ui.dataView.holdings.qualityOption.restoredUnmatched',
 };
 
 /** The holding ids behind each kind, as the report hands them over. Partial

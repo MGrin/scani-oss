@@ -52,7 +52,7 @@ interface V3NavBadgeProps {
  * reason this is two spans rather than one `Math.min`: a `99+` that is also
  * what assistive tech announces would trade a layout bound for a lost fact.
  *
- * For a sighted reader the number is on the home screen, whose `AttentionRow`
+ * For a sighted reader the number is on the home screen, whose `NeedsYou`
  * spells it out in a sentence that wraps, and on `/review` itself. Neither is
  * capped and neither has a width to run out of.
  *

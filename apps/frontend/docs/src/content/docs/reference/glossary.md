@@ -394,7 +394,7 @@ An OHLC (open / high / low / close) bar at a fixed time interval.
 ### Cross rate
 A price between two non-USD currencies computed via a common
 hub. *In Scani:* the [price graph](/concepts/pricing/)'s one-hop
-and two-hop routing.
+routing.
 
 ### FX
 *Foreign Exchange.* Conversion between fiat currencies. *In
@@ -427,9 +427,11 @@ The current market price for immediate delivery. *In Scani:*
 intraday prices are spot-equivalents.
 
 ### Stale price
-A price older than the granularity-appropriate staleness cap.
-*In Scani:* the `stale` flag on `PriceGraphConversion`; folded
-into [coverage quality](#coverage-quality).
+A price older than its asset class's staleness horizon.
+*In Scani:* the `stale` flag on the engine's `PriceAt` answer, set
+when any leg of the route is past its horizon (48 h for crypto,
+120 h for fiat and stocks, none for manual prices); folded into
+[coverage quality](#coverage-quality).
 
 ---
 
@@ -700,12 +702,17 @@ Source: `CostBasisService`, `DisposalOutcome`.
   The `fee` answer. The distinction from `retained` is the whole
   point: `retained` says the money is still the user's somewhere,
   and this says it is gone and nobody bought anything with it.
+- `derivative_loss` — **In the UI:** "A loss on a derivatives
+  position, paid from this balance. Its cost is booked as a realized
+  loss." A `realized_pnl` loss (SC-1563): its units leave at zero
+  proceeds and their cost is realized, as a fee's is, but it is a loss
+  on a position rather than a charge.
 
 ### The words for a disposal
 
 **In the UI:** nouns "sale", "swap", "withdrawal", "transfer",
-"disposal"; verbs "Sold", "Swapped", "Withdrew", "Transferred
-out", "Disposed".
+"derivatives loss", "disposal"; verbs "Sold", "Swapped", "Withdrew",
+"Transferred out", "Lost on derivatives", "Disposed".
 **Means:** the raw transaction kind, deliberately **not** collapsed
 into "sold".
 **Careful:** whether a withdrawal is a sale is a question the app
@@ -766,17 +773,19 @@ are user-facing strings that no translation currently reaches.
 
 ### Anchor, and stale-anchored {#anchor-balance}
 
-**Means:** a past balance is not stored; it is reconstructed by
-walking transactions from the most trustworthy known balance. The
-anchor is which balance that walk started from.
+**Means:** a past balance is not stored; it is reconstructed from the
+holding's readings and its ledger. The anchor is the reading that
+reconstruction counted from.
 Source: `BalanceAtTimeService`.
 
-- `observation-after` — the nearest recorded balance *after* the
-  date, walked backwards. Best.
-- `holdings` — today's balance, walked backwards.
-- `observation-before` — the nearest recorded balance *before* the
-  date, walked forwards. Last resort, and the one counted as
-  **stale-anchored**.
+- `observation-before` — the latest reading at or *before* the date,
+  with the ledger entries since it added. The usual case.
+- `observation-after` — the first reading *after* the date, walked
+  backwards. Used only before a holding's first reading.
+
+Since October 2026 no reconstruction is counted **stale-anchored**:
+walking forward from a reading is the normal case, not a stale one, so
+the count is always 0.
 
 **In the UI:** the exported column "Holdings anchored to a stale
 balance".

@@ -56,6 +56,12 @@ describe('YahooFinanceProvider canPrice', () => {
     expect(p.canPrice(makeMockToken({ id: '5', symbol: 'JPY' }))).toBe(false);
   });
 
+  // Frankfurter no longer serves BGN (the ECB dropped it for the euro on
+  // 2026-01-01), so declining it here would leave it with no price at all.
+  test('accepts BGN, which Frankfurter no longer serves', () => {
+    expect(p.canPrice(makeMockToken({ id: '1', symbol: 'BGN' }))).toBe(true);
+  });
+
   test('accepts stock-style tickers with and without exchange suffixes', () => {
     expect(p.canPrice(makeMockToken({ id: '1', symbol: 'AAPL' }))).toBe(true);
     expect(p.canPrice(makeMockToken({ id: '2', symbol: 'XEQT.TO' }))).toBe(true);
@@ -122,8 +128,11 @@ describe('YahooFinanceProvider fetchHistoricalPrice', () => {
           chart: {
             result: [
               {
-                meta: { currency: isFx ? 'USD' : 'CAD' },
-                timestamp: [ts],
+                meta: {
+                  currency: isFx ? 'USD' : 'CAD',
+                  exchangeTimezoneName: isFx ? 'Europe/London' : 'America/Toronto',
+                },
+                timestamp: [isFx ? Math.floor(Date.parse('2026-03-15T00:00:00Z') / 1000) : ts],
                 indicators: { quote: [{ close: [isFx ? 0.74 : 30] }] },
               },
             ],

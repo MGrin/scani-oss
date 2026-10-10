@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import { jobLabelFor } from '../../lib/job-labels';
 import {
   isJobRunning,
@@ -78,6 +79,7 @@ const RETRY_UNAVAILABLE_KEYS: Record<string, string> = {
 const SENTENCE_SAYS_IT = new Set(['never_delivered', 'cancelled', 'unrecoverable']);
 
 export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
+  useRelativeTimeTick();
   const { t } = useTranslation();
   const { label, icon: Icon } = jobLabelFor(t, job.jobName);
   const identity = { jobId: job.jobId, jobName: job.jobName, createdAt: job.createdAt };

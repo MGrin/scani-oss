@@ -1,13 +1,8 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { HoldingBalanceObservation, NewHoldingBalanceObservation } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, desc, eq, getTableColumns, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
-
-export type BalanceReading = Pick<
-  HoldingBalanceObservation,
-  'observedAt' | 'balance' | 'gapReview'
->;
 
 /**
  * One consecutive observation pair, with everything needed to decide whether
@@ -259,122 +254,6 @@ export class HoldingBalanceObservationRepository extends BaseRepository<
       this.logger.error(
         { holdingId, at, error: error instanceof Error ? error.message : error },
         'Failed to find observation at or before'
-      );
-      throw error;
-    }
-  }
-
-  // Every observation BalanceAtTimeService can read for these instants, per
-  // holding and time-ordered: the first one, and the nearest at-or-before and
-  // at-or-after each instant, with any rows tied on a chosen timestamp. Its
-  // scans answer the same over this as over the whole history, which the
-  // rollup used to prefetch for every 30-day chunk: 112k rows on the portfolio
-  // that took the worker's memory to zero (SC-1283).
-  async findAnchorsForInstants(
-    holdingIds: string[],
-    instants: Date[],
-    transaction?: DatabaseTransaction
-  ): Promise<Map<string, HoldingBalanceObservation[]>> {
-    const out = new Map<string, HoldingBalanceObservation[]>();
-    if (holdingIds.length === 0) return out;
-    for (const id of holdingIds) out.set(id, []);
-    try {
-      const database = this.getDb(transaction);
-      const obs = schema.holdingBalanceObservations;
-      const ids = sql`ARRAY[${sql.join(
-        holdingIds.map((id) => sql`${id}`),
-        sql`, `
-      )}]::uuid[]`;
-      const ats =
-        instants.length === 0
-          ? sql`ARRAY[]::timestamptz[]`
-          : sql`ARRAY[${sql.join(
-              instants.map((at) => sql`${at.toISOString()}`),
-              sql`, `
-            )}]::timestamptz[]`;
-      // Each lateral returns the chosen rows themselves, ties included (WITH
-      // TIES), so nothing is looked up a second time. Re-finding them through
-      // `(holding_id, observed_at) IN (...)` cost 578 ms and 22k buffers for
-      // 60 holdings x 31 instants in production (SC-1516).
-      const raw = await database.execute(sql`
-        WITH h AS (SELECT unnest(${ids}) AS id), d AS (SELECT unnest(${ats}) AS at),
-        picked AS (
-          SELECT f.* FROM h CROSS JOIN LATERAL (
-            SELECT o.* FROM holding_balance_observations o
-            WHERE o.holding_id = h.id
-            ORDER BY o.observed_at ASC FETCH FIRST 1 ROWS WITH TIES) f
-          UNION ALL
-          SELECT a.* FROM h CROSS JOIN d CROSS JOIN LATERAL (
-            SELECT o.* FROM holding_balance_observations o
-            WHERE o.holding_id = h.id AND o.observed_at >= d.at
-            ORDER BY o.observed_at ASC FETCH FIRST 1 ROWS WITH TIES) a
-          UNION ALL
-          SELECT b.* FROM h CROSS JOIN d CROSS JOIN LATERAL (
-            SELECT o.* FROM holding_balance_observations o
-            WHERE o.holding_id = h.id AND o.observed_at <= d.at
-            ORDER BY o.observed_at DESC FETCH FIRST 1 ROWS WITH TIES) b
-        )
-        SELECT DISTINCT ON (observed_at, id) * FROM picked ORDER BY observed_at, id`);
-      const columns = Object.entries(getTableColumns(obs));
-      for (const r of raw as unknown as Record<string, unknown>[]) {
-        const row = Object.fromEntries(
-          columns.map(([key, column]) => {
-            const value = r[column.name];
-            return [
-              key,
-              value === null || value === undefined ? null : column.mapFromDriverValue(value),
-            ];
-          })
-        ) as HoldingBalanceObservation;
-        out.get(row.holdingId)?.push(row);
-      }
-      return out;
-    } catch (error) {
-      this.logger.error(
-        {
-          count: holdingIds.length,
-          instants: instants.length,
-          error: error instanceof Error ? error.message : error,
-        },
-        'Failed anchor-fetch observations for holdings'
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * Every reading for any of `holdingIds`, oldest first, grouped by holding,
-   * carrying only what a balance-change row is built from. Every reading, not
-   * the rollup's anchors: a chunk that saw fewer readings saw different gaps
-   * (SC-1470). Three columns, not the row, because this is the full history
-   * SC-1283 stopped the rollup from holding.
-   */
-  async findReadingsForHoldings(
-    holdingIds: string[],
-    transaction?: DatabaseTransaction
-  ): Promise<Map<string, BalanceReading[]>> {
-    const out = new Map<string, BalanceReading[]>();
-    if (holdingIds.length === 0) return out;
-    try {
-      const database = this.getDb(transaction);
-      const t = schema.holdingBalanceObservations;
-      const results = await database
-        .select({
-          holdingId: t.holdingId,
-          observedAt: t.observedAt,
-          balance: t.balance,
-          gapReview: t.gapReview,
-        })
-        .from(t)
-        .where(inArray(t.holdingId, holdingIds))
-        .orderBy(asc(t.observedAt));
-      for (const id of holdingIds) out.set(id, []);
-      for (const { holdingId, ...reading } of results) out.get(holdingId)?.push(reading);
-      return out;
-    } catch (error) {
-      this.logger.error(
-        { count: holdingIds.length, error: error instanceof Error ? error.message : error },
-        'Failed bulk-fetch observations for holdings'
       );
       throw error;
     }

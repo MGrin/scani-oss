@@ -2,14 +2,16 @@ import type { DatabaseTransaction } from '@scani/db';
 import type { CoverageQuality } from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import type { PriceAsk } from '../../engine/types';
+import { coverageQualityOf } from '../../lib/coverage-quality';
 import { holdingCountsInTotal } from '../../lib/holding-inclusion';
 import { AccountRepository } from '../../repositories/AccountRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { UserRepository } from '../../repositories/UserRepository';
 import { type BalanceAtTimeCaches, BalanceAtTimeService } from '../pricing/BalanceAtTimeService';
-import { PriceGraphService } from '../pricing/PriceGraphService';
-import type { PriceLookup } from '../pricing/PriceLookup';
+import { PriceReader, type PriceSeries } from '../pricing/PriceReader';
+import { InTransitService, type TransitAmount } from './InTransitService';
 
 // Scope for per-entity portfolio queries — the same valuation
 // pipeline used for the user-wide chart now also drives the
@@ -44,8 +46,8 @@ interface PortfolioValueAtTimePerHolding {
    */
   unpriceable: boolean;
   /**
-   * The price that produced `valueInBase` is older than the
-   * granularity-appropriate freshness window (SC-151). The value is still
+   * The price that produced `valueInBase` is past its asset class's
+   * staleness horizon (`STALENESS_HORIZON_MS`, SC-151). The value is still
    * counted — see the note on `holdingsStalePriced` — but it is not a
    * quote from the day it is presented as, and `priceEffectiveAt` says
    * from when it actually is.
@@ -61,13 +63,15 @@ interface PortfolioValueAtTimePerHolding {
    * a measurement, and this says so.
    */
   balanceBeforeRecords: boolean;
-  /**
-   * Part of `balance` was interpolated across a gap between two balance
-   * observations that the ledger does not explain (SC-475 fault B). The
-   * number is a straight line drawn between two measurements rather than a
-   * reconstruction from events, and this says so.
-   */
-  balanceInterpolated: boolean;
+}
+
+/** Money answered `internal` to a provider-fed holding and in neither balance at `at` (SC-1675). */
+export interface TransitAtTime {
+  outflowId: string;
+  destinationHoldingId: string;
+  tokenId: string;
+  quantity: Decimal;
+  valueInBase: Decimal | null;
 }
 
 export interface PortfolioValueAtTimeResult {
@@ -135,64 +139,41 @@ export interface PortfolioValueAtTimeResult {
    */
   holdingsBeforeRecords: number;
   /**
-   * Of `holdingsWithKnownValue`, how many had part of their balance
-   * interpolated across an unexplained gap between two observations
-   * (SC-475 fault B).
-   *
-   * Deliberately does NOT feed `coverageQuality`. Interpolating is an
-   * improvement on the cliff it replaces — the alternative put ten weeks of
-   * drift on one day — and downgrading every day of every sparsely-observed
-   * holding would saturate a bucket that is already saturated
-   * (`daysNotFullyCovered` reads every day of the window on a real account).
-   * The count is
-   * here so that a number partly drawn rather than measured can be told
-   * apart later; nothing surfaces it yet, and that is the point of writing
-   * it down now rather than when someone needs it.
+   * Always 0 since A5 PR-2: the engine draws no line across an unexplained
+   * gap between two readings (SC-475 fault B). Kept while the stored column
+   * is (SC-1624).
    */
   holdingsInterpolated: number;
   perHolding: PortfolioValueAtTimePerHolding[];
+  /** User scope only: an account or institution scope carries none, the money being in neither. */
+  inTransit?: TransitAtTime[];
 }
 
-// Heuristic thresholds for coverage_quality, applied to the *priceable*
-// denominator (see `holdingsUnpriceable`):
-//   full      = ≥ 95% of priceable holdings priced, anchor=='holdings'|'observation-after'
-//   partial   = ≥ 95% priced but some via a stale anchor or a stale price
-//   estimated = 50%–95% priced
-//   unknown   = < 50% priced
-//
-// The 5% slack was originally the whole defence against wallet-airdrop
-// dust, and it was not enough: an account with 14 spam tokens out of 69
-// sat permanently at 80%, i.e. 'estimated', while every asset the user
-// actually owns was priced (SC-146). Dust is now removed from the
-// denominator outright rather than absorbed by a tolerance, and the
-// slack covers what it was always meant to — a genuinely priceable
-// token missing today's quote.
-const COVERAGE_FULL_THRESHOLD = 0.95;
-const COVERAGE_PARTIAL_THRESHOLD = 0.5;
-
 // Computes portfolio value for a user at any past time T, in any display
-// currency. Walks per-holding balance-at-time, prices each balance through
-// the price graph, aggregates.
+// currency. Walks per-holding balance-at-time, prices each balance from
+// one price series (`priceAt`, D-13), aggregates.
 //
 // The result carries coverage_quality so the caller (chart renderer, rollup
 // cron) can honestly represent data completeness without fabricating numbers
 // for missing days.
 @Service()
 export class PortfolioValuationAtTimeService {
-  // Class-field DI — see note in BalanceAtTimeService.ts.
+  // Class-field DI — see `.claude/rules/typedi-di.md`.
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly balanceAtTimeService = Container.get(BalanceAtTimeService);
-  private readonly priceGraphService = Container.get(PriceGraphService);
+  private readonly priceReader = Container.get(PriceReader);
   private readonly userRepository = Container.get(UserRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly inTransitService = Container.get(InTransitService);
 
   async getPortfolioValue(
     userId: string,
     at: Date,
     baseCurrencyId: string | undefined,
     opts: {
-      priceLookup?: PriceLookup;
+      /** Loaded over `priceAsks` for at least this instant. Omitted, one is loaded. */
+      prices?: PriceSeries;
       scope?: PortfolioValueScope;
       // Pre-loaded per-user caches that BalanceAtTimeService can use
       // instead of per-call DB reads. Threaded through from the
@@ -203,6 +184,8 @@ export class PortfolioValuationAtTimeService {
       // all 30 days — the predicate is about the token's whole history,
       // so it does not vary by `at`. Omit and one query resolves it.
       unpriceableTokenIds?: ReadonlySet<string>;
+      /** Amounts in transit, computed once for every instant the caller values (the rollup). Omitted, read for `at`. */
+      transitAmounts?: readonly TransitAmount[];
       /**
        * The database transaction every read on this call goes through, or
        * `undefined` for the pool. REQUIRED — see PriceGraphOptions.tx
@@ -227,24 +210,14 @@ export class PortfolioValuationAtTimeService {
       );
     }
 
-    // Pull all of the user's holdings. We value each against `at` regardless
-    // of its current visibility flags — the history chart shouldn't change
-    // retroactively when a holding is later hidden. Inactive is not a
-    // visibility flag: `findByUser` returns those rows "visible but excluded
-    // from totals", Home excludes them, and counting one here put a
-    // deactivated $888K position on every day of a chart whose Home read
-    // ~$117K (SC-1328). Hidden ones are fetched and the inclusion rule
-    // decides: a position the closed-position sweep hid is still history,
-    // and dropping it took its whole realized PnL out of every past day
-    // (SC-1486). Scam tokens are already filtered by `findByUser`.
-    const allHoldings = (await this.holdingRepository.findByUser(userId, opts.tx, true)).filter(
-      holdingCountsInTotal
-    );
-
-    // Apply the per-entity scope filter (institution / account /
-    // holding). A holding is valued only on days its own records reach —
-    // see the `beforeRecords` skip in the loop below (SC-1323).
-    const holdings = await this.applyScope(allHoldings, opts.scope, userId, opts.tx);
+    const holdings = await this.countedHoldings(userId, opts.scope, opts.tx);
+    const prices =
+      opts.prices ??
+      (await this.priceReader.series(
+        holdings.map((h) => ({ tokenId: h.tokenId, at })),
+        effectiveBaseId,
+        opts.tx
+      ));
 
     const unpriceableTokenIds =
       opts.unpriceableTokenIds ??
@@ -258,13 +231,7 @@ export class PortfolioValuationAtTimeService {
     let total = new Decimal(0);
     let knownCount = 0;
     let unpriceableCount = 0;
-    // Was a bare boolean until SC-249. A boolean is exactly enough to pick
-    // 'partial' and exactly not enough for a reader to do anything about it:
-    // it cannot say how many holdings, nor how far back the worst one is.
-    let staleAnchoredCount = 0;
-    let oldestAnchorAt: Date | null = null;
     let stalePricedCount = 0;
-    let interpolatedCount = 0;
 
     // Holdings whose earliest record is after `at`. They are absent from the
     // day rather than valued on it: `BalanceAtTimeService` would hand back
@@ -305,7 +272,6 @@ export class PortfolioValuationAtTimeService {
           unpriceable: tokenUnpriceable,
           priceStale: false,
           balanceBeforeRecords: result.beforeRecords,
-          balanceInterpolated: result.interpolated,
         });
         continue;
       }
@@ -315,13 +281,12 @@ export class PortfolioValuationAtTimeService {
       // needed. Without this short-circuit, historically-traded-but-
       // currently-empty holdings (fiat pairs used in Kraken trades,
       // fully-sold altcoins) force every rollup day to 'estimated'
-      // because PriceGraphService can't find a CHF→USD / GBP→USD edge.
+      // whenever their price cannot be found.
       // Zero × unknown = 0; counting it as "known" is factually
       // correct and keeps the chart's coverage quality honest.
       if (result.balance.isZero()) {
         total = total.add(0);
         knownCount += 1;
-        if (result.interpolated) interpolatedCount += 1;
         perHolding.push({
           holdingId: h.id,
           accountId: h.accountId,
@@ -341,28 +306,19 @@ export class PortfolioValuationAtTimeService {
           unpriceable: false,
           priceStale: false,
           balanceBeforeRecords: result.beforeRecords,
-          balanceInterpolated: result.interpolated,
         });
         continue;
       }
 
-      // Price the balance at the nearest reading at or before `at`. The
-      // 'daily' preference never picks an older row over a nearer one
-      // (SC-1543): it breaks a tie at one instant and selects the wider
-      // daily staleness cap. Within the last 36h no preference is passed,
-      // so a recent day is judged by the intraday cap.
-      const isRecent = Date.now() - at.getTime() < 36 * 60 * 60 * 1000;
-      const priced = await this.priceGraphService.convert(
-        result.balance,
-        h.tokenId,
-        effectiveBaseId,
-        at,
-        {
-          ...(isRecent ? {} : { preferGranularity: 'daily' as const }),
-          ...(opts.priceLookup ? { priceLookup: opts.priceLookup } : {}),
-          tx: opts.tx,
-        }
-      );
+      // The engine's answer at `at` (D-13, D-14): the freshest route over the
+      // nearest readings at or before it, stale per leg by each token's class.
+      const answer = prices.priceAt(h.tokenId, at);
+      const priced = answer && {
+        amount: result.balance.mul(answer.price),
+        path: answer.path,
+        effectiveAt: answer.readingAt,
+        stale: answer.stale,
+      };
 
       if (!priced) {
         // Balance known, value unknown. Still counts as "holding present"
@@ -385,20 +341,12 @@ export class PortfolioValuationAtTimeService {
           unpriceable: tokenUnpriceable,
           priceStale: false,
           balanceBeforeRecords: result.beforeRecords,
-          balanceInterpolated: result.interpolated,
         });
         continue;
       }
 
       total = total.add(priced.amount);
       knownCount += 1;
-      if (result.interpolated) interpolatedCount += 1;
-      if (result.anchor === 'observation-before') {
-        staleAnchoredCount += 1;
-        if (result.anchorAt && (!oldestAnchorAt || result.anchorAt < oldestAnchorAt)) {
-          oldestAnchorAt = result.anchorAt;
-        }
-      }
       if (priced.stale) {
         stalePricedCount += 1;
       }
@@ -416,25 +364,37 @@ export class PortfolioValuationAtTimeService {
         unpriceable: false,
         priceStale: priced.stale,
         balanceBeforeRecords: result.beforeRecords,
-        balanceInterpolated: result.interpolated,
       });
     }
 
-    const holdingsTotal = holdings.length - absentCount;
-    const priceableTotal = holdingsTotal - unpriceableCount;
-    let coverageQuality: CoverageQuality;
-    if (priceableTotal === 0) {
-      coverageQuality = 'unknown';
-    } else {
-      const knownRatio = knownCount / priceableTotal;
-      if (knownRatio >= COVERAGE_FULL_THRESHOLD) {
-        coverageQuality = staleAnchoredCount > 0 || stalePricedCount > 0 ? 'partial' : 'full';
-      } else if (knownRatio >= COVERAGE_PARTIAL_THRESHOLD) {
-        coverageQuality = 'estimated';
-      } else {
-        coverageQuality = 'unknown';
+    const inTransit: TransitAtTime[] = [];
+    if (!opts.scope || opts.scope.kind === 'user') {
+      const counted = new Set(holdings.map((h) => h.id));
+      const amounts =
+        opts.transitAmounts?.filter((a) => a.at.getTime() === at.getTime()) ??
+        (await this.inTransitService.amountsAt(userId, [at], opts.tx));
+      for (const amount of amounts) {
+        if (!counted.has(amount.destinationHoldingId)) continue;
+        const answer = prices.priceAt(amount.tokenId, at);
+        const valueInBase = answer ? amount.quantity.mul(answer.price) : null;
+        if (valueInBase) total = total.add(valueInBase);
+        inTransit.push({
+          outflowId: amount.outflowId,
+          destinationHoldingId: amount.destinationHoldingId,
+          tokenId: amount.tokenId,
+          quantity: amount.quantity,
+          valueInBase,
+        });
       }
     }
+
+    const holdingsTotal = holdings.length - absentCount;
+    const coverageQuality = coverageQualityOf({
+      withKnownValue: knownCount,
+      total: holdingsTotal,
+      unpriceable: unpriceableCount,
+      degraded: stalePricedCount > 0,
+    });
 
     return {
       userId,
@@ -446,12 +406,17 @@ export class PortfolioValuationAtTimeService {
       holdingsTotal,
       holdingsUnpriceable: unpriceableCount,
       holdingsStalePriced: stalePricedCount,
-      holdingsStaleAnchored: staleAnchoredCount,
-      oldestAnchorAt,
+      // The engine walks forward from a reading on every day after it, which
+      // is not a stale anchor; a balance's staleness is A4's (A5 D-14).
+      holdingsStaleAnchored: 0,
+      oldestAnchorAt: null,
       // A holding before its records is now absent rather than counted (SC-1323).
       holdingsBeforeRecords: 0,
-      holdingsInterpolated: interpolatedCount,
+      // The engine draws no line across a gap (A5 PR-2); the column goes
+      // with the other always-zero counts (SC-1624).
+      holdingsInterpolated: 0,
       perHolding,
+      ...(inTransit.length > 0 ? { inTransit } : {}),
     };
   }
 
@@ -459,6 +424,37 @@ export class PortfolioValuationAtTimeService {
   // Institution scope requires loading the user's accounts to map
   // institution_id → account_id list (cheap; one query). Generic so
   // the caller's Holding row type (with all its columns) survives.
+  /** Every price `getPortfolioValue` reads at these instants: each holding it counts, at each. */
+  async priceAsks(
+    userId: string,
+    instants: readonly Date[],
+    opts: { scope?: PortfolioValueScope; tx: DatabaseTransaction | undefined }
+  ): Promise<PriceAsk[]> {
+    const holdings = await this.countedHoldings(userId, opts.scope, opts.tx);
+    return holdings.flatMap((h) => instants.map((at) => ({ tokenId: h.tokenId, at })));
+  }
+
+  // Valued against `at` regardless of current visibility: the history chart
+  // shouldn't change retroactively when a holding is later hidden. Inactive is
+  // not a visibility flag: `findByUser` returns those rows "visible but
+  // excluded from totals", Home excludes them, and counting one here put a
+  // deactivated $888K position on every day of a chart whose Home read ~$117K
+  // (SC-1328). Hidden ones are fetched and the inclusion rule decides: a
+  // position the closed-position sweep hid is still history, and dropping it
+  // took its whole realized PnL out of every past day (SC-1486). Scam tokens
+  // are already filtered by `findByUser`. A holding is valued only on days its
+  // own records reach — see the `beforeRecords` skip (SC-1323).
+  async countedHoldings(
+    userId: string,
+    scope: PortfolioValueScope | undefined,
+    tx: DatabaseTransaction | undefined
+  ) {
+    const all = (await this.holdingRepository.findByUser(userId, tx, true)).filter(
+      holdingCountsInTotal
+    );
+    return this.applyScope(all, scope, userId, tx);
+  }
+
   private async applyScope<H extends { id: string; accountId: string }>(
     holdings: H[],
     scope: PortfolioValueScope | undefined,

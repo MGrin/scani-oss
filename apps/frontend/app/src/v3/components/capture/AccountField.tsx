@@ -12,6 +12,7 @@ import {
   type NewAccountDraft,
   type PickMode,
 } from '../../lib/manual-entry';
+import { WrapperField } from '../accounts/WrapperField';
 import { Field } from '../form/Field';
 import { RecordPicker } from '../form/RecordPicker';
 
@@ -149,7 +150,7 @@ export function AccountField({
           className="-ms-2 self-start"
           disabled={disabled}
           onClick={() => {
-            onDraftChange({ name: '', typeId: '' });
+            onDraftChange({ name: '', typeId: '', wrapper: null });
             onModeChange('existing');
           }}
         >
@@ -172,7 +173,13 @@ export function AccountField({
       <Field label={t('v3.capture.account.type')}>
         <Select
           value={draft.typeId}
-          onValueChange={(typeId) => onDraftChange({ typeId })}
+          onValueChange={(typeId) =>
+            onDraftChange(
+              types.data?.find((type) => type.id === typeId)?.class === 'liability'
+                ? { typeId, wrapper: null }
+                : { typeId }
+            )
+          }
           disabled={disabled}
         >
           <SelectTrigger aria-label={t('v3.capture.account.typeLabel')}>
@@ -187,6 +194,15 @@ export function AccountField({
           </SelectContent>
         </Select>
       </Field>
+
+      {types.data?.find((type) => type.id === draft.typeId)?.class === 'asset' ? (
+        <WrapperField
+          id="manual-account-wrapper"
+          value={draft.wrapper ?? null}
+          onChange={(wrapper) => onDraftChange({ wrapper })}
+          disabled={disabled}
+        />
+      ) : null}
     </div>
   );
 }

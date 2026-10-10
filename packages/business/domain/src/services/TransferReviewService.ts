@@ -41,6 +41,7 @@ import {
 import Decimal from 'decimal.js';
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, ne, or, sql } from 'drizzle-orm';
 import Container, { Service } from 'typedi';
+import type { HoldingKind } from '../engine/types';
 import { movedBalance } from '../lib/balances/moved-balance';
 import {
   arrivalMetadata,
@@ -75,7 +76,7 @@ import {
   type WithdrawRefusalReason,
   withdrawPairingRefusal,
 } from '../lib/transfer-unlink';
-import { upstreamEventKey } from '../lib/upstream-event';
+import { isReturnedTransit, upstreamEventKey } from '../lib/upstream-event';
 import { HoldingCoverageRepository } from '../repositories/HoldingCoverageRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../repositories/HoldingTransactionRepository';
@@ -87,12 +88,10 @@ import { HoldingTransactionRepository } from '../repositories/HoldingTransaction
 // class-field `Container.get`s pointing at each other recurse forever, since
 // typedi caches an instance only after its constructor returns.
 import { UpdateHoldingUseCase } from '../use-cases/UpdateHoldingUseCase';
-import {
-  BalanceSyncOwnershipService,
-  type SyncOwnableAccount,
-} from './accounts/BalanceSyncOwnershipService';
+import { BalanceSyncOwnershipService } from './accounts/BalanceSyncOwnershipService';
+import { HoldingCacheWriter } from './feeds/HoldingCacheWriter';
 import { manualEditFeeExternalId } from './holdings/ManualBalanceEditService';
-import { PriceGraphService } from './pricing/PriceGraphService';
+import { PriceReader, type PriceSeries } from './pricing/PriceReader';
 import { TransferDestinationOpener } from './TransferDestinationOpener';
 import { adoptTypedDeposit, anchorIsUnobserved } from './transfer-arrival';
 
@@ -336,6 +335,13 @@ export class MalformedCursorError extends Error {
   readonly name = 'MalformedCursorError';
 }
 
+/** Carries a refusal out of a transaction so the transaction rolls back. */
+class SplitRefused extends Error {
+  constructor(readonly result: SplitResolveResult) {
+    super('split refused');
+  }
+}
+
 /**
  * The transfer-review queue (SC-150) — the surface behind
  * `LinkTransferPairsUseCase`'s "surface to user" comment, which for a long
@@ -367,12 +373,13 @@ export class MalformedCursorError extends Error {
  */
 @Service()
 export class TransferReviewService {
-  private readonly priceGraphService = Container.get(PriceGraphService);
+  private readonly priceReader = Container.get(PriceReader);
   private readonly ledger = Container.get(HoldingTransactionRepository);
   private readonly holdings = Container.get(HoldingRepository);
   private readonly coverage = Container.get(HoldingCoverageRepository);
   private readonly syncOwnership = Container.get(BalanceSyncOwnershipService);
   private readonly opener = Container.get(TransferDestinationOpener);
+  private readonly cacheWriter = Container.get(HoldingCacheWriter);
 
   /**
    * How many outflows are waiting, and when the queue last gained one.
@@ -471,6 +478,14 @@ export class TransferReviewService {
     // about the wallet in the very next field.
     const ownWallets = await this.ownWalletAddresses(userId);
 
+    // One series for the page's "if it was a sale" column.
+    const prices = user?.baseCurrencyId
+      ? await this.priceReader.series(
+          outflows.map((row) => ({ tokenId: row.tx.tokenId, at: row.tx.occurredAt })),
+          user.baseCurrencyId
+        )
+      : null;
+
     const results: PendingTransferReview[] = [];
     for (const row of outflows) {
       const quantity = new Decimal(row.tx.quantity).abs();
@@ -536,8 +551,8 @@ export class TransferReviewService {
             }
           : null,
         answerWithdrawnBy: answerWithdrawnBy(row.tx),
-        marketValueInBase: user?.baseCurrencyId
-          ? await this.marketValue(quantity, row.tx.tokenId, user.baseCurrencyId, row.tx.occurredAt)
+        marketValueInBase: prices
+          ? marketValue(prices, quantity, row.tx.tokenId, row.tx.occurredAt)
           : null,
         baseCurrencyCode,
         ...(await this.candidateSetsFor(userId, {
@@ -960,6 +975,7 @@ export class TransferReviewService {
         accountId: schema.holdings.accountId,
         balance: schema.holdings.balance,
         source: schema.holdings.source,
+        kind: schema.holdings.kind,
       })
       .from(schema.holdings)
       .where(
@@ -1031,9 +1047,8 @@ export class TransferReviewService {
           institutionName: account.institutionName,
           source: holding.source,
           balance: holding.balance,
-          // The write path's own predicate, over a sync source already in
-          // hand rather than re-asked per holding.
-          movesBalance: anchorIsUnobserved(holding, accountSyncSource),
+          // The write path's own predicate (A5 #2).
+          movesBalance: anchorIsUnobserved(holding),
           relevance: 'holds_token',
         });
       }
@@ -1051,7 +1066,16 @@ export class TransferReviewService {
   async resolveSplit(
     userId: string,
     transactionId: string,
-    split: TransferReviewSplit
+    split: TransferReviewSplit,
+    opts: {
+      /** As on `resolve`: explains an observed event, so no destination anchor moves. */
+      observedEvent?: boolean;
+      /**
+       * Settle inside a transaction the caller owns, as `resolve` does. The
+       * caller then owns the rollback: a refusal is returned, not rolled back.
+       */
+      transaction?: DatabaseTransaction;
+    } = {}
   ): Promise<SplitResolveResult> {
     const parsed = transferReviewSplitSchema.safeParse(split);
     if (!parsed.success) {
@@ -1063,7 +1087,9 @@ export class TransferReviewService {
     }
     const portions = parsed.data;
 
-    return db.transaction(async (tx) => {
+    // A refusal after an earlier part's write is thrown, so the transaction
+    // rolls back and no part of the answer lands alone (SC-1665).
+    const write = async (tx: DatabaseTransaction): Promise<SplitResolveResult> => {
       const [outflow] = await tx
         .select()
         .from(schema.holdingTransactions)
@@ -1083,11 +1109,12 @@ export class TransferReviewService {
       );
       if (refused) return refused;
 
+      // Every linking part joins ONE group (SC-1665, feeds E2): cost basis hands
+      // each arrival its pro-rata share of that group's buffer (SC-1365).
       const paired = portions.find((p) => p.decision === 'paired');
-      const internal = portions.find((p) => p.decision === 'internal');
-      let groupId: string | null = null;
-      if (paired?.matchTransactionId) {
-        groupId = crypto.randomUUID();
+      const internals = portions.filter((p) => p.decision === 'internal');
+      const groupId = paired || internals.length > 0 ? crypto.randomUUID() : null;
+      if (groupId && paired?.matchTransactionId) {
         const linked = await this.claimInflow(
           tx,
           userId,
@@ -1095,21 +1122,30 @@ export class TransferReviewService {
           paired.matchTransactionId,
           groupId
         );
-        if (!linked) return { ok: false, reason: 'partner_gone' } as const;
+        if (!linked) throw new SplitRefused({ ok: false, reason: 'partner_gone' });
       }
       // The share that moved to a holding the user maintains by hand, and the
       // deposit that share needs in order to be a real pair rather than a
       // lookalike (SC-187). Its quantity is the PORTION's, not the row's:
       // 3,500 of a 4,000 withdrawal arrived, and writing 4,000 there would
       // trade an overstated gain for an overstated balance.
-      if (internal?.destination) {
-        groupId = crypto.randomUUID();
+      for (const internal of internals) {
+        if (!groupId || !internal.destination) continue;
         const written = await this.writeInflow(tx, userId, outflow, {
           destination: internal.destination,
           quantity: new Decimal(internal.quantity).abs(),
           groupId,
+          observedEvent: opts.observedEvent,
         });
-        if (!written.ok) return written;
+        if (!written.ok) throw new SplitRefused(written);
+      }
+      if (groupId && (await this.twoArrivalsOnOneHolding(tx, userId, groupId))) {
+        throw new SplitRefused({
+          ok: false,
+          reason: 'invalid',
+          message:
+            'One part per destination: two parts arrived in the same holding. Enter it once with the combined amount.',
+        });
       }
 
       await tx
@@ -1126,7 +1162,102 @@ export class TransferReviewService {
       if (groupId) await this.ledger.relabelEntries(userId, [outflow.id], tx);
 
       return { ok: true } as const;
+    };
+    const run = opts.transaction ? write(opts.transaction) : db.transaction(write);
+    return run.catch((error: unknown) => {
+      if (error instanceof SplitRefused) return error.result;
+      throw error;
     });
+  }
+
+  /**
+   * Answer again the part of a split that went to one holding, and leave every
+   * other part as it stands (SC-1684). `split` is the whole answer with that
+   * part replaced.
+   *
+   * A reopen rewrites every part, and a part whose arrival a provider already
+   * took over keeps the provider's row, because only the person's legs are
+   * deleted. `resolveSplit` would then write a fresh leg beside it: the same
+   * money twice. So only `holdingId`'s person leg goes, and `claim`, the row
+   * the part became (its arrival or its refund), joins the outflow's group.
+   * False when the outflow is no split with a group, the split does not add
+   * up, or `claim` is taken. The leg may already be gone by then, so the
+   * caller owns the rollback.
+   */
+  async resolvePart(
+    userId: string,
+    transactionId: string,
+    holdingId: string,
+    split: TransferReviewSplit,
+    opts: { claim?: string; transaction: DatabaseTransaction }
+  ): Promise<boolean> {
+    const tx = opts.transaction;
+    const t = schema.holdingTransactions;
+    const [outflow] = await tx
+      .select({ quantity: t.quantity, review: t.transferReview, groupId: t.transferGroupId })
+      .from(t)
+      .where(and(eq(t.id, transactionId), eq(t.userId, userId)))
+      .for('update');
+    if (outflow?.review !== TRANSFER_REVIEW_SPLIT || !outflow.groupId) return false;
+    const parsed = transferReviewSplitSchema.safeParse(split);
+    if (!parsed.success || !splitSumMatches(parsed.data, outflow.quantity)) return false;
+
+    await this.withdrawArrivals(tx, userId, transactionId, holdingId);
+    if (opts.claim) {
+      const claimed = await tx
+        .update(t)
+        .set({ transferGroupId: outflow.groupId, updatedAt: sql`now()` })
+        .where(
+          and(
+            eq(t.id, opts.claim),
+            eq(t.userId, userId),
+            inArray(t.kind, [...INFLOW_KINDS]),
+            isNull(t.transferGroupId)
+          )
+        )
+        .returning({ id: t.id });
+      if (claimed.length !== 1) return false;
+    }
+    if (await this.twoArrivalsOnOneHolding(tx, userId, outflow.groupId)) return false;
+
+    await tx
+      .update(t)
+      .set({
+        transferReviewSplit: parsed.data,
+        transferReviewedAt: sql`now()`,
+        transferReviewSource: 'user',
+        updatedAt: sql`now()`,
+      })
+      .where(eq(t.id, transactionId));
+    await this.ledger.relabelEntries(
+      userId,
+      opts.claim ? [transactionId, opts.claim] : [transactionId],
+      tx
+    );
+    return true;
+  }
+
+  /** Whether two of a group's arrivals landed on one holding (SC-1665, feeds E2). */
+  private async twoArrivalsOnOneHolding(
+    tx: DatabaseTransaction,
+    userId: string,
+    groupId: string
+  ): Promise<boolean> {
+    const t = schema.holdingTransactions;
+    const [row] = await tx
+      .select({ holdingId: t.holdingId })
+      .from(t)
+      .where(
+        and(
+          eq(t.userId, userId),
+          eq(t.transferGroupId, groupId),
+          inArray(t.kind, ['transfer_in', 'deposit'])
+        )
+      )
+      .groupBy(t.holdingId)
+      .having(sql`count(*) > 1`)
+      .limit(1);
+    return row !== undefined;
   }
 
   /**
@@ -1503,16 +1634,18 @@ export class TransferReviewService {
       // Under the lock the edit below takes, so the balance put back is the
       // one standing when it writes (SC-1525).
       const [holding] = await tx
-        .select({ balance: schema.holdings.balance })
+        .select({ id: schema.holdings.id })
         .from(schema.holdings)
         .where(and(eq(schema.holdings.id, leg.holdingId), eq(schema.holdings.userId, userId)))
         .limit(1)
         .for('no key update');
       if (!holding) throw new Error(`Declared transfer leg ${leg.id} has no holding to restore`);
+      // Put back from the engine's balance, which the edit sizes against (A5 D-15).
+      const now = await this.cacheWriter.engineBalance(userId, leg.holdingId, tx);
 
       await updateHolding.execute(
         leg.holdingId,
-        { balance: movedBalance(holding.balance, new Decimal(leg.quantity).neg()) },
+        { balance: movedBalance(now, new Decimal(leg.quantity).neg()) },
         userId,
         tx
       );
@@ -1535,6 +1668,9 @@ export class TransferReviewService {
       legs.map((leg) => leg.holdingId),
       tx
     );
+    // The legs are gone, so the engine's balance moved without a balance
+    // stated for it (A5 D-18).
+    await this.cacheWriter.refresh(userId, [...new Set(legs.map((leg) => leg.holdingId))], tx);
   }
 
   /**
@@ -1735,18 +1871,19 @@ export class TransferReviewService {
     let unpricedCount = 0;
     let alreadyDisposedCount = 0;
 
+    const prices = baseCurrencyId
+      ? await this.priceReader.series(
+          eligible.map((row) => ({ tokenId: row.tokenId, at: row.occurredAt })),
+          baseCurrencyId
+        )
+      : null;
     for (const row of eligible) {
       const isDisposal = row.transferReview === 'left_control';
       if (isDisposal) alreadyDisposedCount += 1;
-      // The same call `listPending` makes for the "if it was a sale" column, so
-      // the confirmation cannot quote a figure the queue never showed.
-      const value = baseCurrencyId
-        ? await this.marketValue(
-            new Decimal(row.quantity).abs(),
-            row.tokenId,
-            baseCurrencyId,
-            row.occurredAt
-          )
+      // The same reading `listPending` makes for the "if it was a sale" column,
+      // so the confirmation cannot quote a figure the queue never showed.
+      const value = prices
+        ? marketValue(prices, new Decimal(row.quantity).abs(), row.tokenId, row.occurredAt)
         : null;
       // Null is "we have no price that day", which books nothing — counted
       // rather than folded into the total as a zero, because the two are
@@ -1933,13 +2070,45 @@ export class TransferReviewService {
     transactionId: string,
     attribution: AnswerAttribution | null
   ): Promise<void> {
+    await this.withdrawArrivals(tx, userId, transactionId);
+
+    await tx
+      .update(schema.holdingTransactions)
+      .set({
+        transferReview: null,
+        transferReviewSplit: null,
+        transferReviewedAt: null,
+        transferReviewSource: attribution,
+        // Required by the table's own CHECK, which allows a rule id only
+        // alongside `transfer_review_source = 'rule'` — and required for the
+        // reason the CHECK exists: a rule id surviving a withdrawal would let
+        // the answered list go on naming a rule for an answer no longer there.
+        transferReviewRuleId: null,
+        updatedAt: sql`now()`,
+      })
+      .where(eq(schema.holdingTransactions.id, transactionId));
+  }
+
+  /**
+   * Delete the arrivals an answer wrote for this outflow, and undo what each
+   * one did to its holding: the holding it opened, the anchor it moved, the
+   * balance edit it adopted. `holdingId` limits it to the arrival in that one
+   * holding (SC-1684).
+   */
+  private async withdrawArrivals(
+    tx: DatabaseTransaction,
+    userId: string,
+    transactionId: string,
+    holdingId?: string
+  ): Promise<void> {
     const removed = await tx
       .delete(schema.holdingTransactions)
       .where(
         and(
           eq(schema.holdingTransactions.userId, userId),
           eq(schema.holdingTransactions.source, TRANSFER_REVIEW_CREATED_SOURCE),
-          eq(schema.holdingTransactions.externalId, transactionId)
+          eq(schema.holdingTransactions.externalId, transactionId),
+          holdingId ? eq(schema.holdingTransactions.holdingId, holdingId) : undefined
         )
       )
       .returning({
@@ -1965,6 +2134,7 @@ export class TransferReviewService {
     //
     // The arrival is already gone by this point, so it does not count itself.
     const survivors: string[] = [];
+    const putBackHoldings: string[] = [];
     const restore: { holdingId: string; quantity: string }[] = [];
     for (const row of removed) {
       if (
@@ -1994,6 +2164,7 @@ export class TransferReviewService {
       }
       const adoptedEdit = readAdoptedBalanceEdit(row.sourceMetadata);
       if (adoptedEdit) {
+        putBackHoldings.push(adoptedEdit.holdingId);
         const putBack = await tx
           .insert(schema.holdingTransactions)
           .values({
@@ -2025,15 +2196,16 @@ export class TransferReviewService {
     for (const entry of restore) {
       // Under the lock the edit below takes, as in `undoDeclaredTransfer`.
       const [holding] = await tx
-        .select({ balance: schema.holdings.balance })
+        .select({ id: schema.holdings.id })
         .from(schema.holdings)
         .where(and(eq(schema.holdings.id, entry.holdingId), eq(schema.holdings.userId, userId)))
         .limit(1)
         .for('no key update');
       if (!holding) continue;
+      const now = await this.cacheWriter.engineBalance(userId, entry.holdingId, tx);
       await Container.get(UpdateHoldingUseCase).execute(
         entry.holdingId,
-        { balance: movedBalance(holding.balance, new Decimal(entry.quantity).neg()) },
+        { balance: movedBalance(now, new Decimal(entry.quantity).neg()) },
         userId,
         tx
       );
@@ -2041,22 +2213,9 @@ export class TransferReviewService {
     if (survivors.length > 0) {
       await Container.get(HoldingCoverageRepository).syncTxBoundsFromLedger(survivors, tx);
     }
-
-    await tx
-      .update(schema.holdingTransactions)
-      .set({
-        transferReview: null,
-        transferReviewSplit: null,
-        transferReviewedAt: null,
-        transferReviewSource: attribution,
-        // Required by the table's own CHECK, which allows a rule id only
-        // alongside `transfer_review_source = 'rule'` — and required for the
-        // reason the CHECK exists: a rule id surviving a withdrawal would let
-        // the answered list go on naming a rule for an answer no longer there.
-        transferReviewRuleId: null,
-        updatedAt: sql`now()`,
-      })
-      .where(eq(schema.holdingTransactions.id, transactionId));
+    // The arrivals are gone and any adopted edit is back, so the engine's
+    // balance moved without a balance stated for it (A5 D-18).
+    await this.cacheWriter.refresh(userId, [...new Set([...survivors, ...putBackHoldings])], tx);
   }
 
   /**
@@ -2167,6 +2326,7 @@ export class TransferReviewService {
           externalId: schema.holdingTransactions.externalId,
           rawPayload: schema.holdingTransactions.rawPayload,
           transferReview: schema.holdingTransactions.transferReview,
+          sourceMetadata: schema.holdingTransactions.sourceMetadata,
         })
         .from(schema.holdingTransactions)
         .where(
@@ -2181,6 +2341,7 @@ export class TransferReviewService {
         source: leg.source,
         transferReview: leg.transferReview,
         eventKey: upstreamEventKey(leg.source, leg.externalId, leg.rawPayload),
+        returned: isReturnedTransit(leg.sourceMetadata),
       }));
 
       // The SAME predicate a projection calls before proposing the write, so
@@ -2388,26 +2549,6 @@ export class TransferReviewService {
     });
 
     return { candidates, combinations };
-  }
-
-  /**
-   * What realizing this row at market would book — the number that says why
-   * the question is worth answering.
-   *
-   * Null on no priceable route, and null is rendered as "unknown" rather than
-   * as zero. SC-151 is making `stale` mean something; when it does, this is
-   * one of the callers that should refuse rather than round.
-   */
-  private async marketValue(
-    quantity: Decimal,
-    tokenId: string,
-    baseCurrencyId: string,
-    at: Date
-  ): Promise<string | null> {
-    const converted = await this.priceGraphService.convert(quantity, tokenId, baseCurrencyId, at, {
-      tx: undefined,
-    });
-    return converted ? converted.amount.toString() : null;
   }
 
   /**
@@ -2672,13 +2813,15 @@ export class TransferReviewService {
     // reused row can have an anchor to move: a created one was opened at the
     // figure the opener chose, which already accounts for the arrival wherever
     // it is the user's number to state (SC-856).
-    let reused: { id: string; source: string; balance: string } | null = null;
+    let reused: { id: string; source: string; kind: HoldingKind | null; balance: string } | null =
+      null;
     if (holdingId) {
       const [holding] = await tx
         .select({
           id: schema.holdings.id,
           tokenId: schema.holdings.tokenId,
           source: schema.holdings.source,
+          kind: schema.holdings.kind,
           balance: schema.holdings.balance,
         })
         .from(schema.holdings)
@@ -2714,6 +2857,7 @@ export class TransferReviewService {
         .select({
           id: schema.holdings.id,
           source: schema.holdings.source,
+          kind: schema.holdings.kind,
           balance: schema.holdings.balance,
         })
         .from(schema.holdings)
@@ -2757,7 +2901,7 @@ export class TransferReviewService {
 
     const movedAnchor =
       reused && !opts.observedEvent && !adopted
-        ? await this.moveUnobservedAnchor(tx, userId, account, reused, quantity)
+        ? await this.moveUnobservedAnchor(tx, userId, reused, quantity, outflow.id)
         : false;
 
     // The arrival is dated at the withdrawal, which can predate a reused
@@ -2819,6 +2963,8 @@ export class TransferReviewService {
       arrival.map((r) => r.id),
       tx
     );
+    // The arrival is evidence; the cache follows it (A5 D-18).
+    await this.cacheWriter.refresh(userId, [holdingId], tx);
 
     // This is the one ledger write in the codebase that doesn't go through
     // `HoldingTransactionRepository.bulkUpsert`, so it states the coverage
@@ -2827,26 +2973,6 @@ export class TransferReviewService {
     await this.coverage.syncTxBoundsFromLedger([holdingId], tx);
 
     return { ok: true };
-  }
-
-  /**
-   * The same question with the account half still to resolve — what the WRITE
-   * path asks, one destination at a time.
-   *
-   * `destinationsFor` calls `anchorIsUnobserved` directly instead, because it has
-   * already resolved the account's sync source once for a whole page of
-   * candidates. Both go through that one function on purpose: the sentence over
-   * the button and the write behind it are the two things that must never
-   * disagree, and two spellings of this rule is how they come to.
-   */
-  private async arrivalMovesTheAnchor(
-    tx: DatabaseTransaction,
-    userId: string,
-    account: SyncOwnableAccount,
-    holding: { source: string }
-  ): Promise<boolean> {
-    const syncSource = await this.syncOwnership.resolveSyncSource(userId, account, tx);
-    return anchorIsUnobserved(holding, syncSource);
   }
 
   /**
@@ -2871,23 +2997,42 @@ export class TransferReviewService {
   private async moveUnobservedAnchor(
     tx: DatabaseTransaction,
     userId: string,
-    account: SyncOwnableAccount,
-    holding: { id: string; source: string; balance: string },
-    quantity: Decimal
+    holding: { id: string; source: string; kind: HoldingKind | null },
+    quantity: Decimal,
+    outflowId: string
   ): Promise<boolean> {
-    if (!(await this.arrivalMovesTheAnchor(tx, userId, account, holding))) return false;
+    if (!anchorIsUnobserved(holding)) return false;
     // Re-read under the lock the edit below takes: the caller's read is from
     // before it, and a concurrent edit of the holding may have committed since
     // (SC-1525).
     const [locked] = await tx
-      .select({ balance: schema.holdings.balance })
+      .select({ id: schema.holdings.id })
       .from(schema.holdings)
       .where(and(eq(schema.holdings.id, holding.id), eq(schema.holdings.userId, userId)))
       .for('no key update');
     if (!locked) return false;
+    // Less any arrival a second writer for this question already left: the
+    // INSERT below rewrites that row, so its amount is not in the balance the
+    // move starts from.
+    const prior = await tx
+      .select({ id: schema.holdingTransactions.id })
+      .from(schema.holdingTransactions)
+      .where(
+        and(
+          eq(schema.holdingTransactions.holdingId, holding.id),
+          eq(schema.holdingTransactions.source, TRANSFER_REVIEW_CREATED_SOURCE),
+          eq(schema.holdingTransactions.externalId, outflowId)
+        )
+      );
+    const now = await this.cacheWriter.engineBalance(
+      userId,
+      holding.id,
+      tx,
+      new Set(prior.map((row) => row.id))
+    );
     await Container.get(UpdateHoldingUseCase).execute(
       holding.id,
-      { balance: movedBalance(locked.balance, quantity) },
+      { balance: movedBalance(now, quantity) },
       userId,
       tx
     );
@@ -2973,4 +3118,22 @@ function ownWalletCounterparty(
   const counterparty = counterpartyFromPayload(tx.kind, tx.rawPayload, tx.counterparty);
   const address = normalizeCounterparty(counterparty);
   return address !== null && ownWallets.has(address) ? address : null;
+}
+
+/**
+ * What realizing this row at market would book — the number that says why
+ * the question is worth answering.
+ *
+ * Null on no priceable route, and null is rendered as "unknown" rather than
+ * as zero. SC-151 is making `stale` mean something; when it does, this is
+ * one of the callers that should refuse rather than round.
+ */
+function marketValue(
+  prices: PriceSeries,
+  quantity: Decimal,
+  tokenId: string,
+  at: Date
+): string | null {
+  const price = prices.priceAt(tokenId, at)?.price;
+  return price ? quantity.mul(price).toString() : null;
 }

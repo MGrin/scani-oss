@@ -39,7 +39,7 @@ describe('WiseProvider', () => {
     const p = new WiseProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (url: string) => {
-      if (url.endsWith('/v2/profiles')) {
+      if (url.endsWith('/2026Q4/profiles')) {
         return new Response(
           JSON.stringify([
             { id: 1, type: 'PERSONAL', fullName: 'Alice' },
@@ -48,7 +48,7 @@ describe('WiseProvider', () => {
           { status: 200 }
         );
       }
-      if (url.includes('/v4/profiles/1/balances')) {
+      if (url.includes('/2026Q4/profiles/1/balances')) {
         return new Response(
           JSON.stringify([
             { id: 11, currency: 'USD', amount: { value: 100, currency: 'USD' }, type: 'STANDARD' },
@@ -57,7 +57,7 @@ describe('WiseProvider', () => {
           { status: 200 }
         );
       }
-      if (url.includes('/v4/profiles/2/balances')) {
+      if (url.includes('/2026Q4/profiles/2/balances')) {
         return new Response(
           JSON.stringify([
             { id: 21, currency: 'USD', amount: { value: 50, currency: 'USD' }, type: 'STANDARD' },
@@ -151,12 +151,12 @@ describe('WiseProvider.fetchTransactions', () => {
    */
   beforeEach(() => {
     globalThis.fetch = (async (url: string) => {
-      if (url.endsWith('/v2/profiles')) {
+      if (url.endsWith('/2026Q4/profiles')) {
         return new Response(JSON.stringify([{ id: 1, type: 'PERSONAL', fullName: 'Alice' }]), {
           status: 200,
         });
       }
-      if (url.includes('/v4/profiles/1/balances')) {
+      if (url.includes('/2026Q4/profiles/1/balances')) {
         return new Response(
           JSON.stringify([
             {
@@ -175,7 +175,7 @@ describe('WiseProvider.fetchTransactions', () => {
           { status: 200 }
         );
       }
-      if (url.includes('/balance-statements/10/statement.json')) {
+      if (url.includes('/2026Q4/profiles/1/balance-statements/10/statement.json')) {
         return new Response(
           JSON.stringify({
             transactions: [
@@ -295,8 +295,13 @@ describe('WiseProvider.fetchTransactions', () => {
       until: new Date('2025-02-01T00:00:00.000Z'),
     } as never);
 
-    const stmt = captured.find((u) => u.includes('/balance-statements/10/statement.json'));
+    const stmt = captured.find((u) =>
+      u.includes('/2026Q4/profiles/1/balance-statements/10/statement.json')
+    );
     expect(stmt).toBeDefined();
+    // Every call is on Wise's global CalVer version, never a legacy per-endpoint one (SC-1573).
+    expect(captured.length).toBeGreaterThan(2);
+    for (const u of captured) expect(new URL(u).pathname.startsWith('/2026Q4/')).toBe(true);
     expect(stmt).toContain('intervalStart=2025-01-01T00%3A00%3A00.000Z');
     expect(stmt).toContain('intervalEnd=2025-02-01T00%3A00%3A00.000Z');
     expect(stmt).toContain('type=COMPACT');
@@ -309,12 +314,12 @@ describe('WiseProvider.fetchTransactions window splitting', () => {
     const originalFetch = globalThis.fetch;
     const statementCalls: string[] = [];
     globalThis.fetch = (async (url: string) => {
-      if (url.endsWith('/v2/profiles')) {
+      if (url.endsWith('/2026Q4/profiles')) {
         return new Response(JSON.stringify([{ id: 1, type: 'PERSONAL', fullName: 'Alice' }]), {
           status: 200,
         });
       }
-      if (url.includes('/v4/profiles/1/balances')) {
+      if (url.includes('/2026Q4/profiles/1/balances')) {
         return new Response(
           JSON.stringify([
             {
@@ -327,7 +332,7 @@ describe('WiseProvider.fetchTransactions window splitting', () => {
           { status: 200 }
         );
       }
-      if (url.includes('/balance-statements/10/statement.json')) {
+      if (url.includes('/2026Q4/profiles/1/balance-statements/10/statement.json')) {
         statementCalls.push(url);
         return new Response(JSON.stringify({ transactions: [] }), { status: 200 });
       }

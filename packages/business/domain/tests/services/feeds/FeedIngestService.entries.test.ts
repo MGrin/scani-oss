@@ -56,7 +56,7 @@ const ORPHAN_NOTICE =
 const skippedNotice = (events: number, tokens: number) =>
   `Skipped ${events} tx event(s) referencing ${tokens} token(s) the user didn't keep during wallet review.`;
 const duplicatePlacementNotice = (events: number) =>
-  `duplicate-placement: ${events} event(s) were placed on a holding that already holds an older copy of them, while this feed records each on another holding. Each copy was updated in place and nothing was moved, so each of these events is on two holdings.`;
+  `duplicate-placement: ${events} event(s) were placed on a holding that already held an older copy of them, while this feed recorded each on another holding. Each older copy was removed and the event moved to the holding it was placed on, so each is now held once.`;
 
 /** A symbol no other test and no seed holds. */
 const freshSymbol = () => `T${randomUUID().replace(/-/g, '').toUpperCase()}`;
@@ -92,7 +92,7 @@ function txBatch(
     userId: owner.userId,
     input: { accountId: owner.accountId, source, credentialId: null, walletId: null },
     fetchedAt: FETCHED,
-    window: { from: T1, to: FETCHED, complete: false },
+    window: { shape: 'transaction-run', from: T1, to: FETCHED, complete: false },
     checkpoints: [],
     entries: entries.map((e) => ({ ...e, legacy: { ...e.legacy, source } })),
     absences: [],
@@ -103,13 +103,11 @@ function txBatch(
       arrival: null,
       writesCache: false,
       createdWithoutCheckpoint: 'zero',
-      cacheObservation: null,
       derivesTradeLegs: false,
       holdingFailure: 'skip-entry',
       absence: null,
       clearsAbsenceTally: false,
       createdCheckpointMeta: null,
-      unhideOnNonZero: false,
       unchangedCheckpoint: 'append',
       zeroOpensHolding: true,
     },
@@ -1025,9 +1023,9 @@ describe('FeedIngestService.ingest — the entry key (input, external_id)', () =
   });
 
   // R58, on the copy R55 leaves behind: once the event is placed back on that
-  // copy's holding, the input already states it on another, so the copy is
-  // updated where it is, on this run and every one after it.
-  test('the copy R55 leaves is updated where it is when the event is placed back on its holding (R58)', async () => {
+  // copy's holding, the input's row moves there and the copy goes, so the
+  // event is held once, where the feed places it (A5 D-22).
+  test('the copy R55 leaves gives way to the input row when the event is placed back on its holding (R58)', async () => {
     await withTestDb(async (tx) => {
       const { batch, inputId, aImported, ledger } = await unstampedAcrossHoldings(tx);
       await ingest(batch, tx);
@@ -1045,11 +1043,10 @@ describe('FeedIngestService.ingest — the entry key (input, external_id)', () =
 
       expect(runs.map((r) => [r.notices, r.earliestChangedAt])).toEqual([
         [[duplicatePlacementNotice(1)], T1],
-        [[duplicatePlacementNotice(1)], null],
+        [[], null],
       ]);
       expect(await ledger()).toEqual([
-        ['a1', 'a-created', null, '3'],
-        ['a1', 'a-imported', inputId, '1'],
+        ['a1', 'a-created', inputId, '3'],
         ['b1', 'b-created', inputId, '2'],
       ]);
     });
@@ -1058,12 +1055,11 @@ describe('FeedIngestService.ingest — the entry key (input, external_id)', () =
   /**
    * R58 (review I1): the input states `p1` on the holding ingest created, and
    * the imported holding the event now resolves to holds an older copy with no
-   * input, as PR-3's (holding, source, external_id) arbiter left one. Moving
-   * the input's row there would break `holding_tx_dedup`, so the run writes
-   * what that arbiter wrote, onto the copy, moves nothing, and says so. Which
-   * of the two rows is the event is A5's figure decision.
+   * input, as PR-3's (holding, source, external_id) arbiter left one. The
+   * feed places the event, so it is held once, there: the copy goes and the
+   * input's row moves onto that holding, and the run says so once (A5 D-22).
    */
-  test('an event placed on a holding holding a NULL-input copy of it updates the copy and moves nothing, on every run (R58)', async () => {
+  test('an event placed on a holding holding a NULL-input copy of it moves the input row there and removes the copy, once (R58)', async () => {
     await withTestDb(async (tx) => {
       const fixture = await owner(tx);
       const token = await makeToken(tx, { symbol: freshSymbol() });
@@ -1094,7 +1090,7 @@ describe('FeedIngestService.ingest — the entry key (input, external_id)', () =
 
       expect(runs.map((r) => [r.notices, r.earliestChangedAt])).toEqual([
         [[duplicatePlacementNotice(1)], T1],
-        [[duplicatePlacementNotice(1)], null],
+        [[], null],
       ]);
       const names = new Map([
         [created, 'created'],
@@ -1104,10 +1100,7 @@ describe('FeedIngestService.ingest — the entry key (input, external_id)', () =
         (await ledgerOf(tx, fixture.userId))
           .map((r) => [names.get(r.holdingId), r.inputId, r.quantity])
           .sort((x, y) => String(x).localeCompare(String(y)))
-      ).toEqual([
-        ['created', first.inputId, '1'],
-        ['imported', null, '1'],
-      ]);
+      ).toEqual([['imported', first.inputId, '1']]);
     });
   });
 
@@ -1156,13 +1149,10 @@ describe('FeedIngestService.ingest — the entry key (input, external_id)', () =
           copies
             .map((r) => [names.get(r.holdingId), r.inputId, r.quantity])
             .sort((x, y) => String(x).localeCompare(String(y)))
-        ).toEqual([
-          ['created', first.inputId, '1'],
-          ['imported', null, '1'],
-        ]);
+        ).toEqual([['imported', first.inputId, '1']]);
       });
     });
-  }, 120_000); // Thousands of rows, on a CI box several times slower than a laptop (SC-1528).
+  }, 300_000); // Thousands of rows, on a CI box several times slower than a laptop, sometimes beside a second gate run (SC-1528).
 
   // SC-1528, the whole path at the size that failed: the TON Foundation wallet's
   // 7,182 events. Every statement ingest runs on the batch, not only the
@@ -1197,7 +1187,7 @@ describe('FeedIngestService.ingest — the entry key (input, external_id)', () =
         expect(await ledgerOf(tx, fixture.userId)).toHaveLength(7200);
       });
     });
-  }, 120_000); // Thousands of rows, on a CI box several times slower than a laptop (SC-1528).
+  }, 300_000); // Thousands of rows, on a CI box several times slower than a laptop, sometimes beside a second gate run (SC-1528).
 
   // The stamp is scoped by user as well as by account (review M3): another
   // user's row in the account is never stamped, so never moved.

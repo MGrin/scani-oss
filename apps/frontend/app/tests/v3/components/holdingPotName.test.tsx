@@ -46,6 +46,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
       name: 'Tinkoff',
       type: 'Checking Account',
       typeCode: 'checking',
+      class: 'asset',
       institutionId: 'i1',
     },
     institution: { id: 'i1', name: 'Tinkoff', type: 'Bank', typeCode: 'bank' },
@@ -56,6 +57,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
     isHidden: false,
     source: 'manual',
     refreshable: false,
+    deleteHides: false,
     ...overrides,
   };
 }
@@ -78,6 +80,8 @@ function configFor(holdings: HoldingWithDetails[]) {
       currency: '$',
       onEdit: () => undefined,
       onRecordMovement: () => undefined,
+      onUpdateValue: () => undefined,
+      onMoveMoney: () => undefined,
       onToggleActive: () => undefined,
       onMarkScam: () => undefined,
       onRefreshPrice: () => undefined,

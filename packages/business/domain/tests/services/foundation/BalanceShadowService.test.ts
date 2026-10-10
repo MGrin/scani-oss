@@ -7,11 +7,7 @@ import { Container } from 'typedi';
 import { EngineEvidenceRepository } from '../../../src/repositories/EngineEvidenceRepository';
 import { BalanceShadowService } from '../../../src/services/foundation/BalanceShadowService';
 import { classifyHoldingEvidence } from '../../../src/services/foundation/legacy-classification';
-import {
-  compareBalance,
-  type LegacyBalanceReading,
-} from '../../../src/services/foundation/shadow-comparison';
-import { BalanceAtTimeService } from '../../../src/services/pricing/BalanceAtTimeService';
+import { compareBalance } from '../../../src/services/foundation/shadow-comparison';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 import { withTestDb } from '../../../test/helpers/db';
 import { makeInstitution, makeUser } from '../../../test/helpers/factories';
@@ -99,8 +95,7 @@ async function walletAheadOfAnchor(tx: DatabaseTransaction, userId: string): Pro
 
 /**
  * A manual holding typed as 50 on Jan 15 and 80 on Feb 15, with nothing in
- * between. On Feb 1 the engine holds 50; `BalanceAtTimeService` draws a line
- * between the two and answers about 66.
+ * between, stored as 80: it matches at `asOf`.
  */
 async function interpolatedManual(
   tx: DatabaseTransaction,
@@ -144,60 +139,17 @@ function emptyIngest(tx: DatabaseTransaction, userId: string): Promise<HoldingRo
 
 /**
  * The differences the shadow found when it read each user's evidence in one
- * load, with `BalanceAtTimeService` answering from every holding's rows at
- * once: the result reading one holding at a time must equal.
+ * load: the result reading one holding at a time must equal.
  */
-async function perUserDifferences(
-  tx: DatabaseTransaction,
-  userId: string,
-  asOf: Date,
-  pastInstants: readonly Date[]
-) {
+async function perUserDifferences(tx: DatabaseTransaction, userId: string, asOf: Date) {
   const raws = await Container.get(EngineEvidenceRepository).findHoldingEvidence({ userId }, tx);
-  const caches = {
-    holdings: new Map(raws.map((r) => [r.holding.id, r.holding])),
-    observations: new Map(raws.map((r) => [r.holding.id, r.observations])),
-    transactions: new Map(raws.map((r) => [r.holding.id, r.transactions])),
-  };
   const found = [];
   for (const raw of raws) {
-    const holding = classifyHoldingEvidence(raw);
-    const readings: Array<{ at: Date; legacy: LegacyBalanceReading }> = [
-      {
-        at: asOf,
-        legacy: {
-          comparator: 'stored-balance',
-          balance: raw.holding.balance,
-          absent: false,
-          interpolated: false,
-          floored: false,
-          lastUpdated: raw.holding.lastUpdated,
-        },
-      },
-    ];
-    for (const past of pastInstants) {
-      const r = await Container.get(BalanceAtTimeService).getBalance(
-        raw.holding.id,
-        past,
-        tx,
-        caches
-      );
-      readings.push({
-        at: past,
-        legacy: {
-          comparator: 'balance-at-time',
-          balance: r.balance?.toFixed() ?? null,
-          absent: r.balance === null || r.beforeRecords,
-          interpolated: r.interpolated,
-          floored: r.floored,
-          lastUpdated: null,
-        },
-      });
-    }
-    for (const { at: instant, legacy } of readings) {
-      const difference = compareBalance(holding, instant, legacy);
-      if (difference !== null) found.push({ ...difference, holdingId: raw.holding.id });
-    }
+    const difference = compareBalance(classifyHoldingEvidence(raw), asOf, {
+      balance: raw.holding.balance,
+      lastUpdated: raw.holding.lastUpdated,
+    });
+    if (difference !== null) found.push({ ...difference, holdingId: raw.holding.id });
   }
   return found;
 }
@@ -208,10 +160,7 @@ describe('BalanceShadowService.run', () => {
       const user = await makeUser(tx);
       await matchingManual(tx, user.id);
 
-      const { runId, summary } = await service().run(
-        { asOf: AS_OF, pastInstants: [], userId: user.id },
-        tx
-      );
+      const { runId, summary } = await service().run({ asOf: AS_OF, userId: user.id }, tx);
 
       expect(summary.compared).toBe(1);
       expect(summary.matched).toBe(1);
@@ -225,10 +174,7 @@ describe('BalanceShadowService.run', () => {
       const user = await makeUser(tx);
       const holding = await walletAheadOfAnchor(tx, user.id);
 
-      const { runId, summary } = await service().run(
-        { asOf: AS_OF, pastInstants: [], userId: user.id },
-        tx
-      );
+      const { runId, summary } = await service().run({ asOf: AS_OF, userId: user.id }, tx);
 
       const rows = await differencesOf(tx, runId);
       expect(rows).toHaveLength(1);
@@ -251,26 +197,6 @@ describe('BalanceShadowService.run', () => {
     });
   });
 
-  test('past instants compare with BalanceAtTimeService', async () => {
-    await withTestDb(async (tx) => {
-      const user = await makeUser(tx);
-      await interpolatedManual(tx, user.id);
-      const feb1 = at('2026-02-01T00:00:00Z');
-
-      const { runId, summary } = await service().run(
-        { asOf: AS_OF, pastInstants: [feb1], userId: user.id },
-        tx
-      );
-
-      const rows = await differencesOf(tx, runId);
-      expect(rows.length).toBeGreaterThanOrEqual(1);
-      expect(rows.every((r) => r.comparator === 'balance-at-time')).toBe(true);
-      expect(rows.every((r) => r.at.getTime() === feb1.getTime())).toBe(true);
-      expect(rows[0]).toMatchObject({ category: 'driftAhead-interpolation', engineValue: '50' });
-      expect(summary).toMatchObject({ compared: 2, matched: 1 });
-    });
-  });
-
   test('REVIEW FOCUS 4: a run writes only its report', async () => {
     await withTestDb(async (tx) => {
       const user = await makeUser(tx);
@@ -280,15 +206,12 @@ describe('BalanceShadowService.run', () => {
       await emptyIngest(tx, user.id);
       const before = await evidenceFingerprint(tx);
 
-      const { runId } = await service().run(
-        { asOf: AS_OF, pastInstants: [at('2026-02-01T00:00:00Z')] },
-        tx
-      );
+      const { runId } = await service().run({ asOf: AS_OF }, tx);
 
       expect(await evidenceFingerprint(tx)).toEqual(before);
-      expect(before.guard).toBe('D');
+      expect(before.guard).toBe('O');
       // Not vacuous: the run did compare, and stored what it found.
-      expect((await differencesOf(tx, runId)).length).toBeGreaterThanOrEqual(2);
+      expect((await differencesOf(tx, runId)).length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -297,10 +220,7 @@ describe('BalanceShadowService.run', () => {
       const user = await makeUser(tx);
       await emptyIngest(tx, user.id);
 
-      const { runId, summary } = await service().run(
-        { asOf: AS_OF, pastInstants: [], userId: user.id },
-        tx
-      );
+      const { runId, summary } = await service().run({ asOf: AS_OF, userId: user.id }, tx);
 
       expect(summary).toMatchObject({ compared: 1, matched: 1, byCategory: {} });
       expect(await differencesOf(tx, runId)).toEqual([]);
@@ -313,10 +233,7 @@ describe('BalanceShadowService.run', () => {
       await matchingManual(tx, user.id);
       await walletAheadOfAnchor(tx, user.id);
 
-      const { summary } = await service().run(
-        { asOf: AS_OF, pastInstants: [], userId: user.id },
-        tx
-      );
+      const { summary } = await service().run({ asOf: AS_OF, userId: user.id }, tx);
 
       expect(summary.unlabelled).toEqual({ holdings: 2, observations: 2, entries: 1 });
       expect(summary.excluded).toEqual({
@@ -337,23 +254,20 @@ describe('BalanceShadowService.run', () => {
         .update(schema.holdingTransactions)
         .set({ ledgerKind: 'inflow', kindOrigin: 'source' })
         .where(eq(schema.holdingTransactions.holdingId, holding.id));
-      const fresh = await service().run({ asOf: AS_OF, pastInstants: [], userId: user.id }, tx);
+      const fresh = await service().run({ asOf: AS_OF, userId: user.id }, tx);
       await tx
         .update(schema.holdingTransactions)
         .set({ transferGroupId: randomUUID() })
         .where(eq(schema.holdingTransactions.holdingId, holding.id));
 
-      const { summary } = await service().run(
-        { asOf: AS_OF, pastInstants: [], userId: user.id },
-        tx
-      );
+      const { summary } = await service().run({ asOf: AS_OF, userId: user.id }, tx);
 
       expect(fresh.summary.staleLabels).toBe(0);
       expect(summary.staleLabels).toBe(1);
     });
   });
 
-  test('a run over several users and instants sums every holding of every user', async () => {
+  test('a run over several users sums every holding of every user', async () => {
     await withTestDb(async (tx) => {
       const first = await makeUser(tx);
       const second = await makeUser(tx);
@@ -365,30 +279,25 @@ describe('BalanceShadowService.run', () => {
 
       let result: Awaited<ReturnType<BalanceShadowService['run']>>;
       try {
-        result = await service().run(
-          { asOf: AS_OF, pastInstants: [at('2026-02-01T00:00:00Z'), at('2026-02-20T00:00:00Z')] },
-          tx
-        );
+        result = await service().run({ asOf: AS_OF }, tx);
       } finally {
         users.mockRestore();
       }
 
-      // 4 holdings x (asOf + 2 past instants). The wallet ahead of its anchor
-      // differs at asOf only, the interpolated holding on Feb 1 only, and the
-      // wallet with an opening row at all three.
+      // 4 holdings at asOf: the wallet ahead of its anchor and the wallet
+      // with an opening row differ.
       expect(result.summary).toMatchObject({
-        compared: 12,
-        matched: 7,
+        compared: 4,
+        matched: 2,
         byCategory: {
           'ledger-ahead-of-anchor': 1,
-          'driftAhead-interpolation': 1,
-          'opening-row': 3,
+          'opening-row': 1,
         },
         unlabelled: { holdings: 4, observations: 4, entries: 2 },
         excluded: { 'fabricated-observation': 0, 'opening-row': 1, 'legacy-correction-row': 0 },
       });
       const rows = await differencesOf(tx, result.runId);
-      expect(rows).toHaveLength(5);
+      expect(rows).toHaveLength(2);
       expect(new Set(rows.map((r) => r.userId))).toEqual(new Set([first.id, second.id]));
     });
   });
@@ -402,7 +311,6 @@ describe('BalanceShadowService.run', () => {
         await interpolatedManual(tx, user.id),
         await walletWithOpening(tx, user.id),
       ];
-      const pastInstants = [at('2026-02-01T00:00:00Z'), at('2026-02-20T00:00:00Z')];
       const repo = Container.get(EngineEvidenceRepository);
       const load = repo.findHoldingEvidence.bind(repo);
       const scopes: Array<readonly string[] | undefined> = [];
@@ -413,7 +321,7 @@ describe('BalanceShadowService.run', () => {
 
       let runId: string;
       try {
-        ({ runId } = await service().run({ asOf: AS_OF, pastInstants, userId: user.id }, tx));
+        ({ runId } = await service().run({ asOf: AS_OF, userId: user.id }, tx));
       } finally {
         evidence.mockRestore();
       }
@@ -441,32 +349,48 @@ describe('BalanceShadowService.run', () => {
         legacyValue: d.legacyValue,
         detail: d.detail,
       });
-      const expected = (await perUserDifferences(tx, user.id, AS_OF, pastInstants))
+      const expected = (await perUserDifferences(tx, user.id, AS_OF))
         .map(fields)
         .toSorted((a, b) => key(a).localeCompare(key(b)));
       const stored = (await differencesOf(tx, runId))
         .map(fields)
         .toSorted((a, b) => key(a).localeCompare(key(b)));
-      // Not vacuous: three of the four holdings differ, in three categories.
-      expect(new Set(expected.map((d) => d.category)).size).toBe(3);
+      // Not vacuous: two of the four holdings differ, in two categories.
+      expect(new Set(expected.map((d) => d.category)).size).toBe(2);
       expect(stored).toEqual(expected);
     });
   });
 
-  test('a dust balance is written in plain notation on both sides', async () => {
+  test('a dust balance is written in plain notation', async () => {
     await withTestDb(async (tx) => {
       const user = await makeUser(tx);
-      await interpolatedManual(tx, user.id, ['0.00000005', '0.00000008']);
-
-      const { runId } = await service().run(
-        { asOf: AS_OF, pastInstants: [at('2026-02-01T00:00:00Z')], userId: user.id },
-        tx
+      const holding = await holdingOf(tx, user.id, {
+        balance: '0.00000005',
+        source: 'blockchain',
+      });
+      await observe(
+        tx,
+        holding,
+        at('2026-02-27T00:00:00Z'),
+        '0.00000005',
+        'updateHoldingBalanceWithEvent'
       );
+      await makeHoldingTransaction(tx, {
+        userId: user.id,
+        holdingId: holding.id,
+        tokenId: holding.tokenId,
+        kind: 'deposit',
+        quantity: '0.00000003',
+        source: 'etherscan',
+        occurredAt: at('2026-02-28T00:00:00Z'),
+      });
+
+      const { runId } = await service().run({ asOf: AS_OF, userId: user.id }, tx);
 
       const rows = await differencesOf(tx, runId);
       expect(rows).toHaveLength(1);
-      expect(rows[0]?.engineValue).toBe('0.00000005');
-      expect(rows[0]?.legacyValue).toMatch(/^0\.0000000664516/);
+      expect(rows[0]?.engineValue).toBe('0.00000008');
+      expect(rows[0]?.legacyValue).toBe('0.00000005');
     });
   });
 
@@ -476,8 +400,8 @@ describe('BalanceShadowService.run', () => {
       await matchingManual(tx, user.id);
       const wallBefore = Date.now();
 
-      const narrowed = await service().run({ asOf: AS_OF, pastInstants: [], userId: user.id }, tx);
-      const full = await service().run({ asOf: AS_OF, pastInstants: [] }, tx);
+      const narrowed = await service().run({ asOf: AS_OF, userId: user.id }, tx);
+      const full = await service().run({ asOf: AS_OF }, tx);
 
       const one = await runRow(tx, narrowed.runId);
       const all = await runRow(tx, full.runId);
@@ -516,7 +440,7 @@ describe('BalanceShadowService.run', () => {
 
       let thrown: unknown;
       try {
-        await service().run({ asOf: AS_OF, pastInstants: [] }, tx);
+        await service().run({ asOf: AS_OF }, tx);
       } catch (err) {
         thrown = err;
       } finally {
@@ -544,7 +468,7 @@ describe('BalanceShadowService.run', () => {
 
       let thrown: unknown;
       try {
-        await service().run({ asOf: AS_OF, pastInstants: [] }, tx);
+        await service().run({ asOf: AS_OF }, tx);
       } catch (err) {
         thrown = err;
       } finally {
@@ -589,7 +513,7 @@ describe('BalanceShadowService.run', () => {
     let stored: Array<typeof runs.$inferSelect> = [];
     try {
       try {
-        await service().run({ asOf: AS_OF, pastInstants: [] });
+        await service().run({ asOf: AS_OF });
       } catch (err) {
         thrown = err;
       }

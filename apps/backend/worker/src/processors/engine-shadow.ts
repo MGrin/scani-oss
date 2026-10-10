@@ -33,13 +33,10 @@ export class EngineShadowProcessor extends ScheduledJobProcessor {
 
   protected async handle(job: ProcessorContext['job']): Promise<void> {
     const done = doneKinds(job.data, job.id);
-    const asOf = new Date();
     await this.shadows.execute({
-      asOf,
+      asOf: new Date(),
       kinds: ENGINE_SHADOW_KINDS.filter((kind) => !done.includes(kind)),
       onRecorded: async (run) => {
-        // A price run's byCategory sums every instant it compared; this is now's alone.
-        const atAsOf = run.summary.byInstant?.[asOf.toISOString()];
         this.logger.info(
           {
             kind: run.kind,
@@ -47,7 +44,6 @@ export class EngineShadowProcessor extends ScheduledJobProcessor {
             compared: run.summary.compared,
             matched: run.summary.matched,
             byCategory: run.summary.byCategory,
-            ...(atAsOf === undefined ? {} : { byCategoryAtAsOf: atAsOf }),
           },
           'Engine shadow run recorded'
         );

@@ -1,5 +1,7 @@
 import {
   describeJobFailure,
+  formatNumber,
+  quantityDecimals,
   type ReviewAmount,
   type ReviewDetail,
   type ReviewLabel,
@@ -74,6 +76,10 @@ export function reviewTitle(texts: ReviewTexts, label: ReviewLabel): string {
       return texts.t('v3.review.item.answersTradesExplain');
     case 'unpriceableAirdrops':
       return texts.t('v3.review.item.unpriceableAirdrops');
+    case 'transferNotArrived':
+      return texts.t('v3.review.item.transferNotArrived');
+    case 'untrackedTransferArrived':
+      return texts.t('v3.review.item.untrackedTransferArrived');
   }
 }
 
@@ -143,6 +149,18 @@ export function reviewDetailText(
       return texts.t('v3.review.item.unpairedTransfers', { count: detail.transfers });
     case 'unpriceableAirdrops':
       return texts.t('v3.review.item.unpriceableTokens', { count: detail.count });
+    case 'transferInTransit':
+      return texts.t('v3.review.item.transferInTransit', {
+        amount: `${formatNumber(detail.quantity, { decimals: quantityDecimals(detail.quantity) })} ${detail.tokenSymbol}`,
+        source: detail.sourceAccountName,
+        destination: detail.destinationAccountName,
+      });
+    case 'untrackedTransferArrived':
+      return texts.t('v3.review.item.untrackedTransferArrivedDetail', {
+        amount: `${formatNumber(detail.quantity, { decimals: quantityDecimals(detail.quantity) })} ${detail.tokenSymbol}`,
+        source: detail.sourceAccountName,
+        destination: detail.destinationAccountName,
+      });
     case 'jobFailure': {
       // The one description of a failure, shared with both frontends' job
       // pages — so /review cannot call a dead job something the job's own

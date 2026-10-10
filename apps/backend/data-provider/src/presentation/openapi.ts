@@ -125,36 +125,3 @@ export function buildOpenApiDocument(
 
   return doc;
 }
-
-/**
- * Scalar's standalone API reference bundle, pinned to one version and its
- * sha384 (SC-1353). This page runs on the origin that holds the scani-cloud
- * session cookie; the unversioned URL it used to load would run whatever the
- * CDN served next, with that cookie in reach. The browser refuses a file whose
- * bytes do not match. To upgrade: change the version, then set the hash from
- * `curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A`.
- */
-const SCALAR_BUNDLE = {
-  src: 'https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.72.1/dist/browser/standalone.js',
-  integrity: 'sha384-U11tb2XnKvmwt8RlTvnwUnYgrN+ur4Xyh9htLhjajWNR/Oyl5AX5DEz00qRmlrmK',
-};
-
-/**
- * Stand-alone HTML page that boots Scalar's API reference UI from the CDN
- * against our `/openapi.json`. Inlined here so we don't take
- * `@scalar/api-reference` as a runtime dep.
- */
-export function renderScalarHtml(specUrl: string): string {
-  return `<!doctype html>
-<html>
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Scani Cloud API — Reference</title>
-  </head>
-  <body>
-    <script id="api-reference" data-url="${specUrl}"></script>
-    <script src="${SCALAR_BUNDLE.src}" integrity="${SCALAR_BUNDLE.integrity}" crossorigin="anonymous"></script>
-  </body>
-</html>`;
-}

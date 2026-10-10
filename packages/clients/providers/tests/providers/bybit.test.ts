@@ -684,8 +684,9 @@ describe('BybitProvider — Unified transaction log (SC-1461)', () => {
     ...extra,
   });
 
-  async function importLog(list: unknown[]) {
+  async function importLogWithWarnings(list: unknown[]) {
     const p = new BybitProvider(passthroughLimiter());
+    const warnings: unknown[] = [];
     const hook = queueFetch((url) => {
       if (url.includes('/v5/account/transaction-log')) {
         return { body: { retCode: 0, retMsg: 'OK', result: { nextPageCursor: '', list } } };
@@ -693,11 +694,20 @@ describe('BybitProvider — Unified transaction log (SC-1461)', () => {
       return { body: { retCode: 0, retMsg: 'OK', result: { rows: [], list: [] } } };
     });
     try {
-      const events = await p.fetchTransactions({ ...(ctx as object), since, until } as never);
-      return events.filter((e) => e.externalId.startsWith('txlog-'));
+      const events = await p.fetchTransactions({
+        ...(ctx as object),
+        since,
+        until,
+        noteWarning: (w: unknown) => warnings.push(w),
+      } as never);
+      return { events: events.filter((e) => e.externalId.startsWith('txlog-')), warnings };
     } finally {
       hook.restore();
     }
+  }
+
+  async function importLog(list: unknown[]) {
+    return (await importLogWithWarnings(list)).events;
   }
 
   test('a futures fill, funding and a liquidation import as signed realized PnL', async () => {
@@ -739,6 +749,49 @@ describe('BybitProvider — Unified transaction log (SC-1461)', () => {
     expect(events).toHaveLength(1);
   });
 
+  test('a log type we do not import is named and counted, never guessed into a row (SC-1591)', async () => {
+    const { events, warnings } = await importLogWithWarnings([
+      row('f', 'TRADE', '-1.5', { category: 'linear' }),
+      row('b1', 'BONUS', '5'),
+      row('b2', 'BONUS', '2'),
+      row('a1', 'AIRDROP', '1'),
+    ]);
+    expect(events.map((e) => e.externalId)).toEqual(['txlog-f']);
+    expect(warnings).toHaveLength(1);
+    const notice = warnings[0] as {
+      key: string;
+      params: { count: number };
+      lists: { types: { items: Array<{ text: string }> } };
+    };
+    expect(notice.key).toBe('v3.jobs.notices.bybitUnlistedLogTypes');
+    expect(notice.params.count).toBe(3);
+    expect(notice.lists.types.items.map((i) => i.text)).toEqual(['"BONUS" (2)', '"AIRDROP" (1)']);
+  });
+
+  test('an unlisted row that moves no balance raises nothing (SC-1591)', async () => {
+    const { events, warnings } = await importLogWithWarnings([row('z', 'BONUS', '0')]);
+    expect(events).toEqual([]);
+    expect(warnings).toEqual([]);
+  });
+
+  test('every type the import knows stays silent', async () => {
+    const { warnings } = await importLogWithWarnings([
+      row('t', 'TRADE', '-1', { category: 'linear' }),
+      row('s', 'TRADE', '-2', { category: 'spot' }),
+      row('c', 'SETTLEMENT', '1', { category: 'linear' }),
+      row('l', 'LIQUIDATION', '-1', { category: 'linear' }),
+      row('d', 'DELIVERY', '1', { category: 'linear' }),
+      row('a', 'ADL', '1', { category: 'linear' }),
+      row('i', 'TRANSFER_IN', '5'),
+      row('o', 'TRANSFER_OUT', '-5'),
+      row('x', 'EXEMPTED_INTEREST', '0'),
+      row('n', 'INTEREST', '-0.1'),
+      row('k1-s', 'CURRENCY_SELL', '-0.1', { currency: 'BTC', tradeId: 'k1' }),
+      row('k1-b', 'CURRENCY_BUY', '1', { tradeId: 'k1' }),
+    ]);
+    expect(warnings).toEqual([]);
+  });
+
   test("Bybit's auto-repay conversion imports as one spot sale", async () => {
     const events = await importLog([
       row('t1-s', 'CURRENCY_SELL', '-0.00043219', { currency: 'BTC', tradeId: 't1' }),
@@ -750,5 +803,43 @@ describe('BybitProvider — Unified transaction log (SC-1461)', () => {
     expect(events[0]?.primary.quantity).toBe('-0.00043219');
     expect(events[0]?.counter?.tokenIdentity.symbol).toBe('USDT');
     expect(events[0]?.counter?.quantity).toBe('12.34567891');
+  });
+});
+
+describe('BybitProvider — a rejected key is an auth failure (SC-1686)', () => {
+  async function kindOf(retCode: number, retMsg: string, call: 'balances' | 'transactions') {
+    const p = new BybitProvider(passthroughLimiter());
+    const hook = queueFetch(() => ({ body: { retCode, retMsg } }));
+    try {
+      if (call === 'balances') await p.fetchBalances(ctx as never);
+      else
+        await p.fetchTransactions({
+          ...ctx,
+          since: new Date('2026-10-01T00:00:00Z'),
+          until: new Date('2026-10-02T00:00:00Z'),
+        } as never);
+    } catch (err) {
+      return (err as { kind?: string }).kind;
+    } finally {
+      hook.restore();
+    }
+    return 'resolved';
+  }
+
+  for (const [retCode, retMsg] of [
+    [33004, 'Your api key has expired.'],
+    [10003, 'API key is invalid.'],
+    [10004, 'Error sign, please check your signature generation algorithm.'],
+    [10007, 'User authentication failed.'],
+    [10010, "Unmatched IP, please check your API key's bound IP addresses."],
+  ] as const) {
+    test(`retCode ${retCode} fails a balance and a transaction read as auth-failed`, async () => {
+      expect(await kindOf(retCode, retMsg, 'balances')).toBe('auth-failed');
+      expect(await kindOf(retCode, retMsg, 'transactions')).toBe('auth-failed');
+    });
+  }
+
+  test('control: an ordinary refusal stays unrecoverable', async () => {
+    expect(await kindOf(10001, 'params error', 'balances')).toBe('unrecoverable');
   });
 });

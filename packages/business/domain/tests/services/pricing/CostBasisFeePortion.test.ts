@@ -11,8 +11,9 @@ import {
   CostBasisService,
   type DisposalLotMatch,
 } from '../../../src/services/pricing/CostBasisService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub } from '../../../test/helpers/price-series';
 
 /**
  * The queue's split can say part of an outflow was a fee (SC-888).
@@ -46,9 +47,10 @@ function makeService(): CostBasisService {
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
   // Every priced row below carries `priceNative` in the base currency, so a
   // conversion means the walk reached for a price it should not have needed.
-  Container.set(PriceGraphService, {
-    convert: async (amount: Decimal) => ({ amount: new Decimal(amount), stale: false }),
-  } as unknown as PriceGraphService);
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal) => ({ amount: new Decimal(amount), stale: false }))
+  );
   const instance = new CostBasisService();
   Container.set(CostBasisService, instance);
   return instance;

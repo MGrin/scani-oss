@@ -1,6 +1,7 @@
 /**
- * Characterization (foundation A3, Task 5): which base the import warm-up
- * asks in today, before Task 7 hands it the base as a token.
+ * The import warm-up (foundation A3, Tasks 5, 7 and 15): it fetches against
+ * the fiat USD, as every provider quote is stored from PR-6 on (D-4), and
+ * answers in the user's base through `PriceReader`.
  *
  * The warm-up resolves the user's base through the global connection, so
  * every row here is committed and removed after each test.
@@ -14,7 +15,7 @@ import type { CurrentPriceProvider } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
-import { CurrencyConverter } from '../../../src/services/pricing/CurrencyConverter';
+import { PriceHubResolver } from '../../../src/services/pricing/PriceHubResolver';
 import { PriceWarmupService } from '../../../src/services/pricing/PriceWarmupService';
 import { PricingProviderRouter } from '../../../src/services/pricing/PricingProviderRouter';
 import { PricingService } from '../../../src/services/pricing/PricingService';
@@ -81,6 +82,7 @@ function warmup(): { service: PriceWarmupService; asks: Ask[] } {
         price: '100',
         timestamp: ctx.timestamp ?? new Date(),
         source: 'coingecko',
+        barDay: null,
       };
     },
   };
@@ -88,27 +90,37 @@ function warmup(): { service: PriceWarmupService; asks: Ask[] } {
   registry.register(coingecko);
   Container.set(ProviderRegistry, registry);
   Container.set(PricingProviderRouter, new PricingProviderRouter());
-  Container.set(CurrencyConverter, new CurrencyConverter());
   Container.set(PricingService, new PricingService());
   return { service: new PriceWarmupService(), asks };
 }
 
 describe('PriceWarmupService.warm', () => {
-  test('the warm-up asks in the user’s base', async () => {
+  test('the warm-up asks in USD and answers in the user’s base', async () => {
+    const usdId = await Container.get(PriceHubResolver).usdTokenId();
     const base = await commitToken('fiat');
+    // One of the user's base buys 2 USD.
+    await getDb()
+      .insert(schema.tokenPrices)
+      .values({
+        tokenId: base.id,
+        baseTokenId: usdId,
+        price: '2',
+        timestamp: new Date(Date.now() - 60_000),
+        source: 'frankfurter',
+      });
     const user = await commitUser(base.id);
     const token = await commitToken();
     const { service, asks } = warmup();
 
     const prices = await service.warm({ userId: user.id, tokenIds: [token.id] });
 
-    expect(asks).toEqual([{ tokenId: token.id, baseId: base.id, baseSymbol: base.symbol }]);
-    expect(prices.get(token.id)).toBe('100');
+    expect(asks).toEqual([{ tokenId: token.id, baseId: usdId, baseSymbol: 'USD' }]);
+    expect(prices.get(token.id)).toBe('50');
     const stored = await getDb()
       .select()
       .from(schema.tokenPrices)
       .where(eq(schema.tokenPrices.tokenId, token.id));
-    expect(stored.map((r) => r.baseTokenId)).toEqual([base.id]);
+    expect(stored.map((r) => r.baseTokenId)).toEqual([usdId]);
   });
 
   test('a user with no base currency is asked in USD', async () => {

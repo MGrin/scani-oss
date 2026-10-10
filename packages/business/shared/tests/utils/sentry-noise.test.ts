@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
   isIgnoredSentryMessage,
+  isInjectedEvalRefusal,
   isThirdPartyOnlyStack,
   SENTRY_IGNORED_ERROR_PATTERNS,
 } from '../../src/utils/sentry-noise';
@@ -138,5 +139,58 @@ describe('isThirdPartyOnlyStack', () => {
         exception: { values: [{ stacktrace: { frames: [{ filename: '' }] } }] },
       })
     ).toBe(false);
+  });
+});
+
+describe('isInjectedEvalRefusal (SC-1630)', () => {
+  const REFUSAL =
+    "Refused to evaluate a string as JavaScript because 'unsafe-eval' is not an allowed source of script in the following Content Security Policy directive: \"script-src 'self'\".";
+  const event = (
+    type: string,
+    value: string,
+    frames: Array<{ filename: string; function?: string }>
+  ) => ({
+    exception: { values: [{ type, value, stacktrace: { frames } }] },
+  });
+  // The SC-1630 event as Sentry received it: Backpack's injected code, called
+  // through the SDK's own callback wrapper, the only frame in our bundle.
+  const sentryWrap = { filename: 'https://app.scani.xyz/assets/index-CQ_pzUMY.js', function: 'r' };
+  const injected = [
+    { filename: '<anonymous>', function: 'next' },
+    { filename: '<anonymous>', function: 'predicate' },
+    { filename: '<anonymous>', function: 'eval' },
+  ];
+
+  test('drops a CSP eval refusal raised by injected code', () => {
+    expect(isInjectedEvalRefusal(event('EvalError', REFUSAL, [sentryWrap, ...injected]))).toBe(
+      true
+    );
+  });
+
+  test('drops one raised by an extension script', () => {
+    const ext = [
+      { filename: 'chrome-extension://abc/inject.js', function: 'run' },
+      { filename: '<anonymous>', function: 'eval' },
+    ];
+    expect(isInjectedEvalRefusal(event('EvalError', REFUSAL, ext))).toBe(true);
+  });
+
+  test('keeps one where our bundle calls eval: that is a dependency we must hear about', () => {
+    const ours = [
+      { filename: 'https://app.scani.xyz/assets/vendor-x.js', function: 'compile' },
+      { filename: '<anonymous>', function: 'eval' },
+    ];
+    expect(isInjectedEvalRefusal(event('EvalError', REFUSAL, ours))).toBe(false);
+  });
+
+  test('keeps other errors from injected code, and anything it cannot classify', () => {
+    expect(isInjectedEvalRefusal(event('TypeError', 'x is undefined', injected))).toBe(false);
+    expect(isInjectedEvalRefusal(event('EvalError', REFUSAL, []))).toBe(false);
+    expect(
+      isInjectedEvalRefusal(
+        event('EvalError', REFUSAL, [{ filename: '<anonymous>', function: 'eval' }])
+      )
+    ).toBe(false);
+    expect(isInjectedEvalRefusal({})).toBe(false);
   });
 });

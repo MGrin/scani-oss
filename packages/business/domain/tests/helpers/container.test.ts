@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { ExchangeRateApiClient } from '@scani/providers/providers/exchangerate-api';
+import { FrankfurterClient } from '@scani/providers/providers/frankfurter/client';
 import { Container, Service, Token } from 'typedi';
 import {
   containerRegistrations,
@@ -9,7 +9,7 @@ import {
 
 // Resolved before this file's snapshot, as a file with no restore scope
 // leaves it for every file that runs after.
-const clientTheProcessHad = Container.get(ExchangeRateApiClient);
+const clientTheProcessHad = Container.get(FrankfurterClient);
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -85,9 +85,9 @@ describe('snapshotContainer', () => {
 });
 
 describe('restoreContainerAfterAll', () => {
-  // The client keeps the table it fetched for an hour, so one that outlived
-  // a file would carry that table into the next.
-  test('gives the file an exchangerate-api client of its own', () => {
-    expect(Container.get(ExchangeRateApiClient)).not.toBe(clientTheProcessHad);
+  // The client keeps each bank table it fetched for an hour, so one that
+  // outlived a file would carry those tables into the next.
+  test('gives the file a Frankfurter client of its own', () => {
+    expect(Container.get(FrankfurterClient)).not.toBe(clientTheProcessHad);
   });
 });

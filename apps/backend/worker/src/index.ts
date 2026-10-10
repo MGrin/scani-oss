@@ -60,6 +60,9 @@ import {
   PostgresResourceLock,
   QueueClient,
   RedisLifecyclePublisher,
+  type ScheduledJobGroupDescriptor,
+  ScheduledJobGroupProcessor,
+  ScheduledJobProcessor,
   serveWorkerWake,
   WorkerClient,
 } from '@scani/queue';
@@ -107,11 +110,18 @@ import { Container } from 'typedi';
 // the class registers with the typedi Container before WorkerClient
 // pulls them out and registers them.
 import { isPostgresTransientError } from './lib/postgres-transient-error';
+import { startOutboxDispatchLoop } from './outbox/outbox-dispatch-loop';
 import { ActivationNudgeProcessor } from './processors/activation-nudge';
+import { ActivePricingProcessor } from './processors/active-pricing';
 import { AlertSweepProcessor } from './processors/alert-sweep';
+import { AppOpenRefreshProcessor } from './processors/app-open-refresh';
 import { ApyPayoutsProcessor } from './processors/apy-payouts';
 import { BackfillCounterpartyProcessor } from './processors/backfill-counterparty';
 import { BackfillTokenIdentityProcessor } from './processors/backfill-token-identity';
+import {
+  BudgetAppImportProcessor,
+  BudgetAppImportUndoProcessor,
+} from './processors/budget-app-import';
 import { CurrencyRateRefreshProcessor } from './processors/currency-rate-refresh';
 import { DbBackupProcessor } from './processors/db-backup';
 import { DemoResetProcessor } from './processors/demo-reset';
@@ -140,8 +150,9 @@ import { RescoreScamTokensProcessor } from './processors/rescore-scam-tokens';
 import { ScreenshotParseProcessor } from './processors/screenshot-parse';
 import { SplitHoldingProbeProcessor } from './processors/split-holding-probe';
 import { StaleSyncProbeProcessor } from './processors/stale-sync-probe';
-import { TokenPricesDownsampleProcessor } from './processors/token-prices-downsample';
 import { TransferLinkingProcessor } from './processors/transfer-linking';
+import { UserBackupProcessor } from './processors/user-backup';
+import { UserBackupRestoreProcessor } from './processors/user-backup-restore';
 import { UserDataDeleteProcessor } from './processors/user-data-delete';
 import { WalletBalancesProcessor } from './processors/wallet-balances';
 import { WalletImportProcessor } from './processors/wallet-import';
@@ -157,12 +168,12 @@ function resolveProcessors() {
   return [
     // Scheduled / cron-triggered (no payload, lock via descriptor.lockName).
     Container.get(PricingProcessor),
+    Container.get(ActivePricingProcessor),
     Container.get(WalletBalancesProcessor),
     Container.get(ExchangeBalancesProcessor),
     Container.get(ExchangeTransactionsProcessor),
     Container.get(ApyPayoutsProcessor),
     Container.get(HistoricalPriceBackfillProcessor),
-    Container.get(TokenPricesDownsampleProcessor),
     Container.get(PortfolioValueRollupProcessor),
     Container.get(TransferLinkingProcessor),
     Container.get(BackfillTokenIdentityProcessor),
@@ -196,10 +207,35 @@ function resolveProcessors() {
     Container.get(PortfolioHistoryBackfillProcessor),
     Container.get(HoldingPriceUpdateProcessor),
     Container.get(RefreshAccountBalanceProcessor),
+    Container.get(AppOpenRefreshProcessor),
     Container.get(UserDataDeleteProcessor),
+    Container.get(UserBackupProcessor),
+    Container.get(UserBackupRestoreProcessor),
+    Container.get(BudgetAppImportProcessor),
+    Container.get(BudgetAppImportUndoProcessor),
     Container.get(IngestTransactionsProcessor),
     Container.get(CurrencyRateRefreshProcessor),
   ];
+}
+
+// One processor per grouped schedule (SC-1688), built over the step
+// processors above, which stay registered by their own names so the admin's
+// "Run now" still runs a single job. A step never throws out of its group, so
+// the terminal-failure hook below never sees it; this reports it instead,
+// under the step's own name.
+function resolveGroups(processors: readonly unknown[]): ScheduledJobGroupProcessor[] {
+  const steps = processors.filter(
+    (p): p is ScheduledJobProcessor => p instanceof ScheduledJobProcessor
+  );
+  return SCHEDULED_JOB_DESCRIPTORS.filter(
+    (d): d is ScheduledJobGroupDescriptor => 'steps' in d
+  ).map(
+    (d) =>
+      new ScheduledJobGroupProcessor(d, steps, {
+        onStepFailure: (step, err, job) =>
+          sentryCapture(err, { jobName: step, jobId: String(job.id ?? 'unknown') }),
+      })
+  );
 }
 
 async function main(): Promise<void> {
@@ -230,9 +266,10 @@ async function main(): Promise<void> {
           finnhubFactory,
           // Yahoo runs *after* Finnhub by registration order so US-listed
           // equities still go to Finnhub first; Yahoo fills the gap for
-          // non-US listings (.TO/.NE/.L/.DE/…) and Frankfurter-unsupported
-          // fiat (RUB after 2022, KZT, GEL, AED, …) where Frankfurter
-          // returns null on historical lookups.
+          // non-US listings (.TO/.NE/.L/.DE/…). For fiat it is the fallback
+          // for history only, where Frankfurter did not answer or neither
+          // central bank it reads publishes: the hourly run sends fiat to
+          // Frankfurter alone.
           yahooFinanceFactory,
           // Chain providers — public-endpoint balance + address-validator
           // dispatch for wallet sync flows.
@@ -334,6 +371,7 @@ async function main(): Promise<void> {
   const publisher = connection.duplicate();
   Container.get(RedisRealtimeUpdatesService).configure(publisher);
   Container.get(RedisLifecyclePublisher).configure(publisher);
+  const outboxLoop = await startOutboxDispatchLoop(connection);
   // SC-518: the per-resource lock moved to Postgres. NOT a pg_advisory_lock,
   // despite cron-lock.ts nearby using one — an advisory lock is held until the
   // session releases it or the connection dies, while this lock needs a TTL. A
@@ -391,7 +429,8 @@ async function main(): Promise<void> {
   // Register every @Service-resolved processor with the WorkerClient
   // dispatch table. Side-effect imports above ensure the @Service
   // decorators have run and the classes are in the Container.
-  for (const processor of resolveProcessors()) {
+  const processors = resolveProcessors();
+  for (const processor of [...processors, ...resolveGroups(processors)]) {
     workerClient.register(processor);
   }
 
@@ -577,6 +616,7 @@ async function main(): Promise<void> {
       }
 
       await Container.get(QueueClient).close();
+      await outboxLoop.stop();
       await publisher.quit();
       await connection.quit();
       await flushSentry(2000);

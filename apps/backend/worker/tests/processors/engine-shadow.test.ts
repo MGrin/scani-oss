@@ -20,47 +20,24 @@ const summary = (compared: number, byCategory: Record<string, number>): ShadowRu
   durationMs: 5,
 });
 
-const PAST_CLOSE = '2026-02-28T23:59:59.999Z';
+type Kind = EngineShadowRunResult['kind'];
 
-/** A price run with one difference at `asOf` and two at a past close. */
-const priceRun = (asOf: Date): EngineShadowRunResult => ({
-  kind: 'price',
-  runId: 'run-p',
-  summary: {
-    ...summary(4, { 'fresher-price': 1, unexplained: 2 }),
-    byInstant: {
-      [asOf.toISOString()]: { 'fresher-price': 1 },
-      [PAST_CLOSE]: { unexplained: 2 },
-    },
-  },
-});
-const BALANCE_RUN: EngineShadowRunResult = {
-  kind: 'balance',
-  runId: 'run-b',
-  summary: summary(10, { unexplained: 2 }),
+const RUNS: Record<Kind, EngineShadowRunResult> = {
+  balance: { kind: 'balance', runId: 'run-b', summary: summary(10, { unexplained: 2 }) },
+  value: { kind: 'value', runId: 'run-v', summary: summary(4, { 'price-moved-since': 1 }) },
 };
-
-const PRICE_LINE = {
-  kind: 'price',
-  runId: 'run-p',
-  compared: 4,
-  matched: 1,
-  byCategory: { 'fresher-price': 1, unexplained: 2 },
-  byCategoryAtAsOf: { 'fresher-price': 1 },
-};
+const EVERY_KIND: Kind[] = ['balance', 'value'];
 
 /** A use case that reports each kind it is asked for, failing those named in `fails`. */
-function harness(fails: ReadonlyArray<'price' | 'balance'> = []) {
+function harness(fails: ReadonlyArray<Kind> = []) {
   const inputs: Input[] = [];
   Container.set(RunEngineShadowsUseCase, {
     execute: async (input: Input) => {
       inputs.push(input);
-      const failures: unknown[] = [];
-      for (const kind of input.kinds ?? ['price', 'balance']) {
-        if (fails.includes(kind)) failures.push(new Error(`${kind} broke`));
-        else await input.onRecorded?.(kind === 'price' ? priceRun(input.asOf) : BALANCE_RUN);
+      for (const kind of input.kinds ?? EVERY_KIND) {
+        if (fails.includes(kind)) throw new Error(`${kind} broke`);
+        await input.onRecorded?.(RUNS[kind]);
       }
-      if (failures.length > 0) throw failures[0];
       return [];
     },
   } as unknown as RunEngineShadowsUseCase);
@@ -119,44 +96,65 @@ describe('EngineShadowProcessor', () => {
     expect(input?.asOf).toBeInstanceOf(Date);
     expect(input?.asOf.getTime()).toBeGreaterThanOrEqual(before);
     expect(input?.asOf.getTime()).toBeLessThanOrEqual(after);
-    // The nightly run is every user, and on a first attempt both kinds.
+    // The nightly run is every user, and on a first attempt every kind.
     expect(input?.userId).toBeUndefined();
-    expect(input?.kinds).toEqual(['price', 'balance']);
+    expect(input?.kinds).toEqual(EVERY_KIND);
   });
 
-  test("logs one line per run: kind, run id, compared, matched, byCategory and a price run's categories at asOf", async () => {
+  test('logs one line per run: kind, run id, compared, matched and byCategory', async () => {
     const { processor, logger } = harness();
+    const { job, saved } = fakeJob();
 
-    const { logged } = await handle(processor, logger, fakeJob().job);
+    const { logged } = await handle(processor, logger, job);
 
-    // byCategory sums every instant, so the line also says what differed at asOf alone.
     expect(logged).toEqual([
-      PRICE_LINE,
       { kind: 'balance', runId: 'run-b', compared: 10, matched: 8, byCategory: { unexplained: 2 } },
+      {
+        kind: 'value',
+        runId: 'run-v',
+        compared: 4,
+        matched: 3,
+        byCategory: { 'price-moved-since': 1 },
+      },
     ]);
-    expect(logged[1]).not.toHaveProperty('byCategoryAtAsOf');
+    expect(saved).toEqual([
+      { engineShadowKindsDone: { jobId: 'job-1', kinds: ['balance'] } },
+      { engineShadowKindsDone: { jobId: 'job-1', kinds: ['balance', 'value'] } },
+    ]);
   });
 
-  test('a run that completed is logged and saved on the job when its sibling fails', async () => {
+  test('a failed value run leaves the recorded balance run done, so a retry runs value alone', async () => {
+    const { processor, logger } = harness(['value']);
+    const { job, saved } = fakeJob();
+
+    const { error } = await handle(processor, logger, job);
+
+    expect((error as Error).message).toBe('value broke');
+    expect(saved).toEqual([{ engineShadowKindsDone: { jobId: 'job-1', kinds: ['balance'] } }]);
+  });
+
+  test('a failed run is neither logged nor saved as done, so a retry runs it again', async () => {
     const { processor, logger } = harness(['balance']);
     const { job, saved } = fakeJob();
 
     const { logged, error } = await handle(processor, logger, job);
 
     expect((error as Error).message).toBe('balance broke');
-    expect(logged).toEqual([PRICE_LINE]);
-    expect(saved).toEqual([{ engineShadowKindsDone: { jobId: 'job-1', kinds: ['price'] } }]);
+    expect(logged).toEqual([]);
+    expect(saved).toEqual([]);
   });
 
   test('a retry runs only the kinds an earlier attempt did not record', async () => {
     const { processor, inputs, logger } = harness();
-    const { job, saved } = fakeJob({ engineShadowKindsDone: { jobId: 'job-1', kinds: ['price'] } });
+    const { job, saved } = fakeJob({
+      engineShadowKindsDone: { jobId: 'job-1', kinds: ['balance'] },
+    });
 
     await handle(processor, logger, job);
 
-    expect(inputs[0]?.kinds).toEqual(['balance']);
+    expect(inputs[0]?.kinds).toEqual(['value']);
     expect(saved).toEqual([
-      { engineShadowKindsDone: { jobId: 'job-1', kinds: ['price', 'balance'] } },
+      { engineShadowKindsDone: { jobId: 'job-1', kinds: ['balance', 'value'] } },
     ]);
   });
 
@@ -165,32 +163,34 @@ describe('EngineShadowProcessor', () => {
     // job would start with it. Its job id is what tells this night from that one.
     const { processor, inputs, logger } = harness();
     const { job, saved } = fakeJob(
-      { engineShadowKindsDone: { jobId: 'job-1', kinds: ['price'] } },
+      { engineShadowKindsDone: { jobId: 'job-1', kinds: ['balance'] } },
       'job-2'
     );
 
     await handle(processor, logger, job);
 
-    expect(inputs[0]?.kinds).toEqual(['price', 'balance']);
+    expect(inputs[0]?.kinds).toEqual(EVERY_KIND);
     expect(saved.at(-1)).toEqual({
-      engineShadowKindsDone: { jobId: 'job-2', kinds: ['price', 'balance'] },
+      engineShadowKindsDone: { jobId: 'job-2', kinds: EVERY_KIND },
     });
   });
 
-  test('a done list it cannot read reruns both kinds rather than skipping one', async () => {
+  test('a done list it cannot read reruns every kind rather than skipping one', async () => {
     const { processor, inputs, logger } = harness();
 
     const unreadable: unknown[] = [
-      'price',
-      ['price'],
-      { jobId: 'job-1', kinds: 'price' },
-      { jobId: 'job-1', kinds: ['prices', 7] },
-      { kinds: ['price'] },
+      'balance',
+      ['balance'],
+      { jobId: 'job-1', kinds: 'balance' },
+      { jobId: 'job-1', kinds: ['balances', 7] },
+      { kinds: ['balance'] },
+      // A retry of a job queued before the price shadow was deleted.
+      { jobId: 'job-1', kinds: ['price', 'balance'] },
     ];
     for (const done of unreadable) {
       await handle(processor, logger, fakeJob({ engineShadowKindsDone: done }).job);
     }
 
-    expect(inputs.map((i) => i.kinds)).toEqual(unreadable.map(() => ['price', 'balance']));
+    expect(inputs.map((i) => i.kinds)).toEqual(unreadable.map(() => EVERY_KIND));
   });
 });

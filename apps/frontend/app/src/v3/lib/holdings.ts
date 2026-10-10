@@ -1,7 +1,10 @@
 import {
+  countsTowardTotal,
   Decimal,
   formatDayMonth,
   type HoldingWithDetails,
+  holdingGainLoss,
+  holdingTypeTotals,
   monthNameInDate,
   quantityDecimals,
   weekdayName,
@@ -10,7 +13,15 @@ import type { AllocationInput } from '@scani/ui/v3/lib/chart';
 import type { TFunction } from 'i18next';
 import { tokenDisplayName } from '@/lib/utils';
 import { HOLDINGS_QUALITY_PARAM } from './dataQuality';
-import { isScamToken, tokenTypeLabel } from './tokens';
+import { tokenTypeLabel } from './tokens';
+
+export {
+  countsTowardTotal,
+  holdingGainLoss,
+  holdingsDebt,
+  holdingsValue,
+  isBaseCurrencyHolding,
+} from '@scani/shared';
 
 /**
  * The pure half of the v3 holdings surface: every decision the list and the
@@ -34,49 +45,11 @@ import { isScamToken, tokenTypeLabel } from './tokens';
  */
 
 /** The token types whose price is entered by hand rather than fetched. */
-const CUSTOM_PRICE_TOKEN_TYPES = new Set(['private-company', 'other']);
+const CUSTOM_PRICE_TOKEN_TYPES = new Set(['private-company', 'other', 'property', 'vehicle']);
 
 /** The account types the APY engine will accrue interest on — the same gate
  *  the backend applies in `upsertApyConfig`. */
 const APY_ACCOUNT_TYPES = new Set(['checking', 'savings', 'investment']);
-
-export interface HoldingGainLoss {
-  absolute: number;
-  /** Percent of the cost basis, not a fraction. */
-  percent: number;
-}
-
-/**
- * Unrealized P/L, or `null` when there is nothing to compare against — no
- * cost basis recorded, or no resolvable price for the position today.
- */
-export function holdingGainLoss(
-  holding: Pick<HoldingWithDetails, 'value' | 'costBasis'> & {
-    token?: Pick<HoldingWithDetails['token'], 'typeCode' | 'symbol'>;
-  },
-  currency: string
-): HoldingGainLoss | null {
-  const { value, costBasis } = holding;
-  // Cash in the base currency is 1 against itself, so no gain is possible.
-  // Its stored cost basis is not evidence either way: before the rollup has
-  // run the server falls back to the value, after it a holding with no
-  // transactions has no lots and reads 0 (SC-1505).
-  if (holding.token && isBaseCurrencyHolding({ token: holding.token }, currency)) {
-    return typeof value === 'number' ? { absolute: 0, percent: 0 } : null;
-  }
-  if (typeof value !== 'number' || typeof costBasis !== 'number') return null;
-  if (!(costBasis > 0)) return null;
-  const absolute = value - costBasis;
-  return { absolute, percent: (absolute / costBasis) * 100 };
-}
-
-/** Whether this holding is cash in the currency every figure is shown in. */
-export function isBaseCurrencyHolding(
-  holding: { token: Pick<HoldingWithDetails['token'], 'typeCode' | 'symbol'> },
-  currency: string
-): boolean {
-  return holding.token.typeCode === 'fiat' && holding.token.symbol === currency;
-}
 
 /** The per-unit price as a number, or `null` when the holding is unpriceable. */
 export function holdingPrice(holding: Pick<HoldingWithDetails, 'price'>): number | null {
@@ -126,14 +99,13 @@ export function supportsApy(holding: Pick<HoldingWithDetails, 'account'>): boole
  *
  * ## Why the sign is enough, and no marker column is needed
  *
- * `CreateHoldingsWithDependenciesDto` and `UpdateHoldingDto` both refuse a
- * negative balance (`greaterThanOrEqualTo(0)`), and `UpdateHoldingDto` gates
- * the `holdings.update` mutation — so no request a person can make writes one.
- * `RecordHoldingMovementUseCase` separately refuses an outflow larger than the
- * balance. A negative therefore came from a domain path writing through the
- * use case rather than the wire, and the sign says so BY CONSTRUCTION. That is
- * what lets this be a rule about the number instead of a provenance column
- * somebody has to remember to set.
+ * `UpdateHoldingUseCase` refuses a negative balance, and
+ * `RecordHoldingMovementUseCase` an outflow larger than the balance, on every
+ * holding except fiat on a loan or card account (SC-1640), which the caller
+ * checks with `holdingOwes` before asking this. A negative anywhere else came
+ * from a domain path writing through the use case rather than the wire, and
+ * the sign says so BY CONSTRUCTION. That is what lets this be a rule about the
+ * number instead of a provenance column somebody has to remember to set.
  *
  * The path that produces one today is SC-618's undo: it restores an anchor as
  * `balance - quantity`, the exact inverse of the declaration, against TODAY's
@@ -159,6 +131,15 @@ export function balanceIsBelowZero(amount: Decimal.Value): boolean {
 
 export function amountDecimals(amount: Decimal.Value): number {
   return quantityDecimals(amount);
+}
+
+/**
+ * Whether a balance edit was kept as a check rather than as the balance: a
+ * value typed on a feed holding verifies the feed, whose figure stands
+ * (A5 D-20). The save says so rather than look like nothing happened.
+ */
+export function savedAsCheck(typed: string | undefined, saved: string): boolean {
+  return typed !== undefined && !new Decimal(saved).eq(typed);
 }
 
 /**
@@ -223,63 +204,6 @@ export function compareHoldings(
     default:
       return compareNullable(a.value, b.value, factor);
   }
-}
-
-/**
- * Whether a holding contributes to a total drawn over this list.
- *
- * The same three conditions the server applies in `isIncludedInTotal`
- * (`packages/business/domain/src/lib/holding-inclusion.ts`) — hidden, inactive
- * and scam-flagged holdings never count — restated on the client because the
- * v3 list totals the *filtered* rows and so cannot use the server's own
- * `summary.totalValue`, which is always over the whole portfolio.
- *
- * SC-63 is what the missing `isActive` half cost: deactivating one position
- * left `/holdings` reading €599,511.02 while `/`, `/accounts` and
- * `/institutions` all read €525,728.45 — two screens disagreeing by 14% of net
- * worth over one data set, and surviving a hard reload, so not even a cache to
- * blame. The server was right; this list was the one arithmetic nobody had
- * taught the rule to.
- *
- * The row itself stays on the list, badged `Inactive`. Excluding it outright
- * would be the easier fix and the wrong one: deactivating is one tap, so a
- * holding deactivated by accident has to still be findable to be turned back
- * on. It is subtracted from the figure, not from the surface.
- */
-export function countsTowardTotal(
-  holding: Pick<HoldingWithDetails, 'isActive' | 'isHidden' | 'token'>
-): boolean {
-  if (holding.isHidden) return false;
-  if (!holding.isActive) return false;
-  return !isScamToken(holding.token.isScamProbability);
-}
-
-/**
- * The value of a set of holdings.
- *
- * Unpriceable positions contribute nothing rather than making the whole sum
- * unknown — the same choice `holdings.getWithDetails` makes for its summary.
- * The list beneath shows each of them as `—`, so the omission is visible on
- * the same screen as the total.
- */
-export function holdingsValue(holdings: readonly HoldingWithDetails[]): number {
-  return holdings.reduce(
-    (sum, holding) => (countsTowardTotal(holding) ? sum + (holding.value ?? 0) : sum),
-    0
-  );
-}
-
-/**
- * Margin debt among the rows that count: the sum of their negative values
- * (SC-1463). `holdingsValue` already nets it and `holdingAllocation` leaves it
- * out, so this is the line that reconciles the bar with the figure.
- */
-export function holdingsDebt(holdings: readonly HoldingWithDetails[]): number {
-  return holdings.reduce(
-    (sum, holding) =>
-      countsTowardTotal(holding) && (holding.value ?? 0) < 0 ? sum + (holding.value ?? 0) : sum,
-    0
-  );
 }
 
 /**
@@ -401,21 +325,11 @@ export function holdingAllocation(
   t: TFunction,
   holdings: readonly HoldingWithDetails[]
 ): AllocationInput[] {
-  const byType = new Map<string, AllocationInput>();
-  for (const holding of holdings) {
-    if (!countsTowardTotal(holding)) continue;
-    if (typeof holding.value !== 'number' || holding.value <= 0) continue;
-    const key = holding.token.typeCode;
-    const existing = byType.get(key);
-    if (existing) existing.value += holding.value;
-    else
-      byType.set(key, {
-        key,
-        label: tokenTypeLabel(t, key, holding.token.type),
-        value: holding.value,
-      });
-  }
-  return [...byType.values()].sort((a, b) => b.value - a.value);
+  return holdingTypeTotals(holdings).map(({ typeCode, type, value }) => ({
+    key: typeCode,
+    label: tokenTypeLabel(t, typeCode, type),
+    value,
+  }));
 }
 
 /** `import_wallet` → `wallet`. The prefix names the pipeline, not the venue,
@@ -648,6 +562,42 @@ export const BALANCE_EDIT_SCALE = 18;
  * correct and costs nothing. The case this exists for is the one where nothing
  * was typed at all, and there the two strings are identical.
  */
+/**
+ * Fiat on a loan or card account: its balance is what is owed, stored
+ * negative, shown and typed positive (SC-1640).
+ */
+export function holdingOwes(holding: {
+  account: { class: 'asset' | 'liability' };
+  token: { typeCode: string };
+}): boolean {
+  return holding.account.class === 'liability' && holding.token.typeCode === 'fiat';
+}
+
+/**
+ * Flips the sign as TEXT, so an untouched figure comes back as the exact
+ * string it left as: `balanceEditWrites` compares strings, and a Decimal
+ * round trip drops trailing zeros and would write over an unedited balance.
+ */
+function flipSign(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed === '') return '';
+  if (trimmed.startsWith('-')) return trimmed.slice(1);
+  return /^0*\.?0*$/.test(trimmed) ? trimmed : `-${trimmed}`;
+}
+
+/** What the balance editor shows: an owed balance as the positive amount owed. */
+export function seedForEditor(holding: Parameters<typeof holdingOwes>[0], balance: string): string {
+  return holdingOwes(holding) ? flipSign(balance) : balance;
+}
+
+/** What the balance editor sends: the owed amount back as a negative balance. */
+export function balanceFromEditor(
+  holding: Parameters<typeof holdingOwes>[0],
+  draft: string
+): string {
+  return holdingOwes(holding) ? flipSign(draft) : draft.trim();
+}
+
 export function balanceEditWrites(seed: string, draft: string): boolean {
   const next = draft.trim();
   if (next === '') return false;

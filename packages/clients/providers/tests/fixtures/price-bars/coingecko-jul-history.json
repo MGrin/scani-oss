@@ -1,0 +1,13 @@
+{
+  "url": "https://api.coingecko.com/api/v3/coins/bitcoin/history?date=13-07-2026&localization=false",
+  "fetchedAt": "2026-10-05T02:22:09.328658Z",
+  "status": 200,
+  "data": {
+    "market_data": {
+      "current_price": {
+        "usd": 843
+      }
+    }
+  },
+  "normalization": "Price values are synthetic integer ranks. Equal values and ordering are preserved across these fixtures; timestamps and response shape are recorded. Raw public responses are retained in the PR5 rehearsal evidence."
+}

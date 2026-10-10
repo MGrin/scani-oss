@@ -23,15 +23,51 @@ import { describe, expect, test } from 'bun:test';
 const REPO_ROOT = new URL('../../../../', import.meta.url).pathname;
 const PACKAGE_DIR = 'packages/infra/http-fetch/';
 
-const SOURCE_GLOB = new Bun.Glob('{apps,packages,scripts}/**/*.{ts,tsx}');
+// Tracked files, listed once: the glob this replaces walked every
+// `node_modules` tree before filtering it out, once per test, and read 16.8s on
+// a loaded CI box against a 1.6s median (SC-1593).
+let listed: Promise<string[]> | undefined;
+function sourceFiles(): Promise<string[]> {
+  listed ??= (async () => {
+    const proc = Bun.spawnSync(
+      [
+        'git',
+        'ls-files',
+        '-z',
+        '--cached',
+        '--others',
+        '--exclude-standard',
+        '--',
+        'apps',
+        'packages',
+        'scripts',
+      ],
+      {
+        cwd: REPO_ROOT,
+      }
+    );
+    if (!proc.success) throw new Error('git ls-files failed, so no file was scanned');
+    const files = proc.stdout
+      .toString()
+      .split('\0')
+      .filter((rel) => /\.tsx?$/.test(rel) && !rel.includes('node_modules'));
+    if (files.length < 100) throw new Error(`git ls-files listed only ${files.length} files`);
+    return files;
+  })();
+  return listed;
+}
 
-async function sourceFiles(): Promise<string[]> {
-  const out: string[] = [];
-  for await (const rel of SOURCE_GLOB.scan(REPO_ROOT)) {
-    if (rel.includes('node_modules')) continue;
-    out.push(rel);
-  }
-  return out;
+let texts: Promise<Map<string, string>> | undefined;
+function sourceText(rel: string): Promise<string> {
+  texts ??= sourceFiles().then(
+    async (files) =>
+      new Map(
+        await Promise.all(
+          files.map(async (file) => [file, await Bun.file(REPO_ROOT + file).text()] as const)
+        )
+      )
+  );
+  return texts.then((all) => all.get(rel) ?? '');
 }
 
 describe('there is exactly one bounded fetcher', () => {
@@ -41,7 +77,7 @@ describe('there is exactly one bounded fetcher', () => {
     const offenders: string[] = [];
     for (const rel of await sourceFiles()) {
       if (rel.startsWith(PACKAGE_DIR)) continue;
-      const src = await Bun.file(REPO_ROOT + rel).text();
+      const src = await sourceText(rel);
       if (/export\s+(async\s+)?function\s+fetchHtmlBounded\b/.test(src)) offenders.push(rel);
     }
     expect(offenders).toEqual([]);
@@ -55,7 +91,7 @@ describe('there is exactly one bounded fetcher', () => {
     const offenders: string[] = [];
     for (const rel of await sourceFiles()) {
       if (rel.startsWith(PACKAGE_DIR)) continue;
-      const src = await Bun.file(REPO_ROOT + rel).text();
+      const src = await sourceText(rel);
       if (/export\s+(async\s+)?function\s+fetchImageBounded\b/.test(src)) offenders.push(rel);
     }
     expect(offenders).toEqual([]);
@@ -67,7 +103,7 @@ describe('there is exactly one bounded fetcher', () => {
     const offenders: string[] = [];
     for (const rel of await sourceFiles()) {
       if (rel.startsWith(PACKAGE_DIR)) continue;
-      const src = await Bun.file(REPO_ROOT + rel).text();
+      const src = await sourceText(rel);
       if (/function\s+assertHostIsPublic\b/.test(src)) offenders.push(rel);
       if (/function\s+followRedirectsSafely\b/.test(src)) offenders.push(rel);
       // `withBudget` joined this list in SC-208. It is a BOUND, and a bound
@@ -90,7 +126,7 @@ describe('every caller goes through the guarded one', () => {
     let importers = 0;
     for (const rel of await sourceFiles()) {
       if (rel.startsWith(PACKAGE_DIR)) continue;
-      const src = await Bun.file(REPO_ROOT + rel).text();
+      const src = await sourceText(rel);
       for (const m of src.matchAll(
         /import\s*\{[^}]*\bfetchHtmlBounded\b[^}]*\}\s*from\s*'([^']+)'/g
       )) {

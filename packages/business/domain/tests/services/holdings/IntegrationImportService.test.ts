@@ -23,7 +23,6 @@ import { AbsenceWriter } from '../../../src/services/feeds/AbsenceWriter';
 import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWriter';
 import { HoldingResolver } from '../../../src/services/feeds/HoldingResolver';
 import { FoundationClassificationService } from '../../../src/services/foundation/FoundationClassificationService';
-import { HoldingService } from '../../../src/services/holdings/HoldingService';
 import {
   type IntegrationImportOptions,
   IntegrationImportService,
@@ -115,6 +114,7 @@ async function ibkrOptions(
     sourceTag: 'import_ibkr',
     arrival: 'user_confirmed',
     zeroStaleHoldings: true,
+    absentFiatConfirmations: 3,
     skipZeroBalances: false,
     cryptoTokenTypeId: types.stock,
     tokenTypeMap: { fiat: types.fiat, stock: types.stock },
@@ -472,8 +472,6 @@ describe('IntegrationImportService.import — the writes', () => {
         isHidden: true,
       }),
     };
-    const before = new Date();
-
     const result = await run(
       [
         target(seeded, [
@@ -484,7 +482,6 @@ describe('IntegrationImportService.import — the writes', () => {
       ],
       await exchangeOptions(seeded.userId, tag)
     );
-    const after = new Date();
 
     expect(result.errors).toEqual([]);
     const balance = async (id: string) => (await holdingRow(id)).balance;
@@ -511,7 +508,8 @@ describe('IntegrationImportService.import — the writes', () => {
       const obs = await observationsOf(zeroed.id);
       expect(obs).toHaveLength(2);
       const zero = obs[1]!;
-      expect(zero.observedAt >= before && zero.observedAt <= after).toBe(true);
+      // At the answer's statementAsOf, not at the write (A5 D-22, R60).
+      expect(zero.observedAt).toEqual(CAPTURED);
       expect({ ...legacyColumns(zero), observedAt: null }).toEqual({
         balance: '0',
         observedAt: null,
@@ -617,6 +615,36 @@ describe('IntegrationImportService.import — the writes', () => {
       [toShow.id, '5', false],
       [toKeep.id, '0', true],
     ]);
+  });
+
+  test('a holding its owner hid stays hidden when the import reports a balance, and the balance is written (A5 #9)', async () => {
+    const seeded = await seed({ accountType: 'PORTFOLIO' }, 'broker');
+    const kept = await token(freshSymbol('OWNHID'), (await typeIds()).stock);
+    const hidden = await holding(seeded, {
+      tokenId: kept.id,
+      balance: '0',
+      source: 'import_ibkr',
+      externalId: 'OWNHIDKEY',
+      isHidden: true,
+    });
+    await getDb()
+      .update(schema.holdings)
+      .set({ hiddenBy: 'user' })
+      .where(eq(schema.holdings.id, hidden.id));
+
+    await run(
+      [
+        target(seeded, [snapshot('OWNHIDKEY', kept.symbol, '5')], {
+          accountInfo: { externalId: 'U1', name: 'IBKR', accountType: 'PORTFOLIO' },
+        }),
+      ],
+      await ibkrOptions(seeded.userId)
+    );
+
+    // The hide is the owner's, so the import never undoes it; the money it
+    // reports is still written, and the data-quality page names the row.
+    const row = await holdingRow(hidden.id);
+    expect([row.balance, row.isHidden, row.hiddenBy]).toEqual(['5', true, 'user']);
   });
 
   test('skipZeroBalances: a zero position makes no token and no holding; without it the zero is a position', async () => {
@@ -948,21 +976,17 @@ describe('IntegrationImportService.import — history', () => {
 
 /**
  * Today's readings, holding-major: updated, zeroed, created, at the six
- * instants. The zeroed holding's unexplained drop is spread from its last
- * observation to the zero, which is why the zero's instant is part of the
- * figure.
+ * instants. Since A5 PR-2 the engine reads them (D-10): a day before a
+ * holding's start reads absent, and nothing is spread, so the update and the
+ * zero are each a step on their own instant and the midpoints read the
+ * reading before them. The sync's own golden names the same three moves.
+ * Since A5 D-22 (R60) the zero sits at the answer's statementAsOf, CAPTURED,
+ * not at the write, so the zeroed holding reads 0 from there.
  */
 const GOLDEN: Array<string | null> = [
-  ...['10', '10', '11', '12', '12', '12'],
-  ...[
-    '5',
-    '5',
-    '3.027210884353741496598639456',
-    '1.054421768707482993197278912',
-    '0.5272108843537414965986394558',
-    '0',
-  ],
-  ...['3', '3', '3', '3', '3', '3'],
+  ...[null, '10', '10', '12', '12', '12'],
+  ...[null, '5', '5', '0', '0', '0'],
+  ...[null, null, null, '3', '3', '3'],
 ];
 
 const inputsOf = (accountId: string) =>
@@ -1111,7 +1135,7 @@ describe('IntegrationImportService.import — through FeedIngestService (A2 Task
     ]);
   });
 
-  test('zeros come from the absence block in immediate mode, and nothing writes through HoldingService', async () => {
+  test('zeros come from the absence block in immediate mode', async () => {
     const seeded = await seed();
     const tag = 'import_characterize';
     const [reported, stale, skipped] = await Promise.all(
@@ -1130,9 +1154,7 @@ describe('IntegrationImportService.import — through FeedIngestService (A2 Task
       externalId: 'ASTALEKEY',
     });
     const absences = spyOn(Container.get(AbsenceWriter), 'apply');
-    // The one balance write `HoldingService` still has.
-    const legacyWrite = spyOn(Container.get(HoldingService), 'updateHoldingBalance');
-    restores.push(absences, legacyWrite);
+    restores.push(absences);
 
     await run(
       [
@@ -1148,9 +1170,10 @@ describe('IntegrationImportService.import — through FeedIngestService (A2 Task
     expect(absences.mock.calls[0]![0].batch.legacy.absence).toEqual({
       mode: 'immediate',
       guardEmptySnapshot: false,
+      confirmations: null,
       reportedKeys: ['AREPKEY', 'ASKIPKEY'],
+      statementAsOf: CAPTURED,
     });
-    expect(legacyWrite).not.toHaveBeenCalled();
     const [input] = await inputsOf(seeded.accountId);
     const zero = (await observationsOf(staleRow.id))[1]!;
     expect([zero.balance, ...Object.values(labels(zero))]).toEqual([
@@ -1160,6 +1183,54 @@ describe('IntegrationImportService.import — through FeedIngestService (A2 Task
       input!.id,
       null,
     ]);
+    // Dated at the latest instant the answer was true at, not at the write (A5 D-22, R60).
+    expect(zero.observedAt).toEqual(CAPTURED);
+  });
+
+  // A2:1272, A5 D-22: IBKR's cash waits for three absent statement days on a
+  // re-import as it does on the hourly sync, so one statement that leaves a
+  // currency out no longer zeroes it for the next to bring back.
+  test('an IBKR re-import zeroes absent cash on its third statement day, and an absent position at once', async () => {
+    const seeded = await seed();
+    const types = await typeIds();
+    const cash = await token(freshSymbol('ICASH'), types.fiat);
+    const stock = await token(freshSymbol('ISTK'), types.stock);
+    const cashRow = await holding(seeded, {
+      tokenId: cash.id,
+      balance: '100',
+      source: 'import_ibkr',
+      externalId: 'ICASHKEY',
+    });
+    const stockRow = await holding(seeded, {
+      tokenId: stock.id,
+      balance: '7',
+      source: 'import_ibkr',
+      externalId: 'ISTKKEY',
+    });
+    const kept = freshSymbol('IKEEP');
+    const dayOf = (day: number) => new Date(CAPTURED.getTime() + day * DAY_MS);
+
+    const days: Array<{ cash: string; stock: string; tally: number }> = [];
+    for (const day of [0, 1, 2]) {
+      await run(
+        [target(seeded, [snapshot('IKEEPKEY', kept, '1', { capturedAt: dayOf(day) })])],
+        await ibkrOptions(seeded.userId)
+      );
+      const [cashNow, stockNow] = [await holdingRow(cashRow.id), await holdingRow(stockRow.id)];
+      days.push({
+        cash: cashNow.balance,
+        stock: stockNow.balance,
+        tally: cashNow.absentFromStatements?.length ?? 0,
+      });
+    }
+
+    expect(days).toEqual([
+      { cash: '100', stock: '0', tally: 1 },
+      { cash: '100', stock: '0', tally: 2 },
+      { cash: '0', stock: '0', tally: 0 },
+    ]);
+    const zero = (await observationsOf(cashRow.id)).at(-1)!;
+    expect([zero.balance, zero.observedAt]).toEqual(['0', dayOf(2)]);
   });
 
   test('every write is labelled as the backfill would label it', async () => {

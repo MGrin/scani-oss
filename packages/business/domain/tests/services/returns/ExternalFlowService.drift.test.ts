@@ -3,13 +3,15 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy
 import { describe, expect, test } from 'bun:test';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
-import { HoldingBalanceObservationRepository } from '../../../src/repositories/HoldingBalanceObservationRepository';
+import { EngineEvidenceRepository } from '../../../src/repositories/EngineEvidenceRepository';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { DriftLedgerService } from '../../../src/services/returns/DriftLedgerService';
 import { ExternalFlowService } from '../../../src/services/returns/ExternalFlowService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub } from '../../../test/helpers/price-series';
+import { rawEvidence } from '../../../test/helpers/raw-evidence';
 
 /**
  * mgrin, 2026-10-01: a balance change no transaction explains is money in or
@@ -37,17 +39,17 @@ function makeService(readings: ReturnType<typeof reading>[], isActive = true): E
     findForHoldingsInRange: async () => [],
     findForHoldingsAll: async () => new Map([[HOLDING, []]]),
   } as unknown as HoldingTransactionRepository);
-  Container.set(HoldingBalanceObservationRepository, {
-    findReadingsForHoldings: async () => new Map([[HOLDING, readings]]),
-  } as unknown as HoldingBalanceObservationRepository);
+  Container.set(EngineEvidenceRepository, {
+    findHoldingEvidence: async () => [rawEvidence(HOLDING, readings)],
+  } as unknown as EngineEvidenceRepository);
   Container.set(HoldingRepository, {
     findIdsIncludedInTotal: async (ids: readonly string[]) => new Set(ids),
     findByIds: async () => [{ id: HOLDING, tokenId: USD, userId: 'u', isActive }],
   } as unknown as HoldingRepository);
-  Container.set(PriceGraphService, {
-    buildPriceLookup: async () => ({ covers: () => false }),
-    convert: async (amount: Decimal) => ({ amount: new Decimal(amount), stale: false }),
-  } as unknown as PriceGraphService);
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal) => ({ amount: new Decimal(amount), stale: false }))
+  );
   Container.set(DriftLedgerService, new DriftLedgerService());
   return new ExternalFlowService();
 }

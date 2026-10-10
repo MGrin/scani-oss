@@ -8,6 +8,7 @@ import { AlertTriangle, CheckCircle2 } from 'lucide-react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import { formatRelative } from '../../lib/relative-time';
 import { TRANSFER_REVIEW_PATH } from '../../lib/routes';
 import {
@@ -49,6 +50,7 @@ interface TransferReviewListProps {
 }
 
 export function TransferReviewList({ items, query }: TransferReviewListProps) {
+  useRelativeTimeTick();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const utils = trpc.useUtils();

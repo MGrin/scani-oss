@@ -6,8 +6,10 @@ import { UserJobRepository } from '../../src/repositories/UserJobRepository';
 import { BalanceGapService } from '../../src/services/holdings/BalanceGapService';
 import { SettlementAnswerReviewService } from '../../src/services/holdings/SettlementAnswerReviewService';
 import { UnpriceableAirdropService } from '../../src/services/holdings/UnpriceableAirdropService';
+import { TransitReviewService } from '../../src/services/portfolio/TransitReviewService';
 import { ReviewFeedService } from '../../src/services/ReviewFeedService';
 import { TransferReviewService } from '../../src/services/TransferReviewService';
+import { UntrackedArrivalReviewService } from '../../src/services/UntrackedArrivalReviewService';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -21,7 +23,9 @@ function makeService(
   deadJobs: unknown[] = [],
   balanceGaps: { count: number; latestAt: Date | null } = { count: 0, latestAt: null },
   settledAnswers: unknown[] = [],
-  unpriceableAirdrops: unknown[] = []
+  unpriceableAirdrops: unknown[] = [],
+  transits: unknown[] = [],
+  untrackedArrivals: unknown[] = []
 ): ReviewFeedService {
   Container.set(UserJobRepository, {
     findPendingReview: async () => jobs,
@@ -49,6 +53,12 @@ function makeService(
   Container.set(UnpriceableAirdropService, {
     listPending: async () => unpriceableAirdrops,
   } as unknown as UnpriceableAirdropService);
+  Container.set(TransitReviewService, {
+    listDue: async () => transits,
+  } as unknown as TransitReviewService);
+  Container.set(UntrackedArrivalReviewService, {
+    listDue: async () => untrackedArrivals,
+  } as unknown as UntrackedArrivalReviewService);
   const instance = new ReviewFeedService();
   Container.set(ReviewFeedService, instance);
   return instance;
@@ -372,5 +382,115 @@ describe('ReviewFeedService — unpriceable airdrops', () => {
   test('none means no row at all', async () => {
     const svc = makeService([]);
     expect(await svc.listPending('user-1')).toEqual([]);
+  });
+});
+
+describe('ReviewFeedService — a transfer still in transit after 7 days (SC-1675)', () => {
+  test('one row per destination of a transfer, each opening its own sheet (SC-1684)', async () => {
+    const dueAt = new Date('2026-09-20T09:00:00.000Z');
+    const svc = makeService(
+      [],
+      [],
+      undefined,
+      [],
+      undefined,
+      [],
+      [],
+      [
+        {
+          outflowId: 'out-1',
+          sourceHoldingId: 'h-wise',
+          destinationHoldingId: 'h-ibkr',
+          tokenId: 't-usd',
+          tokenSymbol: 'USDC',
+          sourceAccountName: 'Wise',
+          destinationAccountName: 'IBKR',
+          sentAt: new Date('2026-09-13T09:00:00.000Z'),
+          quantity: '500',
+          dueAt,
+        },
+        {
+          outflowId: 'out-1',
+          sourceHoldingId: 'h-wise',
+          destinationHoldingId: 'h-kraken',
+          tokenId: 't-usd',
+          tokenSymbol: 'USDC',
+          sourceAccountName: 'Wise',
+          destinationAccountName: 'Kraken',
+          sentAt: new Date('2026-09-13T09:00:00.000Z'),
+          quantity: '300',
+          dueAt,
+        },
+      ]
+    );
+    const [item, other, ...rest] = await svc.listPending('user-1');
+    expect(rest).toEqual([]);
+    expect([other?.id, other?.href]).toEqual([
+      'transit:out-1:h-kraken',
+      '/review/transit-out-1_h-kraken',
+    ]);
+    expect(item).toEqual({
+      id: 'transit:out-1:h-ibkr',
+      kind: 'transit',
+      label: { code: 'transferNotArrived' },
+      detail: {
+        code: 'transferInTransit',
+        quantity: '500',
+        tokenSymbol: 'USDC',
+        sourceAccountName: 'Wise',
+        destinationAccountName: 'IBKR',
+      },
+      represents: 1,
+      createdAt: dueAt,
+      href: '/review/transit-out-1_h-ibkr',
+    });
+    expect(reviewItemSchema.safeParse(item).success).toBe(true);
+  });
+});
+
+describe('ReviewFeedService — money answered untracked that arrived in a tracked account (SC-1696)', () => {
+  test('one row per question, naming both accounts and opening its own sheet', async () => {
+    const arrivedAt = new Date('2026-10-09T23:59:59.000Z');
+    const svc = makeService(
+      [],
+      [],
+      undefined,
+      [],
+      undefined,
+      [],
+      [],
+      [],
+      [
+        {
+          outflowId: 'out-1',
+          inflowId: 'in-1',
+          tokenSymbol: 'USD',
+          quantity: '500',
+          arrivedQuantity: '500',
+          sourceAccountName: 'Wise',
+          destinationAccountName: 'IBKR',
+          sentAt: new Date('2026-10-08T16:00:00.000Z'),
+          arrivedAt,
+        },
+      ]
+    );
+    const [item, ...rest] = await svc.listPending('user-1');
+    expect(rest).toEqual([]);
+    expect(item).toEqual({
+      id: 'untracked-arrival:out-1:in-1',
+      kind: 'untracked-arrival',
+      label: { code: 'untrackedTransferArrived' },
+      detail: {
+        code: 'untrackedTransferArrived',
+        quantity: '500',
+        tokenSymbol: 'USD',
+        sourceAccountName: 'Wise',
+        destinationAccountName: 'IBKR',
+      },
+      represents: 1,
+      createdAt: arrivedAt,
+      href: '/review/untracked-arrival-out-1_in-1',
+    });
+    expect(reviewItemSchema.safeParse(item).success).toBe(true);
   });
 });

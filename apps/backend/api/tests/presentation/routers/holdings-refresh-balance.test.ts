@@ -5,9 +5,9 @@
  * because "this holding is manual" sends a person whose exchange was
  * disconnected to edit a number the exchange would have corrected. A feed with
  * nothing live to ask gets one sentence whether a connection was removed or
- * never existed (R96), so it says connect, not reconnect. A person's row an
- * import wrote into keeps the manual sentence: the sync never writes that row,
- * so a refresh would leave it as it stands (R97).
+ * never existed (R96), so it says connect, not reconnect. A person's row a
+ * feed took over is the sync's to write (A5 D-4), so it is refreshed like any
+ * feed holding.
  *
  * The rows are committed: the router reads through the process-wide handle.
  */
@@ -113,15 +113,8 @@ describe('holdings.refreshBalance refuses on kind and the live sync (R95)', () =
     }
   );
 
-  test.each<[string, 'live' | 'none', Pick<Holding, 'source' | 'kind'>]>([
-    ["a person's snapshot", 'none', { source: 'manual', kind: 'snapshot' }],
-    [
-      "F1 (R97): a person's row an import wrote into, credential live",
-      'live',
-      { source: 'manual', kind: 'feed' },
-    ],
-  ])('%s keeps the manual wording', async (_name, credential, shape) => {
-    const holding = await holdingAt(credential, shape);
+  test("a person's snapshot keeps the manual wording", async () => {
+    const holding = await holdingAt('none', { source: 'manual', kind: 'snapshot' });
 
     await expect(refresh(holding)).rejects.toMatchObject({
       code: 'PRECONDITION_FAILED',
@@ -131,8 +124,11 @@ describe('holdings.refreshBalance refuses on kind and the live sync (R95)', () =
     expect(enqueued).toEqual([]);
   });
 
-  test('control: a synced feed holding, credential live, is refreshed', async () => {
-    const holding = await holdingAt('live', { source: 'sync_exchange_balances', kind: 'feed' });
+  test.each<[string, Pick<Holding, 'source' | 'kind'>]>([
+    ['control: a synced feed holding', { source: 'sync_exchange_balances', kind: 'feed' }],
+    ["F1 (A5 D-4): a person's row a feed took over", { source: 'manual', kind: 'feed' }],
+  ])('%s, credential live, is refreshed', async (_name, shape) => {
+    const holding = await holdingAt('live', shape);
 
     expect(await refresh(holding)).toEqual({ jobId: 'job-1' });
     expect(enqueued).toHaveLength(1);

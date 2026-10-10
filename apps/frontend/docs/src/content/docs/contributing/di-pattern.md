@@ -83,7 +83,6 @@ has already read the previous value (real or undefined).
 Canonical examples:
 - `packages/business/domain/tests/services/HoldingService.test.ts`
 - `packages/business/domain/tests/services/BalanceAtTimeService.test.ts`
-- `packages/business/domain/tests/services/PriceGraphService.test.ts`
 
 ## A few more rules of thumb
 

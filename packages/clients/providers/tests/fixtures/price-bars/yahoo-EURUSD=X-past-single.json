@@ -1,0 +1,30 @@
+{
+  "url": "https://query1.finance.yahoo.com/v8/finance/chart/EURUSD%3DX?period1=1768089600&period2=1768435200&interval=1d",
+  "fetchedAt": "2026-10-05T03:21:13.599971Z",
+  "status": 200,
+  "data": {
+    "chart": {
+      "result": [
+        {
+          "meta": {
+            "currency": "USD",
+            "regularMarketTime": 1791170451,
+            "gmtoffset": 3600,
+            "exchangeTimezoneName": "Europe/London",
+            "dataGranularity": "1d"
+          },
+          "timestamp": [1768176000, 1768262400, 1768348800, 1768435200],
+          "indicators": {
+            "quote": [
+              {
+                "close": [181, 212, 192, 196]
+              }
+            ]
+          }
+        }
+      ],
+      "error": null
+    }
+  },
+  "normalization": "Price values are synthetic integer ranks. Equal values and ordering are preserved across these fixtures; timestamps and response shape are recorded. Raw public responses are retained in the PR5 rehearsal evidence."
+}

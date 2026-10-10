@@ -106,8 +106,7 @@ Two important details:
   MyService()`, otherwise the class-field initialiser reads the
   real dep (or nothing).
 
-See `BalanceAtTimeService.test.ts` and `PriceGraphService.test.ts`
-for canonical examples.
+See `BalanceAtTimeService.test.ts` for a canonical example.
 
 ## What this design unlocks
 

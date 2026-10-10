@@ -22,6 +22,7 @@ import { TokenRepository } from '../../../src/repositories/TokenRepository';
 import { HoldingQueryService } from '../../../src/services/holdings/HoldingQueryService';
 import { PortfolioValuationService } from '../../../src/services/portfolio/PortfolioValuationService';
 import { PortfolioValueCache } from '../../../src/services/portfolio/PortfolioValueCache';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { PriceWarmupService } from '../../../src/services/pricing/PriceWarmupService';
 import { PricingService } from '../../../src/services/pricing/PricingService';
 import { VaultService } from '../../../src/services/users/VaultService';
@@ -164,7 +165,7 @@ describe('a base is a token, never a symbol', () => {
     }
   });
 
-  test('the import warm-up asks in the user’s base token', async () => {
+  test('the import warm-up asks in the fiat USD, not a later crypto token named USD', async () => {
     const usd = await fiatUsd();
     await commitCryptoNamedUsd();
     const user = await commitUser(usd.id);
@@ -191,7 +192,7 @@ describe('a base is a token, never a symbol', () => {
     expect(await basesStoredFor(token.id)).toEqual([usd.id]);
   });
 
-  test('the refresh button fetches against the user’s base token', async () => {
+  test('the refresh button fetches against the fiat USD, not a later crypto token named USD', async () => {
     const usd = await fiatUsd();
     await commitCryptoNamedUsd();
     const user = await commitUser(usd.id);
@@ -269,11 +270,11 @@ describe('a base is a token, never a symbol', () => {
     });
     pricingStack();
     computeEveryValuation();
-    const read = spyOn(Container.get(PricingService), 'getCachedTokenPrices');
+    const read = spyOn(Container.get(PriceReader), 'at');
 
     const portfolio = await new PortfolioValuationService().getUserPortfolioValue(user.id);
 
-    expect(read.mock.calls.map(([, base]) => base.id)).toEqual([eur.id]);
+    expect(read.mock.calls.map(([, baseTokenId]) => baseTokenId)).toEqual([eur.id]);
     expect(portfolio.baseCurrency).toBe('EUR');
     expect(
       portfolio.holdings.map((h) => [h.tokenId, h.currentPrice, h.value, h.priceSource])
@@ -321,7 +322,7 @@ describe('a base is a token, never a symbol', () => {
     }
   });
 
-  test('a vault in the fiat USD prices its holdings against it', async () => {
+  test('a vault in the fiat USD prices its holdings against it, not a later crypto token named USD', async () => {
     const usd = await fiatUsd();
     await commitCryptoNamedUsd();
     const user = await commitUser(usd.id);
@@ -341,15 +342,21 @@ describe('a base is a token, never a symbol', () => {
     await getDb()
       .insert(schema.vaultHoldings)
       .values({ vaultId: vault.id, holdingId: holding.id, percentage: 50 });
-    // The holding has no stored price, so the vault asks the pricing stack.
+    await commitPrice({
+      tokenId: token.id,
+      baseTokenId: usd.id,
+      price: '100',
+      timestamp: new Date(Date.now() - MINUTE),
+      source: 'coingecko',
+    });
+    // A vault reads stored readings and never asks a provider (Task 16).
     const asks = pricingStack();
     const vaults = new VaultService();
 
     const detail = await vaults.getVaultWithProgress(vault.id);
     await vaults.recalculateVaultAmount(vault.id);
 
-    expect(asks).toEqual([{ tokenId: token.id, baseId: usd.id }]);
-    expect(await basesStoredFor(token.id)).toEqual([usd.id]);
+    expect(asks).toEqual([]);
     expect(detail?.holdings.map((h) => [h.holdingValue, h.attributedValue])).toEqual([
       ['200', '100'],
     ]);

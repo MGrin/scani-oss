@@ -10,6 +10,8 @@ import {
   CheckCircle2,
   EyeOff,
   FileText,
+  Hourglass,
+  Link2,
   ListChecks,
   type LucideIcon,
   ReceiptText,
@@ -18,6 +20,7 @@ import {
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import { formatRelative } from '../../lib/relative-time';
 import {
   compareReviewItems,
@@ -55,9 +58,12 @@ const REVIEW_ICONS: Record<ReviewRow['labelCode'], LucideIcon> = {
   balanceChangesToExplain: Scale,
   answersTradesExplain: ReceiptText,
   unpriceableAirdrops: EyeOff,
+  transferNotArrived: Hourglass,
+  untrackedTransferArrived: Link2,
 };
 
 export function ReviewList({ items, queueHasWork, query }: ReviewListProps) {
+  useRelativeTimeTick();
   const { t } = useTranslation();
   const navigate = useNavigate();
   // The feed arrives as operands and is named here (SC-371) — once per render

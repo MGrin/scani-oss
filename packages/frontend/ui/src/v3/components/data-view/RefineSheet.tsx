@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, Check } from 'lucide-react';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { useUiTranslation } from '../../../i18n';
 import { cn } from '../../../lib/cn';
 import {
@@ -199,6 +199,9 @@ export function RefineSections({
   | 'onSetGroupBy'
 >) {
   const { t } = useUiTranslation();
+  // The custom choice can be picked before it has a value: the editor shows,
+  // and the filter is set only once the host's editor produces one.
+  const [editingCustom, setEditingCustom] = useState<string | null>(null);
   const activeFilterKeys = Object.entries(filters)
     .filter(([, value]) => value)
     .map(([key]) => key);
@@ -216,7 +219,13 @@ export function RefineSections({
             {filterDefs.map((def) => {
               const value = filters[def.key] ?? '';
               const active = def.options.find((o) => o.value === value);
-              const activeLabel = active ? filterOptionLabel(active) : undefined;
+              const customActive = def.custom?.matches(value) === true;
+              const activeLabel = active
+                ? filterOptionLabel(active)
+                : customActive
+                  ? def.custom?.format(value)
+                  : undefined;
+              const showEditor = customActive || editingCustom === def.key;
               return (
                 <AccordionItem key={def.key} value={def.key} className="last:border-b-0">
                   <AccordionTrigger>
@@ -236,11 +245,28 @@ export function RefineSections({
                         key={option.value}
                         label={filterOptionLabel(option)}
                         active={option.value === value}
-                        onSelect={() =>
-                          onSetFilter(def.key, option.value === value ? '' : option.value)
-                        }
+                        onSelect={() => {
+                          setEditingCustom(null);
+                          onSetFilter(def.key, option.value === value ? '' : option.value);
+                        }}
                       />
                     ))}
+                    {def.custom ? (
+                      <>
+                        <OptionRow
+                          label={t(def.custom.labelKey)}
+                          active={showEditor}
+                          onSelect={() => setEditingCustom(def.key)}
+                        />
+                        {showEditor ? (
+                          <div className="px-3 pt-1">
+                            {def.custom.render(customActive ? value : '', (next) =>
+                              onSetFilter(def.key, next)
+                            )}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
                   </AccordionContent>
                 </AccordionItem>
               );

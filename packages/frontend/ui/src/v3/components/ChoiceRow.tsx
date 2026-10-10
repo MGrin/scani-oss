@@ -19,28 +19,44 @@ import { cn } from '../../lib/cn';
  * changes where money went.
  */
 export function ChoiceRow({
+  id,
   name,
   checked,
   onSelect,
+  disabled = false,
   children,
 }: {
+  /** The radio's own id, so a test or a `<label htmlFor>` can name one option. */
+  id?: string;
   /** The radio group's `name`. */
   name: string;
   checked: boolean;
   onSelect: () => void;
+  disabled?: boolean;
   /** What the option says. Laid out as a column beside the dot. */
   children: ReactNode;
 }) {
   return (
     <label
       className={cn(
-        'flex min-h-11 w-full cursor-pointer items-start gap-3 rounded-lg border p-3 text-start transition-colors focus-within:ring-2 focus-within:ring-ring',
+        'flex min-h-11 w-full items-start gap-3 rounded-lg border p-3 text-start transition-colors focus-within:ring-2 focus-within:ring-ring',
+        disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
         checked
           ? 'border-primary bg-primary/5'
-          : 'border-border bg-surface-1 hover:bg-surface-hover'
+          : disabled
+            ? 'border-border bg-surface-1'
+            : 'border-border bg-surface-1 hover:bg-surface-hover'
       )}
     >
-      <input type="radio" name={name} checked={checked} onChange={onSelect} className="sr-only" />
+      <input
+        id={id}
+        type="radio"
+        name={name}
+        checked={checked}
+        disabled={disabled}
+        onChange={onSelect}
+        className="sr-only"
+      />
       <span
         aria-hidden="true"
         className={cn(

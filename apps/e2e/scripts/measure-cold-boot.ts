@@ -20,7 +20,7 @@
  * ```
  * # 1. a scratch Postgres, migrated (never the shared :5433)
  * DATABASE_URL=postgres://postgres@127.0.0.1:5497/scani_test bun run db:migrate
- * cd apps/e2e && DATABASE_URL=... bun scripts/seed-cold-boot.ts
+ * cd apps/e2e && DATABASE_URL=... bun scripts/seed-cold-boot.ts --commit
  *
  * # 2. the real api against it, on 3099 (apps/backend/api/.env)
  * cd apps/backend/api && bun run src/index.ts

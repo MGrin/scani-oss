@@ -5,8 +5,8 @@ import { eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { BaseService } from '../BaseService';
+import { PriceReader } from './PriceReader';
 import { PricingService } from './PricingService';
-import { LIVE_PRICE_WINDOW_MS } from './price-windows';
 
 const DEFAULT_BUDGET_MS = 15_000;
 
@@ -20,6 +20,7 @@ export interface WarmTokenPricesInput {
 export class PriceWarmupService extends BaseService {
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly pricingService = Container.get(PricingService);
+  private readonly priceReader = Container.get(PriceReader);
 
   constructor() {
     super('PriceWarmupService');
@@ -70,11 +71,21 @@ export class PriceWarmupService extends BaseService {
       'Warming prices for tokens'
     );
 
-    // A row under an hour old answers: an import must not spend the providers'
-    // budget on a price the hourly run has just fetched.
-    const prices = await this.pricingService.getTokenPrices(tokens, base, new Date(), {
-      reuseStoredWithinMs: LIVE_PRICE_WINDOW_MS,
-    });
+    // Fetched against the fiat USD, where every provider quote is stored
+    // (D-4). A row under an hour old answers: an import must not spend the
+    // providers' budget on a price the hourly run has just fetched.
+    const now = new Date();
+    await this.pricingService.fetchUnlessCurrent(tokens, now);
+    // Answered in the user's base, as their dashboard will read it.
+    const answers = await this.priceReader.at(
+      tokens.map((token) => token.id),
+      base.id,
+      now
+    );
+    const prices = new Map<string, string>();
+    for (const [tokenId, answer] of answers) {
+      if (answer !== null) prices.set(tokenId, answer.price.toString());
+    }
 
     const pricedCount = Array.from(prices.values()).filter((p) => p && p !== '0').length;
     this.logger.info(

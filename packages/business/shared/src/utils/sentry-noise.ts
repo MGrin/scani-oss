@@ -24,11 +24,12 @@
 interface StackFrameLike {
   filename?: string;
   abs_path?: string;
+  function?: string;
 }
 
 interface EventLike {
   exception?: {
-    values?: Array<{ stacktrace?: { frames?: StackFrameLike[] } }>;
+    values?: Array<{ type?: string; value?: string; stacktrace?: { frames?: StackFrameLike[] } }>;
   };
 }
 
@@ -113,4 +114,26 @@ export function isThirdPartyOnlyStack(event: unknown): boolean {
     if (!url) return false;
     return THIRD_PARTY_FRAME_PATTERNS.some((pattern) => pattern.test(url));
   });
+}
+
+/**
+ * True for a CSP `unsafe-eval` refusal raised by code that has no file of ours:
+ * the frame that called `eval` is `<anonymous>` (script injected into the page)
+ * or an extension. Our bundle contains no `eval(` or `new Function(`, so such a
+ * refusal is the CSP doing its job against someone else's code, here a wallet
+ * extension called through the SDK's own callback wrapper (SC-1630).
+ *
+ * A refusal whose calling frame is in our bundle still reports: that is a
+ * dependency starting to evaluate strings, which is exactly what the CSP is
+ * there to surface.
+ */
+export function isInjectedEvalRefusal(event: unknown): boolean {
+  const value = (event as EventLike)?.exception?.values?.[0];
+  if (value?.type !== 'EvalError') return false;
+  if (!value.value?.startsWith('Refused to evaluate a string as JavaScript')) return false;
+  const frames = value.stacktrace?.frames ?? [];
+  const caller = frames.filter((frame) => frame.function !== 'eval').at(-1);
+  if (!caller) return false;
+  const url = caller.abs_path || caller.filename || '';
+  return url === '<anonymous>' || THIRD_PARTY_FRAME_PATTERNS.some((pattern) => pattern.test(url));
 }

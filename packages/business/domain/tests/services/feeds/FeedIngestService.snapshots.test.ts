@@ -1,8 +1,8 @@
 /**
  * Balance batches through `FeedIngestService.ingest` (foundation A2 Task 15):
  * the options the snapshot adapter's paths need. `external-id` is the
- * integration import's match, `createdCheckpointMeta` its create stamp,
- * `unhideOnNonZero` its unhide; `unchangedCheckpoint: 'skip'` and
+ * integration import's match, `createdCheckpointMeta` its create stamp;
+ * `unchangedCheckpoint: 'skip'` and
  * `update-only` are the balance syncs' (Task 16), and the skip happens after
  * placement so a skipped holding still counts as reported (R62 Q2).
  *
@@ -24,7 +24,13 @@ import type {
 } from '../../../src/services/feeds/feed-batch';
 import { withTestDb } from '../../../test/helpers/db';
 import { makeInstitution, makeUser } from '../../../test/helpers/factories';
-import { makeAccount, makeHolding, makeToken } from '../../../test/helpers/factories-extra';
+import {
+  makeAccount,
+  makeCheckpoint,
+  makeHolding,
+  makeHoldingTransaction,
+  makeToken,
+} from '../../../test/helpers/factories-extra';
 
 const ingest = (batch: FeedBatch, tx: DatabaseTransaction) =>
   Container.get(FeedIngestService).ingest(batch, tx);
@@ -68,7 +74,7 @@ function balances(
       walletId: null,
     },
     fetchedAt: FETCHED,
-    window: { from: CAPTURED, to: FETCHED, complete: false },
+    window: { shape: 'balance-snapshot', from: CAPTURED, to: FETCHED, complete: false },
     checkpoints,
     entries: [],
     absences: [],
@@ -79,13 +85,11 @@ function balances(
       arrival: 'user_confirmed',
       writesCache: true,
       createdWithoutCheckpoint: 'zero',
-      cacheObservation: null,
       derivesTradeLegs: false,
       holdingFailure: 'skip-entry',
       absence: null,
       clearsAbsenceTally: false,
       createdCheckpointMeta: CREATE_STAMP,
-      unhideOnNonZero: false,
       unchangedCheckpoint: 'append',
       zeroOpensHolding: true,
       ...legacy,
@@ -220,66 +224,7 @@ describe('FeedIngestService.ingest — a balance batch’s legacy options', () =
     });
   });
 
-  test('unhideOnNonZero shows a hidden holding reported nonzero, by is_hidden and last_updated alone', async () => {
-    await withTestDb(async (tx) => {
-      const fixture = await owner(tx);
-      const [shown, zero, tiny] = [
-        await makeToken(tx, { symbol: freshSymbol() }),
-        await makeToken(tx, { symbol: freshSymbol() }),
-        await makeToken(tx, { symbol: freshSymbol() }),
-      ];
-      const rows = {
-        shown: await holding(tx, fixture, {
-          tokenId: shown.id,
-          balance: '1',
-          externalId: 'SHOWN',
-          isHidden: true,
-        }),
-        zero: await holding(tx, fixture, {
-          tokenId: zero.id,
-          balance: '1',
-          externalId: 'ZERO',
-          isHidden: true,
-        }),
-        tiny: await holding(tx, fixture, {
-          tokenId: tiny.id,
-          balance: '1',
-          externalId: 'TINY',
-          isHidden: true,
-        }),
-      };
-      await tx
-        .update(schema.holdings)
-        .set({ hiddenBy: 'user' })
-        .where(eq(schema.holdings.accountId, fixture.accountId));
-
-      await ingest(
-        balances(
-          fixture,
-          [
-            checkpoint(catalog(shown.symbol, 'SHOWN'), '5'),
-            checkpoint(catalog(zero.symbol, 'ZERO'), '0.000'),
-            // The import's own zero test is parseFloat, which reads an
-            // underflowing exponent as zero.
-            checkpoint(catalog(tiny.symbol, 'TINY'), '1e-400'),
-          ],
-          { unhideOnNonZero: true }
-        ),
-        tx
-      );
-
-      const after = {
-        shown: await holdingRow(tx, rows.shown.id),
-        zero: await holdingRow(tx, rows.zero.id),
-        tiny: await holdingRow(tx, rows.tiny.id),
-      };
-      expect([after.shown.isHidden, after.shown.hiddenBy]).toEqual([false, 'user']);
-      expect(after.shown.lastUpdated > LONG_AGO).toBe(true);
-      expect([after.zero.isHidden, after.tiny.isHidden]).toEqual([true, true]);
-    });
-  });
-
-  test('without unhideOnNonZero a hidden holding stays hidden', async () => {
+  test("a hidden holding reported nonzero stays hidden: the hide is its owner's (A5 #9)", async () => {
     await withTestDb(async (tx) => {
       const fixture = await owner(tx);
       const token = await makeToken(tx, { symbol: freshSymbol() });
@@ -309,6 +254,21 @@ describe('FeedIngestService.ingest — a balance batch’s legacy options', () =
         }),
         moved: await holding(tx, fixture, { tokenId: moved.id, balance: '7' }),
       };
+      // Its 5 is walked, not read: a checkpoint of 3 and an entry of 2 after
+      // it. A reading that agrees adds nothing the engine does not have.
+      await makeCheckpoint(tx, {
+        userId: fixture.userId,
+        holdingId: rows.steady.id,
+        observedAt: LONG_AGO,
+        balance: '3',
+      });
+      await makeHoldingTransaction(tx, {
+        userId: fixture.userId,
+        holdingId: rows.steady.id,
+        kind: 'deposit',
+        quantity: '2',
+        occurredAt: new Date('2026-09-01T00:00:00Z'),
+      });
 
       const result = await ingest(
         balances(
@@ -336,7 +296,7 @@ describe('FeedIngestService.ingest — a balance batch’s legacy options', () =
         steadyAfter.lastUpdated,
         steadyAfter.absentFromStatements,
       ]).toEqual(['5', LONG_AGO, null]);
-      expect(await observationsOf(tx, rows.steady.id)).toEqual([]);
+      expect((await observationsOf(tx, rows.steady.id)).map((o) => o.balance)).toEqual(['3']);
       expect(result.zeroedHoldingIds).toEqual([]);
       expect(result.checkpointsWritten).toBe(1);
       expect((await holdingRow(tx, rows.moved.id)).balance).toBe('8');

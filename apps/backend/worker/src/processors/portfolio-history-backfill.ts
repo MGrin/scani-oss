@@ -6,11 +6,17 @@ import {
   RollupPortfolioValueDailyUseCase,
 } from '@scani/domain/use-cases';
 import {
+  type BackfillQueue,
+  backfillQueueOf,
+  earliestFromDay,
+  enqueueCoalescedBackfill,
   PORTFOLIO_HISTORY_BACKFILL,
   PORTFOLIO_HISTORY_CHUNK_DAYS,
   PORTFOLIO_HISTORY_LOOKBACK_DAYS,
   type PortfolioHistoryBackfillJob,
   type PortfolioHistoryRollupProgress,
+  rebuildWindowDays,
+  withFromDay,
 } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import {
@@ -29,10 +35,13 @@ import { memoryStopReason, readMemory } from '../lib/memory-budget';
 // AFTER the in-flight backfill's snapshot was taken (e.g., wallet add
 // followed by integration add) un-rolled until the next nightly cron.
 // Re-enqueuing with a fixed `lock-held-retry` requestId means at most
-// one pending retry per user (BullMQ jobId dedup), so a flurry of
-// skipped runs collapses into a single delayed tick.
+// one pending retry per user and slot (BullMQ jobId dedup), so a flurry
+// of skipped runs collapses into a single delayed tick.
 export const LOCK_HELD_RETRY_REQUEST_ID = 'lock-held-retry';
 export const LOCK_HELD_RETRY_DELAY_MS = 90_000;
+// A retry that finds the lock still held re-arms at double its own delay, so a
+// holder of hours costs a few dozen short jobs rather than one every 90s.
+const LOCK_HELD_RETRY_MAX_DELAY_MS = 15 * 60_000;
 
 export const MEMORY_DEFER_REQUEST_PREFIX = 'memory-deferred-';
 // Long enough for a restart to have happened, short enough that the whole
@@ -61,6 +70,10 @@ interface EnqueueServiceLike {
   add: (typeof BullMqEnqueueService)['prototype']['add'];
 }
 
+// The retry never lands on a running job (SC-1592) and keeps the earliest
+// start day of what it coalesces with (SC-1607): `enqueueCoalescedBackfill`.
+type LockHeldRetryQueue = BackfillQueue;
+
 // Enqueue the continuation of a memory-stopped run. False means the bound is
 // spent and the caller must let the stop surface.
 export async function scheduleMemoryDeferral(
@@ -72,13 +85,16 @@ export async function scheduleMemoryDeferral(
   if (requestId === null) return false;
   await enqueueService.add(
     PORTFOLIO_HISTORY_BACKFILL,
-    {
-      userId: data.userId,
-      requestId,
-      tokenIds: data.tokenIds,
-      lookbackDays: data.lookbackDays,
-      rollupProgress: progress,
-    },
+    withFromDay(
+      {
+        userId: data.userId,
+        requestId,
+        tokenIds: data.tokenIds,
+        lookbackDays: data.lookbackDays,
+        rollupProgress: progress,
+      },
+      data.fromDay
+    ),
     { delay: MEMORY_DEFER_DELAY_MS }
   );
   return true;
@@ -103,36 +119,47 @@ export async function handleMemoryStop(
 
 export async function scheduleLockHeldRetry(
   userId: string,
-  enqueueService: EnqueueServiceLike,
-  requestedLookbackDays: number = PORTFOLIO_HISTORY_LOOKBACK_DAYS
+  queue: LockHeldRetryQueue,
+  requestedLookbackDays: number = PORTFOLIO_HISTORY_LOOKBACK_DAYS,
+  previousDelayMs?: number,
+  fromDay?: string
 ): Promise<void> {
-  // A wider request keeps its width and gets its own retry id: under the
-  // shared id it would collapse into a pending default-width retry and its
-  // oldest days would never run (SC-1323).
-  const lookbackDays = Math.max(requestedLookbackDays, PORTFOLIO_HISTORY_LOOKBACK_DAYS);
-  const requestId =
+  // A retry keeps the width it was asked for (SC-1607). Widening a 7-day sync
+  // to the default 400 turned every sync that met a running rebuild into a
+  // 400-day one. A wider request still gets its own retry id, and a pending
+  // retry absorbs a wider width, so no request's oldest days are lost (SC-1323).
+  const lookbackDays = requestedLookbackDays;
+  const base =
     lookbackDays > PORTFOLIO_HISTORY_LOOKBACK_DAYS
       ? `${LOCK_HELD_RETRY_REQUEST_ID}-${lookbackDays}d`
       : LOCK_HELD_RETRY_REQUEST_ID;
-  await enqueueService.add(
-    PORTFOLIO_HISTORY_BACKFILL,
-    {
-      userId,
-      requestId,
-      // Empty tokenIds + at least the full lookback so the retry catches
-      // everything the original triggers were meant to cover, regardless of
-      // who first hit the lock.
-      tokenIds: [],
-      lookbackDays,
-    },
-    { delay: LOCK_HELD_RETRY_DELAY_MS }
-  );
+  const delay = previousDelayMs
+    ? Math.min(previousDelayMs * 2, LOCK_HELD_RETRY_MAX_DELAY_MS)
+    : LOCK_HELD_RETRY_DELAY_MS;
+  const payload = (requestId: string) =>
+    withFromDay(
+      {
+        userId,
+        requestId,
+        // Empty tokenIds so the retry catches every token the original
+        // triggers were meant to cover, regardless of who first hit the lock.
+        tokenIds: [],
+        lookbackDays,
+        lockHeldDelayMs: delay,
+      },
+      fromDay
+    );
+  await enqueueCoalescedBackfill(queue, base, payload, { delay });
 }
 
 const logger = createComponentLogger('processor:portfolio-history-backfill');
 
+function lockHeldRetryQueue(): LockHeldRetryQueue {
+  return backfillQueueOf(Container.get(BullMqEnqueueService), Container.get(QueueClient).get());
+}
+
 // A resumed attempt reports zeros for the phases a previous attempt finished.
-const SKIPPED_RECONCILIATION = { holdingsTouched: 0, openingsSynthesized: 0 };
+const SKIPPED_RECONCILIATION = { holdingsTouched: 0, openingsRecorded: 0 };
 const SKIPPED_PRICES = {
   attempted: 0,
   inserted: 0,
@@ -160,6 +187,12 @@ export function resumableProgress(
 export const CHUNK_LOCK_WAIT_MS = 15_000;
 export const CHUNK_LOCK_MAX_WAITS = 20;
 
+// A lock-held retry already waited its turn by being delayed: waiting again
+// would hold a worker slot for 20 x 15s per cycle, so it defers at once.
+export function chunkLockWaitsFor(requestId: string): number {
+  return requestId.startsWith(LOCK_HELD_RETRY_REQUEST_ID) ? 0 : CHUNK_LOCK_MAX_WAITS;
+}
+
 export interface ChunkedRollupDeps {
   rollup: (opts: {
     userId: string;
@@ -175,6 +208,9 @@ export interface ChunkedRollupDeps {
   // every chunk, the first included.
   memoryStopReason?: (fromDayOffset: number) => string | null;
   pace?: ChunkPace;
+  // How many times a chunk waits for a held lock before stopping. Defaults to
+  // CHUNK_LOCK_MAX_WAITS; a lock-held retry passes 0 (SC-1595).
+  maxLockWaits?: number;
 }
 
 // A rest of `factor` times each chunk's own duration before the next (SC-1513).
@@ -231,6 +267,37 @@ export class RollupMemoryStop extends Error {
   }
 }
 
+// Thrown when the rollup lock stays held past the wait budget. A long holder
+// (a full rebuild held it ~6h on 2026-10-06) is a delay, not an error: the
+// throw this replaces failed the user's backfill twice and showed a Retry that
+// would fail the same way (SC-1595). `handleRollupLockHeld` catches it.
+export class RollupLockHeld extends Error {
+  override readonly name = 'RollupLockHeld';
+  constructor(
+    message: string,
+    readonly nextDayOffset: number
+  ) {
+    super(message);
+  }
+}
+
+// Queue the rebuild behind the holder, coalesced with any other lock-held
+// retry for the user (SC-1592), and report where this run stopped.
+export async function handleRollupLockHeld(
+  data: PortfolioHistoryBackfillJob,
+  stop: RollupLockHeld,
+  queue: LockHeldRetryQueue
+): Promise<{ deferredAtDayOffset: number }> {
+  await scheduleLockHeldRetry(
+    data.userId,
+    queue,
+    data.lookbackDays,
+    data.lockHeldDelayMs,
+    data.fromDay
+  );
+  return { deferredAtDayOffset: stop.nextDayOffset };
+}
+
 // Walk the lookback window PORTFOLIO_HISTORY_CHUNK_DAYS at a time (SC-1283).
 // Each chunk is its own rollup call, so everything it prefetched and every
 // per-day result it built is unreachable before the next one starts; memory
@@ -259,9 +326,10 @@ export async function runChunkedRollup(
     let chunkStart = now();
     let summary = await deps.rollup({ userId, lookbackDays, runStart, dayOffsets: { from, to } });
     for (let waits = 0; summary.usersSkipped > 0; waits++) {
-      if (waits >= CHUNK_LOCK_MAX_WAITS) {
-        throw new Error(
-          `Rollup lock for ${userId} stayed held; stopped at day offset ${from} of ${lookbackDays}`
+      if (waits >= (deps.maxLockWaits ?? CHUNK_LOCK_MAX_WAITS)) {
+        throw new RollupLockHeld(
+          `Rollup lock for ${userId} stayed held; stopped at day offset ${from} of ${lookbackDays}`,
+          from
         );
       }
       await sleep(CHUNK_LOCK_WAIT_MS);
@@ -285,7 +353,7 @@ export async function runChunkedRollup(
 interface PortfolioHistoryBackfillResult {
   tokenCount: number;
   lookbackDays: number;
-  reconciliation: { holdingsTouched: number; openingsSynthesized: number };
+  reconciliation: { holdingsTouched: number; openingsRecorded: number };
   prices: {
     attempted: number;
     inserted: number;
@@ -295,6 +363,10 @@ interface PortfolioHistoryBackfillResult {
     droppedDays: number;
   };
   rollup: { usersProcessed: number; daysComputed: number; errorCount: number };
+  // The day the rebuild started from, or null for the whole window, and the
+  // days it walked (SC-1607).
+  fromDay: string | null;
+  windowDays: number;
   // The day offset a memory stop deferred the rest of the window at, or null
   // where the window finished. A deferred run is a SUCCESS with work queued,
   // not a partial failure — the /jobs UI and the job result both have to be
@@ -331,8 +403,10 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     try {
       await scheduleLockHeldRetry(
         data.userId,
-        Container.get(BullMqEnqueueService),
-        data.lookbackDays
+        lockHeldRetryQueue(),
+        data.lookbackDays,
+        data.lockHeldDelayMs,
+        data.fromDay
       );
       logger.info(
         {
@@ -359,6 +433,8 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
       reconciliation: SKIPPED_RECONCILIATION,
       prices: SKIPPED_PRICES,
       rollup: { usersProcessed: 0, daysComputed: 0, errorCount: 0 },
+      fromDay: data.fromDay ?? null,
+      windowDays: 0,
       deferredAtDayOffset: null,
     };
   }
@@ -387,7 +463,7 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     // import that landed mid-flight. Without this, cost basis stays
     // anchored to the bogus opening and PnL stays wrong even after a
     // fresh price backfill.
-    const reconcileSummary = await this.reconcileUser(data.userId);
+    const { summary: reconcileSummary, openingChangedAt } = await this.reconcileUser(data.userId);
     await ctx.reportProgress(0.15);
 
     // Link cross-account transfer pairs before the rollup — its
@@ -395,9 +471,15 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     // a transfer instead of resetting it to market value. Cheap (two
     // queries + in-memory matching); a failure is non-fatal — the rollup
     // still runs, just without fresh linkage.
+    let earliestLinkedAt: Date | null = null;
     try {
-      await Container.get(LinkTransferPairsUseCase).execute({ userId: data.userId });
+      ({ earliestLinkedAt } = await Container.get(LinkTransferPairsUseCase).execute({
+        userId: data.userId,
+      }));
     } catch (error) {
+      // Pairs linked before the throw are not reported, so the rebuild takes
+      // the whole window rather than trust a partial answer.
+      earliestLinkedAt = new Date(0);
       logger.warn(
         { userId: data.userId, error: error instanceof Error ? error.message : error },
         'Transfer linking failed during backfill; continuing'
@@ -413,14 +495,29 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     });
     await ctx.reportProgress(0.55);
 
+    // The phases above can change days before the trigger's start: a moved or
+    // removed opening, a new transfer link, a price written further back. The
+    // rebuild reaches the earliest of them (SC-1607). Saved with the progress,
+    // because a re-run of the phases would find them already done.
+    const { fromDay: _requested, ...rest } = data;
+    const widened = withFromDay(
+      rest,
+      earliestFromDay(
+        data.fromDay,
+        openingChangedAt,
+        earliestLinkedAt,
+        priceSummary.earliestWrittenDay
+      )
+    );
+
     const progress: PortfolioHistoryRollupProgress = {
       anchor: new Date().toISOString(),
       nextDayOffset: 0,
     };
     // Saved before the first chunk: from here a stopped attempt skips
     // straight back to the rollup, the phases above having finished.
-    await this.saveProgress(data, ctx, progress);
-    return this.rollupPhase(data, ctx, progress, reconcileSummary, {
+    await this.saveProgress(widened, ctx, progress);
+    return this.rollupPhase(widened, ctx, progress, reconcileSummary, {
       attempted: priceSummary.attempted,
       inserted: priceSummary.inserted,
       alreadyHad: priceSummary.alreadyHad,
@@ -445,11 +542,13 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     prices: PortfolioHistoryBackfillResult['prices']
   ): Promise<PortfolioHistoryBackfillResult> {
     const rollup = Container.get(RollupPortfolioValueDailyUseCase);
+    const windowDays = rebuildWindowDays(data.lookbackDays, data.fromDay, new Date(start.anchor));
     let deferredAtDayOffset: number | null = null;
     let rollupSummary: Awaited<ReturnType<typeof runChunkedRollup>>;
     try {
-      rollupSummary = await runChunkedRollup(data.userId, data.lookbackDays, start, {
+      rollupSummary = await runChunkedRollup(data.userId, windowDays, start, {
         rollup: (opts) => rollup.execute(opts),
+        maxLockWaits: chunkLockWaitsFor(data.requestId),
         saveProgress: (progress) => this.saveProgress(data, ctx, progress),
         onChunk: (daysDone, total) => ctx.reportProgress(0.55 + 0.4 * (daysDone / total)),
         pace: {
@@ -467,38 +566,41 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
         },
       });
     } catch (error) {
-      if (!(error instanceof RollupMemoryStop)) throw error;
-      // Not a failure: the window is saved and the rest of it is queued. The
-      // throw this replaces spent BullMQ's one retry 30 seconds later against
-      // the same process RSS, stopped at the same offset, and dead-lettered
-      // the job with ~100 days never computed (SC-1298).
-      ({ deferredAtDayOffset } = await handleMemoryStop(
-        data,
-        start.anchor,
-        error,
-        Container.get(BullMqEnqueueService)
-      ));
-      logger.warn(
-        {
-          jobId: ctx.job.id,
-          userId: data.userId,
-          deferredAtDayOffset,
-          delayMs: MEMORY_DEFER_DELAY_MS,
-          reason: error.message,
-        },
-        'History rollup deferred — continuation queued with progress'
-      );
-      rollupSummary = { usersProcessed: 0, daysComputed: 0, errors: [] };
+      if (error instanceof RollupLockHeld) {
+        ({ deferredAtDayOffset } = await handleRollupLockHeld(data, error, lockHeldRetryQueue()));
+        logger.info(
+          { jobId: ctx.job.id, userId: data.userId, deferredAtDayOffset, reason: error.message },
+          'History rollup waiting behind the lock holder — rebuild queued'
+        );
+        rollupSummary = { usersProcessed: 0, daysComputed: 0, errors: [] };
+      } else {
+        if (!(error instanceof RollupMemoryStop)) throw error;
+        // Not a failure: the window is saved and the rest of it is queued. The
+        // throw this replaces spent BullMQ's one retry 30 seconds later against
+        // the same process RSS, stopped at the same offset, and dead-lettered
+        // the job with ~100 days never computed (SC-1298).
+        ({ deferredAtDayOffset } = await handleMemoryStop(
+          data,
+          start.anchor,
+          error,
+          Container.get(BullMqEnqueueService)
+        ));
+        logger.warn(
+          {
+            jobId: ctx.job.id,
+            userId: data.userId,
+            deferredAtDayOffset,
+            delayMs: MEMORY_DEFER_DELAY_MS,
+            reason: error.message,
+          },
+          'History rollup deferred — continuation queued with progress'
+        );
+        rollupSummary = { usersProcessed: 0, daysComputed: 0, errors: [] };
+      }
     }
     await ctx.reportProgress(0.95);
 
-    emitEntityChange({
-      entityType: 'holding',
-      operationType: 'update',
-      entityId: data.userId,
-      userId: data.userId,
-      data: { reason: 'portfolio-history-backfill' },
-    });
+    announceHistoryRebuilt(data.userId, deferredAtDayOffset);
 
     await ctx.reportProgress(1);
 
@@ -519,25 +621,60 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
         daysComputed: rollupSummary.daysComputed,
         errorCount: rollupSummary.errors.length,
       },
+      fromDay: data.fromDay ?? null,
+      windowDays,
       deferredAtDayOffset,
     };
   }
 
-  private async reconcileUser(
-    userId: string
-  ): Promise<{ holdingsTouched: number; openingsSynthesized: number }> {
+  private async reconcileUser(userId: string): Promise<{
+    summary: { holdingsTouched: number; openingsRecorded: number };
+    openingChangedAt: Date | null;
+  }> {
     try {
       const results = await Container.get(OpeningBalanceReconciliationService).reconcileUser(
         userId
       );
-      const synthesized = results.filter((r) => r.openingBalanceSynthesized).length;
-      return { holdingsTouched: results.length, openingsSynthesized: synthesized };
+      const recorded = results.filter((r) => r.hasOpening).length;
+      let openingChangedAt: Date | null = null;
+      for (const r of results) {
+        const at = r.openingChangedAt;
+        if (at && (!openingChangedAt || at < openingChangedAt)) openingChangedAt = at;
+      }
+      return {
+        summary: { holdingsTouched: results.length, openingsRecorded: recorded },
+        openingChangedAt,
+      };
     } catch (error) {
       logger.warn(
         { userId, error: error instanceof Error ? error.message : error },
         'Reconciliation pass threw; continuing with backfill'
       );
-      return { holdingsTouched: 0, openingsSynthesized: 0 };
+      // Unknown is not "unchanged": a failed pass may have moved an opening
+      // before it threw, so the rebuild takes the whole window.
+      return {
+        summary: { holdingsTouched: 0, openingsRecorded: 0 },
+        openingChangedAt: new Date(0),
+      };
     }
   }
+}
+
+/**
+ * Tell the user's open app that its history was rebuilt, once the whole chain
+ * of chunk jobs has finished. A `portfolio` event,
+ * which refetches the chart series. It was a `holding` event, which refetched
+ * the holdings and the dashboard (unchanged by a rebuild) and never the chart
+ * it rebuilt (SC-1600).
+ */
+export function announceHistoryRebuilt(userId: string, deferredAtDayOffset: number | null): void {
+  // A queued continuation means the chain is not finished. Announcing every
+  // chunk would refetch the chart every few minutes for hours (feeds, SC-1600).
+  if (deferredAtDayOffset !== null) return;
+  emitEntityChange({
+    entityType: 'portfolio',
+    operationType: 'sync',
+    userId,
+    data: { reason: 'portfolio-history-backfill' },
+  });
 }

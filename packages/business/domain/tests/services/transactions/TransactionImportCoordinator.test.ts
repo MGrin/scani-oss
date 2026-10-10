@@ -130,13 +130,24 @@ interface Run {
 // after all three.
 function persistWithStubs(
   merges: BulkUpsertMerge[] = [],
-  marks: { calls: string[]; fail?: boolean; links?: string[] } = { calls: [] },
+  marks: {
+    calls: string[];
+    fail?: boolean;
+    links?: string[];
+    withholding?: string[];
+    withholdingFails?: boolean;
+  } = { calls: [] },
   reconcileHolding: (holdingId: string) => Promise<unknown> = async () => undefined,
   changed = true
 ) {
   Container.set(HoldingTransactionRepository, {
     linkSettlements: async (userId: string) => {
       marks.links?.push(userId);
+      return 0;
+    },
+    linkWithholding: async (userId: string) => {
+      if (marks.withholdingFails) throw new Error('withholding sweep failed');
+      marks.withholding?.push(userId);
       return 0;
     },
   });
@@ -182,6 +193,7 @@ function persistWithStubs(
       entryOutcomes: run.rows.map(() => 'landed'),
       rowsSent: run.rows.length,
       entriesWritten: run.rows.length,
+      insertedEntryIds: [],
       merges,
       checkpointsWritten: 0,
       windowRecorded: true,
@@ -567,6 +579,36 @@ describe('TransactionImportCoordinator — a merged batch says so in the summary
     expect(unlinked).toEqual([]);
   });
 
+  test('an IBKR run links its withholding to its dividends (SC-1644)', async () => {
+    const marks = { calls: [] as string[], withholding: [] as string[] };
+    await persistWithStubs([], marks)('user-1', 'account-1', 'ibkr-api', routerResult(), undefined);
+    expect(marks.withholding).toEqual(['user-1']);
+  });
+
+  test('control: a source that names no dividend payer links no withholding', async () => {
+    const marks = { calls: [] as string[], withholding: [] as string[] };
+    await persistWithStubs([], marks)(
+      'user-1',
+      'account-1',
+      'kraken-api',
+      routerResult(),
+      undefined
+    );
+    expect(marks.withholding).toEqual([]);
+  });
+
+  test('a failed withholding sweep does not fail the import', async () => {
+    const marks = { calls: [] as string[], withholding: [] as string[], withholdingFails: true };
+    const result = await persistWithStubs([], marks)(
+      'user-1',
+      'account-1',
+      'ibkr-api',
+      routerResult(),
+      undefined
+    );
+    expect(result).toBeDefined();
+  });
+
   test('control: a wallet source links nothing', async () => {
     const marks = { calls: [] as string[], links: [] as string[] };
     const persist = persistWithStubs([], marks);
@@ -634,7 +676,7 @@ describe('TransactionImportCoordinator — the oldest date a run changed', () =>
 
   test('an opening moved before that transaction sets it earlier', async () => {
     const persist = persistWithStubs([], { calls: [] }, async () => ({
-      openingBalanceSynthesized: true,
+      hasOpening: true,
       openingAt: OPENING,
       openingChangedAt: OPENING,
     }));
@@ -646,7 +688,7 @@ describe('TransactionImportCoordinator — the oldest date a run changed', () =>
     const persist = persistWithStubs(
       [],
       { calls: [] },
-      async () => ({ openingBalanceSynthesized: true, openingAt: OPENING, openingChangedAt: null }),
+      async () => ({ hasOpening: true, openingAt: OPENING, openingChangedAt: null }),
       false
     );
     const out = await persist('user-1', 'account-1', 'ibkr-api', result());
@@ -657,7 +699,7 @@ describe('TransactionImportCoordinator — the oldest date a run changed', () =>
     let asked = 0;
     const persist = persistWithStubs([], { calls: [] }, async () => {
       asked++;
-      return { openingBalanceSynthesized: true, openingAt: OPENING, openingChangedAt: OPENING };
+      return { hasOpening: true, openingAt: OPENING, openingChangedAt: OPENING };
     });
     const out = await persist('user-1', 'account-1', 'ibkr-api', result(), new Date('2026-01-01'));
     expect(asked).toBe(0);

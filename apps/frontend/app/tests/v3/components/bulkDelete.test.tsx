@@ -18,6 +18,7 @@ import {
 import { renderToStaticMarkup } from 'react-dom/server';
 import { selectedNames } from '../../../src/v3/components/entities/AccountsList';
 import {
+  bulkDeleteConsequence,
   holdingsDataViewConfig,
   selectedSymbols,
 } from '../../../src/v3/components/holdings/holdingsConfig';
@@ -84,6 +85,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
       name: 'Spot',
       type: 'Exchange',
       typeCode: 'exchange',
+      class: 'asset',
       institutionId: 'i1',
     },
     institution: { id: 'i1', name: 'Kraken', type: 'Exchange', typeCode: 'exchange' },
@@ -94,6 +96,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
     isHidden: false,
     source: 'import_wallet',
     refreshable: true,
+    deleteHides: true,
     ...overrides,
   };
 }
@@ -115,6 +118,8 @@ const PEEK = {
   currency: '$',
   onEdit: () => undefined,
   onRecordMovement: () => undefined,
+  onUpdateValue: () => undefined,
+  onMoveMoney: () => undefined,
   onToggleActive: () => undefined,
   onMarkScam: () => undefined,
   onRefreshPrice: () => undefined,
@@ -217,5 +222,34 @@ describe('naming the selection', () => {
       { id: 'a2', name: 'Revolut Main' },
     ] as AccountRow[];
     expect(selectedNames(accounts, new Set(['a1', 'a2']))).toBe('Kraken Spot and Revolut Main');
+  });
+});
+
+/** A5 #9: a feed holding is hidden, a snapshot removed, and the sentence says which. */
+describe('the bulk consequence names what is hidden and what is removed', () => {
+  const t = i18n.t.bind(i18n);
+  const feeds = HOLDINGS.map((h) => ({ ...h, deleteHides: true }));
+  const snapshots = HOLDINGS.map((h) => ({ ...h, deleteHides: false }));
+
+  test('snapshots alone are removed, as before', () => {
+    const text = bulkDeleteConsequence(t, snapshots, new Set(['h1', 'h3']));
+    expect(text).toBe(
+      'BTC and SOL are removed from your portfolio, and every transaction recorded against them goes too. This cannot be undone.'
+    );
+  });
+
+  test('feed holdings alone are hidden, and the way back is named', () => {
+    const text = bulkDeleteConsequence(t, feeds, new Set(['h1', 'h3']));
+    expect(text).toContain('BTC and SOL are hidden');
+    expect(text).toContain('Tokens → Hidden brings them back');
+    expect(text).not.toContain('cannot be undone');
+  });
+
+  test('a mixed selection says both, each about its own rows', () => {
+    const mixed = [feeds[0]!, snapshots[1]!, feeds[2]!];
+    const text = bulkDeleteConsequence(t, mixed, new Set(['h1', 'h2', 'h3']));
+    expect(text).toContain('BTC and SOL are hidden');
+    expect(text).toContain('ETH is removed from your portfolio');
+    expect(text).toContain('This cannot be undone.');
   });
 });

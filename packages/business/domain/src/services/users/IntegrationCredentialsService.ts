@@ -206,10 +206,11 @@ export class IntegrationCredentialsService extends BaseService {
   async recordSyncRefusal(
     id: string,
     errorMessage: string,
-    blockedUntil: Date | null
+    blockedUntil: Date | null,
+    kind: string | null
   ): Promise<void> {
     try {
-      await this.credentialsRepository.markSyncRefused(id, errorMessage, blockedUntil);
+      await this.credentialsRepository.markSyncRefused(id, errorMessage, blockedUntil, kind);
     } catch (error) {
       throw this.handleError(error, 'recordSyncRefusal');
     }

@@ -1,11 +1,10 @@
-import type { ScheduledJobDescriptor } from '@scani/queue';
+import type { ScheduledJobStepDescriptor } from '@scani/queue';
 import { JOB_NAMES } from '../job-names';
 
 // Heavy sweep (probes every TokenIdentityProvider against every active
-// token). Weekly Sunday 02:00 UTC keeps it well off the nightly chain
-// and out of weekday peak hours.
-export const BACKFILL_TOKEN_IDENTITY_SCHEDULE: ScheduledJobDescriptor = {
+// token). A Sunday-only step of the `nightly` group, early in the chain and
+// out of weekday peak hours (SC-1688).
+export const BACKFILL_TOKEN_IDENTITY_SCHEDULE: ScheduledJobStepDescriptor = {
   name: JOB_NAMES.backfillTokenIdentity,
-  cron: '0 2 * * 0',
   lockName: JOB_NAMES.backfillTokenIdentity,
 };

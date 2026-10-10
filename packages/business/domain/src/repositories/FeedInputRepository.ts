@@ -1,5 +1,5 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
-import type { FeedInput, NewFeedInput } from '@scani/db/schema';
+import type { FeedInput, FeedWindowShape, NewFeedInput } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { and, asc, eq, exists, inArray, isNull, ne, or, type SQL, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
@@ -34,6 +34,8 @@ export type InputAccountScope =
   | { walletId: string };
 
 /** The feed inputs of D-7: one row per (account, source). */
+
+const LEDGER_WINDOW_SHAPE: FeedWindowShape = 'transaction-run';
 @Service()
 export class FeedInputRepository extends BaseRepository<FeedInput, NewFeedInput> {
   protected readonly table = schema.feedInputs;
@@ -296,6 +298,67 @@ export class FeedInputRepository extends BaseRepository<FeedInput, NewFeedInput>
     return found;
   }
 
+  /**
+   * Where the last ledger read of this account and source stopped (SC-1665):
+   * the newest 'transaction-run' window. A balance sync records a window on
+   * the same input every hour, so the newest window of any shape follows the
+   * balance and would skip every row posted since the last ledger read. `null`
+   * when no ledger read is recorded: unknown, never the epoch.
+   */
+  async findLedgerReadThrough(
+    accountId: string,
+    source: string,
+    tx?: DatabaseTransaction
+  ): Promise<Date | null> {
+    const windows = schema.feedInputWindows;
+    const [row] = await this.getDb(tx)
+      .select({ toAt: windows.toAt })
+      .from(windows)
+      .innerJoin(schema.feedInputs, eq(schema.feedInputs.id, windows.inputId))
+      .where(
+        and(
+          eq(schema.feedInputs.accountId, accountId),
+          eq(schema.feedInputs.source, source),
+          eq(windows.shape, LEDGER_WINDOW_SHAPE)
+        )
+      )
+      .orderBy(sql`${windows.toAt} desc`)
+      .limit(1);
+    return row?.toAt ?? null;
+  }
+
+  /**
+   * Each holding's ledger read-through, for those whose account has an input
+   * of one of `sources` (SC-1665). `null` when that ledger was never read. A
+   * holding with no such input is absent from the map.
+   */
+  async findLedgerReadThroughByHolding(
+    holdingIds: readonly string[],
+    sources: readonly string[],
+    tx?: DatabaseTransaction
+  ): Promise<Map<string, Date | null>> {
+    if (holdingIds.length === 0 || sources.length === 0) return new Map();
+    const windows = schema.feedInputWindows;
+    const rows = await this.getDb(tx)
+      .select({
+        holdingId: schema.holdings.id,
+        readThrough: sql<Date | null>`max(${windows.toAt}) filter (where ${windows.shape} = ${LEDGER_WINDOW_SHAPE})`,
+      })
+      .from(schema.holdings)
+      .innerJoin(schema.feedInputs, eq(schema.feedInputs.accountId, schema.holdings.accountId))
+      .leftJoin(windows, eq(windows.inputId, schema.feedInputs.id))
+      .where(
+        and(
+          inArray(schema.holdings.id, [...holdingIds]),
+          inArray(schema.feedInputs.source, [...sources])
+        )
+      )
+      .groupBy(schema.holdings.id);
+    return new Map(
+      rows.map((row) => [row.holdingId, row.readThrough ? new Date(row.readThrough) : null])
+    );
+  }
+
   /** One window per fetch (D-7): a fetch already recorded writes nothing and returns false. */
   async recordWindow(
     inputId: string,
@@ -312,6 +375,7 @@ export class FeedInputRepository extends BaseRepository<FeedInput, NewFeedInput>
         complete: window.complete,
         fetchedAt,
         uploadRef: window.uploadRef ?? null,
+        shape: window.shape,
       })
       .onConflictDoNothing()
       .returning({ id: schema.feedInputWindows.id });

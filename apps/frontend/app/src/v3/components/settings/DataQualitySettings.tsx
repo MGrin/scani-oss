@@ -117,10 +117,11 @@ export function DataQualitySettings() {
               // is only ever attached to a row that is a link.
               aria-label={
                 row.href
-                  ? t('v3.settings.dataQuality.rowLink', {
+                  ? (row.linkName ??
+                    t('v3.settings.dataQuality.rowLink', {
                       label: row.label,
                       count: row.value,
-                    })
+                    }))
                   : undefined
               }
               className={cn(row.warn ? undefined : 'text-muted-foreground')}

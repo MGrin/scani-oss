@@ -108,6 +108,13 @@ export interface ReturnsMoney {
 
 export interface ReturnsView {
   unavailableReasons?: string[];
+  /**
+   * Set when the window is not eligible right now and these figures are the
+   * last complete result the server kept for it (SC-1694): its time, and the
+   * reasons the fresh answer was withheld.
+   */
+  asOf?: string;
+  updatingReasons?: string[];
   recordedChange?: number | null;
   /** Percent, not a fraction. `annualized` is null under a year. */
   twr: { cumulative: number; annualized: number | null } | null;
@@ -178,12 +185,27 @@ function percent(fraction: string | null | undefined): number | null {
  * for either figure. The card then renders nothing rather than a row of dashes
  * over a portfolio added today.
  */
+export interface LastCompleteReturns {
+  returns: Returns;
+  benchmarks: Benchmarks;
+  computedAt: string;
+}
+
 export function returnsView(
   returns: Returns | null | undefined,
-  benchmarks: Benchmarks = []
+  benchmarks: Benchmarks = [],
+  lastComplete: LastCompleteReturns | null = null
 ): ReturnsView | null {
   if (!returns) return null;
   if (returns.eligibility && !returns.eligibility.eligible) {
+    const stored = lastComplete && returnsView(lastComplete.returns, lastComplete.benchmarks);
+    if (stored && (stored.twr || stored.xirr)) {
+      return {
+        ...stored,
+        asOf: lastComplete.computedAt,
+        updatingReasons: returns.eligibility.reasons,
+      };
+    }
     return {
       twr: null,
       xirr: null,

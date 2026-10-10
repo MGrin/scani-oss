@@ -20,6 +20,81 @@ const ctx = {
   resolveCredentials: async () => ({ walletAddress: VALID_SOL }),
 };
 
+// The fixtures below are written as the per-account changes the netting
+// reads, which is what Helius's enhanced endpoint returned for the
+// production wallets. `getTransactionsForAddress` answers with raw
+// transactions instead (SC-1578), so this writes each one as the balances
+// before and after that the provider must turn back into those changes.
+// A rise appears only after the transaction and a fall only before it,
+// the way a token account opened or closed inside one does.
+const BASE_LAMPORTS = 10_000_000_000;
+
+interface FixtureChange {
+  userAccount?: string;
+  mint: string;
+  rawTokenAmount: { tokenAmount: string; decimals: number };
+}
+interface FixtureTx {
+  signature: string;
+  timestamp: number;
+  accountData?: {
+    account: string;
+    nativeBalanceChange?: number;
+    tokenBalanceChanges?: FixtureChange[];
+  }[];
+}
+
+function asRpcTx(tx: FixtureTx) {
+  const accounts = tx.accountData ?? [];
+  const preTokenBalances: unknown[] = [];
+  const postTokenBalances: unknown[] = [];
+  accounts.forEach((a, accountIndex) => {
+    for (const c of a.tokenBalanceChanges ?? []) {
+      const amount = BigInt(c.rawTokenAmount.tokenAmount);
+      const row = (units: bigint) => ({
+        accountIndex,
+        mint: c.mint,
+        owner: c.userAccount,
+        uiTokenAmount: { amount: units.toString(), decimals: c.rawTokenAmount.decimals },
+      });
+      if (amount >= 0n) postTokenBalances.push(row(amount));
+      else preTokenBalances.push(row(-amount));
+    }
+  });
+  return {
+    slot: 1,
+    blockTime: tx.timestamp,
+    transaction: {
+      signatures: [tx.signature],
+      message: { accountKeys: accounts.map((a) => a.account) },
+    },
+    meta: {
+      err: null,
+      fee: 5000,
+      preBalances: accounts.map(() => BASE_LAMPORTS),
+      postBalances: accounts.map((a) => BASE_LAMPORTS + (a.nativeBalanceChange ?? 0)),
+      preTokenBalances,
+      postTokenBalances,
+    },
+  };
+}
+
+function rpcPage(page: unknown[], paginationToken: string | null): Response {
+  return new Response(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      result: { data: (page as FixtureTx[]).map(asRpcTx), paginationToken },
+    }),
+    { status: 200 }
+  );
+}
+
+function rpcOptions(init?: RequestInit): Record<string, unknown> {
+  const body = JSON.parse(String(init?.body ?? '{}')) as { params?: unknown[] };
+  return (body.params?.[1] ?? {}) as Record<string, unknown>;
+}
+
 describe('SolanaProvider', () => {
   // Per-test isolation: the Jupiter mint resolver caches results in a
   // module-level Map for production efficiency. Tests that exercise
@@ -50,7 +125,7 @@ describe('SolanaProvider', () => {
     globalThis.fetch = (async (url: string, init?: RequestInit) => {
       const urlStr = url.toString();
       // Jupiter resolver: GET request, no body
-      if (urlStr.includes('lite-api.jup.ag')) {
+      if (urlStr.includes('api.jup.ag/tokens')) {
         jupiterCalls += 1;
         return new Response(
           JSON.stringify([
@@ -165,9 +240,9 @@ describe('SolanaProvider', () => {
     let served = false;
     globalThis.fetch = (async (url: string) => {
       if (url.toString().includes('lite-api.jup.ag')) return new Response('[]', { status: 200 });
-      if (served) return new Response('[]', { status: 200 });
+      if (served) return rpcPage([], null);
       served = true;
-      return new Response(JSON.stringify(page), { status: 200 });
+      return rpcPage(page, null);
     }) as unknown as typeof fetch;
     return () => {
       globalThis.fetch = originalFetch;
@@ -460,7 +535,7 @@ describe('SolanaProvider', () => {
     }
   });
 
-  test('fetchTransactions: paginates via `before` cursor until short page', async () => {
+  test('fetchTransactions: follows paginationToken until Helius returns none', async () => {
     const p = helius();
     const fullPage = Array.from({ length: 100 }, (_, i) => ({
       signature: `S${i}`,
@@ -476,18 +551,18 @@ describe('SolanaProvider', () => {
     ];
 
     const originalFetch = globalThis.fetch;
-    const beforeParams: (string | null)[] = [];
+    const tokensSent: unknown[] = [];
     let pageIndex = 0;
-    globalThis.fetch = (async (url: string) => {
-      beforeParams.push(new URL(url).searchParams.get('before'));
-      const body = pageIndex === 0 ? fullPage : shortPage;
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      tokensSent.push(rpcOptions(init).paginationToken ?? null);
+      const response = pageIndex === 0 ? rpcPage(fullPage, '1055:5') : rpcPage(shortPage, null);
       pageIndex += 1;
-      return new Response(JSON.stringify(body), { status: 200 });
+      return response;
     }) as unknown as typeof fetch;
 
     try {
       const events = await p.fetchTransactions(ctx as never);
-      expect(beforeParams).toEqual([null, 'S99']);
+      expect(tokensSent).toEqual([null, '1055:5']);
       expect(events).toHaveLength(101);
       expect(events.at(-1)?.externalId).toBe('TAIL-net-native');
     } finally {
@@ -514,10 +589,12 @@ describe('SolanaProvider', () => {
 
     const originalFetch = globalThis.fetch;
     let requests = 0;
-    globalThis.fetch = (async () => {
+    const blockTimeFilters: unknown[] = [];
+    globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+      blockTimeFilters.push((rpcOptions(init).filters as Record<string, unknown>)?.blockTime);
       const body = pages[requests] ?? [];
       requests += 1;
-      return new Response(JSON.stringify(body), { status: 200 });
+      return rpcPage(body, `t${requests}`);
     }) as unknown as typeof fetch;
 
     try {
@@ -527,6 +604,8 @@ describe('SolanaProvider', () => {
       } as never);
 
       expect(requests).toBe(2);
+      // The cutoff also goes to Helius, which can then skip older rows.
+      expect(blockTimeFilters[0]).toEqual({ gte: cutoff });
       // The straddling page is still sifted event by event, so the boundary
       // is exact rather than page-aligned.
       expect(events).toHaveLength(150);
@@ -548,9 +627,9 @@ describe('SolanaProvider', () => {
     const originalFetch = globalThis.fetch;
     let requests = 0;
     globalThis.fetch = (async () => {
-      const body = requests === 0 ? fullPage : [];
+      const response = requests === 0 ? rpcPage(fullPage, 'next') : rpcPage([], null);
       requests += 1;
-      return new Response(JSON.stringify(body), { status: 200 });
+      return response;
     }) as unknown as typeof fetch;
 
     try {
@@ -634,11 +713,11 @@ describe('SolanaProvider', () => {
   });
 });
 
-// Live test against Helius enhanced /transactions on devnet. Skipped
+// Live test against Helius getTransactionsForAddress on devnet. Skipped
 // unless SCANI_LIVE=1 AND HELIUS_API_KEY is set in the env. Hits a
 // known active devnet address so the shape assertion stays stable.
 test.skipIf(process.env.SCANI_LIVE !== '1' || !process.env.HELIUS_API_KEY)(
-  'SolanaProvider — live Helius enhanced /transactions returns events',
+  'SolanaProvider — live Helius getTransactionsForAddress returns events',
   async () => {
     const apiKey = process.env.HELIUS_API_KEY ?? '';
     const url = `https://devnet.helius-rpc.com/?api-key=${apiKey}`;
@@ -668,17 +747,15 @@ describe('SolanaProvider.fetchTransactions over an address with no end (SC-1271)
     globalThis.fetch = (async (url: string) => {
       if (url.toString().includes('lite-api.jup.ag')) return new Response('[]', { status: 200 });
       pages += 1;
-      return new Response(
-        JSON.stringify(
-          Array.from({ length: 100 }, (_, i) => ({
-            signature: `sig${pages}_${i}`,
-            timestamp: 1_700_000_000 - pages,
-            accountData: [
-              { account: VALID_SOL, nativeBalanceChange: 1_000, tokenBalanceChanges: [] },
-            ],
-          }))
-        ),
-        { status: 200 }
+      return rpcPage(
+        Array.from({ length: 100 }, (_, i) => ({
+          signature: `sig${pages}_${i}`,
+          timestamp: 1_700_000_000 - pages,
+          accountData: [
+            { account: VALID_SOL, nativeBalanceChange: 1_000, tokenBalanceChanges: [] },
+          ],
+        })),
+        `p${pages}`
       );
     }) as unknown as typeof fetch;
     try {
@@ -689,6 +766,175 @@ describe('SolanaProvider.fetchTransactions over an address with no end (SC-1271)
       expect(events.length).toBeGreaterThanOrEqual(WALLET_HISTORY_ROW_CAP);
       expect(pages).toBe(WALLET_HISTORY_ROW_CAP / 100);
       expect(retractions).toHaveLength(1);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});
+
+// SC-1578: history comes from Helius's `getTransactionsForAddress`, whose
+// raw rows the provider decodes itself. These pin the request and the
+// decoding the fixture encoder above does not exercise.
+describe('SolanaProvider.fetchTransactions on getTransactionsForAddress (SC-1578)', () => {
+  const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+  const rpcCtx = {
+    institutionCode: 'solana',
+    baseCurrency: { id: 'usd', symbol: 'USD' },
+    credentialsRef: { userId: 'u', institutionId: 'i' },
+    resolveCredentials: async () => ({ walletAddress: VALID_SOL }),
+  };
+
+  function serve(raw: unknown[], seen?: { url: string; init?: RequestInit }[]): () => void {
+    const originalFetch = globalThis.fetch;
+    let served = false;
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      if (url.toString().includes('lite-api.jup.ag')) return new Response('[]', { status: 200 });
+      seen?.push({ url: url.toString(), init });
+      const data = served ? [] : raw;
+      served = true;
+      return new Response(
+        JSON.stringify({ jsonrpc: '2.0', id: 1, result: { data, paginationToken: null } }),
+        { status: 200 }
+      );
+    }) as unknown as typeof fetch;
+    return () => {
+      globalThis.fetch = originalFetch;
+    };
+  }
+
+  function provider(): SolanaProvider {
+    return new SolanaProvider(passthroughLimiter(), 'https://mainnet.helius-rpc.com/?api-key=k');
+  }
+
+  test('asks for full transactions of every version, the wallet token accounts included', async () => {
+    const seen: { url: string; init?: RequestInit }[] = [];
+    const restore = serve([], seen);
+    try {
+      await provider().fetchTransactions(rpcCtx as never);
+      expect(seen).toHaveLength(1);
+      expect(seen[0]?.url).toBe('https://mainnet.helius-rpc.com/?api-key=k');
+      const body = JSON.parse(String(seen[0]?.init?.body)) as {
+        method: string;
+        params: [string, Record<string, unknown>];
+      };
+      expect(body.method).toBe('getTransactionsForAddress');
+      expect(body.params[0]).toBe(VALID_SOL);
+      expect(body.params[1]).toMatchObject({
+        transactionDetails: 'full',
+        encoding: 'json',
+        maxSupportedTransactionVersion: 1,
+        filters: { tokenAccounts: 'balanceChanged' },
+      });
+    } finally {
+      restore();
+    }
+  });
+
+  test('reads a v0 transaction whose wallet key sits in loadedAddresses', async () => {
+    const restore = serve([
+      {
+        blockTime: 1_700_000_000,
+        transaction: { signatures: ['V0'], message: { accountKeys: ['PAYER'] } },
+        meta: {
+          preBalances: [5_000_000_000, 1_000_000_000],
+          postBalances: [3_999_995_000, 2_000_000_000],
+          preTokenBalances: [],
+          postTokenBalances: [],
+          loadedAddresses: { writable: [VALID_SOL], readonly: [] },
+        },
+      },
+    ]);
+    try {
+      const events = await provider().fetchTransactions(rpcCtx as never);
+      expect(events.map((e) => [e.externalId, e.kind, e.primary.quantity])).toEqual([
+        ['V0-net-native', 'transfer_in', '1'],
+      ]);
+    } finally {
+      restore();
+    }
+  });
+
+  test('reads an incoming token transfer to an account opened in the transaction', async () => {
+    // The token account exists only after the transaction, so it has a
+    // post balance and no pre balance; the owner is read from the post side.
+    const restore = serve([
+      {
+        blockTime: 1_700_000_000,
+        transaction: { signatures: ['IN'], message: { accountKeys: ['SENDER', 'NEWATA'] } },
+        meta: {
+          preBalances: [9_000_000, 0],
+          postBalances: [6_960_720, 2_039_280],
+          preTokenBalances: [],
+          postTokenBalances: [
+            {
+              accountIndex: 1,
+              mint: USDC_MINT,
+              owner: VALID_SOL,
+              uiTokenAmount: { amount: '2500000', decimals: 6 },
+            },
+          ],
+        },
+      },
+    ]);
+    try {
+      const events = await provider().fetchTransactions(rpcCtx as never);
+      expect(events.map((e) => [e.externalId, e.kind, e.primary.quantity])).toEqual([
+        [`IN-net-${USDC_MINT}`, 'transfer_in', '2.5'],
+      ]);
+    } finally {
+      restore();
+    }
+  });
+
+  test("a pre-2022 token balance with no owner is the wallet's when it sits on the wallet ATA", async () => {
+    // Token balances in transactions from before the `owner` field existed
+    // carry none, and the enhanced API filled it in from its own index. 27
+    // of one production wallet's events were of this shape (SC-1578). The
+    // ATA below was derived and checked on chain: owner and mint match.
+    const wallet = '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM';
+    const walletUsdcAta = 'FGETo8T8wMcN2wCjav8VK6eh3dLk63evNDPxzLSJra8B';
+    const ownerless = (account: string) => ({
+      blockTime: 1_600_000_000,
+      transaction: {
+        signatures: [`OLD-${account}`],
+        message: { accountKeys: ['SENDER', account] },
+      },
+      meta: {
+        preBalances: [9_000_000, 2_039_280],
+        postBalances: [8_995_000, 2_039_280],
+        preTokenBalances: [
+          { accountIndex: 1, mint: USDC_MINT, uiTokenAmount: { amount: '0', decimals: 6 } },
+        ],
+        postTokenBalances: [
+          { accountIndex: 1, mint: USDC_MINT, uiTokenAmount: { amount: '2500000', decimals: 6 } },
+        ],
+      },
+    });
+    const restore = serve([ownerless(walletUsdcAta), ownerless('SOMEONEELSESACCOUNT')]);
+    try {
+      const events = await provider().fetchTransactions({
+        ...rpcCtx,
+        resolveCredentials: async () => ({ walletAddress: wallet }),
+      } as never);
+      // The control: the same balance on an account that is not the
+      // wallet's ATA stays unattributed, so it emits nothing.
+      expect(events.map((e) => [e.externalId, e.kind, e.primary.quantity])).toEqual([
+        [`OLD-${walletUsdcAta}-net-${USDC_MINT}`, 'transfer_in', '2.5'],
+      ]);
+    } finally {
+      restore();
+    }
+  });
+
+  test('an RPC error is thrown, never read as an empty history', async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ jsonrpc: '2.0', id: 1, error: { code: -32602, message: 'bad params' } }),
+        { status: 200 }
+      )) as unknown as typeof fetch;
+    try {
+      await expect(provider().fetchTransactions(rpcCtx as never)).rejects.toThrow('bad params');
     } finally {
       globalThis.fetch = originalFetch;
     }

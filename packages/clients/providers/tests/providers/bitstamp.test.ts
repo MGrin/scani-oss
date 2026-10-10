@@ -34,27 +34,72 @@ describe('BitstampProvider', () => {
     expect(p.capabilities).toContain('transactions');
   });
 
-  test('fetchBalances parses *_balance keys, uppercases symbol, skips zeros', async () => {
+  // `/api/v2/balance/` is deprecated (SC-1574); `/api/v2/account_balances/`
+  // returns one row per currency, shape as in ccxt's bitstamp.ts.
+  function stubAccountBalances(rows: unknown, paths: string[]): typeof fetch {
+    return (async (url: string | URL) => {
+      const path = new URL(String(url)).pathname;
+      paths.push(path);
+      if (path !== '/api/v2/account_balances/') return new Response('gone', { status: 404 });
+      return new Response(JSON.stringify(rows), { status: 200 });
+    }) as unknown as typeof fetch;
+  }
+
+  test('fetchBalances reads account_balances rows, uppercases symbol, skips zeros', async () => {
     const p = new BitstampProvider(passthroughLimiter());
     const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () =>
-      new Response(
-        JSON.stringify({
-          btc_balance: '0.25',
-          usd_balance: '0',
-          eur_balance: '100',
-          btc_available: '0.25', // not a *_balance key
-        }),
-        { status: 200 }
-      )) as unknown as typeof fetch;
+    const paths: string[] = [];
+    globalThis.fetch = stubAccountBalances(
+      [
+        { currency: 'btc', total: '0.25000000', available: '0.20000000', reserved: '0.05000000' },
+        { currency: 'usd', total: '0.00', available: '0.00', reserved: '0.00' },
+        { currency: 'eur', total: '100.00', available: '100.00', reserved: '0.00' },
+      ],
+      paths
+    );
     try {
       const out = await p.fetchBalances(ctx as never);
+      expect(paths).toEqual(['/api/v2/account_balances/']);
       const symbols = out.map((h) => h.tokenIdentity.symbol).sort();
       expect(symbols).toEqual(['BTC', 'EUR']);
       const btc = out.find((h) => h.tokenIdentity.symbol === 'BTC');
+      // The total, reserved included — what `<cur>_balance` carried before.
       expect(btc?.balance).toBe('0.25');
       const meta = btc?.tokenIdentity.providerMetadata as { bitstamp: { currency: string } };
       expect(meta.bitstamp.currency).toBe('btc');
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('fetchBalances skips a row with no currency or an unreadable total', async () => {
+    const p = new BitstampProvider(passthroughLimiter());
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = stubAccountBalances(
+      [
+        { total: '5', available: '5', reserved: '0' },
+        { currency: 'eth', total: 'n/a', available: '0', reserved: '0' },
+        { currency: 'sol', total: '2', available: '2', reserved: '0' },
+      ],
+      []
+    );
+    try {
+      const out = await p.fetchBalances(ctx as never);
+      expect(out.map((h) => h.tokenIdentity.symbol)).toEqual(['SOL']);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  test('validateCredentials probes account_balances', async () => {
+    const p = new BitstampProvider(passthroughLimiter());
+    const originalFetch = globalThis.fetch;
+    const paths: string[] = [];
+    globalThis.fetch = stubAccountBalances([], paths);
+    try {
+      const r = await p.validateCredentials({ apiKey: 'k', apiSecret: 's' }, 'bitstamp');
+      expect(r.valid).toBe(true);
+      expect(paths).toEqual(['/api/v2/account_balances/']);
     } finally {
       globalThis.fetch = originalFetch;
     }

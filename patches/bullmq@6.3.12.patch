@@ -1,0 +1,195 @@
+diff --git a/dist/cjs/classes/worker.js b/dist/cjs/classes/worker.js
+index bac50084584bc01e7d4bf13f3e924ef8f4e9bbab..84db04026d90d7283ea54c414d242c26464673cd 100644
+--- a/dist/cjs/classes/worker.js
++++ b/dist/cjs/classes/worker.js
+@@ -369,6 +369,13 @@ class Worker extends queue_base_1.QueueBase {
+             this.waiting = this.waitForJob(this.blockUntil);
+             try {
+                 this.blockUntil = await this.waiting;
++                // Awake for this wake anyway: run the stalled check the idle timer
++                // skipped, before fetching, so a reclaimed job starts now. The SQL
++                // throttles it to one scan per stalledInterval (SC-1611).
++                if (this.backend.deferStalledCheckWhileIdle && !this.opts.skipStalledCheck) {
++                    this.waiting = null;
++                    await this.checkConnectionError(() => this.moveStalledJobsToWait());
++                }
+                 if (this.blockUntil <= 0 || this.blockUntil - Date.now() < 1) {
+                     job = await this.moveToActive(token, this.opts.name);
+                 }
+@@ -904,7 +911,14 @@ class Worker extends queue_base_1.QueueBase {
+         // returned.
+         while (!(this.closing || this.paused) &&
+             generation === this.stalledCheckerGeneration) {
+-            await this.checkConnectionError(() => this.moveStalledJobsToWait());
++            // An idle worker leaves a scale-to-zero Postgres alone: it checks when
++            // it wakes instead. With a job in flight the timer keeps checking, so a
++            // dead worker's job is still reclaimed (SC-1611).
++            if (!(this.backend.deferStalledCheckWhileIdle === true &&
++                this.waiting !== null &&
++                this.lockManager.getActiveJobCount() === 0)) {
++                await this.checkConnectionError(() => this.moveStalledJobsToWait());
++            }
+             if (this.closing ||
+                 this.paused ||
+                 generation !== this.stalledCheckerGeneration) {
+diff --git a/dist/cjs/postgres/postgres-connection.js b/dist/cjs/postgres/postgres-connection.js
+index 0b8bce581f83d88c40ab012c3669fe16e9b430dd..2a7cd41c96c6f96a03c5551694b6614bb7afe03b 100644
+--- a/dist/cjs/postgres/postgres-connection.js
++++ b/dist/cjs/postgres/postgres-connection.js
+@@ -98,9 +98,17 @@ class PostgresConnection extends events_1.EventEmitter {
+                     skipVersionCheck: undefined,
+                     migrate: undefined,
+                     skipMigrations: undefined,
++                    listenReconnect: undefined,
++                    maximumBlockTimeout: undefined,
+                     connectionString: connection,
+                 }
+-                : connection, { schema, skipVersionCheck, migrate, skipMigrations } = _b, poolConfig = tslib_1.__rest(_b, ["schema", "skipVersionCheck", "migrate", "skipMigrations"]);
++                : connection, { schema, skipVersionCheck, migrate, skipMigrations, listenReconnect, maximumBlockTimeout } = _b, poolConfig = tslib_1.__rest(_b, ["schema", "skipVersionCheck", "migrate", "skipMigrations", "listenReconnect", "maximumBlockTimeout"]);
++            if (maximumBlockTimeout !== undefined &&
++                !(maximumBlockTimeout > 0 && maximumBlockTimeout <= 3600)) {
++                throw new Error('BullMQ: `maximumBlockTimeout` must be greater than 0 and at most 3600 seconds.');
++            }
++            this.reconnectsListenOnNextWait = listenReconnect === 'nextWait';
++            this.maximumBlockTimeoutOverride = maximumBlockTimeout;
+             if (migrate !== undefined && skipMigrations !== undefined) {
+                 throw new Error('BullMQ: `migrate` and `skipMigrations` are mutually exclusive. Set only one.');
+             }
+diff --git a/dist/cjs/postgres/postgres-queue-backend.js b/dist/cjs/postgres/postgres-queue-backend.js
+index f1a2a4f7c446106269ffbc4704c21467a6646e28..07f3781f0798e6e89e97bc46818f4b2f1d20efc7 100644
+--- a/dist/cjs/postgres/postgres-queue-backend.js
++++ b/dist/cjs/postgres/postgres-queue-backend.js
+@@ -199,6 +199,11 @@ class PostgresQueueBackend extends events_1.EventEmitter {
+                 var _a, _b;
+                 this.listening = false;
+                 this.listeningEvents = false;
++                // On a scale-to-zero Postgres the drop IS the compute suspending,
++                // and reconnecting now wakes it: the next wait reconnects (SC-963).
++                if (this.connection.reconnectsListenOnNextWait === true) {
++                    return;
++                }
+                 (_a = this.cancelWait) === null || _a === void 0 ? void 0 : _a.call(this);
+                 (_b = this.cancelEventWait) === null || _b === void 0 ? void 0 : _b.call(this);
+             });
+@@ -287,8 +292,16 @@ class PostgresQueueBackend extends events_1.EventEmitter {
+      * ceiling stays at the conservative Redis-like 10s instead.
+      */
+     get maximumBlockTimeout() {
++        const configured = this.connection.maximumBlockTimeoutOverride;
++        if (configured !== undefined) {
++            return configured;
++        }
+         return this.connection.hasListenClientKeepAlive ? 3600 : 10;
+     }
++    /** A periodic stalled check is a query that keeps a scale-to-zero Postgres awake. */
++    get deferStalledCheckWhileIdle() {
++        return true;
++    }
+     forQueue(queueName, _prefix) {
+         // The namespace is the connection's schema, shared by all queues, so a
+         // sibling backend only needs a different queue name. BullMQ's per-queue
+diff --git a/dist/esm/classes/worker.js b/dist/esm/classes/worker.js
+index d8bcf6fda7d0067c08f0924b87de3626ceb807dd..7d76b1d3a3b17729b95d38ae1fff60f84662fd74 100644
+--- a/dist/esm/classes/worker.js
++++ b/dist/esm/classes/worker.js
+@@ -366,6 +366,13 @@ export class Worker extends QueueBase {
+             this.waiting = this.waitForJob(this.blockUntil);
+             try {
+                 this.blockUntil = await this.waiting;
++                // Awake for this wake anyway: run the stalled check the idle timer
++                // skipped, before fetching, so a reclaimed job starts now. The SQL
++                // throttles it to one scan per stalledInterval (SC-1611).
++                if (this.backend.deferStalledCheckWhileIdle && !this.opts.skipStalledCheck) {
++                    this.waiting = null;
++                    await this.checkConnectionError(() => this.moveStalledJobsToWait());
++                }
+                 if (this.blockUntil <= 0 || this.blockUntil - Date.now() < 1) {
+                     job = await this.moveToActive(token, this.opts.name);
+                 }
+@@ -901,7 +908,14 @@ export class Worker extends QueueBase {
+         // returned.
+         while (!(this.closing || this.paused) &&
+             generation === this.stalledCheckerGeneration) {
+-            await this.checkConnectionError(() => this.moveStalledJobsToWait());
++            // An idle worker leaves a scale-to-zero Postgres alone: it checks when
++            // it wakes instead. With a job in flight the timer keeps checking, so a
++            // dead worker's job is still reclaimed (SC-1611).
++            if (!(this.backend.deferStalledCheckWhileIdle === true &&
++                this.waiting !== null &&
++                this.lockManager.getActiveJobCount() === 0)) {
++                await this.checkConnectionError(() => this.moveStalledJobsToWait());
++            }
+             if (this.closing ||
+                 this.paused ||
+                 generation !== this.stalledCheckerGeneration) {
+diff --git a/dist/esm/postgres/postgres-connection.d.ts b/dist/esm/postgres/postgres-connection.d.ts
+index 9e9424754c8bcaa9fc4f5e31955a9951032d4249..f1477f19524aaade0aaee15fc960857cabe4ca96 100644
+--- a/dist/esm/postgres/postgres-connection.d.ts
++++ b/dist/esm/postgres/postgres-connection.d.ts
+@@ -11,6 +11,10 @@ export type PostgresPoolConfig = PgPoolConfig & {
+     skipVersionCheck?: boolean;
+     migrate?: boolean;
+     skipMigrations?: boolean;
++    /** 'nextWait': a dropped LISTEN client reconnects when the wait's timer ends. */
++    listenReconnect?: 'immediate' | 'nextWait';
++    /** Longest block, in seconds (0 < s <= 3600), while a delayed job exists. */
++    maximumBlockTimeout?: number;
+ };
+ /**
+  * What the user may pass as the PostgreSQL `connection` option:
+diff --git a/dist/esm/postgres/postgres-connection.js b/dist/esm/postgres/postgres-connection.js
+index c0e549a911ba9b05a6c962156fbef4c38260fe80..90544e00ee4ec3478a1a627b5b4147b92b2864b4 100644
+--- a/dist/esm/postgres/postgres-connection.js
++++ b/dist/esm/postgres/postgres-connection.js
+@@ -95,9 +95,17 @@ export class PostgresConnection extends EventEmitter {
+                     skipVersionCheck: undefined,
+                     migrate: undefined,
+                     skipMigrations: undefined,
++                    listenReconnect: undefined,
++                    maximumBlockTimeout: undefined,
+                     connectionString: connection,
+                 }
+-                : connection, { schema, skipVersionCheck, migrate, skipMigrations } = _b, poolConfig = __rest(_b, ["schema", "skipVersionCheck", "migrate", "skipMigrations"]);
++                : connection, { schema, skipVersionCheck, migrate, skipMigrations, listenReconnect, maximumBlockTimeout } = _b, poolConfig = __rest(_b, ["schema", "skipVersionCheck", "migrate", "skipMigrations", "listenReconnect", "maximumBlockTimeout"]);
++            if (maximumBlockTimeout !== undefined &&
++                !(maximumBlockTimeout > 0 && maximumBlockTimeout <= 3600)) {
++                throw new Error('BullMQ: `maximumBlockTimeout` must be greater than 0 and at most 3600 seconds.');
++            }
++            this.reconnectsListenOnNextWait = listenReconnect === 'nextWait';
++            this.maximumBlockTimeoutOverride = maximumBlockTimeout;
+             if (migrate !== undefined && skipMigrations !== undefined) {
+                 throw new Error('BullMQ: `migrate` and `skipMigrations` are mutually exclusive. Set only one.');
+             }
+diff --git a/dist/esm/postgres/postgres-queue-backend.js b/dist/esm/postgres/postgres-queue-backend.js
+index 5540590caddc7c6c113186314178b5dacb3a3682..2e0647ce523ffe94490a078ba1d0b7d50798e72c 100644
+--- a/dist/esm/postgres/postgres-queue-backend.js
++++ b/dist/esm/postgres/postgres-queue-backend.js
+@@ -196,6 +196,11 @@ export class PostgresQueueBackend extends EventEmitter {
+                 var _a, _b;
+                 this.listening = false;
+                 this.listeningEvents = false;
++                // On a scale-to-zero Postgres the drop IS the compute suspending,
++                // and reconnecting now wakes it: the next wait reconnects (SC-963).
++                if (this.connection.reconnectsListenOnNextWait === true) {
++                    return;
++                }
+                 (_a = this.cancelWait) === null || _a === void 0 ? void 0 : _a.call(this);
+                 (_b = this.cancelEventWait) === null || _b === void 0 ? void 0 : _b.call(this);
+             });
+@@ -284,8 +289,16 @@ export class PostgresQueueBackend extends EventEmitter {
+      * ceiling stays at the conservative Redis-like 10s instead.
+      */
+     get maximumBlockTimeout() {
++        const configured = this.connection.maximumBlockTimeoutOverride;
++        if (configured !== undefined) {
++            return configured;
++        }
+         return this.connection.hasListenClientKeepAlive ? 3600 : 10;
+     }
++    /** A periodic stalled check is a query that keeps a scale-to-zero Postgres awake. */
++    get deferStalledCheckWhileIdle() {
++        return true;
++    }
+     forQueue(queueName, _prefix) {
+         // The namespace is the connection's schema, shared by all queues, so a
+         // sibling backend only needs a different queue name. BullMQ's per-queue

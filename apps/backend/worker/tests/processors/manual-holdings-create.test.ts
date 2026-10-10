@@ -30,6 +30,7 @@ import { describeRefusedRecord } from '../../src/lib/request-refusal';
 import {
   describeDuplicateHoldingTokens,
   ManualHoldingsCreateProcessor,
+  updateRowBalances,
 } from '../../src/processors/manual-holdings-create';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -215,5 +216,23 @@ describe('describeDuplicateHoldingTokens', () => {
   // pots away to delete three of them.
   test('the copy offers the way out, not only the refusal', () => {
     expect(describeDuplicateHoldingTokens(['RUB'])).toMatch(/separate pots, give each one a name/);
+  });
+});
+
+describe('updateRowBalances (A5 D-20)', () => {
+  test('an update reports what was stored, with the typed figure beside it', () => {
+    const rows = updateRowBalances(
+      [{ holdingId: 'h-1', balance: '150' }],
+      new Map([['h-1', '120']])
+    );
+    expect(rows.get('h-1')).toEqual({ balance: '120', typedBalance: '150' });
+  });
+
+  test('CONTROL: a holding stored at the typed figure reads the same twice', () => {
+    const rows = updateRowBalances(
+      [{ holdingId: 'h-1', balance: '150' }],
+      new Map([['h-1', '150']])
+    );
+    expect(rows.get('h-1')).toEqual({ balance: '150', typedBalance: '150' });
   });
 });

@@ -1,5 +1,4 @@
 import { Search, Sliders, X } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { useUiTranslation } from '../../../i18n';
 import { cn } from '../../../lib/cn';
 import { Badge } from '../../../ui/badge';
@@ -20,8 +19,6 @@ export interface DataViewToolbarProps {
   onRefine: () => void;
   activeFilters: readonly DataViewToolbarFilter[];
   onRemoveFilter: (key: string) => void;
-  /** Controls after Refine, such as Select on a phone. */
-  trailing?: ReactNode;
 }
 
 /**
@@ -41,7 +38,6 @@ export function DataViewToolbar({
   onRefine,
   activeFilters,
   onRemoveFilter,
-  trailing,
 }: DataViewToolbarProps) {
   const { t } = useUiTranslation();
   return (
@@ -79,8 +75,6 @@ export function DataViewToolbar({
             </Badge>
           ) : null}
         </Button>
-
-        {trailing}
       </div>
 
       {activeFilters.length > 0 ? (

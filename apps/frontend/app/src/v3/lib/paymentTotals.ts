@@ -240,7 +240,7 @@ export function unestimatedCount(payments: readonly MonthlyEquivalentInput[]): n
  * nobody asked.
  *
  * Rates come from `tokens.getBaseCurrencyRates`, which is the same
- * `CurrencyConverter` every portfolio valuation goes through. There is no
+ * `PriceReader` every portfolio valuation goes through. There is no
  * second rate path and no rate arithmetic in a component.
  */
 
@@ -252,11 +252,10 @@ export interface BaseCurrencyRate {
 }
 
 /**
- * Past this, a rate is described rather than presented as current. It
- * matches `CurrencyConverter.DB_RATE_MAX_AGE_MS` — the converter refuses
- * to serve a stored rate older than a day without trying upstream first,
- * so anything older than this reaching the UI means upstream is down and
- * the reader deserves to know.
+ * Past this, a rate is described rather than presented as current. The
+ * hourly pricing run asks for every currency in use, so a rate older than
+ * a day reaching the UI means upstream has been failing, and the reader
+ * deserves to know.
  */
 const RATE_STALE_AFTER_MS = 24 * 60 * 60 * 1000;
 

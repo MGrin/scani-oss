@@ -58,9 +58,8 @@ token's metadata. Two paths:
   can decide if it's still fresh enough.
 - **Historical bars are end-of-period**, not session opens. Use the
   unix second exactly at the day boundary for daily-close semantics.
-- **No FX support**. `vs_currency` is implicitly USD; non-USD bases
-  go through the injected `CurrencyConverter` (same as CoinGecko's
-  exotic-base path).
+- **No FX support**. `vs_currency` is implicitly USD; a non-USD base
+  gets no quote. Every caller asks against USD.
 
 ## Source of truth
 

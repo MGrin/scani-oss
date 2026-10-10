@@ -144,6 +144,13 @@ export const HOME_METRICS: readonly { key: HomeMetric; labelKey: string }[] = [
 
 export const HOME_METRIC_KEYS: readonly HomeMetric[] = HOME_METRICS.map((metric) => metric.key);
 
+/** A chart's full name, for a title or a label: the tab's own label is short ("PnL"). */
+export const HOME_METRIC_TITLE_KEYS: Record<HomeMetric, string> = {
+  'net-worth': 'v3.home.metric.netWorth',
+  pnl: 'v3.home.metric.pnlFull',
+  returns: 'v3.home.metric.returns',
+};
+
 export interface HomeMetricChoice {
   /** What to render. Never `returns` while the tab is not offered. */
   metric: HomeMetric;

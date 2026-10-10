@@ -3,9 +3,7 @@
  * snapshot holding (foundation A2): the rows through `bulkUpsert`, labelled and
  * with no input, `starts_at` lowered by D-6, and the cache through
  * `HoldingCacheWriter`, the one A2 writer of `holdings.balance` (D-1). It writes
- * no evidence observation. The balance observation the replaced path wrote is
- * appended, unlabelled, when the caller passes it, because legacy history still
- * anchors on it until A5 (ruling R11).
+ * no observation (ruling R11).
  */
 
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -58,6 +56,28 @@ function apyEntry(externalId: string, amount: string, occurredAt: Date): Snapsho
     occurredAt,
     legacy: { kind: 'interest', source: 'apy-payout', sourceMetadata: { configId: 'c-1' } },
   };
+}
+
+/** A balance the person typed: the evidence the engine writes the cache from (A5 D-1). */
+async function typed(
+  tx: DatabaseTransaction,
+  holding: { userId: string; id: string },
+  amount: string,
+  at: Date
+) {
+  await writer().record(
+    {
+      userId: holding.userId,
+      holdingId: holding.id,
+      amount,
+      at,
+      cause: 'flow',
+      legacySource: 'sync-capture',
+      legacyMeta: { origin: 'updateHolding' },
+    },
+    { cache: 'unchanged' },
+    tx
+  );
 }
 
 async function holdingRow(tx: DatabaseTransaction, holdingId: string) {
@@ -181,6 +201,7 @@ describe('SnapshotWriter.recordEntries', () => {
   test('applies the cache write and bumps last_updated, and writes no cache when cache is null', async () => {
     await withTestDb(async (tx) => {
       const cached = await holdingOf(tx, { balance: '100' });
+      await typed(tx, cached, '100', T0);
       const untouched = await holdingOf(tx, { balance: '100' });
       const entries = [apyEntry('a', '1.5', daysAfterT0(1))];
       const before = Date.now();
@@ -209,95 +230,6 @@ describe('SnapshotWriter.recordEntries', () => {
         balance: '100',
         lastUpdated: LONG_AGO,
       });
-    });
-  });
-
-  test('appends the legacy observation the caller passes: unlabelled, at the balance the cache sets, stamped now (ruling R11)', async () => {
-    await withTestDb(async (tx) => {
-      const holding = await holdingOf(tx, { balance: '100' });
-      const before = Date.now();
-
-      await writer().recordEntries(
-        {
-          userId: holding.userId,
-          holdingId: holding.id,
-          entries: [apyEntry('a', '0.5', daysAfterT0(1))],
-          cache: { holdingId: holding.id, balance: '100.5' },
-          legacyObservation: {
-            source: 'sync-capture',
-            sourceMetadata: { origin: 'updateHoldingBalance' },
-          },
-        },
-        tx
-      );
-
-      const after = Date.now();
-      const o = schema.holdingBalanceObservations;
-      const observations = await tx
-        .select({
-          userId: o.userId,
-          balance: o.balance,
-          source: o.source,
-          sourceMetadata: o.sourceMetadata,
-          role: o.role,
-          authority: o.authority,
-          inputId: o.inputId,
-          cause: o.cause,
-          supersededAt: o.supersededAt,
-          gapReview: o.gapReview,
-          observedAt: o.observedAt,
-        })
-        .from(o)
-        .where(eq(o.holdingId, holding.id));
-      expect(observations.map(({ observedAt, ...rest }) => rest)).toEqual([
-        {
-          userId: holding.userId,
-          balance: '100.5',
-          source: 'sync-capture',
-          sourceMetadata: { origin: 'updateHoldingBalance' },
-          role: null,
-          authority: null,
-          inputId: null,
-          cause: null,
-          supersededAt: null,
-          gapReview: null,
-        },
-      ]);
-      expect(observations[0]?.observedAt.getTime()).toBeGreaterThanOrEqual(before);
-      expect(observations[0]?.observedAt.getTime()).toBeLessThanOrEqual(after);
-    });
-  });
-
-  test('recordEntries refuses a legacy observation with no cache write', async () => {
-    await withTestDb(async (tx) => {
-      const holding = await holdingOf(tx, { balance: '100' });
-
-      // The observation reads the balance the cache write sets; with none there is nothing to read.
-      await expect(
-        tx.transaction((savepoint) =>
-          writer().recordEntries(
-            {
-              userId: holding.userId,
-              holdingId: holding.id,
-              entries: [apyEntry('a', '1', daysAfterT0(1))],
-              cache: null,
-              legacyObservation: { source: 'sync-capture', sourceMetadata: {} },
-            },
-            savepoint
-          )
-        )
-      ).rejects.toThrow('legacy observation');
-
-      const observations = await tx
-        .select()
-        .from(schema.holdingBalanceObservations)
-        .where(eq(schema.holdingBalanceObservations.holdingId, holding.id));
-      expect(observations).toEqual([]);
-      const rows = await tx
-        .select()
-        .from(schema.holdingTransactions)
-        .where(eq(schema.holdingTransactions.holdingId, holding.id));
-      expect(rows).toEqual([]);
     });
   });
 
@@ -443,10 +375,6 @@ describe('SnapshotWriter.recordEntries locks its holding at the level its upsert
             holdingId: holding.id,
             entries,
             cache: { holdingId: holding.id, balance: '101' },
-            legacyObservation: {
-              source: 'sync-capture',
-              sourceMetadata: { origin: 'updateHoldingBalance' },
-            },
           },
           tx
         );
@@ -491,6 +419,7 @@ describe('HoldingCacheWriter.apply', () => {
       expect((await holdingRow(tx, theirs.id)).balance).toBe('100');
 
       // The control: the same write as the holding's own user lands.
+      await typed(tx, theirs, '5', LONG_AGO);
       await cacheWriter().apply(theirs.userId, [{ holdingId: theirs.id, balance: '5' }], tx);
       expect((await holdingRow(tx, theirs.id)).balance).toBe('5');
     });
@@ -502,6 +431,8 @@ describe('HoldingCacheWriter.apply', () => {
     await withTestDb(async (tx) => {
       const stated = await holdingOf(tx, { balance: '100' });
       const unstated = await holdingOf(tx, { balance: '100' });
+      await typed(tx, stated, '7', LONG_AGO);
+      await typed(tx, unstated, '8', LONG_AGO);
       const editedAt = new Date('2026-03-01T09:30:00.000Z');
       const before = Date.now();
 

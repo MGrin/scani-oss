@@ -145,6 +145,7 @@ export class AccountRepository extends BaseRepository<Account, NewAccount> {
           typeId: schema.accounts.typeId,
           description: schema.accounts.description,
           entityId: schema.accounts.entityId,
+          wrapper: schema.accounts.wrapper,
           isHidden: schema.accounts.isHidden,
           isActive: schema.accounts.isActive,
           createdAt: schema.accounts.createdAt,
@@ -197,6 +198,7 @@ export class AccountRepository extends BaseRepository<Account, NewAccount> {
       typeId?: string;
       institutionId?: string;
       description?: string | null;
+      wrapper?: string | null;
     },
     transaction?: DatabaseTransaction
   ): Promise<Account> {
@@ -210,6 +212,7 @@ export class AccountRepository extends BaseRepository<Account, NewAccount> {
       if (data.typeId !== undefined) updateData.typeId = data.typeId;
       if (data.institutionId !== undefined) updateData.institutionId = data.institutionId;
       if (data.description !== undefined) updateData.description = data.description;
+      if (data.wrapper !== undefined) updateData.wrapper = data.wrapper;
 
       const [updated] = await database
         .update(schema.accounts)

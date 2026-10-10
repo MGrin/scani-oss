@@ -1,7 +1,11 @@
 import type { ReactNode } from 'react';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
-import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
+import {
+  invalidateForEntityEvent,
+  invalidateForUserEvent,
+  resyncAfterReconnect,
+} from '@/hooks/invalidatePortfolioQueries';
 import { apiBaseUrl, realtimeSocketUrl } from '@/lib/api-base-url';
 import { trpc } from '@/lib/trpc';
 
@@ -96,17 +100,6 @@ export interface RealtimeContextValue {
 
 const RealtimeContext = createContext<RealtimeContextValue | null>(null);
 
-// Backend entity types we care about for invalidation. Events for other
-// types (user, schedule, transaction) currently have no consumers in V2.
-const PORTFOLIO_ENTITY_TYPES = new Set<string>([
-  'account',
-  'holding',
-  'institution',
-  'vault',
-  'group',
-  'token',
-]);
-
 const MAX_RECONNECT_DELAY_MS = 16_000;
 const INITIAL_RECONNECT_DELAY_MS = 1_000;
 const PING_INTERVAL_MS = 25_000;
@@ -173,6 +166,8 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let pingTimer: ReturnType<typeof setInterval> | null = null;
     let reconnectAttempts = 0;
+    // The first open has nothing to catch up on; every later one follows a gap.
+    let hasOpened = false;
 
     const clearReconnectTimer = () => {
       if (reconnectTimer) {
@@ -252,32 +247,16 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
         return;
       }
 
-      // Base-currency changes broadcast a `user:update` event with
-      // `metadata.source === 'base-currency-change'`. Every money
-      // value on the wire is denominated in the user's base, so a
-      // currency switch invalidates the entire portfolio query
-      // surface and the user-scoped queries that carry the new
-      // base-currency symbol. Other `user` events (none today, but
-      // forward-compatible) only refresh the user queries.
+      // `user` events refresh the user queries; a base-currency change made
+      // in another tab or on another device also re-denominates every figure.
       if (event.entityType === 'user') {
         const metadata = (event as { metadata?: Record<string, unknown> }).metadata;
-        const isBaseCurrencyChange = metadata?.source === 'base-currency-change';
-        void utilsRef.current.users.getCurrent.invalidate();
-        void utilsRef.current.users.getBaseCurrency.invalidate();
-        if (isBaseCurrencyChange) {
-          // Use `refetchType: 'all'` rather than the usual `'active'`:
-          // a currency switch on one device must repaint every tab,
-          // even those that aren't the active view, so navigation
-          // doesn't briefly flash old-currency values.
-          void invalidatePortfolioQueries(utilsRef.current, { refetchType: 'all' });
-        }
+        void invalidateForUserEvent(utilsRef.current, metadata);
         return;
       }
 
-      if (!event.entityType || !PORTFOLIO_ENTITY_TYPES.has(event.entityType)) return;
-
       // Fire-and-forget — React Query handles dedup internally.
-      void invalidatePortfolioQueries(utilsRef.current, { refetchType: 'active' });
+      void invalidateForEntityEvent(utilsRef.current, event.entityType);
     };
 
     const scheduleReconnect = () => {
@@ -357,6 +336,8 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
       nextSocket.onopen = () => {
         reconnectAttempts = 0;
         setConnectionStatus('connected');
+        if (hasOpened) void resyncAfterReconnect(utilsRef.current);
+        hasOpened = true;
 
         // Keep the connection alive through proxies with aggressive idle
         // timeouts. The backend's `handleMessage` understands `ping`.

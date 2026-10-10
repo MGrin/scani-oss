@@ -16,9 +16,9 @@ per-account / per-holding scoped series so detail-page charts read
 from one table instead of three. It's rebuildable end-to-end from
 [transactions](/concepts/transactions/),
 [observations](/concepts/observations/), and
-[prices](/concepts/pricing/). The nightly `portfolio-value-rollup`
-job runs at 04:00 UTC after every ingester, reconciliation, and
-[transfer linking](/concepts/transfers/) has finished.
+[prices](/concepts/pricing/). The `portfolio-value-rollup`
+job runs in the nightly group, after the price backfill and
+[transfer linking](/concepts/transfers/) steps before it have finished.
 
 ## Schema
 
@@ -59,14 +59,14 @@ no separate per-scope jobs.
 
 For each `(user, scope, date)`:
 
-1. For each holding in scope, call
-   [`BalanceAtTimeService.getBalance(holdingId, date)`](/concepts/balance-reconstruction/).
-   The rollup pre-loads per-user holdings, observations, and
-   transactions into in-memory maps so each call avoids DB round-trips.
-2. Convert each balance to the base currency via
-   [`PriceGraphService.convert(...)`](/concepts/pricing/), using
-   `granularity: 'daily'` and a pre-fetched
-   [`PriceLookup`](/concepts/pricing/#pricelookup--the-hot-path-optimisation).
+1. For each holding in scope, take its balance on that date from
+   [`BalanceAtTimeService.balancesFor`](/concepts/balance-reconstruction/).
+   It loads each holding's readings and ledger once, 25 holdings at a
+   time, so no day goes back to the database.
+2. Price each balance in the base currency at the day's close, from
+   one [`PriceReader` series](/concepts/pricing/#one-load-per-request)
+   loaded once per call, for every holding at every day of the chunk
+   that call computes.
 3. Sum the priced balances. Bucket each holding into a
    `coverageQuality` based on whether the balance reconstruction had
    a strong anchor and whether the price was fresh / hub-routed /
@@ -135,8 +135,8 @@ The chart UI reads `coverageQuality` and renders accordingly: a
 
 ## Triggering a rebuild
 
-- **Scheduled.** The `portfolio-value-rollup` job runs nightly at
-  04:00 UTC. See the [Job catalogue](/reference/jobs/).
+- **Scheduled.** The `portfolio-value-rollup` job runs nightly, as a
+  step of the nightly group. See the [Job catalogue](/reference/jobs/).
 - **On import.** A user-initiated import triggers a
   `portfolio-history-backfill` user job for that user, scoped to the
   affected date range.

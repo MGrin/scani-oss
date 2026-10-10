@@ -40,8 +40,8 @@ import type {
 } from '../../core/capabilities';
 import { ProviderError } from '../../core/errors';
 import type { PriceQuote, ProviderContext } from '../../core/types';
+import { closeDayNearMidnight } from '../../core/utils/bar-day';
 import { fetchWithTimeout } from '../../core/utils/fetch';
-import type { CurrencyConverter } from '../coingecko';
 import { CHAIN_ID_TO_DEFILLAMA, DEFILLAMA_MIN_CONFIDENCE } from './chains';
 
 /**
@@ -94,10 +94,7 @@ export class DeFiLlamaProvider implements HistoricalPriceProvider, TokenIdentity
 
   private readonly logger: CustomLogger;
 
-  constructor(
-    private readonly limiter: OutflowRateLimiter,
-    private readonly opts: { converter?: CurrencyConverter | undefined } = {}
-  ) {
+  constructor(private readonly limiter: OutflowRateLimiter) {
     this.logger = createComponentLogger('provider:defillama');
   }
 
@@ -204,8 +201,6 @@ export class DeFiLlamaProvider implements HistoricalPriceProvider, TokenIdentity
           if (typeof bar.price !== 'number' || bar.price <= 0) continue;
           if (typeof bar.timestamp !== 'number') continue;
           const at = new Date(bar.timestamp * 1000);
-          // USD path is direct; non-USD bases re-use the same converter
-          // pattern as the per-day method via toQuote.
           const quote = await this.toQuote(t, ctx, String(bar.price), at, 'defillama_historical');
           if (quote) out.push(quote);
         }
@@ -356,10 +351,9 @@ export class DeFiLlamaProvider implements HistoricalPriceProvider, TokenIdentity
   }
 
   /**
-   * Build a `PriceQuote` and apply USD→base conversion if the user's
-   * base currency isn't USD. Same converter contract as CoinGecko's;
-   * cloud mode never reaches this branch (the data-provider does the
-   * conversion before serializing the response).
+   * Build a `PriceQuote` from DeFiLlama's USD price. DeFiLlama quotes USD
+   * alone, so a base other than USD gets no quote; every caller asks against
+   * USD (foundation A3).
    */
   private async toQuote(
     t: Token,
@@ -368,6 +362,8 @@ export class DeFiLlamaProvider implements HistoricalPriceProvider, TokenIdentity
     timestamp: Date,
     sourceTag: string
   ): Promise<PriceQuote | null> {
+    const barDay =
+      sourceTag === 'defillama_historical' ? closeDayNearMidnight(timestamp, 3_600_000) : null;
     const baseUpper = ctx.baseCurrency.symbol.toUpperCase();
     if (baseUpper === 'USD') {
       return {
@@ -375,20 +371,11 @@ export class DeFiLlamaProvider implements HistoricalPriceProvider, TokenIdentity
         baseTokenId: ctx.baseCurrency.id,
         price: usdPrice,
         timestamp,
+        barDay,
         source: sourceTag,
       };
     }
-    const converter = this.opts.converter;
-    if (!converter) return null;
-    const converted = await converter.convert(usdPrice, 'USD', baseUpper, timestamp);
-    if (converted === null || converted === '0') return null;
-    return {
-      tokenId: t.id,
-      baseTokenId: ctx.baseCurrency.id,
-      price: converted,
-      timestamp,
-      source: `${sourceTag}_converted`,
-    };
+    return null;
   }
 }
 

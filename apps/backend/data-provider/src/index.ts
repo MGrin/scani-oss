@@ -12,6 +12,7 @@ const env = loadEnv();
 import { cors } from '@elysiajs/cors';
 import { trpc } from '@elysiajs/trpc';
 import { getNodeEnv, healthBodyFor, isNodeEnvProduction, servedVersion } from '@scani/config';
+import { renderScalarHtml } from '@scani/config/api-reference';
 import { createTimer, logger, sanitizeUrl } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
 import { buildProviderRegistry } from '@scani/providers/core/boot';
@@ -55,7 +56,7 @@ initSentry({
 import { scrubSentryBreadcrumb, scrubSentryEvent } from '@scani/shared';
 import { AppSessionClient } from './auth/app-session';
 import { type CloudDb, closeCloudDb, getCloudDb } from './db/connection';
-import { buildOpenApiDocument, renderScalarHtml } from './presentation/openapi';
+import { buildOpenApiDocument } from './presentation/openapi';
 import { appRouter, installCloudDb, installUsageDeps } from './presentation/router';
 import { securityHeaders } from './presentation/security-headers';
 import {
@@ -333,7 +334,7 @@ const app = new Elysia()
   // is rendered client-side against /openapi.json.
   .get('/docs', ({ set }: { set: { headers: Record<string, string> } }) => {
     set.headers['Content-Type'] = 'text/html; charset=utf-8';
-    return renderScalarHtml('/openapi.json');
+    return renderScalarHtml('/openapi.json', 'Scani Cloud API — Reference');
   })
   // Liveness — process is alive. Returns 200 from the moment Elysia
   // starts listening, even before init finishes. Useful for app-level
@@ -549,8 +550,9 @@ void (async () => {
           coingeckoFactory,
           finnhubFactory,
           // Yahoo runs after Finnhub: covers non-US equities (.TO,
-          // .NE/.NEO, .L, .DE, …) and Frankfurter-unsupported fiat
-          // (RUB, KZT, GEL, AED, …).
+          // .NE/.NEO, .L, .DE, …), and for current prices only is the
+          // fallback for fiat Frankfurter did not answer or that neither
+          // central bank it reads publishes.
           yahooFinanceFactory,
           krakenFactory,
           ...(process.env.STUB_CHAIN_DATA === '1' ? [chainStubFactory] : []),

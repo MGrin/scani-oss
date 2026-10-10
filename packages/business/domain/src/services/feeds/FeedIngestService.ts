@@ -1,5 +1,6 @@
 import { type DatabaseTransaction, getDb } from '@scani/db';
 import { type JobNotice, toJobNotice } from '@scani/providers/core/types';
+import { Decimal } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { RecordNotAccessibleError } from '../../lib/record-not-accessible';
 import { orphanedSwapLegsNotice } from '../../lib/transactions/swap-groups';
@@ -17,7 +18,13 @@ import { AbsenceWriter } from './AbsenceWriter';
 import { AssetResolver } from './AssetResolver';
 import { type BatchProblem, validateBatch } from './blocks/validate-batch';
 import { FeedClassifier } from './classification/FeedClassifier';
-import type { AssetRef, DecimalString, FeedBatch, LegacyBatchOptions } from './feed-batch';
+import type {
+  AssetRef,
+  DecimalString,
+  FeedBatch,
+  FeedCheckpoint,
+  LegacyBatchOptions,
+} from './feed-batch';
 import { type CacheWrite, HoldingCacheWriter } from './HoldingCacheWriter';
 import { BatchTokens, tokenModeOf } from './ingest/BatchTokens';
 import { HoldingPlacer, type Placement } from './ingest/HoldingPlacer';
@@ -45,6 +52,8 @@ export interface IngestResult extends IngestOutcome {
   rowsSent: number;
   /** Ledger rows the upsert stored after the batch's own merges, a re-sent row included. */
   entriesWritten: number;
+  /** The ledger rows this batch inserted, a re-sent row excluded: what its undo removes (SC-1649). */
+  insertedEntryIds: string[];
   merges: BulkUpsertMerge[];
   /** A checkpoint whose (holding, instant, source) is already held is not appended. */
   checkpointsWritten: number;
@@ -140,13 +149,15 @@ export class FeedIngestService {
    * group key, a lone one demoted to a transfer, under `derivesTradeLegs` each
    * trade's cash and own-fee legs, and each leg pointed at the row it settles.
    *
-   * The cache is written where today's import wrote it (D-1): a checkpointed
-   * holding takes its latest checkpoint, a holding the batch created takes the
-   * batch's rule, and an existing holding with no checkpoint keeps its balance.
-   * Under `unchangedCheckpoint: 'skip'` a checkpoint equal to its holding's
-   * balance is neither appended nor written. Beside each cache write goes the
-   * batch's `cacheObservation`, when it names one, and under `unhideOnNonZero`
-   * a hidden holding reported nonzero is shown. Then the batch's absences are
+   * The cache is the engine's, written last (A5 D-15, D-16). The figure each
+   * holding is expected at is today's import's (D-1): its latest checkpoint,
+   * or for a holding the batch created the batch's rule. Every placed holding
+   * is brought to the engine, a stated one stamped now (A5 D-18). A balance
+   * sync (either skip mode) appends one reading per holding, its latest
+   * (A5 D-21). Under `unchangedCheckpoint: 'skip'` a checkpoint equal to its
+   * holding's balance is neither appended nor stated; under
+   * `'skip-observation'` it is not appended and is still stated. A hidden
+   * holding stays hidden: the hide is its owner's (A5 #9). Then the batch's absences are
    * written: its explicit ones, and under its `absence` policy the holdings it
    * did not mention (`AbsenceWriter`).
    */
@@ -250,30 +261,58 @@ export class FeedIngestService {
         userId,
         inputId: input.id,
         accountId: batch.input.accountId,
-        // An event written onto an old copy is classified as the input's own
-        // row, which the write left where it is (R59).
-        rowIds: [...written.rows.map((row) => row.id), ...written.duplicatePlacements],
+        rowIds: written.rows.map((row) => row.id),
       },
       tx
     );
     /**
-     * Under `unchangedCheckpoint: 'skip'`, an amount equal, as text, to the
+     * Under either skip mode, an amount equal, as text, to the
      * balance its found holding held: today's sync compared the strings.
      */
     const unchanged = (placement: Placement, amount: DecimalString) =>
-      batch.legacy.unchangedCheckpoint === 'skip' &&
+      batch.legacy.unchangedCheckpoint !== 'append' &&
       !placement.created &&
       amount === placement.holding.balance;
 
     let checkpointsWritten = 0;
     const appendedAt: Date[] = [];
     const opened = new Set<Placement>();
+    const parts = new Map<Placement, FeedCheckpoint[]>();
     for (const checkpoint of batch.checkpoints) {
       const placement = placementOf(checkpoint.asset);
       if (placement === null) continue;
       if (placement.close === null || checkpoint.at >= placement.close.at) {
         placement.close = checkpoint;
       }
+      parts.set(placement, [...(parts.get(placement) ?? []), checkpoint]);
+    }
+    // A balance sync states one figure per holding. One that names a holding
+    // twice (two provider codes for one token: Kraken's spot and earn) states
+    // its parts, so the holding's one reading is their sum, at its close's
+    // instant (A5 D-21, D-22; R69).
+    const readingOf = new Map<FeedCheckpoint, FeedCheckpoint>();
+    if (batch.legacy.unchangedCheckpoint !== 'append') {
+      for (const [placement, own] of parts) {
+        const close = placement.close;
+        if (close === null) continue;
+        const reading =
+          own.length === 1
+            ? close
+            : {
+                ...close,
+                amount: own
+                  .reduce((sum, part) => sum.plus(part.amount), new Decimal(0))
+                  .toFixed() as DecimalString,
+              };
+        placement.close = reading;
+        readingOf.set(close, reading);
+      }
+    }
+    for (const sent of batch.checkpoints) {
+      const placement = placementOf(sent.asset);
+      if (placement === null) continue;
+      const checkpoint = batch.legacy.unchangedCheckpoint === 'append' ? sent : readingOf.get(sent);
+      if (checkpoint === undefined) continue;
       // Dropped after placement, so the holding still counts as reported (R62 Q2).
       if (unchanged(placement, checkpoint.amount)) continue;
       const createdMeta = batch.legacy.createdCheckpointMeta;
@@ -307,7 +346,7 @@ export class FeedIngestService {
       tx
     );
 
-    const writes: CacheWrite[] = [];
+    const writes: Required<Pick<CacheWrite, 'holdingId' | 'balance'>>[] = [];
     if (batch.legacy.writesCache) {
       for (const placement of placements) {
         const balance =
@@ -315,47 +354,14 @@ export class FeedIngestService {
           (placement.created
             ? createdBalance(batch.legacy.createdWithoutCheckpoint, placement.amounts)
             : null);
-        if (balance !== null && !unchanged(placement, balance)) {
+        if (
+          balance !== null &&
+          !(batch.legacy.unchangedCheckpoint === 'skip' && unchanged(placement, balance))
+        ) {
           writes.push({ holdingId: placement.holding.id, balance });
         }
       }
-      await this.cacheWriter.apply(userId, writes, tx);
-      const copy = batch.legacy.cacheObservation;
-      if (copy !== null) {
-        // Unlabelled and stamped now, as `updateHoldingBalance` wrote it: A1
-        // reads it as a copy (O2) and excludes it.
-        for (const write of writes) {
-          await this.observations.append(
-            {
-              userId,
-              holdingId: write.holdingId,
-              balance: write.balance,
-              observedAt: new Date(),
-              source: copy.source,
-              sourceMetadata: copy.meta,
-            },
-            tx
-          );
-        }
-      }
     }
-    if (batch.legacy.unhideOnNonZero) {
-      // The import's own zero test, which reads an underflowing exponent as zero.
-      await this.holdings.markShown(
-        userId,
-        placements
-          .filter(
-            (p) =>
-              !p.created &&
-              p.holding.isHidden &&
-              p.close !== null &&
-              Number.parseFloat(p.close.amount) !== 0
-          )
-          .map((p) => p.holding.id),
-        tx
-      );
-    }
-
     const zeroed = await this.absences.apply(
       {
         batch,
@@ -382,6 +388,23 @@ export class FeedIngestService {
       tx
     );
     await this.relabelPersonValues(userId, flipped, tx);
+
+    // The cache last, once every row, start, kind and label the engine reads
+    // is in place (A5 D-15). Every holding the batch placed, not only those
+    // it states a balance for: a ledger-only batch moves the engine's balance
+    // too, and a stale cache is what the shadow would read (A5 D-18). Those
+    // keep their stored instant, as today's path never stamped them.
+    const stated = new Set(writes.map((write) => write.holdingId));
+    const cached = await this.cacheWriter.apply(
+      userId,
+      [
+        ...writes,
+        ...placements
+          .filter((p) => !stated.has(p.holding.id))
+          .map((p) => ({ holdingId: p.holding.id, balance: p.holding.balance, lastUpdated: null })),
+      ],
+      tx
+    );
 
     const created = placements.filter((p) => p.created);
     const noticeDetails: JobNotice[] = [
@@ -423,6 +446,7 @@ export class FeedIngestService {
       rowsSent: sent.length,
       inputId: input.id,
       entriesWritten: written.rows.length,
+      insertedEntryIds: written.inserted,
       merges: written.merges,
       checkpointsWritten,
       windowRecorded,
@@ -448,7 +472,7 @@ export class FeedIngestService {
       holdings: placements.map(({ holding }) => ({
         holdingId: holding.id,
         tokenId: holding.tokenId,
-        cacheBalance: writes.find((write) => write.holdingId === holding.id)?.balance ?? null,
+        cacheBalance: stated.has(holding.id) ? (cached.get(holding.id) ?? null) : null,
       })),
     };
   }

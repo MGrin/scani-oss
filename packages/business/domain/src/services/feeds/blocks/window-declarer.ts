@@ -38,11 +38,17 @@ export function declareWindow(declaration: WindowDeclaration): FeedWindow {
   switch (declaration.shape) {
     case 'balance-snapshot': {
       const [from] = extent(declaration.capturedAt, declaration.shape);
-      return { from, to: declaration.fetchedAt, complete: false };
+      return { shape: declaration.shape, from, to: declaration.fetchedAt, complete: false };
     }
     case 'statement-upload': {
       const [from, to] = extent(declaration.rowDates, declaration.shape);
-      return { from, to, complete: false, uploadRef: declaration.uploadRef };
+      return {
+        shape: declaration.shape,
+        from,
+        to,
+        complete: false,
+        uploadRef: declaration.uploadRef,
+      };
     }
     case 'transaction-run': {
       const { fetchedAt, since, until, historyStartsAt, horizonMs, retracted, firstEventAt } =
@@ -56,7 +62,7 @@ export function declareWindow(declaration: WindowDeclaration): FeedWindow {
           : complete
             ? null
             : (firstEventAt ?? fetchedAt));
-      return { from, to: until ?? fetchedAt, complete };
+      return { shape: declaration.shape, from, to: until ?? fetchedAt, complete };
     }
   }
 }

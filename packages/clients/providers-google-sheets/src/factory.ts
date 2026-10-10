@@ -18,7 +18,7 @@
 import type { DbType } from '@scani/db/connection';
 import { createComponentLogger } from '@scani/logging';
 import type { RateLimiterRegistry } from '@scani/providers/core/rate-limiter-registry';
-import { exchangeRateApi } from '@scani/providers/providers/exchangerate-api';
+import { frankfurterClient } from '@scani/providers/providers/frankfurter/client';
 import { createOutflowLimiter, type OutflowRateLimiter } from '@scani/rate-limiter';
 import type Redis from 'ioredis';
 import { GoogleSheetsCurrencyConverter } from './currency-converter';
@@ -79,7 +79,7 @@ export function googleSheetsFactory(deps: GoogleSheetsFactoryDeps): GoogleSheets
     description: 'Finnhub: 50 req / 60s',
   });
 
-  const converter = new GoogleSheetsCurrencyConverter(exchangeRateApi());
+  const converter = new GoogleSheetsCurrencyConverter(frankfurterClient());
 
   return new GoogleSheetsProvider({
     db: deps.db,

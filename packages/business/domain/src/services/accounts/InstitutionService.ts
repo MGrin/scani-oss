@@ -15,10 +15,10 @@ import {
 
 type InstitutionSummary = {
   accountCount: number;
-  /** Net: assets plus `marginDebt`. */
+  /** Net: assets plus `totalDebt`. */
   totalValue: string;
   /** Signed: `"0"`, or the negative sum of its accounts' debt (SC-1463). */
-  marginDebt: string;
+  totalDebt: string;
 };
 
 @Service()
@@ -182,7 +182,7 @@ export class InstitutionService extends BaseService {
         summary: {
           accountCount: accountCountByInstitution.get(institution.id) ?? 0,
           totalValue: (valueByInstitution.get(institution.id) ?? new Decimal(0)).toString(),
-          marginDebt: (debtByInstitution.get(institution.id) ?? new Decimal(0)).toString(),
+          totalDebt: (debtByInstitution.get(institution.id) ?? new Decimal(0)).toString(),
         },
       }));
     } catch (error) {
@@ -220,7 +220,7 @@ export class InstitutionService extends BaseService {
         rollUpToInstitution(sumPortfolioValuesByAccount(portfolio), ownAccounts).get(
           institutionId
         ) ?? new Decimal(0);
-      const marginDebt =
+      const totalDebt =
         rollUpToInstitution(sumPortfolioDebtByAccount(portfolio), ownAccounts).get(institutionId) ??
         new Decimal(0);
 
@@ -229,7 +229,7 @@ export class InstitutionService extends BaseService {
         summary: {
           accountCount: ownAccounts.length,
           totalValue: totalValue.toString(),
-          marginDebt: marginDebt.toString(),
+          totalDebt: totalDebt.toString(),
         },
       };
     } catch (error) {

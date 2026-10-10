@@ -1,0 +1,30 @@
+{
+  "url": "https://query1.finance.yahoo.com/v8/finance/chart/AAPL?period1=1768089600&period2=1768435200&interval=1d",
+  "fetchedAt": "2026-10-05T03:21:13.465513Z",
+  "status": 200,
+  "data": {
+    "chart": {
+      "result": [
+        {
+          "meta": {
+            "currency": "USD",
+            "regularMarketTime": 1790971201,
+            "gmtoffset": -14400,
+            "exchangeTimezoneName": "America/New_York",
+            "dataGranularity": "1d"
+          },
+          "timestamp": [1768228200, 1768314600, 1768401000],
+          "indicators": {
+            "quote": [
+              {
+                "close": [687, 695, 680]
+              }
+            ]
+          }
+        }
+      ],
+      "error": null
+    }
+  },
+  "normalization": "Price values are synthetic integer ranks. Equal values and ordering are preserved across these fixtures; timestamps and response shape are recorded. Raw public responses are retained in the PR5 rehearsal evidence."
+}

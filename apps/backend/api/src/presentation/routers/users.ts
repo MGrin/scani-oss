@@ -1,6 +1,7 @@
 import { UserJobRepository } from '@scani/domain/repositories';
 import { InvalidBaseCurrencyError, TokenService, UserService } from '@scani/domain/services';
 import {
+  APP_OPEN_REFRESH,
   PORTFOLIO_HISTORY_BACKFILL,
   PORTFOLIO_HISTORY_LOOKBACK_DAYS,
   USER_DATA_DELETE,
@@ -189,6 +190,38 @@ export const usersRouter = router({
       }
       return result;
     }),
+
+  /**
+   * The app was opened (SC-1602): re-fetch the balances it is about to show.
+   * The hourly sync leaves an idle user's accounts for up to six hours, and
+   * this is what makes that free for whoever comes back. The PWA sends it on
+   * every return to the tab, so the request only stamps the visit: working out
+   * the accounts held the event loop for 19.4 s on production (SC-1671), and
+   * the worker's `app-open-refresh` job now does it, one per-account refresh
+   * job each, which dedup against a click and emit the realtime update.
+   */
+  appOpened: protectedProcedure
+    .input(strictInput(z.object({ requestId: z.string().uuid() })))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      await Container.get(UserService).markAppSeen(dbUser.id);
+      await Container.get(BullMqEnqueueService).add(APP_OPEN_REFRESH, {
+        userId: dbUser.id,
+        requestId: input.requestId,
+      });
+      return { queued: true };
+    }),
+
+  /**
+   * The app is still open and in front (SC-1602), sent every 15 minutes while
+   * the tab is visible. It only stamps `app_seen_at`, which is what the
+   * quarter-hour crypto pricing run selects on; balances are not re-fetched.
+   */
+  appHeartbeat: protectedProcedure.mutation(async ({ ctx }) => {
+    const { dbUser } = await requireAuth(ctx);
+    await Container.get(UserService).markAppSeen(dbUser.id);
+    return { ok: true };
+  }),
 
   // Get supported fiat currencies (tokens) for base currency selection
   getSupportedCurrencies: protectedProcedure.query(async () => {

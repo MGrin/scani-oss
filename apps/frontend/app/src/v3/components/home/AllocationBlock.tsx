@@ -1,10 +1,7 @@
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { Skeleton } from '@scani/ui/ui/skeleton';
-import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
-import { LoadingRamp } from '@scani/ui/v3/components/feedback/LoadingRamp';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { TruncatedText } from '@scani/ui/v3/components/TruncatedText';
-import { useDelayedLoading } from '@scani/ui/v3/hooks/useDelayedLoading';
 import { CHART_OTHER_COLOR, foldAllocation } from '@scani/ui/v3/lib/chart';
 import { toFiniteNumber } from '@scani/ui/v3/lib/numeric';
 import { type ReactNode, useState } from 'react';
@@ -25,10 +22,11 @@ import {
 } from '../../lib/home';
 import { V3_ROUTES } from '../../lib/routes';
 import { VIEW_PREFERENCE_KEYS } from '../../lib/view-preference';
-import { AllocationBar } from '../charts/AllocationBar';
-import { MarginDebtLine } from '../charts/MarginDebtLine';
+import { AllocationBar, AllocationTrack } from '../charts/AllocationBar';
+import { DebtLine } from '../charts/DebtLine';
 import { ShareRows } from '../charts/ShareRows';
 import { DisclosureButton } from './DisclosureButton';
+import { HomeCard, type HomeCardVariant } from './HomeCard';
 
 /**
  * "What is it in" — with v2's four cuts restored.
@@ -103,7 +101,7 @@ function FoldedRow({
   );
 }
 
-export function AllocationBlock() {
+export function AllocationBlock({ variant = 'card' }: { variant?: HomeCardVariant }) {
   const { t } = useTranslation();
   // The cut survives a reload (V3-48): it is the one thing on this screen the
   // reader sets *about* the screen, and v2 has remembered it since the start.
@@ -115,16 +113,16 @@ export function AllocationBlock() {
   const [expanded, setExpanded] = useState(false);
 
   const allocation = trpc.dashboard.getAssetAllocation.useQuery({ dimension });
-  const loadingPhase = useDelayedLoading(allocation.isLoading);
 
   const currency = allocation.data?.baseCurrency ?? 'USD';
   const items = allocationItems(t, allocation.data?.items ?? [], dimension);
   const segments = foldAllocation(items);
   const folded = foldedAllocationItems(items, segments);
-  const marginDebt = toFiniteNumber(allocation.data?.marginDebt) ?? 0;
-  // The server keeps margin debt out of every part, so the parts are shares of
+  const totalDebt = toFiniteNumber(allocation.data?.totalDebt) ?? 0;
+  const liabilityDebt = toFiniteNumber(allocation.data?.liabilityDebt) ?? 0;
+  // The server keeps all debt (margin, loans, cards) out of every part, so the parts are shares of
   // gross assets; without debt that is net worth.
-  const assets = (toFiniteNumber(allocation.data?.totalValue) ?? 0) - marginDebt;
+  const assets = (toFiniteNumber(allocation.data?.totalValue) ?? 0) - totalDebt;
   const groupCut = dimension === 'group';
 
   const labelKey =
@@ -132,13 +130,55 @@ export function AllocationBlock() {
     'v3.home.allocation.dimension.tokenType';
 
   return (
-    <Block>
-      <BlockHeader
-        title={t('v3.home.allocation.title')}
-        href={V3_ROUTES.holdings}
-        action={t('nav.holdings')}
-      />
-      <div className="flex flex-col gap-4 px-4 pb-4">
+    <HomeCard
+      title={t('v3.home.allocation.title')}
+      subject={t('v3.home.allocation.loadingLabel')}
+      href={V3_ROUTES.holdings}
+      action={t('nav.holdings')}
+      queries={[allocation]}
+      variant={variant}
+      peekId="allocation"
+      tile={() => {
+        if (groupCut) {
+          // Groups overlap, so a stacked bar would draw a split that does not
+          // exist (SC-1469): the largest group's share of the whole instead.
+          const [largest] = [...groupShareRows(items, assets)].sort((a, b) => b.value - a.value);
+          return largest
+            ? {
+                figure: (
+                  <Numeric value={(largest.share ?? 0) * 100} format="percent" decimals={0} />
+                ),
+                caption: largest.label,
+              }
+            : { figure: '—', caption: t('v3.home.allocation.empty') };
+        }
+        const top = segments[0];
+        return {
+          figure: (
+            <AllocationTrack
+              segments={segments}
+              label={t('v3.home.allocation.barLabel', { dimension: t(labelKey) })}
+              gateHook={false}
+            />
+          ),
+          caption: top ? (
+            <>
+              {top.label} <Numeric value={top.share * 100} format="percent" decimals={0} />
+            </>
+          ) : (
+            t('v3.home.allocation.empty')
+          ),
+        };
+      }}
+      skeleton={
+        <div className="flex flex-col gap-3">
+          <Skeleton className="h-2 w-full rounded-full" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-2/3" />
+        </div>
+      }
+      controls={
         <Segmented
           value={dimension}
           onValueChange={(value) => {
@@ -156,93 +196,81 @@ export function AllocationBlock() {
             </SegmentedItem>
           ))}
         </Segmented>
-
-        {allocation.data === undefined ? (
-          // The ramp rather than a bare skeleton: switching cut refetches, and
-          // a placeholder at 0ms is the flash V3-16 exists to remove — most
-          // switches come back from cache.
-          <LoadingRamp
-            phase={loadingPhase}
-            skeleton={
-              <div className="flex flex-col gap-3">
-                <Skeleton className="h-2 w-full rounded-full" />
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-full" />
-                <Skeleton className="h-4 w-2/3" />
-              </div>
-            }
-            label={t('v3.home.allocation.loadingLabel')}
-            onRetry={() => void allocation.refetch()}
-          />
-        ) : segments.length === 0 ? (
-          <p className="text-body text-muted-foreground">{t('v3.home.allocation.empty')}</p>
-        ) : groupCut ? (
-          // Groups overlap — a holding counts in full in each of its groups —
-          // so a stacked bar would draw a split that does not exist (SC-1469).
-          <ShareRows
-            rows={groupShareRows(items, assets)}
-            currency={currency}
-            label={t('v3.home.allocation.barLabel', { dimension: t(labelKey) })}
-            note={groupsOverlap(items, assets) ? t('v3.home.allocation.groupsOverlap') : null}
-            shareCaption={marginDebt < 0 ? t('v3.allocation.shareOfAssets') : undefined}
-            itemHref={(row) => allocationHref(dimension, row.key)}
-          />
-        ) : (
-          <>
-            {/* Every row reaches the holdings behind its share (SC-74). The
-                whole block used to be inert text on the app's first screen:
-                a reader could see that 38% of his money was at one institution
-                and had no way from here to ask which positions those were. */}
-            <AllocationBar
-              items={items}
+      }
+    >
+      {() => (
+        <div className="flex flex-col gap-4 px-4 pt-1 pb-4">
+          {segments.length === 0 ? (
+            <p className="text-body text-muted-foreground">{t('v3.home.allocation.empty')}</p>
+          ) : groupCut ? (
+            // Groups overlap — a holding counts in full in each of its groups —
+            // so a stacked bar would draw a split that does not exist (SC-1469).
+            <ShareRows
+              rows={groupShareRows(items, assets)}
               currency={currency}
               label={t('v3.home.allocation.barLabel', { dimension: t(labelKey) })}
-              itemHref={(segment) => allocationHref(dimension, segment.key)}
-              shareCaption={marginDebt < 0 ? t('v3.allocation.shareOfAssets') : undefined}
+              note={groupsOverlap(items, assets) ? t('v3.home.allocation.groupsOverlap') : null}
+              shareCaption={totalDebt < 0 ? t('v3.allocation.shareOfAssets') : undefined}
+              itemHref={(row) => allocationHref(dimension, row.key)}
             />
+          ) : (
+            <>
+              {/* Every row reaches the holdings behind its share (SC-74). The
+                    whole block used to be inert text on the app's first screen:
+                    a reader could see that 38% of his money was at one institution
+                    and had no way from here to ask which positions those were. */}
+              <AllocationBar
+                items={items}
+                currency={currency}
+                label={t('v3.home.allocation.barLabel', { dimension: t(labelKey) })}
+                itemHref={(segment) => allocationHref(dimension, segment.key)}
+                shareCaption={totalDebt < 0 ? t('v3.allocation.shareOfAssets') : undefined}
+              />
 
-            {folded.length > 0 ? (
-              <div className="flex flex-col gap-2">
-                <DisclosureButton
-                  expanded={expanded}
-                  onToggle={() => setExpanded((open) => !open)}
-                  label={t('v3.home.disclosure.theNInOther', { count: folded.length })}
-                />
+              {folded.length > 0 ? (
+                <div className="flex flex-col gap-2">
+                  <DisclosureButton
+                    expanded={expanded}
+                    onToggle={() => setExpanded((open) => !open)}
+                    label={t('v3.home.disclosure.theNInOther', { count: folded.length })}
+                  />
 
-                {/* The list is flush, like the bar's own above it and for the
-                    same reason: these rows are 44px controls on touch, and 8px
-                    on top of that reads as floating lines rather than a list. */}
-                {expanded ? (
-                  <ul className="flex flex-col">
-                    {folded.map((item) => (
-                      <FoldedRow
-                        key={item.key}
-                        label={item.label}
-                        href={allocationHref(dimension, item.key)}
-                      >
-                        <Numeric
-                          value={item.value}
-                          currency={currency}
-                          compact
-                          className="text-label text-muted-foreground"
-                        />
-                      </FoldedRow>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
-            ) : null}
-          </>
-        )}
+                  {/* The list is flush, like the bar's own above it and for the
+                        same reason: these rows are 44px controls on touch, and 8px
+                        on top of that reads as floating lines rather than a list. */}
+                  {expanded ? (
+                    <ul className="flex flex-col">
+                      {folded.map((item) => (
+                        <FoldedRow
+                          key={item.key}
+                          label={item.label}
+                          href={allocationHref(dimension, item.key)}
+                        >
+                          <Numeric
+                            value={item.value}
+                            currency={currency}
+                            compact
+                            className="text-label text-muted-foreground"
+                          />
+                        </FoldedRow>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          )}
 
-        {/* Outside the empty branch on purpose: debt larger than every asset
-            leaves no slice to draw, and the debt is still there (SC-1463). */}
-        <MarginDebtLine
-          value={marginDebt}
-          currency={currency}
-          underLegend={segments.length > 0 && !groupCut}
-        />
-      </div>
-    </Block>
+          {/* Outside the empty branch on purpose: debt larger than every asset
+                leaves no slice to draw, and the debt is still there (SC-1463). */}
+          <DebtLine
+            value={totalDebt}
+            liabilities={liabilityDebt}
+            currency={currency}
+            underLegend={segments.length > 0 && !groupCut}
+          />
+        </div>
+      )}
+    </HomeCard>
   );
 }

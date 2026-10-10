@@ -1,4 +1,5 @@
 import type { PortfolioValueDaily } from '@scani/db/schema';
+import { coverageQualityOf } from '@scani/domain/lib/coverage-quality';
 import {
   type IncludedDailyTotalsRow,
   PortfolioValueDailyRepository,
@@ -149,8 +150,8 @@ export function toAggregatedDaily(row: PortfolioValueDaily): AggregatedDailyPoin
 
 // Finish one day of included per-holding rows, summed in SQL
 // (`findIncludedHoldingDailyTotals`, SC-1369), into the shared daily-point
-// shape. coverage_quality is re-derived from the known/total ratio with the
-// rollup's thresholds; a fully-priced day stays 'partial' when any holding
+// shape. coverage_quality is re-derived by the rollup's own rule
+// (`coverageQualityOf`); a fully-priced day stays 'partial' when any holding
 // used a stale anchor/price. The day's PnL arrives null unless every holding
 // row carried cost columns (pre-rebuild rows may not), since a partial sum
 // would be misleading.
@@ -163,20 +164,12 @@ export function toAggregatedDaily(row: PortfolioValueDaily): AggregatedDailyPoin
 // and propagates NULL rather than summing around it.
 export function aggregateDailyTotals(rows: IncludedDailyTotalsRow[]): AggregatedDailyPoint[] {
   return rows.map((r) => {
-    const priceable = r.holdingsTotal - r.holdingsUnpriceable;
-    let coverageQuality: string;
-    if (priceable === 0) {
-      // No holding contributed anything priceable to this day, so the
-      // sum is zero because nothing was measured. Same call as the
-      // rollup's own `upsertScopeRow` — see the note there. A day whose
-      // only holdings are unpriceable dust says the same thing.
-      coverageQuality = 'unknown';
-    } else {
-      const ratio = r.holdingsWithKnownValue / priceable;
-      if (ratio >= 0.95) coverageQuality = r.anyPartial ? 'partial' : 'full';
-      else if (ratio >= 0.5) coverageQuality = 'estimated';
-      else coverageQuality = 'unknown';
-    }
+    const coverageQuality = coverageQualityOf({
+      withKnownValue: r.holdingsWithKnownValue,
+      total: r.holdingsTotal,
+      unpriceable: r.holdingsUnpriceable,
+      degraded: r.anyPartial,
+    });
     // The SQL sum is exact; the JS fold it replaced kept Decimal's precision
     // (28 significant digits). Rounding once to that precision keeps the
     // printed figure, which the history export writes as-is, the same length

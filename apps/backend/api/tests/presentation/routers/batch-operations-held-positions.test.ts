@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { seedHoldingCache } from '@scani/domain/test-helpers';
 import { TRPCError } from '@trpc/server';
 import { eq, inArray } from 'drizzle-orm';
 import { makeAuthedCaller } from '../../helpers/test-caller';
@@ -69,9 +70,11 @@ beforeAll(async () => {
     .values({ userId: alice.id, institutionId, name: `SC-1527 ${suffix}`, typeId: accountTypeId })
     .returning();
   accountId = account!.id;
-  await db
-    .insert(schema.holdings)
-    .values({ userId: alice.id, accountId, tokenId: btcId, balance: '0.4', source: 'manual' });
+  await seedHoldingCache(db, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values({ userId: alice.id, accountId, tokenId: btcId, balance: '0.4', source: 'manual' })
+  );
 });
 
 afterAll(async () => {

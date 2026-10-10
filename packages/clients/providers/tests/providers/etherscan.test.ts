@@ -175,3 +175,64 @@ describe('EtherscanProvider history pages (SC-1443)', () => {
     ).rejects.toThrow(/latest block unreadable/);
   });
 });
+
+describe('EtherscanProvider ledger reads start at the block of `since` (SC-1665)', () => {
+  const ctx = {
+    institutionCode: 'ethereum',
+    baseCurrency: { id: 'usd', symbol: 'USD' } as never,
+    credentialsRef: { userId: 'u', institutionId: 'i' },
+    resolveCredentials: async () => ({ walletAddress: VALID_EVM }),
+  };
+  const latestBlock = { jsonrpc: '2.0', id: 1, result: '0x100' };
+  const empty = { status: '0', message: 'No transactions found', result: [] };
+
+  async function startBlocks(
+    blockByTime: unknown,
+    since: Date | undefined
+  ): Promise<{ starts: string[]; lookups: string[] }> {
+    const starts: string[] = [];
+    const lookups: string[] = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      const params = new URL(url).searchParams;
+      let body: unknown = empty;
+      if (params.get('action') === 'eth_blockNumber') body = latestBlock;
+      else if (params.get('action') === 'getblocknobytime') {
+        lookups.push(`${params.get('timestamp')}:${params.get('closest')}`);
+        body = blockByTime;
+      } else starts.push(`${params.get('action')}:${params.get('startblock')}`);
+      return new Response(JSON.stringify(body), { status: 200 });
+    }) as unknown as typeof fetch;
+    try {
+      const p = new EtherscanProvider(ETHERSCAN_CHAINS, passthroughLimiter(), 'k');
+      await p.fetchTransactions({ ...ctx, since } as never);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    return { starts, lookups };
+  }
+
+  test('a run with `since` walks every stream from the block before it', async () => {
+    const since = new Date('2026-10-09T01:00:00Z');
+    const { starts, lookups } = await startBlocks(
+      { status: '1', message: 'OK', result: '23500000' },
+      since
+    );
+    expect(lookups).toEqual([`${since.getTime() / 1000}:before`]);
+    expect(starts).toEqual(['txlist:23500000', 'tokentx:23500000', 'txlistinternal:23500000']);
+  });
+
+  test('control: a run with no `since` walks from block 0 and asks nothing', async () => {
+    const { starts, lookups } = await startBlocks(null, undefined);
+    expect(lookups).toEqual([]);
+    expect(starts).toEqual(['txlist:0', 'tokentx:0', 'txlistinternal:0']);
+  });
+
+  test('an unanswered lookup walks from block 0 rather than skipping history', async () => {
+    const { starts } = await startBlocks(
+      { status: '0', message: 'NOTOK', result: 'Error! No closest block found' },
+      new Date('2026-10-09T01:00:00Z')
+    );
+    expect(starts).toEqual(['txlist:0', 'tokentx:0', 'txlistinternal:0']);
+  });
+});

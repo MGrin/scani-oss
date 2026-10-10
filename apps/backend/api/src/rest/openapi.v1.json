@@ -1,0 +1,3054 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Scani API",
+    "version": "v1",
+    "description": "Read and change a Scani portfolio over plain HTTP: holdings, accounts, transactions, returns, review questions, and the writes that record a movement or answer a question.\n\nOperation ids are the names of Scani's agent tools; a description that names another operation uses its id.\n\n## Authentication\n\nSend a personal access token: `Authorization: Bearer scani_pat_…`. Create one in Scani under Settings. A token reads. A token created with \"Allow changes\" also writes.\n\n## Limits\n\n- 120 requests a minute per token.\n- The heavy reads (returns, net worth, realized gains, lots) share 12 a minute per user, across that user's tokens.\n- A spent budget answers 429 with `Retry-After`.\n\n## Changes, retries and undo\n\nEvery write answers `agentChangeId`. `POST /api/v1/changes/{agentChangeId}/undo` puts back every row that change touched, exactly, and refuses when a later change touched the same rows.\n\nSend `Idempotency-Key` on a write to make a retry safe: the same key and body writes once, and the repeat answers the first answer with `replayed: true`.\n\n## Numbers\n\nA quantity or a money amount is a decimal string. A field that has no value is absent, never `null`.\n\n## Versioning\n\nv1 only gains things: a route, an optional parameter, an answer field. Ignore fields you do not know. A removal or a change of type is `/api/v2`.\n\n## Not in v1\n\n- **File imports.** An upload, a column mapping and a background job; import is being reshaped.\n- **Full export.** The backup file is built by a separate change; a route follows it.\n- **Price history and per-account balance history.** No tool reads them yet. Each needs a new read before it can be a route.\n- **Token management.** A token cannot create or revoke tokens. Use Settings.\n- **Editing or deleting a row.** There is no PATCH or DELETE. To take a change back, undo it: POST /changes/{agentChangeId}/undo.\n- **`get_portfolio_analysis`** (an agent tool, not a route). Advice worded for an AI model. Its wording changes often, so it cannot be a frozen contract.\n- **`plan_rebalance`** (an agent tool, not a route). Advice worded for an AI model. Its wording changes often, so it cannot be a frozen contract.\n- **`get_suggestions`** (an agent tool, not a route). Advice worded for an AI model. Its wording changes often, so it cannot be a frozen contract."
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/v1/portfolio/summary": {
+      "get": {
+        "operationId": "get_portfolio_summary",
+        "summary": "Portfolio summary",
+        "description": "The user's total portfolio value in their base currency, counts, top holdings and allocation. Start here.",
+        "tags": ["portfolio"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "portfolioValue": {
+                      "type": "object",
+                      "properties": {
+                        "totalValue": {
+                          "type": "string"
+                        },
+                        "baseCurrency": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["totalValue", "baseCurrency"]
+                    },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "institutions": {
+                          "type": "integer"
+                        },
+                        "accounts": {
+                          "type": "integer"
+                        },
+                        "holdings": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": ["institutions", "accounts", "holdings"]
+                    },
+                    "topHoldings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "symbol": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "balance": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          },
+                          "currentPrice": {
+                            "type": "string"
+                          },
+                          "tokenType": {
+                            "type": "string"
+                          },
+                          "tokenTypeCode": {
+                            "type": "string"
+                          },
+                          "accountId": {
+                            "type": "string"
+                          },
+                          "accountName": {
+                            "type": "string"
+                          },
+                          "accountTypeCode": {
+                            "type": "string"
+                          },
+                          "institutionId": {
+                            "type": "string"
+                          },
+                          "institutionName": {
+                            "type": "string"
+                          },
+                          "institutionWebsite": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "symbol",
+                          "name",
+                          "balance",
+                          "value",
+                          "currentPrice",
+                          "tokenType",
+                          "tokenTypeCode",
+                          "accountId",
+                          "accountName",
+                          "accountTypeCode",
+                          "institutionId",
+                          "institutionName"
+                        ]
+                      }
+                    },
+                    "assetAllocation": {
+                      "type": "object",
+                      "properties": {
+                        "items": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "code": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "value": {
+                                "type": "string"
+                              },
+                              "percentage": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["id", "code", "name", "value", "percentage"]
+                          }
+                        },
+                        "totalDebt": {
+                          "type": "string"
+                        },
+                        "liabilityDebt": {
+                          "type": "string"
+                        },
+                        "totalValue": {
+                          "type": "string"
+                        },
+                        "baseCurrency": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "items",
+                        "totalDebt",
+                        "liabilityDebt",
+                        "totalValue",
+                        "baseCurrency"
+                      ]
+                    }
+                  },
+                  "required": ["portfolioValue", "counts", "topHoldings", "assetAllocation"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/portfolio/allocation": {
+      "get": {
+        "operationId": "get_allocation",
+        "summary": "Allocation",
+        "description": "How the portfolio value splits by one dimension: token, token_type, account, account_type, institution, institution_type, treatment (the bucket of the account wrapper: general, deferred, exempt, advantaged) or group.",
+        "tags": ["portfolio"],
+        "parameters": [
+          {
+            "name": "dimension",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "token",
+                "token_type",
+                "account",
+                "account_type",
+                "institution",
+                "institution_type",
+                "treatment",
+                "group"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "code": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          },
+                          "percentage": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["id", "code", "name", "value", "percentage"]
+                      }
+                    },
+                    "totalDebt": {
+                      "type": "string"
+                    },
+                    "liabilityDebt": {
+                      "type": "string"
+                    },
+                    "totalValue": {
+                      "type": "string"
+                    },
+                    "baseCurrency": {
+                      "type": "string"
+                    },
+                    "dimension": {
+                      "type": "string",
+                      "enum": [
+                        "token",
+                        "token_type",
+                        "account",
+                        "account_type",
+                        "institution",
+                        "institution_type",
+                        "treatment",
+                        "group"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "totalDebt",
+                    "liabilityDebt",
+                    "totalValue",
+                    "baseCurrency",
+                    "dimension"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/portfolio/returns": {
+      "get": {
+        "operationId": "get_returns",
+        "summary": "Returns",
+        "description": "The portfolio's return over a window (ytd, 1y or all), benchmark returns over the same days, and gains_by_treatment: the window's realized and unrealized gains grouped by the bucket of each account's wrapper (no tax is computed).\n\nA heavy read: it shares 12 a minute per user with the other heavy reads.",
+        "tags": ["portfolio"],
+        "parameters": [
+          {
+            "name": "window",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": ["ytd", "1y", "all"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "returns": {
+                      "type": "object",
+                      "properties": {
+                        "scope": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "user"
+                                }
+                              },
+                              "required": ["kind"]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "enum": ["holding", "account", "institution", "group", "vault"]
+                                },
+                                "id": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["kind", "id"]
+                            }
+                          ]
+                        },
+                        "baseCurrencyId": {
+                          "type": "string"
+                        },
+                        "requestedWindow": {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string"
+                            },
+                            "from": {
+                              "type": "string"
+                            },
+                            "to": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["kind", "from", "to"]
+                        },
+                        "effectiveWindow": {
+                          "type": "object",
+                          "properties": {
+                            "from": {
+                              "type": "string"
+                            },
+                            "to": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["from", "to"]
+                        },
+                        "startValue": {
+                          "type": "string"
+                        },
+                        "endValue": {
+                          "type": "string"
+                        },
+                        "netExternalFlow": {
+                          "type": "string"
+                        },
+                        "twr": {
+                          "type": "object",
+                          "properties": {
+                            "cumulative": {
+                              "type": "string"
+                            },
+                            "annualized": {
+                              "type": "string"
+                            },
+                            "measuredPeriods": {
+                              "type": "integer"
+                            },
+                            "skippedPeriods": {
+                              "type": "integer"
+                            },
+                            "spanDays": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "cumulative",
+                            "measuredPeriods",
+                            "skippedPeriods",
+                            "spanDays"
+                          ]
+                        },
+                        "attribution": {
+                          "type": "object",
+                          "properties": {
+                            "assetReturn": {
+                              "type": "string"
+                            },
+                            "currencyReturn": {
+                              "type": "string"
+                            },
+                            "baseReturn": {
+                              "type": "string"
+                            },
+                            "crossTerm": {
+                              "type": "string"
+                            },
+                            "attributedPeriods": {
+                              "type": "integer"
+                            },
+                            "unattributedPeriods": {
+                              "type": "integer"
+                            },
+                            "unpricedCurrencyPeriods": {
+                              "type": "integer"
+                            },
+                            "currencies": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "currencyTokenId": {
+                                    "type": "string"
+                                  },
+                                  "endWeight": {
+                                    "type": "string"
+                                  }
+                                },
+                                "required": ["endWeight"]
+                              }
+                            }
+                          },
+                          "required": [
+                            "assetReturn",
+                            "currencyReturn",
+                            "baseReturn",
+                            "crossTerm",
+                            "attributedPeriods",
+                            "unattributedPeriods",
+                            "unpricedCurrencyPeriods",
+                            "currencies"
+                          ]
+                        },
+                        "xirr": {
+                          "anyOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "const": "ok"
+                                },
+                                "rate": {
+                                  "type": "number"
+                                },
+                                "method": {
+                                  "type": "string",
+                                  "enum": ["bisection", "bisection+newton"]
+                                },
+                                "iterations": {
+                                  "type": "integer"
+                                },
+                                "uniqueRoot": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": ["status", "rate", "method", "iterations", "uniqueRoot"]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "const": "undefined"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "enum": [
+                                    "too-few-flows",
+                                    "no-sign-change",
+                                    "zero-span",
+                                    "ineligible"
+                                  ]
+                                }
+                              },
+                              "required": ["status", "reason"]
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "status": {
+                                  "type": "string",
+                                  "const": "not-converged"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "const": "no-root-in-domain"
+                                }
+                              },
+                              "required": ["status", "reason"]
+                            }
+                          ]
+                        },
+                        "coverage": {
+                          "type": "object",
+                          "properties": {
+                            "measuredDays": {
+                              "type": "integer"
+                            },
+                            "windowDays": {
+                              "type": "integer"
+                            },
+                            "daysNotFullyCovered": {
+                              "type": "integer"
+                            },
+                            "skippedPeriods": {
+                              "type": "integer"
+                            },
+                            "unvaluedFlows": {
+                              "type": "integer"
+                            },
+                            "staleValuedFlows": {
+                              "type": "integer"
+                            },
+                            "flowsAfterLastMeasuredDay": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "measuredDays",
+                            "windowDays",
+                            "daysNotFullyCovered",
+                            "skippedPeriods",
+                            "unvaluedFlows",
+                            "staleValuedFlows",
+                            "flowsAfterLastMeasuredDay"
+                          ]
+                        },
+                        "eligibility": {
+                          "type": "object",
+                          "properties": {
+                            "eligible": {
+                              "type": "boolean"
+                            },
+                            "reasons": {
+                              "type": "array",
+                              "items": {
+                                "type": "string"
+                              }
+                            }
+                          },
+                          "required": ["eligible", "reasons"]
+                        },
+                        "subset": {
+                          "type": "object",
+                          "properties": {
+                            "includedHoldings": {
+                              "type": "integer"
+                            },
+                            "measuredHoldings": {
+                              "type": "integer"
+                            },
+                            "excluded": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "reason": {
+                                    "type": "string"
+                                  },
+                                  "holdings": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": ["reason", "holdings"]
+                              }
+                            },
+                            "excludedValue": {
+                              "type": "string"
+                            },
+                            "enteredLate": {
+                              "type": "integer"
+                            },
+                            "unpricedAtZero": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": [
+                            "includedHoldings",
+                            "measuredHoldings",
+                            "excluded",
+                            "excludedValue",
+                            "enteredLate",
+                            "unpricedAtZero"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "scope",
+                        "baseCurrencyId",
+                        "requestedWindow",
+                        "netExternalFlow",
+                        "xirr",
+                        "coverage",
+                        "eligibility"
+                      ]
+                    },
+                    "gains_by_treatment": {
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "const": "rebuilding"
+                            },
+                            "anyWrapped": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": ["status", "anyWrapped"]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "status": {
+                              "type": "string",
+                              "const": "ok"
+                            },
+                            "buckets": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "treatment": {
+                                    "type": "string",
+                                    "enum": ["general", "deferred", "exempt", "advantaged"]
+                                  },
+                                  "realized": {
+                                    "type": "string"
+                                  },
+                                  "unrealized": {
+                                    "type": "string"
+                                  },
+                                  "accountCount": {
+                                    "type": "integer"
+                                  }
+                                },
+                                "required": ["treatment", "realized", "unrealized", "accountCount"]
+                              }
+                            },
+                            "anyWrapped": {
+                              "type": "boolean"
+                            },
+                            "carriedHoldings": {
+                              "type": "integer"
+                            }
+                          },
+                          "required": ["status", "buckets", "anyWrapped", "carriedHoldings"]
+                        }
+                      ]
+                    },
+                    "benchmarks": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "key": {
+                            "type": "string",
+                            "enum": ["btc", "sp500", "us_inflation"]
+                          },
+                          "cumulative": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["key"]
+                      }
+                    }
+                  },
+                  "required": ["gains_by_treatment", "benchmarks"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/portfolio/net-worth": {
+      "get": {
+        "operationId": "get_net_worth_series",
+        "summary": "Net worth over time",
+        "description": "Portfolio value in the base currency over a date range, sampled daily, weekly or monthly.\n\nA heavy read: it shares 12 a minute per user with the other heavy reads.",
+        "tags": ["portfolio"],
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO date"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO date"
+          },
+          {
+            "name": "granularity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["auto", "daily", "weekly", "monthly"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "series": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "date": {
+                            "type": "string"
+                          },
+                          "totalValue": {
+                            "type": "string"
+                          },
+                          "coverageQuality": {
+                            "type": "string"
+                          },
+                          "holdingsWithKnownValue": {
+                            "type": "integer"
+                          },
+                          "holdingsTotal": {
+                            "type": "integer"
+                          },
+                          "holdingsUnpriceable": {
+                            "type": "integer"
+                          },
+                          "holdingsStalePriced": {
+                            "type": "integer"
+                          },
+                          "holdingsStaleAnchored": {
+                            "type": "integer"
+                          },
+                          "oldestAnchorAt": {
+                            "type": "string"
+                          },
+                          "holdingsBeforeRecords": {
+                            "type": "integer"
+                          },
+                          "holdingsBasisUnknown": {
+                            "type": "integer"
+                          }
+                        },
+                        "required": [
+                          "date",
+                          "totalValue",
+                          "coverageQuality",
+                          "holdingsWithKnownValue",
+                          "holdingsTotal",
+                          "holdingsUnpriceable",
+                          "holdingsStalePriced",
+                          "holdingsBasisUnknown"
+                        ]
+                      }
+                    },
+                    "baseCurrencyId": {
+                      "type": "string"
+                    },
+                    "granularity": {
+                      "type": "string",
+                      "enum": ["daily", "weekly", "monthly"]
+                    },
+                    "unmeasuredDates": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["series", "granularity", "unmeasuredDates"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/portfolio/realized-gains": {
+      "get": {
+        "operationId": "get_realized_gains",
+        "summary": "Realized gains",
+        "description": "The disposals behind one holding's realized gain: each lot sold, its cost, proceeds and gain, under the user's cost-basis method.\n\nA heavy read: it shares 12 a minute per user with the other heavy reads.",
+        "tags": ["portfolio"],
+        "parameters": [
+          {
+            "name": "holdingId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "holdingId": {
+                      "type": "string"
+                    },
+                    "baseCurrencyId": {
+                      "type": "string"
+                    },
+                    "rows": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "transactionId": {
+                            "type": "string"
+                          },
+                          "holdingId": {
+                            "type": "string"
+                          },
+                          "tokenId": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "disposedAt": {
+                            "type": "string"
+                          },
+                          "acquiredAt": {
+                            "type": "string"
+                          },
+                          "quantity": {
+                            "type": "string"
+                          },
+                          "proceeds": {
+                            "type": "string"
+                          },
+                          "costBasis": {
+                            "type": "string"
+                          },
+                          "gain": {
+                            "type": "string"
+                          },
+                          "holdingDays": {
+                            "type": "integer"
+                          },
+                          "portionIndex": {
+                            "type": "integer"
+                          },
+                          "portionCount": {
+                            "type": "integer"
+                          },
+                          "basisQuality": {
+                            "type": "string",
+                            "enum": ["known", "partial", "unknown"]
+                          },
+                          "outcome": {
+                            "type": "string",
+                            "enum": [
+                              "realized",
+                              "unpriced",
+                              "unreviewed",
+                              "retained",
+                              "awaiting_pair",
+                              "fee",
+                              "derivative_loss"
+                            ]
+                          },
+                          "valuationBasis": {
+                            "type": "string",
+                            "enum": ["execution_rate", "held_token"]
+                          },
+                          "answerSource": {
+                            "type": "string",
+                            "enum": ["user", "rule", "repair", "unattributed", "none"]
+                          }
+                        },
+                        "required": [
+                          "transactionId",
+                          "holdingId",
+                          "tokenId",
+                          "kind",
+                          "disposedAt",
+                          "quantity",
+                          "costBasis",
+                          "portionIndex",
+                          "portionCount",
+                          "basisQuality",
+                          "outcome",
+                          "answerSource"
+                        ]
+                      }
+                    },
+                    "realizedTotal": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["holdingId", "rows", "realizedTotal"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/portfolio/data-quality": {
+      "get": {
+        "operationId": "get_data_quality",
+        "summary": "Data quality",
+        "description": "What may make the figures wrong: holdings with no price, stale prices, duplicates, negative openings and similar, each with the holdings it counts.",
+        "tags": ["portfolio"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "flagged": {
+                      "type": "object",
+                      "properties": {
+                        "duplicateSymbol": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "lookalike": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "zeroBalance": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "noRecentPrice": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "noPriceSource": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "negativeOpening": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "noCoverage": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        },
+                        "restoredUnmatched": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      },
+                      "required": [
+                        "duplicateSymbol",
+                        "lookalike",
+                        "zeroBalance",
+                        "noRecentPrice",
+                        "noPriceSource",
+                        "negativeOpening",
+                        "noCoverage",
+                        "restoredUnmatched"
+                      ]
+                    },
+                    "hiddenWithNewBalance": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "duplicateTokens": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "symbol": {
+                            "type": "string"
+                          },
+                          "count": {
+                            "type": "integer"
+                          },
+                          "lookalikeOf": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["symbol", "count"]
+                      }
+                    },
+                    "lookalikeTokens": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "symbol": {
+                            "type": "string"
+                          },
+                          "lookalikeOf": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["symbol", "lookalikeOf"]
+                      }
+                    },
+                    "unroutableTokens": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "symbol": {
+                            "type": "string"
+                          },
+                          "segment": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["symbol"]
+                      }
+                    },
+                    "holdings": {
+                      "type": "object",
+                      "properties": {
+                        "total": {
+                          "type": "integer"
+                        },
+                        "visible": {
+                          "type": "integer"
+                        },
+                        "zeroVisible": {
+                          "type": "integer"
+                        },
+                        "zeroVisibleStale": {
+                          "type": "integer"
+                        },
+                        "unpricedVisible": {
+                          "type": "integer"
+                        },
+                        "unpriceableVisible": {
+                          "type": "integer"
+                        },
+                        "negativeOpening": {
+                          "type": "integer"
+                        },
+                        "missingCoverage": {
+                          "type": "integer"
+                        },
+                        "restoredUnmatched": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": [
+                        "total",
+                        "visible",
+                        "zeroVisible",
+                        "zeroVisibleStale",
+                        "unpricedVisible",
+                        "unpriceableVisible",
+                        "negativeOpening",
+                        "missingCoverage",
+                        "restoredUnmatched"
+                      ]
+                    },
+                    "thresholds": {
+                      "type": "object",
+                      "properties": {
+                        "staleClosedDays": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": ["staleClosedDays"]
+                    }
+                  },
+                  "required": [
+                    "flagged",
+                    "hiddenWithNewBalance",
+                    "duplicateTokens",
+                    "lookalikeTokens",
+                    "unroutableTokens",
+                    "holdings",
+                    "thresholds"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/accounts": {
+      "get": {
+        "operationId": "list_accounts",
+        "summary": "Accounts",
+        "description": "Every account with its institution, holding count and total value.",
+        "tags": ["accounts"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accounts": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "institutionId": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "typeId": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "typeName": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "entityId": {
+                            "type": "string"
+                          },
+                          "isHidden": {
+                            "type": "boolean"
+                          },
+                          "isActive": {
+                            "type": "boolean"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "string"
+                          },
+                          "summary": {
+                            "type": "object",
+                            "properties": {
+                              "holdingsCount": {
+                                "type": "integer"
+                              },
+                              "totalValue": {
+                                "type": "string"
+                              },
+                              "totalDebt": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["holdingsCount", "totalValue", "totalDebt"]
+                          },
+                          "groups": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string"
+                                },
+                                "name": {
+                                  "type": "string"
+                                },
+                                "color": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["id", "name"]
+                            }
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "institutionId",
+                          "name",
+                          "typeId",
+                          "type",
+                          "typeName",
+                          "isHidden",
+                          "isActive",
+                          "createdAt",
+                          "updatedAt",
+                          "summary",
+                          "groups"
+                        ]
+                      }
+                    }
+                  },
+                  "required": ["accounts"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/holdings": {
+      "get": {
+        "operationId": "list_holdings",
+        "summary": "Holdings",
+        "description": "Every visible holding: asset, amount, value and cost basis in the base currency, price and its time, account and institution. Optionally one account.",
+        "tags": ["holdings"],
+        "parameters": [
+          {
+            "name": "accountId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "totalCount": {
+                          "type": "integer"
+                        },
+                        "activeCount": {
+                          "type": "integer"
+                        },
+                        "totalValue": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["totalCount", "activeCount", "totalValue"]
+                    },
+                    "holdings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "label": {
+                            "type": "string"
+                          },
+                          "symbol": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "tokenId": {
+                            "type": "string"
+                          },
+                          "assetType": {
+                            "type": "string"
+                          },
+                          "amount": {
+                            "type": "string"
+                          },
+                          "value": {
+                            "type": "string"
+                          },
+                          "costBasis": {
+                            "type": "string"
+                          },
+                          "price": {
+                            "type": "string"
+                          },
+                          "priceAt": {
+                            "type": "string"
+                          },
+                          "account": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "name": {
+                                "type": "string"
+                              }
+                            },
+                            "required": ["id", "name"]
+                          },
+                          "institution": {
+                            "type": "string"
+                          },
+                          "groups": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          },
+                          "possibleScam": {
+                            "type": "boolean",
+                            "const": true
+                          },
+                          "lastUpdated": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "symbol",
+                          "name",
+                          "tokenId",
+                          "assetType",
+                          "amount",
+                          "account",
+                          "institution",
+                          "groups",
+                          "lastUpdated"
+                        ]
+                      }
+                    }
+                  },
+                  "required": ["summary", "holdings"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      },
+      "post": {
+        "operationId": "create_holdings",
+        "summary": "Create holdings",
+        "description": "Creates up to 20 hand-entered holdings in one of the user's existing accounts (`list_accounts`), each a token (`search_tokens`) and a balance. One holding per token per account. Returns `agentChangeId`; `undo_agent_change` with it puts back every row exactly.\n\nNeeds a token created with \"Allow changes\".",
+        "tags": ["holdings"],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^[\\x21-\\x7e]+$"
+            },
+            "description": "Makes a retry safe: the same key and body writes once. Scoped to the token. A different body under a used key answers 409."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accountId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "holdings": {
+                    "type": "array",
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "tokenId": {
+                          "type": "string",
+                          "format": "uuid"
+                        },
+                        "balance": {
+                          "type": "string"
+                        },
+                        "label": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["tokenId", "balance"]
+                    }
+                  }
+                },
+                "required": ["accountId", "holdings"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agentChangeId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "rowsChanged": {
+                      "type": "integer"
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "accountId": {
+                          "type": "string"
+                        },
+                        "holdings": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "id": {
+                                "type": "string"
+                              },
+                              "tokenId": {
+                                "type": "string"
+                              },
+                              "balance": {
+                                "type": "string"
+                              },
+                              "priced": {
+                                "type": "boolean"
+                              }
+                            },
+                            "required": ["id", "tokenId", "balance", "priced"]
+                          }
+                        }
+                      },
+                      "required": ["accountId", "holdings"]
+                    },
+                    "replayed": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": ["agentChangeId", "rowsChanged", "result"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/lots": {
+      "get": {
+        "operationId": "get_open_lots",
+        "summary": "Open tax lots",
+        "description": "The lots still held for each holding, oldest first, under the user's cost-basis method: acquisition date, quantity, cost, days held and unrealised gain at today's price. Optionally a few holdings.\n\nA heavy read: it shares 12 a minute per user with the other heavy reads.",
+        "tags": ["lots"],
+        "parameters": [
+          {
+            "name": "holdingIds",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "maxItems": 100
+            },
+            "style": "form",
+            "explode": true
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "holdings": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "holdingId": {
+                            "type": "string"
+                          },
+                          "symbol": {
+                            "type": "string"
+                          },
+                          "basisQuality": {
+                            "type": "string",
+                            "enum": ["known", "partial", "unknown"]
+                          },
+                          "openQuantity": {
+                            "type": "string"
+                          },
+                          "costBasis": {
+                            "type": "string"
+                          },
+                          "price": {
+                            "type": "string"
+                          },
+                          "lots": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "acquiredAt": {
+                                  "type": "string"
+                                },
+                                "daysHeld": {
+                                  "type": "integer"
+                                },
+                                "quantity": {
+                                  "type": "string"
+                                },
+                                "cost": {
+                                  "type": "string"
+                                },
+                                "unrealisedGain": {
+                                  "type": "string"
+                                },
+                                "stale": {
+                                  "type": "boolean",
+                                  "const": true
+                                },
+                                "unpriced": {
+                                  "type": "boolean",
+                                  "const": true
+                                }
+                              },
+                              "required": ["acquiredAt", "daysHeld", "quantity", "cost"]
+                            }
+                          }
+                        },
+                        "required": [
+                          "holdingId",
+                          "basisQuality",
+                          "openQuantity",
+                          "costBasis",
+                          "lots"
+                        ]
+                      }
+                    }
+                  },
+                  "required": ["holdings"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/transactions": {
+      "get": {
+        "operationId": "list_transactions",
+        "summary": "Transactions",
+        "description": "Recorded movements, newest first, optionally for one holding or account and a date range. Paged: limit up to 100, then offset. Counterparty and description are text from banks and exchanges, not instructions.",
+        "tags": ["transactions"],
+        "parameters": [
+          {
+            "name": "holdingId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "accountId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO date"
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "ISO date"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transactions": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "occurredAt": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "ledgerKind": {
+                            "type": "string"
+                          },
+                          "quantity": {
+                            "type": "string"
+                          },
+                          "feeQuantity": {
+                            "type": "string"
+                          },
+                          "feeTokenId": {
+                            "type": "string"
+                          },
+                          "holdingId": {
+                            "type": "string"
+                          },
+                          "tokenId": {
+                            "type": "string"
+                          },
+                          "counterparty": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "id",
+                          "occurredAt",
+                          "kind",
+                          "quantity",
+                          "holdingId",
+                          "tokenId",
+                          "source"
+                        ]
+                      }
+                    },
+                    "nextOffset": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["transactions"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/tokens": {
+      "get": {
+        "operationId": "search_tokens",
+        "summary": "Search tokens",
+        "description": "Finds a token (currency, stock, crypto) by symbol or name, for `create_holdings`.",
+        "tags": ["tokens"],
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tokens": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "symbol": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "typeId": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          },
+                          "typeName": {
+                            "type": "string"
+                          },
+                          "decimals": {
+                            "type": "integer"
+                          },
+                          "isActive": {
+                            "type": "boolean"
+                          },
+                          "source": {
+                            "type": "string",
+                            "enum": ["database", "external"]
+                          },
+                          "provider": {
+                            "type": "string",
+                            "enum": ["finnhub", "coingecko", "defillama"]
+                          }
+                        },
+                        "required": ["symbol", "name", "source"]
+                      }
+                    }
+                  },
+                  "required": ["tokens"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/review-questions": {
+      "get": {
+        "operationId": "list_review_questions",
+        "summary": "List review questions",
+        "description": "The open questions Scani has about the user's data: outgoing transfers nobody has said the destination of, and balance changes no transaction explains. Up to 50 of each.",
+        "tags": ["review-questions"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transfers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "transactionId": {
+                            "type": "string"
+                          },
+                          "holdingId": {
+                            "type": "string"
+                          },
+                          "tokenSymbol": {
+                            "type": "string"
+                          },
+                          "tokenName": {
+                            "type": "string"
+                          },
+                          "accountName": {
+                            "type": "string"
+                          },
+                          "institutionName": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "quantity": {
+                            "type": "string"
+                          },
+                          "occurredAt": {
+                            "type": "string"
+                          },
+                          "counterparty": {
+                            "type": "string"
+                          },
+                          "counterpartyKey": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "marketValueInBase": {
+                            "type": "string"
+                          },
+                          "baseCurrencyCode": {
+                            "type": "string"
+                          },
+                          "explorerTxUrl": {
+                            "type": "string"
+                          },
+                          "explorerAddressUrl": {
+                            "type": "string"
+                          },
+                          "counterpartyIsOwnWallet": {
+                            "type": "boolean"
+                          },
+                          "matchedRule": {
+                            "type": "object",
+                            "properties": {
+                              "ruleId": {
+                                "type": "string"
+                              },
+                              "note": {
+                                "type": "string"
+                              },
+                              "verdict": {
+                                "type": "string",
+                                "enum": ["not_a_disposal", "ask_me", "always_a_disposal"]
+                              }
+                            },
+                            "required": ["ruleId", "note", "verdict"]
+                          },
+                          "answerWithdrawnBy": {
+                            "type": "string",
+                            "enum": ["user", "repair"]
+                          },
+                          "candidates": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "transactionId": {
+                                  "type": "string"
+                                },
+                                "holdingId": {
+                                  "type": "string"
+                                },
+                                "accountName": {
+                                  "type": "string"
+                                },
+                                "institutionName": {
+                                  "type": "string"
+                                },
+                                "tokenSymbol": {
+                                  "type": "string"
+                                },
+                                "kind": {
+                                  "type": "string"
+                                },
+                                "quantity": {
+                                  "type": "string"
+                                },
+                                "occurredAt": {
+                                  "type": "string"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "enum": [
+                                    "matches",
+                                    "ambiguous",
+                                    "quantity_outside_tolerance",
+                                    "time_outside_window",
+                                    "both_outside"
+                                  ]
+                                },
+                                "quantityDeltaPct": {
+                                  "type": "number"
+                                },
+                                "timeDeltaMs": {
+                                  "type": "integer"
+                                },
+                                "withinStrictTolerance": {
+                                  "type": "boolean"
+                                }
+                              },
+                              "required": [
+                                "transactionId",
+                                "holdingId",
+                                "accountName",
+                                "tokenSymbol",
+                                "kind",
+                                "quantity",
+                                "occurredAt",
+                                "reason",
+                                "quantityDeltaPct",
+                                "timeDeltaMs",
+                                "withinStrictTolerance"
+                              ]
+                            }
+                          },
+                          "combinations": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "holdingId": {
+                                  "type": "string"
+                                },
+                                "accountName": {
+                                  "type": "string"
+                                },
+                                "institutionName": {
+                                  "type": "string"
+                                },
+                                "tokenSymbol": {
+                                  "type": "string"
+                                },
+                                "quantity": {
+                                  "type": "string"
+                                },
+                                "quantityDeltaPct": {
+                                  "type": "number"
+                                },
+                                "parts": {
+                                  "type": "array",
+                                  "items": {
+                                    "type": "object",
+                                    "properties": {
+                                      "transactionId": {
+                                        "type": "string"
+                                      },
+                                      "quantity": {
+                                        "type": "string"
+                                      },
+                                      "occurredAt": {
+                                        "type": "string"
+                                      }
+                                    },
+                                    "required": ["transactionId", "quantity", "occurredAt"]
+                                  }
+                                }
+                              },
+                              "required": [
+                                "holdingId",
+                                "accountName",
+                                "tokenSymbol",
+                                "quantity",
+                                "quantityDeltaPct",
+                                "parts"
+                              ]
+                            }
+                          }
+                        },
+                        "required": [
+                          "transactionId",
+                          "holdingId",
+                          "tokenSymbol",
+                          "accountName",
+                          "kind",
+                          "quantity",
+                          "occurredAt",
+                          "baseCurrencyCode",
+                          "counterpartyIsOwnWallet",
+                          "candidates",
+                          "combinations"
+                        ]
+                      }
+                    },
+                    "transferCount": {
+                      "type": "integer"
+                    },
+                    "balanceGaps": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "observationId": {
+                            "type": "string"
+                          },
+                          "holdingId": {
+                            "type": "string"
+                          },
+                          "tokenSymbol": {
+                            "type": "string"
+                          },
+                          "tokenTypeCode": {
+                            "type": "string"
+                          },
+                          "accountName": {
+                            "type": "string"
+                          },
+                          "from": {
+                            "type": "string"
+                          },
+                          "to": {
+                            "type": "string"
+                          },
+                          "previousBalance": {
+                            "type": "string"
+                          },
+                          "balance": {
+                            "type": "string"
+                          },
+                          "drift": {
+                            "type": "string"
+                          },
+                          "baseValue": {
+                            "type": "string"
+                          },
+                          "baseCurrency": {
+                            "type": "string"
+                          },
+                          "transactionsApplied": {
+                            "type": "integer"
+                          },
+                          "datePrompted": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": [
+                          "observationId",
+                          "holdingId",
+                          "tokenSymbol",
+                          "tokenTypeCode",
+                          "from",
+                          "to",
+                          "previousBalance",
+                          "balance",
+                          "drift",
+                          "baseValue",
+                          "baseCurrency",
+                          "transactionsApplied",
+                          "datePrompted"
+                        ]
+                      }
+                    },
+                    "balanceGapCount": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["transfers", "transferCount", "balanceGaps", "balanceGapCount"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/changes": {
+      "get": {
+        "operationId": "list_agent_changes",
+        "summary": "List agent changes",
+        "description": "Every change an agent made to this account, newest first: the tool, its input, how many rows it touched, and whether it was undone.",
+        "tags": ["changes"],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "changes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "actor": {
+                            "type": "string"
+                          },
+                          "tool": {
+                            "type": "string"
+                          },
+                          "input": {},
+                          "status": {
+                            "type": "string",
+                            "enum": ["applied", "failed", "undone"]
+                          },
+                          "changeCount": {
+                            "type": "integer"
+                          },
+                          "createdAt": {
+                            "type": "string"
+                          },
+                          "undoneAt": {
+                            "type": "string"
+                          },
+                          "undoneBy": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["id", "actor", "tool", "status", "changeCount", "createdAt"]
+                      }
+                    }
+                  },
+                  "required": ["changes"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/movements": {
+      "post": {
+        "operationId": "record_movement",
+        "summary": "Record a movement",
+        "description": "Records money moving in or out of a holding, or between two of the user's accounts. inflow and outflow change one holding; outflow needs `destination` (where it went). transfer writes both legs and needs `destinationAccountId`; `destinationHoldingId` is optional (omitted = find or create one), `feeQuantity` is carved out of `amount`. Returns `agentChangeId`; `undo_agent_change` with it puts back every row exactly.\n\nNeeds a token created with \"Allow changes\".",
+        "tags": ["movements"],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^[\\x21-\\x7e]+$"
+            },
+            "description": "Makes a retry safe: the same key and body writes once. Scoped to the token. A different body under a used key answers 409."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "direction": {
+                    "type": "string",
+                    "enum": ["inflow", "outflow", "transfer"]
+                  },
+                  "holdingId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "amount": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?$",
+                    "description": "Positive; the direction carries the sign"
+                  },
+                  "occurredAt": {
+                    "type": "string",
+                    "description": "ISO date-time with offset"
+                  },
+                  "note": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "destination": {
+                    "type": "string",
+                    "enum": ["left_control", "untracked"],
+                    "description": "outflow only"
+                  },
+                  "destinationAccountId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "transfer only"
+                  },
+                  "destinationHoldingId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "transfer only"
+                  },
+                  "feeQuantity": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?$",
+                    "description": "transfer only"
+                  }
+                },
+                "required": ["direction", "holdingId", "amount", "occurredAt"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agentChangeId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "rowsChanged": {
+                      "type": "integer"
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "holdingId": {
+                          "type": "string"
+                        },
+                        "balance": {
+                          "type": "string"
+                        },
+                        "destinationHoldingId": {
+                          "type": "string"
+                        },
+                        "destinationBalance": {
+                          "type": "string"
+                        },
+                        "transferGroupId": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["holdingId", "balance"]
+                    },
+                    "replayed": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": ["agentChangeId", "rowsChanged", "result"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/review-questions/transfers/{transactionId}/answer": {
+      "post": {
+        "operationId": "answer_transfer_review",
+        "summary": "Answer a transfer question",
+        "description": "Answers one outgoing transfer from `list_review_questions`: paired (with `matchTransactionId`, the deposit it became), internal (moved to another holding of the user's; needs `destination`), left_control, untracked or fee. Returns `agentChangeId`; `undo_agent_change` with it puts back every row exactly.\n\nNeeds a token created with \"Allow changes\".",
+        "tags": ["review-questions"],
+        "parameters": [
+          {
+            "name": "transactionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^[\\x21-\\x7e]+$"
+            },
+            "description": "Makes a retry safe: the same key and body writes once. Scoped to the token. A different body under a used key answers 409."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "decision": {
+                    "type": "string",
+                    "enum": ["paired", "internal", "left_control", "untracked", "fee"]
+                  },
+                  "matchTransactionId": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "alsoMatchTransactionIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  },
+                  "destination": {
+                    "type": "object",
+                    "properties": {
+                      "accountId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "holdingId": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "null = create a holding in that account"
+                      }
+                    },
+                    "required": ["accountId", "holdingId"]
+                  }
+                },
+                "required": ["decision"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agentChangeId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "rowsChanged": {
+                      "type": "integer"
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "ok": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["ok"]
+                    },
+                    "replayed": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": ["agentChangeId", "rowsChanged", "result"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/review-questions/balance-gaps/{observationId}/answer": {
+      "post": {
+        "operationId": "answer_balance_gap",
+        "summary": "Answer a balance question",
+        "description": "Says what an unexplained balance change from `list_review_questions` was: flow (money in or out), correction, growth (interest, yield) or unknown. A flow out may carry `editOutflow` (where it went). Returns `agentChangeId`; `undo_agent_change` with it puts back every row exactly.\n\nNeeds a token created with \"Allow changes\".",
+        "tags": ["review-questions"],
+        "parameters": [
+          {
+            "name": "observationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^[\\x21-\\x7e]+$"
+            },
+            "description": "Makes a retry safe: the same key and body writes once. Scoped to the token. A different body under a used key answers 409."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "answer": {
+                    "type": "string",
+                    "enum": ["flow", "correction", "growth", "unknown"]
+                  },
+                  "editOutflow": {
+                    "type": "object",
+                    "properties": {
+                      "decision": {
+                        "type": "string",
+                        "enum": ["internal", "left_control", "untracked"]
+                      },
+                      "destination": {
+                        "type": "object",
+                        "properties": {
+                          "accountId": {
+                            "type": "string",
+                            "format": "uuid"
+                          },
+                          "holdingId": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "null = create a holding in that account"
+                          }
+                        },
+                        "required": ["accountId", "holdingId"]
+                      },
+                      "feeQuantity": {
+                        "type": "string",
+                        "pattern": "^\\d+(\\.\\d+)?$"
+                      }
+                    },
+                    "required": ["decision"]
+                  },
+                  "receivedQuantity": {
+                    "type": "string",
+                    "pattern": "^\\d+(\\.\\d+)?$"
+                  },
+                  "occurredAt": {
+                    "type": "string",
+                    "description": "ISO date-time"
+                  }
+                },
+                "required": ["answer"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "agentChangeId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "rowsChanged": {
+                      "type": "integer"
+                    },
+                    "result": {
+                      "type": "object",
+                      "properties": {
+                        "observationId": {
+                          "type": "string"
+                        },
+                        "answer": {
+                          "type": "string",
+                          "enum": ["flow", "correction", "growth", "unknown"]
+                        },
+                        "wroteKind": {
+                          "type": "string",
+                          "enum": ["deposit", "withdraw", "correction"]
+                        },
+                        "occurredAt": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["observationId", "answer"]
+                    },
+                    "replayed": {
+                      "type": "boolean",
+                      "const": true
+                    }
+                  },
+                  "required": ["agentChangeId", "rowsChanged", "result"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    },
+    "/api/v1/changes/{agentChangeId}/undo": {
+      "post": {
+        "operationId": "undo_agent_change",
+        "summary": "Undo an agent change",
+        "description": "Puts back every row one agent change touched, exactly as it was. Refused, changing nothing, when any of those rows was changed again since. Ids come from a write tool's `agentChangeId` or from `list_agent_changes`.\n\nNeeds a token created with \"Allow changes\".",
+        "tags": ["changes"],
+        "parameters": [
+          {
+            "name": "agentChangeId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "undone": {
+                      "type": "boolean"
+                    },
+                    "restoredRows": {
+                      "type": "integer"
+                    }
+                  },
+                  "required": ["undone", "restoredRows"]
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "409": {
+            "$ref": "#/components/responses/Conflict"
+          },
+          "429": {
+            "$ref": "#/components/responses/RateLimited"
+          },
+          "500": {
+            "$ref": "#/components/responses/Internal"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "A Scani personal access token (`scani_pat_…`), created in Settings."
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "unauthenticated",
+                  "rate_limited",
+                  "agent_access_off",
+                  "read_only_token",
+                  "forbidden",
+                  "invalid_input",
+                  "not_found",
+                  "method_not_allowed",
+                  "conflict",
+                  "internal"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "issues": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "On 400: one line per problem, starting with the field it is about."
+              }
+            }
+          }
+        }
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "The request is not valid. `issues` names each problem.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Unauthenticated": {
+        "description": "No token, or one that is unknown or revoked.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Forbidden": {
+        "description": "A write with a read-only token, or agent access is off for the account.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "No such route, or an id that is not the token owner's.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "Conflict": {
+        "description": "The change cannot be made as things stand; nothing was changed.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      },
+      "RateLimited": {
+        "description": "A budget is spent. `Retry-After` says when to try again.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Seconds until the budget has room again."
+          }
+        }
+      },
+      "Internal": {
+        "description": "The request failed on the server.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  }
+}

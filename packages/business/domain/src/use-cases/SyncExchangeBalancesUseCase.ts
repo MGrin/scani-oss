@@ -27,6 +27,7 @@ import type { HoldingSnapshot, ProviderContext } from '@scani/providers/core/typ
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { deriveBalancesAsOf, withBalancesAsOf } from '../lib/balances-as-of';
+import { ChangedHoldingUsers } from '../lib/changed-holding-users';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { InstitutionRepository } from '../repositories/InstitutionRepository';
 import {
@@ -37,6 +38,13 @@ import {
   WalletDiscoveryService,
 } from '../services';
 import { providerInputSource } from '../services/foundation/plan-feed-inputs';
+import {
+  AccountLedgerSync,
+  type LedgerRead,
+  type LedgerWrite,
+} from '../services/transactions/AccountLedgerSync';
+import { ledgerSourceOf } from '../services/transactions/transaction-source';
+import { IdleUserSyncPolicy } from '../services/users/IdleUserSyncPolicy';
 
 const logger = createComponentLogger('use-case:sync-exchange-balances');
 
@@ -51,6 +59,8 @@ export interface SyncExchangeBalancesResult {
    *  not passed (SC-279). Reported so "we did not sync" and "we deliberately
    *  did not ask" are different numbers in the same summary. */
   credentialsBlocked: number;
+  /** Credentials left out of this run because their user is idle (SC-1602). */
+  credentialsIdleSkipped: number;
   /** Total holdings updated */
   holdingsUpdated: number;
   /** Total holdings created */
@@ -65,6 +75,11 @@ export interface SyncExchangeBalancesResult {
     error: string;
   }>;
   /** Duration of the operation in milliseconds */
+  /**
+   * Each account whose ledger was read with its balance and wrote rows
+   * (SC-1665), for the worker to follow as it follows an import.
+   */
+  ledgerWrites: LedgerWrite[];
   durationMs: number;
 }
 
@@ -99,6 +114,8 @@ export class SyncExchangeBalancesUseCase {
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
   private readonly holdingsSyncHelper = Container.get(HoldingsSyncHelper);
   private readonly institutionRepository = Container.get(InstitutionRepository);
+  private readonly idlePolicy = Container.get(IdleUserSyncPolicy);
+  private readonly ledgerSync = Container.get(AccountLedgerSync);
 
   async execute(): Promise<SyncExchangeBalancesResult> {
     const startTime = Date.now();
@@ -108,6 +125,7 @@ export class SyncExchangeBalancesUseCase {
     let accountsSynced = 0;
     let accountsFailed = 0;
     let credentialsBlocked = 0;
+    let credentialsIdleSkipped = 0;
     let holdingsUpdated = 0;
     let holdingsCreated = 0;
     let holdingsRemoved = 0;
@@ -133,6 +151,7 @@ export class SyncExchangeBalancesUseCase {
       // Self-maintaining selection: institutions a user connected that aren't
       // blockchain wallets. See InstitutionRepository.findSyncableInstitutions.
       const exchangeInstitutions = await this.institutionRepository.findSyncableInstitutions();
+      const idleUsers = await this.idlePolicy.usersToSkip();
 
       if (exchangeInstitutions.length === 0) {
         logger.info('No credentialed non-wallet institutions to sync');
@@ -141,10 +160,12 @@ export class SyncExchangeBalancesUseCase {
           accountsSynced: 0,
           accountsFailed: 0,
           credentialsBlocked: 0,
+          credentialsIdleSkipped: 0,
           holdingsUpdated: 0,
           holdingsCreated: 0,
           holdingsRemoved: 0,
           errors: [],
+          ledgerWrites: [],
           durationMs: Date.now() - startTime,
         };
       }
@@ -164,6 +185,7 @@ export class SyncExchangeBalancesUseCase {
         snapshots: HoldingSnapshot[];
         fetchedAt: Date;
         absentFiatConfirmations: number | undefined;
+        ledgerRead: LedgerRead;
       }
 
       const allAccountHoldingsData: AccountHoldingsData[] = [];
@@ -230,6 +252,10 @@ export class SyncExchangeBalancesUseCase {
             // age out — the schedule was what sustained it. Skipping is the
             // whole remedy, and it is deliberately checked before anything
             // reads credentials or touches the network.
+            if (idleUsers.has(userCredential.userId)) {
+              credentialsIdleSkipped++;
+              return;
+            }
             if (isSyncBlocked(userCredential)) {
               credentialsBlocked++;
               logger.warn(
@@ -347,14 +373,22 @@ export class SyncExchangeBalancesUseCase {
                   ),
                 ]);
 
+                const fetchedAt = new Date();
+                // Balance first, then the ledger (SC-1665, Q-1).
+                const ledgerRead = await this.ledgerSync.read({
+                  userId: userCredential.userId,
+                  accountId: account.id,
+                  source: ledgerSourceOf(institutionName, account.metadata),
+                });
                 allAccountHoldingsData.push({
                   account,
                   userId: userCredential.userId,
                   institutionId,
                   institutionName,
                   snapshots,
-                  fetchedAt: new Date(),
+                  fetchedAt,
                   absentFiatConfirmations: provider.absentFiatConfirmations,
+                  ledgerRead,
                 });
 
                 // The provider answered, so whatever it was refusing is over
@@ -395,7 +429,8 @@ export class SyncExchangeBalancesUseCase {
                   .recordSyncRefusal(
                     userCredential.id,
                     message,
-                    retryAfterMs ? new Date(Date.now() + retryAfterMs) : null
+                    retryAfterMs ? new Date(Date.now() + retryAfterMs) : null,
+                    error instanceof ProviderError ? error.kind : null
                   )
                   .catch((writeError: unknown) => {
                     // Never let bookkeeping mask the sync failure itself.
@@ -436,15 +471,21 @@ export class SyncExchangeBalancesUseCase {
         }
       }
 
+      const ledgerWrites: LedgerWrite[] = [];
       // STEP 2: each account in its own transaction (A2 Task 16), so one that
       // fails costs itself; in one transaction for all of them, a SQL error
       // aborted every account after it (25P02).
+      const changedUsers = new ChangedHoldingUsers();
       for (const accountData of allAccountHoldingsData) {
-        const { account, snapshots } = accountData;
+        const { account, snapshots, ledgerRead } = accountData;
         try {
-          const result = await withTransaction(
-            (tx) =>
-              this.holdingsSyncHelper.processSnapshotsForAccount({
+          const { result, ingested } = await withTransaction(
+            async (tx) => ({
+              ingested:
+                ledgerRead.kind === 'read'
+                  ? await this.ledgerSync.write(ledgerRead.fetched, tx)
+                  : null,
+              result: await this.holdingsSyncHelper.processSnapshotsForAccount({
                 userId: account.userId,
                 accountId: account.id,
                 inputSource: providerInputSource(accountData.institutionName),
@@ -457,7 +498,7 @@ export class SyncExchangeBalancesUseCase {
                 absentFiatConfirmations: accountData.absentFiatConfirmations,
                 sourceTag: EXCHANGE_BALANCE_SYNC_SOURCE,
                 respectHiddenForCounts: false,
-                skipUnchangedUpdates: true,
+                unchangedCheckpoint: 'skip',
                 // Exchange sync auto-creates new tokens (a deposit on
                 // the exchange should appear in the user's portfolio).
                 // Only the wallet recurring sync is locked down.
@@ -465,11 +506,19 @@ export class SyncExchangeBalancesUseCase {
                 arrival: 'auto_discovered',
                 tx,
               }),
+            }),
             { name: 'syncExchangeBalances', timeout: 120000 }
           );
+          if (ledgerRead.kind === 'read' && ingested) {
+            const ledger = await this.ledgerSync.finish(ledgerRead.fetched, ingested);
+            if (ledger.transactions > 0) {
+              ledgerWrites.push({ userId: account.userId, accountId: account.id, result: ledger });
+            }
+          }
           holdingsUpdated += result.updated;
           holdingsCreated += result.created;
           holdingsRemoved += result.removed;
+          changedUsers.record(account.userId, result);
 
           // Two claims, deliberately separate (SC-384). `lastSync` is when
           // we reached the source; `balancesAsOf` is the moment the
@@ -513,6 +562,8 @@ export class SyncExchangeBalancesUseCase {
         }
       }
 
+      changedUsers.announce('exchange_balance_sync');
+
       const accountsFound = accountsSynced + accountsFailed;
       const durationMs = Date.now() - startTime;
 
@@ -522,6 +573,7 @@ export class SyncExchangeBalancesUseCase {
           accountsSynced,
           accountsFailed,
           credentialsBlocked,
+          credentialsIdleSkipped,
           holdingsUpdated,
           holdingsCreated,
           holdingsRemoved,
@@ -536,10 +588,12 @@ export class SyncExchangeBalancesUseCase {
         accountsSynced,
         accountsFailed,
         credentialsBlocked,
+        credentialsIdleSkipped,
         holdingsUpdated,
         holdingsCreated,
         holdingsRemoved,
         errors,
+        ledgerWrites,
         durationMs,
       };
     } catch (error) {

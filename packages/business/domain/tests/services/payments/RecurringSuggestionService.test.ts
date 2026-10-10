@@ -162,6 +162,15 @@ describe('RecurringSuggestionService', () => {
   });
 
   describe('a payee paid in coins worth the same is one series', () => {
+    async function usdOf(tx: DatabaseTransaction) {
+      const [usd] = await tx
+        .select({ id: schema.tokens.id })
+        .from(schema.tokens)
+        .innerJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
+        .where(and(eq(schema.tokens.symbol, 'USD'), eq(schema.tokenTypes.code, 'fiat')));
+      if (!usd) throw new Error('the fiat USD is seeded by migration');
+      return usd;
+    }
     async function coins(tx: DatabaseTransaction, userId: string, prices: string[]) {
       const [usd] = await tx
         .select()
@@ -259,6 +268,31 @@ describe('RecurringSuggestionService', () => {
           .where(and(eq(schema.tokens.symbol, 'USD'), inArray(schema.tokens.typeId, fiat)));
 
         await expect(service().list(user.id, AS_OF, tx)).rejects.toThrow('no fiat USD token');
+      });
+    });
+
+    // Foundation A3, Task 16: compared through `PriceReader`, so a rate stored
+    // the other way round prices a coin as a direct one does.
+    test('a coin priced only by USD’s price in it is compared too', async () => {
+      await withTestDb(async (tx) => {
+        const { user } = await seed(tx);
+        const [direct, inverse] = await coins(tx, user.id, ['2', '2']);
+        // The second coin's direct row becomes the USD priced in the coin.
+        await tx
+          .update(schema.tokenPrices)
+          .set({
+            tokenId: (await usdOf(tx)).id,
+            baseTokenId: inverse?.token.id as string,
+            price: '0.5',
+          })
+          .where(eq(schema.tokenPrices.tokenId, inverse?.token.id as string));
+        for (const [i, d] of MONTHS.entries()) {
+          await payIn(tx, user.id, (i % 2 ? inverse : direct)?.holding.id as string, d);
+        }
+
+        const [s, ...rest] = await service().list(user.id, AS_OF, tx);
+        expect(rest).toEqual([]);
+        expect(s).toMatchObject({ amount: '120', currencyTokenId: inverse?.token.id });
       });
     });
 

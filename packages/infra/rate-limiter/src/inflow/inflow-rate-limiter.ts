@@ -20,6 +20,12 @@ export interface InflowRateLimiterOptions {
   namespace: string;
   /** Custom keying function (default: IP from edge proxy headers). */
   key?: InflowKeyFn;
+  /**
+   * The clock the window is read from (default `Date.now`). Windows align to
+   * the wall clock, so a test counting calls against a real one fails
+   * whenever its calls straddle a window edge (main build #1731).
+   */
+  now?: () => number;
 }
 
 /**
@@ -91,12 +97,14 @@ export abstract class InflowRateLimiter {
   protected readonly max: number;
   protected readonly namespace: string;
   protected readonly keyFn: InflowKeyFn;
+  private readonly now: () => number;
 
   constructor(opts: InflowRateLimiterOptions) {
     this.windowSec = Math.max(1, Math.floor(opts.windowMs / 1000));
     this.max = Math.max(1, opts.max);
     this.namespace = opts.namespace;
     this.keyFn = opts.key ?? ((req) => defaultInflowKey(req));
+    this.now = opts.now ?? Date.now;
   }
 
   async tryConsume(
@@ -118,7 +126,7 @@ export abstract class InflowRateLimiter {
     identity: string,
     tokens = 1
   ): Promise<{ ok: true } | { ok: false; retryAfterSec: number }> {
-    const nowSec = Math.floor(Date.now() / 1000);
+    const nowSec = Math.floor(this.now() / 1000);
     const windowStart = Math.floor(nowSec / this.windowSec) * this.windowSec;
     const count = await this.incrementCounter(identity, windowStart, tokens);
     if (count <= this.max) return { ok: true };

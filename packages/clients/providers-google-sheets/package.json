@@ -20,7 +20,7 @@
     "@scani/rate-limiter": "workspace:*",
     "decimal.js": "^10.6.0",
     "drizzle-orm": "^0.45.3",
-    "googleapis": "^160.0.0",
+    "googleapis": "^183.0.0",
     "ioredis": "^5.11.1"
   },
   "devDependencies": {

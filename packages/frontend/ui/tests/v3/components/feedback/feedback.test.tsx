@@ -103,4 +103,16 @@ describe('QueryError', () => {
     const html = renderToStaticMarkup(<QueryError error={null} subject="x" onRetry={() => {}} />);
     expect(html).toInclude('border-border-strong');
   });
+
+  /** Inside a `Block` the block's own edge is the panel's edge; a second
+   *  border there draws a box in a box (SC-1668). */
+  test('the inline variant keeps the alert and the retry, and draws no panel', () => {
+    const html = renderToStaticMarkup(
+      <QueryError error={null} subject="your vaults" onRetry={() => {}} variant="inline" />
+    );
+    expect(html).toInclude('role="alert"');
+    expect(html).toInclude('Try again');
+    expect(html).not.toInclude('border-border-strong');
+    expect(html).not.toInclude('bg-surface-1');
+  });
 });

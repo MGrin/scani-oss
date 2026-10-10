@@ -173,7 +173,9 @@ const SheetContent = React.forwardRef<
         {dismissible ? (
           <SheetPrimitive.Close
             className="absolute end-3 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-secondary"
-            style={{ top: 'calc(0.875rem + env(safe-area-inset-top, 0px))' }}
+            style={{
+              top: 'calc(0.875rem + var(--scani-inset-top, env(safe-area-inset-top, 0px)))',
+            }}
           >
             <X className="h-4 w-4" />
             <span className="sr-only">{t('ui.sheet.close')}</span>

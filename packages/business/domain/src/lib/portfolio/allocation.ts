@@ -4,11 +4,19 @@ import Decimal from 'decimal.js';
 type DebtCandidate = {
   holding: { balance: string; isActive: boolean };
   token: { id: string };
+  /** SC-1640: a liability account's negative holding is a loan or card, not margin. */
+  account?: { class?: 'asset' | 'liability' };
 };
 
 type AllocatableHolding = DebtCandidate & {
   token: { symbol: string; name: string; typeId: string; typeCode: string; typeName: string };
-  account: { id: string; name: string; typeCode: string; typeName: string };
+  account: {
+    id: string;
+    name: string;
+    typeCode: string;
+    typeName: string;
+    treatment?: string | null;
+  };
   institution: { id: string; name: string; typeCode: string; typeName: string };
 };
 
@@ -23,26 +31,32 @@ type Bucket = { key: string; id: string; code: string; name: string };
  *
  * Inactive and unpriced holdings stay in `assets` untouched — they are neither
  * slice nor debt, and each caller already has its own rule for them.
+ *
+ * `totalDebt` is ALL debt, so every net-total reader stays right.
+ * `liabilityDebt` is the part of it held on liability accounts (SC-1640);
+ * margin alone is the difference.
  */
 export function splitDebt<H extends DebtCandidate>(
   holdings: readonly H[],
   priceMap: Map<string, string>
-): { assets: H[]; marginDebt: Decimal } {
+): { assets: H[]; totalDebt: Decimal; liabilityDebt: Decimal } {
   const assets: H[] = [];
-  let marginDebt = new Decimal(0);
+  let totalDebt = new Decimal(0);
+  let liabilityDebt = new Decimal(0);
   for (const entry of holdings) {
     const value = activeValue(entry, priceMap);
     if (value?.isNegative()) {
-      marginDebt = marginDebt.plus(value);
+      totalDebt = totalDebt.plus(value);
+      if (entry.account?.class === 'liability') liabilityDebt = liabilityDebt.plus(value);
     } else {
       assets.push(entry);
     }
   }
-  return { assets, marginDebt };
+  return { assets, totalDebt, liabilityDebt };
 }
 
 /**
- * The allocation slices for one dimension, and the margin debt kept beside
+ * The allocation slices for one dimension, and the debt kept beside
  * them. Each `percentage` is a share of gross assets — the sum of the slices —
  * so the slices add to 100 whatever the debt.
  */
@@ -50,8 +64,8 @@ export function aggregateAllocation(
   holdings: readonly AllocatableHolding[],
   priceMap: Map<string, string>,
   dimension: Exclude<AssetAllocationDimension, 'group'>
-): { items: AssetAllocationItem[]; marginDebt: Decimal } {
-  const { assets, marginDebt } = splitDebt(holdings, priceMap);
+): { items: AssetAllocationItem[]; totalDebt: Decimal; liabilityDebt: Decimal } {
+  const { assets, totalDebt, liabilityDebt } = splitDebt(holdings, priceMap);
   const buckets = new Map<string, Bucket & { value: Decimal }>();
 
   for (const entry of assets) {
@@ -78,7 +92,7 @@ export function aggregateAllocation(
       percentage: shareOf(bucket.value, gross),
     }));
 
-  return { items, marginDebt };
+  return { items, totalDebt, liabilityDebt };
 }
 
 export function shareOf(value: Decimal.Value, gross: Decimal): string {
@@ -111,6 +125,10 @@ function bucketFor(
         code: account.typeCode,
         name: account.typeName,
       };
+    case 'treatment': {
+      const treatment = account.treatment ?? 'general';
+      return { key: treatment, id: treatment, code: treatment, name: treatment };
+    }
     case 'institution':
       return {
         key: institution.id,

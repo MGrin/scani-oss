@@ -10,7 +10,6 @@ import {
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { VaultService } from '../services';
 import { type SnapshotEntry, SnapshotWriter } from '../services/feeds/SnapshotWriter';
-import { APY_LEGACY_ANCHOR, LEGACY_ANCHOR_KEY } from '../services/foundation/legacy-ledger-kinds';
 
 const logger = createComponentLogger('use-case:apply-apy-payouts');
 
@@ -279,16 +278,6 @@ export class ApplyApyPayoutsUseCase {
             holdingId: holding.id,
             entries,
             cache: { holdingId: holding.id, balance: newBalance },
-            // The copy `updateHoldingBalance` wrote after every run (ruling R11),
-            // plus the marker classification knows it by when the run booked no
-            // row (ruling R12).
-            legacyObservation: {
-              source: 'sync-capture',
-              sourceMetadata: {
-                origin: 'updateHoldingBalance',
-                [LEGACY_ANCHOR_KEY]: APY_LEGACY_ANCHOR,
-              },
-            },
           },
           tx
         );

@@ -1,5 +1,14 @@
 import { relations, sql } from 'drizzle-orm';
-import { boolean, index, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  boolean,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
+} from 'drizzle-orm/pg-core';
 import { accounts } from './accounts';
 import { groups } from './groups';
 import { holdings } from './holdings';
@@ -17,6 +26,8 @@ export const users = pgTable(
     id: uuid('id').defaultRandom().primaryKey(),
     email: text('email').notNull(),
     emailVerified: boolean('email_verified').notNull().default(false),
+    // Better-Auth's twoFactor plugin reads and writes this (SC-1646).
+    twoFactorEnabled: boolean('two_factor_enabled').notNull().default(false),
     name: text('name').notNull(),
     avatar: text('avatar'),
     image: text('image'), // Better-Auth canonical field; we keep `avatar` too for back-compat
@@ -85,6 +96,10 @@ export const users = pgTable(
     // Once ever. Claimed before the send, cleared if the send fails (SC-1503).
     activationNudgeSentAt: timestamp('activation_nudge_sent_at', { withTimezone: true }),
     onboardingOptOutAt: timestamp('onboarding_opt_out_at', { withTimezone: true }),
+    // When the app was last open and visible (SC-1602): stamped on open and
+    // every 15 minutes while the tab is in front. The quarter-hour crypto
+    // pricing run reads it.
+    appSeenAt: timestamp('app_seen_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -174,6 +189,50 @@ export const userVerifications = pgTable('user_verifications', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** A TOTP secret and its encrypted backup codes; Better-Auth's twoFactor plugin owns the shape (SC-1646). */
+export const userTwoFactors = pgTable(
+  'user_two_factors',
+  {
+    id: text('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    secret: text('secret').notNull(),
+    backupCodes: text('backup_codes').notNull(),
+    verified: boolean('verified').notNull().default(true),
+    failedVerificationCount: integer('failed_verification_count').notNull().default(0),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  },
+  (table) => ({
+    userIdx: index('user_two_factors_user_id_idx').on(table.userId),
+    secretIdx: index('user_two_factors_secret_idx').on(table.secret),
+  })
+);
+
+/** A WebAuthn credential; Better-Auth's passkey plugin owns the shape (SC-1646). */
+export const userPasskeys = pgTable(
+  'user_passkeys',
+  {
+    id: text('id').primaryKey(),
+    name: text('name'),
+    publicKey: text('public_key').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    credentialID: text('credential_id').notNull(),
+    counter: integer('counter').notNull(),
+    deviceType: text('device_type').notNull(),
+    backedUp: boolean('backed_up').notNull(),
+    transports: text('transports'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    aaguid: text('aaguid'),
+  },
+  (table) => ({
+    userIdx: index('user_passkeys_user_id_idx').on(table.userId),
+    credentialIdx: uniqueIndex('user_passkeys_credential_id_idx').on(table.credentialID),
+  })
+);
 
 /**
  * Every time this account's cost-basis method changed (SC-957).

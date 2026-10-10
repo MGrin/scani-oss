@@ -29,10 +29,31 @@ const KIND_KEYS: Readonly<Record<string, string>> = {
   correction: 'v3.holdings.activity.kind.correction',
 };
 
+/** The fields of a ledger row its label is read from. */
+export interface ActivityRow {
+  kind: string;
+  quantity: string;
+  kindSubtype?: string | null;
+  feeOf?: string | null;
+}
+
 /**
+ * A dividend is labelled from its ledger subtype, because its legacy kind is
+ * still `reward` (SC-1644), and the tax taken from it is a fee linked to it.
+ * `dividendIds` are the dividend rows in the same list: a fee is called tax
+ * only when the row it is linked to is one of them.
+ *
  * A kind this build does not name — `unknown`, or one a newer server writes —
  * falls back to its direction rather than to the identifier.
  */
-export function activityKindLabel(t: TFunction, kind: string, quantity: string): string {
-  return t(KIND_KEYS[kind] ?? (quantity.trim().startsWith('-') ? MONEY_OUT : MONEY_IN));
+export function activityKindLabel(
+  t: TFunction,
+  row: ActivityRow,
+  dividendIds: ReadonlySet<string>
+): string {
+  if (row.kindSubtype === 'dividend') return t('v3.holdings.activity.kind.dividend');
+  if (row.kind === 'fee' && row.feeOf && dividendIds.has(row.feeOf)) {
+    return t('v3.holdings.activity.kind.taxWithheld');
+  }
+  return t(KIND_KEYS[row.kind] ?? (row.quantity.trim().startsWith('-') ? MONEY_OUT : MONEY_IN));
 }

@@ -1,14 +1,17 @@
 import type { DatabaseTransaction } from '@scani/db';
 import type { Account } from '@scani/db/schema';
+import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { AccountWihSumaryDTO, CreateAccountInput } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { RecordNotAccessibleError } from '../../lib/record-not-accessible';
 import { AccountRepository } from '../../repositories/AccountRepository';
+import { AccountWrapperRepository } from '../../repositories/AccountWrapperRepository';
 import { AccountTypeRepository } from '../../repositories/EnumRepositories';
 import { GroupRepository } from '../../repositories/GroupRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { InstitutionRepository } from '../../repositories/InstitutionRepository';
+import { UserIntegrationCredentialsRepository } from '../../repositories/UserIntegrationCredentialsRepository';
 import { UserRepository } from '../../repositories/UserRepository';
 import { BaseService } from '../BaseService';
 import {
@@ -18,17 +21,43 @@ import {
 } from '../portfolio/PortfolioValuationService';
 import { IntegrationCredentialsService } from '../users/IntegrationCredentialsService';
 import { UserWalletService } from '../users/UserWalletService';
+import { type KeyRejected, keyRejectedByInstitution } from './key-rejected';
+
+export class WrapperOnLiabilityAccount extends Error {
+  constructor() {
+    super('A wrapper belongs on an asset account');
+    this.name = 'WrapperOnLiabilityAccount';
+  }
+}
+
+export class UnknownWrapper extends Error {
+  constructor() {
+    super('Unknown account wrapper');
+    this.name = 'UnknownWrapper';
+  }
+}
+
+export class AccountClassChange extends Error {
+  constructor() {
+    super(
+      'An asset account cannot become a liability, or the other way round: the balance’s sign means something different on each side'
+    );
+    this.name = 'AccountClassChange';
+  }
+}
 
 @Service()
 export class AccountService extends BaseService {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly accountTypeRepository = Container.get(AccountTypeRepository);
+  private readonly accountWrapperRepository = Container.get(AccountWrapperRepository);
   private readonly institutionRepository = Container.get(InstitutionRepository);
   private readonly groupRepository = Container.get(GroupRepository);
   private readonly userWalletService = Container.get(UserWalletService);
   private readonly integrationCredentialsService = Container.get(IntegrationCredentialsService);
   private readonly userRepository = Container.get(UserRepository);
+  private readonly credentialsRepository = Container.get(UserIntegrationCredentialsRepository);
   private readonly portfolioValuationService = Container.get(PortfolioValuationService);
 
   constructor() {
@@ -60,6 +89,8 @@ export class AccountService extends BaseService {
         );
       }
 
+      await this.assertWrapperFits(data.typeId, data.wrapper, tx);
+
       const account = await this.accountRepository.create(
         {
           name: data.name,
@@ -67,6 +98,7 @@ export class AccountService extends BaseService {
           institutionId: data.institutionId!,
           userId,
           description: data.description || null,
+          wrapper: data.wrapper ?? null,
           metadata: {},
           isActive: true,
         },
@@ -128,12 +160,13 @@ export class AccountService extends BaseService {
     if (accounts.length === 0) return [];
 
     const accountIds = accounts.map((a) => a.id);
-    const [holdings, groupsMap, portfolio] = await Promise.all([
+    const [holdings, groupsMap, portfolio, keyRejected] = await Promise.all([
       this.holdingRepository.findByUser(userId),
       this.groupRepository.findGroupsForAccounts(accountIds),
       user?.baseCurrencyId
         ? this.portfolioValuationService.getUserPortfolioValue(userId, user.baseCurrencyId)
         : Promise.resolve(null),
+      this.keyRejectedFor(userId),
     ]);
 
     const holdingsCountByAccount = new Map<string, number>();
@@ -154,9 +187,10 @@ export class AccountService extends BaseService {
         summary: {
           holdingsCount: holdingsCountByAccount.get(account.id) ?? 0,
           totalValue: (valueByAccount.get(account.id) ?? new Decimal(0)).toString(),
-          marginDebt: (debtByAccount.get(account.id) ?? new Decimal(0)).toString(),
+          totalDebt: (debtByAccount.get(account.id) ?? new Decimal(0)).toString(),
         },
         groups: accountGroups.map((g) => ({ id: g.id, name: g.name, color: g.color })),
+        keyRejected: keyRejected.get(account.institutionId) ?? null,
       };
     });
   }
@@ -175,27 +209,38 @@ export class AccountService extends BaseService {
     ]);
     if (!account || account.userId !== userId) return null;
 
-    const [holdings, groupsMap, portfolio] = await Promise.all([
+    const [holdings, groupsMap, portfolio, keyRejected] = await Promise.all([
       this.holdingRepository.findByUser(userId),
       this.groupRepository.findGroupsForAccounts([accountId]),
       user?.baseCurrencyId
         ? this.portfolioValuationService.getUserPortfolioValue(userId, user.baseCurrencyId)
         : Promise.resolve(null),
+      this.keyRejectedFor(userId),
     ]);
 
     const holdingsCount = holdings.filter((h) => h.accountId === accountId).length;
     const accountGroups = groupsMap.get(accountId) || [];
     const totalValue = sumPortfolioValuesByAccount(portfolio).get(accountId) ?? new Decimal(0);
-    const marginDebt = sumPortfolioDebtByAccount(portfolio).get(accountId) ?? new Decimal(0);
+    const totalDebt = sumPortfolioDebtByAccount(portfolio).get(accountId) ?? new Decimal(0);
     return {
       ...account,
       summary: {
         holdingsCount,
         totalValue: totalValue.toString(),
-        marginDebt: marginDebt.toString(),
+        totalDebt: totalDebt.toString(),
       },
       groups: accountGroups.map((g) => ({ id: g.id, name: g.name, color: g.color })),
+      keyRejected: keyRejected.get(account.institutionId) ?? null,
     };
+  }
+
+  private async keyRejectedFor(userId: string): Promise<Map<string, KeyRejected>> {
+    const rejected = await this.credentialsRepository.findKeyRejected(userId);
+    if (rejected.length === 0) return new Map();
+    return keyRejectedByInstitution(
+      rejected,
+      Container.get(ProviderRegistry).listIntegrationManifests()
+    );
   }
 
   async deleteAccount(accountId: string, userId: string): Promise<boolean> {
@@ -333,6 +378,7 @@ export class AccountService extends BaseService {
       typeId?: string;
       institutionId?: string;
       description?: string | null;
+      wrapper?: string | null;
     },
     userId: string,
     tx?: DatabaseTransaction
@@ -379,7 +425,11 @@ export class AccountService extends BaseService {
       if (data.typeId !== undefined && data.typeId !== existing.typeId) {
         const accountType = await this.accountTypeRepository.findById(data.typeId, tx);
         this.assertExists(accountType, `Account type with ID ${data.typeId} not found`);
+        const current = await this.accountTypeRepository.findById(existing.typeId, tx);
+        if (current && accountType.class !== current.class) throw new AccountClassChange();
       }
+
+      await this.assertWrapperFits(data.typeId ?? existing.typeId, data.wrapper, tx);
 
       const updated = await this.accountRepository.updateAccount(accountId, data, tx);
       this.logInfo('Account updated', { accountId });
@@ -387,6 +437,18 @@ export class AccountService extends BaseService {
     } catch (error) {
       throw this.handleError(error, 'updateAccount');
     }
+  }
+
+  /** SC-1645: a wrapper must be a known code, on an account of an asset type. */
+  private async assertWrapperFits(
+    typeId: string,
+    wrapper: string | null | undefined,
+    tx?: DatabaseTransaction
+  ): Promise<void> {
+    if (wrapper === undefined || wrapper === null) return;
+    const type = await this.accountTypeRepository.findById(typeId, tx);
+    if (type?.class === 'liability') throw new WrapperOnLiabilityAccount();
+    if (!(await this.accountWrapperRepository.findByCode(wrapper, tx))) throw new UnknownWrapper();
   }
 
   /**

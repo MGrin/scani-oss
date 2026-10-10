@@ -11,10 +11,10 @@ import { resolveActiveFilters, type V3FilterDef } from '@scani/ui/v3/lib/data-vi
 import { readDataViewUrl } from '@scani/ui/v3/lib/data-view-url';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { refineSheet } from '@scani/ui/v3/lib/sheet';
-import { Plus } from 'lucide-react';
+import { Plus, ReceiptText } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { type BaseCurrencyRates, useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
 import { CreateVendorSheet } from '../components/money/CreateVendorSheet';
@@ -39,7 +39,7 @@ import {
   historyEstimatesByPaymentId,
   todayDateString,
 } from '../lib/paymentTotals';
-import { PAYMENT_SHEET } from '../lib/routes';
+import { PAYMENT_SHEET, V3_ROUTES } from '../lib/routes';
 
 type Occurrence = RouterOutputs['payments']['upcoming'][number];
 
@@ -109,19 +109,27 @@ export function MoneyPage() {
       <PageHeader
         title={t('v3.money.page.title')}
         action={
-          segment === 'vendors' ? (
-            <Button onClick={() => setCreatingVendor(true)}>
-              <Plus className="me-1.5 h-4 w-4" aria-hidden="true" />
-              {t('v3.money.page.newVendor')}
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link to={V3_ROUTES.transactions}>
+                <ReceiptText className="me-1.5 h-4 w-4" aria-hidden="true" />
+                {t('v3.transactions.title')}
+              </Link>
             </Button>
-          ) : (
-            <Button asChild>
-              <PaymentSheetLink sheet={PAYMENT_SHEET.create}>
+            {segment === 'vendors' ? (
+              <Button onClick={() => setCreatingVendor(true)}>
                 <Plus className="me-1.5 h-4 w-4" aria-hidden="true" />
-                {t('v3.money.page.addPayment')}
-              </PaymentSheetLink>
-            </Button>
-          )
+                {t('v3.money.page.newVendor')}
+              </Button>
+            ) : (
+              <Button asChild>
+                <PaymentSheetLink sheet={PAYMENT_SHEET.create}>
+                  <Plus className="me-1.5 h-4 w-4" aria-hidden="true" />
+                  {t('v3.money.page.addPayment')}
+                </PaymentSheetLink>
+              </Button>
+            )}
+          </div>
         }
       />
 

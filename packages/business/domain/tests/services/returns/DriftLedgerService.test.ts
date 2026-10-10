@@ -3,10 +3,12 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy
 import { describe, expect, test } from 'bun:test';
 import type { HoldingTransaction } from '@scani/db/schema';
 import { Container } from 'typedi';
-import { HoldingBalanceObservationRepository } from '../../../src/repositories/HoldingBalanceObservationRepository';
+import { EngineEvidenceRepository } from '../../../src/repositories/EngineEvidenceRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { DriftLedgerService } from '../../../src/services/returns/DriftLedgerService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { rawEvidence } from '../../../test/helpers/raw-evidence';
 
 /**
  * The memo is keyed on the handed ledger map, and the answer also depends on
@@ -16,24 +18,22 @@ import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
 restoreContainerAfterAll();
 
-const reading = (holdingId: string) => ({
-  holdingId,
-  observedAt: new Date('2026-03-02T10:00:00Z'),
-  balance: '100',
-  gapReview: null,
-});
+const reading = { observedAt: new Date('2026-03-02T10:00:00Z'), balance: '100' };
 
 function harness() {
   const readsAskedFor: string[][] = [];
   Container.set(HoldingTransactionRepository, {
     findForHoldingsAll: async () => new Map(),
   } as unknown as HoldingTransactionRepository);
-  Container.set(HoldingBalanceObservationRepository, {
-    findReadingsForHoldings: async (ids: string[]) => {
-      readsAskedFor.push([...ids]);
-      return new Map(ids.map((id) => [id, [reading(id)]]));
+  Container.set(PriceReader, {
+    firstReadingAt: async () => new Map(),
+  } as unknown as PriceReader);
+  Container.set(EngineEvidenceRepository, {
+    findHoldingEvidence: async ({ holdingIds }: { holdingIds: string[] }) => {
+      readsAskedFor.push([...holdingIds]);
+      return holdingIds.map((id) => rawEvidence(id, [reading]));
     },
-  } as unknown as HoldingBalanceObservationRepository);
+  } as unknown as EngineEvidenceRepository);
   return { service: new DriftLedgerService(), readsAskedFor };
 }
 

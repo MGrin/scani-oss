@@ -19,7 +19,9 @@
       "humanCheckFailed": "La vérification humaine n'a pas pu se charger. Désactivez tout bloqueur pour challenges.cloudflare.com, puis rechargez.",
       "cloudTitle": "Connexion à Scani Cloud",
       "cloudSubtitle": "Vos clés d'API se trouvent dans la console Scani Cloud. Saisissez votre e-mail pour vous connecter ou créer un compte.",
-      "cloudNewAccount": "Nouveau sur Scani Cloud ? Votre compte est créé automatiquement et vous revenez directement à la console."
+      "cloudNewAccount": "Nouveau sur Scani Cloud ? Votre compte est créé automatiquement et vous revenez directement à la console.",
+      "passkey": "Se connecter avec une clé d'accès",
+      "passkeyFailed": "Cet appareil n'a pas pu utiliser de clé d'accès. Connectez-vous avec votre e-mail."
     },
     "code": {
       "title": "Saisissez le code de vérification",
@@ -55,6 +57,16 @@
     },
     "exits": {
       "label": "En savoir plus sur Scani"
+    },
+    "twoFactor": {
+      "title": "Connexion en deux étapes",
+      "subtitle": "Saisissez le code de votre application d'authentification.",
+      "codeLabel": "Code à 6 chiffres",
+      "backupLabel": "Code de secours",
+      "trustDevice": "Faire confiance à cet appareil pendant 30 jours",
+      "submit": "Continuer",
+      "useBackup": "Utiliser un code de secours",
+      "useAuthenticator": "Utiliser mon application d'authentification"
     }
   },
   "currency": {
@@ -97,6 +109,7 @@
     "vaults": "Objectifs",
     "tokens": "Jetons",
     "jobs": "Tâches",
+    "transactions": "Transactions",
     "settings": "Paramètres",
     "signOut": "Se déconnecter",
     "more": "Plus",
@@ -113,7 +126,6 @@
   },
   "settings": {
     "title": "Paramètres",
-    "subtitle": "Gérez vos préférences",
     "profile": "Profil",
     "name": "Nom",
     "namePlaceholder": "Votre nom",
@@ -222,7 +234,13 @@
         "balanceChanges_many": "changements de solde",
         "balanceChanges_counted_many": "{{count}} changements de solde",
         "balanceChanges_other": "changements de solde",
-        "balanceChanges_counted_other": "{{count}} changements de solde"
+        "balanceChanges_counted_other": "{{count}} changements de solde",
+        "transactions_one": "transaction",
+        "transactions_many": "transactions",
+        "transactions_other": "transactions",
+        "transactions_counted_one": "{{count}} transaction",
+        "transactions_counted_many": "{{count}} transactions",
+        "transactions_counted_other": "{{count}} transactions"
       },
       "accounts": {
         "col": {
@@ -444,7 +462,8 @@
           "noRecentPrice": "Aucun prix récent",
           "noPriceSource": "Aucune source de prix utilisable",
           "negativeOpening": "Solde d’ouverture négatif",
-          "noCoverage": "Aucune ligne de couverture"
+          "noCoverage": "Aucune ligne de couverture",
+          "restoredUnmatched": "Jeton non reconnu à la restauration"
         },
         "priceOption": {
           "stale": "Cotation périmée"
@@ -893,6 +912,29 @@
           "answersLandHere": "Les réponses données dans la file des soldes arrivent ici, pour que vous puissiez en annuler une.",
           "nothingAnsweredYet": "Aucun changement de solde expliqué pour l'instant"
         }
+      },
+      "transactions": {
+        "col": {
+          "date": "Date",
+          "description": "Description",
+          "account": "Compte",
+          "category": "Catégorie",
+          "amount": "Montant"
+        },
+        "empty": {
+          "title": "Aucune transaction pour l’instant",
+          "description": "Les lignes arrivent quand vos comptes se synchronisent ou quand vous importez des relevés."
+        },
+        "filter": {
+          "category": "Catégorie",
+          "account": "Compte",
+          "holding": "Actif",
+          "period": "Période"
+        },
+        "period": {
+          "all": "Toute la période",
+          "custom": "Période personnalisée"
+        }
       }
     },
     "brand": {
@@ -1077,5 +1119,21 @@
     "signInDifferent": "Se connecter avec une autre adresse e-mail",
     "connectionIssue": "Problème de connexion",
     "connectionIssueRetrying": "Problème de connexion — nouvelle tentative"
+  },
+  "oauth": {
+    "continuing": "Connexion…",
+    "failed": "La connexion n’a pas pu aboutir. Recommencez depuis l’app que vous connectiez.",
+    "consent": {
+      "title": "{{name}} souhaite lire votre portefeuille Scani",
+      "account": "Connecté en tant que {{email}}",
+      "canTitle": "Elle pourra",
+      "can": "Lire vos positions, comptes, transactions, rendements et rapport de qualité des données.",
+      "cannotTitle": "Elle ne pourra pas",
+      "cannot": "Modifier, ajouter ou supprimer quoi que ce soit, ni déplacer de l’argent.",
+      "revoke": "Vous pouvez la déconnecter à tout moment dans les Réglages.",
+      "allow": "Autoriser",
+      "deny": "Refuser",
+      "unnamedApp": "Une app"
+    }
   }
 }

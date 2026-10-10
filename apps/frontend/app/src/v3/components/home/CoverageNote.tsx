@@ -30,7 +30,7 @@ import { TRANSFER_REVIEW_PATH } from '../../lib/routes';
  * **Monochrome, and quieter when the news is good.** A full house is read in
  * muted ink; anything short of it darkens. Colour would have to compete with
  * the `<DeltaPill>` one line above, where green and red already mean something
- * specific about money, and v3 has no third tone that does not (`AttentionRow`
+ * specific about money, and v3 has no third tone that does not (`NeedsYou`
  * makes the same call, and notes that amber would read as "stale price" — which
  * here would be a claim about one of these three counts and not the others).
  *

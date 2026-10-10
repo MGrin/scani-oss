@@ -1,11 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
-import {
-  histDepositToEvent,
-  histWithdrawalToEvent,
-  KucoinProvider,
-  ledgerItemToEvent,
-} from '../../src/providers/kucoin';
+import type { TransactionEvent } from '../../src/core/types';
+import { KucoinProvider, ledgerItemToEvent } from '../../src/providers/kucoin';
 import { mapKucoinBizType } from '../../src/providers/kucoin/biz-types';
 
 function passthroughLimiter(): OutflowRateLimiter {
@@ -150,37 +146,10 @@ describe('KucoinProvider — pure mappers', () => {
       })
     ).toBeNull();
   });
-
-  test('histDepositToEvent: positive deposit, prefixed externalId', () => {
-    const event = histDepositToEvent({
-      currency: 'eth',
-      createAt: 1700000000,
-      amount: '2.5',
-      walletTxId: '0xdeadbeef',
-    });
-    expect(event.kind).toBe('deposit');
-    expect(event.primary.quantity).toBe('2.5');
-    expect(event.primary.tokenIdentity.symbol).toBe('ETH');
-    expect(event.externalId).toBe('hist-deposit:0xdeadbeef');
-    expect(event.occurredAt.getTime()).toBe(1700000000 * 1000);
-  });
-
-  test('histWithdrawalToEvent: amount comes back negative', () => {
-    const event = histWithdrawalToEvent({
-      id: 'w-9',
-      currency: 'btc',
-      createAt: 1700000050,
-      amount: '0.1',
-      walletTxId: '0xabc',
-    });
-    expect(event.kind).toBe('withdraw');
-    expect(event.primary.quantity).toBe('-0.1');
-    expect(event.externalId).toBe('hist-withdrawal:w-9');
-  });
 });
 
 describe('KucoinProvider.fetchTransactions — fixture-driven', () => {
-  test('walks ledger + hist-deposits + hist-withdrawals and dedups by externalId', async () => {
+  test('walks the ledger and dedups by externalId', async () => {
     const restore = installFetch([
       {
         match: (u) => u.includes('/api/v1/accounts/ledgers'),
@@ -217,29 +186,6 @@ describe('KucoinProvider.fetchTransactions — fixture-driven', () => {
           },
         ]),
       },
-      {
-        match: (u) => u.includes('/api/v1/hist-deposits'),
-        body: pagedEnvelope([
-          {
-            currency: 'ETH',
-            createAt: 1690000000,
-            amount: '1.5',
-            walletTxId: '0xeeed',
-          },
-        ]),
-      },
-      {
-        match: (u) => u.includes('/api/v1/hist-withdrawals'),
-        body: pagedEnvelope([
-          {
-            id: 'w-1',
-            currency: 'BTC',
-            createAt: 1690000050,
-            amount: '0.01',
-            walletTxId: '0xwww',
-          },
-        ]),
-      },
     ]);
 
     try {
@@ -254,13 +200,11 @@ describe('KucoinProvider.fetchTransactions — fixture-driven', () => {
       expect(kinds).toContain('deposit');
       expect(kinds).toContain('sell');
       expect(kinds).toContain('swap_in');
-      expect(kinds).toContain('withdraw');
 
       const byId = new Map(events.map((e) => [e.externalId, e]));
       expect(byId.get('ledger:L2')?.primary.quantity).toBe('-0.05');
       expect(byId.get('ledger:L2')?.fee?.quantity).toBe('-0.0001');
-      expect(byId.get('hist-deposit:0xeeed')?.kind).toBe('deposit');
-      expect(byId.get('hist-withdrawal:w-1')?.primary.quantity).toBe('-0.01');
+      expect(byId.get('ledger:L1')?.kind).toBe('deposit');
     } finally {
       restore();
     }
@@ -463,5 +407,316 @@ describe('KucoinProvider — a row with no recognised direction keeps the amount
     const event = ledgerItemToEvent({ ...base, bizType: 'Deposit', amount: '5' } as never);
     expect(event?.kind).toBe('deposit');
     expect(event?.primary.quantity).toBe('5');
+  });
+});
+
+/**
+ * Deposits and withdrawals were also read from `/api/v1/hist-deposits` and
+ * `/api/v1/hist-withdrawals`, which KuCoin's API spec marks deprecated and
+ * which hold only pre-2019-02-18 records (SC-1575). When one refused, the whole
+ * import threw. This stub refuses any path it does not know, as an abandoned
+ * endpoint does.
+ */
+describe('KucoinProvider — no deprecated hist-* endpoint; deposits and withdrawals are ledger rows (SC-1575)', () => {
+  const ledger = pagedEnvelope([
+    {
+      id: 'L-dep',
+      currency: 'USDT',
+      amount: '6',
+      fee: '0',
+      balance: '0',
+      accountType: 'MAIN',
+      bizType: 'Deposit',
+      direction: 'in' as const,
+      createdAt: 1721730920000,
+    },
+    {
+      id: 'L-wd',
+      currency: 'BTC',
+      amount: '2.5',
+      fee: '0.5',
+      balance: '0',
+      accountType: 'MAIN',
+      bizType: 'Withdrawal',
+      direction: 'out' as const,
+      createdAt: 1721730930000,
+    },
+  ]);
+
+  async function fetchLedger(): Promise<{ events: TransactionEvent[]; paths: string[] }> {
+    const paths: string[] = [];
+    const restore = installFetch([
+      {
+        match: (u) => {
+          paths.push(new URL(u).pathname);
+          return false;
+        },
+        body: null,
+      },
+      { match: (u) => u.includes('/api/v1/accounts/ledgers'), body: ledger },
+    ]);
+    try {
+      const events = await new KucoinProvider(passthroughLimiter()).fetchTransactions({
+        ...ctx,
+        since: new Date(1700000000000),
+        until: new Date(1730000000000),
+      } as never);
+      return { events, paths };
+    } finally {
+      restore();
+    }
+  }
+
+  test('an import reads the ledger and no hist-* path, so a refused one cannot fail it', async () => {
+    const { paths, events } = await fetchLedger();
+    // SC-1584 reads the current deposit/withdrawal records for txids; a refusal
+    // there is caught, so the ledger rows still arrive.
+    expect(paths[0]).toBe('/api/v1/accounts/ledgers');
+    expect(paths.some((path) => path.includes('hist-'))).toBe(false);
+    expect(
+      paths.every((path) =>
+        ['/api/v1/accounts/ledgers', '/api/v1/deposits', '/api/v1/withdrawals'].includes(path)
+      )
+    ).toBe(true);
+    expect(events).toHaveLength(2);
+  });
+
+  test('the same history writes the same rows: one per ledger deposit and withdrawal', async () => {
+    const { events } = await fetchLedger();
+    expect(events).toEqual(ledger.data.items.map((item) => ledgerItemToEvent(item)!));
+    expect(events.map((e) => e.externalId)).toEqual(['ledger:L-dep', 'ledger:L-wd']);
+  });
+
+  /**
+   * KuCoin takes a withdrawal fee from the amount or on top of it, chosen by the
+   * main account's balance unless the user set `feeDeductType`, and the
+   * withdrawal record does not say which. The ledger's `amount` is the balance
+   * change with the fee included, so it is the row's whole quantity, and the fee
+   * travels only as the fee field: `kucoin-api` is not a gross-of-own-fee
+   * source, so no second `fee` row subtracts it again.
+   */
+  test('a withdrawal moves the balance by the ledger amount, fee included; the fee is only its field', async () => {
+    const { events } = await fetchLedger();
+    const withdrawal = events.find((e) => e.externalId === 'ledger:L-wd');
+    expect(withdrawal?.kind).toBe('withdraw');
+    expect(withdrawal?.primary.quantity).toBe('-2.5');
+    expect(withdrawal?.fee?.quantity).toBe('-0.5');
+  });
+});
+
+// SC-1584: a deposit or withdrawal ledger row carries the chain txid from its
+// deposit/withdrawal record as `raw_payload.hash`. The join is by currency,
+// side, time and amount, so anything short of one-to-one leaves it unset.
+describe('KucoinProvider.fetchTransactions — txid on deposits and withdrawals', () => {
+  const ledger = (id: string, over: Record<string, unknown>) => ({
+    id,
+    currency: 'USDT',
+    fee: '0',
+    balance: '0',
+    accountType: 'MAIN',
+    ...over,
+  });
+  const record = (over: Record<string, unknown>) => ({
+    currency: 'USDT',
+    chain: 'trx',
+    status: 'SUCCESS',
+    isInner: false,
+    fee: '0',
+    ...over,
+  });
+  async function run(routes: Route[], noted: unknown[] = []) {
+    const restore = installFetch(routes);
+    try {
+      const p = new KucoinProvider(passthroughLimiter());
+      const events = await p.fetchTransactions({
+        ...ctx,
+        noteWarning: (n: unknown) => noted.push(n),
+      } as never);
+      return new Map(events.map((e) => [e.externalId, e.rawPayload as Record<string, unknown>]));
+    } finally {
+      restore();
+    }
+  }
+  const routes = (ledgerRows: unknown[], deposits: unknown[], withdrawals: unknown[]): Route[] => [
+    { match: (u) => u.includes('/api/v1/accounts/ledgers'), body: pagedEnvelope(ledgerRows) },
+    { match: (u) => u.includes('/api/v1/deposits'), body: pagedEnvelope(deposits) },
+    { match: (u) => u.includes('/api/v1/withdrawals'), body: pagedEnvelope(withdrawals) },
+  ];
+
+  test('a deposit gets its record txid with the @suffix stripped, and its chain', async () => {
+    const rows = await run(
+      routes(
+        [
+          ledger('D1', {
+            amount: '100',
+            bizType: 'Deposit',
+            direction: 'in',
+            createdAt: 1_000_000,
+          }),
+        ],
+        [record({ amount: '100', walletTxId: 'abc123@0', createdAt: 1_005_000 })],
+        []
+      )
+    );
+    expect(rows.get('ledger:D1')?.hash).toBe('abc123');
+    expect(rows.get('ledger:D1')?.chain).toBe('trx');
+  });
+
+  test('a withdrawal matches whether the fee came from the amount or on top of it', async () => {
+    const rows = await run(
+      routes(
+        [
+          ledger('W1', {
+            amount: '51',
+            bizType: 'Withdrawal',
+            direction: 'out',
+            createdAt: 2_000_000,
+          }),
+          ledger('W2', {
+            amount: '30',
+            bizType: 'Withdrawal',
+            direction: 'out',
+            createdAt: 9_000_000,
+          }),
+        ],
+        [],
+        [
+          record({
+            id: 'r1',
+            amount: '50',
+            fee: '1',
+            walletTxId: 'tx-on-top',
+            createdAt: 2_010_000,
+          }),
+          record({
+            id: 'r2',
+            amount: '30',
+            fee: '1',
+            walletTxId: 'tx-inside',
+            createdAt: 9_010_000,
+          }),
+        ]
+      )
+    );
+    expect(rows.get('ledger:W1')?.hash).toBe('tx-on-top');
+    expect(rows.get('ledger:W2')?.hash).toBe('tx-inside');
+  });
+
+  test('no txid when the join is ambiguous, internal, unfinished or too far apart', async () => {
+    const rows = await run(
+      routes(
+        [
+          ledger('A1', { amount: '10', bizType: 'Deposit', direction: 'in', createdAt: 3_000_000 }),
+          ledger('I1', {
+            amount: '20',
+            bizType: 'Withdrawal',
+            direction: 'out',
+            createdAt: 4_000_000,
+          }),
+          ledger('P1', { amount: '30', bizType: 'Deposit', direction: 'in', createdAt: 5_000_000 }),
+          ledger('F1', { amount: '40', bizType: 'Deposit', direction: 'in', createdAt: 6_000_000 }),
+        ],
+        [
+          record({ amount: '10', walletTxId: 'twin-a', createdAt: 3_001_000 }),
+          record({ amount: '10', walletTxId: 'twin-b', createdAt: 3_002_000 }),
+          record({
+            amount: '30',
+            walletTxId: 'pending',
+            status: 'PROCESSING',
+            createdAt: 5_000_000,
+          }),
+          record({ amount: '40', walletTxId: 'late', createdAt: 6_000_000 + 61_000 }),
+        ],
+        [record({ id: 'r3', amount: '20', walletTxId: '', isInner: true, createdAt: 4_000_000 })]
+      )
+    );
+    for (const id of ['A1', 'I1', 'P1', 'F1'])
+      expect(rows.get(`ledger:${id}`)?.hash).toBeUndefined();
+  });
+
+  test('a record that also fits an ambiguous row is assigned to neither', async () => {
+    const rows = await run(
+      routes(
+        [
+          ledger('X1', { amount: '10', bizType: 'Deposit', direction: 'in', createdAt: 8_000_000 }),
+          ledger('Y1', { amount: '10', bizType: 'Deposit', direction: 'in', createdAt: 8_050_000 }),
+        ],
+        [
+          record({ amount: '10', walletTxId: 'shared', createdAt: 8_030_000 }),
+          record({ amount: '10', walletTxId: 'only-x', createdAt: 7_970_000 }),
+        ],
+        []
+      )
+    );
+    expect(rows.get('ledger:X1')?.hash).toBeUndefined();
+    expect(rows.get('ledger:Y1')?.hash).toBeUndefined();
+  });
+
+  // SC-428: the record walks only annotate rows the ledger walk produced, so a
+  // capped one costs txids, never the run's history claim.
+  test('a capped record walk warns about missing txids and retracts nothing', async () => {
+    const full = {
+      ...pagedEnvelope(
+        Array.from({ length: 500 }, () =>
+          record({ currency: 'ZZZ', amount: '1', walletTxId: 'z', createdAt: 0 })
+        )
+      ),
+    };
+    full.data.totalPage = 1000;
+    const noted: unknown[] = [];
+    const retracted: unknown[] = [];
+    const restore = installFetch([
+      {
+        match: (u) => u.includes('/api/v1/accounts/ledgers'),
+        body: pagedEnvelope([
+          ledger('C1', { amount: '5', bizType: 'Deposit', direction: 'in', createdAt: 9_000_000 }),
+        ]),
+      },
+      { match: (u) => u.includes('/api/v1/deposits'), body: full },
+      { match: (u) => u.includes('/api/v1/withdrawals'), body: pagedEnvelope([]) },
+    ]);
+    try {
+      const events = await new KucoinProvider(passthroughLimiter()).fetchTransactions({
+        ...ctx,
+        noteWarning: (n: unknown) => noted.push(n),
+        retractHistoryClaim: (n: unknown) => retracted.push(n),
+      } as never);
+      expect(events.map((e) => e.externalId)).toEqual(['ledger:C1']);
+      expect(retracted).toEqual([]);
+      expect(noted.map((n) => (n as { key?: string }).key)).toEqual([
+        'v3.jobs.notices.pageCapMissingTxIds',
+      ]);
+    } finally {
+      restore();
+    }
+  });
+
+  test('a failed record lookup keeps every ledger row and notes a warning', async () => {
+    const noted: unknown[] = [];
+    const rows = await run(
+      [
+        {
+          match: (u) => u.includes('/api/v1/accounts/ledgers'),
+          body: pagedEnvelope([
+            ledger('D2', {
+              amount: '5',
+              bizType: 'Deposit',
+              direction: 'in',
+              createdAt: 7_000_000,
+            }),
+          ]),
+        },
+        {
+          match: (u) => u.includes('/api/v1/deposits'),
+          body: { code: '400007', msg: 'no permission' },
+        },
+      ],
+      noted
+    );
+    expect(rows.has('ledger:D2')).toBe(true);
+    expect(rows.get('ledger:D2')?.hash).toBeUndefined();
+    expect(noted.map((n) => (n as { key?: string }).key)).toEqual([
+      'v3.jobs.notices.txIdLookupFailed',
+    ]);
   });
 });

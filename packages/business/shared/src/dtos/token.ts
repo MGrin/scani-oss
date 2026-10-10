@@ -75,7 +75,7 @@ export const CreateCustomTokenDto = z.object({
     .max(20)
     .transform((val) => val.toUpperCase()),
   name: z.string().min(1).max(200),
-  typeCode: z.enum(['private-company', 'other']),
+  typeCode: z.enum(['private-company', 'other', 'property', 'vehicle']),
   manualPrice: z.number().positive(),
   baseCurrencyCode: z
     .string()

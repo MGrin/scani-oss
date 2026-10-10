@@ -13,7 +13,11 @@ import { TokenRepository } from '../../repositories/TokenRepository';
 import { BaseService } from '../BaseService';
 import { FeedIngestService } from '../feeds/FeedIngestService';
 import { FeedInputFollower } from '../feeds/FeedInputFollower';
-import { type LegacySnapshot, legacySnapshotBatch } from '../feeds/legacy/snapshot-batch';
+import {
+  type LegacySnapshot,
+  legacySnapshotBatch,
+  snapshotInstant,
+} from '../feeds/legacy/snapshot-batch';
 import {
   accountChainId,
   providerInputSource,
@@ -27,6 +31,16 @@ import {
   projectSnapshotToTokenMapping,
   type TokenMappingResult,
 } from './HoldingSnapshotProjection';
+
+/** The latest instant any returned row was true at; an empty answer's is the fetch. */
+function latestInstant(returnedAt: ReadonlyArray<Date | undefined>, fetchedAt: Date): Date {
+  let latest: Date | null = null;
+  for (const at of returnedAt) {
+    const instant = snapshotInstant(at, fetchedAt);
+    if (latest === null || instant > latest) latest = instant;
+  }
+  return latest ?? fetchedAt;
+}
 
 export interface DiscoveredAccountInfo {
   externalId: string;
@@ -73,6 +87,10 @@ export interface IntegrationImportOptions {
   // Wallet imports preserve user-deleted holdings; exchange/IBKR zero
   // any holding that the upstream API stops returning.
   zeroStaleHoldings: boolean;
+  // A provider that can leave a currency out of one statement (IBKR) zeroes
+  // absent cash only after this many absent statement days, on a re-import as
+  // on its sync, and a reported holding forgets its absent days (A5 D-22).
+  absentFiatConfirmations?: number;
   // Per-source token-type resolution (wallet forces crypto; exchange
   // accepts crypto/fiat/stock; IBKR enforces fiat-or-stock).
   resolveTokenTypeId: (snapshot: HoldingSnapshot, fallbackCryptoTypeId: string) => string;
@@ -258,6 +276,8 @@ export class IntegrationImportService extends BaseService {
       }
     };
 
+    const fetchedAt = new Date();
+    const returnedAt = snapshots.map((s) => s.capturedAt);
     const batch = legacySnapshotBatch({
       userId: options.userId,
       input: {
@@ -266,10 +286,10 @@ export class IntegrationImportService extends BaseService {
         credentialId: null,
         walletId: null,
       },
-      returnedAt: snapshots.map((s) => s.capturedAt),
+      returnedAt,
       snapshots: kept.map((k) => k.snapshot),
       absences: [],
-      fetchedAt: new Date(),
+      fetchedAt,
       options: {
         holdingMatch: 'external-id',
         holdingPolicy: 'create',
@@ -283,11 +303,14 @@ export class IntegrationImportService extends BaseService {
           ? {
               mode: 'immediate',
               guardEmptySnapshot: false,
+              confirmations: options.absentFiatConfirmations
+                ? { typeCode: 'fiat', statements: options.absentFiatConfirmations }
+                : null,
               reportedKeys: projected.map((h) => h.externalTokenId || h.symbol),
+              statementAsOf: latestInstant(returnedAt, fetchedAt),
             }
           : null,
-        clearsAbsenceTally: false,
-        unhideOnNonZero: true,
+        clearsAbsenceTally: options.absentFiatConfirmations !== undefined,
         unchangedCheckpoint: 'append',
         zeroOpensHolding: true,
       },
