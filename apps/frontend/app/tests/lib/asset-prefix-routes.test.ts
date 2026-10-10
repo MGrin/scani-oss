@@ -1,3 +1,4 @@
+import '../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import { V3_CAPTURE_ROUTES, V3_PAYMENT_ROUTES, V3_ROUTES } from '../../src/v3/lib/routes';
 
