@@ -6,13 +6,14 @@ import Decimal from 'decimal.js';
 import { Container } from 'typedi';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { DriftLedgerService } from '../../../src/services/returns/DriftLedgerService';
 import {
   ExternalFlowService,
   netFlowByDate,
 } from '../../../src/services/returns/ExternalFlowService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { noPriceReader } from '../../../test/helpers/price-series';
 
 /**
  * SC-1453: a single-row trade's cash side, written as a settlement on the cash
@@ -128,12 +129,7 @@ function makeService(rows: HoldingTransaction[]): ExternalFlowService {
       { id: USD_HOLDING, tokenId: USD },
     ],
   } as unknown as HoldingRepository);
-  Container.set(PriceGraphService, {
-    buildPriceLookup: async () => ({ covers: () => false }),
-    convert: async () => {
-      throw new Error('PriceGraphService.convert should not be called in these tests');
-    },
-  } as unknown as PriceGraphService);
+  Container.set(PriceReader, noPriceReader);
   Container.set(DriftLedgerService, {
     forHoldings: async () => new Map(),
   } as unknown as DriftLedgerService);

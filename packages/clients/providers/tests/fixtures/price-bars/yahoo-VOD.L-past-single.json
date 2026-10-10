@@ -1,0 +1,30 @@
+{
+  "url": "https://query1.finance.yahoo.com/v8/finance/chart/VOD.L?period1=1768089600&period2=1768435200&interval=1d",
+  "fetchedAt": "2026-10-05T03:21:13.488420Z",
+  "status": 200,
+  "data": {
+    "chart": {
+      "result": [
+        {
+          "meta": {
+            "currency": "GBp",
+            "regularMarketTime": 1790955412,
+            "gmtoffset": 3600,
+            "exchangeTimezoneName": "Europe/London",
+            "dataGranularity": "1d"
+          },
+          "timestamp": [1768204800, 1768291200, 1768377600],
+          "indicators": {
+            "quote": [
+              {
+                "close": [592, 568, 579]
+              }
+            ]
+          }
+        }
+      ],
+      "error": null
+    }
+  },
+  "normalization": "Price values are synthetic integer ranks. Equal values and ordering are preserved across these fixtures; timestamps and response shape are recorded. Raw public responses are retained in the PR5 rehearsal evidence."
+}

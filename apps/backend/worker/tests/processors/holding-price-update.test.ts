@@ -204,11 +204,14 @@ describe('HoldingPriceUpdateProcessor base currency', () => {
     expect(await baseHandedFor(null)).toMatchObject({ id: usd.id, symbol: 'USD' });
   });
 
-  // The user's base is not USD here, so a processor that ignored it and fell
-  // to USD fails as surely as one that looked the symbol up. The use case and
-  // the pricing stack are real, over a provider that records what it is asked.
-  test('a user banking in the fiat EUR is refreshed against it, not a later crypto token named EUR', async () => {
+  // The quote is fetched against the fiat USD, where every provider quote is
+  // stored (D-4), and answered in the user's base, which is not USD here: a
+  // processor that ignored it, or looked its symbol up, answers in the wrong
+  // currency. The use case and the pricing stack are real, over a provider
+  // that records what it is asked.
+  test('a user banking in the fiat EUR is answered in it, not in a later crypto token named EUR', async () => {
     const eur = await fiat('EUR');
+    const usd = await fiatUsd();
     // Created now, and so after the fiat.
     await commitToken({ symbol: 'EUR', name: 'A coin named EUR' });
     const token = await commitToken();
@@ -235,14 +238,29 @@ describe('HoldingPriceUpdateProcessor base currency', () => {
     Container.set(PortfolioValueCache, { bust: async () => {} } as unknown as PortfolioValueCache);
     freeLock();
 
-    const result = await runProcessor({ ...JOB, userId: user.id, holdingId: holding.id });
+    // One EUR buys 2 USD. EUR is seeded, so this row is removed by its id.
+    const [rate] = await getDb()
+      .insert(schema.tokenPrices)
+      .values({
+        tokenId: eur.id,
+        baseTokenId: usd.id,
+        price: '2',
+        timestamp: new Date(Date.now() - 60_000),
+        source: 'frankfurter',
+      })
+      .returning({ id: schema.tokenPrices.id });
+    try {
+      const result = await runProcessor({ ...JOB, userId: user.id, holdingId: holding.id });
 
-    expect(result).toMatchObject({ success: true, price: '100', fetched: true });
-    expect(asks).toEqual([{ tokenId: token.id, baseId: eur.id }]);
-    const written = await getDb()
-      .select({ baseTokenId: schema.tokenPrices.baseTokenId })
-      .from(schema.tokenPrices)
-      .where(eq(schema.tokenPrices.tokenId, token.id));
-    expect(written.map((row) => row.baseTokenId)).toEqual([eur.id]);
+      expect(result).toMatchObject({ success: true, price: '50', fetched: true });
+      expect(asks).toEqual([{ tokenId: token.id, baseId: usd.id }]);
+      const written = await getDb()
+        .select({ baseTokenId: schema.tokenPrices.baseTokenId })
+        .from(schema.tokenPrices)
+        .where(eq(schema.tokenPrices.tokenId, token.id));
+      expect(written.map((row) => row.baseTokenId)).toEqual([usd.id]);
+    } finally {
+      if (rate) await getDb().delete(schema.tokenPrices).where(eq(schema.tokenPrices.id, rate.id));
+    }
   });
 });

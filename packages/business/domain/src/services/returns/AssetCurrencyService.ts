@@ -66,7 +66,7 @@ export class AssetCurrencyService {
     const bySymbol = new Map<string, string>();
     for (const row of rows) {
       // The canonical currency row is the un-segmented one, by the same
-      // constraint `PriceGraphService` resolves its hubs through. A segmented
+      // constraint `PriceHubResolver` resolves its hubs through. A segmented
       // fiat row is not a currency rates should be routed over.
       if (row.marketSegment !== null) continue;
       const symbol = row.symbol.toUpperCase();

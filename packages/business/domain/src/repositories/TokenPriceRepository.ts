@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
-import type { NewTokenPrice, TokenPrice, TokenPriceGranularity } from '@scani/db/schema';
+import type { NewTokenPrice, TokenPrice } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, desc, eq, gte, inArray, like, lt, lte, ne, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, like, lt, ne, or, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 /** A row's place in the table's unique key. */
@@ -32,6 +32,19 @@ function byPosition(
   for (const row of rows) prices[Number(row.i)] = row.price;
   return prices;
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// Past this age a day whose readings are all early is no longer asked for: a
+// weekend or holiday has no close at any provider, and asking every night would
+// grow without end.
+const SETTLED_HISTORY_DAYS = 7;
+
+/** A sample of a curve, as opposed to a person's mark. */
+const SAMPLED_READING = sql`(granularity = 'intraday' AND (source IS NULL OR source NOT LIKE 'manual%'))`;
+
+/** D-7: a sampled reading in the last hour of its UTC day stands in for that day's close. */
+const LAST_HOUR_READING = sql`(${SAMPLED_READING} AND extract(hour FROM "timestamp" AT TIME ZONE 'UTC') = 23)`;
 
 @Service()
 export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPrice> {
@@ -74,10 +87,11 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
 
       const database = this.getDb(transaction);
 
-      // Fetch all matching prices and group by tokenId in memory
-      // While not as optimal as DISTINCT ON, this works reliably with Drizzle's type mapping
+      // Bounded read: DISTINCT ON (token_id) rides idx_token_prices_lookup
+      // (token_id, base_token_id, timestamp DESC) to the latest row per token
+      // instead of reading each token's whole history.
       const results = await database
-        .select()
+        .selectDistinctOn([schema.tokenPrices.tokenId])
         .from(schema.tokenPrices)
         .where(
           and(
@@ -85,17 +99,9 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
             eq(schema.tokenPrices.baseTokenId, baseTokenId)
           )
         )
-        .orderBy(desc(schema.tokenPrices.timestamp));
+        .orderBy(asc(schema.tokenPrices.tokenId), desc(schema.tokenPrices.timestamp));
 
-      // Group by tokenId and keep only the latest (first occurrence due to DESC order)
-      const priceMap = new Map<string, TokenPrice>();
-      for (const price of results) {
-        if (!priceMap.has(price.tokenId)) {
-          priceMap.set(price.tokenId, price);
-        }
-      }
-
-      return priceMap;
+      return new Map(results.map((price) => [price.tokenId, price]));
     } catch (error) {
       this.logger.error(
         { tokenIds, baseTokenId, error },
@@ -106,85 +112,10 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
   }
 
   /**
-   * Latest price per token regardless of which base currency it was
-   * stored against. Tie-breaks toward `preferredBaseTokenId` so a
-   * dashboard request that does have a row in the user's base
-   * currency keeps using it (avoids unnecessary fiat-pair conversion
-   * at read time); otherwise picks the most recent row in whatever
-   * base exists.
-   *
-   * Why this exists: the pricing pipeline writes a row per
-   * `(tokenId, baseTokenId)` it observes. CoinGecko-fetched prices
-   * for crypto are virtually all stored against USD; user-base
-   * changes don't retroactively re-write them. Without this method,
-   * a strict `findLatestPricesForTokens(ids, EUR)` returns nothing
-   * for a user whose holdings are all USD-priced, and the dashboard
-   * silently zeros out. Callers are expected to convert the returned
-   * price from `result.baseTokenId` to whatever base they actually
-   * want — `CurrencyConverter` does the bidirectional + hub routing
-   * to make that succeed for cross-base requests.
-   *
-   * Manual prices are intentionally NOT special-cased here — they
-   * obey the same time ordering as upstream prices. Callers that
-   * want stale manual fallbacks use `findLatestManualPricesForTokensAnyBase`
-   * after this returns.
-   */
-  async findLatestPricesForTokensAnyBase(
-    tokenIds: string[],
-    preferredBaseTokenId: string,
-    transaction?: DatabaseTransaction
-  ): Promise<Map<string, TokenPrice>> {
-    try {
-      if (tokenIds.length === 0) return new Map();
-
-      const database = this.getDb(transaction);
-
-      // Bounded read: DISTINCT ON rides idx_token_prices_lookup
-      // (token_id, base_token_id, timestamp DESC) to fetch the latest row per
-      // (token, base) group instead of scanning the whole table. The preferred-
-      // base preference is resolved in-app over the small result set.
-      const results = await database
-        .selectDistinctOn([schema.tokenPrices.tokenId, schema.tokenPrices.baseTokenId])
-        .from(schema.tokenPrices)
-        .where(inArray(schema.tokenPrices.tokenId, tokenIds))
-        .orderBy(
-          asc(schema.tokenPrices.tokenId),
-          asc(schema.tokenPrices.baseTokenId),
-          desc(schema.tokenPrices.timestamp)
-        );
-
-      const priceMap = new Map<string, TokenPrice>();
-      for (const price of results) {
-        const existing = priceMap.get(price.tokenId);
-        if (!existing) {
-          priceMap.set(price.tokenId, price);
-          continue;
-        }
-        const existingPreferred = existing.baseTokenId === preferredBaseTokenId;
-        const currentPreferred = price.baseTokenId === preferredBaseTokenId;
-        if (currentPreferred && !existingPreferred) {
-          priceMap.set(price.tokenId, price);
-        } else if (currentPreferred === existingPreferred && price.timestamp > existing.timestamp) {
-          priceMap.set(price.tokenId, price);
-        }
-      }
-
-      return priceMap;
-    } catch (error) {
-      this.logger.error(
-        { tokenIds, preferredBaseTokenId, error },
-        'Failed to find latest prices for tokens (any base)'
-      );
-      throw error;
-    }
-  }
-
-  /**
    * Return the latest manual price per tokenId regardless of baseTokenId.
-   * Used by pricing cache fallback: if a custom token was priced in EUR
-   * and a user queries with base=USD, the strict baseTokenId match fails.
-   * This lookup retrieves whichever base the manual price was recorded
-   * under, so the caller can convert to the requested currency.
+   * A price a person typed is stored in the currency they typed it in, so
+   * the warm-up and the refresh ask whether one exists in any base, and a
+   * new manual price records the one it replaces from there.
    */
   async findLatestManualPricesForTokensAnyBase(
     tokenIds: string[],
@@ -253,6 +184,12 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
             price: sql`EXCLUDED.price`,
             source: sql`EXCLUDED.source`,
           },
+          // A close belongs to its source: every provider's close of a day
+          // shares one stamp, so a plain upsert would hand the day to whichever
+          // answered last. A downsample-daily row only stands in for a close.
+          setWhere: sql`${schema.tokenPrices.granularity} <> 'daily'
+            OR ${schema.tokenPrices.source} IS NOT DISTINCT FROM EXCLUDED.source
+            OR ${schema.tokenPrices.source} = 'downsample-daily'`,
         })
         .returning();
 
@@ -304,161 +241,25 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
     return byPosition(keys, rows);
   }
 
-  async findPriceAtTimestamp(
-    tokenId: string,
-    baseTokenId: string,
-    timestamp: Date,
-    windowMs: number,
-    transaction?: DatabaseTransaction
-  ): Promise<TokenPrice | null> {
-    try {
-      const database = this.getDb(transaction);
-      const startWindow = new Date(timestamp.getTime() - windowMs);
-      const endWindow = new Date(timestamp.getTime() + windowMs);
-
-      // Convert timestamp to ISO string for raw SQL template
-      // Note: Drizzle ORM's gte/lte functions handle Date objects correctly,
-      // but raw SQL templates need explicit conversion to avoid Date.toString() serialization
-      const timestampIso = timestamp.toISOString();
-
-      const results = await database
-        .select()
-        .from(schema.tokenPrices)
-        .where(
-          and(
-            eq(schema.tokenPrices.tokenId, tokenId),
-            eq(schema.tokenPrices.baseTokenId, baseTokenId),
-            // Date objects work correctly in Drizzle's comparison functions
-            gte(schema.tokenPrices.timestamp, startWindow),
-            lte(schema.tokenPrices.timestamp, endWindow)
-          )
-        )
-        .orderBy(
-          // Raw SQL requires explicit ISO string and timestamptz cast
-          sql`ABS(EXTRACT(EPOCH FROM (${schema.tokenPrices.timestamp} - ${timestampIso}::timestamptz)))`
-        )
-        .limit(1);
-
-      return results[0] || null;
-    } catch (error) {
-      this.logger.error(
-        { tokenId, baseTokenId, timestamp, windowMs, error },
-        'Failed to find price at timestamp'
-      );
-      throw error;
-    }
-  }
-
-  /**
-   * Find the closest price at or before a specific timestamp
-   * Used for historical portfolio valuation
-   */
-  async findClosestPrice(
-    tokenId: string,
-    baseTokenId: string,
-    timestamp: Date,
-    transaction?: DatabaseTransaction
-  ): Promise<TokenPrice | null> {
-    try {
-      const database = this.getDb(transaction);
-
-      const results = await database
-        .select()
-        .from(schema.tokenPrices)
-        .where(
-          and(
-            eq(schema.tokenPrices.tokenId, tokenId),
-            eq(schema.tokenPrices.baseTokenId, baseTokenId),
-            lte(schema.tokenPrices.timestamp, timestamp)
-          )
-        )
-        .orderBy(desc(schema.tokenPrices.timestamp))
-        .limit(1);
-
-      return results[0] || null;
-    } catch (error) {
-      this.logger.error({ tokenId, baseTokenId, timestamp, error }, 'Failed to find closest price');
-      throw error;
-    }
-  }
-
-  /**
-   * Find price updates for specific tokens within a date range with pagination
-   * Used for portfolio history events
-   */
-  async findPriceUpdatesPaginated(
-    tokenIds: string[],
-    baseTokenId: string,
-    options: {
-      limit: number;
-      offset: number;
-      startDate?: Date;
-      endDate?: Date;
-    },
-    transaction?: DatabaseTransaction
-  ): Promise<{ items: TokenPrice[]; total: number }> {
-    try {
-      if (tokenIds.length === 0) {
-        return { items: [], total: 0 };
-      }
-
-      const database = this.getDb(transaction);
-      const conditions = [
-        inArray(schema.tokenPrices.tokenId, tokenIds),
-        eq(schema.tokenPrices.baseTokenId, baseTokenId),
-      ];
-
-      if (options.startDate) {
-        conditions.push(gte(schema.tokenPrices.timestamp, options.startDate));
-      }
-      if (options.endDate) {
-        conditions.push(lte(schema.tokenPrices.timestamp, options.endDate));
-      }
-
-      const whereClause = and(...conditions);
-
-      // Get total count
-      const countResult = await database
-        .select({ count: sql<number>`count(*)::int` })
-        .from(schema.tokenPrices)
-        .where(whereClause);
-
-      const count = countResult[0]?.count ?? 0;
-
-      // Get paginated items
-      const items = await database
-        .select()
-        .from(schema.tokenPrices)
-        .where(whereClause)
-        .orderBy(desc(schema.tokenPrices.timestamp))
-        .limit(options.limit)
-        .offset(options.offset);
-
-      return {
-        items,
-        total: count,
-      };
-    } catch (error) {
-      this.logger.error(
-        { tokenIds, baseTokenId, options, error },
-        'Failed to find price updates paginated'
-      );
-      throw error;
-    }
-  }
-
-  // `${tokenId}:${YYYY-MM-DD}` for every UTC day at or after `since` on which
-  // the token has any price against `baseTokenId`, whatever its granularity
-  // — if some path already wrote a price for that day there is nothing to
-  // fetch. `tokenIds` scopes the read; omitted, it is every token but the
-  // base. A per-user caller must pass its tokens: unscoped, this is one row
-  // per priced day of every token on the platform (SC-1283).
+  // `${tokenId}:${YYYY-MM-DD}` for every UTC day at or after `since` that is
+  // covered against `baseTokenId`, so there is nothing to fetch for it (D-8,
+  // foundation A3 Task 13). Today is covered by any reading since it began. A
+  // past day is covered by a daily row of any source, by a last-hour reading
+  // (`LAST_HOUR_READING`), or, once older than `SETTLED_HISTORY_DAYS`, by any
+  // reading. `tokenIds` scopes the read; omitted, it is every token but the
+  // base. A per-user caller must pass its tokens: unscoped, this is one row per
+  // priced day of every token on the platform (SC-1283).
   async findPricedDayKeys(
-    opts: { baseTokenId: string; since: Date; tokenIds?: readonly string[] },
+    opts: { baseTokenId: string; since: Date; tokenIds?: readonly string[]; now?: Date },
     transaction?: DatabaseTransaction
   ): Promise<Set<string>> {
     const keys = new Set<string>();
     if (opts.tokenIds?.length === 0) return keys;
+    const now = opts.now ?? new Date();
+    const todayStart = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+    );
+    const settledBefore = new Date(todayStart.getTime() - SETTLED_HISTORY_DAYS * DAY_MS);
     const rows = await this.getDb(transaction)
       .selectDistinct({
         tokenId: schema.tokenPrices.tokenId,
@@ -476,300 +277,16 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
           gte(schema.tokenPrices.timestamp, opts.since),
           opts.tokenIds
             ? inArray(schema.tokenPrices.tokenId, [...opts.tokenIds])
-            : ne(schema.tokenPrices.tokenId, opts.baseTokenId)
+            : ne(schema.tokenPrices.tokenId, opts.baseTokenId),
+          or(
+            eq(schema.tokenPrices.granularity, 'daily'),
+            LAST_HOUR_READING,
+            gte(schema.tokenPrices.timestamp, todayStart),
+            lt(schema.tokenPrices.timestamp, settledBefore)
+          )
         )
       );
     for (const r of rows) keys.add(`${r.tokenId}:${r.day}`);
     return keys;
-  }
-
-  /**
-   * A hash of the rows `findManyForPairsUpTo` returns for the same arguments:
-   * the in-window rows and each pair-and-granularity's carry-in row before
-   * `since`. Computed in SQL so the caller decodes one row instead of the set.
-   * It hashes over the pairs' cross-product rather than the exact pair set, a
-   * superset, so it can only change more often than the lookup, never less.
-   */
-  async fingerprintForPairsUpTo(
-    pairs: ReadonlyArray<{ tokenId: string; baseTokenId: string }>,
-    until: Date,
-    since?: Date,
-    transaction?: DatabaseTransaction
-  ): Promise<string> {
-    if (pairs.length === 0) return '';
-    const tokenIds = [...new Set(pairs.map((p) => p.tokenId))];
-    const baseIds = [...new Set(pairs.map((p) => p.baseTokenId))];
-    const tokens = sql`ARRAY[${sql.join(
-      tokenIds.map((id) => sql`${id}`),
-      sql`, `
-    )}]::uuid[]`;
-    const bases = sql`ARRAY[${sql.join(
-      baseIds.map((id) => sql`${id}`),
-      sql`, `
-    )}]::uuid[]`;
-    const row = (p: string) =>
-      sql.raw(
-        `${p}.id::text || ':' || ${p}.price || ':' || ${p}.timestamp::text || ':' || ${p}.granularity`
-      );
-    const carryIn = since
-      ? sql`(SELECT md5(coalesce(string_agg(${row('c')}, ',' ORDER BY c.id), '')) FROM (
-          SELECT DISTINCT ON (token_id, base_token_id, granularity) id, price, timestamp, granularity
-            FROM token_prices
-           WHERE token_id = ANY(${tokens}) AND base_token_id = ANY(${bases}) AND timestamp < ${since.toISOString()}::timestamptz
-           ORDER BY token_id, base_token_id, granularity, timestamp DESC) c)`
-      : sql`''`;
-    const result = (await this.getDb(transaction).execute(sql`
-      SELECT concat_ws('|',
-        (SELECT md5(coalesce(string_agg(${row('w')}, ',' ORDER BY w.id), ''))
-           FROM token_prices w
-          WHERE w.token_id = ANY(${tokens}) AND w.base_token_id = ANY(${bases})
-            AND w.timestamp <= ${until.toISOString()}::timestamptz
-            ${since ? sql`AND w.timestamp >= ${since.toISOString()}::timestamptz` : sql``}),
-        ${carryIn}
-      ) AS v
-    `)) as unknown as Array<{ v: string }>;
-    return result[0]?.v ?? '';
-  }
-
-  async findManyForPairsUpTo(
-    pairs: ReadonlyArray<{ tokenId: string; baseTokenId: string }>,
-    until: Date,
-    transaction?: DatabaseTransaction,
-    since?: Date
-  ): Promise<TokenPrice[]> {
-    if (pairs.length === 0) return [];
-    try {
-      const database = this.getDb(transaction);
-      // Dedup pairs to avoid the planner doing useless duplicate scans.
-      const seen = new Set<string>();
-      const unique: Array<{ tokenId: string; baseTokenId: string }> = [];
-      for (const p of pairs) {
-        const k = `${p.tokenId}|${p.baseTokenId}`;
-        if (seen.has(k)) continue;
-        seen.add(k);
-        unique.push(p);
-      }
-      const tokenIds = unique.map((p) => p.tokenId);
-      const baseIds = unique.map((p) => p.baseTokenId);
-      // Use ANY($1::uuid[]) for both columns and filter in memory by
-      // pair set — this is N+M queries collapsed to 1 with a small
-      // post-filter, far simpler than the SQL tuple-IN dance and
-      // hits the same composite index plan.
-      const inPairSet = and(
-        inArray(schema.tokenPrices.tokenId, tokenIds),
-        inArray(schema.tokenPrices.baseTokenId, baseIds)
-      );
-      const windowRows = database
-        .select()
-        .from(schema.tokenPrices)
-        .where(
-          and(
-            inPairSet,
-            lte(schema.tokenPrices.timestamp, until),
-            ...(since ? [gte(schema.tokenPrices.timestamp, since)] : [])
-          )
-        )
-        .orderBy(
-          asc(schema.tokenPrices.tokenId),
-          asc(schema.tokenPrices.baseTokenId),
-          desc(schema.tokenPrices.timestamp)
-        );
-      // Two statements rather than a UNION, run together: each is one index
-      // scan the planner already knows, and the second is bounded by the pair
-      // set rather than by the history, so it costs a fraction of the first.
-      const carryIn = since
-        ? database
-            .selectDistinctOn([
-              schema.tokenPrices.tokenId,
-              schema.tokenPrices.baseTokenId,
-              schema.tokenPrices.granularity,
-            ])
-            .from(schema.tokenPrices)
-            .where(and(inPairSet, lt(schema.tokenPrices.timestamp, since)))
-            .orderBy(
-              asc(schema.tokenPrices.tokenId),
-              asc(schema.tokenPrices.baseTokenId),
-              asc(schema.tokenPrices.granularity),
-              desc(schema.tokenPrices.timestamp)
-            )
-        : Promise.resolve([] as TokenPrice[]);
-      const [inWindow, before] = await Promise.all([windowRows, carryIn]);
-      const rows = [...inWindow, ...before];
-      // Strip rows that don't match a wanted pair (the cross-product
-      // expansion can include unwanted (tokenA, baseB) combinations).
-      const wanted = new Set(unique.map((p) => `${p.tokenId}|${p.baseTokenId}`));
-      return rows.filter((r) => wanted.has(`${r.tokenId}|${r.baseTokenId}`));
-    } catch (error) {
-      this.logger.error(
-        { pairCount: pairs.length, until, error },
-        'Failed to bulk fetch prices for pairs'
-      );
-      throw error;
-    }
-  }
-
-  async findClosestPriceByGranularity(
-    tokenId: string,
-    baseTokenId: string,
-    timestamp: Date,
-    preferGranularity: TokenPriceGranularity | null,
-    transaction?: DatabaseTransaction
-  ): Promise<TokenPrice | null> {
-    try {
-      const database = this.getDb(transaction);
-
-      // The nearest reading at or before T. `preferGranularity` decides only
-      // between rows at that one instant. It used to take the latest row of
-      // that granularity whatever its age, and a token the hourly job prices
-      // has no daily row until the downsampler runs at day 8, so every
-      // daily-preferring read of the last week answered a week old (SC-1543).
-      const nearestFirst = desc(schema.tokenPrices.timestamp);
-      const results = await database
-        .select()
-        .from(schema.tokenPrices)
-        .where(
-          and(
-            eq(schema.tokenPrices.tokenId, tokenId),
-            eq(schema.tokenPrices.baseTokenId, baseTokenId),
-            lte(schema.tokenPrices.timestamp, timestamp)
-          )
-        )
-        .orderBy(
-          ...(preferGranularity
-            ? [nearestFirst, desc(sql`${schema.tokenPrices.granularity} = ${preferGranularity}`)]
-            : [nearestFirst])
-        )
-        .limit(1);
-      return results[0] ?? null;
-    } catch (error) {
-      this.logger.error(
-        { tokenId, baseTokenId, timestamp, preferGranularity, error },
-        'Failed to find closest price by granularity'
-      );
-      throw error;
-    }
-  }
-
-  // Collapse intraday prices older than `retentionDays` whole UTC days into a
-  // single 'daily' row per (token, base, day): the last intraday reading of
-  // each day becomes a synthesized daily close, then the collapsed intraday
-  // rows are deleted. Existing 'daily' rows are authoritative and kept
-  // (ON CONFLICT DO NOTHING); 'tx-exact' and manual rows are never touched.
-  // Callers wrap this in a transaction so intraday data is never dropped
-  // without its daily aggregate existing first.
-  //
-  // Reads stay correct because every historical lookup takes the nearest
-  // reading at or before T, whatever its granularity — see
-  // PriceGraphService / CostBasisService / PortfolioValuationAtTimeService.
-  //
-  // Manual prices are exempt because they are not samples of a curve. A custom
-  // token's manual price is written intraday and is the ONLY price that token
-  // will ever have; collapsing it rewrote `source` to 'downsample-daily' and
-  // deleted the original, so `findLatestManualPricesForTokensAnyBase` — the
-  // lookup `tokens.listCustom` reads — stopped finding it a week after it was
-  // set. /tokens then said "Never priced" about a token the same session was
-  // valuing at €177,000 off the surviving row (SC-77 2). Nothing is gained by
-  // compressing them: there is at most one per manual edit.
-  async downsampleIntradayToDaily(
-    retentionDays: number,
-    transaction?: DatabaseTransaction
-  ): Promise<{ aggregated: number; deleted: number }> {
-    const database = this.getDb(transaction);
-
-    // UTC-midnight cutoff, independent of the DB session timezone.
-    const cutoff = sql`((date_trunc('day', now() at time zone 'UTC') at time zone 'UTC') - make_interval(days => ${retentionDays}))`;
-
-    const inserted = (await database.execute(sql`
-      with collapsed as (
-        insert into token_prices (token_id, base_token_id, price, "timestamp", source, granularity)
-        select distinct on (p.token_id, p.base_token_id, d.day)
-          p.token_id, p.base_token_id, p.price, d.day, 'downsample-daily', 'daily'
-        from token_prices p
-        cross join lateral (
-          select (date_trunc('day', p."timestamp" at time zone 'UTC') at time zone 'UTC') as day
-        ) d
-        where p.granularity = 'intraday'
-          and (p.source is null or p.source not like 'manual%')
-          and p."timestamp" < ${cutoff}
-        order by p.token_id, p.base_token_id, d.day, p."timestamp" desc
-        on conflict (token_id, base_token_id, "timestamp", granularity) do nothing
-        returning 1
-      )
-      select count(*)::int as n from collapsed
-    `)) as unknown as Array<{ n: number }>;
-
-    const removed = (await database.execute(sql`
-      with del as (
-        delete from token_prices
-        where granularity = 'intraday'
-          and (source is null or source not like 'manual%')
-          and "timestamp" < ${cutoff}
-        returning 1
-      )
-      select count(*)::int as n from del
-    `)) as unknown as Array<{ n: number }>;
-
-    const aggregated = inserted[0]?.n ?? 0;
-    const deleted = removed[0]?.n ?? 0;
-    this.logger.info(
-      { aggregated, deleted, retentionDays },
-      'Downsampled intraday prices older than retention window to daily'
-    );
-    return { aggregated, deleted };
-  }
-
-  // List distinct (token_id, base_token_id) pairs that exist in the
-  // price table — used by ForexBackfillCronJob / PriceGraphService to
-  // enumerate available edges in the price graph.
-  async listKnownPairs(
-    transaction?: DatabaseTransaction
-  ): Promise<Array<{ tokenId: string; baseTokenId: string }>> {
-    try {
-      const database = this.getDb(transaction);
-      const results = await database
-        .selectDistinct({
-          tokenId: schema.tokenPrices.tokenId,
-          baseTokenId: schema.tokenPrices.baseTokenId,
-        })
-        .from(schema.tokenPrices);
-      return results;
-    } catch (error) {
-      this.logger.error(
-        { error: error instanceof Error ? error.message : error },
-        'Failed to list known token price pairs'
-      );
-      throw error;
-    }
-  }
-
-  // Find the earliest daily-close price for a token. Used by backfill to
-  // know how far back our coverage goes without hitting the provider.
-  async findEarliestDailyAt(
-    tokenId: string,
-    baseTokenId: string,
-    transaction?: DatabaseTransaction
-  ): Promise<Date | null> {
-    try {
-      const database = this.getDb(transaction);
-      const results = await database
-        .select({ t: schema.tokenPrices.timestamp })
-        .from(schema.tokenPrices)
-        .where(
-          and(
-            eq(schema.tokenPrices.tokenId, tokenId),
-            eq(schema.tokenPrices.baseTokenId, baseTokenId),
-            eq(schema.tokenPrices.granularity, 'daily')
-          )
-        )
-        .orderBy(asc(schema.tokenPrices.timestamp))
-        .limit(1);
-      return results[0]?.t ? new Date(results[0].t) : null;
-    } catch (error) {
-      this.logger.error(
-        { tokenId, baseTokenId, error: error instanceof Error ? error.message : error },
-        'Failed to find earliest daily price'
-      );
-      throw error;
-    }
   }
 }

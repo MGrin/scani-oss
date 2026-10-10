@@ -7,10 +7,11 @@ import { Container } from 'typedi';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
 import { CostBasisService } from '../../../src/services/pricing/CostBasisService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { DriftLedgerService } from '../../../src/services/returns/DriftLedgerService';
 import { ExternalFlowService } from '../../../src/services/returns/ExternalFlowService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub } from '../../../test/helpers/price-series';
 
 /**
  * SC-1486: a row with no price of its own is valued at one instant on both
@@ -74,15 +75,15 @@ function wire(rows: HoldingTransaction[]) {
     findIdsIncludedInTotal: async (ids: readonly string[]) => new Set(ids),
     findByIds: async () => [{ id: H, tokenId: VOO }],
   } as unknown as HoldingRepository);
-  Container.set(PriceGraphService, {
-    buildPriceLookup: async () => ({ covers: () => false }),
-    convert: async (amount: Decimal | string, from: string, _to: string, at: Date) => {
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal | string, from: string, _to: string, at: Date) => {
       if (from === USD) return { amount: new Decimal(amount), stale: false };
       if (from !== VOO) return null;
       const rate = at.toISOString() === CLOSE ? '102' : '100';
       return { amount: new Decimal(amount).mul(rate), stale: false };
-    },
-  } as unknown as PriceGraphService);
+    })
+  );
   Container.set(DriftLedgerService, {
     forHoldings: async () => new Map(),
   } as unknown as DriftLedgerService);

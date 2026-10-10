@@ -7,8 +7,9 @@ import { Container } from 'typedi';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
 import { CostBasisService } from '../../../src/services/pricing/CostBasisService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub } from '../../../test/helpers/price-series';
 
 /**
  * At one instant on one holding, an ungrouped `transfer_in` is walked before an
@@ -31,9 +32,10 @@ const T1 = '2024-03-01T12:00:00Z';
 function makeService(): CostBasisService {
   Container.set(HoldingRepository, {} as unknown as HoldingRepository);
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
-  Container.set(PriceGraphService, {
-    convert: async (amount: Decimal) => ({ amount: new Decimal(amount), stale: false }),
-  } as unknown as PriceGraphService);
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal) => ({ amount: new Decimal(amount), stale: false }))
+  );
   const instance = new CostBasisService();
   Container.set(CostBasisService, instance);
   return instance;

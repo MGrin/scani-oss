@@ -9,22 +9,22 @@ import { Aside } from '@astrojs/starlight/components';
 
 ## Summary
 
-`PriceGraphService.convert(amount, fromTokenId, toTokenId, at)` is the
-single entry point for cross-token / cross-time conversion. There is
-**no USD-canonical column** in the schema — every price is stored in
-its native quote currency. The service walks the implicit graph
-defined by `token_prices` rows: direct → reverse direct → one-hop via
-USD / USDT / EUR → (rarely) two-hop. A staleness contract lets
-conversions succeed with old prices while flagging the result for
-downstream coverage-quality treatment.
+`PriceReader` is the only reader of `token_prices`. A caller hands it
+every (token, instant) it needs and a base currency, and
+`PriceReader.series(asks, baseTokenId)` returns a series that answers
+`priceAt(tokenId, at)` from memory; `PriceReader.at` is the
+one-instant form. There is **no USD-canonical column** in the schema:
+every price is stored in its native quote currency, and the engine
+routes between them, directly, inverted, through a hub (USD, USDT,
+EUR) or through a currency the asset is quoted in. A stale answer is
+still returned, flagged for coverage quality.
 
 ## What the graph looks like
 
 Every `token_prices` row is a directed edge `tokenId → baseTokenId`
-at a particular `timestamp` and `granularity`. The "graph" is
-implicit — there is no `edges` table. Hubs are well-known tokens
-(USD, USDT, EUR by default) that frequently have edges from many
-other tokens.
+at a particular `timestamp` and `granularity`. The graph is implicit:
+there is no `edges` table. Hubs are well-known tokens (USD, USDT,
+EUR) that have edges from many other tokens.
 
 ```
    AAPL ──$── USD ─────────── EUR ──€── BTC
@@ -32,86 +32,93 @@ other tokens.
                 USDT           GBP
 ```
 
-## The routing algorithm
+## How a price is chosen
 
-`PriceGraphService.convert(...)` tries paths in order:
+`priceAt` (`packages/business/domain/src/engine/price-at.ts`) builds
+every route it can for the asset, each leg from the nearest reading at
+or before the instant asked:
 
-1. **Identity.** Same token in and out: `(amount, rate=1, stale=false)`.
-2. **Direct lookup.** The edge `(from → to)` with the nearest reading
-   at or before `at` wins. The preferred granularity only breaks a tie
-   between two readings at one instant.
-3. **Reverse direct.** If `(to → from)` exists, use `1/price`.
-4. **One-hop via each hub** in order (default `[USD, USDT, EUR]`,
-   plus the user's display base when known). First hub whose two
-   legs both resolve wins.
-5. **Two-hop** via pairs of hubs (only when `maxDepth: 3`). Rarely
-   useful; pays for extra lookups.
-6. **Otherwise null.** Callers must tolerate.
+1. **Identity.** The asset is the base: price 1, never stale.
+2. **Direct.** A reading `asset → base`.
+3. **Inverse.** A reading `base → asset`, as `1 / price`.
+4. **Through each hub**, in `PRICE_HUBS` order: asset to hub, then hub
+   to base, each leg in whichever direction has the later reading.
+5. **Through a quote currency**: a currency the asset has readings in
+   (a stock quoted in CHF, say), then that currency to the base,
+   directly or through a hub.
+
+The **freshest** route wins: the one whose oldest leg is latest. A tie
+goes to the earlier route in that list, whatever the granularity of
+its readings. So a stored row in the user's base never beats a newer
+reading through a hub (SC-1477). A route passes through one hub at
+most, or through a quote currency and then at most one hub, and an
+asset with no route is `null`: callers must tolerate it.
+
+Of an asset's prices a person typed (`source` starting with
+`manual`), only the latest stands, whatever currency it was typed in.
+An older typed price in the base cannot beat a correction typed in
+another currency.
 
 ```ts
-const conversion = await priceGraph.convert(
-  new Decimal('1'),
-  btcTokenId,
-  eurTokenId,
-  new Date('2024-06-01T00:00:00Z'),
-  { preferGranularity: 'daily', maxDepth: 2 }
+const prices = await priceReader.series(
+  [{ tokenId: btcTokenId, at: new Date('2024-06-01T23:59:59.999Z') }],
+  eurTokenId
 );
-// → { amount: Decimal('57000'), rate: Decimal('57000'), effectiveAt: ..., path: 'direct', stale: false }
+const answer = prices.priceAt(btcTokenId, new Date('2024-06-01T23:59:59.999Z'));
+// → { price, readingAt, path, stale, source }, or null when unpriced
 ```
 
-### What the result tells you
+`priceAt` throws a `RangeError` for a (token, instant) the series was
+not asked for, so a missing ask fails loudly rather than reading as
+unpriced.
+
+### What the answer tells you
 
 | Field | Meaning |
 |---|---|
-| `amount` | The result, already denominated in `toTokenId`. |
-| `rate` | The effective rate used (per unit of `fromToken`). |
-| `effectiveAt` | Timestamp of the **oldest** edge consulted — the binding leg. |
-| `path` | `'identity'`, `'direct'`, `'reverse-direct'`, `'one-hop-<hubId>'`, `'two-hop-<hub1>-<hub2>'`. |
-| `stale` | True when `effectiveAt` is older than the granularity-appropriate staleness cap. The amount is **still returned** — callers fold it into `coverageQuality` rather than dropping the holding and fabricating a chart gap. |
+| `price` | One unit of the asset, in the base. |
+| `readingAt` | Timestamp of the **oldest** reading the route used: the binding leg. |
+| `path` | `'identity'`, `'direct'`, `'inverse'`, `'hub:<hubId>'`, `'quote:<currencyId>'` or `'quote:<currencyId>:<hubId>'`. |
+| `stale` | True when any leg's reading is older than the staleness horizon of the token it prices. The price is **still returned**: callers fold it into `coverageQuality` rather than dropping the holding and fabricating a chart gap. |
+| `source` | The source of the asset's own reading, the route's first leg. `null` for identity. |
 
 ## Staleness contract
 
-Two caps:
+Each leg is judged by the horizon of the token it prices,
+`STALENESS_HORIZON_MS`:
 
-- `MAX_INTRADAY_PRICE_AGE_MS` — short. An intraday price older than
-  this is stale.
-- `MAX_DAILY_PRICE_AGE_MS` — much longer. A daily-granularity price
-  can legitimately be days old for thin pairs.
+| Asset class | Horizon |
+|---|---|
+| `crypto` | 48 hours |
+| `fiat` | 120 hours: a weekend plus a holiday |
+| `stock` | 120 hours |
+| `custom`, a person's own asset | none: a typed price stands until the next |
+| `unknown` | 48 hours |
 
-If `preferGranularity = 'daily'`, the service uses the daily cap. The
-**binding leg** of a multi-hop path — whichever leg has the older
-timestamp — is what determines staleness, because the chain is only
-as fresh as its weakest link.
+So a crypto price through a weekend-old exchange rate is not stale,
+and a typed price through a week-old exchange rate is.
 
-## Hub selection
+## Hubs
 
-Default hubs: `['USD', 'USDT', 'EUR']`, evaluated in order.
+`PRICE_HUBS` in `price-hubs.ts` is the only list: USD, USDT, EUR, in
+that order. `PriceHubResolver` resolves each to its canonical `tokens`
+row, the un-segmented one, and caches the ids for the process. Inside
+a transaction it neither reads nor fills that cache (SC-600), so each
+hub costs up to three lookups there.
 
-- Callers can override via `options.hubSymbols`.
-- `PortfolioValuationAtTimeService` automatically folds the user's
-  display base into the hub list when a display currency is
-  configured.
-- The hub-symbol → token-id resolution is cached for the lifetime of
-  the process. Tokens are seeded by migration and stable for the
-  process lifetime; invalidation on restart is fine.
+## One load per request
 
-The service deduplicates resolved hub ids before iterating —
-configured hub symbols can resolve to the same `tokens.id` (USD and a
-fiat stablecoin aliased to the same token, or a future alias table),
-and a repeated id would produce a degenerate path
-`A → hub → same-hub → B` with rate `p × 1/p = 1`.
+A caller asks once for everything a request needs: the
+[portfolio-value rollup](/concepts/rollup/) asks for every holding at
+every day of the chunk a call computes, Returns for every flow and day of its window.
+`series` reads, for each token and instant, only the rows at the
+nearest stamp at or before that instant, and never a pair's history.
+Once the hubs are known it takes a fixed number of statements however
+much is asked: one for the quote currencies, one for the token types,
+one for the readings.
 
-## PriceLookup — the hot-path optimisation
-
-The [portfolio-value rollup](/concepts/rollup/) does **millions** of
-`convert` calls per backfill. Per-call DB lookups would be ruinous.
-
-`PriceLookup` is a pre-fetched in-memory price index. The rollup
-loads every relevant price for the user up front, hands the
-`PriceLookup` in via `options.priceLookup`, and `tryDirect` reads
-from memory. Pairs not in the lookup defensively fall through to the
-DB — so the hot path is still correct if the rollup didn't preload
-something.
+`fingerprint` hashes the loaded readings, so a cache keyed on it moves
+exactly when a reading under it does.
 
 ## Granularities
 
@@ -119,8 +126,8 @@ Three granularities live in `token_prices.granularity`:
 
 | Granularity | Source | Use |
 |---|---|---|
-| `intraday` | Live syncs (CoinGecko paid, Finnhub, exchange tickers). | Recent valuation, the dashboard headline. |
-| `daily` | Historical backfill (`historical-price-backfill` job). | The chart, point-in-time historical valuation. |
+| `intraday` | Live syncs (CoinGecko paid, Finnhub, exchange tickers); a backfill's quote for today, and a backfilled point the provider does not date to a day. | Recent valuation, the dashboard headline. |
+| `daily` | The close of one UTC day: historical backfill (`historical-price-backfill` job); rows from the retired intraday downsampler (`downsample-daily`) remain. | The chart, point-in-time historical valuation. |
 | `tx-exact` | Captured at a transaction's `occurredAt`. | Cost-basis math against the actual fill price. |
 
 The composite unique key on `token_prices` is
@@ -128,12 +135,38 @@ The composite unique key on `token_prices` is
 timestamp can carry both a daily close and an intraday candle without
 collision.
 
+### A day's price is its close
+
+A `daily` row for UTC day D carries D's close and is stamped at D's
+last millisecond (`2026-09-20T23:59:59.999Z` for 20 September),
+whichever provider answered. Each provider names the day its bar
+closes, so a bar stamped at its start, or at the midnight that ends
+it, still lands on its own day. History is read at
+the same instant: `RollupPortfolioValueDailyUseCase` values a past day
+at `23:59:59.999Z`, so the day reads its own close and never a reading
+from the day after.
+
+Today has no close. A backfill's quote for the current UTC day is
+stored as an `intraday` reading at the instant it was fetched: it is a
+price now.
+
+A close belongs to its source. Every provider's close of a day shares
+one stamp, so a later answer from another provider does not overwrite
+it; the same source does, and so does any provider over a
+`downsample-daily` row, which only stands in for a close.
+
+The backfill asks for a past day only while it is not covered. A day is
+covered by a `daily` row of any source, or by a reading at or after
+23:00 UTC of that day, which stands in for the close. Today is covered
+by any reading since midnight UTC. A day older than seven days is
+covered by any reading: a weekend or holiday has no close at any
+provider, and asking for one every night would never stop.
+
 ## What a stored price is
 
 `token_prices.price` is text. A price fetched from a provider,
 backfilled or entered by hand is written through `PriceWriter`; the
-intraday downsampler and the demo and end-to-end seeders still write
-the table themselves. `PriceWriter` sends a price only when the text is
+demo and end-to-end seeders still write the table themselves. `PriceWriter` sends a price only when the text is
 a canonical positive decimal:
 
 - digits, optionally a point and more digits — at most 64 on each side;
@@ -157,72 +190,87 @@ price that would be dropped is refused with the positive-price error.
 
 ## How an exchange rate is asked
 
-There are three FX sources. Two of them are asked for the table the
-vendor publishes, never for the pair itself, and the pair is divided
-here. A vendor asked for a pair derives and rounds it: for a low-value
-currency in USD (RUB, JPY, IDR) that leaves two or three digits.
+Every fiat rate comes from a named central bank's published table, read
+through [Frankfurter](https://frankfurter.dev/docs/) v2 by one client.
+Two banks are read:
 
-- **Frankfurter**: latest, a day and a range are each requested as
-  `from=EUR&to=X,B`, without whichever side is EUR. EUR is the base the
-  ECB publishes, so EUR into another currency is the ECB fixing as sent,
-  a currency into EUR is one fixing inverted, and a pair with no EUR side
-  is derived from two: the stored price of X in B is
-  `rate(EUR to B) / rate(EUR to X)`.
-- **exchangerate-api** is asked only for its USD table
-  (`/v4/latest/USD`), by one client. Frankfurter's fallback, the Google
-  Sheets converter and `CurrencyConverter` all read that table, and
-  take a pair as `rates[to] / rates[from]`. The fallback answers for
-  fiat the ECB does not publish, and for an ECB pair when Frankfurter
-  gave no answer.
-- **Yahoo Finance** prices the fiat Frankfurter does not cover, and is
-  asked for the pair itself (`<FROM><TO>=X`).
+- **The European Central Bank** ([euro foreign exchange reference
+  rates](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html)).
+  A pair whose two currencies are both in the ECB's table, USD among
+  them, is read from it: `/v2/providers/ecb/rates?base=EUR`.
+- **The Bank of Russia** ([official exchange
+  rates](https://www.cbr.ru/eng/currency_base/daily/)). A pair with a
+  currency the ECB does not publish but the Bank of Russia does (RUB,
+  KZT, AED, …) is read from the Bank of Russia's table:
+  `/v2/providers/cbr/rates?base=USD`.
+
+Both sides of a pair Frankfurter is asked for always come from one
+bank. Two banks' crosses of the same day differ by about a percent, so a
+pair priced half from each would be off by that much. So a pair of a
+currency only the ECB publishes (ILS, ISK, MXN, MYR, PHP) with one only
+the Bank of Russia publishes gets no rate from Frankfurter. The price
+graph, which reads stored rows, can still chain a Bank of Russia row
+with an ECB row through USD when no stored row prices the pair directly.
+
+A currency in neither table is not priced by Frankfurter. The hourly
+pricing run sends fiat to Frankfurter alone, so it gets no current
+price, and the Google Sheets converter cannot convert it. The nightly history backfill
+still falls back to Yahoo Finance, asked for the pair itself
+(`<FROM><TO>=X`).
+
+Each bank is asked in the base it publishes, never for the pair itself,
+and the pair is divided here: a bank's own figure comes back only in
+that direction, and anything else is Frankfurter's cross, rounded to
+about five digits. EUR into another ECB currency is the ECB fixing as
+sent, and RUB into USD is the Bank of Russia's rate inverted. The stored
+price of X in B is `rate(pivot to B) / rate(pivot to X)`, where the
+pivot is EUR for the ECB and USD for the Bank of Russia. The Bank of
+Russia's other currencies are crosses through USD, so they keep about
+five significant digits.
 
 The division is decimal, at 28 significant digits, and the stored text
 is its result. A rate counts only when it is a number above zero. A
 currency missing from the answer gives no price, and nothing is
 written. An answer in a base other than the one asked is refused whole.
 
-The client keeps a table it fetched for 60 minutes in each process. It
-does not keep a failed request, or an answer with no usable rate. Its
-requests share one limiter namespace, `exchangerate-api`, at 10 a
-minute, and one 8-second bound covers both the wait for a slot and the
-request. A row written from a kept table is still stamped at the
-instant Scani asked.
+A day or a range names the bank the same way. A day with no fixing (a
+weekend or a holiday) answers with the bank's last fixing before it,
+and the price is stored as the close of the day that fixing names, not
+the day asked. A range starts with the last fixing at or before its
+first day, and that row keeps its own day.
+
+A rate read from the ECB is stored with the source `frankfurter`
+(`frankfurter_historical` for a day or a range); one read from the Bank
+of Russia with `frankfurter-cbr` (`frankfurter-cbr_historical`), and the
+app shows it as the Bank of Russia.
+
+The client keeps each bank's latest table for 60 minutes in each
+process, so a table costs one request an hour whatever the number of
+currencies. It does not keep a failed request, or an answer with no
+usable rate, and it asks for a day or a range every time. Its requests
+share one limiter namespace, `frankfurter`, at 10 a second, and one
+8-second bound covers both the wait for a slot and the request. A row
+written from a kept table is still stamped at the instant Scani asked.
 
 ## When a current price is stamped
 
 A current quote is stored at the instant Scani asked for it, as an
 `intraday` row, whichever provider answered. A provider's own date is
-not used: Frankfurter dates its latest rate by the ECB day at 00:00 UTC,
-and a row stamped that way was overwritten in place by every later ask
-of the same day.
+not used: Frankfurter dates its latest rate by its bank's fixing day
+(the ECB's or the Bank of Russia's) at 00:00 UTC, and a row stamped that
+way was overwritten in place by every later ask of the same day.
 
 So the age of a current price is the time since the last successful
 fetch, not the age of the provider's data, and the staleness caps
-measure that. Three other readers change with it:
+measure that. Two other readers change with it:
 
-- **The converter's 24-hour gate.** `CurrencyConverter.getRateDetail`
-  takes a stored rate only when its row is less than 24 hours old, and
-  otherwise derives the pair from exchangerate-api's USD table and
-  stores that rate. A row
-  dated by the ECB day was past that gate for most of every weekday and
-  all weekend; a row the hourly run writes never is while its provider
-  answers. So a conversion into USD reads the stored rate, which for an
-  ECB currency is derived from the ECB fixing as above, and no longer
-  goes to exchangerate-api for it. The other direction does not always:
-  a stored direct pair answers first at any age, and the converter wrote
-  one for every pair it took from exchangerate-api before. Where such a
-  row exists, a USD to X conversion finds it, finds it too old, and
-  still goes to the table.
-- **The Money tab's rates, for a person whose base is USD.** Each is
-  the newest stored rate, dated by its row. It picks up a new fixing
-  within the hour, and its date is the hour Scani last asked, not the
-  ECB day: on a Sunday, Friday's fixing reads as this hour's. On another
-  base a stored direct pair answers first, as above, and keeps its own
-  date.
-- **Reuse for a token Frankfurter prices.** The import warm-up, the
-  refresh button and `getTokenPrice` answer from a stored row under an
-  hour old. For such a token that now happens. Before, its row sat at
+- **The Money tab's rates.** Each is `PriceReader`'s answer from stored
+  rows, dated by the reading it binds to. It picks up a new fixing within
+  the hour, and its date is the hour Scani last asked, not the ECB day: on
+  a Sunday, Friday's fixing reads as this hour's.
+- **Reuse for a token Frankfurter prices.** The import warm-up and the
+  refresh button leave a token unasked when its row against USD is under
+  an hour old. For such a token that now happens. Before, its row sat at
   the ECB day's midnight and never fell inside the hour, so each of them
   asked Frankfurter every time.
 
@@ -239,16 +287,10 @@ prices, each against USD:
 A token priced by hand (`private-company`, `other`) is not sent to a
 provider: its last manual price stands.
 
-The other callers read a stored row first, and ask a provider only when
-none answers:
-
-- the import warm-up: the token's newest row in any base, converted to
-  the user's, when it is under an hour old, or its latest manual price
-  of any age;
-- the refresh button and `getTokenPrice`: a row in the base asked, within
-  an hour either side of the instant asked, or the latest manual price;
-- a vault: the pair's latest row, of any age. It reaches
-  `getTokenPrice` only when the pair has no row at all.
+The import warm-up and the refresh button read a stored row first, and
+ask a provider, against USD, only for a token with no row against USD
+under an hour old and no manual price in any base. A vault asks no
+provider: it reads `PriceReader`.
 
 The nightly `historical-price-backfill` also writes FX history: currencies in use
 start at their users' earliest ledger or observation day within the lookback,
@@ -258,8 +300,8 @@ that already holds a price unchanged. An empty history response for a currency
 in use or a baseline member never gives it an unpriceable cooldown.
 
 `currency-rate-refresh` asks the provider registry for both currencies against
-USD (only the other currency when one is USD); stored conversion then derives
-the requested pair through USD.
+USD (only the other currency when one is USD); `PriceReader` then derives the
+requested pair through USD.
 
 ## Provider routing
 

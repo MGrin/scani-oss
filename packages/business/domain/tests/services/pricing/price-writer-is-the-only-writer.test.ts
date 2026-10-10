@@ -32,13 +32,12 @@ const STATEMENT_ALLOWED = [
   'packages/infra/db/src/migrations/0016_ibkr_segment_token_dedup.sql',
   'packages/infra/db/src/migrations/0017_purge_crosstype_price_pollution.sql',
   'packages/infra/db/src/migrations/0028_restore_downsampled_manual_price_source.sql',
+  // Ops O1 (foundation A3, task 14): moves and deletes existing rows, which the
+  // writer does not do; every new price it adds goes through the writer.
+  'scripts/lib/restamp-daily-prices.ts',
 ];
 
-const REPOSITORY_CALL_ALLOWED = [
-  // The downsampler writes through the repository until PR-8 deletes it.
-  'apps/backend/worker/src/processors/token-prices-downsample.ts',
-  'packages/business/domain/src/services/pricing/PriceWriter.ts',
-];
+const REPOSITORY_CALL_ALLOWED = ['packages/business/domain/src/services/pricing/PriceWriter.ts'];
 
 /** The table in a raw statement: by name, quoted or schema-qualified, or interpolated. */
 const TABLE = String.raw`(?:(?:"?public"?\.)?"?token_prices\b"?|\$\{\s*(?:schema\s*\.\s*)?tokenPrices\s*\})`;
@@ -76,7 +75,7 @@ const DECLARED_PATTERNS = [
 ];
 
 /** Names that only the price repository carries, so any receiver counts. */
-const OWN_WRITE_METHODS = /\.\s*(?:bulkUpsertDailyBackfill|downsampleIntradayToDaily)\s*\(/g;
+const OWN_WRITE_METHODS = /\.\s*bulkUpsertDailyBackfill\s*\(/g;
 /** Write methods every repository has, so only a price-repository receiver counts. */
 const SHARED_WRITE_METHODS = '(?:bulkUpsert|create|createMany|update|delete)';
 const RECEIVER_BINDINGS = [
@@ -247,7 +246,6 @@ describe('PriceWriter is the only writer of token_prices', () => {
       ],
       ['a.ts', 'await this.tokenPriceRepository.bulkUpsert(rows);', 'price-repository receiver'],
       ['a.ts', 'await this.tokenPriceRepository.create(row, tx);', 'price-repository receiver'],
-      ['a.ts', 'await repo.downsampleIntradayToDaily(7, tx);', 'repository-only method'],
       ['a.ts', 'await repo.bulkUpsertDailyBackfill(rows);', 'repository-only method'],
       [
         'a.ts',

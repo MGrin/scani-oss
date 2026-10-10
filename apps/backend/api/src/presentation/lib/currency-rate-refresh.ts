@@ -1,4 +1,4 @@
-import type { CurrencyRef } from '@scani/domain/services';
+import type { Token } from '@scani/db/schema';
 import {
   CURRENCY_RATE_REFRESH,
   CURRENCY_RATE_REFRESH_COALESCE_MS,
@@ -7,6 +7,8 @@ import {
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService } from '@scani/queue';
 import { Container } from 'typedi';
+
+type CurrencyRef = Pick<Token, 'id' | 'symbol'>;
 
 const logger = createComponentLogger('lib:currency-rate-refresh');
 
@@ -33,8 +35,8 @@ export async function enqueueCurrencyRateRefresh(
   // Bucketed wall clock, the same trick `enqueuePortfolioRollup` uses: the
   // jobId is (pair + requestId), so every request for the same pair inside one
   // window computes the same id and BullMQ drops the duplicates. Without it,
-  // one deploy emptying the converter's memory cache turns every user opening
-  // Money into another queued upstream call for the same handful of pairs.
+  // every user opening Money while a pair is missing queues another upstream
+  // call for the same handful of pairs.
   const requestId = `read-miss-${Math.floor(Date.now() / CURRENCY_RATE_REFRESH_COALESCE_MS)}`;
   const enqueue = Container.get(BullMqEnqueueService);
 

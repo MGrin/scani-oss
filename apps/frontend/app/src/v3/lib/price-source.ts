@@ -14,8 +14,11 @@ const PROVIDER_NAMES: Readonly<Record<string, string>> = {
   coingecko: 'CoinGecko',
   defillama: 'DefiLlama',
   etherscan: 'Etherscan',
+  // Rows written before SC-1566 still carry it; nothing writes it now.
   'exchangerate-api': 'ExchangeRate-API',
   finnhub: 'Finnhub',
+  // The Bank of Russia's rates, read through Frankfurter.
+  'frankfurter-cbr': 'Bank of Russia',
   gate: 'Gate',
   gemini: 'Gemini',
   'google-sheets': 'Google Sheets',
@@ -34,16 +37,14 @@ const TRANSLATED_SOURCES: Readonly<Record<string, string>> = {
   frankfurter: 'v3.priceSource.frankfurter',
   manual: 'v3.priceSource.manual',
   'base-currency': 'v3.priceSource.baseCurrency',
-  sibling_fallback: 'v3.priceSource.siblingFallback',
 };
 
 /**
  * A source id is a provider key with optional variant suffixes —
  * `frankfurter_historical`, `coingecko_historical_usd_converted`,
- * `defillama_stale_fallback` — so a key matches the whole id or the id's head
+ * `kraken_klines_usd` — so a key matches the whole id or the id's head
  * up to an underscore or a hyphen (`manual-…` is a hand-set price too).
- * Longest key first, so `sibling_fallback` is not read as a provider called
- * `sibling`.
+ * Longest key first, so `frankfurter-cbr` is not read as the ECB's `frankfurter`.
  */
 function matchKey(source: string, keys: readonly string[]): string | undefined {
   return [...keys]
@@ -66,9 +67,12 @@ function readableId(source: string): string {
  */
 export function priceSourceLabel(t: TFunction, source: string): string {
   const id = source.trim().toLowerCase();
-  const translated = matchKey(id, Object.keys(TRANSLATED_SOURCES));
-  if (translated) return t(TRANSLATED_SOURCES[translated] as string);
-  const provider = matchKey(id, Object.keys(PROVIDER_NAMES));
-  if (provider) return PROVIDER_NAMES[provider] as string;
+  // One match over both tables: a brand whose key extends a translated one
+  // (`frankfurter-cbr`) must beat the shorter key.
+  const key = matchKey(id, [...Object.keys(TRANSLATED_SOURCES), ...Object.keys(PROVIDER_NAMES)]);
+  if (key !== undefined && Object.hasOwn(TRANSLATED_SOURCES, key)) {
+    return t(TRANSLATED_SOURCES[key] as string);
+  }
+  if (key !== undefined) return PROVIDER_NAMES[key] as string;
   return readableId(id) || t('v3.priceSource.unknown');
 }

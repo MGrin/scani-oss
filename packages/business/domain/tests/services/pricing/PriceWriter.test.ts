@@ -321,7 +321,18 @@ describe('PriceWriter.writeHistory', () => {
       expect(first.seriesChanged).toEqual([
         { tokenId: token.id, baseTokenId: base.id, fromDay: '2026-02-02' },
       ]);
-      expect(again).toEqual({ written: 3, dropped: 0, changed: [], seriesChanged: [] });
+      expect(again).toEqual({
+        written: 3,
+        dropped: 0,
+        changed: [],
+        seriesChanged: [],
+        accepted: bars.map(({ tokenId, baseTokenId, at, granularity }) => ({
+          tokenId,
+          baseTokenId,
+          at,
+          granularity,
+        })),
+      });
       expect(await storedFor(tx, [token.id])).toHaveLength(3);
     });
   });
@@ -569,5 +580,130 @@ describe('the column refuses what the writer drops', () => {
     expect(checkExpressions(commentOnly)).toEqual([
       "CASE WHEN price ~ '^[0-9]+$' THEN price::numeric > 0 ELSE false END",
     ]);
+  });
+});
+
+describe('a daily close belongs to the source that wrote it', () => {
+  const close = new Date('2026-09-20T23:59:59.999Z');
+
+  /** A close stored by `stored`, then the same key sent again by `incoming` at another price. */
+  async function resend(tx: DatabaseTransaction, stored: string, incoming: string) {
+    const { token, base } = await pair(tx);
+    const writer = new PriceWriter();
+    await writer.writeHistory(
+      [reading(token, base, '100', close, { granularity: 'daily', source: stored })],
+      tx
+    );
+    const outcome = await writer.writeHistory(
+      [reading(token, base, '101', close, { granularity: 'daily', source: incoming })],
+      tx
+    );
+    const rows = await storedFor(tx, [token.id]);
+    return { outcome, rows: rows.map(({ price, source }) => ({ price, source })) };
+  }
+
+  test('a daily close from another source is not replaced, and seriesChanged is empty for the refused write', async () => {
+    await withTestDb(async (tx) => {
+      const { outcome, rows } = await resend(
+        tx,
+        'yahoo-finance_historical',
+        'defillama_historical'
+      );
+
+      expect(rows).toEqual([{ price: '100', source: 'yahoo-finance_historical' }]);
+      expect(outcome.written).toBe(0);
+      expect(outcome.seriesChanged).toEqual([]);
+    });
+  });
+
+  test('a provider’s close replaces a downsample-daily row', async () => {
+    await withTestDb(async (tx) => {
+      const { outcome, rows } = await resend(tx, 'downsample-daily', 'defillama_historical');
+
+      expect(rows).toEqual([{ price: '101', source: 'defillama_historical' }]);
+      expect(outcome.written).toBe(1);
+      expect(outcome.seriesChanged).toHaveLength(1);
+    });
+  });
+
+  test('CONTROL: the same source corrects its own close', async () => {
+    await withTestDb(async (tx) => {
+      const { outcome, rows } = await resend(
+        tx,
+        'yahoo-finance_historical',
+        'yahoo-finance_historical'
+      );
+
+      expect(rows).toEqual([{ price: '101', source: 'yahoo-finance_historical' }]);
+      expect(outcome.written).toBe(1);
+      expect(outcome.seriesChanged).toHaveLength(1);
+    });
+  });
+
+  test('a batch with one refused and one accepted row reports only the accepted one', async () => {
+    await withTestDb(async (tx) => {
+      const owned = await pair(tx);
+      const fresh = await makeToken(tx);
+      const writer = new PriceWriter();
+      await writer.writeHistory(
+        [
+          reading(owned.token, owned.base, '100', close, {
+            granularity: 'daily',
+            source: 'yahoo-finance_historical',
+          }),
+        ],
+        tx
+      );
+
+      // The refused row first, so a filter that lost its alignment would name it.
+      const outcome = await writer.writeHistory(
+        [
+          reading(owned.token, owned.base, '101', close, {
+            granularity: 'daily',
+            source: 'defillama_historical',
+          }),
+          reading(fresh, owned.base, '7', close, {
+            granularity: 'daily',
+            source: 'defillama_historical',
+          }),
+        ],
+        tx
+      );
+
+      expect(outcome.written).toBe(1);
+      expect(outcome.seriesChanged).toEqual([
+        { tokenId: fresh.id, baseTokenId: owned.base.id, fromDay: '2026-09-20' },
+      ]);
+      expect(outcome.accepted).toEqual([
+        { tokenId: fresh.id, baseTokenId: owned.base.id, at: close, granularity: 'daily' },
+      ]);
+      const rows = await storedFor(tx, [owned.token.id, fresh.id]);
+      expect(rows.map(({ tokenId, price, source }) => [tokenId, price, source]).sort()).toEqual(
+        [
+          [owned.token.id, '100', 'yahoo-finance_historical'],
+          [fresh.id, '7', 'defillama_historical'],
+        ].sort()
+      );
+    });
+  });
+
+  test('CONTROL: an intraday row is still replaced by any source', async () => {
+    await withTestDb(async (tx) => {
+      const { token, base } = await pair(tx);
+      const writer = new PriceWriter();
+      const at = new Date('2026-09-20T14:00:00.000Z');
+      await writer.writeHistory([reading(token, base, '100', at, { source: 'kraken_klines' })], tx);
+
+      const outcome = await writer.writeHistory(
+        [reading(token, base, '101', at, { source: 'coingecko_historical' })],
+        tx
+      );
+
+      const rows = await storedFor(tx, [token.id]);
+      expect(rows.map(({ price, source, granularity }) => [price, source, granularity])).toEqual([
+        ['101', 'coingecko_historical', 'intraday'],
+      ]);
+      expect(outcome.written).toBe(1);
+    });
   });
 });

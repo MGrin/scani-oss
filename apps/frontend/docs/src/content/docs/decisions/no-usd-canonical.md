@@ -11,8 +11,9 @@ sidebar:
 the currency the price was originally quoted in. A Kraken `BTC/EUR`
 trade is stored with `baseTokenId = EUR`, not USD. Conversion between
 any two tokens happens at read time via the
-[price graph](/concepts/pricing/), walking direct → reverse direct →
-one-hop via USD / USDT / EUR hubs.
+[price graph](/concepts/pricing/): direct, inverse, through a USD /
+USDT / EUR hub, or through the asset's quote currency, the freshest
+route winning.
 
 There is **no** USD-canonical column anywhere in the schema.
 
@@ -52,11 +53,12 @@ target currency. (See also the
 [market segment](/concepts/tokens/#the-unique-key) column that
 distinguishes the two.)
 
-**The price-graph cost is bounded and cacheable.** Direct lookups are
-O(1). One-hop via three hubs is O(3). Two-hop is rarely used. The
-`PriceLookup` pre-fetch optimisation reduces the hot-path rollup to
-in-memory lookups. The convenience of `SELECT SUM(value_usd)` is not
-worth what it costs.
+**The routing cost is bounded.** An answer weighs the direct reading,
+its inverse, one hop through each of three hubs and the asset's quote
+currencies. [`PriceReader`](/concepts/pricing/#one-load-per-request)
+loads everything a request asks for in a fixed number of statements,
+so the hot-path rollup answers from memory. The convenience of
+`SELECT SUM(value_usd)` is not worth what it costs.
 
 ## What this design unlocks
 
@@ -73,16 +75,14 @@ worth what it costs.
 ## What the design costs
 
 - **Conversion has to happen on read.** Sums over multi-currency
-  positions are not a single `SUM(...)`. The
-  [`PriceGraphService`](/concepts/pricing/) and
-  [`PriceLookup`](/concepts/pricing/#pricelookup--the-hot-path-optimisation)
-  encapsulate this cost.
+  positions are not a single `SUM(...)`.
+  [`PriceReader`](/concepts/pricing/) encapsulates this cost.
 - **Hub selection matters.** Pairs that don't directly trade against
   any hub will fail to resolve. In practice, USD / USDT / EUR cover
-  essentially every traded asset; rare exceptions are handled by
-  feeding the user's display currency into the hub list dynamically.
+  essentially every traded asset; the rest route through a currency
+  the asset is quoted in.
 - **Staleness is real.** A thin pair may have no direct edge fresh
-  enough to clear the [staleness cap](/concepts/pricing/#staleness-contract).
+  enough to clear its [staleness horizon](/concepts/pricing/#staleness-contract).
   The result is still returned with `stale=true`, and the rollup
   buckets it into [`coverageQuality='estimated'`](/concepts/rollup/#coverage-quality).
 

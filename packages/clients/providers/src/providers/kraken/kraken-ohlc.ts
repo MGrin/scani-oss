@@ -15,6 +15,7 @@
  */
 
 import type { Token } from '@scani/db/schema';
+import { createOutflowLimiter, type OutflowRateLimiter } from '@scani/rate-limiter';
 import type { PriceQuote, ProviderContext } from '../../core/types';
 import { fetchWithTimeout } from '../../core/utils/fetch';
 
@@ -35,6 +36,12 @@ const KRAKEN_SUPPORTED_QUOTES = new Set([
   'USDT',
   'USDC',
 ]);
+
+const publicLimiter = createOutflowLimiter({
+  maxRequests: 1,
+  windowMs: 1000,
+  namespace: 'kraken-public',
+});
 
 const KRAKEN_OHLC_URL = 'https://api.kraken.com/0/public/OHLC';
 
@@ -103,7 +110,10 @@ interface OhlcBar {
  * Lifetime: process. The provider instance is created at boot and
  * reused across every backfill run.
  */
-const krakenOhlcCache = new Map<string, { bars: OhlcBar[]; maxBarSec: number }>();
+const krakenOhlcCache = new Map<
+  string,
+  { bars: OhlcBar[]; maxBarSec: number; fetchedAtMs: number }
+>();
 
 /**
  * Walk cached bars from the end (ascending) and return the first
@@ -132,6 +142,7 @@ function priceFromCachedBars(
     baseTokenId,
     price: best.close,
     timestamp: new Date(best.timeSec * 1000),
+    barDay: new Date(best.timeSec * 1000).toISOString().slice(0, 10),
     source,
   };
 }
@@ -144,7 +155,8 @@ function priceFromCachedBars(
 export async function fetchKrakenHistoricalPrice(
   token: Token,
   at: Date,
-  ctx: ProviderContext
+  ctx: ProviderContext,
+  limiter: OutflowRateLimiter = publicLimiter
 ): Promise<PriceQuote | null> {
   const krakenAsset = readKrakenAssetCode(token);
   if (!krakenAsset) return null;
@@ -158,14 +170,24 @@ export async function fetchKrakenHistoricalPrice(
 
   const cached = krakenOhlcCache.get(pair);
   if (cached && targetSec <= cached.maxBarSec) {
-    return priceFromCachedBars(token.id, ctx.baseCurrency.id, cached.bars, targetSec, sourceTag);
+    const quote = priceFromCachedBars(
+      token.id,
+      ctx.baseCurrency.id,
+      cached.bars,
+      targetSec,
+      sourceTag
+    );
+    if (quote && cached.fetchedAtMs >= quote.timestamp.getTime() + 86_400_000) return quote;
   }
 
   const url = `${KRAKEN_OHLC_URL}?pair=${encodeURIComponent(pair)}&interval=1440`;
   try {
-    const response = await fetchWithTimeout(url, {
-      headers: { 'Content-Type': 'application/json' },
-    });
+    const fetchedAtMs = Date.now();
+    const response = await limiter.execute(() =>
+      fetchWithTimeout(url, {
+        headers: { 'Content-Type': 'application/json' },
+      })
+    );
     if (!response.ok) return null;
     const data = (await response.json()) as {
       error?: string[];
@@ -192,7 +214,7 @@ export async function fetchKrakenHistoricalPrice(
     }
     bars.sort((a, b) => a.timeSec - b.timeSec);
     const maxBarSec = bars.length > 0 ? (bars[bars.length - 1]?.timeSec ?? 0) : 0;
-    krakenOhlcCache.set(pair, { bars, maxBarSec });
+    krakenOhlcCache.set(pair, { bars, maxBarSec, fetchedAtMs });
 
     return priceFromCachedBars(token.id, ctx.baseCurrency.id, bars, targetSec, sourceTag);
   } catch {

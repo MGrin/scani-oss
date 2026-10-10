@@ -36,9 +36,9 @@ import type {
   TokenSearchResult,
 } from '../../core/capabilities';
 import type { PriceQuote, ProviderContext } from '../../core/types';
+import { tradingDate } from '../../core/utils/bar-day';
 import { fetchWithTimeout } from '../../core/utils/fetch';
 import { isFiatCode } from '../../core/utils/fiat-codes';
-import type { CurrencyConverter } from '../coingecko';
 import { detectExchangeInfo, normalizeForFinnhubSymbol } from './symbol';
 
 const FINNHUB_BASE_URL = 'https://finnhub.io/api/v1';
@@ -91,10 +91,7 @@ export class FinnhubProvider implements HistoricalPriceProvider, TokenIdentityPr
 
   constructor(
     private readonly limiter: OutflowRateLimiter,
-    private readonly opts: {
-      apiKey: string;
-      converter?: CurrencyConverter | undefined;
-    }
+    private readonly opts: { apiKey: string }
   ) {
     this.logger = createComponentLogger('provider:finnhub');
   }
@@ -231,8 +228,8 @@ export class FinnhubProvider implements HistoricalPriceProvider, TokenIdentityPr
     // Semiconductors, EUR = ProShares Ultra Euro, …). Stamping
     // finnhub.symbol on a fiat token routes its pricing through the
     // equity pipeline and pollutes the screenshot-parse review UI.
-    // Skip enrichment for fiat codes — Frankfurter / ExchangeRate-API
-    // own the fiat-pricing path.
+    // Skip enrichment for fiat codes — Frankfurter owns the fiat-pricing
+    // path.
     if (isFiatCode(sym)) return null;
     const normalized = normalizeForFinnhubSymbol(sym);
     if (!normalized) return null;
@@ -380,6 +377,8 @@ export class FinnhubProvider implements HistoricalPriceProvider, TokenIdentityPr
     timestamp: Date,
     sourceTag: string
   ): Promise<PriceQuote | null> {
+    const barDay =
+      sourceTag === 'finnhub_historical' ? tradingDate(timestamp, 'America/New_York') : null;
     const baseUpper = ctx.baseCurrency.symbol.toUpperCase();
     if (baseUpper === 'USD') {
       return {
@@ -387,20 +386,11 @@ export class FinnhubProvider implements HistoricalPriceProvider, TokenIdentityPr
         baseTokenId: ctx.baseCurrency.id,
         price: usdPrice,
         timestamp,
+        barDay,
         source: sourceTag,
       };
     }
-    const converter = this.opts.converter;
-    if (!converter) return null;
-    const converted = await converter.convert(usdPrice, 'USD', baseUpper, timestamp);
-    if (converted === null || converted === '0') return null;
-    return {
-      tokenId: t.id,
-      baseTokenId: ctx.baseCurrency.id,
-      price: converted,
-      timestamp,
-      source: `${sourceTag}_converted`,
-    };
+    return null;
   }
 }
 

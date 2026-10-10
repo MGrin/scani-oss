@@ -24,15 +24,15 @@ export class UpdateHoldingPriceUseCase {
     // conflated into one green toast that claimed a refresh over a price line
     // still reading `25m ago` (SC-148); `fetched` is what separates them.
     success: boolean;
-    // `null` when no provider had a quote and no stale fallback was
-    // usable. The request technically succeeded (no error, no rate
+    // The price in `base`, as the dashboard reads it. `null` when nothing
+    // prices the token in `base`: the request succeeded (no error, no rate
     // limit) but produced no price; the UI shows "—" rather than $0.
     price: string | null;
     source: string;
     /**
-     * When the price being returned was stamped: the instant this refresh
-     * asked, for a quote it fetched; the stored row's own time, for one it
-     * reused or fell back to.
+     * When the price being returned was read: its route's oldest leg, so a
+     * quote this refresh fetched carries the instant it asked unless an
+     * older FX leg binds it.
      */
     timestamp: string;
     /** False when the stored price was already current and nothing was

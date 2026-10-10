@@ -16,6 +16,18 @@ import { AIUnavailableError } from '@scani/providers/core/errors';
 import type { PriceQuote, ProviderContext } from '@scani/providers/core/types';
 import type { CloudClient } from '../client';
 
+function cloudQuote(
+  row: Omit<PriceQuote, 'timestamp' | 'barDay'> & { timestamp: string; barDay?: string | null },
+  historical: boolean
+): PriceQuote {
+  return {
+    ...row,
+    timestamp: new Date(row.timestamp),
+    barDay: row.barDay ?? null,
+    ...(historical && row.barDay === undefined ? { legacyDaily: true as const } : {}),
+  };
+}
+
 type PricingKey = (typeof cloudPricingProviderSchema.options)[number];
 
 export class CloudPricingProvider implements HistoricalPriceProvider {
@@ -44,8 +56,7 @@ export class CloudPricingProvider implements HistoricalPriceProvider {
         tokens: tokens.slice(offset, offset + 100).map(toCloudAsset),
         baseCurrency: toCloudAsset(ctx.baseCurrency),
       });
-      for (const row of rows)
-        result.set(row.tokenId, { ...row, timestamp: new Date(row.timestamp) });
+      for (const row of rows) result.set(row.tokenId, cloudQuote(row, false));
     }
     return result;
   }
@@ -61,7 +72,7 @@ export class CloudPricingProvider implements HistoricalPriceProvider {
       at: at.toISOString(),
     });
     const row = rows[0];
-    return row ? { ...row, timestamp: new Date(row.timestamp) } : null;
+    return row ? cloudQuote(row, true) : null;
   }
   private async fetchRange(
     token: Token,
@@ -79,7 +90,7 @@ export class CloudPricingProvider implements HistoricalPriceProvider {
         from: new Date(start).toISOString(),
         to: new Date(end).toISOString(),
       });
-      rows.push(...page.map((row) => ({ ...row, timestamp: new Date(row.timestamp) })));
+      rows.push(...page.map((row) => cloudQuote(row, true)));
       start = end + 86_400_000;
     }
     return rows;

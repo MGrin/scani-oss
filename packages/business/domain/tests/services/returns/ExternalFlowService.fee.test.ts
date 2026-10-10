@@ -7,10 +7,11 @@ import Decimal from 'decimal.js';
 import { Container } from 'typedi';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { DriftLedgerService } from '../../../src/services/returns/DriftLedgerService';
 import { ExternalFlowService } from '../../../src/services/returns/ExternalFlowService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub } from '../../../test/helpers/price-series';
 
 /**
  * A fee answer reaches the RETURN figure, and that is the whole of SC-888's
@@ -83,10 +84,10 @@ function makeService(rows: HoldingTransaction[]): ExternalFlowService {
     findIdsIncludedInTotal: async (ids: readonly string[]) => new Set(ids),
     findByIds: async () => [{ id: HOLDING, tokenId: USD }],
   } as unknown as HoldingRepository);
-  Container.set(PriceGraphService, {
-    buildPriceLookup: async () => ({ covers: () => false }),
-    convert: async (amount: Decimal) => ({ amount: new Decimal(amount), stale: false }),
-  } as unknown as PriceGraphService);
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal) => ({ amount: new Decimal(amount), stale: false }))
+  );
   Container.set(DriftLedgerService, {
     forHoldings: async () => new Map(),
   } as unknown as DriftLedgerService);

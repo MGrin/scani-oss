@@ -75,9 +75,10 @@ Finnhub stocks land here, the rest go to Finnhub / CoinGecko).
 - `google-sheets-provider.ts` — the class + capability surface.
   ~1400 lines of GOOGLEFINANCE row-management.
 - `currency-converter.ts` — `GoogleSheetsCurrencyConverter` for
-  per-token native→base currency conversion. Reads the USD table of
-  the process's one exchangerate-api client (`@scani/providers`),
-  which owns the 60-minute cache and the `exchangerate-api` limiter.
+  per-token native→base currency conversion. Asks the process's one
+  Frankfurter client (`@scani/providers`), which reads each pair inside
+  one central bank's table and owns the 60-minute cache and the
+  `frankfurter` limiter.
 - `failure-result.ts` — formats upstream errors into the
   `ProviderPriceResult` shape PricingService consumes.
 - `factory.ts` — `googleSheetsFactory(deps)` wires limiters

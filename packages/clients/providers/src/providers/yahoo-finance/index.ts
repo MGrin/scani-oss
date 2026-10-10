@@ -5,10 +5,13 @@
  *  1. Non-US-listed equities/ETFs (`.TO`, `.NE`/`.NEO`, `.L`, `.DE`, …).
  *     Finnhub's free tier returns 403 on these; Yahoo serves them
  *     unauthenticated via the public chart endpoint.
- *  2. Frankfurter-unsupported fiat (RUB after 2022, KZT, GEL, AED, …).
- *     Frankfurter returns null for historical lookups outside its
- *     ECB-derived list; Yahoo carries full historical FX-cross daily
- *     bars for any ISO-4217 pair via `<FROM><TO>=X` symbols.
+ *  2. Fiat history outside the ECB's table. Frankfurter now reads RUB,
+ *     KZT, GEL, AED and the rest of the Bank of Russia's table too, and it
+ *     is registered first, so Yahoo prices such fiat only when Frankfurter
+ *     does not answer, and prices alone the fiat in neither bank's table.
+ *     The hourly current-price run sends fiat to Frankfurter alone. Yahoo
+ *     carries full historical FX-cross daily bars for any ISO-4217 pair
+ *     via `<FROM><TO>=X` symbols.
  *
  * The chart endpoint lives at:
  *   https://query1.finance.yahoo.com/v8/finance/chart/{symbol}
@@ -27,6 +30,7 @@ import { createOutflowLimiter, type OutflowRateLimiter } from '@scani/rate-limit
 import type { ProviderFactory } from '../../core/boot';
 import type { Capability, HistoricalPriceProvider } from '../../core/capabilities';
 import type { PriceQuote, ProviderContext } from '../../core/types';
+import { tradingDate } from '../../core/utils/bar-day';
 import { fetchWithTimeout } from '../../core/utils/fetch';
 import { resolveYahooStockSymbol, yahooFxPairSymbol } from './symbol';
 
@@ -41,6 +45,7 @@ const SINGLE_POINT_PADDING_SECS = 48 * 60 * 60;
 const USER_AGENT = 'Mozilla/5.0 (compatible; ScaniBot/1.0)';
 
 interface YahooChartBar {
+  barDay: string | null;
   timeSec: number;
   close: number;
 }
@@ -48,7 +53,7 @@ interface YahooChartBar {
 interface YahooChartResponse {
   chart?: {
     result?: Array<{
-      meta?: { currency?: string };
+      meta?: { currency?: string; exchangeTimezoneName?: string };
       timestamp?: number[];
       indicators?: { quote?: Array<{ close?: Array<number | null> }> };
     }>;
@@ -129,14 +134,15 @@ const SUPPORTED_FIAT = new Set([
   'ZAR',
 ]);
 
-// Mirrors Frankfurter's published-currency list (see frankfurter/index.ts).
-// Yahoo skips these to avoid duplicate token_prices rows — Frankfurter
-// is registered first and serves them. Updates here must stay in sync
-// with the Frankfurter side; cross-importing would create a cyclic
-// provider→provider dep we don't want.
+// The ECB's currencies, which Frankfurter serves (frankfurter/client.ts holds
+// both banks' lists, read 2026-10-05). Yahoo skips these to avoid duplicate
+// token_prices rows — Frankfurter is registered first and serves them. BGN is
+// not here: the ECB stopped publishing it when Bulgaria adopted the euro on
+// 2026-01-01, so Yahoo is its source. The Bank of Russia's currencies are
+// deliberately not here either: Yahoo stays their fallback. Cross-importing
+// would create a cyclic provider→provider dep we don't want.
 const FRANKFURTER_COVERED_FIAT = new Set([
   'AUD',
-  'BGN',
   'BRL',
   'CAD',
   'CHF',
@@ -182,14 +188,15 @@ export class YahooFinanceProvider implements HistoricalPriceProvider {
    * Accept any non-US-listed equity (suffix-detected via Finnhub's
    * shared exchange map), any US-listed equity (Yahoo handles them too,
    * though Finnhub will be tried first by registration order), and
-   * exotic fiat that Frankfurter doesn't cover (RUB / KZT / GEL / …).
+   * fiat outside the ECB's list (RUB / KZT / GEL / …), which Frankfurter,
+   * registered first, now usually answers from the Bank of Russia's table.
    *
    * Crypto is intentionally left to CoinGecko / DeFiLlama. Frankfurter-
    * covered fiat is also skipped so we don't write duplicate rows: prod
    * carries both `frankfurter_historical` and `yahoo-finance_fx_historical`
    * rows for the same major pairs.
-   * Frankfurter (ECB-sourced, no auth, no rate limit) wins when it
-   * covers the fiat; Yahoo stays the fallback for everything else.
+   * Frankfurter (central-bank rates, no auth) wins when it covers the
+   * fiat; Yahoo stays the fallback for everything else.
    */
   canPrice(t: Token): boolean {
     const sym = (t.symbol ?? '').toUpperCase();
@@ -201,7 +208,8 @@ export class YahooFinanceProvider implements HistoricalPriceProvider {
   }
 
   async fetchCurrentPrice(t: Token, ctx: ProviderContext): Promise<PriceQuote | null> {
-    return this.fetchAt(t, ctx, ctx.timestamp ?? new Date());
+    const quote = await this.fetchAt(t, ctx, ctx.timestamp ?? new Date(), true);
+    return quote ? { ...quote, barDay: null } : null;
   }
 
   async fetchHistoricalPrice(t: Token, at: Date, ctx: ProviderContext): Promise<PriceQuote | null> {
@@ -213,6 +221,16 @@ export class YahooFinanceProvider implements HistoricalPriceProvider {
     from: Date,
     to: Date,
     ctx: ProviderContext
+  ): Promise<PriceQuote[]> {
+    return this.fetchRange(t, from, to, ctx, false);
+  }
+
+  private async fetchRange(
+    t: Token,
+    from: Date,
+    to: Date,
+    ctx: ProviderContext,
+    current: boolean
   ): Promise<PriceQuote[]> {
     if (to.getTime() < from.getTime()) return [];
     const baseSymbol = ctx.baseCurrency.symbol.toUpperCase();
@@ -237,18 +255,20 @@ export class YahooFinanceProvider implements HistoricalPriceProvider {
     const fxByDay =
       resolved.currency === baseSymbol
         ? null
-        : await this.fetchFxRangeByDay(resolved.currency, baseSymbol, from, to);
+        : await this.fetchFxRangeByDay(resolved.currency, baseSymbol, from, to, current);
 
     const out: PriceQuote[] = [];
     for (const bar of stockBars) {
-      const fx = fxByDay?.get(this.dayKey(bar.timeSec));
+      const fx = bar.barDay ? fxByDay?.get(bar.barDay) : undefined;
       // If we needed an FX rate but couldn't find one for this day,
       // skip the bar rather than emit a stock-currency-denominated row
       // that would break the rollup. The next provider's fallback (or
       // the next-day bar) will fill in.
       if (fxByDay && fx == null) continue;
       const price = fx == null ? bar.close : bar.close * fx;
-      out.push(this.toQuote(t, ctx, String(price), new Date(bar.timeSec * 1000), 'historical'));
+      out.push(
+        this.toQuote(t, ctx, String(price), new Date(bar.timeSec * 1000), 'historical', bar.barDay)
+      );
     }
     return out;
   }
@@ -258,11 +278,16 @@ export class YahooFinanceProvider implements HistoricalPriceProvider {
    * range fetcher with a tight ±48h window so the close-price logic
    * stays in one place.
    */
-  private async fetchAt(t: Token, ctx: ProviderContext, at: Date): Promise<PriceQuote | null> {
+  private async fetchAt(
+    t: Token,
+    ctx: ProviderContext,
+    at: Date,
+    current = false
+  ): Promise<PriceQuote | null> {
     const targetSec = Math.floor(at.getTime() / 1000);
     const from = new Date((targetSec - SINGLE_POINT_PADDING_SECS) * 1000);
     const to = new Date((targetSec + SINGLE_POINT_PADDING_SECS) * 1000);
-    const bars = await this.fetchHistoricalRange(t, from, to, ctx);
+    const bars = await this.fetchRange(t, from, to, ctx, current);
     if (bars.length === 0) return null;
     // Pick the bar closest to `at`.
     let closest = bars[0];
@@ -294,7 +319,14 @@ export class YahooFinanceProvider implements HistoricalPriceProvider {
     const pair = yahooFxPairSymbol(fromSym, baseSymbol);
     const bars = await this.fetchChartRange(pair, from, to);
     return bars.map((bar) =>
-      this.toQuote(t, ctx, String(bar.close), new Date(bar.timeSec * 1000), 'fx_historical')
+      this.toQuote(
+        t,
+        ctx,
+        String(bar.close),
+        new Date(bar.timeSec * 1000),
+        'fx_historical',
+        bar.barDay
+      )
     );
   }
 
@@ -302,12 +334,17 @@ export class YahooFinanceProvider implements HistoricalPriceProvider {
     fromSym: string,
     toSym: string,
     from: Date,
-    to: Date
+    to: Date,
+    current: boolean
   ): Promise<Map<string, number>> {
     const pair = yahooFxPairSymbol(fromSym, toSym);
     const bars = await this.fetchChartRange(pair, from, to);
     const out = new Map<string, number>();
-    for (const bar of bars) out.set(this.dayKey(bar.timeSec), bar.close);
+    for (const bar of bars) {
+      const day =
+        bar.barDay ?? (current ? tradingDate(new Date(bar.timeSec * 1000), 'Europe/London') : null);
+      if (day) out.set(day, bar.close);
+    }
     return out;
   }
 
@@ -341,7 +378,18 @@ export class YahooFinanceProvider implements HistoricalPriceProvider {
         if (typeof ts !== 'number' || typeof close !== 'number' || !Number.isFinite(close)) {
           continue;
         }
-        out.push({ timeSec: ts, close });
+        const at = new Date(ts * 1000);
+        const isFx = yahooSymbol.endsWith('=X');
+        const boundary = ts % 86_400 === 0 || ts % 86_400 === 82_800;
+        const timeZone = result?.meta?.exchangeTimezoneName;
+        const barDay = isFx
+          ? boundary
+            ? tradingDate(at, 'Europe/London')
+            : null
+          : timeZone
+            ? tradingDate(at, timeZone)
+            : null;
+        out.push({ timeSec: ts, close, barDay });
       }
       return out;
     } catch (err) {
@@ -350,22 +398,20 @@ export class YahooFinanceProvider implements HistoricalPriceProvider {
     }
   }
 
-  private dayKey(epochSec: number): string {
-    return new Date(epochSec * 1000).toISOString().slice(0, 10);
-  }
-
   private toQuote(
     t: Token,
     ctx: ProviderContext,
     price: string,
     timestamp: Date,
-    variant: 'historical' | 'fx_historical'
+    variant: 'historical' | 'fx_historical',
+    barDay: string | null
   ): PriceQuote {
     return {
       tokenId: t.id,
       baseTokenId: ctx.baseCurrency.id,
       price,
       timestamp,
+      barDay,
       source: `yahoo-finance_${variant}`,
     };
   }

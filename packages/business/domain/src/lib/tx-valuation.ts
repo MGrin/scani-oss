@@ -1,9 +1,8 @@
-import type { DatabaseTransaction } from '@scani/db';
 import type { HoldingTransaction } from '@scani/db/schema';
 import type { ValuationBasisDto } from '@scani/shared';
 import Decimal from 'decimal.js';
-import type { PriceGraphService } from '../services/pricing/PriceGraphService';
-import type { PriceLookup } from '../services/pricing/PriceLookup';
+import type { PriceAsk } from '../engine/types';
+import type { PriceSeries } from '../services/pricing/PriceReader';
 
 /**
  * What one ledger row is worth in the user's base currency at the instant it
@@ -22,8 +21,8 @@ import type { PriceLookup } from '../services/pricing/PriceLookup';
  *      `qty x priceNative` in `priceNativeTokenId`, converted to base. For a
  *      trade or a swap this is the rate the deal actually executed at and
  *      needs no price source at all.
- *   2. `held_token` — the quantity in the HELD token, converted to base via
- *      the price graph at `occurredAt`. This is what values a fiat deposit
+ *   2. `held_token` — the quantity in the HELD token, converted to base at
+ *      `occurredAt` through the series the caller loaded. This is what values a fiat deposit
  *      (a EUR balance worth EUR 500 at receipt) and any leg whose worth can
  *      be inferred from spot.
  *
@@ -46,24 +45,17 @@ type ValuableTransaction = Pick<
 >;
 
 /**
- * `dbTx` is the database transaction every read here must go through, or
- * `undefined` for the pool — REQUIRED, so a caller cannot omit it and get a
- * silent pool read (SC-600). It is named `dbTx` rather than `tx` throughout
- * this file and `CostBasisService` because `tx` already means a LEDGER ROW in
- * both, and one identifier meaning two things one line apart is how a
- * shadowing bug gets written by somebody reading carefully.
+ * Every read here goes to `prices`, loaded by the caller over the instants
+ * `valuationInstantsOf` lists; an instant it did not list throws rather than
+ * reading the database row by row. `tx` is a LEDGER ROW throughout this file.
  */
-async function valueTransactionInBase(
-  priceGraphService: PriceGraphService,
-  dbTx: DatabaseTransaction | undefined,
+function valueTransactionInBase(
+  prices: PriceSeries,
   tx: ValuableTransaction,
   qtyAbs: Decimal,
   baseCurrencyId: string,
-  heldTokenId: string | null,
-  priceLookup?: PriceLookup
-): Promise<TxValuation | null> {
-  const convertOpts = convertOptions(dbTx, priceLookup);
-
+  heldTokenId: string | null
+): TxValuation | null {
   if (tx.priceNative && tx.priceNativeTokenId) {
     const native = new Decimal(tx.priceNative).mul(qtyAbs);
     // Recorded by the importer at the moment of the trade — no price
@@ -71,13 +63,7 @@ async function valueTransactionInBase(
     if (tx.priceNativeTokenId === baseCurrencyId) {
       return { amount: native, stale: false, basis: 'execution_rate' };
     }
-    const converted = await priceGraphService.convert(
-      native,
-      tx.priceNativeTokenId,
-      baseCurrencyId,
-      tx.occurredAt,
-      convertOpts
-    );
+    const converted = convert(prices, native, tx.priceNativeTokenId, tx.occurredAt);
     if (converted) {
       return { amount: converted.amount, stale: converted.stale, basis: 'execution_rate' };
     }
@@ -89,13 +75,7 @@ async function valueTransactionInBase(
     if (heldTokenId === baseCurrencyId) {
       return { amount: qtyAbs, stale: false, basis: 'held_token' };
     }
-    const converted = await priceGraphService.convert(
-      qtyAbs,
-      heldTokenId,
-      baseCurrencyId,
-      tx.occurredAt,
-      convertOpts
-    );
+    const converted = convert(prices, qtyAbs, heldTokenId, tx.occurredAt);
     if (converted) {
       return { amount: converted.amount, stale: converted.stale, basis: 'held_token' };
     }
@@ -104,10 +84,14 @@ async function valueTransactionInBase(
   return null;
 }
 
-function convertOptions(dbTx: DatabaseTransaction | undefined, priceLookup?: PriceLookup) {
-  return priceLookup
-    ? ({ preferGranularity: 'daily', priceLookup, tx: dbTx } as const)
-    : ({ preferGranularity: 'daily', tx: dbTx } as const);
+function convert(
+  prices: PriceSeries,
+  amount: Decimal,
+  tokenId: string,
+  at: Date
+): { amount: Decimal; stale: boolean } | null {
+  const answer = prices.priceAt(tokenId, at);
+  return answer ? { amount: amount.mul(answer.price), stale: answer.stale } : null;
 }
 
 /** The subset of a ledger row a trade-fee valuation reads. */
@@ -137,45 +121,35 @@ export interface FeeValuation {
  *     execution rate when it has one. A fee taken in the coin being bought is
  *     worth what that coin cost in this trade, not a spot quote.
  *   - **In any other token** — the counter asset, or a third one such as BNB —
- *     the price graph at `occurredAt`, at the same granularity and through the
- *     same lookup.
+ *     the series at `occurredAt`.
  *
  * Providers store the fee negative and the manual route stores what was typed,
  * so the sign is ignored and the magnitude is valued.
  */
-export async function valueTradeFeeInBase(
-  priceGraphService: PriceGraphService,
-  dbTx: DatabaseTransaction | undefined,
+export function valueTradeFeeInBase(
+  prices: PriceSeries,
   tx: FeeBearingTransaction,
   baseCurrencyId: string,
   heldTokenId: string | null,
-  priceLookup?: PriceLookup
-): Promise<FeeValuation | null> {
+  now: Date
+): FeeValuation | null {
   const qty = tradeFeeQuantity(tx.feeQuantity);
   if (qty === null) return null;
   if (qty === 'unreadable' || tx.feeTokenId === null) return { amount: null, stale: false };
   if (tx.feeTokenId === baseCurrencyId) return { amount: qty, stale: false };
 
   if (tx.feeTokenId === tx.tokenId || tx.feeTokenId === heldTokenId) {
-    const own = await valueTransactionInBase(
-      priceGraphService,
-      dbTx,
-      tx,
+    const own = valueTransactionInBase(
+      prices,
+      { ...tx, occurredAt: valuationInstant(tx, now, true) },
       qty,
       baseCurrencyId,
-      heldTokenId,
-      priceLookup
+      heldTokenId
     );
     return own ? { amount: own.amount, stale: own.stale } : { amount: null, stale: false };
   }
 
-  const converted = await priceGraphService.convert(
-    qty,
-    tx.feeTokenId,
-    baseCurrencyId,
-    tx.occurredAt,
-    convertOptions(dbTx, priceLookup)
-  );
+  const converted = convert(prices, qty, tx.feeTokenId, valuationInstant(tx, now, true));
   return converted
     ? { amount: converted.amount, stale: converted.stale }
     : { amount: null, stale: false };
@@ -236,7 +210,7 @@ export function withTradeFee(
  * `RollupPortfolioValueDailyUseCase` values a past day at 23:59:59.999Z and
  * today at the moment it runs, so today's flows are valued now.
  */
-export function flowValuationInstant(occurredAt: Date, now: Date = new Date()): Date {
+export function flowValuationInstant(occurredAt: Date, now: Date): Date {
   const endOfDay = new Date(occurredAt);
   endOfDay.setUTCHours(23, 59, 59, 999);
   return endOfDay.getTime() > now.getTime() ? now : endOfDay;
@@ -266,37 +240,32 @@ export type SwapLegTransaction = ValuableTransaction &
  *
  * Falls back to the row's own valuation when the arrival cannot be priced.
  */
-async function valueSwapLegInBase(
-  priceGraphService: PriceGraphService,
-  dbTx: DatabaseTransaction | undefined,
+function valueSwapLegInBase(
+  prices: PriceSeries,
   tx: SwapLegTransaction,
   qtyAbs: Decimal,
   baseCurrencyId: string,
   heldTokenId: string | null,
-  priceLookup?: PriceLookup
-): Promise<TxValuation | null> {
-  const at = flowValuationInstant(tx.occurredAt);
+  now: Date
+): TxValuation | null {
+  const at = valuationInstant(tx, now);
   const arrival = swapLegArrival(tx, qtyAbs, heldTokenId);
   if (arrival) {
-    const valued = await valueTransactionInBase(
-      priceGraphService,
-      dbTx,
+    const valued = valueTransactionInBase(
+      prices,
       { priceNative: null, priceNativeTokenId: null, occurredAt: at },
       arrival.quantity,
       baseCurrencyId,
-      arrival.tokenId,
-      priceLookup
+      arrival.tokenId
     );
     if (valued) return valued;
   }
   return valueTransactionInBase(
-    priceGraphService,
-    dbTx,
+    prices,
     { ...tx, occurredAt: at },
     qtyAbs,
     baseCurrencyId,
-    heldTokenId,
-    priceLookup
+    heldTokenId
   );
 }
 
@@ -334,37 +303,68 @@ function hasExecutionPrice(tx: Pick<HoldingTransaction, 'priceNative' | 'priceNa
  * (SC-1254). The cost walk used to price those at their own minute while the
  * flow took the close, so the intraday move stood between them (SC-1486).
  */
-export async function valueRowInBase(
-  priceGraphService: PriceGraphService,
-  dbTx: DatabaseTransaction | undefined,
+export function valueRowInBase(
+  prices: PriceSeries,
   tx: SwapLegTransaction,
   qtyAbs: Decimal,
   baseCurrencyId: string,
   heldTokenId: string | null,
-  priceLookup?: PriceLookup
-): Promise<TxValuation | null> {
+  now: Date
+): TxValuation | null {
   if (isSwapLeg(tx)) {
-    return valueSwapLegInBase(
-      priceGraphService,
-      dbTx,
-      tx,
-      qtyAbs,
-      baseCurrencyId,
-      heldTokenId,
-      priceLookup
-    );
+    return valueSwapLegInBase(prices, tx, qtyAbs, baseCurrencyId, heldTokenId, now);
   }
-  const at =
-    TRADE_KINDS.has(tx.kind) && hasExecutionPrice(tx)
-      ? tx.occurredAt
-      : flowValuationInstant(tx.occurredAt);
+  const at = valuationInstant(tx, now);
   return valueTransactionInBase(
-    priceGraphService,
-    dbTx,
+    prices,
     { ...tx, occurredAt: at },
     qtyAbs,
     baseCurrencyId,
-    heldTokenId,
-    priceLookup
+    heldTokenId
   );
+}
+
+function valuationInstant(
+  tx: ValuableTransaction & Partial<Pick<HoldingTransaction, 'kind'>>,
+  now: Date,
+  fee = false
+): Date {
+  return fee || (TRADE_KINDS.has(tx.kind ?? '') && hasExecutionPrice(tx))
+    ? tx.occurredAt
+    : flowValuationInstant(tx.occurredAt, now);
+}
+
+/** A conservative superset: include fallbacks before knowing which routes resolve. */
+export function valuationInstantsOf(
+  tx: SwapLegTransaction & FeeBearingTransaction,
+  baseCurrencyId: string,
+  heldTokenId: string | null,
+  now: Date
+): PriceAsk[] {
+  const asks = new Map<string, PriceAsk>();
+  const add = (tokenId: string | null, at: Date) => {
+    if (tokenId && tokenId !== baseCurrencyId) {
+      asks.set(`${tokenId}|${at.getTime()}`, { tokenId, at });
+    }
+  };
+  const own = (at: Date) => {
+    if (hasExecutionPrice(tx)) {
+      if (tx.priceNativeTokenId === baseCurrencyId) return;
+      add(tx.priceNativeTokenId, at);
+    }
+    add(heldTokenId, at);
+  };
+  const at = valuationInstant(tx, now);
+  if (isSwapLeg(tx)) {
+    const arrival = swapLegArrival(tx, new Decimal(tx.quantity).abs(), heldTokenId);
+    if (arrival) add(arrival.tokenId, at);
+  }
+  own(at);
+  const fee = tradeFeeQuantity(tx.feeQuantity);
+  if (fee !== null && fee !== 'unreadable' && tx.feeTokenId !== baseCurrencyId) {
+    const feeAt = valuationInstant(tx, now, true);
+    if (tx.feeTokenId === tx.tokenId || tx.feeTokenId === heldTokenId) own(feeAt);
+    else add(tx.feeTokenId, feeAt);
+  }
+  return [...asks.values()];
 }

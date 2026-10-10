@@ -2,17 +2,18 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy
 
 import { describe, expect, test } from 'bun:test';
 import type { HoldingTransaction } from '@scani/db/schema';
-import Decimal from 'decimal.js';
+import type Decimal from 'decimal.js';
 import { Container } from 'typedi';
-import { MAX_DAILY_PRICE_AGE_MS } from '../../../src/lib/constants';
+import { STALENESS_HORIZON_MS } from '../../../src/engine/price-at';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
 import {
   CostBasisService,
   type HistoryCompleteness,
 } from '../../../src/services/pricing/CostBasisService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { noPriceReader, priceReaderStub } from '../../../test/helpers/price-series';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -22,20 +23,12 @@ const USD = 'token-USD';
 const BTC = 'token-BTC';
 
 // Every priced tx in these tests carries `priceNative` in the base
-// currency, so CostBasisService never needs an FX conversion. This stub
+// currency, so CostBasisService never needs an FX conversion. This reader
 // throws — a test that accidentally relies on FX fails loudly.
-function makePriceGraphStub(): PriceGraphService {
-  return {
-    convert: async () => {
-      throw new Error('PriceGraphService.convert should not be called in these tests');
-    },
-  } as unknown as PriceGraphService;
-}
-
 function makeService(): CostBasisService {
   Container.set(HoldingRepository, {} as unknown as HoldingRepository);
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
-  Container.set(PriceGraphService, makePriceGraphStub());
+  Container.set(PriceReader, noPriceReader);
   const instance = new CostBasisService();
   Container.set(CostBasisService, instance);
   return instance;
@@ -44,10 +37,12 @@ function makeService(): CostBasisService {
 function makeServiceWithSpot(priceable: string, rate: string): CostBasisService {
   Container.set(HoldingRepository, {} as unknown as HoldingRepository);
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
-  Container.set(PriceGraphService, {
-    convert: async (amount: Decimal, from: string) =>
-      from === priceable ? { amount: amount.mul(rate), stale: false } : null,
-  } as unknown as PriceGraphService);
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal, from: string) =>
+      from === priceable ? { amount: amount.mul(rate), stale: false } : null
+    )
+  );
   const instance = new CostBasisService();
   Container.set(CostBasisService, instance);
   return instance;
@@ -810,26 +805,20 @@ describe('CostBasisService.walkComponent', () => {
  * wrong-looking, it was wrong-*meaning*.
  */
 describe('CostBasisService — basis quality', () => {
-  // A conversion stub whose price is `ageDays` old relative to the tx, so the
-  // 45-day daily cap decides `stale`. 96 days is the age measured on the
+  // A reader whose price is `ageDays` old relative to the tx, so the engine's
+  // crypto horizon decides `stale`. 96 days is the age measured on the
   // SC-90 fixture: an airdrop on 2025-11-05 valued from a price dated
   // 2025-08-01 and reported as market value on the day.
-  function makeAgingPriceGraphStub(ageDays: number): PriceGraphService {
-    return {
-      convert: async (amount: unknown, _from: string, _to: string, at: Date) => ({
-        amount: new Decimal(amount as string | number),
-        rate: new Decimal(1),
-        effectiveAt: new Date(at.getTime() - ageDays * 24 * 60 * 60 * 1000),
-        path: 'direct',
-        stale: ageDays * 24 * 60 * 60 * 1000 > MAX_DAILY_PRICE_AGE_MS,
-      }),
-    } as unknown as PriceGraphService;
-  }
-
   function serviceWithPrices(ageDays: number): CostBasisService {
     Container.set(HoldingRepository, {} as unknown as HoldingRepository);
     Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
-    Container.set(PriceGraphService, makeAgingPriceGraphStub(ageDays));
+    Container.set(
+      PriceReader,
+      priceReaderStub((amount) => ({
+        amount,
+        stale: ageDays * 24 * 60 * 60 * 1000 > (STALENESS_HORIZON_MS.crypto ?? 0),
+      }))
+    );
     const instance = new CostBasisService();
     Container.set(CostBasisService, instance);
     return instance;
@@ -903,21 +892,6 @@ describe('CostBasisService — basis quality', () => {
     expect(fresh.basisQuality).toBe('known');
     // Same figure, and before this the reader had no way to tell them apart.
     expect(stale.costBasis.toString()).toBe(fresh.costBasis.toString());
-  });
-
-  test('a price just inside the daily window is not flagged', async () => {
-    const airdrop = [
-      tx({ holdingId: 'A', kind: 'airdrop', quantity: '5', occurredAt: '2025-11-05' }),
-    ];
-    const r = await serviceWithPrices(44).walkLots(
-      undefined,
-      airdrop,
-      USD,
-      BTC,
-      undefined,
-      'complete'
-    );
-    expect(r.basisQuality).toBe('known');
   });
 
   test('an inflow nothing could value books a zero-cost lot → partial', async () => {

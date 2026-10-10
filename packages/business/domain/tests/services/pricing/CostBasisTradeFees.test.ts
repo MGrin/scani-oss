@@ -6,6 +6,7 @@ import type { HoldingTransaction } from '@scani/db/schema';
 import { TRANSFER_REVIEW_SPLIT } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
+import { valuationInstantsOf } from '../../../src/lib/tx-valuation';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
 import {
@@ -13,20 +14,20 @@ import {
   CostBasisService,
   type DisposalLotMatch,
 } from '../../../src/services/pricing/CostBasisService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
-import { PriceLookup } from '../../../src/services/pricing/PriceLookup';
+import { PriceReader, type PriceSeries } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub, type StubConvert, seriesFrom } from '../../../test/helpers/price-series';
 import {
   BNB,
   BTC,
   byHolding,
+  convertAtFixedRates,
   ETH,
   FUTURE,
   HELD_TOKENS,
   type LedgerRow,
   ledger,
   OBSCURE,
-  priceGraphStub,
   row,
   USD,
   walkEverything,
@@ -58,15 +59,27 @@ interface ConvertCall {
 function makeService(calls: ConvertCall[] = []): CostBasisService {
   Container.set(HoldingRepository, {} as unknown as HoldingRepository);
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
-  Container.set(PriceGraphService, {
-    convert: async (amount: Decimal | string, from: string, to: string, at: Date) => {
-      calls.push({ from, at });
-      return priceGraphStub.convert(amount, from, to);
-    },
-  } as unknown as PriceGraphService);
+  Container.set(PriceReader, priceReaderStub(recording(calls)));
   const instance = new CostBasisService();
   Container.set(CostBasisService, instance);
   return instance;
+}
+
+function recording(calls: ConvertCall[]): StubConvert {
+  return (amount, from, to, at) => {
+    calls.push({ from, at });
+    return convertAtFixedRates(amount, from, to);
+  };
+}
+
+/** A series over what walking `rows` reads, as the walk would load it. */
+function seriesFor(rows: HoldingTransaction[], calls: ConvertCall[] = []): PriceSeries {
+  const now = new Date();
+  return seriesFrom(
+    rows.flatMap((r) => valuationInstantsOf(r, USD, BTC, now)),
+    USD,
+    recording(calls)
+  );
 }
 
 const serialize = (walked: unknown): string => `${JSON.stringify(walked, null, 2)}\n`;
@@ -403,52 +416,56 @@ describe('a fee is valued once per price snapshot (SC-1145)', () => {
   async function walkWith(
     svc: CostBasisService,
     rows: HoldingTransaction[],
-    priceLookup: PriceLookup | undefined,
+    prices: PriceSeries | undefined,
     method: CostBasisMethod = 'fifo',
     dbTx: DatabaseTransaction | undefined = undefined
   ) {
     const collect: DisposalLotMatch[] = [];
-    const r = await svc.walkLots(dbTx, rows, USD, BTC, priceLookup, 'complete', collect, method);
+    const r = await svc.walkLots(dbTx, rows, USD, BTC, prices, 'complete', collect, method);
     return serialize({ ...r, collect });
   }
 
-  test('re-walking under one snapshot converts no fee twice', async () => {
+  test('re-walking under one series converts no fee twice', async () => {
     const calls: ConvertCall[] = [];
     const svc = makeService(calls);
     const rows = feeRows();
-    const lookup = new PriceLookup([]);
-    await walkWith(svc, rows, lookup);
+    const series = seriesFor(rows, calls);
+    await walkWith(svc, rows, series);
     // Two BNB fees, the OBSCURE one, and the last row's trade and its fee. The
     // first BTC fee rides its trade's execution rate in USD, which converts
     // nothing.
     expect(calls.length).toBe(5);
-    await walkWith(svc, rows, lookup);
-    await walkWith(svc, rows, lookup);
+    await walkWith(svc, rows, series);
+    await walkWith(svc, rows, series);
     // Only the last row's own trade valuation is asked again; its fee is not.
     expect(calls.length).toBe(7);
   });
 
-  test('the control: with no snapshot, or a new one, every walk asks again', async () => {
+  test('the control: with no series, or a new one, every walk asks again', async () => {
     const calls: ConvertCall[] = [];
     const svc = makeService(calls);
     const rows = feeRows();
     await walkWith(svc, rows, undefined);
     await walkWith(svc, rows, undefined);
     expect(calls.length).toBe(10);
-    await walkWith(svc, rows, new PriceLookup([]));
-    await walkWith(svc, rows, new PriceLookup([]));
+    await walkWith(svc, rows, seriesFor(rows, calls));
+    await walkWith(svc, rows, seriesFor(rows, calls));
     expect(calls.length).toBe(20);
   });
 
-  test('under a database transaction nothing is remembered', async () => {
+  // A series is the readings one load read, inside whichever transaction
+  // loaded it, so what it answered once it answers again.
+  test('under a database transaction a fee is remembered per series too', async () => {
     const calls: ConvertCall[] = [];
     const svc = makeService(calls);
     const rows = feeRows();
-    const lookup = new PriceLookup([]);
+    const series = seriesFor(rows, calls);
     const dbTx = {} as DatabaseTransaction;
-    await walkWith(svc, rows, lookup, 'fifo', dbTx);
-    await walkWith(svc, rows, lookup, 'fifo', dbTx);
-    expect(calls.length).toBe(10);
+    await walkWith(svc, rows, series, 'fifo', dbTx);
+    expect(calls.length).toBe(5);
+    await walkWith(svc, rows, series, 'fifo', dbTx);
+    // As above: the second walk asks only the last row's own trade again.
+    expect(calls.length).toBe(6);
   });
 
   test.each(['fifo', 'uk_section_104'] as const)(
@@ -457,9 +474,9 @@ describe('a fee is valued once per price snapshot (SC-1145)', () => {
       const rows = feeRows();
       const fresh = await walkWith(makeService(), rows, undefined, method);
       const svc = makeService();
-      const lookup = new PriceLookup([]);
-      const first = await walkWith(svc, rows, lookup, method);
-      const again = await walkWith(svc, rows, lookup, method);
+      const series = seriesFor(rows);
+      const first = await walkWith(svc, rows, series, method);
+      const again = await walkWith(svc, rows, series, method);
       expect(first).toBe(fresh);
       expect(again).toBe(fresh);
       // The fees reach the figures at all, or the equality above proves nothing.

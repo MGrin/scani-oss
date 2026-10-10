@@ -7,8 +7,9 @@ import { Container } from 'typedi';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
 import { CostBasisService } from '../../../src/services/pricing/CostBasisService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub } from '../../../test/helpers/price-series';
 
 restoreContainerAfterAll();
 
@@ -21,10 +22,12 @@ function makeService(): CostBasisService {
   Container.set(HoldingRepository, {} as unknown as HoldingRepository);
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
   const rates: Record<string, string> = { [CAD]: '0.75', [BTC]: '100' };
-  Container.set(PriceGraphService, {
-    convert: async (amount: Decimal, from: string) =>
-      rates[from] ? { amount: amount.mul(rates[from]), stale: false } : null,
-  } as unknown as PriceGraphService);
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal, from: string) =>
+      rates[from] ? { amount: amount.mul(rates[from]), stale: false } : null
+    )
+  );
   const instance = new CostBasisService();
   Container.set(CostBasisService, instance);
   return instance;

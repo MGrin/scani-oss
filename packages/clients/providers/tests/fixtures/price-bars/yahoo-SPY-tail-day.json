@@ -1,0 +1,30 @@
+{
+  "url": "https://query1.finance.yahoo.com/v8/finance/chart/SPY?period1=1790294400&period2=1790640000&interval=1d",
+  "fetchedAt": "2026-10-05T03:21:13.283044Z",
+  "status": 200,
+  "data": {
+    "chart": {
+      "result": [
+        {
+          "meta": {
+            "currency": "USD",
+            "regularMarketTime": 1790971200,
+            "gmtoffset": -14400,
+            "exchangeTimezoneName": "America/New_York",
+            "dataGranularity": "1d"
+          },
+          "timestamp": [1790343000, 1790602200],
+          "indicators": {
+            "quote": [
+              {
+                "close": [739, 738]
+              }
+            ]
+          }
+        }
+      ],
+      "error": null
+    }
+  },
+  "normalization": "Price values are synthetic integer ranks. Equal values and ordering are preserved across these fixtures; timestamps and response shape are recorded. Raw public responses are retained in the PR5 rehearsal evidence."
+}
