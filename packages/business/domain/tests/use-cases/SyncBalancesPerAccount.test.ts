@@ -589,7 +589,7 @@ describe('which holding a sync writes into', () => {
 describe('the unchanged balance (exchange) and the hourly refresh of it (wallet)', () => {
   // Changed on purpose (SC-1601 item 3): a wallet poll used to append a checkpoint
   // every hour. The rehearsal on production's data showed those readings bound no
-  // interpolation and move no balance, while they were 99.9% of wallet rows; what
+  // interpolation and move no balance, while they were nearly all wallet rows; what
   // they did carry is the peek's "Last updated", which the cache write keeps.
   test('an unchanged poll writes no checkpoint; the wallet poll still advances last updated', async () => {
     const exchange = await institution();

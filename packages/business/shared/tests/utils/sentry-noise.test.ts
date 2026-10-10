@@ -152,7 +152,7 @@ describe('isInjectedEvalRefusal (SC-1630)', () => {
   ) => ({
     exception: { values: [{ type, value, stacktrace: { frames } }] },
   });
-  // SCANI-FRONTEND-G as Sentry received it: Backpack's injected code, called
+  // The SC-1630 event as Sentry received it: Backpack's injected code, called
   // through the SDK's own callback wrapper, the only frame in our bundle.
   const sentryWrap = { filename: 'https://app.scani.xyz/assets/index-CQ_pzUMY.js', function: 'r' };
   const injected = [
