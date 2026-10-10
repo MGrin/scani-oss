@@ -41,6 +41,40 @@ const MAX_PAGES = 50;
 // `transactionHistoryHorizonMs` so the coverage flag reflects it.
 const DEFAULT_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
 
+// A unified trading account (UTA) cannot call the classic V2 endpoints, and
+// Bitget has migrated classic accounts to UTA since 2026-09-15 (SC-1576). Its
+// V3 record and fill feeds accept a window of at most 30 days.
+const UTA_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+interface BitgetUtaBalanceRow {
+  coin: string;
+  balance?: string;
+}
+
+interface BitgetUtaFill {
+  execId: string;
+  orderId: string;
+  category?: string;
+  symbol: string;
+  side: string;
+  execPrice?: string;
+  execQty?: string;
+  execValue?: string;
+  feeDetail?: Array<{ feeCoin?: string; fee?: string }>;
+  createdTime: string;
+}
+
+interface BitgetUtaRecord {
+  orderId: string;
+  /** The on-chain tx hash; V2 carries it as `tradeId`. */
+  recordId?: string;
+  coin: string;
+  size: string;
+  fee?: string;
+  createdTime: string;
+  updatedTime?: string;
+}
+
 interface BitgetAsset {
   coin: string;
   available: string;
@@ -151,6 +185,7 @@ export class BitgetProvider
   ): Promise<HoldingSnapshot[]> {
     const creds = await this.resolveApiCreds(ctx);
     if (!creds?.passphrase) return [];
+    if (await this.isUnifiedAccount(creds)) return this.fetchUnifiedBalances(creds);
 
     const data = await this.signedJson<BitgetEnvelope<BitgetAsset[]>>(
       { method: 'GET', url: '/api/v2/spot/account/assets' },
@@ -203,6 +238,19 @@ export class BitgetProvider
     // legs + fee detail in one row, and the dedicated deposit/withdrawal
     // endpoints carry the on-chain txId we need for transfer linking.
     const events: TransactionEvent[] = [];
+    if (await this.isUnifiedAccount(creds)) {
+      for await (const fill of this.iterateUnifiedFills(creds, since, until)) {
+        const ev = this.mapFill(fill);
+        if (ev) events.push(ev);
+      }
+      for await (const row of this.iterateUnifiedRecords(creds, 'deposit', since, until)) {
+        events.push(this.mapDeposit(toV2Record(row)));
+      }
+      for await (const row of this.iterateUnifiedRecords(creds, 'withdrawal', since, until)) {
+        events.push(this.mapWithdrawal(toV2Record(row)));
+      }
+      return events;
+    }
     for await (const fill of this.iterateFills(creds, since, until)) {
       const ev = this.mapFill(fill);
       if (ev) events.push(ev);
@@ -229,6 +277,7 @@ export class BitgetProvider
     if (!apiKey || !apiSecret || !passphrase) {
       return { valid: false, message: 'apiKey + apiSecret + passphrase required' };
     }
+    if (await this.isUnifiedAccount({ apiKey, apiSecret, passphrase })) return { valid: true };
     try {
       const data = await this.signedJson<BitgetEnvelope<unknown>>(
         { method: 'GET', url: '/api/v2/spot/account/assets' },
@@ -241,6 +290,137 @@ export class BitgetProvider
     } catch (err) {
       return credentialRejection(err);
     }
+  }
+
+  // A classic key is refused here, so any failure reads as a classic account
+  // and the V2 path then fails or succeeds on its own terms (ccxt does the same).
+  private async isUnifiedAccount(creds: ApiKeyCreds): Promise<boolean> {
+    try {
+      const data = await this.signedJson<BitgetEnvelope<unknown>>(
+        { method: 'GET', url: '/api/v3/account/settings' },
+        creds
+      );
+      return data.code === '00000';
+    } catch {
+      return false;
+    }
+  }
+
+  private async fetchUnifiedBalances(creds: ApiKeyCreds): Promise<HoldingSnapshot[]> {
+    const unified = await this.utaJson<{ assets?: BitgetUtaBalanceRow[] }>(
+      creds,
+      '/api/v3/account/assets'
+    );
+    const funding = await this.utaJson<BitgetUtaBalanceRow[]>(
+      creds,
+      '/api/v3/account/funding-assets'
+    );
+    const totals = new Map<string, Decimal>();
+    for (const row of [...(unified?.assets ?? []), ...(funding ?? [])]) {
+      totals.set(row.coin, (totals.get(row.coin) ?? new Decimal(0)).plus(row.balance || '0'));
+    }
+    const out: HoldingSnapshot[] = [];
+    for (const [coin, total] of totals) {
+      if (total.lte(0)) continue;
+      out.push({
+        externalId: coin,
+        tokenIdentity: this.coinIdentity(coin),
+        balance: total.toString(),
+        capturedAt: new Date(),
+        tokenType: tokenTypeForCexAsset(coin),
+      });
+    }
+    return out;
+  }
+
+  private async *iterateUnifiedFills(
+    creds: ApiKeyCreds,
+    since: Date,
+    until: Date
+  ): AsyncGenerator<BitgetFill> {
+    for (const [start, end] of utaWindows(since, until)) {
+      let cursor: string | undefined;
+      for (let page = 0; page < MAX_PAGES; page += 1) {
+        const params = new URLSearchParams({
+          category: 'SPOT',
+          startTime: start.toString(),
+          endTime: end.toString(),
+          limit: PAGE_LIMIT.toString(),
+        });
+        if (cursor) params.set('cursor', cursor);
+        const data = await this.utaJson<{ list?: BitgetUtaFill[]; cursor?: string }>(
+          creds,
+          '/api/v3/trade/fills',
+          params
+        );
+        const rows = data?.list ?? [];
+        for (const row of rows) {
+          if (row.category && row.category !== 'SPOT') continue;
+          const fee = row.feeDetail?.[0];
+          yield {
+            symbol: row.symbol,
+            orderId: row.orderId,
+            tradeId: row.execId,
+            side: row.side,
+            price: row.execPrice,
+            baseVolume: row.execQty,
+            quoteVolume: row.execValue,
+            feeDetail: fee ? { feeCoin: fee.feeCoin, totalFee: fee.fee } : undefined,
+            cTime: row.createdTime,
+          };
+        }
+        if (rows.length < PAGE_LIMIT || !data?.cursor) break;
+        cursor = data.cursor;
+      }
+    }
+  }
+
+  private async *iterateUnifiedRecords(
+    creds: ApiKeyCreds,
+    kind: 'deposit' | 'withdrawal',
+    since: Date,
+    until: Date
+  ): AsyncGenerator<BitgetUtaRecord> {
+    for (const [start, end] of utaWindows(since, until)) {
+      let cursor: string | undefined;
+      for (let page = 0; page < MAX_PAGES; page += 1) {
+        const params = new URLSearchParams({
+          startTime: start.toString(),
+          endTime: end.toString(),
+          limit: PAGE_LIMIT.toString(),
+        });
+        if (cursor) params.set('cursor', cursor);
+        const rows =
+          (await this.utaJson<BitgetUtaRecord[]>(
+            creds,
+            `/api/v3/account/${kind}-records`,
+            params
+          )) ?? [];
+        for (const row of rows) yield row;
+        const last = rows[rows.length - 1];
+        if (rows.length < PAGE_LIMIT || !last?.orderId) break;
+        cursor = last.orderId;
+      }
+    }
+  }
+
+  private async utaJson<T>(
+    creds: ApiKeyCreds,
+    url: string,
+    params?: URLSearchParams
+  ): Promise<T | undefined> {
+    const data = await this.signedJson<BitgetEnvelope<T>>(
+      { method: 'GET', url, query: params?.toString() },
+      creds
+    );
+    if (data.code !== '00000') {
+      throw new ProviderError(
+        `Bitget code=${data.code}: ${data.msg}`,
+        'unrecoverable',
+        this.providerKey
+      );
+    }
+    return data.data;
   }
 
   private async *iterateFills(
@@ -427,6 +607,25 @@ export class BitgetProvider
       providerMetadata: { bitget: { coin } },
     };
   }
+}
+
+function* utaWindows(since: Date, until: Date): Generator<[number, number]> {
+  const last = until.getTime();
+  for (let start = since.getTime(); start < last; start += UTA_WINDOW_MS) {
+    yield [start, Math.min(start + UTA_WINDOW_MS, last)];
+  }
+}
+
+function toV2Record(row: BitgetUtaRecord): BitgetDepositRow & BitgetWithdrawalRow {
+  return {
+    orderId: row.orderId,
+    tradeId: row.recordId,
+    coin: row.coin,
+    size: row.size,
+    fee: row.fee,
+    cTime: row.createdTime,
+    uTime: row.updatedTime,
+  };
 }
 
 export const bitgetFactory: ProviderFactory = async (deps) => {
