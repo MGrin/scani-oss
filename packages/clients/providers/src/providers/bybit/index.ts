@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { NewToken } from '@scani/db/schema';
+import { createComponentLogger } from '@scani/logging';
 import { createOutflowLimiter, type OutflowRateLimiter } from '@scani/rate-limiter';
 import Decimal from 'decimal.js';
 import {
@@ -18,12 +19,16 @@ import { credentialRejection, ProviderError } from '../../core/errors';
 import type {
   DecryptedCredentials,
   HoldingSnapshot,
+  JobNotice,
   ProviderContext,
   TransactionEvent,
+  TransactionFetchContext,
   WithUserCreds,
 } from '../../core/types';
 import { enforceSign, inferCounterSign, negateFee } from '../../core/utils/enforce-tx-sign';
+import { englishList } from '../../core/utils/english-list';
 import { tokenTypeForCexAsset } from '../../core/utils/fiat-codes';
+import { namedTypeCounts } from '../../core/utils/named-type-counts';
 import { splitConcatenatedPair } from '../../core/utils/symbol-splitter';
 import { slidingWindows } from '../../core/utils/time-windows';
 import { bybitManifest } from './manifest';
@@ -47,6 +52,10 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
 // deposit and never their withdrawal (SC-1461).
 const FUND_BALANCE_URL = '/v5/asset/transfer/query-account-coins-balance';
 const PERMISSION_DENIED = 10005;
+// The key itself was refused: invalid, expired, mis-signed, or used from an IP
+// it is not bound to. Only its owner can fix that, so it is an auth failure
+// rather than a generic one (SC-1686: two expired keys paged as stale syncs).
+const KEY_REJECTED = new Set([10003, 10004, 10007, 10010, 33004]);
 // `withdrawType` defaults to on-chain only; 2 adds transfers to other Bybit users.
 const ALL_WITHDRAW_TYPES = '2';
 const INTERNAL_DEPOSIT_SUCCESS = 2;
@@ -58,6 +67,15 @@ const INTERNAL_DEPOSIT_SUCCESS = 2;
 // imported from the execution list, the second nets to zero in the summed balance.
 const PNL_LOG_TYPES = new Set(['SETTLEMENT', 'LIQUIDATION', 'DELIVERY', 'ADL']);
 const SKIPPED_LOG_TYPES = new Set(['TRANSFER_IN', 'TRANSFER_OUT', 'EXEMPTED_INTEREST']);
+// Any other type is money that moved with no row to say so. It is counted and
+// named in the run's warnings, never guessed into a quantity row (SC-1591).
+const IMPORTED_LOG_TYPES = new Set([
+  ...PNL_LOG_TYPES,
+  'TRADE',
+  'INTEREST',
+  'CURRENCY_BUY',
+  'CURRENCY_SELL',
+]);
 const FUNDING_PERMISSION_MESSAGE =
   'Bybit API key cannot read the Funding wallet. Enable the "Assets" (Wallet) read permission on the key; without it deposits and withdrawals are invisible and balances would be wrong.';
 
@@ -193,6 +211,23 @@ function epochToDate(raw: string): Date {
   return new Date(n < 1e12 ? n * 1000 : n);
 }
 
+const logger = createComponentLogger('provider:bybit');
+
+function describeUnlistedLogTypes(counts: ReadonlyMap<string, number>): JobNotice | null {
+  const named = namedTypeCounts(counts, 'v3.jobs.notices.bybitFurtherTypes');
+  if (!named) return null;
+  const { types, total } = named;
+  return {
+    key: 'v3.jobs.notices.bybitUnlistedLogTypes',
+    params: { count: total },
+    lists: { types },
+    text:
+      `bybit: ${total} transaction-log row${total === 1 ? '' : 's'} had a type Scani does not ` +
+      `import — ${englishList(types)} — so the balance change${total === 1 ? ' it carries is' : 's they carry are'} ` +
+      'missing from this history. This one is ours to fix, not yours: please report it.',
+  };
+}
+
 export class BybitProvider
   extends BaseHmacCexProvider
   implements BalanceProvider, TransactionsProvider, CredentialValidator
@@ -290,7 +325,7 @@ export class BybitProvider
     if (data.retCode !== 0) {
       throw new ProviderError(
         `Bybit retCode=${data.retCode}: ${data.retMsg}`,
-        'unrecoverable',
+        KEY_REJECTED.has(data.retCode) ? 'auth-failed' : 'unrecoverable',
         this.providerKey
       );
     }
@@ -300,13 +335,7 @@ export class BybitProvider
     return c === BYBIT_INSTITUTION_CODE;
   }
 
-  async fetchTransactions(
-    ctx: WithUserCreds<ProviderContext> & {
-      institutionCode: string;
-      since?: Date;
-      until?: Date;
-    }
-  ): Promise<TransactionEvent[]> {
+  async fetchTransactions(ctx: TransactionFetchContext): Promise<TransactionEvent[]> {
     const creds = await this.resolveApiCreds(ctx);
     if (!creds) return [];
 
@@ -331,7 +360,17 @@ export class BybitProvider
     for await (const row of this.iterateInternalDeposits(creds, since, until)) {
       if (row.status === INTERNAL_DEPOSIT_SUCCESS) events.push(this.mapInternalDeposit(row));
     }
-    events.push(...this.mapTransactionLog(await this.readTransactionLog(creds, since, until)));
+    const unlisted = new Map<string, number>();
+    const logRows = await this.readTransactionLog(creds, since, until);
+    events.push(...this.mapTransactionLog(logRows, unlisted));
+    const notice = describeUnlistedLogTypes(unlisted);
+    if (notice) {
+      logger.warn(
+        { types: Object.fromEntries(unlisted), rows: notice.params?.count },
+        'Bybit transaction-log rows of a type the import does not map'
+      );
+      ctx.noteWarning?.(notice);
+    }
     return events;
   }
 
@@ -390,13 +429,7 @@ export class BybitProvider
           { method: 'GET', url: '/v5/execution/list', query: params.toString() },
           creds
         );
-        if (data.retCode !== 0) {
-          throw new ProviderError(
-            `Bybit retCode=${data.retCode}: ${data.retMsg}`,
-            'unrecoverable',
-            this.providerKey
-          );
-        }
+        this.assertOk(data);
         const list = data.result?.list ?? [];
         for (const exec of list) yield exec;
         cursor = data.result?.nextPageCursor || undefined;
@@ -425,13 +458,7 @@ export class BybitProvider
           { method: 'GET', url: '/v5/asset/deposit/query-record', query: params.toString() },
           creds
         );
-        if (data.retCode !== 0) {
-          throw new ProviderError(
-            `Bybit retCode=${data.retCode}: ${data.retMsg}`,
-            'unrecoverable',
-            this.providerKey
-          );
-        }
+        this.assertOk(data);
         const rows = data.result?.rows ?? [];
         for (const row of rows) yield row;
         cursor = data.result?.nextPageCursor || undefined;
@@ -461,13 +488,7 @@ export class BybitProvider
           { method: 'GET', url: '/v5/asset/withdraw/query-record', query: params.toString() },
           creds
         );
-        if (data.retCode !== 0) {
-          throw new ProviderError(
-            `Bybit retCode=${data.retCode}: ${data.retMsg}`,
-            'unrecoverable',
-            this.providerKey
-          );
-        }
+        this.assertOk(data);
         const rows = data.result?.rows ?? [];
         for (const row of rows) yield row;
         cursor = data.result?.nextPageCursor || undefined;
@@ -539,7 +560,10 @@ export class BybitProvider
     return [...rows.values()];
   }
 
-  private mapTransactionLog(rows: BybitTransactionLogRow[]): TransactionEvent[] {
+  private mapTransactionLog(
+    rows: BybitTransactionLogRow[],
+    unlisted: Map<string, number>
+  ): TransactionEvent[] {
     const events: TransactionEvent[] = [];
     const conversions = new Map<
       string,
@@ -547,6 +571,12 @@ export class BybitProvider
     >();
     for (const row of rows) {
       if (SKIPPED_LOG_TYPES.has(row.type)) continue;
+      if (!IMPORTED_LOG_TYPES.has(row.type)) {
+        if (!new Decimal(row.change || '0').isZero()) {
+          unlisted.set(row.type, (unlisted.get(row.type) ?? 0) + 1);
+        }
+        continue;
+      }
       if (row.type === 'TRADE' && (row.category ?? 'spot') === 'spot') continue;
       if (row.type === 'CURRENCY_BUY' || row.type === 'CURRENCY_SELL') {
         const key = row.tradeId || row.id;

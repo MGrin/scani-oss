@@ -3,7 +3,7 @@
  * by pricing its two currencies against USD through the provider registry.
  * The read then crosses USD, so nothing has to store the pair itself.
  *
- * The pricing stack and the stored-rate reader are real, over one provider
+ * The pricing stack and `PriceReader` are real, over one provider
  * that answers from a table and records each ask. Every row is committed and
  * removed after each test.
  */
@@ -12,19 +12,21 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { getDb } from '@scani/db';
 import type { Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { CurrencyConverter, PricingService } from '@scani/domain/services';
+import { PriceReader, PricingService } from '@scani/domain/services';
+import { CacheWriteCounter } from '@scani/domain/services/feeds/CacheWriteCounter';
 import {
+  CBR_TABLE_URL,
   dropPricesOf,
+  fixing,
+  freshFrankfurterClient,
   makeToken,
   pricingStack,
   restoreContainerAfterAll,
 } from '@scani/domain/test-helpers';
 import type { CurrencyRateRefreshJob } from '@scani/jobs';
 import { ProviderRegistry } from '@scani/providers/core/registry';
-import type { ExchangeRateApiClient } from '@scani/providers/providers/exchangerate-api';
 import { FrankfurterProvider } from '@scani/providers/providers/frankfurter';
 import type { ProcessorContext } from '@scani/queue';
-import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { PricingProviderRouter } from '../../../../../packages/business/domain/src/services/pricing/PricingProviderRouter';
@@ -112,30 +114,34 @@ async function storedFor(tokens: Token[]): Promise<string[][]> {
   return rows.map((row) => [row.tokenId, row.baseTokenId, row.price]);
 }
 
+/** What `tokens.getBaseCurrencyRates` answers for the pair: one `from` in `to`, from stored rows. */
+async function rateOf(from: Token, to: Token): Promise<string | null> {
+  const answer = (await new PriceReader().at([from.id], to.id, new Date())).get(from.id);
+  return answer?.price.toString() ?? null;
+}
+
 describe('CurrencyRateRefreshProcessor', () => {
-  test('a fiat outside the ECB and old fallback lists is refreshed through the real registry route', async () => {
+  test('a fiat only the Bank of Russia publishes is refreshed through the real registry route', async () => {
     const usd = await seededFiat();
-    const from = await seededFiat('ETB');
-    const to = await seededFiat('SOS');
+    const from = await seededFiat('KGS');
+    const to = await seededFiat('MNT');
     pricedSeedTokens.push(from.id, to.id);
-    let asks = 0;
-    const provider = new FrankfurterProvider(
-      { execute: async <T>(fn: () => Promise<T>) => fn() } as OutflowRateLimiter,
-      {
-        fetchUsdRates: async () => {
-          asks++;
-          return { rates: { USD: '1', ETB: '100', SOS: '5' }, fetchedAt: new Date() };
-        },
-      } as unknown as ExchangeRateApiClient
-    );
+    // The one client's routing decides which table is asked; only the Bank of
+    // Russia's answers. Invented: units of each per one USD.
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = input instanceof Request ? input.url : String(input);
+      fetched.push(url);
+      if (url === CBR_TABLE_URL)
+        return Response.json(fixing('USD', '2026-01-09', { KGS: 100, MNT: 5 }));
+      throw new Error(`the rate refresh asked ${url}`);
+    }) as unknown as typeof fetch;
+    const provider = new FrankfurterProvider(freshFrankfurterClient());
     const registry = new ProviderRegistry();
     registry.register(provider);
     Container.set(ProviderRegistry, registry);
     Container.set(PricingProviderRouter, new PricingProviderRouter());
-    Container.set(CurrencyConverter, new CurrencyConverter());
     Container.set(PricingService, new PricingService());
-    const reader = Container.get(CurrencyConverter);
-    expect(await reader.getStoredRateDetail(from, to, new Date())).toBeNull();
+    expect(await rateOf(from, to)).toBeNull();
 
     expect(await refresh(from, to)).toMatchObject({ refreshed: true });
 
@@ -143,9 +149,9 @@ describe('CurrencyRateRefreshProcessor', () => {
       [from.id, usd.id, '0.01'],
       [to.id, usd.id, '0.2'],
     ]);
-    expect(asks).toBe(2);
-    expect(await reader.getStoredRateDetail(from, to, new Date())).toMatchObject({ rate: '0.05' });
-    expect(fetched).toEqual([]);
+    expect(await rateOf(from, to)).toBe('0.05');
+    // One Bank of Russia table answered both, and nothing else was asked.
+    expect(fetched).toEqual([CBR_TABLE_URL]);
   });
 
   test('the rate refresh writes the pair’s two currencies against USD', async () => {
@@ -153,6 +159,12 @@ describe('CurrencyRateRefreshProcessor', () => {
     const from = await commitToken();
     const to = await commitToken();
     const asks = pricingStack((tokenId) => (tokenId === from.id ? '4' : '2'));
+    const counted: Array<[string, number]> = [];
+    Container.set(CacheWriteCounter, {
+      add: async (trigger: string, writes: number) => {
+        counted.push([trigger, writes]);
+      },
+    } as unknown as CacheWriteCounter);
 
     const result = await refresh(from, to);
 
@@ -165,6 +177,8 @@ describe('CurrencyRateRefreshProcessor', () => {
     expect(asks).toContainEqual({ tokenId: from.id, baseId: usd.id });
     expect(asks).toContainEqual({ tokenId: to.id, baseId: usd.id });
     expect(fetched).toEqual([]);
+    // Counted as the FX refresh's, apart from the price runs' (SC-1610).
+    expect(counted).toEqual([['fx', 0]]);
   });
 
   test('a pair against USD asks for the one currency', async () => {
@@ -186,11 +200,10 @@ describe('CurrencyRateRefreshProcessor', () => {
     const from = await commitToken();
     const to = await commitToken();
     pricingStack((tokenId) => (tokenId === from.id ? '4' : '2'));
-    const reader = Container.get(CurrencyConverter);
-    expect(await reader.getStoredRateDetail(from, to, new Date())).toBeNull();
+    expect(await rateOf(from, to)).toBeNull();
 
     await refresh(from, to);
 
-    expect(await reader.getStoredRateDetail(from, to, new Date())).toMatchObject({ rate: '2' });
+    expect(await rateOf(from, to)).toBe('2');
   });
 });

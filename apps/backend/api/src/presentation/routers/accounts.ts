@@ -1,10 +1,15 @@
-import { AccountRepository, GroupRepository } from '@scani/domain/repositories';
+import {
+  AccountRepository,
+  AccountWrapperRepository,
+  GroupRepository,
+} from '@scani/domain/repositories';
 import { AccountService } from '@scani/domain/services';
 import { BulkAssignAccountGroupsUseCase } from '@scani/domain/use-cases';
 import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
 import { IdInputDto, UpdateAccountDto } from '@scani/shared';
 import { Container } from 'typedi';
 import { z } from 'zod';
+import { rethrowAccountRefusal } from '../lib/account-refusal';
 import { executeBulkOperation } from '../lib/bulk-operation';
 import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
 import { strictInput } from '../lib/strict-input';
@@ -15,6 +20,12 @@ export const accountsRouter = router({
   getAll: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
     return await Container.get(AccountService).getAccountsByUserId(dbUser.id);
+  }),
+
+  // SC-1645: the seeded wrappers, for the picker.
+  listWrappers: protectedProcedure.query(async ({ ctx }) => {
+    await requireAuth(ctx);
+    return Container.get(AccountWrapperRepository).list();
   }),
 
   getByUserIdWithSummary: protectedProcedure.query(async ({ ctx }) => {
@@ -39,11 +50,9 @@ export const accountsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
 
-      const result = await Container.get(AccountService).updateAccount(
-        input.id,
-        input.data,
-        dbUser.id
-      );
+      const result = await Container.get(AccountService)
+        .updateAccount(input.id, input.data, dbUser.id)
+        .catch(rethrowAccountRefusal);
 
       emitEntityChange({
         entityType: 'account',
@@ -58,7 +67,6 @@ export const accountsRouter = router({
 
   delete: protectedProcedure.input(strictInput(IdInputDto)).mutation(async ({ input, ctx }) => {
     const { dbUser } = await requireAuth(ctx);
-
     const deleted = await Container.get(AccountService).deleteAccount(input.id, dbUser.id);
     if (!deleted) {
       throw new Error('Account not found or could not be deleted');
@@ -75,6 +83,7 @@ export const accountsRouter = router({
     // Without this, the chart keeps showing pre-deletion totals — the
     // `portfolio_value_daily` rollup still references the holdings the
     // cascade just removed. Coalesced 30s window (see helper).
+    // A full rebuild until the Neon falsifier proves a range for this edit (SC-1607).
     void enqueuePortfolioRollup(dbUser.id);
 
     return { success: true };
@@ -92,6 +101,7 @@ export const accountsRouter = router({
 
       if (result.deletedIds.length > 0) {
         emitBulkEntityChanges('account', 'delete', result.deletedIds, dbUser.id);
+        // A full rebuild until the Neon falsifier proves a range for this edit (SC-1607).
         void enqueuePortfolioRollup(dbUser.id);
       }
 

@@ -42,9 +42,11 @@ export interface ProcessSnapshotsForAccountInput {
   // Wallet sync preserves user-hidden state across counts; exchange sync
   // counts every mutation regardless. Set true for wallet-style behaviour.
   respectHiddenForCounts: boolean;
-  // Exchange sync skips updates when the balance hasn't changed; wallet
-  // sync updates unconditionally to refresh the lastUpdated timestamp.
-  skipUnchangedUpdates: boolean;
+  // What an unchanged balance writes: the exchange sync skips it outright,
+  // the wallet sync records no checkpoint but still stamps `last_updated`
+  // (SC-1601), as a refresh does for either source; imports and statements
+  // append.
+  unchangedCheckpoint: 'append' | 'skip' | 'skip-observation';
   // Only existing holdings are refreshed; the wallet refresh never opens one,
   // because chain discovery surfaces every airdropped scam-dust contract.
   updateOnly: boolean;
@@ -65,6 +67,9 @@ export interface ProcessSnapshotsForAccountResult {
   // the token MUST re-check the token is genuinely new before writing —
   // see SyncWalletBalancesUseCase.scoreAndWarmNewTokens.
   createdTokenIds: string[];
+  // Balance observations the run wrote, zeroes included. Unlike `updated`, an
+  // unchanged balance the wallet sync re-stamps adds nothing (SC-1600).
+  observationsWritten: number;
 }
 
 /** A row of the answer the sync keeps, and the balance it becomes. */
@@ -125,8 +130,7 @@ export class HoldingsSyncHelper extends BaseService {
         holdingFailure: 'skip-entry',
         absence: input.staleStrategy === 'zero' ? this.zeroStale(input) : null,
         clearsAbsenceTally: true,
-        unhideOnNonZero: false,
-        unchangedCheckpoint: input.skipUnchangedUpdates ? 'skip' : 'append',
+        unchangedCheckpoint: input.unchangedCheckpoint,
         zeroOpensHolding: false,
       },
     });
@@ -238,6 +242,7 @@ export class HoldingsSyncHelper extends BaseService {
       created: 0,
       removed: 0,
       createdTokenIds: [],
+      observationsWritten: ingested.checkpointsWritten + ingested.zeroedHoldingIds.length,
     };
     const outcomes = ingested.checkpointOutcomes;
     const hidden = input.respectHiddenForCounts

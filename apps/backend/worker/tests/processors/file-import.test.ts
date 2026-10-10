@@ -17,6 +17,7 @@ import {
   CsvColumnDetectionService,
   DocumentRetentionService,
   FoundationClassificationService,
+  LearnedCategoryRules,
   TransferReviewService,
   UploadedFileService,
 } from '@scani/domain/services';
@@ -30,18 +31,34 @@ import {
   makeToken,
   makeUser,
   restoreContainerAfterAll,
+  seedHoldingCache,
 } from '@scani/domain/test-helpers';
 import type { FileImportJob, PortfolioHistoryBackfillJob } from '@scani/jobs';
 import { BullMqEnqueueService, type ProcessorContext } from '@scani/queue';
-import { asc, eq, inArray, sql } from 'drizzle-orm';
+import { type RealTimeEvent, RedisRealtimeUpdatesService } from '@scani/realtime';
+import { asc, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { FileImportProcessor } from '../../src/processors/file-import';
 
 restoreContainerAfterAll();
 
+/** Who the learned-category spread ran for (SC-1695); its own behaviour is tested in the domain. */
+const learned: string[] = [];
+Container.set(LearnedCategoryRules, {
+  afterImport: async (userId: string) => {
+    learned.push(userId);
+  },
+} as unknown as LearnedCategoryRules);
+
 const objects = new Map<string, Buffer>();
 const enqueued: PortfolioHistoryBackfillJob[] = [];
 const marked: Array<[userId: string, jobId: string]> = [];
+const broadcasts: Array<Omit<RealTimeEvent, 'timestamp'>> = [];
+Container.set(RedisRealtimeUpdatesService, {
+  broadcast: (event: Omit<RealTimeEvent, 'timestamp'>) => {
+    broadcasts.push(event);
+  },
+} as unknown as RedisRealtimeUpdatesService);
 
 Container.set(StorageFacade, {
   read: async (key: string) => {
@@ -197,7 +214,7 @@ const ledgerOf = (userId: string) =>
     .where(eq(ledger.userId, userId))
     .orderBy(asc(ledger.occurredAt), asc(ledger.externalId));
 
-/** Closes before copies, then by amount: two copies written a millisecond apart have no order of their own. */
+/** By source, then by amount: two rows written a millisecond apart have no order of their own. */
 const observationsOf = async (userId: string) =>
   (await getDb().select().from(observations).where(eq(observations.userId, userId))).sort(
     (a, b) => a.source.localeCompare(b.source) || Number(a.balance) - Number(b.balance)
@@ -244,6 +261,7 @@ describe('FileImportProcessor', () => {
     objects.clear();
     enqueued.length = 0;
     marked.length = 0;
+    broadcasts.length = 0;
     const db = getDb();
     const users = created.users.splice(0);
     const tokens = created.tokens.splice(0);
@@ -352,7 +370,7 @@ describe('FileImportProcessor', () => {
     return { fixture, closed, unclosed, manual, unknown, csv };
   }
 
-  test('a two-currency statement: its rows, its close, each cache and its copy, the window, the warnings, the summary and the follow-ups', async () => {
+  test('a two-currency statement: its rows, its close, each cache and no copy, the window, the warnings, the summary and the follow-ups', async () => {
     const { fixture, closed, unclosed, manual, unknown, csv } = await twoCurrencies();
     const job = upload(fixture, csv);
 
@@ -472,29 +490,9 @@ describe('FileImportProcessor', () => {
         inputId: input.id,
         atTheClose: true,
       },
-      // The sync-capture copy is still written beside each balance write,
-      // stamped at the import and unlabelled; only its marker is new.
-      {
-        holding: 'unclosed',
-        balance: '30',
-        source: 'sync-capture',
-        sourceMetadata: { origin: 'updateHoldingBalance', legacyAnchor: 'file-import' },
-        role: null,
-        authority: null,
-        inputId: null,
-        atTheClose: false,
-      },
-      {
-        holding: 'closed',
-        balance: '855',
-        source: 'sync-capture',
-        sourceMetadata: { origin: 'updateHoldingBalance', legacyAnchor: 'file-import' },
-        role: null,
-        authority: null,
-        inputId: null,
-        atTheClose: false,
-      },
     ]);
+    // No copy of the balance beside the cache write: the engine reads the close (A5 D-19).
+    expect(await copiesOf(fixture.userId)).toEqual([]);
 
     const [document] = await documentsOf(fixture.userId);
     expect({
@@ -515,6 +513,7 @@ describe('FileImportProcessor', () => {
           complete: false,
           fetchedAt: document!.createdAt,
           uploadRef: job.r2Key,
+          shape: 'statement-upload',
         },
       ],
     });
@@ -571,9 +570,20 @@ describe('FileImportProcessor', () => {
     expect((await documentsOf(fixture.userId)).map((d) => d.purpose)).toEqual(['file-import']);
   });
 
-  // What every chart and rollup reads for these two holdings. The figures were
-  // recorded on the import as it stood before it moved onto `FeedIngestService`.
-  test('history reads the same figures at every instant around the statement', async () => {
+  // What every chart and rollup reads for these two holdings. Since A5 PR-2 the
+  // engine reads them (D-10), and every move from the figures recorded before
+  // the import moved onto `FeedIngestService` is named:
+  //   - an instant before a holding's start reads absent;
+  //   - closed walks FORWARD from the 700 typed on 15 July through the
+  //     statement's rows to its close, with nothing spread. The typed 700
+  //     contradicts the statement's own opening of 0 (its balance column reads
+  //     1000 after the 1000 salary), and the import records only the close, so
+  //     the window reads about 700 high and drops to 855 at the close. The old
+  //     ramp was wrong too; the engine shows the contradiction instead of
+  //     smoothing it (D7, `balance-at.feed.test.ts`);
+  //   - unclosed has no reading, so it reads its rows' sum: -20 before the +50.
+  //     Its opening is unknown, and nothing floors it any more.
+  test('history reads the engine figures at every instant around the statement', async () => {
     const { fixture, manual, csv } = await twoCurrencies();
 
     await run(upload(fixture, csv));
@@ -595,38 +605,19 @@ describe('FileImportProcessor', () => {
       closed: await balancesOf(manual.id),
       unclosed: await balancesOf(made!.id),
     }).toEqual({
-      closed: [
-        '700',
-        '543.956043956043956043956044',
-        '969.2783882783882783882783883',
-        '866.3021978021978021978021978',
-        '855',
-        '855',
-        '855',
-      ],
-      unclosed: ['0', '0', '0', '30', '30', '30', '30'],
+      closed: [null, '700', '1578.5', '1568.5', '855', '855', '855'],
+      unclosed: [null, null, '-20', '30', '30', '30', '30'],
     });
   });
 
-  // Where the balance copy shows in history: it holds the balance at the
-  // import, so a value typed in later is spread back to the import and no
-  // further. These figures were recorded before the move as well.
-  test('history after a later balance reads the same figures: the copy still holds the import', async () => {
+  // A value typed after the import onto what is now a feed holding, with no
+  // flow row, is a verification, and a verification never anchors. So since
+  // A5 PR-2 history reads the statement's close on every day, where the old
+  // walk spread the typed 900 back to the import.
+  test('a balance typed after the import does not move history: the statement close holds', async () => {
     const { fixture, manual, csv } = await twoCurrencies();
     await run(upload(fixture, csv));
-    // The import was on 10 September, and the balance was typed over ten days later.
-    const importedAt = new Date('2026-09-10T00:00:00Z');
     const typedAt = new Date('2026-09-20T00:00:00Z');
-    const copies = await copiesOf(fixture.userId);
-    await getDb()
-      .update(observations)
-      .set({ observedAt: importedAt })
-      .where(
-        inArray(
-          observations.id,
-          copies.map((c) => c.id)
-        )
-      );
     await getDb()
       .insert(observations)
       .values({
@@ -635,12 +626,14 @@ describe('FileImportProcessor', () => {
         balance: '900',
         observedAt: typedAt,
         source: 'sync-capture',
-        sourceMetadata: { origin: 'updateHoldingBalance' },
+        sourceMetadata: { origin: 'updateHolding' },
       });
-    await getDb()
-      .update(holdings)
-      .set({ balance: '900', lastUpdated: typedAt })
-      .where(eq(holdings.id, manual.id));
+    await seedHoldingCache(getDb(), (calculator) =>
+      calculator
+        .update(holdings)
+        .set({ balance: '900', lastUpdated: typedAt })
+        .where(eq(holdings.id, manual.id))
+    );
 
     const readings = await captureHistory(
       [manual.id],
@@ -651,7 +644,7 @@ describe('FileImportProcessor', () => {
         new Date('2026-09-25T00:00:00Z'),
       ]
     );
-    expect(readings.map((reading) => reading.balance)).toEqual(['855', '855', '877.5', '900']);
+    expect(readings.map((reading) => reading.balance)).toEqual(['855', '855', '855', '855']);
   });
 
   test('the three early gates (column mapping, date order, currency) write nothing', async () => {
@@ -690,6 +683,7 @@ describe('FileImportProcessor', () => {
       enqueued,
       marked,
       disposalMarks: disposalMarks.mock.calls,
+      broadcasts,
     }).toEqual({
       holdings: [],
       ledger: [],
@@ -698,10 +692,31 @@ describe('FileImportProcessor', () => {
       enqueued: [],
       marked: [],
       disposalMarks: [],
+      broadcasts: [],
     });
   });
 
-  test('re-uploading the same file writes no new entry, checkpoint or window, and repeats the balance write and the copy of the holding with the close', async () => {
+  test('an import that wrote rows spreads learned categories once, after its commit (SC-1695)', async () => {
+    const { fixture, csv } = await twoCurrencies();
+    learned.length = 0;
+    await run(upload(fixture, csv));
+    expect(learned).toEqual([fixture.userId]);
+  });
+
+  test('an import that wrote rows tells the open app once, so it shows them without a reload (SC-1600)', async () => {
+    const { fixture, csv } = await twoCurrencies();
+    await run(upload(fixture, csv));
+
+    expect(
+      broadcasts.map(({ entityType, operationType, userId }) => ({
+        entityType,
+        operationType,
+        userId,
+      }))
+    ).toEqual([{ entityType: 'holding', operationType: 'sync', userId: fixture.userId }]);
+  });
+
+  test('re-uploading the same file writes no new entry, checkpoint, window or copy, and repeats the balance write of the holding with the close', async () => {
     const { fixture, manual, csv } = await twoCurrencies();
     await run(upload(fixture, csv));
     const [, made] = await holdingsOf(fixture.accountId);
@@ -718,7 +733,6 @@ describe('FileImportProcessor', () => {
       windows: await windowsOf(fixture.accountId),
     };
     expect(before.windows).toHaveLength(1);
-    const copiesBefore = await copiesOf(fixture.userId);
 
     const { result } = await run(upload(fixture, csv));
 
@@ -736,13 +750,8 @@ describe('FileImportProcessor', () => {
     }).toEqual(before);
 
     // The holding the first upload created is found on the second, so it takes
-    // no balance write and no copy; the one with the close takes both again.
-    const copiesAfter = await copiesOf(fixture.userId);
-    expect(
-      copiesAfter
-        .filter((c) => !copiesBefore.some((b) => b.id === c.id))
-        .map((c) => [c.holdingId, c.balance])
-    ).toEqual([[manual.id, '855']]);
+    // no balance write; the one with the close takes it again, and neither a copy.
+    expect(await copiesOf(fixture.userId)).toEqual([]);
     expect({
       transactionCount: result.transactionCount,
       observationCount: result.observationCount,
@@ -762,57 +771,6 @@ describe('FileImportProcessor', () => {
     // One file, uploaded twice, is one document.
     expect(await documentsOf(fixture.userId)).toHaveLength(1);
     await expectLabelsSettled(fixture.userId);
-  });
-
-  test("the copy carries legacyAnchor 'file-import' and A1 reads it O2 even more than 120 s after the statement", async () => {
-    const { fixture, manual, csv } = await twoCurrencies();
-    await run(upload(fixture, csv));
-    // The first upload was an hour ago: nothing it wrote is within 120 s of the next.
-    await getDb()
-      .update(ledger)
-      .set({ createdAt: sql`${ledger.createdAt} - interval '1 hour'` })
-      .where(eq(ledger.userId, fixture.userId));
-    await getDb()
-      .update(observations)
-      .set({ createdAt: sql`${observations.createdAt} - interval '1 hour'` })
-      .where(eq(observations.userId, fixture.userId));
-    const copiesBefore = await copiesOf(fixture.userId);
-
-    await run(upload(fixture, csv));
-
-    const late = (await copiesOf(fixture.userId)).filter(
-      (c) => !copiesBefore.some((b) => b.id === c.id)
-    );
-    expect(
-      late.map((c) => ({
-        holdingId: c.holdingId,
-        sourceMetadata: c.sourceMetadata,
-        role: c.role,
-        authority: c.authority,
-        inputId: c.inputId,
-      }))
-    ).toEqual([
-      {
-        holdingId: manual.id,
-        sourceMetadata: { origin: 'updateHoldingBalance', legacyAnchor: 'file-import' },
-        role: null,
-        authority: null,
-        inputId: null,
-      },
-    ]);
-    await expectLabelsSettled(fixture.userId);
-
-    // The control: without its marker the same row is a value a person typed,
-    // and classification would label it.
-    await getDb()
-      .update(observations)
-      .set({ sourceMetadata: { origin: 'updateHoldingBalance' } })
-      .where(eq(observations.id, late[0]!.id));
-    const unmarked = await Container.get(FoundationClassificationService).classify({
-      apply: false,
-      userId: fixture.userId,
-    });
-    expect(unmarked.rowsUpdated.observations).toBe(1);
   });
 
   test('one window per upload, with upload_ref: the same file twice is one window, and another file over the same dates is a second', async () => {
@@ -852,6 +810,7 @@ describe('FileImportProcessor', () => {
       inputId: input!.id,
       fetchedAt: document!.createdAt,
       uploadRef: first.r2Key,
+      shape: 'statement-upload' as const,
     };
     expect(await windowsOf(fixture.accountId)).toEqual([firstWindow]);
 
@@ -869,6 +828,7 @@ describe('FileImportProcessor', () => {
         inputId: input!.id,
         fetchedAt: otherDocument!.createdAt,
         uploadRef: other.r2Key,
+        shape: 'statement-upload',
       },
     ]);
     expect(await inputsOf(fixture.accountId)).toHaveLength(1);
@@ -1013,12 +973,11 @@ describe('FileImportProcessor', () => {
       observationCount: result.observationCount,
       balanceFrom: result.holdingsTouched.map((h) => h.balanceFrom),
     }).toEqual({
-      balance: '96.5',
+      // The balance now: the last row counts from its own instant (A5 D-16).
+      // Nothing rewrites the cache when that instant passes (SC-1633).
+      balance: '100',
       rows: ['100', '-3.5'],
-      observations: [
-        { source: 'statement-close', balance: '96.5', atTheLastRow: true },
-        { source: 'sync-capture', balance: '96.5', atTheLastRow: false },
-      ],
+      observations: [{ source: 'statement-close', balance: '96.5', atTheLastRow: true }],
       transactionCount: 2,
       observationCount: 1,
       balanceFrom: ['statement-close'],

@@ -43,6 +43,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
       name: 'Spot',
       type: 'Exchange',
       typeCode: 'exchange',
+      class: 'asset',
       institutionId: 'i1',
     },
     institution: { id: 'i1', name: 'Kraken', type: 'Exchange', typeCode: 'exchange' },
@@ -53,6 +54,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
     isHidden: false,
     source: 'import_wallet',
     refreshable: true,
+    deleteHides: false,
     ...overrides,
   };
 }
@@ -87,7 +89,14 @@ const PORTFOLIO = [
   holding({
     id: 'h2',
     value: 73_782.57,
-    account: { id: 'a2', name: 'Vault', type: 'Wallet', typeCode: 'wallet', institutionId: 'i2' },
+    account: {
+      id: 'a2',
+      name: 'Vault',
+      type: 'Wallet',
+      typeCode: 'wallet',
+      class: 'asset',
+      institutionId: 'i2',
+    },
   }),
 ];
 

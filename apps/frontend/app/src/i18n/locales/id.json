@@ -19,7 +19,9 @@
       "humanCheckFailed": "Pemeriksaan manusia tidak dapat dimuat. Nonaktifkan pemblokir untuk challenges.cloudflare.com, lalu muat ulang.",
       "cloudTitle": "Masuk ke Scani Cloud",
       "cloudSubtitle": "Kunci API Anda ada di konsol Scani Cloud. Masukkan email Anda untuk masuk atau membuat akun.",
-      "cloudNewAccount": "Baru di Scani Cloud? Akun Anda dibuat otomatis, dan Anda langsung kembali ke konsol."
+      "cloudNewAccount": "Baru di Scani Cloud? Akun Anda dibuat otomatis, dan Anda langsung kembali ke konsol.",
+      "passkey": "Masuk dengan passkey",
+      "passkeyFailed": "Perangkat ini tidak dapat memakai passkey. Masuk dengan email Anda."
     },
     "code": {
       "title": "Masukkan kode verifikasi",
@@ -55,6 +57,16 @@
     },
     "exits": {
       "label": "Selengkapnya tentang Scani"
+    },
+    "twoFactor": {
+      "title": "Masuk dua langkah",
+      "subtitle": "Masukkan kode dari aplikasi autentikator Anda.",
+      "codeLabel": "Kode 6 digit",
+      "backupLabel": "Kode cadangan",
+      "trustDevice": "Percayai perangkat ini selama 30 hari",
+      "submit": "Lanjutkan",
+      "useBackup": "Gunakan kode cadangan",
+      "useAuthenticator": "Gunakan aplikasi autentikator"
     }
   },
   "currency": {
@@ -91,6 +103,7 @@
     "vaults": "Target Tabungan",
     "tokens": "Token",
     "jobs": "Proses",
+    "transactions": "Transaksi",
     "settings": "Pengaturan",
     "signOut": "Keluar",
     "more": "Lainnya",
@@ -107,7 +120,6 @@
   },
   "settings": {
     "title": "Pengaturan",
-    "subtitle": "Kelola preferensi Anda",
     "profile": "Profil",
     "name": "Nama",
     "namePlaceholder": "Nama Anda",
@@ -156,7 +168,9 @@
         "customTokens_other": "token khusus",
         "customTokens_counted_other": "{{count}} token khusus",
         "balanceChanges_other": "perubahan saldo",
-        "balanceChanges_counted_other": "{{count}} perubahan saldo"
+        "balanceChanges_counted_other": "{{count}} perubahan saldo",
+        "transactions_other": "transaksi",
+        "transactions_counted_other": "{{count}} transaksi"
       },
       "accounts": {
         "col": {
@@ -378,7 +392,8 @@
           "noRecentPrice": "Tidak ada harga terbaru",
           "noPriceSource": "Tidak ada sumber harga yang bisa kami pakai",
           "negativeOpening": "Saldo awal negatif",
-          "noCoverage": "Tidak ada baris cakupan"
+          "noCoverage": "Tidak ada baris cakupan",
+          "restoredUnmatched": "Token tidak dikenali saat pemulihan"
         },
         "priceOption": {
           "stale": "Kutipan harga usang"
@@ -811,6 +826,29 @@
           "answersLandHere": "Jawaban yang Anda berikan di antrean saldo muncul di sini agar bisa dibatalkan.",
           "nothingAnsweredYet": "Belum ada perubahan saldo yang dijelaskan"
         }
+      },
+      "transactions": {
+        "col": {
+          "date": "Tanggal",
+          "description": "Keterangan",
+          "account": "Akun",
+          "category": "Kategori",
+          "amount": "Jumlah"
+        },
+        "empty": {
+          "title": "Belum ada transaksi",
+          "description": "Baris muncul saat akun Anda tersinkron atau saat Anda mengimpor mutasi."
+        },
+        "filter": {
+          "category": "Kategori",
+          "account": "Akun",
+          "holding": "Aset",
+          "period": "Periode"
+        },
+        "period": {
+          "all": "Sepanjang waktu",
+          "custom": "Rentang khusus"
+        }
       }
     },
     "brand": {
@@ -995,5 +1033,21 @@
     "signInDifferent": "Masuk dengan email lain",
     "connectionIssue": "Masalah koneksi",
     "connectionIssueRetrying": "Masalah koneksi — mencoba lagi"
+  },
+  "oauth": {
+    "continuing": "Menghubungkan…",
+    "failed": "Koneksi tidak dapat diselesaikan. Mulai lagi dari aplikasi yang sedang Anda hubungkan.",
+    "consent": {
+      "title": "{{name}} ingin membaca portofolio Scani Anda",
+      "account": "Masuk sebagai {{email}}",
+      "canTitle": "Aplikasi ini akan dapat",
+      "can": "Membaca aset, akun, transaksi, imbal hasil, dan laporan kualitas data Anda.",
+      "cannotTitle": "Aplikasi ini tidak akan dapat",
+      "cannot": "Mengubah, menambah, atau menghapus apa pun, atau memindahkan uang.",
+      "revoke": "Anda dapat memutuskannya kapan saja di Pengaturan.",
+      "allow": "Izinkan",
+      "deny": "Tolak",
+      "unnamedApp": "Sebuah aplikasi"
+    }
   }
 }

@@ -51,6 +51,7 @@ let seededTokenIds: string[] = [];
 let seededCustomTokenId: string;
 let seededInstitutionId: string;
 let seededR2Key: string;
+let seededBackupKey: string;
 let seededShadowRunId: string;
 /** Per-table counts for this user, taken after the seed and before the run. */
 const seededCounts = new Map<string, number>();
@@ -74,8 +75,35 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
   await makeInstitution(tx, { createdByUserId: userId });
 
   const account = await makeAccount(tx, { userId, institutionId: institution.id });
+  const [household] = await tx
+    .insert(schema.households)
+    .values({ name: 'Home', baseCurrencyId: baseToken.id, createdBy: userId })
+    .returning();
+  await tx
+    .insert(schema.householdMembers)
+    .values({ householdId: household?.id ?? '', userId, role: 'admin' });
+  await tx.insert(schema.householdInvites).values({
+    householdId: household?.id ?? '',
+    email: 'partner@example.com',
+    tokenHash: randomUUID(),
+    invitedBy: userId,
+    expiresAt: new Date(Date.now() + 86_400_000),
+  });
+  await tx
+    .insert(schema.accountShares)
+    .values({ accountId: account.id, householdId: household?.id ?? '', sharedBy: userId });
   const holding = await makeHolding(tx, { userId, accountId: account.id, tokenId: token.id });
-  await makeHoldingTransaction(tx, { userId, holdingId: holding.id });
+  // A categorized row, so the delete has to take the row before its category (SC-1652).
+  const [category] = await tx
+    .insert(schema.transactionCategories)
+    .values({ userId, name: 'Groceries' })
+    .returning({ id: schema.transactionCategories.id });
+  await makeHoldingTransaction(tx, {
+    userId,
+    holdingId: holding.id,
+    categoryId: category!.id,
+    categorySetBy: 'person',
+  });
 
   await tx.insert(schema.holdingBalanceObservations).values({
     userId,
@@ -125,6 +153,14 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
     holdingsWithKnownValue: 1,
     holdingsTotal: 1,
   });
+  await tx.insert(schema.returnsLastComplete).values({
+    userId,
+    scopeKey: '{"kind":"user"}',
+    windowKey: 'ytd',
+    baseCurrencyId: baseToken.id,
+    answer: { returns: {}, benchmarks: [] },
+    computedAt: new Date(),
+  });
 
   const vendor = await makeVendor(tx, { userId });
   const document = await makeDocument(tx, {
@@ -132,6 +168,24 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
     r2Key: `documents/${userId}/${randomUUID()}.pdf`,
   });
   seededR2Key = document.r2Key;
+  const [backup] = await tx
+    .insert(schema.userBackups)
+    .values({
+      userId,
+      storageKey: `temp/backup/${userId}/${randomUUID()}.ndjson.gz`,
+      formatVersion: 1,
+      byteSize: 1,
+      sha256: 'x',
+      recordCount: 1,
+    })
+    .returning();
+  seededBackupKey = backup?.storageKey ?? '';
+  await tx.insert(schema.budgetAppImports).values({
+    userId,
+    app: 'ynab',
+    uploadRef: `temp/file-import/${userId}/${randomUUID()}.csv`,
+    summary: {},
+  });
   const extraction = await makeDocumentExtraction(tx, {
     documentId: document.id,
     vendorId: vendor.id,
@@ -211,6 +265,65 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
     p256dh: 'x',
     auth: 'x',
   });
+  await tx.insert(schema.personalAccessTokens).values({
+    userId,
+    name: 'fixture agent',
+    tokenPrefix: 'scani_pat_000000',
+    hashedToken: randomUUID(),
+  });
+  await tx.insert(schema.billCalendarFeeds).values({ userId, hashedToken: randomUUID() });
+  const oauthClientId = `fixture-${randomUUID()}`;
+  await tx.insert(schema.oauthClients).values({
+    id: randomUUID(),
+    clientId: oauthClientId,
+    userId,
+    redirectUris: ['https://claude.ai/api/mcp/auth_callback'],
+  });
+  const refreshId = randomUUID();
+  const later = new Date(Date.now() + 3_600_000);
+  await tx.insert(schema.oauthRefreshTokens).values({
+    id: refreshId,
+    token: randomUUID(),
+    clientId: oauthClientId,
+    userId,
+    expiresAt: later,
+    createdAt: new Date(),
+    scopes: ['portfolio:read'],
+  });
+  await tx.insert(schema.oauthAccessTokens).values({
+    id: randomUUID(),
+    token: randomUUID(),
+    clientId: oauthClientId,
+    userId,
+    refreshId,
+    expiresAt: later,
+    createdAt: new Date(),
+    scopes: ['portfolio:read'],
+  });
+  await tx.insert(schema.oauthConsents).values({
+    id: randomUUID(),
+    clientId: oauthClientId,
+    userId,
+    scopes: ['portfolio:read'],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+  await tx.insert(schema.agentWrites).values({
+    userId,
+    actor: 'fixture',
+    tool: 'record_movement',
+    input: {},
+    status: 'applied',
+  });
+  await tx.insert(schema.agentWriteLocks).values({ userId });
+  await tx.insert(schema.agentCalls).values({
+    userId,
+    actor: 'fixture',
+    tool: 'list_holdings',
+    argsSummary: '{}',
+    outcome: 'ok',
+    durationMs: 1,
+  });
   await tx.insert(schema.userCostBasisMethodChanges).values({
     userId,
     previousMethod: 'fifo',
@@ -233,6 +346,21 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
     token: randomUUID(),
     expiresAt: new Date(Date.now() + 86_400_000),
     userId,
+  });
+  await tx.insert(schema.userTwoFactors).values({
+    id: randomUUID(),
+    userId,
+    secret: 'fixture-secret',
+    backupCodes: 'fixture-codes',
+  });
+  await tx.insert(schema.userPasskeys).values({
+    id: randomUUID(),
+    userId,
+    publicKey: 'fixture-key',
+    credentialID: randomUUID(),
+    counter: 0,
+    deviceType: 'singleDevice',
+    backedUp: false,
   });
   await tx.insert(schema.cloudApiKeys).values({
     ownerUserId: userId,
@@ -344,8 +472,8 @@ test('an anonymised row survives with the user link severed', async () => {
   expect(named?.n).toBe(0);
 });
 
-test('the stored object behind the deleted document is removed', async () => {
-  expect(deletedObjectKeys).toEqual([seededR2Key]);
+test('the stored objects behind the deleted document and backup are removed', async () => {
+  expect(deletedObjectKeys).toEqual([seededR2Key, seededBackupKey]);
 });
 
 test('the surviving user row keeps its login', async () => {

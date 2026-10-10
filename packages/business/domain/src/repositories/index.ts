@@ -4,6 +4,7 @@
 // table through `WalletDiscoveryService.resolveInstitutionCode` or
 // directly via `InstitutionBlockchainMappingRepository`.
 export { AccountRepository } from './AccountRepository';
+export { AccountWrapperRepository } from './AccountWrapperRepository';
 export {
   AlertDeliveryRepository,
   type ClaimedAlert,
@@ -35,8 +36,10 @@ export { HoldingRepository } from './HoldingRepository';
 export {
   describeMergedRows,
   HoldingTransactionRepository,
+  TransactionsNotFoundError,
 } from './HoldingTransactionRepository';
 export { InstitutionRepository, type StaleSyncTarget } from './InstitutionRepository';
+export { LiabilityTermsRepository } from './LiabilityTermsRepository';
 export { OperatorAlarmRepository } from './OperatorAlarmRepository';
 export { PaymentOccurrenceRepository } from './PaymentOccurrenceRepository';
 export { PaymentRepository } from './PaymentRepository';
@@ -46,8 +49,10 @@ export {
   PortfolioValueDailyRepository,
 } from './PortfolioValueDailyRepository';
 export { PushSubscriptionRepository } from './PushSubscriptionRepository';
+export { ReturnsLastCompleteRepository } from './ReturnsLastCompleteRepository';
 export { TokenPriceRepository } from './TokenPriceRepository';
 export { TokenRepository } from './TokenRepository';
+export { TransactionCategoryRepository } from './TransactionCategoryRepository';
 export { UserJobRepository } from './UserJobRepository';
 export {
   type AlertRecipient,

@@ -50,6 +50,7 @@ function holding(
       name: 'Spot',
       type: 'Exchange',
       typeCode: 'exchange',
+      class: 'asset',
       institutionId: 'i1',
     },
     institution: { id: 'i1', name: 'Kraken', type: 'Exchange', typeCode: 'exchange' },
@@ -60,6 +61,7 @@ function holding(
     isHidden: false,
     source: 'import_wallet',
     refreshable: true,
+    deleteHides: false,
     ...overrides,
   };
 }
@@ -88,6 +90,8 @@ function configFor(holdings: HoldingWithDetails[]) {
       currency: '$',
       onEdit: () => undefined,
       onRecordMovement: () => undefined,
+      onUpdateValue: () => undefined,
+      onMoveMoney: () => undefined,
       onToggleActive: () => undefined,
       onMarkScam: () => undefined,
       onRefreshPrice: () => undefined,

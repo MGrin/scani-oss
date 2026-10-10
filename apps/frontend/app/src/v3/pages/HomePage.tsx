@@ -6,21 +6,31 @@ import { DashboardGrid, DashboardItem, PageLayout } from '@scani/ui/v3/component
 import { useDelayedLoading } from '@scani/ui/v3/hooks/useDelayedLoading';
 import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Navigate, useLocation } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { useHomeChart } from '@/v3/hooks/useHomeChart';
-import { useReviewFeed } from '@/v3/hooks/useReviewFeed';
 import { useOpenCapture } from '../components/capture/CaptureSheetContext';
 import { StaleNotice } from '../components/feedback/StaleNotice';
 import { AllocationBlock } from '../components/home/AllocationBlock';
-import { AttentionRow } from '../components/home/AttentionRow';
+import { DebtBlock } from '../components/home/DebtBlock';
+import { FigureVisibilityProvider } from '../components/home/FigureVisibility';
 import { FirstRun } from '../components/home/FirstRun';
 import { GroupsBlock } from '../components/home/GroupsBlock';
 import { HeroBlock } from '../components/home/HeroBlock';
+import { HeroDetails } from '../components/home/HeroDetails';
+import { HomePageStaleContext } from '../components/home/HomeCard';
+import { HomePeek } from '../components/home/HomePeek';
+import { HouseholdLink } from '../components/home/HouseholdLink';
+import { IncomeBlock } from '../components/home/IncomeBlock';
+import { NeedsYou } from '../components/home/NeedsYou';
 import { ReturnsBlock } from '../components/home/ReturnsBlock';
 import { TopHoldingsBlock } from '../components/home/TopHoldingsBlock';
 import { UpcomingBlock } from '../components/home/UpcomingBlock';
 import { VaultsBlock } from '../components/home/VaultsBlock';
+import { WrapperGainsBlock } from '../components/home/WrapperGainsBlock';
 import { AccountDeletionNotice } from '../components/settings/AccountDeletionNotice';
+import { HOME_METRIC_TITLE_KEYS } from '../lib/home';
+import { V3_ROUTES } from '../lib/routes';
 
 /**
  * The v3 home screen — what it contains. How wide it is belongs to
@@ -145,9 +155,9 @@ function HomeHeading() {
 export function HomePage() {
   const { t } = useTranslation();
   useDocumentTitle(t('nav.home'));
+  const { pathname } = useLocation();
   const overview = trpc.dashboard.getOverview.useQuery();
   const openCapture = useOpenCapture();
-  const { count: reviewCount } = useReviewFeed();
   const loadingPhase = useDelayedLoading(overview.isLoading);
   // Held here rather than in `HeroBlock` because two blocks read it now: the
   // hero draws the selected tab, and the returns block below gives up its own
@@ -163,6 +173,10 @@ export function HomePage() {
   // worth to lead with, so its state governs the page. Every other query now
   // lives inside a block that degrades to its own copy, and none of them can
   // take the whole screen down.
+  // Closing a peek that was opened by URL replaces to the peek base, `/home`.
+  if (pathname.replace(/\/$/, '') === V3_ROUTES.homePeek)
+    return <Navigate to={V3_ROUTES.home} replace />;
+
   if (overview.isError && overview.data === undefined) {
     return (
       <>
@@ -174,6 +188,13 @@ export function HomePage() {
             onRetry={() => void overview.refetch()}
           />
         </PageLayout>
+        {/* A deep-linked peek still opens: its own queries may well answer. */}
+        <HomePeek
+          currency={currency}
+          hero={null}
+          heroTitle={t(HOME_METRIC_TITLE_KEYS[chart.metric])}
+          holdings={null}
+        />
       </>
     );
   }
@@ -203,12 +224,18 @@ export function HomePage() {
         <AccountDeletionNotice />
         <FirstRun onOpenCapture={openCapture} />
         {/* The empty screen is exactly where a dead job hides best, and this
-            branch used to return before the attention row (SC-153). Someone
+            branch used to return before the Needs-you strip (SC-153). Someone
             whose first import failed has no holdings *because* it failed —
             and was told "nothing tracked yet", which reads as "you have not
             tried". The row below it is the only thing on the screen that
             knows otherwise. */}
-        {reviewCount > 0 ? <AttentionRow count={reviewCount} className="w-full" /> : null}
+        <NeedsYou />
+        <HomePeek
+          currency={currency}
+          hero={null}
+          heroTitle={t(HOME_METRIC_TITLE_KEYS[chart.metric])}
+          holdings={null}
+        />
       </PageLayout>
     );
   }
@@ -216,89 +243,79 @@ export function HomePage() {
   return (
     <>
       <HomeHeading />
-      <DashboardGrid>
-        {/* Before everything else: an account its owner asked to delete, and
+      <FigureVisibilityProvider>
+        <HomePageStaleContext.Provider value={overview.isError}>
+          <DashboardGrid>
+            {/* Before everything else: an account its owner asked to delete, and
           believes is gone, is still here (SC-1276). Renders nothing otherwise. */}
-        <AccountDeletionNotice className="col-span-full" />
+            <AccountDeletionNotice className="col-span-full" />
 
-        {/* Above everything, because it qualifies everything: with the api
+            {/* Above everything, because it qualifies everything: with the api
           unreachable this screen renders a full portfolio to the cent off the
           cache and used to say nothing at all about how old it was (SC-71 9.1).
           `overview` is the query the net worth, the totals and the top
           holdings all come from, so its state is the honest one to report. */}
-        {overview.isError ? (
-          <DashboardItem span="full">
-            <StaleNotice onRetry={() => void overview.refetch()} />
-          </DashboardItem>
-        ) : null}
+            {overview.isError ? (
+              <DashboardItem span="full">
+                <StaleNotice onRetry={() => void overview.refetch()} />
+              </DashboardItem>
+            ) : null}
 
-        {/* The hero takes the full row rather than sharing it. It is the one
+            {/* The hero takes the full row rather than sharing it. It is the one
           block the screen exists for, and its chart is the only element here
           that turns width directly into resolution — a wider trace is a longer
           readable history, not just a bigger picture. */}
-        <DashboardItem span="full">
-          <HeroBlock total={total} currency={currency} chart={chart} />
-        </DashboardItem>
+            <DashboardItem span="full">
+              <HeroBlock total={total} currency={currency} chart={chart} variant="compact" />
+            </DashboardItem>
 
-        {/* Full width because it is an alert: a row that has to be noticed
+            <HouseholdLink />
+
+            {/* Full width because it is an alert: a row that has to be noticed
           cannot be the narrow one in a row of three. */}
-        {reviewCount > 0 ? (
-          <DashboardItem span="full">
-            <AttentionRow count={reviewCount} />
-          </DashboardItem>
-        ) : null}
+            <DashboardItem span="full">
+              <NeedsYou />
+            </DashboardItem>
 
-        {/* Three columns of standing facts. None is worth a full row alone, and
-          putting them on one line is what keeps six blocks from becoming six
-          screens on a desktop. On a phone they are the same three blocks in the
-          same order, stacked. */}
-        <DashboardItem span="third">
-          <AllocationBlock />
-        </DashboardItem>
-
-        {/* Ahead of top holdings, as on v2: what is due is time-sensitive in a
-          way a holdings ranking is not, so it takes the earlier slot. */}
-        <DashboardItem span="third">
-          <UpcomingBlock currency={currency} />
-        </DashboardItem>
-
-        <DashboardItem span="third">
-          <TopHoldingsBlock
-            holdings={overview.data.topHoldings}
-            total={total}
+            {/* One figure per tile, two to a row on a phone (SC-1669). The page
+          was 4.3 phone screens of full cards; every card is still here, one
+          tap away in its peek, and a tile with nothing to say renders no cell. */}
+            <DashboardItem span="full">
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <AllocationBlock variant="tile" />
+                <UpcomingBlock currency={currency} variant="tile" />
+                <ReturnsBlock variant="tile" />
+                <TopHoldingsBlock
+                  holdings={overview.data.topHoldings}
+                  total={total}
+                  currency={currency}
+                  query={overview}
+                  variant="tile"
+                />
+                <IncomeBlock variant="tile" />
+                <WrapperGainsBlock variant="tile" />
+                <DebtBlock variant="tile" />
+                <GroupsBlock variant="tile" />
+                <VaultsBlock variant="tile" />
+              </div>
+            </DashboardItem>
+          </DashboardGrid>
+          <HomePeek
             currency={currency}
+            hero={<HeroDetails chart={chart} currency={currency} />}
+            heroTitle={t(HOME_METRIC_TITLE_KEYS[chart.metric])}
+            holdings={
+              <TopHoldingsBlock
+                holdings={overview.data.topHoldings}
+                total={total}
+                currency={currency}
+                query={overview}
+                variant="peek"
+              />
+            }
           />
-        </DashboardItem>
-
-        {/* Halves rather than thirds: both carry a name beside a figure and a
-          second line beneath it, and at a third of 1440 the name is what gives
-          way.
-
-          Both blocks render nothing when the user has none, so a portfolio
-          without groups or vaults keeps the shorter screen it has today —
-          `empty:hidden` is what collapses the placement wrapper with them,
-          since an item left holding no child still spends six columns and a
-          `gap-6` on nothing. CSS rather than lifting the queries up here: the
-          page has no business knowing what makes a vault list empty. */}
-        {/* Beside groups and vaults, and collapsed the same way: it renders
-          nothing until there is history to measure (SC-1159). */}
-        <DashboardItem span="half" className="empty:hidden">
-          {/* The sentence and the comparison chart are up in the hero while
-            Returns is the selected tab, so what is left here is the
-            attribution bar and the ahead/behind rows — a table, which is a
-            different reading rhythm from a chart inside a hero. The window
-            travels with it so both halves describe the same days. */}
-          <ReturnsBlock heroWindow={chart.metric === 'returns' ? chart.returns.request : null} />
-        </DashboardItem>
-
-        <DashboardItem span="half" className="empty:hidden">
-          <GroupsBlock />
-        </DashboardItem>
-
-        <DashboardItem span="half" className="empty:hidden">
-          <VaultsBlock />
-        </DashboardItem>
-      </DashboardGrid>
+        </HomePageStaleContext.Provider>
+      </FigureVisibilityProvider>
     </>
   );
 }

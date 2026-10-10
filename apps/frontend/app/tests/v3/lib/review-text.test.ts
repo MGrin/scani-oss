@@ -77,6 +77,36 @@ describe('reviewTitle', () => {
     );
   });
 
+  test('a transfer still travelling after 7 days says what and where (SC-1675)', () => {
+    expect(reviewTitle(v3, { code: 'transferNotArrived' })).toBe('Transfer not arrived');
+    expect(
+      detail((texts) =>
+        reviewDetailText(texts, {
+          code: 'transferInTransit',
+          quantity: '1500',
+          tokenSymbol: 'USDC',
+          sourceAccountName: 'Wise',
+          destinationAccountName: 'Kraken',
+        })
+      )
+    ).toBe('1,500 USDC from Wise to Kraken');
+  });
+
+  test('money answered untracked that arrived in a tracked account asks about it (SC-1696)', () => {
+    expect(reviewTitle(v3, { code: 'untrackedTransferArrived' })).toBe('Was this a transfer?');
+    expect(
+      detail((texts) =>
+        reviewDetailText(texts, {
+          code: 'untrackedTransferArrived',
+          quantity: '500',
+          tokenSymbol: 'USD',
+          sourceAccountName: 'Wise',
+          destinationAccountName: 'IBKR',
+        })
+      )
+    ).toBe('500 USD left Wise, and the same arrived in IBKR');
+  });
+
   test('answers imported trades explain name their holding (SC-1453)', () => {
     expect(
       detail((texts) =>

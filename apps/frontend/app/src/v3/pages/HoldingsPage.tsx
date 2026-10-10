@@ -8,13 +8,17 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { useHoldingActions } from '@/v3/hooks/useHoldingActions';
+import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import { useOpenCapture } from '../components/capture/CaptureSheetContext';
 import { AssignGroupsSheet } from '../components/groups/AssignGroupsSheet';
 import { ApyConfigSheet } from '../components/holdings/ApyConfigSheet';
 import { EditHoldingSheet } from '../components/holdings/EditHoldingSheet';
+import { type HandValuedMode, HandValuedSheet } from '../components/holdings/HandValuedSheet';
 import { holdingsDataViewConfig } from '../components/holdings/holdingsConfig';
 import { RecordMovementSheet } from '../components/holdings/RecordMovementSheet';
+import { LiabilityPanel } from '../components/liabilities/LiabilityPanel';
 import { EditCustomTokenPriceSheet } from '../components/tokens/EditCustomTokenPriceSheet';
+import { useHandValued } from '../hooks/useHandValued';
 import { useHoldingRefresh } from '../hooks/useHoldingRefresh';
 import { useRecordMovement } from '../hooks/useRecordMovement';
 import { HOLDINGS_QUALITY_PARAM } from '../lib/dataQuality';
@@ -53,6 +57,7 @@ import { V3_ROUTES } from '../lib/routes';
  */
 
 export function HoldingsPage() {
+  useRelativeTimeTick();
   const { t } = useTranslation();
   useDocumentTitle(t('v3.holdings.page.title'));
   const holdingsQuery = trpc.holdings.getWithDetails.useQuery();
@@ -83,6 +88,7 @@ export function HoldingsPage() {
     staleTime: 60_000,
   });
   const qualityParam = searchParams.get(HOLDINGS_QUALITY_PARAM);
+  const accountParam = searchParams.get('account');
 
   // The queries the list actually depends on, collapsed so the error half
   // cannot be dropped (V3-16). `holdings.getWithDetails` failing while the
@@ -126,6 +132,10 @@ export function HoldingsPage() {
    * the drawer's own dismiss.
    */
   const [movementTarget, setMovementTarget] = useState<HoldingWithDetails | null>(null);
+  const [handValuedTarget, setHandValuedTarget] = useState<{
+    holding: HoldingWithDetails;
+    mode: HandValuedMode;
+  } | null>(null);
 
   const holdings = holdingsQuery.data?.holdings ?? [];
   const currency = baseCurrencyQuery.data?.symbol || 'USD';
@@ -162,6 +172,7 @@ export function HoldingsPage() {
 
   const openCapture = useOpenCapture();
   const movement = useRecordMovement(() => setMovementTarget(null));
+  const handValued = useHandValued(() => setHandValuedTarget(null));
 
   const config = holdingsDataViewConfig({
     holdings,
@@ -194,6 +205,8 @@ export function HoldingsPage() {
       refreshingBalanceId: refresh.refreshingBalanceId,
       onEditPrice: setPriceTarget,
       onRecordMovement: setMovementTarget,
+      onUpdateValue: (holding) => setHandValuedTarget({ holding, mode: 'value' }),
+      onMoveMoney: (holding) => setHandValuedTarget({ holding, mode: 'money' }),
       contestedHoldingIds,
       onConfigureApy: setApyTarget,
       // The confirmation is `HoldingDeleteAction`'s, inline in the peek's own
@@ -214,6 +227,9 @@ export function HoldingsPage() {
     // otherwise have to open the peek sheet to see.
     <PageLayout measure="wide">
       <PageHeader title={t('v3.holdings.page.title')} />
+
+      {/* A loan or card account shows what is owed and when it is paid off (SC-1640). */}
+      {accountParam ? <LiabilityPanel accountId={accountParam} /> : null}
 
       <V3DataView config={config} getId={(item) => item.id} query={holdingsState} />
 
@@ -266,6 +282,27 @@ export function HoldingsPage() {
           isSaving={movement.isSaving}
           error={movement.error}
           onSubmit={movement.submit}
+        />
+      ) : null}
+
+      {handValuedTarget ? (
+        <HandValuedSheet
+          // Keyed like the movement sheet: a second holding must not inherit
+          // the first one's half-typed amount.
+          key={`${handValuedTarget.holding.id}-${handValuedTarget.mode}`}
+          mode={handValuedTarget.mode}
+          onOpenChange={(open) => {
+            if (!open) setHandValuedTarget(null);
+          }}
+          currency={currency}
+          isSaving={handValued.isSaving}
+          error={handValued.error}
+          onSubmitValue={(draft) =>
+            handValued.submitValue(handValuedTarget.holding.id, currency, draft)
+          }
+          onSubmitMoney={(draft) =>
+            handValued.submitMoney(handValuedTarget.holding.id, currency, draft)
+          }
         />
       ) : null}
 

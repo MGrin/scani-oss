@@ -1,6 +1,6 @@
 process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
 
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { HISTORY_REBUILD_JOB_NAME } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
@@ -14,7 +14,11 @@ import { TokenRepository } from '../../../src/repositories/TokenRepository';
 import { UserJobRepository } from '../../../src/repositories/UserJobRepository';
 import { UserRepository } from '../../../src/repositories/UserRepository';
 import { VaultRepository } from '../../../src/repositories/VaultRepository';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import {
+  InTransitService,
+  type OpenTransit,
+} from '../../../src/services/portfolio/InTransitService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { AssetCurrencyService } from '../../../src/services/returns/AssetCurrencyService';
 import { DriftLedgerService } from '../../../src/services/returns/DriftLedgerService';
 import { ExternalFlowService } from '../../../src/services/returns/ExternalFlowService';
@@ -25,7 +29,9 @@ import {
   type ReturnsResult,
   ReturnsService,
 } from '../../../src/services/returns/ReturnsService';
+import { ReturnsSharedLoads } from '../../../src/services/returns/ReturnsSharedLoads';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { seriesFrom } from '../../../test/helpers/price-series';
 
 // Container stubs are process-global; put back whatever this file changes so
 // no later test file resolves them (SC-448).
@@ -46,14 +52,14 @@ const NOW = new Date('2026-03-10T12:00:00.000Z');
  */
 const baseCurrencyCalls: Array<string | undefined> = [];
 
-/** Token id sets handed to `buildPriceLookup`, one entry per prefetch. */
-const priceLookupBuilds: string[][] = [];
+/** The tokens each series load was asked for, one entry per load (SC-471). */
+const seriesLoads: string[][] = [];
 
-/** The `since` each prefetch was bounded to, in the same order (SC-1306). */
-const priceLookupSince: Array<Date | undefined> = [];
+/** Every series load's asks, in the same order. */
+const seriesAsks: Array<ReadonlyArray<{ tokenId: string; at: Date }>> = [];
 
-/** Every `PriceGraphService.convert`, and whether it was given the prefetch. */
-const convertCalls: Array<{ fromTokenId: string; toTokenId: string; withLookup: boolean }> = [];
+/** Every token a flow valuation read from a series. */
+const seriesReads: string[] = [];
 
 interface DayRow {
   date: string;
@@ -77,8 +83,9 @@ interface TxRow {
   kind: string;
   quantity: string;
   occurredAt: string;
-  /** Per-unit price already denominated in the base currency. */
+  /** Per-unit price, in the base currency unless `priceNativeTokenId` says otherwise. */
   priceNative?: string | null;
+  priceNativeTokenId?: string;
   tokenId?: string;
 }
 
@@ -113,6 +120,8 @@ interface Fixture {
   incomplete?: boolean;
   /** Only these holdings lack a complete ledger (SC-1421). */
   incompleteHoldings?: string[];
+  /** Holdings on liability (loan, card) accounts (SC-1640). */
+  debtHoldings?: string[];
   /** Holdings whose ledger rebuilds below zero from their earliest balance (SC-1444). */
   negativeRebuild?: string[];
   unresolvedResidual?: string;
@@ -123,7 +132,28 @@ interface Fixture {
   /** First reading of a position with no ledger whose readings never moved (SC-1448). */
   unchangedSince?: Record<string, string>;
   groupHoldings?: Record<string, string[]>;
+  /** Money in transit, by day and destination; the rows the repository adds at user scope (SC-1675). */
+  transitDays?: Array<{ date: string; holdingId: string; value: string }>;
+  /** Transfers answered internal to a provider-fed holding (SC-1675). */
+  transits?: OpenTransit[];
   vaults?: Record<string, Array<{ holdingId: string; percentage: number }>>;
+}
+
+/** One unit of `fromTokenId` in `toTokenId`: the FX table first, then the flow rates. */
+function rateOf(
+  fixture: Fixture,
+  fromTokenId: string,
+  toTokenId: string,
+  at: Date
+): Decimal | null {
+  if (fromTokenId === toTokenId) return new Decimal(1);
+  const fx = fixture.fxRates?.[fromTokenId];
+  if (fx !== undefined) {
+    const resolved = typeof fx === 'string' ? fx : (fx[at.toISOString().slice(0, 10)] ?? null);
+    return resolved === null ? null : new Decimal(resolved);
+  }
+  const rate = fixture.rates?.[fromTokenId];
+  return rate ? new Decimal(rate) : null;
 }
 
 function install(fixture: Fixture): ReturnsService {
@@ -180,13 +210,20 @@ function install(fixture: Fixture): ReturnsService {
       const fromStr = from.toISOString().slice(0, 10);
       const toStr = to.toISOString().slice(0, 10);
       const wanted = holdingIds ? new Set(holdingIds) : null;
+      // As the repository does: at user scope a day's transit adds to its destination.
+      const transitOf = (d: DayRow) =>
+        wanted
+          ? undefined
+          : fixture.transitDays?.find((t) => t.date === d.date && t.holdingId === d.holdingId);
       return fixture.days
         .filter((d) => d.date >= fromStr && d.date <= toStr)
         .filter((d) => !wanted || wanted.has(d.holdingId))
         .map((d) => ({
           snapshotDate: d.date,
           holdingId: d.holdingId,
-          totalValue: d.value,
+          totalValue: transitOf(d)
+            ? new Decimal(d.value).add(transitOf(d)?.value ?? '0').toString()
+            : d.value,
           costBasis: null,
           realizedPnl: null,
           unrealizedPnl: null,
@@ -247,6 +284,8 @@ function install(fixture: Fixture): ReturnsService {
         .filter((h) => !filter?.accountId || h.accountId === filter.accountId)
         .map((h) => h.id),
     findIdsIncludedInTotal: async (ids: readonly string[]) => new Set(ids),
+    findIdsOnLiabilityAccounts: async (ids: readonly string[]) =>
+      new Set(ids.filter((id) => (fixture.debtHoldings ?? []).includes(id))),
     findByIds: async (ids: string[]) => ids.map((id) => holdingById.get(id)).filter(Boolean),
   } as never);
 
@@ -263,7 +302,7 @@ function install(fixture: Fixture): ReturnsService {
           quantity: t.quantity,
           occurredAt: new Date(t.occurredAt),
           priceNative: t.priceNative ?? null,
-          priceNativeTokenId: t.priceNative ? BASE : null,
+          priceNativeTokenId: t.priceNativeTokenId ?? (t.priceNative ? BASE : null),
           tokenId: t.tokenId ?? holdingById.get(t.holdingId)?.tokenId ?? 'token-x',
         }))
         .filter((t) => t.occurredAt > from && t.occurredAt <= to)
@@ -271,53 +310,17 @@ function install(fixture: Fixture): ReturnsService {
     },
   } as never);
 
-  // The prefetch, recorded rather than mocked away: SC-471 is a ticket about
-  // how MANY times the price graph is consulted, so the count and the tokens
-  // it was asked to cover are what a test has to be able to see.
-  Container.set(PriceGraphService, {
-    buildPriceLookup: async (
-      tokenIds: Iterable<string>,
-      _baseCurrencyId: string,
-      _until: Date,
-      _tx: unknown,
-      since?: Date
-    ) => {
-      priceLookupBuilds.push([...tokenIds].sort());
-      priceLookupSince.push(since);
-      return { covers: () => true } as never;
-    },
-    convert: async (
-      amount: Decimal,
-      fromTokenId: string,
-      toTokenId: string,
-      _at: Date,
-      options?: { priceLookup?: unknown }
-    ) => {
-      convertCalls.push({ fromTokenId, toTokenId, withLookup: options?.priceLookup !== undefined });
-      if (fromTokenId === toTokenId) {
-        return { amount, rate: new Decimal(1), effectiveAt: NOW, path: 'identity', stale: false };
-      }
-      const fx = fixture.fxRates?.[fromTokenId];
-      if (fx !== undefined) {
-        const resolved = typeof fx === 'string' ? fx : (fx[_at.toISOString().slice(0, 10)] ?? null);
-        if (resolved === null) return null;
-        return {
-          amount: new Decimal(amount).mul(resolved),
-          rate: new Decimal(resolved),
-          effectiveAt: _at,
-          path: 'direct',
-          stale: false,
-        };
-      }
-      const rate = fixture.rates?.[fromTokenId];
-      if (!rate) return null;
-      return {
-        amount: new Decimal(amount).mul(rate),
-        rate: new Decimal(rate),
-        effectiveAt: NOW,
-        path: 'direct',
-        stale: false,
-      };
+  // Flows and the FX attribution each read one series, answering from the
+  // fixture's rates.
+  Container.set(PriceReader, {
+    series: async (asks: ReadonlyArray<{ tokenId: string; at: Date }>, baseTokenId: string) => {
+      seriesLoads.push([...new Set(asks.map((ask) => ask.tokenId))].sort());
+      seriesAsks.push(asks);
+      return seriesFrom(asks, baseTokenId, (amount, tokenId, base, at) => {
+        seriesReads.push(tokenId);
+        const rate = rateOf(fixture, tokenId, base, at);
+        return rate === null ? null : { amount: amount.mul(rate), stale: false };
+      });
     },
   } as never);
 
@@ -363,6 +366,9 @@ function install(fixture: Fixture): ReturnsService {
   Container.set(DriftLedgerService, {
     forHoldings: async () => new Map(),
   } as unknown as DriftLedgerService);
+  Container.set(InTransitService, {
+    openTransits: async () => fixture.transits ?? [],
+  } as unknown as InTransitService);
   const flowService = new ExternalFlowService();
   Container.set(ExternalFlowService, flowService);
   const service = new ReturnsService();
@@ -396,9 +402,9 @@ beforeEach(() => {
   Container.remove(ReturnsService);
   Container.remove(AssetCurrencyService);
   baseCurrencyCalls.length = 0;
-  priceLookupBuilds.length = 0;
-  priceLookupSince.length = 0;
-  convertCalls.length = 0;
+  seriesLoads.length = 0;
+  seriesAsks.length = 0;
+  seriesReads.length = 0;
 });
 
 describe('ReturnsService — the scenarios that decide whether the number is right', () => {
@@ -1044,7 +1050,7 @@ describe('ReturnsService — it says what it could not measure', () => {
   });
 });
 
-describe('ReturnsService — the price graph is consulted once, not once per flow (SC-471)', () => {
+describe('ReturnsService — prices are loaded once, not once per flow (SC-471)', () => {
   const MANY_FLOWS = 40;
 
   function fixtureWithFlows(count: number): Fixture {
@@ -1054,9 +1060,9 @@ describe('ReturnsService — the price graph is consulted once, not once per flo
         ['2026-01-01', '1000'],
         ['2026-03-01', '1000'],
       ]),
-      // Every flow needs the SAME conversion, so a per-flow lookup and a
-      // prefetch are indistinguishable by their answers and separable only
-      // by how many times the graph was asked.
+      // Every flow needs the SAME price, so a per-flow load and one series
+      // are indistinguishable by their answers and separable only by how
+      // many times prices were loaded.
       rates: { 'token-eur': '2' },
       txs: Array.from({ length: count }, (_, i) => ({
         id: `tx-${i}`,
@@ -1068,22 +1074,19 @@ describe('ReturnsService — the price graph is consulted once, not once per flo
     };
   }
 
-  test('one prefetch per compute, whatever the flow count', async () => {
+  test('one series per compute, whatever the flow count', async () => {
     const service = install(fixtureWithFlows(MANY_FLOWS));
     const result = ok(await service.compute(request()));
 
-    expect(priceLookupBuilds.length).toBe(1);
-    expect(convertCalls.length).toBe(MANY_FLOWS);
-    // Every conversion reads the prefetch. One that did not would be a DB
-    // round-trip, which is the entire cost this removes.
-    expect(convertCalls.every((call) => call.withLookup)).toBe(true);
+    expect(seriesLoads.length).toBe(1);
+    expect(seriesReads.length).toBe(MANY_FLOWS);
     expect(result.netExternalFlow).toBe(String(MANY_FLOWS * 2));
   });
 
-  test('the prefetch covers the held token AND the token an execution rate is quoted in', async () => {
-    // The two routes `valueTransactionInBase` can take. A prefetch built only
-    // from held tokens would miss the second, and `PriceLookup.covers` would
-    // then send it to the database — correct, but not fast.
+  test('the series asks the held token AND the token an execution rate is quoted in', async () => {
+    // The two routes a flow's valuation can take. A series that missed the
+    // second would throw when it is read: the asks come from the same rule
+    // the valuation reads by (`valuationInstantsOf`).
     const service = install({
       holdings: [{ id: 'h1', tokenId: 'token-eur', accountId: 'acc-1' }],
       days: days('h1', [
@@ -1105,17 +1108,44 @@ describe('ReturnsService — the price graph is consulted once, not once per flo
           kind: 'deposit',
           quantity: '1',
           occurredAt: '2026-02-02T10:00:00.000Z',
-          tokenId: 'token-gbp',
+          priceNative: '1',
+          priceNativeTokenId: 'token-gbp',
         },
       ],
     });
-    await service.compute(request());
+    const result = ok(await service.compute(request()));
 
-    expect(priceLookupBuilds.length).toBe(1);
-    expect(priceLookupBuilds[0]).toEqual(['token-eur', 'token-gbp']);
+    expect(seriesLoads).toEqual([['token-eur', 'token-gbp']]);
+    // 1 EUR at 2, then 1 unit at 1 GBP at 3.
+    expect(result.netExternalFlow).toBe('5');
   });
 
-  test('no flows in the window means no prefetch at all', async () => {
+  test('a flow dated today is valued inside the series it was loaded with', async () => {
+    const service = install({
+      holdings: [{ id: 'h1', tokenId: 'token-eur', accountId: 'acc-1' }],
+      days: days('h1', [
+        ['2026-03-01', '1000'],
+        ['2026-03-10', '1002'],
+      ]),
+      rates: { 'token-eur': '2' },
+      txs: [
+        {
+          id: 'tx-today',
+          holdingId: 'h1',
+          kind: 'deposit',
+          quantity: '1',
+          occurredAt: '2026-03-10T08:00:00.000Z',
+        },
+      ],
+    });
+    const result = ok(await service.compute(request()));
+
+    // Today has no close yet, so the flow is asked and read at `now`.
+    expect(seriesAsks[0]?.map((ask) => ask.at.toISOString())).toEqual([NOW.toISOString()]);
+    expect(result.netExternalFlow).toBe('2');
+  });
+
+  test('no flows in the window means no load at all', async () => {
     // Most accounts in the product are this one. It used to pay for a query
     // whose result nothing would read.
     const service = install({
@@ -1128,7 +1158,7 @@ describe('ReturnsService — the price graph is consulted once, not once per flo
     });
     const result = ok(await service.compute(request()));
 
-    expect(priceLookupBuilds.length).toBe(0);
+    expect(seriesLoads.length).toBe(0);
     expect(Number(result.twr?.cumulative)).toBeCloseTo(0.2, 12);
   });
 });
@@ -1210,9 +1240,9 @@ describe('ReturnsService — how much of it was the exchange rate (SC-458)', () 
   });
 
   test('a portfolio held entirely in the base currency costs nothing to attribute', async () => {
-    // No rate exists between a currency and itself, so no prefetch and no
-    // conversion is issued — the common case pays nothing for the split, and
-    // the answer is still a measurement rather than an absence.
+    // No rate exists between a currency and itself, so no series is loaded —
+    // the common case pays nothing for the split, and the answer is still a
+    // measurement rather than an absence.
     const service = install({
       holdings: [{ id: 'h1', tokenId: BASE, accountId: 'acc-1' }],
       tokens: [{ id: BASE, symbol: 'USD', typeCode: 'fiat' }],
@@ -1224,17 +1254,15 @@ describe('ReturnsService — how much of it was the exchange rate (SC-458)', () 
     });
     const result = ok(await service.compute(request()));
 
-    expect(priceLookupBuilds.length).toBe(0);
-    expect(convertCalls.length).toBe(0);
+    expect(seriesLoads).toEqual([]);
     expect(Number(result.attribution?.assetReturn)).toBeCloseTo(0.2, 12);
     expect(Number(result.attribution?.currencyReturn)).toBeCloseTo(0, 12);
   });
 
-  test('the rates are prefetched ONCE, whatever the window length (SC-471 still holds)', async () => {
+  test('the rates come from one series, whatever the window length (SC-471 still holds)', async () => {
     // A rate per currency per day is exactly the shape SC-471 removed: 537
-    // sequential lookups were 51.2 of a 53.1-second request. Every conversion
-    // below reads the in-memory index instead, and one prefetch serves all of
-    // them however long the window.
+    // sequential lookups were 51.2 of a 53.1-second request. One series
+    // serves every day however long the window.
     const dates = Array.from(
       { length: 60 },
       (_, i) => `2026-01-${String((i % 28) + 1).padStart(2, '0')}`
@@ -1253,31 +1281,30 @@ describe('ReturnsService — how much of it was the exchange rate (SC-458)', () 
     const result = ok(await service.compute(request()));
 
     expect(unique.length).toBeGreaterThan(20);
-    expect(priceLookupBuilds.length).toBe(1);
-    expect(priceLookupBuilds[0]).toEqual([GBP]);
-    expect(convertCalls.every((call) => call.withLookup)).toBe(true);
+    expect(seriesLoads).toEqual([[GBP]]);
     expect(result.attribution?.attributedPeriods).toBe(unique.length - 1);
   });
 
-  test('the FX prefetch is bounded to the first measured day (SC-1306)', async () => {
+  test('the last date of a returns window does not throw: today is asked at the run’s instant', async () => {
     const service = install({
       holdings: [{ id: 'h1', tokenId: GBP, accountId: 'acc-1' }],
       tokens: [{ id: GBP, symbol: 'GBP', typeCode: 'fiat' }],
       days: days('h1', [
-        ['2026-02-01', '1000'],
-        ['2026-02-02', '1100'],
-        ['2026-02-03', '1210'],
+        ['2026-03-01', '1000'],
+        ['2026-03-10', '1100'],
       ]),
       txs: [],
       fxRates: { [GBP]: '1.0' },
     });
-    ok(await service.compute(request()));
+    const result = ok(await service.compute(request()));
 
-    // The START of the first measured day, not its end: the earliest instant
-    // this prefetch will be asked to convert at is `2026-02-01T23:59:59.999Z`,
-    // and a bound must sit at or before the earliest ASK, never at it.
-    expect(priceLookupSince.length).toBe(1);
-    expect(priceLookupSince[0]?.toISOString()).toBe('2026-02-01T00:00:00.000Z');
+    // A past day at its close; today, which has no close yet, at `now`.
+    expect(seriesAsks).toHaveLength(1);
+    expect(seriesAsks[0]?.map((ask) => [ask.tokenId, ask.at.toISOString()])).toEqual([
+      [GBP, '2026-03-01T23:59:59.999Z'],
+      [GBP, NOW.toISOString()],
+    ]);
+    expect(result.attribution?.attributedPeriods).toBe(1);
   });
 
   test('a rate nobody could read costs its period and is counted, not assumed away', async () => {
@@ -1418,15 +1445,13 @@ describe('ReturnsService.hasHistory — one bit, and the SAME bit (SC-1306)', ()
       rates: { 'token-btc': '100' },
     });
     baseCurrencyCalls.length = 0;
-    convertCalls.length = 0;
-    priceLookupBuilds.length = 0;
+    seriesLoads.length = 0;
 
     expect(await service.hasHistory(request())).toBe(true);
     // `findIncludedHoldingValueRange` is the read that records a base
-    // currency; the flow valuation is what builds a price lookup.
+    // currency; the flow valuation is what loads a series.
     expect(baseCurrencyCalls).toEqual([]);
-    expect(priceLookupBuilds).toEqual([]);
-    expect(convertCalls).toEqual([]);
+    expect(seriesLoads).toEqual([]);
   });
 
   test('an account with no base currency is a no, not a throw', async () => {
@@ -1653,6 +1678,13 @@ describe('Returns eligibility is decided per holding (SC-1421)', () => {
       enteredLate: 0,
       unpricedAtZero: 0,
     });
+  });
+
+  test('a holding on a loan or card account is left out as debt, not measured (SC-1640)', async () => {
+    const result = ok(await install({ ...fixture, debtHoldings: ['h2'] }).compute(request()));
+    expect(result.eligibility.eligible).toBe(true);
+    expect(result.subset?.excluded).toEqual([{ reason: 'debt-account', holdings: 1 }]);
+    expect(Number(result.twr?.cumulative)).toBeCloseTo(0.1, 12);
   });
 
   test('a stale price on one holding leaves out that holding only', async () => {
@@ -2065,6 +2097,77 @@ describe('ReturnsService — a short interpolated run is tolerated (SC-1427)', (
   });
 });
 
+// SC-1541: the engine calls a daily crypto price stale after 48 hours, where
+// the old resolver allowed 45 days. SOMM's provider skipped eight days in April
+// 2026 and resumed, and that closed gap took the holding out of every window.
+describe('ReturnsService — a closed price gap is tolerated (SC-1541)', () => {
+  const TWO = [
+    { id: 'h1', tokenId: 'token-btc', accountId: 'acc-1' },
+    { id: 'h2', tokenId: 'token-eth', accountId: 'acc-2' },
+  ];
+  // Every run ends on NOW's day, so the window reaches all of it.
+  const datesEnding = (count: number) =>
+    Array.from({ length: count }, (_, i) =>
+      new Date(Date.UTC(2026, 2, 10 - (count - 1) + i)).toISOString().slice(0, 10)
+    );
+  const withGap = (dates: readonly string[], gap: readonly string[], gapDay: Partial<DayRow>) => ({
+    holdings: TWO,
+    days: [
+      ...days(
+        'h1',
+        dates.map((d) => [d, '1000'] as [string, string])
+      ),
+      ...dates.map(
+        (date): DayRow => ({
+          date,
+          holdingId: 'h2',
+          value: '500',
+          ...(gap.includes(date) ? gapDay : {}),
+        })
+      ),
+    ],
+    txs: [],
+  });
+  const STALE_DAY: Partial<DayRow> = { stale: 1, quality: 'partial' };
+  const excluded = async (
+    dates: readonly string[],
+    gap: readonly string[],
+    gapDay: Partial<DayRow> = STALE_DAY
+  ) =>
+    [
+      ...(ok(await install(withGap(dates, gap, gapDay)).compute(request())).subset?.excluded ?? []),
+    ].sort((a, b) => a.reason.localeCompare(b.reason));
+  const TEN = datesEnding(10);
+  const BOTH = [
+    { reason: 'missing-valuation', holdings: 1 },
+    { reason: 'stale-valuation', holdings: 1 },
+  ];
+
+  test('a gap the feed closed inside the window: counted', async () => {
+    expect(await excluded(TEN, TEN.slice(2, 8))).toEqual([]);
+  });
+
+  test('a gap still open on the window’s last day excludes', async () => {
+    expect(await excluded(TEN, TEN.slice(7))).toEqual(BOTH);
+  });
+
+  test('a gap open on the window’s first day excludes', async () => {
+    expect(await excluded(TEN, TEN.slice(0, 2))).toEqual(BOTH);
+  });
+
+  test('a closed gap of 45 days is counted; 46 days excludes', async () => {
+    const fifty = datesEnding(50);
+    expect(await excluded(fifty, fifty.slice(2, 47))).toEqual([]);
+    expect(await excluded(fifty, fifty.slice(2, 48))).toEqual(BOTH);
+  });
+
+  test('a gap day that also lost its value still excludes as missing-valuation', async () => {
+    expect(
+      await excluded(TEN, TEN.slice(2, 4), { stale: 1, quality: 'estimated', known: 0 })
+    ).toEqual(BOTH);
+  });
+});
+
 // An All window that opened on a few hundred pounds of tokens held for years
 // before the bulk of the money arrived let those years decide the figure
 // (SC-1439).
@@ -2111,5 +2214,190 @@ describe('ReturnsService — a window starts where its capital is material (SC-1
     const result = ok(await service.compute(request()));
     expect(result.effectiveWindow?.from).toBe('2026-03-01');
     expect(Number(result.twr?.cumulative)).toBeCloseTo(-0.22, 12);
+  });
+});
+
+describe('ReturnsService — money in transit (SC-1675)', () => {
+  // 500 leaves h1 on 03-02 for h2, a provider-fed holding; the provider shows
+  // it arriving on 03-04. The person owns 1000 throughout.
+  const TRANSIT_FIXTURE = {
+    holdings: [
+      { id: 'h1', tokenId: BASE, accountId: 'acc-1' },
+      { id: 'h2', tokenId: BASE, accountId: 'acc-2' },
+    ],
+    days: [
+      ...days('h1', [
+        ['2026-03-01', '1000'],
+        ['2026-03-02', '500'],
+        ['2026-03-03', '500'],
+        ['2026-03-04', '500'],
+      ]),
+      ...days('h2', [
+        ['2026-03-01', '0'],
+        ['2026-03-02', '0'],
+        ['2026-03-03', '0'],
+        ['2026-03-04', '500'],
+      ]),
+    ],
+    transitDays: [
+      { date: '2026-03-02', holdingId: 'h2', value: '500' },
+      { date: '2026-03-03', holdingId: 'h2', value: '500' },
+    ],
+    txs: [
+      {
+        id: 'tx-out',
+        holdingId: 'h1',
+        kind: 'withdraw',
+        quantity: '-500',
+        occurredAt: '2026-03-02T09:00:00.000Z',
+      },
+      {
+        id: 'tx-arr',
+        holdingId: 'h2',
+        kind: 'transfer_in',
+        quantity: '500',
+        occurredAt: '2026-03-04T09:00:00.000Z',
+      },
+    ],
+    transits: [
+      {
+        outflowId: 'tx-out',
+        sourceHoldingId: 'h1',
+        destinationHoldingId: 'h2',
+        destinationAccountId: 'acc-2',
+        tokenId: BASE,
+        transit: {
+          sent: '500',
+          sentAt: new Date('2026-03-02T09:00:00.000Z'),
+          arrivalId: 'tx-arr',
+          arrived: true,
+        },
+        arrival: { quantity: '500', at: new Date('2026-03-04T09:00:00.000Z') },
+        askAgainAt: null,
+      },
+    ],
+  };
+
+  test('a transfer that travels for two days is no return and no flow', async () => {
+    const service = install(TRANSIT_FIXTURE);
+    const result = ok(await service.compute(request()));
+    expect(result.series.map((p) => p.value)).toEqual(['1000', '1000', '1000', '1000']);
+    expect(result.netExternalFlow).toBe('0');
+    expect(Number(result.twr?.cumulative)).toBe(0);
+  });
+
+  test('a window that ends while the money travels still reads no return', async () => {
+    const service = install(TRANSIT_FIXTURE);
+    const result = ok(
+      await service.compute(
+        request({
+          window: {
+            kind: 'custom',
+            from: new Date('2026-03-01T00:00:00.000Z'),
+            to: new Date('2026-03-03T00:00:00.000Z'),
+          },
+        })
+      )
+    );
+    expect(result.endValue).toBe('1000');
+    expect(result.netExternalFlow).toBe('0');
+    expect(Number(result.twr?.cumulative)).toBe(0);
+  });
+
+  test('CONTROL: the destination account sees the arrival cross its boundary when it lands', async () => {
+    const service = install(TRANSIT_FIXTURE);
+    const result = ok(await service.compute(request({ scope: { kind: 'account', id: 'acc-2' } })));
+    expect(result.netExternalFlow).toBe('500');
+  });
+});
+
+describe('ReturnsService — the windows of one Home load share their loads (SC-1671)', () => {
+  const FIXTURE = {
+    holdings: ONE_HOLDING,
+    days: [
+      { date: '2025-02-01', holdingId: 'h1', value: '700' },
+      { date: '2025-12-31', holdingId: 'h1', value: '1000' },
+      { date: '2026-03-10', holdingId: 'h1', value: '1300' },
+    ],
+    txs: [],
+  };
+  const KINDS = ['all', '1y', 'ytd'] as const;
+
+  function withDriftRecorder(fixture: Fixture) {
+    install(fixture);
+    const driftMemos: unknown[] = [];
+    Container.set(DriftLedgerService, {
+      forHoldings: async (_userId: string, _tokens: unknown, opts: { shared?: unknown }) => {
+        driftMemos.push(opts.shared);
+        return new Map();
+      },
+    } as unknown as DriftLedgerService);
+    Container.set(ExternalFlowService, new ExternalFlowService());
+    const service = new ReturnsService();
+    Container.set(ReturnsService, service);
+    return { service, driftMemos };
+  }
+
+  test('three windows at once resolve currencies once and hand the drift read one memo', async () => {
+    const { service, driftMemos } = withDriftRecorder(FIXTURE);
+    const resolve = spyOn(Container.get(AssetCurrencyService), 'resolve');
+    try {
+      const shared = new ReturnsSharedLoads();
+      await Promise.all(
+        KINDS.map((kind) => service.compute(request({ window: { kind } }), { shared }))
+      );
+      expect(resolve).toHaveBeenCalledTimes(1);
+      expect(driftMemos.length).toBe(3);
+      expect(new Set(driftMemos)).toEqual(new Set([shared.driftByHolding]));
+    } finally {
+      resolve.mockRestore();
+    }
+  });
+
+  test('control: without shared loads each window resolves its own currencies', async () => {
+    const { service, driftMemos } = withDriftRecorder(FIXTURE);
+    const resolve = spyOn(Container.get(AssetCurrencyService), 'resolve');
+    try {
+      await Promise.all(KINDS.map((kind) => service.compute(request({ window: { kind } }))));
+      expect(resolve).toHaveBeenCalledTimes(3);
+      expect(driftMemos).toEqual([undefined, undefined, undefined]);
+    } finally {
+      resolve.mockRestore();
+    }
+  });
+
+  test('a failed currency load is dropped at once, so a later call loads again', async () => {
+    const { service } = withDriftRecorder(FIXTURE);
+    const currencies = Container.get(AssetCurrencyService);
+    const real = currencies.resolve.bind(currencies);
+    let calls = 0;
+    const resolve = spyOn(currencies, 'resolve').mockImplementation(async (...args) => {
+      calls += 1;
+      if (calls === 1) throw new Error('token read failed');
+      return real(...args);
+    });
+    try {
+      const shared = new ReturnsSharedLoads();
+      await expect(
+        service.compute(request({ window: { kind: 'all' } }), { shared })
+      ).rejects.toThrow('token read failed');
+      const outcome = await service.compute(request({ window: { kind: 'all' } }), { shared });
+      expect(outcome.status).toBe('ok');
+      expect(resolve).toHaveBeenCalledTimes(2);
+    } finally {
+      resolve.mockRestore();
+    }
+  });
+
+  test('each window returns what it returns alone', async () => {
+    const { service } = withDriftRecorder(FIXTURE);
+    const shared = new ReturnsSharedLoads();
+    const together = await Promise.all(
+      KINDS.map((kind) => service.compute(request({ window: { kind } }), { shared }))
+    );
+    const alone = [];
+    for (const kind of KINDS) alone.push(await service.compute(request({ window: { kind } })));
+    expect(together).toEqual(alone);
+    expect(together.map((outcome) => ok(outcome).requestedWindow.kind)).toEqual([...KINDS]);
   });
 });

@@ -22,6 +22,9 @@ import { z } from 'zod';
 
 const inProd = isNodeEnvProduction();
 
+/** The app's origin when `FRONTEND_URL` is unset outside production. */
+export const DEV_FRONTEND_URL = 'http://localhost:5173';
+
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z
@@ -31,7 +34,7 @@ const envSchema = z.object({
     .refine((n) => Number.isFinite(n) && n > 0 && n < 65536, {
       message: 'PORT must be a valid port number',
     }),
-  HOST: z.string().default('localhost'),
+  HOST: z.string().default('::'),
 
   // Postgres. Direct connection string (no PgBouncer needed — Neon / Fly
   // both provide direct connections).
@@ -42,7 +45,7 @@ const envSchema = z.object({
   // the Postgres backend, out of `DATABASE_URL`'s `bullmq` schema (SC-518).
   REDIS_URL: urlSchema,
 
-  FRONTEND_URL: inProd ? httpsUrlInProduction : urlSchema.default('http://localhost:5173'),
+  FRONTEND_URL: inProd ? httpsUrlInProduction : urlSchema.default(DEV_FRONTEND_URL),
 
   // The Cloud console origin. Its browser calls /api/auth/* with credentials, so
   // it must be a trusted origin and a CORS origin. Optional everywhere.

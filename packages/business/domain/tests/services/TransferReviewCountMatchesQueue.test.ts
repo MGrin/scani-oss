@@ -32,7 +32,7 @@
  * the fixture is not exercising rules at all and the case is vacuous.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
@@ -42,10 +42,11 @@ import Container from 'typedi';
 import { HoldingRepository } from '../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../src/repositories/HoldingTransactionRepository';
 import { PnLAtTimeService } from '../../src/services/portfolio/PnLAtTimeService';
-import { PriceGraphService } from '../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../src/services/pricing/PriceReader';
 import { TransferReviewRuleService } from '../../src/services/TransferReviewRuleService';
 import { TransferReviewService } from '../../src/services/TransferReviewService';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
+import { seedHoldingCache } from '../../test/helpers/engine-guard';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -123,10 +124,12 @@ async function setupFixture(): Promise<Fixture> {
     .values({ symbol: `TRB${tag.toUpperCase()}`, name: 'TRQ Base', typeId: tokenType.id })
     .returning();
   if (!base) throw new Error('base token insert failed');
-  const [holding] = await db
-    .insert(schema.holdings)
-    .values({ userId: user.id, accountId: account.id, tokenId: token.id, balance: '0' })
-    .returning();
+  const [holding] = await seedHoldingCache(db, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values({ userId: user.id, accountId: account.id, tokenId: token.id, balance: '0' })
+      .returning()
+  );
   if (!holding) throw new Error('holding insert failed');
 
   return {
@@ -232,7 +235,7 @@ beforeEach(async () => {
   // repository would otherwise depend on file order (SC-448).
   Container.set(HoldingRepository, new HoldingRepository());
   Container.set(HoldingTransactionRepository, new HoldingTransactionRepository());
-  Container.set(PriceGraphService, new PriceGraphService());
+  Container.set(PriceReader, new PriceReader());
   Container.set(TransferReviewService, new TransferReviewService());
   fixture = await setupFixture();
 });
@@ -438,5 +441,35 @@ describe('neither side writes, so the order they are read in cannot matter (SC-1
     expect(await new TransferReviewService().applyDisposalMarks(f.userId)).toBe(0);
     expect(await reviewOf(arrived)).toBeNull();
     expect(await readings(f)).toEqual([1, 1, 1, 1, 1]);
+  });
+});
+
+describe('the queue prices a page with one series (foundation A3)', () => {
+  test('a page of 50 pending transfers makes a fixed number of price reads', async () => {
+    const f = fixture!;
+    await insertBuy(f, '100');
+    // The queue prices only for a user with a base currency.
+    await db
+      .update(schema.users)
+      .set({ baseCurrencyId: f.baseCurrencyId })
+      .where(eq(schema.users.id, f.userId));
+    const series = spyOn(Container.get(PriceReader), 'series');
+    try {
+      const read = async () => {
+        series.mockClear();
+        const listed = await new TransferReviewService().listPending(f.userId);
+        return { listed: listed.length, loads: series.mock.calls.length };
+      };
+      for (let i = 0; i < 5; i++) await insertOutflow(f, { to: DEST_A });
+      const few = await read();
+      for (let i = 0; i < 45; i++) await insertOutflow(f, { to: DEST_A });
+      const many = await read();
+
+      // CONTROL: the pages were really 5 and 50 rows long.
+      expect([few.listed, many.listed]).toEqual([5, 50]);
+      expect([few.loads, many.loads]).toEqual([1, 1]);
+    } finally {
+      series.mockRestore();
+    }
   });
 });

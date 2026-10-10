@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { getDb } from '@scani/db';
 import { InstitutionRepository, type StaleSyncTarget } from '@scani/domain/repositories';
+import { IdleUserSyncPolicy } from '@scani/domain/services/users/IdleUserSyncPolicy';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { STALE_SYNC_ALARM } from '@scani/jobs';
 import { sql } from 'drizzle-orm';
@@ -31,16 +32,24 @@ const target = (credentialId: string, institutionName: string): StaleSyncTarget 
   institutionId: `inst-for-${credentialId}`,
   institutionName,
   kind: 'orphaned-credential',
+  lastError: null,
 });
 
 /** What the probe currently sees. Reassigned between probes to move the world. */
 let current: StaleSyncTarget[] = [];
+let asked: unknown[][] = [];
 
 function harness() {
   const captured: Array<{ message: string; tags?: Record<string, string> }> = [];
   Container.set(InstitutionRepository, {
-    findStaleSyncTargets: async () => current,
+    findStaleSyncTargets: async (...args: unknown[]) => {
+      asked.push(args);
+      return current;
+    },
   } as unknown as InstitutionRepository);
+  Container.set(IdleUserSyncPolicy, {
+    idleUserIds: async () => new Set(['idle-user']),
+  } as unknown as IdleUserSyncPolicy);
   const captureException = (err: unknown, tags?: Record<string, string>) => {
     captured.push({ message: err instanceof Error ? err.message : String(err), tags });
   };
@@ -57,11 +66,27 @@ async function clearAlarmRows(): Promise<void> {
 
 beforeEach(async () => {
   current = [];
+  asked = [];
   await clearAlarmRows();
 });
 afterEach(clearAlarmRows);
 
 describe('stale-sync probe', () => {
+  // SC-1629: idle users sync every sixth hour, so one missed idle run is
+  // seven hours, not three.
+  test('judges idle users against seven hours and everyone else against the threshold', async () => {
+    const { probeAt } = harness();
+    await probeAt(12);
+    const now = Date.UTC(2026, 0, 1) + 12 * HOUR;
+    expect(asked).toEqual([
+      [
+        new Date(now - 3 * HOUR),
+        undefined,
+        { userIds: ['idle-user'], cutoff: new Date(now - 7 * HOUR) },
+      ],
+    ]);
+  });
+
   test('a condition that persists escalates once, not once per probe', async () => {
     const { captured, probeAt } = harness();
     current = [target('cred-1', 'Binance')];
@@ -114,6 +139,24 @@ describe('stale-sync probe', () => {
     // event becomes a copy of the first and Sentry groups them together.
     expect(captured[1]?.message).toContain('Kraken');
     expect(captured[1]?.message).not.toContain('Binance');
+  });
+
+  test('names the refusal the sync recorded, so the alert says why (SC-1686)', async () => {
+    const { captured, probeAt } = harness();
+    current = [
+      {
+        ...target('cred-1', 'Bybit'),
+        kind: 'stale-account',
+        lastError: 'Bybit retCode=33004: Your api key has expired.',
+      },
+      { ...target('cred-2', 'Kraken'), kind: 'stale-account' },
+    ];
+    await probeAt(0);
+    expect(captured[0]?.message).toContain(
+      'Bybit(stale-account: Bybit retCode=33004: Your api key has expired.)'
+    );
+    expect(captured[0]?.message).toContain('Kraken(stale-account)');
+    expect(captured[0]?.message).not.toContain('Kraken(stale-account:');
   });
 
   test('a condition true throughout is re-stated once a week, not once an hour', async () => {

@@ -7,6 +7,9 @@ import { httpBatchLink } from '@trpc/client';
 import { getQueryKey } from '@trpc/react-query';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom';
+import type { AuthContextType } from '../../../src/contexts/AuthContext';
+import { AuthContext } from '../../../src/contexts/auth-context';
+import { BaseCurrencyProvider } from '../../../src/contexts/BaseCurrencyContext';
 import type { BaseCurrencyRates } from '../../../src/hooks/useBaseCurrencyRates';
 import { trpc } from '../../../src/lib/trpc';
 import { CoverageNote } from '../../../src/v3/components/home/CoverageNote';
@@ -17,12 +20,14 @@ import {
   resolveFirstRunState,
 } from '../../../src/v3/components/home/FirstRunPanel';
 import { HeroBlock } from '../../../src/v3/components/home/HeroBlock';
+import { HeroDetails } from '../../../src/v3/components/home/HeroDetails';
 import { formatChartDate } from '../../../src/v3/components/home/PortfolioChart';
 import { UpcomingFootLine } from '../../../src/v3/components/home/UpcomingBlock';
 import { VaultProgressRow } from '../../../src/v3/components/home/VaultsBlock';
 import type { HomeChart } from '../../../src/v3/hooks/useHomeChart';
 import {
   type FigureQuality,
+  HOME_METRIC_TITLE_KEYS,
   HOME_METRICS,
   heroFigureQuality,
   homePeriodByKey,
@@ -673,4 +678,287 @@ describe('Home net-worth change', () => {
       expect(html).not.toInclude('excluding');
     }
   );
+});
+
+/**
+ * SC-1690: Home's hero lost its PnL and Returns tabs in SC-1669, and the peek
+ * behind it said "Net worth" whichever tab was on.
+ */
+describe('Home hero keeps all three charts', () => {
+  const range = { from: new Date('2026-08-01'), to: new Date('2026-08-31') };
+  const chartFor = (metric: HomeChart['metric']): HomeChart => ({
+    metric,
+    chooseMetric: () => {},
+    metrics: HOME_METRICS,
+    periodKey: '30d',
+    choosePeriod: () => {},
+    period: homePeriodByKey('30d'),
+    range,
+    returns: { request: { kind: 'custom', ...range }, view: null, pending: false },
+  });
+
+  function renderHomeHero(metric: HomeChart['metric']): string {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    // Answered, so each tab draws its chart rather than a loading skeleton.
+    const input = { ...range, granularity: 'auto' } as const;
+    const quality = {
+      holdingsTotal: 1,
+      holdingsWithKnownValue: 1,
+      holdingsUnpriceable: 0,
+      holdingsStalePriced: 0,
+      holdingsBasisUnknown: 0,
+    };
+    client.setQueryData(getQueryKey(trpc.portfolio.getNetWorthSeries, input, 'query'), {
+      series: [
+        { date: '2026-08-01', totalValue: '100', ...quality },
+        { date: '2026-08-30', totalValue: '110', ...quality },
+      ],
+      baseCurrencyId: 'USD',
+      granularity: 'daily',
+      unmeasuredDates: [],
+    });
+    client.setQueryData(getQueryKey(trpc.portfolio.getPnLSeries, input, 'query'), {
+      series: [
+        { date: '2026-08-01', realizedPnl: '0', unrealizedPnl: '0', totalPnl: '0', ...quality },
+        { date: '2026-08-30', realizedPnl: '2', unrealizedPnl: '8', totalPnl: '10', ...quality },
+      ],
+      baseCurrencyId: 'USD',
+      granularity: 'daily',
+    });
+    const trpcClient = trpc.createClient({
+      links: [httpBatchLink({ url: 'http://localhost/trpc' })],
+    });
+    const html = renderToStaticMarkup(
+      <trpc.Provider client={trpcClient} queryClient={client}>
+        <QueryClientProvider client={client}>
+          <StaticRouter location="/">
+            <HeroBlock total="110" currency="USD" chart={chartFor(metric)} variant="compact" />
+          </StaticRouter>
+        </QueryClientProvider>
+      </trpc.Provider>
+    );
+    client.clear();
+    return html;
+  }
+
+  test('the tab control is on the Home card', () => {
+    const html = renderHomeHero('net-worth');
+    expect(html).toInclude('aria-label="Choose what to plot"');
+    for (const label of ['Net worth', 'PnL', 'Returns']) expect(html).toInclude(`>${label}<`);
+  });
+
+  test('PnL chosen on Home shows the PnL figure, not net worth', () => {
+    const html = renderHomeHero('pnl');
+    expect(html).toInclude('Profit and loss · ');
+  });
+
+  test('the chart link names the chart it opens', () => {
+    expect(renderHomeHero('pnl')).toInclude('aria-label="Open the profit and loss chart"');
+    expect(renderHomeHero('net-worth')).toInclude('aria-label="Open the net worth chart"');
+  });
+
+  test('the peek is titled by the chosen chart', () => {
+    expect(HOME_METRIC_TITLE_KEYS['net-worth']).toBe('v3.home.metric.netWorth');
+    expect(HOME_METRIC_TITLE_KEYS.pnl).toBe('v3.home.metric.pnlFull');
+    expect(HOME_METRIC_TITLE_KEYS.returns).toBe('v3.home.metric.returns');
+  });
+});
+
+/**
+ * SC-1692: the peek behind the Home chart repeated the card. It now shows
+ * details for the chart that is on, over the period that is on.
+ */
+describe('Home chart peek shows details for the chosen chart', () => {
+  const range = { from: new Date('2026-08-01'), to: new Date('2026-08-31') };
+  const chartFor = (metric: HomeChart['metric']): HomeChart => ({
+    metric,
+    chooseMetric: () => {},
+    metrics: HOME_METRICS,
+    periodKey: '30d',
+    choosePeriod: () => {},
+    period: homePeriodByKey('30d'),
+    range,
+    returns: { request: { kind: 'custom', ...range }, view: null, pending: false },
+  });
+
+  function renderDetails(metric: HomeChart['metric']): string {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+    });
+    client.setQueryData(getQueryKey(trpc.portfolio.getPeriodBreakdown, range, 'query'), {
+      startDate: '2026-08-01',
+      endDate: '2026-08-30',
+      total: { start: '1000', end: '1250', change: '250' },
+      byAccountType: [
+        {
+          code: 'crypto_exchange',
+          name: 'Crypto exchange',
+          start: '400',
+          end: '700',
+          change: '300',
+        },
+        { code: 'checking', name: 'Checking', start: '600', end: '550', change: '-50' },
+      ],
+      topMovers: [
+        {
+          holdingId: 'h1',
+          symbol: 'BTC',
+          accountName: 'BTC account',
+          start: '300',
+          end: '580',
+          change: '280',
+        },
+        {
+          holdingId: 'h2',
+          symbol: 'GBP',
+          accountName: 'GBP account',
+          start: '600',
+          end: '550',
+          change: '-50',
+        },
+      ],
+      topPnl: [
+        {
+          holdingId: 'h1',
+          symbol: 'BTC',
+          accountName: 'BTC account',
+          realized: '0',
+          unrealized: '260',
+          total: '260',
+        },
+        {
+          holdingId: 'h3',
+          symbol: 'VWRL',
+          accountName: 'VWRL account',
+          realized: '12',
+          unrealized: '-40',
+          total: '-28',
+        },
+      ],
+    });
+    const quality = {
+      holdingsTotal: 1,
+      holdingsWithKnownValue: 1,
+      holdingsUnpriceable: 0,
+      holdingsStalePriced: 0,
+      holdingsBasisUnknown: 0,
+    };
+    client.setQueryData(
+      getQueryKey(trpc.portfolio.getPnLSeries, { ...range, granularity: 'auto' }, 'query'),
+      {
+        series: [
+          { date: '2026-08-01', realizedPnl: '0', unrealizedPnl: '0', totalPnl: '0', ...quality },
+          {
+            date: '2026-08-30',
+            realizedPnl: '12',
+            unrealizedPnl: '220',
+            totalPnl: '232',
+            ...quality,
+          },
+        ],
+        baseCurrencyId: 'USD',
+        granularity: 'daily',
+      }
+    );
+    // The returns tab reads the hero's own window, answered here.
+    const returnsInput = { window: { kind: 'custom', ...range }, scope: undefined } as const;
+    client.setQueryData(getQueryKey(trpc.portfolio.hasReturns, returnsInput, 'query'), {
+      hasReturns: true,
+    });
+    client.setQueryData(getQueryKey(trpc.portfolio.getReturns, returnsInput, 'query'), {
+      returns: {
+        scope: { kind: 'user' },
+        requestedWindow: { kind: 'custom', from: '2026-08-01', to: '2026-08-31' },
+        effectiveWindow: { from: '2026-08-01', to: '2026-08-30' },
+        baseCurrencyId: 'usd',
+        startValue: '1000',
+        endValue: '1250',
+        netExternalFlow: '100',
+        twr: {
+          cumulative: '0.15',
+          annualized: null,
+          measuredPeriods: 29,
+          skippedPeriods: 0,
+          spanDays: 29,
+        },
+        xirr: { status: 'ok', rate: 0.2, method: 'bisection', iterations: 12, uniqueRoot: true },
+        coverage: {
+          measuredDays: 30,
+          windowDays: 31,
+          daysNotFullyCovered: 0,
+          skippedPeriods: 0,
+          unvaluedFlows: 0,
+          staleValuedFlows: 0,
+          flowsAfterLastMeasuredDay: 0,
+        },
+        attribution: null,
+      },
+      benchmarks: [{ key: 'btc', cumulative: '0.1' }],
+    });
+    const trpcClient = trpc.createClient({
+      links: [httpBatchLink({ url: 'http://localhost/trpc' })],
+    });
+    const html = renderToStaticMarkup(
+      <trpc.Provider client={trpcClient} queryClient={client}>
+        <QueryClientProvider client={client}>
+          <AuthContext.Provider
+            value={
+              { user: { id: 'user-1' }, status: 'authenticated' } as unknown as AuthContextType
+            }
+          >
+            <BaseCurrencyProvider>
+              <StaticRouter location="/home/hero">
+                <HeroDetails chart={chartFor(metric)} currency="USD" />
+              </StaticRouter>
+            </BaseCurrencyProvider>
+          </AuthContext.Provider>
+        </QueryClientProvider>
+      </trpc.Provider>
+    );
+    client.clear();
+    return html;
+  }
+
+  test('no tab repeats the card: there is no chart picker in the peek', () => {
+    for (const metric of ['net-worth', 'pnl', 'returns'] as const) {
+      expect(renderDetails(metric)).not.toInclude('aria-label="Choose what to plot"');
+    }
+  });
+
+  test('net worth shows the change by account type and the top movers', () => {
+    const html = renderDetails('net-worth');
+    expect(html).toInclude('Change by account type');
+    expect(html).toInclude('Crypto exchange');
+    expect(html).toInclude('Checking');
+    expect(html).toInclude('Top movers');
+    expect(html).toInclude('BTC');
+    expect(html).not.toInclude('Top holdings by PnL');
+  });
+
+  test('PnL shows realized against unrealized and the top holdings by PnL', () => {
+    const html = renderDetails('pnl');
+    expect(html).toInclude('Realized vs unrealized');
+    expect(html).toInclude('Top holdings by PnL');
+    expect(html).toInclude('VWRL');
+    expect(html).not.toInclude('Change by account type');
+  });
+
+  test('returns shows the returns details, not the net worth breakdown', () => {
+    const html = renderDetails('returns');
+    expect(html).not.toInclude('Change by account type');
+    expect(html).not.toInclude('Top holdings by PnL');
+    // Both rates, time-weighted and money-weighted, are in the peek.
+    expect(html).toInclude('Investment return');
+    expect(html).toInclude('Your money&#x27;s return');
+    // Open, not behind "The rates behind this": in the peek they are the point.
+    expect(html).toMatch(/<details[^>]*\sopen/);
+  });
+
+  test('a mover names its account, so one token in two accounts reads as two rows', () => {
+    const html = renderDetails('net-worth');
+    expect(html).toInclude('BTC account');
+    expect(html).toInclude('GBP account');
+  });
 });

@@ -1,16 +1,10 @@
 import type { StatementIngesterResult, StatementRow } from '@scani/ingesters';
-import {
-  BALANCE_COPY_ORIGIN,
-  FILE_IMPORT_LEGACY_ANCHOR,
-  LEGACY_ANCHOR_KEY,
-  SYNC_CAPTURE_SOURCE,
-} from '../../foundation/legacy-ledger-kinds';
 import { STATEMENT_INPUT_SOURCE } from '../../foundation/plan-feed-inputs';
 import { declareWindow } from '../blocks/window-declarer';
 import type { AssetRef, FeedBatch, FeedEntry, LegacyEntryColumns } from '../feed-batch';
 
 /** A statement names a currency and nothing else, so the catalog decides the token (D-2). */
-function currencyAsset(currency: string): AssetRef {
+export function currencyAsset(currency: string): AssetRef {
   return {
     identity: { symbol: currency, name: currency },
     typeCode: 'fiat',
@@ -47,8 +41,8 @@ function entryOf(asset: AssetRef, row: StatementRow): FeedEntry {
  * One uploaded statement as a feed batch, writing what the file import wrote
  * before it moved (D-1): rows into the account's holding of each currency, the
  * close as a statement checkpoint, the cache set to the close or, for a holding
- * the upload creates, to the sum of its rows, and the balance copy beside each
- * cache write (rulings R19, R21).
+ * the upload creates, to the sum of its rows. The balance copy it wrote beside
+ * each cache write (rulings R19, R21) stopped in A5 (D-19): the engine reads the close.
  *
  * A positions statement (IB) is the exception: its holdings at the period end
  * become statement checkpoints, securities found by ticker within their type.
@@ -120,16 +114,11 @@ export function legacyStatementBatch(input: {
       arrival: 'user_confirmed',
       writesCache: true,
       createdWithoutCheckpoint: 'sum-of-entries',
-      cacheObservation: {
-        source: SYNC_CAPTURE_SOURCE,
-        meta: { origin: BALANCE_COPY_ORIGIN, [LEGACY_ANCHOR_KEY]: FILE_IMPORT_LEGACY_ANCHOR },
-      },
       derivesTradeLegs: false,
       holdingFailure: 'fail-batch',
       absence: null,
       clearsAbsenceTally: false,
       createdCheckpointMeta: null,
-      unhideOnNonZero: false,
       unchangedCheckpoint: 'append',
       zeroOpensHolding: true,
     },

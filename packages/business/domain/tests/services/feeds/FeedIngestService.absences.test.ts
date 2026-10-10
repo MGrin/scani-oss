@@ -34,6 +34,7 @@ import type {
 import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWriter';
 import { FoundationClassificationService } from '../../../src/services/foundation/FoundationClassificationService';
 import { withTestDb } from '../../../test/helpers/db';
+import { seedHoldingCache } from '../../../test/helpers/engine-guard';
 import { makeInstitution, makeInstitutionType, makeUser } from '../../../test/helpers/factories';
 import { makeAccount, makeHolding, makeToken } from '../../../test/helpers/factories-extra';
 import { captureHistory } from '../../../test/helpers/history-neutrality';
@@ -73,7 +74,9 @@ function confirmed(
 const immediate = (reportedKeys: string[]): AbsencePolicy => ({
   mode: 'immediate',
   guardEmptySnapshot: false,
+  confirmations: null,
   reportedKeys,
+  statementAsOf: CAPTURED,
 });
 
 const asset = (symbol: string): AssetRef => ({
@@ -100,7 +103,7 @@ function sync(
     userId: owner.userId,
     input: { accountId: owner.accountId, source: PROVIDER, credentialId: null, walletId: null },
     fetchedAt: FETCHED,
-    window: { from: CAPTURED, to: FETCHED, complete: false },
+    window: { shape: 'balance-snapshot', from: CAPTURED, to: FETCHED, complete: false },
     checkpoints: fields.checkpoints ?? [],
     entries: [],
     absences: fields.absences ?? [],
@@ -111,13 +114,11 @@ function sync(
       arrival: 'auto_discovered',
       writesCache: true,
       createdWithoutCheckpoint: 'zero',
-      cacheObservation: null,
       derivesTradeLegs: false,
       holdingFailure: 'skip-entry',
       absence: fields.absence ?? null,
       clearsAbsenceTally: fields.clearsAbsenceTally ?? false,
       createdCheckpointMeta: null,
-      unhideOnNonZero: false,
       unchangedCheckpoint: 'append',
       zeroOpensHolding: true,
     },
@@ -165,6 +166,7 @@ async function holding(
     tokenId: string;
     balance: string;
     source?: string;
+    kind?: 'feed' | 'snapshot';
     externalId?: string | null;
     absentFromStatements?: Date[] | null;
     evidence?: ReadonlyArray<'sync' | 'statement'>;
@@ -176,6 +178,7 @@ async function holding(
     tokenId: fields.tokenId,
     balance: fields.balance,
     source: fields.source ?? SYNC_TAG,
+    ...(fields.kind === undefined ? {} : { kind: fields.kind }),
     externalId: fields.externalId ?? null,
     absentFromStatements: fields.absentFromStatements ?? null,
     createdAt: T0,
@@ -232,7 +235,7 @@ async function capturingLog<T>(
 }
 
 describe('FeedIngestService.ingest — a confirmed absence (the exchange sync, Z1)', () => {
-  test("a zero sets the cache to '0' and writes one labelled observation at now, never one at statementAsOf, and the tally lands in the same write", async () => {
+  test("a zero sets the cache to '0' and writes one labelled observation at statementAsOf, and the tally lands in the same write", async () => {
     await withTestDb(async (tx) => {
       const fixture = await owner(tx);
       const providerInput = await input(tx, fixture, PROVIDER);
@@ -274,7 +277,8 @@ describe('FeedIngestService.ingest — a confirmed absence (the exchange sync, Z
       const written = (await observationsOf(tx, zeroed.id)).filter((o) => o.observedAt > T0);
       expect(written).toHaveLength(1);
       const [zero] = written;
-      expect(zero!.observedAt >= before && zero!.observedAt <= after).toBe(true);
+      // Dated when the answer was true, not when it was written (A5 D-22, R60).
+      expect(zero!.observedAt).toEqual(STATEMENT_AS_OF);
       expect({
         balance: zero!.balance,
         source: zero!.source,
@@ -299,12 +303,6 @@ describe('FeedIngestService.ingest — a confirmed absence (the exchange sync, Z
       expect(tallyRow.absentFromStatements).toEqual([STATEMENT_AS_OF]);
       expect(tallyRow.lastUpdated).toEqual(LONG_AGO);
       expect(await observationsOf(tx, tallied.id)).toHaveLength(1);
-      // R60: no zero is dated at the statement.
-      const all = [
-        ...(await observationsOf(tx, zeroed.id)),
-        ...(await observationsOf(tx, tallied.id)),
-      ];
-      expect(all.filter((o) => o.observedAt.getTime() === STATEMENT_AS_OF.getTime())).toEqual([]);
     });
   });
 
@@ -314,9 +312,9 @@ describe('FeedIngestService.ingest — a confirmed absence (the exchange sync, Z
       await input(tx, fixture, PROVIDER);
       await input(tx, fixture, STATEMENT);
       const tokens: Array<typeof schema.tokens.$inferSelect> = [];
-      for (let i = 0; i < 6; i += 1) tokens.push(await makeToken(tx, { symbol: freshSymbol() }));
+      for (let i = 0; i < 8; i += 1) tokens.push(await makeToken(tx, { symbol: freshSymbol() }));
       const scamToken = await makeToken(tx, { symbol: freshSymbol(), isScamProbability: 0.99 });
-      const [reported, statementOnly, both, unowned, manual] = tokens;
+      const [reported, statementOnly, both, unowned, manual, personsFeed, syncSnapshot] = tokens;
       await holding(tx, fixture, { tokenId: reported!.id, balance: '1' });
       const ids = {
         statementOnly: (
@@ -339,6 +337,23 @@ describe('FeedIngestService.ingest — a confirmed absence (the exchange sync, Z
         manual: (
           await holding(tx, fixture, { tokenId: manual!.id, balance: '9', source: 'manual' })
         ).id,
+        // A person's row a feed took over is the sync's to write (A5 D-4), and
+        // a snapshot never is, whatever its source.
+        personsFeed: (
+          await holding(tx, fixture, {
+            tokenId: personsFeed!.id,
+            balance: '4',
+            source: 'manual',
+            kind: 'feed',
+          })
+        ).id,
+        syncSnapshot: (
+          await holding(tx, fixture, {
+            tokenId: syncSnapshot!.id,
+            balance: '6',
+            kind: 'snapshot',
+          })
+        ).id,
         scam: (await holding(tx, fixture, { tokenId: scamToken.id, balance: '1000' })).id,
       };
 
@@ -360,9 +375,13 @@ describe('FeedIngestService.ingest — a confirmed absence (the exchange sync, Z
         both: '0',
         unowned: '0',
         manual: '9',
+        personsFeed: '0',
+        syncSnapshot: '6',
         scam: '1000',
       });
-      expect([...result.zeroedHoldingIds].sort()).toEqual([ids.both, ids.unowned].sort());
+      expect([...result.zeroedHoldingIds].sort()).toEqual(
+        [ids.both, ids.unowned, ids.personsFeed].sort()
+      );
     });
   });
 
@@ -666,17 +685,15 @@ describe('FeedIngestService.ingest — absences, committed', () => {
       clearsAbsenceTally: true,
     });
 
-  test("R60: exactly one observation per zero, at now, with today's source and origin, and the labels settle", async () => {
+  test("R60: exactly one observation per zero, at statementAsOf, with today's source and origin, and the labels settle", async () => {
     const seeded = await seed();
-    const before = new Date();
 
     const first = await ingest(batchOf(seeded));
 
-    const after = new Date();
     const zeros = await read((tx) => observationsOf(tx, seeded.zeroed.id));
     expect(zeros.map((o) => o.balance)).toEqual(['5', '0']);
     const zero = zeros[1]!;
-    expect(zero.observedAt >= before && zero.observedAt <= after).toBe(true);
+    expect(zero.observedAt).toEqual(STATEMENT_AS_OF);
     expect([zero.source, zero.sourceMetadata, zero.role, zero.authority, zero.inputId]).toEqual([
       'sync-capture',
       ZERO_ORIGIN,
@@ -700,11 +717,11 @@ describe('FeedIngestService.ingest — absences, committed', () => {
   // The old path's zero was `HoldingService.updateHoldingBalanceWithEvent` with
   // no `observedAt`, deleted once nothing called it: the balance set, then one
   // `sync-capture` observation of it at now under that method's origin. A twin
-  // holding, with the same history, is zeroed each way and legacy history must
-  // read the same at every instant. Both zeros are stamped "now", and history
-  // spreads the drift up to a zero over the time before it, so the clock is
-  // held still for both: only the path may differ.
-  test("the zero's legacy history is byte-identical to the old path's", async () => {
+  // holding, with the same history, is zeroed each way. The two zeros match in
+  // every column but the date: since A5 D-22 (R60) the new one sits at the
+  // answer's `statementAsOf`, so history reads 0 from there and not from the
+  // write. The clock is held still so only that may differ.
+  test("the zero matches the old path's in every column but its date, which R60 moves to statementAsOf", async () => {
     const seeded = await seed();
     const twin = await getDb().transaction(async (tx) => {
       const account = await makeAccount(tx, {
@@ -721,7 +738,12 @@ describe('FeedIngestService.ingest — absences, committed', () => {
     const zeroAt = new Date('2026-08-01T12:00:00Z');
     setSystemTime(zeroAt);
     try {
-      await Container.get(HoldingRepository).updateBalance(twin.id, '0');
+      await seedHoldingCache(getDb(), (calculator) =>
+        calculator
+          .update(schema.holdings)
+          .set({ balance: '0', lastUpdated: new Date() })
+          .where(eq(schema.holdings.id, twin.id))
+      );
       await Container.get(HoldingBalanceObservationRepository).append({
         userId: seeded.fixture.userId,
         holdingId: twin.id,
@@ -747,16 +769,12 @@ describe('FeedIngestService.ingest — absences, committed', () => {
       readings.map(({ at, balance, anchor }) => ({ at, balance, anchor }));
     const old = strip(await captureHistory([twin.id], instants));
     const moved = strip(await captureHistory([seeded.zeroed.id], instants));
-    expect(moved).toEqual(old);
-    expect(old.map((r) => r.balance)).toEqual([
-      '5',
-      '5',
-      old[2]!.balance,
-      old[3]!.balance,
-      '0',
-      '0',
-    ]);
-    expect([old[2]!.balance, old[3]!.balance].every((b) => b !== '5' && b !== '0')).toBe(true);
+    // Since A5 PR-2 the engine reads both (D-10): absent before the holding's
+    // start, then the 5 walked forward until the zero. The old walk spread
+    // the unexplained drop across the days before it.
+    expect(old.map((r) => r.balance)).toEqual([null, '5', '5', '5', '0', '0']);
+    // The new zero sits at statementAsOf, before the write's instant.
+    expect(moved.map((r) => r.balance)).toEqual([null, '5', '5', '0', '0', '0']);
 
     const [oldZero, newZero] = await read(async (tx) => [
       (await observationsOf(tx, twin.id))[1]!,
@@ -770,7 +788,8 @@ describe('FeedIngestService.ingest — absences, committed', () => {
       gapReview: o!.gapReview,
       supersededAt: o!.supersededAt,
     });
-    expect(columns(newZero)).toEqual(columns(oldZero));
+    expect({ ...columns(newZero), observedAt: oldZero!.observedAt }).toEqual(columns(oldZero));
+    expect(newZero!.observedAt).toEqual(STATEMENT_AS_OF);
     const cache = await read(async (tx) => ({
       old: (await holdingRow(tx, twin.id)).balance,
       moved: (await holdingRow(tx, seeded.zeroed.id)).balance,

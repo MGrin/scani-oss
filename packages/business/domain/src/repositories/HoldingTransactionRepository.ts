@@ -1,7 +1,12 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { HoldingTransaction, NewHoldingTransaction } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { Decimal } from '@scani/shared';
+import {
+  Decimal,
+  TRANSFER_REVIEW_CREATED_SOURCE,
+  TRANSFER_REVIEW_SPLIT,
+  type TransferReviewSplit,
+} from '@scani/shared';
 import {
   and,
   asc,
@@ -9,6 +14,7 @@ import {
   getTableColumns,
   gt,
   gte,
+  ilike,
   inArray,
   isNotNull,
   isNull,
@@ -27,13 +33,23 @@ import { ledgerOrderBy } from '../lib/ledger-order';
 import { PERSON_AUTHORED_SOURCES } from '../lib/person-authored-sources';
 import { isSettlementLeg } from '../lib/transactions/trade-settlement';
 import { ruleDecidablePredicate } from '../lib/transfer-review-queue';
+import { replaceTravelledPart } from '../lib/transit-answer';
 import {
   mapLegacyEntry,
   UNDERIVABLE_KIND_ORIGINS,
 } from '../services/foundation/legacy-ledger-kinds';
 import { LABEL_BATCH_SIZE, MAPPED_ENTRY_LABELS } from './entry-labels';
 import { HoldingCoverageRepository } from './HoldingCoverageRepository';
+import { LEDGER_METADATA_FACTS } from './ledger-metadata-facts';
 import { describeMergedBatch, type MergedRowSubject } from './merged-rows';
+
+/** A row or a category named in a write is missing, or is another user's (SC-1652). */
+export class TransactionsNotFoundError extends Error {
+  constructor(what: 'transactions' | 'category') {
+    super(what === 'category' ? 'Category not found.' : 'Some transactions were not found.');
+    this.name = 'TransactionsNotFoundError';
+  }
+}
 
 export interface TransactionRangeOptions {
   // Direct holding anchor — preferred primary filter when listing the tx
@@ -50,6 +66,11 @@ export interface TransactionRangeOptions {
   to?: Date;
   kinds?: string[];
   source?: string;
+  /** A category and its children, or rows with none (SC-1652). */
+  /** A category id (its children included), no category, or one a rule or AI set (SC-1695). */
+  category?: { id: string } | 'uncategorized' | 'auto';
+  /** Text in the description or the counterparty, ignoring case (SC-1652). */
+  search?: string;
   limit?: number;
   offset?: number;
   order?: 'asc' | 'desc';
@@ -189,12 +210,16 @@ export interface BulkUpsertResult {
    */
   earliestChangedAt: Date | null;
   /**
-   * Events written onto a copy with no input on the holding they were placed
-   * on, because the input states them on another holding (R58), each as the
-   * input's own row there. The event is then on two holdings until A5 decides
-   * between them, and classification reads that row, not the copy (R59).
+   * The NULL-input copies removed because the batch placed their event on
+   * their holding while the input's row sat on another (R58): that row moved
+   * there, so each event is held once (A5 D-22).
    */
   duplicatePlacements: string[];
+  /**
+   * Rows no key held before this call: what this batch added, as against
+   * what it updated. An upload's undo removes exactly these (SC-1649).
+   */
+  inserted: string[];
 }
 
 const VALUATION_FIELDS = [
@@ -346,6 +371,12 @@ const ARBITERS = {
 
 type BulkUpsertArbiter = keyof typeof ARBITERS;
 
+/** A NULL-input copy of an event on the holding the batch now places it on (R58). */
+interface PlacedCopy {
+  copyId: string;
+  occurredAt: Date;
+}
+
 // postgres.js binds at most 65,534 parameters per statement, and an inserted
 // ledger row can bind one per column (SC-1528).
 const ROWS_PER_STATEMENT = Math.floor(
@@ -376,6 +407,7 @@ const LEGACY_ENTRY_FACTS = {
   settlesTransactionId: schema.holdingTransactions.settlesTransactionId,
   priceNative: schema.holdingTransactions.priceNative,
   priceNativeTokenId: schema.holdingTransactions.priceNativeTokenId,
+  ...LEDGER_METADATA_FACTS,
 };
 
 const TRANSACTION_ROWS: MergedRowSubject = {
@@ -483,6 +515,96 @@ export class HoldingTransactionRepository extends BaseRepository<
   }
 
   /**
+   * The person's arrival leg a provider inflow takes over when it landed net of
+   * a fee: one leg on the holding, inside its 7-day window, that the inflow is
+   * at most 10% under and never over; and no other inflow of this batch in that
+   * range. The outflow's answer becomes a split whose `fee` part is the
+   * shortfall, so every reader of a split books it as a charge from the
+   * outflow's instant (SC-1675 Q2). Null when any of that does not hold: the
+   * inflow then stands beside the leg, and day 7 asks the person.
+   */
+  private async feeReducedArrival(
+    row: NewHoldingTransaction,
+    batch: readonly NewHoldingTransaction[],
+    database: DatabaseTransaction
+  ): Promise<{ legId: string; outflowId: string; split: TransferReviewSplit } | null> {
+    const inflowKinds = ['deposit', 'transfer_in'];
+    if (!inflowKinds.includes(row.kind)) return null;
+    const t = schema.holdingTransactions;
+    const at = new Date(row.occurredAt).toISOString();
+    const legs = await database
+      .select()
+      .from(t)
+      .where(
+        and(
+          eq(t.holdingId, row.holdingId),
+          eq(t.userId, row.userId),
+          inArray(t.kind, inflowKinds),
+          eq(t.source, TRANSFER_REVIEW_CREATED_SOURCE),
+          isNotNull(t.transferGroupId),
+          sql`${t.quantity}::numeric > ${row.quantity}::numeric`,
+          sql`${t.quantity}::numeric * 0.9 <= ${row.quantity}::numeric`,
+          sql`${t.sourceMetadata}->>'arrivalFrom' IS NOT NULL`,
+          sql`${at} >= (${t.sourceMetadata}->>'arrivalFrom')::timestamptz`,
+          sql`${at} <= (${t.sourceMetadata}->>'arrivalTo')::timestamptz`
+        )
+      )
+      .for('update');
+    if (legs.length !== 1) return null;
+    const leg = legs[0]!;
+    const sent = new Decimal(leg.quantity);
+    const inRange = batch.filter((other) => {
+      if (other.holdingId !== row.holdingId || !inflowKinds.includes(other.kind)) return false;
+      const amount = new Decimal(other.quantity);
+      return (
+        amount.lte(sent) &&
+        amount.gte(sent.times('0.9')) &&
+        fallsInArrivalWindow(leg, other.occurredAt)
+      );
+    });
+    if (inRange.length !== 1) return null;
+
+    const meta = (leg.sourceMetadata ?? {}) as Record<string, unknown>;
+    const outflowId =
+      typeof meta.outflowTransactionId === 'string' ? meta.outflowTransactionId : leg.externalId;
+    if (!outflowId) return null;
+    const [outflow] = await database
+      .select()
+      .from(t)
+      .where(
+        and(
+          eq(t.id, outflowId),
+          eq(t.userId, row.userId),
+          eq(t.transferGroupId, leg.transferGroupId!)
+        )
+      )
+      .for('update');
+    if (!outflow) return null;
+    const [holding] = await database
+      .select({ accountId: schema.holdings.accountId })
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, row.holdingId));
+    if (!holding) return null;
+
+    const arrived = new Decimal(row.quantity);
+    const split = replaceTravelledPart(
+      {
+        review: outflow.transferReview,
+        split: outflow.transferReviewSplit,
+        quantity: outflow.quantity,
+      },
+      sent,
+      { accountId: holding.accountId, holdingId: row.holdingId },
+      (travelled) => [
+        { ...travelled, quantity: arrived.toString() },
+        { decision: 'fee', quantity: sent.minus(arrived).toString() },
+      ]
+    );
+    if (!split) return null;
+    return { legId: leg.id, outflowId, split };
+  }
+
+  /**
    * The holdings among `rows`' that hold an answer an arrival could take over:
    * a person's gap balance edit or a transfer review's row. Most hold none, and
    * a row on one of those needs no search for its candidate.
@@ -581,8 +703,8 @@ export class HoldingTransactionRepository extends BaseRepository<
   private async placedOntoCopies(
     rows: readonly NewHoldingTransaction[],
     tx: DatabaseTransaction
-  ): Promise<Map<NewHoldingTransaction, { source: string; inputRowId: string }>> {
-    const placed = new Map<NewHoldingTransaction, { source: string; inputRowId: string }>();
+  ): Promise<Map<NewHoldingTransaction, PlacedCopy>> {
+    const placed = new Map<NewHoldingTransaction, PlacedCopy>();
     for (const part of inStatements(rows)) {
       for (const [row, copy] of await this.placedOntoCopiesIn(part, tx)) placed.set(row, copy);
     }
@@ -592,7 +714,7 @@ export class HoldingTransactionRepository extends BaseRepository<
   private async placedOntoCopiesIn(
     rows: readonly NewHoldingTransaction[],
     tx: DatabaseTransaction
-  ): Promise<Map<NewHoldingTransaction, { source: string; inputRowId: string }>> {
+  ): Promise<Map<NewHoldingTransaction, PlacedCopy>> {
     const values = sql.join(
       rows.map(
         (r, i) => sql`(${i}::int, ${r.inputId}::uuid, ${r.holdingId}::uuid, ${r.externalId}::text)`
@@ -600,7 +722,7 @@ export class HoldingTransactionRepository extends BaseRepository<
       sql`, `
     );
     const found = (await tx.execute(sql`
-      SELECT v.i, own.source, own.id
+      SELECT v.i, copied.id AS copy_id, copied.occurred_at
       FROM (VALUES ${values}) AS v (i, input_id, holding_id, external_id)
       JOIN holding_transactions own
         ON own.input_id = v.input_id AND own.external_id = v.external_id
@@ -609,8 +731,13 @@ export class HoldingTransactionRepository extends BaseRepository<
         AND copied.source = own.source
         AND copied.external_id = v.external_id
       WHERE copied.input_id IS NULL
-    `)) as unknown as Array<{ i: number; source: string; id: string }>;
-    return new Map(found.map(({ i, source, id }) => [rows[i]!, { source, inputRowId: id }]));
+    `)) as unknown as Array<{ i: number; copy_id: string; occurred_at: Date | string }>;
+    return new Map(
+      found.map(({ i, copy_id, occurred_at }) => [
+        rows[i]!,
+        { copyId: copy_id, occurredAt: new Date(occurred_at) },
+      ])
+    );
   }
 
   /**
@@ -629,7 +756,13 @@ export class HoldingTransactionRepository extends BaseRepository<
     const arbiter = ARBITERS[arbiterName];
     try {
       if (rows.length === 0) {
-        return { rows: [], merges: [], earliestChangedAt: null, duplicatePlacements: [] };
+        return {
+          rows: [],
+          merges: [],
+          earliestChangedAt: null,
+          duplicatePlacements: [],
+          inserted: [],
+        };
       }
       if (!transaction) {
         return this.getDb().transaction((tx) => this.bulkUpsert(rows, tx, options));
@@ -720,6 +853,18 @@ export class HoldingTransactionRepository extends BaseRepository<
       // rows before it wrote.
       const stored = await this.keysAlreadyStored(arrivals, arbiterName, database);
       const answered = await this.holdingsWithAnswers(arrivals, database);
+      // The row becomes the feed's, so it carries the feed's input (R54).
+      const takeOver = (id: string, row: NewHoldingTransaction) =>
+        database
+          .update(schema.holdingTransactions)
+          .set({
+            source: row.source,
+            externalId: row.externalId,
+            ...(row.inputId ? { inputId: row.inputId } : {}),
+            updatedAt: sql`now()`,
+          })
+          .where(eq(schema.holdingTransactions.id, id))
+          .returning({ id: schema.holdingTransactions.id });
       for (const row of arrivals) {
         // A row the upsert will update is no arrival to take over: one on
         // this holding's key, or, under the input arbiter, one its input
@@ -750,6 +895,25 @@ export class HoldingTransactionRepository extends BaseRepository<
             )
           )
           .for('update');
+        if (candidates.length === 0) {
+          // No answer of the exact amount: the money may have landed net of a
+          // fee (SC-1675 Q2).
+          const reduced = await this.feeReducedArrival(row, inputRows, database);
+          if (!reduced) continue;
+          for (const { id } of await takeOver(reduced.legId, row)) relabelLater(row.userId, id);
+          await database
+            .update(schema.holdingTransactions)
+            .set({
+              transferReview: TRANSFER_REVIEW_SPLIT,
+              transferReviewSplit: reduced.split,
+              updatedAt: sql`now()`,
+            })
+            .where(eq(schema.holdingTransactions.id, reduced.outflowId));
+          relabelLater(row.userId, reduced.outflowId);
+          stored.add(heldKey(row));
+          if (row.inputId) stored.add(statedKey(row));
+          continue;
+        }
         if (candidates.length !== 1) continue;
         const candidate = candidates[0]!;
         // Only rows that could be this same arrival compete for it. Equal amounts at
@@ -763,42 +927,45 @@ export class HoldingTransactionRepository extends BaseRepository<
             fallsInArrivalWindow(candidate, other.occurredAt)
         );
         if (competing.length !== 1) continue;
-        // The row becomes the feed's, so it carries the feed's input (R54).
-        const takenOver = await database
-          .update(schema.holdingTransactions)
-          .set({
-            source: row.source,
-            externalId: row.externalId,
-            ...(row.inputId ? { inputId: row.inputId } : {}),
-            updatedAt: sql`now()`,
-          })
-          .where(eq(schema.holdingTransactions.id, candidate.id))
-          .returning({ id: schema.holdingTransactions.id });
-        for (const { id } of takenOver) relabelLater(row.userId, id);
+        for (const { id } of await takeOver(candidate.id, row)) relabelLater(row.userId, id);
         stored.add(heldKey(row));
         if (row.inputId) stored.add(statedKey(row));
       }
 
-      // R58: where the input's row cannot move onto the holding the batch
-      // places it on, the run writes what the (holding, source, external_id)
-      // arbiter wrote, onto the copy already there, and leaves the input's row
-      // where it is. Which of the two is the event is A5's figure decision.
+      // R58: the input's row for an event sits on another holding, and the
+      // holding the batch places it on holds a NULL-input copy of it under the
+      // (holding, source, external_id) key. The feed places the event, so it is
+      // held once, there: the copy goes, its settlement rows with it, and the
+      // input's row moves onto that holding below (A5 D-22).
       const ontoCopies =
         arbiterName === 'input'
           ? await this.placedOntoCopies(inputRows, database)
-          : new Map<NewHoldingTransaction, { source: string; inputRowId: string }>();
-      const writes = [
-        { arbiter: arbiterName, rows: inputRows.filter((row) => !ontoCopies.has(row)) },
-        {
-          arbiter: 'holding-source' as const,
-          rows: [...ontoCopies].map(([row, { source }]) => ({ ...row, source })),
-        },
-      ].filter((write) => write.rows.length > 0);
+          : new Map<NewHoldingTransaction, PlacedCopy>();
+      const removedCopies = [...ontoCopies.values()];
+      if (removedCopies.length > 0) {
+        await database.delete(schema.holdingTransactions).where(
+          inArray(
+            schema.holdingTransactions.id,
+            removedCopies.map((copy) => copy.copyId)
+          )
+        );
+      }
+      const writes = [{ arbiter: arbiterName, rows: inputRows }].filter(
+        (write) => write.rows.length > 0
+      );
 
+      // A removed copy, and the row that moved in its place, change both holdings from their instants.
       let earliestChangedAt: Date | null = null;
+      for (const [row, copy] of ontoCopies) {
+        for (const at of [copy.occurredAt, new Date(row.occurredAt)]) {
+          if (!earliestChangedAt || at < earliestChangedAt) earliestChangedAt = at;
+        }
+      }
       const storedRows: HoldingTransaction[] = [];
+      const storedKeys = new Map<BulkUpsertArbiter, Set<string>>();
       for (const write of writes) {
         const stored = await this.storedUnderKeys(write.rows, write.arbiter, database);
+        storedKeys.set(write.arbiter, new Set(stored.keys()));
         const earliest = earliestChangeIn(write.rows, stored, ARBITERS[write.arbiter].keyOf);
         if (earliest && (!earliestChangedAt || earliest < earliestChangedAt)) {
           earliestChangedAt = earliest;
@@ -807,24 +974,26 @@ export class HoldingTransactionRepository extends BaseRepository<
       }
 
       const results: HoldingTransaction[] = [];
+      const inserted: string[] = [];
       // One transaction, the holdings already locked above: a batch too large
       // for one statement is written in parts, and lands or fails whole.
       for (const write of writes) {
-        const { target, set } = ARBITERS[write.arbiter];
+        const { target, set, keyOf } = ARBITERS[write.arbiter];
+        const held = storedKeys.get(write.arbiter) ?? new Set<string>();
         for (const part of inStatements(write.rows)) {
-          results.push(
-            ...(await database
-              .insert(schema.holdingTransactions)
-              .values(part)
-              .onConflictDoUpdate({
-                target,
-                set: {
-                  ...set,
-                  updatedAt: sql`CASE WHEN ${reimportChanges(set)} THEN now() ELSE ${schema.holdingTransactions.updatedAt} END`,
-                },
-              })
-              .returning())
-          );
+          const written = await database
+            .insert(schema.holdingTransactions)
+            .values(part)
+            .onConflictDoUpdate({
+              target,
+              set: {
+                ...set,
+                updatedAt: sql`CASE WHEN ${reimportChanges(set)} THEN now() ELSE ${schema.holdingTransactions.updatedAt} END`,
+              },
+            })
+            .returning();
+          results.push(...written);
+          for (const r of written) if (!held.has(keyOf(r))) inserted.push(r.id);
         }
       }
 
@@ -852,7 +1021,8 @@ export class HoldingTransactionRepository extends BaseRepository<
         rows: results,
         merges,
         earliestChangedAt,
-        duplicatePlacements: [...ontoCopies.values()].map((copy) => copy.inputRowId),
+        duplicatePlacements: removedCopies.map((copy) => copy.copyId),
+        inserted,
       };
     } catch (error) {
       // postgres-js error shape varies: sometimes plain Error with
@@ -915,6 +1085,63 @@ export class HoldingTransactionRepository extends BaseRepository<
       RETURNING s.id
     `)) as unknown as Array<{ id: string }>;
     // The trade is a settle leg's group and a fee's `fee_of` (D-5).
+    await this.relabelEntries(
+      userId,
+      linked.map((r) => r.id),
+      transaction
+    );
+    return linked.length;
+  }
+
+  /**
+   * Point each unlinked withholding at the dividend it was taken from
+   * (SC-1644): a `fee` naming a `paidBy` security, and the one dividend on the
+   * same holding — so the same account and currency — from the same source on
+   * the same UTC day naming the same security (its ISIN, else its symbol), and
+   * agreeing on `inLieu`: a security can pay a dividend and a payment in lieu
+   * on one day, and each withholding says which it was taken from.
+   * Where none or several match it stays unlinked, which an income view reports
+   * as unmatched withholding rather than guessing.
+   *
+   * The link is written as the `source_metadata.feeOf` fact, which the D-5
+   * mapping reads into `fee_of`: `relabelEntries` rewrites that column from the
+   * facts on every re-import, and a re-import merges `source_metadata` as
+   * `existing || new`, so the fact outlives the next sync and the column would
+   * not. The linked rows are re-labelled here.
+   */
+  async linkWithholding(userId: string, transaction?: DatabaseTransaction): Promise<number> {
+    if (!transaction) return this.getDb().transaction((tx) => this.linkWithholding(userId, tx));
+    const linked = (await transaction.execute(sql`
+      WITH candidates AS (
+        SELECT w.id AS withholding_id, d.id AS dividend_id
+        FROM holding_transactions w
+        JOIN holding_transactions d
+          ON d.user_id = w.user_id
+         AND d.holding_id = w.holding_id
+         AND d.source = w.source
+         AND d.kind = 'reward'
+         AND d.source_metadata->>'income' = 'dividend'
+         AND (d.occurred_at AT TIME ZONE 'UTC')::date = (w.occurred_at AT TIME ZONE 'UTC')::date
+         AND COALESCE(d.source_metadata #>> '{paidBy,isin}', d.source_metadata #>> '{paidBy,symbol}')
+           = COALESCE(w.source_metadata #>> '{paidBy,isin}', w.source_metadata #>> '{paidBy,symbol}')
+         AND (d.source_metadata->>'inLieu') IS NOT DISTINCT FROM (w.source_metadata->>'inLieu')
+        WHERE w.user_id = ${userId}
+          AND w.kind = 'fee'
+          AND jsonb_typeof(w.source_metadata->'paidBy') = 'object'
+          AND NOT (w.source_metadata ? 'feeOf')
+      ),
+      single AS (
+        SELECT withholding_id, (array_agg(dividend_id))[1] AS dividend_id
+        FROM candidates
+        GROUP BY withholding_id
+        HAVING count(*) = 1
+      )
+      UPDATE holding_transactions w
+      SET source_metadata = w.source_metadata || jsonb_build_object('feeOf', s.dividend_id::text)
+      FROM single s
+      WHERE w.id = s.withholding_id AND w.user_id = ${userId}
+      RETURNING w.id
+    `)) as unknown as Array<{ id: string }>;
     await this.relabelEntries(
       userId,
       linked.map((r) => r.id),
@@ -1129,8 +1356,6 @@ export class HoldingTransactionRepository extends BaseRepository<
       .where(and(eq(t.id, rowId), eq(t.userId, userId), isNull(t.decisionId)));
   }
 
-  // Returns every tx for a given holding in (from, to] ordered by time.
-  // Used by BalanceAtTimeService.getBalance to walk backward from an anchor.
   // All transactions for a holding occurring on or before `until`,
   // chronologically ordered. The cost-basis FIFO walker reads this
   // (the `from` parameter on findForHoldingInRange is `gt`-exclusive,
@@ -1470,6 +1695,66 @@ export class HoldingTransactionRepository extends BaseRepository<
     }
   }
 
+  /**
+   * A person sets (or clears) the category on many rows at once (SC-1652).
+   * All or nothing: a row or a category that is not the user's throws, and the
+   * caller's transaction undoes the rows already written.
+   */
+  async setCategory(
+    userId: string,
+    ids: string[],
+    categoryId: string | null,
+    transaction?: DatabaseTransaction
+  ): Promise<{ updated: number }> {
+    const database = this.getDb(transaction);
+    const h = schema.holdingTransactions;
+    if (categoryId) {
+      const c = schema.transactionCategories;
+      const [owned] = await database
+        .select({ id: c.id })
+        .from(c)
+        .where(and(eq(c.id, categoryId), eq(c.userId, userId)));
+      if (!owned) throw new TransactionsNotFoundError('category');
+    }
+    const unique = [...new Set(ids)];
+    const updated = await database
+      .update(h)
+      // A clear is the person's too: 'cleared' keeps a learned rule from refilling it (SC-1695).
+      .set({ categoryId, categorySetBy: categoryId ? 'person' : 'cleared', updatedAt: new Date() })
+      .where(and(eq(h.userId, userId), inArray(h.id, unique)))
+      .returning({ id: h.id });
+    if (updated.length !== unique.length) throw new TransactionsNotFoundError('transactions');
+    return { updated: updated.length };
+  }
+
+  /**
+   * Keep: an automatic category becomes the person's, unchanged (SC-1695).
+   * Every id must be the person's or nothing is written; a row a person or an
+   * import already set is left as it is and not counted.
+   */
+  async confirmCategories(
+    userId: string,
+    ids: string[],
+    transaction?: DatabaseTransaction
+  ): Promise<{ confirmed: number }> {
+    const database = this.getDb(transaction);
+    const h = schema.holdingTransactions;
+    const unique = [...new Set(ids)];
+    const owned = await database
+      .select({ id: h.id })
+      .from(h)
+      .where(and(eq(h.userId, userId), inArray(h.id, unique)));
+    if (owned.length !== unique.length) throw new TransactionsNotFoundError('transactions');
+    const confirmed = await database
+      .update(h)
+      .set({ categorySetBy: 'person', updatedAt: new Date() })
+      .where(
+        and(eq(h.userId, userId), inArray(h.id, unique), inArray(h.categorySetBy, ['rule', 'ai']))
+      )
+      .returning({ id: h.id });
+    return { confirmed: confirmed.length };
+  }
+
   // Generic range query for listing UIs (transaction list in holding detail,
   // etc). Accepts holdingId as a direct filter, or accountId/tokenId as
   // indirect filters applied via subquery on holdings.
@@ -1516,6 +1801,35 @@ export class HoldingTransactionRepository extends BaseRepository<
       }
       if (opts.source) {
         conditions.push(eq(schema.holdingTransactions.source, opts.source));
+      }
+      if (opts.category === 'uncategorized') {
+        conditions.push(isNull(schema.holdingTransactions.categoryId));
+      } else if (opts.category === 'auto') {
+        conditions.push(inArray(schema.holdingTransactions.categorySetBy, ['rule', 'ai']));
+      } else if (opts.category) {
+        // The row's key carries its user, so a category id from another user
+        // can match none of this user's rows.
+        const c = schema.transactionCategories;
+        conditions.push(
+          inArray(
+            schema.holdingTransactions.categoryId,
+            database
+              .select({ id: c.id })
+              .from(c)
+              .where(or(eq(c.id, opts.category.id), eq(c.parentId, opts.category.id)))
+          )
+        );
+      }
+
+      const term = opts.search?.trim();
+      if (term) {
+        const pattern = `%${term.replace(/[\\%_]/g, (ch) => `\\${ch}`)}%`;
+        conditions.push(
+          or(
+            ilike(schema.holdingTransactions.description, pattern),
+            ilike(schema.holdingTransactions.counterparty, pattern)
+          ) as SQL
+        );
       }
 
       // Total, not just chronological — this is the paginated read, and
@@ -1689,11 +2003,41 @@ export class HoldingTransactionRepository extends BaseRepository<
   // duplicate that was merged into this canonical holding by migration
   // 0006/0007) doesn't keep distorting cost basis. Returns the count
   // deleted; 0 means there was nothing to clean up.
+  // The date of the opening removed, or null when there was none: a removed
+  // opening moves every day from it, and a rebuild is sized from that (SC-1607).
   async deleteReconciliationOpening(
     holdingId: string,
     transaction?: DatabaseTransaction
-  ): Promise<number> {
-    return this.deleteForHoldingBySource(holdingId, 'reconciliation-opening', transaction);
+  ): Promise<Date | null> {
+    const removed = await this.removeForHoldingBySource(
+      holdingId,
+      'reconciliation-opening',
+      transaction
+    );
+    return removed.reduce<Date | null>(
+      (earliest, row) =>
+        earliest === null || row.occurredAt < earliest ? row.occurredAt : earliest,
+      null
+    );
+  }
+
+  // Whether an earlier version's synthesized opening row still stands. The
+  // reconciler keeps such a row current and never writes a new one (A5).
+  async hasReconciliationOpening(
+    holdingId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<boolean> {
+    const rows = await this.getDb(transaction)
+      .select({ id: schema.holdingTransactions.id })
+      .from(schema.holdingTransactions)
+      .where(
+        and(
+          eq(schema.holdingTransactions.holdingId, holdingId),
+          eq(schema.holdingTransactions.source, 'reconciliation-opening')
+        )
+      )
+      .limit(1);
+    return rows.length > 0;
   }
 
   /**
@@ -1734,6 +2078,14 @@ export class HoldingTransactionRepository extends BaseRepository<
     source: string,
     transaction?: DatabaseTransaction
   ): Promise<number> {
+    return (await this.removeForHoldingBySource(holdingId, source, transaction)).length;
+  }
+
+  private async removeForHoldingBySource(
+    holdingId: string,
+    source: string,
+    transaction?: DatabaseTransaction
+  ): Promise<Array<{ id: string; occurredAt: Date }>> {
     try {
       const database = this.getDb(transaction);
       const results = await database
@@ -1744,13 +2096,16 @@ export class HoldingTransactionRepository extends BaseRepository<
             eq(schema.holdingTransactions.source, source)
           )
         )
-        .returning({ id: schema.holdingTransactions.id });
+        .returning({
+          id: schema.holdingTransactions.id,
+          occurredAt: schema.holdingTransactions.occurredAt,
+        });
       // A removal narrows the ledger, so the summary of it has to narrow
       // too — the old `LEAST`/`GREATEST` upsert could only ever widen.
       if (results.length > 0) {
         await this.coverageRepository.syncTxBoundsFromLedger([holdingId], transaction);
       }
-      return results.length;
+      return results;
     } catch (error) {
       this.logger.error(
         { holdingId, source, error: error instanceof Error ? error.message : error },

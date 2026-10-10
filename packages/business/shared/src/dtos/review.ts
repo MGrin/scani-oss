@@ -88,6 +88,10 @@ const reviewLabelSchema = z.discriminatedUnion('code', [
   z.object({ code: z.literal('answersTradesExplain') }),
   /** Wallet tokens nothing can price, waiting on one Hide (SC-1469). */
   z.object({ code: z.literal('unpriceableAirdrops') }),
+  /** A transfer still travelling 7 days after it left (SC-1675). */
+  z.object({ code: z.literal('transferNotArrived') }),
+  /** Money answered as gone somewhere untracked that later arrived in a tracked account (SC-1696). */
+  z.object({ code: z.literal('untrackedTransferArrived') }),
 ]);
 
 export type ReviewLabel = z.infer<typeof reviewLabelSchema>;
@@ -184,6 +188,26 @@ export const reviewDetailSchema = z.discriminatedUnion('code', [
     code: z.literal('unpriceableAirdrops'),
     count: z.number().int().positive(),
   }),
+  /**
+   * What is still travelling, in the token's own units, and between which
+   * accounts (SC-1675). Not an `amount`: that one requires a 3-letter currency,
+   * and a stablecoin's symbol is not one.
+   */
+  z.object({
+    code: z.literal('transferInTransit'),
+    quantity: z.string().min(1),
+    tokenSymbol: z.string().min(1),
+    sourceAccountName: z.string().min(1),
+    destinationAccountName: z.string().min(1),
+  }),
+  /** What left untracked, and the account the same amount later arrived in (SC-1696). */
+  z.object({
+    code: z.literal('untrackedTransferArrived'),
+    quantity: z.string().min(1),
+    tokenSymbol: z.string().min(1),
+    sourceAccountName: z.string().min(1),
+    destinationAccountName: z.string().min(1),
+  }),
 ]);
 
 export type ReviewDetail = z.infer<typeof reviewDetailSchema>;
@@ -279,9 +303,66 @@ export const UNPRICEABLE_AIRDROPS_REVIEW_KIND = 'unpriceable-airdrops';
 /** Their sheet, over Review itself like the settled-answers one. */
 export const UNPRICEABLE_AIRDROPS_REVIEW_PATH = `${REVIEW_PATH}/${UNPRICEABLE_AIRDROPS_REVIEW_KIND}`;
 
+/** `ReviewItem.kind` for a transfer still in transit after 7 days (SC-1675). */
+export const TRANSIT_REVIEW_KIND = 'transit';
+
+/** What a transit question asks about: the part of an outflow that went to one holding (SC-1684). */
+export interface TransitReviewKey {
+  outflowId: string;
+  destinationHoldingId: string;
+}
+
+/** A sheet over Review named by two ids: `<kind>-<first>_<second>`. */
+function pairReviewPath(kind: string, first: string, second: string): string {
+  return `${REVIEW_PATH}/${kind}-${encodeURIComponent(first)}_${encodeURIComponent(second)}`;
+}
+
+/** The two ids a `pairReviewPath` peek id names, or null for any other sheet. */
+function pairOf(kind: string, peekId: string): [string, string] | null {
+  const prefix = `${kind}-`;
+  if (!peekId.startsWith(prefix)) return null;
+  const [first, second, ...rest] = peekId.slice(prefix.length).split('_');
+  if (!first || !second || rest.length > 0) return null;
+  return [decodeURIComponent(first), decodeURIComponent(second)];
+}
+
+/** Its sheet, over Review itself, named by the outflow and the destination it asks about. */
+export function transitReviewPath(key: TransitReviewKey): string {
+  return pairReviewPath(TRANSIT_REVIEW_KIND, key.outflowId, key.destinationHoldingId);
+}
+
+/** The question a transit sheet's peek id names, or null for any other sheet. */
+export function transitQuestionOf(peekId: string): TransitReviewKey | null {
+  const pair = pairOf(TRANSIT_REVIEW_KIND, peekId);
+  return pair ? { outflowId: pair[0], destinationHoldingId: pair[1] } : null;
+}
+
+/**
+ * `ReviewItem.kind` for an outflow answered `untracked` whose same amount later
+ * arrived in an account Scani tracks (SC-1696).
+ */
+export const UNTRACKED_ARRIVAL_REVIEW_KIND = 'untracked-arrival';
+
+/** What that question asks about: the untracked outflow and the arrival that may be it. */
+export interface UntrackedArrivalKey {
+  outflowId: string;
+  inflowId: string;
+}
+
+/** Its sheet, over Review itself, named by the outflow and the arrival. */
+export function untrackedArrivalReviewPath(key: UntrackedArrivalKey): string {
+  return pairReviewPath(UNTRACKED_ARRIVAL_REVIEW_KIND, key.outflowId, key.inflowId);
+}
+
+/** The question an untracked-arrival sheet's peek id names, or null for any other sheet. */
+export function untrackedArrivalQuestionOf(peekId: string): UntrackedArrivalKey | null {
+  const pair = pairOf(UNTRACKED_ARRIVAL_REVIEW_KIND, peekId);
+  return pair ? { outflowId: pair[0], inflowId: pair[1] } : null;
+}
+
 /**
  * "How much is waiting on me" — the number the nav badge, the home screen's
- * attention row and the More drawer all show.
+ * Needs-you strip and the More drawer all show.
  *
  * It lives here rather than at any of those call sites so there is exactly
  * one summing rule, for the same reason `useReviewFeed` is one hook: the

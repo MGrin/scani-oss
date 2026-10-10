@@ -6,7 +6,8 @@ import type {
 } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lte, sql } from 'drizzle-orm';
+import Decimal from 'decimal.js';
+import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lte, notInArray, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 import { includedInTotalSql } from '../lib/holding-inclusion';
 
@@ -107,6 +108,10 @@ const DERIVED_COLUMNS = [
 ] as const;
 
 const excluded = (key: (typeof DERIVED_COLUMNS)[number]) => sql.raw(`EXCLUDED.${daily[key].name}`);
+
+/** A transit row's key: its day and the holding the money is travelling to. */
+const transitKey = (snapshotDate: string, holdingId: string) =>
+  `${String(snapshotDate).slice(0, 10)}|${holdingId}`;
 
 const ON_ROLLUP_CONFLICT = {
   target: [daily.userId, daily.scopeKind, daily.scopeId, daily.snapshotDate, daily.baseCurrencyId],
@@ -216,7 +221,25 @@ export class PortfolioValueDailyRepository {
         .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
         .where(this.includedHoldingRows(userId, baseCurrencyId, from, to, holdingIds))
         .orderBy(asc(daily.snapshotDate));
-      return results as IncludedHoldingScopeRow[];
+      const rows = results as IncludedHoldingScopeRow[];
+      if (holdingIds !== undefined) return rows;
+      const transit = await this.transitByDestination(
+        userId,
+        baseCurrencyId,
+        from,
+        to,
+        transaction
+      );
+      return rows.map((row) => {
+        const t = transit.get(transitKey(row.snapshotDate, row.holdingId));
+        if (!t) return row;
+        return {
+          ...row,
+          totalValue: new Decimal(row.totalValue).add(t.value).toString(),
+          costBasis:
+            row.costBasis === null ? null : new Decimal(row.costBasis).add(t.cost).toString(),
+        };
+      });
     } catch (error) {
       this.logger.error(
         { userId, baseCurrencyId, from, to, error: error instanceof Error ? error.message : error },
@@ -262,7 +285,21 @@ export class PortfolioValueDailyRepository {
         .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
         .where(this.includedHoldingRows(userId, baseCurrencyId, from, to, holdingIds))
         .orderBy(asc(daily.snapshotDate));
-      return results as IncludedHoldingValueRow[];
+      const rows = results as IncludedHoldingValueRow[];
+      if (holdingIds !== undefined) return rows;
+      const transit = await this.transitByDestination(
+        userId,
+        baseCurrencyId,
+        from,
+        to,
+        transaction
+      );
+      return rows.map((row) => {
+        const t = transit.get(transitKey(row.snapshotDate, row.holdingId));
+        return t
+          ? { ...row, totalValue: new Decimal(row.totalValue).add(t.value).toString() }
+          : row;
+      });
     } catch (error) {
       this.logger.error(
         { userId, baseCurrencyId, from, to, error: error instanceof Error ? error.message : error },
@@ -282,7 +319,7 @@ export class PortfolioValueDailyRepository {
   ): Promise<IncludedDailyTotalsRow[]> {
     const pnlComplete = sql`bool_and(${daily.costBasis} IS NOT NULL AND ${daily.realizedPnl} IS NOT NULL AND ${daily.unrealizedPnl} IS NOT NULL)`;
     try {
-      return await this.getDb(transaction)
+      const rows = await this.getDb(transaction)
         .select({
           snapshotDate: sql<string>`${daily.snapshotDate}::text`,
           totalValue: sql<string>`sum(${daily.totalValue}::numeric)::text`,
@@ -318,6 +355,7 @@ export class PortfolioValueDailyRepository {
         .where(this.includedHoldingRows(userId, baseCurrencyId, from, to))
         .groupBy(daily.snapshotDate)
         .orderBy(asc(daily.snapshotDate));
+      return await this.withTransit(rows, userId, baseCurrencyId, from, to, transaction);
     } catch (error) {
       this.logger.error(
         { userId, baseCurrencyId, from, to, error: error instanceof Error ? error.message : error },
@@ -325,6 +363,157 @@ export class PortfolioValueDailyRepository {
       );
       throw error;
     }
+  }
+
+  // Money in transit is in the user total and in no holding's own figures, so
+  // the per-day sum of holding rows misses it; this adds the day's `transit`
+  // rows. Each is carried at its value as its cost, so the day's unrealized P&L
+  // is unchanged and the chart still reconciles with the user row (SC-1675).
+  private async withTransit(
+    rows: IncludedDailyTotalsRow[],
+    userId: string,
+    baseCurrencyId: string,
+    from: Date,
+    to: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<IncludedDailyTotalsRow[]> {
+    const transit = await this.transitByDestination(userId, baseCurrencyId, from, to, transaction);
+    if (transit.size === 0) return rows;
+    const byDay = new Map<string, { value: Decimal; cost: Decimal }>();
+    for (const [key, t] of transit) {
+      const date = key.slice(0, 10);
+      const sum = byDay.get(date) ?? { value: new Decimal(0), cost: new Decimal(0) };
+      byDay.set(date, { value: sum.value.add(t.value), cost: sum.cost.add(t.cost) });
+    }
+    return rows.map((row) => {
+      const t = byDay.get(row.snapshotDate.slice(0, 10));
+      if (!t) return row;
+      return {
+        ...row,
+        totalValue: new Decimal(row.totalValue).add(t.value).toString(),
+        costBasis:
+          row.costBasis === null ? null : new Decimal(row.costBasis).add(t.cost).toString(),
+      };
+    });
+  }
+
+  /**
+   * Each day's `transit` rows with the holding the money travels to, for a
+   * reader that keeps only some destinations: a household keeps the ones in a
+   * shared account (SC-1647).
+   */
+  async findTransitRange(
+    userId: string,
+    baseCurrencyId: string,
+    from: Date,
+    to: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<Array<{ snapshotDate: string; holdingId: string; value: string }>> {
+    const transit = await this.transitByDestination(userId, baseCurrencyId, from, to, transaction);
+    return [...transit].map(([key, t]) => ({
+      snapshotDate: key.slice(0, 10),
+      holdingId: key.slice(11),
+      value: t.value,
+    }));
+  }
+
+  /**
+   * The day's `transit` rows, by `date|destination holding`, under the same
+   * inclusion contract as the holding rows: money travelling to a holding that
+   * counts nowhere counts nowhere either (SC-1675).
+   */
+  private async transitByDestination(
+    userId: string,
+    baseCurrencyId: string,
+    from: Date,
+    to: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, { value: string; cost: string }>> {
+    const rows = await this.getDb(transaction)
+      .select({
+        snapshotDate: sql<string>`${daily.snapshotDate}::text`,
+        holdingId: daily.scopeId,
+        value: daily.totalValue,
+        cost: daily.costBasis,
+      })
+      .from(daily)
+      .innerJoin(schema.holdings, eq(schema.holdings.id, daily.scopeId))
+      .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
+      .where(
+        and(
+          eq(daily.userId, userId),
+          eq(daily.scopeKind, 'transit'),
+          eq(daily.baseCurrencyId, baseCurrencyId),
+          gte(daily.snapshotDate, from.toISOString().slice(0, 10)),
+          lte(daily.snapshotDate, to.toISOString().slice(0, 10)),
+          includedInTotalSql()
+        )
+      );
+    return new Map(
+      rows.map((r) => [
+        transitKey(r.snapshotDate, r.holdingId),
+        { value: r.value, cost: r.cost ?? r.value },
+      ])
+    );
+  }
+
+  /**
+   * One day's `transit` rows, replaced: one per holding money is travelling
+   * to, at its value as its cost, and a row no longer in transit is removed.
+   * Keyed by the destination so every per-holding reader can add it to that
+   * holding and apply its own rules to it; two outflows to one holding on one
+   * day are one row (SC-1675).
+   */
+  async replaceTransitRows(
+    userId: string,
+    baseCurrencyId: string,
+    snapshotDate: string,
+    lines: ReadonlyArray<{ destinationHoldingId: string; valueInBase: Decimal }>,
+    transaction?: DatabaseTransaction
+  ): Promise<void> {
+    const byDestination = new Map<string, Decimal>();
+    for (const line of lines)
+      byDestination.set(
+        line.destinationHoldingId,
+        (byDestination.get(line.destinationHoldingId) ?? new Decimal(0)).add(line.valueInBase)
+      );
+    const keep = [...byDestination.keys()];
+    await this.getDb(transaction)
+      .delete(daily)
+      .where(
+        and(
+          eq(daily.userId, userId),
+          eq(daily.scopeKind, 'transit'),
+          eq(daily.baseCurrencyId, baseCurrencyId),
+          eq(daily.snapshotDate, snapshotDate),
+          ...(keep.length > 0 ? [notInArray(daily.scopeId, keep)] : [])
+        )
+      );
+    await this.bulkUpsert(
+      [...byDestination].map(([destinationHoldingId, value]) => ({
+        userId,
+        scopeKind: 'transit',
+        scopeId: destinationHoldingId,
+        snapshotDate,
+        baseCurrencyId,
+        totalValue: value.toString(),
+        coverageQuality: 'full' as const,
+        holdingsWithKnownValue: 0,
+        holdingsTotal: 0,
+        holdingsUnpriceable: 0,
+        holdingsStalePriced: 0,
+        holdingsStaleAnchored: 0,
+        oldestAnchorAt: null,
+        holdingsBeforeRecords: 0,
+        holdingsInterpolated: 0,
+        holdingsBasisUnknown: 0,
+        transfersUnreviewed: 0,
+        costBasis: value.toString(),
+        realizedPnl: '0',
+        unrealizedPnl: '0',
+      })),
+      transaction
+    );
   }
 
   // The inclusion contract over `scope_kind='holding'` rows: every reader that

@@ -52,9 +52,8 @@ export class ParseScreenshotUseCase {
       'Starting screenshot parsing and token enrichment'
     );
 
-    // PDFs don't round-trip through the vision Chat Completions API
-    // (OpenAI + DeepSeek + Perplexity all reject `application/pdf` in
-    // `image_url` → 400). Extract text with pdf-parse and go through
+    // PDFs don't round-trip through the vision path as an image (OpenAI
+    // rejects `application/pdf` in an image part → 400). Extract text with pdf-parse and go through
     // the text completion path instead. Most financial statements are
     // digitally generated and have embedded text, so this works for
     // the overwhelming majority of real uploads. Scanned / image-only

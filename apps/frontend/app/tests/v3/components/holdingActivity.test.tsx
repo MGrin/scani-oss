@@ -33,6 +33,8 @@ const CONTEXT: HoldingPeekContext = {
   currency: 'EUR',
   onEdit: () => undefined,
   onRecordMovement: () => undefined,
+  onUpdateValue: () => undefined,
+  onMoveMoney: () => undefined,
   onToggleActive: () => undefined,
   onMarkScam: () => undefined,
   onRefreshPrice: () => undefined,
@@ -60,7 +62,14 @@ const EUR: HoldingWithDetails = {
   value: 750,
   costBasis: null,
   price: { value: '1', timestamp: '2026-10-02T09:00:00.000Z', source: 'base-currency' },
-  account: { id: 'a1', name: 'Current', type: 'Bank', typeCode: 'bank', institutionId: 'i1' },
+  account: {
+    id: 'a1',
+    name: 'Current',
+    type: 'Bank',
+    typeCode: 'bank',
+    class: 'asset',
+    institutionId: 'i1',
+  },
   institution: { id: 'i1', name: 'Revolut', type: 'Bank', typeCode: 'bank' },
   groups: [],
   lastUpdated: '2026-10-02T09:00:00.000Z',
@@ -69,6 +78,7 @@ const EUR: HoldingWithDetails = {
   isHidden: false,
   source: 'manual',
   refreshable: false,
+  deleteHides: false,
 };
 
 type ListedRow = RouterOutputs['transactions']['list']['transactions'][number];

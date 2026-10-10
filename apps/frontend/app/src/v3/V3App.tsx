@@ -67,6 +67,30 @@ const KitchenSinkPage = lazyRoute('component gallery', () =>
   import('./pages/KitchenSinkPage').then((m) => m.KitchenSinkPage)
 );
 
+const ValuedAssetPage = lazyRoute('valued asset', () =>
+  import('./pages/ValuedAssetPage').then((m) => m.ValuedAssetPage)
+);
+
+const BudgetAppImportPage = lazyRoute('budget app import', () =>
+  import('./pages/BudgetAppImportPage').then((m) => m.BudgetAppImportPage)
+);
+
+const CategoriesPage = lazyRoute('categories', () =>
+  import('./pages/CategoriesPage').then((m) => m.CategoriesPage)
+);
+
+const TransactionsPage = lazyRoute('transactions', () =>
+  import('./pages/TransactionsPage').then((m) => m.TransactionsPage)
+);
+
+const HouseholdPage = lazyRoute('household', () =>
+  import('./pages/HouseholdPage').then((m) => m.HouseholdPage)
+);
+
+const HouseholdAcceptPage = lazyRoute('household invite', () =>
+  import('./pages/HouseholdAcceptPage').then((m) => m.HouseholdAcceptPage)
+);
+
 export function V3App() {
   // Teaches the shared export path how to make a PDF (SC-94). Registered here
   // rather than in `@scani/ui` because rendering one is a server call, and the
@@ -86,6 +110,9 @@ export function V3App() {
         <Routes location={location}>
           <Route element={<V3Shell />}>
             <Route index element={<HomePage />} />
+            {/* A Home tile's peek (SC-1669). `/home` with no id is Home itself,
+                which `HomePage` sends back to the index. */}
+            <Route path={`${relative(V3_ROUTES.homePeek)}/:peekId?`} element={<HomePage />} />
             {/* The primitive gallery (V3-06). Unlinked and deletable — this
                 line plus KitchenSinkPage.tsx are its whole footprint, and since
                 SC-132 it is not in the bundle either (see `KitchenSinkPage`
@@ -145,7 +172,12 @@ export function V3App() {
               path={relative(V3_CAPTURE_ROUTES.recordMovement)}
               element={<RecordMovementPage />}
             />
+            <Route path={relative(V3_CAPTURE_ROUTES.valuedAsset)} element={<ValuedAssetPage />} />
             <Route path={relative(V3_CAPTURE_ROUTES.fileImport)} element={<FileImportPage />} />
+            <Route
+              path={relative(V3_CAPTURE_ROUTES.budgetAppImport)}
+              element={<BudgetAppImportPage />}
+            />
             <Route path={relative(V3_CAPTURE_ROUTES.walletImport)} element={<WalletImportPage />} />
             <Route
               path={relative(V3_CAPTURE_ROUTES.invoiceUpload)}
@@ -180,9 +212,16 @@ export function V3App() {
                 `/documents`; this is the address people had written down. */}
             <Route path="files" element={<Navigate to={V3_ROUTES.files} replace />} />
 
-            {/* Settings (V3-43). A form surface, not a list, so no peek and no
-                child route — everything it does happens in place. */}
-            <Route path={relative(V3_ROUTES.settings)} element={<SettingsPage />} />
+            {/* Settings (V3-43, SC-1670). A list of areas, each at
+                `/settings/<area>`; a form surface, so no peek. */}
+            <Route path={`${relative(V3_ROUTES.settings)}/:area?`} element={<SettingsPage />} />
+            <Route path={relative(V3_ROUTES.household)} element={<HouseholdPage />} />
+            <Route
+              path={`${relative(V3_ROUTES.transactions)}/:peekId?`}
+              element={<TransactionsPage />}
+            />
+            <Route path={relative(V3_ROUTES.categories)} element={<CategoriesPage />} />
+            <Route path="household/accept" element={<HouseholdAcceptPage />} />
 
             {/* The remaining More destinations (V3-15).
 

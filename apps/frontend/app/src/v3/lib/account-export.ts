@@ -112,8 +112,25 @@ const transactions = (t: TFunction): ExportField<Row<'transactions'>>[] => [
   { header: t('v3.export.column.fee'), value: (row) => exportNumber(row.feeQuantity) },
   { header: t('v3.export.column.counterparty'), value: (row) => exportText(row.counterparty) },
   { header: t('v3.export.column.description'), value: (row) => exportText(row.description) },
+  { header: t('v3.export.column.category'), value: (row) => exportText(row.category) },
+  {
+    header: t('v3.export.column.categorySetBy'),
+    value: (row) =>
+      // Only beside a category: a person's clear ('cleared') has none to explain.
+      exportText(
+        row.category && row.categorySetBy
+          ? t(`v3.export.value.categorySetBy.${row.categorySetBy}`)
+          : null
+      ),
+  },
   { header: t('v3.export.column.source'), value: (row) => exportText(row.source) },
   { header: t('v3.export.column.externalId'), value: (row) => exportText(row.externalId) },
+];
+
+const categories = (t: TFunction): ExportField<Row<'categories'>>[] => [
+  { header: t('v3.export.column.category'), value: (row) => exportText(row.name) },
+  { header: t('v3.export.column.parent'), value: (row) => exportText(row.parent) },
+  { header: t('v3.export.column.colour'), value: (row) => exportText(row.color) },
 ];
 
 const vendors = (t: TFunction): ExportField<Row<'vendors'>>[] => [
@@ -252,6 +269,7 @@ export function accountExportSheets(
       ),
       sheet(t('v3.export.sheet.holdings'), holdings(t), data.holdings),
       sheet(t('v3.export.sheet.transactions'), transactions(t), data.transactions),
+      sheet(t('v3.export.sheet.categories'), categories(t), data.categories),
       sheet(t('v3.export.sheet.vendors'), vendors(t), data.vendors),
       sheet(t('v3.export.sheet.payments'), payments(t), data.payments),
       sheet(t('v3.export.sheet.occurrences'), occurrences(t), data.paymentOccurrences),

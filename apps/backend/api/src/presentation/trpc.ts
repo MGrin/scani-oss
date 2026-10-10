@@ -69,6 +69,17 @@ export type Context = {
   // `ctx.sessionRevokeLimiter.tryConsumeKey(...)` without reaching for
   // a module-global.
   sessionRevokeLimiter: InflowRateLimiter;
+  /**
+   * Set when an AI agent calls through `/mcp` with a personal access token
+   * (SC-1614). Such a context is read-only: `readOnlyGuard` refuses every
+   * mutation except the ones named in `agentWritablePaths`.
+   */
+  agentTokenId?: string | null;
+  /**
+   * The mutations one agent write tool may call (SC-1617), set by that tool
+   * alone and only for a token holding the write scope. Empty on every read.
+   */
+  agentWritablePaths?: readonly string[];
 } & AuthContext;
 
 export const createContext = async (opts?: FetchCreateContextFnOptions): Promise<Context> => {
@@ -135,6 +146,37 @@ export const createContext = async (opts?: FetchCreateContextFnOptions): Promise
     ...authContext,
   };
 };
+
+/**
+ * The context an agent's tool call runs in (SC-1614): the token's owner,
+ * no session, so no fresh-session check can pass, and `agentTokenId` set, so
+ * `readOnlyGuard` refuses every mutation outside `agentWritablePaths`.
+ */
+export function createAgentContext(
+  dbUser: NonNullable<AuthContext['dbUser']>,
+  agentTokenId: string,
+  agentWritablePaths: readonly string[] = []
+): Context {
+  if (!sessionRevokeLimiterRef) {
+    throw new Error(
+      'Session-revoke limiter not initialized — setSessionRevokeLimiterForContext must be called at boot'
+    );
+  }
+  return {
+    requestId: generateRequestId(),
+    startTime: Date.now(),
+    requestCache: new Map(),
+    headers: null,
+    sessionRevokeLimiter: sessionRevokeLimiterRef,
+    userId: dbUser.id,
+    email: dbUser.email ?? null,
+    isAuthenticated: true,
+    sessionCreatedAt: null,
+    dbUser,
+    agentTokenId,
+    agentWritablePaths,
+  };
+}
 
 // Initialize tRPC with logging
 const t = initTRPC.context<Context>().create({
@@ -224,7 +266,7 @@ function reportUnrecognizedKeys(
  * nothing. `withSpan`'s docblock carries the measurement.
  *
  * OUTERMOST, ahead of logging and the demo refusal, for two reasons. A call
- * refused by `demoReadOnly` or by the auth middleware is still a call somebody
+ * refused by `readOnlyGuard` or by the auth middleware is still a call somebody
  * made and still costs latency, so the span has to enclose the refusal rather
  * than start after it. And `loggingMiddleware` reports exceptions to Sentry
  * from inside here, which is what gives those events a trace to attach to —
@@ -291,9 +333,14 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
 
   try {
     const leave = enterProcedure(path);
-    let loopBlockedMs = 0;
+    let loopTime = { blockedMs: 0, lagSumMs: 0 };
     const result = await next().finally(() => {
-      loopBlockedMs = leave();
+      loopTime = leave();
+      // SC-1689: into its minute's row, so a memory spike names what ran.
+      procedureCallRecorder.complete(path, {
+        durationMs: timer.end(),
+        loopBlockedMs: loopTime.blockedMs,
+      });
     });
     const duration = timer.end();
     const serializedOutput =
@@ -303,7 +350,8 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
       procedureLogger.info(
         {
           duration: `${duration}ms`,
-          loopBlockedMs,
+          loopBlockedMs: loopTime.blockedMs,
+          loopLagSumMs: loopTime.lagSumMs,
           outputSize: serializedOutput ? serializedOutput.length : undefined,
           output:
             logOutput && serializedOutput
@@ -318,7 +366,8 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
       procedureLogger.warn(
         {
           duration: `${duration}ms`,
-          loopBlockedMs,
+          loopBlockedMs: loopTime.blockedMs,
+          loopLagSumMs: loopTime.lagSumMs,
           error: result.error,
         },
         `⚠️ Procedure completed with error: ${path}`
@@ -400,11 +449,17 @@ const safeStringify = (value: unknown): string => {
  * statement about the client; this is a statement about the server, and it is
  * the only one that survives someone opening a console.
  */
-const demoReadOnly = t.middleware(async ({ type, path, next }) => {
+const readOnlyGuard = t.middleware(async ({ type, path, ctx, next }) => {
   if (isDemoMode() && type === 'mutation') {
     throw new TRPCError({
       code: 'FORBIDDEN',
       message: `This is a read-only demo — '${path}' and every other write is refused by the server.`,
+    });
+  }
+  if (ctx.agentTokenId && type === 'mutation' && !ctx.agentWritablePaths?.includes(path)) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: `An agent token is read-only — '${path}' is refused.`,
     });
   }
   return next();
@@ -415,14 +470,14 @@ const demoReadOnly = t.middleware(async ({ type, path, next }) => {
 export const publicProcedure = t.procedure
   .use(tracingMiddleware)
   .use(loggingMiddleware)
-  .use(demoReadOnly);
+  .use(readOnlyGuard);
 
 // Protected procedure that requires authentication
 // Note: dbUser is NOT checked here - it will be fetched lazily by requireAuth when needed
 export const protectedProcedure = t.procedure
   .use(tracingMiddleware)
   .use(loggingMiddleware)
-  .use(demoReadOnly)
+  .use(readOnlyGuard)
   .use(async ({ ctx, next }) => {
     if (!ctx.isAuthenticated || !ctx.userId) {
       throw new TRPCError({

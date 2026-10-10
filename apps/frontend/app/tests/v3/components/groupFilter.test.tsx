@@ -45,7 +45,14 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
     amount: '1',
     value: 1,
     costBasis: 1,
-    account: { id: 'a1', name: 'Airwallex', type: 'Bank', typeCode: 'bank', institutionId: 'i1' },
+    account: {
+      id: 'a1',
+      name: 'Airwallex',
+      type: 'Bank',
+      typeCode: 'bank',
+      class: 'asset',
+      institutionId: 'i1',
+    },
     institution: { id: 'i1', name: 'Airwallex', type: 'Bank', typeCode: 'bank' },
     groups: [],
     lastUpdated: '2026-08-18T04:00:00.000Z',
@@ -54,6 +61,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
     isHidden: false,
     source: 'import_wallet',
     refreshable: true,
+    deleteHides: false,
     ...overrides,
   };
 }

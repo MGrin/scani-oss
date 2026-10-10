@@ -7,6 +7,7 @@ import {
   TokenRepository,
 } from '@scani/domain/repositories';
 import {
+  AccountClassService,
   type BalanceRefreshability,
   BalanceRefreshabilityService,
   HoldingQueryService,
@@ -14,17 +15,22 @@ import {
   KeptHoldingNotFoundError,
   ManualBalanceEditService,
   ManualEditFeeRefused,
+  NegativeBalanceRefused,
   RealizedLedgerService,
   UnpriceableAirdropService,
 } from '@scani/domain/services';
 import {
   BulkAssignHoldingGroupsUseCase,
   DeleteHoldingUseCase,
+  HandValuedHoldingUseCase,
   HoldingLabelTakenError,
   ManualOutflowAnswerRefused,
   MovementExceedsBalanceError,
   MovementHoldingNotFoundError,
   MovementSameHoldingError,
+  NoPriceYetError,
+  NotHandValuedError,
+  NothingHeldThenError,
   RecordHoldingMovementUseCase,
   UpdateHoldingUseCase,
 } from '@scani/domain/use-cases';
@@ -34,10 +40,12 @@ import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
 import {
   Decimal,
   type ManualEditCause,
+  MoveHandValuedMoneyDto,
   parseCostBasisMethod,
   type RealizedLedger,
   RecordHoldingMovementDto,
   toDisposalLotMatchDto,
+  UpdateHandValueDto,
   UpdateHoldingDto,
   UpsertHoldingApyConfigDto,
 } from '@scani/shared';
@@ -46,7 +54,12 @@ import { Container } from 'typedi';
 import { z } from 'zod';
 import { withIdempotency } from '../../lib/idempotency';
 import { executeBulkOperation } from '../lib/bulk-operation';
-import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
+import {
+  alsoFromFloor,
+  enqueuePortfolioRollup,
+  floorBefore,
+  rebuildFrom,
+} from '../lib/portfolio-rollup';
 import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
@@ -57,13 +70,39 @@ const MANUAL_HOLDING_REFUSAL =
 /** One short line each: the client shows the sentence as it arrives. */
 const REFRESH_REFUSALS: Record<Exclude<BalanceRefreshability, 'refreshable'>, string> = {
   'not-a-feed': MANUAL_HOLDING_REFUSAL,
-  // A person's row a feed has written entries into: the balance sync never
-  // writes it (D-4), so it keeps the sentence it always had. A5 lifts D-4,
-  // and this entry goes with the answer.
-  'sync-cannot-write': MANUAL_HOLDING_REFUSAL,
   'no-live-sync':
     'There is no active connection to refresh this holding from — connect or re-authorise the integration.',
 };
+
+function refuseHandValued(error: unknown): never {
+  if (error instanceof NotHandValuedError) {
+    throw new TRPCError({ code: 'NOT_FOUND', message: error.message });
+  }
+  // Distinct statuses, so the sheet can say which in the reader's language.
+  if (error instanceof NothingHeldThenError) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
+  }
+  if (error instanceof NoPriceYetError) {
+    throw new TRPCError({ code: 'PRECONDITION_FAILED', message: error.message });
+  }
+  if (error instanceof MovementExceedsBalanceError) {
+    throw new TRPCError({ code: 'CONFLICT', message: 'That is more than this holding is worth.' });
+  }
+  if (error instanceof NegativeBalanceRefused) {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
+  }
+  throw error;
+}
+
+function emitHoldingChanged(holdingId: string, userId: string) {
+  emitEntityChange({
+    entityType: 'holding',
+    operationType: 'update',
+    entityId: holdingId,
+    userId,
+    data: {},
+  });
+}
 
 export const holdingsRouter = router({
   // Get all holdings with full details (for Holdings page)
@@ -137,6 +176,30 @@ export const holdingsRouter = router({
     }),
 
   /**
+   * The lots each holding still holds, oldest first, under the account's
+   * cost-basis method (SC-1616): the open side of `realizedLedger`. With no
+   * `holdingIds` it covers every holding the caller owns.
+   */
+  openLots: protectedProcedure
+    .input(strictInput(z.object({ holdingIds: z.array(z.string().uuid()).max(500).optional() })))
+    .query(async ({ ctx, input }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const ownedIds = new Set(await Container.get(HoldingRepository).findIdsForUser(dbUser.id));
+      const ids = input.holdingIds ?? [...ownedIds];
+      if (ids.some((id) => !ownedIds.has(id))) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Holding not found' });
+      }
+      const baseCurrencyId = dbUser.baseCurrencyId ?? null;
+      if (!baseCurrencyId || ids.length === 0) return [];
+      return Container.get(RealizedLedgerService).openLots(
+        dbUser.id,
+        ids,
+        baseCurrencyId,
+        parseCostBasisMethod(dbUser.costBasisMethod)
+      );
+    }),
+
+  /**
    * Wallet tokens nothing can price (SC-1469), for the Review sheet that asks
    * once whether to hide them. `bulkDelete` hides each of these rather than
    * deleting it, because every one came from a wallet sync.
@@ -195,7 +258,27 @@ export const holdingsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
       return withIdempotency(dbUser.id, input.idempotencyKey, async () => {
+        // Only a loan or card may be edited below zero (SC-1640).
+        if (input.data.balance !== undefined) {
+          await Container.get(AccountClassService)
+            .refuseNegativeEdit(dbUser.id, input.id, input.data.balance)
+            .catch((error) => {
+              if (error instanceof NegativeBalanceRefused) {
+                throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
+              }
+              throw error;
+            });
+        }
         const editCause = await resolveEditCause(input.id, dbUser.id, input.data);
+        const destination = input.data.editOutflow?.destination?.holdingId ?? null;
+        const edited = destination ? [input.id, destination] : [input.id];
+        const editedAt = input.data.editOccurredAt
+          ? new Date(input.data.editOccurredAt)
+          : new Date();
+        // Read before the write too: the edit writes an observation of its
+        // own, dated now, and a read after it finds that one instead of the
+        // observation before (SC-1607 falsifier). The earlier start wins.
+        const floor = await floorBefore((range) => range.fromEdit(edited, editedAt));
 
         // `label` is forwarded only when the client sent the key at all.
         // `null` clears the name and `undefined` leaves it alone, and a
@@ -258,7 +341,16 @@ export const holdingsRouter = router({
           },
         });
 
-        void enqueuePortfolioRollup(dbUser.id);
+        // Turning a holding on or off moves all of it; a balance edit moves
+        // from the observation before the day it is dated (SC-1607).
+        void enqueuePortfolioRollup(
+          dbUser.id,
+          alsoFromFloor(floor, (range) =>
+            input.data.isActive !== undefined
+              ? range.fromWholeHoldings([updatedHolding.id])
+              : range.fromEdit(edited, editedAt)
+          )
+        );
         return updatedHolding;
       });
     }),
@@ -344,6 +436,56 @@ export const holdingsRouter = router({
           });
         }
 
+        // A full rebuild until the Neon falsifier proves a range for this edit (SC-1607).
+        void enqueuePortfolioRollup(dbUser.id);
+        return result;
+      });
+    }),
+
+  /**
+   * A hand-valued holding, edited in money (SC-1596): a new value is growth,
+   * money in or out is a flow. Both refuse with a sentence the sheet can show,
+   * because each refusal is something the owner can fix on the form.
+   */
+  updateHandValue: protectedProcedure
+    .input(
+      strictInput(
+        z.object({
+          update: UpdateHandValueDto,
+          idempotencyKey: z.string().min(1).max(128).optional(),
+        })
+      )
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return withIdempotency(dbUser.id, input.idempotencyKey, async () => {
+        const result = await Container.get(HandValuedHoldingUseCase)
+          .updateValue(input.update, dbUser.id)
+          .catch(refuseHandValued);
+        emitHoldingChanged(result.holdingId, dbUser.id);
+        // A full rebuild until the Neon falsifier proves a range for this edit (SC-1607).
+        void enqueuePortfolioRollup(dbUser.id);
+        return result;
+      });
+    }),
+
+  moveHandValuedMoney: protectedProcedure
+    .input(
+      strictInput(
+        z.object({
+          move: MoveHandValuedMoneyDto,
+          idempotencyKey: z.string().min(1).max(128).optional(),
+        })
+      )
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return withIdempotency(dbUser.id, input.idempotencyKey, async () => {
+        const result = await Container.get(HandValuedHoldingUseCase)
+          .moveMoney(input.move, dbUser.id)
+          .catch(refuseHandValued);
+        emitHoldingChanged(result.holdingId, dbUser.id);
+        // A full rebuild until the Neon falsifier proves a range for this edit (SC-1607).
         void enqueuePortfolioRollup(dbUser.id);
         return result;
       });
@@ -354,6 +496,8 @@ export const holdingsRouter = router({
     .input(strictInput(z.object({ id: z.string().uuid() })))
     .mutation(async ({ input, ctx }) => {
       const { dbUser } = await requireAuth(ctx);
+      // Read before the delete: a hard delete cascades the records it is read from.
+      const fromDay = await rebuildFrom((range) => range.fromWholeHoldings([input.id]));
 
       const result = await Container.get(DeleteHoldingUseCase).execute(input.id, dbUser.id, {
         baseCurrencyId: dbUser.baseCurrencyId || undefined,
@@ -374,7 +518,7 @@ export const holdingsRouter = router({
         },
       });
 
-      void enqueuePortfolioRollup(dbUser.id);
+      void enqueuePortfolioRollup(dbUser.id, fromDay);
       return result;
     }),
 
@@ -384,18 +528,22 @@ export const holdingsRouter = router({
       const { dbUser } = await requireAuth(ctx);
       const useCase = Container.get(DeleteHoldingUseCase);
       const baseCurrencyId = dbUser.baseCurrencyId || undefined;
-
-      const result = await executeBulkOperation(input.ids, (id) =>
-        useCase.execute(id, dbUser.id, { baseCurrencyId })
-      );
+      // Which of them a delete hid (A5 #9): the toast offers Undo for those alone.
+      const hidden = new Set<string>();
+      const result = await executeBulkOperation(input.ids, async (id) => {
+        const outcome = await useCase.execute(id, dbUser.id, { baseCurrencyId });
+        if (outcome.wasHidden) hidden.add(id);
+        return outcome;
+      });
 
       // PERFORMANCE: Emit single bulk event instead of looping
       if (result.deletedIds.length > 0) {
         emitBulkEntityChanges('holding', 'delete', result.deletedIds, dbUser.id);
+        // A full rebuild until the Neon falsifier proves a range for this edit (SC-1607).
         void enqueuePortfolioRollup(dbUser.id);
       }
 
-      return result;
+      return { ...result, hiddenIds: input.ids.filter((id) => hidden.has(id)) };
     }),
 
   // Restore a hidden holding (unmark as hidden)
@@ -426,6 +574,7 @@ export const holdingsRouter = router({
         },
       });
 
+      // A full rebuild until the Neon falsifier proves a range for this edit (SC-1607).
       void enqueuePortfolioRollup(dbUser.id);
       return result;
     }),

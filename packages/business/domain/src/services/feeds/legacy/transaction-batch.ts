@@ -22,6 +22,8 @@ const HINTED_TYPE_CODES: ReadonlySet<string> = new Set([
   'stock',
   'private-company',
   'other',
+  'property',
+  'vehicle',
 ]);
 
 type Mention = { tokenIdentity: Partial<NewToken>; tokenType?: string };
@@ -68,7 +70,7 @@ function entryOf(
   const legacy: LegacyEntryColumns = {
     kind: event.kind,
     source,
-    sourceMetadata: {},
+    sourceMetadata: event.sourceMetadata ?? {},
     rawPayload: (event.rawPayload as Record<string, unknown> | null) ?? null,
     priceNative: event.priceNative?.value ?? null,
     counterQuantity: event.counter?.quantity ?? null,
@@ -142,13 +144,11 @@ export function legacyTransactionBatch(input: {
       arrival: null,
       writesCache: false,
       createdWithoutCheckpoint: 'zero',
-      cacheObservation: null,
       derivesTradeLegs: true,
       holdingFailure: 'skip-entry',
       absence: null,
       clearsAbsenceTally: false,
       createdCheckpointMeta: null,
-      unhideOnNonZero: false,
       unchangedCheckpoint: 'append',
       zeroOpensHolding: true,
     },

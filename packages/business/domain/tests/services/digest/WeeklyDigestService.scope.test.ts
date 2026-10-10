@@ -10,8 +10,8 @@ import { Container } from 'typedi';
 import { WeeklyDigestService } from '../../../src/services/digest/WeeklyDigestService';
 import { PortfolioValuationService } from '../../../src/services/portfolio/PortfolioValuationService';
 import { PortfolioValueCache } from '../../../src/services/portfolio/PortfolioValueCache';
-import { PricingService } from '../../../src/services/pricing/PricingService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { seedHoldingCache } from '../../../test/helpers/engine-guard';
 
 restoreContainerAfterAll();
 
@@ -30,7 +30,7 @@ const AS_OF = '2026-08-18';
 
 /** The visible holding, in the base currency so the dashboard needs no price. */
 const VISIBLE = { balance: '1000', baseline: '900' };
-/** The large holding, priced at 1 by the stub below. */
+/** The large holding, priced at 1 in each user's base by a stored reading. */
 const LARGE = { balance: '500000', baseline: '400000' };
 
 type Flags = { holdingHidden?: boolean; holdingInactive?: boolean; accountHidden?: boolean };
@@ -88,21 +88,30 @@ async function seed(flags: Flags): Promise<Seeded> {
     .returning();
   if (!account) throw new Error('account insert failed');
 
-  const [visible, large] = await db
-    .insert(schema.holdings)
-    .values([
-      { userId: user.id, accountId: account.id, tokenId: base.id, balance: VISIBLE.balance },
-      {
-        userId: user.id,
-        accountId: account.id,
-        tokenId: largeTokenId,
-        balance: LARGE.balance,
-        isHidden: flags.holdingHidden ?? false,
-        isActive: !(flags.holdingInactive ?? false),
-      },
-    ])
-    .returning();
+  const [visible, large] = await seedHoldingCache(db, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values([
+        { userId: user.id, accountId: account.id, tokenId: base.id, balance: VISIBLE.balance },
+        {
+          userId: user.id,
+          accountId: account.id,
+          tokenId: largeTokenId,
+          balance: LARGE.balance,
+          isHidden: flags.holdingHidden ?? false,
+          isActive: !(flags.holdingInactive ?? false),
+        },
+      ])
+      .returning()
+  );
   if (!visible || !large) throw new Error('holding insert failed');
+  await db.insert(schema.tokenPrices).values({
+    tokenId: largeTokenId,
+    baseTokenId: base.id,
+    price: '1',
+    timestamp: new Date(Date.now() - 60_000),
+    source: 'coingecko',
+  });
 
   const row = (scopeKind: string, scopeId: string, snapshotDate: string, totalValue: string) => ({
     userId: user.id,
@@ -168,10 +177,6 @@ beforeAll(async () => {
     .returning();
   cleanup.accountTypeId = accountType!.id;
 
-  Container.set(PricingService, {
-    getCachedTokenPrices: async () => new Map([[largeTokenId, '1']]),
-    resolveFiatRatesToBase: async () => new Map(),
-  } as unknown as PricingService);
   Container.set(PortfolioValueCache, {
     getOrCompute: async (_key: string, factory: () => Promise<unknown>) => factory(),
     bust: async () => {},
@@ -185,6 +190,9 @@ afterAll(async () => {
     await db.delete(schema.users).where(inArray(schema.users.id, cleanup.userIds));
   }
   if (cleanup.tokenIds.length > 0) {
+    await db
+      .delete(schema.tokenPrices)
+      .where(inArray(schema.tokenPrices.tokenId, cleanup.tokenIds));
     await db.delete(schema.tokens).where(inArray(schema.tokens.id, cleanup.tokenIds));
   }
   await db.delete(schema.tokenTypes).where(eq(schema.tokenTypes.id, cleanup.tokenTypeId));

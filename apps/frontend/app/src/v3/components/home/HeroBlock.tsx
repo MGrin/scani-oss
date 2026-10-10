@@ -5,13 +5,18 @@ import { Block } from '@scani/ui/v3/components/Block';
 import { DeltaPill } from '@scani/ui/v3/components/charts/DeltaPill';
 import { StatTile } from '@scani/ui/v3/components/charts/StatTile';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
+import { peekOpenState, peekPath } from '@scani/ui/v3/lib/peek';
+import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import type { HomeChart } from '../../hooks/useHomeChart';
 import { useReviewFeed } from '../../hooks/useReviewFeed';
 import {
   fromFirstRecord,
+  HOME_METRIC_TITLE_KEYS,
   HOME_PERIODS,
+  type HomeMetric,
   heroDeltaState,
   heroFigureQuality,
   lastMeasuredBeforeToday,
@@ -23,8 +28,13 @@ import {
 import { todayDateString } from '../../lib/paymentTotals';
 import { comparisonView } from '../../lib/returns-comparison';
 import { pendingTransferCount } from '../../lib/review';
+import { V3_ROUTES } from '../../lib/routes';
 import { CoverageNote } from './CoverageNote';
-import { FigureVisibilityToggle, MaskedFigure, useFigureVisibility } from './FigureVisibility';
+import {
+  FigureVisibilityToggle,
+  MaskedFigure,
+  useSharedFigureVisibility,
+} from './FigureVisibility';
 import { HistoryExport } from './HistoryExport';
 import { NetWorthTape } from './NetWorthTape';
 import { formatChartDate, PortfolioChart } from './PortfolioChart';
@@ -95,6 +105,35 @@ function ChartLoadFailure({ onRetry }: { onRetry: () => void }) {
   );
 }
 
+const OPEN_CHART_KEYS: Record<HomeMetric, string> = {
+  'net-worth': 'v3.home.hero.openChart.netWorth',
+  pnl: 'v3.home.hero.openChart.pnl',
+  returns: 'v3.home.hero.openChart.returns',
+};
+
+/** On Home the chart is the way into its peek, which names the same chart. */
+function OpensPeek({
+  when,
+  label,
+  children,
+}: {
+  when: boolean;
+  label: string;
+  children: ReactNode;
+}) {
+  if (!when) return <>{children}</>;
+  return (
+    <Link
+      to={peekPath(V3_ROUTES.homePeek, 'hero')}
+      state={peekOpenState(V3_ROUTES.homePeek)}
+      aria-label={label}
+      className="block rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+    >
+      {children}
+    </Link>
+  );
+}
+
 interface HeroBlockProps {
   /** From `dashboard.getOverview` — the live total, a day ahead of the rollup. */
   total: string | undefined;
@@ -104,14 +143,19 @@ interface HeroBlockProps {
    * SC-1301 — the block below the hero reads the same three facts.
    */
   chart: HomeChart;
+  /** `compact` is Home's own (SC-1669): the chart opens `full` in a peek.
+   *  Every tab stays on the card, each chart with its axes (SC-1690). */
+  variant?: 'compact' | 'full';
 }
 
-export function HeroBlock({ total, currency, chart }: HeroBlockProps) {
+export function HeroBlock({ total, currency, chart, variant = 'full' }: HeroBlockProps) {
   const { t } = useTranslation();
-  const { metric, period, periodKey, range } = chart;
+  const compact = variant === 'compact';
+  const { period, periodKey, range } = chart;
+  const metric: HomeMetric = chart.metric;
   // Money figures only: both money tabs share it, so switching to PnL while
   // hidden cannot show what the net-worth tab was hiding (SC-1375).
-  const figure = useFigureVisibility();
+  const figure = useSharedFigureVisibility();
   const figureToggle = (
     <FigureVisibilityToggle hidden={figure.settingHidden} onToggle={figure.toggle} />
   );
@@ -352,12 +396,14 @@ export function HeroBlock({ total, currency, chart }: HeroBlockProps) {
       </div>
 
       {isReturns ? (
-        <ReturnsHeroChart
-          comparison={comparison}
-          comparisonPending={comparisonQuery.isLoading}
-          comparisonFailed={comparisonQuery.isError && comparisonQuery.data === undefined}
-          currency={currency}
-        />
+        <OpensPeek when={compact} label={t(OPEN_CHART_KEYS.returns)}>
+          <ReturnsHeroChart
+            comparison={comparison}
+            comparisonPending={comparisonQuery.isLoading}
+            comparisonFailed={comparisonQuery.isError && comparisonQuery.data === undefined}
+            currency={currency}
+          />
+        </OpensPeek>
       ) : loading ? (
         <Skeleton aria-hidden="true" className="h-[200px] w-full" />
       ) : failed ? (
@@ -365,23 +411,28 @@ export function HeroBlock({ total, currency, chart }: HeroBlockProps) {
         // that says why does not.
         <div
           role="alert"
-          className="flex h-[200px] w-full items-center justify-center rounded-lg border border-dashed border-border-strong px-4 text-center"
+          className="flex h-[200px] w-full flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-border-strong px-4 text-center"
         >
           <p className="text-body text-muted-foreground">{t('v3.home.hero.chartFailed')}</p>
+          <Button variant="outline" size="sm" onClick={() => void active.refetch()}>
+            {t('v3.home.hero.retry')}
+          </Button>
         </div>
       ) : (
-        <PortfolioChart
-          metric={metric}
-          netWorth={trend}
-          pnl={pnl}
-          currency={currency}
-          granularity={granularity}
-          amountsHidden={figure.hidden}
-          label={t('v3.home.hero.chartLabel', {
-            metric: isPnl ? t('v3.home.metric.pnlFull') : t('v3.home.metric.netWorth'),
-            period: t(period.suffixKey),
-          })}
-        />
+        <OpensPeek when={compact} label={t(OPEN_CHART_KEYS[metric])}>
+          <PortfolioChart
+            metric={metric}
+            netWorth={trend}
+            pnl={pnl}
+            currency={currency}
+            granularity={granularity}
+            amountsHidden={figure.hidden}
+            label={t('v3.home.hero.chartLabel', {
+              metric: t(HOME_METRIC_TITLE_KEYS[metric]),
+              period: t(period.suffixKey),
+            })}
+          />
+        </OpensPeek>
       )}
 
       {/* Why the curve stops before the right-hand edge (SC-115). Under the

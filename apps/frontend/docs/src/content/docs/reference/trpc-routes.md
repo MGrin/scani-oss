@@ -17,17 +17,21 @@ Located in `apps/backend/api/src/presentation/routers/`.
 |---|---|
 | `users` | Profile, settings, display currency, magic-link / OTP flows. |
 | `sessions` | Session read / revoke. |
+| `agent-tokens` | Personal access tokens for the user's own AI agent: create (shown once), list, revoke, and whether agent access is on. The tokens authenticate the read-only `/mcp` endpoint. |
 | `push` | Web Push subscriptions, one per browser per device: the VAPID public key, subscribe, unsubscribe, and a status that reports whether the SERVER has keys at all — so the client can say "this deployment cannot notify you" rather than showing a toggle that silently does nothing. |
 | `accounts` | List, create, update, hide accounts. |
 | `account-types` | Catalogue of account types. |
 | `institutions` | List institutions. Create the synthetic *manual* institution. |
 | `institution-types` | Catalogue of institution types. |
 | `holdings` | CRUD on holdings, set/unset APY config, attach to vault / group. |
+| `valued-assets` | Property and vehicles valued by hand: create one from its purchase, add a dated valuation (a same-day correction is a later row), read its valuation history, edit its details. Each write rebuilds the rollup from the day it changed. |
 | `tokens` | Search tokens, materialise via `TokenIdentityService`. |
-| `transactions` | Read the ledger. Filter by date range, kind, account, holding, transfer group. |
+| `transactions` | Read the ledger. Filter by date range, kind, account, holding, transfer group, category. `setCategory` sets or clears the category on up to 500 rows at once (SC-1652). |
+| `categories` | A person's own transaction categories, nested one level (SC-1652): `list` with per-category counts, `create`, `update`, `delete` (moving its rows to a replacement), and `suggest`, which creates a starter set only when the person asks. |
 | `vaults` | CRUD on vaults, attach/detach holdings with percentage splits. |
 | `groups` | CRUD on groups, attach holdings. |
 | `entities` | Read-only archival ownership records and totals. Creation and assignment are retired; account exports preserve historical ownership links. |
+| `household` | Households (SC-1647): `create`, `invite`, `previewInvite`, `accept`, `revoke`, `share` and `unshare` one's own accounts, `leave`, `remove`, `transferAdmin`, `setCurrency`; `mine` reads membership. `view` and `history` read only the accounts members share, in the household currency. Read access only: no route writes another member's rows. |
 | `portfolio` | Dashboard headline + chart series (reads `portfolio_value_daily`). |
 | `dashboard` | Aggregate dashboard data — composes calls to `portfolio` + per-scope rollups. |
 | `integrations` | Connect / disconnect provider integrations (Binance OAuth, exchange API keys, brokerage tokens, wallets). Owns encrypt/decrypt of credentials. |
@@ -36,16 +40,22 @@ Located in `apps/backend/api/src/presentation/routers/`.
 | `file-import` | Upload CSV / file, enqueue `file-import` job. |
 | `storage` | Presigned URL minting for direct S3 reads. |
 | `payments` | Recurring bills and income: CRUD, pause / end, the occurrence feed (`upcoming` returns overdue rows too), manual settlement, and suggested recurring payments detected from outflows (list, dismiss, accept). |
+| `bill-calendar` | The opt-in bills calendar feed (SC-1654): `status`, `enable` and `rotate` (each returns the URL once; only its hash is kept), `disable`. The URL serves `GET /calendar/<token>.ics`, public and keyed only by the token. |
 | `vendors` | Who a payment is with. List, create, rename, and merge two vendors into one. |
 | `documents` | Upload an invoice, read its parse status, confirm or reject the extraction. |
 | `review` | Read-model over everything awaiting the user — pending job results plus pending document extractions. |
 | `transfer-review` | Outflows the `transfer-linking` matcher could not pair: `listPending`, `resolve` (`paired` with a deposit / `left_control` / `untracked`), `reopen`. |
 | `balance-gaps` | Balance changes no transaction explains: `listPending` (with the count of what was suppressed and why), `answer` (`flow` writes a deposit / withdrawal at a date inside the interval, `correction` a restatement, `growth` and `unknown` write nothing). |
 | `settlement-answers` | Balance-gap answers that imported trade settlements now explain: `listPending` (per holding, each answer `full` or `partial` with its remainder), `retire` (removes the answer's rows and keeps a copy; asks again when it also moved another holding), `keep`, `undoRetire` (puts the rows back with their original ids). |
+| `transit-review` | Transfers still in transit 7 days after they left: `listDue`, `candidates` (arrivals on the destination up to 10% under, exact refunds to the source), `arrived` (a shortfall becomes a fee), `cameBack`, `lost` (`fee` or `left_control`), `stillWaiting` (asks again in 7 days, books nothing). Every answer that moves money rebuilds history from the day it left. |
+| `untracked-arrival-review` | An outflow answered `untracked` whose same amount later arrived in a tracked account (within 1%, at most 7 days after, one arrival for one outflow): `listDue`, `confirm` (pairs the two and rebuilds history from the day it left), `decline` (keeps `untracked` and never offers that arrival for it again). |
 | `jobs` | The signed-in user's own jobs: status, list, retry, cancel, remove. |
+| `liabilities` | Loan and card terms on a liability account (`getTerms`, `setTerms`), and `getProjection`: the amount owed, the amortization schedule and the payoff computed from them on read. Reads on an asset account answer null. |
 | `batch-operations` | Batched mutations the SPA uses for bulk edits. |
 | `client-errors` | Endpoint the SPA posts unhandled-error reports to. |
 | `demo` | Public and session-free. `status` answers whether this deployment is the read-only demo (`SCANI_DEMO_MODE=1`), and on the demo returns the persona's identity and the signup URL. The SPA asks this before it asks for a session, so it must not need one. |
+| `backups` | `create` queues a backup of the account (uploaded documents are not included yet); `latest` names the newest one; `downloadUrl` signs a five-minute download, only for the backup's owner. One backup per account; `temp/` expires it after 30 days. `restorable` says whether the account is empty, and `restore` queues a restore of the caller's own uploaded backup into it. |
+| `budget-app-imports` | `targets` lists the caller's accounts, each saying whether an import may land in it (not when a provider, a wallet or a live sync feeds it); `start` queues the import of the caller's own uploaded YNAB register, Actual Budget export or Mint export with the account mapping; `list` names the caller's uploads; `undo` queues the removal of one upload's rows. |
 | `exports` | `renderPdf` typesets a workbook the client already assembled — it reads no holdings of its own, so a statement cannot drift from the CSV beside it; the account name comes from the session, never the input. `everything` returns the whole account for the "export everything" file. |
 
 Auth: every router except the user-facing magic-link entry points and

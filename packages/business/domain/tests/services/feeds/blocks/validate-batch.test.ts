@@ -5,6 +5,7 @@ import type {
   FeedBatch,
   FeedCheckpoint,
   FeedEntry,
+  FeedWindow,
 } from '../../../../src/services/feeds/feed-batch';
 
 const at = (iso: string) => new Date(iso);
@@ -51,7 +52,13 @@ function batch(over: Partial<FeedBatch> = {}): FeedBatch {
       walletId: null,
     },
     fetchedAt: NOW,
-    window: { from: FROM, to: TO, complete: false, uploadRef: 'upload-1' },
+    window: {
+      shape: 'statement-upload',
+      from: FROM,
+      to: TO,
+      complete: false,
+      uploadRef: 'upload-1',
+    },
     checkpoints: [checkpoint()],
     entries: [entry()],
     absences: [],
@@ -62,13 +69,11 @@ function batch(over: Partial<FeedBatch> = {}): FeedBatch {
       arrival: 'user_confirmed',
       writesCache: true,
       createdWithoutCheckpoint: 'sum-of-entries',
-      cacheObservation: null,
       derivesTradeLegs: false,
       holdingFailure: 'fail-batch',
       absence: null,
       clearsAbsenceTally: false,
       createdCheckpointMeta: null,
-      unhideOnNonZero: false,
       unchangedCheckpoint: 'append',
       zeroOpensHolding: true,
     },
@@ -113,34 +118,39 @@ describe('validateBatch', () => {
   });
 
   test('an open-start window has no lower bound for a checkpoint to fall below', () => {
-    const window = { from: null, to: TO, complete: true };
+    const window: FeedWindow = { shape: 'transaction-run', from: null, to: TO, complete: true };
     const old = checkpoint({ at: at('1999-01-01T00:00:00Z') });
     expect(codes(batch({ window, checkpoints: [old] }))).toEqual([]);
   });
 
   test('an incomplete window with no start is unbounded', () => {
-    const window = { from: null, to: TO, complete: false };
+    const window: FeedWindow = { shape: 'transaction-run', from: null, to: TO, complete: false };
     expect(codes(batch({ window, checkpoints: [] }))).toEqual(['unbounded-incomplete-window']);
   });
 
   test('from null with complete true is valid', () => {
-    const window = { from: null, to: TO, complete: true };
+    const window: FeedWindow = { shape: 'transaction-run', from: null, to: TO, complete: true };
     expect(codes(batch({ window }))).toEqual([]);
   });
 
   test('a window that ends before it starts is inverted', () => {
-    const window = { from: TO, to: FROM, complete: false };
+    const window: FeedWindow = { shape: 'transaction-run', from: TO, to: FROM, complete: false };
     expect(codes(batch({ window, checkpoints: [] }))).toEqual(['window-inverted']);
   });
 
   test('a window of one instant is not inverted', () => {
-    const window = { from: TO, to: TO, complete: false };
+    const window: FeedWindow = { shape: 'transaction-run', from: TO, to: TO, complete: false };
     expect(codes(batch({ window }))).toEqual([]);
   });
 
   test("a provider's checkpoint after now is in the future", () => {
     const future = checkpoint({ authority: 'provider', at: new Date(NOW.getTime() + 1) });
-    const window = { from: FROM, to: at('2026-08-01T00:00:00Z'), complete: false };
+    const window: FeedWindow = {
+      shape: 'transaction-run',
+      from: FROM,
+      to: at('2026-08-01T00:00:00Z'),
+      complete: false,
+    };
     expect(codes(batch({ window, checkpoints: [future] }))).toEqual(['checkpoint-in-future']);
   });
 
@@ -148,7 +158,12 @@ describe('validateBatch', () => {
   // UTC: east of UTC the close of a fresh export sits after the moment it is
   // imported, and the import has always kept it as printed (ruling R22).
   test("a statement's checkpoint after now is kept, however far ahead it is printed", () => {
-    const window = { from: FROM, to: at('2027-01-01T00:00:00Z'), complete: false };
+    const window: FeedWindow = {
+      shape: 'transaction-run',
+      from: FROM,
+      to: at('2027-01-01T00:00:00Z'),
+      complete: false,
+    };
     const after = (ms: number) =>
       codes(
         batch({
@@ -165,7 +180,12 @@ describe('validateBatch', () => {
   });
 
   test('a checkpoint at exactly now is not in the future', () => {
-    const window = { from: FROM, to: at('2026-08-01T00:00:00Z'), complete: false };
+    const window: FeedWindow = {
+      shape: 'transaction-run',
+      from: FROM,
+      to: at('2026-08-01T00:00:00Z'),
+      complete: false,
+    };
     expect(codes(batch({ window, checkpoints: [checkpoint({ at: NOW })] }))).toEqual([]);
   });
 
@@ -213,7 +233,7 @@ describe('validateBatch', () => {
     const problems = validateBatch(
       batch({
         fetchedAt: invalid,
-        window: { from: invalid, to: invalid, complete: false },
+        window: { shape: 'transaction-run', from: invalid, to: invalid, complete: false },
         checkpoints: [checkpoint({ at: invalid })],
         entries: [entry(), entry({ externalId: 'row-2', occurredAt: invalid })],
       }),

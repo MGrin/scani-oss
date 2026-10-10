@@ -427,7 +427,7 @@ function buildPriceBook(startDate: string, days: number): PriceBook {
   // `historical-price-backfill` writes, so the pricing services read this the
   // same way they read a real backfill.
   for (let dayIndex = 0; dayIndex < days; dayIndex++) {
-    const at = atHour(addDays(startDate, dayIndex), 23, 59);
+    const at = new Date(`${addDays(startDate, dayIndex)}T23:59:59.999Z`);
     for (const asset of DEMO_ASSETS) {
       rows.push({
         symbol: asset.symbol,
@@ -543,6 +543,9 @@ function buildCashFlows(
   const events: LedgerEvent[] = [];
   const paymentsByKey = new Map(DEMO_PAYMENTS.map((payment) => [payment.key, payment]));
 
+  // Openings seed the series below and are written as each account's first
+  // reading, at its start: a holding opens from evidence, not from a ledger row
+  // (A5). Every other row of these accounts lands later that day.
   for (const [holdingKey, symbol, amount, externalId] of [
     ['wise-eur-cash', 'EUR', 13_500, 'demo-open-wise-eur'],
     ['wise-gbp-cash', 'GBP', 12_000, 'demo-open-wise-gbp'],
@@ -551,7 +554,7 @@ function buildCashFlows(
     events.push({
       holdingKey,
       day: ctx.startDate,
-      hour: 5,
+      hour: 6,
       kind: 'opening_balance',
       delta: amount,
       priceNativeSymbol: symbol,
@@ -1186,33 +1189,36 @@ export function buildDemoDataset(options: BuildDemoDatasetOptions = {}): DemoDat
   const holdingSpecs = new Map<string, HoldingSpec>(DEMO_HOLDINGS.map((h) => [h.key, h]));
 
   // ---- transactions -------------------------------------------------------
-  const transactions: DemoTransactionRow[] = events.map((event) => {
-    const spec = holdingSpecs.get(event.holdingKey);
-    if (!spec) throw new Error(`demo dataset: unknown holding key ${event.holdingKey}`);
-    const answered = event.transferReview ?? null;
-    return {
-      id: demoUuid('transaction', event.holdingKey, event.externalId),
-      holdingKey: event.holdingKey,
-      symbol: spec.symbol,
-      kind: event.kind,
-      quantity: quantity(spec.symbol, event.delta),
-      priceNative:
-        event.priceNative === undefined
-          ? null
-          : event.priceNative.toFixed(event.priceNative < 10 ? 6 : 2),
-      priceNativeSymbol: event.priceNativeSymbol ?? null,
-      occurredAt: atHour(event.day, event.hour, event.minute ?? 0),
-      externalId: event.externalId,
-      source: event.source,
-      swapGroupId: event.swapGroup ?? null,
-      transferGroupId: event.transferGroup ?? null,
-      transferReview: answered,
-      transferReviewedAt: answered ? atHour(addDays(event.day, 2), 19) : null,
-      transferReviewSource: answered ? 'user' : null,
-      counterparty: event.counterparty ?? null,
-      description: event.description ?? null,
-    };
-  });
+  const isOpening = (event: LedgerEvent) => event.kind === 'opening_balance';
+  const transactions: DemoTransactionRow[] = events
+    .filter((e) => !isOpening(e))
+    .map((event) => {
+      const spec = holdingSpecs.get(event.holdingKey);
+      if (!spec) throw new Error(`demo dataset: unknown holding key ${event.holdingKey}`);
+      const answered = event.transferReview ?? null;
+      return {
+        id: demoUuid('transaction', event.holdingKey, event.externalId),
+        holdingKey: event.holdingKey,
+        symbol: spec.symbol,
+        kind: event.kind,
+        quantity: quantity(spec.symbol, event.delta),
+        priceNative:
+          event.priceNative === undefined
+            ? null
+            : event.priceNative.toFixed(event.priceNative < 10 ? 6 : 2),
+        priceNativeSymbol: event.priceNativeSymbol ?? null,
+        occurredAt: atHour(event.day, event.hour, event.minute ?? 0),
+        externalId: event.externalId,
+        source: event.source,
+        swapGroupId: event.swapGroup ?? null,
+        transferGroupId: event.transferGroup ?? null,
+        transferReview: answered,
+        transferReviewedAt: answered ? atHour(addDays(event.day, 2), 19) : null,
+        transferReviewSource: answered ? 'user' : null,
+        counterparty: event.counterparty ?? null,
+        description: event.description ?? null,
+      };
+    });
 
   const transactionByExternalId = new Map(transactions.map((t) => [t.externalId, t.id]));
 
@@ -1344,8 +1350,7 @@ export function buildDemoDataset(options: BuildDemoDatasetOptions = {}): DemoDat
       balance: quantity(spec.symbol, state.balance[days - 1] as number),
       source: spec.source,
       kind: spec.kind,
-      // Created ahead of every row the engine counts for it: only the opening
-      // balance is earlier, and that is not evidence.
+      // Created at its first record, the opening reading where it has one.
       startsAt: createdAt,
       arrival: spec.arrival,
       label: spec.label ?? null,
@@ -1362,7 +1367,13 @@ export function buildDemoDataset(options: BuildDemoDatasetOptions = {}): DemoDat
   // what an hourly sync leaves behind after 18 months of running — enough for
   // `BalanceAtTimeService` to anchor on rather than extrapolate across the
   // whole window.
-  const observations: DemoObservationRow[] = [];
+  const observations: DemoObservationRow[] = events.filter(isOpening).map((event) => ({
+    id: demoUuid('observation', event.holdingKey, event.externalId),
+    holdingKey: event.holdingKey,
+    balance: quantity(holdingSpecs.get(event.holdingKey)?.symbol as string, event.delta),
+    observedAt: atHour(event.day, event.hour, event.minute ?? 0),
+    source: 'sync-capture',
+  }));
   for (const spec of DEMO_HOLDINGS) {
     const state = series.get(spec.key) as HoldingSeries;
     if (state.firstIndex < 0) continue;

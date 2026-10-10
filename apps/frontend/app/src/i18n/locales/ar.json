@@ -19,7 +19,9 @@
       "humanCheckFailed": "تعذّر تحميل التحقق البشري. عطّل أي أداة حظر لـ challenges.cloudflare.com ثم أعد تحميل الصفحة.",
       "cloudTitle": "تسجيل الدخول إلى Scani Cloud",
       "cloudSubtitle": "مفاتيح API الخاصة بك موجودة في لوحة Scani Cloud. أدخل بريدك الإلكتروني لتسجيل الدخول أو إنشاء حساب.",
-      "cloudNewAccount": "جديد على Scani Cloud؟ يُنشأ حسابك تلقائيًا وتعود مباشرةً إلى اللوحة."
+      "cloudNewAccount": "جديد على Scani Cloud؟ يُنشأ حسابك تلقائيًا وتعود مباشرةً إلى اللوحة.",
+      "passkey": "تسجيل الدخول بمفتاح المرور",
+      "passkeyFailed": "تعذّر على هذا الجهاز استخدام مفتاح المرور. سجّل الدخول ببريدك الإلكتروني بدلاً من ذلك."
     },
     "code": {
       "title": "إدخال رمز التحقق",
@@ -55,6 +57,16 @@
     },
     "exits": {
       "label": "المزيد عن Scani"
+    },
+    "twoFactor": {
+      "title": "تسجيل الدخول بخطوتين",
+      "subtitle": "أدخل الرمز من تطبيق المصادقة.",
+      "codeLabel": "رمز من 6 أرقام",
+      "backupLabel": "رمز احتياطي",
+      "trustDevice": "الوثوق بهذا الجهاز لمدة 30 يومًا",
+      "submit": "متابعة",
+      "useBackup": "استخدام رمز احتياطي",
+      "useAuthenticator": "استخدام تطبيق المصادقة"
     }
   },
   "currency": {
@@ -106,6 +118,7 @@
     "vaults": "الحصّالات",
     "tokens": "التوكنات",
     "jobs": "المهام",
+    "transactions": "المعاملات",
     "settings": "الإعدادات",
     "signOut": "تسجيل الخروج",
     "more": "المزيد",
@@ -122,7 +135,6 @@
   },
   "settings": {
     "title": "الإعدادات",
-    "subtitle": "إدارة تفضيلاتك",
     "profile": "الملف الشخصي",
     "name": "الاسم",
     "namePlaceholder": "اسمك",
@@ -321,7 +333,19 @@
         "balanceChanges_many": "تغييرات الرصيد",
         "balanceChanges_counted_many": "{{count}} تغييرًا في الرصيد",
         "balanceChanges_other": "تغييرات الرصيد",
-        "balanceChanges_counted_other": "{{count}} تغيير في الرصيد"
+        "balanceChanges_counted_other": "{{count}} تغيير في الرصيد",
+        "transactions_zero": "معاملات",
+        "transactions_one": "معاملة",
+        "transactions_two": "معاملتان",
+        "transactions_few": "معاملات",
+        "transactions_many": "معاملة",
+        "transactions_other": "معاملة",
+        "transactions_counted_zero": "لا معاملات",
+        "transactions_counted_one": "معاملة واحدة",
+        "transactions_counted_two": "معاملتان",
+        "transactions_counted_few": "{{count}} معاملات",
+        "transactions_counted_many": "{{count}} معاملة",
+        "transactions_counted_other": "{{count}} معاملة"
       },
       "accounts": {
         "col": {
@@ -543,7 +567,8 @@
           "noRecentPrice": "لا يوجد سعر حديث",
           "noPriceSource": "لا يوجد مصدر سعر يمكن استخدامه",
           "negativeOpening": "رصيد افتتاحي مُستنتَج سالب",
-          "noCoverage": "لا يوجد صف تغطية"
+          "noCoverage": "لا يوجد صف تغطية",
+          "restoredUnmatched": "رمز لم يُطابَق عند الاستعادة"
         },
         "priceOption": {
           "stale": "سعر متقادم"
@@ -991,6 +1016,29 @@
           "answersLandHere": "تظهر هنا الإجابات التي تقدّمها في قائمة الأرصدة، لتتمكّن من التراجع عن أيّ منها.",
           "nothingAnsweredYet": "لم تُفسَّر أي تغييرات في الرصيد بعد"
         }
+      },
+      "transactions": {
+        "col": {
+          "date": "التاريخ",
+          "description": "الوصف",
+          "account": "الحساب",
+          "category": "الفئة",
+          "amount": "المبلغ"
+        },
+        "empty": {
+          "title": "لا توجد معاملات بعد",
+          "description": "تصل الصفوف عند مزامنة حساباتك أو عند استيراد الكشوف."
+        },
+        "filter": {
+          "category": "الفئة",
+          "account": "الحساب",
+          "holding": "الأصل",
+          "period": "الفترة"
+        },
+        "period": {
+          "all": "كل الأوقات",
+          "custom": "نطاق مخصص"
+        }
       }
     },
     "brand": {
@@ -1175,5 +1223,21 @@
     "signInDifferent": "تسجيل الدخول ببريد إلكتروني آخر",
     "connectionIssue": "مشكلة في الاتصال",
     "connectionIssueRetrying": "مشكلة في الاتصال — جارٍ إعادة المحاولة"
+  },
+  "oauth": {
+    "continuing": "جارٍ الربط…",
+    "failed": "تعذّر إكمال الربط. ابدأ من جديد من التطبيق الذي كنت تربطه.",
+    "consent": {
+      "title": "يريد {{name}} قراءة محفظتك في Scani",
+      "account": "مسجّل الدخول باسم {{email}}",
+      "canTitle": "سيتمكن من",
+      "can": "قراءة أصولك وحساباتك ومعاملاتك وعوائدك وتقرير جودة البيانات.",
+      "cannotTitle": "لن يتمكن من",
+      "cannot": "تغيير أي شيء أو إضافته أو حذفه، أو تحويل الأموال.",
+      "revoke": "يمكنك فصله في أي وقت من الإعدادات.",
+      "allow": "سماح",
+      "deny": "رفض",
+      "unnamedApp": "تطبيق"
+    }
   }
 }

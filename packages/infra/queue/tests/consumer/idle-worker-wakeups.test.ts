@@ -9,11 +9,13 @@ import { interruptIdleWait, serveWorkerWake, WorkerWakeClient } from '../../src/
  * it queries every 10s (a hardcoded block cap, used whenever a delayed job
  * exists, and every schedule is one) and every 30s (the stalled check), while
  * Neon needs 300s with no query at all.
- * `patches/bullmq@6.2.0.patch` makes the cap an option, skips the
- * stalled check while an idle worker's LISTEN connection is down, and
- * re-establishes that connection lazily — on the worker's next wake, never on
- * the disconnect, because on Neon the disconnect IS the suspend and an eager
- * reconnect wakes the compute straight back up.
+ * BullMQ 6.3 raised the cap itself and replaces a dead LISTEN connection
+ * (SC-1677). `patches/bullmq@6.3.12.patch` carries what it does not: the
+ * stalled check is skipped while a worker is idle, and with
+ * `listenReconnect: 'nextWait'` the connection is re-established lazily — on
+ * the worker's next wake, never on the disconnect, because on Neon the
+ * disconnect IS the suspend and an eager reconnect wakes the compute straight
+ * back up. `maximumBlockTimeout` on the connection sets that wake's bound.
  *
  * These drive the real Postgres backend. Each latency arm is a job that must
  * start within a stated bound; the lost-LISTEN arms also count the worker's
@@ -83,7 +85,8 @@ type IdleWait = { startedAt: number; endedAt?: number };
  */
 type DbTouch = { at: number; via: 'query' | 'connect' | 'reconnect'; text?: string };
 type PgConnectionInternals = {
-  listenClientLost: boolean;
+  /** Unset from the moment the LISTEN client dies until the next wait replaces it. */
+  listenClient: unknown;
   getListenClient(): Promise<unknown>;
   pool: {
     query(...args: unknown[]): unknown;
@@ -94,7 +97,6 @@ type StalledInternals = {
   moveStalledJobsToWait(): Promise<void>;
   waiting: unknown;
   backend: {
-    blockingConnectionLost: boolean;
     waitForJob(blockTimeout: number): Promise<unknown>;
     connection: PgConnectionInternals;
   };
@@ -102,7 +104,8 @@ type StalledInternals = {
 
 function makeWorker(
   name: string,
-  opts: Record<string, unknown>
+  opts: Record<string, unknown>,
+  processor: (job: { name: string }) => Promise<unknown> = async () => undefined
 ): {
   worker: PgWorker;
   started: Map<string, number>;
@@ -114,13 +117,20 @@ function makeWorker(
   const stalledChecks: StalledCheck[] = [];
   const waits: IdleWait[] = [];
   const touches: DbTouch[] = [];
+  const { maximumBlockTimeout, ...workerOpts } = opts;
   const worker = new Worker(
     name,
-    async () => undefined,
+    processor,
     {
-      connection: { connectionString: withAppName(databaseUrl!, name), schema: SCHEMA },
       concurrency: 1,
-      ...opts,
+      ...workerOpts,
+      // As production sets them (`worker-client.ts`): both are connection options.
+      connection: {
+        connectionString: withAppName(databaseUrl!, name),
+        schema: SCHEMA,
+        listenReconnect: 'nextWait',
+        ...(maximumBlockTimeout === undefined ? {} : { maximumBlockTimeout }),
+      },
     } as never,
     createPostgresBackend
   ) as unknown as PgWorker;
@@ -132,7 +142,7 @@ function makeWorker(
     stalledChecks.push({
       at: Date.now(),
       waiting: Boolean(internals.waiting),
-      suspended: Boolean(internals.waiting && internals.backend.blockingConnectionLost),
+      suspended: Boolean(internals.waiting && backend.connection.listenClient === undefined),
     });
     return check();
   };
@@ -162,7 +172,7 @@ function makeWorker(
   };
   const listenClient = connection.getListenClient.bind(connection);
   connection.getListenClient = () => {
-    if (connection.listenClientLost) touches.push({ at: Date.now(), via: 'reconnect' });
+    if (connection.listenClient === undefined) touches.push({ at: Date.now(), via: 'reconnect' });
     return listenClient();
   };
   open.push(worker);
@@ -312,9 +322,10 @@ afterEach(async () => {
 });
 
 describe('the maximumBlockTimeout option (SC-963)', () => {
-  test('an idle worker blocks for the configured cap, and keeps the stock 10s when none is set', async () => {
+  test("an idle worker blocks for the configured cap, and for upstream's 3600s when none is set", async () => {
     const name = uniqueQueue();
-    const farFuture = Date.now() + 3_600_000;
+    // Two hours out, so the delay itself never undercuts the 3600s cap.
+    const farFuture = Date.now() + 7_200_000;
     const configured = makeWorker(name, { autorun: false, maximumBlockTimeout: 900 })
       .worker as unknown as {
       getBlockTimeout(blockUntil: number): number;
@@ -324,7 +335,7 @@ describe('the maximumBlockTimeout option (SC-963)', () => {
     };
 
     expect(configured.getBlockTimeout(farFuture)).toBe(900);
-    expect(stock.getBlockTimeout(farFuture)).toBe(10);
+    expect(stock.getBlockTimeout(farFuture)).toBe(3600);
   });
 });
 
@@ -523,16 +534,24 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
     const name = uniqueQueue();
     const queue = makeQueue(name);
     await queue.add('far-future', {}, { delay: 3_600_000 });
-    const { worker, started } = makeWorker(name, {
+    const { worker, started, waits } = makeWorker(name, {
       maximumBlockTimeout: CAP_S,
       drainDelay: CAP_S,
       stalledInterval: 1_000,
     });
     await worker.waitUntilReady();
     await Bun.sleep(500);
+    const completed = new Map<string, number>();
+    worker.on('completed', (job) => completed.set(job.name, Date.now()));
     await queue.add('prime', {});
-    await waitFor(() => started.get('prime'), 5_000);
-    await Bun.sleep(300);
+    // Idle means a wait that began after prime finished, not 300ms later
+    // (SC-1700): under load the worker was still busy, and its next fetch took
+    // the job with no listener and no wake.
+    const primedAt = await waitFor(() => completed.get('prime'), 5_000);
+    const idleWait = await waitFor(
+      () => waits.find((w) => w.startedAt >= primedAt && w.endedAt === undefined),
+      5_000
+    );
 
     const wakes = { n: 0 };
     const server = serveWorkerWake({
@@ -550,6 +569,7 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
     // Last, so nothing slow stands between the cut and the enqueue.
     await cutListener(name);
     const listenersAtEnqueue = await listeners(name);
+    expect(idleWait.endedAt).toBeUndefined();
     return {
       name,
       queue,
@@ -672,4 +692,84 @@ describe('a job enqueued while the LISTEN connection is down (SC-1144)', () => {
     await queue.add('while-listening', {});
     expect(await listeners(name)).toBe(1);
   });
+});
+
+/**
+ * SC-1611. While the compute is awake, the stalled check used to run on its
+ * free 600s timer, and each run held Neon up for another 300s. An idle worker
+ * now checks only when it wakes anyway, and keeps the timer while a job is in
+ * flight, so a dead worker's job is still reclaimed.
+ */
+describe('the stalled check runs only when the worker is awake anyway (SC-1611)', () => {
+  /** A job a dead worker claimed: active, its lock long expired. */
+  async function deadWorkersJob(queue: PgQueue, name: string): Promise<string> {
+    const job = await queue.add('dead', {}, { delay: 3_600_000 });
+    const now = Date.now();
+    await pool.query(
+      `UPDATE ${SCHEMA}.job SET state = 'active', lock_token = 'dead-worker',
+         locked_until_ms = $3, process_at_ms = $4, delay_ms = 0, processed_at_ms = $4
+       WHERE queue = $1 AND id = $2`,
+      [name, job.id, now - 60_000, now - 120_000]
+    );
+    return job.id!;
+  }
+
+  async function idle(
+    opts: Record<string, unknown>,
+    processor?: (job: { name: string }) => Promise<unknown>
+  ) {
+    const name = uniqueQueue();
+    const queue = makeQueue(name);
+    await queue.add('far-future', {}, { delay: 3_600_000 });
+    const made = makeWorker(
+      name,
+      { stalledInterval: 200, maxStalledCount: 1, drainDelay: 900, ...opts },
+      processor
+    );
+    await made.worker.waitUntilReady();
+    await Bun.sleep(500);
+    return { name, queue, ...made };
+  }
+
+  test('idle with its LISTEN up, the worker runs no stalled check', async () => {
+    const { stalledChecks } = await idle({ maximumBlockTimeout: 900 });
+    const from = Date.now();
+    await Bun.sleep(1_500);
+    const whileIdle = stalledChecks.filter((c) => c.at >= from && c.waiting);
+    expect(whileIdle).toEqual([]);
+  });
+
+  test("idle, it still reclaims a dead worker's job: each wake runs one check", async () => {
+    const { name, queue, started } = await idle({ maximumBlockTimeout: 900 });
+    await deadWorkersJob(queue, name);
+    // Two wakes, each past the 200ms throttle: the first marks the expired
+    // job, the second reclaims it. Adding the dead job is itself a wake, so
+    // the first nudge waits out the throttle that wake started.
+    await Bun.sleep(400);
+    await queue.add('nudge-1', {});
+    await waitFor(() => started.get('nudge-1'), 3_000); // [wall-clock]
+    await Bun.sleep(400);
+    await queue.add('nudge-2', {});
+    const at = await waitFor(() => started.get('dead'), 5_000); // [wall-clock]
+    expect(at).toBeGreaterThan(0);
+  }, 15_000);
+
+  test("with a job in flight, the timer keeps checking: a dead worker's job is reclaimed during it", async () => {
+    let longEnded = 0;
+    const { name, queue, started } = await idle(
+      { maximumBlockTimeout: 900, concurrency: 2 },
+      async (job) => {
+        if (job.name === 'long') {
+          await Bun.sleep(3_000);
+          longEnded = Date.now();
+        }
+      }
+    );
+    await deadWorkersJob(queue, name);
+    await queue.add('long', {});
+    // No further wake: only the timer running beside the in-flight job can
+    // mark and then reclaim it before 'long' ends.
+    const at = await waitFor(() => started.get('dead'), 6_000); // [wall-clock]
+    expect(longEnded === 0 || at < longEnded).toBe(true);
+  }, 15_000);
 });

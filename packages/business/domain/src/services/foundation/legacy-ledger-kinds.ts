@@ -14,6 +14,7 @@ import {
 import { CEX_SOURCE_TO_INSTITUTION } from '../transactions/transaction-sources';
 import type { Exclusion } from './classified-counts';
 import {
+  BUDGET_APP_SOURCE_PREFIX,
   PROVIDER_INPUT_SOURCE_PREFIX,
   STATEMENT_INPUT_SOURCE,
   WALLET_FALLBACK_INPUT_SOURCE,
@@ -29,7 +30,33 @@ export type LegacyEntryFacts = Pick<
   | 'settlesTransactionId'
   | 'priceNative'
   | 'priceNativeTokenId'
->;
+> &
+  LedgerMetadataFacts;
+
+/**
+ * What the mapping reads from `source_metadata`, each the key's value when it is
+ * a string and null otherwise, so a loader selects two strings rather than the
+ * whole jsonb (SC-1644).
+ *
+ * - `metadataIncome`: what the source says an income row is; `'dividend'`
+ *   makes a `reward` dividend income.
+ * - `metadataFeeOf`: the row a fee was charged on, as the withholding linker
+ *   wrote it. A fact rather than the `fee_of` column, because a re-label
+ *   rewrites that column from the facts on every re-import.
+ */
+export type LedgerMetadataFacts = {
+  metadataIncome: string | null;
+  metadataFeeOf: string | null;
+};
+
+const DIVIDEND_INCOME = 'dividend';
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+// `fee_of` is a uuid column, and a malformed fact would fail the whole re-label.
+function linkedFeeOf(row: LegacyEntryFacts): string | null {
+  return row.metadataFeeOf !== null && UUID.test(row.metadataFeeOf) ? row.metadataFeeOf : null;
+}
 
 type ExcludedEntry = Exclude<Exclusion, 'fabricated-observation'>;
 
@@ -75,11 +102,12 @@ export const PROVIDER_SYNC_ORIGIN = 'updateHoldingBalanceWithEvent';
 export const CREATED_WITH_EVENT_ORIGIN = 'createHoldingWithEvent';
 
 /**
- * The `source_metadata` key on a balance copy a moved path keeps writing for
- * legacy history, naming the run it anchors. An APY run that books no row
- * leaves no payout row for rule O3 to find beside its copy (ruling R12), and a
- * statement uploaded a second time writes no statement row for rule O2 to find
- * beside its copy (ruling R21).
+ * The `source_metadata` key on a balance copy an APY run or a statement upload
+ * once wrote for legacy history, naming the run it anchors. No path writes one
+ * since A5 (openings PR-1, flip PR-3b); the classifier still knows old copies
+ * by it. An APY run that booked no row left no payout row for rule O3 to find
+ * beside its copy (ruling R12), and a statement uploaded twice left no
+ * statement row for rule O2 (ruling R21).
  */
 export const LEGACY_ANCHOR_KEY = 'legacyAnchor';
 export const APY_LEGACY_ANCHOR = APY_PAYOUT_SOURCE;
@@ -138,7 +166,10 @@ function classify(row: LegacyEntryFacts): Classified | null {
     case 'settle_out':
       return classified({ ledgerKind: 'trade_leg', groupId: row.settlesTransactionId });
     case 'fee':
-      return classified({ ledgerKind: 'fee', feeOf: row.settlesTransactionId });
+      return classified({
+        ledgerKind: 'fee',
+        feeOf: row.settlesTransactionId ?? linkedFeeOf(row),
+      });
     case 'deposit':
       return row.transferGroupId === null
         ? classified({ ledgerKind: 'inflow' })
@@ -156,6 +187,10 @@ function classify(row: LegacyEntryFacts): Classified | null {
         kindSubtype: row.source === APY_PAYOUT_SOURCE ? 'apy' : 'interest',
       });
     case 'reward':
+      return classified({
+        ledgerKind: 'income',
+        kindSubtype: row.metadataIncome === DIVIDEND_INCOME ? DIVIDEND_INCOME : 'reward',
+      });
     case 'airdrop':
       return classified({ ledgerKind: 'income', kindSubtype: row.kind });
     case 'realized_pnl':
@@ -195,7 +230,11 @@ export function mapLegacyEntry(row: LegacyEntryFacts): LedgerMapping {
 export function inputSourceClass(source: string): InputSourceClass {
   if (Object.hasOwn(CEX_SOURCE_TO_INSTITUTION, source)) return 'provider';
   if (source.startsWith(PROVIDER_INPUT_SOURCE_PREFIX)) return 'provider';
-  if (source === STATEMENT_INPUT_SOURCE || source.startsWith(STATEMENT_LEDGER_SOURCE_PREFIX)) {
+  if (
+    source === STATEMENT_INPUT_SOURCE ||
+    source.startsWith(STATEMENT_LEDGER_SOURCE_PREFIX) ||
+    source.startsWith(BUDGET_APP_SOURCE_PREFIX)
+  ) {
     return 'statement';
   }
   if (source === EVM_WALLET_SOURCE || NON_EVM_WALLET_SOURCES.has(source)) return 'wallet';

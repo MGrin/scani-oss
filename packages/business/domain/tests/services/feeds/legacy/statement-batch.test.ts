@@ -148,6 +148,7 @@ describe('legacyStatementBatch', () => {
 
   test('the window runs from the first row to the last and carries the upload', () => {
     expect(batchOf(statement()).window).toEqual({
+      shape: 'statement-upload',
       from: D1,
       to: D3,
       complete: false,
@@ -169,7 +170,7 @@ describe('legacyStatementBatch', () => {
     expect(batchOf(statement({ closes: [], bankTemplate: null })).checkpoints).toEqual([]);
   });
 
-  test("the options are the file import's: account-token matching, the cache from the close or the rows, and the marked balance copy", () => {
+  test("the options are the file import's: account-token matching, the cache from the close or the rows, and no balance copy", () => {
     expect(batchOf(statement()).legacy).toEqual({
       holdingMatch: 'account-token',
       holdingPolicy: 'create',
@@ -177,16 +178,11 @@ describe('legacyStatementBatch', () => {
       arrival: 'user_confirmed',
       writesCache: true,
       createdWithoutCheckpoint: 'sum-of-entries',
-      cacheObservation: {
-        source: 'sync-capture',
-        meta: { origin: 'updateHoldingBalance', legacyAnchor: 'file-import' },
-      },
       derivesTradeLegs: false,
       holdingFailure: 'fail-batch',
       absence: null,
       clearsAbsenceTally: false,
       createdCheckpointMeta: null,
-      unhideOnNonZero: false,
       unchangedCheckpoint: 'append',
       zeroOpensHolding: true,
     });
@@ -212,6 +208,7 @@ describe('legacyStatementBatch', () => {
       entries: batch.entries.map((entry) => entry.externalId),
     }).toEqual({
       window: {
+        shape: 'statement-upload',
         from: before,
         to: after,
         complete: false,

@@ -22,14 +22,18 @@ export interface PriceWrite {
 /** A current quote. Its instant is the call's, and it is always intraday. */
 export type CurrentPriceWrite = Omit<PriceWrite, 'at' | 'granularity'>;
 
-interface PairAt {
+export interface PairAt {
   tokenId: string;
   baseTokenId: string;
   at: Date;
 }
 
 export interface PriceWriteOutcome {
-  /** Rows sent to the table: inserted, overwritten, or rewritten unchanged. */
+  /**
+   * Rows the table took: inserted, overwritten, or rewritten unchanged. A
+   * history row landing on another source's daily close is refused, and not
+   * counted.
+   */
   written: number;
   /** Rows whose price was not a reading, so nothing was sent for them. */
   dropped: number;
@@ -44,6 +48,11 @@ export interface PriceWriteOutcome {
    * day ('YYYY-MM-DD') of its earliest such row (D-5).
    */
   seriesChanged: Array<{ tokenId: string; baseTokenId: string; fromDay: string }>;
+}
+
+export interface HistoryWriteOutcome extends PriceWriteOutcome {
+  /** The keys the table took, in the order they were given. */
+  accepted: PriceKey[];
 }
 
 /**
@@ -103,22 +112,35 @@ export class PriceWriter {
     });
   }
 
-  /** Bars and backfilled readings. Upsert. */
+  /**
+   * Bars and backfilled readings. Upsert, except that a daily close is updated
+   * only by the source that wrote it, or replaces a downsample-daily row.
+   */
   async writeHistory(
     rows: readonly PriceWrite[],
     tx?: DatabaseTransaction
-  ): Promise<PriceWriteOutcome> {
+  ): Promise<HistoryWriteOutcome> {
     const { kept, dropped } = this.readings(rows);
-    if (kept.length === 0) return outcome(0, dropped);
+    if (kept.length === 0) return { ...outcome(0, dropped), accepted: [] };
     return this.inTransaction(tx, async (db) => {
       const stored = await this.prices.findPricesAtKeys(kept.map(keyOf), db);
-      await this.prices.bulkUpsert(
+      const written = await this.prices.bulkUpsert(
         kept.map(({ row }) => toRow(row)),
         db
       );
+      const acceptedKeys = new Set(
+        written.map((row) => `${pairKey(row)}|${row.timestamp.getTime()}|${row.granularity}`)
+      );
+      const accepted = kept.map(({ row }) =>
+        acceptedKeys.has(`${pairKey(row)}|${row.at.getTime()}|${row.granularity}`)
+      );
       return {
-        ...outcome(kept.length, dropped),
-        seriesChanged: seriesChangedFrom(kept, stored),
+        ...outcome(written.length, dropped),
+        seriesChanged: seriesChangedFrom(
+          kept.filter((_, i) => accepted[i]),
+          stored.filter((_, i) => accepted[i])
+        ),
+        accepted: kept.filter((_, i) => accepted[i]).map(keyOf),
       };
     });
   }

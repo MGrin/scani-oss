@@ -19,14 +19,23 @@ import {
   readGapAnswerReceipt,
 } from '../../lib/balances/gap-answer-receipt';
 import { isExactReversal, unexplainedDrift } from '../../lib/balances/unexplained-drift';
+import { FeedInputRepository } from '../../repositories/FeedInputRepository';
 import type { BalanceGapCandidate } from '../../repositories/HoldingBalanceObservationRepository';
 import { HoldingBalanceObservationRepository } from '../../repositories/HoldingBalanceObservationRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { UserRepository } from '../../repositories/UserRepository';
-import { PriceGraphService } from '../pricing/PriceGraphService';
+import { HoldingCacheWriter } from '../feeds/HoldingCacheWriter';
+import { InTransitService } from '../portfolio/InTransitService';
+import { PriceReader, type PriceSeries } from '../pricing/PriceReader';
 import { type TransferResolveResult, TransferReviewService } from '../TransferReviewService';
-import { BalanceGapListingCache, balanceGapListingKey } from './BalanceGapListingCache';
+import { AWAITING_LEDGER_MAX_MS, NIGHTLY_LEDGER_SOURCES } from '../transactions/ledger-cadence';
+import {
+  BalanceGapListingCache,
+  balanceGapListingKey,
+  holdsTravellingLeg,
+  type TravellingLegs,
+} from './BalanceGapListingCache';
 import { ManualBalanceEditService } from './ManualBalanceEditService';
 
 /** The list, plus what it left out and why. */
@@ -70,48 +79,114 @@ export class BalanceGapService {
   private readonly holdings = Container.get(HoldingRepository);
   private readonly users = Container.get(UserRepository);
   private readonly tokens = Container.get(TokenRepository);
-  private readonly priceGraph = Container.get(PriceGraphService);
+  private readonly priceReader = Container.get(PriceReader);
   private readonly manualBalanceEdits = Container.get(ManualBalanceEditService);
   private readonly listingCache = Container.get(BalanceGapListingCache);
+  private readonly cacheWriter = Container.get(HoldingCacheWriter);
+  private readonly inTransit = Container.get(InTransitService);
+  private readonly feedInputs = Container.get(FeedInputRepository);
 
   /**
    * The queue, and the accounting for what is not in it.
    *
-   * Reads no clock. Every gate is a property of the rows — the observation's
-   * source, whether the owner booked something while the interval closed,
-   * whether the next interval reverses it, what it is worth — so the same
-   * inputs always produce the same queue, and a gap does not appear or
-   * disappear with the time of day.
+   * Every gate but one is a property of the rows — the observation's source,
+   * whether the owner booked something while the interval closed, whether the
+   * next interval reverses it, what it is worth. The exception is
+   * `awaiting-ledger` (SC-1665), which reads `now` for its bound, so a ledger
+   * that never arrives cannot hold a gap past it.
    */
-  async listPending(userId: string): Promise<BalanceGapListing> {
-    const candidates = await this.observations.findGapCandidatesForUser(userId);
-    const user = await this.users.findById(userId);
+  async listPending(
+    userId: string,
+    now: Date = new Date(),
+    tx?: DatabaseTransaction
+  ): Promise<BalanceGapListing> {
+    const candidates = await this.observations.findGapCandidatesForUser(userId, tx);
+    const awaiting = await this.awaitingLedger(candidates, now, tx);
+    const user = await this.users.findById(userId, tx);
     const baseCurrencyId = user?.baseCurrencyId ?? null;
-    const baseCurrency = baseCurrencyId ? await this.currencyCode(baseCurrencyId) : '';
+    const baseCurrency = baseCurrencyId ? await this.currencyCode(baseCurrencyId, tx) : '';
+    const travelling = await this.travellingLegs(userId, tx);
 
     // Over EVERY candidate's token and instant, a superset of what the listing
     // prices, so a price that lands for any of them is a different key.
-    const times = candidates.map((candidate) => candidate.to.getTime());
-    const priceVersion =
+    const prices =
       baseCurrencyId && candidates.length > 0
-        ? await this.priceGraph.priceLookupFingerprint(
-            candidates.map((candidate) => candidate.tokenId),
+        ? await this.priceReader.series(
+            candidates.map((candidate) => ({ tokenId: candidate.tokenId, at: candidate.to })),
             baseCurrencyId,
-            new Date(Math.max(...times)),
-            new Date(Math.min(...times))
+            tx
           )
-        : '';
+        : null;
 
     return this.listingCache.getOrCompute(
-      balanceGapListingKey(userId, baseCurrencyId, baseCurrency, priceVersion, candidates),
-      () => this.priceListing(candidates, baseCurrencyId, baseCurrency)
+      balanceGapListingKey(
+        userId,
+        baseCurrencyId,
+        baseCurrency,
+        prices?.fingerprint ?? '',
+        candidates,
+        { travelling, awaitingLedger: [...awaiting] }
+      ),
+      () => this.priceListing(candidates, prices, baseCurrency, travelling, awaiting)
     );
+  }
+
+  /**
+   * The gaps whose holding's ledger is still read nightly and has not been
+   * read since the balance landed, less than `AWAITING_LEDGER_MAX_MS` ago.
+   * A ledger read with its balance has no entry and is never held.
+   */
+  private async awaitingLedger(
+    candidates: readonly BalanceGapCandidate[],
+    now: Date,
+    tx?: DatabaseTransaction
+  ): Promise<ReadonlySet<string>> {
+    const open = candidates.filter(
+      (c) =>
+        c.gapReview === null &&
+        c.source === SYNC_OBSERVATION_SOURCE &&
+        now.getTime() - c.to.getTime() < AWAITING_LEDGER_MAX_MS
+    );
+    if (open.length === 0) return new Set();
+    const readThrough = await this.feedInputs.findLedgerReadThroughByHolding(
+      [...new Set(open.map((c) => c.holdingId))],
+      NIGHTLY_LEDGER_SOURCES,
+      tx
+    );
+    return new Set(
+      open
+        .filter((c) => {
+          if (!readThrough.has(c.holdingId)) return false;
+          const at = readThrough.get(c.holdingId);
+          return !at || at < c.to;
+        })
+        .map((c) => c.observationId)
+    );
+  }
+
+  /**
+   * Where each transfer still in transit put its arrival leg (SC-1680). The
+   * destination's provider reading does not hold that money yet, so the
+   * interval looks short by it; the day-7 transit question owns that money,
+   * and a balance-change question beside it would ask about it twice.
+   */
+  private async travellingLegs(userId: string, tx?: DatabaseTransaction): Promise<TravellingLegs> {
+    const legs = new Map<string, number[]>();
+    for (const open of await this.inTransit.openTransits(userId, tx)) {
+      if (open.transit.arrived) continue;
+      const instants = legs.get(open.destinationHoldingId) ?? [];
+      instants.push(open.arrival.at.getTime());
+      legs.set(open.destinationHoldingId, instants);
+    }
+    return legs;
   }
 
   private async priceListing(
     candidates: BalanceGapCandidate[],
-    baseCurrencyId: string | null,
-    baseCurrency: string
+    prices: PriceSeries | null,
+    baseCurrency: string,
+    travelling: TravellingLegs,
+    awaiting: ReadonlySet<string>
   ): Promise<BalanceGapListing> {
     const suppressed = emptySuppressionCounts();
 
@@ -135,8 +210,18 @@ export class BalanceGapService {
       // somebody dealt with it, which is the queue working.
       if (candidate.gapReview !== null) continue;
 
+      if (holdsTravellingLeg(travelling, candidate)) {
+        suppressed['in-transit'] += 1;
+        continue;
+      }
+
       if (candidate.source !== SYNC_OBSERVATION_SOURCE) {
         suppressed['owner-stated'] += 1;
+        continue;
+      }
+
+      if (awaiting.has(candidate.observationId)) {
+        suppressed['awaiting-ledger'] += 1;
         continue;
       }
 
@@ -148,33 +233,15 @@ export class BalanceGapService {
       toPrice.push({ candidate, drift });
     }
 
-    const priceLookup =
-      baseCurrencyId && toPrice.length > 0
-        ? await this.priceGraph.buildPriceLookup(
-            toPrice.map(({ candidate }) => candidate.tokenId),
-            baseCurrencyId,
-            new Date(Math.max(...toPrice.map(({ candidate }) => candidate.to.getTime()))),
-            undefined,
-            new Date(Math.min(...toPrice.map(({ candidate }) => candidate.to.getTime())))
-          )
-        : undefined;
-
     for (const { candidate, drift } of toPrice) {
-      const baseValue = baseCurrencyId
-        ? await this.priceGraph.convert(
-            drift.abs(),
-            candidate.tokenId,
-            baseCurrencyId,
-            candidate.to,
-            { tx: undefined, priceLookup }
-          )
-        : null;
-      if (!baseValue) {
+      const unit = prices?.priceAt(candidate.tokenId, candidate.to)?.price;
+      if (!unit) {
         suppressed.unpriceable += 1;
         continue;
       }
+      const baseValue = drift.abs().mul(unit);
 
-      if (baseValue.amount.lt(BALANCE_GAP_MIN_BASE_VALUE)) {
+      if (baseValue.lt(BALANCE_GAP_MIN_BASE_VALUE)) {
         suppressed['below-threshold'] += 1;
         continue;
       }
@@ -190,7 +257,7 @@ export class BalanceGapService {
         previousBalance: candidate.previousBalance,
         balance: candidate.balance,
         drift: drift.toString(),
-        baseValue: baseValue.amount.toString(),
+        baseValue: baseValue.toString(),
         baseCurrency,
         transactionsApplied: candidate.transactionsApplied,
         datePrompted:
@@ -257,6 +324,7 @@ export class BalanceGapService {
       occurredAt: input.occurredAt?.toISOString() ?? null,
       editOutflow: input.editOutflow ?? null,
       receivedQuantity: input.receivedQuantity ?? null,
+      parts: input.parts ?? null,
     });
     if (observation.gapReview !== null) {
       if (receipt?.request === request) return { result: receipt.result };
@@ -267,6 +335,9 @@ export class BalanceGapService {
     if (!candidate) return { refusal: 'no-longer-a-gap' };
     const drift = driftOf(candidate);
     if (drift.isZero()) return { refusal: 'no-longer-a-gap' };
+    // Not in the queue while a transfer is in transit through it (SC-1680).
+    if (holdsTravellingLeg(await this.travellingLegs(userId, transaction), candidate))
+      return { refusal: 'no-longer-a-gap' };
     const holding = await this.holdings.findById(candidate.holdingId, transaction);
     if (!holding || holding.userId !== userId) return { refusal: 'gone' };
     if (input.receivedQuantity && input.editOutflow?.decision !== 'internal')
@@ -275,6 +346,14 @@ export class BalanceGapService {
       );
     if (input.editOutflow && (input.answer !== 'flow' || !drift.isNegative()))
       throw new BalanceGapAnswerRejected('A destination can only be given for money that left');
+    if (input.parts) {
+      if (input.answer !== 'flow' || !drift.isNegative())
+        throw new BalanceGapAnswerRejected('Only money that left can be divided');
+      if (input.editOutflow || input.receivedQuantity)
+        throw new BalanceGapAnswerRejected('Give either one destination or the parts, not both');
+      if (input.parts.some((part) => part.decision === 'paired'))
+        throw new BalanceGapAnswerRejected('A balance change has no deposit to pair a part with');
+    }
     const occurredAt = clampToInterval(input.occurredAt ?? candidate.to, candidate);
     const written = isLedgerWritingAnswer(input.answer)
       ? await this.manualBalanceEdits.record(
@@ -306,6 +385,23 @@ export class BalanceGapService {
         }
       );
       if (!resolved.ok) throw new BalanceGapAnswerRejected(destinationRefusal(resolved));
+    }
+    if (input.parts) {
+      if (!written?.transactionId) throw new Error('Withdrawal was not recorded');
+      // One withdrawal for the drift, divided: each move joins its group (SC-1665).
+      const divided = await this.transfers.resolveSplit(
+        userId,
+        written.transactionId,
+        input.parts,
+        {
+          transaction,
+          observedEvent: true,
+        }
+      );
+      if (!divided.ok)
+        throw new BalanceGapAnswerRejected(
+          divided.reason === 'invalid' ? divided.message : destinationRefusal(divided)
+        );
     }
     const result: AnswerBalanceGapResult = {
       observationId: candidate.observationId,
@@ -372,6 +468,8 @@ export class BalanceGapService {
         })
         .where(eq(schema.holdingTransactions.id, written.fee.transactionId));
     }
+    // The answer's rows are evidence; the cache follows them (A5 D-18).
+    if (written?.transactionId) await this.cacheWriter.refresh(userId, [holding.id], transaction);
     return { result };
   }
 
@@ -466,16 +564,23 @@ export class BalanceGapService {
     if (receipt?.transactionId)
       await this.transfers.reopen(userId, receipt.transactionId, transaction);
     const ids = gapAnswerRowIds(receipt);
-    if (ids.length)
-      await transaction
-        .delete(schema.holdingTransactions)
-        .where(
-          and(
-            eq(schema.holdingTransactions.userId, userId),
-            inArray(schema.holdingTransactions.id, ids),
-            inArray(schema.holdingTransactions.source, [...GAP_ANSWER_ROW_SOURCES])
-          )
-        );
+    if (ids.length === 0) return;
+    const removed = await transaction
+      .delete(schema.holdingTransactions)
+      .where(
+        and(
+          eq(schema.holdingTransactions.userId, userId),
+          inArray(schema.holdingTransactions.id, ids),
+          inArray(schema.holdingTransactions.source, [...GAP_ANSWER_ROW_SOURCES])
+        )
+      )
+      .returning({ holdingId: schema.holdingTransactions.holdingId });
+    // The rows are gone, so the engine's balance may have moved (A5 D-18).
+    await this.cacheWriter.refresh(
+      userId,
+      [...new Set(removed.map((row) => row.holdingId))],
+      transaction
+    );
   }
 
   /**
@@ -510,8 +615,8 @@ export class BalanceGapService {
     return false;
   }
 
-  private async currencyCode(tokenId: string): Promise<string> {
-    const token = await this.tokens.findById(tokenId);
+  private async currencyCode(tokenId: string, tx?: DatabaseTransaction): Promise<string> {
+    const token = await this.tokens.findById(tokenId, tx);
     return token?.symbol ?? '';
   }
 }

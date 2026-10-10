@@ -59,26 +59,28 @@ COPY packages ./packages
 
 RUN cd apps/backend/api && bun run build
 
+# SC-1646: patches/@better-auth%2Foauth-provider@1.7.7.patch makes a concurrent
+# first start skip the duplicate MCP resource seed by SQLSTATE. The plugin is
+# bundled into the binary, so the check reads the binary.
+RUN grep -aqF '==="23505"||/unique|duplicate|UNIQUE/i' apps/backend/api/dist/server \
+    || (echo "SC-1646: the oauth-provider patch is not in the compiled api binary" && exit 1)
+
 # ---------- runtime ----------
-# SC-518. BullMQ v6's Postgres backend loads every SQL command with
-# `readFileSync` at RUNTIME (`sql-loader.ts` joins `__dirname` with
-# `commands/`), and `bun build --compile` bundles JavaScript but NOT data
-# files. So the compiled binary looks for these on disk and the runtime image
-# has no `node_modules`. Without them every enqueue returns 500 — the image
-# builds and passes every check, and fails on first use.
+# SC-518. BullMQ 6.2's Postgres backend read every SQL command with
+# `readFileSync` at RUNTIME, which `bun build --compile` does not bundle, so the
+# image used to copy the .sql files beside the binary. 6.3 inlines them into
+# `sql-scripts.js` (taskforcesh/bullmq#4603) and has no .sql files at all, which
+# is how the old file check aborted deploys #461 and #465 (SC-1677).
 #
-# THIS ASSERTION IS A CONDITION, NOT A NICETY. It is the only thing standing
-# between a bullmq patch release relocating these files and a green image that
-# 500s in production: `COPY` does not fail when it matches an empty directory,
-# so without this the breakage is silent. Assert on a FILE THE LOADER ACTUALLY
-# READS, not on the directory — a directory can exist and be empty.
-#
-# Remove it only when bullmq inlines its SQL — upstream taskforcesh/bullmq#4603
-# (see also
-# taskforcesh/bullmq#4601).
-RUN test -s node_modules/bullmq/dist/esm/postgres/commands/add_job.sql \
-    && test -s node_modules/bullmq/dist/esm/postgres/migrations/0001_schema.sql \
-    || (echo "SC-518: bullmq Postgres SQL assets missing — the compiled binary cannot enqueue" && exit 1)
+# THIS ASSERTION IS STILL A CONDITION. Without the SQL every enqueue returns
+# 500 from an image that builds and passes every other check. So assert both
+# halves of "the binary needs nothing on disk": the loader imports the inlined
+# scripts and reads no file, and the compiled binary itself carries add_job's
+# SQL. A release that goes back to reading files fails here, not in production.
+RUN grep -q "from './sql-scripts'" node_modules/bullmq/dist/esm/postgres/sql-loader.js \
+    && ! grep -q readFileSync node_modules/bullmq/dist/esm/postgres/sql-loader.js \
+    && grep -q 'Insert a single job, routing it to waiting or delayed' apps/backend/api/dist/server \
+    || (echo "SC-518: the compiled binary does not carry bullmq's Postgres SQL — it cannot enqueue" && exit 1)
 
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
@@ -91,7 +93,7 @@ ENV SERVICE_VERSION=${SCANI_COMMIT} SCANI_CORE_BUILD=${SCANI_CORE_BUILD} \
 
 ENV NODE_ENV=production \
     PORT=3001 \
-    HOST=0.0.0.0
+    HOST=::
 
 # curl: needed by the healthcheck below. ca-certificates: TLS to
 # postgres / redis / external APIs from inside the binary.
@@ -105,10 +107,6 @@ RUN useradd --create-home --shell /usr/sbin/nologin --uid 1001 app
 USER app
 
 COPY --from=build --chown=app:app /app/apps/backend/api/dist/server /app/server
-
-# SC-518: the SQL the compiled binary reads at runtime. Path must match the
-# build-time `__dirname` baked into the binary, which is /app/node_modules/...
-COPY --from=build --chown=app:app /app/node_modules/bullmq/dist/esm/postgres /app/node_modules/bullmq/dist/esm/postgres
 
 EXPOSE 3001
 

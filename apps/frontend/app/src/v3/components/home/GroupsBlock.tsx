@@ -1,5 +1,4 @@
 import { Badge } from '@scani/ui/ui/badge';
-import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { useState } from 'react';
@@ -7,9 +6,10 @@ import { Trans, useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { groupRows } from '../../lib/home';
 import { PAYMENTS_HORIZON_DAYS } from '../../lib/money';
-import { groupDetailPath } from '../../lib/routes';
+import { groupDetailPath, V3_ROUTES } from '../../lib/routes';
 import { DisclosureButton } from './DisclosureButton';
 import { GroupBillsFigure } from './GroupBillsFigure';
+import { HomeCard, type HomeCardVariant, RowsSkeleton } from './HomeCard';
 
 /**
  * Groups, with what each one is worth.
@@ -42,7 +42,7 @@ import { GroupBillsFigure } from './GroupBillsFigure';
 /** Enough that a normal set of groups shows whole; the rest is one tap away. */
 const GROUPS_SHOWN = 5;
 
-export function GroupsBlock() {
+export function GroupsBlock({ variant = 'card' }: { variant?: HomeCardVariant }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
 
@@ -52,86 +52,110 @@ export function GroupsBlock() {
   const currency = values.data?.baseCurrency ?? 'USD';
   const rows = groupRows(groups.data ?? [], values.data?.groups ?? [], t);
 
-  // Nothing to summarise and nothing to offer: the user has not organised
-  // anything into groups, and an empty block teaching him that groups exist is
-  // an advert on the screen he checks his money on.
-  if (groups.isLoading || rows.length === 0) return null;
-
   const shown = expanded ? rows : rows.slice(0, GROUPS_SHOWN);
 
   return (
-    <Block>
-      <BlockHeader title={t('v3.home.groups.title')} />
-      <DataRowList className="border-t border-border">
-        {shown.map((row) => (
-          <DataRow
-            key={row.id}
-            leading={
-              row.color ? (
-                // The user's own colour for the group — identity he chose, not
-                // a palette slot this screen assigned. Nothing is encoded by
-                // it, so it owes no contrast floor beyond being visible.
-                <span
-                  aria-hidden="true"
-                  className="size-2.5 rounded-full"
-                  style={{ backgroundColor: row.color }}
-                />
-              ) : null
-            }
-            label={row.name}
-            sublabel={row.sublabel}
-            // A count line naming four kinds wraps rather than ending in "…" (SC-1437).
-            wrapIdentity
-            value={
-              row.billsOnly ? (
-                // Bills carry no value, so a bills group leads with what its
-                // bills commit, in the Bills page's figure and words — as the
-                // group's own page does (SC-1408, SC-1437).
-                <GroupBillsFigure groupId={row.id} />
-              ) : row.inactiveValue === null ? (
-                <Numeric value={row.value} currency={currency} compact />
-              ) : (
-                // Every holding in the group is inactive (SC-1128): what they
-                // are worth, muted and labelled, rather than a bare 0.
-                <span className="inline-flex items-center gap-2">
-                  <Badge variant="secondary" className="shrink-0">
-                    {t('v3.holdings.peek.inactive')}
-                  </Badge>
-                  <span className="text-muted-foreground">
-                    <Numeric value={row.inactiveValue} currency={currency} compact />
-                  </span>
-                </span>
-              )
-            }
-            delta={
-              row.billsOnly ? (
-                <span className="text-caption text-muted-foreground">
-                  {t('v3.money.upcoming.billsCommitted', { count: PAYMENTS_HORIZON_DAYS })}
-                </span>
-              ) : row.hasBills ? (
-                <span className="text-caption text-muted-foreground">
-                  <Trans
-                    i18nKey="v3.home.groups.billsNext"
-                    count={PAYMENTS_HORIZON_DAYS}
-                    components={{ amount: <GroupBillsFigure groupId={row.id} /> }}
-                  />
-                </span>
-              ) : undefined
-            }
-            href={groupDetailPath(row.id)}
-            aria-label={t('v3.home.groups.openGroup', { name: row.name })}
-          />
-        ))}
-      </DataRowList>
-      {rows.length > GROUPS_SHOWN ? (
-        <div className="flex px-4 pt-2 pb-3">
-          <DisclosureButton
-            expanded={expanded}
-            onToggle={() => setExpanded((open) => !open)}
-            label={t('v3.home.disclosure.theOtherN', { count: rows.length - GROUPS_SHOWN })}
-          />
-        </div>
-      ) : null}
-    </Block>
+    <HomeCard
+      title={t('v3.home.groups.title')}
+      subject={t('v3.home.groups.loadingLabel')}
+      href={V3_ROUTES.groups}
+      action={t('v3.common.action.seeAll')}
+      // With no groups there is nothing for the values to describe: waiting on
+      // them would show a skeleton, or an error, for a feature not in use.
+      queries={groups.data?.length === 0 ? [groups] : [groups, values]}
+      variant={variant}
+      peekId="groups"
+      tile={() => {
+        const [first] = rows;
+        return {
+          figure: rows.length,
+          caption:
+            first && !first.billsOnly && first.inactiveValue === null ? (
+              <>
+                {first.name} · <Numeric value={first.value} currency={currency} compact />
+              </>
+            ) : (
+              first?.name
+            ),
+        };
+      }}
+      absent={rows.length === 0}
+      skeleton={<RowsSkeleton />}
+    >
+      {() => (
+        <>
+          <DataRowList className="border-t border-border">
+            {shown.map((row) => (
+              <DataRow
+                key={row.id}
+                leading={
+                  row.color ? (
+                    // The user's own colour for the group — identity he chose, not
+                    // a palette slot this screen assigned. Nothing is encoded by
+                    // it, so it owes no contrast floor beyond being visible.
+                    <span
+                      aria-hidden="true"
+                      className="size-2.5 rounded-full"
+                      style={{ backgroundColor: row.color }}
+                    />
+                  ) : null
+                }
+                label={row.name}
+                sublabel={row.sublabel}
+                // A count line naming four kinds wraps rather than ending in "…" (SC-1437).
+                wrapIdentity
+                value={
+                  row.billsOnly ? (
+                    // Bills carry no value, so a bills group leads with what its
+                    // bills commit, in the Bills page's figure and words — as the
+                    // group's own page does (SC-1408, SC-1437).
+                    <GroupBillsFigure groupId={row.id} />
+                  ) : row.inactiveValue === null ? (
+                    <Numeric value={row.value} currency={currency} compact />
+                  ) : (
+                    // Every holding in the group is inactive (SC-1128): what they
+                    // are worth, muted and labelled, rather than a bare 0.
+                    <span className="inline-flex items-center gap-2">
+                      <Badge variant="secondary" className="shrink-0">
+                        {t('v3.holdings.peek.inactive')}
+                      </Badge>
+                      <span className="text-muted-foreground">
+                        <Numeric value={row.inactiveValue} currency={currency} compact />
+                      </span>
+                    </span>
+                  )
+                }
+                delta={
+                  row.billsOnly ? (
+                    <span className="text-caption text-muted-foreground">
+                      {t('v3.money.upcoming.billsCommitted', { count: PAYMENTS_HORIZON_DAYS })}
+                    </span>
+                  ) : row.hasBills ? (
+                    <span className="text-caption text-muted-foreground">
+                      <Trans
+                        i18nKey="v3.home.groups.billsNext"
+                        count={PAYMENTS_HORIZON_DAYS}
+                        components={{ amount: <GroupBillsFigure groupId={row.id} /> }}
+                      />
+                    </span>
+                  ) : undefined
+                }
+                href={groupDetailPath(row.id)}
+                aria-label={t('v3.home.groups.openGroup', { name: row.name })}
+              />
+            ))}
+          </DataRowList>
+          {rows.length > GROUPS_SHOWN ? (
+            <div className="flex px-4 pt-2 pb-3">
+              <DisclosureButton
+                expanded={expanded}
+                onToggle={() => setExpanded((open) => !open)}
+                label={t('v3.home.disclosure.theOtherN', { count: rows.length - GROUPS_SHOWN })}
+              />
+            </div>
+          ) : null}
+        </>
+      )}
+    </HomeCard>
   );
 }

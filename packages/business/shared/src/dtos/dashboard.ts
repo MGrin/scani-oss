@@ -7,6 +7,8 @@ export const AssetAllocationDimensionDto = z.enum([
   'account_type',
   'institution',
   'institution_type',
+  // SC-1645: the bucket of the account's wrapper; no wrapper is `general`.
+  'treatment',
   'group',
 ]);
 
@@ -30,7 +32,9 @@ export const GetAssetAllocationOutputDto = z.object({
   dimension: AssetAllocationDimensionDto,
   items: z.array(AssetAllocationItemDto),
   /** Signed: `"0"`, or the negative sum of the holdings kept out of `items` (SC-1463). */
-  marginDebt: z.string(),
+  totalDebt: z.string(),
+  /** Signed: the part of `totalDebt` held on liability accounts (SC-1640). */
+  liabilityDebt: z.string(),
   totalValue: z.string(),
   baseCurrency: z.string(),
 });

@@ -26,7 +26,6 @@ const options: SnapshotBatchOptions = {
   holdingFailure: 'skip-entry',
   absence: null,
   clearsAbsenceTally: false,
-  unhideOnNonZero: true,
   unchangedCheckpoint: 'append',
   zeroOpensHolding: true,
 };
@@ -89,7 +88,6 @@ describe('legacySnapshotBatch', () => {
       ...options,
       writesCache: true,
       createdWithoutCheckpoint: 'zero',
-      cacheObservation: null,
       derivesTradeLegs: false,
       // A holding the batch opens takes `createHoldingWithEvent`'s stamp, as A1's O4 reads it.
       createdCheckpointMeta: { origin: 'createHoldingWithEvent', source: 'import_test' },
@@ -144,7 +142,12 @@ describe('legacySnapshotBatch', () => {
       fetchedAt: FETCHED,
       options,
     });
-    expect(batch.window).toEqual({ from: EARLIEST, to: FETCHED, complete: false });
+    expect(batch.window).toEqual({
+      shape: 'balance-snapshot',
+      from: EARLIEST,
+      to: FETCHED,
+      complete: false,
+    });
     expect(batch.fetchedAt).toEqual(FETCHED);
   });
 
@@ -164,6 +167,7 @@ describe('legacySnapshotBatch', () => {
       });
       expect(batch.checkpoints).toEqual([]);
       expect(batch.window).toEqual({
+        shape: 'balance-snapshot',
         from: returnedAt.length === 0 ? FETCHED : EARLIER,
         to: FETCHED,
         complete: false,

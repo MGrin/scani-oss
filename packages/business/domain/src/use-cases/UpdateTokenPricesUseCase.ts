@@ -18,6 +18,8 @@ import { emitEntityChange } from '@scani/realtime';
 import { inArray } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { assetClassOf } from '../engine/price-at';
+import { isPriceFetchDue, listingExchange } from '../lib/pricing-cadence';
+import { TokenPriceRepository } from '../repositories/TokenPriceRepository';
 import { TokenRepository } from '../repositories/TokenRepository';
 import {
   FX_BASELINE,
@@ -26,10 +28,15 @@ import {
   PricingService,
   VaultService,
 } from '../services';
+import { CacheWriteCounter } from '../services/feeds/CacheWriteCounter';
+import { HoldingCacheWriter } from '../services/feeds/HoldingCacheWriter';
+import type { PairAt } from '../services/pricing/PriceWriter';
 
 const logger = createComponentLogger('use-case:update-token-prices');
 
 export interface UpdateTokenPricesResult {
+  /** Cached holding values this run wrote, apart from the quarter-hour run's (SC-1610). */
+  cacheWrites?: number;
   /**
    * The tokens the run prices: held ones, currencies in use, the hubs and the
    * FX baseline. Never USD or the custom class, held or not.
@@ -48,6 +55,12 @@ export interface UpdateTokenPricesResult {
    * something to look at.
    */
   tokensSuppressed: number;
+  /**
+   * Stocks outside their exchange's session and FX outside the 23:00Z hour,
+   * each holding a reading under a day old (SC-1603). Not asked, on purpose,
+   * and never a failure.
+   */
+  tokensDeferred: number;
   /** Errors encountered during update */
   errors: Array<{
     tokenId: string;
@@ -65,9 +78,12 @@ export interface UpdateTokenPricesResult {
 export class UpdateTokenPricesUseCase {
   private readonly pricingService = Container.get(PricingService);
   private readonly tokenRepository = Container.get(TokenRepository);
+  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly holdingQueryService = Container.get(HoldingQueryService);
   private readonly vaultService = Container.get(VaultService);
   private readonly priceHubs = Container.get(PriceHubResolver);
+  private readonly valueCache = Container.get(HoldingCacheWriter);
+  private readonly cacheWrites = Container.get(CacheWriteCounter);
 
   async execute(): Promise<UpdateTokenPricesResult> {
     const startTime = Date.now();
@@ -90,6 +106,7 @@ export class UpdateTokenPricesUseCase {
           tokensUpdated: 0,
           tokensFailed: 0,
           tokensSuppressed: 0,
+          tokensDeferred: 0,
           errors: [],
           durationMs: Date.now() - startTime,
         };
@@ -146,8 +163,17 @@ export class UpdateTokenPricesUseCase {
         );
       }
 
+      const deferredIds = await this.deferredThisRun(priceableIds, usd.id, runAt);
+      const dueIds = priceableIds.filter((id) => !deferredIds.has(id));
+      if (deferredIds.size > 0) {
+        logger.info(
+          { tokensDeferred: deferredIds.size, tokensDue: dueIds.length },
+          'Deferring stocks outside exchange hours and FX outside the 23:00Z hour'
+        );
+      }
+
       // Fetch token details using batch query
-      const tokens = await this.tokenRepository.findByIds(priceableIds);
+      const tokens = await this.tokenRepository.findByIds(dueIds);
 
       if (tokens.length === 0) {
         // Two different nothings, and they must not log the same (SC-296).
@@ -155,15 +181,17 @@ export class UpdateTokenPricesUseCase {
         // for ids that ARE priceable is a fault. Before this split a fully
         // suppressed run would have reported `tokensFailed = tokensFound`
         // and warned — turning the fix into a louder version of the bug.
-        const allSuppressed = priceableIds.length === 0;
+        // Deferred tokens are the same kind of nothing as suppressed ones (SC-1603).
+        const allSuppressed = dueIds.length === 0;
         if (allSuppressed) {
           logger.info(
             {
               tokensFound: uniqueTokenIds.length,
               tokensSuppressed: suppressedIds.size,
+              tokensDeferred: deferredIds.size,
               durationMs: Date.now() - startTime,
             },
-            'Every token of the run is inside an unpriceable cooldown — nothing to ask'
+            'Every token of the run is in cooldown or deferred — nothing to ask'
           );
         } else {
           logger.warn('No valid tokens found');
@@ -172,8 +200,9 @@ export class UpdateTokenPricesUseCase {
         return {
           tokensFound: uniqueTokenIds.length,
           tokensUpdated: 0,
-          tokensFailed: allSuppressed ? 0 : priceableIds.length,
+          tokensFailed: allSuppressed ? 0 : dueIds.length,
           tokensSuppressed: suppressedIds.size,
+          tokensDeferred: deferredIds.size,
           errors: allSuppressed
             ? []
             : [
@@ -197,7 +226,8 @@ export class UpdateTokenPricesUseCase {
       // Against the fiat USD, and with no reuse window: every run asks the
       // providers. A run that reused a row under an hour old reused the row of
       // the run before, so production fetched in 14 to 17 hours of 24.
-      const prices = await this.pricingService.getTokenPrices(tokens, usd, runAt);
+      const changed: PairAt[] = [];
+      const prices = await this.pricingService.getTokenPrices(tokens, usd, runAt, changed);
 
       // Count successful and failed updates
       let tokensUpdated = 0;
@@ -240,6 +270,7 @@ export class UpdateTokenPricesUseCase {
         .map((t) => t.id);
 
       await this.fanOut([...updatedTokenIds, ...heldUnasked], updatedTokenIds.length);
+      const cacheWrites = await this.revalueCache(changed);
 
       const durationMs = Date.now() - startTime;
 
@@ -257,6 +288,7 @@ export class UpdateTokenPricesUseCase {
             tokensUpdated,
             tokensFailed,
             tokensSuppressed: suppressedIds.size,
+            tokensDeferred: deferredIds.size,
             failedSymbols: errors.map((e) => e.tokenSymbol).slice(0, 20),
             durationMs,
           },
@@ -269,6 +301,7 @@ export class UpdateTokenPricesUseCase {
             tokensAsked: tokens.length,
             tokensUpdated,
             tokensSuppressed: suppressedIds.size,
+            tokensDeferred: deferredIds.size,
             durationMs,
           },
           suppressedIds.size > 0
@@ -281,9 +314,11 @@ export class UpdateTokenPricesUseCase {
         tokensFound: uniqueTokenIds.length,
         tokensUpdated,
         tokensSuppressed: suppressedIds.size,
+        tokensDeferred: deferredIds.size,
         tokensFailed,
         errors,
         durationMs,
+        cacheWrites,
       };
     } catch (error) {
       const durationMs = Date.now() - startTime;
@@ -297,6 +332,42 @@ export class UpdateTokenPricesUseCase {
 
       throw error;
     }
+  }
+
+  /**
+   * The stocks and FX this run need not ask about (SC-1603): a reading under a
+   * day old, and outside the exchange's session or the 23:00Z hour. Their
+   * newest reading is read against USD, the base this run writes in.
+   */
+  private async deferredThisRun(
+    tokenIds: readonly string[],
+    usdTokenId: string,
+    runAt: Date
+  ): Promise<Set<string>> {
+    const scheduled = (await this.tokenRepository.findManyWithTypes([...tokenIds])).filter(
+      (token) => token.typeCode === 'fiat' || token.typeCode === 'stock'
+    );
+    if (scheduled.length === 0) return new Set();
+    const newest = await this.tokenPriceRepository.findLatestPricesForTokens(
+      scheduled.map((token) => token.id),
+      usdTokenId
+    );
+    return new Set(
+      scheduled
+        .filter(
+          (token) =>
+            !isPriceFetchDue(
+              {
+                typeCode: token.typeCode,
+                marketSegment: token.marketSegment,
+                exchange: listingExchange(token.providerMetadata),
+              },
+              newest.get(token.id)?.timestamp ?? null,
+              runAt
+            )
+        )
+        .map((token) => token.id)
+    );
   }
 
   /**
@@ -330,6 +401,26 @@ export class UpdateTokenPricesUseCase {
       toPrice: [...ids].filter((id) => !custom.has(id)),
       heldUnasked: held.filter((id) => id === usdTokenId || custom.has(id)),
     };
+  }
+
+  /**
+   * A failure is logged, not thrown: the nightly value shadow names what it
+   * left, and the hidden-holding flag that reads `value_base` (A5 #9) waits
+   * for the next run.
+   */
+  private async revalueCache(changed: readonly PairAt[]): Promise<number> {
+    try {
+      const written = await this.valueCache.revalueAffected(changed, new Date(), { sweep: true });
+      logger.info(
+        { pairsChanged: changed.length, cacheWrites: written.length },
+        'Revalued the holding value cache'
+      );
+      await this.cacheWrites.add('hourly', written.length);
+      return written.length;
+    } catch (error) {
+      logger.warn({ error }, 'Failed to revalue the holding value cache after a price update');
+      return 0;
+    }
   }
 
   /**

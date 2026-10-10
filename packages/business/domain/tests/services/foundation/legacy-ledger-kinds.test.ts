@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { flowRoleOf } from '../../../src/lib/returns/flow-classification';
 import {
   type InputSourceClass,
   inputSourceClass,
@@ -20,6 +21,8 @@ function row(facts: Partial<LegacyEntryFacts> & Pick<LegacyEntryFacts, 'kind'>):
     settlesTransactionId: null,
     priceNative: null,
     priceNativeTokenId: null,
+    metadataIncome: null,
+    metadataFeeOf: null,
     ...facts,
   };
 }
@@ -116,6 +119,34 @@ describe('mapLegacyEntry: fees', () => {
   });
 });
 
+describe('mapLegacyEntry: a withholding linked to its dividend (SC-1644)', () => {
+  const dividend = '00000000-0000-4000-8000-0000000000d1';
+
+  test('a fee reads its fee_of from the linked fact', () => {
+    expect(mapLegacyEntry(row({ kind: 'fee', metadataFeeOf: dividend }))).toEqual(
+      mapped({ ledgerKind: 'fee', feeOf: dividend })
+    );
+  });
+
+  test('a settled trade still wins over the fact', () => {
+    expect(
+      mapLegacyEntry(row({ kind: 'fee', settlesTransactionId: 't9', metadataFeeOf: dividend }))
+    ).toEqual(mapped({ ledgerKind: 'fee', feeOf: 't9' }));
+  });
+
+  test('a fact that is not a row id is ignored, so it cannot fail the uuid cast', () => {
+    expect(mapLegacyEntry(row({ kind: 'fee', metadataFeeOf: 'not-a-uuid' }))).toEqual(
+      mapped({ ledgerKind: 'fee', feeOf: null })
+    );
+  });
+
+  test('only a fee row reads the fact', () => {
+    expect(mapLegacyEntry(row({ kind: 'reward', metadataFeeOf: dividend }))).toEqual(
+      mapped({ ledgerKind: 'income', kindSubtype: 'reward' })
+    );
+  });
+});
+
 describe('mapLegacyEntry: deposits, withdrawals and transfers', () => {
   test('a grouped deposit is a transfer in', () => {
     expect(mapLegacyEntry(row({ kind: 'deposit', transferGroupId: 'g1' }))).toEqual(
@@ -167,6 +198,25 @@ describe('mapLegacyEntry: income and pnl', () => {
     expect(mapLegacyEntry(row({ kind: 'airdrop' }))).toEqual(
       mapped({ ledgerKind: 'income', kindSubtype: 'airdrop' })
     );
+  });
+
+  test('a reward the source names a dividend is dividend income (SC-1644)', () => {
+    expect(mapLegacyEntry(row({ kind: 'reward', metadataIncome: 'dividend' }))).toEqual(
+      mapped({ ledgerKind: 'income', kindSubtype: 'dividend' })
+    );
+  });
+
+  test('the dividend fact names a subtype of reward only', () => {
+    expect(mapLegacyEntry(row({ kind: 'interest', metadataIncome: 'dividend' }))).toEqual(
+      mapped({ ledgerKind: 'income', kindSubtype: 'interest' })
+    );
+    expect(mapLegacyEntry(row({ kind: 'reward', metadataIncome: 'coupon' }))).toEqual(
+      mapped({ ledgerKind: 'income', kindSubtype: 'reward' })
+    );
+  });
+
+  test('a dividend keeps the legacy kind reward, so returns count it as a return, not a contribution', () => {
+    expect(flowRoleOf('reward')).toBe('return');
   });
 
   test('realized_pnl is derivative pnl', () => {
@@ -230,6 +280,8 @@ describe('inputSourceClass', () => {
   const cases: Array<[string, InputSourceClass]> = [
     ['kraken-api', 'provider'],
     ['statement-csv', 'statement'],
+    ['budget-ynab', 'statement'],
+    ['budget-actual', 'statement'],
     ['etherscan', 'wallet'],
     ['solana', 'wallet'],
     ['user-balance-edit', 'none'],

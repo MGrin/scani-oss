@@ -19,7 +19,9 @@
       "humanCheckFailed": "Не удалось загрузить проверку на человека. Отключите блокировщик для challenges.cloudflare.com и перезагрузите страницу.",
       "cloudTitle": "Вход в Scani Cloud",
       "cloudSubtitle": "Ваши API-ключи находятся в консоли Scani Cloud. Введите email, чтобы войти или создать аккаунт.",
-      "cloudNewAccount": "Впервые в Scani Cloud? Аккаунт создастся автоматически, и вы сразу вернётесь в консоль."
+      "cloudNewAccount": "Впервые в Scani Cloud? Аккаунт создастся автоматически, и вы сразу вернётесь в консоль.",
+      "passkey": "Войти с ключом доступа",
+      "passkeyFailed": "Это устройство не смогло использовать ключ доступа. Войдите по электронной почте."
     },
     "code": {
       "title": "Введите код подтверждения",
@@ -55,6 +57,16 @@
     },
     "exits": {
       "label": "Подробнее о Scani"
+    },
+    "twoFactor": {
+      "title": "Двухэтапный вход",
+      "subtitle": "Введите код из приложения-аутентификатора.",
+      "codeLabel": "6-значный код",
+      "backupLabel": "Резервный код",
+      "trustDevice": "Доверять этому устройству 30 дней",
+      "submit": "Продолжить",
+      "useBackup": "Использовать резервный код",
+      "useAuthenticator": "Использовать приложение-аутентификатор"
     }
   },
   "currency": {
@@ -100,6 +112,7 @@
     "vaults": "Копилки",
     "tokens": "Токены",
     "jobs": "Задачи",
+    "transactions": "Операции",
     "settings": "Настройки",
     "signOut": "Выйти",
     "more": "Ещё",
@@ -116,7 +129,6 @@
   },
   "settings": {
     "title": "Настройки",
-    "subtitle": "Управление предпочтениями",
     "profile": "Профиль",
     "name": "Имя",
     "namePlaceholder": "Ваше имя",
@@ -255,7 +267,15 @@
         "balanceChanges_many": "изменений баланса",
         "balanceChanges_counted_many": "{{count}} изменений баланса",
         "balanceChanges_other": "изменения баланса",
-        "balanceChanges_counted_other": "{{count}} изменения баланса"
+        "balanceChanges_counted_other": "{{count}} изменения баланса",
+        "transactions_one": "операция",
+        "transactions_few": "операции",
+        "transactions_many": "операций",
+        "transactions_other": "операции",
+        "transactions_counted_one": "{{count}} операция",
+        "transactions_counted_few": "{{count}} операции",
+        "transactions_counted_many": "{{count}} операций",
+        "transactions_counted_other": "{{count}} операции"
       },
       "accounts": {
         "col": {
@@ -477,7 +497,8 @@
           "noRecentPrice": "Нет свежей цены",
           "noPriceSource": "Нет источника цены, которым можно пользоваться",
           "negativeOpening": "Отрицательный начальный остаток",
-          "noCoverage": "Нет записи о покрытии"
+          "noCoverage": "Нет записи о покрытии",
+          "restoredUnmatched": "Токен не сопоставлен при восстановлении"
         },
         "priceOption": {
           "stale": "Устаревшая котировка"
@@ -919,6 +940,29 @@
           "answersLandHere": "Ответы из очереди балансов появляются здесь — любой из них можно отменить.",
           "nothingAnsweredYet": "Пока нет объяснённых изменений баланса"
         }
+      },
+      "transactions": {
+        "col": {
+          "date": "Дата",
+          "description": "Описание",
+          "account": "Счёт",
+          "category": "Категория",
+          "amount": "Сумма"
+        },
+        "empty": {
+          "title": "Операций пока нет",
+          "description": "Строки появляются, когда счета синхронизируются или вы импортируете выписки."
+        },
+        "filter": {
+          "category": "Категория",
+          "account": "Счёт",
+          "holding": "Актив",
+          "period": "Период"
+        },
+        "period": {
+          "all": "За всё время",
+          "custom": "Свой период"
+        }
       }
     },
     "brand": {
@@ -1103,5 +1147,21 @@
     "signInDifferent": "Войти с другой почтой",
     "connectionIssue": "Проблема со связью",
     "connectionIssueRetrying": "Проблема со связью — повторяем"
+  },
+  "oauth": {
+    "continuing": "Подключение…",
+    "failed": "Не удалось завершить подключение. Начните заново в приложении, которое вы подключали.",
+    "consent": {
+      "title": "{{name}} хочет читать ваш портфель в Scani",
+      "account": "Вы вошли как {{email}}",
+      "canTitle": "Оно сможет",
+      "can": "Читать ваши позиции, счета, транзакции, доходность и отчёт о качестве данных.",
+      "cannotTitle": "Оно не сможет",
+      "cannot": "Изменять, добавлять или удалять что-либо и переводить деньги.",
+      "revoke": "Отключить его можно в любой момент в Настройках.",
+      "allow": "Разрешить",
+      "deny": "Отклонить",
+      "unnamedApp": "Приложение"
+    }
   }
 }

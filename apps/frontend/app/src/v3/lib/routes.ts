@@ -14,6 +14,8 @@ import { V3_BASE } from './ui-version';
  */
 export const V3_ROUTES = {
   home: V3_BASE,
+  /** Where a Home tile's peek lives: `/home/<id>` opens over Home (SC-1669). */
+  homePeek: '/home',
   holdings: '/holdings',
   money: '/payments',
   recurring: '/payments/recurring',
@@ -25,10 +27,16 @@ export const V3_ROUTES = {
   files: '/documents',
   vaults: '/vaults',
   settings: '/settings',
+  /** Every ledger row, filtered and categorized (SC-1652). */
+  transactions: '/transactions',
+  categories: '/categories',
   groups: '/groups',
   tokens: '/tokens',
   vendors: '/vendors',
   jobs: '/jobs',
+  /** What a household holds together (SC-1647). */
+  household: '/household',
+  /** Where a household invite lands after sign-in (SC-1647). */
 } as const;
 
 /**
@@ -120,7 +128,11 @@ export const V3_CAPTURE_ROUTES = {
   manualEntry: '/manual-entry',
   /** "I withdrew 2000" — the movement, not the balance it leaves (SC-607). */
   recordMovement: '/record-movement',
+  /** A property or vehicle, valued by hand (SC-1643). */
+  valuedAsset: '/assets/new',
   fileImport: '/import',
+  /** A YNAB register, mapped account by account (SC-1649). */
+  budgetAppImport: '/import/budget-app',
   walletImport: '/wallet-import',
   integrations: '/integrations',
   /** Under Files for the reason v2 puts it there — the upload's own result is a
@@ -338,6 +350,7 @@ export const V3_DRAWER_PRIMARY: readonly V3NavItem[] = [
 /** Everything else, as a list below the grid. Reaching it is what the
  * drawer's full-height snap point is for. */
 export const V3_DRAWER_SECONDARY: readonly V3NavItem[] = [
+  { labelKey: 'nav.transactions', icon: 'ArrowLeftRight', path: V3_ROUTES.transactions },
   { labelKey: 'nav.groups', icon: 'Tags', path: V3_ROUTES.groups },
   { labelKey: 'nav.tokens', icon: 'Coins', path: V3_ROUTES.tokens },
   { labelKey: 'nav.jobs', icon: 'ListChecks', path: V3_ROUTES.jobs },
@@ -377,6 +390,7 @@ export const V3_SIDEBAR_SECTIONS: readonly V3NavSection[] = [
     titleKey: 'nav.sections.activity',
     items: [
       { labelKey: 'nav.review', icon: 'ClipboardCheck', path: V3_ROUTES.review },
+      { labelKey: 'nav.transactions', icon: 'ArrowLeftRight', path: V3_ROUTES.transactions },
       { labelKey: 'nav.files', icon: 'Files', path: V3_ROUTES.files },
       { labelKey: 'nav.jobs', icon: 'ListChecks', path: V3_ROUTES.jobs },
     ],
@@ -422,6 +436,9 @@ function normalize(pathname: string): string {
  */
 export function resolveActiveV3Path(pathname: string): string | null {
   const path = normalize(pathname);
+  // A Home tile's peek is Home with a sheet over it (SC-1669). Home is `/`,
+  // which `covers` never treats as a parent, so it is named here.
+  if (covers(V3_ROUTES.homePeek, path)) return V3_ROUTES.home;
   let best: string | null = null;
   for (const navPath of V3_NAV_PATHS) {
     if (covers(navPath, path) && (best === null || navPath.length > best.length)) {

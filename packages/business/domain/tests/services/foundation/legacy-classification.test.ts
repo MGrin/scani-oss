@@ -8,6 +8,7 @@ import {
   type EvidenceObservation,
   type LegacyHoldingEvidence,
 } from '../../../src/services/foundation/legacy-classification';
+import type { LedgerMetadataFacts } from '../../../src/services/foundation/legacy-ledger-kinds';
 import { utc } from '../../engine/fixtures';
 
 const USER = 'u1';
@@ -28,6 +29,7 @@ function holding(fields: Partial<Holding> = {}): Holding {
     label: null,
     isHidden: false,
     hiddenBy: null,
+    hiddenBalance: null,
     isActive: true,
     manualEditCause: null,
     absentFromStatements: null,
@@ -109,12 +111,15 @@ function apyCopy(id: string, createdAt: Date, balance: string): EvidenceObservat
   return { ...balanceCopy(id, createdAt, balance), metadataLegacyAnchor: 'apy-payout' };
 }
 
+/** A stored row as a loader reads it: its columns and its `source_metadata` facts. */
+type LedgerRow = HoldingTransaction & LedgerMetadataFacts;
+
 function transaction(
   id: string,
   occurredAt: Date,
   quantity: string,
-  fields: Partial<HoldingTransaction> = {}
-): HoldingTransaction {
+  fields: Partial<LedgerRow> = {}
+): LedgerRow {
   return {
     id,
     userId: USER,
@@ -154,8 +159,12 @@ function transaction(
     executionPriceTokenId: null,
     kindOrigin: null,
     decisionId: null,
+    categoryId: null,
+    categorySetBy: null,
     createdAt: occurredAt,
     updatedAt: occurredAt,
+    metadataIncome: null,
+    metadataFeeOf: null,
     ...fields,
   };
 }
@@ -180,7 +189,16 @@ function inputWindow(
   fromAt: Date | null,
   toAt: Date
 ): FeedInputWindow {
-  return { id, inputId, fromAt, toAt, complete: true, fetchedAt: toAt, uploadRef: null };
+  return {
+    id,
+    inputId,
+    fromAt,
+    toAt,
+    complete: true,
+    fetchedAt: toAt,
+    uploadRef: null,
+    shape: 'transaction-run',
+  };
 }
 
 function evidence(fields: Partial<LegacyHoldingEvidence> = {}): LegacyHoldingEvidence {
@@ -1156,10 +1174,10 @@ describe('stale labels', () => {
   /** The same row after a writer changed it, its persisted labels untouched. */
   function rewritten(
     raw: LegacyHoldingEvidence,
-    fields: Partial<HoldingTransaction>
+    fields: Partial<LedgerRow>
   ): LegacyHoldingEvidence {
     const [row] = raw.transactions;
-    return { ...raw, transactions: [{ ...(row as HoldingTransaction), ...fields }] };
+    return { ...raw, transactions: [{ ...(row as LedgerRow), ...fields }] };
   }
 
   const staleOf = (raw: LegacyHoldingEvidence) =>

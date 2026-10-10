@@ -37,6 +37,8 @@ import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { TransactionCategoryService } from '../services/categories/TransactionCategoryService';
+import { HoldingCacheWriter } from '../services/feeds/HoldingCacheWriter';
 import { FoundationClassificationService } from '../services/foundation/FoundationClassificationService';
 import { type BuildDemoDatasetOptions, buildDemoDataset, type DemoDataset } from './dataset';
 
@@ -60,9 +62,43 @@ export interface DemoSeedSummary {
   readonly counts: Record<string, number>;
 }
 
+/** The starter set as an English-speaking person would see it (SC-1652). */
+const DEMO_CATEGORY_NAMES: Record<string, string> = {
+  income: 'Income',
+  salary: 'Salary',
+  interest: 'Interest',
+  dividends: 'Dividends',
+  housing: 'Housing',
+  rent: 'Rent',
+  utilities: 'Utilities',
+  food: 'Food',
+  groceries: 'Groceries',
+  restaurants: 'Restaurants',
+  transport: 'Transport',
+  health: 'Health',
+  shopping: 'Shopping',
+  travel: 'Travel',
+  fees: 'Fees',
+  bankFees: 'Bank fees',
+  exchangeFees: 'Exchange fees',
+  taxes: 'Taxes',
+};
+
+/** The demo's fiat rows a person would have categorized, by description. */
+const DEMO_ROW_CATEGORIES: ReadonlyArray<
+  [description: string, parent: string, child: string | null]
+> = [
+  ['Monthly interest', 'income', 'interest'],
+  ['Groceries, travel, everything uncategorised', 'shopping', null],
+  ['VAT return', 'fees', 'taxes'],
+  ['Quarterly management accounts', 'fees', null],
+];
+
 @Service()
 export class DemoDatasetSeeder {
   private readonly classification = Container.get(FoundationClassificationService);
+  private readonly cache = Container.get(HoldingCacheWriter);
+  private readonly categories = Container.get(TransactionCategoryService);
 
   async seed(options: BuildDemoDatasetOptions = {}): Promise<DemoSeedSummary> {
     const dataset = buildDemoDataset(options);
@@ -170,7 +206,7 @@ export class DemoDatasetSeeder {
         userId: dataset.user.id,
         accountId: accountIds.get(holding.accountKey) as string,
         tokenId: tokenIds.get(holding.symbol) as string,
-        balance: holding.balance,
+        balance: '0',
         source: holding.source,
         kind: holding.kind,
         startsAt: holding.startsAt,
@@ -219,6 +255,8 @@ export class DemoDatasetSeeder {
       );
     });
 
+    await this.seedCategories(dataset.user.id, database);
+
     await insertChunked(dataset.observations, async (batch) => {
       await database
         .insert(schema.holdingBalanceObservations)
@@ -234,6 +272,18 @@ export class DemoDatasetSeeder {
         )
         .onConflictDoNothing();
     });
+
+    // Each holding is written unfunded and funded here, once its evidence is
+    // in, by the one writer of the cache (A5 D-4).
+    await this.cache.apply(
+      dataset.user.id,
+      dataset.holdings.map((holding) => ({
+        holdingId: holding.id,
+        balance: holding.balance,
+        lastUpdated: holding.lastUpdated,
+      })),
+      database
+    );
 
     const baseCurrencyId = tokenIds.get(dataset.user.baseCurrency) as string;
     const scopeId = (row: (typeof dataset.rollups)[number]): string => {
@@ -473,6 +523,24 @@ export class DemoDatasetSeeder {
    * its own backfill has run. A failed classification throws, which rolls the
    * seed back.
    */
+  private async seedCategories(userId: string, database: DatabaseTransaction): Promise<void> {
+    const name = (key: string) => DEMO_CATEGORY_NAMES[key] ?? key;
+    await this.categories.suggest(userId, name, database);
+    const t = schema.holdingTransactions;
+    for (const [description, parent, child] of DEMO_ROW_CATEGORIES) {
+      const categoryId = await this.categories.findOrCreatePath(
+        userId,
+        name(parent),
+        child ? name(child) : null,
+        database
+      );
+      await database
+        .update(t)
+        .set({ categoryId, categorySetBy: 'person' })
+        .where(and(eq(t.userId, userId), eq(t.description, description)));
+    }
+  }
+
   private async classify(userId: string, database: DatabaseTransaction): Promise<void> {
     const report = await this.classification.classify({ apply: true, userId }, database);
     const [failed] = report.failedUsers;

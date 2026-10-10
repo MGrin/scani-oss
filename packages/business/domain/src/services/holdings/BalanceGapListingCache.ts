@@ -49,16 +49,42 @@ export class BalanceGapListingCache {
   }
 }
 
+/** Each open transit's arrival-leg instant (ms), by destination holding (SC-1680). */
+export type TravellingLegs = ReadonlyMap<string, readonly number[]>;
+
+/** Whether a gap's interval holds the arrival of a transfer still in transit. */
+export function holdsTravellingLeg(
+  travelling: TravellingLegs,
+  candidate: Pick<BalanceGapCandidate, 'holdingId' | 'from' | 'to'>
+): boolean {
+  const from = candidate.from.getTime();
+  const to = candidate.to.getTime();
+  return (travelling.get(candidate.holdingId) ?? []).some((at) => at > from && at <= to);
+}
+
 export function balanceGapListingKey(
   userId: string,
   baseCurrencyId: string | null,
   baseCurrency: string,
   priceVersion: string,
-  candidates: readonly BalanceGapCandidate[]
+  candidates: readonly BalanceGapCandidate[],
+  held: {
+    /** Where open transits' arrival legs sit: a transfer that lands or closes changes the queue (SC-1680). */
+    travelling?: TravellingLegs;
+    /** Gaps held for a nightly ledger read (SC-1665). */
+    awaitingLedger?: readonly string[];
+  } = {}
 ): string {
   const hash = createHash('sha256');
   hash.update(
     JSON.stringify([BALANCE_GAP_MIN_BASE_VALUE, baseCurrencyId, baseCurrency, priceVersion])
+  );
+  hash.update(
+    JSON.stringify(
+      [...(held.travelling ?? new Map()).entries()]
+        .map(([holdingId, instants]) => [holdingId, [...instants].sort((a, b) => a - b)] as const)
+        .sort(([a], [b]) => a.localeCompare(b))
+    )
   );
   for (const c of candidates) {
     hash.update(
@@ -80,5 +106,6 @@ export function balanceGapListingKey(
       ])
     );
   }
-  return `bg:v1:${userId}:${hash.digest('hex')}`;
+  hash.update(JSON.stringify([...(held.awaitingLedger ?? [])].sort()));
+  return `bg:v3:${userId}:${hash.digest('hex')}`;
 }

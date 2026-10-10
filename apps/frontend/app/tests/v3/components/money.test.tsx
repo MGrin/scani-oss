@@ -1513,3 +1513,82 @@ describe('DuplicateVendorPicker', () => {
     expect(html).toInclude('aria-checked="true"');
   });
 });
+
+describe('ExpectedIncome — the date line is never cut (SC-1697)', () => {
+  test('an income row wraps its payee and date rather than truncating them', () => {
+    const html = renderFeed('/payments', { occurrences: asAny([SALARY_OCCURRENCE]) });
+    const date = T('v3.money.expectedIncome.expected', {
+      date: formatDate(SALARY_OCCURRENCE.dueDate),
+    });
+    const line = html.match(new RegExp(`<[^<>]*class="([^"]*)"[^<>]*>${date}<`));
+    expect(line?.[1]).toBeDefined();
+    expect(line?.[1]).toContain('text-pretty');
+    expect(line?.[1]).not.toContain('truncate');
+  });
+});
+
+describe('UpcomingFeed — calendar layout (SC-1654)', () => {
+  const dueMonth = DUE_BILL.dueDate.slice(0, 7);
+
+  test('the list is the default, and has no calendar', () => {
+    expect(renderFeed('/payments')).not.toContain('data-bills-calendar');
+  });
+
+  test('the calendar counts each day’s bills, and income is not a bill', () => {
+    const html = renderFeed(`/payments?layout=calendar&month=${dueMonth}`, {
+      occurrences: asAny([DUE_BILL, { ...SALARY_OCCURRENCE, dueDate: DUE_BILL.dueDate }]),
+    });
+    expect(html).toContain('data-bills-calendar');
+    expect(html).toContain(
+      T('v3.money.calendar.day', { date: formatDate(DUE_BILL.dueDate), count: 1 })
+    );
+  });
+
+  test('a chosen day lists that day’s bills and no other day’s', () => {
+    const html = renderFeed(`/payments?layout=calendar&day=${DUE_BILL.dueDate}`);
+    expect(html).toContain('99.00');
+    expect(html).toContain(
+      T('v3.money.upcoming.row', { vendor: 'Hetzner', date: formatDate(DUE_BILL.dueDate) })
+    );
+    expect(html).not.toContain(
+      T('v3.money.upcoming.row', { vendor: 'Hetzner', date: formatDate(LATE_BILL.dueDate) })
+    );
+  });
+
+  test('a chosen day with no bills says so', () => {
+    const empty = daysFromToday(1);
+    const html = renderFeed(`/payments?layout=calendar&day=${empty}`, {
+      occurrences: asAny([DUE_BILL]),
+    });
+    expect(html).toContain(T('v3.money.calendar.noneOnDay', { date: formatDate(empty) }));
+  });
+
+  test('it opens on the current month with today chosen and ringed', () => {
+    const html = renderFeed('/payments?layout=calendar', { occurrences: asAny([DUE_BILL]) });
+    const today = new RegExp(
+      `<button[^>]*aria-pressed="true"[^>]*aria-label="${formatDate(TODAY)}[^"]*"[^>]*data-today=""`
+    );
+    expect(html).toMatch(today);
+  });
+
+  test('the chosen day’s heading says how many bills, in words', () => {
+    const html = renderFeed(`/payments?layout=calendar&day=${DUE_BILL.dueDate}`);
+    const heading = html.match(/<h3[^>]*>(.*?)<\/h3>/)?.[1] ?? '';
+    expect(heading).toContain(T('v3.membership.count.bill', { count: 1 }));
+  });
+
+  test('an overdue day’s dot is marked overdue', () => {
+    const html = renderFeed(`/payments?layout=calendar&month=${LATE_BILL.dueDate.slice(0, 7)}`, {
+      occurrences: asAny([LATE_BILL]),
+    });
+    expect(html).toContain('data-dot="overdue"');
+  });
+
+  test('a bill beyond the list’s 30 days still appears on its month', () => {
+    const far = { ...DUE_BILL, id: 'occurrence-far', dueDate: daysFromToday(90) };
+    const html = renderFeed(`/payments?layout=calendar&month=${far.dueDate.slice(0, 7)}`, {
+      occurrences: asAny([far]),
+    });
+    expect(html).toContain(T('v3.money.calendar.day', { date: formatDate(far.dueDate), count: 1 }));
+  });
+});

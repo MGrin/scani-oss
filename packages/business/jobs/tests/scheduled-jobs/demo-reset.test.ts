@@ -37,15 +37,17 @@ describe('DEMO_RESET_SCHEDULE', () => {
       'transfer-linking',
       'portfolio-value-rollup',
       'hide-closed-holdings',
-      'token-prices-downsample',
       'backfill-counterparty',
     ];
-    const hours = CHAIN.map((name) => {
-      const descriptor = SCHEDULED_JOB_DESCRIPTORS.find((d) => d.name === name);
-      expect(descriptor).toBeDefined();
-      return Number((descriptor as { cron: string }).cron.split(' ')[1]);
-    });
+    // They are steps of the nightly group (SC-1688), which runs them in order
+    // from its start. Two hours of margin: the backfill step alone may run 60
+    // minutes before its limit stops it.
+    const nightly = SCHEDULED_JOB_DESCRIPTORS.find((d) => d.name === 'nightly');
+    expect(nightly && 'steps' in nightly).toBe(true);
+    const stepNames = (nightly as { steps: readonly { name: string }[] }).steps.map((s) => s.name);
+    expect(stepNames).toEqual(expect.arrayContaining(CHAIN));
+    const nightlyHour = Number((nightly as { cron: string }).cron.split(' ')[1]);
     const resetHour = Number(DEMO_RESET_SCHEDULE.cron.split(' ')[1]);
-    expect(resetHour).toBeGreaterThan(Math.max(...hours));
+    expect(resetHour).toBeGreaterThanOrEqual(nightlyHour + 2);
   });
 });

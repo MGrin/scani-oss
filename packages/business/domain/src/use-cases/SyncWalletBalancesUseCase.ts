@@ -30,6 +30,7 @@ import type { HoldingSnapshot, ProviderContext } from '@scani/providers/core/typ
 import { integrationCircuitBreaker, withRetry } from '@scani/rate-limiter';
 import { and, asc, eq, gt, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { ChangedHoldingUsers } from '../lib/changed-holding-users';
 import { TokenTypeRepository } from '../repositories/EnumRepositories';
 import { HoldingExclusionRepository } from '../repositories/HoldingExclusionRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
@@ -48,6 +49,13 @@ import {
   WalletDiscoveryService,
 } from '../services';
 import { accountChainId, walletInputSource } from '../services/foundation/plan-feed-inputs';
+import {
+  AccountLedgerSync,
+  type LedgerRead,
+  type LedgerWrite,
+} from '../services/transactions/AccountLedgerSync';
+import { ledgerSourceOf } from '../services/transactions/transaction-source';
+import { IdleUserSyncPolicy } from '../services/users/IdleUserSyncPolicy';
 
 const logger = createComponentLogger('use-case:sync-wallet-balances');
 
@@ -74,6 +82,8 @@ export interface SyncWalletBalancesResult {
    * nothing, and the split is the whole point (SC-852).
    */
   exitedSymbols: string[];
+  /** Users left out of this run for being idle (SC-1602). */
+  usersIdleSkipped: number;
   /** Errors encountered during sync */
   errors: Array<{
     accountId: string;
@@ -81,6 +91,8 @@ export interface SyncWalletBalancesResult {
     walletAddress: string;
     error: string;
   }>;
+  /** Each wallet whose ledger was read with its balance and wrote rows (SC-1665). */
+  ledgerWrites: LedgerWrite[];
   /** Duration of the operation in milliseconds */
   durationMs: number;
 }
@@ -91,6 +103,7 @@ export interface SyncWalletBalancesResult {
 @Service()
 export class SyncWalletBalancesUseCase {
   private readonly userWalletService = Container.get(UserWalletService);
+  private readonly ledgerSync = Container.get(AccountLedgerSync);
   private readonly accountService = Container.get(AccountService);
   private readonly tokenTypeRepository = Container.get(TokenTypeRepository);
   private readonly walletDiscovery = Container.get(WalletDiscoveryService);
@@ -101,6 +114,7 @@ export class SyncWalletBalancesUseCase {
   private readonly priceWarmupService = Container.get(PriceWarmupService);
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly exitProbe = Container.get(ExitedPositionProbe);
+  private readonly idlePolicy = Container.get(IdleUserSyncPolicy);
 
   async execute(): Promise<SyncWalletBalancesResult> {
     const startTime = Date.now();
@@ -122,7 +136,9 @@ export class SyncWalletBalancesUseCase {
         holdingsCreated: 0,
         holdingsRemoved: 0,
         exitedSymbols: [],
+        usersIdleSkipped: 0,
         errors: [],
+        ledgerWrites: [],
         durationMs: Date.now() - startTime,
       };
     }
@@ -153,7 +169,9 @@ export class SyncWalletBalancesUseCase {
       holdingsCreated += result.holdingsCreated;
       holdingsRemoved += result.holdingsRemoved;
       exitedSymbols.push(...result.exitedSymbols);
+      const usersIdleSkipped = result.usersIdleSkipped;
       errors.push(...result.errors);
+      const ledgerWrites = result.ledgerWrites;
 
       const totalAccountsFound = accountsSynced + accountsFailed;
       const durationMs = Date.now() - startTime;
@@ -167,6 +185,7 @@ export class SyncWalletBalancesUseCase {
           holdingsCreated,
           holdingsRemoved,
           exitedSymbols,
+          usersIdleSkipped,
           durationMs,
         },
         'Wallet balance sync completed'
@@ -180,7 +199,9 @@ export class SyncWalletBalancesUseCase {
         holdingsCreated,
         holdingsRemoved,
         exitedSymbols,
+        usersIdleSkipped,
         errors,
+        ledgerWrites,
         durationMs,
       };
     } catch (error) {
@@ -207,7 +228,9 @@ export class SyncWalletBalancesUseCase {
     holdingsCreated: number;
     holdingsRemoved: number;
     exitedSymbols: string[];
+    usersIdleSkipped: number;
     errors: SyncWalletBalancesResult['errors'];
+    ledgerWrites: LedgerWrite[];
   }> {
     const errors: SyncWalletBalancesResult['errors'] = [];
     const exitedSymbols: string[] = [];
@@ -216,6 +239,8 @@ export class SyncWalletBalancesUseCase {
     let holdingsUpdated = 0;
     let holdingsCreated = 0;
     let holdingsRemoved = 0;
+    let usersIdleSkipped = 0;
+    const idleUsers = await this.idlePolicy.usersToSkip();
 
     // Captured before any token can be created this run. Used to tell
     // genuinely-new tokens (created during this sync) apart from
@@ -242,6 +267,7 @@ export class SyncWalletBalancesUseCase {
       fetchedAt: Date;
       /** Symbols this run measured at zero — counted only once the write commits. */
       exitedSymbols: string[];
+      ledgerRead: LedgerRead;
     }> = [];
 
     // Keyset pagination cursor (id is uuid; lexicographic ordering is fine here).
@@ -267,6 +293,10 @@ export class SyncWalletBalancesUseCase {
       // concurrency batches instead of strictly one after another.
       const USER_CONCURRENCY = 8;
       const processUser = async (user: UserRow): Promise<void> => {
+        if (idleUsers.has(user.id)) {
+          usersIdleSkipped++;
+          return;
+        }
         // Get user's wallets
         const userWallets = await this.userWalletService.getUserWallets(user.id);
 
@@ -469,6 +499,12 @@ export class SyncWalletBalancesUseCase {
                   ),
               });
 
+              // Balance first, then the ledger (SC-1665, Q-1).
+              const ledgerRead = await this.ledgerSync.read({
+                userId: user.id,
+                accountId: syncAccount.id,
+                source: ledgerSourceOf(institution.name, syncAccount.metadata),
+              });
               walletDataToSync.push({
                 user,
                 userWallet,
@@ -479,6 +515,7 @@ export class SyncWalletBalancesUseCase {
                 exits: probed.snapshots,
                 fetchedAt,
                 exitedSymbols: probed.exitedSymbols,
+                ledgerRead,
               });
               pairTimings.push({
                 chain: institutionCode,
@@ -518,13 +555,19 @@ export class SyncWalletBalancesUseCase {
     const createdTokenIdsByUser = new Map<string, Set<string>>();
     const fetchPhaseMs = Date.now() - runStartedAt.getTime();
     const writeStartedAt = Date.now();
+    const changedUsers = new ChangedHoldingUsers();
+    const ledgerWrites: LedgerWrite[] = [];
     for (const walletData of walletDataToSync) {
       try {
-        const { user, account, snapshots } = walletData;
+        const { user, account, snapshots, ledgerRead } = walletData;
         const metadata = account.metadata as Record<string, unknown>;
-        const result = await withTransaction(
-          (tx) =>
-            this.holdingsSyncHelper.processSnapshotsForAccount({
+        const { result, ingested } = await withTransaction(
+          async (tx) => ({
+            ingested:
+              ledgerRead.kind === 'read'
+                ? await this.ledgerSync.write(ledgerRead.fetched, tx)
+                : null,
+            result: await this.holdingsSyncHelper.processSnapshotsForAccount({
               userId: user.id,
               accountId: account.id,
               inputSource: walletInputSource(accountChainId(metadata)),
@@ -536,7 +579,7 @@ export class SyncWalletBalancesUseCase {
               staleStrategy: 'preserve',
               sourceTag: WALLET_BALANCE_SYNC_SOURCE,
               respectHiddenForCounts: true,
-              skipUnchangedUpdates: false,
+              unchangedCheckpoint: 'skip-observation',
               // Auto-discover newly-received tokens. Snapshots for tokens
               // the user rejected at import review were already filtered
               // out above against `holding_exclusions`.
@@ -547,14 +590,22 @@ export class SyncWalletBalancesUseCase {
               arrival: 'auto_discovered',
               tx,
             }),
+          }),
           {
             name: 'sync-wallet-balances',
             timeout: 120000, // 120s timeout for potentially large sync operations
           }
         );
+        if (ledgerRead.kind === 'read' && ingested) {
+          const ledger = await this.ledgerSync.finish(ledgerRead.fetched, ingested);
+          if (ledger.transactions > 0) {
+            ledgerWrites.push({ userId: user.id, accountId: account.id, result: ledger });
+          }
+        }
         holdingsUpdated += result.updated;
         holdingsCreated += result.created;
         holdingsRemoved += result.removed;
+        changedUsers.record(user.id, result);
         // Claimed after the write, not after the probe: a row whose
         // persistence threw below still holds the old number.
         exitedSymbols.push(...walletData.exitedSymbols);
@@ -593,6 +644,8 @@ export class SyncWalletBalancesUseCase {
     const writePhaseMs = Date.now() - writeStartedAt;
     const warmStartedAt = Date.now();
     await this.scoreAndWarmNewTokens(createdTokenIdsByUser, runStartedAt);
+    // After the warm-up, so an open app refetches balances that already have a price.
+    changedUsers.announce('wallet_balance_sync');
     logger.info(
       {
         fetchPhaseMs,
@@ -610,7 +663,9 @@ export class SyncWalletBalancesUseCase {
       holdingsCreated,
       holdingsRemoved,
       exitedSymbols: Array.from(new Set(exitedSymbols)),
+      usersIdleSkipped,
       errors,
+      ledgerWrites,
     };
   }
 

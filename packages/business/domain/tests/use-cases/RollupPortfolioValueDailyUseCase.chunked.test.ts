@@ -8,15 +8,29 @@
  * comparison covers every column the rollup computes, not a stub's echo.
  */
 
-import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from 'bun:test';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  setDefaultTimeout,
+  spyOn,
+  test,
+} from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
-import { asc, eq, inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
-import { HoldingBalanceObservationRepository } from '../../src/repositories/HoldingBalanceObservationRepository';
-import { BalanceAtTimeService } from '../../src/services/pricing/BalanceAtTimeService';
+import type { EngineEvidenceRepository } from '../../src/repositories/EngineEvidenceRepository';
+import type { BalanceAtTimeService } from '../../src/services/pricing/BalanceAtTimeService';
 import { RollupPortfolioValueDailyUseCase } from '../../src/use-cases/RollupPortfolioValueDailyUseCase';
+import { seedHoldingCache } from '../../test/helpers/engine-guard';
+
+// Two of these roll 70 days up twice through real valuation: 12s median on
+// main's CI, 23.3s at worst, and one red at 30.4s under a shared runner (SC-1593).
+setDefaultTimeout(90_000);
 
 const DAY = 86_400_000;
 const LOOKBACK = 70;
@@ -102,10 +116,12 @@ async function setupFixture(): Promise<Fixture> {
         source: 'rpvc-test',
       }))
     );
-    const [holding] = await db
-      .insert(schema.holdings)
-      .values({ userId: user!.id, accountId: account!.id, tokenId: token!.id, balance: '7' })
-      .returning();
+    const [holding] = await seedHoldingCache(db, (calculator) =>
+      calculator
+        .insert(schema.holdings)
+        .values({ userId: user!.id, accountId: account!.id, tokenId: token!.id, balance: '7' })
+        .returning()
+    );
     await db.insert(schema.holdingTransactions).values(
       [
         { kind: 'buy', quantity: '10', daysAgo: 60 },
@@ -259,63 +275,41 @@ describe('RollupPortfolioValueDailyUseCase — chunked window (SC-1283)', () => 
     expect(dates[0]).toBe('2026-07-24'); // 59 days before the anchor
   });
 
-  // What exhausted the worker in prod: every chunk re-read the holding's
-  // whole observation history, and the balance walk only ever looks at the
-  // first row and the two bracketing each day (SC-1283).
-  test('a 30-day chunk hands the balance walk at most 1 + 2 x 30 observations per holding', async () => {
+  // What exhausted the worker in prod was a chunk holding more history than it
+  // needed (SC-1283). Since A5 PR-2 a chunk loads each holding's evidence once,
+  // a bounded batch of holdings at a time, and never once per day (D-11).
+  test('a 30-day chunk loads evidence once per batch of holdings, not once per day', async () => {
     await clearRows();
-    let largest = 0;
-    const real = BalanceAtTimeService.prototype.getBalance;
+    // Spy on the instances this rollup holds, not on the prototypes: other test
+    // files put their own repository in the container, and a singleton built
+    // while one was there keeps it for the rest of the process.
+    const useCase = Container.get(RollupPortfolioValueDailyUseCase);
+    const balances = (useCase as unknown as { balanceAtTimeService: BalanceAtTimeService })
+      .balanceAtTimeService;
+    const evidence = (balances as unknown as { evidenceRepository: EngineEvidenceRepository })
+      .evidenceRepository;
+    const batches: number[] = [];
+    const real = evidence.findHoldingEvidence.bind(evidence);
     spies.push(
-      spyOn(BalanceAtTimeService.prototype, 'getBalance').mockImplementation(function (
-        this: BalanceAtTimeService,
-        ...args: Parameters<BalanceAtTimeService['getBalance']>
-      ) {
-        for (const rows of args[3]?.observations?.values() ?? []) {
-          largest = Math.max(largest, rows.length);
-        }
-        return real.apply(this, args);
+      spyOn(evidence, 'findHoldingEvidence').mockImplementation((...args) => {
+        batches.push(args[0].holdingIds?.length ?? Number.POSITIVE_INFINITY);
+        return real(...args);
       })
     );
-    await Container.get(RollupPortfolioValueDailyUseCase).execute({
+    const getBalance = spyOn(balances, 'getBalance');
+    spies.push(getBalance);
+    await useCase.execute({
       userId: fixture.userId,
       lookbackDays: LOOKBACK,
       runStart: new Date(),
       dayOffsets: { from: 0, to: 30 },
     });
-    expect(largest).toBeGreaterThan(0);
-    expect(largest).toBeLessThanOrEqual(1 + 2 * 30);
-  });
-
-  test('the scoped observation read writes exactly the rows the full history does', async () => {
-    const runStart = new Date();
-    const run = () =>
-      Container.get(RollupPortfolioValueDailyUseCase).execute({
-        userId: fixture.userId,
-        lookbackDays: LOOKBACK,
-        runStart,
-      });
-
-    await clearRows();
-    await run();
-    const scoped = await readRows(fixture.userId);
-
-    await clearRows();
-    const repo = Container.get(HoldingBalanceObservationRepository);
-    spies.push(
-      spyOn(repo, 'findAnchorsForInstants').mockImplementation(async (holdingIds: string[]) => {
-        const rows = await db
-          .select()
-          .from(schema.holdingBalanceObservations)
-          .where(inArray(schema.holdingBalanceObservations.holdingId, holdingIds))
-          .orderBy(asc(schema.holdingBalanceObservations.observedAt));
-        return new Map(holdingIds.map((id) => [id, rows.filter((r) => r.holdingId === id)]));
-      })
-    );
-    await run();
-    const full = await readRows(fixture.userId);
-
-    expect(new Set(full.map((r) => r.totalValue)).size).toBeGreaterThan(10);
-    expect(scoped).toEqual(full);
+    expect(batches.length).toBeGreaterThan(0);
+    expect(Math.max(...batches)).toBeLessThanOrEqual(25);
+    expect(batches.length).toBeLessThan(30);
+    expect(getBalance).toHaveBeenCalled();
+    for (const call of getBalance.mock.calls) {
+      expect(call[3]?.balances?.get(call[0])?.get(call[1].getTime())).toBeDefined();
+    }
   });
 });

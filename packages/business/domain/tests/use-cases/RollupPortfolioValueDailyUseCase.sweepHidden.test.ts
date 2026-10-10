@@ -15,7 +15,7 @@ import * as schema from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { and, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
-import { HoldingBalanceObservationRepository } from '../../src/repositories/HoldingBalanceObservationRepository';
+import type { EngineEvidenceRepository } from '../../src/repositories/EngineEvidenceRepository';
 import { HoldingTransactionRepository } from '../../src/repositories/HoldingTransactionRepository';
 import { PortfolioValueDailyRepository } from '../../src/repositories/PortfolioValueDailyRepository';
 import {
@@ -23,6 +23,7 @@ import {
   PnLAtTimeService,
 } from '../../src/services/portfolio/PnLAtTimeService';
 import { RollupPortfolioValueDailyUseCase } from '../../src/use-cases/RollupPortfolioValueDailyUseCase';
+import { seedHoldingCache } from '../../test/helpers/engine-guard';
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
@@ -268,20 +269,22 @@ async function setupFixture(closed: Closed): Promise<Fixture> {
 
   const holdingIds: string[] = [];
   for (const spec of specs) {
-    const [holding] = await db
-      .insert(schema.holdings)
-      .values({
-        userId: user!.id,
-        accountId: spec.accountId,
-        tokenId: spec.tokenId,
-        balance: spec.balance,
-        isHidden: spec.isHidden,
-        hiddenBy: spec.hiddenBy,
-        isActive: spec.isActive,
-        createdAt: ago(31),
-        lastUpdated: ago(4, 8),
-      })
-      .returning();
+    const [holding] = await seedHoldingCache(db, (calculator) =>
+      calculator
+        .insert(schema.holdings)
+        .values({
+          userId: user!.id,
+          accountId: spec.accountId,
+          tokenId: spec.tokenId,
+          balance: spec.balance,
+          isHidden: spec.isHidden,
+          hiddenBy: spec.hiddenBy,
+          isActive: spec.isActive,
+          createdAt: ago(31),
+          lastUpdated: ago(4, 8),
+        })
+        .returning()
+    );
     holdingIds.push(holding!.id);
     await db.insert(schema.holdingTransactions).values(
       spec.trades.map((t, k) => ({
@@ -351,12 +354,16 @@ afterEach(async () => {
   }
 });
 
-const rollUp = (f: Fixture) =>
-  Container.get(RollupPortfolioValueDailyUseCase).execute({
+/** A price the series was not asked for is a per-user error, never a database read. */
+const rollUp = async (f: Fixture) => {
+  const summary = await Container.get(RollupPortfolioValueDailyUseCase).execute({
     userId: f.userId,
     lookbackDays: LOOKBACK,
     runStart: RUN_START,
   });
+  expect(summary.errors).toEqual([]);
+  return summary;
+};
 
 /** Every figure the user-scope row stores from one `getPnL` answer. */
 function figuresOf(r: PnLAtTimeResult) {
@@ -712,22 +719,32 @@ describe('RollupPortfolioValueDailyUseCase: a sweep-hidden holding (SC-1546)', (
   });
 
   // `DriftLedgerService` memoises on the ledger map it is handed. A map
-  // rebuilt per day would re-read every reading of every holding once per day.
-  test('one rollup reads the ledger and the readings once, however many days it values', async () => {
+  // rebuilt per day would re-read every holding's evidence once per day.
+  // Two evidence reads: one batch for the days' balances (A5 D-11), one for
+  // the drift ledger (SC-1637); a read per day would make it LOOKBACK + 1.
+  test('one rollup reads the ledger and the evidence once each, however many days it values', async () => {
     const f = await setupFixture({ isHidden: true, hiddenBy: 'auto', readings: true });
     const ledgerReads = spyOn(HoldingTransactionRepository.prototype, 'findForHoldingsAll');
-    const readingReads = spyOn(
-      HoldingBalanceObservationRepository.prototype,
-      'findReadingsForHoldings'
-    );
+    // Spy on the instances this rollup holds, not on the prototype: a singleton
+    // built while another file's repository sat in the container keeps it, and
+    // the prototype spy then counts 0 (CI build 1572).
+    const useCase = Container.get(RollupPortfolioValueDailyUseCase) as unknown as {
+      balanceAtTimeService: { evidenceRepository: EngineEvidenceRepository };
+      pnlService: { driftLedgerService: { evidenceRepository: EngineEvidenceRepository } };
+    };
+    const held = new Set([
+      useCase.balanceAtTimeService.evidenceRepository,
+      useCase.pnlService.driftLedgerService.evidenceRepository,
+    ]);
+    const readingReads = [...held].map((repo) => spyOn(repo, 'findHoldingEvidence'));
     try {
       const summary = await rollUp(f);
       expect(summary.daysComputed).toBe(LOOKBACK);
       expect(ledgerReads).toHaveBeenCalledTimes(1);
-      expect(readingReads).toHaveBeenCalledTimes(1);
+      expect(readingReads.reduce((calls, spy) => calls + spy.mock.calls.length, 0)).toBe(2);
     } finally {
       ledgerReads.mockRestore();
-      readingReads.mockRestore();
+      for (const spy of readingReads) spy.mockRestore();
     }
   });
 });

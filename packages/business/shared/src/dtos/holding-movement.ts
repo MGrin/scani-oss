@@ -25,7 +25,7 @@ import { manualOutflowDestinationSchema } from './transfer-review';
  * numeric type and a JSON number would round a 14-decimal crypto balance on
  * the way in.
  */
-const movementAmount = z
+export const movementAmount = z
   .string()
   .trim()
   .min(1)
@@ -154,3 +154,29 @@ export interface RecordHoldingMovementResult {
   /** Set only for a transfer: the pair both legs now share. */
   transferGroupId: string | null;
 }
+
+/**
+ * A hand-valued holding, edited in money (SC-1596). Its units are how the
+ * ledger keeps money moved apart from growth, so the owner never types one:
+ * a new value moves the price per unit, and money in or out buys or sells
+ * units at that day's price.
+ */
+const handValuedBase = {
+  holdingId: z.string().uuid(),
+  /** The currency the amounts are in, and the one the price is kept in. */
+  currencyCode: z.string().trim().min(3).max(10),
+  occurredAt: movementOccurredAt,
+};
+
+export const UpdateHandValueDto = z.object({ ...handValuedBase, value: movementAmount });
+export type UpdateHandValueInput = z.infer<typeof UpdateHandValueDto>;
+
+export const HAND_VALUED_DIRECTIONS = ['in', 'out'] as const;
+export type HandValuedDirection = (typeof HAND_VALUED_DIRECTIONS)[number];
+
+export const MoveHandValuedMoneyDto = z.object({
+  ...handValuedBase,
+  direction: z.enum(HAND_VALUED_DIRECTIONS),
+  amount: movementAmount,
+});
+export type MoveHandValuedMoneyInput = z.infer<typeof MoveHandValuedMoneyDto>;

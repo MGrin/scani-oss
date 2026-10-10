@@ -102,6 +102,14 @@ const ROUTES: readonly CaptureRoute[] = [
     path: V3_CAPTURE_ROUTES.integrations,
   },
   {
+    id: 'budgetApp',
+    group: 'connect',
+    titleKey: 'v3.capture.route.budgetApp.title',
+    descriptionKey: 'v3.capture.route.budgetApp.description',
+    icon: 'Import',
+    path: V3_CAPTURE_ROUTES.budgetAppImport,
+  },
+  {
     id: 'manual',
     group: 'manual',
     titleKey: 'v3.capture.route.manual.title',
@@ -117,6 +125,14 @@ const ROUTES: readonly CaptureRoute[] = [
     descriptionKey: 'v3.capture.route.movement.description',
     icon: 'ArrowLeftRight',
     path: V3_CAPTURE_ROUTES.recordMovement,
+  },
+  {
+    id: 'valuedAsset',
+    group: 'manual',
+    titleKey: 'v3.capture.route.valuedAsset.title',
+    descriptionKey: 'v3.capture.route.valuedAsset.description',
+    icon: 'House',
+    path: V3_CAPTURE_ROUTES.valuedAsset,
   },
   {
     id: 'payment',

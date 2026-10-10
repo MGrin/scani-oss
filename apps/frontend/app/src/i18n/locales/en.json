@@ -19,7 +19,9 @@
       "humanCheckFailed": "The human check could not load. Disable any blocker for challenges.cloudflare.com, then reload.",
       "cloudTitle": "Sign in to Scani Cloud",
       "cloudSubtitle": "Your API keys live in the Scani Cloud console. Enter your email to sign in or create an account.",
-      "cloudNewAccount": "New to Scani Cloud? Your account is created automatically, and you go straight back to the console."
+      "cloudNewAccount": "New to Scani Cloud? Your account is created automatically, and you go straight back to the console.",
+      "passkey": "Sign in with a passkey",
+      "passkeyFailed": "This device couldn't use a passkey. Sign in with your email instead."
     },
     "code": {
       "title": "Enter verification code",
@@ -55,6 +57,16 @@
     },
     "exits": {
       "label": "More about Scani"
+    },
+    "twoFactor": {
+      "title": "Two-factor sign-in",
+      "subtitle": "Enter the code from your authenticator app.",
+      "codeLabel": "6-digit code",
+      "backupLabel": "Backup code",
+      "trustDevice": "Trust this device for 30 days",
+      "submit": "Continue",
+      "useBackup": "Use a backup code",
+      "useAuthenticator": "Use my authenticator app"
     }
   },
   "currency": {
@@ -94,6 +106,7 @@
     "vaults": "Vaults",
     "tokens": "Tokens",
     "jobs": "Jobs",
+    "transactions": "Transactions",
     "settings": "Settings",
     "signOut": "Sign out",
     "more": "More",
@@ -110,7 +123,6 @@
   },
   "settings": {
     "title": "Settings",
-    "subtitle": "Manage your preferences",
     "profile": "Profile",
     "name": "Name",
     "namePlaceholder": "Your name",
@@ -189,7 +201,11 @@
         "balanceChanges_one": "balance change",
         "balanceChanges_counted_one": "{{count}} balance change",
         "balanceChanges_other": "balance changes",
-        "balanceChanges_counted_other": "{{count}} balance changes"
+        "balanceChanges_counted_other": "{{count}} balance changes",
+        "transactions_one": "transaction",
+        "transactions_other": "transactions",
+        "transactions_counted_one": "{{count}} transaction",
+        "transactions_counted_other": "{{count}} transactions"
       },
       "accounts": {
         "col": {
@@ -411,7 +427,8 @@
           "noRecentPrice": "No recent price",
           "noPriceSource": "No price source we can use",
           "negativeOpening": "Negative opening balance",
-          "noCoverage": "No coverage row"
+          "noCoverage": "No coverage row",
+          "restoredUnmatched": "Token not matched on restore"
         },
         "priceOption": {
           "stale": "Stale quote"
@@ -752,6 +769,29 @@
           "answersLandHere": "Answers you give in the balance queue land here, so you can undo one.",
           "nothingAnsweredYet": "No balance changes answered yet"
         }
+      },
+      "transactions": {
+        "col": {
+          "date": "Date",
+          "description": "Description",
+          "account": "Account",
+          "category": "Category",
+          "amount": "Amount"
+        },
+        "empty": {
+          "title": "No transactions yet",
+          "description": "Rows arrive as your accounts sync or as you import statements."
+        },
+        "filter": {
+          "category": "Category",
+          "account": "Account",
+          "holding": "Holding",
+          "period": "Period"
+        },
+        "period": {
+          "all": "All time",
+          "custom": "Custom range"
+        }
       }
     }
   },
@@ -767,5 +807,21 @@
     "signInDifferent": "Sign in with a different email",
     "connectionIssue": "Connection issue",
     "connectionIssueRetrying": "Connection issue — retrying"
+  },
+  "oauth": {
+    "continuing": "Connecting…",
+    "failed": "This connection could not be completed. Start again from the app you were connecting.",
+    "consent": {
+      "title": "{{name}} wants to read your Scani portfolio",
+      "account": "Signed in as {{email}}",
+      "canTitle": "It will be able to",
+      "can": "Read your holdings, accounts, transactions, returns and data-quality report.",
+      "cannotTitle": "It will not be able to",
+      "cannot": "Change, add or delete anything, or move money.",
+      "revoke": "You can disconnect it at any time in Settings.",
+      "allow": "Allow",
+      "deny": "Deny",
+      "unnamedApp": "An app"
+    }
   }
 }

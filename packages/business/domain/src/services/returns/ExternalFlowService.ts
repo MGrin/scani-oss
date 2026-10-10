@@ -7,13 +7,18 @@ import {
   flowRoleOfRow,
   rowIdsByHolding,
 } from '../../lib/returns/flow-classification';
-import { type ValuationBasis, valueRowInBase, valueTradeFeeInBase } from '../../lib/tx-valuation';
+import {
+  type ValuationBasis,
+  valuationInstantsOf,
+  valueRowInBase,
+  valueTradeFeeInBase,
+} from '../../lib/tx-valuation';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
-import { PriceGraphService } from '../pricing/PriceGraphService';
-import type { PriceLookup } from '../pricing/PriceLookup';
+import { PriceReader, type PriceSeries } from '../pricing/PriceReader';
 import { DriftLedgerService } from './DriftLedgerService';
 import type { WeightedHolding } from './ReturnsScopeResolver';
+import type { ReturnsSharedLoads } from './ReturnsSharedLoads';
 
 /**
  * One movement of money across a scope's boundary, in base currency — plus,
@@ -97,14 +102,16 @@ export type FlowProblem = 'unvalued' | 'stale' | 'unresolved';
 export class ExternalFlowService {
   private readonly txRepository = Container.get(HoldingTransactionRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
-  private readonly priceGraphService = Container.get(PriceGraphService);
+  private readonly priceReader = Container.get(PriceReader);
   private readonly driftLedgerService = Container.get(DriftLedgerService);
 
   async forHoldings(
     holdings: readonly WeightedHolding[],
     baseCurrencyId: string,
     from: Date,
-    to: Date
+    to: Date,
+    now: Date = new Date(),
+    shared?: ReturnsSharedLoads
   ): Promise<ExternalFlowSeries> {
     if (holdings.length === 0)
       return {
@@ -144,7 +151,7 @@ export class ExternalFlowService {
     const drift = await this.driftLedgerService.forHoldings(
       holdingRows[0]?.userId ?? '',
       new Map(holdingRows.filter((row) => row.isActive).map((row) => [row.id, row.tokenId])),
-      { tx: undefined }
+      { tx: undefined, shared: shared?.driftByHolding }
     );
     const transactions = [
       ...ledger,
@@ -163,26 +170,14 @@ export class ExternalFlowService {
 
     const heldTokenByHolding = new Map(holdingRows.map((row) => [row.id, row.tokenId]));
 
-    // Every token a valuation below could ask to convert: the token each
-    // holding holds, and — when the importer recorded an execution rate —
-    // the token that rate is denominated in, which is routinely neither the
-    // held token nor the base.
-    const tokenIds = new Set<string>(heldTokenByHolding.values());
-    for (const tx of transactions) {
-      if (tx.tokenId) tokenIds.add(tx.tokenId);
-      if (tx.priceNativeTokenId) tokenIds.add(tx.priceNativeTokenId);
-    }
-    // Bounded to `from` (SC-1306). The interval is `(from, to]` and every
-    // valuation below happens at `flowValuationInstant(tx.occurredAt)`, which
-    // only ever moves an instant FORWARD to the end of its own day — so no ask
-    // can land before `from`, and the repository's carry-in row makes the
-    // bounded index answer exactly as the unbounded one did.
-    const priceLookup = await this.priceGraphService.buildPriceLookup(
-      tokenIds,
-      baseCurrencyId,
-      to,
-      undefined,
-      from
+    // One series over every instant the valuations below read. Each flow is
+    // read at `flowValuationInstant`, which only ever moves an instant FORWARD
+    // to the end of its own day, or at its own instant (D-10).
+    const heldOf = (tx: HoldingTransaction) =>
+      heldTokenByHolding.get(tx.holdingId) ?? tx.tokenId ?? null;
+    const prices = await this.priceReader.series(
+      transactions.flatMap((tx) => valuationInstantsOf(tx, baseCurrencyId, heldOf(tx), now)),
+      baseCurrencyId
     );
 
     const flows: ExternalFlow[] = [];
@@ -230,13 +225,7 @@ export class ExternalFlowService {
       if (external.lte(0)) continue;
       const quantity = asRecorded.isNegative() ? external.negated() : external;
 
-      const valuation = await this.valueOf(
-        tx,
-        external,
-        baseCurrencyId,
-        heldTokenByHolding,
-        priceLookup
-      );
+      const valuation = valueRowInBase(prices, tx, external, baseCurrencyId, heldOf(tx), now);
       if (!valuation) {
         unvaluedCount += 1;
         flag(tx.holdingId, 'unvalued');
@@ -257,7 +246,7 @@ export class ExternalFlowService {
         valuation &&
         TRADE_KINDS.has(tx.kind) &&
         commissionCrossesInto(tx, heldTokenByHolding.get(tx.holdingId) ?? tx.tokenId ?? null)
-          ? await this.commissionOf(tx, baseCurrencyId, heldTokenByHolding, priceLookup)
+          ? commissionOf(prices, tx, baseCurrencyId, heldOf(tx), now)
           : new Decimal(0);
       const magnitude = valuation
         ? Decimal.max(
@@ -285,47 +274,22 @@ export class ExternalFlowService {
 
     return { flows, unvaluedCount, staleValuedCount, unresolvedCount, problemsByHolding };
   }
+}
 
-  private async valueOf(
-    tx: HoldingTransaction,
-    qtyAbs: Decimal,
-    baseCurrencyId: string,
-    heldTokenByHolding: ReadonlyMap<string, string>,
-    priceLookup: PriceLookup
-  ) {
-    // `holding_transactions.token_id` is documented as kept in sync with the
-    // holding's token, and the holding row is the authority when a bad
-    // ingester lets the two drift. Fall back to the row's own token rather
-    // than refusing to value it.
-    const heldTokenId = heldTokenByHolding.get(tx.holdingId) ?? tx.tokenId ?? null;
-    return valueRowInBase(
-      this.priceGraphService,
-      undefined,
-      tx,
-      qtyAbs,
-      baseCurrencyId,
-      heldTokenId,
-      priceLookup
-    );
-  }
-
-  private async commissionOf(
-    tx: HoldingTransaction,
-    baseCurrencyId: string,
-    heldTokenByHolding: ReadonlyMap<string, string>,
-    priceLookup: PriceLookup
-  ): Promise<Decimal> {
-    const heldTokenId = heldTokenByHolding.get(tx.holdingId) ?? tx.tokenId ?? null;
-    const fee = await valueTradeFeeInBase(
-      this.priceGraphService,
-      undefined,
-      tx,
-      baseCurrencyId,
-      heldTokenId,
-      priceLookup
-    );
-    return fee?.amount ?? new Decimal(0);
-  }
+// `holding_transactions.token_id` is documented as kept in sync with the
+// holding's token, and the holding row is the authority when a bad ingester
+// lets the two drift: `heldOf` falls back to the row's own token rather than
+// refusing to value it.
+function commissionOf(
+  prices: PriceSeries,
+  tx: HoldingTransaction,
+  baseCurrencyId: string,
+  heldTokenId: string | null,
+  now: Date
+): Decimal {
+  return (
+    valueTradeFeeInBase(prices, tx, baseCurrencyId, heldTokenId, now)?.amount ?? new Decimal(0)
+  );
 }
 
 const TRADE_KINDS: ReadonlySet<string> = new Set(['buy', 'sell']);

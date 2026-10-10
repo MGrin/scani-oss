@@ -25,8 +25,22 @@ export const accountTypes = pgTable('account_types', {
   description: text('description'),
   displayOrder: real('display_order').notNull().default(0),
   isActive: boolean('is_active').notNull().default(true),
+  // SC-1640: a liability account's holding is debt, stored negative.
+  class: text('class').$type<'asset' | 'liability'>().notNull().default('asset'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type WrapperTreatment = 'general' | 'deferred' | 'exempt' | 'advantaged';
+export type WrapperRegion = 'us' | 'uk' | 'ca' | 'au' | 'eu';
+
+// SC-1645: the wrappers an asset account may carry, each in one bucket.
+// Reference data, seeded by migration; NULL region is "anywhere".
+export const accountWrappers = pgTable('account_wrappers', {
+  code: text('code').primaryKey(),
+  region: text('region').$type<WrapperRegion>(),
+  treatment: text('treatment').$type<WrapperTreatment>().notNull(),
+  displayOrder: real('display_order').notNull(),
 });
 
 // Per-user financial accounts at an institution. Hidden accounts stay
@@ -55,6 +69,8 @@ export const accounts = pgTable(
     // `set null` on delete, not `cascade`: deleting an entity must not delete
     // the accounts inside it, and must not take their holdings with it.
     entityId: uuid('entity_id').references(() => entities.id, { onDelete: 'set null' }),
+    // SC-1645. NULL means general; a liability account never has one.
+    wrapper: text('wrapper').references(() => accountWrappers.code, { onDelete: 'restrict' }),
     metadata: jsonb('metadata').notNull().default('{}'), // Store wallet addresses and chain-specific data
     isHidden: boolean('is_hidden').notNull().default(false), // Hidden accounts excluded from UI but still synced
     isActive: boolean('is_active').notNull().default(true),
@@ -100,4 +116,5 @@ export const accountsRelations = relations(accounts, ({ one, many }) => ({
 
 export type AccountType = typeof accountTypes.$inferSelect;
 export type Account = typeof accounts.$inferSelect;
+export type AccountWrapper = typeof accountWrappers.$inferSelect;
 export type NewAccount = typeof accounts.$inferInsert;

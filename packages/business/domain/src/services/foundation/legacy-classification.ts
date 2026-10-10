@@ -39,6 +39,7 @@ import {
   type InputSourceClass,
   inputSourceClass,
   type LedgerMapping,
+  type LedgerMetadataFacts,
   mapLegacyEntry,
   PROVIDER_SYNC_ORIGIN,
   SYNC_CAPTURE_SOURCE,
@@ -48,7 +49,7 @@ import {
 // The columns classification, the engine and `BalanceAtTimeService` read, and
 // no others: the nightly shadow reads a heavy account's whole history through
 // these, in the worker's memory.
-export type EvidenceHolding = Pick<
+type EvidenceHolding = Pick<
   Holding,
   | 'id'
   | 'accountId'
@@ -110,7 +111,8 @@ export type EvidenceTransaction = Pick<
   | 'kindOrigin'
   | 'decisionId'
   | 'createdAt'
->;
+> &
+  LedgerMetadataFacts;
 
 export type EvidenceInput = Pick<FeedInput, 'id' | 'accountId' | 'source'>;
 export type EvidenceWindow = Pick<FeedInputWindow, 'id' | 'inputId' | 'fromAt' | 'toAt'>;
@@ -190,7 +192,7 @@ const FEED_HOLDING_SOURCES: ReadonlySet<string> = new Set([
   'ingest-backfill',
 ]);
 
-const STATEMENT_CLOSE_SOURCE = 'statement-close';
+export const STATEMENT_CLOSE_SOURCE = 'statement-close';
 
 /** O2: a file import writes its "now" copy within this long after the statement it read. */
 const FILE_IMPORT_COPY_WINDOW_MS = 120_000;

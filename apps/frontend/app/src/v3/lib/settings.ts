@@ -1,6 +1,7 @@
 import type { TFunction } from 'i18next';
 import type { DataQualityKind, DataQualitySets } from './dataQuality';
 import { holdingsQualityPath } from './routes';
+import { TOKENS_HIDDEN_PATH } from './tokens';
 /**
  * Settings' pure half — the two things on that screen that are derived rather
  * than typed in.
@@ -76,6 +77,8 @@ export interface DataQualityReport {
   /** Held tokens whose symbol is drawn from lookalike characters (SC-271).
    *  Optional so an older API simply reports none. */
   lookalikeTokens?: readonly { symbol: string; lookalikeOf: string }[];
+  /** Hidden holdings with a new balance (A5 #9). Optional so an older API reports none. */
+  hiddenWithNewBalance?: readonly string[];
   holdings: {
     visible: number;
     total: number;
@@ -85,6 +88,8 @@ export interface DataQualityReport {
     unpriceableVisible: number;
     negativeOpening: number;
     missingCoverage: number;
+    /** Holdings a restore put on a token of the reader's own (SC-1649 Q3). Optional so an older API reports none. */
+    restoredUnmatched?: number;
   };
   thresholds: { staleClosedDays: number };
 }
@@ -106,6 +111,8 @@ export interface DataQualityRow {
    * link that lands on an empty list.
    */
   href?: string;
+  /** The link's name when it lands somewhere other than Holdings (A5 #9). */
+  linkName?: string;
 }
 
 const UNROUTABLE_SAMPLE = 5;
@@ -190,6 +197,8 @@ export function dataQualityRows(t: TFunction, report: DataQualityReport): DataQu
   const noRecentPrice = count('noRecentPrice', report.holdings.unpricedVisible);
   const negativeOpening = count('negativeOpening', report.holdings.negativeOpening);
   const noCoverage = count('noCoverage', report.holdings.missingCoverage);
+  const hiddenNew = report.hiddenWithNewBalance?.length ?? 0;
+  const restoredUnmatched = count('restoredUnmatched', report.holdings.restoredUnmatched ?? 0);
 
   return [
     {
@@ -328,6 +337,35 @@ export function dataQualityRows(t: TFunction, report: DataQualityReport): DataQu
       value: noCoverage,
       warn: noCoverage > 0,
       href: destination('noCoverage', noCoverage > 0),
+    },
+    // SC-1649 Q3: a restore keeps a holding whose token this instance lacks
+    // on a token of the reader's own rather than refusing the file, and says
+    // so here. Only a restore produces one, so an account with none is not
+    // shown a row about restores.
+    ...(restoredUnmatched > 0
+      ? [
+          {
+            label: t('v3.settings.dataQuality.restoredUnmatched'),
+            value: restoredUnmatched,
+            warn: true,
+            hint: t('v3.settings.dataQuality.restoredUnmatchedHint'),
+            href: destination('restoredUnmatched', true),
+          },
+        ]
+      : []),
+    {
+      // A5 #9: a hide is its owner's and sticks, so money a feed later reports
+      // on a hidden row would sit outside every total unseen. Hidden rows are
+      // not in the holdings list, so the link goes where they are brought back.
+      label: t('v3.settings.dataQuality.hiddenNewBalance'),
+      value: hiddenNew,
+      warn: hiddenNew > 0,
+      hint: t('v3.settings.dataQuality.hiddenNewBalanceHint'),
+      href: hiddenNew > 0 ? TOKENS_HIDDEN_PATH : undefined,
+      linkName: t('v3.settings.dataQuality.rowLinkHidden', {
+        label: t('v3.settings.dataQuality.hiddenNewBalance'),
+        count: hiddenNew,
+      }),
     },
   ];
 }

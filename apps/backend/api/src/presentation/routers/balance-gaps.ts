@@ -9,6 +9,8 @@
  */
 
 import { BalanceGapAnswerRejected, BalanceGapService } from '@scani/domain/services';
+import { ReconcilePaymentsUseCase } from '@scani/domain/use-cases';
+import { createComponentLogger } from '@scani/logging';
 import { answerBalanceGapSchema } from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import Container from 'typedi';
@@ -16,6 +18,8 @@ import { z } from 'zod';
 import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
 import { strictInput } from '../lib/strict-input';
 import { protectedProcedure, router } from '../trpc';
+
+const logger = createComponentLogger('router:balance-gaps');
 
 export const balanceGapsRouter = router({
   crossCurrencyDestinations: protectedProcedure
@@ -66,6 +70,7 @@ export const balanceGapsRouter = router({
           answer: input.answer,
           editOutflow: input.editOutflow,
           receivedQuantity: input.receivedQuantity,
+          parts: input.parts,
           ...(input.occurredAt ? { occurredAt: input.occurredAt } : {}),
         })
         .catch((error: unknown) => {
@@ -92,7 +97,20 @@ export const balanceGapsRouter = router({
         }
       }
 
+      // A full rebuild until the Neon falsifier proves a range for this edit (SC-1607).
       await enqueuePortfolioRollup(ctx.userId);
+      // A flow row can pay a bill, so it is matched now rather than by hand
+      // (SC-1665). The answer is saved either way.
+      if (outcome.result.wroteKind === 'deposit' || outcome.result.wroteKind === 'withdraw') {
+        await Container.get(ReconcilePaymentsUseCase)
+          .execute(ctx.userId)
+          .catch((error: unknown) =>
+            logger.warn(
+              { userId: ctx.userId, err: error instanceof Error ? error.message : String(error) },
+              'Matching a gap answer to bills failed'
+            )
+          );
+      }
       return outcome.result;
     }),
 });

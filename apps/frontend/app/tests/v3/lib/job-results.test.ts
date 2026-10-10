@@ -2,6 +2,8 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import {
   capList,
+  readBudgetAppImport,
+  readBudgetAppUndo,
   readExchangeImport,
   readFileImport,
   readGenericJobResult,
@@ -203,6 +205,27 @@ describe('manual-holdings-create', () => {
   test('refuses a payload it cannot read', () => {
     expect(readManualHoldings({ holdings: [] })).toBeNull();
   });
+
+  test('an update the feed kept as a check says so (A5 D-20)', () => {
+    const view = readManualHoldings({
+      accountId: 'acc-1',
+      holdings: [
+        { id: 'a', symbol: 'BTC', balance: '120', typedBalance: '150', isUpdate: true },
+        { id: 'b', symbol: 'ETH', balance: '2.50', typedBalance: '2.5', isUpdate: true },
+        { id: 'c', symbol: 'SOL', balance: '9', isUpdate: false },
+        { id: 'd', symbol: 'ABC', balance: '4', isUpdate: true },
+      ],
+    });
+    expect(view?.rows.map((r) => r.savedAsCheck)).toEqual([true, false, false, false]);
+  });
+
+  test('an unreadable figure claims nothing rather than throwing', () => {
+    const view = readManualHoldings({
+      accountId: 'acc-1',
+      holdings: [{ id: 'a', symbol: 'BTC', balance: '120', typedBalance: 'x', isUpdate: true }],
+    });
+    expect(view?.rows[0]?.savedAsCheck).toBe(false);
+  });
 });
 
 describe('the fallback', () => {
@@ -222,5 +245,47 @@ describe('the fallback', () => {
   test('knows when it has nothing to say', () => {
     expect(readGenericJobResult({})?.isEmpty).toBe(true);
     expect(readGenericJobResult({ message: 'done' })?.isEmpty).toBe(false);
+  });
+});
+
+describe('a budget app import result (SC-1649)', () => {
+  test('counts the rows each account took, and leaves out the accounts skipped', () => {
+    const view = readBudgetAppImport({
+      importId: 'i1',
+      summary: {
+        accounts: [
+          { name: 'Checking', accountId: 'a1', created: true, rowsInserted: 3, rowsUpdated: 0 },
+          { name: 'Savings', accountId: 'a2', created: false, rowsInserted: 1, rowsUpdated: 2 },
+          { name: 'Old card', accountId: null, created: false, rowsInserted: 0, rowsUpdated: 0 },
+        ],
+        transfersPaired: 1,
+        transfersUnpaired: 2,
+        skippedRows: [
+          { line: 4, reason: 'zero-amount' },
+          { line: 7, reason: 'split-parent' },
+        ],
+      },
+    });
+    expect(view).toMatchObject({
+      importId: 'i1',
+      rowsInserted: 4,
+      transfersPaired: 1,
+      transfersUnpaired: 2,
+      skippedRows: 1,
+    });
+    expect(view?.accounts.map((a) => a.name)).toEqual(['Checking', 'Savings']);
+  });
+
+  test('a result with no import id is not read as one', () => {
+    expect(readBudgetAppImport({ summary: { accounts: [] } })).toBeNull();
+  });
+
+  test('an undo reads what it removed and what it kept', () => {
+    expect(readBudgetAppUndo({ rowsRemoved: 4, accountsRemoved: 1, accountsKept: 1 })).toEqual({
+      rowsRemoved: 4,
+      accountsRemoved: 1,
+      accountsKept: 1,
+    });
+    expect(readBudgetAppUndo({})).toBeNull();
   });
 });

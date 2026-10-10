@@ -88,6 +88,8 @@ const SEND_DELAY_MS = 8_000;
 // won't trigger stalled-job recovery.
 const MAX_FETCH_RETRIES = 24;
 const FETCH_DELAY_MS = 12_000;
+// Long enough for one sync run's balance and ledger reads, short of the next hourly run.
+const STATEMENT_REUSE_MS = 10 * 60 * 1000;
 // IBKR Flex Web Service serializes generation per token. A SendRequest
 // can hang for tens of seconds if the previous one hasn't cleared
 // server-side. 60s gives the call time to ride out the slow path
@@ -269,6 +271,9 @@ interface CashTransactionRow {
   transactionID: string;
   /** `'DETAIL'` | `'SUMMARY'` | `''` when the template does not ask for it. */
   levelOfDetail: string;
+  /** The security a dividend or a withholding belongs to, when the template asks for it. */
+  symbol: string;
+  isin: string;
 }
 
 function delay(ms: number): Promise<void> {
@@ -538,6 +543,8 @@ function parseCashTransactions(xml: string): CashTransactionRow[] {
       tradeID: extractAttr(attrs, 'tradeID'),
       transactionID: extractAttr(attrs, 'transactionID'),
       levelOfDetail: extractAttr(attrs, 'levelOfDetail'),
+      symbol: extractAttr(attrs, 'symbol'),
+      isin: extractAttr(attrs, 'isin'),
     });
   }
   return out;
@@ -598,6 +605,62 @@ function classifyCashType(type: string, amount: string): CashKind | null {
     default:
       return null;
   }
+}
+
+export type IbkrPaidBy = { symbol: string; isin: string };
+
+const DIVIDEND_CASH_TYPES: ReadonlySet<string> = new Set([
+  'Dividends',
+  'Payment In Lieu Of Dividends',
+]);
+
+// `SYMBOL(ISIN) …`, how IBKR opens the description of every dividend and of
+// the tax withheld from it, e.g. `ACME(ZZ0000000017) CASH DIVIDEND USD 0.24
+// PER SHARE - US TAX`. A symbol may hold a space or a dot (`BRK B`, `RDS.A`).
+const PAID_BY = /^\s*([A-Z0-9][A-Z0-9 .\-/]*?)\s*\(([A-Z]{2}[A-Z0-9]{9}[0-9])\)/i;
+
+/** The security a dividend or withholding description names, or null. */
+export function ibkrPaidBy(description: string): IbkrPaidBy | null {
+  const match = PAID_BY.exec(description);
+  if (!match?.[1] || !match[2]) return null;
+  return { symbol: match[1].toUpperCase(), isin: match[2].toUpperCase() };
+}
+
+/** The fields of a Flex cash row that say whose dividend it is. */
+export type IbkrCashFacts = {
+  type: string;
+  description: string;
+  symbol?: string | null;
+  isin?: string | null;
+};
+
+// The row's own attributes where the template carries them; the description otherwise.
+function paidByOf(c: IbkrCashFacts): IbkrPaidBy | null {
+  if (c.symbol && c.isin) return { symbol: c.symbol.toUpperCase(), isin: c.isin.toUpperCase() };
+  return ibkrPaidBy(c.description);
+}
+
+const IN_LIEU = /PAYMENT IN LIEU OF DIVIDEND/i;
+
+/**
+ * What a dividend or a withholding row says about itself, for the ledger
+ * (SC-1644): `income: 'dividend'` on a dividend, the `paidBy` security on
+ * both, and `inLieu: true` on a payment in lieu and the tax withheld from it.
+ * A security can pay both on one day, and `inLieu` is what tells the linker
+ * which of the two a withholding belongs to. The backfill calls this too.
+ */
+export function ibkrCashSourceMetadata(c: IbkrCashFacts): Record<string, unknown> | undefined {
+  const isDividend = DIVIDEND_CASH_TYPES.has(c.type);
+  if (!isDividend && c.type !== 'Withholding Tax') return undefined;
+  const paidBy = paidByOf(c);
+  const inLieu =
+    c.type === 'Payment In Lieu Of Dividends' || (!isDividend && IN_LIEU.test(c.description));
+  if (!isDividend && !paidBy) return undefined;
+  return {
+    ...(isDividend ? { income: 'dividend' } : {}),
+    ...(paidBy ? { paidBy } : {}),
+    ...(inLieu ? { inLieu: true } : {}),
+  };
 }
 
 function buildEquityIdentity(t: TradeRow): Partial<NewToken> {
@@ -744,6 +807,12 @@ function cashTxDropReason(c: CashTransactionRow): CashDropReason | null {
   return null;
 }
 
+function withSourceMetadata(
+  sourceMetadata: Record<string, unknown> | undefined
+): Pick<TransactionEvent, 'sourceMetadata'> {
+  return sourceMetadata ? { sourceMetadata } : {};
+}
+
 function cashTxToEvent(c: CashTransactionRow): TransactionEvent | null {
   if (cashTxDropReason(c)) return null;
   const kind = classifyCashType(c.type, c.amount);
@@ -762,6 +831,7 @@ function cashTxToEvent(c: CashTransactionRow): TransactionEvent | null {
       quantity: enforceSign(c.amount, kind),
       tokenType: 'fiat',
     },
+    ...withSourceMetadata(ibkrCashSourceMetadata(c)),
     rawPayload: c,
   };
 }
@@ -785,8 +855,17 @@ export class IbkrProvider
    */
   constructor(
     private readonly limiter: OutflowRateLimiter,
-    private readonly sleep: (ms: number) => Promise<void> = delay
+    private readonly sleep: (ms: number) => Promise<void> = delay,
+    private readonly now: () => number = Date.now
   ) {}
+
+  /**
+   * The statement this process fetched last, per token and query, reused for
+   * `STATEMENT_REUSE_MS` (SC-1665). One sync run reads the balance and then
+   * the ledger, and IBKR builds the statement once a day, so the second read
+   * would ask for the same statement and spend the Flex budget doing it.
+   */
+  private readonly statements = new Map<string, { xml: string; fetchedAt: number }>();
 
   /** A cash currency missing from one statement is not evidence it went to
    *  zero (SC-1451): the CashReport has left out a currency that was still
@@ -1084,6 +1163,19 @@ export class IbkrProvider
   }
 
   private async runFlexQuery(
+    token: string,
+    queryId: string,
+    onStatus?: (message: string) => void | Promise<void>
+  ): Promise<string> {
+    const key = `${credentialBucketKey(token)}:${queryId}`;
+    const reused = this.statements.get(key);
+    if (reused && this.now() - reused.fetchedAt < STATEMENT_REUSE_MS) return reused.xml;
+    const xml = await this.fetchFlexStatement(token, queryId, onStatus);
+    this.statements.set(key, { xml, fetchedAt: this.now() });
+    return xml;
+  }
+
+  private async fetchFlexStatement(
     token: string,
     queryId: string,
     onStatus?: (message: string) => void | Promise<void>

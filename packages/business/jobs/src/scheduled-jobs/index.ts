@@ -1,4 +1,7 @@
+import type { ScheduledJobStepDescriptor } from '@scani/queue';
+
 export { ACTIVATION_NUDGE_SCHEDULE } from './activation-nudge';
+export { ACTIVE_PRICING_SCHEDULE } from './active-pricing';
 export { ALERT_SWEEP_SCHEDULE } from './alert-sweep';
 export { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
 export { BACKFILL_COUNTERPARTY_SCHEDULE } from './backfill-counterparty';
@@ -15,11 +18,19 @@ export {
 export { ENGINE_SHADOW_SCHEDULE } from './engine-shadow';
 export { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 export { EXCHANGE_TRANSACTIONS_SCHEDULE } from './exchange-transactions';
+export {
+  HOURLY_SCHEDULE,
+  HOUSEKEEPING_SCHEDULE,
+  MORNING_SCHEDULE,
+  NIGHTLY_SCHEDULE,
+} from './groups';
 export { HIDE_CLOSED_HOLDINGS_SCHEDULE } from './hide-closed-holdings';
 export { HISTORICAL_PRICE_BACKFILL_SCHEDULE } from './historical-price-backfill';
 export {
+  HEARTBEAT_DAILY_DEADLINE_UTC_HOUR,
   HEARTBEAT_TOLERANCE_MS,
   JOB_HEARTBEAT_PROBE_SCHEDULE,
+  missedDailyDeadline,
 } from './job-heartbeat-probe';
 export { PAYMENT_DUE_REMINDER_SCHEDULE } from './payment-due-reminder';
 export { PAYMENT_HORIZON_ROLL_SCHEDULE } from './payment-horizon-roll';
@@ -34,15 +45,12 @@ export {
   STALE_SYNC_PROBE_SCHEDULE,
   STALE_SYNC_RENOTIFY_MS,
 } from './stale-sync-probe';
-export {
-  TOKEN_PRICES_DOWNSAMPLE_SCHEDULE,
-  TOKEN_PRICES_INTRADAY_RETENTION_DAYS,
-} from './token-prices-downsample';
 export { TRANSFER_LINKING_SCHEDULE } from './transfer-linking';
 export { WALLET_BALANCES_SCHEDULE } from './wallet-balances';
 export { WEEKLY_DIGEST_SCHEDULE } from './weekly-digest';
 
 import { ACTIVATION_NUDGE_SCHEDULE } from './activation-nudge';
+import { ACTIVE_PRICING_SCHEDULE } from './active-pricing';
 import { ALERT_SWEEP_SCHEDULE } from './alert-sweep';
 import { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
 import { BACKFILL_COUNTERPARTY_SCHEDULE } from './backfill-counterparty';
@@ -52,6 +60,12 @@ import { DLQ_DEPTH_PROBE_SCHEDULE } from './dlq-depth-probe';
 import { ENGINE_SHADOW_SCHEDULE } from './engine-shadow';
 import { EXCHANGE_BALANCES_SCHEDULE } from './exchange-balances';
 import { EXCHANGE_TRANSACTIONS_SCHEDULE } from './exchange-transactions';
+import {
+  HOURLY_SCHEDULE,
+  HOUSEKEEPING_SCHEDULE,
+  MORNING_SCHEDULE,
+  NIGHTLY_SCHEDULE,
+} from './groups';
 import { HIDE_CLOSED_HOLDINGS_SCHEDULE } from './hide-closed-holdings';
 import { HISTORICAL_PRICE_BACKFILL_SCHEDULE } from './historical-price-backfill';
 import { JOB_HEARTBEAT_PROBE_SCHEDULE } from './job-heartbeat-probe';
@@ -64,51 +78,53 @@ import { RECONCILE_PENDING_CREDENTIALS_SCHEDULE } from './reconcile-pending-cred
 import { RESCORE_SCAM_TOKENS_SCHEDULE } from './rescore-scam-tokens';
 import { SPLIT_HOLDING_PROBE_SCHEDULE } from './split-holding-probe';
 import { STALE_SYNC_PROBE_SCHEDULE } from './stale-sync-probe';
-import { TOKEN_PRICES_DOWNSAMPLE_SCHEDULE } from './token-prices-downsample';
 import { TRANSFER_LINKING_SCHEDULE } from './transfer-linking';
 import { WALLET_BALANCES_SCHEDULE } from './wallet-balances';
 import { WEEKLY_DIGEST_SCHEDULE } from './weekly-digest';
 
+// The schedules the worker arms (SC-1688): four groups and the two jobs that
+// keep a schedule of their own. A step is registered in the SAME commit as its
+// processor: a step with no processor refuses at boot
+// (`ScheduledJobGroupProcessor`), and a schedule with no processor fails once
+// per tick, in production, into the DLQ (SC-283).
 export const SCHEDULED_JOB_DESCRIPTORS = [
-  PRICING_SCHEDULE,
-  WALLET_BALANCES_SCHEDULE,
-  EXCHANGE_BALANCES_SCHEDULE,
-  EXCHANGE_TRANSACTIONS_SCHEDULE,
-  APY_PAYOUTS_SCHEDULE,
-  // Registered in the SAME commit as `PaymentDueReminderProcessor` (SC-283).
-  // A schedule with no processor does not fail the build, a test, or boot —
-  // it fails once per tick, in production, into the DLQ.
-  PAYMENT_DUE_REMINDER_SCHEDULE,
-  // Registered in the SAME commit as `PaymentHorizonRollProcessor` (SC-622),
-  // for the reason given on `PAYMENT_DUE_REMINDER_SCHEDULE`.
-  PAYMENT_HORIZON_ROLL_SCHEDULE,
-  // Registered in the SAME commit as `WeeklyDigestProcessor` (SC-460), for the
-  // reason given on `PAYMENT_DUE_REMINDER_SCHEDULE`. That reason was written
-  // as "one line above" and this list is built to have entries inserted into
-  // it, so the next insertion made it name the wrong entry (SC-622).
+  HOUSEKEEPING_SCHEDULE,
+  ACTIVE_PRICING_SCHEDULE,
+  HOURLY_SCHEDULE,
+  NIGHTLY_SCHEDULE,
+  MORNING_SCHEDULE,
+  // Alone, so it never mails in the same hour as alert-sweep (SC-459).
   WEEKLY_DIGEST_SCHEDULE,
-  // And in the SAME commit as `AlertSweepProcessor` (SC-459).
-  ALERT_SWEEP_SCHEDULE,
-  // In the SAME commit as `ActivationNudgeProcessor` (SC-1503).
-  ACTIVATION_NUDGE_SCHEDULE,
-  RECONCILE_PENDING_CREDENTIALS_SCHEDULE,
-  RECONCILE_ORPHANED_USER_JOBS_SCHEDULE,
-  HISTORICAL_PRICE_BACKFILL_SCHEDULE,
-  TOKEN_PRICES_DOWNSAMPLE_SCHEDULE,
-  PORTFOLIO_VALUE_ROLLUP_SCHEDULE,
-  TRANSFER_LINKING_SCHEDULE,
-  BACKFILL_TOKEN_IDENTITY_SCHEDULE,
-  BACKFILL_COUNTERPARTY_SCHEDULE,
-  HIDE_CLOSED_HOLDINGS_SCHEDULE,
-  DLQ_DEPTH_PROBE_SCHEDULE,
-  RESCORE_SCAM_TOKENS_SCHEDULE,
-  JOB_HEARTBEAT_PROBE_SCHEDULE,
-  STALE_SYNC_PROBE_SCHEDULE,
-  SPLIT_HOLDING_PROBE_SCHEDULE,
-  // Registered in the SAME commit as `EngineShadowProcessor` (foundation A1),
-  // for the reason given on `PAYMENT_DUE_REMINDER_SCHEDULE` above.
-  ENGINE_SHADOW_SCHEDULE,
-  // Registered in the SAME commit as `DbBackupProcessor` (SC-793), for the
-  // reason given on `PAYMENT_DUE_REMINDER_SCHEDULE` above.
-  DB_BACKUP_SCHEDULE,
 ] as const;
+
+// Every job that runs as a step of a group, by name: its lock, jitter and
+// heartbeat name.
+export const SCHEDULED_JOB_STEPS: Readonly<Record<string, ScheduledJobStepDescriptor>> =
+  Object.fromEntries(
+    [
+      ACTIVATION_NUDGE_SCHEDULE,
+      ALERT_SWEEP_SCHEDULE,
+      APY_PAYOUTS_SCHEDULE,
+      BACKFILL_COUNTERPARTY_SCHEDULE,
+      BACKFILL_TOKEN_IDENTITY_SCHEDULE,
+      DB_BACKUP_SCHEDULE,
+      DLQ_DEPTH_PROBE_SCHEDULE,
+      ENGINE_SHADOW_SCHEDULE,
+      EXCHANGE_BALANCES_SCHEDULE,
+      EXCHANGE_TRANSACTIONS_SCHEDULE,
+      HIDE_CLOSED_HOLDINGS_SCHEDULE,
+      HISTORICAL_PRICE_BACKFILL_SCHEDULE,
+      JOB_HEARTBEAT_PROBE_SCHEDULE,
+      PAYMENT_DUE_REMINDER_SCHEDULE,
+      PAYMENT_HORIZON_ROLL_SCHEDULE,
+      PORTFOLIO_VALUE_ROLLUP_SCHEDULE,
+      PRICING_SCHEDULE,
+      RECONCILE_ORPHANED_USER_JOBS_SCHEDULE,
+      RECONCILE_PENDING_CREDENTIALS_SCHEDULE,
+      RESCORE_SCAM_TOKENS_SCHEDULE,
+      SPLIT_HOLDING_PROBE_SCHEDULE,
+      STALE_SYNC_PROBE_SCHEDULE,
+      TRANSFER_LINKING_SCHEDULE,
+      WALLET_BALANCES_SCHEDULE,
+    ].map((d) => [d.name, d])
+  );
