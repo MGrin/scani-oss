@@ -71,6 +71,8 @@ export const disposalOutcomeCountsSchema = z.object({
   unreviewed: z.number().int().nonnegative(),
   retained: z.number().int().nonnegative(),
   awaiting_pair: z.number().int().nonnegative(),
+  fee: z.number().int().nonnegative(),
+  derivative_loss: z.number().int().nonnegative(),
 });
 
 export type DisposalOutcomeCounts = z.infer<typeof disposalOutcomeCountsSchema>;

@@ -130,6 +130,8 @@ function disposalNounKey(kind: string): string {
       return 'v3.realizedLedger.noun.withdrawal';
     case 'transfer_out':
       return 'v3.realizedLedger.noun.transfer';
+    case 'realized_pnl':
+      return 'v3.realizedLedger.noun.derivativeLoss';
     default:
       return 'v3.realizedLedger.noun.disposal';
   }
@@ -151,6 +153,8 @@ export function disposalVerb(kind: string, t: TFunction): string {
       return t('v3.realizedLedger.verb.withdrew');
     case 'transfer_out':
       return t('v3.realizedLedger.verb.transferredOut');
+    case 'realized_pnl':
+      return t('v3.realizedLedger.verb.lostOnDerivatives');
     default:
       return t('v3.realizedLedger.verb.disposed');
   }
@@ -208,6 +212,8 @@ export function outcomeNote(
       // way and the sentence would be a caveat about a figure the row does not
       // carry (SC-888).
       return t('v3.realizedLedger.outcome.fee');
+    case 'derivative_loss':
+      return t('v3.realizedLedger.outcome.derivativeLoss');
   }
 }
 
