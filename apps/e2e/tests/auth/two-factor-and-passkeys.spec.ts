@@ -123,7 +123,7 @@ test.describe('auth: passkeys (SC-1646)', () => {
     await enrol(page);
     await authenticator(page, true);
 
-    await page.goto('/settings');
+    await page.goto('/settings/account');
     await page.getByRole('button', { name: 'Add a passkey' }).click();
     await expect(page.getByText('Passkey added.').first()).toBeVisible();
 
@@ -137,7 +137,7 @@ test.describe('auth: passkeys (SC-1646)', () => {
   test('a passkey that cannot verify the user is refused', async ({ page }, testInfo) => {
     await signIn({ page, testInfo });
     const { cdp, authenticatorId } = await authenticator(page, true);
-    await page.goto('/settings');
+    await page.goto('/settings/account');
     await page.getByRole('button', { name: 'Add a passkey' }).click();
     await expect(page.getByText('Passkey added.').first()).toBeVisible();
 
@@ -171,7 +171,7 @@ test.describe('auth: passkeys fail safe (SC-1646)', () => {
   test('adding a passkey fails readably and adds nothing', async ({ page }, testInfo) => {
     await page.addInitScript(NO_AUTHENTICATOR);
     await signIn({ page, testInfo });
-    await page.goto('/settings');
+    await page.goto('/settings/account');
     await page.getByRole('button', { name: 'Add a passkey' }).click();
     await expect(page.getByText("This device couldn't save a passkey.").first()).toBeVisible();
     await expect(page.getByText(/w3\.org|NotAllowedError/)).toHaveCount(0);
