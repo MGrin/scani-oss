@@ -439,3 +439,133 @@ describe('a later deposit replaces the answer’s arrival within the arrival win
     });
   });
 });
+
+/**
+ * SC-1665 Part 2. A gap whose money went to several places is answered in
+ * parts. The service writes one withdrawal for the drift and divides it with
+ * the transfer review's split, so each move lands in one transfer group.
+ */
+describe('a balance gap answered in parts (SC-1665)', () => {
+  async function secondDestination(tx: DatabaseTransaction, userId: string, tokenId: string) {
+    const institution = await makeInstitution(tx);
+    const account = await makeAccount(tx, { userId, institutionId: institution.id });
+    return makeHolding(tx, { userId, accountId: account.id, tokenId, source: 'manual' });
+  }
+
+  test('one withdrawal, one arrival per destination, one group, and undo takes them all', async () => {
+    await withTestDb(async (tx) => {
+      const { user, source, destination, closing } = await fixture(tx);
+      const wise = await secondDestination(tx, user.id, source.tokenId);
+      const service = new BalanceGapService();
+      const input = {
+        observationId: closing.id,
+        answer: 'flow' as const,
+        parts: [
+          {
+            decision: 'internal' as const,
+            quantity: '120',
+            destination: { accountId: destination.accountId, holdingId: destination.id },
+          },
+          {
+            decision: 'internal' as const,
+            quantity: '50',
+            destination: { accountId: wise.accountId, holdingId: wise.id },
+          },
+          { decision: 'left_control' as const, quantity: '30' },
+        ],
+      };
+      const result = await service.answer(user.id, input, new Date(), tx);
+      expect(result).toHaveProperty('result');
+      expect(await service.answer(user.id, input, new Date(), tx)).toEqual(result);
+
+      const rows = await tx
+        .select()
+        .from(schema.holdingTransactions)
+        .where(eq(schema.holdingTransactions.userId, user.id));
+      const withdrawal = rows.find((row) => row.holdingId === source.id);
+      expect(withdrawal?.quantity).toBe('-200');
+      expect(withdrawal?.transferReview).toBe('split');
+      const arrivals = new Map(
+        rows.filter((row) => row.kind === 'transfer_in').map((row) => [row.holdingId, row])
+      );
+      expect(arrivals.get(destination.id)?.quantity).toBe('120');
+      expect(arrivals.get(wise.id)?.quantity).toBe('50');
+      expect(arrivals.get(destination.id)?.transferGroupId).toBe(withdrawal?.transferGroupId ?? '');
+      expect(arrivals.get(wise.id)?.transferGroupId).toBe(withdrawal?.transferGroupId ?? '');
+      // The destination's balance was observed, so the answer does not move it.
+      const [after] = await tx
+        .select({ balance: schema.holdings.balance })
+        .from(schema.holdings)
+        .where(eq(schema.holdings.id, destination.id));
+      expect(after?.balance).toBe('700');
+
+      expect(await service.undo(user.id, closing.id, tx)).toBe(true);
+      const left = await tx
+        .select({ id: schema.holdingTransactions.id })
+        .from(schema.holdingTransactions)
+        .where(eq(schema.holdingTransactions.userId, user.id));
+      expect(left).toEqual([]);
+    });
+  });
+
+  const REFUSED: ReadonlyArray<
+    readonly [string, (d: { accountId: string; id: string }) => object]
+  > = [
+    [
+      'parts that do not add up to the drift',
+      (d) => ({
+        parts: [
+          {
+            decision: 'internal',
+            quantity: '120',
+            destination: { accountId: d.accountId, holdingId: d.id },
+          },
+          { decision: 'left_control', quantity: '30' },
+        ],
+      }),
+    ],
+    [
+      'a paired part, which a gap has no deposit for',
+      (d) => ({
+        parts: [
+          { decision: 'paired', quantity: '170', matchTransactionId: crypto.randomUUID() },
+          {
+            decision: 'internal',
+            quantity: '30',
+            destination: { accountId: d.accountId, holdingId: d.id },
+          },
+        ],
+      }),
+    ],
+    [
+      'parts beside a whole destination',
+      (d) => ({
+        editOutflow: {
+          decision: 'internal',
+          destination: { accountId: d.accountId, holdingId: d.id },
+        },
+        parts: [
+          { decision: 'untracked', quantity: '170' },
+          { decision: 'left_control', quantity: '30' },
+        ],
+      }),
+    ],
+  ];
+
+  for (const [label, extra] of REFUSED) {
+    test(`${label} is refused`, async () => {
+      await withTestDb(async (tx) => {
+        const { user, destination, closing } = await fixture(tx);
+        const service = new BalanceGapService();
+        await expect(
+          service.answer(
+            user.id,
+            { observationId: closing.id, answer: 'flow', ...extra(destination) } as never,
+            new Date(),
+            tx
+          )
+        ).rejects.toBeInstanceOf(BalanceGapAnswerRejected);
+      });
+    });
+  }
+});

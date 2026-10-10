@@ -84,3 +84,23 @@ export function sourceForChainId(chainId: string | number | null | undefined): s
   if (Number.isFinite(numeric) && EVM_CHAIN_IDS.has(numeric)) return EVM_WALLET_SOURCE;
   return NON_EVM_CHAIN_SOURCE_MAP[String(chainId)] ?? null;
 }
+
+/**
+ * The ledger source of one account: its provider's, or for a wallet its
+ * chain's. The recurring transaction sync and the balance syncs that read
+ * the ledger with the balance (SC-1665) both resolve it here.
+ */
+export function ledgerSourceOf(institutionName: string, accountMetadata: unknown): string | null {
+  const chainId = ((accountMetadata ?? {}) as { chainId?: unknown }).chainId;
+  return (
+    sourceForProvider(institutionName) ??
+    sourceForChainId(typeof chainId === 'string' || typeof chainId === 'number' ? chainId : null)
+  );
+}
+
+/** Every source a ledger read can write: each provider's and each chain's. */
+export const LEDGER_SOURCES: ReadonlySet<string> = new Set([
+  ...Object.values(PROVIDER_SOURCE_MAP),
+  EVM_WALLET_SOURCE,
+  ...Object.values(NON_EVM_CHAIN_SOURCE_MAP),
+]);

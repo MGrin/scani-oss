@@ -274,6 +274,19 @@ export abstract class BaseEvmProvider implements ProviderBase {
   protected abstract fetchLatestBlock(chain: EvmChainConfig, apiKey: string): Promise<number>;
 
   /**
+   * The block at or before `at`, so a read with `since` walks from there
+   * rather than from genesis (SC-1665). `null` when the chain cannot say,
+   * which walks from block 0: slower, never a skipped row.
+   */
+  protected async fetchBlockAtOrBefore(
+    _chain: EvmChainConfig,
+    _at: Date,
+    _apiKey: string
+  ): Promise<number | null> {
+    return null;
+  }
+
+  /**
    * Resolve the wallet address + API key out of the
    * credentials/context. Subclasses pull whatever fields the venue
    * needs — for Etherscan it's `apiKey` from credentials and a
@@ -294,13 +307,12 @@ export abstract class BaseEvmProvider implements ProviderBase {
     const chain = this.getChainConfig(ctx.institutionCode);
     const { walletAddress, apiKey } = await this.resolveRequestParams(ctx);
 
-    // since/until → block range. Etherscan V2 doesn't accept
-    // timestamps directly; subclasses can either hint via a
-    // block-by-timestamp call (most chains support it) or just
-    // start at 0 and filter in-memory by occurredAt — the latter
-    // is the safe default since "all of history" is the typical
-    // first-import case.
+    // Etherscan V2 takes blocks, not timestamps: `since` becomes the block
+    // before it, and the in-memory filter below keeps the window exact.
     const endBlock = await this.fetchLatestBlock(chain, apiKey);
+    const firstBlock = ctx.since
+      ? ((await this.fetchBlockAtOrBefore(chain, ctx.since, apiKey)) ?? 0)
+      : 0;
 
     const legs: EvmLeg[] = [];
     // Gas, one per transaction the wallet sent. Kept out of `legs` so swap
@@ -329,7 +341,8 @@ export abstract class BaseEvmProvider implements ProviderBase {
           if (fee) feeLegs.push(fee);
           const wrap = this.wrappedNativeLeg(row, chain, walletAddress);
           if (wrap) legs.push(wrap);
-        }
+        },
+        firstBlock
       )
     ) {
       truncatedStreams.push('native');
@@ -346,7 +359,8 @@ export abstract class BaseEvmProvider implements ProviderBase {
         (start) => this.fetchTokenTxPage(chain, walletAddress, start, endBlock, apiKey),
         (row) => {
           tokenRows.push(row);
-        }
+        },
+        firstBlock
       )
     ) {
       truncatedStreams.push('token');
@@ -381,7 +395,8 @@ export abstract class BaseEvmProvider implements ProviderBase {
           internalOrdinals.set(row.hash, ordinal + 1);
           const leg = this.normalizeInternalTx(row, chain, walletAddress, ordinal);
           if (leg) legs.push(leg);
-        }
+        },
+        firstBlock
       )
     ) {
       truncatedStreams.push('internal');
@@ -404,9 +419,8 @@ export abstract class BaseEvmProvider implements ProviderBase {
       });
     }
 
-    // since/until filter — we always paginate the full chain because
-    // Etherscan's by-block API can't translate dates without an extra
-    // call, and the result is always small enough to sift in memory.
+    // since/until filter: the first block is at or before `since`, so the
+    // walk can return rows from just before it.
     const filtered = legs.filter((l) => {
       if (ctx.since && l.event.occurredAt < ctx.since) return false;
       if (ctx.until && l.event.occurredAt > ctx.until) return false;
@@ -429,7 +443,7 @@ export abstract class BaseEvmProvider implements ProviderBase {
   }
 
   /**
-   * Walk one stream from block 0 to `endBlock`, narrowing the window each
+   * Walk one stream from `firstBlock` to `endBlock`, narrowing the window each
    * time a page comes back full. Shared by all three streams so the
    * did-not-advance guard cannot be present in two of them and missing from
    * the third.
@@ -440,9 +454,10 @@ export abstract class BaseEvmProvider implements ProviderBase {
     streamLabel: string,
     chain: EvmChainConfig,
     fetchPage: (startBlock: number) => Promise<EvmPaginationPage<T>>,
-    onRow: (row: T) => void
+    onRow: (row: T) => void,
+    firstBlock = 0
   ): Promise<boolean> {
-    let startBlock = 0;
+    let startBlock = firstBlock;
     let collected = 0;
     while (true) {
       const page = await fetchPage(startBlock);

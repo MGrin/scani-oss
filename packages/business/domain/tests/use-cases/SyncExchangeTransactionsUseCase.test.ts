@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Container } from 'typedi';
 import { AccountRepository } from '../../src/repositories/AccountRepository';
+import { FeedInputRepository } from '../../src/repositories/FeedInputRepository';
 import { HoldingCoverageRepository } from '../../src/repositories/HoldingCoverageRepository';
 import { HoldingTransactionRepository } from '../../src/repositories/HoldingTransactionRepository';
 import { InstitutionRepository } from '../../src/repositories/InstitutionRepository';
@@ -30,6 +31,8 @@ function makeUseCase(opts: {
   unclaimedBySource?: Record<string, Record<string, string>>;
   /** Each account's full-import history, keyed by source. */
   historyBySource?: Record<string, Record<string, History>>;
+  /** Accounts whose ledger has a read-through point, keyed by source. */
+  readThroughBySource?: Record<string, string[]>;
 }) {
   const pick = <T, U>(
     by: Record<string, Record<string, T>> | undefined,
@@ -67,6 +70,10 @@ function makeUseCase(opts: {
     findAccountsWithLedgerFor: async (accountIds: readonly string[], source: string) =>
       new Set((opts.warmBySource?.[source] ?? []).filter((id) => accountIds.includes(id))),
   } as unknown as HoldingTransactionRepository);
+  Container.set(FeedInputRepository, {
+    findLedgerReadThrough: async (accountId: string, source: string) =>
+      opts.readThroughBySource?.[source]?.includes(accountId) ? new Date() : null,
+  } as unknown as FeedInputRepository);
   return new SyncExchangeTransactionsUseCase();
 }
 
@@ -407,5 +414,50 @@ describe('SyncExchangeTransactionsUseCase — cold ledgers get full history', ()
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.ids).toEqual(['a1', 'a2', 'a3']);
+  });
+});
+
+/**
+ * SC-1665. A ledger read with its balance every hour needs no nightly window;
+ * the night keeps only what the hourly read cannot do.
+ */
+describe('a ledger that rides its balance run', () => {
+  const airwallex = (opts: { warm: boolean; readThrough: boolean }) =>
+    makeUseCase({
+      institutions: [{ id: 'inst-awx', name: 'Airwallex' }],
+      credsByInstitution: { 'inst-awx': [{ userId: 'u1' }] },
+      accountsByUser: { u1: [{ id: 'acc1', institutionId: 'inst-awx', isActive: true }] },
+      warmBySource: opts.warm ? { 'airwallex-api': ['acc1'] } : {},
+      readThroughBySource: opts.readThrough ? { 'airwallex-api': ['acc1'] } : {},
+    });
+
+  test('a windowed read is left to the hourly run', async () => {
+    const res = await airwallex({ warm: true, readThrough: true }).execute();
+    expect(res.targets).toEqual([]);
+    expect(res.ledgerWithBalance).toBe(1);
+  });
+
+  test('a full walk stays nightly: the hourly run never walks a whole history', async () => {
+    const res = await airwallex({ warm: false, readThrough: true }).execute();
+    expect(res.targets.map((t) => t.since)).toEqual([undefined]);
+  });
+
+  test('a ledger with rows but no read-through point stays nightly, or nobody reads it', async () => {
+    const res = await airwallex({ warm: true, readThrough: false }).execute();
+    expect(res.targets).toHaveLength(1);
+    expect(res.ledgerWithBalance).toBe(0);
+  });
+
+  test('control: a source still on the nightly run keeps its window', async () => {
+    const res = makeUseCase({
+      institutions: [{ id: 'inst-tron', name: 'Tron' }],
+      credsByInstitution: { 'inst-tron': [{ userId: 'u1' }] },
+      accountsByUser: {
+        u1: [{ id: 'acc1', institutionId: 'inst-tron', isActive: true, metadata: { chainId: -1 } }],
+      },
+      warmBySource: { tron: ['acc1'] },
+      readThroughBySource: { tron: ['acc1'] },
+    });
+    expect((await res.execute()).targets).toHaveLength(1);
   });
 });

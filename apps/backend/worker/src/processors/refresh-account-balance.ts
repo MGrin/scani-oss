@@ -5,6 +5,7 @@ import { createComponentLogger } from '@scani/logging';
 import { PostgresResourceLock, type ProcessorContext, UserJobProcessor } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { Container, Service } from 'typedi';
+import { afterLedgerRows } from '../lib/after-ledger-rows';
 import { asJobFailure } from '../lib/request-refusal';
 
 const logger = createComponentLogger('processor:refresh-account-balance');
@@ -47,6 +48,14 @@ export class RefreshAccountBalanceProcessor extends UserJobProcessor<
       // A balance refresh can change the holding's balance — drop the
       // user's cached portfolio valuation so the next read recomputes.
       await Container.get(PortfolioValueCache).bust(data.userId);
+
+      // The ledger read with the balance (SC-1665) is followed as an import's is.
+      if (result.ledger) {
+        await afterLedgerRows(
+          { userId: data.userId, accountId: result.accountId, source: result.ledger.source },
+          result.ledger
+        );
+      }
 
       // Tell the WS pipe to reload the user's holdings list — the
       // entityId is the holdingId the user clicked from (or the account

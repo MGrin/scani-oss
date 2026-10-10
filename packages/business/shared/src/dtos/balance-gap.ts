@@ -5,7 +5,7 @@ import {
   BALANCE_GAP_SUPPRESSIONS,
   type BalanceGapSuppression,
 } from '../lib/balance-gap';
-import { manualOutflowAnswerSchema } from './transfer-review';
+import { manualOutflowAnswerSchema, transferReviewSplitSchema } from './transfer-review';
 
 /**
  * The wire shape of one unexplained balance change (SC-501).
@@ -144,6 +144,12 @@ export const answerBalanceGapSchema = z.object({
   observationId: z.string().uuid(),
   answer: balanceGapAnswerSchema,
   editOutflow: manualOutflowAnswerSchema.optional(),
+  /**
+   * Money that left for several places at once (SC-1665): the drift divided,
+   * in the transfer review's part shape. `flow` on money that left only, never
+   * beside `editOutflow`, and never `paired`: a gap has no deposit to pair.
+   */
+  parts: transferReviewSplitSchema.optional(),
   receivedQuantity: z
     .string()
     .refine((value) => {
