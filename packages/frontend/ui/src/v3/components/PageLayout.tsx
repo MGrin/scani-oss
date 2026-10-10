@@ -55,7 +55,7 @@ type PageMeasure = keyof typeof MEASURES;
  * desktop window is the opposite, and 24px of dead space above the first block
  * is 24px of the fold spent on nothing.
  */
-const PADDING = 'px-4 py-6 lg:px-6 lg:py-5';
+const PADDING = 'px-4 pb-6 pt-[var(--scani-page-top)] lg:px-6 lg:py-5';
 
 interface PageLayoutProps {
   children: ReactNode;
