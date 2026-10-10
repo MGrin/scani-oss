@@ -25,6 +25,7 @@ export class PricingProcessor extends ScheduledJobProcessor {
           // are still REPORTED, because a run that quietly drops 13 of 50 and
           // says nothing is the other way to be wrong about this.
           tokensSuppressed: result.tokensSuppressed,
+          tokensDeferred: result.tokensDeferred,
           tokensUpdated: result.tokensUpdated,
           tokensFailed: result.tokensFailed,
           errorCount: result.errors.length,
