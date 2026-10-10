@@ -118,6 +118,7 @@ export default defineConfig({
             { label: 'Groups', slug: 'concepts/groups' },
             { label: 'APY & yield', slug: 'concepts/apy' },
             { label: 'Manual assets', slug: 'concepts/manual-assets' },
+            { label: 'Loans, mortgages & cards', slug: 'concepts/debt-accounts' },
             { label: 'Token identity & enrichment', slug: 'concepts/token-identity' },
           ],
         },

@@ -73,7 +73,8 @@ describe('GetAssetAllocationOutputDto', () => {
           { id: '1', code: 'crypto', name: 'Crypto', value: '100', percentage: '50' },
           { id: '2', code: 'fiat', name: 'Fiat', value: '100', percentage: '50' },
         ],
-        marginDebt: '0',
+        totalDebt: '0',
+        liabilityDebt: '0',
         totalValue: '200',
         baseCurrency: 'USD',
       }).success
@@ -85,7 +86,8 @@ describe('GetAssetAllocationOutputDto', () => {
       GetAssetAllocationOutputDto.safeParse({
         dimension: 'group',
         items: [],
-        marginDebt: '0',
+        totalDebt: '0',
+        liabilityDebt: '0',
         totalValue: '0',
         baseCurrency: 'USD',
       }).success
@@ -97,23 +99,28 @@ describe('GetAssetAllocationOutputDto', () => {
       GetAssetAllocationOutputDto.safeParse({
         dimension: 'token',
         items: [{ id: 'x' /* missing other fields */ }],
-        marginDebt: '0',
+        totalDebt: '0',
+        liabilityDebt: '0',
         totalValue: '0',
         baseCurrency: 'USD',
       }).success
     ).toBe(false);
   });
 
-  test('carries margin debt beside the slices, and requires it', () => {
+  test('carries total debt beside the slices, and requires it', () => {
     const payload = {
       dimension: 'token_type',
       items: [{ id: '1', code: 'stock', name: 'Stock', value: '10000', percentage: '100.00' }],
-      marginDebt: '-2500',
+      totalDebt: '-2500',
+      liabilityDebt: '0',
       totalValue: '7500',
       baseCurrency: 'USD',
     };
     expect(GetAssetAllocationOutputDto.safeParse(payload).success).toBe(true);
-    const { marginDebt: _omitted, ...withoutDebt } = payload;
+    const { totalDebt: _omitted, ...withoutDebt } = payload;
     expect(GetAssetAllocationOutputDto.safeParse(withoutDebt).success).toBe(false);
+    // SC-1640: the loan and card part of that debt is required beside it.
+    const { liabilityDebt: _omittedLoans, ...withoutLoans } = payload;
+    expect(GetAssetAllocationOutputDto.safeParse(withoutLoans).success).toBe(false);
   });
 });

@@ -40,6 +40,7 @@ type HoldingWithCompleteDetails = {
     institutionId: string;
     typeCode: string;
     typeName: string;
+    class: 'asset' | 'liability';
   };
   institution: {
     id: string;
@@ -53,7 +54,9 @@ type HoldingWithCompleteDetails = {
 type AllocationResult = {
   items: AssetAllocationItem[];
   /** Signed: `"0"`, or the negative sum of the holdings kept out of `items`. */
-  marginDebt: string;
+  totalDebt: string;
+  /** Signed: the part of `totalDebt` held on liability accounts (SC-1640). */
+  liabilityDebt: string;
   totalValue: string;
   baseCurrency: string;
 };
@@ -109,24 +112,30 @@ export class AssetAllocationService extends BaseService {
     const priceMap = extractPriceMap(portfolioValue);
 
     if (dimension === 'group') {
-      const { assets, marginDebt } = splitDebt(holdingsWithDetails, priceMap);
+      const { assets, totalDebt, liabilityDebt } = splitDebt(holdingsWithDetails, priceMap);
       return {
         items: await this.calculateGroupAllocation(
           assets,
           priceMap,
-          new Decimal(portfolioValue.totalValue).minus(marginDebt),
+          new Decimal(portfolioValue.totalValue).minus(totalDebt),
           userId
         ),
-        marginDebt: marginDebt.toString(),
+        totalDebt: totalDebt.toString(),
+        liabilityDebt: liabilityDebt.toString(),
         totalValue: portfolioValue.totalValue,
         baseCurrency: portfolioValue.baseCurrency,
       };
     }
 
-    const { items, marginDebt } = aggregateAllocation(holdingsWithDetails, priceMap, dimension);
+    const { items, totalDebt, liabilityDebt } = aggregateAllocation(
+      holdingsWithDetails,
+      priceMap,
+      dimension
+    );
     return {
       items,
-      marginDebt: marginDebt.toString(),
+      totalDebt: totalDebt.toString(),
+      liabilityDebt: liabilityDebt.toString(),
       totalValue: portfolioValue.totalValue,
       baseCurrency: portfolioValue.baseCurrency,
     };

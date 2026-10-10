@@ -4,7 +4,7 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import type { AllocationInput } from '@scani/ui/v3/lib/chart';
 import { useTranslation } from 'react-i18next';
 import { AllocationBar } from '../charts/AllocationBar';
-import { MarginDebtLine } from '../charts/MarginDebtLine';
+import { DebtLine } from '../charts/DebtLine';
 
 /**
  * What a list of containers adds up to, over the rows actually shown.
@@ -23,7 +23,7 @@ import { MarginDebtLine } from '../charts/MarginDebtLine';
  * figure that is already directly above it.
  *
  * The hero is NET and the parts are GROSS assets, so an account whose debt
- * outweighs its assets is still a part (SC-1463). `marginDebt` is the
+ * outweighs its assets is still a part (SC-1463). `totalDebt` is the
  * difference, drawn as its own line — shown even with no bar, since it is
  * still part of the figure above.
  */
@@ -31,7 +31,7 @@ import { MarginDebtLine } from '../charts/MarginDebtLine';
 interface EntityValueSummaryProps {
   value: number;
   /** Signed: 0, or the negative debt of the rows shown. */
-  marginDebt: number;
+  totalDebt: number;
   currency: string;
   allocation: readonly AllocationInput[];
   /** Names the bar for assistive tech — "Value by account". */
@@ -40,7 +40,7 @@ interface EntityValueSummaryProps {
 
 export function EntityValueSummary({
   value,
-  marginDebt,
+  totalDebt,
   currency,
   allocation,
   allocationLabel,
@@ -60,10 +60,10 @@ export function EntityValueSummary({
           items={parts}
           currency={currency}
           label={allocationLabel}
-          shareCaption={marginDebt < 0 ? t('v3.allocation.shareOfAssets') : undefined}
+          shareCaption={totalDebt < 0 ? t('v3.allocation.shareOfAssets') : undefined}
         />
       ) : null}
-      <MarginDebtLine value={marginDebt} currency={currency} underLegend={parts.length > 1} />
+      <DebtLine value={totalDebt} currency={currency} underLegend={parts.length > 1} />
     </Block>
   );
 }

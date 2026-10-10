@@ -29,7 +29,8 @@ schema-only summary.
 | `institution_types` | `bank`, `broker`, `crypto_exchange`, `crypto_wallet`, `investment_fund`, `private_equity`, `real_estate`, `other`. | [Accounts](/concepts/accounts/) |
 | `institutions` | Catalogue of financial entities — shared across users (manual institution is per-user). | |
 | `institution_blockchain_mappings` | Maps blockchain-typed institutions to `(chainId, chainType)`. | |
-| `account_types` | `checking`, `savings`, `investment`, `wallet`, etc. | |
+| `account_types` | `checking`, `savings`, `investment`, `wallet`, etc. Each has a `class`: `asset`, or `liability` for loans, mortgages and cards. | [Loans, mortgages & cards](/concepts/debt-accounts/) |
+| `liability_terms` | One row per liability account: rate, term, start, principal, payment; or a card's limit, minimum payment and fee. | [Loans, mortgages & cards](/concepts/debt-accounts/) |
 | `accounts` | Per-user container for holdings at one institution. `metadata` jsonb holds wallet addresses / chain data. | |
 
 ## Tokens & prices

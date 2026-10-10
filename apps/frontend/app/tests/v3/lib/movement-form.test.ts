@@ -5,6 +5,7 @@ import {
   describeMovementFailure,
   type MovementHolding,
   matchMovementHoldings,
+  movementAvailable,
   movementBalanceBelowZero,
   movementBlockerKeys,
   movementFeeArrival,
@@ -411,5 +412,34 @@ describe('a movement that takes the holding below zero says so (SC-1518)', () =>
     expect(movementBalanceBelowZero('2500', { direction: 'outflow', amount: '2500' })).toBeNull();
     expect(movementBalanceBelowZero('2500', { direction: 'inflow', amount: '99999' })).toBeNull();
     expect(movementBalanceBelowZero('2500', { direction: 'outflow', amount: '' })).toBeNull();
+  });
+});
+
+// SC-1640 review I2. Spending on a card deepens what it owes: neither the
+// blocker nor the below-zero warning applies to fiat on a liability account.
+describe('a holding that owes', () => {
+  const card = {
+    id: 'h1',
+    amount: '-1500',
+    token: { symbol: 'USD', name: 'US Dollar', typeCode: 'fiat' },
+    account: { name: 'Visa', class: 'liability' as const },
+    institution: { id: 'i1', name: 'Bank' },
+  };
+
+  test('has no available ceiling, so an outflow is never blocked', () => {
+    expect(movementAvailable(card)).toBeUndefined();
+    expect(
+      movementAvailable({ ...card, amount: '2500', account: { name: 'Checking', class: 'asset' } })
+    ).toBe('2500');
+    expect(movementAvailable(null)).toBeUndefined();
+  });
+
+  test('carries no below-zero warning', () => {
+    expect(
+      movementBalanceBelowZero('-1500', { direction: 'outflow', amount: '200' }, true)
+    ).toBeNull();
+    expect(movementBalanceBelowZero('-1500', { direction: 'outflow', amount: '200' })).toBe(
+      '-1700'
+    );
   });
 });
