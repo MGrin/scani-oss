@@ -46,7 +46,7 @@ describe('transactions.list by holding', () => {
       limit: 10,
     });
 
-    expect(result).toEqual({ transactions: [] });
+    expect(result).toEqual({ transactions: [], nextCursor: null });
     expect(seen).toHaveLength(1);
     expect(seen[0]).toMatchObject({ userId, holdingId, limit: 10, order: 'desc' });
   });

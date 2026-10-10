@@ -1,4 +1,5 @@
 import {
+  ArrowLeftRight,
   Building2,
   CalendarClock,
   ClipboardCheck,
@@ -20,6 +21,7 @@ import {
 /** Nav items name their icon as a string so the route table stays a plain
  * data module — importable from a test without pulling in React. */
 const ICONS: Record<string, LucideIcon> = {
+  ArrowLeftRight,
   Building2,
   CalendarClock,
   ClipboardCheck,

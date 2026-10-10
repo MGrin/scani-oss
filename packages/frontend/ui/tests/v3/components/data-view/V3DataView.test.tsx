@@ -404,6 +404,16 @@ describe('V3DataView — the peek sheet', () => {
 });
 
 describe('V3DataView — bulk selection', () => {
+  /**
+   * The same reason Export left the control row: at 390px a third control
+   * beside search and a counted sliders button took the search field below its
+   * placeholder's width, and /transactions read "Search transa…" (SC-1652).
+   */
+  test('on a phone, Select sits on the count line, not in the search row', () => {
+    const html = render({ renderBulkActions: () => <button type="button">Refresh</button> });
+    expect(html.indexOf('>Select<')).toBeGreaterThan(html.indexOf('3 holdings'));
+  });
+
   test('the Select control appears only when the surface has bulk actions', () => {
     expect(render()).not.toInclude('>Select<');
     expect(render({ renderBulkActions: () => <button type="button">Refresh</button> })).toInclude(
