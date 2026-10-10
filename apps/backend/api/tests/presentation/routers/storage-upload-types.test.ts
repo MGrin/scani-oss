@@ -122,3 +122,62 @@ describe('storage.getUploadUrl size (SC-1492)', () => {
     expect(res.method).toBe('PUT');
   });
 });
+
+/** SC-1649. A backup to restore is gzipped NDJSON, and larger than the one upload ceiling. */
+describe('storage.getUploadUrl backups (SC-1649)', () => {
+  function caller() {
+    Container.set(StorageFacade, {
+      async presignUpload() {
+        return {
+          uploadUrl: 'https://s3.test/put',
+          key: 'k',
+          expiresAt: new Date(),
+          requiredHeaders: {},
+        };
+      },
+    } as unknown as StorageFacade);
+    return makeAuthedCaller({ id: crypto.randomUUID(), email: 'b@example.invalid' } as schema.User);
+  }
+  const MB = 2 ** 20;
+
+  test('accepts a 20 MB gzip backup', async () => {
+    const res = await caller().storage.getUploadUrl({
+      purpose: 'backup',
+      contentType: 'application/gzip',
+      filename: 'scani-backup.ndjson.gz',
+      sizeBytes: 20 * MB,
+    });
+    expect(res.method).toBe('PUT');
+  });
+
+  test('refuses a backup over its limit, and any file that is not gzip', async () => {
+    const c = caller();
+    await expect(
+      c.storage.getUploadUrl({
+        purpose: 'backup',
+        contentType: 'application/gzip',
+        filename: 'b.gz',
+        sizeBytes: 65 * MB,
+      })
+    ).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
+    await expect(
+      c.storage.getUploadUrl({
+        purpose: 'backup',
+        contentType: 'text/csv',
+        filename: 'b.csv',
+        sizeBytes: MB,
+      })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+
+  test('control: the larger limit is the backup’s alone', async () => {
+    await expect(
+      caller().storage.getUploadUrl({
+        purpose: 'file-import',
+        contentType: 'text/csv',
+        filename: 'a.csv',
+        sizeBytes: 20 * MB,
+      })
+    ).rejects.toMatchObject({ code: 'PAYLOAD_TOO_LARGE' });
+  });
+});

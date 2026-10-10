@@ -14,15 +14,19 @@
 import type { TFunction } from 'i18next';
 import type { LucideIcon } from 'lucide-react';
 import {
+  Archive,
+  ArchiveRestore,
   Coins,
   DollarSign,
   FileSpreadsheet,
   FileText,
   History,
   Image as ImageIcon,
+  Import,
   Keyboard,
   Link2,
   Trash2,
+  Undo2,
 } from 'lucide-react';
 
 export interface JobLabel {
@@ -47,7 +51,11 @@ const BY_NAME: Record<string, { labelKey: string; icon: LucideIcon }> = {
   'portfolio-history-backfill': { labelKey: 'v3.jobs.label.historyBackfill', icon: History },
   'holding-price-update': { labelKey: 'v3.jobs.label.priceRefresh', icon: DollarSign },
   'user-data-delete': { labelKey: 'v3.jobs.label.accountDeletion', icon: Trash2 },
+  'user-backup': { labelKey: 'v3.jobs.label.backup', icon: Archive },
+  'user-backup-restore': { labelKey: 'v3.jobs.label.restore', icon: ArchiveRestore },
   'transaction-import': { labelKey: 'v3.jobs.label.transactionImport', icon: History },
+  'budget-app-import': { labelKey: 'v3.jobs.label.budgetAppImport', icon: Import },
+  'budget-app-import-undo': { labelKey: 'v3.jobs.label.budgetAppUndo', icon: Undo2 },
 };
 
 /**
