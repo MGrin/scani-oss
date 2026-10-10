@@ -8,6 +8,7 @@ import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import type { TFunction } from 'i18next';
 import { Coins, Pencil, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import { amountDecimals } from '../../lib/holdings';
 import { priceSourceLabel } from '../../lib/price-source';
 import { formatRelative } from '../../lib/relative-time';
@@ -92,6 +93,7 @@ function TokenPrice({ token }: { token: CustomTokenRow }) {
 }
 
 export function CustomTokensList({ tokens, query, onCreate, onEditPrice }: CustomTokensListProps) {
+  useRelativeTimeTick();
   const { t } = useTranslation();
   const typeOptions = [...new Set(tokens.map(typeLabel))]
     .sort((a, b) => a.localeCompare(b))

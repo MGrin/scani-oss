@@ -227,7 +227,8 @@ describe('a message nobody wrote for a reader never reaches one', () => {
     // would be satisfied forever by the rename rather than by the discipline.
     // This is the assertion with something to bite on: re-add `error` to the
     // hook and the raw throw has a plausible-looking home again.
-    const hook = stripComments(await Bun.file(resolve(SRC, 'v3/hooks/useJobStatus.ts')).text());
+    // The hook's result type is `JobStatusSnapshot`, in `v3/lib/jobs.ts` since SC-1599.
+    const hook = stripComments(await Bun.file(resolve(SRC, 'v3/lib/jobs.ts')).text());
     expect(hook).toContain('userFacingError: string | null;');
     expect(hook).not.toMatch(/^\s*error: string \| null;$/m);
   });

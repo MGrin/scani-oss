@@ -7,6 +7,7 @@ import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { ListChecks } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
+import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import { jobLabelFor } from '../../lib/job-labels';
 import {
   compareJobs,
@@ -52,6 +53,7 @@ interface JobsListProps {
 const BUCKET_RANK: Record<JobBucket, number> = { review: 0, running: 1, failed: 2, completed: 3 };
 
 export function JobsList({ jobs, query }: JobsListProps) {
+  useRelativeTimeTick();
   const { t } = useTranslation();
   const navigate = useNavigate();
   // The capture sheet, not a link: V3-14 made capture shell state precisely so

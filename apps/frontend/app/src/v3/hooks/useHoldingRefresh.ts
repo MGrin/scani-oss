@@ -82,7 +82,7 @@ export function useHoldingRefresh(actions: ReturnType<typeof useHoldingActions>)
       else showSuccess(outcome.message);
       setPriceJob(null);
       void invalidatePortfolioQueries(utils);
-    } else if (priceStatus.state === 'failed') {
+    } else if (priceStatus.finalFailure) {
       // `userFacingError`, never the raw throw — see `AccountSettings` (SC-551).
       showError(
         priceStatus.userFacingError ?? t('v3.holdings.refresh.priceFailed'),
@@ -90,7 +90,15 @@ export function useHoldingRefresh(actions: ReturnType<typeof useHoldingActions>)
       );
       setPriceJob(null);
     }
-  }, [priceJob, priceStatus.state, priceStatus.result, priceStatus.userFacingError, utils, t]);
+  }, [
+    priceJob,
+    priceStatus.state,
+    priceStatus.finalFailure,
+    priceStatus.result,
+    priceStatus.userFacingError,
+    utils,
+    t,
+  ]);
 
   useEffect(() => {
     if (!balanceJob) return;
@@ -109,7 +117,7 @@ export function useHoldingRefresh(actions: ReturnType<typeof useHoldingActions>)
       else showSuccess(outcome.message);
       setBalanceJob(null);
       void invalidatePortfolioQueries(utils);
-    } else if (balanceStatus.state === 'failed') {
+    } else if (balanceStatus.finalFailure) {
       // `userFacingError`, never the raw throw — see `AccountSettings` (SC-551).
       showError(
         balanceStatus.userFacingError ?? t('v3.holdings.refresh.balanceFailed'),
@@ -120,6 +128,7 @@ export function useHoldingRefresh(actions: ReturnType<typeof useHoldingActions>)
   }, [
     balanceJob,
     balanceStatus.state,
+    balanceStatus.finalFailure,
     balanceStatus.result,
     balanceStatus.userFacingError,
     utils,

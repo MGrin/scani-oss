@@ -11,6 +11,7 @@ import { Route } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
+import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import { formatRelative } from '../../lib/relative-time';
 
 /**
@@ -72,6 +73,7 @@ export function TransferRuleList({
 }
 
 function RuleRow({ rule }: { rule: TransferReviewRule }) {
+  useRelativeTimeTick();
   const { t } = useTranslation();
   const { toast } = useToast();
   const utils = trpc.useUtils();
@@ -184,6 +186,7 @@ function RuleRow({ rule }: { rule: TransferReviewRule }) {
  * waiting rather than settled.
  */
 function HiddenList({ hidden }: { hidden: HiddenTransferReview[] }) {
+  useRelativeTimeTick();
   const { t } = useTranslation();
   return (
     <Block className="flex flex-col gap-3 p-4">
