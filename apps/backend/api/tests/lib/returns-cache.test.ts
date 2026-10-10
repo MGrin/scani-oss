@@ -79,4 +79,47 @@ describe('sharedReturnsRun', () => {
     expect(second).toBe('recovered');
     expect(runs).toBe(2);
   });
+
+  test('windows over unchanged data are handed one data key (SC-1671)', async () => {
+    const seen: string[] = [];
+    const record = async (dataKey: string) => {
+      seen.push(dataKey);
+      return 'result';
+    };
+    await Promise.all([
+      sharedReturnsRun(`${KEY}:all`, USER, record, fixedVersion('v1'), '2026-09-24'),
+      sharedReturnsRun(`${KEY}:1y`, USER, record, fixedVersion('v1'), '2026-09-24'),
+      sharedReturnsRun(`${KEY}:ytd`, USER, record, fixedVersion('v1'), '2026-09-24'),
+    ]);
+    expect(seen).toHaveLength(3);
+    expect(new Set(seen)).toEqual(new Set(['user-a:2026-09-24:v1']));
+  });
+
+  test('a write between two calls hands the second a fresh data key (SC-1671)', async () => {
+    const seen: string[] = [];
+    const record = async (dataKey: string) => {
+      seen.push(dataKey);
+      return 'result';
+    };
+    await sharedReturnsRun(`${KEY}:all`, USER, record, fixedVersion('v1'), '2026-09-24');
+    await sharedReturnsRun(`${KEY}:1y`, USER, record, fixedVersion('v2'), '2026-09-24');
+    expect(seen).toEqual(['user-a:2026-09-24:v1', 'user-a:2026-09-24:v2']);
+  });
+
+  test("another user's windows never share a user's data key (SC-1671)", async () => {
+    const seen: string[] = [];
+    const record = async (dataKey: string) => {
+      seen.push(dataKey);
+      return 'result';
+    };
+    await sharedReturnsRun(`${KEY}:all`, USER, record, fixedVersion('v1'), '2026-09-24');
+    await sharedReturnsRun(
+      'returns:user-b:all',
+      'user-b',
+      record,
+      fixedVersion('v1'),
+      '2026-09-24'
+    );
+    expect(seen[0]).not.toBe(seen[1]);
+  });
 });
