@@ -12,6 +12,22 @@ function req(headers: Record<string, string> = {}, method = 'GET'): Request {
 }
 
 describe('InMemoryInflowRateLimiter', () => {
+  test('a given clock decides the window, so a test need not race the wall clock', async () => {
+    let now = Date.UTC(2026, 9, 7, 12, 0, 59, 990);
+    const limiter = new InMemoryInflowRateLimiter({
+      windowMs: 60_000,
+      max: 1,
+      namespace: 'test-clock',
+      key: () => 'id',
+      now: () => now,
+    });
+    expect((await limiter.tryConsume(req())).ok).toBe(true);
+    const refused = await limiter.tryConsume(req());
+    expect(refused).toEqual({ ok: false, retryAfterSec: 1 });
+    now = Date.UTC(2026, 9, 7, 12, 1, 0, 10);
+    expect((await limiter.tryConsume(req())).ok).toBe(true);
+  });
+
   test('admits requests under the limit', async () => {
     const limiter = new InMemoryInflowRateLimiter({
       windowMs: 60_000,
