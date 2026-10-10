@@ -99,3 +99,27 @@ describe('every tRPC invocation is recorded by procedure name', () => {
     expect(pending).not.toContain('sc742NeverCalled');
   });
 });
+
+/**
+ * SC-1689. Each finished call also lands in its minute's row, so a memory
+ * spike can be read against the procedures that ran in that minute. A thrown
+ * or refused call holds memory too, so it counts as finished.
+ */
+describe('every finished tRPC call is rolled into its minute', () => {
+  test('a successful, a thrown and a refused call each buffer a minute row; a never-called one does not', async () => {
+    await probe.createCaller(context()).sc742RecordedQuery();
+    await probe
+      .createCaller(context())
+      .sc742ThrowingQuery()
+      .catch(() => undefined);
+    await probe
+      .createCaller(context({ userId: null, isAuthenticated: false }))
+      .sc742RefusedQuery()
+      .catch(() => undefined);
+    const minutes = procedureCallRecorder.pendingMinutes();
+    expect(minutes).toContain('sc742RecordedQuery');
+    expect(minutes).toContain('sc742ThrowingQuery');
+    expect(minutes).toContain('sc742RefusedQuery');
+    expect(minutes).not.toContain('sc742NeverCalled');
+  });
+});

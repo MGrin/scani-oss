@@ -46,11 +46,20 @@
  * for every other table. The write cost is one buffered upsert a minute per
  * machine against a connection that is already open, so choosing the durable
  * store here buys the artefact's entire meaning for approximately nothing.
+ *
+ * THE SAME FLUSH WRITES A PER-MINUTE ROLLUP (SC-1689). A memory spike on one
+ * api machine could not be traced to a route: the counter above has no
+ * history. Each finished call also lands in `api_procedure_minutes`, keyed by
+ * the minute it finished in and the machine, with the worst duration, loop
+ * block and process RSS of that minute. It rides this flush, so it adds no
+ * write per request and no wake of its own.
  */
 
-import { sql } from 'drizzle-orm';
+import { hostname } from 'node:os';
+import { lt, sql } from 'drizzle-orm';
 import { db } from './connection';
 import { apiProcedureCalls } from './schema/api-procedure-calls';
+import { apiProcedureMinutes } from './schema/api-procedure-minutes';
 
 export interface ProcedureCallTally {
   procedure: string;
@@ -58,12 +67,28 @@ export interface ProcedureCallTally {
   lastSeenAt: Date;
 }
 
+/** One procedure's finished calls in one minute on one machine (SC-1689). */
+export interface ProcedureMinute {
+  minute: Date;
+  machine: string;
+  procedure: string;
+  calls: number;
+  maxDurationMs: number;
+  maxLoopBlockedMs: number;
+  maxRssMb: number;
+}
+
 /** Persists one flush. Injected so the buffering logic is testable without a database. */
 export type ProcedureCallWriter = (tallies: ProcedureCallTally[]) => Promise<void>;
+
+/** Persists one flush of minute rows. Injected for the same reason. */
+export type ProcedureMinuteWriter = (minutes: ProcedureMinute[]) => Promise<void>;
 
 export interface ProcedureCallRecorder {
   /** Count one invocation. Never throws, never awaits. */
   record(procedure: string): void;
+  /** Roll one finished call into its minute's row. Never throws, never awaits. */
+  complete(procedure: string, sample: { durationMs: number; loopBlockedMs: number }): void;
   /** Drain the buffer. Safe to call when empty; used by the shutdown path. */
   flush(): Promise<void>;
   /**
@@ -73,6 +98,8 @@ export interface ProcedureCallRecorder {
    * constant, which is the defect worth catching here.
    */
   pending(): string[];
+  /** Procedure names with a buffered minute row, as names for the same reason. */
+  pendingMinutes(): string[];
 }
 
 // yagni: counts are approximate across restarts — anything buffered when a
@@ -80,54 +107,107 @@ export interface ProcedureCallRecorder {
 // exact total, so a lost partial minute changes no answer. Revisit only if
 // someone needs these numbers to reconcile against billing.
 const DEFAULT_FLUSH_INTERVAL_MS = 60_000;
+const MINUTE_MS = 60_000;
 
 export function createProcedureCallRecorder(
   write: ProcedureCallWriter,
-  options: { flushIntervalMs?: number; now?: () => Date } = {}
+  options: {
+    flushIntervalMs?: number;
+    now?: () => Date;
+    writeMinutes?: ProcedureMinuteWriter;
+    machine?: string;
+    readRssBytes?: () => number;
+  } = {}
 ): ProcedureCallRecorder {
   const flushIntervalMs = options.flushIntervalMs ?? DEFAULT_FLUSH_INTERVAL_MS;
   const now = options.now ?? (() => new Date());
+  const writeMinutes = options.writeMinutes ?? (async () => {});
+  const machine = options.machine ?? process.env.FLY_MACHINE_ID ?? hostname();
+  const readRssBytes = options.readRssBytes ?? (() => process.memoryUsage.rss());
   const buffer = new Map<string, number>();
+  const minutes = new Map<string, ProcedureMinute>();
   let timer: ReturnType<typeof setTimeout> | null = null;
+
+  function arm(): void {
+    if (timer) return;
+    timer = setTimeout(() => void flush(), flushIntervalMs);
+    // Do not hold the process open for a pending tally; the shutdown
+    // path calls flush() explicitly.
+    timer.unref?.();
+  }
+
+  async function settle(count: string, run: () => Promise<void>): Promise<void> {
+    try {
+      await run();
+    } catch (err) {
+      // A dropped tally costs one flush of counts and nothing else. Failing
+      // the caller — a shutdown handler, or the timer's own tick — would
+      // convert a bookkeeping problem into an outage.
+      console.warn(
+        `[procedure-calls] failed to flush ${count}:`,
+        err instanceof Error ? err.message : err
+      );
+    }
+  }
 
   async function flush(): Promise<void> {
     if (timer) {
       clearTimeout(timer);
       timer = null;
     }
-    if (buffer.size === 0) return;
-    const at = now();
-    const tallies: ProcedureCallTally[] = [...buffer.entries()].map(([procedure, calls]) => ({
-      procedure,
-      calls,
-      lastSeenAt: at,
-    }));
-    buffer.clear();
-    try {
-      await write(tallies);
-    } catch (err) {
-      // A dropped tally costs one flush of counts and nothing else. Failing
-      // the caller — a shutdown handler, or the timer's own tick — would
-      // convert a bookkeeping problem into an outage.
-      console.warn(
-        `[procedure-calls] failed to flush ${tallies.length} tally(ies):`,
-        err instanceof Error ? err.message : err
-      );
+    if (buffer.size > 0) {
+      const at = now();
+      const tallies: ProcedureCallTally[] = [...buffer.entries()].map(([procedure, calls]) => ({
+        procedure,
+        calls,
+        lastSeenAt: at,
+      }));
+      buffer.clear();
+      await settle(`${tallies.length} tally(ies)`, () => write(tallies));
+    }
+    if (minutes.size > 0) {
+      const rows = [...minutes.values()];
+      minutes.clear();
+      await settle(`${rows.length} minute row(s)`, () => writeMinutes(rows));
     }
   }
 
   return {
     record(procedure: string): void {
       buffer.set(procedure, (buffer.get(procedure) ?? 0) + 1);
-      if (!timer) {
-        timer = setTimeout(() => void flush(), flushIntervalMs);
-        // Do not hold the process open for a pending tally; the shutdown
-        // path calls flush() explicitly.
-        timer.unref?.();
+      arm();
+    },
+    complete(procedure, { durationMs, loopBlockedMs }): void {
+      const at = now().getTime();
+      const minute = new Date(at - (at % MINUTE_MS));
+      const key = `${minute.toISOString()} ${procedure}`;
+      const duration = Math.round(durationMs);
+      const blocked = Math.round(loopBlockedMs);
+      const rssMb = Math.round(readRssBytes() / 2 ** 20);
+      const row = minutes.get(key);
+      if (row) {
+        row.calls += 1;
+        row.maxDurationMs = Math.max(row.maxDurationMs, duration);
+        row.maxLoopBlockedMs = Math.max(row.maxLoopBlockedMs, blocked);
+        row.maxRssMb = Math.max(row.maxRssMb, rssMb);
+      } else {
+        minutes.set(key, {
+          minute,
+          machine,
+          procedure,
+          calls: 1,
+          maxDurationMs: duration,
+          maxLoopBlockedMs: blocked,
+          maxRssMb: rssMb,
+        });
       }
+      // A call that outlived the flush its record() armed finishes into an
+      // empty buffer, so it arms one of its own.
+      arm();
     },
     flush,
     pending: () => [...buffer.keys()],
+    pendingMinutes: () => [...new Set([...minutes.values()].map((row) => row.procedure))],
   };
 }
 
@@ -177,9 +257,47 @@ const writeProcedureCallsToDb: ProcedureCallWriter = async (tallies) => {
   await buildProcedureCallUpsert(tallies);
 };
 
+// Outlasts Fly Prometheus's ~11 days of memory history, the other half of the join.
+const PROCEDURE_MINUTES_RETAIN_MS = 14 * 86_400_000;
+
+/**
+ * Two flushes into one minute — a timer that fired mid-minute, or a restart
+ * within it — add their calls and keep the worst figures.
+ * Built but not executed, so a test can read the SQL.
+ */
+export function buildProcedureMinuteUpsert(rows: ProcedureMinute[]) {
+  return db
+    .insert(apiProcedureMinutes)
+    .values(rows)
+    .onConflictDoUpdate({
+      target: [
+        apiProcedureMinutes.minute,
+        apiProcedureMinutes.machine,
+        apiProcedureMinutes.procedure,
+      ],
+      set: {
+        calls: sql`${apiProcedureMinutes.calls} + excluded.calls`,
+        maxDurationMs: sql`greatest(${apiProcedureMinutes.maxDurationMs}, excluded.max_duration_ms)`,
+        maxLoopBlockedMs: sql`greatest(${apiProcedureMinutes.maxLoopBlockedMs}, excluded.max_loop_blocked_ms)`,
+        maxRssMb: sql`greatest(${apiProcedureMinutes.maxRssMb}, excluded.max_rss_mb)`,
+      },
+    });
+}
+
+const writeProcedureMinutesToDb: ProcedureMinuteWriter = async (rows) => {
+  await buildProcedureMinuteUpsert(rows);
+  // Retention rides the flush's wake, so it adds none: an idle api prunes
+  // nothing and lets Neon sleep, and no worker job has to exist for it.
+  await db
+    .delete(apiProcedureMinutes)
+    .where(lt(apiProcedureMinutes.minute, new Date(Date.now() - PROCEDURE_MINUTES_RETAIN_MS)));
+};
+
 /**
  * Process-wide recorder used by the api's tRPC middleware. A module-level
  * singleton because the buffer must be shared by every request in the
  * process — one buffer per request would defeat the batching entirely.
  */
-export const procedureCallRecorder = createProcedureCallRecorder(writeProcedureCallsToDb);
+export const procedureCallRecorder = createProcedureCallRecorder(writeProcedureCallsToDb, {
+  writeMinutes: writeProcedureMinutesToDb,
+});
