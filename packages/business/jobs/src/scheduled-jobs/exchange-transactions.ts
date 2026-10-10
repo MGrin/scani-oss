@@ -1,4 +1,4 @@
-import type { ScheduledJobDescriptor } from '@scani/queue';
+import type { ScheduledJobStepDescriptor } from '@scani/queue';
 import { JOB_NAMES } from '../job-names';
 
 // Daily refresh of integration transaction LEDGERS (the hourly
@@ -6,8 +6,7 @@ import { JOB_NAMES } from '../job-names';
 // transaction-import job per syncable account. Daily — the ledger is
 // historical and IBKR Flex queries are slow/serialized, so sub-daily
 // would hammer the upstream for no benefit.
-export const EXCHANGE_TRANSACTIONS_SCHEDULE: ScheduledJobDescriptor = {
+export const EXCHANGE_TRANSACTIONS_SCHEDULE: ScheduledJobStepDescriptor = {
   name: JOB_NAMES.exchangeTransactions,
-  cron: '0 1 * * *',
   lockName: JOB_NAMES.exchangeTransactions,
 };

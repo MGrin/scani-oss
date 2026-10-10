@@ -44,8 +44,8 @@ const PENDING_CUTOFF_MS = 5 * 60 * 1000; // 5 min
 //
 // The bound keeps ONE FIRE short. It is not overlap protection: this
 // descriptor sets no `lockName`, so two sweepers may run at once by
-// design — they are idempotent re-scans, and BullMQ's deterministic jobId
-// dedups the double-enqueue.
+// design — they are idempotent re-scans, and the requestId below is derived
+// from the credential, so the import's jobId dedups the double-enqueue.
 //
 // 100 was sized against a per-minute tick. Whether it is right for the
 // cadence the descriptor now sets needs the orphan-rate distribution,
@@ -127,9 +127,11 @@ export class ReconcilePendingCredentialsProcessor extends ScheduledJobProcessor 
           continue;
         }
 
-        // Synthesize a fresh requestId — the original is gone. The
-        // reconciler is firing on behalf of a missing-in-action enqueue.
-        const requestId = crypto.randomUUID();
+        // The original requestId is gone. This one is derived from the
+        // credential and its attempt, because it is part of the import's
+        // jobId: two sweeps over the same orphan (this job takes no lock)
+        // then collapse onto one import instead of queueing two (SC-1688).
+        const requestId = `reconcile:${row.id}:${row.importRetryCount}`;
         const jobId = await enqueueService.add(EXCHANGE_IMPORT, {
           userId: row.userId,
           requestId,

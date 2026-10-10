@@ -14,8 +14,8 @@ import { JOB_NAMES } from '../job-names';
  * transactions. A demo that drifts between resets is a demo that is wrong for
  * most of the day.
  *
- * 06:00 UTC: after the last of the nightly chain (`backfill-counterparty`,
- * 05:30) and before `alert-sweep` at 09:00, so the hour is free on a normal
+ * 06:00 UTC: well after the nightly group that starts at 00:00 (SC-1688), and
+ * before the morning group at 09:00, so the hour is free on a normal
  * deployment too — this file has to state a time that is defensible whether or
  * not it is the only job running. On the hour, like every other fixed-minute
  * schedule here: the advisory locks batch into one database wake and Neon
