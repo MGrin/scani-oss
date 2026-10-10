@@ -22,8 +22,9 @@ export function DemoBanner() {
   return (
     <div
       data-testid="demo-banner"
+      data-top-banner
       className="flex shrink-0 flex-wrap items-center justify-center gap-x-2 gap-y-1 border-b border-border bg-muted px-4 py-2 text-center text-caption text-muted-foreground"
-      style={{ paddingTop: 'max(0.5rem, env(safe-area-inset-top))' }}
+      style={{ paddingTop: 'max(0.5rem, var(--scani-inset-top, env(safe-area-inset-top, 0px)))' }}
     >
       <span>{t('v3.shell.demo.banner')}</span>
       {signupUrl ? (

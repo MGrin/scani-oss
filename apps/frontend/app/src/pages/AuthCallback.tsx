@@ -82,7 +82,8 @@ export function AuthCallback() {
       <div
         className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
         style={{
-          paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
+          paddingTop:
+            'max(3rem, calc(3rem + var(--scani-inset-top, env(safe-area-inset-top, 0px))))',
           paddingBottom: 'max(3rem, calc(3rem + env(safe-area-inset-bottom)))',
           paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
           paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
@@ -111,7 +112,8 @@ export function AuthCallback() {
       <div
         className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
         style={{
-          paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
+          paddingTop:
+            'max(3rem, calc(3rem + var(--scani-inset-top, env(safe-area-inset-top, 0px))))',
           paddingBottom: 'max(3rem, calc(3rem + env(safe-area-inset-bottom)))',
           paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
           paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
@@ -139,7 +141,7 @@ export function AuthCallback() {
     <div
       className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
       style={{
-        paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
+        paddingTop: 'max(3rem, calc(3rem + var(--scani-inset-top, env(safe-area-inset-top, 0px))))',
         paddingBottom: 'max(3rem, calc(3rem + env(safe-area-inset-bottom)))',
         paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
         paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',

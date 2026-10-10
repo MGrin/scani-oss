@@ -65,7 +65,9 @@ describe('bottom drawer — the ways out', () => {
     // Top banners already pad themselves by the inset, so when one is up its
     // measured height subsumes it. `max()` is what keeps a drawer opened under
     // a banner from losing a second inset's worth of height for nothing.
-    expect(HEIGHT).toContain('max(var(--scani-banner-offset, 0px), env(safe-area-inset-top, 0px))');
+    expect(HEIGHT).toContain(
+      'max(var(--scani-banner-offset, 0px), var(--scani-inset-top, env(safe-area-inset-top, 0px)))'
+    );
   });
 
   test('the height is inline, so a caller className cannot restore h-dvh', () => {

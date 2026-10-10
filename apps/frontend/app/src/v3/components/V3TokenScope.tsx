@@ -12,6 +12,8 @@ interface V3TokenScopeProps {
    * to the portal provider as a *value* during render.
    */
   rootRef?: MutableRefObject<HTMLDivElement | null>;
+  /** Marks the app shell, which `styles/v3-shell.css` keys the header inset on. */
+  shell?: boolean;
   /**
    * Pins the token block to one theme regardless of the document's, via
    * `[data-ui='v3'][data-theme='dark']` in `v3-tokens.css`. Only the kitchen
@@ -38,7 +40,14 @@ interface V3TokenScopeProps {
  * creates it. The extra render that `setState` causes is the mount pass,
  * where nothing is open yet.
  */
-export function V3TokenScope({ children, className, style, theme, rootRef }: V3TokenScopeProps) {
+export function V3TokenScope({
+  children,
+  className,
+  style,
+  theme,
+  rootRef,
+  shell,
+}: V3TokenScopeProps) {
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
 
   const attach = (element: HTMLDivElement | null) => {
@@ -47,7 +56,14 @@ export function V3TokenScope({ children, className, style, theme, rootRef }: V3T
   };
 
   return (
-    <div ref={attach} data-ui="v3" data-theme={theme} className={className} style={style}>
+    <div
+      ref={attach}
+      data-ui="v3"
+      data-theme={theme}
+      data-v3-shell={shell ? '' : undefined}
+      className={className}
+      style={style}
+    >
       <PortalContainerProvider container={root}>{children}</PortalContainerProvider>
     </div>
   );
