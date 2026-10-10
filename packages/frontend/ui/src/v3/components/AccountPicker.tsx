@@ -71,6 +71,8 @@ export interface AccountPickerOption {
   /** One sentence under the group's heading. Where a fact is true of every row
    *  in the group, it belongs here rather than on each of them. */
   groupHint?: string;
+  /** Shown but not choosable, e.g. already taken by another part of a form. */
+  disabled?: boolean;
 }
 
 interface AccountPickerProps {
@@ -230,6 +232,7 @@ export function AccountPicker({
                   key={option.id}
                   name={name}
                   checked={isSelected}
+                  disabled={option.disabled}
                   onSelect={() => onChange(option)}
                 >
                   <TruncatedText className="truncate text-body font-medium">

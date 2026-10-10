@@ -12,6 +12,7 @@ its own package so prod-vs-dev gates aren't copy-pasted across
 | `urlSchema` | `z.ZodString` | Any syntactically valid URL. Custom error: `must be a valid URL`. |
 | `httpsUrlInProduction` | `z.ZodString \| z.ZodEffects<z.ZodString>` | `urlSchema` plus an `https://` requirement when running in production. |
 | `requiredInProd(schema, varName?)` | `z.ZodString \| z.ZodOptional<z.ZodString>` | Wraps a string schema so it's required in prod, optional in dev. The optional `varName` is woven into the error message so missing values name the env var that tripped validation. |
+| `renderScalarHtml(specUrl, title)`, `SCALAR_BUNDLE` (from `@scani/config/api-reference`) | `string`, pinned script | The rendered API reference page, and the one version-and-hash pin of Scalar's bundle that the Cloud API and `/api/v1` both load (SC-1353, SC-1648). |
 
 ## Usage
 

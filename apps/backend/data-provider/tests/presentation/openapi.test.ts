@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { buildOpenApiDocument, renderScalarHtml } from '../../src/presentation/openapi';
+import { renderScalarHtml } from '@scani/config/api-reference';
+import { buildOpenApiDocument } from '../../src/presentation/openapi';
 import { appRouter } from '../../src/presentation/router';
 
 /**
@@ -111,7 +112,7 @@ describe('OpenAPI document', () => {
 // cookie, and it loaded `@scalar/api-reference` from jsDelivr with no version
 // and no integrity. Whatever that URL served next would run with the cookie.
 describe('the API reference page loads a pinned, integrity-checked script (SC-1353)', () => {
-  const html = renderScalarHtml('/openapi.json');
+  const html = renderScalarHtml('/openapi.json', 'Scani Cloud API — Reference');
   const tags = [...html.matchAll(/<script\b[^>]*\bsrc="([^"]+)"[^>]*>/g)];
 
   test('every external script names an exact version and carries an integrity hash', () => {

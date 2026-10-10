@@ -2,7 +2,12 @@ import type { TransferDestination } from '@scani/shared';
 import { AccountPicker, type AccountPickerOption } from '@scani/ui/v3/components/AccountPicker';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { destinationDetail, destinationGroup, destinationScale } from '../../lib/transfer-review';
+import {
+  destinationDetail,
+  destinationGroup,
+  destinationKey,
+  destinationScale,
+} from '../../lib/transfer-review';
 
 /**
  * Where the money went, when it went somewhere Scani already tracks (SC-187).
@@ -49,11 +54,6 @@ import { destinationDetail, destinationGroup, destinationScale } from '../../lib
  * adopt the shared one.
  */
 
-/** A destination's identity for the radio group — `accountId` is not unique. */
-function destinationId(destination: TransferDestination): string {
-  return `${destination.accountId}:${destination.holdingId ?? 'new'}`;
-}
-
 interface TransferDestinationPickerProps {
   destinations: TransferDestination[];
   tokenSymbol: string;
@@ -63,6 +63,8 @@ interface TransferDestinationPickerProps {
   selected: TransferDestination | null;
   onSelect: (destination: TransferDestination) => void;
   isLoading: boolean;
+  /** Destinations another part of the same answer already took (SC-1665). */
+  taken?: ReadonlySet<string>;
 }
 
 export function TransferDestinationPicker({
@@ -72,6 +74,7 @@ export function TransferDestinationPicker({
   selected,
   onSelect,
   isLoading,
+  taken,
 }: TransferDestinationPickerProps) {
   const { t } = useTranslation();
 
@@ -79,23 +82,24 @@ export function TransferDestinationPicker({
     // One scale for the whole list — these balances are read as a column.
     const scale = destinationScale(destinations);
     return destinations.map((destination) => ({
-      id: destinationId(destination),
+      id: destinationKey(destination),
       name: destination.accountName,
       institution: destination.institutionName,
       subtitle: destinationDetail(destination, tokenSymbol, scale) ?? undefined,
       ...destinationGroup(t, destination, tokenSymbol),
+      disabled: taken?.has(destinationKey(destination)) ?? false,
     }));
-  }, [destinations, tokenSymbol, t]);
+  }, [destinations, tokenSymbol, t, taken]);
 
   const byId = useMemo(
-    () => new Map(destinations.map((destination) => [destinationId(destination), destination])),
+    () => new Map(destinations.map((destination) => [destinationKey(destination), destination])),
     [destinations]
   );
 
   return (
     <AccountPicker
       options={options}
-      value={selected ? destinationId(selected) : null}
+      value={selected ? destinationKey(selected) : null}
       onChange={(option) => {
         const destination = byId.get(option.id);
         if (destination) onSelect(destination);
