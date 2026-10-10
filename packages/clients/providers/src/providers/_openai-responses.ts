@@ -1,0 +1,532 @@
+/**
+ * Shared base for providers that speak OpenAI's Responses API
+ * (`POST /v1/responses`). Only OpenAI extends it today.
+ *
+ * Methods exposed via the `AIInferenceProvider` capability:
+ *  - `parseScreenshot({ imageBase64, mimeType, hint, systemPrompt })` →
+ *    multimodal request with the document and a JSON-shaped prompt. A PDF
+ *    travels as an `input_file` part, an image as `input_image`; see
+ *    `supportsPdfFileInput`.
+ *  - `parseDocumentText(text, hint)` → text-only request with the same
+ *    JSON-output contract.
+ *  - `completeText(prompt, opts)` → generic completion, returns the
+ *    raw text.
+ *
+ * Every request sets `store: false`. The API retains a response for later
+ * retrieval unless told not to, and these carry a user's uploaded
+ * statement; nothing here reads a stored response back (SC-1581).
+ *
+ * Failure handling: every method throws on transport / 4xx / 5xx
+ * errors. Every successful response is paced through an outflow
+ * rate-limiter (per-providerKey) so a runaway batch can't pin upstream
+ * to its 429-budget; usage tokens are parsed off the response and
+ * returned alongside the parsed data so the data-provider's usage
+ * middleware can attribute upstream cost back to the calling tenant.
+ */
+
+import { type CustomLogger, createComponentLogger } from '@scani/logging';
+import { createOutflowLimiter, getSharedRedis, type OutflowRateLimiter } from '@scani/rate-limiter';
+import type {
+  AIAvailability,
+  AIAvailabilityState,
+  AIInferenceProvider,
+  AIResult,
+  AIUsage,
+  Capability,
+} from '../core/capabilities';
+import { AIUnavailableError } from '../core/errors';
+import type { RateLimiterRegistry } from '../core/rate-limiter-registry';
+import { fetchWithTimeout } from '../core/utils/fetch';
+
+/** The temperature field is omitted, not defaulted, where the model accepts
+    only its own default. Kept in one place so a third call site cannot
+    forget it — the incompatibility was found in production. */
+function tuning(
+  config: ResponsesConfig,
+  maxTokens: number,
+  temperature: number
+): Record<string, number> {
+  const out: Record<string, number> = { max_output_tokens: maxTokens };
+  if (config.supportsTemperature !== false) out.temperature = temperature;
+  return out;
+}
+
+export interface ResponsesConfig {
+  providerKey: string;
+  baseUrl: string;
+  model: string;
+  /** Vision-capable model. When undefined the provider declines image
+      input by throwing — let the AIRouter fall through to a vision
+      provider. */
+  visionModel?: string;
+  apiKey: string;
+  maxTokens?: number;
+  temperature?: number;
+  /**
+   * The gpt-5 family accepts only the default temperature ("Unsupported
+   * value: 'temperature' does not support 0.1 with this model. Only the
+   * default (1) value is supported"), so the field has to be OMITTED,
+   * not set to a different number. Default true preserves the tuned
+   * low-temperature behaviour everywhere else.
+   */
+  supportsTemperature?: boolean;
+  /**
+   * Whether this provider reads a PDF as an `input_file` part. A PDF sent
+   * as an image part is rejected outright — "Invalid MIME type. Only image
+   * types are supported" (`invalid_image_format`), observed in production
+   * 2026-08-11 — and a file part was confirmed working against the live API
+   * with the same invoice that failed. Opt-in: default off makes
+   * `parseScreenshot` reject a PDF locally rather than pay for a request the
+   * endpoint will refuse, letting the AIRouter fall through to a provider
+   * that can read it.
+   */
+  supportsPdfFileInput?: boolean;
+  /** Per-minute upstream call budget for this provider key. Defaults
+      to a conservative 20/min. Override via factory if you have a
+      higher OpenAI tier. */
+  rateLimitPerMinute?: number;
+  /** Pricing table for `upstreamCostUsd` calculation. USD per 1M
+      tokens. Optional — when absent, `usage.upstreamCostUsd` is left
+      unset and the dashboard applies its fallback rate. */
+  pricing?: {
+    promptUsdPerMillion: number;
+    completionUsdPerMillion: number;
+  };
+  /**
+   * Boot's namespace map, passed by the factory. The other 25 provider
+   * directories call `register()` in their own factory; these three build
+   * their limiter in the shared base below, so the registry has to reach
+   * the base to be told about them at all — and until SC-1090 it never
+   * was, leaving `registry.list()` short by exactly the three namespaces
+   * with the structural `ai:${providerKey}` doubling and the duplicate
+   * guard blind to them.
+   *
+   * OPTIONAL because direct construction (`new OpenAIProvider(key)` in
+   * tests) has no boot and no registry, and registering from a bare
+   * `new` would make a second construction in the same process throw on
+   * a namespace the first one took. Registration belongs to boot.
+   */
+  rateLimiterRegistry?: RateLimiterRegistry;
+}
+
+/** The subset of a Responses API body this client reads. `output_text` is
+    an SDK convenience and absent from the REST body, so text is collected
+    from the `message` items in `output`; a reasoning model puts a
+    `reasoning` item ahead of them. */
+interface ResponsesResponse {
+  status?: string;
+  incomplete_details?: { reason?: string } | null;
+  output?: Array<{
+    type: string;
+    content?: Array<{ type: string; text?: string }>;
+  }>;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    total_tokens?: number;
+  };
+}
+
+const DEFAULT_RATE_LIMIT_PER_MINUTE = 20;
+const PDF_MIME_TYPE = 'application/pdf';
+/** Stands in for the user turn when the caller replaced the system prompt
+    and passed no hint — the document still needs an instruction next to it. */
+const ATTACHED_DOCUMENT_PROMPT = 'Extract the requested data from the attached document.';
+/** JSON mode. The API refuses it unless "json" appears in the INPUT messages
+    and does not count top-level `instructions` (HTTP 400, measured
+    2026-10-05), so the system prompt travels as a `system` input message —
+    where Chat Completions had it — rather than as `instructions`. */
+const JSON_OUTPUT = { format: { type: 'json_object' } } as const;
+
+/** OpenAI keys the part off the filename's extension, not the data URL's
+    MIME type, so the extension is load-bearing even though the name is
+    synthetic. */
+function pdfFilePart(base64: string) {
+  return {
+    type: 'input_file',
+    filename: 'document.pdf',
+    file_data: `data:${PDF_MIME_TYPE};base64,${base64}`,
+  };
+}
+
+function imagePart(base64: string, mimeType: string) {
+  return {
+    type: 'input_image',
+    image_url: `data:${mimeType || 'image/jpeg'};base64,${base64}`,
+    detail: 'high',
+  };
+}
+
+function outputText(data: ResponsesResponse): string {
+  return (data.output ?? [])
+    .filter((item) => item.type === 'message')
+    .flatMap((item) => item.content ?? [])
+    .filter((part) => part.type === 'output_text')
+    .map((part) => part.text ?? '')
+    .join('');
+}
+
+export class ResponsesProvider implements AIInferenceProvider {
+  readonly providerKey: string;
+  readonly capabilities: readonly Capability[] = ['ai-inference'];
+  readonly supportsPdfFileInput: boolean;
+
+  protected readonly logger: CustomLogger;
+  private readonly limiter: OutflowRateLimiter;
+
+  constructor(protected readonly config: ResponsesConfig) {
+    this.providerKey = config.providerKey;
+    this.supportsPdfFileInput = config.supportsPdfFileInput === true;
+    this.logger = createComponentLogger(`provider:${config.providerKey}`);
+    // Redis-backed when the host app initialised the shared client
+    // (api / worker / data-provider), in-memory in tests / OSS without
+    // Redis. Namespace per providerKey so each provider's budget stays
+    // independent.
+    //
+    // The literal is built HERE and read back off `limiterConfig` rather
+    // than spelled twice: `provider-namespaces.test.ts` parses this one
+    // line as the source of truth for the AI namespaces, and a second
+    // copy is a second thing to keep in step. The doubled `ai` in
+    // `ai:ai-openai` is deliberate and untouched — a namespace is a live
+    // Redis key, so renaming it abandons whatever window is in flight
+    // (SC-1085 recorded it as-is for that reason).
+    const limiterConfig = {
+      maxRequests: config.rateLimitPerMinute ?? DEFAULT_RATE_LIMIT_PER_MINUTE,
+      windowMs: 60_000,
+      redis: getSharedRedis(),
+      namespace: `ai:${config.providerKey}`,
+    };
+    const limiter = createOutflowLimiter(limiterConfig);
+    // SC-1090. `register()` returns the limiter, so the registered one is
+    // what this provider uses — the same shape the other 25 factories have.
+    this.limiter =
+      config.rateLimiterRegistry?.register({
+        namespace: limiterConfig.namespace,
+        limiter,
+        registeredFrom: `providers/${config.providerKey}`,
+        description: `${config.providerKey}: ${limiterConfig.maxRequests} req / 60s`,
+      }) ?? limiter;
+  }
+
+  private availabilityState: AIAvailabilityState = 'unverified';
+  private retryAt = 0;
+
+  private get availabilityKey(): string {
+    const fingerprint = new Bun.CryptoHasher('sha256').update(this.config.apiKey).digest('hex');
+    return `ai-availability:${this.providerKey}:${fingerprint}`;
+  }
+
+  async getAvailability(): Promise<AIAvailability> {
+    if (!this.isConfigured())
+      return { state: 'missing', image: false, pdf: false, text: false, completion: false };
+    const redis = getSharedRedis();
+    if (redis) {
+      try {
+        const rejected = await Promise.race([
+          redis.get(this.availabilityKey),
+          Bun.sleep(1000).then(() => null),
+        ]);
+        if (rejected === 'rejected') this.availabilityState = 'rejected';
+      } catch {
+        /* Local observations still apply when shared status is unreachable. */
+      }
+    }
+    if (this.availabilityState === 'transient' && Date.now() >= this.retryAt)
+      this.availabilityState = 'unverified';
+    const usable = this.availabilityState === 'unverified' || this.availabilityState === 'ready';
+    return {
+      state: this.availabilityState,
+      image: usable && Boolean(this.config.visionModel),
+      pdf: usable && this.supportsPdfFileInput,
+      text: usable,
+      completion: usable,
+    };
+  }
+
+  /**
+   * A 401 is a revoked or wrong key. A 403 can equally be a region or model
+   * restriction, so it is believed for less time. Neither is permanent: a
+   * misread status must heal on its own rather than by hand in Redis.
+   */
+  private async unavailable(
+    state: 'rejected' | 'transient',
+    rejectedForSeconds = 86_400
+  ): Promise<never> {
+    this.availabilityState = state;
+    this.retryAt = Date.now() + 30_000;
+    if (state === 'rejected') {
+      try {
+        await Promise.race([
+          getSharedRedis()?.set(this.availabilityKey, 'rejected', 'EX', rejectedForSeconds),
+          Bun.sleep(1000),
+        ]);
+      } catch {
+        /* Retain the local rejection. */
+      }
+    }
+    throw new AIUnavailableError(state);
+  }
+
+  isConfigured(): boolean {
+    return Boolean(this.config.apiKey.trim());
+  }
+
+  async parseScreenshot(
+    input: {
+      imageBase64: string;
+      mimeType: string;
+      hint?: string;
+      systemPrompt?: string;
+    },
+    signal?: AbortSignal
+  ): Promise<AIResult<unknown>> {
+    if (!this.isConfigured()) {
+      throw new AIUnavailableError('missing');
+    }
+    if (!this.config.visionModel) {
+      throw new Error(`${this.config.providerKey}: vision not supported by configured model`);
+    }
+    const isPdf = input.mimeType === PDF_MIME_TYPE;
+    if (isPdf && !this.supportsPdfFileInput) {
+      throw new Error(
+        `${this.config.providerKey}: PDF input not supported by this provider (only image types)`
+      );
+    }
+    // Same contract as `parseDocumentText`: a caller-supplied system prompt
+    // REPLACES the holdings schema rather than sitting under it, so the
+    // default's "extract every visible token holding" can't contradict it.
+    const useCustom = Boolean(input.systemPrompt);
+    const userPrompt = useCustom
+      ? (input.hint ?? ATTACHED_DOCUMENT_PROMPT)
+      : buildUserPrompt(input.hint);
+    const body = {
+      model: this.config.visionModel,
+      store: false,
+      input: [
+        { role: 'system', content: input.systemPrompt ?? buildSystemPrompt() },
+        {
+          role: 'user',
+          content: [
+            { type: 'input_text', text: userPrompt },
+            isPdf ? pdfFilePart(input.imageBase64) : imagePart(input.imageBase64, input.mimeType),
+          ],
+        },
+      ],
+      ...tuning(this.config, this.config.maxTokens ?? 4000, this.config.temperature ?? 0.1),
+      text: JSON_OUTPUT,
+    };
+    return this.callJson(body, signal);
+  }
+
+  async parseDocumentText(
+    text: string,
+    hint?: string,
+    systemPrompt?: string,
+    signal?: AbortSignal
+  ): Promise<AIResult<unknown>> {
+    if (!this.isConfigured()) {
+      throw new AIUnavailableError('missing');
+    }
+    // A caller-supplied system prompt REPLACES the holdings schema rather
+    // than sitting under it. `buildUserPrompt`'s "Extract every visible
+    // token holding" opener would otherwise still contradict it.
+    const useCustom = Boolean(systemPrompt);
+    const resolvedSystem = systemPrompt ?? buildSystemPrompt();
+    const userPrompt = useCustom
+      ? [hint, text ? `Document text:\n${text.slice(0, 32000)}` : ''].filter(Boolean).join('\n\n')
+      : buildUserPrompt(hint, text);
+    const body = {
+      model: this.config.model,
+      store: false,
+      input: [
+        { role: 'system', content: resolvedSystem },
+        { role: 'user', content: userPrompt },
+      ],
+      ...tuning(this.config, this.config.maxTokens ?? 4000, this.config.temperature ?? 0.1),
+      text: JSON_OUTPUT,
+    };
+    return this.callJson(body, signal);
+  }
+
+  async completeText(
+    prompt: string,
+    opts?: { temperature?: number; maxTokens?: number },
+    signal?: AbortSignal
+  ): Promise<AIResult<string>> {
+    if (!this.isConfigured()) {
+      throw new AIUnavailableError('missing');
+    }
+    const body = {
+      model: this.config.model,
+      store: false,
+      input: prompt,
+      ...tuning(
+        this.config,
+        opts?.maxTokens ?? this.config.maxTokens ?? 1000,
+        opts?.temperature ?? this.config.temperature ?? 0.7
+      ),
+    };
+    const { data, usage } = await this.callRaw(body, signal);
+    return {
+      data: outputText(data),
+      usage,
+    };
+  }
+
+  // ============================================================
+  // Internals
+  // ============================================================
+
+  /** Returns the parsed JSON of the response's output text. */
+  private async callJson(body: unknown, signal?: AbortSignal): Promise<AIResult<unknown>> {
+    const { data, usage } = await this.callRaw(body, signal);
+    // A truncated object would otherwise surface as a JSON syntax error,
+    // which names the symptom and hides that the token cap was hit.
+    if (data.status === 'incomplete') {
+      throw new Error(
+        `${this.config.providerKey}: response incomplete (${data.incomplete_details?.reason ?? 'unknown'})`
+      );
+    }
+    const content = outputText(data);
+    if (!content) {
+      throw new Error(`${this.config.providerKey}: no content in response`);
+    }
+    try {
+      return { data: JSON.parse(content), usage };
+    } catch (err) {
+      throw new Error(
+        `${this.config.providerKey}: failed to parse JSON response (${err instanceof Error ? err.message : err})`
+      );
+    }
+  }
+
+  /** Returns the raw `ResponsesResponse` and parsed token usage. */
+  private async callRaw(
+    body: unknown,
+    signal?: AbortSignal
+  ): Promise<{ data: ResponsesResponse; usage?: AIUsage }> {
+    const status = await this.getAvailability();
+    if (status.state === 'missing' || status.state === 'rejected' || status.state === 'transient') {
+      throw new AIUnavailableError(status.state);
+    }
+    const data = await this.limiter.execute(
+      async () => {
+        const current = await this.getAvailability();
+        if (
+          current.state === 'missing' ||
+          current.state === 'rejected' ||
+          current.state === 'transient'
+        ) {
+          throw new AIUnavailableError(current.state);
+        }
+        const response = await fetchWithTimeout(
+          `${this.config.baseUrl}/responses`,
+          {
+            method: 'POST',
+            signal: signal
+              ? AbortSignal.any([signal, AbortSignal.timeout(30_000)])
+              : AbortSignal.timeout(30_000),
+            headers: {
+              Authorization: `Bearer ${this.config.apiKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(body),
+          },
+          30000,
+          0
+        ).catch((error: unknown) => {
+          // Only a failure to reach the provider backs every caller off. A
+          // caller's own cancellation and one slow answer fail this call alone.
+          if (signal?.aborted) throw error;
+          if (error instanceof Error && error.name === 'TimeoutError')
+            throw new AIUnavailableError('transient');
+          return this.unavailable('transient');
+        });
+        if (!response.ok) {
+          if (response.status === 401) return this.unavailable('rejected');
+          if (response.status === 403) return this.unavailable('rejected', 3_600);
+          if (response.status === 429 || response.status >= 500)
+            return this.unavailable('transient');
+          throw new Error(`AI processing request failed (HTTP ${response.status})`);
+        }
+        return (await response.json()) as ResponsesResponse;
+      },
+      undefined,
+      signal
+    );
+    this.availabilityState = 'ready';
+    return { data, usage: this.extractUsage(data) };
+  }
+
+  private extractUsage(data: ResponsesResponse): AIUsage | undefined {
+    const u = data.usage;
+    if (!u) return undefined;
+    const tokensIn = typeof u.input_tokens === 'number' ? u.input_tokens : 0;
+    const tokensOut = typeof u.output_tokens === 'number' ? u.output_tokens : 0;
+    const totalTokens = typeof u.total_tokens === 'number' ? u.total_tokens : tokensIn + tokensOut;
+    let upstreamCostUsd: number | undefined;
+    if (this.config.pricing) {
+      upstreamCostUsd =
+        (tokensIn * this.config.pricing.promptUsdPerMillion) / 1_000_000 +
+        (tokensOut * this.config.pricing.completionUsdPerMillion) / 1_000_000;
+    }
+    return { tokensIn, tokensOut, totalTokens, upstreamCostUsd };
+  }
+}
+
+function buildSystemPrompt(): string {
+  return `You are a financial data extraction expert. Extract every position the
+account holder owns from screenshots or document text. Return JSON in this exact shape:
+
+{
+  "holdings": [
+    { "symbol": "<ticker>", "name": "<full name>", "assetType": "<fiat|crypto|stock>", "balance": "<decimal string>", "confidence": <0-1> }
+  ],
+  "overallConfidence": <0-1>,
+  "detectedCurrency": "<ISO currency code>"
+}
+
+A "holding" is anything with a balance the user owns. This includes:
+  • crypto tokens (BTC, ETH, USDC, …)
+  • stocks / ETFs (AAPL, VTI, …)
+  • fiat cash balances on bank, brokerage, or wallet statements (USD, EUR, GBP, …) —
+    use the ISO currency code as both symbol and (if no other name is given) name.
+    For a savings/checking statement with a single currency, the holding's balance is
+    the closing balance shown on the statement.
+
+Classify every holding with "assetType", based on what the screenshot actually shows:
+  • "fiat"   — a cash or currency balance (a "Cash", "Available balance", "Buying
+               power" or account-balance line). A 3-letter ISO-4217 currency code
+               (USD, EUR, GBP, CHF, JPY, …) shown as a cash/account balance is ALWAYS
+               "fiat" — never a stock, even though some currency codes also exist as
+               equity tickers.
+  • "crypto" — a cryptocurrency or token (including stablecoins like USDT, USDC).
+  • "stock"  — a publicly traded stock, ETF, fund, or other equity/commodity.
+When genuinely unsure, pick the most likely type and lower "confidence".
+
+Extract EVERY balance line — be exhaustive:
+  • Include named savings pockets, vaults, "pots", "spaces", goals and
+    sub-accounts, not only rows that show an explicit ticker. A line like
+    "Savings  $7,040.50" is a holding.
+  • Each distinct balance line is its OWN holding, even when several lines
+    share the same currency. Never merge, deduplicate, or skip a balance
+    because that currency already appeared in another row.
+  • When a line has no ticker but shows a currency symbol ($, €, £, ¥, ₣,
+    …), use the matching ISO-4217 code as "symbol" and the line's own
+    label (e.g. "Savings") as "name".
+  • When one balance is shown in two currencies (a primary amount plus a
+    smaller converted estimate), use the primary/most-prominent amount and
+    the currency shown directly next to it.
+
+Always return at least one holding when the document clearly shows an account balance.
+Be conservative with confidence — when in doubt, lower it. Use Decimal.js-safe string
+representation for balance (no scientific notation, no thousands separators).`;
+}
+
+function buildUserPrompt(hint?: string, text?: string): string {
+  const lines: string[] = [];
+  lines.push('Extract every visible token holding from the input.');
+  if (hint) lines.push(`Hint: ${hint}`);
+  if (text) lines.push(`Document text:\n${text.slice(0, 32000)}`);
+  return lines.join('\n\n');
+}

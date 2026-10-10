@@ -10,7 +10,7 @@
  * The fallback hands the provider the ORIGINAL file, not a rendered page
  * image — there is no PDF-page-to-image renderer here. That is fine
  * because a provider that declares PDF support uploads it as a document
- * part (see `supportsPdfFileInput` in `_chat-completions.ts`); one that
+ * part (see `supportsPdfFileInput` in `_openai-responses.ts`); one that
  * doesn't throws, and this service surfaces that rather than storing an
  * empty extraction. Sending a PDF as an image part is what produced
  * `invalid_image_format` in production on 2026-08-11.
