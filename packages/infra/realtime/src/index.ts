@@ -6,6 +6,7 @@ export {
   channelForUser,
   type EntityType,
   type OperationType,
+  OUTBOX_KICK_CHANNEL,
   REDIS_CHANNEL_PATTERN,
   REDIS_CHANNEL_PREFIX,
   type RealTimeEvent,
