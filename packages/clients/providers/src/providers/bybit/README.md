@@ -27,6 +27,9 @@ Bybit V5 balances (Funding + Unified), transactions and creds-validate.
     Funding/Unified transfers in the log are skipped, since the execution
     list and the summed balance already cover them. Rows are keyed on Bybit's
     id, because adjacent 7-day windows share a boundary instant (SC-1461).
+    A row of any other log type that moves a balance is counted and named
+    in the run's warnings and a `warn` log line, and never imported as a
+    row (SC-1591).
 - **Permissions**: the key needs the Assets/Wallet read permission. Without it
   the Funding read returns `retCode 10005`, and both sync and credential
   validation fail with a message naming the permission rather than reading
