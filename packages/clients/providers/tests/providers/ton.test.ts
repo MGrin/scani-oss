@@ -43,7 +43,7 @@ describe('TonProvider', () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
       new Response(
-        JSON.stringify({ ok: true, result: '2500000000' }), // 2.5 TON
+        JSON.stringify({ accounts: [{ balance: '2500000000', status: 'active' }] }), // 2.5 TON
         { status: 200 }
       )) as unknown as typeof fetch;
     try {
@@ -60,7 +60,7 @@ describe('TonProvider', () => {
     const p = new TonProvider(passthroughLimiter(), 'http://api');
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () =>
-      new Response(JSON.stringify({ ok: true, result: '0' }), {
+      new Response(JSON.stringify({ accounts: [{ balance: '0', status: 'active' }] }), {
         status: 200,
       })) as unknown as typeof fetch;
     try {
@@ -78,7 +78,9 @@ describe('TonProvider', () => {
     globalThis.fetch = (async (_url: string, init?: RequestInit) => {
       const headers = new Headers(init?.headers);
       seenKeys.push(headers.get('x-api-key'));
-      return new Response(JSON.stringify({ ok: true, result: '0' }), { status: 200 });
+      return new Response(JSON.stringify({ accounts: [{ balance: '0', status: 'active' }] }), {
+        status: 200,
+      });
     }) as unknown as typeof fetch;
     try {
       await p.fetchBalances(ctx as never);
@@ -93,14 +95,14 @@ describe('TonProvider', () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async (url: string) => {
       expect(url).toContain('limit=100');
-      expect(url).toContain('to_lt=0');
+      expect(url).toContain('sort=desc');
       // Single short page → loop terminates after one call.
       const body = {
-        ok: true,
-        result: [
+        transactions: [
           {
-            utime: 1_700_000_000,
-            transaction_id: { lt: '111', hash: 'hashA' },
+            now: 1_700_000_000,
+            lt: '111',
+            hash: 'hashA',
             in_msg: {
               source: 'EQSomeSender',
               destination: VALID_TON_FRIENDLY,
@@ -142,11 +144,11 @@ describe('TonProvider', () => {
     const originalFetch = globalThis.fetch;
     globalThis.fetch = (async () => {
       const body = {
-        ok: true,
-        result: [
+        transactions: [
           {
-            utime: 1_700_000_100,
-            transaction_id: { lt: '222', hash: 'hashB' },
+            now: 1_700_000_100,
+            lt: '222',
+            hash: 'hashB',
             in_msg: {
               source: 'EQSomeSender',
               destination: VALID_TON_FRIENDLY,
@@ -172,15 +174,16 @@ describe('TonProvider', () => {
     }
   });
 
-  test('fetchTransactions: paginates via lt/hash cursor until short page', async () => {
+  test('fetchTransactions: paginates backwards by lt until short page', async () => {
     const p = new TonProvider(passthroughLimiter(), 'http://api');
     const originalFetch = globalThis.fetch;
     const calls: string[] = [];
     // Page 1: 100 rows (full) → cursor advances.
     // Page 2: 1 row (short)   → loop terminates.
     const fullPage = Array.from({ length: 100 }, (_, idx) => ({
-      utime: 1_700_000_000 + idx,
-      transaction_id: { lt: String(1000 - idx), hash: `h${idx}` },
+      now: 1_700_000_000 + idx,
+      lt: String(1000 - idx),
+      hash: `h${idx}`,
       in_msg: {
         source: 'EQS',
         destination: VALID_TON_FRIENDLY,
@@ -190,12 +193,12 @@ describe('TonProvider', () => {
     }));
     const lastFullRow = fullPage[fullPage.length - 1];
     if (!lastFullRow) throw new Error('test setup: full page missing last row');
-    const expectedCursorLt = lastFullRow.transaction_id.lt;
-    const expectedCursorHash = lastFullRow.transaction_id.hash;
+    const expectedCursorLt = lastFullRow.lt;
     const tailPage = [
       {
-        utime: 1_699_999_000,
-        transaction_id: { lt: '900', hash: 'tail' },
+        now: 1_699_999_000,
+        lt: '900',
+        hash: 'tail',
         in_msg: {
           source: 'EQS',
           destination: VALID_TON_FRIENDLY,
@@ -206,16 +209,15 @@ describe('TonProvider', () => {
     ];
     globalThis.fetch = (async (url: string) => {
       calls.push(url);
-      const isFirst = !url.includes('hash=');
-      const body = isFirst ? { ok: true, result: fullPage } : { ok: true, result: tailPage };
+      const isFirst = !url.includes('end_lt=');
+      const body = isFirst ? { transactions: fullPage } : { transactions: tailPage };
       return new Response(JSON.stringify(body), { status: 200 });
     }) as unknown as typeof fetch;
     try {
       const events = await p.fetchTransactions(ctx as never);
       expect(calls).toHaveLength(2);
-      expect(calls[0]).not.toContain('hash=');
-      expect(calls[1]).toContain(`lt=${expectedCursorLt}`);
-      expect(calls[1]).toContain(`hash=${expectedCursorHash}`);
+      expect(calls[0]).not.toContain('end_lt=');
+      expect(calls[1]).toContain(`end_lt=${BigInt(expectedCursorLt) - 1n}`);
       // 100 inflows + 1 inflow tail.
       expect(events).toHaveLength(101);
       expect(events[events.length - 1]?.externalId).toBe('900-tail-0');
@@ -230,11 +232,11 @@ describe('TonProvider', () => {
     globalThis.fetch = (async () =>
       new Response(
         JSON.stringify({
-          ok: true,
-          result: [
+          transactions: [
             {
-              utime: 1_600_000_000,
-              transaction_id: { lt: '1', hash: 'old' },
+              now: 1_600_000_000,
+              lt: '1',
+              hash: 'old',
               in_msg: {
                 source: 'EQS',
                 destination: VALID_TON_FRIENDLY,
@@ -243,8 +245,9 @@ describe('TonProvider', () => {
               out_msgs: [],
             },
             {
-              utime: 1_800_000_000,
-              transaction_id: { lt: '2', hash: 'new' },
+              now: 1_800_000_000,
+              lt: '2',
+              hash: 'new',
               in_msg: {
                 source: 'EQS',
                 destination: VALID_TON_FRIENDLY,
@@ -281,11 +284,11 @@ describe('TonProvider', () => {
 // foundation address so the shape assertion is stable. Opt-in via
 // SCANI_LIVE=1.
 test.skipIf(process.env.SCANI_LIVE !== '1')(
-  'TonProvider — live toncenter.com /getTransactions returns events',
+  'TonProvider — live toncenter.com /transactions returns events',
   async () => {
     const provider = new TonProvider(
       passthroughLimiter(),
-      process.env.TON_API_URL ?? 'https://toncenter.com/api/v2',
+      process.env.TON_API_URL ?? 'https://toncenter.com/api/v3',
       process.env.TON_API_KEY
     );
     const events = await provider.fetchTransactions({
@@ -315,10 +318,10 @@ describe('TonProvider.fetchTransactions over an address with no end (SC-1271)', 
       pages += 1;
       return new Response(
         JSON.stringify({
-          ok: true,
-          result: Array.from({ length: 100 }, (_, i) => ({
-            utime: 1_700_000_000 - pages,
-            transaction_id: { lt: String(1_000_000 - pages * 100 - i), hash: `h${pages}_${i}` },
+          transactions: Array.from({ length: 100 }, (_, i) => ({
+            now: 1_700_000_000 - pages,
+            lt: String(1_000_000 - pages * 100 - i),
+            hash: `h${pages}_${i}`,
             in_msg: { source: 'EQSomeSender', destination: VALID_TON_FRIENDLY, value: '1' },
             out_msgs: [],
           })),
