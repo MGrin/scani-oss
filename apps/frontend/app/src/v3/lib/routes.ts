@@ -128,8 +128,9 @@ export const V3_CAPTURE_ROUTES = {
   manualEntry: '/manual-entry',
   /** "I withdrew 2000" — the movement, not the balance it leaves (SC-607). */
   recordMovement: '/record-movement',
-  /** A property or vehicle, valued by hand (SC-1643). */
-  valuedAsset: '/assets/new',
+  /** A property or vehicle, valued by hand (SC-1643). Never under `/assets/`:
+   *  that prefix 404s on every host once no hashed file matches (SC-1318). */
+  valuedAsset: '/valued-asset',
   fileImport: '/import',
   /** A YNAB register, mapped account by account (SC-1649). */
   budgetAppImport: '/import/budget-app',

@@ -53,7 +53,7 @@ test.describe('assets: add a property', () => {
     expect(row).toBeTruthy();
     expect(Number(row.value)).toBe(360000);
 
-    await page.goto('/assets/new');
+    await page.goto('/valued-asset');
     await expect(page.getByRole('heading', { name: 'Add a property or vehicle' })).toBeVisible();
   });
 });
