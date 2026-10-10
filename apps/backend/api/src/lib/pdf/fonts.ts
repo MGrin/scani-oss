@@ -79,6 +79,7 @@ import hanTraditional from '@fontsource/noto-sans-tc/files/noto-sans-tc-chinese-
 };
 import * as fontkit from 'fontkit';
 import type { Face } from './layout';
+import { woffToSfnt } from './woff';
 
 /**
  * Which face draws which character — SC-127.
@@ -387,8 +388,12 @@ export async function loadTypesetter(): Promise<Typesetter> {
   const faces = new Map<string, LoadedFace>();
   await Promise.all(
     [...paths].map(async ([name, path]) => {
-      const bytes = Buffer.from(await Bun.file(path).arrayBuffer());
-      const font = fontkit.create(bytes);
+      const woff = Buffer.from(await Bun.file(path).arrayBuffer());
+      // Coverage is read off the WOFF as before, so which face sets which
+      // character is unchanged; pdfkit gets the unwrapped sfnt, which it
+      // re-parses per document without inflating anything (SC-1593).
+      const font = fontkit.create(woff);
+      const bytes = woffToSfnt(woff);
       // `create` also answers with a collection, for a `.ttc` or a `.dfont`.
       // These are single-face `.woff`s from a pinned package, so that branch is
       // unreachable — but reading `characterSet` off a collection yields
