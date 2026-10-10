@@ -3,7 +3,7 @@ import { Input } from '@scani/ui/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
 import { showError } from '@scani/ui/ui/use-toast';
 import { Block } from '@scani/ui/v3/components/Block';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useFormatLocale } from '@/contexts/FormatLocaleContext';
 import { invalidateAfterCurrencyChange } from '@/hooks/invalidatePortfolioQueries';
@@ -128,14 +128,33 @@ export function ProfileSettings() {
   );
 
   const { mutate } = update;
+  const pendingSave = useRef<(() => void) | null>(null);
+  // The form reads as dirty for one render before it is filled from the user,
+  // so "dirty" alone is not "the person typed something".
+  const typed = useRef(false);
   useEffect(() => {
-    if (!isDirty) return;
-    const timer = setTimeout(
-      () => mutate({ name: name || undefined, baseCurrencyId: baseCurrencyId || undefined }),
-      AUTOSAVE_DELAY_MS
-    );
+    if (!isDirty) {
+      pendingSave.current = null;
+      return;
+    }
+    const save = () => {
+      pendingSave.current = null;
+      typed.current = false;
+      mutate({ name: name || undefined, baseCurrencyId: baseCurrencyId || undefined });
+    };
+    pendingSave.current = save;
+    const timer = setTimeout(save, AUTOSAVE_DELAY_MS);
     return () => clearTimeout(timer);
   }, [name, baseCurrencyId, isDirty, mutate]);
+
+  // Leaving inside the delay saves at once rather than dropping the edit: the
+  // next Settings area is one tap away (SC-1670).
+  useEffect(
+    () => () => {
+      if (typed.current) pendingSave.current?.();
+    },
+    []
+  );
 
   return (
     <>
@@ -146,7 +165,10 @@ export function ProfileSettings() {
               <Input
                 id="settings-name"
                 value={name}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(event) => {
+                  typed.current = true;
+                  setName(event.target.value);
+                }}
                 placeholder={t('settings.namePlaceholder')}
                 className="text-body"
               />

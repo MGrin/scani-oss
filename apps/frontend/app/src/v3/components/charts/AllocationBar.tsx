@@ -79,29 +79,7 @@ export function AllocationBar({
           neighbour it would be most of the segment. `overflow-hidden` on a
           fully-rounded track is what rounds the two data ends while leaving
           the interior joins square. */}
-      <div
-        role="img"
-        aria-label={label}
-        // A stable hook for the visual gate, which must confirm this bar is
-        // FOLDED before committing a baseline of it (SC-815). The page carries
-        // 21 `role="img"` nodes — every institution mark is one — so a
-        // structural selector picks whichever comes first, and matching on
-        // `aria-label` would tie the harness to a translated string.
-        data-ui="allocation-bar"
-        className="flex h-2 gap-[2px] overflow-hidden rounded-full"
-      >
-        {segments.map((segment) => (
-          <div
-            key={segment.key}
-            // `flex-grow: share` with a zero basis divides the space *after*
-            // the gaps are taken out, so the gaps never distort the
-            // proportions. Widths in `%` would sum past 100 and let flexbox
-            // shrink the segments by an amount that depends on how many there
-            // are.
-            style={{ flex: `${segment.share} 0 0px`, backgroundColor: segment.color }}
-          />
-        ))}
-      </div>
+      <AllocationTrack segments={segments} label={label} />
 
       {shareCaption ? (
         <p className="max-w-[34rem] text-end text-caption text-muted-foreground">{shareCaption}</p>
@@ -181,6 +159,44 @@ export function AllocationBar({
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+/** The bar alone, for a place too small for its legend — a Home tile (SC-1669). */
+export function AllocationTrack({
+  segments,
+  label,
+  gateHook = true,
+}: {
+  segments: readonly AllocationSegment[];
+  label: string;
+  /** Only the full bar carries the visual gate's selector (SC-815). */
+  gateHook?: boolean;
+}) {
+  return (
+    <div
+      role="img"
+      aria-label={label}
+      // A stable hook for the visual gate, which must confirm this bar is
+      // FOLDED before committing a baseline of it (SC-815). The page carries
+      // 21 `role="img"` nodes — every institution mark is one — so a
+      // structural selector picks whichever comes first, and matching on
+      // `aria-label` would tie the harness to a translated string.
+      data-ui={gateHook ? 'allocation-bar' : undefined}
+      className="flex h-2 gap-[2px] overflow-hidden rounded-full"
+    >
+      {segments.map((segment) => (
+        <div
+          key={segment.key}
+          // `flex-grow: share` with a zero basis divides the space *after*
+          // the gaps are taken out, so the gaps never distort the
+          // proportions. Widths in `%` would sum past 100 and let flexbox
+          // shrink the segments by an amount that depends on how many there
+          // are.
+          style={{ flex: `${segment.share} 0 0px`, backgroundColor: segment.color }}
+        />
+      ))}
     </div>
   );
 }

@@ -135,6 +135,9 @@ interface PortfolioChartProps {
   /** Reads as a sentence — see `ChartFrame`. */
   label: string;
   height?: number;
+  /** The compact hero's trace (SC-1669): no grid, no axes and no tooltip,
+   *  because the whole chart is a link to the full hero. */
+  bare?: boolean;
   /** The hero's eye is closed: the axis and tooltip must not give the figure away. */
   amountsHidden?: boolean;
 }
@@ -180,6 +183,7 @@ export function PortfolioChart({
   label,
   height = 200,
   amountsHidden = false,
+  bare = false,
 }: PortfolioChartProps) {
   // One gradient per instance: two charts on one page sharing an id would make
   // the second one paint with the first one's colour.
@@ -218,8 +222,9 @@ export function PortfolioChart({
         </defs>
         {/* Horizontal rules only. Vertical ones add a second grid the eye has
             to filter out to read a trend that is entirely about height. */}
-        <CartesianGrid vertical={false} stroke="hsl(var(--border))" />
+        {bare ? null : <CartesianGrid vertical={false} stroke="hsl(var(--border))" />}
         <XAxis
+          hide={bare}
           dataKey="date"
           tick={AXIS_TICK}
           tickFormatter={(value: string) => formatChartDate(value, granularity)}
@@ -231,6 +236,9 @@ export function PortfolioChart({
           tickLine={false}
         />
         <YAxis
+          // Hidden rather than dropped: its domain is what keeps a 120k → 124k
+          // move from flattening against zero.
+          hide={bare}
           orientation={isRtl ? 'right' : 'left'}
           tick={AXIS_TICK}
           // Compact through `<Numeric>`'s own formatter, so an axis tick and
@@ -251,17 +259,22 @@ export function PortfolioChart({
         {/* PnL crosses zero and net worth does not, so only PnL earns the
             win/loss boundary. */}
         {isPnl ? <ReferenceLine y={0} stroke="hsl(var(--border-strong))" /> : null}
-        <Tooltip
-          cursor={{ stroke: 'hsl(var(--border-strong))' }}
-          content={(props) => (
-            <ChartTooltip
-              {...(props as Omit<ChartTooltipProps, 'currency' | 'granularity' | 'amountsHidden'>)}
-              currency={currency}
-              granularity={granularity}
-              amountsHidden={amountsHidden}
-            />
-          )}
-        />
+        {bare ? null : (
+          <Tooltip
+            cursor={{ stroke: 'hsl(var(--border-strong))' }}
+            content={(props) => (
+              <ChartTooltip
+                {...(props as Omit<
+                  ChartTooltipProps,
+                  'currency' | 'granularity' | 'amountsHidden'
+                >)}
+                currency={currency}
+                granularity={granularity}
+                amountsHidden={amountsHidden}
+              />
+            )}
+          />
+        )}
         <Area
           dataKey={dataKey}
           type="monotone"
