@@ -1,5 +1,6 @@
 import { formatDate } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
+import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
 import { Block } from '@scani/ui/v3/components/Block';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { DataViewEmpty } from '@scani/ui/v3/components/data-view/DataViewEmpty';
@@ -17,9 +18,10 @@ import type { TFunction } from 'i18next';
 import { CalendarClock, Plus } from 'lucide-react';
 import { type ReactNode, useMemo } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import type { BaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import type { RouterOutputs } from '@/lib/trpc';
+import { billsMonthGrid, shiftMonth } from '../../lib/bills-calendar';
 import {
   dayTotals,
   directionLabel,
@@ -46,6 +48,7 @@ import { PAYMENT_SHEET, V3_ROUTES } from '../../lib/routes';
 import { BaseEquivalent } from '../BaseEquivalent';
 import { ConvertedFigure } from '../ConvertedFigure';
 import { ConvertedTotal } from '../ConvertedTotal';
+import { BillsCalendar } from './BillsCalendar';
 import { EstimatedFromHistory } from './EstimatedFromHistory';
 import { ExpectedIncome } from './ExpectedIncome';
 import { type GroupTag, WithGroupTags } from './GroupTags';
@@ -119,6 +122,11 @@ interface UpcomingFeedProps {
 }
 
 const NO_GROUPS: ReadonlyMap<string, GroupTag> = new Map();
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_MONTH = /^\d{4}-\d{2}$/;
+/** The page asks the server for a year of occurrences; the calendar shows all of it. */
+const CALENDAR_DAYS = 365;
 
 function vendorFor(
   t: TFunction,
@@ -290,7 +298,48 @@ export function UpcomingFeed({
   // sums (SC-1405). It used to group every occurrence, so income and bills
   // past the window sat under a total that did not count them, and a late
   // payer was filed under Overdue as though the reader owed it.
-  const groups = useMemo(() => groupUpcoming(t, bills, today), [bills, today, t]);
+  const listGroups = useMemo(() => groupUpcoming(t, bills, today), [bills, today, t]);
+
+  // The calendar (SC-1654) reaches the whole year the page fetched, not the
+  // list's window: a month view that went blank after thirty days would read as
+  // "no bills next month". Its state is in the URL, so a chosen day survives a
+  // reload and a peek's back button.
+  const [params, setParams] = useSearchParams();
+  const calendar = params.get('layout') === 'calendar';
+  const dayParam = params.get('day');
+  const selectedDay = dayParam && ISO_DAY.test(dayParam) ? dayParam : null;
+  const monthParam = params.get('month');
+  const month =
+    monthParam && ISO_MONTH.test(monthParam) ? monthParam : (selectedDay ?? today).slice(0, 7);
+  const shownDay = selectedDay ?? (month === today.slice(0, 7) ? today : null);
+  const calendarBills = useMemo(
+    () => upcomingBills(occurrences, today, CALENDAR_DAYS),
+    [occurrences, today]
+  );
+  const grid = useMemo(
+    () => billsMonthGrid(month, calendarBills, today),
+    [month, calendarBills, today]
+  );
+  const groups = useMemo(() => {
+    if (!calendar) return listGroups;
+    if (!shownDay) return [];
+    const items = calendarBills.filter((bill) => bill.dueDate === shownDay);
+    return items.length === 0
+      ? []
+      : [{ key: shownDay, label: formatDate(shownDay), overdue: shownDay < today, items }];
+  }, [calendar, listGroups, shownDay, calendarBills, today]);
+  const setCalendar = (next: Record<string, string | null>) =>
+    setParams(
+      (current) => {
+        const merged = new URLSearchParams(current);
+        for (const [key, value] of Object.entries(next)) {
+          if (value === null) merged.delete(key);
+          else merged.set(key, value);
+        }
+        return merged;
+      },
+      { replace: true }
+    );
 
   // Second split, same reason as the first: a figure may only describe the set
   // it names. The feed lists overdue and upcoming under separate headings and
@@ -535,7 +584,39 @@ export function UpcomingFeed({
 
       {toolbar}
 
-      {ahead.length === 0 ? (
+      <div>
+        <Segmented
+          value={calendar ? 'calendar' : 'list'}
+          onValueChange={(value) =>
+            setCalendar(
+              value === 'calendar'
+                ? { layout: 'calendar' }
+                : { layout: null, month: null, day: null }
+            )
+          }
+          aria-label={t('v3.money.calendar.choose')}
+        >
+          <SegmentedItem value="list">{t('v3.money.calendar.list')}</SegmentedItem>
+          <SegmentedItem value="calendar">{t('v3.money.calendar.calendar')}</SegmentedItem>
+        </Segmented>
+      </div>
+
+      {calendar ? (
+        <BillsCalendar
+          grid={grid}
+          selectedDay={shownDay}
+          onSelectDay={(day) => setCalendar({ day, month: day.slice(0, 7) })}
+          onShiftMonth={(delta) => setCalendar({ month: shiftMonth(month, delta), day: null })}
+        />
+      ) : null}
+
+      {calendar && shownDay && groups.length === 0 ? (
+        <p className="px-4 text-body text-muted-foreground">
+          {t('v3.money.calendar.noneOnDay', { date: formatDate(shownDay) })}
+        </p>
+      ) : null}
+
+      {!calendar && ahead.length === 0 ? (
         <p className="px-4 text-body text-muted-foreground">
           {t('v3.money.upcoming.noneAhead', { count: horizonDays })}
         </p>
@@ -547,6 +628,9 @@ export function UpcomingFeed({
             <DataViewGroupHeading
               label={group.label}
               count={group.items.length}
+              countLabel={
+                calendar ? t('v3.membership.count.bill', { count: group.items.length }) : undefined
+              }
               // The overdue group's figure is already the "Overdue" line above,
               // and a day with one bill would repeat that bill's own amount.
               aside={
