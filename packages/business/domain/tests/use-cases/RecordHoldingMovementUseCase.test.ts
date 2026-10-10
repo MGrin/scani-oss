@@ -37,12 +37,14 @@ import {
 import { UpdateHoldingUseCase } from '../../src/use-cases/UpdateHoldingUseCase';
 import { committedRows } from '../../test/helpers/committed-rows';
 import { withTestDb } from '../../test/helpers/db';
+import { seedHoldingCache } from '../../test/helpers/engine-guard';
 import { makeCredential, makeInstitution, makeUser } from '../../test/helpers/factories';
 import {
   makeAccount,
   makeHolding,
   makeToken,
   makeWalletAccount,
+  seedReading,
 } from '../../test/helpers/factories-extra';
 import { expectHistoryUnchanged, type HistoryReading } from '../../test/helpers/history-neutrality';
 import {
@@ -68,8 +70,21 @@ async function scaffold(tx: Tx) {
     balance: '4000',
     source: 'manual',
   });
+  await funded(tx, holding);
   return { user, institution, account, token, holding };
 }
+
+/** The reading a holding's balance comes from, dated before every movement here (A2). */
+async function funded(tx: Tx, holding: { userId: string; id: string; balance: string }) {
+  await seedReading(tx, {
+    userId: holding.userId,
+    holdingId: holding.id,
+    balance: holding.balance,
+    at: FUNDED_AT,
+  });
+}
+
+const FUNDED_AT = new Date('2026-08-01T00:00:00Z');
 
 /** How many rows the transfer-review queue would still ask about. */
 async function reviewPrompts(tx: Tx, userId: string): Promise<number> {
@@ -209,9 +224,32 @@ describe('an inflow', () => {
       expect(await balanceOf(tx, holding.id)).toBe('4250.5');
       const [row] = await ledger(tx, holding.id);
       expect(row?.kind).toBe('deposit');
+      expect(row?.quantity).toBe('250.5');
       // `answerIsOwedFor` covers withdraw and transfer_out only, so an
       // arrival is never a queue row whatever it carries.
       expect(await reviewPrompts(tx, user.id)).toBe(0);
+    });
+  });
+
+  test('on a stale stored balance it moves the engine figure by exactly the amount (A5 D-15)', async () => {
+    await withTestDb(async (tx) => {
+      const { user, holding } = await scaffold(tx);
+      // Stored 4,100 against a reading of 4,000: a cache a writer left behind.
+      await seedHoldingCache(tx, (calculator) =>
+        calculator
+          .update(schema.holdings)
+          .set({ balance: '4100' })
+          .where(eq(schema.holdings.id, holding.id))
+      );
+
+      await useCase().execute(
+        { direction: 'inflow', holdingId: holding.id, amount: '5', occurredAt: MOVED_AT },
+        user.id,
+        tx
+      );
+
+      expect(await balanceOf(tx, holding.id)).toBe('4005');
+      expect((await ledger(tx, holding.id)).map((r) => r.quantity)).toEqual(['5']);
     });
   });
 });
@@ -227,13 +265,15 @@ describe('a movement that leaves dust (U4)', () => {
     const { user, institution, token } = await scaffold(tx);
     const holdingAt = async (balance: string) => {
       const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
-      return await makeHolding(tx, {
+      const holding = await makeHolding(tx, {
         userId: user.id,
         accountId: account.id,
         tokenId: token.id,
         balance,
         source: 'manual',
       });
+      await funded(tx, holding);
+      return holding;
     };
     return {
       user,
@@ -242,12 +282,16 @@ describe('a movement that leaves dust (U4)', () => {
     };
   }
 
+  /** What the movement wrote, not the reading the fixture opened with. */
   async function copiesOf(tx: Tx, holdingId: string): Promise<string[]> {
     const rows = await tx
-      .select({ balance: schema.holdingBalanceObservations.balance })
+      .select({
+        balance: schema.holdingBalanceObservations.balance,
+        observedAt: schema.holdingBalanceObservations.observedAt,
+      })
       .from(schema.holdingBalanceObservations)
       .where(eq(schema.holdingBalanceObservations.holdingId, holdingId));
-    return rows.map((row) => row.balance);
+    return rows.filter((row) => row.observedAt > FUNDED_AT).map((row) => row.balance);
   }
 
   test('an inflow below 1e-6 is written in plain notation, on the cache and on its copy', async () => {
@@ -307,6 +351,7 @@ describe('a declared transfer', () => {
         balance: '10',
         source: 'manual',
       });
+      await funded(tx, destination);
 
       const result = await useCase().execute(
         {
@@ -454,6 +499,7 @@ describe('a declared transfer that cost something (SC-889)', () => {
       balance: '10',
       source: 'manual',
     });
+    await funded(tx, destination);
     return { ...base, other, destination };
   }
 
@@ -901,21 +947,23 @@ describe('a declared transfer’s created destination, pinned before it moves (f
     );
 
     // Read on the path before the move. The source falls by exactly what
-    // left, so no drift is spread; each destination reads zero before the
-    // arrival and the arrival after it.
+    // left, so no drift is spread; each destination reads the arrival after
+    // it. Since A5 PR-2 (D-10) a holding reads absent before its start: the
+    // source before 1 June, and each destination before its arrival, where
+    // the old walk read 4000 and 0.
     const now = new Date();
     const golden: Array<[string, Date, string | null]> = [
-      [manualSourceId, at('2026-05-15T00:00:00.000Z'), '4000'],
+      [manualSourceId, at('2026-05-15T00:00:00.000Z'), null],
       [manualSourceId, at('2026-08-19T00:00:00.000Z'), '4000'],
       [manualSourceId, at('2026-08-21T00:00:00.000Z'), '2000'],
       [manualSourceId, now, '2000'],
       [walletSourceId, at('2026-08-19T00:00:00.000Z'), '4000'],
       [walletSourceId, at('2026-08-21T00:00:00.000Z'), '3500'],
       [walletSourceId, now, '3500'],
-      [intoManual, at('2026-08-19T00:00:00.000Z'), '0'],
+      [intoManual, at('2026-08-19T00:00:00.000Z'), null],
       [intoManual, at('2026-08-21T00:00:00.000Z'), '2000'],
       [intoManual, now, '2000'],
-      [intoWallet, at('2026-08-19T00:00:00.000Z'), '0'],
+      [intoWallet, at('2026-08-19T00:00:00.000Z'), null],
       [intoWallet, at('2026-08-21T00:00:00.000Z'), '500'],
       [intoWallet, now, '500'],
     ];
@@ -1038,6 +1086,7 @@ describe('a declared transfer’s created destination comes from HoldingResolver
           balance: '4000',
           source: 'manual',
         });
+        await funded(tx, holding);
         sources.push(holding.id);
       }
       const fresh = await makeAccount(tx, { userId: user.id, institutionId: institution.id });

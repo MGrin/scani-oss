@@ -4,6 +4,7 @@ import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { getDb } from '../../src';
 import type { DatabaseTransaction } from '../../src/transaction';
+import { seedHoldingCache } from './foundation-helpers';
 
 /**
  * The migration runs against the real schema, seeded with one row of every
@@ -77,9 +78,11 @@ async function withSeededDb(
       const tokenId = await one(sql`
         INSERT INTO tokens (symbol, name, type_id, market_segment)
         VALUES ('SOL', 'Solana', ${tokenTypeId}, 'solana:0049') RETURNING id`);
-      const holdingId = await one(sql`
-        INSERT INTO holdings (user_id, account_id, token_id, balance)
-        VALUES (${userId}, ${accountId}, ${tokenId}, '10') RETURNING id`);
+      const holdingId = await seedHoldingCache(tx, () =>
+        one(sql`
+          INSERT INTO holdings (user_id, account_id, token_id, balance)
+          VALUES (${userId}, ${accountId}, ${tokenId}, '10') RETURNING id`)
+      );
 
       const row = async (
         kind: string,

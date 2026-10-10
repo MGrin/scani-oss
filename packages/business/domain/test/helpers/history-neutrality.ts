@@ -36,8 +36,8 @@ export function captureHistory(
  * Re-reads every pair `before` holds and asserts its balance did not move.
  *
  * The anchor is printed and never compared: a writer that stops fabricating an
- * observation moves the walk from `observation-after` to `holdings` while
- * every figure stays put, and the figure is what a person sees.
+ * observation can move the anchor while every figure stays put, and the
+ * figure is what a person sees.
  */
 export async function expectHistoryUnchanged(before: HistorySnapshot): Promise<void> {
   const after = await Promise.all(before.map(({ holdingId, at }) => read(holdingId, at)));

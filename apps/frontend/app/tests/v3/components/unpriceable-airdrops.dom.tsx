@@ -54,6 +54,7 @@ function respond(path: string, input: unknown): unknown {
         failed: 0,
         total: ids.length,
         deletedIds: ids,
+        hiddenIds: ids,
         failedIds: [],
       };
     }

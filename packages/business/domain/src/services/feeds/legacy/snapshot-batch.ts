@@ -29,7 +29,6 @@ export type SnapshotBatchOptions = Pick<
   | 'holdingFailure'
   | 'absence'
   | 'clearsAbsenceTally'
-  | 'unhideOnNonZero'
   | 'unchangedCheckpoint'
   | 'zeroOpensHolding'
 >;
@@ -96,7 +95,6 @@ export function legacySnapshotBatch(input: {
       ...options,
       writesCache: true,
       createdWithoutCheckpoint: 'zero',
-      cacheObservation: null,
       derivesTradeLegs: false,
       createdCheckpointMeta: { origin: CREATED_WITH_EVENT_ORIGIN, source: options.holdingSource },
     },

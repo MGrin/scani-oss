@@ -24,6 +24,7 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { RepairMatchedOutflowsUseCase } from '@scani/domain/use-cases/RepairMatchedOutflowsUseCase';
 import { eq } from 'drizzle-orm';
+import { seedHoldingCache } from '../../test/helpers/engine-guard';
 
 const WALLET = '0xa11ce0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7';
 
@@ -104,10 +105,12 @@ async function setupFixture(): Promise<Fixture> {
   if (!token) throw new Error('token insert failed');
 
   const holding = async (accountId: string) => {
-    const [row] = await db
-      .insert(schema.holdings)
-      .values({ userId: user.id, accountId, tokenId: token.id, balance: '0' })
-      .returning();
+    const [row] = await seedHoldingCache(db, (calculator) =>
+      calculator
+        .insert(schema.holdings)
+        .values({ userId: user.id, accountId, tokenId: token.id, balance: '0' })
+        .returning()
+    );
     if (!row) throw new Error('holding insert failed');
     return row;
   };

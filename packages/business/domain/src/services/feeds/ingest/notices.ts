@@ -18,7 +18,7 @@ const unheldCheckpointsNotice = (count: number, symbols: readonly string[]) =>
 
 /** R58: counted, never named, like the batch refusals. */
 export const duplicatePlacementNotice = (count: number) =>
-  `duplicate-placement: ${count} event(s) were placed on a holding that already holds an older copy of them, while this feed records each on another holding. Each copy was updated in place and nothing was moved, so each of these events is on two holdings.`;
+  `duplicate-placement: ${count} event(s) were placed on a holding that already held an older copy of them, while this feed recorded each on another holding. Each older copy was removed and the event moved to the holding it was placed on, so each is now held once.`;
 
 /** `ambiguous`: several catalog listings share the symbol, so none was taken. */
 export interface SkippedAsset {

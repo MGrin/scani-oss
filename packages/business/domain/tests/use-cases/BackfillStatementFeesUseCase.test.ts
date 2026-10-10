@@ -255,17 +255,13 @@ describe('BackfillStatementFeesUseCase', () => {
   });
 });
 
+/** The opening the reconciler records on coverage; no ledger row carries it (A5). */
 async function openingBalance(holdingId: string): Promise<number | null> {
   const rows = await getDb()
-    .select()
-    .from(schema.holdingTransactions)
-    .where(
-      and(
-        eq(schema.holdingTransactions.holdingId, holdingId),
-        eq(schema.holdingTransactions.source, 'reconciliation-opening')
-      )
-    );
-  return rows[0] ? Number(rows[0].quantity) : null;
+    .select({ quantity: schema.holdingCoverage.openingBalanceQuantity })
+    .from(schema.holdingCoverage)
+    .where(eq(schema.holdingCoverage.holdingId, holdingId));
+  return rows[0]?.quantity ? Number(rows[0].quantity) : null;
 }
 
 function sumQuantities(rows: { quantity: string }[]): number {

@@ -24,12 +24,7 @@ restoreContainerAfterAll();
  * shipping what it was told.
  */
 
-const ANSWERS: BalanceRefreshability[] = [
-  'refreshable',
-  'no-live-sync',
-  'not-a-feed',
-  'sync-cannot-write',
-];
+const ANSWERS: BalanceRefreshability[] = ['refreshable', 'no-live-sync', 'not-a-feed'];
 
 interface Asked {
   id: string;
@@ -115,7 +110,7 @@ const user = { id: 'user-1', baseCurrencyId: 'base-token' } as User;
 describe('HoldingQueryService: refreshable on the wire', () => {
   test('is true only for a holding the server answers refreshable, whatever its source', async () => {
     const holdings = await makeService([]).getHoldingsByAccountIdWithDetails(user);
-    expect(holdings.map((holding) => holding.refreshable)).toEqual([true, false, false, false]);
+    expect(holdings.map((holding) => holding.refreshable)).toEqual([true, false, false]);
   });
 
   test('is asked once for the whole list, for the user whose list it is, with the kind, source and account of every holding', async () => {

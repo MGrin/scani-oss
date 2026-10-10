@@ -67,7 +67,11 @@ export function ManualHoldingsCreateResult({ result }: { result: unknown }) {
                     <span className="min-w-0 truncate text-muted-foreground">{row.name}</span>
                   ) : null}
                   <Badge variant="outline">
-                    {row.isUpdate ? t('v3.jobs.manual.row.updated') : t('v3.jobs.manual.row.new')}
+                    {row.savedAsCheck
+                      ? t('v3.jobs.manual.row.savedAsCheck')
+                      : row.isUpdate
+                        ? t('v3.jobs.manual.row.updated')
+                        : t('v3.jobs.manual.row.new')}
                   </Badge>
                 </span>
               }

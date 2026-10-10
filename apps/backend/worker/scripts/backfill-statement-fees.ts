@@ -43,6 +43,6 @@ console.log(`of those, still stating a fee     ${summary.feesFound}`);
 console.log(`fee rows written                  ${summary.feesWritten}`);
 console.log(`total fee magnitude (mixed ccy)   ${summary.totalFeeMagnitude}`);
 console.log(`holdings touched                  ${summary.holdingsTouched}`);
-console.log(`openings re-synthesized           ${summary.openingsResynthesized}`);
+console.log(`openings recorded                ${summary.openingsRecorded}`);
 
 process.exit(0);

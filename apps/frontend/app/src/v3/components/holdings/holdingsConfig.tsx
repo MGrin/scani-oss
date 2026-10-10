@@ -126,6 +126,37 @@ export function selectedSymbols(
   );
 }
 
+/**
+ * What the bulk delete does to a selection, in one sentence per outcome (A5
+ * #9): a feed holding is hidden and Tokens → Hidden brings it back; a snapshot
+ * is removed with its ledger. Each sentence is whole and pluralised on its own
+ * rows, so a translator never joins two fragments.
+ */
+export function bulkDeleteConsequence(
+  t: TFunction,
+  holdings: readonly HoldingWithDetails[],
+  selectedIds: ReadonlySet<string>
+): string {
+  const selected = holdings.filter((item) => selectedIds.has(item.id));
+  const hidden = selected.filter((item) => item.deleteHides);
+  const removed = selected.filter((item) => !item.deleteHides);
+  const symbols = (items: readonly HoldingWithDetails[]) =>
+    selectedSymbols(holdings, new Set(items.map((item) => item.id)));
+  return [
+    hidden.length > 0
+      ? t('v3.holdings.bulk.hideConsequence', { count: hidden.length, symbols: symbols(hidden) })
+      : null,
+    removed.length > 0
+      ? t('v3.holdings.bulk.deleteConsequence', {
+          count: removed.length,
+          symbols: symbols(removed),
+        })
+      : null,
+  ]
+    .filter((sentence) => sentence !== null)
+    .join(' ');
+}
+
 function InstitutionCell({ holding }: { holding: HoldingWithDetails }) {
   return (
     <span className="flex min-w-0 items-center gap-2">
@@ -605,10 +636,7 @@ export function holdingsDataViewConfig({
           // it: the sentence agrees in three places — "is/are", "it/them" —
           // and a language that marks case would otherwise be handed an
           // English pronoun table to fill in (SC-201).
-          consequence={t('v3.holdings.bulk.deleteConsequence', {
-            count: selectedIds.size,
-            symbols: selectedSymbols(holdings, selectedIds),
-          })}
+          consequence={bulkDeleteConsequence(t, holdings, selectedIds)}
           onConfirm={() => onBulkDelete([...selectedIds], clearSelection)}
         />
       </>

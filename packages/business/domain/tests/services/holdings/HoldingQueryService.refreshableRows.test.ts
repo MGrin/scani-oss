@@ -29,7 +29,7 @@ const rows = committedRows();
 afterEach(rows.drop);
 
 describe('HoldingQueryService: refreshable, from the stored rows', () => {
-  test("a person's row an import wrote into (F1) and a feed whose credential was removed (F3) are not refreshable, and a synced feed is", async () => {
+  test("a feed whose credential was removed (F3) is not refreshable, and a synced feed and a person's row a feed took over (F1, A5 D-4) are", async () => {
     const seeded = await getDb().transaction(async (tx) => {
       const [base, held] = [await makeToken(tx), await makeToken(tx)];
       rows.tokens.push(base.id, held.id);
@@ -65,6 +65,41 @@ describe('HoldingQueryService: refreshable, from the stored rows', () => {
     const refreshable = new Map(listed.map((holding) => [holding.id, holding.refreshable]));
     expect(
       [seeded.f1, seeded.f3, seeded.control].map((holding) => refreshable.get(holding.id))
-    ).toEqual([false, false, true]);
+    ).toEqual([true, false, true]);
+  });
+});
+
+describe('HoldingQueryService: deleteHides, from the stored rows (A5 #9)', () => {
+  test('a feed holding is hidden by delete, and a snapshot is removed by it', async () => {
+    const seeded = await getDb().transaction(async (tx) => {
+      const [base, held] = [await makeToken(tx), await makeToken(tx)];
+      rows.tokens.push(base.id, held.id);
+      const user = await makeUser(tx, { baseCurrencyId: base.id });
+      rows.users.push(user.id);
+      const type = await makeInstitutionType(tx, { code: 'crypto_exchange' });
+      const institution = await makeInstitution(tx, { typeId: type.id });
+      rows.institutions.push(institution.id);
+      const at = { userId: user.id, institutionId: institution.id };
+      const account = await makeAccount(tx, at);
+      const of = (shape: Pick<Holding, 'source' | 'kind'>) =>
+        makeHolding(tx, { ...at, accountId: account.id, tokenId: held.id, ...shape });
+      return {
+        user,
+        feed: await of({ source: EXCHANGE_BALANCE_SYNC_SOURCE, kind: 'feed' }),
+        taken: await of({ source: MANUAL_HOLDING_SOURCE, kind: 'feed' }),
+        snapshot: await of({ source: MANUAL_HOLDING_SOURCE, kind: 'snapshot' }),
+      };
+    });
+
+    const listed = await Container.get(HoldingQueryService).getHoldingsByAccountIdWithDetails(
+      seeded.user
+    );
+
+    const hides = new Map(listed.map((holding) => [holding.id, holding.deleteHides]));
+    expect([seeded.feed, seeded.taken, seeded.snapshot].map((h) => hides.get(h.id))).toEqual([
+      true,
+      true,
+      false,
+    ]);
   });
 });

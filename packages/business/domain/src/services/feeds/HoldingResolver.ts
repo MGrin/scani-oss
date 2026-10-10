@@ -3,7 +3,6 @@ import type { Holding } from '@scani/db/schema';
 import type { HoldingArrival } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
-import { MANUAL_HOLDING_SOURCE } from '../holdings/balance-sync-sources';
 import type { LegacyBatchOptions } from './feed-batch';
 
 interface FeedHoldingRequest {
@@ -128,14 +127,13 @@ export class HoldingResolver {
           userId: req.userId,
           accountId: req.accountId,
           tokenId: req.tokenId,
-          exceptSource: MANUAL_HOLDING_SOURCE,
           externalId,
           scamFree,
         },
         tx
       );
     switch (req.match) {
-      // F4, the balance syncs': a person's row is never theirs to write.
+      // F4, the balance syncs': a feed holding, never a snapshot (A5 D-4).
       case 'token-id':
         return lastSyncHolding(null, true);
       case 'token-id-with-scam':
@@ -156,14 +154,17 @@ export class HoldingResolver {
           tx,
           true
         );
-      // F1, the statement import's: the account's oldest visible holding of the token.
+      // F1, the statement import's: the account's oldest visible holding of the
+      // token, else its oldest hidden one, which is written rather than
+      // duplicated (A5 #9).
       case 'account-token':
         return this.holdingRepository.findByAccountAndToken(
           req.accountId,
           req.tokenId,
           req.userId,
           undefined,
-          tx
+          tx,
+          true
         );
       // F2, the transaction import's (SC-193).
       case 'ingest-order':

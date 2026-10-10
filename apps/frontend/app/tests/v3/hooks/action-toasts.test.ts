@@ -75,3 +75,17 @@ describe('the toasts whose English is unchanged', () => {
     expect(t(key)).toBe(expected);
   });
 });
+
+/** A5 #9: a delete that hid says so, and its Undo brings the rows back. */
+describe('the hide toasts', () => {
+  test.each([
+    ['v3.holdings.toast.hidden', {}, 'Holding hidden. Tokens → Hidden brings it back.'],
+    ['v3.holdings.toast.bulkHidden', { count: 1 }, '1 holding hidden'],
+    ['v3.holdings.toast.bulkHidden', { count: 4 }, '4 holdings hidden'],
+    ['v3.holdings.undoHide.undo', {}, 'Undo'],
+    ['v3.holdings.undoHide.restored', {}, 'Restored'],
+    ['v3.holdings.undoHide.restoreFailed', {}, 'Could not restore'],
+  ])('%s with %p reads %p', (key, values, expected) => {
+    expect(t(key, values)).toBe(expected);
+  });
+});

@@ -657,6 +657,27 @@ describe('SettlementAnswerReviewService.undoRetire', () => {
     });
   });
 
+  // A5 D-4: the copy comes back unfunded and the calculator funds it, so the
+  // guard admits the undo and the row reads exactly as it did.
+  test('a destination comes back byte for byte with the engine writer guard on', async () => {
+    await withTestDb(async (tx) => {
+      const { user, closing } = await movedFixture(tx, { createDestination: true });
+      const ledgerBefore = await ledger(tx, user.id);
+      const holdingsBefore = await holdingsOf(tx, user.id);
+
+      const service = new SettlementAnswerReviewService();
+      const outcome = await service.retire(user.id, closing.id, { confirmOtherHolding: true }, tx);
+      if (!('retired' in outcome)) throw new Error('not retired');
+      expect(await holdingsOf(tx, user.id)).toHaveLength(1);
+
+      expect(await service.undoRetire(user.id, outcome.retired.id, new Date(), tx)).toHaveProperty(
+        'restored'
+      );
+      expect(await holdingsOf(tx, user.id)).toEqual(holdingsBefore);
+      expect(await ledger(tx, user.id)).toEqual(ledgerBefore);
+    });
+  });
+
   test('a destination captured before A1 comes back classified as the backfill would', async () => {
     await withTestDb(async (tx) => {
       const { user, cash, closing } = await movedFixture(tx, { createDestination: true });
@@ -727,10 +748,11 @@ describe('SettlementAnswerReviewService.undoRetire', () => {
       const holdingsBefore = await holdingsOf(tx, user.id);
       const opened = holdingsBefore.find((row) => row.id !== cash.id);
       // The control: what the opener made of it, with no observation of its own.
+      // Its cache reads the 195 that arrived, which the answer applies (A5 D-18).
       expect({ kind: opened?.kind, source: opened?.source, balance: opened?.balance }).toEqual({
         kind: 'feed',
         source: EXCHANGE_BALANCE_SYNC_SOURCE,
-        balance: '0',
+        balance: '195',
       });
       const observationsBefore = await observationsOf(tx, user.id);
       expect(observationsBefore.filter((row) => row.holding_id === opened?.id)).toEqual([]);

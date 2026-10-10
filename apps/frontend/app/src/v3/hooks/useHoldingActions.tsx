@@ -1,0 +1,194 @@
+import type { ManualEditCause, ManualOutflowAnswer } from '@scani/shared';
+import { showError, showSuccess, useToast } from '@scani/ui/ui/use-toast';
+import { formatAmountForDisplay } from '@scani/ui/v3/lib/amount-input';
+import { useTranslation } from 'react-i18next';
+import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
+import { trpc } from '@/lib/trpc';
+import { UndoHide } from '@/v3/components/holdings/UndoHide';
+import { optimisticPatchHolding, optimisticRemoveHoldings } from '@/v3/hooks/optimisticUpdates';
+import { savedAsCheck } from '@/v3/lib/holdings';
+
+/**
+ * v3's copy of v2's hook of the same name, with the eight toasts keyed
+ * (SC-320). v2 keeps its own and dies with it: `v3.*` is registered by the v3
+ * chunk alone, so one shared hook would toast raw keys under `/v2`.
+ */
+export function useHoldingActions() {
+  const { t } = useTranslation();
+  const utils = trpc.useUtils();
+  const { toast } = useToast();
+  // A delete that hid a feed holding (A5 #9) says so and offers Undo; a
+  // removed snapshot has nothing to restore.
+  const undo = (hiddenIds: readonly string[]) => (
+    <UndoHide hiddenIds={hiddenIds} onWritten={() => invalidatePortfolioQueries(utils)} />
+  );
+
+  // delete / bulkDelete / update apply an optimistic cache patch in `onMutate`
+  // (the row disappears / updates instantly), roll back in `onError`, and
+  // reconcile server-computed figures via `invalidatePortfolioQueries` in
+  // `onSettled`.
+  const deleteMutation = trpc.holdings.delete.useMutation({
+    onMutate: ({ id }) => optimisticRemoveHoldings(utils, [id]),
+    onSuccess: (result, { id }) => {
+      if (result.wasHidden) {
+        toast({ title: t('v3.holdings.toast.hidden'), action: undo([id]) });
+        return;
+      }
+      showSuccess(t('v3.holdings.toast.deleted'));
+    },
+    onError: (err, _vars, ctx) => {
+      ctx?.restore();
+      showError(err, t('v3.holdings.toast.deletingContext'));
+    },
+    onSettled: () => {
+      void invalidatePortfolioQueries(utils);
+    },
+  });
+
+  const bulkDeleteMutation = trpc.holdings.bulkDelete.useMutation({
+    onMutate: ({ ids }) => optimisticRemoveHoldings(utils, ids),
+    onSuccess: (result, _vars, ctx) => {
+      if (result.failedIds.length > 0 && ctx) {
+        // The call resolved but some ids failed server-side. Restore the
+        // snapshot, then re-remove only the rows that actually deleted.
+        ctx.restore();
+        void optimisticRemoveHoldings(utils, result.deletedIds);
+      }
+      const failed = result.failedIds.length;
+      const hidden = result.hiddenIds.length;
+      const count = result.deletedIds.length - hidden;
+      // Two keys rather than a suffix concatenated onto one: v2 wrote
+      // `${n} holding(s) deleted` and appended `, ${failed} failed`, and both
+      // halves are English grammar — the parenthesised plural has no analogue
+      // in a language that inflects, and a sentence assembled from two
+      // translated fragments cannot be reordered by the translator.
+      const removed =
+        failed > 0
+          ? t('v3.holdings.toast.bulkDeletedWithFailures', { count, failed })
+          : t('v3.holdings.toast.bulkDeleted', { count });
+      if (hidden === 0) {
+        showSuccess(removed);
+        return;
+      }
+      // One toast at a time (TOAST_LIMIT 1): the hidden rows lead, with Undo,
+      // and what was removed or failed rides in the description.
+      toast({
+        title: t('v3.holdings.toast.bulkHidden', { count: hidden }),
+        description: count > 0 || failed > 0 ? removed : undefined,
+        action: undo(result.hiddenIds),
+      });
+    },
+    onError: (err, _vars, ctx) => {
+      ctx?.restore();
+      showError(err, t('v3.holdings.toast.bulkDeletingContext'));
+    },
+    onSettled: () => {
+      void invalidatePortfolioQueries(utils);
+    },
+  });
+
+  const updateMutation = trpc.holdings.update.useMutation({
+    onMutate: ({ id, data }) =>
+      optimisticPatchHolding(utils, id, {
+        // The balance verbatim, not `Number(...)`: the optimistic row has to
+        // hold what the server will send back, and that is a decimal string
+        // (SC-567). Coercing here reintroduced the double one render early.
+        amount: data.balance,
+        isActive: data.isActive,
+        // `null` is a real value here — it clears the pot name — and
+        // `mergeDefined` preserves it while skipping `undefined`, so a
+        // balance edit that sends no `label` leaves the name alone.
+        label: data.label,
+      }),
+    onSuccess: (holding, { data }) => {
+      showSuccess(
+        savedAsCheck(data.balance, holding.balance)
+          ? t('v3.holdings.toast.savedAsCheck', {
+              balance: formatAmountForDisplay(holding.balance),
+            })
+          : t('v3.holdings.toast.updated')
+      );
+    },
+    onError: (err, _vars, ctx) => {
+      ctx?.restore();
+      showError(err, t('v3.holdings.toast.updatingContext'));
+    },
+    onSettled: () => {
+      void invalidatePortfolioQueries(utils);
+    },
+  });
+
+  // The reader's own verdict (SC-1160): it moves the holding out of THEIR
+  // totals and onto the hidden list, and changes nothing for anyone else.
+  const markScamMutation = trpc.tokens.markAsScam.useMutation({
+    onError: (err) => showError(err, t('v3.holdings.scam.markingContext')),
+    onSettled: () => {
+      void invalidatePortfolioQueries(utils);
+      void utils.holdings.getHidden.invalidate();
+    },
+  });
+
+  // Price refresh runs async on the worker. The enqueue mutation resolves
+  // immediately with a jobId; `useHoldingRefresh` subscribes to it to show an
+  // inline spinner and emit the terminal toast — which is why the two context
+  // strings below are the keys that hook already uses.
+  const refreshPriceMutation = trpc.holdings.updatePrice.useMutation({
+    onError: (err) => showError(err, t('v3.holdings.refresh.price')),
+  });
+
+  // Balance refresh hits the underlying integration (wallet RPC, CEX API,
+  // broker Flex Query). Same async + jobId pattern as price refresh.
+  const refreshBalanceMutation = trpc.holdings.refreshBalance.useMutation({
+    onError: (err) => showError(err, t('v3.holdings.refresh.balance')),
+  });
+
+  return {
+    deleteHolding: (id: string, options?: { onSuccess?: () => void }) =>
+      deleteMutation.mutate({ id }, { onSuccess: options?.onSuccess }),
+    bulkDeleteHoldings: (ids: string[], options?: { onSuccess?: () => void }) =>
+      bulkDeleteMutation.mutate({ ids }, { onSuccess: options?.onSuccess }),
+    /**
+     * `editCause` / `editOccurredAt` say what a balance change MEANT (SC-510).
+     * Omitted for an `isActive` toggle and for a holding whose price we fetch
+     * — the server derives the cause there. Required for the ambiguous set;
+     * `EditHoldingSheet` asks through `useHoldingEditCause` and the API refuses
+     * rather than guessing if it arrives without one.
+     */
+    updateHolding: (
+      id: string,
+      data: {
+        balance?: string;
+        isActive?: boolean;
+        /** The pot's name (SC-564). `null` clears it; omitted leaves it. */
+        label?: string | null;
+        editCause?: ManualEditCause;
+        editOccurredAt?: string;
+        /** Where an outflow went, answered in the same dialog (SC-606). */
+        editOutflow?: ManualOutflowAnswer;
+      }
+    ) => updateMutation.mutate({ id, data }),
+    markScam: (tokenId: string, symbol: string) =>
+      markScamMutation.mutate(
+        { tokenId },
+        { onSuccess: () => showSuccess(t('v3.holdings.scam.marked', { symbol })) }
+      ),
+    refreshPrice: (id: string) =>
+      refreshPriceMutation.mutate({ id, requestId: crypto.randomUUID() }),
+    refreshBalance: (holdingId: string) =>
+      refreshBalanceMutation.mutate({ holdingId, requestId: crypto.randomUUID() }),
+    /**
+     * Raw mutation handles are exposed so the holdings page can read
+     * `data.jobId` from the latest call and subscribe via `useJobStatus` —
+     * the inline spinner + terminal toast are driven in `useHoldingRefresh`,
+     * not here.
+     */
+    refreshPriceMutation,
+    refreshBalanceMutation,
+    isDeleting: deleteMutation.isPending,
+    isBulkDeleting: bulkDeleteMutation.isPending,
+    isUpdating: updateMutation.isPending,
+    isMarkingScam: markScamMutation.isPending,
+    isRefreshingPrice: refreshPriceMutation.isPending,
+    isRefreshingBalance: refreshBalanceMutation.isPending,
+  };
+}

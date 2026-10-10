@@ -17,6 +17,7 @@ import { readCreatedDestination, readMovedDestinationAnchor } from '../../lib/cr
 import { HoldingBalanceObservationRepository } from '../../repositories/HoldingBalanceObservationRepository';
 import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
+import { type CacheWrite, HoldingCacheWriter } from '../feeds/HoldingCacheWriter';
 import { FoundationClassificationService } from '../foundation/FoundationClassificationService';
 import { BalanceGapService } from './BalanceGapService';
 
@@ -107,6 +108,7 @@ export class SettlementAnswerReviewService {
   private readonly coverage = Container.get(HoldingCoverageRepository);
   private readonly ledger = Container.get(HoldingTransactionRepository);
   private readonly classification = Container.get(FoundationClassificationService);
+  private readonly cache = Container.get(HoldingCacheWriter);
 
   async listPending(
     userId: string,
@@ -327,13 +329,23 @@ export class SettlementAnswerReviewService {
     }
 
     const unclassified: string[] = [];
+    const funded: CacheWrite[] = [];
     for (const bundle of bundles) {
       const [exists] = await transaction
         .select({ id: schema.holdings.id })
         .from(schema.holdings)
         .where(eq(schema.holdings.id, String(bundle.holding.id)));
       if (exists) continue;
-      await restoreRows(transaction, schema.holdings, [bundle.holding]);
+      // The copy comes back unfunded and the calculator funds it once its
+      // evidence is back, as the one writer of the cache (A5 D-4).
+      await restoreRows(transaction, schema.holdings, [
+        { ...bundle.holding, balance: '0', value_base: null, value_priced_at: null },
+      ]);
+      funded.push({
+        holdingId: String(bundle.holding.id),
+        balance: String(bundle.holding.balance),
+        lastUpdated: null,
+      });
       await restoreRows(transaction, schema.holdingBalanceObservations, bundle.observations);
       await restoreRows(transaction, schema.holdingCoverage, bundle.coverage);
       if (bundle.holding.kind == null || bundle.holding.starts_at == null) {
@@ -352,6 +364,7 @@ export class SettlementAnswerReviewService {
       transaction
     );
     await this.classification.labelHoldings(userId, unclassified, transaction);
+    if (funded.length) await this.cache.apply(userId, funded, transaction);
 
     let outcome: RestoredObservation = 'gone';
     if (observation) {

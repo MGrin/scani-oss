@@ -26,6 +26,7 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { eq } from 'drizzle-orm';
 import { RepairCoverageTxBoundsUseCase } from '../../src/use-cases/RepairCoverageTxBoundsUseCase';
+import { seedHoldingCache } from '../../test/helpers/engine-guard';
 
 /** The run's oldest event — the BTC buy, on the holding held since 2021. */
 const RUN_FIRST = new Date('2021-09-17T06:54:48.401Z');
@@ -108,10 +109,12 @@ async function setupFixture(): Promise<Fixture> {
   const youngToken = await token('YNG');
 
   const holding = async (tokenId: string) => {
-    const [row] = await db
-      .insert(schema.holdings)
-      .values({ userId: user.id, accountId: account.id, tokenId, balance: '1' })
-      .returning();
+    const [row] = await seedHoldingCache(db, (calculator) =>
+      calculator
+        .insert(schema.holdings)
+        .values({ userId: user.id, accountId: account.id, tokenId, balance: '1' })
+        .returning()
+    );
     if (!row) throw new Error('holding insert failed');
     return row;
   };

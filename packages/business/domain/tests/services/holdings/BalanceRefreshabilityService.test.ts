@@ -88,14 +88,14 @@ const service = () => Container.get(BalanceRefreshabilityService);
 describe('BalanceRefreshabilityService.forHolding', () => {
   test.each<[string, Shape, BalanceRefreshability]>([
     [
-      "F1 (R97): a person's row a transaction import wrote into is not, credential live or not, because the sync never writes it",
+      "F1 (A5 D-4, U5): a person's row a feed took over is the sync's to write, so with a live credential it is refreshable",
       F1,
-      'sync-cannot-write',
+      'refreshable',
     ],
     [
-      'F1 with nothing connected gets the same answer, not the one about a missing connection',
+      'F1 with nothing connected is told there is no live sync, as any feed is',
       { ...F1, sync: 'none' },
-      'sync-cannot-write',
+      'no-live-sync',
     ],
     [
       'F2 (U5): a statement-fed holding in an account nothing syncs is not, where its source offered a refresh that ended unsupported',
@@ -156,7 +156,7 @@ describe('BalanceRefreshabilityService.forHoldings', () => {
       const answers = await service().forHoldings(who.userId, holdings, tx);
 
       expect(holdings.map((h) => answers.get(h.id))).toEqual([
-        'sync-cannot-write',
+        'refreshable',
         'no-live-sync',
         'no-live-sync',
         'not-a-feed',
@@ -166,7 +166,7 @@ describe('BalanceRefreshabilityService.forHoldings', () => {
     });
   });
 
-  test("asks about an account once however many feed holdings it has, and never about one holding only a snapshot or only a person's row", async () => {
+  test('asks about an account once however many feed holdings it has, and never about one holding only a snapshot', async () => {
     await withTestDb(async (tx) => {
       const who = await owner(tx);
       const first = await holdingOf(tx, who, EXCHANGE_FEED);
@@ -194,16 +194,21 @@ describe('BalanceRefreshabilityService.forHoldings', () => {
           tx
         );
 
+        // The accounts come back in whatever order Postgres reads them, which
+        // follows the random ids once the planner takes the primary key.
         expect(
-          resolve.mock.calls.map(([userId, accounts]) => [userId, accounts.map(({ id }) => id)])
-        ).toEqual([[who.userId, [first.accountId]]]);
+          resolve.mock.calls.map(([userId, accounts]) => [
+            userId,
+            accounts.map(({ id }) => id).sort(),
+          ])
+        ).toEqual([[who.userId, [first.accountId, personsRow.accountId].sort()]]);
         expect([first, ...siblings].map((h) => answers.get(h.id))).toEqual([
           'refreshable',
           'refreshable',
           'refreshable',
         ]);
         expect(answers.get(snapshot.id)).toBe('not-a-feed');
-        expect(answers.get(personsRow.id)).toBe('sync-cannot-write');
+        expect(answers.get(personsRow.id)).toBe('refreshable');
       } finally {
         resolve.mockRestore();
       }

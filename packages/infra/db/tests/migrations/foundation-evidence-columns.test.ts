@@ -2,7 +2,13 @@ import { expect, test } from 'bun:test';
 import { getTableColumns, sql } from 'drizzle-orm';
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import * as schema from '../../src/schema';
-import { inRollback, type Query, refusedWith, type Tx } from './foundation-helpers';
+import {
+  inRollback,
+  type Query,
+  refusedWith,
+  seedHoldingCache,
+  type Tx,
+} from './foundation-helpers';
 
 /**
  * The evidence columns foundation A1 adds to `holdings`,
@@ -53,9 +59,11 @@ async function seedHolding(tx: Tx): Promise<Seed> {
     sql`INSERT INTO accounts (user_id, institution_id, name, type_id) VALUES (${userId}, ${institutionId}, concat('acct-', gen_random_uuid()), (SELECT id FROM account_types LIMIT 1)) RETURNING id`
   );
   const tokenId = await seedToken(tx);
-  const holdingId = await id(
-    tx,
-    sql`INSERT INTO holdings (user_id, account_id, token_id, balance) VALUES (${userId}, ${accountId}, ${tokenId}, '10') RETURNING id`
+  const holdingId = await seedHoldingCache(tx, () =>
+    id(
+      tx,
+      sql`INSERT INTO holdings (user_id, account_id, token_id, balance) VALUES (${userId}, ${accountId}, ${tokenId}, '10') RETURNING id`
+    )
   );
   return { userId, accountId, tokenId, holdingId };
 }
@@ -245,7 +253,7 @@ test('REVIEW FOCUS 1: a holdings row captured before this migration restores', a
     expect(Object.keys(captured)).not.toContain('kind');
     await tx.execute(sql`DELETE FROM holdings WHERE id = ${seed.holdingId}`);
 
-    await tx.execute(restoreStatement(schema.holdings, [captured]));
+    await seedHoldingCache(tx, () => tx.execute(restoreStatement(schema.holdings, [captured])));
 
     const restored = await one<{ balance: string; kind: string | null; starts_at: Date | null }>(
       tx,

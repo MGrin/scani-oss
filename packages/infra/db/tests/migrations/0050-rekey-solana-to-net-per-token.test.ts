@@ -4,6 +4,7 @@ import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { getDb } from '../../src';
 import type { DatabaseTransaction } from '../../src/transaction';
+import { seedHoldingCache } from './foundation-helpers';
 
 /**
  * The migration runs against the real schema, seeded with one row of every
@@ -88,13 +89,15 @@ async function withSeededDb(
       // for SOL, the mint for an SPL token, both written by
       // `SolanaProvider.fetchBalances`. That is what makes the new
       // `external_id` derivable rather than guessed.
-      const solHoldingId = await one(sql`
-        INSERT INTO holdings (user_id, account_id, token_id, balance, external_id)
-        VALUES (${userId}, ${accountId}, ${solTokenId}, '10', 'native') RETURNING id`);
-      const usdcHoldingId = await one(sql`
-        INSERT INTO holdings (user_id, account_id, token_id, balance, external_id)
-        VALUES (${userId}, ${accountId}, ${usdcTokenId}, '5',
-                'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v') RETURNING id`);
+      const [solHoldingId, usdcHoldingId] = await seedHoldingCache(tx, async () => [
+        await one(sql`
+          INSERT INTO holdings (user_id, account_id, token_id, balance, external_id)
+          VALUES (${userId}, ${accountId}, ${solTokenId}, '10', 'native') RETURNING id`),
+        await one(sql`
+          INSERT INTO holdings (user_id, account_id, token_id, balance, external_id)
+          VALUES (${userId}, ${accountId}, ${usdcTokenId}, '5',
+                  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v') RETURNING id`),
+      ]);
 
       await tx.execute(sql`
         INSERT INTO holding_coverage

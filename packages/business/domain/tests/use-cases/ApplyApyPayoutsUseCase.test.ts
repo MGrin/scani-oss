@@ -20,10 +20,9 @@
  *                                = 0.137005066616626008632013511
  *              running  1000.273991367986489022330644, round8 1000.27399137
  *
- * Every run also writes the `sync-capture` observation the old path wrote, kept
- * until A5 because legacy history anchors on it (ruling R11). It carries one key
- * the old row did not, `legacyAnchor`, which is how classification knows it when
- * the run booked no row to find beside it (ruling R12).
+ * A run writes no observation. Until A5 it also wrote the `sync-capture` copy of
+ * the new balance the old path wrote (rulings R11, R12): a reading nobody took,
+ * which legacy history anchored on. Ops O1 deletes the ones already written.
  *
  * Each row is the step between two round8 balances (ruling R6), 0.1369863 and
  * 0.13700507, so the ledger sums to the balance change exactly. Task 1's rows
@@ -60,12 +59,11 @@ const TASK_1_GOLDEN_HISTORY = [
 
 // The moved writer's. Readings 3-4 are Task 1's exactly. Readings 1-2 lose the
 // A1 carry-forward-5 drift, 2.0e-9 and 3.4e-9, a named sub-display change
-// (ruling R3). They are walked back from the run's own observation, which is
-// written again (ruling R11), through the 8-dp steps:
-//   config created           1000.27399137 - 0.13700507 - 0.1369863
-//   between the two payouts  1000.27399137 - 0.13700507
-// The steps sum to the balance change exactly, so the interval the observation
-// closes has no unexplained drift and nothing is spread across it.
+// (ruling R3). Since A5 PR-2 the engine walks them FORWARD from the creation
+// reading through the 8-dp steps, and lands on the same figures:
+//   config created           1000
+//   between the two payouts  1000 + 0.1369863
+// The steps sum to the balance change exactly, so nothing is left over.
 const GOLDEN_HISTORY = [
   { instant: 'config created', balance: '1000' },
   { instant: 'between the two payouts', balance: '1000.1369863' },
@@ -136,6 +134,7 @@ async function seed(daysBack = 2, balance = '1000') {
     createdInstitutionIds.push(institution.id);
     return { userId: user.id, tokenId: token.id, holdingId: holding.id, config };
   });
+  await recordCreationReading(fixture.userId, fixture.holdingId, createdAt, balance);
 
   // `findAllActive` reads every user's configs; a run sees this fixture only,
   // so its counts are this fixture's and it never writes another file's rows.
@@ -170,6 +169,23 @@ const observationsOf = (holdingId: string) =>
     .select()
     .from(schema.holdingBalanceObservations)
     .where(eq(schema.holdingBalanceObservations.holdingId, holdingId));
+
+/**
+ * The reading every create path has written since A2, which `seed` records for
+ * each fixture: since A5 the engine writes the stored balance from evidence,
+ * so a holding funded with no reading would read as its payouts alone.
+ */
+const recordCreationReading = (userId: string, holdingId: string, at: Date, balance = '1000') =>
+  getDb()
+    .insert(schema.holdingBalanceObservations)
+    .values({
+      userId,
+      holdingId,
+      balance,
+      observedAt: at,
+      source: 'sync-capture',
+      sourceMetadata: { origin: 'createHoldingWithEvent', source: 'manual' },
+    });
 
 async function holdingOf(holdingId: string) {
   const [row] = await getDb()
@@ -254,10 +270,11 @@ describe('ApplyApyPayoutsUseCase', () => {
     expect(holding.lastUpdated.getTime()).toBeLessThanOrEqual(after);
   });
 
-  test('the balance written is the round8 total itself, whatever the stored balance carries below 8 dp', async () => {
-    // One yearly payout at 300% on a 28-digit stored balance. Written as
-    // stored + (total - stored), the sum rounds twice at 28 digits and keeps a
-    // 1e-17 tail the round8 total does not have.
+  test('the balance is the engine sum of the reading and the booked row, below 8 dp too', async () => {
+    // One yearly payout at 300% on a 28-digit reading. The run books the round8
+    // total less the reading, and since A5 the cache is the engine's figure:
+    // the reading plus that row, summed at Decimal's 28 digits, which keeps a
+    // 1e-17 tail the round8 total does not have. History reads the same.
     const { holdingId, config } = await seed(2, '5000000000.000000000000000005');
     const today = new Date();
     await getDb()
@@ -272,7 +289,7 @@ describe('ApplyApyPayoutsUseCase', () => {
 
     await run();
 
-    expect((await holdingOf(holdingId)).balance).toBe('20000000000');
+    expect((await holdingOf(holdingId)).balance).toBe('20000000000.00000000000000001');
   });
 
   test('a second run the same day writes no row and leaves the balance', async () => {
@@ -307,63 +324,19 @@ describe('ApplyApyPayoutsUseCase', () => {
     expect(lastPayoutAt?.getTime()).toBeLessThanOrEqual(after);
   });
 
-  test('writes one observation: source sync-capture, origin updateHoldingBalance, marked as the APY anchor (ruling R12)', async () => {
-    const { userId, holdingId } = await seed();
-
-    await run();
-
-    const observations = await observationsOf(holdingId);
-    expect(
-      observations.map((o) => ({
-        userId: o.userId,
-        balance: o.balance,
-        source: o.source,
-        sourceMetadata: o.sourceMetadata,
-      }))
-    ).toEqual([
-      {
-        userId,
-        balance: '1000.27399137',
-        source: 'sync-capture',
-        sourceMetadata: { origin: 'updateHoldingBalance', legacyAnchor: 'apy-payout' },
-      },
-    ]);
-  });
-
-  test('the observation is unlabelled, stamped inside the run and written with the rows (ruling R11)', async () => {
-    const { holdingId } = await seed();
-    const before = Date.now();
-
-    await run();
-
-    const after = Date.now();
-    const [observation] = await observationsOf(holdingId);
-    if (!observation) throw new Error('the run wrote no observation');
-    expect({
-      role: observation.role,
-      authority: observation.authority,
-      inputId: observation.inputId,
-      cause: observation.cause,
-      supersededAt: observation.supersededAt,
-    }).toEqual({ role: null, authority: null, inputId: null, cause: null, supersededAt: null });
-    expect(observation.observedAt.getTime()).toBeGreaterThanOrEqual(before);
-    expect(observation.observedAt.getTime()).toBeLessThanOrEqual(after);
-    // One transaction: A1 tells this copy from a typed value by the instant it
-    // shares with the payout rows (rule O3).
-    const written = (await ledgerOf(holdingId)).map((row) => row.createdAt.getTime());
-    expect(written).toEqual([observation.createdAt.getTime(), observation.createdAt.getTime()]);
-  });
-
-  test('a second run the same day writes no second observation', async () => {
+  test('writes no observation: the balance moves and nothing claims it was read (A5)', async () => {
     const { holdingId } = await seed();
 
+    const readings = await observationsOf(holdingId);
+
     await run();
     await run();
 
-    expect(await observationsOf(holdingId)).toHaveLength(1);
+    expect(await observationsOf(holdingId)).toEqual(readings);
+    expect((await holdingOf(holdingId)).balance).toBe('1000.27399137');
   });
 
-  test('a later reading the ledger does not explain lands after the last payout run: every day up to it reads what had accrued (ruling R11)', async () => {
+  test('a later reading the ledger does not explain lands on its own day; the days before read the payouts (A5 PR-2)', async () => {
     // Two runs, two dates each. The second starts from the stored 1000.27399137:
     //   run 1  1000.1369863, 1000.27399137   rows 0.1369863, 0.13700507
     //   run 2  1000.4110152, 1000.54805781   rows 0.13702383, 0.13704261
@@ -371,18 +344,6 @@ describe('ApplyApyPayoutsUseCase', () => {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
     const midday = (daysBack: number) => new Date(today.getTime() - daysBack * DAY_MS + DAY_MS / 2);
-    const o = schema.holdingBalanceObservations;
-    // What creating the holding wrote, four days back.
-    await getDb()
-      .insert(o)
-      .values({
-        userId,
-        holdingId,
-        balance: '1000',
-        observedAt: config.createdAt,
-        source: 'sync-capture',
-        sourceMetadata: { origin: 'createHoldingWithEvent', source: 'manual' },
-      });
 
     setSystemTime(new Date(Date.now() - 2 * DAY_MS));
     await run();
@@ -391,7 +352,7 @@ describe('ApplyApyPayoutsUseCase', () => {
     // Ten days on the person trues the balance up: 99.45194219 no row explains.
     const trueUpAt = new Date(Date.now() + 10 * DAY_MS);
     await getDb()
-      .insert(o)
+      .insert(schema.holdingBalanceObservations)
       .values({
         userId,
         holdingId,
@@ -401,24 +362,27 @@ describe('ApplyApyPayoutsUseCase', () => {
         sourceMetadata: { origin: 'updateHolding' },
       });
 
-    // Each run's observation closes an interval its rows explain to the cent, so
-    // the 99.45194219 is spread only after the second run. Without those two
-    // observations it is drawn as one line from the day the holding was
-    // created, and every reading below sits on that line.
-    const readings = await captureHistory(
-      [holdingId],
-      [config.createdAt, midday(3), midday(1), trueUpAt]
-    );
+    const payouts = await ledgerOf(holdingId);
+    const paid = payouts.reduce((sum, row) => sum.add(row.quantity), new Decimal(0));
+    expect(new Decimal('1100').minus('1000').minus(paid).toString()).toBe('99.45194219');
+    // The old walk spread that 99.45194219 along a straight line back to the
+    // creation reading. The engine walks forward from the latest reading, so
+    // every day before the true-up reads exactly what was paid, and the gap is
+    // a step on the true-up's own day (A5 D-10, SC-475 fault B).
+    const forward = (at: Date) =>
+      payouts
+        .filter((row) => row.occurredAt.getTime() <= at.getTime())
+        .reduce((sum, row) => sum.add(row.quantity), new Decimal('1000'));
+    const before = [config.createdAt, midday(3), midday(1)];
+    const readings = await captureHistory([holdingId], [...before, trueUpAt]);
     expect(readings.map((reading) => reading.balance)).toEqual([
-      '1000',
-      '1000.1369863',
-      '1000.4110152',
+      ...before.map((at) => forward(at).toFixed()),
       '1100',
     ]);
+    // The control: a figure the old spread would have read is not what we read.
+    expect(readings[1]?.balance).toBe('1000.1369863');
     expect((await observationsOf(holdingId)).map((row) => row.balance).sort()).toEqual([
       '1000',
-      '1000.27399137',
-      '1000.54805781',
       '1100',
     ]);
   });
@@ -507,14 +471,14 @@ describe('ApplyApyPayoutsUseCase', () => {
 
   test('a run that nets below zero writes no row', async () => {
     // The first two dates of the fixture above: the carry is still -1e-9 when
-    // the run ends, so nothing is booked. The balance is the round8 figure the
-    // use case has always written.
+    // the run ends, so nothing is booked, and the balance stays the reading.
+    // The round8 figure the use case wrote before A5 was a write no row explained.
     const { holdingId } = await seed(2, '0.000010001');
 
     await run();
 
     expect(await ledgerOf(holdingId)).toEqual([]);
-    expect((await holdingOf(holdingId)).balance).toBe('0.00001');
+    expect((await holdingOf(holdingId)).balance).toBe('0.000010001');
   });
 
   // Ruling R10a: the carry is relative to the direction interest accrues in,
@@ -636,81 +600,36 @@ describe('ApplyApyPayoutsUseCase', () => {
     expect(drift).toEqual(['0.000000002013510977669356', '0.000000003383373991367986']);
   });
 
-  test('the kept observation is classified fabricated (O3) and excluded, and labels stay settled (ruling R11)', async () => {
-    const { userId } = await seed();
-    const classification = Container.get(FoundationClassificationService);
-    await classification.classify({ apply: true, userId });
-
-    await run();
-
-    const report = await classification.classify({ apply: false, userId });
-    expect({
-      rule: report.notes['obs:O3'],
-      excluded: report.excluded['fabricated-observation'],
-      toLabel: report.rowsUpdated.observations,
-      failedUsers: report.failedUsers,
-    }).toEqual({ rule: 1, excluded: 1, toLabel: 0, failedUsers: [] });
-    await expectLabelsSettled(userId);
-  });
-
-  test('a run that books no row still writes the observation (ruling R11)', async () => {
-    const { holdingId } = await seed(2, '0.000001');
-
-    await run();
-
-    expect(await ledgerOf(holdingId)).toEqual([]);
-    expect((await observationsOf(holdingId)).map((row) => row.balance)).toEqual(['0.000001']);
-  });
-
-  test('a run that books no row leaves an observation classification excludes: nothing to label, and a second backfill labels nothing and keeps the kind (ruling R12)', async () => {
-    const { userId, holdingId } = await seed(2, '0.000001');
+  // Classification still recognises a copy an earlier run wrote, by its marker
+  // or by the payout row beside it, until O1 deletes the last one; its own
+  // tests cover both arms (legacy-classification.test.ts, rule O3).
+  test('a run leaves classification no copy to exclude, and labels stay settled (A5)', async () => {
+    const { userId, holdingId } = await seed();
     const classification = Container.get(FoundationClassificationService);
     await classification.classify({ apply: true, userId });
     const { kind } = await holdingOf(holdingId);
 
     await run();
 
-    expect(await ledgerOf(holdingId)).toEqual([]);
     const report = await classification.classify({ apply: false, userId });
     expect({
       fabricated: report.notes['obs:O3'] ?? 0,
-      personValue: report.notes['obs:O5'] ?? 0,
       excluded: report.excluded['fabricated-observation'] ?? 0,
       toLabel: report.rowsUpdated.observations,
       failedUsers: report.failedUsers,
-    }).toEqual({ fabricated: 1, personValue: 0, excluded: 1, toLabel: 0, failedUsers: [] });
+    }).toEqual({ fabricated: 0, excluded: 0, toLabel: 0, failedUsers: [] });
     await expectLabelsSettled(userId);
-
-    await classification.classify({ apply: true, userId });
-    const [observation] = await observationsOf(holdingId);
-    expect({
-      role: observation?.role,
-      authority: observation?.authority,
-      cause: observation?.cause,
-    }).toEqual({ role: null, authority: null, cause: null });
-    expect(kind).toBe('snapshot');
     expect((await holdingOf(holdingId)).kind).toBe(kind);
   });
 
-  test('an observation written before the marker existed is still fabricated (O3) by the payout row beside it (ruling R12)', async () => {
-    const { userId, holdingId } = await seed();
-    const classification = Container.get(FoundationClassificationService);
-    await classification.classify({ apply: true, userId });
-    await run();
-    // As main wrote it: the origin and nothing else.
-    await getDb()
-      .update(schema.holdingBalanceObservations)
-      .set({ sourceMetadata: { origin: 'updateHoldingBalance' } })
-      .where(eq(schema.holdingBalanceObservations.holdingId, holdingId));
+  test('a run that books no row writes nothing (A5)', async () => {
+    const { holdingId } = await seed(2, '0.000001');
+    const readings = await observationsOf(holdingId);
 
-    const report = await classification.classify({ apply: false, userId });
-    expect({
-      fabricated: report.notes['obs:O3'] ?? 0,
-      excluded: report.excluded['fabricated-observation'] ?? 0,
-      toLabel: report.rowsUpdated.observations,
-      failedUsers: report.failedUsers,
-    }).toEqual({ fabricated: 1, excluded: 1, toLabel: 0, failedUsers: [] });
-    await expectLabelsSettled(userId);
+    await run();
+
+    expect(await ledgerOf(holdingId)).toEqual([]);
+    expect(await observationsOf(holdingId)).toEqual(readings);
   });
 
   test('labels are settled after the run on a backfilled fixture', async () => {

@@ -223,6 +223,7 @@ export class ImportIbkrAccountsUseCase {
       // they connected on purpose — nothing can be pushed at them (SC-277).
       arrival: 'user_confirmed',
       zeroStaleHoldings: true,
+      absentFiatConfirmations: provider.absentFiatConfirmations,
       skipZeroBalances: false,
       cryptoTokenTypeId: stockTokenType.id,
       tokenTypeMap,

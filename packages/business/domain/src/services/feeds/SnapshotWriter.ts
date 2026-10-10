@@ -55,12 +55,6 @@ export interface SnapshotValue {
   attestation?: BalanceObservationAttestation;
 }
 
-/** The copy of the new balance a replaced path wrote as an observation. */
-interface LegacyObservation {
-  source: string;
-  sourceMetadata: Record<string, unknown>;
-}
-
 /**
  * The A2 writer for what a person typed, or configured: a value on a holding,
  * or movements on a snapshot holding.
@@ -170,10 +164,8 @@ export class SnapshotWriter {
   }
 
   /**
-   * It writes no evidence observation: a movement is not a reading of the
-   * balance. `legacyObservation` is appended unlabelled, at the balance the
-   * cache write sets. Legacy history spreads unexplained drift from the nearest
-   * observation, so the anchor stays until A5; the engine excludes it (R11).
+   * It writes no observation: a movement is not a reading of the balance.
+   * Copies written before A5 are SC-1634's to delete (R11).
    */
   async recordEntries(
     input: {
@@ -181,11 +173,10 @@ export class SnapshotWriter {
       holdingId: string;
       entries: readonly SnapshotEntry[];
       cache: CacheWrite | null;
-      legacyObservation?: LegacyObservation;
     },
     tx: DatabaseTransaction
   ): Promise<IngestOutcome> {
-    const { userId, holdingId, entries, cache, legacyObservation } = input;
+    const { userId, holdingId, entries, cache } = input;
     // The level the upsert below takes on the holding, so its lock is not an
     // upgrade (R81). With no entries it upserts, and locks, nothing.
     const holding = await this.ownedHolding(
@@ -199,12 +190,6 @@ export class SnapshotWriter {
     if (cache && cache.holdingId !== holdingId) {
       throw new Error(
         `SnapshotWriter: a cache write for holding ${cache.holdingId} cannot ride on entries for ${holdingId}`
-      );
-    }
-
-    if (legacyObservation && !cache) {
-      throw new Error(
-        `SnapshotWriter: a legacy observation for holding ${holdingId} needs the cache write whose balance it reads`
       );
     }
 
@@ -231,19 +216,6 @@ export class SnapshotWriter {
     );
     if (earliest) await this.holdingRepository.lowerStartsAt(userId, holdingId, earliest, tx);
     if (cache) await this.cacheWriter.apply(userId, [cache], tx);
-    if (cache && legacyObservation) {
-      await this.observations.append(
-        {
-          userId,
-          holdingId,
-          balance: cache.balance,
-          observedAt: new Date(),
-          source: legacyObservation.source,
-          sourceMetadata: legacyObservation.sourceMetadata,
-        },
-        tx
-      );
-    }
 
     return {
       userId,

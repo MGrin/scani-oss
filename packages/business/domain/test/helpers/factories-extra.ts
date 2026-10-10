@@ -8,6 +8,10 @@ import { randomUUID } from 'node:crypto';
 import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { eq } from 'drizzle-orm';
+import { Container } from 'typedi';
+import { HoldingCacheWriter } from '../../src/services/feeds/HoldingCacheWriter';
+import { SnapshotWriter } from '../../src/services/feeds/SnapshotWriter';
+import { seedHoldingCache } from './engine-guard';
 import { makeInstitution, makeVendor } from './factories';
 
 async function getOrCreateCryptoTokenType(
@@ -177,6 +181,51 @@ export async function makeCheckpoint(
   return row;
 }
 
+/**
+ * A holding's balance as production has held it since A2: a reading the
+ * engine anchors on, then the cache brought to it by the calculator (A5 D-1).
+ * A person's value as creating a holding writes it, or with
+ * `authority: 'provider'` a balance sync's checkpoint.
+ */
+export async function seedReading(
+  tx: DatabaseTransaction,
+  fields: {
+    userId: string;
+    holdingId: string;
+    balance: string;
+    at: Date;
+    authority?: 'person' | 'provider';
+  }
+): Promise<void> {
+  const { userId, holdingId, balance, at } = fields;
+  if (fields.authority === 'provider') {
+    await tx.insert(schema.holdingBalanceObservations).values({
+      userId,
+      holdingId,
+      balance,
+      observedAt: at,
+      source: 'sync-capture',
+      role: 'checkpoint',
+      authority: 'provider',
+    });
+  } else {
+    await Container.get(SnapshotWriter).record(
+      {
+        userId,
+        holdingId,
+        amount: balance,
+        at,
+        cause: 'flow',
+        legacySource: 'sync-capture',
+        legacyMeta: { origin: 'createHoldingWithEvent', source: 'manual' },
+      },
+      { cache: 'unchanged' },
+      tx
+    );
+  }
+  await Container.get(HoldingCacheWriter).refresh(userId, [holdingId], tx);
+}
+
 /** Balance observations as given, in one statement: a history to read back. */
 export async function makeObservations(
   tx: DatabaseTransaction,
@@ -193,14 +242,16 @@ export async function makeHolding(
     tokenId: string;
   }
 ): Promise<typeof schema.holdings.$inferSelect> {
-  const [row] = await tx
-    .insert(schema.holdings)
-    .values({
-      ...overrides,
-      balance: overrides.balance ?? '100',
-      source: overrides.source ?? 'manual',
-    })
-    .returning();
+  const [row] = await seedHoldingCache(tx, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values({
+        ...overrides,
+        balance: overrides.balance ?? '100',
+        source: overrides.source ?? 'manual',
+      })
+      .returning()
+  );
   if (!row) throw new Error('holdings insert failed');
   return row;
 }

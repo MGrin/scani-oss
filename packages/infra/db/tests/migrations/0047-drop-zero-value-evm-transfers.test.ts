@@ -4,6 +4,7 @@ import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { getDb } from '../../src';
 import type { DatabaseTransaction } from '../../src/transaction';
+import { seedHoldingCache } from './foundation-helpers';
 
 /**
  * The migration runs against the real schema, seeded with one row of every
@@ -103,12 +104,15 @@ async function withSeededDb(
                 TIMESTAMPTZ '2026-08-17 08:00:00+00')
         RETURNING id`);
 
-      const holdingId = await one(sql`
-        INSERT INTO holdings (user_id, account_id, token_id, balance)
-        VALUES (${userId}, ${accountId}, ${keptTokenId}, '100') RETURNING id`);
-      await one(sql`
-        INSERT INTO holdings (user_id, account_id, token_id, balance)
-        VALUES (${userId}, ${accountId}, ${usedTokenId}, '1') RETURNING id`);
+      const holdingId = await seedHoldingCache(tx, async () => {
+        const kept = await one(sql`
+          INSERT INTO holdings (user_id, account_id, token_id, balance)
+          VALUES (${userId}, ${accountId}, ${keptTokenId}, '100') RETURNING id`);
+        await one(sql`
+          INSERT INTO holdings (user_id, account_id, token_id, balance)
+          VALUES (${userId}, ${accountId}, ${usedTokenId}, '1') RETURNING id`);
+        return kept;
+      });
 
       // The poisoned row, carrying the unattributed answer the ten production
       // rows carry: `left_control` with no `transfer_reviewed_at`.

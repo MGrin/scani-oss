@@ -39,6 +39,7 @@ import {
 } from '../../src/use-cases/UpdateHoldingUseCase';
 import { committedRows } from '../../test/helpers/committed-rows';
 import { withTestDb } from '../../test/helpers/db';
+import { seedHoldingCache } from '../../test/helpers/engine-guard';
 import { makeInstitution, makeInstitutionType, makeUser } from '../../test/helpers/factories';
 import {
   makeAccount,
@@ -47,6 +48,7 @@ import {
   makeHoldingTransaction,
   makeToken,
   makeWalletAccount,
+  seedReading,
 } from '../../test/helpers/factories-extra';
 import { expectHistoryUnchanged, type HistoryReading } from '../../test/helpers/history-neutrality';
 import {
@@ -57,9 +59,14 @@ import { backendPid, outcomeOf, waitUntilBlocked } from '../../test/helpers/lock
 
 const useCase = () => Container.get(UpdateHoldingUseCase);
 
+/**
+ * A manual holding stored at 100. `funded` gives it the reading the 100 comes
+ * from, as production has had since A2; an edit sized against the engine
+ * (A5 D-15) needs it, and a test counting observations does not want it.
+ */
 async function scaffold(
   tx: Parameters<Parameters<typeof withTestDb>[0]>[0],
-  holdingOverrides: { lastUpdated?: Date } = {}
+  { funded = false, ...holdingOverrides }: { lastUpdated?: Date; funded?: boolean } = {}
 ) {
   const user = await makeUser(tx);
   const institution = await makeInstitution(tx);
@@ -73,6 +80,14 @@ async function scaffold(
     source: 'manual',
     ...holdingOverrides,
   });
+  if (funded) {
+    await seedReading(tx, {
+      userId: user.id,
+      holdingId: holding.id,
+      balance: '100',
+      at: new Date('2026-01-01T00:00:00Z'),
+    });
+  }
   return { user, account, token, holding };
 }
 
@@ -192,7 +207,7 @@ describe('UpdateHoldingUseCase', () => {
    */
   test('money added to a manual holding is booked as a flow, not as a gain', async () => {
     await withTestDb(async (tx) => {
-      const { user, holding } = await scaffold(tx);
+      const { user, holding } = await scaffold(tx, { funded: true });
       const moved = new Date('2026-06-01T00:00:00Z');
 
       await useCase().execute(
@@ -307,7 +322,7 @@ describe('UpdateHoldingUseCase', () => {
    */
   test('a synthesized flow is a row the reconciler counts, so no phantom opening appears', async () => {
     await withTestDb(async (tx) => {
-      const { user, holding } = await scaffold(tx);
+      const { user, holding } = await scaffold(tx, { funded: true });
 
       await useCase().execute(
         holding.id,
@@ -330,10 +345,12 @@ describe('UpdateHoldingUseCase — a hidden holding given a balance (SC-1557)', 
   async function editHidden(hiddenBy: 'auto' | 'user') {
     return await withTestDb(async (tx) => {
       const { user, holding } = await scaffold(tx);
-      await tx
-        .update(schema.holdings)
-        .set({ balance: '0', isHidden: true, hiddenBy })
-        .where(eq(schema.holdings.id, holding.id));
+      await seedHoldingCache(tx, (calculator) =>
+        calculator
+          .update(schema.holdings)
+          .set({ balance: '0', isHidden: true, hiddenBy })
+          .where(eq(schema.holdings.id, holding.id))
+      );
 
       await useCase().execute(holding.id, { balance: '55' }, user.id, tx);
 
@@ -1064,6 +1081,12 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
         balance: '500',
         source: 'manual',
       });
+      await seedReading(tx, {
+        userId: user.id,
+        holdingId: destination.id,
+        balance: '500',
+        at: SEEDED_LAST_UPDATED,
+      });
 
       await useCase().execute(
         holding.id,
@@ -1164,6 +1187,12 @@ describe('UpdateHoldingUseCase — one edit, one question (SC-606)', () => {
         tokenId: token.id,
         balance: '500',
         source: 'manual',
+      });
+      await seedReading(tx, {
+        userId: user.id,
+        holdingId: destination.id,
+        balance: '500',
+        at: SEEDED_LAST_UPDATED,
       });
 
       await useCase().execute(
@@ -1504,6 +1533,15 @@ describe('UpdateHoldingUseCase — today’s edit, pinned before it moves (found
   test('a correction is dated 1 ms after the figure it replaces entered: the last observation, or the edit instant when there is none', async () => {
     await withTestDb(async (tx) => {
       const { user, holding } = await scaffold(tx, { lastUpdated: SEEDED_LAST_UPDATED });
+      // Its 100 as a ledger row, not a reading: the engine reads 100 and the
+      // holding still has no observation for the fallback to find (A5 D-15).
+      await makeHoldingTransaction(tx, {
+        userId: user.id,
+        holdingId: holding.id,
+        kind: 'deposit',
+        quantity: '100',
+        occurredAt: new Date('2025-12-01T00:00:00Z'),
+      });
 
       await useCase().execute(
         holding.id,
@@ -1512,7 +1550,7 @@ describe('UpdateHoldingUseCase — today’s edit, pinned before it moves (found
         tx
       );
 
-      const [correction] = await ledgerFor(tx, holding.id);
+      const correction = (await ledgerFor(tx, holding.id)).find((r) => r.kind === 'correction');
       expect(correction).toMatchObject({
         kind: 'correction',
         source: 'user-balance-correction',
@@ -1556,7 +1594,7 @@ describe('UpdateHoldingUseCase — today’s edit, pinned before it moves (found
     });
   });
 
-  test('a value at an instant the holding already holds from the same source is dropped, and the balance is still set (R8)', async () => {
+  test('a value at an instant the holding already holds from the same source is dropped, and the balance stays the recorded one (R8, A5 D-1)', async () => {
     await withTestDb(async (tx) => {
       const { user, holding } = await scaffold(tx, { lastUpdated: SEEDED_LAST_UPDATED });
       setSystemTime(EDITED_AT);
@@ -1564,7 +1602,9 @@ describe('UpdateHoldingUseCase — today’s edit, pinned before it moves (found
       await useCase().execute(holding.id, { balance: '150' }, user.id, tx);
       const second = await useCase().execute(holding.id, { balance: '175' }, user.id, tx);
 
-      expect(second.balance).toBe('175');
+      // The 175 was not recorded, so it is not evidence: the engine still
+      // reads the 150 that was.
+      expect(second.balance).toBe('150');
       expect(second.lastUpdated.toISOString()).toBe(EDITED_AT.toISOString());
       const rows = await observationsFor(tx, holding.id);
       expect(rows.map((o) => [o.balance, o.observedAt.toISOString()])).toEqual([
@@ -1757,7 +1797,8 @@ describe('UpdateHoldingUseCase records through SnapshotWriter (foundation A2)', 
         tx
       );
 
-      expect((await holdingRowOf(tx, snapshot.id)).balance).toBe('140');
+      // The 140 was dropped, so the cache stays the recorded 150 (A5 D-1).
+      expect((await holdingRowOf(tx, snapshot.id)).balance).toBe('150');
       const rows = await personSnapshotsOf(tx, snapshot.id);
       expect(
         rows.map((o) => ({ balance: o.balance, role: o.role, live: o.supersededAt === null }))
@@ -1868,24 +1909,29 @@ describe('UpdateHoldingUseCase — history across a person’s edits (foundation
     const fixture = await committedHolding();
     await aPersonsEdits(fixture);
 
-    // Read on the path before the move. The drift between two observations
-    // is spread across the interval they bracket (`driftAhead`), which is why
-    // the figures between 1 June and 1 August are not round: 150 observed on
-    // 1 August, less the 60 booked since 1 June, leaves 10 unexplained.
-    //   15 May   before the first observation: its 100
-    //   15 Jun   97.70…   10 Jul 103.60…   25 Jul 151.14…   the spread drift
+    // Read on the engine since A5 PR-2 (D-10). It walks forward from the
+    // latest reading and spreads nothing, so each edit is a step on its own
+    // day where the old walk ramped it across the interval before (SC-475
+    // fault B).
+    //   15 May   before the holding's start: absent (the old walk read 100)
+    //   15 Jun   the 1 June 100
+    //   10 Jul   100 + the 10 deposited on 1 July
+    //   25 Jul   110 + the flow row dated 20 July, 40: the edit sizes it
+    //            against the engine's 110 (A5 D-15). Under PR-2 it read 160,
+    //            a row of 50 sized against a stored 100 this fixture's
+    //            deposit never reached (PR-2 golden trace, case 1).
     //   5 Aug    the correction dated 1 Aug + 1 ms restates the interval: 140
-    //   15 Aug   the growth, 5 of 10 days from 140 to 145
-    //   25 Aug   5 of 12 days from 145 to the uncaused 160
+    //   15 Aug   the correction's 140, until the growth on 20 Aug
+    //   25 Aug   the growth's 145, until the uncaused 160 on 1 Sep
     //   5 Sep, now   160
-    const golden: Array<[Date, string]> = [
-      [at('2026-05-15'), '100'],
-      [at('2026-06-15'), '97.70491803278688524590163934'],
-      [at('2026-07-10'), '103.6065573770491803278688525'],
-      [at('2026-07-25'), '151.1475409836065573770491803'],
+    const golden: Array<[Date, string | null]> = [
+      [at('2026-05-15'), null],
+      [at('2026-06-15'), '100'],
+      [at('2026-07-10'), '110'],
+      [at('2026-07-25'), '150'],
       [at('2026-08-05'), '140'],
-      [at('2026-08-15'), '142.5'],
-      [at('2026-08-25'), '151.25'],
+      [at('2026-08-15'), '140'],
+      [at('2026-08-25'), '145'],
       [at('2026-09-05'), '160'],
       [new Date(), '160'],
     ];
@@ -2095,6 +2141,12 @@ async function sourceAndDestinations(tx: DestinationTx) {
     balance: '100',
     source: 'manual',
   });
+  await seedReading(tx, {
+    userId: user.id,
+    holdingId: holding.id,
+    balance: '100',
+    at: new Date('2026-08-01T00:00:00Z'),
+  });
   const fresh = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
   const wallet = await makeWalletAccount(tx, { userId: user.id, institutionId: institution.id });
   return { user, token, holding, fresh, wallet };
@@ -2253,8 +2305,9 @@ describe('UpdateHoldingUseCase — the destination an internal answer opens, pin
     );
 
     // Before the withdrawal, after it, and now. Each source falls by exactly
-    // what left, so no drift is spread; each destination reads zero before
-    // the arrival and the arrival after it.
+    // what left, so no drift is spread; each destination reads the arrival
+    // after it. Since A5 PR-2 (D-10) a destination reads absent before its
+    // start, the withdrawal, where the old walk read 0.
     const before = at('2026-08-31T00:00:00.000Z');
     const after = at('2026-09-02T00:00:00.000Z');
     const now = new Date();
@@ -2265,10 +2318,10 @@ describe('UpdateHoldingUseCase — the destination an internal answer opens, pin
       [fixture.intoWallet.holdingId, before, '100'],
       [fixture.intoWallet.holdingId, after, '80'],
       [fixture.intoWallet.holdingId, now, '80'],
-      [fresh.id, before, '0'],
+      [fresh.id, before, null],
       [fresh.id, after, '40'],
       [fresh.id, now, '40'],
-      [wallet.id, before, '0'],
+      [wallet.id, before, null],
       [wallet.id, after, '20'],
       [wallet.id, now, '20'],
     ];

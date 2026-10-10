@@ -4,6 +4,7 @@ import path from 'node:path';
 import { sql } from 'drizzle-orm';
 import { getDb } from '../../src';
 import type { DatabaseTransaction } from '../../src/transaction';
+import { seedHoldingCache } from './foundation-helpers';
 
 /**
  * SC-1285's migration, run verbatim against the real schema inside a
@@ -130,9 +131,11 @@ describe('SC-1285 migration: custom tokens belong to their creator', () => {
               VALUES (${userId}, ${institution}, ${`sc1285-${crypto.randomUUID()}`}, ${accountType})
               RETURNING id`
         );
-        await tx.execute(sql`
-          INSERT INTO holdings (user_id, account_id, token_id, balance)
-          VALUES (${userId}, ${account}, ${tokenId}, '1')`);
+        await seedHoldingCache(tx, () =>
+          tx.execute(sql`
+            INSERT INTO holdings (user_id, account_id, token_id, balance)
+            VALUES (${userId}, ${account}, ${tokenId}, '1')`)
+        );
       };
 
       // Created by `creator`, then edited by `attacker` — the 2026-09-19 shape.

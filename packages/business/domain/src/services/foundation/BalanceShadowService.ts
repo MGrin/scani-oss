@@ -1,40 +1,28 @@
 import type { DatabaseTransaction } from '@scani/db';
 import { Container, Service } from 'typedi';
 import { EngineEvidenceRepository } from '../../repositories/EngineEvidenceRepository';
-import {
-  type BalanceAtTimeResult,
-  BalanceAtTimeService,
-  type BalanceWalkCaches,
-} from '../pricing/BalanceAtTimeService';
 import { addClassified, type ClassifiedCounts, emptyClassifiedCounts } from './classified-counts';
-import {
-  classifyHoldingEvidence,
-  type EvidenceHolding,
-  type LegacyHoldingEvidence,
-} from './legacy-classification';
+import { classifyHoldingEvidence } from './legacy-classification';
 import { type ShadowRunResult, ShadowRunService, type ShadowTally } from './ShadowRunService';
-import { compareBalance, type LegacyBalanceReading } from './shadow-comparison';
+import { compareBalance } from './shadow-comparison';
 
 type BalanceTally = ShadowTally & { classified: ClassifiedCounts };
 
 export interface BalanceShadowInput {
   /** The instant compared with each holding's stored balance. */
   asOf: Date;
-  /** Instants compared with `BalanceAtTimeService`, reading every row the holding has. */
-  pastInstants: readonly Date[];
   userId?: string;
 }
 
 /**
  * The nightly balance shadow (D-10): every holding's engine balance beside its
- * stored balance at `asOf` and beside `BalanceAtTimeService` at each past
- * instant. It writes only its report.
+ * stored balance at `asOf`. It writes only its report. It also compared
+ * `BalanceAtTimeService` at past instants until A5 PR-2 made that the engine.
  */
 @Service()
 export class BalanceShadowService {
   private readonly runs = Container.get(ShadowRunService);
   private readonly evidence = Container.get(EngineEvidenceRepository);
-  private readonly balanceAtTime = Container.get(BalanceAtTimeService);
 
   /** One user at a time, each in a snapshot of its own (`ShadowRunService.run`). */
   run(input: BalanceShadowInput, tx?: DatabaseTransaction): Promise<ShadowRunResult> {
@@ -95,69 +83,19 @@ export class BalanceShadowService {
     Bun.gc(true);
     const holding = classifyHoldingEvidence(raw);
     addClassified(tally.classified, holding);
-    const caches = cachesOf(raw);
 
-    const readings: Array<{ at: Date; legacy: LegacyBalanceReading }> = [
-      { at: input.asOf, legacy: storedReading(raw.holding) },
-    ];
-    for (const at of input.pastInstants) {
-      const result = await this.balanceAtTime.getBalance(raw.holding.id, at, tx, caches);
-      readings.push({ at, legacy: historicalReading(result) });
-    }
-
-    for (const { at, legacy } of readings) {
-      tally.compared += 1;
-      const difference = compareBalance(holding, at, legacy);
-      if (difference === null) continue;
-      tally.differences.push({
-        ...difference,
-        userId,
-        holdingId: raw.holding.id,
-        tokenId: raw.holding.tokenId,
-        baseTokenId: null,
-      });
-    }
+    tally.compared += 1;
+    const difference = compareBalance(holding, input.asOf, {
+      balance: raw.holding.balance,
+      lastUpdated: raw.holding.lastUpdated,
+    });
+    if (difference === null) return;
+    tally.differences.push({
+      ...difference,
+      userId,
+      holdingId: raw.holding.id,
+      tokenId: raw.holding.tokenId,
+      baseTokenId: null,
+    });
   }
-}
-
-/**
- * The holding's rows already loaded, keyed as `BalanceAtTimeService` reads
- * them, so it answers from the same snapshot the engine does. A holding with
- * no rows gets an empty list rather than none: a missing key falls through to
- * the database.
- */
-function cachesOf(raw: LegacyHoldingEvidence): BalanceWalkCaches {
-  const id = raw.holding.id;
-  return {
-    holdings: new Map([[id, raw.holding]]),
-    observations: new Map([[id, raw.observations]]),
-    transactions: new Map([[id, raw.transactions]]),
-  };
-}
-
-function storedReading(holding: EvidenceHolding): LegacyBalanceReading {
-  return {
-    comparator: 'stored-balance',
-    balance: holding.balance,
-    absent: false,
-    interpolated: false,
-    floored: false,
-    lastUpdated: holding.lastUpdated,
-  };
-}
-
-/**
- * `beforeRecords` counts as absent: `PortfolioValuationAtTimeService.getPortfolioValue`
- * counts such a holding as absent and values nothing for it.
- */
-function historicalReading(r: BalanceAtTimeResult): LegacyBalanceReading {
-  return {
-    comparator: 'balance-at-time',
-    // `toFixed`, as the engine side is written: `toString` turns a dust balance into `1e-8`.
-    balance: r.balance?.toFixed() ?? null,
-    absent: r.balance === null || r.beforeRecords,
-    interpolated: r.interpolated,
-    floored: r.floored,
-    lastUpdated: null,
-  };
 }

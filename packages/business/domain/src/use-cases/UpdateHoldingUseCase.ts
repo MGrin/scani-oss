@@ -281,7 +281,11 @@ export class UpdateHoldingUseCase {
     await this.execute(
       arrived.id,
       {
-        balance: movedBalance(arrived.balance, quantity),
+        // From the engine's balance, as the edit that sizes it reads it (A5 D-15).
+        balance: movedBalance(
+          await this.cacheWriter.engineBalance(userId, arrived.id, tx),
+          quantity
+        ),
         editCause: 'flow',
         // The date the WITHDRAWAL was stamped with, not the edit instant: two
         // legs of one movement dated apart would leave each of them explaining
@@ -398,13 +402,14 @@ export class UpdateHoldingUseCase {
       const claimsTheBalanceMoved = balance !== undefined || data.isActive !== undefined;
       const lastUpdated = statedLastUpdated || editedAt;
 
-      // The balance through the one A2 writer of the cache (D-1), and BEFORE
-      // the observation below on every path that writes one: concurrent edits
-      // of one holding serialize on the row lock `previous` was read under,
-      // so the second one's snapshot sees the first's once it commits (R72).
-      if (balance !== undefined) {
-        await this.cacheWriter.apply(userId, [{ holdingId, balance, lastUpdated }], tx);
-      }
+      // What the engine says the balance is before this edit: the figure a
+      // flow is sized against (A5 D-15), not the cache column, which a writer
+      // that left the cache behind could have left stale. Concurrent edits of
+      // one holding serialize on the row lock `previous` was read under (R72).
+      const before =
+        balance === undefined
+          ? undefined
+          : await this.cacheWriter.engineBalance(userId, holdingId, tx);
 
       const fields = {
         ...columns,
@@ -420,13 +425,13 @@ export class UpdateHoldingUseCase {
       };
       const owned = and(eq(schema.holdings.id, holdingId), eq(schema.holdings.userId, userId));
       // A balance-only edit has nothing left to set, and its row lock is
-      // already held by the cache write.
-      const [result] =
+      // already held from the read of `previous`.
+      const [updated] =
         balance !== undefined && Object.values(fields).every((value) => value === undefined)
           ? await tx.select().from(schema.holdings).where(owned).limit(1)
           : await tx.update(schema.holdings).set(fields).where(owned).returning();
 
-      if (!result) {
+      if (!updated) {
         throw new Error('Holding not found');
       }
 
@@ -439,9 +444,12 @@ export class UpdateHoldingUseCase {
         balance !== undefined && editCause
           ? await this.manualBalanceEditService.record(
               {
-                holding: result,
-                previousBalance: previous.balance,
-                newBalance: result.balance,
+                // Stamped with this edit's instant, which the cache write
+                // below sets: a correction on a holding with no observation is
+                // dated from it (A5 D-15 moved that write after this one).
+                holding: { ...updated, lastUpdated },
+                previousBalance: before ?? previous.balance,
+                newBalance: balance,
                 cause: editCause,
                 occurredAt: editOccurredAt ?? editedAt,
                 editedAt,
@@ -498,7 +506,7 @@ export class UpdateHoldingUseCase {
         // where the queue's own refusals live (SC-350).
         if (editOutflow.decision === 'internal' && editOutflow.destination) {
           await this.moveDeclaredTransfer(
-            { id: holdingId, tokenId: result.tokenId },
+            { id: holdingId, tokenId: updated.tokenId },
             editOutflow.destination,
             // What ARRIVED, which is what left minus the fee (SC-857). Read
             // off `written` rather than off `editOutflow`, so a fee `record`
@@ -529,13 +537,14 @@ export class UpdateHoldingUseCase {
       // R85); its legacy source and origin are today's, because readers
       // still key on them. Stamped now, as it always was, so a same-instant
       // value from the same source is dropped by the key, as it always was
-      // (R8). The cache is already set above.
+      // (R8). It carries what the person typed; the cache is then the
+      // engine's reading of it (A5 D-15, D-20).
       if (balance !== undefined) {
         const recorded = await this.snapshotWriter.record(
           {
             userId,
             holdingId,
-            amount: result.balance,
+            amount: balance,
             at: new Date(),
             cause: editCause ?? null,
             legacySource: 'sync-capture',
@@ -570,6 +579,15 @@ export class UpdateHoldingUseCase {
         for (const notice of recorded.notices) {
           logger.warn({ userId, holdingId }, notice);
         }
+        await this.cacheWriter.apply(userId, [{ holdingId, balance, lastUpdated }], tx);
+      }
+
+      const [result] =
+        balance === undefined
+          ? [updated]
+          : await tx.select().from(schema.holdings).where(owned).limit(1);
+      if (!result) {
+        throw new Error('Holding not found');
       }
 
       logger.info(
