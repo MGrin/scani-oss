@@ -45,6 +45,12 @@ import type {
 import { airwallexManifest } from './manifest';
 
 const AIRWALLEX_INSTITUTION_CODE = 'airwallex';
+
+/**
+ * Pinned per request: without it each account's own default version decides the
+ * response shape, so one parser would read different shapes across customers.
+ */
+const AIRWALLEX_API_VERSION = '2026-08-21';
 const AIRWALLEX_BASE_URL = 'https://api.airwallex.com';
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FIVE_YEARS_MS = 5 * 365 * DAY_MS;
@@ -247,6 +253,7 @@ export class AirwallexProvider
           headers: {
             'x-client-id': clientId,
             'x-api-key': apiKey,
+            'x-api-version': AIRWALLEX_API_VERSION,
             'Content-Type': 'application/json',
           },
         }),
@@ -266,7 +273,7 @@ export class AirwallexProvider
     const response = await this.limiter.execute(
       async () =>
         fetch(`${this.baseUrl}/api/v1/balances/current`, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${token}`, 'x-api-version': AIRWALLEX_API_VERSION },
         }),
       subKey
     );
@@ -293,7 +300,7 @@ export class AirwallexProvider
     const response = await this.limiter.execute(
       async () =>
         fetch(url, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${token}`, 'x-api-version': AIRWALLEX_API_VERSION },
         }),
       subKey
     );
