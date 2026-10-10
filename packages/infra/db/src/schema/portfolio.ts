@@ -161,7 +161,9 @@ export const portfolioValueDaily = pgTable(
 // Scope kind for portfolio_value_daily.scope_kind. 'user' rows are
 // the user-wide totals (scope_id = userId sentinel). The per-entity
 // rows enable detail-page charts without requiring three more tables.
-export type PortfolioValueScopeKind = 'user' | 'institution' | 'account' | 'holding';
+// A 'transit' row is money between two of the person's accounts, keyed by
+// its outflow: in the user total, in no account (SC-1675).
+export type PortfolioValueScopeKind = 'user' | 'institution' | 'account' | 'holding' | 'transit';
 
 export const portfolioValueDailyRelations = relations(portfolioValueDaily, ({ one }) => ({
   user: one(users, {
