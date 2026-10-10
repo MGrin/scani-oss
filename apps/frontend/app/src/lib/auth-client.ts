@@ -1,5 +1,6 @@
+import { passkeyClient } from '@better-auth/passkey/client';
 import { LANGUAGE_HEADER } from '@scani/shared';
-import { emailOTPClient, magicLinkClient } from 'better-auth/client/plugins';
+import { emailOTPClient, magicLinkClient, twoFactorClient } from 'better-auth/client/plugins';
 import { createAuthClient } from 'better-auth/react';
 // The i18next SINGLETON, not `@/i18n` — the same object at run time, since
 // `src/i18n/index.ts` configures this very instance and re-exports it, and
@@ -57,5 +58,7 @@ export const authClient = createAuthClient({
       return context;
     },
   },
-  plugins: [magicLinkClient(), emailOTPClient()],
+  // twoFactorClient gives /two-factor/*; its redirect hook is not used, because
+  // AuthContext reads `twoFactorRedirect` off the sign-in answer itself (SC-1646).
+  plugins: [magicLinkClient(), emailOTPClient(), twoFactorClient(), passkeyClient()],
 });

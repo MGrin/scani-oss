@@ -3,6 +3,7 @@ import { useTurnstile } from '@scani/ui/components/Turnstile';
 import { Button } from '@scani/ui/ui/button';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { TwoFactorCodeForm } from '@/components/auth/TwoFactorCodeForm';
 import { useAuth } from '@/contexts/AuthContext';
 import { FormActions, FormSheet } from '../form/FormSheet';
 
@@ -30,11 +31,15 @@ export function ConfirmIdentityDialog({
   const [sent, setSent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The code passed and the account has 2FA on: the fresh session comes from
+  // the second factor instead (SC-1646).
+  const [secondFactor, setSecondFactor] = useState(false);
   const email = user?.email ?? '';
 
   useEffect(() => {
     if (!open) {
       setSent(false);
+      setSecondFactor(false);
       setError(null);
     }
   }, [open]);
@@ -58,6 +63,14 @@ export function ConfirmIdentityDialog({
       setError(result.error);
       return;
     }
+    if (result.twoFactor) {
+      setSecondFactor(true);
+      return;
+    }
+    confirmed();
+  };
+
+  const confirmed = () => {
     onOpenChange(false);
     onConfirmed();
   };
@@ -93,7 +106,9 @@ export function ConfirmIdentityDialog({
       }
     >
       {turnstile.widget}
-      {sent ? (
+      {secondFactor ? (
+        <TwoFactorCodeForm allowTrustDevice={false} onDone={confirmed} />
+      ) : sent ? (
         <MagicCodeInput onSubmit={verify} onResend={send} isLoading={busy} error={error} />
       ) : null}
     </FormSheet>
