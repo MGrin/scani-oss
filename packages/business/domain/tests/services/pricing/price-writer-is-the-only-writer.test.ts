@@ -32,9 +32,6 @@ const STATEMENT_ALLOWED = [
   'packages/infra/db/src/migrations/0016_ibkr_segment_token_dedup.sql',
   'packages/infra/db/src/migrations/0017_purge_crosstype_price_pollution.sql',
   'packages/infra/db/src/migrations/0028_restore_downsampled_manual_price_source.sql',
-  // Ops O1 (foundation A3, task 14): moves and deletes existing rows, which the
-  // writer does not do; every new price it adds goes through the writer.
-  'scripts/lib/restamp-daily-prices.ts',
 ];
 
 const REPOSITORY_CALL_ALLOWED = ['packages/business/domain/src/services/pricing/PriceWriter.ts'];

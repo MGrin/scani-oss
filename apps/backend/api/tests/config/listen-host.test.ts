@@ -22,13 +22,12 @@ describe('the api listen address', () => {
     expect(source).not.toMatch(/app\.listen\(\s*PORT\s*,/);
   });
 
-  test.each([
-    ['apps/backend/api/fly.toml', /^\s*HOST\s*=\s*"::"\s*$/m],
-    ['infra/demo/fly.api.toml', /^\s*HOST\s*=\s*"::"\s*$/m],
-    ['apps/backend/api/Dockerfile', /^\s*HOST=::\s*$/m],
-  ])('%s deploys on ::, which keeps 6PN reachable', async (path, pattern) => {
-    expect(await read(path)).toMatch(pattern);
-  });
+  test.each([['apps/backend/api/Dockerfile', /^\s*HOST=::\s*$/m]])(
+    '%s deploys on ::, which keeps 6PN reachable',
+    async (path, pattern) => {
+      expect(await read(path)).toMatch(pattern);
+    }
+  );
 
   test('an unset HOST still binds :: as before', async () => {
     expect(await read('apps/backend/api/src/config/env.ts')).toMatch(

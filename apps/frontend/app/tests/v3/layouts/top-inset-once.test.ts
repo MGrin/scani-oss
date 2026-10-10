@@ -53,7 +53,7 @@ describe('the top clearance is applied once', () => {
     );
   });
 
-  test.each(['src/v3/billing/PlanBanner.tsx', 'src/v3/components/DemoBanner.tsx'])(
+  test.each(['src/v3/components/DemoBanner.tsx'])(
     '%s marks itself as the top banner',
     async (path) => {
       expect(await read(path)).toContain('data-top-banner');

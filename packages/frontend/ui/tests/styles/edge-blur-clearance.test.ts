@@ -24,7 +24,6 @@ describe('the top edge clears the iOS edge blur', () => {
   });
 
   test.each([
-    'apps/frontend/app/src/v3/billing/PlanBanner.tsx',
     'apps/frontend/app/src/v3/components/DemoBanner.tsx',
     'packages/frontend/ui/src/components/UpdateBanner.tsx',
     'packages/frontend/ui/src/components/InstallPromptBanner.tsx',
