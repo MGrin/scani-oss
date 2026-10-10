@@ -177,6 +177,15 @@ export class UserService extends BaseService {
    * is the difference between one row touched when someone flies somewhere new
    * and one write per session per user, forever.
    */
+  /** The app is open and in front (SC-1602); see `users.app_seen_at`. */
+  async markAppSeen(userId: string): Promise<void> {
+    try {
+      await this.userRepository.update(userId, { appSeenAt: new Date() });
+    } catch (error) {
+      throw this.handleError(error, 'markAppSeen');
+    }
+  }
+
   async reportTimezone(userId: string, timezone: string): Promise<{ changed: boolean }> {
     try {
       const existingUser = await this.userRepository.findById(userId);
