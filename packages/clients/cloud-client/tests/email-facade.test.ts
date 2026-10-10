@@ -5,6 +5,7 @@ import { Container } from 'typedi';
 // shared helper is reached the same way the shared test preload is: by path.
 import { restoreContainerAfterAll } from '../../../business/domain/test/helpers/container';
 import type { CloudClient } from '../src/client';
+import { resetCloudClientConfig } from '../src/config';
 import { EmailFacade } from '../src/facades/email-facade';
 import { resetCloudClient, setCloudClient } from '../src/runtime';
 
@@ -141,5 +142,40 @@ describe('EmailFacade — cloud mode (cloud client set)', () => {
     await expect(
       facade.send({ from: 'a@x', to: 'b@x', subject: 's', text: 't' })
     ).rejects.toBeInstanceOf(Error);
+  });
+});
+
+describe('EmailFacade.canSendCustomMail (SC-1647)', () => {
+  test('Tier 2 sends only template sign-in mail, so it cannot', () => {
+    // The tier is read through a cached config, so it is reset on both sides.
+    // Tier 2's config refuses to load without a cloud URL and key, and CI sets
+    // neither, so the test supplies both and puts back whatever was there.
+    const keys = ['SCANI_DEPLOYMENT_TIER', 'SCANI_CLOUD_URL', 'SCANI_CLOUD_API_KEY'] as const;
+    const before = keys.map((key) => process.env[key]);
+    Object.assign(process.env, {
+      SCANI_DEPLOYMENT_TIER: '2',
+      SCANI_CLOUD_URL: 'https://cloud.example.test',
+      SCANI_CLOUD_API_KEY: 'test-cloud-api-key-000000',
+    });
+    resetCloudClientConfig();
+    try {
+      expect(new EmailFacade().canSendCustomMail()).toBe(false);
+    } finally {
+      keys.forEach((key, i) => {
+        const value = before[i];
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      });
+      resetCloudClientConfig();
+    }
+  });
+
+  test('locally, it follows whether the local transport really sends', () => {
+    expect(new EmailFacade().canSendCustomMail()).toBe(stubLocal.sendsMail);
+  });
+
+  test('with a cloud client, the data-provider sends it', () => {
+    setCloudClient(stubCloudClient().client);
+    expect(new EmailFacade().canSendCustomMail()).toBe(true);
   });
 });

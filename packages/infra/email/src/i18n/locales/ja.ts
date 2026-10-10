@@ -22,6 +22,17 @@ export const ja: EmailStrings = {
       '操作を開始したものと同じブラウザでこのリンクを開いてください。一度だけ有効で、15分で期限が切れます。',
     textIgnore: 'お心当たりがない場合は、このメールを破棄していただいて問題ありません。',
   },
+  householdInvite: {
+    subject: '{inviter} さんから {app} の世帯への招待が届いています',
+    headline: '{household} に参加',
+    body: '{inviter} さんが {app} の {household} で共有している口座を見られるよう、あなたを招待しました。あなた自身の口座は、共有を選ばない限り非公開のままです。',
+    button: '招待を承認する',
+    preheader: '{inviter} さんから {app} の {household} への招待です。',
+    textIntro: '{inviter} さんから {app} の {household} への招待です。',
+    textBody:
+      'このメールアドレスでサインインしてから承認してください。あなたの口座は共有しない限り非公開のままです。',
+    expiry: '招待の有効期限は7日間です。',
+  },
   otp: {
     headline: {
       signIn: 'サインイン用コード',

@@ -35,6 +35,17 @@ export const es: EmailStrings = {
       'Abre este enlace en el navegador desde el que empezaste. Solo funciona una vez y caduca en 15 minutos.',
     textIgnore: '¿No has pedido nada? Puedes ignorar este correo sin problema.',
   },
+  householdInvite: {
+    subject: '{inviter} te ha invitado a un hogar en {app}',
+    headline: 'Únete a {household}',
+    body: '{inviter} te ha invitado a ver las cuentas que comparte en {household} en {app}. Tus propias cuentas siguen siendo privadas a menos que decidas compartirlas.',
+    button: 'Aceptar la invitación',
+    preheader: '{inviter} te ha invitado a {household} en {app}.',
+    textIntro: '{inviter} te ha invitado a {household} en {app}.',
+    textBody:
+      'Inicia sesión con esta dirección de correo y luego acepta. Tus propias cuentas siguen siendo privadas a menos que las compartas.',
+    expiry: 'La invitación caduca en 7 días.',
+  },
   otp: {
     headline: {
       signIn: 'Tu código de acceso',

@@ -31,6 +31,17 @@ export const id: EmailStrings = {
       'Buka tautan ini di peramban yang sama dengan tempat Anda memulainya. Tautan ini hanya bisa dipakai sekali dan kedaluwarsa dalam 15 menit.',
     textIgnore: 'Bukan Anda yang meminta ini? Abaikan saja email ini.',
   },
+  householdInvite: {
+    subject: '{inviter} mengundang Anda ke rumah tangga di {app}',
+    headline: 'Bergabung dengan {household}',
+    body: '{inviter} mengundang Anda untuk melihat akun yang dibagikan di {household} di {app}. Akun Anda sendiri tetap pribadi kecuali Anda memilih untuk membagikannya.',
+    button: 'Terima undangan',
+    preheader: '{inviter} mengundang Anda ke {household} di {app}.',
+    textIntro: '{inviter} mengundang Anda ke {household} di {app}.',
+    textBody:
+      'Masuk dengan alamat email ini, lalu terima undangan. Akun Anda tetap pribadi kecuali Anda membagikannya.',
+    expiry: 'Undangan berlaku selama 7 hari.',
+  },
   otp: {
     headline: {
       signIn: 'Kode masuk Anda',
