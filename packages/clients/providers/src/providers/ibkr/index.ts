@@ -617,7 +617,9 @@ const DIVIDEND_CASH_TYPES: ReadonlySet<string> = new Set([
 // `SYMBOL(ISIN) …`, how IBKR opens the description of every dividend and of
 // the tax withheld from it, e.g. `ACME(ZZ0000000017) CASH DIVIDEND USD 0.24
 // PER SHARE - US TAX`. A symbol may hold a space or a dot (`BRK B`, `RDS.A`).
-const PAID_BY = /^\s*([A-Z0-9][A-Z0-9 .\-/]*?)\s*\(([A-Z]{2}[A-Z0-9]{9}[0-9])\)/i;
+// Each space in the symbol is followed by a symbol character, so a run of
+// spaces before `(` has one parse, not a polynomial number (CodeQL js/polynomial-redos).
+const PAID_BY = /^\s*([A-Z0-9][A-Z0-9.\-/]*(?: [A-Z0-9.\-/]+)*)\s*\(([A-Z]{2}[A-Z0-9]{9}[0-9])\)/i;
 
 /** The security a dividend or withholding description names, or null. */
 export function ibkrPaidBy(description: string): IbkrPaidBy | null {
