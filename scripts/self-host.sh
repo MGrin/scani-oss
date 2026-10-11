@@ -36,6 +36,8 @@
 #   SCANI_IMAGE_TAG=latest    image tag to run (pin this for a reproducible box)
 #   SCANI_PORT=8080           host port the SPA is served on
 #   SCANI_MAIL_PORT=8026      host port for the bundled mail catcher (loopback only)
+#                             FRONTEND_PORT / MAILPIT_UI_PORT are accepted as the same
+#                             two ports; naming one port twice, differently, is refused
 #   SCANI_SKIP_UP=1           write .env and stop — for inspecting before booting
 #   SCANI_RESET=1             DELETE this project's data volumes first (see below)
 #
@@ -43,8 +45,6 @@ set -euo pipefail
 
 SCANI_REF="${SCANI_REF:-main}"
 SCANI_IMAGE_TAG="${SCANI_IMAGE_TAG:-latest}"
-SCANI_PORT="${SCANI_PORT:-8080}"
-SCANI_MAIL_PORT="${SCANI_MAIL_PORT:-8026}"
 SCANI_DEPLOYMENT_TIER="${SCANI_DEPLOYMENT_TIER:-1}"
 case "$SCANI_DEPLOYMENT_TIER" in 1|2) ;; *) printf 'SCANI_DEPLOYMENT_TIER must be 1 or 2\n' >&2; exit 1 ;; esac
 if [ "$SCANI_DEPLOYMENT_TIER" = 2 ] && [ ! -f .env ]; then
@@ -159,13 +159,27 @@ fi
 
 env_value() { sed -n "s/^$1=//p" .env 2>/dev/null | sed -n 1p; }
 
+# Compose reads FRONTEND_PORT and MAILPIT_UI_PORT from the shell ahead of
+# ./.env, so one exported here IS the port the box binds. Taking it as the
+# port, and refusing two names for two ports, keeps the check, .env, the boot
+# wait and the banner on the port compose will use (SC-1709).
+fresh_port() {  # <into> <script name> <compose name> <default>
+  local into="$1"; shift
+  local mine="${!1:-}" theirs="${!2:-}"
+  [ -z "$mine" ] || [ -z "$theirs" ] || [ "$mine" = "$theirs" ] \
+    || die "$1=${mine} and $2=${theirs} name two different ports. Set one of them. Nothing has been written or started."
+  printf -v "$into" '%s' "${mine:-${theirs:-$3}}"
+}
+
 if [ -f .env ]; then
   WEB_PORT="$(env_value FRONTEND_PORT)"; MAIL_PORT="$(env_value MAILPIT_UI_PORT)"
   S3_PORT="$(env_value SEAWEEDFS_S3_HOST_PORT)"; PORT_TIER="$(env_value SCANI_DEPLOYMENT_TIER)"
 else
-  WEB_PORT="$SCANI_PORT"; MAIL_PORT="$SCANI_MAIL_PORT"
+  fresh_port WEB_PORT SCANI_PORT FRONTEND_PORT 8080
+  fresh_port MAIL_PORT SCANI_MAIL_PORT MAILPIT_UI_PORT 8026
   S3_PORT="${SEAWEEDFS_S3_HOST_PORT:-9000}"; PORT_TIER="$SCANI_DEPLOYMENT_TIER"
 fi
+SCANI_PORT="${WEB_PORT:-8080}"; SCANI_MAIL_PORT="${MAIL_PORT:-8026}"
 
 port_taken() { (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null; }
 

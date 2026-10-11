@@ -469,11 +469,12 @@ jobs:
     # Bounding the steps serves both: the hang is caught by a budget that
     # names it, and the slow red gets the room to finish and report itself.
     #
-    # 35 IS THE SMALLEST HONEST BACKSTOP, not a comfort margin: 12 + 15 for
+    # 43 IS THE SMALLEST HONEST BACKSTOP, not a comfort margin: 12 + 25 for
     # the two bounded steps, plus the observed maxima of everything left
     # unbounded (stack boot 2m26s, checkout+setup+cache 0m50s, teardown 0m17s,
-    # post-steps 2m07s). It is sized never to fire.
-    timeout-minutes: 35
+    # post-steps 2m07s). It is sized never to fire. It was 35 while the suite
+    # step was 15 (SC-1708, below).
+    timeout-minutes: 43
     env:
       COMPOSE_PROJECT_NAME: mgrin-e2e-suite
       # The same number as `timeout-minutes` above. A job-level
@@ -481,7 +482,7 @@ jobs:
       # it back, so the budget is stated twice by necessity;
       # `scripts/tests/e2e-timeout-is-legible.test.ts` fails when the two
       # disagree, which is what makes one number in two places safe.
-      E2E_BUDGET_MINUTES: '35'
+      E2E_BUDGET_MINUTES: '43'
     steps:
       # Before checkout deliberately: the earliest point the job can write
       # anything, so the elapsed figure reported at the end covers as much of
@@ -564,11 +565,19 @@ jobs:
       # 60s`. Sizing this to the green distribution would keep converting
       # exactly the runs that have something to say into `cancelled`.
       #
-      # 15 is 1.7x the slowest green run and ~34% more than the censored red
+      # 15 was 1.7x the slowest green run and ~34% more than the censored red
       # one had. The censoring is why no tighter number is defensible: that
       # run was killed, so how much longer it needed is not in the data.
+      #
+      # SC-1708, 2026-10-11: GREEN OUTGREW IT. The 0.54.0 release PR (#699)
+      # ran 186 of 186 green in 15.1m and was killed by this budget; its
+      # re-run passed in 14m23s, 37s inside. Main's last five greens were
+      # 6.5-9.5m. Tests rose 164 -> 192 (+17%) and frontend source 519 -> 592
+      # files (+14%), which predicts ~12m; ~3m is spread over existing specs
+      # and is not explained. 25 re-applies the same rule, 1.7x the slowest
+      # green, to the new slowest green.
       - name: Run Playwright suite
-        timeout-minutes: 15
+        timeout-minutes: 25
         run: cd apps/e2e && bun run test:e2e -- --project=chromium --project=webkit --project=iphone --project=ipad
         env:
           CI: "true"
