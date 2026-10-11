@@ -54,6 +54,10 @@ test.describe('assets: add a property', () => {
     expect(Number(row.value)).toBe(360000);
 
     await page.goto('/valued-asset');
-    await expect(page.getByRole('heading', { name: 'Add a property or vehicle' })).toBeVisible();
+    // The test's first page load: on CI's Vite dev server the page module arrived
+    // 10.2s after the goto (SC-1698), past the 5s default.
+    await expect(page.getByRole('heading', { name: 'Add a property or vehicle' })).toBeVisible({
+      timeout: 20_000,
+    });
   });
 });
