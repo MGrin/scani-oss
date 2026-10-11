@@ -1,7 +1,7 @@
 import { createComponentLogger } from '@scani/logging';
 import type { Redis } from 'ioredis';
 import { Service } from 'typedi';
-import { channelForUser, RealtimeUpdatesService } from './base';
+import { channelForUser, OUTBOX_KICK_CHANNEL, RealtimeUpdatesService } from './base';
 
 const log = createComponentLogger('realtime:redis');
 
@@ -11,6 +11,17 @@ export class RedisRealtimeUpdatesService extends RealtimeUpdatesService {
 
   configure(publisher: Redis): void {
     this.publisher = publisher;
+  }
+
+  /**
+   * Best effort, like every broadcast here: a lost kick only delays events
+   * until the dispatcher's next sweep, and nothing is lost.
+   */
+  kickOutbox(): void {
+    if (!this.publisher) return;
+    void this.publisher.publish(OUTBOX_KICK_CHANNEL, '1').catch((err) => {
+      log.warn({ err: err instanceof Error ? err.message : String(err) }, 'outbox kick dropped');
+    });
   }
 
   protected deliver(userId: string, payload: string): void {

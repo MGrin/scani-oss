@@ -14,8 +14,8 @@ import {
   sumPortfolioDebtByAccount,
 } from '../../../src/services/portfolio/PortfolioValuationService';
 import { PortfolioValueCache } from '../../../src/services/portfolio/PortfolioValueCache';
-import { PricingService } from '../../../src/services/pricing/PricingService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { seedHoldingCache } from '../../../test/helpers/engine-guard';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -24,7 +24,7 @@ restoreContainerAfterAll();
 /**
  * PortfolioValuationService — pure math unit tests.
  *
- * The actual service fetches holdings from the DB and prices from PricingService.
+ * The actual service fetches holdings from the DB and prices from PriceReader.
  * Here we test the calculation logic in isolation by reproducing the exact
  * formulas the service uses (balance * price, summing totals, etc.).
  */
@@ -309,16 +309,17 @@ describe('PortfolioValuationService (unit — math)', () => {
 /**
  * The metadata half of the service, against the real database.
  *
- * `getCachedTokenPrices` resolves a price from whatever base it was cached
- * against and converts it, so a EUR-base user gets a value out of a USD-cached
- * CoinGecko price. The metadata lookup beside it used to fall back to *manual*
- * prices only, so those same holdings came back with no `priceTimestamp` and
- * `HoldingQueryService` dropped them — every crypto and equity row on /holdings
- * printed its value, its gain, and "—" for its price (SC-66 / D-1).
+ * A EUR-base user's holding is priced through a USD-cached CoinGecko price,
+ * and its time and source come from the same `PriceReader` answer. They were
+ * once a separate lookup that fell back to *manual* prices only, so those
+ * holdings came back with no `priceTimestamp` and `HoldingQueryService`
+ * dropped them — every crypto and equity row on /holdings printed its value,
+ * its gain, and "—" for its price (SC-66 / D-1).
  */
 describe('PortfolioValuationService (integration — price metadata)', () => {
   interface MetadataFixture {
     userId: string;
+    baseId: string;
     tokenIds: string[];
     assetId: string;
     freshId: string;
@@ -388,28 +389,30 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
       })
       .returning();
 
-    await db.insert(schema.holdings).values([
-      {
-        userId: user.id,
-        accountId: account!.id,
-        tokenId: asset.id,
-        balance: '2',
-      },
-      {
-        userId: user.id,
-        accountId: account!.id,
-        tokenId: fresh.id,
-        balance: '1',
-      },
-      // Cash in the base currency, which also has an old quote of its own
-      // against another currency (SC-1447).
-      {
-        userId: user.id,
-        accountId: account!.id,
-        tokenId: base.id,
-        balance: '100',
-      },
-    ]);
+    await seedHoldingCache(db, (calculator) =>
+      calculator.insert(schema.holdings).values([
+        {
+          userId: user.id,
+          accountId: account!.id,
+          tokenId: asset.id,
+          balance: '2',
+        },
+        {
+          userId: user.id,
+          accountId: account!.id,
+          tokenId: fresh.id,
+          balance: '1',
+        },
+        // Cash in the base currency, which also has an old quote of its own
+        // against another currency (SC-1447).
+        {
+          userId: user.id,
+          accountId: account!.id,
+          tokenId: base.id,
+          balance: '100',
+        },
+      ])
+    );
 
     // The provider row: priced in the QUOTE currency, not the user's base.
     //
@@ -440,10 +443,20 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
         timestamp: new Date('2026-08-13T06:00:00Z'),
         source: 'frankfurter',
       },
+      // The same rate, current: a route is stale when any leg is, so the
+      // current arm needs a current FX leg as well as a current quote.
+      {
+        tokenId: base.id,
+        baseTokenId: quote.id,
+        price: '1.08',
+        timestamp: new Date(),
+        source: 'frankfurter',
+      },
     ]);
 
     fixture = {
       userId: user.id,
+      baseId: base.id,
       tokenIds: [base.id, quote.id, asset.id, fresh.id],
       assetId: asset.id,
       freshId: fresh.id,
@@ -453,15 +466,6 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
       accountTypeId: accountType!.id,
     };
 
-    // Stand in for the pricing pipeline: it resolved the USD row and converted
-    // it, which is why the holding has a value at all.
-    Container.set(PricingService, {
-      getCachedTokenPrices: async () =>
-        new Map([
-          [asset.id, '55200'],
-          [fresh.id, '2760'],
-        ]),
-    } as unknown as PricingService);
     // Redis is not part of this assertion; compute every time.
     Container.set(PortfolioValueCache, {
       getOrCompute: async (_key: string, factory: () => Promise<unknown>) => factory(),
@@ -483,7 +487,6 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
       .delete(schema.institutionTypes)
       .where(eq(schema.institutionTypes.id, fixture.institutionTypeId));
 
-    Container.set(PricingService, new PricingService());
     Container.set(PortfolioValueCache, new PortfolioValueCache());
     Container.set(PortfolioValuationService, new PortfolioValuationService());
   });
@@ -493,7 +496,8 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
       fixture.userId
     );
 
-    const holding = portfolio.holdings.find((h) => h.value === '110400');
+    const holding = portfolio.holdings.find((h) => h.tokenId === fixture.assetId);
+    expect(holding?.currentPrice).not.toBeNull();
     expect(holding?.priceSource).toBe('coingecko');
     expect(holding?.priceTimestamp?.toISOString()).toBe('2026-08-13T06:00:00.000Z');
   });
@@ -513,8 +517,8 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
       fixture.userId
     );
 
-    const stale = portfolio.holdings.find((h) => h.value === '110400');
-    const current = portfolio.holdings.find((h) => h.value === '2760');
+    const stale = portfolio.holdings.find((h) => h.tokenId === fixture.assetId);
+    const current = portfolio.holdings.find((h) => h.tokenId === fixture.freshId);
     expect(stale?.priceStale).toBe(true);
     expect(current?.priceStale).toBe(false);
   });
@@ -531,11 +535,11 @@ describe('PortfolioValuationService (integration — price metadata)', () => {
       fixture.userId
     );
 
-    const cash = portfolio.holdings.find((h) => h.value === '100');
+    const cash = portfolio.holdings.find((h) => h.tokenId === fixture.baseId);
     expect(cash?.currentPrice).toBe('1');
     expect(cash?.priceStale).toBe(false);
     expect(cash?.priceSource).toBe('Base Currency');
-    expect(portfolio.holdings.find((h) => h.value === '110400')?.priceStale).toBe(true);
+    expect(portfolio.holdings.find((h) => h.tokenId === fixture.assetId)?.priceStale).toBe(true);
   });
 });
 
@@ -547,6 +551,7 @@ describe('sumPortfolioDebtByAccount', () => {
       totalValue: '0',
       baseCurrency: 'USD',
       holdings: holdings.map((h, index) => ({
+        holdingId: `holding-${index}`,
         accountId: h.accountId,
         tokenId: `token-${index}`,
         tokenSymbol: `T${index}`,

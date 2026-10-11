@@ -8,7 +8,13 @@ import type { MovementHolding } from '../../../src/v3/lib/movement-form';
 
 /** SC-1253: the balance under the amount reads as the holdings table does. */
 function markupFor(amount: string, date = '2026-09-19'): string {
-  const selected = { id: 'h1', amount, token: { symbol: 'EUR' } } as unknown as MovementHolding;
+  const selected: MovementHolding = {
+    id: 'h1',
+    amount,
+    token: { symbol: 'EUR', name: 'Euro' },
+    account: { name: 'Current' },
+    institution: { id: 'i1', name: 'Bank' },
+  };
   const form = {
     holdingId: 'h1',
     selected,

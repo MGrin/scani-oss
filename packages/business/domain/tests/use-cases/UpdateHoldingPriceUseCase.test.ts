@@ -1,8 +1,9 @@
 /**
- * The refresh button (foundation A3, Tasks 5 and 8).
+ * The refresh button (foundation A3, Tasks 5, 8 and 15).
  *
- * `fetched` compares the pair's latest stored row before and after the
- * price call (SC-148). A quote lands at the instant the refresh asked, never
+ * The quote is fetched against the fiat USD (D-4) and answered in the user's
+ * base. `fetched` compares the USD pair's latest stored row before and after
+ * the price call (SC-148). A quote lands at the instant the refresh asked, never
  * at its provider's stamp (D-4), so a quote that lands is always the newer
  * row. The holding is read and the price written through the global
  * connection, so every row here is committed and removed after each test.
@@ -18,7 +19,7 @@ import { ProviderRegistry } from '@scani/providers/core/registry';
 import type { PriceQuote } from '@scani/providers/core/types';
 import { and, asc, eq } from 'drizzle-orm';
 import { Container } from 'typedi';
-import { CurrencyConverter } from '../../src/services/pricing/CurrencyConverter';
+import { PriceHubResolver } from '../../src/services/pricing/PriceHubResolver';
 import { PricingProviderRouter } from '../../src/services/pricing/PricingProviderRouter';
 import { PricingService } from '../../src/services/pricing/PricingService';
 import { VaultService } from '../../src/services/users/VaultService';
@@ -57,8 +58,12 @@ interface Scaffold {
   holding: Holding;
 }
 
-/** A user's holding of a crypto token, and a fiat base, committed. */
-function commitHolding(): Promise<Scaffold> {
+/**
+ * A user's holding of a crypto token, committed, and their base: the seeded
+ * fiat USD, where quotes are stored, or a fiat of the test's own.
+ */
+async function commitHolding(baseKind: 'usd' | 'own' = 'usd'): Promise<Scaffold> {
+  const usdId = await Container.get(PriceHubResolver).usdTokenId();
   return getDb().transaction(async (tx) => {
     const user = await makeUser(tx);
     rows.users.push(user.id);
@@ -68,8 +73,14 @@ function commitHolding(): Promise<Scaffold> {
     rows.institutions.push(institution.id);
     const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
     const token = await makeToken(tx);
-    const base = await makeToken(tx, { typeId: fiatTypeId });
-    rows.tokens.push(token.id, base.id);
+    rows.tokens.push(token.id);
+    const base =
+      baseKind === 'own'
+        ? await makeToken(tx, { typeId: fiatTypeId })
+        : (await tx.select().from(schema.tokens).where(eq(schema.tokens.id, usdId)))[0];
+    if (!base) throw new Error('the fiat USD is seeded by migration');
+    // Never the seeded USD: dropping its prices would reach every other test.
+    if (baseKind === 'own') rows.tokens.push(base.id);
     const holding = await makeHolding(tx, {
       userId: user.id,
       accountId: account.id,
@@ -112,7 +123,6 @@ function refresh(answer: (token: Token) => PriceQuote | null): {
   registry.register(coingecko);
   Container.set(ProviderRegistry, registry);
   Container.set(PricingProviderRouter, new PricingProviderRouter());
-  Container.set(CurrencyConverter, new CurrencyConverter());
   Container.set(PricingService, new PricingService());
   Container.set(VaultService, {
     recalculateVaultsForHolding: async () => {},
@@ -134,6 +144,7 @@ describe('refresh reports fetched: true when a newer row landed, false when none
     });
     const providerStamp = new Date(Date.now() - 20 * MINUTE);
     const { useCase, asked } = refresh((t) => ({
+      barDay: null,
       tokenId: t.id,
       baseTokenId: base.id,
       price: '100',
@@ -172,6 +183,7 @@ describe('refresh reports fetched: true when a newer row landed, false when none
       source: 'coingecko',
     });
     const { useCase, asked } = refresh((t) => ({
+      barDay: null,
       tokenId: t.id,
       baseTokenId: base.id,
       price: '100',
@@ -234,6 +246,7 @@ test('a quote its provider dated before the stored row lands at the instant aske
     source: 'stored-source',
   });
   const { useCase, asked } = refresh((t) => ({
+    barDay: null,
     tokenId: t.id,
     baseTokenId: base.id,
     price: '100',
@@ -256,6 +269,42 @@ test('a quote its provider dated before the stored row lands at the instant aske
     price: '100',
     source: 'coingecko',
     timestamp: landed.toISOString(),
+    fetched: true,
+  });
+});
+
+// From PR-6 every provider quote is stored against the fiat USD (D-4), and
+// the refresh answers in the user's base through `PriceReader`, as the
+// dashboard it refreshes does.
+test('a user banking in another currency: the quote lands against USD and the answer is in their base', async () => {
+  const usdId = await Container.get(PriceHubResolver).usdTokenId();
+  const { userId, token, base, holding } = await commitHolding('own');
+  // One of the user's base buys 2 USD.
+  await commitPrice({
+    tokenId: base.id,
+    baseTokenId: usdId,
+    price: '2',
+    timestamp: new Date(Date.now() - MINUTE),
+    source: 'frankfurter',
+  });
+  const { useCase, asked } = refresh((t) => ({
+    barDay: null,
+    tokenId: t.id,
+    baseTokenId: usdId,
+    price: '100',
+    timestamp: new Date(),
+    source: 'coingecko',
+  }));
+
+  const result = await useCase.execute(holding.id, userId, base);
+
+  expect(asked).toEqual([token.id]);
+  expect(await storedFor(token.id, base.id)).toEqual([]);
+  expect((await storedFor(token.id, usdId)).map((r) => r.price)).toEqual(['100']);
+  expect(result).toMatchObject({
+    success: true,
+    price: '50',
+    source: 'coingecko',
     fetched: true,
   });
 });

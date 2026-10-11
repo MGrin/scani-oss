@@ -18,11 +18,11 @@ import type {
 import { fetchWithTimeout } from '../../core/utils/fetch';
 import { PageCapWatch } from '../../core/utils/page-cap';
 import { WALLET_HISTORY_ROW_CAP } from '../../core/wallet-limits';
+import { associatedTokenAddress } from './associated-token-account';
 import { resolveJupiterMint } from './jupiter';
 
 const SOL_INSTITUTION_CODE = 'solana';
 const LAMPORTS_PER_SOL = 1_000_000_000;
-const HELIUS_ENHANCED_BASE = 'https://api.helius.xyz/v0';
 const HELIUS_PAGE_LIMIT = 100;
 const WSOL_MINT = 'So11111111111111111111111111111111111111112';
 /** `external_id` and net-map key for native SOL, which has no mint. */
@@ -49,24 +49,53 @@ interface SolanaTokenAccount {
   pubkey: string;
 }
 
-interface HeliusTokenBalanceChange {
-  /** Owner of `tokenAccount` — the wallet, for its own ATAs. */
+interface TokenBalanceChange {
+  /** Owner of the token account — the wallet, for its own ATAs. */
   userAccount?: string;
   mint: string;
   rawTokenAmount: { tokenAmount: string; decimals: number };
 }
 
-interface HeliusAccountData {
+interface AccountChange {
   account: string;
   /** Signed lamport delta for `account`, fee included for the payer. */
   nativeBalanceChange?: number;
-  tokenBalanceChanges?: HeliusTokenBalanceChange[];
+  tokenBalanceChanges?: TokenBalanceChange[];
 }
 
-interface HeliusEnhancedTx {
+/** One transaction as the netting reads it: what changed, per account. */
+interface NettableTx {
   signature: string;
   timestamp: number;
-  accountData?: HeliusAccountData[];
+  accountData: AccountChange[];
+}
+
+interface RpcTokenBalance {
+  accountIndex: number;
+  mint: string;
+  owner?: string;
+  uiTokenAmount: { amount: string; decimals: number };
+}
+
+/** A `transactionDetails: 'full'`, `encoding: 'json'` row — `getTransaction`'s shape. */
+interface RpcFullTx {
+  blockTime: number | null;
+  transaction: {
+    signatures: string[];
+    message: { accountKeys: (string | { pubkey: string })[] };
+  };
+  meta: {
+    preBalances: number[];
+    postBalances: number[];
+    preTokenBalances?: RpcTokenBalance[];
+    postTokenBalances?: RpcTokenBalance[];
+    loadedAddresses?: { writable?: string[]; readonly?: string[] };
+  } | null;
+}
+
+interface TransactionsForAddressPage {
+  data: RpcFullTx[];
+  paginationToken: string | null;
 }
 
 /**
@@ -184,24 +213,17 @@ export class SolanaProvider
       this.warnPublicRpcTransactionsOnce();
       return [];
     }
-    const apiKey = this.extractHeliusApiKey();
-    if (!apiKey) {
-      this.warnPublicRpcTransactionsOnce();
-      return [];
-    }
 
     const events: TransactionEvent[] = [];
     const capped = new PageCapWatch();
     let pages = 0;
-    let before: string | undefined;
+    let paginationToken: string | undefined;
     while (true) {
-      const url = this.buildEnhancedTxUrl(address, apiKey, before);
-      const response = await this.limiter.execute(async () => fetchWithTimeout(url));
-      if (!response.ok) {
-        throw new Error(`Helius enhanced /transactions: HTTP ${response.status}`);
-      }
-      const page = (await response.json()) as HeliusEnhancedTx[];
-      if (!Array.isArray(page) || page.length === 0) break;
+      const result = await this.fetchTransactionsPage(address, ctx.since, paginationToken);
+      const page = result.data
+        .map((raw) => toNettable(raw, address))
+        .filter((tx): tx is NettableTx => tx !== null);
+      if (result.data.length === 0) break;
       // Pre-resolve every unique mint on this page in parallel, then
       // pass the resolved Map into the synchronous event projection.
       // Without this, projection would have to be async and serialize
@@ -211,15 +233,15 @@ export class SolanaProvider
         events.push(...this.toTransactionEvents(tx, address, mintMap));
       }
       pages += 1;
-      const last = page[page.length - 1];
-      if (!last?.signature || page.length < HELIUS_PAGE_LIMIT) break;
+      if (!result.paginationToken) break;
       // The address is the requester's choice, so its size is too (SC-1271).
       if (events.length >= WALLET_HISTORY_ROW_CAP) {
         capped.note({ walk: { kind: 'addressHistory' }, pages, rows: events.length });
         break;
       }
-      if (ctx.since && new Date(last.timestamp * 1000) < ctx.since) break;
-      before = last.signature;
+      const last = page[page.length - 1];
+      if (ctx.since && last && new Date(last.timestamp * 1000) < ctx.since) break;
+      paginationToken = result.paginationToken;
     }
 
     capped.retract(ctx, this.providerKey);
@@ -320,28 +342,57 @@ export class SolanaProvider
   }
 
   // ============================================================
-  // Internals — transactions (Helius enhanced API)
+  // Internals — transactions (Helius getTransactionsForAddress)
   // ============================================================
 
   private isHeliusUrl(): boolean {
     return this.rpcUrl.includes('helius');
   }
 
-  private extractHeliusApiKey(): string | null {
-    try {
-      return new URL(this.rpcUrl).searchParams.get('api-key');
-    } catch {
-      return null;
+  /**
+   * One page of the wallet's history, newest first (SC-1578).
+   *
+   * `tokenAccounts: 'balanceChanged'` is what reaches an incoming SPL
+   * transfer: it lands on the wallet's token account, and the wallet
+   * itself is not among that transaction's keys. Without
+   * `maxSupportedTransactionVersion` only legacy transactions come back.
+   */
+  private async fetchTransactionsPage(
+    address: string,
+    since: Date | undefined,
+    paginationToken: string | undefined
+  ): Promise<TransactionsForAddressPage> {
+    const filters: Record<string, unknown> = { tokenAccounts: 'balanceChanged' };
+    if (since) filters.blockTime = { gte: Math.floor(since.getTime() / 1000) };
+    const options: Record<string, unknown> = {
+      transactionDetails: 'full',
+      encoding: 'json',
+      maxSupportedTransactionVersion: 1,
+      sortOrder: 'desc',
+      limit: HELIUS_PAGE_LIMIT,
+      filters,
+    };
+    if (paginationToken) options.paginationToken = paginationToken;
+    const response = await this.limiter.execute(async () =>
+      fetchWithTimeout(this.rpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'getTransactionsForAddress',
+          params: [address, options],
+        }),
+      })
+    );
+    if (!response.ok) {
+      throw new Error(`Helius getTransactionsForAddress: HTTP ${response.status}`);
     }
-  }
-
-  private buildEnhancedTxUrl(address: string, apiKey: string, before?: string): string {
-    const params = new URLSearchParams({
-      'api-key': apiKey,
-      limit: String(HELIUS_PAGE_LIMIT),
-    });
-    if (before) params.set('before', before);
-    return `${HELIUS_ENHANCED_BASE}/addresses/${address}/transactions?${params.toString()}`;
+    const body = (await response.json()) as RpcResponse<TransactionsForAddressPage>;
+    if (body.error) {
+      throw new Error(`Helius getTransactionsForAddress: ${body.error.message}`);
+    }
+    return { data: body.result?.data ?? [], paginationToken: body.result?.paginationToken ?? null };
   }
 
   private warnPublicRpcTransactionsOnce(): void {
@@ -353,7 +404,7 @@ export class SolanaProvider
   }
 
   /**
-   * One event per token per transaction, netted from `accountData`.
+   * One event per token per transaction, netted from its account changes.
    *
    * The wallet's `nativeBalanceChange` and the `tokenBalanceChanges` of
    * the token accounts it owns are, together, the whole of what the
@@ -362,7 +413,7 @@ export class SolanaProvider
    * that motivated it (SC-357).
    */
   private toTransactionEvents(
-    tx: HeliusEnhancedTx,
+    tx: NettableTx,
     wallet: string,
     mintMap: Map<string, Partial<NewToken>>
   ): TransactionEvent[] {
@@ -371,7 +422,7 @@ export class SolanaProvider
     const add = (key: string, qty: Decimal) =>
       net.set(key, (net.get(key) ?? new Decimal(0)).plus(qty));
 
-    for (const account of tx.accountData ?? []) {
+    for (const account of tx.accountData) {
       if (account.account === wallet && account.nativeBalanceChange) {
         add(NATIVE_KEY, new Decimal(account.nativeBalanceChange).div(LAMPORTS_PER_SOL));
       }
@@ -405,6 +456,63 @@ export class SolanaProvider
 // WSOL is native SOL in a token account. It resolves to the same token
 // identity, so netting it under a separate key would leave a wrap and
 // its unwrap as two full-sized movements of the same lamports.
+/**
+ * A raw transaction as the per-account changes the netting reads.
+ *
+ * `meta` carries balances before and after, so a change is their
+ * difference: lamports per account key, and token units per token
+ * account, its owner taken from whichever side lists it (a token
+ * account opened or closed in the transaction appears on one side
+ * only). A v0 transaction keeps some keys in `loadedAddresses`, after
+ * the static ones, which is the order `accountIndex` counts in.
+ */
+function toNettable(raw: RpcFullTx, wallet: string): NettableTx | null {
+  const signature = raw.transaction.signatures[0];
+  if (!signature || raw.blockTime === null || !raw.meta) return null;
+  const { meta } = raw;
+  const keys = [
+    ...raw.transaction.message.accountKeys.map((k) => (typeof k === 'string' ? k : k.pubkey)),
+    ...(meta.loadedAddresses?.writable ?? []),
+    ...(meta.loadedAddresses?.readonly ?? []),
+  ];
+
+  const changes = keys.map((account, i): AccountChange => {
+    const pre = meta.preBalances[i] ?? 0;
+    const post = meta.postBalances[i] ?? 0;
+    return { account, nativeBalanceChange: post - pre, tokenBalanceChanges: [] };
+  });
+
+  const byIndex = new Map<number, { pre?: RpcTokenBalance; post?: RpcTokenBalance }>();
+  for (const b of meta.preTokenBalances ?? []) {
+    byIndex.set(b.accountIndex, { ...byIndex.get(b.accountIndex), pre: b });
+  }
+  for (const b of meta.postTokenBalances ?? []) {
+    byIndex.set(b.accountIndex, { ...byIndex.get(b.accountIndex), post: b });
+  }
+  for (const [index, { pre, post }] of byIndex) {
+    const side = post ?? pre;
+    const change = changes[index];
+    if (!side || !change) continue;
+    const delta =
+      BigInt(post?.uiTokenAmount.amount ?? '0') - BigInt(pre?.uiTokenAmount.amount ?? '0');
+    if (delta === 0n) continue;
+    change.tokenBalanceChanges?.push({
+      userAccount: post?.owner ?? pre?.owner ?? ownerlessHolder(change.account, side.mint, wallet),
+      mint: side.mint,
+      rawTokenAmount: { tokenAmount: delta.toString(), decimals: side.uiTokenAmount.decimals },
+    });
+  }
+
+  return { signature, timestamp: raw.blockTime, accountData: changes };
+}
+
+/** A balance recorded before the RPC's `owner` field existed names no owner.
+    It is the wallet's when the account is the wallet's ATA for that mint;
+    otherwise nobody can be named, so it is not the wallet's (SC-1578). */
+function ownerlessHolder(account: string, mint: string, wallet: string): string | undefined {
+  return account === associatedTokenAddress(wallet, mint) ? wallet : undefined;
+}
+
 function mintKey(mint: string): string {
   return mint === WSOL_MINT ? NATIVE_KEY : mint;
 }
@@ -450,15 +558,13 @@ function splIdentity(
 // Pre-resolve all unique mints on a page of Helius txs so the
 // synchronous projection function can look them up without awaiting.
 // Concurrent Jupiter lookups; per-mint cache means subsequent pages
-// touching the same mint are free. Scans `accountData` because that is
-// what the projection reads — WSOL is skipped, since it is emitted
+// touching the same mint are free. Scans the account changes because
+// they are what the projection reads — WSOL is skipped, since it is emitted
 // under the native SOL identity and never looked up as a mint.
-async function collectMintIdentities(
-  txs: HeliusEnhancedTx[]
-): Promise<Map<string, Partial<NewToken>>> {
+async function collectMintIdentities(txs: NettableTx[]): Promise<Map<string, Partial<NewToken>>> {
   const mints = new Map<string, number>();
   for (const tx of txs) {
-    for (const account of tx.accountData ?? []) {
+    for (const account of tx.accountData) {
       for (const change of account.tokenBalanceChanges ?? []) {
         if (!change.mint || change.mint === WSOL_MINT) continue;
         mints.set(change.mint, change.rawTokenAmount.decimals);

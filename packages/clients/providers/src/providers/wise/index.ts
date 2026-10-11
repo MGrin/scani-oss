@@ -5,11 +5,11 @@
  * Auth: Bearer API token. The user pastes the personal/business API
  * token from Wise's developer settings; we use it as `Authorization: Bearer <token>`.
  *
- * Endpoints:
- *  - GET `/v2/profiles` — list user profiles (personal + business).
- *  - GET `/v4/profiles/{profileId}/balances?types=STANDARD` — multi-
+ * Endpoints, all on Wise's global quarterly version (`/2026Q4/...`):
+ *  - GET `/profiles` — list user profiles (personal + business).
+ *  - GET `/profiles/{profileId}/balances?types=STANDARD` — multi-
  *    currency balances per profile.
- *  - GET `/v1/profiles/{profileId}/balance-statements/{balanceId}/statement.json`
+ *  - GET `/profiles/{profileId}/balance-statements/{balanceId}/statement.json`
  *    — per-balance ledger; window capped at 469 days, so multi-year
  *    histories are split into chunks.
  *
@@ -49,6 +49,7 @@ import { wiseManifest } from './manifest';
 
 const WISE_INSTITUTION_CODE = 'wise';
 const WISE_BASE_URL = 'https://api.wise.com';
+const WISE_API_VERSION = '2026Q4';
 const STATEMENT_MAX_DAYS = 469;
 const DAY_MS = 24 * 60 * 60 * 1000;
 const FIVE_YEARS_MS = 5 * 365 * DAY_MS;
@@ -264,7 +265,7 @@ export class WiseProvider implements BalanceProvider, TransactionsProvider, Cred
   private async fetchProfiles(apiToken: string, subKey: string): Promise<WiseProfile[]> {
     const response = await this.limiter.execute(
       async () =>
-        fetch(`${this.baseUrl}/v2/profiles`, {
+        fetch(`${this.baseUrl}/${WISE_API_VERSION}/profiles`, {
           headers: { Authorization: `Bearer ${apiToken}` },
         }),
       subKey
@@ -282,7 +283,7 @@ export class WiseProvider implements BalanceProvider, TransactionsProvider, Cred
   ): Promise<WiseBalance[]> {
     const response = await this.limiter.execute(
       async () =>
-        fetch(`${this.baseUrl}/v4/profiles/${profileId}/balances?types=STANDARD`, {
+        fetch(`${this.baseUrl}/${WISE_API_VERSION}/profiles/${profileId}/balances?types=STANDARD`, {
           headers: { Authorization: `Bearer ${apiToken}` },
         }),
       subKey
@@ -308,7 +309,7 @@ export class WiseProvider implements BalanceProvider, TransactionsProvider, Cred
       intervalEnd: intervalEnd.toISOString(),
       type: 'COMPACT',
     });
-    const url = `${this.baseUrl}/v1/profiles/${profileId}/balance-statements/${balanceId}/statement.json?${params.toString()}`;
+    const url = `${this.baseUrl}/${WISE_API_VERSION}/profiles/${profileId}/balance-statements/${balanceId}/statement.json?${params.toString()}`;
     const response = await this.limiter.execute(
       async () =>
         fetch(url, {

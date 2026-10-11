@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, it } from 'bun:test';
 import { restoreContainerAfterAll } from '../../../business/domain/test/helpers/container';
-import { freshExchangeRateApiClient } from '../../../business/domain/test/helpers/exchangerate-api';
+import {
+  CBR_TABLE_URL,
+  ECB_TABLE_URL,
+  fixing,
+  outsideFrankfurterV2,
+} from '../../../business/domain/test/helpers/frankfurter';
+import { freshFrankfurterClient } from '../../../business/domain/test/helpers/frankfurter-client';
 import { GoogleSheetsCurrencyConverter } from '../src/currency-converter';
 
 // The client under each converter is installed in the process-global
@@ -8,25 +14,30 @@ import { GoogleSheetsCurrencyConverter } from '../src/currency-converter';
 restoreContainerAfterAll();
 
 const realFetch = globalThis.fetch;
+let asked: string[] = [];
 afterEach(() => {
   globalThis.fetch = realFetch;
+  // R25-6, R25-7: nothing this file asks leaves Frankfurter v2's named tables.
+  expect(outsideFrankfurterV2(asked)).toEqual([]);
+  asked = [];
 });
 
 /**
- * A converter over an exchangerate-api client that has asked nothing, whose
+ * A converter over a Frankfurter client that has asked nothing, whose
  * upstream is `upstream`, and every URL that client asked.
  */
-function converterOver(upstream: () => Promise<Response>) {
-  const asked: string[] = [];
+function converterOver(upstream: (url: string) => Promise<Response>) {
   globalThis.fetch = (async (input: string | URL | Request) => {
-    asked.push(String(input));
-    return upstream();
+    const url = String(input);
+    asked.push(url);
+    return upstream(url);
   }) as unknown as typeof fetch;
-  return { converter: new GoogleSheetsCurrencyConverter(freshExchangeRateApiClient()), asked };
+  return { converter: new GoogleSheetsCurrencyConverter(freshFrankfurterClient()), asked };
 }
 
-/** The upstream's table: units of each currency per one USD. Invented figures. */
-const usdTable = (rates: Record<string, number>) => Response.json({ base: 'USD', rates });
+/** The ECB's table: units of each currency per one EUR. Invented figures. */
+const ecbTable = (rates: Record<string, number>) =>
+  Response.json(fixing('EUR', '2024-03-04', rates));
 
 describe('GoogleSheetsCurrencyConverter', () => {
   it('reports a rate lookup that throws as a refusal, never as a number', async () => {
@@ -51,7 +62,7 @@ describe('GoogleSheetsCurrencyConverter', () => {
   });
 
   it('reports a table missing the requested currency as a refusal', async () => {
-    const { converter } = converterOver(async () => usdTable({ USD: 1, EUR: 0.8 }));
+    const { converter } = converterOver(async () => ecbTable({ USD: 2, GBP: 0.8 }));
 
     const outcome = await converter.convert('50', 'CAD', 'USD', new Date());
 
@@ -59,7 +70,7 @@ describe('GoogleSheetsCurrencyConverter', () => {
   });
 
   it('reports a price that is not a number as a refusal that says so', async () => {
-    const { converter } = converterOver(async () => usdTable({ USD: 1, CAD: 1.25 }));
+    const { converter } = converterOver(async () => ecbTable({ USD: 2, CAD: 2.5 }));
 
     const outcome = await converter.convert('#N/A', 'CAD', 'USD', new Date());
 
@@ -70,16 +81,16 @@ describe('GoogleSheetsCurrencyConverter', () => {
   });
 
   it('converts when upstream answers', async () => {
-    const { converter } = converterOver(async () => usdTable({ USD: 1, CAD: 1.25 }));
+    const { converter } = converterOver(async () => ecbTable({ USD: 2, CAD: 2.5 }));
 
     const outcome = await converter.convert('50', 'CAD', 'USD', new Date());
 
     expect(outcome).toEqual({ ok: true, price: '40' });
   });
 
-  it('asks for the USD table whatever the pair, and one table answers every pair', async () => {
+  it('asks for the ECB table whatever the ECB pair, and one table answers every such pair', async () => {
     const { converter, asked } = converterOver(async () =>
-      usdTable({ USD: 1, CAD: 1.25, EUR: 0.8, GBP: 0.64 })
+      ecbTable({ USD: 2, CAD: 2.5, GBP: 0.8 })
     );
 
     const outcomes = [
@@ -88,12 +99,26 @@ describe('GoogleSheetsCurrencyConverter', () => {
       await converter.convert('8', 'USD', 'CAD', new Date()),
     ];
 
-    expect(asked).toEqual(['https://api.exchangerate-api.com/v4/latest/USD']);
+    expect(asked).toEqual([ECB_TABLE_URL]);
     expect(outcomes).toEqual([
       { ok: true, price: '40' },
       { ok: true, price: '8' },
       { ok: true, price: '10' },
     ]);
+  });
+
+  it('converts a price in RUB from the Bank of Russia’s table', async () => {
+    const { converter, asked } = converterOver(async (url) =>
+      url.includes('/providers/cbr/')
+        ? Response.json(fixing('USD', '2024-03-04', { RUB: 80 }))
+        : new Response('not found', { status: 404 })
+    );
+
+    // 1 / 80 terminates, so the product is exact.
+    const outcome = await converter.convert('160', 'RUB', 'USD', new Date());
+
+    expect(asked).toEqual([CBR_TABLE_URL]);
+    expect(outcome).toEqual({ ok: true, price: '2' });
   });
 
   it('passes a same-currency price through without an upstream call', async () => {
@@ -120,7 +145,7 @@ describe('GoogleSheetsCurrencyConverter', () => {
     const { converter } = converterOver(async () => {
       call += 1;
       if (call === 1) return new Response('nope', { status: 503 });
-      return usdTable({ USD: 1, CAD: 1.25 });
+      return ecbTable({ USD: 2, CAD: 2.5 });
     });
 
     const outcomes = [
@@ -137,7 +162,7 @@ describe('GoogleSheetsCurrencyConverter', () => {
     let call = 0;
     const { converter } = converterOver(async () => {
       call += 1;
-      return usdTable({ USD: 1, CAD: 1.25 });
+      return ecbTable({ USD: 2, CAD: 2.5 });
     });
 
     const outcomes = [

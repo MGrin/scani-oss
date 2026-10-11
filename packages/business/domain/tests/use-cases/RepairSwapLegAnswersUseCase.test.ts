@@ -26,6 +26,7 @@ import * as schema from '@scani/db/schema';
 import { TransferReviewService } from '@scani/domain/services/TransferReviewService';
 import { RepairSwapLegAnswersUseCase } from '@scani/domain/use-cases/RepairSwapLegAnswersUseCase';
 import { eq } from 'drizzle-orm';
+import { seedHoldingCache } from '../../test/helpers/engine-guard';
 
 const WALLET = '0xa11ce0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7';
 const ZERO_EX = '0xdef1c0ded9bec7f1a1670819833240f027b25eff';
@@ -94,10 +95,12 @@ async function setupFixture(): Promise<Fixture> {
     .returning();
   if (!counterToken) throw new Error('counterToken insert failed');
 
-  const [holding] = await db
-    .insert(schema.holdings)
-    .values({ userId: user.id, accountId: account.id, tokenId: token.id, balance: '0' })
-    .returning();
+  const [holding] = await seedHoldingCache(db, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values({ userId: user.id, accountId: account.id, tokenId: token.id, balance: '0' })
+      .returning()
+  );
   if (!holding) throw new Error('holding insert failed');
 
   return {

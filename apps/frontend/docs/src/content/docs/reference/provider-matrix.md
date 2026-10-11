@@ -21,8 +21,7 @@ is the check.
 | CoinGecko | `COINGECKO_API_KEY` | price, token-identity | Public tier (no key) works but is rate-limited. |
 | Finnhub | `FINNHUB_API_KEY` | price, token-identity | Public equities. |
 | DeFiLlama | _none_ | price, token-identity | Free. Coin spec is `chain:address` or `coingecko:slug`. |
-| Frankfurter | _none_ | price | Free FX rates between fiat currencies. |
-| ExchangeRate-API | _none_ | FX rate table | Open-access rates against USD. Not a registered provider: Frankfurter's fallback (fiat the ECB does not publish, and an ECB pair Frankfurter did not answer), the Google Sheets converter and the base-currency converter read its table. |
+| Frankfurter | _none_ | price | Fiat FX rates from named central banks, through Frankfurter v2. A pair both of whose currencies the [European Central Bank](https://www.ecb.europa.eu/stats/policy_and_exchange_rates/euro_reference_exchange_rates/html/index.en.html) publishes is read from the ECB's table; one with a currency only the [Bank of Russia](https://www.cbr.ru/eng/currency_base/daily/) publishes (RUB, KZT, AED, …) from the Bank of Russia's. Both sides always from one bank. The Google Sheets converter and the base-currency converter read the same client. |
 | BLS | _none_ | inflation index | US consumer price index (CPI-U) for the returns card's inflation line. Public API v1, no key, 25 requests a day. |
 | Yahoo Finance | _none_ | price | Backup pricing source for equities. |
 | Google Sheets | `GOOGLE_SHEETS_ID` + `GOOGLE_SERVICE_ACCOUNT_KEY` (base64 JSON) | price (current only) | Per-user manual-asset prices read from a sheet. Lives in its own workspace (`packages/clients/providers-google-sheets`). Historical falls through to Frankfurter. |
@@ -72,8 +71,6 @@ leave your api.
 | Provider | Env var | Capabilities | Notes |
 |---|---|---|---|
 | OpenAI | `OPENAI_API_KEY` | AI inference | Model pinned to `gpt-5.6-luna` for both text and vision. Not configurable. |
-| Perplexity | `PERPLEXITY_API_KEY` | AI inference | Token-identity enrichment helper. Optional. |
-| DeepSeek | `DEEPSEEK_API_KEY` | AI inference | Token-identity enrichment helper. Optional. |
 | AI stub | `STUB_AI=1` | AI inference (stub) | Test-only. Returns a fixed holdings payload so e2e tests don't depend on a real AI provider. Refused in production by the data-provider env schema. |
 | Chain stub | `STUB_CHAIN_DATA=1` | Balances, transactions, address validation (stub) | Test-only. Answers every chain from a local fixture so e2e tests don't depend on a public chain API's rate limiter. Address-shape checks are the real providers' own, so a stubbed boot cannot disagree with a live one about what a valid address looks like. Refused in production by the api, worker and data-provider env schemas. |
 
@@ -104,7 +101,6 @@ work with per-user credentials only.
 | IBKR (Flex), Wise, Airwallex | Functional. Flex query setup is the main user friction. |
 | Bitcoin, Tron, TON, ENS | Functional. Public RPCs are slow on big wallets. |
 | OpenAI Vision | Solid for screenshots; quality degrades on dark-mode or non-English UIs. |
-| Perplexity, DeepSeek | Optional supplements; not required. |
 
 ## Adding a provider
 

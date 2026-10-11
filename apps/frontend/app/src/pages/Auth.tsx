@@ -9,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader } from '@scani/ui/ui/car
 import { Input } from '@scani/ui/ui/input';
 import { Label } from '@scani/ui/ui/label';
 import type { TFunction } from 'i18next';
-import { CloudOff, Loader2, Mail } from 'lucide-react';
+import { CloudOff, KeyRound, Loader2, Mail } from 'lucide-react';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { type ResolverResult, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -66,7 +66,7 @@ function resolveAuthForm(values: AuthFormData, t: TFunction): ResolverResult<Aut
  */
 export function Auth() {
   const { t } = useTranslation();
-  const { user, loading, authenticate, verifyCode } = useAuth();
+  const { user, loading, authenticate, verifyCode, signInWithPasskey } = useAuth();
   // Human check before any sign-in mail (SC-1266); renders nothing unkeyed.
   const turnstile = useTurnstile(import.meta.env.VITE_TURNSTILE_SITE_KEY);
   // The offline retry fires later from an effect; it must send the token
@@ -154,11 +154,41 @@ export function Auth() {
     if (result.error) {
       setError(result.error);
       throw new Error(result.error);
-    } else {
-      // Successfully authenticated, redirect to return URL or dashboard
-      goToReturnTarget(returnTo, navigate);
     }
+    if (result.twoFactor) {
+      navigate(`/sign-in/2fa?returnTo=${encodeURIComponent(returnTo)}`);
+      return;
+    }
+    goToReturnTarget(returnTo, navigate);
   };
+
+  const passkeySignIn = async () => {
+    setError(null);
+    const result = await signInWithPasskey();
+    if (result.error) setError(result.error);
+    else goToReturnTarget(returnTo, navigate);
+  };
+
+  // A saved passkey is offered in the email field's autofill where the browser
+  // supports it (conditional mediation). It waits silently until picked; a
+  // browser without it simply never resolves this, and the button stays.
+  // Started once per visit: a second conditional request would cancel the first.
+  const latest = useRef({ signInWithPasskey, returnTo, navigate });
+  latest.current = { signInWithPasskey, returnTo, navigate };
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const available = await window.PublicKeyCredential?.isConditionalMediationAvailable?.();
+      if (!available || cancelled) return;
+      const result = await latest.current.signInWithPasskey({ autoFill: true });
+      if (!cancelled && !result.error) {
+        goToReturnTarget(latest.current.returnTo, latest.current.navigate);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleResendCode = async () => {
     setError(null);
@@ -177,7 +207,8 @@ export function Auth() {
         <div
           className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
           style={{
-            paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
+            paddingTop:
+              'max(3rem, calc(3rem + var(--scani-inset-top, env(safe-area-inset-top, 0px))))',
             paddingBottom: 'max(3rem, calc(3rem + env(safe-area-inset-bottom)))',
             paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
             paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
@@ -229,7 +260,8 @@ export function Auth() {
       <div
         className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
         style={{
-          paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
+          paddingTop:
+            'max(3rem, calc(3rem + var(--scani-inset-top, env(safe-area-inset-top, 0px))))',
           paddingBottom: 'max(3rem, calc(3rem + env(safe-area-inset-bottom)))',
           paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
           paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
@@ -275,7 +307,7 @@ export function Auth() {
     <div
       className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 py-12 px-4 sm:px-6 lg:px-8"
       style={{
-        paddingTop: 'max(3rem, calc(3rem + env(safe-area-inset-top)))',
+        paddingTop: 'max(3rem, calc(3rem + var(--scani-inset-top, env(safe-area-inset-top, 0px))))',
         paddingBottom: 'max(3rem, calc(3rem + env(safe-area-inset-bottom)))',
         paddingLeft: 'max(1rem, calc(1rem + env(safe-area-inset-left)))',
         paddingRight: 'max(1rem, calc(1rem + env(safe-area-inset-right)))',
@@ -320,6 +352,7 @@ export function Auth() {
                 <Input
                   id={emailId}
                   type="email"
+                  autoComplete="username webauthn"
                   placeholder={t('auth.signIn.emailPlaceholder')}
                   {...register('email')}
                   disabled={isLoading}
@@ -335,6 +368,17 @@ export function Auth() {
               <Button type="submit" className="w-full" disabled={isLoading || needsHumanCheck}>
                 {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {t('auth.signIn.submit')}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={passkeySignIn}
+                disabled={isLoading}
+              >
+                <KeyRound className="mr-2 h-4 w-4" />
+                {t('auth.signIn.passkey')}
               </Button>
 
               <div className="text-center text-sm text-muted-foreground">

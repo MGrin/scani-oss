@@ -50,6 +50,79 @@ export function balanceAt(evidence: HoldingEvidence, at: Date): BalanceAt {
   return walkBack(evidence.entries, current.anchor, at, 'walk-back');
 }
 
+/** An instant where `balanceAt` less the evidence's own entries takes a new value (SC-1637). */
+export interface ResidualStep {
+  at: Date;
+  /** `balanceAt(evidence, t)` less every entry at or before `t`, from `at` to the next step. */
+  residual: Decimal;
+  /** The anchor whose window opens here; null at `startsAt` with no window, or on an entry. */
+  anchorId: string | null;
+}
+
+/**
+ * Where the balance moves by more than its entries explain: `balanceAt` less
+ * the entries at or before each instant, ascending, constant between two steps.
+ * Inside a window the walk from its anchor moves only with entries, so the
+ * residual changes only where a window opens; before the first window a
+ * snapshot holding holds its first value while entries pass, so each of those
+ * steps too. The money side books drift on these instants, so flows and the
+ * value series agree at every instant (SC-1637). Before `startsAt` the balance
+ * is absent, and no step is given.
+ */
+export function residualSteps(evidence: HoldingEvidence): ResidualStep[] {
+  const sums = entrySums(evidence.entries);
+  const windows = anchorWindows(evidence);
+  const start = evidence.startsAt;
+  const first = windows[0];
+  if (first === undefined) {
+    return [{ at: start, residual: sums.before(start).neg(), anchorId: null }];
+  }
+
+  const steps: ResidualStep[] = [];
+  const push = (at: Date, residual: Decimal, anchorId: string | null) => {
+    const last = steps.at(-1);
+    if (last !== undefined && last.residual.eq(residual)) return;
+    steps.push({ at, residual, anchorId });
+  };
+  const windowResidual = (w: AnchorWindow) =>
+    new Decimal(w.anchor.amount).minus(sums.through(w.anchor.at));
+
+  if (first.from > start) {
+    if (evidence.kind === 'snapshot') {
+      const held = new Decimal(first.anchor.amount).minus(
+        sums.through(first.anchor.at).minus(sums.through(first.from))
+      );
+      push(start, held.minus(sums.through(start)), null);
+      for (const e of [...evidence.entries].sort((a, b) => a.at.getTime() - b.at.getTime())) {
+        if (e.at > start && e.at < first.from) push(e.at, held.minus(sums.through(e.at)), null);
+      }
+    } else {
+      push(start, windowResidual(first), null);
+    }
+  }
+  for (const w of windows) push(w.from < start ? start : w.from, windowResidual(w), w.anchor.id);
+  return steps;
+}
+
+/** Entry totals up to an instant, summed in `total`'s order. */
+function entrySums(entries: readonly Entry[]) {
+  const ordered = [...entries].sort(
+    (a, b) => a.at.getTime() - b.at.getTime() || compareText(a.id, b.id)
+  );
+  const instants = ordered.map((e) => e.at.getTime());
+  const cumulative: Decimal[] = [];
+  let running = new Decimal(0);
+  for (const e of ordered) {
+    running = running.plus(e.quantity);
+    cumulative.push(running);
+  }
+  const upTo = (index: number) => (index < 0 ? new Decimal(0) : (cumulative[index] as Decimal));
+  return {
+    through: (at: Date) => upTo(lastAtOrBefore(instants, at.getTime())),
+    before: (at: Date) => upTo(lastAtOrBefore(instants, at.getTime() - 1)),
+  };
+}
+
 /** Disjoint closed spans of time, ascending: `starts[i]` to `ends[i]`, in epoch milliseconds. */
 interface Spans {
   starts: number[];

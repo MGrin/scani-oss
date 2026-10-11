@@ -75,6 +75,7 @@ const EMPTY_ACCOUNT = {
   profile: { email: 'a@b.c', name: 'A', baseCurrency: 'usd-id', createdAt: new Date(0) },
   accounts: [],
   holdings: [],
+  categories: [],
   transactions: [],
   vendors: [],
   payments: [],

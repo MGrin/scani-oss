@@ -95,7 +95,11 @@ export function useHomeChart(): HomeChart {
     // it, so this is exactly "the tab is on".
     { enabled: offer.metric === 'returns' }
   );
-  const view = returnsView(returnsQuery.data?.returns, returnsQuery.data?.benchmarks);
+  const view = returnsView(
+    returnsQuery.data?.returns,
+    returnsQuery.data?.benchmarks,
+    returnsQuery.data?.lastComplete ?? null
+  );
 
   // The engine may WITHHOLD the figure (rebuilding, too little history —
   // SC-1396) while the probe says history exists. It cannot withdraw a tab the

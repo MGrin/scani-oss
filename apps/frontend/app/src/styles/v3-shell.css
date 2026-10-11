@@ -1,0 +1,15 @@
+/* The top clearance (SC-1597) is applied once, by whatever is topmost.
+ * An update or install banner is fixed on top and its height, published as
+ * `--scani-banner-offset`, already includes the clearance, so the header takes
+ * only what is left. A plan or demo banner sits in flow above the header and
+ * takes all of it, so the header takes none. */
+[data-v3-shell] {
+  --scani-header-inset: max(
+    0px,
+    calc(var(--scani-inset-top, env(safe-area-inset-top, 0px)) - var(--scani-banner-offset, 0px))
+  );
+}
+
+[data-v3-shell]:has(> [data-top-banner]) {
+  --scani-header-inset: 0px;
+}

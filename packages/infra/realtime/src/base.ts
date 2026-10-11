@@ -13,7 +13,9 @@ export type EntityType =
   | 'schedule_step'
   | 'group'
   | 'vault'
-  | 'job';
+  | 'job'
+  // The portfolio's history (the chart) was rebuilt (SC-1600).
+  | 'portfolio';
 
 export type OperationType = 'create' | 'update' | 'delete' | 'sync';
 
@@ -33,6 +35,13 @@ export interface RealTimeEvent {
 
 export const REDIS_CHANNEL_PREFIX = 'rt:user:';
 export const REDIS_CHANNEL_PATTERN = `${REDIS_CHANNEL_PREFIX}*`;
+
+/**
+ * Where a committed outbox write tells the dispatcher to drain (SC-1609). It
+ * carries no row data and sits outside the `rt:user:*` pattern, so no client
+ * ever receives it.
+ */
+export const OUTBOX_KICK_CHANNEL = 'outbox:kick';
 
 export function channelForUser(userId: string): string {
   return `${REDIS_CHANNEL_PREFIX}${userId}`;

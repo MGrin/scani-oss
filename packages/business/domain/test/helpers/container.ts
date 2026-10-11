@@ -1,5 +1,5 @@
 import { afterAll } from 'bun:test';
-import { ExchangeRateApiClient } from '@scani/providers/providers/exchangerate-api';
+import { FrankfurterClient } from '@scani/providers/providers/frankfurter/client';
 import { Container } from 'typedi';
 
 // `bun test` runs every file in ONE process and typedi's Container is
@@ -68,9 +68,9 @@ export function containerRegistrations(): Registration[] {
 export function restoreContainerAfterAll(): void {
   const restore = snapshotContainer();
   openScope(callerFile());
-  // The client keeps the exchange-rate table it fetched for an hour, so the
-  // one a previous file left would answer this file's asks from that table.
-  Container.set(ExchangeRateApiClient, new ExchangeRateApiClient());
+  // The client keeps each bank table it fetched for an hour, so the one a
+  // previous file left would answer this file's asks from those tables.
+  Container.set(FrankfurterClient, new FrankfurterClient());
   afterAll(() => {
     restore();
     closeScope();

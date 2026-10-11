@@ -3,8 +3,11 @@ import type { CoverageQuality, HoldingCoverage, HoldingTransaction } from '@scan
 import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
+import type { PriceAsk } from '../../engine/types';
 import { flowRoleOfRow } from '../../lib/returns/flow-classification';
+import { valuationInstantsOf } from '../../lib/tx-valuation';
 import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRepository';
+import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
 import type { BalanceAtTimeCaches } from '../pricing/BalanceAtTimeService';
 import {
@@ -15,12 +18,13 @@ import {
   type HistoryCompleteness,
   historyCompletenessOf,
 } from '../pricing/CostBasisService';
-import type { PriceLookup } from '../pricing/PriceLookup';
+import { PriceReader, type PriceSeries } from '../pricing/PriceReader';
 import { DriftLedgerService, withDrift } from '../returns/DriftLedgerService';
 import { TransferReviewService } from '../TransferReviewService';
 import {
   PortfolioValuationAtTimeService,
   type PortfolioValueScope,
+  type TransitAtTime,
 } from './PortfolioValuationAtTimeService';
 
 type LedgerByHolding = ReadonlyMap<string, ReadonlyArray<HoldingTransaction>>;
@@ -57,16 +61,16 @@ export interface PnLAtTimePerHolding {
    * row and no reader ever sees.
    */
   balanceBeforeRecords: boolean;
-  /**
-   * Mirrors PortfolioValueAtTimePerHolding.balanceInterpolated — see
-   * SC-475 fault B. Carried for the same reason the field above it is: the
-   * rollup builds every scope row from THIS shape.
-   */
-  balanceInterpolated: boolean;
   /** How much of this holding's cost we know — see CostBasisQuality (SC-149). */
   basisQuality: CostBasisQuality;
   /** Outflows out of this holding still waiting on an answer — see SC-160. */
   transfersUnreviewed: number;
+  /**
+   * Held on a liability account (SC-1640): its value is in every total and
+   * none of it is P&L, so every scope leaves it out of cost, realized and
+   * unrealized (SC-1664).
+   */
+  debt: boolean;
 }
 
 export interface PnLAtTimeResult {
@@ -76,7 +80,7 @@ export interface PnLAtTimeResult {
   totalValueInBase: Decimal;
   totalCostBasis: Decimal;
   totalRealizedPnl: Decimal;
-  totalUnrealizedPnl: Decimal; // total value − total cost basis
+  totalUnrealizedPnl: Decimal; // total value less debt − total cost basis
   totalPnl: Decimal; // realized + unrealized
   // Re-exposed from the underlying valuation pass so the rollup can
   // populate every column of portfolio_value_daily in one call
@@ -156,6 +160,8 @@ export interface PnLAtTimeResult {
    */
   transfersUnreviewed: number;
   perHolding: PnLAtTimePerHolding[];
+  /** User scope only, from the valuation: each line is carried at its value as its cost (SC-1675). */
+  inTransit?: TransitAtTime[];
 }
 
 // Combines PortfolioValuationAtTimeService (current value side) with
@@ -169,10 +175,12 @@ export class PnLAtTimeService {
   private readonly costBasisService = Container.get(CostBasisService);
   private readonly txRepository = Container.get(HoldingTransactionRepository);
   private readonly coverageRepository = Container.get(HoldingCoverageRepository);
+  private readonly holdingRepository = Container.get(HoldingRepository);
   // The queue's own service, so the caption's count and the page its link
   // opens are answering to one predicate (SC-1067).
   private readonly transferReviewService = Container.get(TransferReviewService);
   private readonly driftLedgerService = Container.get(DriftLedgerService);
+  private readonly priceReader = Container.get(PriceReader);
   private readonly logger = createComponentLogger('portfolio:pnl-at-time');
   // A handed ledger with the holdings it lacked read in, kept per handed map
   // so every day of one rollup gets the same object back.
@@ -184,7 +192,9 @@ export class PnLAtTimeService {
     baseCurrencyId: string,
     opts: {
       scope?: PortfolioValueScope;
-      priceLookup?: PriceLookup;
+      now?: Date;
+      /** Loaded over `priceAsks` for at least `at`. Omitted, one is loaded. */
+      prices?: PriceSeries;
       // Pre-loaded per-user caches that BalanceAtTimeService and
       // CostBasisService can use instead of per-call DB reads.
       caches?: BalanceAtTimeCaches;
@@ -208,33 +218,29 @@ export class PnLAtTimeService {
       tx: DatabaseTransaction | undefined;
     }
   ): Promise<PnLAtTimeResult> {
-    const valuation = await this.valuationService.getPortfolioValue(
-      userId,
-      at,
-      baseCurrencyId,
-      opts
-    );
+    const now = opts.now ?? new Date();
+    const prices =
+      opts.prices ??
+      (await this.priceReader.series(
+        await this.priceAsks(userId, [at], baseCurrencyId, { ...opts, now }),
+        baseCurrencyId,
+        opts.tx
+      ));
+    const valuation = await this.valuationService.getPortfolioValue(userId, at, baseCurrencyId, {
+      ...opts,
+      prices,
+    });
 
     const holdingIds = valuation.perHolding.map((ph) => ph.holdingId);
     const heldTokenByHolding = new Map(
       valuation.perHolding.map((ph) => [ph.holdingId, ph.tokenId])
     );
 
-    // Cost basis needs every holding's full tx history — both to detect
-    // transfer-linked components and to cost-walk them together. The
-    // rollup hands these in via caches; ad-hoc callers pay one bulk read.
-    const handed = opts.caches?.transactions;
-    const ledgerByHolding = handed
-      ? await this.completeLedger(handed, holdingIds, opts.tx)
-      : await this.txRepository.findForHoldingsAll(holdingIds, opts.tx);
-    // Unexplained balance changes walk as money in or out, so a balance that
-    // moved with no transaction is never PnL (SC-1470, mgrin 2026-10-01).
-    const txsByHolding = withDrift(
-      ledgerByHolding,
-      await this.driftLedgerService.forHoldings(userId, heldTokenByHolding, {
-        transactions: ledgerByHolding,
-        tx: opts.tx,
-      })
+    const txsByHolding = await this.ledgerOf(
+      userId,
+      heldTokenByHolding,
+      opts.caches?.transactions,
+      opts.tx
     );
 
     // The flag every provider writes honestly and nothing has ever read
@@ -267,6 +273,14 @@ export class PnLAtTimeService {
       opts.tx
     );
 
+    // Debt is not an investment (SC-1640): a loan's balance counts in net
+    // worth, and none of it is gain or loss. Its row stays in `perHolding`,
+    // because the rollup sums every narrower scope from it.
+    const liabilityIds = await this.holdingRepository.findIdsOnLiabilityAccounts(
+      holdingIds,
+      opts.tx
+    );
+
     const { components, singletons } = buildTransferComponents(holdingIds, txsByHolding);
     const costByHolding = new Map<string, CostBasisAtTime>();
     for (const component of components) {
@@ -277,20 +291,22 @@ export class PnLAtTimeService {
         at,
         baseCurrencyId,
         heldTokenByHolding,
-        opts.priceLookup,
+        prices,
         historyByHolding,
         undefined,
         opts.costBasisMethod,
-        ruleHiddenTxIds
+        ruleHiddenTxIds,
+        now
       );
       for (const [h, c] of result) costByHolding.set(h, c);
     }
     for (const h of singletons) {
       const txs = txsByHolding.get(h);
       const cost = await this.costBasisService.getCostBasis(h, at, baseCurrencyId, {
+        now,
         heldTokenId: heldTokenByHolding.get(h),
         historyCompleteness: historyByHolding.get(h) ?? 'unrecorded',
-        ...(opts.priceLookup ? { priceLookup: opts.priceLookup } : {}),
+        prices,
         ...(txs ? { txs } : {}),
         ...(opts.costBasisMethod ? { method: opts.costBasisMethod } : {}),
         ruleHiddenTxIds,
@@ -302,6 +318,7 @@ export class PnLAtTimeService {
     const perHolding: PnLAtTimePerHolding[] = [];
     let totalCost = new Decimal(0);
     let totalRealized = new Decimal(0);
+    let debtValue = new Decimal(0);
     let basisUnknownCount = 0;
     let unreviewedCount = 0;
 
@@ -320,15 +337,20 @@ export class PnLAtTimeService {
       // (a fee, an unmatched spend) leaves lots behind, and each read as a loss
       // the size of money already spent (SC-1467).
       const atPar = ph.valueInBase !== null && ph.tokenId === baseCurrencyId;
-      const costBasis =
-        (costUnknown || atPar) && ph.valueInBase !== null ? ph.valueInBase : rawCostBasis;
-      const realizedPnl = costUnknown
+      const debt = liabilityIds.has(ph.holdingId);
+      const costBasis = debt
         ? new Decimal(0)
-        : atPar
-          ? rawRealized.add(
-              baseCashFees(txsByHolding.get(ph.holdingId) ?? [], at, cost?.feesRealized)
-            )
-          : rawRealized;
+        : (costUnknown || atPar) && ph.valueInBase !== null
+          ? ph.valueInBase
+          : rawCostBasis;
+      const realizedPnl =
+        costUnknown || debt
+          ? new Decimal(0)
+          : atPar
+            ? rawRealized.add(
+                baseCashFees(txsByHolding.get(ph.holdingId) ?? [], at, cost?.feesRealized)
+              )
+            : rawRealized;
       // A holding kept out of the value side stays out of the cost side.
       //
       // The gate is "we could not value it", not `ph.unpriceable` — which is
@@ -346,7 +368,8 @@ export class PnLAtTimeService {
       // number moves: an inflow with no price reference books a zero-cost
       // lot, so there was never any cost to keep out.
       const valueUnknown = ph.valueInBase === null;
-      if (!valueUnknown) {
+      if (debt && ph.valueInBase !== null) debtValue = debtValue.add(ph.valueInBase);
+      if (!valueUnknown && !debt) {
         totalCost = totalCost.add(costBasis);
         totalRealized = totalRealized.add(realizedPnl);
       }
@@ -356,14 +379,14 @@ export class PnLAtTimeService {
       // failure — the exact shape of the bug SC-146 closed on the value
       // side. Only holdings that contribute a number can qualify it.
       const basisQuality = cost?.basisQuality ?? 'unknown';
-      if (!valueUnknown && basisQuality !== 'known') basisUnknownCount += 1;
+      if (!valueUnknown && !debt && basisQuality !== 'known') basisUnknownCount += 1;
       // Same gate, same argument (SC-160). An unpriceable holding's realized
       // PnL never entered `totalRealized`, so an unanswered exit out of it
       // cannot be understating a figure it does not contribute to — counting
       // it would put a caveat on the chart that no answer in the queue could
       // ever remove.
       const transfersUnreviewed = cost?.transfersUnreviewed ?? 0;
-      if (!valueUnknown) unreviewedCount += transfersUnreviewed;
+      if (!valueUnknown && !debt) unreviewedCount += transfersUnreviewed;
       perHolding.push({
         holdingId: ph.holdingId,
         accountId: ph.accountId,
@@ -371,25 +394,37 @@ export class PnLAtTimeService {
         value: ph.valueInBase,
         costBasis,
         realizedPnl,
-        unrealizedPnl: ph.valueInBase ? ph.valueInBase.minus(costBasis) : null,
+        unrealizedPnl: ph.valueInBase
+          ? debt
+            ? new Decimal(0)
+            : ph.valueInBase.minus(costBasis)
+          : null,
         unpriceable: ph.unpriceable,
         priceStale: ph.priceStale,
         anchorSource: ph.anchorSource,
         anchorAt: ph.anchorAt,
         balanceBeforeRecords: ph.balanceBeforeRecords,
-        balanceInterpolated: ph.balanceInterpolated,
         basisQuality,
         transfersUnreviewed,
+        debt,
       });
     }
 
-    const totalUnrealized = valuation.totalValueInBase.minus(totalCost);
+    // Money in transit is carried at its value as its cost, so it is neither a
+    // gain nor a loss: its lots left with the outflow or with the reading that
+    // absorbed it, and its value alone would read the transfer as gain (SC-1675).
+    const inTransitValue = (valuation.inTransit ?? []).reduce(
+      (sum, line) => (line.valueInBase ? sum.add(line.valueInBase) : sum),
+      new Decimal(0)
+    );
+    const totalCostBasis = totalCost.add(inTransitValue);
+    const totalUnrealized = valuation.totalValueInBase.minus(debtValue).minus(totalCostBasis);
     return {
       userId,
       at,
       baseCurrencyId,
       totalValueInBase: valuation.totalValueInBase,
-      totalCostBasis: totalCost,
+      totalCostBasis,
       totalRealizedPnl: totalRealized,
       totalUnrealizedPnl: totalUnrealized,
       totalPnl: totalRealized.add(totalUnrealized),
@@ -405,7 +440,73 @@ export class PnLAtTimeService {
       holdingsBasisUnknown: basisUnknownCount,
       transfersUnreviewed: unreviewedCount,
       perHolding,
+      ...(valuation.inTransit ? { inTransit: valuation.inTransit } : {}),
     };
+  }
+
+  /**
+   * Every price `getPnL` reads at these instants: the valuation's, and what
+   * valuing each ledger and drift row at or before the latest of them reads
+   * (`valuationInstantsOf`). Listed by the code that reads them, never by a
+   * caller's own lists, which are narrower: the rollup preloads visible
+   * holdings while the valuation counts sweep-hidden ones too, and drift rows
+   * exist only here.
+   */
+  async priceAsks(
+    userId: string,
+    instants: readonly Date[],
+    baseCurrencyId: string,
+    opts: {
+      scope?: PortfolioValueScope;
+      now: Date;
+      caches?: BalanceAtTimeCaches;
+      tx: DatabaseTransaction | undefined;
+    }
+  ): Promise<PriceAsk[]> {
+    const latest = Math.max(...instants.map((at) => at.getTime()));
+    const holdings = await this.valuationService.countedHoldings(userId, opts.scope, opts.tx);
+    const heldTokenByHolding = new Map(holdings.map((h) => [h.id, h.tokenId]));
+    const ledger = await this.ledgerOf(
+      userId,
+      heldTokenByHolding,
+      opts.caches?.transactions,
+      opts.tx
+    );
+    const asks = await this.valuationService.priceAsks(userId, instants, opts);
+    for (const [holdingId, rows] of ledger) {
+      const held = heldTokenByHolding.get(holdingId) ?? null;
+      for (const row of rows) {
+        if (row.occurredAt.getTime() > latest) continue;
+        asks.push(...valuationInstantsOf(row, baseCurrencyId, held, opts.now));
+      }
+    }
+    return asks;
+  }
+
+  /**
+   * Every holding's full ledger, drift rows included. Cost basis needs it
+   * both to detect transfer-linked components and to cost-walk them together.
+   * The rollup hands the transactions in; ad-hoc callers pay one bulk read.
+   * Unexplained balance changes walk as money in or out, so a balance that
+   * moved with no transaction is never PnL (SC-1470, mgrin 2026-10-01).
+   */
+  private async ledgerOf(
+    userId: string,
+    heldTokenByHolding: ReadonlyMap<string, string>,
+    handed: LedgerByHolding | undefined,
+    tx: DatabaseTransaction | undefined
+  ): Promise<LedgerByHolding> {
+    const holdingIds = [...heldTokenByHolding.keys()];
+    const ledgerByHolding = handed
+      ? await this.completeLedger(handed, holdingIds, tx)
+      : await this.txRepository.findForHoldingsAll(holdingIds, tx);
+    return withDrift(
+      ledgerByHolding,
+      await this.driftLedgerService.forHoldings(userId, heldTokenByHolding, {
+        transactions: ledgerByHolding,
+        tx,
+      })
+    );
   }
 
   /**

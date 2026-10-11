@@ -85,7 +85,7 @@ export function CostBasisSettings() {
 
   useEffect(() => {
     if (!jobId) return;
-    if (status.state !== 'completed' && status.state !== 'failed') return;
+    if (status.state !== 'completed' && !status.finalFailure) return;
     // Both terminal states clear the banner, and a failure is not toasted
     // here: the figures are stale rather than wrong, the nightly rollup and
     // the next mutation catch up, and this block is not where a reader who
@@ -94,7 +94,7 @@ export function CostBasisSettings() {
     if (status.state === 'completed') {
       void invalidatePortfolioQueries(utils, { refetchType: 'all' });
     }
-  }, [jobId, status.state, utils]);
+  }, [jobId, status.state, status.finalFailure, utils]);
 
   if (!state) return null;
 

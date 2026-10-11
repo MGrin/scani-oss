@@ -26,7 +26,8 @@
  */
 
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
-import { Service } from 'typedi';
+import { Container, Service } from 'typedi';
+import { ApiCallCounter } from './api-call-counter';
 
 interface RegisteredLimiter {
   namespace: string;
@@ -42,7 +43,13 @@ interface RegisteredLimiter {
 @Service()
 export class RateLimiterRegistry {
   private readonly limiters = new Map<string, RegisteredLimiter>();
+  private readonly calls = Container.get(ApiCallCounter);
 
+  /**
+   * Returns the limiter wrapped so every call it lets out is counted under
+   * its namespace (SC-1665). Every provider takes its limiter from here, so
+   * this is the one place that sees all of them.
+   */
   register(entry: RegisteredLimiter): OutflowRateLimiter {
     const existing = this.limiters.get(entry.namespace);
     if (existing) {
@@ -53,8 +60,9 @@ export class RateLimiterRegistry {
           `or extend the existing limiter via .get(${entry.namespace}).`
       );
     }
-    this.limiters.set(entry.namespace, entry);
-    return entry.limiter;
+    const limiter = counted(entry.namespace, entry.limiter, this.calls);
+    this.limiters.set(entry.namespace, { ...entry, limiter });
+    return limiter;
   }
 
   get(namespace: string): OutflowRateLimiter | null {
@@ -81,4 +89,28 @@ export class RateLimiterRegistry {
       description: l.description,
     }));
   }
+}
+
+function counted(
+  namespace: string,
+  limiter: OutflowRateLimiter,
+  calls: ApiCallCounter
+): OutflowRateLimiter {
+  return new Proxy(limiter, {
+    get(target, prop) {
+      if (prop === 'execute') {
+        return <T>(fn: () => Promise<T>, subKey?: string, signal?: AbortSignal) =>
+          target.execute(
+            () => {
+              calls.add(namespace);
+              return fn();
+            },
+            subKey,
+            signal
+          );
+      }
+      const value = Reflect.get(target, prop, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
 }

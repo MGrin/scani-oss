@@ -6,8 +6,10 @@ import { UserJobRepository } from '../../src/repositories/UserJobRepository';
 import { BalanceGapService } from '../../src/services/holdings/BalanceGapService';
 import { SettlementAnswerReviewService } from '../../src/services/holdings/SettlementAnswerReviewService';
 import { UnpriceableAirdropService } from '../../src/services/holdings/UnpriceableAirdropService';
+import { TransitReviewService } from '../../src/services/portfolio/TransitReviewService';
 import { ReviewFeedService } from '../../src/services/ReviewFeedService';
 import { TransferReviewService } from '../../src/services/TransferReviewService';
+import { UntrackedArrivalReviewService } from '../../src/services/UntrackedArrivalReviewService';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -16,7 +18,7 @@ restoreContainerAfterAll();
 
 /**
  * SC-153: a job the queue has given up on has to reach the person whose data
- * it is. The feed is the channel — it drives the home screen's attention row,
+ * it is. The feed is the channel — it drives the home screen's Needs-you strip,
  * the /review page and the tab badge — so what this suite protects is that a
  * dead job arrives there, that a job which is merely mid-retry does not, and
  * that the item says what happened rather than "something failed".
@@ -48,6 +50,12 @@ function makeService(deadJobs: unknown[], pendingReview: unknown[] = []): Review
   Container.set(UnpriceableAirdropService, {
     listPending: async () => [],
   } as unknown as UnpriceableAirdropService);
+  Container.set(TransitReviewService, {
+    listDue: async () => [],
+  } as unknown as TransitReviewService);
+  Container.set(UntrackedArrivalReviewService, {
+    listDue: async () => [],
+  } as unknown as UntrackedArrivalReviewService);
   const instance = new ReviewFeedService();
   Container.set(ReviewFeedService, instance);
   return instance;

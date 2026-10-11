@@ -4,6 +4,12 @@ import {
   REVIEWABLE_JOB_NAMES,
   reviewBadgeCount,
   reviewItemSchema,
+  TRANSIT_REVIEW_KIND,
+  transitQuestionOf,
+  transitReviewPath,
+  UNTRACKED_ARRIVAL_REVIEW_KIND,
+  untrackedArrivalQuestionOf,
+  untrackedArrivalReviewPath,
 } from '../../src/dtos/review';
 
 describe('REVIEWABLE_JOB_NAMES', () => {
@@ -182,5 +188,68 @@ describe('reviewBadgeCount', () => {
   /** Nothing waiting is zero, which is what hides the badge entirely. */
   test('an empty feed is zero', () => {
     expect(reviewBadgeCount([])).toBe(0);
+  });
+});
+
+describe('a transfer still in transit (SC-1675)', () => {
+  const key = { outflowId: 'out-1', destinationHoldingId: 'h-2' };
+
+  test('its sheet path names the outflow and the destination, and reads back (SC-1684)', () => {
+    expect(transitReviewPath(key)).toBe('/review/transit-out-1_h-2');
+    expect(transitQuestionOf('transit-out-1_h-2')).toEqual(key);
+    // Control: another sheet's peek id is not a transit, nor is one naming no destination.
+    expect(transitQuestionOf('unpriceable-airdrops')).toBeNull();
+    expect(transitQuestionOf('transit-out-1')).toBeNull();
+  });
+
+  test('its row carries the amount as a figure with a symbol of any length', () => {
+    const parsed = reviewItemSchema.safeParse({
+      id: 'transit:out-1:h-2',
+      kind: TRANSIT_REVIEW_KIND,
+      label: { code: 'transferNotArrived' },
+      detail: {
+        code: 'transferInTransit',
+        quantity: '500',
+        tokenSymbol: 'USDC',
+        sourceAccountName: 'Wise',
+        destinationAccountName: 'IBKR',
+      },
+      represents: 1,
+      createdAt: new Date(),
+      href: transitReviewPath(key),
+    });
+    expect(parsed.success).toBe(true);
+  });
+});
+
+describe('money answered untracked that later arrived in a tracked account (SC-1696)', () => {
+  const key = { outflowId: 'out-1', inflowId: 'in-1' };
+
+  test('its sheet path names the outflow and the arrival, and reads back', () => {
+    expect(untrackedArrivalReviewPath(key)).toBe('/review/untracked-arrival-out-1_in-1');
+    expect(untrackedArrivalQuestionOf('untracked-arrival-out-1_in-1')).toEqual(key);
+    // Control: a transit sheet is not this question, and neither is one naming no arrival.
+    expect(untrackedArrivalQuestionOf('transit-out-1_h-2')).toBeNull();
+    expect(untrackedArrivalQuestionOf('untracked-arrival-out-1')).toBeNull();
+    expect(transitQuestionOf('untracked-arrival-out-1_in-1')).toBeNull();
+  });
+
+  test('its row names what left, from where, and the account it arrived in', () => {
+    const parsed = reviewItemSchema.safeParse({
+      id: 'untracked-arrival:out-1:in-1',
+      kind: UNTRACKED_ARRIVAL_REVIEW_KIND,
+      label: { code: 'untrackedTransferArrived' },
+      detail: {
+        code: 'untrackedTransferArrived',
+        quantity: '500',
+        tokenSymbol: 'USD',
+        sourceAccountName: 'Wise',
+        destinationAccountName: 'IBKR',
+      },
+      represents: 1,
+      createdAt: new Date(),
+      href: untrackedArrivalReviewPath(key),
+    });
+    expect(parsed.success).toBe(true);
   });
 });

@@ -8,7 +8,7 @@
  * declare itself.
  *
  * Routers that need finer-grained attribution (e.g. "this call hit
- * OpenAI" vs. "this call hit DeepSeek") can enrich the event via
+ * pricing" vs. "this call hit a chain") can enrich the event via
  * `ctx.usage.annotate({...})` inside the resolver; the middleware merges
  * the annotations into the final event.
  */

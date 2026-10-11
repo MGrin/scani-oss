@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { postgresJsSsl } from '@scani/config';
 import postgres from 'postgres';
 import { decideTarget, describeTarget, formatTarget, refusalMessage } from './migrate-target';
+import { migrationFailureLines } from './migration-failure';
 import { applyMigrations, parseAssumeAppliedThrough } from './migration-runner';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -133,7 +134,11 @@ export async function runDrizzleMigrations(): Promise<number> {
     await migrationClient.end();
     return 0;
   } catch (error) {
-    console.error('❌ Migration failed:', error);
+    for (const line of migrationFailureLines(error, {
+      debug: process.env.SCANI_MIGRATE_DEBUG === '1',
+    })) {
+      console.error(line);
+    }
 
     // Ensure connection is closed on error
     try {

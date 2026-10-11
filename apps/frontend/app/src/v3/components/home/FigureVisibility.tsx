@@ -1,6 +1,6 @@
 import { Button } from '@scani/ui/ui/button';
 import { Eye, EyeOff } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { createContext, type ReactNode, useContext, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   readViewPreference,
@@ -32,7 +32,7 @@ export function readFigureVisibility(storage?: Parameters<typeof readViewPrefere
  * blurred figure only PEEKS (SC-1376): it reveals this view and saves nothing,
  * so the next time Home opens it is hidden again.
  */
-export function useFigureVisibility() {
+function useFigureVisibility() {
   const [visibility, setVisibility] = useState<FigureVisibility>(() => readFigureVisibility());
   const [peeking, setPeeking] = useState(false);
   const settingHidden = visibility === 'hidden';
@@ -49,6 +49,30 @@ export function useFigureVisibility() {
     onPeek: settingHidden ? togglePeek : undefined,
     toggle,
   };
+}
+
+type FigureVisibilityState = ReturnType<typeof useFigureVisibility>;
+
+/**
+ * One eye for the whole of Home (SC-1669). The compact hero, its peek and the
+ * tiles each kept their own copy before, so hiding amounts in the peek left
+ * the hero and every tile figure on screen.
+ */
+export const FigureVisibilityContext = createContext<FigureVisibilityState | null>(null);
+
+export function FigureVisibilityProvider({ children }: { children: ReactNode }) {
+  const visibility = useFigureVisibility();
+  return (
+    <FigureVisibilityContext.Provider value={visibility}>
+      {children}
+    </FigureVisibilityContext.Provider>
+  );
+}
+
+/** The page's shared state under a provider, and this component's own otherwise. */
+export function useSharedFigureVisibility(): FigureVisibilityState {
+  const own = useFigureVisibility();
+  return useContext(FigureVisibilityContext) ?? own;
 }
 
 /**

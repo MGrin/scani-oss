@@ -5,6 +5,8 @@ import {
   createPostgresBackend,
   DelayedError,
   type Job,
+  type JobProgress,
+  type PostgresConnectionOptions,
   type PostgresQueueBackend,
   Queue,
   UnrecoverableError,
@@ -16,16 +18,33 @@ import {
 // `RedisQueueBackend`. Passing `createPostgresBackend` produces the Postgres
 // variant, which is not assignable to that default — so the backend has to be
 // named once here rather than inferred at each site.
-type PgQueue = Queue<any, any, string, any, any, string, PostgresQueueBackend>;
-type PgWorker = Worker<any, any, string, PostgresQueueBackend>;
+type PgQueue = Queue<
+  any,
+  any,
+  string,
+  any,
+  any,
+  string,
+  PostgresQueueBackend,
+  PostgresConnectionOptions
+>;
+type PgWorker = Worker<
+  any,
+  any,
+  string,
+  PostgresQueueBackend,
+  JobProgress,
+  PostgresConnectionOptions
+>;
 
 import { Container, Service } from 'typedi';
 import { DEFAULT_DLQ_NAME, DEFAULT_QUEUE_NAME } from '../core/default-names';
-import { isScheduledJobDescriptor } from '../core/job-descriptor';
+import { isUserJobDescriptor } from '../core/job-descriptor';
 import { jobDeathReason } from '../core/source-unavailable';
 import { userFacingMessage } from '../core/user-facing';
 import { interruptIdleWait } from '../wake/worker-wake';
 import { LIFECYCLE_MIRROR, type LifecycleMirror } from './lifecycle-mirror';
+import type { ScheduledJobGroupProcessor } from './scheduled-job-group';
 import type { ScheduledJobProcessor } from './scheduled-job-processor';
 import { Semaphore } from './semaphore';
 import type { UserJobProcessor } from './user-job-processor';
@@ -71,7 +90,8 @@ export interface WorkerClientConfig {
 
 type ProcessorClass =
   | UserJobProcessor<{ userId: string; requestId: string }, unknown>
-  | ScheduledJobProcessor;
+  | ScheduledJobProcessor
+  | ScheduledJobGroupProcessor;
 
 export type TerminalFailureHook = (job: Job, err: Error) => void;
 
@@ -137,7 +157,7 @@ export class WorkerClient {
       throw new Error(`Processor for job '${name}' already registered`);
     }
     this.processors.set(name, (job) => processor.process(job));
-    if (isScheduledJobDescriptor(processor.descriptor)) {
+    if (!isUserJobDescriptor(processor.descriptor)) {
       this.scheduledNames.add(name);
     }
     log.info({ name }, '🔧 Registered processor');
@@ -189,7 +209,20 @@ export class WorkerClient {
   private async dispatch(entry: InFlightJob): Promise<unknown> {
     const { job } = entry;
     const processor = this.processors.get(job.name);
-    if (!processor) throw new Error(`No processor registered for job '${job.name}'`);
+    if (!processor) {
+      // A schedule removed from the descriptors loses its scheduler at boot,
+      // but bullmq leaves an occurrence that was already promoted (SC-1567).
+      // Nothing is left to run it, so it completes rather than failing into
+      // the dead-letter queue. A user job has no scheduler and still throws.
+      if (job.repeatJobKey) {
+        log.warn(
+          { jobId: job.id, name: job.name, repeatJobKey: job.repeatJobKey },
+          'Completed an occurrence of a schedule with no processor'
+        );
+        return undefined;
+      }
+      throw new Error(`No processor registered for job '${job.name}'`);
+    }
     // Waiting inside dispatch already occupies a BullMQ slot. Defer excess
     // cron work without spending an attempt, allowing user jobs to be admitted.
     let release: (() => void) | null = null;
@@ -239,18 +272,21 @@ export class WorkerClient {
         connection: {
           connectionString: verifiedPgConnectionString(cfg.connection),
           schema: cfg.schema ?? 'bullmq',
+          // SC-963. On Neon a dropped LISTEN connection IS the compute
+          // suspending, and BullMQ's default reconnects at once, which wakes
+          // it. `nextWait` reconnects when the wait's timer ends, and
+          // `maximumBlockTimeout` is that timer. Both are options only because
+          // `patches/bullmq@6.3.12.patch` adds them (SC-1677).
+          listenReconnect: 'nextWait',
+          maximumBlockTimeout: IDLE_BLOCK_SECONDS,
         },
         concurrency: cfg.concurrency ?? 1,
         // SC-963. Neon suspends a compute only after 300s with no query, so an
         // idle worker has to leave the database alone for longer than that.
-        // Stock BullMQ caps the blocking wait at 10s whenever a delayed job
-        // exists (every repeatable schedule is one) and runs the stalled
-        // check every 30s, so the suspend window was never reached.
-        // `maximumBlockTimeout` is an option only because
-        // `patches/bullmq@6.2.0.patch` makes it one — upstream it is a
-        // hardcoded constant (taskforcesh/bullmq#4601).
+        // Stock BullMQ runs the stalled check every 30s even while idle, so
+        // the suspend window was never reached; the patch defers it to the
+        // worker's next wake (SC-1611).
         drainDelay: IDLE_BLOCK_SECONDS,
-        maximumBlockTimeout: IDLE_BLOCK_SECONDS,
         stalledInterval: STALLED_INTERVAL_MS,
         maxStalledCount: MAX_STALLED_COUNT,
       } as never,

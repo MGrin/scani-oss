@@ -196,7 +196,7 @@ describe('SnapshotWriter.record', () => {
     });
   });
 
-  test('on a feed holding whose feed has begun it writes a verification, and still sets the cache', async () => {
+  test("on a feed holding whose feed has begun it writes a verification, and the cache keeps the feed's figure (A5 D-20)", async () => {
     await withTestDb(async (tx) => {
       const holding = await holdingOf(tx, { kind: 'feed', balance: '100' });
       await makeCheckpoint(tx, { userId: holding.userId, holdingId: holding.id, observedAt: T0 });
@@ -221,9 +221,10 @@ describe('SnapshotWriter.record', () => {
         cause: null,
         supersededAt: null,
       });
-      // D-1: a person's value on a feed holding still sets today's figure.
+      // A verification never anchors, so today's figure is still the feed's
+      // checkpoint; the app says so on save (A5 D-20).
       const written = await holdingRow(tx, holding.id);
-      expect(written.balance).toBe('175');
+      expect(written.balance).toBe('100');
       expect(written.lastUpdated.getTime()).toBeGreaterThanOrEqual(before);
       expect(written.lastUpdated.getTime()).toBeLessThanOrEqual(after);
     });
@@ -574,8 +575,9 @@ describe('SnapshotWriter.record', () => {
       expect(
         rows.map((r) => ({ balance: r.balance, superseded: r.supersededAt !== null }))
       ).toEqual([{ balance: '100', superseded: false }]);
-      // As the path it replaces did: the observation is dropped, the figure is still set.
-      expect((await holdingRow(tx, holding.id)).balance).toBe('140');
+      // A value that was not recorded is not evidence, so the figure stays the
+      // recorded one (A5 D-1).
+      expect((await holdingRow(tx, holding.id)).balance).toBe('100');
     });
   });
 

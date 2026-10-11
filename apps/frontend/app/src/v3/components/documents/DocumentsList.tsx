@@ -8,6 +8,7 @@ import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
 import { FileText } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
+import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import {
   compareDocuments,
   type DocumentRow,
@@ -51,6 +52,7 @@ interface DocumentsListProps {
 }
 
 export function DocumentsList({ documents, query, onSearch }: DocumentsListProps) {
+  useRelativeTimeTick();
   const { t } = useTranslation();
   const navigate = useNavigate();
 

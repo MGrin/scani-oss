@@ -273,3 +273,35 @@ describe('the Returns picker offers All only when it covers more than 1Y (SC-143
     expect(offeredReturnsWindows('2021-09-05', null).map((w) => w.key)).toEqual(['ytd', '1y']);
   });
 });
+
+describe('the last complete result during a rebuild (SC-1694)', () => {
+  const rebuilding = returns({
+    eligibility: { eligible: false, reasons: ['rebuilding-history'] },
+  });
+  const lastComplete = {
+    returns: returns({ twr: { ...returns()?.twr, cumulative: '0.1' } }),
+    benchmarks: [],
+    computedAt: '2026-10-11T08:30:00.000Z',
+  } as unknown as Parameters<typeof returnsView>[2];
+
+  test('a rebuild with a stored result shows that result, dated, and says why it is not fresh', () => {
+    const view = returnsView(rebuilding, [], lastComplete);
+    expect(view?.twr?.cumulative).toBe(10);
+    expect(view?.asOf).toBe('2026-10-11T08:30:00.000Z');
+    expect(view?.updatingReasons).toEqual(['rebuilding-history']);
+    expect(view?.unavailableReasons).toBeUndefined();
+  });
+
+  test('a rebuild with nothing stored is still the unavailable view', () => {
+    const view = returnsView(rebuilding, [], null);
+    expect(view?.twr).toBeNull();
+    expect(view?.unavailableReasons).toEqual(['rebuilding-history']);
+    expect(view?.asOf).toBeUndefined();
+  });
+
+  test('an eligible answer is shown as it is, and the stored one is ignored', () => {
+    const view = returnsView(returns(), [], lastComplete);
+    expect(view?.twr?.cumulative).toBe(25);
+    expect(view?.asOf).toBeUndefined();
+  });
+});

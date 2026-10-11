@@ -4,7 +4,9 @@ import { holdings } from './holdings';
 import { tokens } from './tokens';
 import { users } from './users';
 
-export type EngineShadowRunKind = 'balance' | 'price';
+// No `price` run is written since PR-8 (foundation A3) deleted the price
+// shadow; the kind stays so the reports it left still read.
+export type EngineShadowRunKind = 'balance' | 'price' | 'value';
 export type EngineShadowRunStatus = 'complete' | 'failed';
 export type EngineShadowRunScope = 'all' | 'user';
 

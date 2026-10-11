@@ -10,8 +10,9 @@ import {
   CostBasisService,
   type HistoryCompleteness,
 } from '../../../src/services/pricing/CostBasisService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub } from '../../../test/helpers/price-series';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -45,13 +46,14 @@ const BTC = 'token-BTC';
 function makeService(): CostBasisService {
   Container.set(HoldingRepository, {} as unknown as HoldingRepository);
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
-  Container.set(PriceGraphService, {
-    convert: async (amount: Decimal, from: string, to: string) => {
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal, from: string, to: string) => {
       if (from === to) return { amount, stale: false };
       if (from === EUR && to === GBP) return { amount: amount.mul('0.85'), stale: false };
       return null;
-    },
-  } as unknown as PriceGraphService);
+    })
+  );
   const instance = new CostBasisService();
   Container.set(CostBasisService, instance);
   return instance;

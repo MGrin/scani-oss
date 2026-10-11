@@ -25,6 +25,7 @@ import Container from 'typedi';
 import { TransferReviewRuleService } from '../../src/services/TransferReviewRuleService';
 import { TransferReviewService } from '../../src/services/TransferReviewService';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
+import { seedHoldingCache } from '../../test/helpers/engine-guard';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -102,10 +103,12 @@ async function setupFixture(): Promise<Fixture> {
     .values({ symbol: `RR${randomUUID().toUpperCase()}`, name: 'RR Token', typeId: tokenType.id })
     .returning();
   if (!token) throw new Error('token insert failed');
-  const [holding] = await db
-    .insert(schema.holdings)
-    .values({ userId: user.id, accountId: account.id, tokenId: token.id, balance: '0' })
-    .returning();
+  const [holding] = await seedHoldingCache(db, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values({ userId: user.id, accountId: account.id, tokenId: token.id, balance: '0' })
+      .returning()
+  );
   if (!holding) throw new Error('holding insert failed');
 
   return {

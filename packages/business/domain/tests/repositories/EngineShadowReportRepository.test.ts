@@ -102,7 +102,7 @@ describe('recordRun', () => {
             }),
             difference({
               ...seeded,
-              comparator: 'balance-at-time',
+              comparator: 'stored-balance',
               category: 'ledger-ahead-of-anchor',
               at: new Date('2026-02-01T00:00:00Z'),
             }),
@@ -195,11 +195,11 @@ describe('recordRun', () => {
         difference({ userId: userGone.userId, holdingId: userGone.holdingId, engineValue: 'user' }),
         difference({ ...refsGone, engineValue: 'refs' }),
         difference({
-          comparator: 'live-resolver',
-          category: 'route',
+          comparator: 'stored-balance',
+          category: 'unexplained',
           tokenId: refsGone.baseTokenId,
           baseTokenId: kept.baseTokenId,
-          engineValue: 'price',
+          engineValue: 'tokens',
         }),
       ];
       // Found by the shadow, then deleted before its report is stored.
@@ -234,7 +234,7 @@ describe('recordRun', () => {
           tokenId: refsGone.tokenId,
           baseTokenId: null,
         },
-        price: { userId: null, holdingId: null, tokenId: null, baseTokenId: kept.baseTokenId },
+        tokens: { userId: null, holdingId: null, tokenId: null, baseTokenId: kept.baseTokenId },
       });
     });
   });
@@ -370,7 +370,7 @@ describe('findDifferences', () => {
       expect(found['starts-at']).toHaveLength(2);
 
       const stored = await differencesOf(tx, runId);
-      // A price run's rows at now, the ones with the value at stake, before its past closes.
+      // The latest rows first within a category.
       const latestAtThenId = (a: { at: Date; id: string }, b: { at: Date; id: string }) =>
         b.at.getTime() - a.at.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
       const expected = (category: string, n: number) =>

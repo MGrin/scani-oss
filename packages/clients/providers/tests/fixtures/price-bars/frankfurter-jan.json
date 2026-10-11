@@ -1,0 +1,32 @@
+{
+  "url": "https://api.frankfurter.dev/v1/2026-01-12..2026-01-19?base=EUR&symbols=USD",
+  "fetchedAt": "2026-10-05T02:18:06.815290Z",
+  "status": 200,
+  "data": {
+    "amount": 101,
+    "base": "EUR",
+    "start_date": "2026-01-12",
+    "end_date": "2026-01-19",
+    "rates": {
+      "2026-01-12": {
+        "USD": 226
+      },
+      "2026-01-13": {
+        "USD": 204
+      },
+      "2026-01-14": {
+        "USD": 201
+      },
+      "2026-01-15": {
+        "USD": 182
+      },
+      "2026-01-16": {
+        "USD": 176
+      },
+      "2026-01-19": {
+        "USD": 185
+      }
+    }
+  },
+  "normalization": "Price values are synthetic integer ranks. Equal values and ordering are preserved across these fixtures; timestamps and response shape are recorded. Raw public responses are retained in the PR5 rehearsal evidence."
+}

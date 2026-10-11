@@ -10,8 +10,9 @@ import {
   CostBasisService,
   type DisposalLotMatch,
 } from '../../../src/services/pricing/CostBasisService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub } from '../../../test/helpers/price-series';
 
 /**
  * HMRC's identification rules, checked against HMRC's own published answers
@@ -50,11 +51,12 @@ const HOLDING = 'h';
 function makeService(): CostBasisService {
   Container.set(HoldingRepository, {} as unknown as HoldingRepository);
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
-  Container.set(PriceGraphService, {
-    convert: async () => {
+  Container.set(
+    PriceReader,
+    priceReaderStub(() => {
       throw new Error('every figure in these examples is priced in the base currency');
-    },
-  } as unknown as PriceGraphService);
+    })
+  );
   const instance = new CostBasisService();
   Container.set(CostBasisService, instance);
   return instance;

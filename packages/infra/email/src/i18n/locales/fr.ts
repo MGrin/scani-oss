@@ -33,6 +33,17 @@ export const fr: EmailStrings = {
       'Ouvrez ce lien dans le navigateur depuis lequel vous avez commencé. Il ne fonctionne qu’une seule fois et expire dans 15 minutes.',
     textIgnore: 'Vous n’avez rien demandé ? Vous pouvez ignorer cet e-mail sans risque.',
   },
+  householdInvite: {
+    subject: '{inviter} vous invite à rejoindre un foyer sur {app}',
+    headline: 'Rejoindre {household}',
+    body: '{inviter} vous invite à voir les comptes partagés dans {household} sur {app}. Vos propres comptes restent privés, sauf si vous choisissez de les partager.',
+    button: "Accepter l'invitation",
+    preheader: '{inviter} vous invite à rejoindre {household} sur {app}.',
+    textIntro: '{inviter} vous invite à rejoindre {household} sur {app}.',
+    textBody:
+      'Connectez-vous avec cette adresse e-mail, puis acceptez. Vos propres comptes restent privés, sauf si vous les partagez.',
+    expiry: "L'invitation expire dans 7 jours.",
+  },
   otp: {
     headline: {
       signIn: 'Votre code de connexion',

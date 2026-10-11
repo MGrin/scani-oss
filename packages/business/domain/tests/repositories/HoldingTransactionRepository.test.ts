@@ -49,6 +49,7 @@ describe('HoldingTransactionRepository', () => {
         merges: [],
         earliestChangedAt: null,
         duplicatePlacements: [],
+        inserted: [],
       });
 
       const { rows: inserted } = await repo().bulkUpsert(
@@ -340,6 +341,46 @@ describe('HoldingTransactionRepository', () => {
       });
       expect(real_only.first?.getTime()).toBe(real.getTime());
       expect(real_only.last?.getTime()).toBe(real.getTime());
+    });
+  });
+
+  test('hasReconciliationOpening sees only a synthesized opening row (A5)', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, holdingId, tokenId } = await makeHoldingFixture(tx);
+      const real = new Date('2024-06-15T00:00:00Z');
+      await repo().bulkUpsert(
+        [
+          {
+            userId,
+            holdingId,
+            tokenId,
+            kind: 'buy',
+            quantity: '1',
+            occurredAt: real,
+            source: 'manual',
+            externalId: 'real-1',
+          },
+        ],
+        tx
+      );
+      expect(await repo().hasReconciliationOpening(holdingId, tx)).toBe(false);
+
+      await repo().bulkUpsert(
+        [
+          {
+            userId,
+            holdingId,
+            tokenId,
+            kind: 'opening_balance',
+            quantity: '5',
+            occurredAt: new Date(real.getTime() - 1),
+            source: 'reconciliation-opening',
+            externalId: 'opening_balance',
+          },
+        ],
+        tx
+      );
+      expect(await repo().hasReconciliationOpening(holdingId, tx)).toBe(true);
     });
   });
 
@@ -981,4 +1022,29 @@ describe('bulkUpsert — a batch larger than one statement can carry', () => {
       });
     });
   }, 120_000); // Thousands of rows, on a CI box several times slower than a laptop (SC-1528).
+});
+
+describe('bulkUpsert — the rows it inserted (SC-1649)', () => {
+  test('names only rows no key held before, so an undo removes what this upload added', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, holdingId, tokenId } = await makeHoldingFixture(tx);
+      const row = (externalId: string, quantity = '1'): NewHoldingTransaction => ({
+        userId,
+        holdingId,
+        tokenId,
+        kind: 'deposit',
+        quantity,
+        occurredAt: new Date('2026-08-01T00:00:00Z'),
+        source: 'budget-ynab',
+        externalId,
+      });
+
+      const first = await repo().bulkUpsert([row('a'), row('b')], tx);
+      expect(first.inserted.sort()).toEqual(first.rows.map((r) => r.id).sort());
+
+      const second = await repo().bulkUpsert([row('a'), row('b', '2'), row('c')], tx);
+      const c = second.rows.find((r) => r.externalId === 'c')!;
+      expect(second.inserted).toEqual([c.id]);
+    });
+  });
 });

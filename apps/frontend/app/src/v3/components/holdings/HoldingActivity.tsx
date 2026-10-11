@@ -1,8 +1,10 @@
 import { balanceDecimals, formatDate } from '@scani/shared';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { activityKindLabel } from '../../lib/holding-activity';
+import { V3_ROUTES } from '../../lib/routes';
 
 const HOLDING_ACTIVITY_LIMIT = 10;
 
@@ -27,17 +29,28 @@ export function HoldingActivity({ holdingId, symbol, tokenTypeCode }: HoldingAct
 
   const rows = activity.data?.transactions ?? [];
   if (rows.length === 0) return null;
+  const dividendIds = new Set(
+    rows.filter((row) => row.kindSubtype === 'dividend').map((row) => row.id)
+  );
 
   return (
     <section className="flex flex-col gap-1">
-      <h3 className="text-caption font-medium uppercase tracking-wide text-muted-foreground">
-        {t('v3.holdings.activity.heading')}
-      </h3>
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="text-caption font-medium uppercase tracking-wide text-muted-foreground">
+          {t('v3.holdings.activity.heading')}
+        </h3>
+        <Link
+          to={`${V3_ROUTES.transactions}?holding=${holdingId}`}
+          className="text-label text-primary hover:underline"
+        >
+          {t('v3.transactions.seeAll')}
+        </Link>
+      </div>
       <ul className="divide-y divide-border">
         {rows.map((row) => (
           <li key={row.id} className="flex items-baseline justify-between gap-4 py-2">
             <span className="flex min-w-0 flex-col">
-              <span className="text-body">{activityKindLabel(t, row.kind, row.quantity)}</span>
+              <span className="text-body">{activityKindLabel(t, row, dividendIds)}</span>
               <span className="truncate text-caption text-muted-foreground">
                 {row.description
                   ? `${formatDate(row.occurredAt)} · ${row.description}`

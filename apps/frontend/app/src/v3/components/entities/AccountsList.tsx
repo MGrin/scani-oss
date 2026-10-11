@@ -6,9 +6,11 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { nameList, type V3DataViewConfig } from '@scani/ui/v3/lib/data-view';
 import { exportCount, exportMoney, exportText } from '@scani/ui/v3/lib/export/cell';
 import type { V3QueryState } from '@scani/ui/v3/lib/query-state';
-import { Info, PieChart, Tags, Wallet } from 'lucide-react';
+import { Info, Pencil, PieChart, Tags, Wallet } from 'lucide-react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
+import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import {
   type AccountRow,
   accountAssets,
@@ -23,8 +25,10 @@ import {
 } from '../../lib/accounts';
 import { formatRelative } from '../../lib/relative-time';
 import { accountHoldingsPath, V3_ROUTES } from '../../lib/routes';
+import { EditAccountSheet } from '../accounts/EditAccountSheet';
 import { useOpenCapture } from '../capture/CaptureSheetContext';
 import { ReturnsBlock } from '../home/ReturnsBlock';
+import { AccountReconnect } from './AccountReconnect';
 import { EntityValueSummary } from './EntityValueSummary';
 import { InstitutionMark } from './InstitutionMark';
 
@@ -106,9 +110,11 @@ export function AccountsList({
   onBulkDelete,
   isBulkDeleting,
 }: AccountsListProps) {
+  useRelativeTimeTick();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const openCapture = useOpenCapture();
+  const [editing, setEditing] = useState<AccountRow | null>(null);
   const institutionById = nameById(institutions);
   const typeById = nameById(accountTypes);
 
@@ -210,7 +216,7 @@ export function AccountsList({
     summary: (items) => (
       <EntityValueSummary
         value={accountsValue(items)}
-        marginDebt={accountsDebt(items)}
+        totalDebt={accountsDebt(items)}
         currency={currency}
         allocation={namedAllocation(items, accountAssets)}
         allocationLabel={t('v3.entities.account.valueByAccount')}
@@ -218,6 +224,13 @@ export function AccountsList({
     ),
     renderRow: (account) => {
       const stale = isStaleSync(accountLastSync(account.metadata));
+      // A refused key outranks "overdue": it names the cause, and the cure is
+      // the owner's (SC-1686).
+      const badge = account.keyRejected
+        ? t('v3.entities.account.keyRejected')
+        : stale
+          ? t('v3.entities.account.syncOverdue')
+          : null;
       return {
         leading: (
           <InstitutionMark
@@ -242,22 +255,19 @@ export function AccountsList({
         // edge of its own border, which renders as a stray arc that says
         // nothing. The value zone never truncates, which is exactly what a
         // warning needs.
-        delta: stale ? (
-          <Badge variant="outline" className="border-border-strong">
-            {t('v3.entities.account.syncOverdue')}
+        delta: badge ? (
+          <Badge
+            variant={account.keyRejected ? 'destructive' : 'outline'}
+            className={account.keyRejected ? undefined : 'border-border-strong'}
+          >
+            {badge}
           </Badge>
         ) : undefined,
         // A comma-joined ENUMERATION of three independent facts, not a
         // sentence — so the separator is markup and each fact is the same
         // whole key the badge above uses (SC-235). It was `", sync overdue"`,
         // a key carrying the comma that attached it to the name before it.
-        ariaLabel: [
-          account.name,
-          institutionName(account),
-          stale ? t('v3.entities.account.syncOverdue') : null,
-        ]
-          .filter(Boolean)
-          .join(', '),
+        ariaLabel: [account.name, institutionName(account), badge].filter(Boolean).join(', '),
       };
     },
     columns: [
@@ -399,12 +409,21 @@ export function AccountsList({
           // would leave that reader with no way into the account's holdings
           // at all.
           actions: (
-            <Button asChild variant="outline" size="sm">
-              <Link to={accountHoldingsPath(account.id)}>
-                <PieChart className="me-2 size-4" aria-hidden="true" />
-                {t('v3.entities.account.viewHoldings')}
-              </Link>
-            </Button>
+            <>
+              {account.keyRejected ? (
+                <AccountReconnect providerKey={account.keyRejected.providerKey} />
+              ) : null}
+              <Button variant="outline" size="sm" onClick={() => setEditing(account)}>
+                <Pencil className="me-2 size-4" aria-hidden="true" />
+                {t('v3.entities.account.edit')}
+              </Button>
+              <Button asChild variant="outline" size="sm">
+                <Link to={accountHoldingsPath(account.id)}>
+                  <PieChart className="me-2 size-4" aria-hidden="true" />
+                  {t('v3.entities.account.viewHoldings')}
+                </Link>
+              </Button>
+            </>
           ),
         };
       },
@@ -433,5 +452,18 @@ export function AccountsList({
     ),
   };
 
-  return <V3DataView config={config} getId={(account) => account.id} query={query} />;
+  return (
+    <>
+      <V3DataView config={config} getId={(account) => account.id} query={query} />
+      {editing ? (
+        <EditAccountSheet
+          account={{ ...editing, wrapper: editing.wrapper ?? null }}
+          open
+          onOpenChange={(open) => {
+            if (!open) setEditing(null);
+          }}
+        />
+      ) : null}
+    </>
+  );
 }

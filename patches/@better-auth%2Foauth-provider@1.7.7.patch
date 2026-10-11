@@ -1,0 +1,14 @@
+diff --git a/dist/introspect-CNR06Oy3.mjs b/dist/introspect-CNR06Oy3.mjs
+index e633e0e33a23a0c41537d099585ddb4138a6b5fa..88d1835b9a4ec46a2acfbd044a3d34e6dfa4b596 100644
+--- a/dist/introspect-CNR06Oy3.mjs
++++ b/dist/introspect-CNR06Oy3.mjs
+@@ -845,7 +845,8 @@ async function seedResources(ctx, opts) {
+ 				});
+ 			} catch (err) {
+ 				const message = err instanceof Error ? err.message : String(err);
+-				if (/unique|duplicate|UNIQUE/i.test(message)) {
++				const sqlstate = err instanceof Error && typeof err.cause === "object" && err.cause !== null ? err.cause.code : void 0;
++				if (sqlstate === "23505" || /unique|duplicate|UNIQUE/i.test(message)) {
+ 					logger.debug(`oauth-provider: resource ${input.identifier} already inserted by a concurrent process — skipping.`);
+ 					continue;
+ 				}

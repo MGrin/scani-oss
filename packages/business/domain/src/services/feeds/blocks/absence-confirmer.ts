@@ -5,24 +5,38 @@
  * survived of it.
  *
  * `confirmed` is the exchange sync's (`HoldingsSyncHelper`): a provider that
- * returned no row at all zeroes nothing (SC-236), and a holding of the
- * confirmed type zeroes only once it has been missing from `statements`
- * distinct statement days (SC-1451). `statementAsOf` is the latest instant any
- * returned row was true at.
+ * returned no row at all zeroes nothing (SC-236).
  *
- * `immediate` is an integration import's: the first absence zeroes, an empty
- * answer included. `reportedKeys` is every key the import named, rows it
- * skipped included, so an asset it reported at zero keeps its old holding.
+ * `immediate` is an integration import's: an absence zeroes on the first
+ * answer, an empty one included. `reportedKeys` is every key the import named,
+ * rows it skipped included, so an asset it reported at zero keeps its old
+ * holding.
+ *
+ * In either mode a holding of the `confirmations` type zeroes only once it has
+ * been missing from `statements` distinct statement days (SC-1451), on an
+ * import as on the sync (A5 D-22, A2:1272). `statementAsOf` is the latest
+ * instant any returned row was true at, and a zero is dated there (R60).
  */
 export type AbsencePolicy =
   | {
       mode: 'confirmed';
       guardEmptySnapshot: true;
-      confirmations: { typeCode: 'fiat'; statements: number } | null;
+      confirmations: AbsenceConfirmations | null;
       providerRows: number;
       statementAsOf: Date;
     }
-  | { mode: 'immediate'; guardEmptySnapshot: false; reportedKeys: readonly string[] };
+  | {
+      mode: 'immediate';
+      guardEmptySnapshot: false;
+      confirmations: AbsenceConfirmations | null;
+      reportedKeys: readonly string[];
+      statementAsOf: Date;
+    };
+
+interface AbsenceConfirmations {
+  typeCode: 'fiat';
+  statements: number;
+}
 
 interface AbsenceCandidate {
   holdingId: string;
@@ -75,9 +89,7 @@ export function confirmAbsences(input: {
     return decision;
   }
   const confirm =
-    policy.mode === 'confirmed' && policy.confirmations !== null
-      ? { ...policy.confirmations, asOf: policy.statementAsOf }
-      : null;
+    policy.confirmations !== null ? { ...policy.confirmations, asOf: policy.statementAsOf } : null;
 
   for (const holding of input.owned) {
     if (holding.key !== null && reportedKeys.has(holding.key)) continue;

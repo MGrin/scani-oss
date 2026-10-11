@@ -52,7 +52,12 @@ interface CapturedUpsert {
   granularity?: string;
 }
 
-function makeService(opts: { tokens: Map<string, Token>; pricers: HistoricalPriceProvider[] }): {
+function makeService(opts: {
+  tokens: Map<string, Token>;
+  pricers: HistoricalPriceProvider[];
+  /** Rows the stubbed writer refuses, as the table refuses another source's close. */
+  refuse?: (row: PriceWrite) => boolean;
+}): {
   service: HistoricalPriceBackfillService;
   captured: CapturedUpsert[];
 } {
@@ -85,7 +90,21 @@ function makeService(opts: { tokens: Map<string, Token>; pricers: HistoricalPric
   Container.set(PriceWriter, {
     writeHistory: async (rows: PriceWrite[]) => {
       captured.push(...rows.map(({ at, ...row }) => ({ ...row, timestamp: at })));
-      return { written: rows.length, dropped: 0, changed: [], seriesChanged: [] };
+      const accepted = rows
+        .filter((row) => !opts.refuse?.(row))
+        .map(({ tokenId, baseTokenId, at, granularity }) => ({
+          tokenId,
+          baseTokenId,
+          at,
+          granularity,
+        }));
+      return {
+        written: accepted.length,
+        dropped: 0,
+        changed: [],
+        seriesChanged: [],
+        accepted,
+      };
     },
   } as unknown as PriceWriter);
 
@@ -211,6 +230,7 @@ describe('HistoricalPriceBackfillService.backfillTokenRange', () => {
             price: '100',
             timestamp: d,
             source: 'defillama_historical',
+            barDay: d.toISOString().slice(0, 10),
           }))
         ),
       ],
@@ -218,17 +238,52 @@ describe('HistoricalPriceBackfillService.backfillTokenRange', () => {
     const result = await service.backfillTokenRange('btc', 'usd', days);
     expect(result.attemptFailed).toBe(false);
     expect(result.inserted).toBe(days.length);
-    // Each bar a daily row at the provider's own stamp, under its own source.
+    // Each bar a daily row at its day's close, under its own source.
     expect(captured).toEqual(
       days.map((d) => ({
         tokenId: 'btc',
         baseTokenId: 'usd',
         price: '100',
-        timestamp: d,
+        timestamp: new Date(`${d.toISOString().slice(0, 10)}T23:59:59.999Z`),
         source: 'defillama_historical',
         granularity: 'daily',
       }))
     );
+  });
+
+  // Foundation A3, Task 13. The table refuses a close another source wrote, so
+  // a day is inserted only when the writer accepted a row for it.
+  test('a day the writer refused is not inserted, and counts as already had', async () => {
+    const tokens = new Map([
+      ['btc', makeToken('btc', 'BTC')],
+      ['usd', makeToken('usd', 'USD')],
+    ]);
+    const refusedDay = '2021-09-07';
+    const { service } = makeService({
+      tokens,
+      pricers: [
+        rangePricer('defillama', async () =>
+          days.map((d) => ({
+            tokenId: 'btc',
+            baseTokenId: 'usd',
+            price: '100',
+            timestamp: d,
+            source: 'defillama_historical',
+            barDay: d.toISOString().slice(0, 10),
+          }))
+        ),
+      ],
+      refuse: (row) => row.at.toISOString().startsWith(refusedDay),
+    });
+
+    const result = await service.backfillTokenRange('btc', 'usd', days);
+
+    expect(result).toMatchObject({
+      inserted: 1,
+      alreadyHad: 1,
+      providerMissing: 0,
+      droppedDays: 0,
+    });
   });
 });
 

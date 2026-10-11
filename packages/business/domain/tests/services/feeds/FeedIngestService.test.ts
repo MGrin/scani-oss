@@ -21,8 +21,6 @@ import * as schema from '@scani/db/schema';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { FeedInputRepository } from '../../../src/repositories/FeedInputRepository';
-import { HoldingBalanceObservationRepository } from '../../../src/repositories/HoldingBalanceObservationRepository';
-import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import {
   FeedBatchRejected,
   FeedIngestService,
@@ -33,10 +31,16 @@ import type {
   FeedCheckpoint,
   FeedEntry,
 } from '../../../src/services/feeds/feed-batch';
+import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWriter';
 import { FoundationClassificationService } from '../../../src/services/foundation/FoundationClassificationService';
 import { withTestDb } from '../../../test/helpers/db';
 import { makeInstitution, makeInstitutionType, makeUser } from '../../../test/helpers/factories';
-import { makeAccount, makeHolding, makeToken } from '../../../test/helpers/factories-extra';
+import {
+  makeAccount,
+  makeCheckpoint,
+  makeHolding,
+  makeToken,
+} from '../../../test/helpers/factories-extra';
 import { expectLabelsSettled } from '../../../test/helpers/labels-settled';
 
 const ingest = (batch: FeedBatch, tx?: DatabaseTransaction) =>
@@ -50,14 +54,6 @@ const T3 = new Date('2026-08-10T00:00:00Z');
 const FETCHED = new Date('2026-08-12T09:00:00Z');
 
 const STATEMENT_META = { format: 'csv', bankTemplate: null };
-
-// Today's `updateHoldingBalance` copy, which file import keeps writing until A5 (ruling R19).
-const BALANCE_COPY = { source: 'sync-capture', meta: { origin: 'updateHoldingBalance' } };
-
-const withCopy = (batch: FeedBatch): FeedBatch => ({
-  ...batch,
-  legacy: { ...batch.legacy, cacheObservation: BALANCE_COPY },
-});
 
 function asset(symbol: string): AssetRef {
   return { identity: { symbol, name: symbol }, typeCode: 'fiat', lookup: 'catalog-symbol' };
@@ -98,7 +94,7 @@ function statement(
     userId: owner.userId,
     input: { accountId: owner.accountId, source: 'statement', credentialId: null, walletId: null },
     fetchedAt: FETCHED,
-    window: { from: T1, to: T3, complete: false, uploadRef: 'upload-1' },
+    window: { shape: 'statement-upload', from: T1, to: T3, complete: false, uploadRef: 'upload-1' },
     absences: [],
     legacy: {
       holdingMatch: 'account-token',
@@ -107,13 +103,11 @@ function statement(
       arrival: 'user_confirmed',
       writesCache: true,
       createdWithoutCheckpoint: 'sum-of-entries',
-      cacheObservation: null,
       derivesTradeLegs: false,
       holdingFailure: 'fail-batch',
       absence: null,
       clearsAbsenceTally: false,
       createdCheckpointMeta: null,
-      unhideOnNonZero: false,
       unchangedCheckpoint: 'append',
       zeroOpensHolding: true,
     },
@@ -190,8 +184,8 @@ const copiesOf = (tx: DatabaseTransaction, userId: string) =>
     .where(
       and(
         eq(schema.holdingBalanceObservations.userId, userId),
-        eq(schema.holdingBalanceObservations.source, BALANCE_COPY.source),
-        sql`${schema.holdingBalanceObservations.sourceMetadata}->>'origin' = ${BALANCE_COPY.meta.origin}`
+        eq(schema.holdingBalanceObservations.source, 'sync-capture'),
+        sql`${schema.holdingBalanceObservations.sourceMetadata}->>'origin' = 'updateHoldingBalance'`
       )
     )
     .orderBy(asc(schema.holdingBalanceObservations.observedAt));
@@ -238,6 +232,7 @@ describe('FeedIngestService.ingest', () => {
         entryOutcomes: ['landed', 'landed', 'landed', 'landed'],
         rowsSent: 4,
         entriesWritten: 4,
+        insertedEntryIds: expect.any(Array),
         merges: [],
         checkpointsWritten: 1,
         windowRecorded: true,
@@ -251,6 +246,8 @@ describe('FeedIngestService.ingest', () => {
           { holdingId: holding!.id, tokenId: fixture.tokens[0]!.id, cacheBalance: '1249' },
         ],
       });
+      expect(result.insertedEntryIds).toHaveLength(4);
+      expect(await ingest(batch, tx).then((again) => again.insertedEntryIds)).toEqual([]);
       expect({
         userId: input!.userId,
         source: input!.source,
@@ -496,7 +493,7 @@ describe('FeedIngestService.ingest', () => {
     });
   });
 
-  test("a created holding with no close takes the sum of its rows; a negative sum leaves '0'", async () => {
+  test('a created holding with no close takes the sum of its rows, a negative one included (A5: no floor)', async () => {
     await withTestDb(async (tx) => {
       const fixture = await owner(tx, 2);
       const [gains, spends] = fixture.tokens.map((t) => t.symbol) as [string, string];
@@ -518,13 +515,13 @@ describe('FeedIngestService.ingest', () => {
         (await holdingsOf(tx, fixture.accountId)).map((h) => [h.tokenId, h.balance])
       );
       expect(byToken.get(fixture.tokens[0]!.id)).toBe('2015.8');
-      expect(byToken.get(fixture.tokens[1]!.id)).toBe('0');
+      expect(byToken.get(fixture.tokens[1]!.id)).toBe('-1184.2');
       expect(result.createdHoldingIds).toHaveLength(2);
       expect(result.checkpointsWritten).toBe(0);
     });
   });
 
-  test("with createdWithoutCheckpoint 'zero', a created holding with no close stays at 0 whatever its rows sum to", async () => {
+  test("with createdWithoutCheckpoint 'zero', a created holding with no close still takes the sum of its rows: the option sets only what the import expected (A5 D-1)", async () => {
     await withTestDb(async (tx) => {
       const fixture = await owner(tx, 1);
       const eur = fixture.tokens[0]!.symbol;
@@ -535,11 +532,11 @@ describe('FeedIngestService.ingest', () => {
       await ingest({ ...batch, legacy: { ...batch.legacy, createdWithoutCheckpoint: 'zero' } }, tx);
 
       const [holding] = await holdingsOf(tx, fixture.accountId);
-      expect(holding?.balance).toBe('0');
+      expect(holding?.balance).toBe('500');
     });
   });
 
-  test('an existing holding with no close keeps its balance and its last_updated', async () => {
+  test('an existing holding with no close takes its rows after its last checkpoint, and keeps its last_updated (A5 D-18)', async () => {
     await withTestDb(async (tx) => {
       const fixture = await owner(tx, 1);
       const existing = await makeHolding(tx, {
@@ -550,6 +547,12 @@ describe('FeedIngestService.ingest', () => {
         kind: 'feed',
         startsAt: LONG_AGO,
         lastUpdated: LONG_AGO,
+      });
+      await makeCheckpoint(tx, {
+        userId: fixture.userId,
+        holdingId: existing.id,
+        observedAt: LONG_AGO,
+        balance: '500',
       });
 
       const result = await ingest(
@@ -562,7 +565,7 @@ describe('FeedIngestService.ingest', () => {
 
       const after = await holdingRow(tx, existing.id);
       expect({ balance: after.balance, lastUpdated: after.lastUpdated }).toEqual({
-        balance: '500',
+        balance: '510',
         lastUpdated: LONG_AGO,
       });
       expect(result.createdHoldingIds).toEqual([]);
@@ -570,7 +573,7 @@ describe('FeedIngestService.ingest', () => {
     });
   });
 
-  test('a batch that writes no cache leaves even a checkpointed holding as it was', async () => {
+  test("a batch that writes no cache still brings a checkpointed holding to the engine's figure, and keeps its last_updated (A5 D-18)", async () => {
     await withTestDb(async (tx) => {
       const fixture = await owner(tx, 1);
       const existing = await makeHolding(tx, {
@@ -591,7 +594,7 @@ describe('FeedIngestService.ingest', () => {
 
       const after = await holdingRow(tx, existing.id);
       expect({ balance: after.balance, lastUpdated: after.lastUpdated }).toEqual({
-        balance: '500',
+        balance: '510',
         lastUpdated: LONG_AGO,
       });
       expect((await observationsOf(tx, existing.id)).map((o) => o.balance)).toEqual(['510']);
@@ -708,111 +711,33 @@ describe('FeedIngestService.ingest', () => {
     });
   });
 
-  test('with cacheObservation set, each cache write gets one unlabelled copy at its balance, and a holding with no cache write gets none', async () => {
+  test('a statement batch appends no copy beside its cache writes: the engine reads the close (A5 D-19)', async () => {
     await withTestDb(async (tx) => {
-      const fixture = await owner(tx, 4);
-      const [closed, summed, negative, untouched] = fixture.tokens.map((t) => t.symbol) as [
-        string,
+      const fixture = await owner(tx, 3);
+      const [closed, summed, negative] = fixture.tokens.map((t) => t.symbol) as [
         string,
         string,
         string,
       ];
-      const existing = await makeHolding(tx, {
-        userId: fixture.userId,
-        accountId: fixture.accountId,
-        tokenId: fixture.tokens[3]!.id,
-        balance: '500',
-        kind: 'feed',
-        startsAt: LONG_AGO,
-        lastUpdated: LONG_AGO,
-      });
-      const before = new Date();
 
       const result = await ingest(
-        withCopy(
-          statement(fixture, {
-            entries: [
-              row(closed, 'c1', '100', T1),
-              row(summed, 's1', '70', T2),
-              row(negative, 'n1', '-5', T2),
-              row(untouched, 'u1', '10', T2),
-            ],
-            checkpoints: [close(closed, T3, '120')],
-          })
-        ),
-        tx
-      );
-
-      const holdingOf = new Map(
-        (await holdingsOf(tx, fixture.accountId)).map((h) => [h.tokenId, h])
-      );
-      const copies = await copiesOf(tx, fixture.userId);
-      expect(
-        copies
-          .map((c) => ({
-            holdingId: c.holdingId,
-            balance: c.balance,
-            sourceMetadata: c.sourceMetadata,
-            role: c.role,
-            authority: c.authority,
-            inputId: c.inputId,
-            cause: c.cause,
-            stampedNow: c.observedAt >= before,
-          }))
-          .sort((a, b) => a.balance.localeCompare(b.balance))
-      ).toEqual([
-        {
-          holdingId: holdingOf.get(fixture.tokens[0]!.id)!.id,
-          balance: '120',
-          sourceMetadata: BALANCE_COPY.meta,
-          role: null,
-          authority: null,
-          inputId: null,
-          cause: null,
-          stampedNow: true,
-        },
-        {
-          holdingId: holdingOf.get(fixture.tokens[1]!.id)!.id,
-          balance: '70',
-          sourceMetadata: BALANCE_COPY.meta,
-          role: null,
-          authority: null,
-          inputId: null,
-          cause: null,
-          stampedNow: true,
-        },
-      ]);
-      // Each copy reads the balance its cache write set.
-      for (const copy of copies) {
-        expect((await holdingRow(tx, copy.holdingId)).balance).toBe(copy.balance);
-      }
-      expect(holdingOf.get(fixture.tokens[2]!.id)?.balance).toBe('0');
-      expect(copies.map((c) => c.holdingId)).not.toContain(existing.id);
-      expect(result.checkpointsWritten).toBe(1);
-    });
-  });
-
-  test('with cacheObservation null, or with no cache written, no copy is appended', async () => {
-    await withTestDb(async (tx) => {
-      const fixture = await owner(tx, 2);
-      const [plain, uncached] = fixture.tokens.map((t) => t.symbol) as [string, string];
-      await ingest(
         statement(fixture, {
-          entries: [row(plain, 'p1', '100', T1)],
-          checkpoints: [close(plain, T3, '100')],
+          entries: [
+            row(closed, 'c1', '100', T1),
+            row(summed, 's1', '70', T2),
+            row(negative, 'n1', '-5', T2),
+          ],
+          checkpoints: [close(closed, T3, '120')],
         }),
         tx
       );
-      const batch = withCopy(
-        statement(fixture, {
-          fetchedAt: new Date(FETCHED.getTime() + 60_000),
-          entries: [row(uncached, 'q1', '100', T1)],
-          checkpoints: [close(uncached, T3, '100')],
-        })
-      );
-      await ingest({ ...batch, legacy: { ...batch.legacy, writesCache: false } }, tx);
 
+      const balanceOf = new Map(
+        (await holdingsOf(tx, fixture.accountId)).map((h) => [h.tokenId, h.balance])
+      );
+      expect(fixture.tokens.map((t) => balanceOf.get(t.id))).toEqual(['120', '70', '-5']);
       expect(await copiesOf(tx, fixture.userId)).toEqual([]);
+      expect(result.checkpointsWritten).toBe(1);
     });
   });
 
@@ -827,7 +752,13 @@ describe('FeedIngestService.ingest', () => {
       const second = await ingest(
         statement(fixture, {
           fetchedAt: new Date(FETCHED.getTime() + 60_000),
-          window: { from: T2, to: T3, complete: false, uploadRef: 'upload-2' },
+          window: {
+            shape: 'statement-upload',
+            from: T2,
+            to: T3,
+            complete: false,
+            uploadRef: 'upload-2',
+          },
           entries: [row(eur, 'r2', '20', T3)],
           checkpoints: [],
         }),
@@ -1009,14 +940,16 @@ describe('FeedIngestService.ingest, committed', () => {
       })
     );
     const duringFailure: Array<Pick<schema.Holding, 'balance' | 'kind' | 'startsAt'>> = [];
-    stubbed = spyOn(
-      Container.get(HoldingBalanceObservationRepository),
-      'markVerifications'
-    ).mockImplementation(async (_userId, _ids, tx) => {
-      const { balance, kind, startsAt } = await holdingRow(tx, existing.id);
-      duringFailure.push({ balance, kind, startsAt });
-      throw new Error('re-label failed');
-    });
+    // The cache is the batch's last write, and revaluing it is the last step
+    // of that write (A5 D-15). The unhide step revalues first, with no holding.
+    stubbed = spyOn(Container.get(HoldingCacheWriter), 'revalue').mockImplementation(
+      async (_userId, ids, _at, tx) => {
+        if (!ids.includes(existing.id)) return [];
+        const { balance, kind, startsAt } = await holdingRow(tx, existing.id);
+        duringFailure.push({ balance, kind, startsAt });
+        throw new Error('revalue failed');
+      }
+    );
     const symbol = fixture.tokens[0]!.symbol;
 
     await expect(
@@ -1026,7 +959,7 @@ describe('FeedIngestService.ingest, committed', () => {
           checkpoints: [close(symbol, T3, '600')],
         })
       )
-    ).rejects.toThrow('re-label failed');
+    ).rejects.toThrow('revalue failed');
 
     // What the rollback has to undo was written before the failure.
     expect(duringFailure).toEqual([{ balance: '600', kind: 'feed', startsAt: T1 }]);
@@ -1120,146 +1053,5 @@ describe('FeedIngestService.ingest, committed', () => {
       { observedAt: T2, role: 'verification' },
     ]);
     await expectLabelsSettled(fixture.userId);
-  });
-
-  /** A manual holding as today's create leaves it, backfilled, and one token with no holding. */
-  async function backfilledManualHolding() {
-    const fixture = await seed(2);
-    const manual = await getDb().transaction(async (tx) => {
-      const holding = await makeHolding(tx, {
-        userId: fixture.userId,
-        accountId: fixture.accountId,
-        tokenId: fixture.tokens[0]!.id,
-        balance: '900',
-        source: 'manual',
-        createdAt: T0,
-        lastUpdated: T0,
-      });
-      await tx.insert(schema.holdingBalanceObservations).values({
-        userId: fixture.userId,
-        holdingId: holding.id,
-        balance: '900',
-        observedAt: T0,
-        source: 'sync-capture',
-        sourceMetadata: { origin: 'createHoldingWithEvent', source: 'manual' },
-      });
-      return holding;
-    });
-    await Container.get(FoundationClassificationService).classify({
-      apply: true,
-      userId: fixture.userId,
-    });
-    const [manualSymbol, newSymbol] = fixture.tokens.map((t) => t.symbol) as [string, string];
-    const batch = withCopy(
-      statement(fixture, {
-        entries: [
-          row(manualSymbol, 'm1', '100', T1),
-          row(newSymbol, 'n1', '40', T2),
-          row(manualSymbol, 'm2', '-30', T3),
-        ],
-        checkpoints: [close(manualSymbol, T3, '970')],
-      })
-    );
-    return { fixture, manual, batch };
-  }
-
-  test('the copy reads as A1 rule O2, so classification excludes it and labels stay settled', async () => {
-    const { fixture, batch } = await backfilledManualHolding();
-
-    await ingest(batch);
-
-    const report = await Container.get(FoundationClassificationService).classify({
-      apply: false,
-      userId: fixture.userId,
-    });
-    expect({
-      copies: (await read((tx) => copiesOf(tx, fixture.userId))).length,
-      o2: report.notes['obs:O2'] ?? 0,
-      fabricated: report.excluded['fabricated-observation'] ?? 0,
-      toLabel: report.rowsUpdated.observations,
-      failedUsers: report.failedUsers,
-    }).toEqual({ copies: 2, o2: 2, fabricated: 2, toLabel: 0, failedUsers: [] });
-    await expectLabelsSettled(fixture.userId);
-  });
-
-  // Today's re-upload re-runs `updateHoldingBalance` for every close, which
-  // stamps another copy at now: the cache write and its copy go together.
-  test('replaying a batch with cacheObservation set writes one more copy, as a re-upload does today, and nothing else', async () => {
-    const { fixture, manual, batch } = await backfilledManualHolding();
-    const first = await ingest(batch);
-    const snapshot = () =>
-      read(async (tx) => ({
-        ledger: (await ledgerOf(tx, fixture.userId)).map((r) => ({
-          id: r.id,
-          updatedAt: r.updatedAt,
-        })),
-        checkpoints: (await observationsOf(tx, manual.id))
-          .filter((o) => o.role === 'checkpoint')
-          .map((o) => o.id),
-        windows: (await windowsOf(tx, [first.inputId])).map((w) => w.id),
-        balances: (await holdingsOf(tx, fixture.accountId)).map((h) => h.balance),
-      }));
-    const before = await snapshot();
-    const copiesBefore = await read((tx) => copiesOf(tx, fixture.userId));
-
-    await ingest(batch);
-
-    expect(await snapshot()).toEqual(before);
-    const copiesAfter = await read((tx) => copiesOf(tx, fixture.userId));
-    // The holding the first run created is found on the replay, so it takes no
-    // cache write and no copy; the checkpointed one takes both again.
-    expect(copiesAfter.length - copiesBefore.length).toBe(1);
-    const manualCopies = copiesAfter.filter((c) => c.holdingId === manual.id);
-    expect(manualCopies.map((c) => c.balance)).toEqual(['970', '970']);
-    expect(manualCopies[1]!.observedAt > manualCopies[0]!.observedAt).toBe(true);
-    await expectLabelsSettled(fixture.userId);
-  });
-
-  test('a failure after the copy rolls it back with everything else', async () => {
-    const fixture = await seed(1);
-    const existing = await getDb().transaction((tx) =>
-      makeHolding(tx, {
-        userId: fixture.userId,
-        accountId: fixture.accountId,
-        tokenId: fixture.tokens[0]!.id,
-        balance: '500',
-        source: 'manual',
-        kind: 'snapshot',
-        startsAt: LONG_AGO,
-        lastUpdated: LONG_AGO,
-      })
-    );
-    let copiesBeforeFailure = -1;
-    stubbed = spyOn(Container.get(HoldingRepository), 'markFeed').mockImplementation(
-      async (userId, _holdingIds, tx) => {
-        copiesBeforeFailure = (await copiesOf(tx, userId)).length;
-        throw new Error('kind flip failed');
-      }
-    );
-    const symbol = fixture.tokens[0]!.symbol;
-
-    await expect(
-      ingest(
-        withCopy(
-          statement(fixture, {
-            entries: [row(symbol, 'r1', '100', T1)],
-            checkpoints: [close(symbol, T3, '600')],
-          })
-        )
-      )
-    ).rejects.toThrow('kind flip failed');
-
-    expect(copiesBeforeFailure).toBe(1);
-    await read(async (tx) => {
-      expect(await copiesOf(tx, fixture.userId)).toEqual([]);
-      expect(await observationsOf(tx, existing.id)).toEqual([]);
-      expect(await ledgerOf(tx, fixture.userId)).toEqual([]);
-      expect(await inputsOf(tx, fixture.accountId)).toEqual([]);
-      const after = await holdingRow(tx, existing.id);
-      expect({ balance: after.balance, lastUpdated: after.lastUpdated }).toEqual({
-        balance: '500',
-        lastUpdated: LONG_AGO,
-      });
-    });
   });
 });

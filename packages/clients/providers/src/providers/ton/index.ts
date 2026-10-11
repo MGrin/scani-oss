@@ -1,16 +1,14 @@
 /**
  * `TonProvider` — balance + transaction fetching for The Open Network
- * via the public Toncenter API.
+ * via the public Toncenter indexed API v3
+ * (docs.ton.org/ecosystem/api/toncenter/v3/overview, SC-1580).
  *
  * Capabilities:
- *  - `current-balances`: native TON via `/getAddressBalance`. Jetton
- *    (TRC20-equivalent) balances are out of scope here pending a
- *    cleaner Toncenter v3 integration.
- *  - `transactions`: native TON inflows/outflows via `/getTransactions`.
- *    Jettons are explicitly out of scope for this first cut — they
- *    arrive as smart-contract calls with 0-value `in_msg`/`out_msgs`
- *    plus a separate notification message body, and need v3 to
- *    decode cleanly. Smart-contract / 0-value rows are skipped here.
+ *  - `current-balances`: native TON via `/accountStates`. Jetton
+ *    (TRC20-equivalent) balances are out of scope.
+ *  - `transactions`: native TON inflows/outflows via `/transactions`.
+ *    Jettons are out of scope: they arrive as smart-contract calls with
+ *    0-value messages, and those rows are skipped here.
  *  - `address-validator`: user-friendly mainnet (`EQ...`/`UQ...`) and
  *    testnet (`kQ...`/`0Q...`) base64url plus raw (`0:<64 hex>`).
  */
@@ -48,21 +46,25 @@ const TON_NATIVE_IDENTITY: Partial<NewToken> = {
 };
 
 interface ToncenterMessage {
-  source?: string;
-  destination?: string;
-  value: string;
+  source?: string | null;
+  destination?: string | null;
+  value?: string | null;
 }
 
 interface ToncenterTx {
-  utime: number;
-  transaction_id: { lt: string; hash: string };
-  in_msg?: ToncenterMessage;
+  hash: string;
+  lt: string;
+  now: number;
+  in_msg?: ToncenterMessage | null;
   out_msgs?: ToncenterMessage[];
 }
 
 interface ToncenterTransactionsResponse {
-  ok: boolean;
-  result?: ToncenterTx[];
+  transactions?: ToncenterTx[];
+}
+
+interface ToncenterAccountStatesResponse {
+  accounts?: Array<{ balance?: string; status?: string }>;
 }
 
 /**
@@ -74,6 +76,20 @@ export function isTonAddress(address: string): boolean {
   if (/^[EUk0]Q[A-Za-z0-9_-]{46}$/.test(address)) return true;
   if (/^-?[0-9]:[a-fA-F0-9]{64}$/.test(address)) return true;
   return false;
+}
+
+/**
+ * The account an address names, as `<workchain>:<hex>` lowercase. v3 reports
+ * every address raw, while a user saves the bounceable (`EQ…`) or
+ * non-bounceable (`UQ…`) form of the same account, so addresses are compared
+ * on this and never as strings.
+ */
+function accountOf(address: string): string {
+  const raw = /^(-?[0-9]):([a-fA-F0-9]{64})$/.exec(address);
+  if (raw) return `${raw[1]}:${raw[2]?.toLowerCase()}`;
+  const bytes = Buffer.from(address, 'base64url');
+  const workchain = bytes.readInt8(1);
+  return `${workchain}:${bytes.subarray(2, 34).toString('hex')}`;
 }
 
 export class TonProvider
@@ -113,9 +129,9 @@ export class TonProvider
   }
 
   /**
-   * Activity probe — Toncenter `/getAddressInformation` returns the
-   * account state. A fresh address that's never received TON has
-   * `state="uninit"`; activity is anything else.
+   * Activity probe — `/accountStates` returns the account's status. An
+   * address that never received TON is `nonexist`, one funded but never
+   * deployed is `uninit`; activity is anything else.
    */
   async hasActivity(
     address: string,
@@ -123,18 +139,22 @@ export class TonProvider
     _ctx: ProviderContext
   ): Promise<boolean> {
     if (!this.isValidAddress(address)) return false;
-    const url = `${this.apiUrl}/getAddressInformation?address=${encodeURIComponent(address)}`;
+    const { status } = await this.accountState(address);
+    if (status === undefined) throw new Error('toncenter: accountStates returned no status');
+    return status !== 'nonexist' && status !== 'uninit';
+  }
+
+  private async accountState(address: string): Promise<{ balance?: string; status?: string }> {
+    const params = new URLSearchParams({ address, include_boc: 'false' });
+    const url = `${this.apiUrl}/accountStates?${params.toString()}`;
     const response = await this.limiter.execute(async () =>
       fetchWithTimeout(url, this.requestInit())
     );
-    if (!response.ok) {
-      throw new Error(`toncenter: HTTP ${response.status} for getAddressInformation`);
-    }
-    const data = (await response.json()) as { ok?: boolean; result?: { state?: string } };
-    if (!data.ok || !data.result) {
-      throw new Error('toncenter: getAddressInformation returned no result');
-    }
-    return data.result.state !== undefined && data.result.state !== 'uninit';
+    if (!response.ok) throw new Error(`toncenter: HTTP ${response.status} for accountStates`);
+    const data = (await response.json()) as ToncenterAccountStatesResponse;
+    if (!data.accounts) throw new Error('toncenter: accountStates returned no list');
+    // v3 lists no row at all for an address the chain has never seen.
+    return data.accounts[0] ?? { balance: '0', status: 'nonexist' };
   }
 
   async fetchBalances(
@@ -145,15 +165,11 @@ export class TonProvider
       (creds.walletAddress as string | undefined) ?? (creds.address as string | undefined);
     if (!address || !this.isValidAddress(address)) return [];
 
-    const url = `${this.apiUrl}/getAddressBalance?address=${encodeURIComponent(address)}`;
-    const response = await this.limiter.execute(async () =>
-      fetchWithTimeout(url, this.requestInit())
-    );
-    if (!response.ok) throw new Error(`Toncenter: HTTP ${response.status}`);
-    const data = (await response.json()) as { ok: boolean; result: string };
-    if (!data.ok) throw new Error('Toncenter returned ok=false');
+    const state = await this.accountState(address);
+    if (state.balance === undefined)
+      throw new Error('toncenter: accountStates returned no balance');
 
-    const ton = new Decimal(data.result).div(NANOTONS_PER_TON);
+    const ton = new Decimal(state.balance).div(NANOTONS_PER_TON);
     if (ton.isZero()) return [];
 
     return [
@@ -187,18 +203,16 @@ export class TonProvider
     const events: TransactionEvent[] = [];
     const capped = new PageCapWatch();
     let pages = 0;
-    let cursor: { lt: string; hash: string } | null = null;
+    const wallet = accountOf(address);
+    let endLt: bigint | null = null;
     while (true) {
       const params = new URLSearchParams({
-        address,
+        account: address,
         limit: String(TX_PAGE_LIMIT),
-        to_lt: '0',
+        sort: 'desc',
       });
-      if (cursor) {
-        params.set('lt', cursor.lt);
-        params.set('hash', cursor.hash);
-      }
-      const url = `${this.apiUrl}/getTransactions?${params.toString()}`;
+      if (endLt !== null) params.set('end_lt', endLt.toString());
+      const url = `${this.apiUrl}/transactions?${params.toString()}`;
       const response = await this.limiter.execute(async () =>
         fetchWithTimeout(url, this.requestInit())
       );
@@ -206,10 +220,10 @@ export class TonProvider
         throw new Error(`Toncenter: HTTP ${response.status} for ${address}`);
       }
       const data = (await response.json()) as ToncenterTransactionsResponse;
-      if (!data.ok) throw new Error('Toncenter returned ok=false');
-      const txs = data.result ?? [];
+      if (!data.transactions) throw new Error('toncenter: transactions returned no list');
+      const txs = data.transactions;
       for (const tx of txs) {
-        for (const event of this.toTransactionEvents(tx, address)) {
+        for (const event of this.toTransactionEvents(tx, wallet)) {
           events.push(event);
         }
       }
@@ -222,9 +236,9 @@ export class TonProvider
       }
       const last = txs[txs.length - 1];
       if (!last) break;
-      // Toncenter cursor: pass the last row's lt + hash back. The next
-      // page returns rows strictly older than that point.
-      cursor = { lt: last.transaction_id.lt, hash: last.transaction_id.hash };
+      // An account's transactions have distinct lt, so the next page is
+      // everything strictly older than the last row.
+      endLt = BigInt(last.lt) - 1n;
     }
 
     capped.retract(ctx, this.providerKey);
@@ -237,15 +251,20 @@ export class TonProvider
 
   private toTransactionEvents(tx: ToncenterTx, wallet: string): TransactionEvent[] {
     const events: TransactionEvent[] = [];
-    const occurredAt = new Date(tx.utime * 1000);
-    const { lt, hash } = tx.transaction_id;
+    const occurredAt = new Date(tx.now * 1000);
+    const { lt, hash } = tx;
 
     // Position-based legIndex keeps externalId stable regardless of
     // which legs we end up emitting after the 0-value filter:
     //   leg 0 → in_msg
     //   leg 1+i → out_msgs[i]
     const inMsg = tx.in_msg;
-    if (inMsg && inMsg.destination === wallet && this.isNonZero(inMsg.value)) {
+    if (
+      inMsg?.destination &&
+      accountOf(inMsg.destination) === wallet &&
+      inMsg.value &&
+      this.isNonZero(inMsg.value)
+    ) {
       const qty = new Decimal(inMsg.value).div(NANOTONS_PER_TON);
       events.push({
         externalId: `${lt}-${hash}-0`,
@@ -258,7 +277,7 @@ export class TonProvider
     const outMsgs = tx.out_msgs ?? [];
     for (let i = 0; i < outMsgs.length; i++) {
       const out = outMsgs[i];
-      if (!out || !this.isNonZero(out.value)) continue;
+      if (!out?.value || !this.isNonZero(out.value)) continue;
       const qty = new Decimal(out.value).div(NANOTONS_PER_TON).neg();
       events.push({
         externalId: `${lt}-${hash}-${i + 1}`,
@@ -271,8 +290,8 @@ export class TonProvider
     return events;
   }
 
-  private isNonZero(value: string | undefined): boolean {
-    if (value === undefined || value === '' || value === '0') return false;
+  private isNonZero(value: string): boolean {
+    if (value === '' || value === '0') return false;
     return !new Decimal(value).isZero();
   }
 
@@ -300,7 +319,7 @@ export const tonFactory: ProviderFactory = async (deps) => {
   });
   return new TonProvider(
     registered,
-    deps.env.TON_API_URL ?? 'https://toncenter.com/api/v2',
+    deps.env.TON_API_URL ?? 'https://toncenter.com/api/v3',
     apiKey
   );
 };

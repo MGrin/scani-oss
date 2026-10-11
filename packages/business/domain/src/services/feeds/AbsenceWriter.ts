@@ -7,7 +7,6 @@ import { HoldingBalanceObservationRepository } from '../../repositories/HoldingB
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { classifyHoldingEvidence } from '../foundation/legacy-classification';
 import { PROVIDER_SYNC_ORIGIN, SYNC_CAPTURE_SOURCE } from '../foundation/legacy-ledger-kinds';
-import { MANUAL_HOLDING_SOURCE } from '../holdings/balance-sync-sources';
 import { confirmAbsences } from './blocks/absence-confirmer';
 import type { AssetRef, FeedBatch } from './feed-batch';
 import { HoldingCacheWriter } from './HoldingCacheWriter';
@@ -41,9 +40,10 @@ function exitObservedAt(confirmedAt: Date, now: Date): Date {
 
 /**
  * Writes what a batch's absences decide, inside the batch's transaction (A2
- * Task 14). A zero is today's (R60): the cache at '0' and one observation with
- * the sync's source and origin, labelled as A1 labels that row, at now for a
- * silence and at its own instant for a measured exit. Each holding's writes
+ * Task 14). A zero is the cache brought to '0' and one observation with the
+ * sync's source and origin, labelled as A1 labels that row, at the answer's
+ * `statementAsOf` for a silence (A5 D-22, R60) and at its own instant for a
+ * measured exit. Each holding's writes
  * have their own savepoint, so one that fails is logged as the sync logs it and
  * costs only itself (R61).
  *
@@ -129,7 +129,7 @@ export class AbsenceWriter {
       userId,
       accountId,
       confirmed
-        ? { exceptSource: MANUAL_HOLDING_SOURCE, scamFree: true }
+        ? { kind: 'feed', scamFree: true }
         : { source: batch.legacy.holdingSource, scamFree: false },
       tx
     );
@@ -179,7 +179,9 @@ export class AbsenceWriter {
       } else if (dates !== undefined) {
         await this.attempt(id, (sp) => this.holdings.setAbsentFromStatements(id, dates, sp), tx);
       } else {
-        const at = new Date();
+        // An unreadable date, or one not before the fetch, is the fetch's, as a
+        // checkpoint's is (SC-1427): a zero dated ahead would not count until then.
+        const at = policy.statementAsOf < batch.fetchedAt ? policy.statementAsOf : batch.fetchedAt;
         if (await this.zero(write, id, at, cleared.has(id), tx)) zeroed.push({ holdingId: id, at });
       }
     }
@@ -198,7 +200,7 @@ export class AbsenceWriter {
       holdingId,
       async (sp) => {
         if (clearTally) await this.holdings.setAbsentFromStatements(holdingId, null, sp);
-        await this.cacheWriter.apply(userId, [{ holdingId, balance: '0' }], sp);
+        // The zero is evidence first, then the cache the engine reads from it (A5 D-15).
         await this.observations.append(
           {
             userId,
@@ -214,6 +216,7 @@ export class AbsenceWriter {
           },
           sp
         );
+        await this.cacheWriter.apply(userId, [{ holdingId, balance: '0' }], sp);
       },
       tx
     );

@@ -50,6 +50,31 @@ export class PriceReader {
   }
 
   /**
+   * Each token's earliest stored reading, in any base: nothing is priced before
+   * it, so a drift opening waits for it (SC-1638). A token with no reading is
+   * absent.
+   */
+  async firstReadingAt(
+    tokenIds: readonly string[],
+    tx?: DatabaseTransaction
+  ): Promise<Map<string, Date>> {
+    return this.evidence.findFirstPriceInstants(tokenIds, tx);
+  }
+
+  /**
+   * One pair's stored rows as typed, not a price: a valued asset's history in
+   * its own currency (SC-1643). Nothing is routed or converted.
+   */
+  async pairHistory(
+    tokenId: string,
+    baseTokenId: string,
+    range?: { from: Date; until: Date },
+    tx?: DatabaseTransaction
+  ): Promise<{ price: string; timestamp: Date }[]> {
+    return this.evidence.findPairReadings(tokenId, baseTokenId, range, tx);
+  }
+
+  /**
    * A fixed number of statements whatever is asked: once the hubs are known,
    * one for the quote currencies, one for the token types, one for the readings.
    */

@@ -24,11 +24,62 @@ const EQUITY_ONLY_PROVIDER_KEYS = new Set(['yahoo-finance', 'finnhub']);
 // only cover exchange-listed crypto pairs.
 const CRYPTO_ONLY_PROVIDER_KEYS = new Set(['defillama', 'coingecko', 'kraken', 'binance']);
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+const dayOf = (at: Date) => at.toISOString().slice(0, 10);
+
+const utcDayStart = (at: Date) => Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate());
+
+/** Where a quote is stored, and the UTC day it is for (D-8). */
+interface Placement {
+  quote: PriceQuote;
+  day: string;
+  at: Date;
+  granularity: 'daily' | 'intraday';
+}
+
+/**
+ * A close of a past day lands on that day's last millisecond. Today has no
+ * close, so its bar is a price at the fetch instant; a price at an instant
+ * keeps its own. A cloud that predates `barDay` is stored as it always was.
+ */
+export function placementOf(quote: PriceQuote, now: Date): Placement {
+  const today = dayOf(now);
+  if (quote.legacyDaily) {
+    return { quote, day: dayOf(quote.timestamp), at: quote.timestamp, granularity: 'daily' };
+  }
+  if (quote.barDay === null) {
+    return { quote, day: dayOf(quote.timestamp), at: quote.timestamp, granularity: 'intraday' };
+  }
+  if (quote.barDay < today) {
+    return {
+      quote,
+      day: quote.barDay,
+      at: new Date(`${quote.barDay}T23:59:59.999Z`),
+      granularity: 'daily',
+    };
+  }
+  return { quote, day: today, at: now, granularity: 'intraday' };
+}
+
+/** One placement per stored key: the quote the provider stamped last. */
+function latestPerKey(placements: readonly Placement[]): Placement[] {
+  const byKey = new Map<string, Placement>();
+  for (const placement of placements) {
+    const key = `${placement.at.getTime()}|${placement.granularity}`;
+    const kept = byKey.get(key);
+    if (!kept || placement.quote.timestamp.getTime() > kept.quote.timestamp.getTime()) {
+      byKey.set(key, placement);
+    }
+  }
+  return [...byKey.values()];
+}
+
 @Service()
 export class HistoricalPriceBackfillService {
   private readonly logger = createComponentLogger('service:HistoricalPriceBackfillService');
 
-  // Class-field DI — see note in BalanceAtTimeService.ts.
+  // Class-field DI — see `.claude/rules/typedi-di.md`.
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
   private readonly priceWriter = Container.get(PriceWriter);
@@ -45,9 +96,10 @@ export class HistoricalPriceBackfillService {
    *
    * Caller passes the SET of `neededDays` (already deduped against
    * `token_prices`) — the method asks the provider for the spanning
-   * range, then fills only UTC days with no stored row. Quotes outside the
-   * requested days can fill empty days too: DeFiLlama can stamp a point on
-   * the day before the midnight asked for.
+   * range, then fills only UTC days that are not covered
+   * (`TokenPriceRepository.findPricedDayKeys`). Each quote is stored for the
+   * day its bar closes (`placementOf`), which can lie outside the requested
+   * days, and fills that day when it is not covered.
    *
    * Returns counts so the use-case can aggregate into BackfillSummary.
    */
@@ -89,13 +141,19 @@ export class HistoricalPriceBackfillService {
       return { ...empty, providerMissing: neededDays.length };
     }
 
-    // Span derived from the needed-days set; the provider will return
-    // every business day in [from, to], which usually covers more than
-    // neededDays — extra coverage is a bonus.
+    // One clock read: the request's end, what "today" is, and the stamp of
+    // today's bar are the same instant.
+    const now = new Date();
     const sorted = [...neededDays].sort((a, b) => a.getTime() - b.getTime());
-    const from = sorted[0];
-    const to = sorted[sorted.length - 1];
-    if (!from || !to) return empty;
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    if (!first || !last) return empty;
+    // From the day before the first needed day, because a bar can be stamped
+    // late on the day before the one it closes (Yahoo's =X in summer, at 23:00
+    // UTC); to the midnight that ends the last needed day, where a provider
+    // stamps that day's close, and never past now.
+    const from = new Date(utcDayStart(first) - DAY_MS);
+    const to = new Date(Math.min(utcDayStart(last) + DAY_MS, now.getTime()));
 
     const ctx: ProviderContext = { baseCurrency: baseToken, timestamp: to };
     const registry = Container.get(ProviderRegistry);
@@ -124,33 +182,43 @@ export class HistoricalPriceBackfillService {
       const quotes = attempt.quotes;
       if (quotes.length === 0) continue;
 
-      const dayOf = (at: Date) => at.toISOString().slice(0, 10);
-      const earliest = Math.min(from.getTime(), ...quotes.map((q) => q.timestamp.getTime()));
+      const placements = quotes.map((q) => placementOf(q, now));
+      const earliest = Math.min(
+        from.getTime(),
+        ...placements.map((p) => Date.parse(`${p.day}T00:00:00.000Z`))
+      );
       const existingDays = await this.tokenPriceRepository.findPricedDayKeys({
         baseTokenId,
         tokenIds: [tokenId],
-        since: new Date(`${dayOf(new Date(earliest))}T00:00:00.000Z`),
+        since: new Date(earliest),
+        now,
       });
-      const missingQuotes = quotes.filter(
-        (q) => !existingDays.has(`${tokenId}:${dayOf(q.timestamp)}`)
-      );
+      const uncovered = placements.filter((p) => !existingDays.has(`${tokenId}:${p.day}`));
+      const storable = uncovered.filter((p) => isStorablePrice(p.quote.price));
+      // Only a storable quote may win its key: a later one the writer would
+      // drop must not displace an earlier close. The rest still reach the
+      // writer so `droppedBars` counts them.
+      const missing = [
+        ...latestPerKey(storable),
+        ...uncovered.filter((p) => !isStorablePrice(p.quote.price)),
+      ];
       const written = await this.priceWriter.writeHistory(
-        missingQuotes.map((q) => ({
+        missing.map((p) => ({
           tokenId,
           baseTokenId,
-          price: q.price,
-          at: q.timestamp,
-          granularity: 'daily',
-          source: q.source,
+          price: p.quote.price,
+          at: p.at,
+          granularity: p.granularity,
+          source: p.quote.source,
         }))
       );
 
-      // Days from neededDays that the provider covered, and of
-      // those the ones it covered with a bar the writer stored.
-      const coveredDayKeys = new Set(missingQuotes.map((q) => dayOf(q.timestamp)));
-      const storedDayKeys = new Set(
-        missingQuotes.filter((q) => isStorablePrice(q.price)).map((q) => dayOf(q.timestamp))
-      );
+      // Days the provider answered that were not covered; of those, the ones
+      // a storable bar was sent for; of those, the ones the table took. A day
+      // whose bar the table refused holds another source's close.
+      const answeredDays = new Set(missing.map((p) => p.day));
+      const sentDays = new Set(storable.map((p) => p.day));
+      const acceptedDays = new Set(written.accepted.map((key) => dayOf(key.at)));
       let inserted = 0;
       let alreadyHad = 0;
       let providerMissing = 0;
@@ -158,8 +226,9 @@ export class HistoricalPriceBackfillService {
       for (const day of neededDays) {
         const key = dayOf(day);
         if (existingDays.has(`${tokenId}:${key}`)) alreadyHad++;
-        else if (storedDayKeys.has(key)) inserted++;
-        else if (coveredDayKeys.has(key)) droppedDays++;
+        else if (acceptedDays.has(key)) inserted++;
+        else if (sentDays.has(key)) alreadyHad++;
+        else if (answeredDays.has(key)) droppedDays++;
         else providerMissing++;
       }
       return {

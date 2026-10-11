@@ -11,7 +11,7 @@ import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
 import type { PeekFact, PeekSection, PeekSpec } from '@scani/ui/v3/lib/peek';
 import type { TFunction } from 'i18next';
-import { ArrowLeftRight, RefreshCw, Wallet } from 'lucide-react';
+import { ArrowLeftRight, Banknote, PencilLine, RefreshCw, Wallet } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { tokenDisplayName } from '@/lib/utils';
 import {
@@ -20,6 +20,7 @@ import {
   describeSource,
   hasCustomPrice,
   holdingGainLoss,
+  holdingOwes,
   holdingPrice,
   isBaseCurrencyHolding,
   payoutScheduleLabel,
@@ -29,6 +30,8 @@ import { priceSourceLabel } from '../../lib/price-source';
 import { formatRelative } from '../../lib/relative-time';
 import { groupDetailPath } from '../../lib/routes';
 import { tokenTypeLabel } from '../../lib/tokens';
+import { isValuedAssetType } from '../../lib/valued-assets';
+import { ValuedAssetDetails } from '../assets/ValuedAssetDetails';
 import { InstitutionMark } from '../entities/InstitutionMark';
 import { EditAction } from '../form/FormSheet';
 import { HoldingActivity } from './HoldingActivity';
@@ -81,6 +84,13 @@ export interface HoldingPeekContext {
    * is the case that used to be the long way round.
    */
   onRecordMovement: (holding: HoldingWithDetails) => void;
+  /**
+   * A hand-valued holding is edited in money, not units (SC-1596): a new value
+   * is growth, money in or out is a flow. These replace the unit-denominated
+   * Edit and movement on it.
+   */
+  onUpdateValue: (holding: HoldingWithDetails) => void;
+  onMoveMoney: (holding: HoldingWithDetails) => void;
   onToggleActive: (holding: HoldingWithDetails) => void;
   /** True while an activate/deactivate write is in flight. */
   isTogglingActive?: boolean;
@@ -211,6 +221,12 @@ function apySection(holding: HoldingWithDetails, ctx: HoldingPeekContext): PeekS
 export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekContext): PeekSpec {
   const { t } = ctx;
   const gainLoss = holdingGainLoss(holding, ctx.currency);
+  // Its units are bookkeeping that keeps money moved apart from growth; the
+  // owner reads a figure in money off a statement and never a unit count.
+  const handValued = hasCustomPrice(holding);
+  // A property or vehicle is valued in its own currency through its own
+  // history (SC-1643), so the money actions of a hand-valued fund do not apply.
+  const valuedAsset = isValuedAssetType(holding.token.typeCode);
   const priceBusy = ctx.refreshingPriceId === holding.id;
   const balanceBusy = ctx.refreshingBalanceId === holding.id;
 
@@ -333,7 +349,7 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
       title: t('v3.holdings.peek.performance'),
       facts: [
         {
-          label: t('v3.holdings.peek.costBasis'),
+          label: handValued ? t('v3.holdings.peek.moneyPutIn') : t('v3.holdings.peek.costBasis'),
           value: <Numeric value={holding.costBasis} currency={ctx.currency} />,
         },
         {
@@ -440,11 +456,26 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     // `tests/v3/token-hygiene.test.ts` for the guard that pins the floor.
     actions: (
       <>
-        <EditAction onClick={() => ctx.onEdit(holding)} />
-        <Button onClick={() => ctx.onRecordMovement(holding)}>
-          <ArrowLeftRight className="me-2 size-4" aria-hidden="true" />
-          {t('v3.holdings.movement.peekAction')}
-        </Button>
+        {valuedAsset ? null : handValued ? (
+          <>
+            <Button onClick={() => ctx.onUpdateValue(holding)}>
+              <PencilLine className="me-2 size-4" aria-hidden="true" />
+              {t('v3.holdings.handValued.updateValue.action')}
+            </Button>
+            <Button variant="outline" onClick={() => ctx.onMoveMoney(holding)}>
+              <Banknote className="me-2 size-4" aria-hidden="true" />
+              {t('v3.holdings.handValued.money.action')}
+            </Button>
+          </>
+        ) : (
+          <>
+            <EditAction onClick={() => ctx.onEdit(holding)} />
+            <Button onClick={() => ctx.onRecordMovement(holding)}>
+              <ArrowLeftRight className="me-2 size-4" aria-hidden="true" />
+              {t('v3.holdings.movement.peekAction')}
+            </Button>
+          </>
+        )}
         {/* The base currency is 1 against itself, so there is nothing to refresh (SC-1447). */}
         {isBaseCurrencyHolding(holding, ctx.currency) ? null : (
           <Button
@@ -486,27 +517,32 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
       </>
     ),
     primary: [
-      {
-        label: t('v3.holdings.peek.amount'),
-        value: (
-          <HoldingAmountFact
-            amount={holding.amount}
-            symbol={holding.token.symbol}
-            lookalikeOf={holding.token.lookalikeOf}
-          />
-        ),
-      },
-      {
-        label: t('v3.holdings.peek.price'),
-        value: (
-          <PriceFact
-            holding={holding}
-            currency={ctx.currency}
-            onEditPrice={ctx.onEditPrice}
-            t={t}
-          />
-        ),
-      },
+      ...(handValued
+        ? []
+        : [
+            {
+              label: t('v3.holdings.peek.amount'),
+              value: (
+                <HoldingAmountFact
+                  amount={holding.amount}
+                  symbol={holding.token.symbol}
+                  lookalikeOf={holding.token.lookalikeOf}
+                  owes={holdingOwes(holding)}
+                />
+              ),
+            },
+            {
+              label: t('v3.holdings.peek.price'),
+              value: (
+                <PriceFact
+                  holding={holding}
+                  currency={ctx.currency}
+                  onEditPrice={ctx.onEditPrice}
+                  t={t}
+                />
+              ),
+            },
+          ]),
       { label: t('v3.holdings.peek.account'), value: holding.account.name },
       // Only where there is something to tell apart: a row that carries a name
       // already, or one sharing its (account, token) with a sibling. On every
@@ -542,7 +578,9 @@ export function holdingPeekSpec(holding: HoldingWithDetails, ctx: HoldingPeekCon
     // each with its own lots under it is not a run of label/value pairs — the
     // same reason the transfer-review chooser is here (SC-150). Both render
     // themselves away when there is nothing to list.
-    content: (
+    content: valuedAsset ? (
+      <ValuedAssetDetails holdingId={holding.id} />
+    ) : handValued ? undefined : (
       <>
         <HoldingActivity
           holdingId={holding.id}

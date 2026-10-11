@@ -7,6 +7,7 @@ import {
   RecordNotAccessibleError,
 } from '@scani/domain/services';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
+import { ReconcilePaymentsUseCase } from '@scani/domain/use-cases';
 import type { TransactionImportJob } from '@scani/jobs';
 import { ProviderError } from '@scani/providers/core/errors';
 import {
@@ -189,6 +190,9 @@ describe('the rebuild after an import reaches the oldest row it wrote', () => {
     Container.set(PortfolioValueCache, {
       bust: async () => undefined,
     } as unknown as PortfolioValueCache);
+    Container.set(ReconcilePaymentsUseCase, {
+      execute: async () => ({ scanned: 0, matched: 0 }),
+    } as unknown as ReconcilePaymentsUseCase);
     return { processor: new TestableProcessor(), added };
   }
 
@@ -206,5 +210,70 @@ describe('the rebuild after an import reaches the oldest row it wrote', () => {
     await processor.run(JOB, makeCtx());
     expect(added[0]?.lookbackDays).toBeLessThan(30);
     expect(added[0]?.requestId).toMatch(/^tx-import-\d+$/);
+  });
+});
+
+/**
+ * SC-1665 Part 4. An expected income that arrives marks its bill paid. The
+ * matcher existed and nothing called it, so every bill was settled by hand.
+ */
+describe("an import that wrote rows reconciles the user's bills", () => {
+  function processorImporting(transactions: number, reconcile: () => Promise<unknown>) {
+    const reconciled: string[] = [];
+    Container.set(TransactionImportCoordinator, {
+      execute: async () => ({
+        transactions,
+        earliestWrittenAt: new Date().toISOString(),
+        warnings: [],
+        warningDetails: [],
+      }),
+    } as unknown as TransactionImportCoordinator);
+    Container.set(PortfolioValueDailyRepository, {
+      findLatestSnapshotDate: async () =>
+        new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
+    } as unknown as PortfolioValueDailyRepository);
+    Container.set(HoldingRepository, {
+      hasHoldingCreatedAfter: async () => false,
+    } as unknown as HoldingRepository);
+    Container.set(BullMqEnqueueService, {
+      add: async () => undefined,
+    } as unknown as BullMqEnqueueService);
+    Container.set(PortfolioValueCache, {
+      bust: async () => undefined,
+    } as unknown as PortfolioValueCache);
+    Container.set(ReconcilePaymentsUseCase, {
+      execute: async (userId: string) => {
+        reconciled.push(userId);
+        return reconcile();
+      },
+    } as unknown as ReconcilePaymentsUseCase);
+    return { processor: new TestableProcessor(), reconciled };
+  }
+
+  test('rows written: the bills of that user are matched', async () => {
+    const { processor, reconciled } = processorImporting(5, async () => ({
+      scanned: 1,
+      matched: 1,
+    }));
+    await processor.run(JOB, makeCtx());
+    expect(reconciled).toEqual(['user-1']);
+  });
+
+  test('control: an import that wrote nothing matches nothing', async () => {
+    const { processor, reconciled } = processorImporting(0, async () => ({
+      scanned: 0,
+      matched: 0,
+    }));
+    await processor.run(JOB, makeCtx());
+    expect(reconciled).toEqual([]);
+  });
+
+  test('a failed match does not fail the import, whose rows are already written', async () => {
+    const { processor, reconciled } = processorImporting(2, async () => {
+      throw new Error('vendor lookup timed out');
+    });
+    const result = (await processor.run(JOB, makeCtx())) as { transactions: number };
+    expect(result.transactions).toBe(2);
+    expect(reconciled).toEqual(['user-1']);
   });
 });

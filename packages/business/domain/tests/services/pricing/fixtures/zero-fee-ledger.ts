@@ -178,7 +178,7 @@ const LEDGER: ReadonlyArray<[string, LedgerRow]> = [
       transferGroupId: 'g1',
     },
   ],
-  // Priced in EUR: the execution rate converts to base through the graph.
+  // Priced in EUR: the execution rate converts to base through the series.
   [
     'b02',
     {
@@ -345,12 +345,10 @@ export async function walkEverything(
 }
 
 /** The price-graph stub: a fixed spot rate per token, never stale. */
-export const priceGraphStub = {
-  convert: async (amount: Decimal | string, from: string, to: string) => {
-    const amt = new Decimal(amount);
-    if (from === to) return { amount: amt, stale: false };
-    if (to !== USD) return null;
-    const rate = RATES_TO_USD[from];
-    return rate === undefined ? null : { amount: amt.mul(rate), stale: false };
-  },
-};
+export function convertAtFixedRates(amount: Decimal | string, from: string, to: string) {
+  const amt = new Decimal(amount);
+  if (from === to) return { amount: amt, stale: false };
+  if (to !== USD) return null;
+  const rate = RATES_TO_USD[from];
+  return rate === undefined ? null : { amount: amt.mul(rate), stale: false };
+}

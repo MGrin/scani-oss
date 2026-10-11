@@ -88,7 +88,13 @@ const DATA = {
       externalId: null,
       counterparty: null,
       description: null,
+      category: 'Bills › Rent',
+      categorySetBy: 'rule',
     },
+  ],
+  categories: [
+    { name: 'Bills', parent: null, color: null },
+    { name: 'Rent', parent: 'Bills', color: '#aa5500' },
   ],
   vendors: [],
   payments: [],
@@ -131,6 +137,7 @@ describe('accountExportSheets', () => {
       'Archived ownership',
       'Holdings',
       'Transactions',
+      'Categories',
       'Payees',
       'Payments',
       'Payment occurrences',
@@ -209,6 +216,42 @@ describe('accountExportSheets', () => {
     const { sheets } = accountExportSheets(DATA, AT, t, { hideAmounts: true });
     expect(sheets.find((s) => s.name === 'Holdings')?.headers).toContain('Symbol');
     expect(sheets.find((s) => s.name === 'Accounts')?.headers).toContain('Institution');
+  });
+});
+
+describe('categories in the export (SC-1652)', () => {
+  it("names each row's category and lists the categories on their own sheet", () => {
+    const { sheets } = accountExportSheets(DATA, AT, t);
+    const transactions = sheets.find((s) => s.name === 'Transactions');
+    const at = transactions?.headers.indexOf('Category') ?? -1;
+    expect(at).toBeGreaterThanOrEqual(0);
+    expect(transactions?.rows[0]?.[at]).toEqual({ kind: 'text', value: 'Bills › Rent' });
+    const categories = sheets.find((s) => s.name === 'Categories');
+    expect(categories?.headers).toEqual(['Category', 'Parent', 'Colour']);
+    const text = (value: string) => ({ kind: 'text' as const, value });
+    const blank = { kind: 'blank' as const };
+    expect(categories?.rows).toEqual([
+      [text('Bills'), blank, blank],
+      [text('Rent'), text('Bills'), text('#aa5500')],
+    ]);
+  });
+});
+
+describe('who set a category (SC-1695)', () => {
+  it('says who set the category, in the column beside it', () => {
+    const { sheets } = accountExportSheets(DATA, AT, t);
+    const transactions = sheets.find((s) => s.name === 'Transactions');
+    const at = transactions?.headers.indexOf('Category set by') ?? -1;
+    expect(at).toBe((transactions?.headers.indexOf('Category') ?? -2) + 1);
+    expect(transactions?.rows[0]?.[at]).toEqual({ kind: 'text', value: 'Rule' });
+  });
+
+  it("leaves it blank for a person's clear, which has no category to explain", () => {
+    const row = { ...DATA.transactions[0]!, category: null, categorySetBy: 'cleared' as const };
+    const { sheets } = accountExportSheets({ ...DATA, transactions: [row] }, AT, t);
+    const transactions = sheets.find((s) => s.name === 'Transactions');
+    const at = transactions?.headers.indexOf('Category set by') ?? -1;
+    expect(transactions?.rows[0]?.[at]).toEqual({ kind: 'blank' });
   });
 });
 

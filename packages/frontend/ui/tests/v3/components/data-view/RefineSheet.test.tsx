@@ -198,3 +198,58 @@ describe('RefineFooter — the button is a dismiss, and says so', () => {
     expect(html).toInclude('safe-area-inset-bottom');
   });
 });
+
+/**
+ * A ledger needs a range no preset covers — a tax year (SC-1652). The custom
+ * choice lives in the same Refine row as the presets, and the host draws its
+ * own date fields, so no second filter mechanism appears beside the sheet.
+ */
+describe('RefineSections — a custom value beside the presets', () => {
+  addUiLocale('en', {
+    ui: { dataView: { test: { period: 'Period', customRange: 'Custom range' } } },
+  });
+  const CUSTOM_DEFS = [
+    {
+      key: 'period',
+      labelKey: 'ui.dataView.test.period',
+      options: [{ value: '30', label: 'Last 30 days' }],
+      fn: () => true,
+      custom: {
+        labelKey: 'ui.dataView.test.customRange',
+        matches: (value: string) => value.includes('..'),
+        format: (value: string) => value.replace('..', ' – '),
+        render: (value: string) => <span data-testid="range-editor">{value}</span>,
+      },
+    },
+  ] as unknown as V3FilterDef[];
+
+  function customSections(filters: Record<string, string>): string {
+    return render(
+      <RefineSections
+        filters={filters}
+        filterDefs={CUSTOM_DEFS}
+        onSetFilter={() => {}}
+        sortField=""
+        sortDirection="desc"
+        sortDefs={[]}
+        onSetSort={() => {}}
+        groupBy=""
+        groupByDefs={[]}
+        onSetGroupBy={() => {}}
+      />
+    );
+  }
+
+  test('a custom range is offered as one more choice in the same row', () => {
+    const html = customSections({ period: '30' });
+    expect(html).toInclude('Last 30 days');
+    expect(html).toInclude('Custom range');
+    expect(html).not.toInclude('range-editor');
+  });
+
+  test('an active custom range shows its editor and names itself in the row', () => {
+    const html = customSections({ period: '2025-04-06..2026-04-05' });
+    expect(html).toInclude('data-testid="range-editor"');
+    expect(html).toInclude('2025-04-06 – 2026-04-05');
+  });
+});

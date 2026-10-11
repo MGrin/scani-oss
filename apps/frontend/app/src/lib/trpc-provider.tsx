@@ -4,6 +4,7 @@ import { httpBatchLink, splitLink, TRPCClientError } from '@trpc/client';
 import i18n from 'i18next';
 import { useEffect, useState } from 'react';
 import { authClient } from './auth-client';
+import { QUERY_DEFAULTS } from './query-defaults';
 import { trpc } from './trpc';
 import { getTrpcAuthHeaders } from './trpc-auth-headers';
 import { trpcBatchLane } from './trpc-batch-lane';
@@ -37,30 +38,7 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
           },
         }),
         defaultOptions: {
-          queries: {
-            staleTime: 30 * 1000, // Consider data fresh for 30 seconds
-            cacheTime: 5 * 60 * 1000, // Keep in cache for 5 minutes
-            // Refetch on mount when the cached data is stale. Combined with
-            // `staleTime: 30s`, this means: within 30s of last fetch the cache
-            // is served instantly, after 30s (or after an `invalidate()` call
-            // which marks stale immediately) the data is refetched on next
-            // mount. Previously this was `false`, which caused a subtle bug:
-            // post-mutation `.invalidate()` calls that then navigated to a
-            // list page served stale cached data on arrival, because the
-            // invalidated query had no active observers at invalidation time
-            // and `refetchOnMount: false` skipped the refetch on mount.
-            refetchOnMount: true,
-            refetchOnWindowFocus: false, // Don't refetch on window focus
-            refetchOnReconnect: true, // Refetch on reconnect only
-            networkMode: 'online',
-            retry: (failureCount, error) => {
-              // Don't retry on 401 errors
-              if (error instanceof TRPCClientError && error.data?.code === 'UNAUTHORIZED') {
-                return false;
-              }
-              return failureCount < 3;
-            },
-          },
+          queries: QUERY_DEFAULTS,
           mutations: {
             networkMode: 'online',
             // A lost response may follow a committed write. Retrying requires an idempotency key.
@@ -126,7 +104,15 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
           false: splitLink({
             condition: (op) => trpcBatchLane(op.path) === 'returns',
             true: makeBatchLink(),
-            false: makeBatchLink(),
+            false: splitLink({
+              condition: (op) => trpcBatchLane(op.path) === 'income',
+              true: makeBatchLink(),
+              false: splitLink({
+                condition: (op) => trpcBatchLane(op.path) === 'review',
+                true: makeBatchLink(),
+                false: makeBatchLink(),
+              }),
+            }),
           }),
         }),
       ],

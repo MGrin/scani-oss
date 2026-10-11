@@ -24,6 +24,7 @@ src/
 │   ├── screenshot-parse.ts
 │   ├── file-import.ts
 │   ├── holding-price-update.ts
+│   ├── user-backup.ts
 │   ├── user-data-delete.ts
 │   ├── transaction-import.ts
 │   └── index.ts
@@ -50,8 +51,8 @@ src/
 | Export | Kind | Purpose |
 |---|---|---|
 | `JOB_NAMES` | const | Single source of truth for job-name strings |
-| `WALLET_IMPORT`, `EXCHANGE_IMPORT`, `SCREENSHOT_PARSE`, `FILE_IMPORT`, `HOLDING_PRICE_UPDATE`, `USER_DATA_DELETE`, `TRANSACTION_IMPORT` | `UserJobDescriptor` consts | One per user-initiated job |
-| `WalletImportJob`, `ExchangeImportJob`, `ScreenshotParseJob`, `FileImportJob`, `HoldingPriceUpdateJob`, `UserDataDeleteJob`, `TransactionImportJob` | payload types | Producer + consumer share |
+| `WALLET_IMPORT`, `EXCHANGE_IMPORT`, `SCREENSHOT_PARSE`, `FILE_IMPORT`, `HOLDING_PRICE_UPDATE`, `USER_DATA_DELETE`, `USER_BACKUP`, `TRANSACTION_IMPORT` | `UserJobDescriptor` consts | One per user-initiated job |
+| `WalletImportJob`, `ExchangeImportJob`, `ScreenshotParseJob`, `FileImportJob`, `HoldingPriceUpdateJob`, `UserDataDeleteJob`, `UserBackupJob`, `TransactionImportJob` | payload types | Producer + consumer share |
 | `walletImportSchema`, `exchangeImportSchema`, …  | zod schemas | Worker re-validates on receive |
 | `PRICING_SCHEDULE`, `WALLET_BALANCES_SCHEDULE`, … (11 total) | `ScheduledJobDescriptor` consts | One per cron job |
 | `SCHEDULED_JOB_DESCRIPTORS` | readonly array | Iterate all scheduled descriptors |

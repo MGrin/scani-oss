@@ -25,6 +25,7 @@ import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { eq } from 'drizzle-orm';
 import { RetractKrakenCoverageClaimsUseCase } from '../../src/use-cases/RetractKrakenCoverageClaimsUseCase';
+import { seedHoldingCache } from '../../test/helpers/engine-guard';
 
 interface Fixture {
   userId: string;
@@ -95,10 +96,12 @@ async function setupFixture(): Promise<Fixture> {
   const usdToken = await token('USD');
 
   const holding = async (tokenId: string) => {
-    const [row] = await db
-      .insert(schema.holdings)
-      .values({ userId: user.id, accountId: account.id, tokenId, balance: '1' })
-      .returning();
+    const [row] = await seedHoldingCache(db, (calculator) =>
+      calculator
+        .insert(schema.holdings)
+        .values({ userId: user.id, accountId: account.id, tokenId, balance: '1' })
+        .returning()
+    );
     if (!row) throw new Error('holding insert failed');
     return row;
   };

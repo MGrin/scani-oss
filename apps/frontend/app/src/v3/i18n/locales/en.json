@@ -103,13 +103,10 @@
         "theNInOther_one": "the {{count}} in Other",
         "theNInOther_other": "the {{count}} in Other"
       },
-      "attentionRow": {
-        "needsReview_one": "{{count}} item needs your review",
-        "needsReview_other": "{{count}} items need your review"
-      },
       "topHoldings": {
         "title": "Top holdings",
-        "empty": "Nothing priced yet."
+        "empty": "Nothing priced yet.",
+        "loadingLabel": "your top holdings"
       },
       "tape": {
         "noValue": "No value"
@@ -118,12 +115,14 @@
         "title": "Groups",
         "openGroup": "{{name}} — open the group",
         "billsNext_one": "<amount/> bills, next {{count}} day",
-        "billsNext_other": "<amount/> bills, next {{count}} days"
+        "billsNext_other": "<amount/> bills, next {{count}} days",
+        "loadingLabel": "your groups"
       },
       "vaults": {
         "title": "Vaults",
         "progress": "{{name}}: {{percent}}% of target",
-        "ofTarget": "of <target></target>"
+        "ofTarget": "of <target></target>",
+        "loadingLabel": "your vaults"
       },
       "allocation": {
         "title": "Allocation",
@@ -141,11 +140,14 @@
       },
       "upcoming": {
         "title": "Upcoming bills",
+        "subject": "upcoming bills",
         "empty_one": "Nothing due in the next {{count}} day.",
         "empty_other": "Nothing due in the next {{count}} days.",
         "addPayment": "Add a payment",
         "incomeExpected_one": "Income expected, next {{count}} day",
-        "incomeExpected_other": "Income expected, next {{count}} days"
+        "incomeExpected_other": "Income expected, next {{count}} days",
+        "dueNext_one": "{{count}} due · next {{when}}",
+        "dueNext_other": "{{count}} due · next {{when}}"
       },
       "metric": {
         "netWorth": "Net worth",
@@ -188,7 +190,12 @@
         "returnsNoChart": "Not enough measured days to draw the comparison yet.",
         "returnsOverPeriod": "Returns · {{period}}",
         "returnsSince": "Returns · since {{date}}",
-        "returnsNoRate": "The return is not computed for this period yet"
+        "returnsNoRate": "The return is not computed for this period yet",
+        "openChart": {
+          "netWorth": "Open the net worth chart",
+          "pnl": "Open the profit and loss chart",
+          "returns": "Open the returns chart"
+        }
       },
       "quality": {
         "allPriced_one": "All {{count}} holding priced",
@@ -300,6 +307,7 @@
         "unavailable": "Investment performance unavailable",
         "recordedChange": "Recorded net-worth change",
         "eligibility": {
+          "debt-account": "Loan or card account",
           "incomplete-flow-coverage": "Incomplete flow history",
           "unresolved-change": "Unresolved balance change",
           "missing-valuation": "Missing valuation",
@@ -313,14 +321,123 @@
         "leftOut": "Left out:",
         "enteredLate": "Counted from their first statement date: {{holdings}}.",
         "unpricedAtZero_one": "{{count}} unpriced token counted at zero.",
-        "unpricedAtZero_other": "{{count}} unpriced tokens counted at zero."
+        "unpricedAtZero_other": "{{count}} unpriced tokens counted at zero.",
+        "loadingLabel": "your returns"
+      },
+      "income": {
+        "title": "Investment income received",
+        "window": "Received {{from}} – {{to}}",
+        "chartLabel": "Income received per month",
+        "gross": "Gross",
+        "withheld": "Tax withheld",
+        "net": "Net",
+        "group": {
+          "dividend": "Dividends",
+          "interest": "Interest",
+          "staking": "Staking",
+          "rewards": "Rewards"
+        },
+        "bySecurity": "Dividends by security",
+        "payments_one": "{{count}} payment",
+        "payments_other": "{{count}} payments",
+        "unpriced_one": "{{count}} payment could not be valued and is not counted",
+        "unpriced_other": "{{count}} payments could not be valued and are not counted",
+        "loadingLabel": "your income"
+      },
+      "card": {
+        "asOf": "As of {{time}}",
+        "tileFailed": "Couldn't load",
+        "peekEmpty": "Nothing to show here right now."
+      },
+      "debt": {
+        "loadingLabel": "your debt"
+      },
+      "needsYou": {
+        "review_one": "{{count}} item needs your review",
+        "review_other": "{{count}} items need your review",
+        "overdue_one": "{{count}} bill overdue",
+        "overdue_other": "{{count}} bills overdue",
+        "dueSoon_one": "{{count}} bill due in the next 3 days",
+        "dueSoon_other": "{{count}} bills due in the next 3 days",
+        "clear": "Nothing needs you",
+        "failed": "Couldn't check what needs you",
+        "retry": "Retry",
+        "partlyFailed": "Couldn't check everything that needs you"
+      },
+      "details": {
+        "failed": "Couldn't load the details for this period.",
+        "measured": "Measured {{from}} to {{to}}",
+        "realizedVsUnrealized": "Realized vs unrealized",
+        "pnlNote": "The change in realized and unrealized PnL since the start of the period. A sale moves gain from unrealized to realized.",
+        "byAccountType": "Change by account type",
+        "empty": "Nothing changed in this period.",
+        "otherType": "Other",
+        "topPnl": "Top holdings by PnL",
+        "unknownSymbol": "Unknown",
+        "topMovers": "Top movers"
       }
     },
     "allocation": {
-      "marginDebt": "Margin debt",
+      "debt": "Debt",
+      "debtLiabilities": "Loans and cards",
+      "debtMargin": "Margin",
       "shareOfAssets": "Share of assets"
     },
+    "liabilities": {
+      "addCard": "Add card terms",
+      "addLoan": "Add loan terms",
+      "addOther": "Add terms",
+      "ahead_one": "{{count}} month ahead",
+      "ahead_other": "{{count}} months ahead",
+      "annualFee": "Annual fee",
+      "available": "Available credit",
+      "behind_one": "{{count}} month behind",
+      "behind_other": "{{count}} months behind",
+      "contractedPayment": "Monthly payment",
+      "creditLimit": "Credit limit",
+      "editTerms": "Edit terms",
+      "formDescription": "Rate, term and payment for this loan or card. Leave a field blank if you don't know it.",
+      "formTitle": "Loan and card terms",
+      "interestLeft": "Interest left",
+      "kind": "Type",
+      "kindCard": "Credit card",
+      "kindLoan": "Loan",
+      "kindOther": "Other",
+      "minimumPayment": "Minimum payment",
+      "notConverging": "This payment does not cover the interest, so the loan never pays off.",
+      "onTrack": "On schedule",
+      "owed": "Amount owed",
+      "paidOff": "Paid off",
+      "paidOffBy": "Paid off by {{date}}",
+      "payment": "Monthly payment",
+      "principal": "Original amount",
+      "rate": "Annual rate (%)",
+      "save": "Save terms",
+      "saving": "Saving…",
+      "startDate": "Start date",
+      "subject": "these terms",
+      "termMonths": "Term (months)",
+      "used": "Used",
+      "showSchedule": "Show schedule",
+      "hideSchedule": "Hide schedule",
+      "termsSubject": "your loan terms",
+      "scheduleDate": "Date",
+      "schedulePayment": "Payment",
+      "scheduleInterest": "Interest",
+      "schedulePrincipal": "Principal",
+      "scheduleRemaining": "Left"
+    },
     "money": {
+      "calendar": {
+        "choose": "Show bills as",
+        "list": "List",
+        "calendar": "Calendar",
+        "previous": "Previous month",
+        "next": "Next month",
+        "noneOnDay": "No bills on {{date}}.",
+        "day_one": "{{date}}: {{count}} bill",
+        "day_other": "{{date}}: {{count}} bills"
+      },
       "upcoming": {
         "overdueTotal_one": "Overdue, {{count}} bill",
         "overdueTotal_other": "Overdue, {{count}} bills",
@@ -806,14 +923,16 @@
         "swap": "swap",
         "withdrawal": "withdrawal",
         "transfer": "transfer",
-        "disposal": "disposal"
+        "disposal": "disposal",
+        "derivativeLoss": "derivatives loss"
       },
       "verb": {
         "sold": "Sold",
         "swapped": "Swapped",
         "withdrew": "Withdrew",
         "transferredOut": "Transferred out",
-        "disposed": "Disposed"
+        "disposed": "Disposed",
+        "lostOnDerivatives": "Lost on derivatives"
       },
       "outcome": {
         "unpriced": "No price could be found for this, so no gain was booked. The cost is still shown.",
@@ -822,7 +941,8 @@
         "awaitingPair": "Only one side of this move was imported, so no gain was booked.",
         "realizedUnattributed": "Recorded as having left your portfolio, so this gain was booked. There is no record of anyone answering it — the answer was not given in the review queue.",
         "retainedUnattributed": "Recorded as never having left your control, so nothing was realized. There is no record of anyone answering it.",
-        "fee": "A charge taken out of what left, so no gain was booked — it is counted as a cost, not as a withdrawal."
+        "fee": "A charge taken out of what left, so no gain was booked — it is counted as a cost, not as a withdrawal.",
+        "derivativeLoss": "A loss on a derivatives position, paid from this balance. Its cost is booked as a realized loss."
       },
       "basis": {
         "partialNote": "Based on history we know is incomplete or a price outside our freshness window.",
@@ -859,7 +979,9 @@
       "deleteAction": {
         "trigger": "Delete",
         "commit": "Delete {{symbol}}",
-        "consequence": "{{symbol}} in {{account}} is removed, along with every transaction recorded against it — <value/> comes off your portfolio total. Nothing restores it; a re-import would have to rebuild the history. To take it out of the total and keep the record, use Deactivate."
+        "commitHide": "Hide {{symbol}}",
+        "consequence": "{{symbol}} in {{account}} is removed, along with every transaction recorded against it — <value/> comes off your portfolio total. Nothing restores it; a re-import would have to rebuild the history. To take it out of the total and keep the record, use Deactivate.",
+        "consequenceHide": "{{symbol}} in {{account}} is hidden — <value/> comes off your portfolio total. Its transactions stay, and Tokens → Hidden brings it back."
       },
       "trendLabel": "{{symbol}} value over the last {{period}}",
       "payout": {
@@ -909,7 +1031,8 @@
         "amount": "Amount",
         "account": "Account",
         "type": "Type",
-        "sinceBought": "since bought"
+        "sinceBought": "since bought",
+        "moneyPutIn": "Money put in"
       },
       "badge": {
         "noPrice": "No price",
@@ -930,7 +1053,9 @@
       "bulk": {
         "assignGroups": "Assign groups",
         "deleteConsequence_one": "{{symbols}} is removed from your portfolio, and every transaction recorded against it goes too. This cannot be undone.",
-        "deleteConsequence_other": "{{symbols}} are removed from your portfolio, and every transaction recorded against them goes too. This cannot be undone."
+        "deleteConsequence_other": "{{symbols}} are removed from your portfolio, and every transaction recorded against them goes too. This cannot be undone.",
+        "hideConsequence_one": "{{symbols}} is hidden: it comes off your portfolio total and keeps its transactions. Tokens → Hidden brings it back.",
+        "hideConsequence_other": "{{symbols}} are hidden: they come off your portfolio total and keep their transactions. Tokens → Hidden brings them back."
       },
       "realized": {
         "heading": "Realized",
@@ -1024,13 +1149,17 @@
       },
       "toast": {
         "deleted": "Holding deleted",
+        "hidden": "Holding hidden. Tokens → Hidden brings it back.",
         "deletingContext": "Deleting holding",
         "bulkDeleted_one": "{{count}} holding deleted",
         "bulkDeleted_other": "{{count}} holdings deleted",
+        "bulkHidden_one": "{{count}} holding hidden",
+        "bulkHidden_other": "{{count}} holdings hidden",
         "bulkDeletedWithFailures_one": "{{count}} holding deleted, {{failed}} failed",
         "bulkDeletedWithFailures_other": "{{count}} holdings deleted, {{failed}} failed",
         "bulkDeletingContext": "Deleting holdings",
         "updated": "Holding updated",
+        "savedAsCheck": "Saved as a check: the feed shows {{balance}}",
         "updatingContext": "Updating holding"
       },
       "editCause": {
@@ -1138,10 +1267,52 @@
           "fee": "Fee",
           "reward": "Reward",
           "interest": "Interest",
+          "dividend": "Dividend",
+          "taxWithheld": "Tax withheld",
           "airdrop": "Airdrop",
           "openingBalance": "Opening balance",
           "correction": "Correction"
         }
+      },
+      "handValued": {
+        "updateValue": {
+          "action": "Update value",
+          "title": "Update value",
+          "description": "Use this when the investment grew or fell. The change counts as gain or loss.",
+          "valueLabel": "Value now ({{currency}})",
+          "dateLabel": "Value on",
+          "save": "Save value",
+          "saving": "Saving…"
+        },
+        "money": {
+          "action": "Money in / out",
+          "title": "Money in / out",
+          "description": "Use this when you put money in or took it out. It does not count as gain.",
+          "direction": {
+            "in": "Money in",
+            "out": "Money out"
+          },
+          "amountLabel": "Amount ({{currency}})",
+          "dateLabel": "Date",
+          "save": "Save",
+          "saving": "Saving…"
+        },
+        "blocker": {
+          "amount": "Enter an amount above zero",
+          "date": "Pick a date"
+        },
+        "saved": "Saved",
+        "subject": "value",
+        "error": {
+          "nothingHeld": "Nothing was held on that date, so it has no value to set.",
+          "tooMuch": "That is more than this holding is worth on that date.",
+          "noPriceYet": "Set a value on or before this date first."
+        }
+      },
+      "undoHide": {
+        "undo": "Undo",
+        "restored": "Restored",
+        "restoreFailed": "Could not restore"
       }
     },
     "export": {
@@ -1159,7 +1330,8 @@
         "documents": "Documents",
         "history": "Net worth history",
         "netWorth": "Net worth",
-        "archivedOwnership": "Archived ownership"
+        "archivedOwnership": "Archived ownership",
+        "categories": "Categories"
       },
       "column": {
         "account": "Account",
@@ -1220,7 +1392,10 @@
         "holdingsUnpriceable": "Holdings unpriceable",
         "holdingsStalePriced": "Holdings priced from a stale quote",
         "archivedOwnerId": "Archived owner ID",
-        "name": "Name"
+        "name": "Name",
+        "parent": "Parent",
+        "colour": "Colour",
+        "categorySetBy": "Category set by"
       },
       "value": {
         "yes": "yes",
@@ -1233,7 +1408,13 @@
         "every_quarter_other": "{{count}} quarters",
         "every_year_one": "{{count}} year",
         "every_year_other": "{{count}} years",
-        "everyUnknown": "{{count}} × {{unit}}"
+        "everyUnknown": "{{count}} × {{unit}}",
+        "categorySetBy": {
+          "person": "You",
+          "import": "Import",
+          "rule": "Rule",
+          "ai": "AI"
+        }
       },
       "provenance": {
         "subject": "Whole account",
@@ -1277,6 +1458,68 @@
         "intro": "Every record on this account in one file — holdings, the whole transaction ledger, payments, groups, vaults and your net-worth history. Exchange and brokerage keys are left out: they are credentials, not records.",
         "trigger": "Export everything",
         "ownershipArchive": "Historical ownership names and account links are preserved in your export. They no longer have editing controls."
+      },
+      "backup": {
+        "title": "Backup",
+        "intro": "Your account in one file: every account, holding, transaction and balance reading, with your settings and rules.",
+        "notIncluded": "Not included yet: uploaded documents. Exchange and bank connections are never included: they are credentials, not records.",
+        "last": "Last backup {{date}} · {{size}}",
+        "make": "Make a backup",
+        "making": "Making your backup…",
+        "download": "Download backup",
+        "ready": "Your backup is ready to download.",
+        "failed": "The backup could not be made.",
+        "restoreTitle": "Restore from a backup",
+        "restoreIntro": "Loads a Scani backup file into this account. Only an empty account can take one.",
+        "restoreChoose": "Choose a backup file",
+        "restoring": "Restoring your account…",
+        "restored": "Restore finished. Records restored: {{rows}}.",
+        "restoredUnmatched": "Tokens this Scani does not know: {{tokens}}. Data quality lists them.",
+        "restoreFailed": "The restore did not finish. Nothing was restored."
+      },
+      "household": {
+        "title": "Household",
+        "intro": "Share read-only access to the accounts you choose with the people you live with. Nobody can change another member's accounts.",
+        "subject": "household",
+        "nameLabel": "Household name",
+        "namePlaceholder": "e.g. Home",
+        "create": "Create household",
+        "creating": "Creating the household",
+        "members": "Members",
+        "roleAdmin": "Admin",
+        "roleMember": "Member",
+        "makeAdmin": "Make admin",
+        "makeAdminConfirm": "Make {{name}} the admin",
+        "makeAdminConsequence": "They will manage invites and members. You stay a member.",
+        "handingOver": "Handing over the admin role",
+        "remove": "Remove",
+        "removeConfirm": "Remove {{name}}",
+        "removeConsequence": "They stop seeing shared accounts at once, and their own shares are removed.",
+        "removing": "Removing the member",
+        "invite": "Invite someone",
+        "emailLabel": "Their email",
+        "emailPlaceholder": "name@example.com",
+        "sendInvite": "Invite",
+        "inviting": "Sending the invite",
+        "emailed": "Invite emailed to {{email}}. The link below works for 7 days.",
+        "notEmailed": "Invite created but not emailed. Copy the link and send it yourself. It works for 7 days.",
+        "copyLink": "Copy link",
+        "copied": "Copied",
+        "done": "Done",
+        "pending": "Pending invites",
+        "expires": "Expires {{date}}",
+        "revoke": "Revoke",
+        "revoking": "Revoking the invite",
+        "yourAccounts": "Your accounts",
+        "yourAccountsHint": "Members see a shared account's balance and value, read-only.",
+        "sharing": "Changing what you share",
+        "currency": "Household currency",
+        "currencyHint": "The household view shows totals in this currency.",
+        "settingCurrency": "Changing the household currency",
+        "leave": "Leave household",
+        "leaveConfirm": "Leave {{name}}",
+        "leaveConsequence": "You stop seeing other members' accounts at once, and your shares are removed.",
+        "leaving": "Leaving the household"
       },
       "maintenance": {
         "title": "Portfolio history",
@@ -1331,6 +1574,90 @@
         "lastUsed": "{{where}} · last used {{when}}",
         "unknownIp": "unknown IP"
       },
+      "billCalendar": {
+        "title": "Bills calendar",
+        "intro": "Subscribe to your upcoming bills in Apple, Google or Outlook Calendar.",
+        "warning": "Anyone with the link sees each bill's payee, amount and date. Keep it private, and get a new link if it leaks.",
+        "enable": "Turn on",
+        "enabling": "Turning on the bills calendar",
+        "copyOnce": "Copy this link into your calendar app now. It won't be shown again.",
+        "addToCalendar": "Add to calendar",
+        "copy": "Copy link",
+        "copied": "Link copied",
+        "done": "Done",
+        "since": "Turned on {{when}}",
+        "rotate": "New link",
+        "rotateConfirm": "Get a new link",
+        "rotateConsequence": "The current link stops working at once. Calendars using it stop updating.",
+        "rotating": "Getting a new link",
+        "disable": "Turn off",
+        "disableConfirm": "Turn off the bills calendar",
+        "disableConsequence": "The link stops working at once. Calendars using it stop updating.",
+        "disabling": "Turning off the bills calendar",
+        "disabled": "Bills calendar turned off",
+        "subject": "the bills calendar"
+      },
+      "agentTokens": {
+        "title": "AI agents",
+        "intro": "Let your own AI agent (Claude Code, Cursor and others) read your portfolio. The same token works for your own scripts, through the REST API at /api/v1. A token is read-only unless you allow changes, and can be revoked at any time.",
+        "nameLabel": "Token name",
+        "namePlaceholder": "e.g. Claude Code on my laptop",
+        "create": "Create token",
+        "creating": "Creating the token",
+        "copyOnce": "Copy this token now. It will not be shown again.",
+        "claudeCode": "To add Scani to Claude Code, run:",
+        "copyCommand": "Copy command",
+        "copied": "Copied",
+        "done": "Done",
+        "subject": "agent tokens",
+        "empty": "No tokens yet.",
+        "lastUsed": "{{prefix}}… · last used {{when}}",
+        "neverUsed": "{{prefix}}… · never used",
+        "revoke": "Revoke",
+        "revokeConfirm": "Revoke {{name}}",
+        "revokeConsequence": "Any agent using this token loses access at once. This cannot be undone.",
+        "revoked": "Token revoked",
+        "revoking": "Revoking the token",
+        "allowWrites": "Allow changes",
+        "allowWritesHint": "The agent can record movements, add holdings and answer review questions. Every change is listed under Agent changes and can be undone.",
+        "canWrite": "can make changes"
+      },
+      "connectedApps": {
+        "title": "Connected apps",
+        "intro": "Apps you allowed to read your portfolio by signing in, such as Claude. Disconnecting stops them at once.",
+        "subject": "connected apps",
+        "connected": "Connected {{when}}",
+        "disconnect": "Disconnect",
+        "disconnectConfirm": "Disconnect {{name}}",
+        "disconnectConsequence": "It loses access at once and must be connected again to read your portfolio.",
+        "disconnected": "App disconnected",
+        "disconnecting": "Disconnecting the app"
+      },
+      "agentActivity": {
+        "title": "Agent changes",
+        "intro": "What your AI agents changed. Undo puts every row back exactly as it was.",
+        "rows": "Rows changed: {{count}}",
+        "statusUndone": "undone {{when}}",
+        "statusFailed": "failed",
+        "undo": "Undo",
+        "undoConfirm": "Undo this change",
+        "undoConsequence": "Every row it touched goes back to how it was before. Refused if anything has changed those rows since.",
+        "undone": "Change undone",
+        "undoing": "Undoing the change",
+        "tools": {
+          "record_movement": "Recorded a movement",
+          "create_holdings": "Created holdings",
+          "answer_transfer_review": "Answered a transfer question",
+          "answer_balance_gap": "Answered a balance question"
+        }
+      },
+      "agentCalls": {
+        "title": "Agent calls",
+        "intro": "Every request your AI agents made, newest first, refused and failed ones included.",
+        "removedAgent": "a removed agent",
+        "outcomeError": "failed",
+        "outcomeRefused": "refused"
+      },
       "device": {
         "unknown": "Unknown device",
         "genericBrowser": "Browser",
@@ -1359,7 +1686,12 @@
         "negativeOpeningHint": "An import that did not reach back before the first trade",
         "missingCoverage": "Holdings with no value history yet",
         "intro": "Recounted on every visit. Anything marked “{{flag}}” is worth looking into.",
-        "rowLink": "{{label}}: {{count}} — show in Holdings"
+        "rowLink": "{{label}}: {{count}} — show in Holdings",
+        "rowLinkHidden": "{{label}}: {{count}} — show in Tokens → Hidden",
+        "hiddenNewBalance": "Hidden holdings with a new balance",
+        "hiddenNewBalanceHint": "You hid these, and a feed now reports more on them than when you did. A hidden holding counts in no total.",
+        "restoredUnmatched": "Restored holdings on an unmatched token",
+        "restoredUnmatchedHint": "Your backup named a token this Scani does not know. The holding keeps that symbol on a token of your own, with no price source."
       },
       "pending": {
         "deletingData": "Deleting your data",
@@ -1370,7 +1702,10 @@
         "signingOutOthers": "Signing out the other sessions",
         "togglingNotifications": "Changing your notification setting",
         "sendingTestNotification": "Sending a test notification",
-        "changingCostBasis": "Changing how your gains are worked out"
+        "changingCostBasis": "Changing how your gains are worked out",
+        "makingBackup": "Making a backup",
+        "downloadingBackup": "Downloading your backup",
+        "restoringBackup": "Restoring a backup"
       },
       "costBasis": {
         "title": "Cost basis",
@@ -1387,7 +1722,11 @@
         "consequenceUnchanged": "Your gains are already worked out using {{method}}. Pick a different rule to see what changing it would do.",
         "changeConfirm": "Recalculate my gains on {{method}}",
         "changeInFlight": "Your gains are being recalculated.",
-        "recomputing": "Recalculating your gains — figures across the app are still settling."
+        "recomputing": "Recalculating your gains — figures across the app are still settling.",
+        "methodShort": {
+          "fifo": "FIFO",
+          "uk_section_104": "Section 104"
+        }
       },
       "accountDeletion": {
         "failed": "Your account deletion did not complete, so the account is still here.",
@@ -1401,6 +1740,63 @@
         "send": "Email me a code",
         "sending": "Sending…",
         "humanCheck": "finish the security check"
+      },
+      "areas": {
+        "you": {
+          "title": "You & your figures"
+        },
+        "notifications": {
+          "title": "Notifications & devices",
+          "remindersOn": "Reminders on",
+          "remindersOff": "Reminders off",
+          "devices_one": "{{count}} device",
+          "devices_other": "{{count}} devices"
+        },
+        "agents": {
+          "title": "AI agents",
+          "off": "AI agent access is not on for this account.",
+          "keys_one": "{{count}} agent key",
+          "keys_other": "{{count}} agent keys"
+        },
+        "data": {
+          "title": "Your data",
+          "lastBackup": "Last backup {{date}}",
+          "noBackup": "No backup yet"
+        },
+        "account": {
+          "title": "Account"
+        },
+        "notFound": "There is no such settings page."
+      },
+      "security": {
+        "title": "Two-factor sign-in",
+        "intro": "Ask for a code from an authenticator app after your email code or link.",
+        "turnOn": "Turn on two-factor sign-in",
+        "scan": "Scan this with your authenticator app, or open it on this device.",
+        "qrAlt": "QR code for your authenticator app",
+        "openApp": "Open in authenticator app",
+        "manualKey": "Or type this key:",
+        "confirm": "Confirm",
+        "onNow": "Two-factor sign-in is on.",
+        "signOutOthers": "Sign out everywhere else",
+        "done": "Done",
+        "isOn": "Two-factor sign-in is on.",
+        "newCodes": "Get new backup codes",
+        "turnOff": "Turn off two-factor sign-in",
+        "turnOffBody": "Signing in will need only your email again. Your backup codes stop working.",
+        "turnedOff": "Two-factor sign-in is off.",
+        "backupCodesIntro": "Save these backup codes somewhere safe. Each one signs you in once if you lose your phone.",
+        "passkeysTitle": "Passkeys",
+        "passkeysIntro": "Sign in with Face ID, Touch ID or your device PIN, without an email.",
+        "passkeyUnnamed": "Passkey",
+        "removePasskey": "Remove passkey",
+        "addPasskey": "Add a passkey",
+        "passkeyAdded": "Passkey added.",
+        "failed": "That didn't work",
+        "turnOffConfirm": "Yes, turn it off",
+        "confirming": "Confirming…",
+        "blockerCode": "enter the 6-digit code",
+        "passkeyFailed": "This device couldn't save a passkey."
       }
     },
     "feedback": {
@@ -1460,7 +1856,11 @@
         "answersExplained_other": "{{count}} explanations on {{subject}}",
         "unpriceableAirdrops": "Tokens nothing can price",
         "unpriceableTokens_one": "{{count}} token arrived in your wallets that nothing can price",
-        "unpriceableTokens_other": "{{count}} tokens arrived in your wallets that nothing can price"
+        "unpriceableTokens_other": "{{count}} tokens arrived in your wallets that nothing can price",
+        "transferNotArrived": "Transfer not arrived",
+        "transferInTransit": "{{amount}} from {{source}} to {{destination}}",
+        "untrackedTransferArrived": "Was this a transfer?",
+        "untrackedTransferArrivedDetail": "{{amount}} left {{source}}, and the same arrived in {{destination}}"
       },
       "kind": {
         "withdrawal": "Withdrawal",
@@ -1610,9 +2010,9 @@
         "internal": {
           "carry": "The {{amount}} {{symbol}} keeps what you originally paid for it as it moves to {{location}}. Nothing is realized, and no gain is booked.",
           "writeNew": "A new {{symbol}} holding is created there with a balance of {{amount}} {{symbol}}, holding a deposit dated {{date}}.",
-          "writeNewSynced": "A new {{symbol}} holding is created there, opening at zero and holding a deposit dated {{date}}. That account is synced, so its next sync fills in the real balance.",
-          "writeExisting": "A deposit of {{amount}} {{symbol}} dated {{date}} is recorded there. Its balance stays at {{balance}} — that account is synced, so its own sync already reports the money as arrived.",
-          "writeExistingMoves": "A deposit of {{amount}} {{symbol}} dated {{date}} is recorded there, and its balance goes from {{balance}} up by {{amount}} {{symbol}}. Nothing syncs that account, so nobody else would ever put the money in — you do not need to change it yourself.",
+          "writeNewSynced": "A new {{symbol}} holding is created there, with the deposit of {{amount}} {{symbol}} dated {{date}} as its balance until that account’s next sync sets the real one.",
+          "writeExisting": "A deposit of {{amount}} {{symbol}} dated {{date}} is recorded there. That account’s feed sets its balance: it stays at {{balance}} unless the feed has not reported since {{date}}, and the feed’s next report confirms it.",
+          "writeExistingMoves": "A deposit of {{amount}} {{symbol}} dated {{date}} is recorded there, and its balance goes from {{balance}} up by {{amount}} {{symbol}}. You keep that balance by hand, so nothing else would put the money in — you do not need to change it yourself.",
           "balanceFallback": "its balance"
         },
         "allocation": {
@@ -1624,9 +2024,11 @@
           "trigger": "It was more than one of these",
           "commit": "Record this division",
           "note": "A withdrawal can be more than one thing at once — part moved to another holding of yours, part genuinely left. Divide it and each part is treated on its own.",
-          "oneLinkOnly": "Only one part can move somewhere Scani tracks — {{paired}} or {{internal}}, not both. Cost basis follows one destination, and two would send it to neither.",
+          "oneDestinationOnly": "Two parts move to the same holding. Enter that move once, with the combined amount.",
+          "addDestination": "Add another destination",
           "needTwo": "Give at least two of these an amount. Together they have to come to {{amount}} {{symbol}}.",
           "takeRest": "Take the rest — {{amount}} {{symbol}}",
+          "changeWas": "Change was {{amount}} {{symbol}}",
           "transferWas": "Transfer was {{amount}} {{symbol}}",
           "clause": {
             "paired": "{{amount}} keeps what you paid for it as it moves to {{location}}",
@@ -1638,12 +2040,12 @@
           },
           "summary": "{{clauses}}. Only the disposal books a gain.",
           "balanceNew": "A new {{symbol}} holding is created there, with that deposit as its balance.",
-          "balanceUnchanged": "No balance is changed.",
+          "balanceFeed": "That account’s feed sets its balance, and its next report confirms the deposit.",
           "balanceMoves": "That account’s balance goes up by the amount that arrived there.",
           "sheetTitle": "Divide this transfer",
           "blocker": {
             "twoParts": "an amount on at least two outcomes",
-            "oneLink": "only one part moving somewhere Scani tracks",
+            "oneDestination": "one part per destination",
             "deposit": "a deposit picked for “{{paired}}”",
             "destination": "where the tracked part moved",
             "positive": "amounts above zero",
@@ -1889,15 +2291,36 @@
         "keepFailed": "Your choice to keep these was not saved. Try again.",
         "partlyFailed_one": "{{count}} token could not be hidden. Try again.",
         "partlyFailed_other": "{{count}} tokens could not be hidden. Try again.",
-        "undo": "Undo",
         "toast": {
           "hidden_one": "{{count}} token hidden",
           "hidden_other": "{{count}} tokens hidden",
           "kept_one": "{{count}} token kept",
-          "kept_other": "{{count}} tokens kept",
-          "restored": "Tokens restored",
-          "restoreFailed": "Could not restore the tokens"
+          "kept_other": "{{count}} tokens kept"
         }
+      },
+      "transit": {
+        "title": "Transfer not arrived",
+        "description": "{{amount}} left {{source}} for {{destination}} on {{date}} and has not shown up there. It still counts in your net worth. What happened?",
+        "arrived": "It arrived: {{amount}} on {{destination}}, {{date}}",
+        "shortfall": "The other {{amount}} is booked as a fee",
+        "noArrival": "No transaction on {{destination}} matches yet",
+        "cameBack": "It came back to {{source}} on {{date}}",
+        "lostFee": "It was lost on the way",
+        "lostFeeDetail": "Booked as a fee: a cost on this account",
+        "leftControl": "It left my portfolio",
+        "leftControlDetail": "Spent, gifted or sold somewhere Scani cannot see",
+        "waiting": "Still waiting",
+        "waitingDetail": "Nothing is booked. It stays counted, and Review asks again in 7 days",
+        "save": "Save",
+        "failed": "That answer was not saved"
+      },
+      "untrackedArrival": {
+        "title": "Was this the transfer to {{destination}}?",
+        "description": "{{amount}} left {{source}} on {{date}}, and you said it went to an account Scani can’t see. {{arrived}} arrived in {{destination}} on {{arrivedDate}}.",
+        "keepNote": "If not, your answer stays and Review won’t ask about this arrival again.",
+        "confirm": "Yes, link them",
+        "decline": "No, keep my answer",
+        "failed": "That answer was not saved"
       }
     },
     "form": {
@@ -1975,6 +2398,14 @@
         "movement": {
           "title": "Record a movement",
           "description": "Money in, money out, or a transfer between your accounts."
+        },
+        "valuedAsset": {
+          "title": "Property or vehicle",
+          "description": "A home, land or a car you value yourself"
+        },
+        "budgetApp": {
+          "title": "A YNAB, Actual or Mint export",
+          "description": "Your budget app history, account by account."
         }
       },
       "fileImport": {
@@ -2221,7 +2652,9 @@
         "crypto": "Cryptocurrency",
         "stock": "Stock / ETF / Equity / Commodity",
         "privateCompany": "Private Company",
-        "other": "Other"
+        "other": "Other",
+        "property": "Property",
+        "vehicle": "Vehicle"
       },
       "hiddenReason": {
         "user": "Hidden by you",
@@ -2294,6 +2727,8 @@
         "sublabel_one": "{{institution}} · {{count}} holding",
         "sublabel_other": "{{institution}} · {{count}} holdings",
         "syncOverdue": "Sync overdue",
+        "keyRejected": "Key rejected",
+        "keyRejectedReconnect": "Key rejected — Reconnect",
         "viewHoldings": "View holdings",
         "assignGroups": "Assign groups",
         "pageTitle": "Accounts",
@@ -2315,7 +2750,13 @@
           "bulkDeletingContext": "Failed to delete accounts",
           "updated": "Account updated successfully",
           "updatingContext": "Failed to update account"
-        }
+        },
+        "edit": "Edit",
+        "editTitle": "Edit account",
+        "editDescription": "The account’s name, type and wrapper.",
+        "save": "Save changes",
+        "saving": "Saving…",
+        "saved": "Account updated"
       },
       "institution": {
         "unknownType": "Unknown type",
@@ -2612,7 +3053,11 @@
         "historyBackfill": "History backfill",
         "priceRefresh": "Price refresh",
         "accountDeletion": "Account deletion",
-        "transactionImport": "Transaction history import"
+        "transactionImport": "Transaction history import",
+        "backup": "Backup",
+        "restore": "Restore from backup",
+        "budgetAppImport": "Budget app import",
+        "budgetAppUndo": "Undo budget app import"
       },
       "review": {
         "title": "Review extracted holdings",
@@ -2706,6 +3151,7 @@
         "ibkrStatementWindowUnknown": "ibkr: this Flex statement does not say which window it covers, so it cannot be read as the account’s whole history. The range is a setting on your saved Flex Query and Scani does not choose it — to reach further back, change that query’s date range (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), save, and re-run the import.",
         "pageCapRetracted": "{{provider}}: {{walks}} — the rest of this account's history was never fetched",
         "pageCapMissingTxIds": "{{provider}}: {{walks}} — some deposits and withdrawals in this run carry no on-chain transaction id",
+        "txIdLookupFailed": "{{provider}}: deposit and withdrawal records could not be read, so this run's deposits and withdrawals carry no on-chain transaction id ({{reason}})",
         "pageCapAddressHistory": "the address history stopped at its {{pages}}-page cap after {{rows}} rows",
         "pageCapUserTransactionsLedger": "the user-transactions ledger stopped at its {{pages}}-page cap after {{rows}} rows",
         "pageCapCryptoTransactionsLookup": "the crypto-transactions lookup stopped at its {{pages}}-page cap after {{rows}} rows",
@@ -2728,6 +3174,10 @@
         "ibkrUnmappedCashTypes_other": "ibkr: {{count}} cash transactions in this statement had a type Scani does not recognise — {{types}} — so they were not imported. This one is ours to fix, not yours: please report it.",
         "ibkrFurtherTypes_one": "{{count}} further type",
         "ibkrFurtherTypes_other": "{{count}} further types",
+        "bybitUnlistedLogTypes_one": "bybit: {{count}} transaction-log row had a type Scani does not import — {{types}} — so the balance change it carries is missing from this history. This one is ours to fix, not yours: please report it.",
+        "bybitUnlistedLogTypes_other": "bybit: {{count}} transaction-log rows had a type Scani does not import — {{types}} — so the balance changes they carry are missing from this history. This one is ours to fix, not yours: please report it.",
+        "bybitFurtherTypes_one": "{{count}} further type",
+        "bybitFurtherTypes_other": "{{count}} further types",
         "ibkrIncompleteCashRows_one": "ibkr: {{count}} cash transaction in this statement arrived with a required field blank — {{blanks}} — so it was not imported. If your Flex Query is missing those columns, add them (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), save, and re-run the import. If the columns are there, the data came to us blank and this one is ours: please report it.",
         "ibkrIncompleteCashRows_other": "ibkr: {{count}} cash transactions in this statement arrived with a required field blank — {{blanks}} — so they were not imported. If your Flex Query is missing those columns, add them (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), save, and re-run the import. If the columns are there, the data came to us blank and this one is ours: please report it.",
         "ibkrBlankFields": "{{rows}} with no {{fields}}"
@@ -2884,6 +3334,7 @@
         "row": {
           "new": "New",
           "updated": "Updated",
+          "savedAsCheck": "Saved as a check",
           "noPrice": "No price yet"
         },
         "unpricedNote_one": "{{count}} row has no price yet. It is saved either way — refresh it from Holdings, or wait for the next hourly pricing sweep.",
@@ -2942,6 +3393,25 @@
           "label": "Failed",
           "sentence": "The last attempt failed. Checking whether anything else is queued for it."
         }
+      },
+      "budgetApp": {
+        "title": "Budget app import",
+        "unreadable": "This result cannot be read.",
+        "rows": "Rows added",
+        "transfersPaired": "Transfers paired",
+        "newAccount": "New",
+        "accountRows_one": "{{count}} row",
+        "accountRows_other": "{{count}} rows",
+        "unpaired_one": "{{count}} transfer row has no other side in the file. It goes to review.",
+        "unpaired_other": "{{count}} transfer rows have no other side in the file. They go to review.",
+        "skipped_one": "{{count}} row was skipped: empty, zero or unreadable.",
+        "skipped_other": "{{count}} rows were skipped: empty, zero or unreadable.",
+        "manage": "Undo or import another file",
+        "undoTitle": "Budget app import undone",
+        "rowsRemoved": "Rows removed",
+        "accountsRemoved": "Accounts removed",
+        "accountsKept_one": "{{count}} account the import opened is kept: something else has written to it since.",
+        "accountsKept_other": "{{count}} accounts the import opened are kept: something else has written to them since."
       }
     },
     "membership": {
@@ -3026,8 +3496,331 @@
       "frankfurter": "Frankfurter (ECB rates)",
       "manual": "Set manually",
       "baseCurrency": "Your base currency",
-      "siblingFallback": "Same asset, another listing",
       "unknown": "Unknown source"
+    },
+    "valuedAssets": {
+      "title": "Add a property or vehicle",
+      "description": "Something you own and value yourself, such as a home, land or a car. You enter its value; Scani keeps the history.",
+      "subject": "property or vehicle",
+      "whatFieldset": "What it is",
+      "valueFieldset": "What it cost",
+      "kind": {
+        "label": "What is it?",
+        "property": "Property",
+        "vehicle": "Vehicle"
+      },
+      "nameLabel": "Name",
+      "addressLabel": "Address",
+      "areaLabel": "Area (m²)",
+      "makeLabel": "Make",
+      "modelLabel": "Model",
+      "yearLabel": "Year",
+      "mileageLabel": "Mileage (km)",
+      "purchaseDateLabel": "Bought on",
+      "purchasePriceLabel": "Purchase price ({{currency}})",
+      "currentValueLabel": "Value today ({{currency}})",
+      "currentValueHint": "Optional. Leave it empty and it stays at the purchase price.",
+      "save": "Add",
+      "saving": "Adding…",
+      "blocker": {
+        "name": "Give it a name",
+        "purchaseDate": "Pick the day you bought it",
+        "purchasePrice": "Enter what you paid",
+        "currentValue": "Today's value must be a positive amount"
+      },
+      "details": {
+        "title": "Details",
+        "area": "Area",
+        "vehicle": "Vehicle",
+        "mileage": "Mileage",
+        "purchase": "Bought {{date}}",
+        "gain": "Change since purchase"
+      },
+      "history": {
+        "title": "Valuations",
+        "corrected": "Corrected"
+      },
+      "addValuation": {
+        "action": "Add valuation",
+        "title": "Add a valuation",
+        "description": "What it was worth on a day. A second valuation on the same day replaces the first.",
+        "valueLabel": "Value ({{currency}})",
+        "dateLabel": "On",
+        "save": "Save",
+        "saving": "Saving…",
+        "blocker": {
+          "value": "Enter a positive amount",
+          "date": "Pick a day"
+        }
+      }
+    },
+    "household": {
+      "accept": {
+        "title": "Household invite",
+        "heading": "{{inviter}} invited you to {{household}}",
+        "explain": "Accepting moves no data. You see the accounts members share, read-only, and you choose which of yours to share.",
+        "accept": "Accept",
+        "notNow": "Not now",
+        "accepting": "Accepting the invite",
+        "joined": "You joined {{name}}",
+        "expired": "This invite has expired",
+        "revoked": "This invite was withdrawn",
+        "used": "This invite was already used",
+        "invalid": "This invite link is not valid",
+        "home": "Go to Home"
+      },
+      "view": {
+        "title": "Household",
+        "description": "What the household holds together, from the accounts members share.",
+        "unavailable": "The household view could not be loaded",
+        "none": "You are not in a household.",
+        "toSettings": "Create or join one in Settings",
+        "currency": "In {{currency}}",
+        "chart": "Household net worth over the last year",
+        "allocation": "Allocation",
+        "accounts": "Shared accounts",
+        "accountOwner": "{{name}} · {{owner}}",
+        "you": "You",
+        "trackedTwice": "Both of you track {{name}}: un-share one copy",
+        "link": "Household"
+      }
+    },
+    "budgetApp": {
+      "title": "Import from YNAB, Actual or Mint",
+      "description": "Bring your YNAB, Actual Budget or Mint history into Scani. Each account in the file becomes an account here, and transfers the file links between two of them stay paired.",
+      "subject": "the budget app import",
+      "fileFieldset": "Your budget app export",
+      "prompt": "Choose YNAB's Register file, Actual's export, or Mint's transactions.csv",
+      "formats": "CSV or TSV, from YNAB's Export Plan, Actual's Export, or Mint",
+      "wrongFile": "Choose the .csv or .tsv file YNAB, Actual or Mint exported.",
+      "notRegister": "This is not a YNAB register, an Actual export or a Mint export. In YNAB, export the plan and choose the file whose name ends in Register. In Actual, choose Export on an account. From Mint, choose transactions.csv.",
+      "mixedDecimals": "The amounts in this file use both a dot and a comma as the decimal point, so Scani cannot read them.",
+      "dateOrder": {
+        "question": "The dates in this file fit both orders. Which comes first?",
+        "dayFirst": "Day first (31/12)",
+        "monthFirst": "Month first (12/31)"
+      },
+      "accounts": {
+        "title": "Where each account goes",
+        "rows_one": "{{count}} row",
+        "rows_other": "{{count}} rows",
+        "choose": "Where {{name}} goes",
+        "fedNote": "Accounts a connected provider or wallet feeds are not offered. They already record these movements."
+      },
+      "target": {
+        "new": "New {{type}}",
+        "existing": "Into {{name}}",
+        "skip": "Don't import"
+      },
+      "currency": {
+        "label": "Currency of the amounts",
+        "hint": "The file shows {{symbol}}. Enter its three-letter code.",
+        "hintNone": "The file shows no currency symbol. Enter the three-letter code."
+      },
+      "notImported": "Budgets are not imported. Each row keeps its category, and its cleared state where the file has one.",
+      "skipped_one": "{{count}} row will be skipped: it is empty, zero or unreadable.",
+      "skipped_other": "{{count}} rows will be skipped: they are empty, zero or unreadable.",
+      "blocker": {
+        "noFile": "choose your budget app export",
+        "unreadable": "choose an export Scani can read",
+        "noAccount": "import at least one account",
+        "noCurrency": "enter a three-letter currency code",
+        "sameTarget": "import each account into a different Scani account"
+      },
+      "submit": "Import",
+      "busy": "the import",
+      "history": {
+        "title": "Past imports",
+        "rows_one": "{{count}} row",
+        "rows_other": "{{count}} rows",
+        "accounts_one": "{{count}} account",
+        "accounts_other": "{{count}} accounts",
+        "undo": "Undo",
+        "undone": "Undone",
+        "confirm_one": "Remove the {{count}} row this import added, and the accounts it opened?",
+        "confirm_other": "Remove the {{count}} rows this import added, and the accounts it opened?",
+        "remove": "Remove",
+        "keep": "Keep"
+      }
+    },
+    "categories": {
+      "picker": {
+        "legend": "Category",
+        "searchPlaceholder": "Find or create a category",
+        "create": "Create “{{name}}”",
+        "none": "No category"
+      },
+      "empty": {
+        "title": "No categories yet.",
+        "namePlaceholder": "Category name",
+        "suggest": "Add suggested categories",
+        "create": "Create category"
+      },
+      "manage": "Manage categories",
+      "uncategorized": "Uncategorized",
+      "suggested": {
+        "income": "Income",
+        "salary": "Salary",
+        "interest": "Interest",
+        "dividends": "Dividends",
+        "housing": "Housing",
+        "rent": "Rent",
+        "utilities": "Utilities",
+        "food": "Food",
+        "groceries": "Groceries",
+        "restaurants": "Restaurants",
+        "transport": "Transport",
+        "health": "Health",
+        "shopping": "Shopping",
+        "travel": "Travel",
+        "fees": "Fees",
+        "bankFees": "Bank fees",
+        "exchangeFees": "Exchange fees",
+        "taxes": "Taxes"
+      },
+      "page": {
+        "title": "Categories",
+        "new": "New category",
+        "newTitle": "New category",
+        "editTitle": "Edit category",
+        "formDescription": "A category can sit under one top-level category.",
+        "save": "Save",
+        "saving": "Saving…",
+        "nameRequired": "Name the category.",
+        "parent": "Parent",
+        "topLevel": "Top level",
+        "hasChildren": "It has subcategories, so it stays at the top level.",
+        "count_one": "{{count}} transaction",
+        "count_other": "{{count}} transactions",
+        "deleteAction": "Delete"
+      },
+      "delete": {
+        "title": "Delete {{name}}",
+        "description": "Choose where its transactions go.",
+        "lifted": "Its subcategories move to the top level.",
+        "legend": "Move its transactions to",
+        "submit": "Delete category",
+        "pending": "Deleting…",
+        "where_one": "{{count}} transaction is in {{name}}.",
+        "where_other": "{{count}} transactions are in {{name}}."
+      },
+      "auto": {
+        "marker": "Set automatically",
+        "reasonRule": "Matched your earlier pick for {{payee}}",
+        "keep": "Keep",
+        "kept": "Category kept",
+        "spread_one": "Also set on {{count}} similar transaction.",
+        "spread_other": "Also set on {{count}} similar transactions."
+      }
+    },
+    "transactions": {
+      "title": "Transactions",
+      "empty": {
+        "addAccount": "Add an account"
+      },
+      "bulk": {
+        "setCategory": "Set category",
+        "title_one": "Set the category of {{count}} transaction",
+        "title_other": "Set the category of {{count}} transactions",
+        "description": "Choose a category, or none to clear it.",
+        "submit": "Set category",
+        "clear": "Clear category",
+        "pending": "Saving…"
+      },
+      "moved_one": "{{count}} transaction moved to {{name}}",
+      "moved_other": "{{count}} transactions moved to {{name}}",
+      "cleared_one": "{{count}} transaction is now uncategorized",
+      "cleared_other": "{{count}} transactions are now uncategorized",
+      "seeAll": "See all",
+      "range": {
+        "from": "From",
+        "to": "To"
+      }
+    },
+    "wrappers": {
+      "code": {
+        "brokerage": "Brokerage",
+        "cash_management": "Cash management",
+        "401k": "401(k)",
+        "roth_401k": "Roth 401(k)",
+        "403b": "403(b)",
+        "457b": "457(b)",
+        "tsp": "TSP",
+        "ira": "IRA",
+        "roth_ira": "Roth IRA",
+        "sep_ira": "SEP IRA",
+        "simple_ira": "SIMPLE IRA",
+        "529_plan": "529 Plan",
+        "hsa": "HSA",
+        "ugma": "UGMA",
+        "utma": "UTMA",
+        "isa": "ISA",
+        "lisa": "LISA",
+        "sipp": "SIPP",
+        "workplace_pension_uk": "Workplace pension",
+        "tfsa": "TFSA",
+        "rrsp": "RRSP",
+        "non_registered": "Non-registered",
+        "fhsa": "FHSA",
+        "rdsp": "RDSP",
+        "resp": "RESP",
+        "dpsp": "DPSP",
+        "prpp": "PRPP",
+        "lira": "LIRA",
+        "rrif": "RRIF",
+        "lif": "LIF",
+        "lrif": "LRIF",
+        "prif": "PRIF",
+        "rlif": "RLIF",
+        "super": "Super",
+        "smsf": "SMSF",
+        "assurance_vie": "AV",
+        "pea": "PEA",
+        "pillar_3a": "Pillar 3a",
+        "riester": "Riester",
+        "pension": "Pension",
+        "retirement": "Retirement account",
+        "mutual_fund": "Mutual fund",
+        "gold": "Gold",
+        "angel": "Angel investment",
+        "trust": "Trust",
+        "other": "Other"
+      },
+      "bucket": {
+        "general": "General",
+        "deferred": "Deferred (pensions)",
+        "exempt": "Sheltered (ISA, Roth, TFSA)",
+        "advantaged": "Other advantaged"
+      },
+      "region": {
+        "us": "United States",
+        "uk": "United Kingdom",
+        "ca": "Canada",
+        "au": "Australia",
+        "eu": "Europe",
+        "generic": "Anywhere"
+      },
+      "field": {
+        "label": "Account wrapper",
+        "none": "None",
+        "hint": "An ISA, a pension or a Roth IRA, for example. Leave it empty for an ordinary account."
+      },
+      "block": {
+        "title": "Gains by account wrapper",
+        "realized": "Realized",
+        "unrealized": "Unrealized",
+        "note": "Grouped by each account's wrapper today.",
+        "loadingLabel": "your gains by account wrapper",
+        "carried_one": "{{count}} holding had no price on the last day; its last priced day is used",
+        "carried_other": "{{count}} holdings had no price on the last day; their last priced day is used",
+        "tileSums": "The tile sums every wrapper except General."
+      },
+      "bucketShort": {
+        "general": "General",
+        "deferred": "Deferred",
+        "exempt": "Sheltered",
+        "advantaged": "Advantaged"
+      }
     }
   }
 }

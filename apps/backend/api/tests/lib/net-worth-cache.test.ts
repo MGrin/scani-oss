@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { seedHoldingCache } from '@scani/domain/test-helpers';
 import { eq, inArray } from 'drizzle-orm';
 import { _resetNetWorthCache, cachedUserNetWorthDaily } from '../../src/lib/net-worth-cache';
 import type { AggregatedDailyPoint } from '../../src/lib/net-worth-series';
@@ -116,10 +117,12 @@ describe('cachedUserNetWorthDaily with the real data version', () => {
       .insert(schema.accounts)
       .values({ userId, institutionId, name: 'SC-1369', typeId: accountTypeId })
       .returning();
-    const [holding] = await db
-      .insert(schema.holdings)
-      .values({ userId, accountId: account!.id, tokenId: heldId, balance: '1' })
-      .returning();
+    const [holding] = await seedHoldingCache(db, (calculator) =>
+      calculator
+        .insert(schema.holdings)
+        .values({ userId, accountId: account!.id, tokenId: heldId, balance: '1' })
+        .returning()
+    );
     holdingId = holding!.id;
   });
 
@@ -267,10 +270,12 @@ describe('cachedUserNetWorthDaily returns the NEW answer when its input changes'
       .insert(schema.accounts)
       .values({ userId, institutionId, name: 'SC-1369 nv', typeId: accountTypeId })
       .returning();
-    const [holding] = await db
-      .insert(schema.holdings)
-      .values({ userId, accountId: account!.id, tokenId: heldId, balance: '1' })
-      .returning();
+    const [holding] = await seedHoldingCache(db, (calculator) =>
+      calculator
+        .insert(schema.holdings)
+        .values({ userId, accountId: account!.id, tokenId: heldId, balance: '1' })
+        .returning()
+    );
     holdingId = holding!.id;
     await writeRollup('100');
   });

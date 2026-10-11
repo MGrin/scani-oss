@@ -1,17 +1,15 @@
-import type { ScheduledJobDescriptor } from '@scani/queue';
+import type { ScheduledJobStepDescriptor } from '@scani/queue';
 import { JOB_NAMES } from '../job-names';
 
-// Dead-letter sweeper. Every 15 minutes the worker reads `scani-dlq`, removes
+// Dead-letter sweeper. Every 15 minutes, as a step of the `housekeeping`
+// group (SC-1688), the worker reads `scani-dlq`, removes
 // what has aged out, escalates each entry once on its arrival, and escalates
 // the depth when it crosses a threshold. Nothing consumes that queue, so
 // without this a terminal failure sits there unseen and for ever (SC-1545).
 // The advisory lock keeps two machines from double-firing an alert when both
-// run a probe at the same minute — and it's exactly why this probe is on the
-// shared quarter-hour cadence: the PG advisory lock wakes Neon, so all
-// frequent jobs fire together and the DB sleeps in between.
-export const DLQ_DEPTH_PROBE_SCHEDULE: ScheduledJobDescriptor = {
+// run a probe at the same minute.
+export const DLQ_DEPTH_PROBE_SCHEDULE: ScheduledJobStepDescriptor = {
   name: JOB_NAMES.dlqDepthProbe,
-  cron: '*/15 * * * *',
   lockName: JOB_NAMES.dlqDepthProbe,
 };
 

@@ -17,6 +17,7 @@ import type { PriceQuote } from '@scani/providers/core/types';
 import { asc, eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HistoricalPriceBackfillService } from '../../../src/services/pricing/HistoricalPriceBackfillService';
+import { type PriceWriteOutcome, PriceWriter } from '../../../src/services/pricing/PriceWriter';
 import { committedRows, dropPricesOf } from '../../../test/helpers/committed-rows';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 import { makeToken } from '../../../test/helpers/factories-extra';
@@ -78,7 +79,7 @@ function backfill(provider: {
 }
 
 describe('HistoricalPriceBackfillService writes', () => {
-  test('a range lands as daily rows at the provider’s stamps, under its source, against the base asked', async () => {
+  test('a range lands as daily rows at each bar’s close, under its source, against the base asked', async () => {
     const currency = await commitFiat();
     const base = await commitFiat();
     const first = new Date('2026-02-02T00:00:00.000Z');
@@ -93,6 +94,7 @@ describe('HistoricalPriceBackfillService writes', () => {
           baseTokenId: base.id,
           price: prices[k] ?? '',
           timestamp: stamp(day),
+          barDay: day.toISOString().slice(0, 10),
           source: 'test-fx_historical',
         })),
     });
@@ -107,7 +109,7 @@ describe('HistoricalPriceBackfillService writes', () => {
       days.map((day, k) => [
         base.id,
         prices[k] ?? '',
-        stamp(day).getTime(),
+        day.getTime() + DAY - 1,
         'daily',
         'test-fx_historical',
       ])
@@ -130,6 +132,7 @@ describe('HistoricalPriceBackfillService writes', () => {
           baseTokenId: base.id,
           price: prices[k] ?? '',
           timestamp: day,
+          barDay: null,
           source: 'test-fx_historical',
         })),
     });
@@ -159,6 +162,7 @@ describe('HistoricalPriceBackfillService writes', () => {
       baseTokenId: base.id,
       price,
       timestamp: new Date(at),
+      barDay: null,
       source: 'test-fx_historical',
     });
     const service = backfill({
@@ -186,18 +190,22 @@ describe('HistoricalPriceBackfillService writes', () => {
     );
   });
 
-  // Foundation A3, Task 10. The backfill fills empty days. A day that holds a
-  // row of any kind keeps it as it is, whatever the provider answers for it.
+  // Foundation A3, Tasks 10 and 13. The backfill fills days that are not
+  // covered. A covered day keeps what it holds, whatever the provider answers.
   describe('a day that already holds a row', () => {
     const first = new Date('2026-02-02T00:00:00.000Z');
-    const [before, covered, after] = [0, 1, 2].map((k) => new Date(first.getTime() + k * DAY)) as [
+    const februaryDays = [0, 1, 2].map((k) => new Date(first.getTime() + k * DAY)) as [
       Date,
       Date,
       Date,
     ];
+    const close = (day: Date) => new Date(day.getTime() + DAY - 1);
 
-    /** A provider with a bar at each of the three midnights, asked for the two around `covered`. */
-    async function runSpanning(stored: { timestamp: Date; granularity: 'daily' | 'intraday' }) {
+    /** A provider with each day's close, asked for the two days around `covered`. */
+    async function runSpanning(
+      [before, covered, after]: [Date, Date, Date],
+      stored: { timestamp: Date; granularity: 'daily' | 'intraday' }
+    ) {
       const currency = await commitFiat();
       const base = await commitFiat();
       await getDb()
@@ -216,6 +224,7 @@ describe('HistoricalPriceBackfillService writes', () => {
             baseTokenId: base.id,
             price: '1.75',
             timestamp: day,
+            barDay: day.toISOString().slice(0, 10),
             source: 'test-fx_historical',
           })),
       });
@@ -232,25 +241,51 @@ describe('HistoricalPriceBackfillService writes', () => {
     }
 
     test('CONTROL: a stored row on a covered day keeps its price and its source after a run that spans it', async () => {
-      // The provider's bar has the stored row's own key, so an upsert replaces it.
-      const stored = await runSpanning({ timestamp: covered, granularity: 'daily' });
+      const [before, covered, after] = februaryDays;
+      // The provider's close has the stored row's own key.
+      const stored = await runSpanning(februaryDays, {
+        timestamp: close(covered),
+        granularity: 'daily',
+      });
 
       expect(stored).toEqual([
-        [before.toISOString(), '1.75', 'test-fx_historical', 'daily'],
-        [covered.toISOString(), '1.25', 'stored-before', 'daily'],
-        [after.toISOString(), '1.75', 'test-fx_historical', 'daily'],
+        [close(before).toISOString(), '1.75', 'test-fx_historical', 'daily'],
+        [close(covered).toISOString(), '1.25', 'stored-before', 'daily'],
+        [close(after).toISOString(), '1.75', 'test-fx_historical', 'daily'],
       ]);
     });
 
-    test('a quote on a day that already holds a row is not written', async () => {
-      // The provider's bar has a key of its own, so an upsert adds it beside the row.
+    test('a 14:00 row more than 7 days old still covers its day', async () => {
+      const [before, covered, after] = februaryDays;
       const afternoon = new Date(covered.getTime() + 14 * 60 * 60 * 1000);
-      const stored = await runSpanning({ timestamp: afternoon, granularity: 'intraday' });
+      const stored = await runSpanning(februaryDays, {
+        timestamp: afternoon,
+        granularity: 'intraday',
+      });
 
       expect(stored).toEqual([
-        [before.toISOString(), '1.75', 'test-fx_historical', 'daily'],
+        [close(before).toISOString(), '1.75', 'test-fx_historical', 'daily'],
         [afternoon.toISOString(), '1.25', 'stored-before', 'intraday'],
-        [after.toISOString(), '1.75', 'test-fx_historical', 'daily'],
+        [close(after).toISOString(), '1.75', 'test-fx_historical', 'daily'],
+      ]);
+    });
+
+    test('a 14:00 row two days old does not cover its day', async () => {
+      const now = new Date();
+      const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+      const recentDays = [3, 2, 1].map((k) => new Date(today - k * DAY)) as [Date, Date, Date];
+      const [before, covered, after] = recentDays;
+      const afternoon = new Date(covered.getTime() + 14 * 60 * 60 * 1000);
+      const stored = await runSpanning(recentDays, {
+        timestamp: afternoon,
+        granularity: 'intraday',
+      });
+
+      expect(stored).toEqual([
+        [close(before).toISOString(), '1.75', 'test-fx_historical', 'daily'],
+        [afternoon.toISOString(), '1.25', 'stored-before', 'intraday'],
+        [close(covered).toISOString(), '1.75', 'test-fx_historical', 'daily'],
+        [close(after).toISOString(), '1.75', 'test-fx_historical', 'daily'],
       ]);
     });
   });
@@ -270,6 +305,7 @@ describe('HistoricalPriceBackfillService writes', () => {
           baseTokenId: base.id,
           price: '1.75',
           timestamp: anHourBefore(day),
+          barDay: null,
           source: 'test-fx_historical',
         })),
     });
@@ -279,5 +315,239 @@ describe('HistoricalPriceBackfillService writes', () => {
     expect((await storedFor(currency.id)).map((r) => r.timestamp.toISOString())).toEqual(
       days.map((day) => anHourBefore(day).toISOString())
     );
+  });
+});
+
+/** Foundation A3, Task 13: a bar is stored as the close of the UTC day it names. */
+describe('the close of each UTC day', () => {
+  const now = new Date();
+  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const todayKey = todayStart.toISOString().slice(0, 10);
+
+  async function currencyAndBase() {
+    return { currency: await commitFiat(), base: await commitFiat() };
+  }
+
+  function bar(
+    pair: { currency: Token; base: Token },
+    price: string,
+    timestamp: Date,
+    barDay: string | null,
+    extra: Partial<PriceQuote> = {}
+  ): PriceQuote {
+    return {
+      tokenId: pair.currency.id,
+      baseTokenId: pair.base.id,
+      price,
+      timestamp,
+      barDay,
+      source: 'test-fx_historical',
+      ...extra,
+    };
+  }
+
+  async function storedRows(tokenId: string) {
+    return (await storedFor(tokenId)).map((r) => [
+      r.timestamp.toISOString(),
+      r.price,
+      r.granularity,
+    ]);
+  }
+
+  test('a daily bar is stored at its day’s last millisecond', async () => {
+    const pair = await currencyAndBase();
+    // The close of 20 September, stamped at the midnight that ends it.
+    const service = backfill({
+      range: () => [bar(pair, '2', new Date('2026-09-21T00:00:00.000Z'), '2026-09-20')],
+    });
+
+    const result = await service.backfillTokenRange(pair.currency.id, pair.base.id, [
+      new Date('2026-09-20T00:00:00.000Z'),
+    ]);
+
+    expect(await storedRows(pair.currency.id)).toEqual([
+      ['2026-09-20T23:59:59.999Z', '2', 'daily'],
+    ]);
+    expect(result.inserted).toBe(1);
+  });
+
+  test('today’s in-progress bar is stored intraday at the fetch instant', async () => {
+    const pair = await currencyAndBase();
+    let requestEnd: Date | undefined;
+    const service = backfill({
+      range: (_token, _from, to) => {
+        requestEnd = to;
+        return [bar(pair, '2', todayStart, todayKey)];
+      },
+    });
+    const start = Date.now();
+
+    const result = await service.backfillTokenRange(pair.currency.id, pair.base.id, [todayStart]);
+
+    const end = Date.now();
+    const [row, ...others] = await storedFor(pair.currency.id);
+    expect(others).toEqual([]);
+    expect(row?.granularity).toBe('intraday');
+    expect(row?.timestamp.getTime()).toBeGreaterThanOrEqual(start);
+    expect(row?.timestamp.getTime()).toBeLessThanOrEqual(end);
+    // One clock read per range: the instant the request ends at is the stamp.
+    expect(row?.timestamp).toEqual(requestEnd);
+    expect(result.inserted).toBe(1);
+  });
+
+  test('a quote with `barDay: null` is stored intraday at its own stamp', async () => {
+    const pair = await currencyAndBase();
+    const service = backfill({
+      range: () => [bar(pair, '2', new Date('2026-09-20T14:00:00.000Z'), null)],
+    });
+
+    await service.backfillTokenRange(pair.currency.id, pair.base.id, [
+      new Date('2026-09-20T00:00:00.000Z'),
+    ]);
+
+    expect(await storedRows(pair.currency.id)).toEqual([
+      ['2026-09-20T14:00:00.000Z', '2', 'intraday'],
+    ]);
+  });
+
+  test('a Tier 2 quote with barDay absent is stored as before, daily at its own stamp', async () => {
+    const pair = await currencyAndBase();
+    const service = backfill({
+      range: () => [
+        bar(pair, '2', new Date('2026-09-21T00:00:00.000Z'), null, { legacyDaily: true }),
+      ],
+    });
+
+    await service.backfillTokenRange(pair.currency.id, pair.base.id, [
+      new Date('2026-09-21T00:00:00.000Z'),
+    ]);
+
+    expect(await storedRows(pair.currency.id)).toEqual([
+      ['2026-09-21T00:00:00.000Z', '2', 'daily'],
+    ]);
+  });
+
+  test('the request for a needed day reaches that day’s close', async () => {
+    const pair = await currencyAndBase();
+    let requestEnd: Date | undefined;
+    const service = backfill({
+      range: (_token, _from, to) => {
+        requestEnd = to;
+        return [];
+      },
+    });
+
+    await service.backfillTokenRange(pair.currency.id, pair.base.id, [
+      new Date('2026-09-20T00:00:00.000Z'),
+    ]);
+
+    expect(requestEnd).toEqual(new Date('2026-09-21T00:00:00.000Z'));
+  });
+
+  test('a request that reaches today ends at the fetch instant, not after it', async () => {
+    const pair = await currencyAndBase();
+    let requestEnd: Date | undefined;
+    const service = backfill({
+      range: (_token, _from, to) => {
+        requestEnd = to;
+        return [];
+      },
+    });
+    const start = Date.now();
+
+    await service.backfillTokenRange(pair.currency.id, pair.base.id, [todayStart]);
+
+    const end = Date.now();
+    expect(requestEnd?.getTime()).toBeGreaterThanOrEqual(start);
+    expect(requestEnd?.getTime()).toBeLessThanOrEqual(end);
+  });
+
+  test('the request starts the day before the first needed day', async () => {
+    const pair = await currencyAndBase();
+    let requestStart: Date | undefined;
+    const service = backfill({
+      range: (_token, from) => {
+        requestStart = from;
+        return [];
+      },
+    });
+
+    await service.backfillTokenRange(pair.currency.id, pair.base.id, [
+      new Date('2026-09-22T00:00:00.000Z'),
+      new Date('2026-09-20T00:00:00.000Z'),
+    ]);
+
+    expect(requestStart).toEqual(new Date('2026-09-19T00:00:00.000Z'));
+  });
+
+  test('re-running a range writes nothing new', async () => {
+    const pair = await currencyAndBase();
+    const writer = Container.get(PriceWriter);
+    const outcomes: PriceWriteOutcome[] = [];
+    Container.set(PriceWriter, {
+      writeHistory: async (...args: Parameters<PriceWriter['writeHistory']>) => {
+        const outcome = await writer.writeHistory(...args);
+        outcomes.push(outcome);
+        return outcome;
+      },
+    } as unknown as PriceWriter);
+    try {
+      // A close stamped on the next UTC day, so a run that keyed coverage by
+      // the stamp would read the day as empty and send the bar again.
+      const service = backfill({
+        range: () => [bar(pair, '2', new Date('2026-09-21T00:00:00.000Z'), '2026-09-20')],
+      });
+      const needed = [new Date('2026-09-20T00:00:00.000Z')];
+      await service.backfillTokenRange(pair.currency.id, pair.base.id, needed);
+      const afterFirst = await storedFor(pair.currency.id);
+      outcomes.length = 0;
+
+      await service.backfillTokenRange(pair.currency.id, pair.base.id, needed);
+
+      expect(outcomes.flatMap((outcome) => outcome.seriesChanged)).toEqual([]);
+      expect(outcomes.reduce((sum, outcome) => sum + outcome.written, 0)).toBe(0);
+      expect(await storedFor(pair.currency.id)).toEqual(afterFirst);
+    } finally {
+      Container.set(PriceWriter, writer);
+    }
+  });
+
+  test('an unstorable later quote does not hide a storable one for the same key', async () => {
+    const pair = await currencyAndBase();
+    const service = backfill({
+      range: () => [
+        bar(pair, '0', new Date('2026-09-20T20:00:02.000Z'), '2026-09-20'),
+        bar(pair, '10', new Date('2026-09-20T20:00:00.000Z'), '2026-09-20'),
+      ],
+    });
+
+    const result = await service.backfillTokenRange(pair.currency.id, pair.base.id, [
+      new Date('2026-09-20T00:00:00.000Z'),
+    ]);
+
+    expect(await storedRows(pair.currency.id)).toEqual([
+      ['2026-09-20T23:59:59.999Z', '10', 'daily'],
+    ]);
+    expect(result).toMatchObject({ inserted: 1, droppedDays: 0, droppedBars: 1 });
+  });
+
+  test('two quotes for one key are written as one, the later one', async () => {
+    const pair = await currencyAndBase();
+    // A session bar and the terminal quote of the same trading date, the
+    // later one first.
+    const service = backfill({
+      range: () => [
+        bar(pair, '11', new Date('2026-09-20T20:00:02.000Z'), '2026-09-20'),
+        bar(pair, '10', new Date('2026-09-20T20:00:00.000Z'), '2026-09-20'),
+      ],
+    });
+
+    await service.backfillTokenRange(pair.currency.id, pair.base.id, [
+      new Date('2026-09-20T00:00:00.000Z'),
+    ]);
+
+    expect(await storedRows(pair.currency.id)).toEqual([
+      ['2026-09-20T23:59:59.999Z', '11', 'daily'],
+    ]);
   });
 });

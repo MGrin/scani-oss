@@ -54,7 +54,7 @@ describe('CoinGeckoProvider', () => {
       const at = new Date('2024-03-05T12:00:00Z');
       const quote = await p.fetchHistoricalPrice(btc, at, { baseCurrency: usdToken });
       expect(quote?.price).toBe('30000');
-      expect(capturedUrl).toContain('date=05-03-2024');
+      expect(capturedUrl).toContain('date=06-03-2024');
     } finally {
       globalThis.fetch = originalFetch;
     }

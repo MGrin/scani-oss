@@ -51,7 +51,6 @@ const EXCHANGE_SYNC: SnapshotBatchOptions = {
   holdingFailure: 'skip-entry',
   absence: null,
   clearsAbsenceTally: true,
-  unhideOnNonZero: false,
   unchangedCheckpoint: 'skip',
   zeroOpensHolding: false,
 };
@@ -154,7 +153,13 @@ function entryBatch(fixture: Fixture, holdings: ReadonlyArray<{ symbol: string }
       walletId: null,
     },
     fetchedAt: FETCHED,
-    window: { from: LONG_AGO, to: CAPTURED, complete: false, uploadRef: 'upload-1' },
+    window: {
+      shape: 'statement-upload',
+      from: LONG_AGO,
+      to: CAPTURED,
+      complete: false,
+      uploadRef: 'upload-1',
+    },
     checkpoints: [],
     entries: holdings.map(({ symbol }, i) => ({
       externalId: `row-${i}`,
@@ -176,13 +181,11 @@ function entryBatch(fixture: Fixture, holdings: ReadonlyArray<{ symbol: string }
       arrival: 'user_confirmed',
       writesCache: true,
       createdWithoutCheckpoint: 'sum-of-entries',
-      cacheObservation: null,
       derivesTradeLegs: false,
       holdingFailure: 'fail-batch',
       absence: null,
       clearsAbsenceTally: false,
       createdCheckpointMeta: null,
-      unhideOnNonZero: false,
       unchangedCheckpoint: 'append',
       zeroOpensHolding: true,
     },
@@ -308,11 +311,12 @@ describe('FeedIngestService.ingest — its locks against a person’s edit (R78)
       blocked: true,
       outcomes: ['fulfilled', 'fulfilled'],
     });
-    // The edit committed second, so its figure is the cache, beside the sync's checkpoint.
+    // The edit committed second, beside the sync's checkpoint. On a feed
+    // holding it is a verification, so the cache stays the feed's (A5 D-20).
     expect({
       balance: await balanceOf(holding.id),
       observed: await observedBalances(holding.id),
-    }).toEqual({ balance: '150', observed: ['120', '150'] });
+    }).toEqual({ balance: '120', observed: ['120', '150'] });
   });
 
   /**

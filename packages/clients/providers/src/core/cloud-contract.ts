@@ -36,6 +36,13 @@ export const cloudPricingProviderSchema = z.enum([
   'yahoo-finance',
   'kraken',
 ]);
+/**
+ * Pricing providers the cloud serves only to Scani's own keys (SC-1586).
+ * Yahoo's terms forbid commercial reuse and redistribution, so a Cloud API
+ * key is never served its prices and a Tier 2 install never asks for them.
+ */
+export const SCANI_ONLY_CLOUD_PRICING: ReadonlySet<string> = new Set(['yahoo-finance']);
+
 export const cloudPricesInput = z
   .object({
     provider: cloudPricingProviderSchema,

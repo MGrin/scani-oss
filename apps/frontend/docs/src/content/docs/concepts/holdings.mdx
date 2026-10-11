@@ -34,7 +34,7 @@ The Drizzle table is `holdings` in
 | `externalId` | text \| null | Provider-specific identifier (e.g. `'BTC'` for Binance) used as a sync-matching key. NULL for manual holdings. |
 | `isHidden` | bool | Hidden holdings are excluded from the UI but still synced by cron jobs. |
 | `isActive` | bool | Inactive holdings stay visible but are excluded from total calculations. |
-| `lastUpdated` | timestamptz | When the balance was last updated by any source. Also the [anchor timestamp](/concepts/balance-reconstruction/) for current-state-based reconstruction. |
+| `lastUpdated` | timestamptz | When the balance was last updated by any source. Not used to [reconstruct a past balance](/concepts/balance-reconstruction/). |
 | `createdAt` | timestamptz | |
 
 Composite indexes cover the common lookups: `(user, account, token)`,

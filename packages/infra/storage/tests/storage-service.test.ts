@@ -595,3 +595,29 @@ describe('read with maxBytes', () => {
     expect(bodyReads(svc)).toHaveLength(1);
   });
 });
+
+describe('writeTemp (SC-1649)', () => {
+  test('writes under a fresh temp key in the prefix and returns that key', async () => {
+    const svc = new TestStorageService({ envOverride: validEnv });
+    const key = await svc.writeTemp(
+      { keyPrefix: 'backup/user-1', extension: 'gz', contentType: 'application/gzip' },
+      new Uint8Array([1, 2])
+    );
+
+    expect(key).toMatch(/^temp\/backup\/user-1\/[0-9a-f-]{36}\.gz$/);
+    const call = svc.fakeFor(SERVER_ENDPOINT)?.calls.find((c) => c.op === 'write');
+    expect(call?.key).toBe(key);
+    expect(call?.writeType).toBe('application/gzip');
+  });
+
+  test('refuses a prefix a presigned upload would refuse, and writes nothing', async () => {
+    const svc = new TestStorageService({ envOverride: validEnv });
+    await expect(
+      svc.writeTemp(
+        { keyPrefix: '../etc', extension: 'gz', contentType: 'application/gzip' },
+        new Uint8Array([1])
+      )
+    ).rejects.toThrow(/invalid keyPrefix/i);
+    expect(svc.fakeFor(SERVER_ENDPOINT)?.calls.some((c) => c.op === 'write') ?? false).toBe(false);
+  });
+});

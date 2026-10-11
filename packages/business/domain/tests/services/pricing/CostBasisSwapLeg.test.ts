@@ -7,10 +7,11 @@ import { Container } from 'typedi';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
 import { CostBasisService } from '../../../src/services/pricing/CostBasisService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { DriftLedgerService } from '../../../src/services/returns/DriftLedgerService';
 import { ExternalFlowService } from '../../../src/services/returns/ExternalFlowService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub } from '../../../test/helpers/price-series';
 
 /**
  * SC-1475: a swap leg's cost (or proceeds) is the same number as its external
@@ -131,15 +132,15 @@ function wire(rows: HoldingTransaction[], calls: Call[] = []) {
       { id: ETH_HOLDING, tokenId: ETH },
     ],
   } as unknown as HoldingRepository);
-  Container.set(PriceGraphService, {
-    buildPriceLookup: async () => ({ covers: () => false }),
-    convert: async (amount: Decimal | string, from: string, _to: string, at: Date) => {
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal | string, from: string, _to: string, at: Date) => {
       calls.push({ from, at });
       if (from === GBP) return { amount: new Decimal(amount), stale: false };
       const rate = RATES[from];
       return rate ? { amount: new Decimal(amount).mul(rate), stale: false } : null;
-    },
-  } as unknown as PriceGraphService);
+    })
+  );
   Container.set(DriftLedgerService, {
     forHoldings: async () => new Map(),
   } as unknown as DriftLedgerService);

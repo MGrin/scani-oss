@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { EMAIL_STRINGS, type EmailStrings, fill, resolveEmailStrings } from '../../src/i18n';
 import { renderActivationNudgeEmail } from '../../src/templates/activation-nudge';
+import { renderHouseholdInviteEmail } from '../../src/templates/household-invite';
 import { escapeHtml } from '../../src/templates/layout';
 import { renderMagicLinkEmail } from '../../src/templates/magic-link';
 import { renderOtpEmail } from '../../src/templates/otp';
@@ -214,6 +215,13 @@ describe('the fallback is the WHOLE letter, never a key of it', () => {
   const everyLetter = (language: string): EmailContent[] => [
     renderMagicLinkEmail({ brand: SCANI_BRAND, url: 'https://app.scani.xyz/x', language }),
     renderVerificationEmail({ brand: SCANI_BRAND, url: 'https://app.scani.xyz/x', language }),
+    renderHouseholdInviteEmail({
+      brand: SCANI_BRAND,
+      url: 'https://app.scani.xyz/x',
+      inviterName: 'Alice',
+      householdName: 'Home',
+      language,
+    }),
     // All four purposes, not the two that used to be rendered: a bundle key no
     // letter renders sits in the population unable to fire, which reads exactly
     // like a key that matched nothing (SC-802).

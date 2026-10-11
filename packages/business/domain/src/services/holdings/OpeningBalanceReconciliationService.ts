@@ -5,6 +5,7 @@ import { HoldingBalanceObservationRepository } from '../../repositories/HoldingB
 import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
+import { AccountClassService } from '../liabilities/AccountClassService';
 import { BalanceAtTimeService } from '../pricing/BalanceAtTimeService';
 
 /**
@@ -65,7 +66,9 @@ export interface OpeningProjection {
   // `arrived-later`   — the ledger explains the balance as of the first
   //                     observation, so the unexplained amount arrived after
   //                     it. No row, and specifically not a backdated one.
-  // `opening`         — a row is written, at `openingAt`, for `openingQuantity`.
+  // `opening`         — coverage records `openingQuantity` at `openingAt`. No
+  //                     row is written: the drift ledger carries the opening
+  //                     from the first reading (feeds foundation A5).
   action: 'reconciled' | 'missing-inflows' | 'arrived-later' | 'opening';
   openingAt: Date | null;
   openingQuantity: Decimal;
@@ -97,14 +100,14 @@ export interface ReconciliationResult {
   // backdated, and recorded here and in the coverage notes so it is not
   // silently dropped (SC-481).
   unexplainedResidual: Decimal;
-  // Did we synthesize a new opening_balance tx?
-  openingBalanceSynthesized: boolean;
-  // The occurred_at of the synthesized opening tx, if any.
+  // Did coverage record a positive opening position?
+  hasOpening: boolean;
+  // When that opening is dated, if there is one.
   openingAt: Date | null;
-  // Set only when this run moved the opening in the ledger: written for the
-  // first time, or at a new date or quantity. Re-writing an identical opening
-  // on every full import leaves it null, so no rebuild is sized from it
-  // (SC-1459).
+  // The oldest day whose stored history this run changed: a stored opening row
+  // it rewrote or moved, or one it removed. An opening recorded in coverage
+  // alone is not read by any stored history, so moving it leaves this null and
+  // no rebuild is sized from it (SC-1459, SC-1607).
   openingChangedAt?: Date | null;
   // Note left on holding_coverage if anything notable happened.
   notes: string | null;
@@ -126,13 +129,9 @@ export interface ReconciliationResult {
 export const DEFAULT_OPENING_EPSILON = new Decimal('1e-12');
 
 // Reconciles (sum-of-transactions) against (current holdings.balance) per
-// holding. When they disagree, inserts a synthetic kind='opening_balance'
-// tx at the start of known history so the tx chain fully explains the
-// current balance. Never touches the `holdings` table.
-//
-// Idempotent per holding: running twice produces at most one opening row
-// because the dedup key is (holding_id, 'reconciliation-opening',
-// externalId='opening_balance').
+// holding and records the opening position on `holding_coverage`. It writes
+// no ledger row: the drift ledger derives the opening from the first reading
+// (feeds foundation A5). Never touches the `holdings` table.
 @Service()
 export class OpeningBalanceReconciliationService {
   private readonly logger = createComponentLogger('service:OpeningBalanceReconciliationService');
@@ -142,6 +141,7 @@ export class OpeningBalanceReconciliationService {
   private readonly transactionRepository = Container.get(HoldingTransactionRepository);
   private readonly observationRepository = Container.get(HoldingBalanceObservationRepository);
   private readonly balanceAtTimeService = Container.get(BalanceAtTimeService);
+  private readonly accountClass = Container.get(AccountClassService);
 
   // What `reconcileHolding` is about to decide, without deciding it.
   //
@@ -160,6 +160,13 @@ export class OpeningBalanceReconciliationService {
       // Nothing to reconcile against — the holding was deleted while
       // transactions remain (shouldn't happen with FK cascade, but guard
       // anyway). Leave the ledger alone.
+      return null;
+    }
+
+    // What a loan or card owes is negative by design, and every branch below
+    // models an asset: a negative opening would read as missing inflows and
+    // the holding as incomplete history (SC-1640). Nothing to reconcile.
+    if (await this.accountClass.holdingMayOwe(holding.userId, holdingId)) {
       return null;
     }
 
@@ -255,7 +262,6 @@ export class OpeningBalanceReconciliationService {
       holding,
       // The pool, exactly as before — this reconciler is not transactional.
       undefined,
-      {},
       { excludeReconciliationOpening: true }
     );
     // `extremes.first` is one of the candidates `earliestEvidenceAt` compares,
@@ -401,7 +407,8 @@ export class OpeningBalanceReconciliationService {
       : null;
 
     if (projection.action === 'reconciled') {
-      await this.transactionRepository.deleteReconciliationOpening(holdingId);
+      const removedOpeningAt =
+        await this.transactionRepository.deleteReconciliationOpening(holdingId);
       await this.coverageRepository.upsertReconciliation({
         holdingId,
         lastReconciledAt: new Date(),
@@ -416,8 +423,9 @@ export class OpeningBalanceReconciliationService {
         computedOpening,
         openingQuantity: new Decimal(0),
         unexplainedResidual: new Decimal(0),
-        openingBalanceSynthesized: false,
+        hasOpening: false,
         openingAt: null,
+        openingChangedAt: removedOpeningAt,
         notes: null,
         residueCause,
         historyStartsAt,
@@ -425,7 +433,8 @@ export class OpeningBalanceReconciliationService {
     }
 
     if (projection.action === 'missing-inflows') {
-      await this.transactionRepository.deleteReconciliationOpening(holdingId);
+      const removedOpeningAt =
+        await this.transactionRepository.deleteReconciliationOpening(holdingId);
       // Two sentences for two facts, and which one a reader gets is the whole
       // of SC-900. Both name the same amount and neither nets it away — the
       // figure staying visible is what would still catch the day the window
@@ -466,8 +475,9 @@ export class OpeningBalanceReconciliationService {
         computedOpening,
         openingQuantity: new Decimal(0),
         unexplainedResidual,
-        openingBalanceSynthesized: false,
+        hasOpening: false,
         openingAt: null,
+        openingChangedAt: removedOpeningAt,
         notes: gapNotes,
         residueCause,
         historyStartsAt,
@@ -481,7 +491,8 @@ export class OpeningBalanceReconciliationService {
       // branch exists to refuse, and writing it at a date we cannot name is
       // not available, so the ledger says nothing and the coverage row says
       // what happened.
-      await this.transactionRepository.deleteReconciliationOpening(holdingId);
+      const removedOpeningAt =
+        await this.transactionRepository.deleteReconciliationOpening(holdingId);
       const laterNotes = `No opening balance: the transaction history already explains this holding's balance as of its first observation. ${unexplainedResidual.toString()} of the current balance arrived after that without a transaction to record it, and is deliberately NOT backdated to ${openingAt?.toISOString()}.`;
       await this.coverageRepository.upsertReconciliation({
         holdingId,
@@ -497,43 +508,48 @@ export class OpeningBalanceReconciliationService {
         computedOpening,
         openingQuantity: new Decimal(0),
         unexplainedResidual,
-        openingBalanceSynthesized: false,
+        hasOpening: false,
         openingAt: null,
+        openingChangedAt: removedOpeningAt,
         notes: laterNotes,
         residueCause,
         historyStartsAt,
       };
     }
 
-    // `action === 'opening'`, the only branch that writes to the ledger.
-    // `openingAt` is non-null on it by construction.
+    // `action === 'opening'`. `openingAt` is non-null on it by construction.
+    // No new row is written. A row an earlier version wrote is kept current
+    // exactly as before, so it cannot go stale before a later cleanup deletes
+    // them all under a diff.
     const occurredAt = openingAt as Date;
-    const written = await this.transactionRepository.bulkUpsert([
-      {
-        userId: projection.userId,
-        holdingId,
-        tokenId: projection.tokenId,
-        kind: 'opening_balance',
-        quantity: openingQuantity.toString(),
-        occurredAt,
-        source: 'reconciliation-opening',
-        externalId: 'opening_balance',
-        sourceMetadata: {
-          reconciledAt: new Date().toISOString(),
-          holdingsBalance: holdingsBalance.toString(),
-          txSumAllTime: txSumAllTime.toString(),
-          // Kept beside the quantity because the two disagreeing IS the
-          // finding: the difference is money the ledger cannot date.
-          computedOpening: computedOpening.toString(),
-          unexplainedResidual: unexplainedResidual.toString(),
-        },
-      },
-    ]);
+    const stored = (await this.transactionRepository.hasReconciliationOpening(holdingId))
+      ? await this.transactionRepository.bulkUpsert([
+          {
+            userId: projection.userId,
+            holdingId,
+            tokenId: projection.tokenId,
+            kind: 'opening_balance',
+            quantity: openingQuantity.toString(),
+            occurredAt,
+            source: 'reconciliation-opening',
+            externalId: 'opening_balance',
+            sourceMetadata: {
+              reconciledAt: new Date().toISOString(),
+              holdingsBalance: holdingsBalance.toString(),
+              txSumAllTime: txSumAllTime.toString(),
+              // Kept beside the quantity because the two disagreeing IS the
+              // finding: the difference is money the ledger cannot date.
+              computedOpening: computedOpening.toString(),
+              unexplainedResidual: unexplainedResidual.toString(),
+            },
+          },
+        ])
+      : null;
 
     const residualNote = unexplainedResidual.abs().lte(epsilon)
       ? ''
       : ` A further ${unexplainedResidual.toString()} of the current balance is unexplained by any transaction and did not exist at the opening, so it is recorded here rather than backdated.`;
-    const notes = `Synthesized opening balance of ${openingQuantity.toString()} at ${occurredAt.toISOString()} — tx history began after user already held this amount.${residualNote}`;
+    const notes = `Opening balance of ${openingQuantity.toString()} at ${occurredAt.toISOString()} — tx history began after user already held this amount.${residualNote}`;
 
     await this.coverageRepository.upsertReconciliation({
       holdingId,
@@ -551,7 +567,7 @@ export class OpeningBalanceReconciliationService {
         unexplainedResidual: unexplainedResidual.toString(),
         openingAt: occurredAt.toISOString(),
       },
-      'Synthesized opening_balance tx'
+      'Recorded opening position'
     );
 
     return {
@@ -561,9 +577,9 @@ export class OpeningBalanceReconciliationService {
       computedOpening,
       openingQuantity,
       unexplainedResidual,
-      openingBalanceSynthesized: true,
+      hasOpening: true,
       openingAt: occurredAt,
-      openingChangedAt: written.earliestChangedAt,
+      openingChangedAt: stored ? stored.earliestChangedAt : null,
       notes,
       residueCause,
       historyStartsAt,

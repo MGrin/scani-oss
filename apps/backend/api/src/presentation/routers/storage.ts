@@ -20,6 +20,7 @@
  */
 
 import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
+import { BACKUP_UPLOAD_MAX_BYTES } from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
@@ -28,7 +29,14 @@ import { strictInput } from '../lib/strict-input';
 import { UserBudget } from '../lib/user-budget';
 import { protectedProcedure, router } from '../trpc';
 
-const MAX_SIZE_BYTES = UPLOAD_LIMITS.PRESIGN_UPLOAD_BYTES;
+type Purpose = 'screenshot' | 'file-import' | 'document' | 'backup';
+
+const MAX_SIZE_BYTES: Record<Purpose, number> = {
+  screenshot: UPLOAD_LIMITS.PRESIGN_UPLOAD_BYTES,
+  'file-import': UPLOAD_LIMITS.PRESIGN_UPLOAD_BYTES,
+  document: UPLOAD_LIMITS.PRESIGN_UPLOAD_BYTES,
+  backup: BACKUP_UPLOAD_MAX_BYTES,
+};
 
 function megabytes(bytes: number): string {
   return `${Number((bytes / 2 ** 20).toFixed(1))} MB`;
@@ -50,38 +58,40 @@ const uploadBudget = new UserBudget({
 // or expand the bucket's effective attack surface (e.g. serving the
 // stored object back through a permissive CDN). Keep this list tight
 // and explicit — broaden only with a security review.
-const ALLOWED_CONTENT_TYPES: Record<'screenshot' | 'file-import' | 'document', readonly string[]> =
-  {
-    // PDF too: `/import` sends a statement PDF here, and `screenshots.parse`
-    // reads a `.pdf` key as text. Leaving it out refused every bank-statement
-    // PDF at the upload (SC-1519).
-    screenshot: ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'],
-    'file-import': [
-      'text/csv',
-      'text/plain',
-      'application/csv',
-      'application/vnd.ms-excel',
-      'application/x-ofx',
-      'application/x-qfx',
-      'application/x-qif',
-      'application/octet-stream',
-    ],
-    // Mirrors `InvoiceExtractionService`'s two extraction paths: PDF
-    // (text or scanned) plus the same image set `screenshot` accepts,
-    // for a photographed receipt/invoice. No HEIC: no AI provider reads it
-    // (SC-1399), and iOS converts a photo to JPEG when HEIC is not offered.
-    document: ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'],
-  };
+const ALLOWED_CONTENT_TYPES: Record<Purpose, readonly string[]> = {
+  // PDF too: `/import` sends a statement PDF here, and `screenshots.parse`
+  // reads a `.pdf` key as text. Leaving it out refused every bank-statement
+  // PDF at the upload (SC-1519).
+  screenshot: ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf'],
+  'file-import': [
+    'text/csv',
+    'text/plain',
+    'application/csv',
+    'application/vnd.ms-excel',
+    'application/x-ofx',
+    'application/x-qfx',
+    'application/x-qif',
+    'application/octet-stream',
+  ],
+  // Mirrors `InvoiceExtractionService`'s two extraction paths: PDF
+  // (text or scanned) plus the same image set `screenshot` accepts,
+  // for a photographed receipt/invoice. No HEIC: no AI provider reads it
+  // (SC-1399), and iOS converts a photo to JPEG when HEIC is not offered.
+  document: ['application/pdf', 'image/png', 'image/jpeg', 'image/webp'],
+  // A Scani backup to restore (SC-1649): gzipped NDJSON.
+  backup: ['application/gzip', 'application/x-gzip', 'application/octet-stream'],
+};
 
 // Per-purpose filename extension allowlist. Belt-and-braces with the
 // content-type check: an attacker who controls both can still craft a
 // matched pair, but constraining the extension prevents `evil.exe`
 // from ever landing on R2 even if the bucket's object metadata is
 // later mishandled.
-const ALLOWED_EXTENSIONS: Record<'screenshot' | 'file-import' | 'document', readonly string[]> = {
+const ALLOWED_EXTENSIONS: Record<Purpose, readonly string[]> = {
   screenshot: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf'],
   'file-import': ['csv', 'txt', 'ofx', 'qfx', 'qif', 'xls'],
   document: ['pdf', 'png', 'jpg', 'jpeg', 'webp'],
+  backup: ['gz'],
 };
 
 export const storageRouter = router({
@@ -89,7 +99,7 @@ export const storageRouter = router({
     .input(
       strictInput(
         z.object({
-          purpose: z.enum(['screenshot', 'file-import', 'document']),
+          purpose: z.enum(['screenshot', 'file-import', 'document', 'backup']),
           contentType: z.string().min(1).max(200),
           filename: z.string().min(1).max(200),
           sizeBytes: z.number().int().positive(),
@@ -99,10 +109,11 @@ export const storageRouter = router({
     .mutation(async ({ input, ctx }) => {
       // Refused here rather than by zod's `.max`, whose message is an issue
       // list the app will not show a reader (SC-1492).
-      if (input.sizeBytes > MAX_SIZE_BYTES) {
+      const maxBytes = MAX_SIZE_BYTES[input.purpose];
+      if (input.sizeBytes > maxBytes) {
         throw new TRPCError({
           code: 'PAYLOAD_TOO_LARGE',
-          message: `This file is ${megabytes(input.sizeBytes)}. The limit is ${megabytes(MAX_SIZE_BYTES)}.`,
+          message: `This file is ${megabytes(input.sizeBytes)}. The limit is ${megabytes(maxBytes)}.`,
         });
       }
       const normalisedContentType = input.contentType.toLowerCase().split(';')[0]?.trim() ?? '';

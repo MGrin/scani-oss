@@ -3,8 +3,8 @@
 The unified third-party integration layer. Owns every outbound call to
 pricing APIs (CoinGecko, Finnhub, DeFiLlama, Frankfurter), CEX accounts
 (11 venues), broker APIs (IBKR, Wise), public chains (Bitcoin, Solana,
-TRON, TON, Etherscan-multichain), AI inference (OpenAI, Perplexity,
-DeepSeek), and the manual-pricing Google Sheets fallback.
+TRON, TON, Etherscan-multichain), AI inference (OpenAI), and the
+manual-pricing Google Sheets fallback.
 
 Every provider conforms to one or more **capability interfaces** in
 `core/capabilities.ts`. The `ProviderRegistry` (`core/registry.ts`)
@@ -33,8 +33,8 @@ src/
 │   └── utils/
 │       └── fetch.ts               fetchWithTimeout — every provider's HTTP path
 ├── providers/
-│   ├── _chat-completions.ts       shared chat-completions client (OpenAI/Perplexity/DeepSeek)
-│   └── <name>/                    one directory per provider (28 today; see list below)
+│   ├── _openai-responses.ts       shared Responses API client (OpenAI)
+│   └── <name>/                    one directory per provider (30 today, two of them e2e stubs)
 └── tests/
     ├── core/                      capabilities, registry, errors, config, rate-limiter, base, fetch
     └── providers/                 representative provider tests (binance)
@@ -52,7 +52,7 @@ src/
 | `credential-validator` | `CredentialValidator`           | every CEX, IBKR, Wise               |
 | `account-discoverer`   | `AccountDiscoveryProvider`      | IBKR, Wise                          |
 | `address-validator`    | `AddressValidatorProvider`      | every chain                         |
-| `ai-inference`         | `AIInferenceProvider`           | OpenAI, Perplexity, DeepSeek        |
+| `ai-inference`         | `AIInferenceProvider`           | OpenAI                              |
 
 Registration is **duck-typed**: a provider class doesn't need to declare
 which interfaces it implements. The registry runs `is*Provider(provider)`

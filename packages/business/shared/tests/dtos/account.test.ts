@@ -80,3 +80,20 @@ describe('UpdateAccountDto', () => {
     expect(UpdateAccountDto.safeParse({ typeId: 'not-a-uuid' }).success).toBe(false);
   });
 });
+
+describe('account wrapper (SC-1645)', () => {
+  test('create and update keep a wrapper code, null, or none', () => {
+    // `.parse`, not `.success`: zod strips an unknown key and still succeeds,
+    // so a DTO without the field would pass a success-only check.
+    for (const wrapper of ['isa', null, undefined]) {
+      expect(CreateAccountDto.parse({ name: 'ISA', typeId: VALID_UUID, wrapper }).wrapper).toBe(
+        wrapper
+      );
+      expect(UpdateAccountDto.parse({ wrapper }).wrapper).toBe(wrapper);
+    }
+  });
+
+  test('a code longer than 40 characters is refused', () => {
+    expect(UpdateAccountDto.safeParse({ wrapper: 'x'.repeat(41) }).success).toBe(false);
+  });
+});

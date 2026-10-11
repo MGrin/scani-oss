@@ -36,6 +36,8 @@ export const TOKEN_TYPE_TO_PROVIDER: Record<
   stock: 'stock-discriminator',
   'private-company': null,
   other: null,
+  property: null,
+  vehicle: null,
 };
 
 /**

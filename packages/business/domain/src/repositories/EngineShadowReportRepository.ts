@@ -37,13 +37,6 @@ export type ShadowRunSummary = {
    * changed since the backfill: the drift A2's writers re-label (plan D-4).
    */
   staleLabels?: number;
-  /** Price runs: per instant compared, its differences by category; `{}` where all matched. */
-  byInstant?: Record<string, Record<string, number>>;
-  /**
-   * Price runs: per base and comparator, the signed sum of the value at stake
-   * of the differences at `asOf`, a decimal string in that base.
-   */
-  valueImpactByBase?: Record<string, Record<string, string>>;
   durationMs: number;
 };
 

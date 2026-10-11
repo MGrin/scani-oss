@@ -20,8 +20,6 @@ function render(
       comparison={comparison}
       comparisonFailed={comparisonFailed}
       currency="GBP"
-      windowKey="all"
-      onWindowChange={() => undefined}
     />
   );
 }
@@ -279,5 +277,31 @@ describe('a return over part of the scope says which part (SC-1421)', () => {
     });
     expect(html).toContain('1 unpriced token counted at zero.');
     expect(html).not.toContain(copy.leftOut);
+  });
+});
+
+describe('a stored result during a rebuild says when it is from (SC-1694)', () => {
+  const STORED: ReturnsView = {
+    ...VIEW,
+    asOf: '2026-10-11T08:30:00.000Z',
+    updatingReasons: ['rebuilding-history'],
+  };
+
+  test('it names the time and the reason, under the figure', () => {
+    const html = render(STORED);
+    const asOf = html.indexOf('As of ');
+    expect(asOf).toBeGreaterThan(-1);
+    expect(html).toContain(copy.eligibility['rebuilding-history']);
+    expect(asOf).toBeLessThan(html.indexOf(copy.details));
+  });
+
+  test('it is not the unavailable view: the figures stay', () => {
+    const html = render(STORED);
+    expect(html).not.toContain(copy.unavailable);
+    expect(html).toContain('70.2');
+  });
+
+  test('a fresh result carries no as-of line', () => {
+    expect(render(VIEW)).not.toContain('As of ');
   });
 });

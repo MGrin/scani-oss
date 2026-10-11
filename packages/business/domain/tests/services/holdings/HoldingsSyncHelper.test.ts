@@ -140,7 +140,7 @@ interface Scenario {
   snapshots: HoldingSnapshot[];
   staleStrategy?: 'zero' | 'preserve';
   arrival?: 'user_confirmed' | 'auto_discovered';
-  skipUnchangedUpdates?: boolean;
+  unchangedCheckpoint?: 'append' | 'skip' | 'skip-observation';
   /** SC-1451: a fiat holding zeroes once it is missing from this many statements. */
   confirmFiat?: number;
 }
@@ -164,7 +164,7 @@ async function sync(seeded: Seeded, scenario: Scenario) {
       ...(scenario.confirmFiat ? { absentFiatConfirmations: scenario.confirmFiat } : {}),
       sourceTag: TAG,
       respectHiddenForCounts: false,
-      skipUnchangedUpdates: scenario.skipUnchangedUpdates ?? true,
+      unchangedCheckpoint: scenario.unchangedCheckpoint ?? 'skip',
       updateOnly: false,
       arrival: scenario.arrival ?? 'auto_discovered',
       tx,
@@ -493,6 +493,54 @@ describe('HoldingsSyncHelper — an empty snapshot never zeroes anything', () =>
   });
 });
 
+// SC-1600: the hourly syncs announce a user only when a balance moved. The
+// wallet sync stamps `last_updated` on an unchanged balance (skip-observation),
+// so a cache write counts as `updated` and is not evidence of a change; a
+// written observation is.
+describe('HoldingsSyncHelper — whether a balance changed (SC-1600)', () => {
+  async function held(seeded: Seeded, balance: string) {
+    const btc = await token(fresh('ZBTC'), 'crypto');
+    await holding(seeded, {
+      tokenId: btc.id,
+      source: 'import_binance',
+      externalId: 'BTC',
+      balance,
+    });
+    return btc;
+  }
+
+  test('a wallet sync that finds the same balance writes no observation, though it counts an update', async () => {
+    const seeded = await seed();
+    const btc = await held(seeded, '1.5');
+    const result = await sync(seeded, {
+      snapshots: [snapshot(btc.symbol, '1.5', 'crypto')],
+      unchangedCheckpoint: 'skip-observation',
+    });
+    expect(result.updated).toBe(1);
+    expect(result.observationsWritten).toBe(0);
+  });
+
+  test('control: a wallet sync that finds a new balance writes one', async () => {
+    const seeded = await seed();
+    const btc = await held(seeded, '1.5');
+    const result = await sync(seeded, {
+      snapshots: [snapshot(btc.symbol, '2', 'crypto')],
+      unchangedCheckpoint: 'skip-observation',
+    });
+    expect(result.observationsWritten).toBe(1);
+  });
+
+  test('an exchange sync that finds the same balance writes none, and a zeroed holding counts', async () => {
+    const seeded = await seed();
+    const btc = await held(seeded, '1.5');
+    const same = await sync(seeded, { snapshots: [snapshot(btc.symbol, '1.5', 'crypto')] });
+    expect(same.observationsWritten).toBe(0);
+    const gone = await sync(seeded, { snapshots: [snapshot(fresh('ZUSD'), '50', 'fiat')] });
+    expect(gone.removed).toBe(1);
+    expect(gone.observationsWritten).toBeGreaterThanOrEqual(1);
+  });
+});
+
 // SC-1427: a reporting interface's balance is true as of its own date, not
 // when we fetched it. IBKR's Flex positions are a close 1-2 business days
 // earlier; stamped at fetch time, a trade in between sat before an
@@ -511,7 +559,7 @@ describe('HoldingsSyncHelper — the observation is stamped at the source as-of'
     const asOf = new Date('2026-08-14T20:00:00.000Z');
 
     await sync(seeded, {
-      skipUnchangedUpdates: false,
+      unchangedCheckpoint: 'append',
       snapshots: [snapshot(usd.symbol, '10', 'fiat', asOf), snapshot(eur, '5', 'fiat', asOf)],
     });
 
@@ -575,12 +623,12 @@ describe('HoldingsSyncHelper — a currency missing from one statement is not a 
 
   test('the third consecutive statement without it lands the zero and clears the count', async () => {
     const { seeded, cash, stock } = await withCash(['2026-07-18', '2026-07-19']);
-    const before = new Date();
     await sync(seeded, { confirmFiat: 3, snapshots: [stock] });
     expect((await holdingRow(cash.id)).balance).toBe('0');
     expect(await absences(cash.id)).toBeNull();
     const zero = (await observationsOf(cash.id)).at(-1)!;
-    expect(zero.observedAt >= before).toBe(true);
+    // At the statement the third absence is read from (A5 D-22, R60).
+    expect(zero.observedAt).toEqual(day('2026-07-20'));
     expect({ ...legacyColumns(zero), observedAt: null }).toEqual({
       balance: '0',
       observedAt: null,

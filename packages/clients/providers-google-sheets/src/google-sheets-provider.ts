@@ -272,6 +272,7 @@ export class GoogleSheetsProvider implements CurrentPriceProvider {
         baseTokenId,
         price: r.price,
         timestamp: r.timestamp,
+        barDay: null,
         source: r.source,
       });
     }

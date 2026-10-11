@@ -1,6 +1,12 @@
 import { expect, test } from 'bun:test';
 import { sql } from 'drizzle-orm';
-import { inRollback, type Query, refusedWith, type Tx } from './foundation-helpers';
+import {
+  inRollback,
+  type Query,
+  refusedWith,
+  seedHoldingCache,
+  type Tx,
+} from './foundation-helpers';
 
 /**
  * The two report tables the foundation shadows write. What is pinned here is
@@ -23,9 +29,9 @@ const insertRun = (kind: string, status: string, scope = 'all') =>
   sql`INSERT INTO engine_shadow_runs (kind, as_of, started_at, finished_at, status, scope)
       VALUES (${kind}, now(), now(), now(), ${status}, ${scope}) RETURNING id`;
 
-test('a run is a balance or a price run, complete or failed, over all users or one, and says which', async () => {
+test('a run is a balance, price or value run, complete or failed, over all users or one, and says which', async () => {
   await inRollback(async (tx) => {
-    for (const kind of ['balance', 'price']) {
+    for (const kind of ['balance', 'price', 'value']) {
       for (const status of ['complete', 'failed']) {
         for (const scope of ['all', 'user']) {
           expect(await refusedWith(tx, insertRun(kind, status, scope))).toBe(undefined);
@@ -73,9 +79,11 @@ test("a user's differences go with the user; a holding or token going clears the
     const heldTokenId = await token();
     const tokenId = await token();
     const baseTokenId = await token();
-    const holdingId = await id(
-      tx,
-      sql`INSERT INTO holdings (user_id, account_id, token_id, balance) VALUES (${userId}, ${accountId}, ${heldTokenId}, '1') RETURNING id`
+    const holdingId = await seedHoldingCache(tx, () =>
+      id(
+        tx,
+        sql`INSERT INTO holdings (user_id, account_id, token_id, balance) VALUES (${userId}, ${accountId}, ${heldTokenId}, '1') RETURNING id`
+      )
     );
     const runId = await id(tx, insertRun('balance', 'complete'));
     const differenceId = await id(

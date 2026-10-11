@@ -3,7 +3,10 @@ import {
   isCurrentPriceProvider,
   isHistoricalPriceProvider,
 } from '@scani/providers/core/capabilities';
-import { cloudPricingProviderSchema } from '@scani/providers/core/cloud-contract';
+import {
+  cloudPricingProviderSchema,
+  SCANI_ONLY_CLOUD_PRICING,
+} from '@scani/providers/core/cloud-contract';
 import { loadCloudClientConfig } from '../config';
 import { getCloudClient } from '../runtime';
 import { CloudAIProvider, CloudIdentityProvider, CloudPricingProvider } from './platform';
@@ -19,7 +22,7 @@ export function platformProviderFactories(
       if (!client) throw new Error('Tier 2 requires Scani Cloud credentials');
       return [
         ...cloudPricingProviderSchema.options
-          .filter((key) => key !== 'kraken')
+          .filter((key) => key !== 'kraken' && !SCANI_ONLY_CLOUD_PRICING.has(key))
           .map((key) => new CloudPricingProvider(client, key)),
         ...['coingecko', 'defillama', 'finnhub'].map(
           (key) => new CloudIdentityProvider(client, key)

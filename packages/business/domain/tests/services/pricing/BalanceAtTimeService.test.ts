@@ -1,548 +1,236 @@
-process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy@localhost/dummy';
-
 import { describe, expect, test } from 'bun:test';
+import type { DatabaseTransaction } from '@scani/db';
+import Decimal from 'decimal.js';
 import { Container } from 'typedi';
-import { HoldingBalanceObservationRepository } from '../../../src/repositories/HoldingBalanceObservationRepository';
-import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
-import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
-import { BalanceAtTimeService } from '../../../src/services/pricing/BalanceAtTimeService';
-import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { EngineEvidenceRepository } from '../../../src/repositories/EngineEvidenceRepository';
+import {
+  type BalanceAtTimeResult,
+  BalanceAtTimeService,
+} from '../../../src/services/pricing/BalanceAtTimeService';
+import { withTestDb } from '../../../test/helpers/db';
+import { makeInstitution, makeUser } from '../../../test/helpers/factories';
+import {
+  makeAccount,
+  makeHolding,
+  makeHoldingTransaction,
+  makeObservations,
+  makeToken,
+} from '../../../test/helpers/factories-extra';
 
-// Container stubs are process-global; put back whatever this file changes
-// so no later test file resolves them (SC-448).
-restoreContainerAfterAll();
+/**
+ * A5 flip PR-2: history's balance reads come from the engine's `balanceAt`
+ * over classified evidence (D-6), mapped onto the result shape every reader
+ * already consumes (D-10). The engine's own rules are pinned in
+ * `tests/engine/`; these pin the mapping, the two behaviours the old walk had
+ * and the engine does not, and the batched load (D-11).
+ */
 
-// Minimal in-memory stubs. Only the methods BalanceAtTimeService calls are
-// implemented; anything else would throw if touched. Keeps the tests honest
-// — a future refactor that adds a dep we don't stub will fail loudly here.
+const day = (iso: string) => new Date(`${iso}T12:00:00Z`);
 
-function makeObservationStub(
-  rows: Array<{
-    holdingId: string;
-    balance: string;
-    observedAt: Date;
-  }>
-): HoldingBalanceObservationRepository {
-  return {
-    findLatestAtOrAfter: async (holdingId: string, at: Date) => {
-      const match = rows
-        .filter((r) => r.holdingId === holdingId && r.observedAt >= at)
-        .sort((a, b) => a.observedAt.getTime() - b.observedAt.getTime())[0];
-      return match
-        ? ({
-            ...match,
-            id: 'x',
-            userId: 'u',
-            source: 's',
-            sourceMetadata: {},
-            createdAt: new Date(),
-          } as never)
-        : null;
-    },
-    findLatestAtOrBefore: async (holdingId: string, at: Date) => {
-      const match = rows
-        .filter((r) => r.holdingId === holdingId && r.observedAt <= at)
-        .sort((a, b) => b.observedAt.getTime() - a.observedAt.getTime())[0];
-      return match
-        ? ({
-            ...match,
-            id: 'x',
-            userId: 'u',
-            source: 's',
-            sourceMetadata: {},
-            createdAt: new Date(),
-          } as never)
-        : null;
-    },
-    findLowestBalance: async (holdingId: string) => {
-      const balances = rows.filter((r) => r.holdingId === holdingId).map((r) => Number(r.balance));
-      return balances.length ? String(Math.min(...balances)) : null;
-    },
-    findExtremesForHolding: async (holdingId: string) => {
-      const times = rows
-        .filter((r) => r.holdingId === holdingId)
-        .map((r) => r.observedAt.getTime())
-        .sort((a, b) => a - b);
-      return times.length
-        ? { first: new Date(times[0] as number), last: new Date(times[times.length - 1] as number) }
-        : { first: null, last: null };
-    },
-  } as unknown as HoldingBalanceObservationRepository;
+async function holdingOf(tx: DatabaseTransaction, createdAt = day('2026-01-01')) {
+  const user = await makeUser(tx);
+  const account = await makeAccount(tx, {
+    userId: user.id,
+    institutionId: (await makeInstitution(tx)).id,
+  });
+  const token = await makeToken(tx);
+  const holding = await makeHolding(tx, {
+    userId: user.id,
+    accountId: account.id,
+    tokenId: token.id,
+    createdAt,
+  });
+  return { userId: user.id, holding };
 }
 
-function makeTransactionStub(
-  rows: Array<{
-    holdingId: string;
-    quantity: string;
-    occurredAt: Date;
-    priceNative?: string;
-    priceNativeTokenId?: string;
-  }>
-): HoldingTransactionRepository {
+/** A person's value, as `SnapshotWriter` records it. */
+function snapshot(userId: string, holdingId: string, observedAt: Date, balance: string) {
   return {
-    findForHoldingInRange: async (holdingId: string, from: Date, to: Date) => {
-      return rows
-        .filter((r) => r.holdingId === holdingId && r.occurredAt > from && r.occurredAt <= to)
-        .sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime())
-        .map((r) => ({
-          ...r,
-          id: 'x',
-          userId: 'u',
-          tokenId: 'tok-1',
+    userId,
+    holdingId,
+    observedAt,
+    balance,
+    source: 'sync-capture',
+    role: 'snapshot' as const,
+    authority: 'person' as const,
+    cause: 'flow' as const,
+  };
+}
+
+const service = () => Container.get(BalanceAtTimeService);
+
+describe('BalanceAtTimeService.getBalance answers from the engine (D-10)', () => {
+  test('before the holding starts, the balance is absent and marked before-records', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, holding } = await holdingOf(tx);
+      await makeObservations(tx, [snapshot(userId, holding.id, day('2026-02-01'), '100')]);
+
+      const result = await service().getBalance(holding.id, day('2025-12-01'), tx);
+
+      expect(result).toEqual({
+        balance: null,
+        anchor: null,
+        anchorAt: null,
+        beforeRecords: true,
+      });
+    });
+  });
+
+  test('after a reading, the walk runs forward from it', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, holding } = await holdingOf(tx);
+      await makeObservations(tx, [snapshot(userId, holding.id, day('2026-02-01'), '100')]);
+      await makeHoldingTransaction(tx, {
+        userId,
+        holdingId: holding.id,
+        kind: 'deposit',
+        quantity: '10',
+        occurredAt: day('2026-02-05'),
+      });
+
+      const result = await service().getBalance(holding.id, day('2026-02-10'), tx);
+
+      expect(result.balance?.toString()).toBe('110');
+      expect(result.anchor).toBe('observation-before');
+      expect(result.anchorAt?.toISOString()).toBe(day('2026-02-01').toISOString());
+      expect(result.beforeRecords).toBe(false);
+    });
+  });
+
+  test('before the first reading of a snapshot holding, its first value stands', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, holding } = await holdingOf(tx);
+      await makeObservations(tx, [snapshot(userId, holding.id, day('2026-02-01'), '100')]);
+
+      const result = await service().getBalance(holding.id, day('2026-01-15'), tx);
+
+      expect(result.balance?.toString()).toBe('100');
+      expect(result.anchor).toBe('observation-after');
+      expect(result.beforeRecords).toBe(false);
+    });
+  });
+
+  test('a holding with a ledger and no reading sums its ledger, with no anchor', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, holding } = await holdingOf(tx);
+      for (const [quantity, at] of [
+        ['10', '2026-02-01'],
+        ['5', '2026-02-03'],
+      ] as const) {
+        await makeHoldingTransaction(tx, {
+          userId,
+          holdingId: holding.id,
           kind: 'deposit',
-          source: 's',
-          sourceMetadata: {},
-          rawPayload: null,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        })) as never;
-    },
-    findExtremesForHolding: async (holdingId: string) => {
-      const times = rows
-        .filter((r) => r.holdingId === holdingId)
-        .map((r) => r.occurredAt.getTime())
-        .sort((a, b) => a - b);
-      return times.length
-        ? { first: new Date(times[0] as number), last: new Date(times[times.length - 1] as number) }
-        : { first: null, last: null };
-    },
-  } as unknown as HoldingTransactionRepository;
-}
-
-function makeHoldingStub(
-  holding: {
-    id: string;
-    userId: string;
-    accountId: string;
-    tokenId: string;
-    balance: string;
-    lastUpdated: Date;
-    createdAt: Date;
-  } | null
-): HoldingRepository {
-  return {
-    // BaseRepository.findById; BalanceAtTimeService fetches the holding
-    // directly by its PK now that transactions key on holdingId.
-    findById: async () => (holding as never) ?? null,
-  } as unknown as HoldingRepository;
-}
-
-// The service reads its deps from the typedi Container (class-field DI).
-// The factory seeds stubs via `Container.set()` and then *constructs a
-// fresh* BalanceAtTimeService so its class-field initializers capture
-// the current stubs. We can't `Container.reset()` — that would also
-// drop the @Service() registration that the decorator put in at
-// module load time and can't be recreated without re-importing. We
-// also can't `Container.remove(BalanceAtTimeService)` for the same
-// reason. Overriding the stored instance with `Container.set` works.
-function makeService(
-  observations: Parameters<typeof makeObservationStub>[0],
-  txs: Parameters<typeof makeTransactionStub>[0],
-  holding: Parameters<typeof makeHoldingStub>[0] = null
-): BalanceAtTimeService {
-  Container.set(HoldingRepository, makeHoldingStub(holding));
-  Container.set(HoldingBalanceObservationRepository, makeObservationStub(observations));
-  Container.set(HoldingTransactionRepository, makeTransactionStub(txs));
-  const instance = new BalanceAtTimeService();
-  Container.set(BalanceAtTimeService, instance);
-  return instance;
-}
-
-const HOLD = 'hold-1';
-
-describe('BalanceAtTimeService.getBalance', () => {
-  test('returns null when no data exists anywhere', async () => {
-    const svc = makeService([], []);
-    const r = await svc.getBalance(HOLD, new Date('2024-01-01T00:00:00Z'), undefined);
-    expect(r.balance).toBeNull();
-    expect(r.anchor).toBeNull();
-    expect(r.anchorAt).toBeNull();
-    expect(r.txApplied).toBe(0);
-  });
-
-  test('uses observation-after as anchor and walks backward over txs', async () => {
-    // We have a future observation of 10 BTC at 2024-06-01.
-    // Between 2024-03-01 (query) and 2024-06-01 there were three txs:
-    //   +5 on 2024-04-01, -3 on 2024-05-01, +1 on 2024-05-15 = net +3.
-    // Balance at 2024-03-01 must be 10 - 3 = 7.
-    const svc = makeService(
-      [{ holdingId: HOLD, balance: '10', observedAt: new Date('2024-06-01T00:00:00Z') }],
-      [
-        { holdingId: HOLD, quantity: '5', occurredAt: new Date('2024-04-01T00:00:00Z') },
-        { holdingId: HOLD, quantity: '-3', occurredAt: new Date('2024-05-01T00:00:00Z') },
-        { holdingId: HOLD, quantity: '1', occurredAt: new Date('2024-05-15T00:00:00Z') },
-      ]
-    );
-    const r = await svc.getBalance(HOLD, new Date('2024-03-01T00:00:00Z'), undefined);
-    expect(r.balance?.toString()).toBe('7');
-    expect(r.anchor).toBe('observation-after');
-    expect(r.txApplied).toBe(3);
-  });
-
-  test('uses holdings.balance fallback when no observation-after exists', async () => {
-    // Current balance 20 at 2024-12-01. Query 2024-07-01. Two txs between:
-    //   +5 at 2024-08-01, -2 at 2024-09-01 = net +3.
-    // Balance at 2024-07-01 = 20 - 3 = 17.
-    const svc = makeService(
-      [], // no observation-after
-      [
-        { holdingId: HOLD, quantity: '5', occurredAt: new Date('2024-08-01T00:00:00Z') },
-        { holdingId: HOLD, quantity: '-2', occurredAt: new Date('2024-09-01T00:00:00Z') },
-      ],
-      {
-        id: HOLD,
-        userId: 'u1',
-        accountId: 'acc-1',
-        tokenId: 'tok-1',
-        balance: '20',
-        lastUpdated: new Date('2024-12-01T00:00:00Z'),
-        createdAt: new Date('2024-06-01T00:00:00Z'),
+          quantity,
+          occurredAt: day(at),
+        });
       }
-    );
-    const r = await svc.getBalance(HOLD, new Date('2024-07-01T00:00:00Z'), undefined);
-    expect(r.balance?.toString()).toBe('17');
-    expect(r.anchor).toBe('holdings');
-    expect(r.txApplied).toBe(2);
-    expect(r.beforeRecords).toBe(false);
-  });
 
-  test('uses observation-before as last-ditch anchor, walking forward', async () => {
-    // Observation at 2023-01-01 shows 2 ETH. Query 2023-06-01. Between them:
-    //   +4 at 2023-03-01. Balance at query = 2 + 4 = 6.
-    const svc = makeService(
-      [{ holdingId: HOLD, balance: '2', observedAt: new Date('2023-01-01T00:00:00Z') }],
-      [{ holdingId: HOLD, quantity: '4', occurredAt: new Date('2023-03-01T00:00:00Z') }]
-    );
-    const r = await svc.getBalance(HOLD, new Date('2023-06-01T00:00:00Z'), undefined);
-    expect(r.balance?.toString()).toBe('6');
-    expect(r.anchor).toBe('observation-before');
-    expect(r.txApplied).toBe(1);
-  });
+      const result = await service().getBalance(holding.id, day('2026-02-10'), tx);
 
-  test('exact-match observation at query time returns balance with no walk', async () => {
-    const svc = makeService(
-      [{ holdingId: HOLD, balance: '42', observedAt: new Date('2024-01-01T00:00:00Z') }],
-      []
-    );
-    const r = await svc.getBalance(HOLD, new Date('2024-01-01T00:00:00Z'), undefined);
-    expect(r.balance?.toString()).toBe('42');
-    expect(r.anchor).toBe('observation-after');
-    expect(r.txApplied).toBe(0);
-  });
-
-  test('txs outside the (at, anchor] window are not applied', async () => {
-    // Observation at 2024-06-01: 10. Query at 2024-05-01. Txs BEFORE query at
-    // 2024-04-01 must not influence the walk; balance stays anchor (no txs
-    // in-range).
-    const svc = makeService(
-      [{ holdingId: HOLD, balance: '10', observedAt: new Date('2024-06-01T00:00:00Z') }],
-      [{ holdingId: HOLD, quantity: '99', occurredAt: new Date('2024-04-01T00:00:00Z') }]
-    );
-    const r = await svc.getBalance(HOLD, new Date('2024-05-01T00:00:00Z'), undefined);
-    expect(r.balance?.toString()).toBe('10');
-    expect(r.txApplied).toBe(0);
+      expect(result.balance?.toString()).toBe('15');
+      expect(result.anchor).toBeNull();
+      expect(result.beforeRecords).toBe(false);
+    });
   });
 });
 
-// SC-252. The reconstruction had no lower bound: it answered for any past
-// instant, including before the holding, the account or the user existed.
-// Below the earliest evidence we hold, `current balance - sum(all known
-// txs)` stops being a reconstruction and becomes the unexplained opening
-// balance, asserted for all of time. The value is still returned — the
-// history chart is built on propagating a balance backward and dropping it
-// would empty the chart for a newly-onboarded user — but `beforeRecords`
-// travels with it so no caller can present it as a measurement.
-describe('BalanceAtTimeService.getBalance — the lower bound (SC-252)', () => {
-  // Production numbers, from the ticket: an Airwallex USD holding whose
-  // current balance is 0 and whose ledger holds one withdraw of -586.94.
-  // 0 - (-586.94) = +586.94, reported for every date before the ledger
-  // starts, and stored coverage_quality = 'full'.
-  const SC252 = {
-    holding: {
-      id: HOLD,
-      userId: 'u1',
-      accountId: 'acc-1',
-      tokenId: 'tok-1',
-      balance: '0',
-      lastUpdated: new Date('2026-08-01T00:00:00Z'),
-      createdAt: new Date('2026-06-22T00:00:00Z'),
-    },
-    withdraw: {
-      holdingId: HOLD,
-      quantity: '-586.94',
-      occurredAt: new Date('2026-07-23T00:00:00Z'),
-    },
-    phantomDate: new Date('2025-06-21T00:00:00Z'),
-  };
+describe('BalanceAtTimeService.getBalance: what the old walk did and the engine does not', () => {
+  test('an unexplained gap is not spread: the day reads the reading before it', async () => {
+    // The old walk drew a straight line from 100 to 170 (SC-475 fault B) and
+    // read ~135 here, flagged interpolated. The engine records no event
+    // between the two readings, so the balance is the last one measured.
+    await withTestDb(async (tx) => {
+      const { userId, holding } = await holdingOf(tx);
+      await makeObservations(tx, [
+        snapshot(userId, holding.id, day('2026-02-01'), '100'),
+        snapshot(userId, holding.id, day('2026-04-12'), '170'),
+      ]);
 
-  test('flags a pre-existence date as before-records via the holdings anchor', async () => {
-    const svc = makeService([], [SC252.withdraw], SC252.holding);
-    const r = await svc.getBalance(HOLD, SC252.phantomDate, undefined);
-    // The value is deliberately unchanged — this bounds confidence, not the number.
-    expect(r.balance?.toString()).toBe('586.94');
-    expect(r.anchor).toBe('holdings');
-    expect(r.beforeRecords).toBe(true);
+      const result = await service().getBalance(holding.id, day('2026-03-08'), tx);
+
+      expect(result.balance?.toString()).toBe('100');
+    });
   });
 
-  // The case a bound on anchor 2 alone would miss. `findObservationAtOrAfter`
-  // runs FIRST, so any holding carrying observations never reaches the
-  // holdings anchor — and for a pre-existence date the earliest observation
-  // is always "at or after", putting the whole ledger inside the walk and
-  // producing the identical residue.
-  test('flags a pre-existence date as before-records via the observation-after anchor', async () => {
-    const svc = makeService(
-      [{ holdingId: HOLD, balance: '0', observedAt: new Date('2026-08-01T00:00:00Z') }],
-      [SC252.withdraw],
-      SC252.holding
-    );
-    const r = await svc.getBalance(HOLD, SC252.phantomDate, undefined);
-    expect(r.balance?.toString()).toBe('586.94');
-    expect(r.anchor).toBe('observation-after');
-    expect(r.beforeRecords).toBe(true);
-  });
+  test('a walk below zero is reported as it is, not floored', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, holding } = await holdingOf(tx);
+      await makeObservations(tx, [snapshot(userId, holding.id, day('2026-02-01'), '5')]);
+      await makeHoldingTransaction(tx, {
+        userId,
+        holdingId: holding.id,
+        kind: 'withdraw',
+        quantity: '-10',
+        occurredAt: day('2026-02-05'),
+      });
 
-  test('a date at the earliest evidence is not before-records', async () => {
-    const svc = makeService([], [SC252.withdraw], SC252.holding);
-    const r = await svc.getBalance(HOLD, SC252.holding.createdAt, undefined);
-    expect(r.beforeRecords).toBe(false);
-  });
+      const result = await service().getBalance(holding.id, day('2026-02-10'), tx);
 
-  // The bound is the EARLIEST of the three, so an imported wallet whose
-  // ledger reaches back years is answered from its first transaction and
-  // not from the day we happened to learn of it.
-  test('a transaction older than the holding row extends the bound backward', async () => {
-    const svc = makeService(
-      [],
-      [{ holdingId: HOLD, quantity: '5', occurredAt: new Date('2021-03-01T00:00:00Z') }],
-      SC252.holding
-    );
-    const r = await svc.getBalance(HOLD, new Date('2022-01-01T00:00:00Z'), undefined);
-    expect(r.beforeRecords).toBe(false);
-  });
-
-  test('no evidence of any kind stays an honest unknown', async () => {
-    const svc = makeService([], []);
-    const r = await svc.getBalance(HOLD, SC252.phantomDate, undefined);
-    expect(r.balance).toBeNull();
-    expect(r.beforeRecords).toBe(false);
+      expect(result.balance?.toString()).toBe('-5');
+    });
   });
 });
 
-// ---------------------------------------------------------------------
-// SC-475 fault B — interpolation across an unexplained observation gap.
-// ---------------------------------------------------------------------
+describe('BalanceAtTimeService.balancesFor loads evidence in batches (D-11)', () => {
+  test('answers every holding at every instant, as getBalance does, 25 holdings per load', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const account = await makeAccount(tx, {
+        userId: user.id,
+        institutionId: (await makeInstitution(tx)).id,
+      });
+      const ids: string[] = [];
+      for (let i = 0; i < 30; i++) {
+        const token = await makeToken(tx);
+        const holding = await makeHolding(tx, {
+          userId: user.id,
+          accountId: account.id,
+          tokenId: token.id,
+          createdAt: day('2026-01-01'),
+        });
+        await makeObservations(tx, [
+          snapshot(user.id, holding.id, day('2026-02-01'), String(100 + i)),
+        ]);
+        ids.push(holding.id);
+      }
+      const instants = [day('2025-12-01'), day('2026-01-15'), day('2026-02-10')];
 
-describe('BalanceAtTimeService.getBalance — interpolation across sparse observations', () => {
-  test('THE DEFECT: ten weeks of unexplained drift used to land on one day', async () => {
-    // The real shape, exactly: a cash holding with two observations months
-    // apart and no transaction between them. Anchoring on "the observation at
-    // or after `at`" means the anchor rolls over the instant the earlier
-    // observation falls into the past, so the whole accumulated difference
-    // fell in a single day and a chained daily return read it as a
-    // double-digit percentage loss on cash — one sub-period carrying an
-    // entire year.
-    const first = new Date('2026-05-17T15:07:54.662Z');
-    const second = new Date('2026-07-27T23:47:01.714Z');
-    const svc = makeService(
-      [
-        { holdingId: HOLD, balance: '40000.85', observedAt: first },
-        { holdingId: HOLD, balance: '25000.58', observedAt: second },
-      ],
-      []
-    );
+      const repository = Container.get(EngineEvidenceRepository);
+      const original = repository.findHoldingEvidence.bind(repository);
+      const loads: number[] = [];
+      repository.findHoldingEvidence = async (scope, t) => {
+        loads.push(scope.holdingIds?.length ?? -1);
+        return original(scope, t);
+      };
+      let answers: Map<string, Map<number, BalanceAtTimeResult>>;
+      try {
+        answers = await service().balancesFor(user.id, ids, instants, tx);
+      } finally {
+        repository.findHoldingEvidence = original;
+      }
 
-    const dayAfter = await svc.getBalance(HOLD, new Date('2026-05-17T23:59:59.999Z'), undefined);
-    // Under the cliff this read 25000.58 — the whole 71 days of drift on
-    // the first day. It is now a few hours' worth.
-    expect(Number(dayAfter.balance?.toString())).toBeGreaterThan(39900);
-    expect(dayAfter.interpolated).toBe(true);
-
-    // Halfway across the gap is halfway down.
-    const midpoint = new Date((first.getTime() + second.getTime()) / 2);
-    expect(
-      Number((await svc.getBalance(HOLD, midpoint, undefined)).balance?.toString())
-    ).toBeCloseTo((40000.85 + 25000.58) / 2, 6);
+      expect(loads).toEqual([25, 5]);
+      for (const id of ids) {
+        for (const at of instants) {
+          const single = await service().getBalance(id, at, tx);
+          expect(answers.get(id)?.get(at.getTime())).toEqual(single);
+        }
+      }
+    });
   });
 
-  test('both measurements are reproduced exactly — only the space between them moves', async () => {
-    const first = new Date('2026-05-17T15:07:54.662Z');
-    const second = new Date('2026-07-27T23:47:01.714Z');
-    const svc = makeService(
-      [
-        { holdingId: HOLD, balance: '40000.85', observedAt: first },
-        { holdingId: HOLD, balance: '25000.58', observedAt: second },
-      ],
-      []
-    );
-
-    const atFirst = await svc.getBalance(HOLD, first, undefined);
-    expect(atFirst.balance?.toString()).toBe('40000.85');
-    // `at` sits ON an observation, so there is nothing to draw a line across.
-    expect(atFirst.interpolated).toBe(false);
-
-    const atSecond = await svc.getBalance(HOLD, second, undefined);
-    expect(atSecond.balance?.toString()).toBe('25000.58');
-    expect(atSecond.interpolated).toBe(false);
-  });
-
-  test('a gap the transactions DO explain is untouched, and not flagged', async () => {
-    // The common path, and the reason this is safe to turn on for everyone:
-    // where the ledger accounts for the difference between two observations
-    // there is no drift to spread, so the walk-back answer is returned
-    // unchanged and `interpolated` stays false.
-    const first = new Date('2026-01-01T00:00:00Z');
-    const second = new Date('2026-03-01T00:00:00Z');
-    const svc = makeService(
-      [
-        { holdingId: HOLD, balance: '100', observedAt: first },
-        { holdingId: HOLD, balance: '150', observedAt: second },
-      ],
-      [{ holdingId: HOLD, quantity: '50', occurredAt: new Date('2026-02-01T00:00:00Z') }]
-    );
-
-    const before = await svc.getBalance(HOLD, new Date('2026-01-15T00:00:00Z'), undefined);
-    expect(before.balance?.toString()).toBe('100');
-    expect(before.interpolated).toBe(false);
-
-    const after = await svc.getBalance(HOLD, new Date('2026-02-15T00:00:00Z'), undefined);
-    expect(after.balance?.toString()).toBe('150');
-    expect(after.interpolated).toBe(false);
-  });
-
-  test('drift and a transaction in the same gap: only the drift is spread', async () => {
-    const first = new Date('2026-01-01T00:00:00Z');
-    const second = new Date('2026-01-11T00:00:00Z');
-    const svc = makeService(
-      [
-        { holdingId: HOLD, balance: '100', observedAt: first },
-        { holdingId: HOLD, balance: '160', observedAt: second },
-      ],
-      // 50 of the 60 is explained; 10 is drift.
-      [{ holdingId: HOLD, quantity: '50', occurredAt: new Date('2026-01-09T00:00:00Z') }]
-    );
-
-    // Day 5 of 10: half the drift has accrued, the transaction has not landed.
-    const midpoint = await svc.getBalance(HOLD, new Date('2026-01-06T00:00:00Z'), undefined);
-    expect(Number(midpoint.balance?.toString())).toBeCloseTo(105, 9);
-    expect(midpoint.interpolated).toBe(true);
-  });
-
-  test('before the first observation nothing is interpolated', async () => {
-    // There is no earlier measurement to draw a line from, so the walk-back
-    // from the first observation stands — which is what makes the opening
-    // balance visible at all.
-    const first = new Date('2026-05-17T15:07:54.662Z');
-    const svc = makeService([{ holdingId: HOLD, balance: '40000.85', observedAt: first }], []);
-    const r = await svc.getBalance(HOLD, new Date('2026-01-01T00:00:00Z'), undefined);
-    expect(r.balance?.toString()).toBe('40000.85');
-    expect(r.interpolated).toBe(false);
-  });
-});
-
-// The ETH wallet whose ledger has no gas fees: today's balance minus its
-// recorded net inflow is negative, so the walk back is floored. Until
-// SC-1444 the floor was silent and read as an empty wallet.
-describe('BalanceAtTimeService.getBalance — a negative walk is marked (SC-1444)', () => {
-  const holding = {
-    id: HOLD,
-    userId: 'u1',
-    accountId: 'acc-1',
-    tokenId: 'tok-1',
-    balance: '0.003',
-    lastUpdated: new Date('2026-09-01T00:00:00Z'),
-    createdAt: new Date('2021-09-01T00:00:00Z'),
-  };
-
-  test('flags the floored balance on the holdings anchor', async () => {
-    const svc = makeService(
-      [],
-      [{ holdingId: HOLD, quantity: '2.83', occurredAt: new Date('2021-12-01T00:00:00Z') }],
-      holding
-    );
-    const r = await svc.getBalance(HOLD, new Date('2021-11-01T00:00:00Z'), undefined);
-    expect(r.balance?.toString()).toBe('0');
-    expect(r.floored).toBe(true);
-  });
-
-  test('flags the floored balance on the observation-after anchor', async () => {
-    const svc = makeService(
-      [{ holdingId: HOLD, balance: '1', observedAt: new Date('2022-06-01T00:00:00Z') }],
-      [{ holdingId: HOLD, quantity: '3', occurredAt: new Date('2022-01-01T00:00:00Z') }],
-      holding
-    );
-    const r = await svc.getBalance(HOLD, new Date('2021-11-01T00:00:00Z'), undefined);
-    expect(r.balance?.toString()).toBe('0');
-    expect(r.floored).toBe(true);
-  });
-
-  test('a walk that reaches exactly zero is not floored', async () => {
-    const svc = makeService(
-      [],
-      [{ holdingId: HOLD, quantity: '0.003', occurredAt: new Date('2021-12-01T00:00:00Z') }],
-      holding
-    );
-    const r = await svc.getBalance(HOLD, new Date('2021-11-01T00:00:00Z'), undefined);
-    expect(r.balance?.toString()).toBe('0');
-    expect(r.floored).toBe(false);
-  });
-});
-
-// SC-1462. Broker cash can be negative (margin debt), and a reading that says
-// so is evidence the holding can go that low. The floor moves to the lowest
-// balance the source ever reported; with no negative evidence it stays at 0,
-// which is every SC-1444 case above.
-describe('BalanceAtTimeService.getBalance — a measured debit is not floored (SC-1462)', () => {
-  const usd = {
-    id: HOLD,
-    userId: 'u1',
-    accountId: 'acc-1',
-    tokenId: 'tok-usd',
-    balance: '93.86',
-    lastUpdated: new Date('2026-07-21T00:00:00Z'),
-    createdAt: new Date('2025-03-31T00:00:00Z'),
-  };
-  // mgrin's IBKR USD over the weekend of 2026-07-17 (margin until Monday's sales).
-  const readings = [
-    { holdingId: HOLD, balance: '-5509.33', observedAt: new Date('2026-07-20T00:00:00Z') },
-    { holdingId: HOLD, balance: '93.86', observedAt: new Date('2026-07-21T00:00:00Z') },
-  ];
-  const monday = [
-    { holdingId: HOLD, quantity: '5603.19', occurredAt: new Date('2026-07-20T09:30:00Z') },
-  ];
-
-  test('the weekend on margin reads the debit', async () => {
-    const svc = makeService(readings, monday, usd);
-    const r = await svc.getBalance(HOLD, new Date('2026-07-19T00:00:00Z'), undefined);
-    expect(r.balance?.toString()).toBe('-5509.33');
-    expect(r.floored).toBe(false);
-  });
-
-  test('after the sales it reads positive again', async () => {
-    const svc = makeService(readings, monday, usd);
-    const r = await svc.getBalance(HOLD, new Date('2026-07-20T12:00:00Z'), undefined);
-    expect(r.balance?.toString()).toBe('93.86');
-    expect(r.floored).toBe(false);
-  });
-
-  test('a walk below the lowest reading stops there and is flagged', async () => {
-    const svc = makeService(
-      [{ holdingId: HOLD, balance: '-100', observedAt: new Date('2026-06-01T00:00:00Z') }],
-      [{ holdingId: HOLD, quantity: '50', occurredAt: new Date('2026-05-01T00:00:00Z') }],
-      usd
-    );
-    const r = await svc.getBalance(HOLD, new Date('2026-04-01T00:00:00Z'), undefined);
-    expect(r.balance?.toString()).toBe('-100');
-    expect(r.floored).toBe(true);
-  });
-
-  test('a negative current balance is evidence too', async () => {
-    const svc = makeService(
-      [],
-      [{ holdingId: HOLD, quantity: '-8', occurredAt: new Date('2026-07-10T00:00:00Z') }],
-      { ...usd, balance: '-42' }
-    );
-    const r = await svc.getBalance(HOLD, new Date('2026-07-01T00:00:00Z'), undefined);
-    expect(r.balance?.toString()).toBe('-34');
-    expect(r.floored).toBe(false);
+  test('getBalance answers from a handed-in answer without loading anything', async () => {
+    const at = day('2026-02-10');
+    const handed: BalanceAtTimeResult = {
+      balance: new Decimal('42'),
+      anchor: 'observation-before',
+      anchorAt: day('2026-02-01'),
+      beforeRecords: false,
+    };
+    const result = await service().getBalance('no-such-holding', at, undefined, {
+      balances: new Map([['no-such-holding', new Map([[at.getTime(), handed]])]]),
+    });
+    expect(result).toBe(handed);
   });
 });

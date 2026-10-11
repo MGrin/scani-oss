@@ -56,6 +56,8 @@ export interface NewInstitutionDraft {
 export interface NewAccountDraft {
   name: string;
   typeId: string;
+  /** SC-1645: a wrapper code, sent only when one is chosen. */
+  wrapper?: string | null;
 }
 
 /**
@@ -113,6 +115,11 @@ export interface ManualEntryDraft extends AccountTargetDraft {
    * Ignored for a new account, which holds nothing.
    */
   held?: { accountName: string; positions: readonly HeldPosition[] };
+  /**
+   * The chosen account is a loan or card, so each amount is what is owed:
+   * typed positive, sent negative (SC-1640).
+   */
+  owes?: boolean;
 }
 
 /** The `batchOperations.ensureAccount` payload — an id when the account already
@@ -364,6 +371,7 @@ export function buildEnsureAccountInput(draft: AccountTargetDraft): EnsureAccoun
       name: draft.newAccount.name.trim(),
       typeId: draft.newAccount.typeId,
       institutionId: creatingInstitution ? undefined : draft.institutionId,
+      ...(draft.newAccount.wrapper ? { wrapper: draft.newAccount.wrapper } : {}),
     },
   };
 }
@@ -380,6 +388,27 @@ export function buildEnsureAccountInput(draft: AccountTargetDraft): EnsureAccoun
  * - `updateHoldings` is always empty. This form only ever adds; changing a
  *   balance is the holding's own surface.
  */
+/** A typed owed amount as the balance stored: negative, and zero stays zero. */
+function owedBalance(balance: string, owes: boolean | undefined): string {
+  return owes && !/^0*\.?0*$/.test(balance) ? `-${balance}` : balance;
+}
+
+/**
+ * Whether the account a manual entry targets is a loan or card (SC-1640), by
+ * the type of the existing account or the type picked for a new one.
+ */
+export function targetOwes(
+  draft: AccountTargetDraft,
+  accounts: readonly { id: string; typeId: string }[] | undefined,
+  accountTypes: readonly { id: string; class: string }[] | undefined
+): boolean {
+  const typeId =
+    draft.accountMode === 'new'
+      ? draft.newAccount.typeId
+      : accounts?.find((account) => account.id === draft.accountId)?.typeId;
+  return accountTypes?.find((row) => row.id === typeId)?.class === 'liability';
+}
+
 export function buildHoldingsBatchInput(
   draft: ManualEntryDraft,
   requestId: string
@@ -404,6 +433,7 @@ export function buildHoldingsBatchInput(
           name: draft.newAccount.name.trim(),
           typeId: draft.newAccount.typeId,
           institutionId: creatingInstitution ? undefined : draft.institutionId,
+          ...(draft.newAccount.wrapper ? { wrapper: draft.newAccount.wrapper } : {}),
         }
       : undefined,
     newHoldings: completedHoldings(draft.holdings).map((holding) => ({
@@ -413,7 +443,7 @@ export function buildHoldingsBatchInput(
       label: contestedHoldingTokenIds(draft.holdings, heldPositions(draft)).has(holding.tokenId)
         ? holding.label.trim() || undefined
         : undefined,
-      balance: holding.balance.trim(),
+      balance: owedBalance(holding.balance.trim(), draft.owes),
     })),
     updateHoldings: [],
   };

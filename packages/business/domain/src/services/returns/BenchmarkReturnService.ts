@@ -3,7 +3,6 @@ import * as schema from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { and, desc, eq, isNull, lte } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
-import { mapWithConcurrency } from '../../lib/map-with-concurrency';
 import {
   BENCHMARKS,
   type Benchmark,
@@ -11,7 +10,7 @@ import {
   monthOf,
   US_INFLATION,
 } from '../../lib/returns/benchmarks';
-import { PriceGraphService } from '../pricing/PriceGraphService';
+import { PriceReader } from '../pricing/PriceReader';
 
 export interface BenchmarkReturn {
   key: BenchmarkKey;
@@ -30,9 +29,6 @@ export function measuredDayInstant(day: string, now: Date = new Date()): Date {
   return endOfDay.getTime() > now.getTime() ? now : endOfDay;
 }
 
-// Bound database concurrency independently of the history length.
-const DAY_CONVERSION_CONCURRENCY = 8;
-
 /**
  * What each benchmark did over the window a return was measured on (SC-464),
  * in the reader's base currency.
@@ -44,7 +40,7 @@ const DAY_CONVERSION_CONCURRENCY = 8;
  */
 @Service()
 export class BenchmarkReturnService {
-  private readonly priceGraphService = Container.get(PriceGraphService);
+  private readonly priceReader = Container.get(PriceReader);
 
   async over(
     window: { from: string; to: string },
@@ -70,20 +66,11 @@ export class BenchmarkReturnService {
    * A flat segment drawn through a gap is a claim the benchmark did not move,
    * which is the one thing an unpriced day cannot support.
    *
-   * Every day is converted through `PriceGraphService` INDIVIDUALLY rather
-   * than through a bulk query, because the cumulative figure printed beside
-   * this chart is computed that way — a second price path could disagree with
-   * the number it sits under.
-   *
-   * That is a constraint on the PATH and says nothing about the ORDER, and
-   * this sentence used to read "one day at a time", which was taken as both
-   * (SC-1306). It meant one day per conversion; it was implemented as one
-   * conversion at a time, and a 120-point chart therefore cost 120 sequential
-   * round trips — the slowest thing on the dashboard once the returns engine
-   * itself was fixed. The days now go out `DAY_CONVERSION_CONCURRENCY` at a
-   * time through the same call with the same arguments, so the numbers are
-   * unchanged. Every measured day is needed to fund and value the benchmark
-   * before the chart is sampled.
+   * Every day is read from one series with `priceAt`, the path the
+   * cumulative figure printed beside this chart reads too, so the two cannot
+   * disagree. One load covers every benchmark and every day (SC-1306: a
+   * 120-point chart once cost 120 sequential round trips). Every measured day
+   * is needed to fund and value the benchmark before the chart is sampled.
    */
   async pricesOn(
     days: string[],
@@ -91,28 +78,21 @@ export class BenchmarkReturnService {
     now: Date = new Date()
   ): Promise<Map<BenchmarkKey, Map<string, Decimal>>> {
     const out = new Map<BenchmarkKey, Map<string, Decimal>>();
-
-    await Promise.all(
-      BENCHMARKS.map(async (benchmark) => {
-        const tokenId = await this.tokenIdOf(benchmark);
-        if (!tokenId) return;
-        const prices = new Map<string, Decimal>();
-        const converted = await mapWithConcurrency(days, DAY_CONVERSION_CONCURRENCY, (day) =>
-          this.priceGraphService.convert(
-            new Decimal(1),
-            tokenId,
-            baseCurrencyId,
-            measuredDayInstant(day, now),
-            { tx: undefined, preferGranularity: 'daily' }
-          )
-        );
-        days.forEach((day, i) => {
-          const price = converted[i];
-          if (price?.amount.gt(0)) prices.set(day, price.amount);
-        });
-        if (prices.size > 0) out.set(benchmark.key, prices);
-      })
+    const resolved = await this.resolved();
+    const prices = await this.priceReader.series(
+      resolved.flatMap(({ tokenId }) =>
+        days.map((day) => ({ tokenId, at: measuredDayInstant(day, now) }))
+      ),
+      baseCurrencyId
     );
+    for (const { benchmark, tokenId } of resolved) {
+      const byDay = new Map<string, Decimal>();
+      for (const day of days) {
+        const price = prices.priceAt(tokenId, measuredDayInstant(day, now))?.price;
+        if (price?.gt(0)) byDay.set(day, price);
+      }
+      if (byDay.size > 0) out.set(benchmark.key, byDay);
+    }
 
     const inflation = await this.inflationIndexOn(days);
     if (inflation.size > 0) out.set(US_INFLATION.key, inflation);
@@ -176,29 +156,32 @@ export class BenchmarkReturnService {
     end: Date,
     baseCurrencyId: string
   ): Promise<BenchmarkReturn[]> {
-    return Promise.all(
-      BENCHMARKS.map(async (benchmark) => {
-        const tokenId = await this.tokenIdOf(benchmark);
-        if (!tokenId) return { key: benchmark.key, cumulative: null };
-        const [opening, closing] = await Promise.all([
-          this.priceGraphService.convert(new Decimal(1), tokenId, baseCurrencyId, start, {
-            tx: undefined,
-            preferGranularity: 'daily',
-          }),
-          this.priceGraphService.convert(new Decimal(1), tokenId, baseCurrencyId, end, {
-            tx: undefined,
-            preferGranularity: 'daily',
-          }),
-        ]);
-        if (!opening || !closing || opening.amount.lte(0)) {
-          return { key: benchmark.key, cumulative: null };
-        }
-        return {
-          key: benchmark.key,
-          cumulative: closing.amount.div(opening.amount).minus(1).toString(),
-        };
-      })
+    const resolved = new Map(
+      (await this.resolved()).map(({ benchmark, tokenId }) => [benchmark.key, tokenId])
     );
+    const prices = await this.priceReader.series(
+      [...resolved.values()].flatMap((tokenId) => [
+        { tokenId, at: start },
+        { tokenId, at: end },
+      ]),
+      baseCurrencyId
+    );
+    return BENCHMARKS.map((benchmark) => {
+      const tokenId = resolved.get(benchmark.key);
+      const opening = tokenId ? prices.priceAt(tokenId, start)?.price : undefined;
+      const closing = tokenId ? prices.priceAt(tokenId, end)?.price : undefined;
+      if (!opening || !closing || opening.lte(0)) return { key: benchmark.key, cumulative: null };
+      return { key: benchmark.key, cumulative: closing.div(opening).minus(1).toString() };
+    });
+  }
+
+  /** Every benchmark whose token exists, with that token. */
+  private async resolved(): Promise<Array<{ benchmark: Benchmark; tokenId: string }>> {
+    const tokenIds = await Promise.all(BENCHMARKS.map((benchmark) => this.tokenIdOf(benchmark)));
+    return BENCHMARKS.flatMap((benchmark, i) => {
+      const tokenId = tokenIds[i];
+      return tokenId ? [{ benchmark, tokenId }] : [];
+    });
   }
 
   private async tokenIdOf(benchmark: Benchmark): Promise<string | null> {

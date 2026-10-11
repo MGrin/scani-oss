@@ -27,6 +27,9 @@
  * so v2 is untouched. */
 @import "./styles/v3-motion.css";
 
+/* The header takes the top clearance only when nothing sits above it (SC-1597). */
+@import "./styles/v3-shell.css";
+
 /* App-specific extras — also @imports, also above @tailwind. */
 @import "./styles/accessibility.css";
 @import "./styles/animations.css";

@@ -7,6 +7,7 @@ import { QueueClient } from '@scani/queue';
 import { eq, getTableColumns } from 'drizzle-orm';
 import { type AnyPgColumn, getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import { Container, Service } from 'typedi';
+import { HouseholdMembershipService } from '../services/household/HouseholdMembershipService';
 import {
   USER_DATA_TABLE_DISPOSITIONS,
   USER_ROW_COLUMN_DISPOSITIONS,
@@ -26,6 +27,7 @@ function columnKey(table: PgTable, column: AnyPgColumn): string {
 @Service()
 export class DeleteAllUserDataUseCase {
   private readonly logger = createComponentLogger('use-case:delete-all-user-data');
+  private readonly households = Container.get(HouseholdMembershipService);
 
   /**
    * `runningJobId` is the `user-data-delete` job this is running inside, when
@@ -60,6 +62,9 @@ export class DeleteAllUserDataUseCase {
    */
   async deleteRows(tx: DatabaseTransaction, userId: string): Promise<Map<PgTable, string[]>> {
     const echoed = new Map<PgTable, string[]>();
+    // Before the manifest deletes the membership: an admin's household passes
+    // to the member who joined first, or goes with them when they are alone (SC-1647).
+    await this.households.beforeUserRemoved(userId, tx);
     // Every table keyed on `users.id` is classified in the manifest, and
     // the loop is driven by it rather than by a hand-written list of
     // deletes. That is the whole point: this flow was correct when it was
@@ -120,14 +125,18 @@ export class DeleteAllUserDataUseCase {
     echoed: Map<PgTable, string[]>,
     runningJobId?: string
   ): Promise<void> {
-    await this.purgeStoredObjects(userId, echoed.get(schema.documents) ?? []);
+    await this.purgeStoredObjects(userId, [
+      ...(echoed.get(schema.documents) ?? []),
+      ...(echoed.get(schema.userBackups) ?? []),
+    ]);
     await this.purgeQueuePayloads(userId, echoed.get(schema.userJobs) ?? [], runningJobId);
   }
 
   /**
-   * Remove the R2 objects behind the documents just deleted — the bank
-   * statements, screenshots and invoices, which are the most sensitive bytes
-   * the product holds and outlived this flow entirely until SC-1014.
+   * Remove the R2 objects behind the documents and backups just deleted —
+   * the bank statements, screenshots and invoices, and the backup files that
+   * hold every ledger row (SC-1649). Documents outlived this flow entirely
+   * until SC-1014.
    *
    * **Objects go after the commit, and the failure this ordering picks is the
    * recoverable one.** An object delete cannot join a Postgres transaction.

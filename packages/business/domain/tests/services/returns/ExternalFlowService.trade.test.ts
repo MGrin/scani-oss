@@ -6,10 +6,11 @@ import Decimal from 'decimal.js';
 import { Container } from 'typedi';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { DriftLedgerService } from '../../../src/services/returns/DriftLedgerService';
 import { ExternalFlowService } from '../../../src/services/returns/ExternalFlowService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub } from '../../../test/helpers/price-series';
 
 /**
  * A trade's flow is what actually moved (SC-1470): its execution price at its
@@ -58,13 +59,13 @@ function makeService(rows: HoldingTransaction[]) {
       { id: 'usd', tokenId: USD, isActive: true },
     ],
   } as unknown as HoldingRepository);
-  Container.set(PriceGraphService, {
-    buildPriceLookup: async () => ({ covers: () => false }),
-    convert: async (amount: Decimal, from: string, _to: string, at: Date) => {
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal, from: string, _to: string, at: Date) => {
       asked.push(at);
       return from === CAD ? { amount: new Decimal(amount).mul('0.75'), stale: false } : null;
-    },
-  } as unknown as PriceGraphService);
+    })
+  );
   Container.set(DriftLedgerService, {
     forHoldings: async () => new Map(),
   } as unknown as DriftLedgerService);

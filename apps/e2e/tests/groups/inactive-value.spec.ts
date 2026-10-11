@@ -80,7 +80,8 @@ test.describe('groups: a group of only inactive holdings', () => {
     await expect(liveRow).toContainText('1,000.00');
     await expect(liveRow).not.toContainText('Inactive');
 
-    await gotoWithGroupValues(page, '/');
+    // Home lists groups in the Groups peek since SC-1669; the tile names only the top one.
+    await gotoWithGroupValues(page, '/home/groups');
     await expect(page.getByRole('link', { name: new RegExp(closedName) })).toContainText(
       'Inactive'
     );

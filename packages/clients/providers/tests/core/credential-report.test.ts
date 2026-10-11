@@ -5,9 +5,7 @@ import {
   type ProviderCredentialStatus,
 } from '../../src/core/credential-report';
 import { RateLimiterRegistry } from '../../src/core/rate-limiter-registry';
-import { aiDeepseekFactory } from '../../src/providers/ai-deepseek';
 import { aiOpenAIFactory } from '../../src/providers/ai-openai';
-import { aiPerplexityFactory } from '../../src/providers/ai-perplexity';
 import { coingeckoFactory } from '../../src/providers/coingecko';
 import { etherscanFactory } from '../../src/providers/etherscan';
 import { finnhubFactory } from '../../src/providers/finnhub';
@@ -134,7 +132,7 @@ describe('ProviderCredentialReport', () => {
 /**
  * Every provider with a keyless branch, and the env var that keys it.
  *
- * Seven, not the four SC-536 was filed with: CoinGecko and Etherscan had no
+ * Five, not the four SC-536 was filed with: CoinGecko and Etherscan had no
  * boot warning at all before this, so an operator reading every log line
  * still could not learn they had come up unkeyed.
  */
@@ -144,8 +142,6 @@ const KEYLESS_BRANCH_FACTORIES: [string, ProviderFactory, string][] = [
   ['finnhub', finnhubFactory, 'FINNHUB_API_KEY'],
   ['solana', solanaFactory, 'HELIUS_API_KEY'],
   ['openai', aiOpenAIFactory, 'OPENAI_API_KEY'],
-  ['deepseek', aiDeepseekFactory, 'DEEPSEEK_API_KEY'],
-  ['perplexity', aiPerplexityFactory, 'PERPLEXITY_API_KEY'],
 ];
 
 async function runFactory(

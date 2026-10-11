@@ -10,8 +10,9 @@ import {
   CostBasisService,
   type DisposalLotMatch,
 } from '../../../src/services/pricing/CostBasisService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub } from '../../../test/helpers/price-series';
 
 /**
  * A `fee` row that settles no trade is an outflow at zero proceeds (SC-1561).
@@ -31,9 +32,10 @@ const ETH = 'token-ETH';
 function makeService(): CostBasisService {
   Container.set(HoldingRepository, {} as unknown as HoldingRepository);
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
-  Container.set(PriceGraphService, {
-    convert: async (amount: Decimal) => ({ amount: new Decimal(amount), stale: false }),
-  } as unknown as PriceGraphService);
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal) => ({ amount: new Decimal(amount), stale: false }))
+  );
   const instance = new CostBasisService();
   Container.set(CostBasisService, instance);
   return instance;

@@ -37,6 +37,8 @@ managed routing. Provider keys belong on the Scani processing service for Tier 2
 not on customer API or worker instances.
 
 `processing.v1.capabilities` reports the active pricing and AI providers. A
+Cloud API key is never served Yahoo Finance prices, directly or as a fallback,
+because Yahoo's terms forbid redistribution (SC-1586). A
 successful `/health` response alone does not establish processing availability.
 AI requests have bounded inputs, a cancellation deadline and owner-scoped replay
 protection; replayed results do not count as additional upstream spend. Small AI

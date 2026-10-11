@@ -34,7 +34,7 @@ export function MaintenanceSettings() {
       showSuccess(t('v3.settings.maintenance.rebuilt'));
       setJobId(null);
       void utils.portfolio.invalidate();
-    } else if (status.state === 'failed') {
+    } else if (status.finalFailure) {
       // A string, and `userFacingError` rather than the raw throw — see the
       // note in `AccountSettings` for why both halves matter (SC-551).
       showError(
@@ -45,7 +45,7 @@ export function MaintenanceSettings() {
     }
     // Same as `AccountSettings`: the toast is fired from the effect, so `t`
     // has to be a dependency or the message is stale.
-  }, [jobId, status.state, status.userFacingError, utils, t]);
+  }, [jobId, status.state, status.finalFailure, status.userFacingError, utils, t]);
 
   const running = recompute.isPending || jobId !== null;
 

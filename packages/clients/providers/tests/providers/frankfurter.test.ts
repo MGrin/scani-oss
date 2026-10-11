@@ -1,46 +1,42 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { OutflowRateLimiter } from '@scani/rate-limiter';
 import { restoreContainerAfterAll } from '../../../../business/domain/test/helpers/container';
-import { freshExchangeRateApiClient } from '../../../../business/domain/test/helpers/exchangerate-api';
+import {
+  CBR_TABLE_URL,
+  ECB_TABLE_URL,
+  fixing,
+  outsideFrankfurterV2,
+} from '../../../../business/domain/test/helpers/frankfurter';
+import { freshFrankfurterClient } from '../../../../business/domain/test/helpers/frankfurter-client';
 import { makeMockToken } from '../../src/core/testing';
 import { FrankfurterProvider } from '../../src/providers/frankfurter';
 
-// The fallback's client is installed in the process-global container; put
-// back whatever this file changes (SC-448).
+// The client is installed in the process-global container; put back whatever
+// this file changes (SC-448).
 restoreContainerAfterAll();
 
-function passthroughLimiter(): OutflowRateLimiter {
-  return {
-    execute: async <T>(fn: () => Promise<T>) => fn(),
-  } as unknown as OutflowRateLimiter;
-}
-
-/** A provider whose fallback client has asked nothing. */
+/** A provider whose client has asked nothing. */
 function provider(): FrankfurterProvider {
-  return new FrankfurterProvider(passthroughLimiter(), freshExchangeRateApiClient());
+  return new FrankfurterProvider(freshFrankfurterClient());
 }
 
 const realFetch = globalThis.fetch;
+let requested: string[] = [];
 afterEach(() => {
   globalThis.fetch = realFetch;
+  // R25-6, R25-7: nothing this file asks leaves Frankfurter v2's named tables.
+  expect(outsideFrankfurterV2(requested)).toEqual([]);
+  requested = [];
 });
 
 /**
- * Answers Frankfurter with `frankfurter` and exchangerate-api with `usdTable`
- * as its USD table. A host with no answer refuses. Records every URL asked.
+ * Answers the ECB's table with `ecb` and the CBR's with `cbr`. A bank with no
+ * answer refuses. Records every URL asked.
  */
-function upstreams(answers: {
-  frankfurter?: unknown;
-  usdTable?: Record<string, number>;
-}): string[] {
-  const requested: string[] = [];
+function upstreams(answers: { ecb?: unknown; cbr?: unknown }): string[] {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = String(input);
     requested.push(url);
-    const body = url.startsWith('https://api.exchangerate-api.com/')
-      ? answers.usdTable && { base: 'USD', rates: answers.usdTable }
-      : answers.frankfurter;
-    // 404 rather than a 5xx, which the provider's fetch retries after a backoff.
+    const body = url.includes('/providers/cbr/') ? answers.cbr : answers.ecb;
     return body ? Response.json(body) : new Response('not found', { status: 404 });
   }) as unknown as typeof fetch;
   return requested;
@@ -52,115 +48,199 @@ const jpy = makeMockToken({ id: 'jpy', symbol: 'JPY', name: 'JPY' });
 const gbp = makeMockToken({ id: 'gbp', symbol: 'GBP', name: 'GBP' });
 const rub = makeMockToken({ id: 'rub', symbol: 'RUB', name: 'RUB' });
 
+/** Invented: units of each currency per one USD, from the CBR's table. */
+const CBR_RATES = { RUB: 97.25, EUR: 0.5 };
+
 describe('FrankfurterProvider', () => {
-  test('canPrice gates on supported fiat allowlist', () => {
+  test('canPrice: a currency in the ECB’s or the CBR’s table, and nothing else', () => {
     const p = provider();
-    expect(p.canPrice(makeMockToken({ symbol: 'USD' }))).toBe(true);
-    expect(p.canPrice(makeMockToken({ symbol: 'GBP' }))).toBe(true);
-    expect(p.canPrice(makeMockToken({ symbol: 'ETB' }))).toBe(true);
-    expect(p.canPrice(makeMockToken({ symbol: 'FOK' }))).toBe(true);
-    expect(p.canPrice(makeMockToken({ symbol: 'BTC' }))).toBe(false);
-    expect(p.canPrice(makeMockToken({ symbol: 'NOPE' }))).toBe(false);
+    for (const symbol of ['USD', 'GBP', 'EUR', 'RUB', 'KZT', 'ETB', 'gbp']) {
+      expect(p.canPrice(makeMockToken({ symbol }))).toBe(true);
+    }
+    // BGN left the ECB's table with Bulgaria's euro; SOS, TWD and FOK are in
+    // neither table; the metals and the SDR are not routed.
+    for (const symbol of ['BGN', 'SOS', 'TWD', 'FOK', 'XAU', 'XDR', 'BTC', 'NOPE']) {
+      expect(p.canPrice(makeMockToken({ symbol }))).toBe(false);
+    }
   });
 
+  // Each test that expects no request still installs a refusing upstream, so a
+  // regression is a recorded request rather than a call to the real API.
   test('fetchCurrentPrice returns identity quote when from === to', async () => {
+    upstreams({});
     const eur = makeMockToken({ id: 'eur', symbol: 'EUR' });
     const quote = await provider().fetchCurrentPrice(eur, { baseCurrency: eurToken });
     expect(quote?.price).toBe('1');
     expect(quote?.source).toBe('frankfurter_identity');
+    expect(requested).toEqual([]);
   });
 
-  test('fetchCurrentPrice returns ECB rate from /latest', async () => {
-    const requested = upstreams({
-      frankfurter: { base: 'EUR', date: '2024-03-05', rates: { USD: 1.25 } },
-    });
+  test('fetchCurrentPrice returns the ECB rate from the ECB table', async () => {
+    upstreams({ ecb: fixing('EUR', '2024-03-05', { USD: 1.25 }) });
 
     const quote = await provider().fetchCurrentPrice(usdToken, { baseCurrency: eurToken });
 
     // 1 / 1.25
     expect(quote?.price).toBe('0.8');
     expect(quote?.source).toBe('frankfurter');
-    expect(requested[0]).toContain('/latest?from=EUR&to=USD');
+    expect(requested).toEqual([ECB_TABLE_URL]);
   });
 
-  test('fetchCurrentPrice returns null when both currencies fall outside the allowlist', async () => {
+  test('fetchCurrentPrice returns null when both currencies fall outside the tables', async () => {
+    upstreams({});
     const result = await provider().fetchCurrentPrice(makeMockToken({ symbol: 'NOPE' }), {
       baseCurrency: eurToken,
     });
     expect(result).toBeNull();
+    expect(requested).toEqual([]);
   });
 
-  test('fetchCurrentPrice falls back to exchangerate-api for RUB, through the one client', async () => {
-    const requested = upstreams({ usdTable: { USD: 1, RUB: 97.25 } });
+  test('RUB in USD is asked as providers/cbr base=USD and inverted with full digits', async () => {
+    upstreams({ cbr: fixing('USD', '2024-03-05', CBR_RATES) });
 
     const quote = await provider().fetchCurrentPrice(rub, { baseCurrency: usdToken });
 
-    expect(requested).toEqual(['https://api.exchangerate-api.com/v4/latest/USD']);
+    expect(requested).toEqual([CBR_TABLE_URL]);
+    // 1 / 97.25 at 28 significant digits.
     expect(quote?.price).toBe('0.01028277634961439588688946015');
-    expect(quote?.source).toBe('exchangerate-api');
+    expect(quote?.source).toBe('frankfurter-cbr');
+    expect(quote?.barDay).toBeNull();
+  });
+
+  test('EUR in RUB is priced from the CBR table only', async () => {
+    upstreams({
+      ecb: fixing('EUR', '2024-03-05', { USD: 1.25 }),
+      cbr: fixing('USD', '2024-03-05', CBR_RATES),
+    });
+
+    const quote = await provider().fetchCurrentPrice(eurToken, { baseCurrency: rub });
+
+    expect(requested).toEqual([CBR_TABLE_URL]);
+    // rate(USD to RUB) / rate(USD to EUR): 97.25 / 0.5.
+    expect(quote?.price).toBe('194.5');
+    expect(quote?.source).toBe('frankfurter-cbr');
   });
 
   // CONTROL
-  test('the fallback gives no quote for a currency the USD table does not hold', async () => {
-    upstreams({ usdTable: { USD: 1, EUR: 0.8, RUB: 0 } });
-    const p = provider();
-
-    expect(await p.fetchCurrentPrice(rub, { baseCurrency: usdToken })).toBeNull();
-    expect(
-      await p.fetchCurrentPrice(makeMockToken({ id: 'kzt', symbol: 'KZT' }), {
-        baseCurrency: usdToken,
-      })
-    ).toBeNull();
+  test('a CBR table without RUB, or with a zero rate for it, gives no quote', async () => {
+    for (const rates of [{ EUR: 0.5 }, { EUR: 0.5, RUB: 0 }]) {
+      upstreams({ cbr: fixing('USD', '2024-03-05', rates) });
+      expect(await provider().fetchCurrentPrice(rub, { baseCurrency: usdToken })).toBeNull();
+    }
   });
 
   test('fetchHistoricalPrice returns identity quote when from === to', async () => {
+    upstreams({});
     const eur = makeMockToken({ id: 'eur', symbol: 'EUR' });
     const at = new Date('2024-03-05T00:00:00Z');
     const quote = await provider().fetchHistoricalPrice(eur, at, { baseCurrency: eurToken });
     expect(quote?.price).toBe('1');
     expect(quote?.source).toBe('frankfurter_identity');
+    expect(requested).toEqual([]);
   });
 
-  test('fetchHistoricalPrice returns ECB rate from upstream', async () => {
-    const requested = upstreams({
-      frankfurter: { base: 'EUR', date: '2024-03-05', rates: { USD: 1.25 } },
-    });
+  test('fetchHistoricalPrice returns the ECB rate from the ECB', async () => {
+    upstreams({ ecb: fixing('EUR', '2024-03-05', { USD: 1.25 }) });
 
     const at = new Date('2024-03-05T00:00:00Z');
     const quote = await provider().fetchHistoricalPrice(usdToken, at, { baseCurrency: eurToken });
 
     expect(quote?.price).toBe('0.8');
-    expect(requested[0]).toContain('2024-03-05?from=EUR&to=USD');
+    expect(requested).toEqual([
+      'https://api.frankfurter.dev/v2/providers/ecb/rates?base=EUR&quotes=USD&date=2024-03-05',
+    ]);
   });
 
   test('fetchHistoricalPrice returns null when target currency unsupported', async () => {
+    upstreams({});
     const noSuch = makeMockToken({ id: 'x', symbol: 'NOPE' });
     const result = await provider().fetchHistoricalPrice(usdToken, new Date(), {
       baseCurrency: noSuch,
     });
     expect(result).toBeNull();
+    expect(requested).toEqual([]);
   });
 });
 
 /**
- * SC-1565. Frankfurter is asked in EUR, the base the ECB publishes, and the
- * pair is divided here. Asked in another base it serves a table it derived
- * and rounded itself.
+ * R25-3: a day and a range ask the bank R25-1 names, and each quote is the
+ * close of the day its row names, never the day asked. The fixings are
+ * invented, in units per one USD.
+ */
+describe('FrankfurterProvider: Bank of Russia history', () => {
+  test('a day ask on a day with no fixing is stored under the response’s date', async () => {
+    // Asked for a Sunday; the bank last fixed on the Friday before.
+    upstreams({ cbr: fixing('USD', '2024-03-01', CBR_RATES) });
+
+    const quote = await provider().fetchHistoricalPrice(rub, new Date('2024-03-03T00:00:00Z'), {
+      baseCurrency: usdToken,
+    });
+
+    expect(requested).toEqual([
+      'https://api.frankfurter.dev/v2/providers/cbr/rates?base=USD&quotes=RUB&date=2024-03-03',
+    ]);
+    expect(quote?.price).toBe('0.01028277634961439588688946015');
+    expect(quote?.barDay).toBe('2024-03-01');
+    expect(quote?.timestamp.toISOString()).toBe('2024-03-01T00:00:00.000Z');
+    expect(quote?.source).toBe('frankfurter-cbr_historical');
+  });
+
+  test('a range’s carry-in row, dated before the range, keeps its own barDay', async () => {
+    upstreams({
+      cbr: [
+        ...fixing('USD', '2024-03-01', { RUB: 97.25 }),
+        ...fixing('USD', '2024-03-04', { RUB: 50 }),
+        ...fixing('USD', '2024-03-05', { RUB: 100 }),
+      ],
+    });
+
+    const quotes = await provider().fetchHistoricalRange(
+      rub,
+      new Date('2024-03-03T00:00:00Z'),
+      new Date('2024-03-05T00:00:00Z'),
+      { baseCurrency: usdToken }
+    );
+
+    expect(requested).toEqual([
+      'https://api.frankfurter.dev/v2/providers/cbr/rates?base=USD&quotes=RUB&from=2024-03-03&to=2024-03-05',
+    ]);
+    expect(
+      quotes.map((quote) => [
+        quote.barDay,
+        quote.timestamp.toISOString(),
+        quote.price,
+        quote.source,
+      ])
+    ).toEqual([
+      [
+        '2024-03-01',
+        '2024-03-01T00:00:00.000Z',
+        '0.01028277634961439588688946015',
+        'frankfurter-cbr_historical',
+      ],
+      ['2024-03-04', '2024-03-04T00:00:00.000Z', '0.02', 'frankfurter-cbr_historical'],
+      ['2024-03-05', '2024-03-05T00:00:00.000Z', '0.01', 'frankfurter-cbr_historical'],
+    ]);
+  });
+});
+
+/**
+ * SC-1565, on v2. An ECB pair is asked from the ECB's own table, base EUR, and
+ * the pair is divided here. Asked in another base, Frankfurter serves a table
+ * it derived and rounded itself.
  *
  * The fixings are invented, each in units per one EUR: on the 4th 1.2 dollars,
  * 150 yen and 0.75 pounds; on the 5th 1.5 dollars and 200 yen.
  */
-describe('FrankfurterProvider asks in EUR and divides', () => {
+describe('FrankfurterProvider asks the ECB in EUR and divides', () => {
   const THE_3RD = new Date('2024-03-03T00:00:00Z');
   const THE_4TH = new Date('2024-03-04T00:00:00Z');
   const THE_5TH = new Date('2024-03-05T00:00:00Z');
   const ON_THE_4TH = { USD: 1.2, JPY: 150, GBP: 0.75 };
   const ON_THE_5TH = { USD: 1.5, JPY: 200 };
 
-  test('the host is api.frankfurter.dev/v1', async () => {
-    const requested = upstreams({
-      frankfurter: { base: 'EUR', date: '2024-03-04', rates: ON_THE_4TH },
-    });
+  test('every ask is api.frankfurter.dev/v2 and names the ECB', async () => {
+    upstreams({ ecb: fixing('EUR', '2024-03-04', ON_THE_4TH) });
     const p = provider();
 
     await p.fetchCurrentPrice(jpy, { baseCurrency: usdToken });
@@ -168,48 +248,46 @@ describe('FrankfurterProvider asks in EUR and divides', () => {
     await p.fetchHistoricalRange(jpy, THE_3RD, THE_5TH, { baseCurrency: usdToken });
 
     expect(requested).toEqual([
-      'https://api.frankfurter.dev/v1/latest?from=EUR&to=JPY,USD',
-      'https://api.frankfurter.dev/v1/2024-03-04?from=EUR&to=JPY,USD',
-      'https://api.frankfurter.dev/v1/2024-03-03..2024-03-05?from=EUR&to=JPY,USD',
+      ECB_TABLE_URL,
+      'https://api.frankfurter.dev/v2/providers/ecb/rates?base=EUR&quotes=JPY,USD&date=2024-03-04',
+      'https://api.frankfurter.dev/v2/providers/ecb/rates?base=EUR&quotes=JPY,USD&from=2024-03-03&to=2024-03-05',
     ]);
   });
 
   test('EUR in USD is the fixing as sent', async () => {
-    const requested = upstreams({
-      frankfurter: { base: 'EUR', date: '2024-03-04', rates: { USD: 1.2345 } },
-    });
+    upstreams({ ecb: fixing('EUR', '2024-03-04', { USD: 1.2345 }) });
 
     const quote = await provider().fetchCurrentPrice(eurToken, { baseCurrency: usdToken });
 
     expect(quote?.price).toBe('1.2345');
     expect(quote?.source).toBe('frankfurter');
-    expect(requested[0]).toEndWith('/latest?from=EUR&to=USD');
   });
 
   test('JPY in USD is USD-per-EUR over JPY-per-EUR: latest', async () => {
-    upstreams({ frankfurter: { base: 'EUR', date: '2024-03-04', rates: ON_THE_4TH } });
+    upstreams({ ecb: fixing('EUR', '2024-03-04', ON_THE_4TH) });
 
     const quote = await provider().fetchCurrentPrice(jpy, { baseCurrency: usdToken });
 
     // 1.2 / 150
     expect(quote?.price).toBe('0.008');
     expect(quote?.source).toBe('frankfurter');
-    expect(quote?.timestamp).toEqual(THE_4TH);
+    expect(quote?.timestamp.toISOString()).toBe(THE_4TH.toISOString());
   });
 
   test('JPY in USD is USD-per-EUR over JPY-per-EUR: a day', async () => {
-    upstreams({ frankfurter: { base: 'EUR', date: '2024-03-04', rates: ON_THE_4TH } });
+    upstreams({ ecb: fixing('EUR', '2024-03-04', ON_THE_4TH) });
 
     const quote = await provider().fetchHistoricalPrice(jpy, THE_4TH, { baseCurrency: usdToken });
 
     expect(quote?.price).toBe('0.008');
     expect(quote?.source).toBe('frankfurter_historical');
-    expect(quote?.timestamp).toEqual(THE_4TH);
+    expect(quote?.timestamp.toISOString()).toBe(THE_4TH.toISOString());
+    expect(quote?.barDay).toBe('2024-03-04');
   });
 
   test('JPY in USD is USD-per-EUR over JPY-per-EUR: a range', async () => {
     upstreams({
-      frankfurter: { base: 'EUR', rates: { '2024-03-04': ON_THE_4TH, '2024-03-05': ON_THE_5TH } },
+      ecb: [...fixing('EUR', '2024-03-04', ON_THE_4TH), ...fixing('EUR', '2024-03-05', ON_THE_5TH)],
     });
 
     const quotes = await provider().fetchHistoricalRange(jpy, THE_3RD, THE_5TH, {
@@ -217,47 +295,42 @@ describe('FrankfurterProvider asks in EUR and divides', () => {
     });
 
     // 1.2 / 150, then 1.5 / 200
-    expect(
-      quotes.map((quote) => [quote.timestamp.toISOString().slice(0, 10), quote.price])
-    ).toEqual([
-      ['2024-03-04', '0.008'],
-      ['2024-03-05', '0.0075'],
+    expect(quotes.map((quote) => [quote.barDay, quote.price, quote.source])).toEqual([
+      ['2024-03-04', '0.008', 'frankfurter_historical'],
+      ['2024-03-05', '0.0075', 'frankfurter_historical'],
     ]);
   });
 
   test('a pair with neither side EUR or USD', async () => {
-    const requested = upstreams({
-      frankfurter: { base: 'EUR', date: '2024-03-04', rates: ON_THE_4TH },
-    });
+    upstreams({ ecb: fixing('EUR', '2024-03-04', ON_THE_4TH) });
 
     const quote = await provider().fetchHistoricalPrice(gbp, THE_4TH, { baseCurrency: jpy });
 
-    expect(requested).toEqual(['https://api.frankfurter.dev/v1/2024-03-04?from=EUR&to=GBP,JPY']);
+    expect(requested).toEqual([
+      'https://api.frankfurter.dev/v2/providers/ecb/rates?base=EUR&quotes=GBP,JPY&date=2024-03-04',
+    ]);
     // 150 / 0.75
     expect(quote?.price).toBe('200');
   });
 
   test('a day missing either currency gives no quote', async () => {
     upstreams({
-      frankfurter: {
-        base: 'EUR',
-        rates: {
-          '2024-03-03': { USD: 1.2 },
-          '2024-03-04': { JPY: 150 },
-          '2024-03-05': ON_THE_5TH,
-        },
-      },
+      ecb: [
+        ...fixing('EUR', '2024-03-03', { USD: 1.2 }),
+        ...fixing('EUR', '2024-03-04', { JPY: 150 }),
+        ...fixing('EUR', '2024-03-05', ON_THE_5TH),
+      ],
     });
-    const p = provider();
 
-    const quotes = await p.fetchHistoricalRange(jpy, THE_3RD, THE_5TH, { baseCurrency: usdToken });
+    const quotes = await provider().fetchHistoricalRange(jpy, THE_3RD, THE_5TH, {
+      baseCurrency: usdToken,
+    });
 
-    expect(quotes.map((quote) => quote.timestamp.toISOString().slice(0, 10))).toEqual([
-      '2024-03-05',
-    ]);
+    expect(quotes.map((quote) => quote.barDay)).toEqual(['2024-03-05']);
 
     for (const rates of [{ USD: 1.2 }, { JPY: 150 }]) {
-      upstreams({ frankfurter: { base: 'EUR', date: '2024-03-04', rates } });
+      upstreams({ ecb: fixing('EUR', '2024-03-04', rates) });
+      const p = provider();
       expect(await p.fetchCurrentPrice(jpy, { baseCurrency: usdToken })).toBeNull();
       expect(await p.fetchHistoricalPrice(jpy, THE_4TH, { baseCurrency: usdToken })).toBeNull();
     }
@@ -265,15 +338,14 @@ describe('FrankfurterProvider asks in EUR and divides', () => {
 
   // CONTROL
   test('a zero or negative rate gives no quote', async () => {
-    const p = provider();
     for (const rates of [
       { USD: 1.2, JPY: 0 },
       { USD: 1.2, JPY: -150 },
     ]) {
-      upstreams({ frankfurter: { base: 'EUR', date: '2024-03-04', rates } });
+      upstreams({ ecb: fixing('EUR', '2024-03-04', rates) });
+      const p = provider();
       expect(await p.fetchCurrentPrice(jpy, { baseCurrency: usdToken })).toBeNull();
       expect(await p.fetchHistoricalPrice(jpy, THE_4TH, { baseCurrency: usdToken })).toBeNull();
-      upstreams({ frankfurter: { base: 'EUR', rates: { '2024-03-04': rates } } });
       expect(
         await p.fetchHistoricalRange(jpy, THE_3RD, THE_5TH, { baseCurrency: usdToken })
       ).toEqual([]);
@@ -281,12 +353,13 @@ describe('FrankfurterProvider asks in EUR and divides', () => {
   });
 
   test('a table in another base is refused', async () => {
-    const p = provider();
     for (const base of ['USD', undefined]) {
-      upstreams({ frankfurter: { base, date: '2024-03-04', rates: ON_THE_4TH } });
+      upstreams({
+        ecb: fixing('EUR', '2024-03-04', ON_THE_4TH).map((row) => ({ ...row, base })),
+      });
+      const p = provider();
       expect(await p.fetchCurrentPrice(jpy, { baseCurrency: usdToken })).toBeNull();
       expect(await p.fetchHistoricalPrice(jpy, THE_4TH, { baseCurrency: usdToken })).toBeNull();
-      upstreams({ frankfurter: { base, rates: { '2024-03-04': ON_THE_4TH } } });
       expect(
         await p.fetchHistoricalRange(jpy, THE_3RD, THE_5TH, { baseCurrency: usdToken })
       ).toEqual([]);

@@ -1,17 +1,14 @@
-import Decimal from 'decimal.js';
-
 interface PriceMapInput {
   holdings: Array<{
     tokenId: string;
-    balance: string;
     // `null` for unpriceable holdings — those are skipped so the
     // returned map only contains tokens we can actually price.
-    value: string | null;
+    currentPrice: string | null;
   }>;
 }
 
 /**
- * Per-token unit price, derived from each holding's value ÷ balance.
+ * Per-token unit price, as the live valuation priced it.
  *
  * Keyed on the TOKEN ID, never the symbol. A symbol is not unique — a
  * `private-company` token and a crypto token can carry the same one — so a
@@ -19,20 +16,17 @@ interface PriceMapInput {
  * below values both of them at it (SC-1114). Callers must look up with
  * `token.id`.
  *
- * A negative balance prices its token too: margin debt is negative cash
- * (SC-1462), and a currency held only as debt would otherwise go unpriced and
- * drop out of every figure built on this map while net worth still counts it
- * (SC-1463).
+ * The price is read, never derived from value ÷ balance, so every balance
+ * prices its token: a negative one, since margin debt is negative cash
+ * (SC-1462) and a currency held only as debt would otherwise drop out of every
+ * figure built on this map while net worth still counts it (SC-1463), and a
+ * zero one.
  */
 export function extractPriceMap(portfolioValue: PriceMapInput): Map<string, string> {
   const priceMap = new Map<string, string>();
-  for (const portfolioHolding of portfolioValue.holdings) {
-    if (portfolioHolding.value === null) continue;
-    const balance = new Decimal(portfolioHolding.balance);
-    const value = new Decimal(portfolioHolding.value);
-    if (!balance.isZero() && !priceMap.has(portfolioHolding.tokenId)) {
-      const price = value.div(balance);
-      priceMap.set(portfolioHolding.tokenId, price.toString());
+  for (const holding of portfolioValue.holdings) {
+    if (holding.currentPrice !== null && !priceMap.has(holding.tokenId)) {
+      priceMap.set(holding.tokenId, holding.currentPrice);
     }
   }
   return priceMap;

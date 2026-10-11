@@ -56,9 +56,9 @@ export class TransferDestinationOpener {
     // by the writers.
     const holding = await this.create(input, opening, tx);
     if (opening.balance === '0') return holding.id;
-    // The cache first, then the observation: a holding's row lock before the
-    // per-holding lock an observation insert takes (R78).
-    await this.cacheWriter.apply(userId, [{ holdingId: holding.id, balance: opening.balance }], tx);
+    // The observation first, then the cache the engine reads from it (A5
+    // D-15). R78's order holds: `record` takes the holding's row lock before
+    // it inserts.
     await this.snapshots.record(
       {
         userId,
@@ -74,6 +74,7 @@ export class TransferDestinationOpener {
       { cache: 'unchanged' },
       tx
     );
+    await this.cacheWriter.apply(userId, [{ holdingId: holding.id, balance: opening.balance }], tx);
     return holding.id;
   }
 

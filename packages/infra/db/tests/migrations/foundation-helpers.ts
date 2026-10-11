@@ -1,4 +1,4 @@
-import type { sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { getDb } from '../../src';
 import type { DatabaseTransaction } from '../../src/transaction';
 
@@ -6,6 +6,19 @@ export type Tx = DatabaseTransaction;
 export type Query = ReturnType<typeof sql>;
 
 class Rollback extends Error {}
+
+/**
+ * Runs a fixture's holdings insert as the engine calculator, the one writer
+ * the holdings guard admits to the cached columns (A5 D-5); the domain
+ * package's `seedHoldingCache`, for the tests below it. `tx` is a test's own
+ * transaction, which the setting is local to.
+ */
+export async function seedHoldingCache<T>(tx: Tx, insert: () => Promise<T>): Promise<T> {
+  await tx.execute(sql`SELECT set_config('scani.engine_writer', 'calculator', true)`);
+  const result = await insert();
+  await tx.execute(sql`SELECT set_config('scani.engine_writer', '', true)`);
+  return result;
+}
 
 /** Runs `body` in a transaction that is always rolled back, so a test leaves nothing behind. */
 export async function inRollback(body: (tx: Tx) => Promise<void>): Promise<void> {

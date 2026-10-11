@@ -23,7 +23,14 @@ function makeHolding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDe
     amount: '1',
     value: 100,
     costBasis: 80,
-    account: { id: 'a1', name: 'Acc', type: 'wallet', typeCode: 'wallet', institutionId: 'i1' },
+    account: {
+      id: 'a1',
+      name: 'Acc',
+      type: 'wallet',
+      typeCode: 'wallet',
+      class: 'asset',
+      institutionId: 'i1',
+    },
     institution: { id: 'i1', name: 'Inst', type: 'self', typeCode: 'self', website: null },
     groups: [],
     lastUpdated: '2026-01-01T00:00:00.000Z',
@@ -32,6 +39,7 @@ function makeHolding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDe
     isHidden: false,
     source: 'manual',
     refreshable: false,
+    deleteHides: false,
     ...overrides,
   };
 }

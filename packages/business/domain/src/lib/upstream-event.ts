@@ -79,6 +79,17 @@ export interface GroupLegFacts {
   readonly holdingId: string;
   readonly source: string;
   readonly eventKey: string | null;
+  /** The outflow of a transfer that came back to its source, answered by its owner (SC-1675 Q3). */
+  readonly returned?: boolean;
+}
+
+/** The outflow metadata key that marks a transfer which came back to its source. */
+export const TRANSIT_RETURNED_KEY = 'transitReturned';
+
+/** Whether a row's metadata marks the outflow of a transfer that came back. */
+export function isReturnedTransit(sourceMetadata: unknown): boolean {
+  const meta = sourceMetadata as Record<string, unknown> | null;
+  return typeof meta?.[TRANSIT_RETURNED_KEY] === 'string';
 }
 
 export interface SameHoldingGroupVerdict {
@@ -105,6 +116,9 @@ export function sameHoldingGroupVerdict(
   }
   if (new Set(legs.map((leg) => leg.holdingId)).size !== 1) {
     return { unlink: false, reason: 'KEEP  spans two holdings — this is a real move' };
+  }
+  if (legs.some((leg) => leg.returned === true)) {
+    return { unlink: false, reason: 'KEEP  a transfer that came back — a real round trip' };
   }
   const sources = new Set(legs.map((leg) => leg.source));
   if (sources.size !== 1) {

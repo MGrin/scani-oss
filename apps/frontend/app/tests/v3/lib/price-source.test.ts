@@ -26,7 +26,14 @@ describe('priceSourceLabel', () => {
     expect(priceSourceLabel(t, 'coingecko_historical_usd_converted')).toBe('CoinGecko');
     expect(priceSourceLabel(t, 'yahoo-finance_fx_historical')).toBe('Yahoo Finance');
     expect(priceSourceLabel(t, 'kraken_klines_usd')).toBe('Kraken');
-    expect(priceSourceLabel(t, 'defillama_stale_fallback')).toBe('DefiLlama');
+  });
+
+  // R25-4: a Bank of Russia rate comes through Frankfurter too, and must never
+  // read as the ECB's. The name is a brand, so it is the same in every locale.
+  test('a Bank of Russia rate reads as the Bank of Russia, and an ECB rate as before', () => {
+    expect(priceSourceLabel(t, 'frankfurter-cbr')).toBe('Bank of Russia');
+    expect(priceSourceLabel(t, 'frankfurter-cbr_historical')).toBe('Bank of Russia');
+    expect(priceSourceLabel(t, 'frankfurter_historical')).toBe('Frankfurter (ECB rates)');
   });
 
   test('the prices nobody fetched say whose they are', () => {

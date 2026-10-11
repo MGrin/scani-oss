@@ -91,12 +91,10 @@
         "theOtherN_other": "残りの{{count}}件",
         "theNInOther_other": "「その他」の{{count}}件"
       },
-      "attentionRow": {
-        "needsReview_other": "{{count}}件が確認待ちです"
-      },
       "topHoldings": {
         "title": "主な保有資産",
-        "empty": "価格が付いたものはまだありません。"
+        "empty": "価格が付いたものはまだありません。",
+        "loadingLabel": "主な保有資産"
       },
       "tape": {
         "noValue": "評価額なし"
@@ -104,12 +102,14 @@
       "groups": {
         "title": "グループ",
         "openGroup": "{{name}} — グループを開く",
-        "billsNext_other": "支払 <amount/>（今後{{count}}日間）"
+        "billsNext_other": "支払 <amount/>（今後{{count}}日間）",
+        "loadingLabel": "グループ"
       },
       "vaults": {
         "title": "貯蓄目標",
         "progress": "{{name}}: 目標の{{percent}}%",
-        "ofTarget": "／ <target></target>"
+        "ofTarget": "／ <target></target>",
+        "loadingLabel": "貯蓄目標"
       },
       "allocation": {
         "title": "資産配分",
@@ -127,9 +127,11 @@
       },
       "upcoming": {
         "title": "今後の支払",
+        "subject": "今後の支払",
         "empty_other": "今後{{count}}日間に期日の予定はありません。",
         "addPayment": "支払を追加",
-        "incomeExpected_other": "見込み収入（今後{{count}}日間）"
+        "incomeExpected_other": "見込み収入（今後{{count}}日間）",
+        "dueNext_other": "支払い{{count}}件 · 次回は{{when}}"
       },
       "metric": {
         "netWorth": "純資産",
@@ -172,7 +174,12 @@
         "returnsNoChart": "比較を描くにはまだ計測できた日数が足りません。",
         "returnsOverPeriod": "リターン · {{period}}",
         "returnsSince": "リターン · {{date}} から",
-        "returnsNoRate": "この期間のリターンはまだ計算されていません"
+        "returnsNoRate": "この期間のリターンはまだ計算されていません",
+        "openChart": {
+          "netWorth": "純資産のグラフを開く",
+          "pnl": "損益のグラフを開く",
+          "returns": "リターンのグラフを開く"
+        }
       },
       "quality": {
         "allPriced_other": "{{count}}件の保有資産すべてに価格あり",
@@ -273,6 +280,7 @@
         "unavailable": "投資パフォーマンスを表示できません",
         "recordedChange": "記録済み純資産の変化",
         "eligibility": {
+          "debt-account": "ローンまたはカードの口座",
           "incomplete-flow-coverage": "資金移動の履歴が不完全",
           "unresolved-change": "未解決の残高変化",
           "missing-valuation": "評価が不足",
@@ -285,14 +293,117 @@
         "coversValue": "金額の{{share}}、{{holdings}}のうち{{included}}件が対象です。",
         "leftOut": "対象外:",
         "enteredLate": "明細書の初日から計上: {{holdings}}",
-        "unpricedAtZero_other": "価格のないトークン{{count}}件はゼロとして計上"
+        "unpricedAtZero_other": "価格のないトークン{{count}}件はゼロとして計上",
+        "loadingLabel": "リターン"
+      },
+      "income": {
+        "title": "受取済みの投資収益",
+        "window": "{{from}}〜{{to}}の受取額",
+        "chartLabel": "月別の受取収益",
+        "gross": "税引前",
+        "withheld": "源泉徴収税",
+        "net": "税引後",
+        "group": {
+          "dividend": "配当",
+          "interest": "利息",
+          "staking": "ステーキング",
+          "rewards": "報酬"
+        },
+        "bySecurity": "銘柄別の配当",
+        "payments_other": "{{count}}回",
+        "unpriced_other": "{{count}}件は評価できず、集計に含めていません",
+        "loadingLabel": "投資収益"
+      },
+      "card": {
+        "asOf": "{{time}} 時点",
+        "tileFailed": "読み込めませんでした",
+        "peekEmpty": "現在表示できるものはありません。"
+      },
+      "debt": {
+        "loadingLabel": "負債"
+      },
+      "needsYou": {
+        "review_other": "{{count}}件が確認待ちです",
+        "overdue_other": "期限切れの支払い {{count}}件",
+        "dueSoon_other": "3日以内の支払い {{count}}件",
+        "clear": "対応が必要なものはありません",
+        "failed": "対応が必要なものを確認できませんでした",
+        "retry": "再試行",
+        "partlyFailed": "対応が必要なものをすべては確認できませんでした"
+      },
+      "details": {
+        "failed": "この期間の詳細を読み込めませんでした。",
+        "measured": "{{from}}〜{{to}}の測定",
+        "realizedVsUnrealized": "実現と含み",
+        "pnlNote": "期間の開始時からの実現損益と含み損益の変化です。売却すると、含み益は実現益に移ります。",
+        "byAccountType": "口座タイプ別の変化",
+        "empty": "この期間に変化はありません。",
+        "otherType": "その他",
+        "topPnl": "損益の大きい保有銘柄",
+        "unknownSymbol": "不明",
+        "topMovers": "変動の大きい銘柄"
       }
     },
     "allocation": {
-      "marginDebt": "信用取引の借入",
+      "debt": "負債",
+      "debtLiabilities": "ローンとカード",
+      "debtMargin": "信用取引",
       "shareOfAssets": "資産に占める割合"
     },
+    "liabilities": {
+      "addCard": "カード条件を追加",
+      "addLoan": "ローン条件を追加",
+      "addOther": "条件を追加",
+      "ahead_one": "{{count}}か月前倒し",
+      "ahead_other": "{{count}}か月前倒し",
+      "annualFee": "年会費",
+      "available": "利用可能額",
+      "behind_one": "{{count}}か月遅れ",
+      "behind_other": "{{count}}か月遅れ",
+      "contractedPayment": "毎月の返済額",
+      "creditLimit": "利用限度額",
+      "editTerms": "条件を編集",
+      "formDescription": "このローンまたはカードの金利、期間、返済額。わからない項目は空欄のままにしてください。",
+      "formTitle": "ローンとカードの条件",
+      "interestLeft": "残りの利息",
+      "kind": "種類",
+      "kindCard": "クレジットカード",
+      "kindLoan": "ローン",
+      "kindOther": "その他",
+      "minimumPayment": "最低支払額",
+      "notConverging": "この返済額では利息をまかなえないため、完済できません。",
+      "onTrack": "予定どおり",
+      "owed": "借入残高",
+      "paidOff": "完済",
+      "paidOffBy": "{{date}}に完済",
+      "payment": "毎月の返済額",
+      "principal": "当初の借入額",
+      "rate": "年利 (%)",
+      "save": "条件を保存",
+      "saving": "保存中…",
+      "startDate": "開始日",
+      "subject": "この条件",
+      "termMonths": "期間 (か月)",
+      "used": "利用額",
+      "showSchedule": "返済予定を表示",
+      "hideSchedule": "返済予定を隠す",
+      "termsSubject": "ローンの条件",
+      "scheduleDate": "日付",
+      "schedulePayment": "返済額",
+      "scheduleInterest": "利息",
+      "schedulePrincipal": "元金",
+      "scheduleRemaining": "残高"
+    },
     "money": {
+      "calendar": {
+        "choose": "請求の表示方法",
+        "list": "リスト",
+        "calendar": "カレンダー",
+        "previous": "前の月",
+        "next": "次の月",
+        "noneOnDay": "{{date}} の請求はありません。",
+        "day_other": "{{date}}：請求 {{count}} 件"
+      },
       "upcoming": {
         "overdueTotal_other": "支払期日超過（{{count}}件）",
         "dayTotalEstimated_other": "概算（見積もり{{count}}件を含む）：",
@@ -734,14 +845,16 @@
         "swap": "交換",
         "withdrawal": "出金",
         "transfer": "送金",
-        "disposal": "譲渡"
+        "disposal": "譲渡",
+        "derivativeLoss": "デリバティブの損失"
       },
       "verb": {
         "sold": "売却しました",
         "swapped": "交換しました",
         "withdrew": "出金しました",
         "transferredOut": "送金しました",
-        "disposed": "譲渡しました"
+        "disposed": "譲渡しました",
+        "lostOnDerivatives": "デリバティブで損失"
       },
       "outcome": {
         "unpriced": "価格が見つからなかったため、損益は計上していません。取得原価は表示しています。",
@@ -750,7 +863,8 @@
         "awaitingPair": "この移動の片側しか取り込まれていないため、損益は計上していません。",
         "realizedUnattributed": "ポートフォリオから出たものとして記録されているため、この損益を計上しました。誰が回答したかの記録はありません。確認キューで回答されたものではありません。",
         "retainedUnattributed": "自分の管理下から出ていないものとして記録されているため、何も実現していません。誰が回答したかの記録はありません。",
-        "fee": "出金額から差し引かれた手数料のため、損益は計上されていません。出金ではなくコストとして扱われます。"
+        "fee": "出金額から差し引かれた手数料のため、損益は計上されていません。出金ではなくコストとして扱われます。",
+        "derivativeLoss": "デリバティブのポジションで生じた損失で、この残高から支払われました。そのコストは実現損失として計上されます。"
       },
       "basis": {
         "partialNote": "不完全と分かっている履歴、または鮮度の範囲外の価格に基づいています。",
@@ -785,7 +899,9 @@
       "deleteAction": {
         "trigger": "削除",
         "commit": "{{symbol}} を削除",
-        "consequence": "{{account}} の {{symbol}} が、そこに記録されたすべての取引とともに削除されます。ポートフォリオの合計から <value/> が減ります。元に戻す方法はなく、履歴を作り直すには取り込みし直すしかありません。記録を残したまま合計から外すには「無効化」を使ってください。"
+        "commitHide": "{{symbol}} を非表示",
+        "consequence": "{{account}} の {{symbol}} が、そこに記録されたすべての取引とともに削除されます。ポートフォリオの合計から <value/> が減ります。元に戻す方法はなく、履歴を作り直すには取り込みし直すしかありません。記録を残したまま合計から外すには「無効化」を使ってください。",
+        "consequenceHide": "{{account}} の {{symbol}} を非表示にします。ポートフォリオの合計から <value/> が減ります。取引は残り、トークン → 非表示 から元に戻せます。"
       },
       "trendLabel": "直近{{period}}の {{symbol}} の評価額",
       "payout": {
@@ -835,7 +951,8 @@
         "amount": "数量",
         "account": "口座",
         "type": "種類",
-        "sinceBought": "購入以降"
+        "sinceBought": "購入以降",
+        "moneyPutIn": "投入した資金"
       },
       "badge": {
         "noPrice": "価格なし",
@@ -852,7 +969,8 @@
       },
       "bulk": {
         "assignGroups": "グループを割り当て",
-        "deleteConsequence_other": "{{symbols}} がポートフォリオから削除され、それらに記録されたすべての取引も削除されます。この操作は取り消せません。"
+        "deleteConsequence_other": "{{symbols}} がポートフォリオから削除され、それらに記録されたすべての取引も削除されます。この操作は取り消せません。",
+        "hideConsequence_other": "{{symbols}} を非表示にします。ポートフォリオの合計から外れ、取引は残ります。トークン → 非表示 から元に戻せます。"
       },
       "realized": {
         "heading": "実現分",
@@ -942,11 +1060,14 @@
       },
       "toast": {
         "deleted": "保有資産を削除しました",
+        "hidden": "保有資産を非表示にしました。トークン → 非表示 から元に戻せます。",
         "deletingContext": "保有資産を削除しています",
         "bulkDeleted_other": "{{count}}件の保有資産を削除しました",
+        "bulkHidden_other": "{{count}}件の保有資産を非表示にしました",
         "bulkDeletedWithFailures_other": "{{count}}件の保有資産を削除しました（{{failed}}件は失敗）",
         "bulkDeletingContext": "保有資産を削除しています",
         "updated": "保有資産を更新しました",
+        "savedAsCheck": "確認として保存しました：フィードの値は {{balance}} です",
         "updatingContext": "保有資産を更新しています"
       },
       "editCause": {
@@ -1054,10 +1175,52 @@
           "fee": "手数料",
           "reward": "報酬",
           "interest": "利息",
+          "dividend": "配当",
+          "taxWithheld": "源泉徴収税",
           "airdrop": "エアドロップ",
           "openingBalance": "期首残高",
           "correction": "修正"
         }
+      },
+      "handValued": {
+        "updateValue": {
+          "action": "評価額を更新",
+          "title": "評価額を更新",
+          "description": "投資が値上がり・値下がりしたときに使います。変動は損益として計上されます。",
+          "valueLabel": "現在の評価額（{{currency}}）",
+          "dateLabel": "評価日",
+          "save": "評価額を保存",
+          "saving": "保存中…"
+        },
+        "money": {
+          "action": "入金 / 出金",
+          "title": "入金 / 出金",
+          "description": "資金を入れた・引き出したときに使います。損益には含まれません。",
+          "direction": {
+            "in": "入金",
+            "out": "出金"
+          },
+          "amountLabel": "金額（{{currency}}）",
+          "dateLabel": "日付",
+          "save": "保存",
+          "saving": "保存中…"
+        },
+        "blocker": {
+          "amount": "0より大きい金額を入力してください",
+          "date": "日付を選んでください"
+        },
+        "saved": "保存しました",
+        "subject": "評価額",
+        "error": {
+          "nothingHeld": "その日付には保有がないため、評価額を設定できません。",
+          "tooMuch": "その日付のこの投資の評価額を超えています。",
+          "noPriceYet": "先にこの日付以前の評価額を設定してください。"
+        }
+      },
+      "undoHide": {
+        "undo": "元に戻す",
+        "restored": "元に戻しました",
+        "restoreFailed": "元に戻せませんでした"
       }
     },
     "export": {
@@ -1075,7 +1238,8 @@
         "documents": "書類",
         "history": "純資産の推移",
         "netWorth": "純資産",
-        "archivedOwnership": "所有履歴アーカイブ"
+        "archivedOwnership": "所有履歴アーカイブ",
+        "categories": "カテゴリ"
       },
       "column": {
         "account": "口座",
@@ -1136,7 +1300,10 @@
         "holdingsUnpriceable": "価格を付けられない保有資産",
         "holdingsStalePriced": "古い価格で評価した保有資産",
         "archivedOwnerId": "アーカイブ所有者ID",
-        "name": "名前"
+        "name": "名前",
+        "parent": "親カテゴリ",
+        "colour": "色",
+        "categorySetBy": "カテゴリの設定元"
       },
       "value": {
         "yes": "はい",
@@ -1145,7 +1312,13 @@
         "every_month_other": "{{count}}か月",
         "every_quarter_other": "{{count}}四半期",
         "every_year_other": "{{count}}年",
-        "everyUnknown": "{{count}} × {{unit}}"
+        "everyUnknown": "{{count}} × {{unit}}",
+        "categorySetBy": {
+          "person": "あなた",
+          "import": "インポート",
+          "rule": "ルール",
+          "ai": "AI"
+        }
       },
       "provenance": {
         "subject": "アカウント全体",
@@ -1186,6 +1359,68 @@
         "intro": "このアカウントのすべての記録を1つのファイルにまとめます。保有資産、取引履歴全体、支払、グループ、貯蓄目標、純資産の推移が含まれます。取引所・証券会社の鍵は記録ではなく認証情報のため、含まれません。",
         "trigger": "すべてエクスポート",
         "ownershipArchive": "過去の所有者名と口座の関連付けはエクスポートに保持されます。編集はできなくなりました。"
+      },
+      "backup": {
+        "title": "バックアップ",
+        "intro": "アカウントを1つのファイルにまとめます。すべての口座、保有資産、取引、残高の記録に加え、設定とルールも含まれます。",
+        "notIncluded": "まだ含まれないもの：アップロードした書類。取引所や銀行との接続は常に含まれません。これらは認証情報であり、記録ではないためです。",
+        "last": "最終バックアップ {{date}} · {{size}}",
+        "make": "バックアップを作成",
+        "making": "バックアップを作成中…",
+        "download": "バックアップをダウンロード",
+        "ready": "バックアップのダウンロード準備ができました。",
+        "failed": "バックアップを作成できませんでした。",
+        "restoreTitle": "バックアップから復元",
+        "restoreIntro": "Scaniのバックアップファイルをこのアカウントに読み込みます。空のアカウントにのみ復元できます。",
+        "restoreChoose": "バックアップファイルを選択",
+        "restoring": "アカウントを復元しています…",
+        "restored": "復元が完了しました。復元したレコード数: {{rows}}。",
+        "restoredUnmatched": "このScaniが認識しないトークン: {{tokens}}。データ品質に一覧があります。",
+        "restoreFailed": "復元は完了しませんでした。何も復元されていません。"
+      },
+      "household": {
+        "title": "世帯",
+        "intro": "選んだ口座を、一緒に暮らす人と閲覧のみで共有します。他のメンバーの口座を変更することは誰にもできません。",
+        "subject": "世帯",
+        "nameLabel": "世帯名",
+        "namePlaceholder": "例: 自宅",
+        "create": "世帯を作成",
+        "creating": "世帯を作成しています",
+        "members": "メンバー",
+        "roleAdmin": "管理者",
+        "roleMember": "メンバー",
+        "makeAdmin": "管理者にする",
+        "makeAdminConfirm": "{{name}} を管理者にする",
+        "makeAdminConsequence": "招待とメンバーの管理をこの人に任せます。あなたはメンバーのままです。",
+        "handingOver": "管理者の役割を引き渡しています",
+        "remove": "外す",
+        "removeConfirm": "{{name}} を外す",
+        "removeConsequence": "この人はすぐに共有口座を見られなくなり、この人が共有していた口座も外れます。",
+        "removing": "メンバーを外しています",
+        "invite": "招待する",
+        "emailLabel": "相手のメールアドレス",
+        "emailPlaceholder": "name@example.com",
+        "sendInvite": "招待",
+        "inviting": "招待を送信しています",
+        "emailed": "{{email}} に招待を送りました。下のリンクは 7 日間有効です。",
+        "notEmailed": "招待は作成しましたが、メールでは送信していません。リンクをコピーしてご自身で送ってください。7 日間有効です。",
+        "copyLink": "リンクをコピー",
+        "copied": "コピーしました",
+        "done": "完了",
+        "pending": "保留中の招待",
+        "expires": "{{date}} に期限切れ",
+        "revoke": "取り消す",
+        "revoking": "招待を取り消しています",
+        "yourAccounts": "あなたの口座",
+        "yourAccountsHint": "メンバーは共有口座の残高と評価額を閲覧のみで見られます。",
+        "sharing": "共有設定を変更しています",
+        "currency": "世帯の通貨",
+        "currencyHint": "世帯ビューの合計はこの通貨で表示されます。",
+        "settingCurrency": "世帯の通貨を変更しています",
+        "leave": "世帯を抜ける",
+        "leaveConfirm": "{{name}} を抜ける",
+        "leaveConsequence": "他のメンバーの口座はすぐに見られなくなり、あなたが共有していた口座も外れます。",
+        "leaving": "世帯を抜けています"
       },
       "maintenance": {
         "title": "ポートフォリオの履歴",
@@ -1238,6 +1473,90 @@
         "lastUsed": "{{where}} · 最終利用 {{when}}",
         "unknownIp": "IP不明"
       },
+      "billCalendar": {
+        "title": "請求カレンダー",
+        "intro": "今後の請求を Apple、Google、Outlook のカレンダーで購読できます。",
+        "warning": "リンクを知っている人は誰でも、各請求の支払先・金額・日付を見られます。共有せず、漏れたら新しいリンクを作成してください。",
+        "enable": "オンにする",
+        "enabling": "請求カレンダーをオンにしています",
+        "copyOnce": "このリンクを今すぐカレンダーアプリにコピーしてください。再表示はされません。",
+        "addToCalendar": "カレンダーに追加",
+        "copy": "リンクをコピー",
+        "copied": "リンクをコピーしました",
+        "done": "完了",
+        "since": "{{when}}にオン",
+        "rotate": "新しいリンク",
+        "rotateConfirm": "新しいリンクを作成",
+        "rotateConsequence": "現在のリンクはすぐに使えなくなります。そのリンクを使うカレンダーは更新されなくなります。",
+        "rotating": "新しいリンクを作成しています",
+        "disable": "オフにする",
+        "disableConfirm": "請求カレンダーをオフにする",
+        "disableConsequence": "リンクはすぐに使えなくなります。そのリンクを使うカレンダーは更新されなくなります。",
+        "disabling": "請求カレンダーをオフにしています",
+        "disabled": "請求カレンダーをオフにしました",
+        "subject": "請求カレンダー"
+      },
+      "agentTokens": {
+        "title": "AI エージェント",
+        "intro": "ご自身の AI エージェント（Claude Code、Cursor など）にポートフォリオの読み取りを許可します。同じトークンは、/api/v1 の REST API を通じてご自身のスクリプトでも使えます。変更を許可しない限りトークンは読み取り専用で、いつでも取り消せます。",
+        "nameLabel": "トークン名",
+        "namePlaceholder": "例：ノートPCの Claude Code",
+        "create": "トークンを作成",
+        "creating": "トークンを作成しています",
+        "copyOnce": "今すぐこのトークンをコピーしてください。再表示はされません。",
+        "claudeCode": "Claude Code に Scani を追加するには、次を実行します：",
+        "copyCommand": "コマンドをコピー",
+        "copied": "コピーしました",
+        "done": "完了",
+        "subject": "エージェントトークン",
+        "empty": "トークンはまだありません。",
+        "lastUsed": "{{prefix}}… · 最終使用 {{when}}",
+        "neverUsed": "{{prefix}}… · 未使用",
+        "revoke": "取り消す",
+        "revokeConfirm": "{{name}} を取り消す",
+        "revokeConsequence": "このトークンを使うエージェントは直ちにアクセスを失います。元に戻せません。",
+        "revoked": "トークンを取り消しました",
+        "revoking": "トークンを取り消しています",
+        "allowWrites": "変更を許可",
+        "allowWritesHint": "エージェントは入出金の記録、保有資産の追加、確認事項への回答ができます。すべての変更は「エージェントによる変更」に表示され、元に戻せます。",
+        "canWrite": "変更可能"
+      },
+      "connectedApps": {
+        "title": "接続済みのアプリ",
+        "intro": "サインインしてポートフォリオの読み取りを許可したアプリ（Claude など）。接続を解除するとすぐにアクセスできなくなります。",
+        "subject": "接続済みのアプリ",
+        "connected": "{{when}}に接続",
+        "disconnect": "接続解除",
+        "disconnectConfirm": "{{name}} の接続を解除",
+        "disconnectConsequence": "すぐにアクセスできなくなり、再度接続しないとポートフォリオを読み取れません。",
+        "disconnected": "アプリの接続を解除しました",
+        "disconnecting": "アプリの接続を解除しています"
+      },
+      "agentActivity": {
+        "title": "エージェントによる変更",
+        "intro": "AI エージェントが変更した内容です。元に戻すと、すべての行が変更前とまったく同じ状態に戻ります。",
+        "rows": "変更された行: {{count}}",
+        "statusUndone": "{{when}}に元に戻しました",
+        "statusFailed": "失敗",
+        "undo": "元に戻す",
+        "undoConfirm": "この変更を元に戻す",
+        "undoConsequence": "変更されたすべての行が以前の状態に戻ります。その後にこれらの行が変更されている場合は実行されません。",
+        "undone": "変更を元に戻しました",
+        "undoing": "変更を元に戻しています",
+        "tools": {
+          "record_movement": "入出金を記録しました",
+          "create_holdings": "保有資産を作成しました",
+          "answer_transfer_review": "送金の確認に回答しました",
+          "answer_balance_gap": "残高の確認に回答しました"
+        }
+      },
+      "agentCalls": {
+        "title": "エージェントの呼び出し",
+        "intro": "AI エージェントが行ったすべてのリクエストです。新しい順に、拒否・失敗したものも含みます。",
+        "removedAgent": "削除されたエージェント",
+        "outcomeError": "失敗",
+        "outcomeRefused": "拒否"
+      },
       "device": {
         "unknown": "不明な端末",
         "genericBrowser": "ブラウザ",
@@ -1265,7 +1584,12 @@
         "negativeOpeningHint": "最初の取引より前まで遡れなかった取り込みです",
         "missingCoverage": "価値の履歴がまだない保有資産",
         "intro": "アクセスのたびに数え直しています。「{{flag}}」が付いたものは確認する価値があります。",
-        "rowLink": "{{label}}: {{count}} — 保有資産で表示"
+        "rowLink": "{{label}}: {{count}} — 保有資産で表示",
+        "rowLinkHidden": "{{label}}: {{count}} — トークン → 非表示 で表示",
+        "hiddenNewBalance": "新しい残高がある非表示の保有資産",
+        "hiddenNewBalanceHint": "非表示にした後、データソースが当時より多い残高を報告しています。非表示の保有資産はどの合計にも含まれません。",
+        "restoredUnmatched": "一致しなかったトークンで復元された保有資産",
+        "restoredUnmatchedHint": "バックアップに、このScaniが認識しないトークンが含まれていました。保有資産はそのシンボルのまま、価格ソースのないあなた専用のトークンに残っています。"
       },
       "pending": {
         "deletingData": "データを削除しています",
@@ -1276,7 +1600,10 @@
         "signingOutOthers": "他のセッションをサインアウトしています",
         "togglingNotifications": "通知の設定を変更しています",
         "sendingTestNotification": "テスト通知を送信しています",
-        "changingCostBasis": "損益の計算方法を変更しています"
+        "changingCostBasis": "損益の計算方法を変更しています",
+        "makingBackup": "バックアップの作成",
+        "downloadingBackup": "バックアップのダウンロード",
+        "restoringBackup": "バックアップを復元しています"
       },
       "costBasis": {
         "title": "取得原価の計算方法",
@@ -1292,7 +1619,11 @@
         "consequenceUnchanged": "損益はすでに{{method}}で計算されています。別のルールを選ぶと、変更した場合の内容が表示されます。",
         "changeConfirm": "{{method}}で損益を計算し直す",
         "changeInFlight": "損益を計算し直しています。",
-        "recomputing": "損益を計算し直しています。アプリ全体の数値はまだ確定していません。"
+        "recomputing": "損益を計算し直しています。アプリ全体の数値はまだ確定していません。",
+        "methodShort": {
+          "fifo": "先入先出",
+          "uk_section_104": "Section 104"
+        }
       },
       "accountDeletion": {
         "failed": "アカウントの削除が完了しなかったため、アカウントはまだ残っています。",
@@ -1306,6 +1637,61 @@
         "send": "コードを送信",
         "sending": "送信中…",
         "humanCheck": "セキュリティチェックの完了"
+      },
+      "areas": {
+        "you": {
+          "title": "あなたと数値"
+        },
+        "notifications": {
+          "title": "通知とデバイス",
+          "remindersOn": "リマインダー オン",
+          "remindersOff": "リマインダー オフ",
+          "devices_other": "{{count}}台のデバイス"
+        },
+        "agents": {
+          "title": "AIエージェント",
+          "off": "このアカウントではAIエージェントのアクセスが有効になっていません。",
+          "keys_other": "エージェントキー {{count}}件"
+        },
+        "data": {
+          "title": "あなたのデータ",
+          "lastBackup": "最終バックアップ {{date}}",
+          "noBackup": "バックアップなし"
+        },
+        "account": {
+          "title": "アカウント"
+        },
+        "notFound": "その設定ページはありません。"
+      },
+      "security": {
+        "title": "2段階サインイン",
+        "intro": "メールのコードやリンクの後に、認証アプリのコードを求めます。",
+        "turnOn": "2段階サインインをオンにする",
+        "scan": "認証アプリでスキャンするか、このデバイスで開いてください。",
+        "qrAlt": "認証アプリ用のQRコード",
+        "openApp": "認証アプリで開く",
+        "manualKey": "またはこのキーを入力:",
+        "confirm": "確認",
+        "onNow": "2段階サインインはオンです。",
+        "signOutOthers": "他のすべての場所からサインアウト",
+        "done": "完了",
+        "isOn": "2段階サインインはオンです。",
+        "newCodes": "新しいバックアップコードを取得",
+        "turnOff": "2段階サインインをオフにする",
+        "turnOffBody": "サインインはメールだけで再びできるようになります。バックアップコードは使えなくなります。",
+        "turnedOff": "2段階サインインはオフです。",
+        "backupCodesIntro": "これらのバックアップコードを安全な場所に保管してください。電話をなくしたとき、それぞれ1回サインインに使えます。",
+        "passkeysTitle": "パスキー",
+        "passkeysIntro": "メールなしで、Face ID、Touch ID、またはデバイスのPINでサインインします。",
+        "passkeyUnnamed": "パスキー",
+        "removePasskey": "パスキーを削除",
+        "addPasskey": "パスキーを追加",
+        "passkeyAdded": "パスキーを追加しました。",
+        "failed": "うまくいきませんでした",
+        "turnOffConfirm": "はい、オフにします",
+        "confirming": "確認中…",
+        "blockerCode": "6桁のコードを入力",
+        "passkeyFailed": "このデバイスではパスキーを保存できませんでした。"
       }
     },
     "feedback": {
@@ -1352,7 +1738,11 @@
         "answersTradesExplain": "取り込んだ取引で説明済み",
         "answersExplained_other": "{{subject}} の説明{{count}}件",
         "unpriceableAirdrops": "価格を付けられないトークン",
-        "unpriceableTokens_other": "ウォレットに届いた、価格を付けられないトークン{{count}}件"
+        "unpriceableTokens_other": "ウォレットに届いた、価格を付けられないトークン{{count}}件",
+        "transferNotArrived": "未着の送金",
+        "transferInTransit": "{{source}} から {{destination}} へ {{amount}}",
+        "untrackedTransferArrived": "これは送金でしたか？",
+        "untrackedTransferArrivedDetail": "{{source}} から {{amount}} が出て、同じ額が {{destination}} に入りました"
       },
       "kind": {
         "withdrawal": "出金",
@@ -1498,9 +1888,9 @@
         "internal": {
           "carry": "{{amount}} {{symbol}} は、{{location}} へ移っても取得時の金額をそのまま保ちます。何も実現せず、損益も計上されません。",
           "writeNew": "移動先に {{symbol}} の保有資産が新たに作成され、残高 {{amount}} {{symbol}}、{{date}} 付けの入金を持ちます。",
-          "writeNewSynced": "そこに新しい {{symbol}} の保有が作成されます。残高はゼロで開始し、{{date}} 付けの入金を保持します。その口座は同期されているため、次回の同期で実際の残高が入ります。",
-          "writeExisting": "{{date}} 付けの {{amount}} {{symbol}} の入金がそこに記録されます。残高は {{balance}} のままです。その口座は同期されており、同期側がすでに着金を反映しています。",
-          "writeExistingMoves": "{{date}} 付けの {{amount}} {{symbol}} の入金がそこに記録され、残高は {{balance}} から {{amount}} {{symbol}} 増えます。その口座は何とも同期されていないため、ほかに残高を入れる仕組みはありません。ご自身で変更する必要はありません。",
+          "writeNewSynced": "そこに新しい {{symbol}} の保有が作成され、その口座の次回の同期で実際の残高が入るまで、{{date}} 付けの {{amount}} {{symbol}} の入金が残高になります。",
+          "writeExisting": "{{date}} 付けの {{amount}} {{symbol}} の入金がそこに記録されます。その口座の残高はフィードが決めます。{{date}} 以降フィードの報告がない場合を除き残高は {{balance}} のままで、フィードの次回の報告で確定します。",
+          "writeExistingMoves": "{{date}} 付けの {{amount}} {{symbol}} の入金がそこに記録され、残高は {{balance}} から {{amount}} {{symbol}} 増えます。その残高はご自身で管理しているため、ほかに入金を反映する仕組みはありません。ご自身で変更する必要はありません。",
           "balanceFallback": "その残高"
         },
         "allocation": {
@@ -1512,9 +1902,11 @@
           "trigger": "これは複数の内訳だった",
           "commit": "この分割を記録する",
           "note": "1回の出金が同時に複数の意味を持つことがあります。一部は自分の別の保有資産へ移り、一部は本当に出ていった、という場合です。分割すれば、それぞれが個別に扱われます。",
-          "oneLinkOnly": "Scaniが記録している先へ移せる内訳は1つだけです。{{paired}} か {{internal}} のどちらかで、両方は指定できません。取得原価は1つの移動先にしか引き継げず、2つあるとどちらにも引き継げなくなります。",
+          "oneDestinationOnly": "2つの内訳が同じ保有資産に移動しています。その移動は合計額で1回だけ入力してください。",
+          "addDestination": "移動先を追加",
           "needTwo": "少なくとも2つに金額を入力してください。合計が {{amount}} {{symbol}} になる必要があります。",
           "takeRest": "残り {{amount}} {{symbol}} をここに充てる",
+          "changeWas": "変動は {{amount}} {{symbol}} でした",
           "transferWas": "送金額は {{amount}} {{symbol}} でした",
           "clause": {
             "paired": "{{amount}} は {{location}} へ移っても取得時の金額を保ちます",
@@ -1526,12 +1918,12 @@
           },
           "summary": "{{clauses}}。損益が計上されるのは譲渡の分だけです。",
           "balanceNew": "移動先に {{symbol}} の保有資産が新たに作成され、その入金が残高になります。",
-          "balanceUnchanged": "残高は変わりません。",
+          "balanceFeed": "その口座の残高はフィードが決め、次回の報告でこの入金が確定します。",
           "balanceMoves": "その口座の残高は、そこに届いた金額のぶん増えます。",
           "sheetTitle": "この送金を内訳に分ける",
           "blocker": {
             "twoParts": "2つ以上の内訳の金額",
-            "oneLink": "Scaniが記録している先への内訳は1つだけ",
+            "oneDestination": "移動先ごとに内訳は1つ",
             "deposit": "「{{paired}}」の入金の選択",
             "destination": "記録対象の内訳の移動先",
             "positive": "0より大きい金額",
@@ -1741,13 +2133,34 @@
         "failed": "何も非表示にしませんでした。もう一度お試しください。",
         "keepFailed": "選択を保存できませんでした。もう一度お試しください。",
         "partlyFailed_other": "{{count}}件のトークンを非表示にできませんでした。もう一度お試しください。",
-        "undo": "元に戻す",
         "toast": {
           "hidden_other": "{{count}}件のトークンを非表示にしました",
-          "kept_other": "{{count}}件のトークンを残しました",
-          "restored": "トークンを元に戻しました",
-          "restoreFailed": "トークンを元に戻せませんでした"
+          "kept_other": "{{count}}件のトークンを残しました"
         }
+      },
+      "transit": {
+        "title": "未着の送金",
+        "description": "{{date}}に {{amount}} が {{source}} から {{destination}} へ送られましたが、まだ届いていません。純資産には引き続き含まれています。どうなりましたか？",
+        "arrived": "届いた：{{destination}} に {{amount}}（{{date}}）",
+        "shortfall": "残りの {{amount}} は手数料として記録されます",
+        "noArrival": "{{destination}} に一致する取引はまだありません",
+        "cameBack": "{{date}}に {{source}} へ戻った",
+        "lostFee": "途中で失われた",
+        "lostFeeDetail": "手数料として記録：この口座のコスト",
+        "leftControl": "ポートフォリオの外に出た",
+        "leftControlDetail": "Scani から見えない場所で使った、贈った、または売った",
+        "waiting": "まだ待っている",
+        "waitingDetail": "何も記録されません。引き続き含まれ、7 日後にレビューで再度確認します",
+        "save": "保存",
+        "failed": "回答を保存できませんでした"
+      },
+      "untrackedArrival": {
+        "title": "これは {{destination}} への送金でしたか？",
+        "description": "{{date}} に {{source}} から {{amount}} が出て、Scani から見えない口座へ行ったと回答されています。{{arrivedDate}} に {{destination}} へ {{arrived}} が入りました。",
+        "keepNote": "違う場合は回答がそのまま残り、確認でこの入金について再び聞くことはありません。",
+        "confirm": "はい、つなげる",
+        "decline": "いいえ、回答を残す",
+        "failed": "回答を保存できませんでした"
       }
     },
     "form": {
@@ -1823,6 +2236,14 @@
         "movement": {
           "title": "資金の移動を記録",
           "description": "入金、出金、または自分の口座間の送金です。"
+        },
+        "valuedAsset": {
+          "title": "不動産・車両",
+          "description": "ご自身で評価する住宅、土地、車"
+        },
+        "budgetApp": {
+          "title": "YNAB・Actual・Mintの出力ファイル",
+          "description": "家計簿アプリの履歴を口座ごとに。"
         }
       },
       "fileImport": {
@@ -2068,7 +2489,9 @@
         "crypto": "暗号資産",
         "stock": "株式 / ETF / 証券 / コモディティ",
         "privateCompany": "非公開企業",
-        "other": "その他"
+        "other": "その他",
+        "property": "不動産",
+        "vehicle": "車両"
       },
       "hiddenReason": {
         "user": "あなたが非表示にしました",
@@ -2140,6 +2563,8 @@
         "lastSyncOverdue": "{{when}} · 遅延",
         "sublabel_other": "{{institution}} · 保有資産{{count}}件",
         "syncOverdue": "同期が遅延しています",
+        "keyRejected": "キーが拒否されました",
+        "keyRejectedReconnect": "キーが拒否されました — 再接続",
         "viewHoldings": "保有資産を見る",
         "assignGroups": "グループを割り当て",
         "pageTitle": "口座",
@@ -2158,7 +2583,13 @@
           "bulkDeletingContext": "口座を削除しています",
           "updated": "口座を更新しました",
           "updatingContext": "口座を更新しています"
-        }
+        },
+        "edit": "編集",
+        "editTitle": "口座を編集",
+        "editDescription": "口座の名前、種類、枠組み。",
+        "save": "変更を保存",
+        "saving": "保存中…",
+        "saved": "口座を更新しました"
       },
       "institution": {
         "unknownType": "種類不明",
@@ -2448,7 +2879,11 @@
         "historyBackfill": "履歴の補完",
         "priceRefresh": "価格の更新",
         "accountDeletion": "アカウントの削除",
-        "transactionImport": "取引履歴の取り込み"
+        "transactionImport": "取引履歴の取り込み",
+        "backup": "バックアップ",
+        "restore": "バックアップの復元",
+        "budgetAppImport": "家計簿アプリのインポート",
+        "budgetAppUndo": "家計簿アプリのインポートの取り消し"
       },
       "review": {
         "title": "読み取った保有資産を確認",
@@ -2536,6 +2971,7 @@
         "ibkrStatementWindowUnknown": "ibkr: この Flex レポートは対象期間を示していないため、口座の全履歴とは読めません。対象期間は保存済みの Flex Query の設定で、Scani が選ぶものではありません — さらに過去まで遡るには、そのクエリの日付範囲を変更し（IBKR Client Portal → Performance & Reports → Flex Queries → edit the query）、保存してからインポートを実行し直してください。",
         "pageCapRetracted": "{{provider}}: {{walks}} — このアカウントの残りの履歴は取得されていません",
         "pageCapMissingTxIds": "{{provider}}: {{walks}} — この実行の一部の入金と出金にはオンチェーンのトランザクション ID がありません",
+        "txIdLookupFailed": "{{provider}}: 入金と出金の記録を読み込めなかったため、この実行の入金と出金にはオンチェーンのトランザクション ID がありません（{{reason}}）",
         "pageCapAddressHistory": "アドレス履歴は {{pages}} ページの上限で止まりました（{{rows}} 行取得）",
         "pageCapUserTransactionsLedger": "user-transactions 台帳は {{pages}} ページの上限で止まりました（{{rows}} 行取得）",
         "pageCapCryptoTransactionsLookup": "crypto-transactions の照会は {{pages}} ページの上限で止まりました（{{rows}} 行取得）",
@@ -2554,6 +2990,8 @@
         "ibkrMissingCashTransactions": "配当・利息・入金・出金・手数料を一件もインポートできませんでした",
         "ibkrUnmappedCashTypes_other": "ibkr: このレポートの現金取引 {{count}} 件は Scani が認識できない種類でした — {{types}} — そのためインポートされていません。これはお客様ではなく私たちが直すべき問題です。報告をお願いします。",
         "ibkrFurtherTypes_other": "ほか {{count}} 種類",
+        "bybitUnlistedLogTypes_other": "bybit: 取引ログの {{count}} 行は Scani がインポートしない種類でした — {{types}} — そのため、それらの残高の変動はこの履歴に含まれていません。これはお客様ではなく私たちが直すべき問題です。報告をお願いします。",
+        "bybitFurtherTypes_other": "ほか {{count}} 種類",
         "ibkrIncompleteCashRows_other": "ibkr: このレポートの現金取引 {{count}} 件は必須項目が空のまま届きました — {{blanks}} — そのためインポートされていません。Flex Query にその列がない場合は追加し（IBKR Client Portal → Performance & Reports → Flex Queries → edit the query）、保存してからインポートを実行し直してください。列がある場合はデータが空のまま届いたもので、私たちが直すべき問題です。報告をお願いします。",
         "ibkrBlankFields": "{{fields}} なし: {{rows}} 件"
       },
@@ -2700,6 +3138,7 @@
         "row": {
           "new": "新規",
           "updated": "更新",
+          "savedAsCheck": "確認として保存",
           "noPrice": "まだ価格なし"
         },
         "unpricedNote_other": "{{count}}行はまだ価格が付いていません。いずれにせよ保存されています。「保有資産」から更新するか、次回の1時間ごとの価格取得をお待ちください。",
@@ -2754,6 +3193,21 @@
           "label": "失敗",
           "sentence": "前回の試行が失敗しました。他に待機中のものがあるか確認しています。"
         }
+      },
+      "budgetApp": {
+        "title": "家計簿アプリのインポート",
+        "unreadable": "この結果は読み取れません。",
+        "rows": "追加した行",
+        "transfersPaired": "対になった振替",
+        "newAccount": "新規",
+        "accountRows_other": "{{count}}行",
+        "unpaired_other": "振替の{{count}}行は、相手側がファイルにありません。レビューに回ります。",
+        "skipped_other": "{{count}}行をスキップしました（空、ゼロ、または読み取れない行）。",
+        "manage": "取り消すか、別のファイルを取り込む",
+        "undoTitle": "家計簿アプリのインポートを取り消しました",
+        "rowsRemoved": "削除した行",
+        "accountsRemoved": "削除した口座",
+        "accountsKept_other": "インポートで開設した{{count}}口座は残しました。その後、別の記録が書き込まれています。"
       }
     },
     "membership": {
@@ -2828,8 +3282,319 @@
       "frankfurter": "Frankfurter（ECBレート）",
       "manual": "手動で設定",
       "baseCurrency": "基準通貨",
-      "siblingFallback": "同じ資産の別の銘柄",
       "unknown": "取得元不明"
+    },
+    "valuedAssets": {
+      "title": "不動産・車両を追加",
+      "description": "住宅、土地、車など、ご自身で評価する資産です。価値を入力すると、Scani が履歴を保存します。",
+      "subject": "不動産・車両",
+      "whatFieldset": "種類",
+      "valueFieldset": "購入時の情報",
+      "kind": {
+        "label": "種類は？",
+        "property": "不動産",
+        "vehicle": "車両"
+      },
+      "nameLabel": "名前",
+      "addressLabel": "住所",
+      "areaLabel": "面積（m²）",
+      "makeLabel": "メーカー",
+      "modelLabel": "モデル",
+      "yearLabel": "年式",
+      "mileageLabel": "走行距離（km）",
+      "purchaseDateLabel": "購入日",
+      "purchasePriceLabel": "購入価格（{{currency}}）",
+      "currentValueLabel": "現在の価値（{{currency}}）",
+      "currentValueHint": "任意。空欄の場合は購入価格のままです。",
+      "save": "追加",
+      "saving": "追加中…",
+      "blocker": {
+        "name": "名前を入力してください",
+        "purchaseDate": "購入日を選んでください",
+        "purchasePrice": "支払った金額を入力してください",
+        "currentValue": "現在の価値は正の金額にしてください"
+      },
+      "details": {
+        "title": "詳細",
+        "area": "面積",
+        "vehicle": "車両",
+        "mileage": "走行距離",
+        "purchase": "{{date}} に購入",
+        "gain": "購入時からの変化"
+      },
+      "history": {
+        "title": "評価履歴",
+        "corrected": "修正済み"
+      },
+      "addValuation": {
+        "action": "評価を追加",
+        "title": "評価を追加",
+        "description": "特定の日の価値です。同じ日の2件目の評価は1件目を置き換えます。",
+        "valueLabel": "価値（{{currency}}）",
+        "dateLabel": "日付",
+        "save": "保存",
+        "saving": "保存中…",
+        "blocker": {
+          "value": "正の金額を入力してください",
+          "date": "日付を選んでください"
+        }
+      }
+    },
+    "household": {
+      "accept": {
+        "title": "世帯への招待",
+        "heading": "{{inviter}} さんが {{household}} に招待しています",
+        "explain": "承諾してもデータは移動しません。メンバーが共有する口座を閲覧のみで見られ、自分のどの口座を共有するかは自分で選べます。",
+        "accept": "承諾",
+        "notNow": "今はしない",
+        "accepting": "招待を承諾しています",
+        "joined": "{{name}} に参加しました",
+        "expired": "この招待は期限切れです",
+        "revoked": "この招待は取り消されました",
+        "used": "この招待はすでに使用されています",
+        "invalid": "この招待リンクは無効です",
+        "home": "ホームへ"
+      },
+      "view": {
+        "title": "世帯",
+        "description": "メンバーが共有する口座から見た、世帯全体の保有資産です。",
+        "unavailable": "世帯ビューを読み込めませんでした",
+        "none": "世帯に参加していません。",
+        "toSettings": "設定で作成または参加できます",
+        "currency": "{{currency}} 建て",
+        "chart": "過去1年の世帯の純資産",
+        "allocation": "配分",
+        "accounts": "共有口座",
+        "accountOwner": "{{name}} · {{owner}}",
+        "you": "あなた",
+        "trackedTwice": "お二人とも {{name}} を記録しています。片方の共有を解除してください",
+        "link": "世帯"
+      }
+    },
+    "budgetApp": {
+      "title": "YNAB・Actual・Mintからインポート",
+      "description": "YNAB、Actual Budget、Mintの履歴をScaniに取り込みます。ファイル内の各口座はここで口座になり、ファイルが2つの口座を結んでいる振替は対のまま残ります。",
+      "subject": "家計簿アプリのインポート",
+      "fileFieldset": "家計簿アプリから出力したファイル",
+      "prompt": "YNABの Register ファイル、Actualの出力ファイル、またはMintの transactions.csv を選んでください",
+      "formats": "YNABの「Export Plan」、Actualの「Export」、またはMintから出力したCSVまたはTSV",
+      "wrongFile": "YNAB、Actual、またはMintが出力した .csv または .tsv ファイルを選んでください。",
+      "notRegister": "これはYNABの記録でも、ActualやMintの出力でもありません。YNABではプランを出力し、名前が Register で終わるファイルを選んでください。Actualでは口座の「Export」を選んでください。Mintからは transactions.csv を選んでください。",
+      "mixedDecimals": "このファイルの金額は小数点にピリオドとカンマの両方を使っているため、Scaniでは読み取れません。",
+      "dateOrder": {
+        "question": "このファイルの日付はどちらの順序にも当てはまります。どちらが先ですか？",
+        "dayFirst": "日が先 (31/12)",
+        "monthFirst": "月が先 (12/31)"
+      },
+      "accounts": {
+        "title": "各口座の取り込み先",
+        "rows_other": "{{count}}行",
+        "choose": "{{name}}の取り込み先",
+        "fedNote": "接続済みのプロバイダーやウォレットが記録している口座は選べません。これらの動きはすでに記録されています。"
+      },
+      "target": {
+        "new": "新規: {{type}}",
+        "existing": "{{name}}へ",
+        "skip": "取り込まない"
+      },
+      "currency": {
+        "label": "金額の通貨",
+        "hint": "ファイルには {{symbol}} とあります。3文字の通貨コードを入力してください。",
+        "hintNone": "ファイルに通貨記号がありません。3文字の通貨コードを入力してください。"
+      },
+      "notImported": "予算は取り込みません。各行のカテゴリは保持され、ファイルにあれば照合状態も保持されます。",
+      "skipped_other": "{{count}}行をスキップします（空、ゼロ、または読み取れない行）。",
+      "blocker": {
+        "noFile": "家計簿アプリから出力したファイルを選択",
+        "unreadable": "Scaniが読み取れる出力ファイルを選択",
+        "noAccount": "少なくとも1つの口座を取り込む",
+        "noCurrency": "3文字の通貨コードを入力",
+        "sameTarget": "口座ごとに別のScani口座へ取り込む"
+      },
+      "submit": "インポート",
+      "busy": "インポート",
+      "history": {
+        "title": "過去のインポート",
+        "rows_other": "{{count}}行",
+        "accounts_other": "{{count}}口座",
+        "undo": "取り消す",
+        "undone": "取り消し済み",
+        "confirm_other": "このインポートで追加した{{count}}行と、開設した口座を削除しますか？",
+        "remove": "削除",
+        "keep": "残す"
+      }
+    },
+    "categories": {
+      "picker": {
+        "legend": "カテゴリ",
+        "searchPlaceholder": "カテゴリを検索または作成",
+        "create": "「{{name}}」を作成",
+        "none": "カテゴリなし"
+      },
+      "empty": {
+        "title": "カテゴリはまだありません。",
+        "namePlaceholder": "カテゴリ名",
+        "suggest": "おすすめのカテゴリを追加",
+        "create": "カテゴリを作成"
+      },
+      "manage": "カテゴリを管理",
+      "uncategorized": "未分類",
+      "suggested": {
+        "income": "収入",
+        "salary": "給与",
+        "interest": "利息",
+        "dividends": "配当",
+        "housing": "住居",
+        "rent": "家賃",
+        "utilities": "光熱費",
+        "food": "食費",
+        "groceries": "食料品",
+        "restaurants": "外食",
+        "transport": "交通",
+        "health": "健康",
+        "shopping": "買い物",
+        "travel": "旅行",
+        "fees": "手数料",
+        "bankFees": "銀行手数料",
+        "exchangeFees": "取引所手数料",
+        "taxes": "税金"
+      },
+      "page": {
+        "title": "カテゴリ",
+        "new": "新しいカテゴリ",
+        "newTitle": "新しいカテゴリ",
+        "editTitle": "カテゴリを編集",
+        "formDescription": "カテゴリは1つの上位カテゴリの下に置けます。",
+        "save": "保存",
+        "saving": "保存中…",
+        "nameRequired": "カテゴリ名を入力してください。",
+        "parent": "上位カテゴリ",
+        "topLevel": "最上位",
+        "hasChildren": "サブカテゴリがあるため、最上位のままです。",
+        "count_other": "{{count}}件の取引",
+        "deleteAction": "削除"
+      },
+      "delete": {
+        "title": "{{name}}を削除",
+        "description": "取引の移動先を選んでください。",
+        "lifted": "サブカテゴリは最上位に移動します。",
+        "legend": "取引の移動先",
+        "submit": "カテゴリを削除",
+        "pending": "削除中…",
+        "where_other": "{{name}}には{{count}}件の取引があります。"
+      },
+      "auto": {
+        "marker": "自動で設定",
+        "reasonRule": "{{payee}} に以前選んだカテゴリと一致",
+        "keep": "このままにする",
+        "kept": "カテゴリを確定しました",
+        "spread_other": "似た取引 {{count}} 件にも設定しました。"
+      }
+    },
+    "transactions": {
+      "title": "取引",
+      "empty": {
+        "addAccount": "口座を追加"
+      },
+      "bulk": {
+        "setCategory": "カテゴリを設定",
+        "title_other": "{{count}}件の取引のカテゴリを設定",
+        "description": "カテゴリを選ぶか、解除する場合は「なし」を選んでください。",
+        "submit": "カテゴリを設定",
+        "clear": "カテゴリを解除",
+        "pending": "保存中…"
+      },
+      "moved_other": "{{count}}件の取引を{{name}}に移動しました",
+      "cleared_other": "{{count}}件の取引が未分類になりました",
+      "seeAll": "すべて表示",
+      "range": {
+        "from": "開始",
+        "to": "終了"
+      }
+    },
+    "wrappers": {
+      "code": {
+        "brokerage": "証券口座",
+        "cash_management": "キャッシュ管理",
+        "401k": "401(k)",
+        "roth_401k": "Roth 401(k)",
+        "403b": "403(b)",
+        "457b": "457(b)",
+        "tsp": "TSP",
+        "ira": "IRA",
+        "roth_ira": "Roth IRA",
+        "sep_ira": "SEP IRA",
+        "simple_ira": "SIMPLE IRA",
+        "529_plan": "529 Plan",
+        "hsa": "HSA",
+        "ugma": "UGMA",
+        "utma": "UTMA",
+        "isa": "ISA",
+        "lisa": "LISA",
+        "sipp": "SIPP",
+        "workplace_pension_uk": "職域年金",
+        "tfsa": "TFSA",
+        "rrsp": "RRSP",
+        "non_registered": "非登録口座",
+        "fhsa": "FHSA",
+        "rdsp": "RDSP",
+        "resp": "RESP",
+        "dpsp": "DPSP",
+        "prpp": "PRPP",
+        "lira": "LIRA",
+        "rrif": "RRIF",
+        "lif": "LIF",
+        "lrif": "LRIF",
+        "prif": "PRIF",
+        "rlif": "RLIF",
+        "super": "Super",
+        "smsf": "SMSF",
+        "assurance_vie": "AV",
+        "pea": "PEA",
+        "pillar_3a": "Pillar 3a",
+        "riester": "Riester",
+        "pension": "年金",
+        "retirement": "退職口座",
+        "mutual_fund": "投資信託",
+        "gold": "金",
+        "angel": "エンジェル投資",
+        "trust": "信託",
+        "other": "その他"
+      },
+      "bucket": {
+        "general": "一般",
+        "deferred": "繰延（年金）",
+        "exempt": "非課税枠（ISA、Roth、TFSA）",
+        "advantaged": "その他の優遇"
+      },
+      "region": {
+        "us": "米国",
+        "uk": "英国",
+        "ca": "カナダ",
+        "au": "オーストラリア",
+        "eu": "欧州",
+        "generic": "全地域"
+      },
+      "field": {
+        "label": "口座の枠組み",
+        "none": "なし",
+        "hint": "例：ISA、年金、Roth IRA。通常の口座なら空欄のままにします。"
+      },
+      "block": {
+        "title": "口座の枠組み別の損益",
+        "realized": "実現",
+        "unrealized": "未実現",
+        "note": "各口座の現在の枠組みで分類しています。",
+        "loadingLabel": "口座の枠組み別の損益",
+        "carried_other": "{{count}}件は最終日に価格がなく、最後に価格があった日の値を使っています",
+        "tileSums": "タイルは一般を除くすべての枠組みの合計です。"
+      },
+      "bucketShort": {
+        "general": "一般",
+        "deferred": "繰延",
+        "exempt": "非課税枠",
+        "advantaged": "優遇"
+      }
     }
   }
 }

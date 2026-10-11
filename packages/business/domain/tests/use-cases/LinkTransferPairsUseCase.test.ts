@@ -23,6 +23,7 @@ import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { TransferReviewService } from '../../src/services/TransferReviewService';
 import { LinkTransferPairsUseCase } from '../../src/use-cases/LinkTransferPairsUseCase';
+import { seedHoldingCache } from '../../test/helpers/engine-guard';
 
 interface Fixture {
   userId: string;
@@ -112,24 +113,28 @@ async function setupFixture(): Promise<Fixture> {
     .returning();
   if (!token) throw new Error('token insert failed');
 
-  const [withdrawHolding] = await db
-    .insert(schema.holdings)
-    .values({
-      userId: user.id,
-      accountId: withdrawAccount.id,
-      tokenId: token.id,
-      balance: '0',
-    })
-    .returning();
-  const [depositHolding] = await db
-    .insert(schema.holdings)
-    .values({
-      userId: user.id,
-      accountId: depositAccount.id,
-      tokenId: token.id,
-      balance: '1',
-    })
-    .returning();
+  const [withdrawHolding] = await seedHoldingCache(db, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values({
+        userId: user.id,
+        accountId: withdrawAccount.id,
+        tokenId: token.id,
+        balance: '0',
+      })
+      .returning()
+  );
+  const [depositHolding] = await seedHoldingCache(db, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values({
+        userId: user.id,
+        accountId: depositAccount.id,
+        tokenId: token.id,
+        balance: '1',
+      })
+      .returning()
+  );
   if (!withdrawHolding || !depositHolding) throw new Error('holding insert failed');
 
   return {
@@ -185,6 +190,7 @@ describe('LinkTransferPairsUseCase', () => {
     expect(summary.scanned).toBe(0);
     expect(summary.linked).toBe(0);
     expect(summary.ambiguous).toBe(0);
+    expect(summary.earliestLinkedAt).toBeNull();
   });
 
   test('links a single matching withdraw/deposit pair within window + epsilon', async () => {
@@ -219,6 +225,9 @@ describe('LinkTransferPairsUseCase', () => {
     expect(summary.scanned).toBe(1);
     expect(summary.linked).toBe(1);
     expect(summary.ambiguous).toBe(0);
+    // SC-1607: a link joins two lot chains from its date, so a rebuild sized
+    // from an edit must reach back to it.
+    expect(summary.earliestLinkedAt).toEqual(at);
 
     const rows = await db
       .select({
@@ -606,15 +615,17 @@ describe('LinkTransferPairsUseCase — bridged assets', () => {
       tokens.map(async (token, i) => {
         const account = accounts[i];
         if (!account) throw new Error('account missing');
-        const [holding] = await db
-          .insert(schema.holdings)
-          .values({
-            userId: user.id,
-            accountId: account.id,
-            tokenId: token.id,
-            balance: '0',
-          })
-          .returning();
+        const [holding] = await seedHoldingCache(db, (calculator) =>
+          calculator
+            .insert(schema.holdings)
+            .values({
+              userId: user.id,
+              accountId: account.id,
+              tokenId: token.id,
+              balance: '0',
+            })
+            .returning()
+        );
         if (!holding) throw new Error('holding insert failed');
         return holding;
       })
@@ -813,10 +824,17 @@ describe('LinkTransferPairsUseCase — bridged assets', () => {
       .where(eq(schema.accounts.userId, b.userId))
       .limit(1);
     if (!otherAccount) throw new Error('account missing');
-    const [rival] = await db
-      .insert(schema.holdings)
-      .values({ userId: b.userId, accountId: otherAccount.id, tokenId: b.outTokenId, balance: '0' })
-      .returning();
+    const [rival] = await seedHoldingCache(db, (calculator) =>
+      calculator
+        .insert(schema.holdings)
+        .values({
+          userId: b.userId,
+          accountId: otherAccount.id,
+          tokenId: b.outTokenId,
+          balance: '0',
+        })
+        .returning()
+    );
     if (!rival) throw new Error('rival holding insert failed');
     await db.insert(schema.holdingTransactions).values({
       userId: b.userId,

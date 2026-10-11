@@ -2,6 +2,7 @@ import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Institution, NewInstitution } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { and, desc, eq, ne, or, sql } from 'drizzle-orm';
+import { makePgArray } from 'drizzle-orm/pg-core';
 import { Service } from 'typedi';
 
 export type StaleSyncTarget = {
@@ -15,6 +16,8 @@ export type StaleSyncTarget = {
    * `stale-account` — it has accounts and every one is older than the cutoff.
    */
   kind: 'stale-account' | 'orphaned-credential';
+  /** What the last scheduled sync recorded when the provider refused it, or null (SC-1686). */
+  lastError: string | null;
 };
 
 @Service()
@@ -63,13 +66,21 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
     }
   }
 
+  /**
+   * `idle` gives its users their own cutoff: an idle user is synced every
+   * sixth hour (SC-1602), so the hourly cutoff would page between runs.
+   */
   async findStaleSyncTargets(
     cutoff: Date,
-    transaction?: DatabaseTransaction
+    transaction?: DatabaseTransaction,
+    idle?: { userIds: readonly string[]; cutoff: Date }
   ): Promise<StaleSyncTarget[]> {
     const database = this.getDb(transaction);
+    const idleUserIds = makePgArray([...(idle?.userIds ?? [])]);
+    const idleCutoff = (idle?.cutoff ?? cutoff).toISOString();
     const rows = (await database.execute(sql`
       select uic.id as credential_id, uic.user_id, i.id as institution_id, i.name as institution_name,
+        uic.sync_last_error as last_error,
         case when count(a.id) = 0 then 'orphaned-credential'
              else 'stale-account' end as kind
       from user_integration_credentials uic
@@ -103,13 +114,16 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
         -- stale-account: has accounts, but every one last synced before the
         -- cutoff. The 'epoch' coalesce makes an account that has never synced
         -- at all count as infinitely stale rather than as unknown.
-        or bool_and(coalesce((a.metadata->>'lastSync')::timestamptz, 'epoch') < ${cutoff.toISOString()}::timestamptz)
+        or bool_and(coalesce((a.metadata->>'lastSync')::timestamptz, 'epoch') <
+          case when uic.user_id = any(${idleUserIds}::uuid[]) then ${idleCutoff}::timestamptz
+               else ${cutoff.toISOString()}::timestamptz end)
     `)) as unknown as Array<{
       credential_id: string;
       user_id: string;
       institution_id: string;
       institution_name: string;
       kind: 'stale-account' | 'orphaned-credential';
+      last_error: string | null;
     }>;
     return rows.map((r) => ({
       credentialId: r.credential_id,
@@ -117,6 +131,7 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
       institutionId: r.institution_id,
       institutionName: r.institution_name,
       kind: r.kind,
+      lastError: r.last_error,
     }));
   }
 

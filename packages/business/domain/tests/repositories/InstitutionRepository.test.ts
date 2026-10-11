@@ -183,6 +183,29 @@ describe('findStaleSyncTargets', () => {
     });
   });
 
+  test('carries the refusal the last sync recorded, and null when there was none (SC-1686)', async () => {
+    await withTestDb(async (tx) => {
+      const exchange = await makeInstitutionType(tx, { code: 'exchange' });
+      const bybit = await makeInstitution(tx, { name: 'Bybit', typeId: exchange.id });
+      const refused = await makeUser(tx);
+      const quiet = await makeUser(tx);
+      const stale = { lastSync: new Date('2020-01-01').toISOString() };
+      await makeCredential(tx, {
+        userId: refused.id,
+        institutionId: bybit.id,
+        syncLastError: 'Bybit retCode=33004: Your api key has expired.',
+        syncFailureCount: 2,
+      });
+      await makeCredential(tx, { userId: quiet.id, institutionId: bybit.id });
+      await makeAccount(tx, { userId: refused.id, institutionId: bybit.id, metadata: stale });
+      await makeAccount(tx, { userId: quiet.id, institutionId: bybit.id, metadata: stale });
+      const targets = await repo().findStaleSyncTargets(new Date('2026-01-01'), tx);
+      const of = (userId: string) => targets.find((t) => t.userId === userId)?.lastError;
+      expect(of(refused.id)).toBe('Bybit retCode=33004: Your api key has expired.');
+      expect(of(quiet.id)).toBeNull();
+    });
+  });
+
   test('flags a zero-account institution whose credential import failed', async () => {
     await withTestDb(async (tx) => {
       const user = await makeUser(tx);
@@ -283,6 +306,45 @@ describe('findStaleSyncTargets', () => {
       });
       const targets = await repo().findStaleSyncTargets(new Date('2026-06-01'), tx);
       expect(targets.find((t) => t.institutionId === inst.id)).toBeUndefined();
+    });
+  });
+
+  // SC-1629: an idle user is synced every sixth hour (SC-1602), so the
+  // three-hour cutoff paged on every idle exchange between runs.
+  test('judges an idle user against the idle cutoff and everyone else against the cutoff', async () => {
+    await withTestDb(async (tx) => {
+      const cex = await makeInstitutionType(tx, { code: 'crypto_exchange' });
+      const bybit = await makeInstitution(tx, { name: 'Bybit', typeId: cex.id });
+      const onCadence = await makeUser(tx);
+      const missedARun = await makeUser(tx);
+      const active = await makeUser(tx);
+      const synced = async (userId: string, at: string) => {
+        await makeCredential(tx, { userId, institutionId: bybit.id });
+        await makeAccount(tx, { userId, institutionId: bybit.id, metadata: { lastSync: at } });
+      };
+      await synced(onCadence.id, '2026-06-28T06:00:24Z');
+      await synced(missedARun.id, '2026-06-28T04:50:00Z');
+      await synced(active.id, '2026-06-28T08:50:00Z');
+
+      const cutoff = new Date('2026-06-28T09:00:00Z');
+      const idle = {
+        userIds: [onCadence.id, missedARun.id],
+        cutoff: new Date('2026-06-28T05:00:00Z'),
+      };
+      const flagged = (targets: Array<{ userId: string }>) =>
+        [onCadence.id, missedARun.id, active.id].filter((id) =>
+          targets.some((t) => t.userId === id)
+        );
+
+      expect(flagged(await repo().findStaleSyncTargets(cutoff, tx))).toEqual([
+        onCadence.id,
+        missedARun.id,
+        active.id,
+      ]);
+      expect(flagged(await repo().findStaleSyncTargets(cutoff, tx, idle))).toEqual([
+        missedARun.id,
+        active.id,
+      ]);
     });
   });
 });

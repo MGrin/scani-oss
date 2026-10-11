@@ -1,4 +1,4 @@
-import type { ScheduledJobDescriptor } from '@scani/queue';
+import type { ScheduledJobStepDescriptor } from '@scani/queue';
 import { JOB_NAMES } from '../job-names';
 
 // The offsite database dump (SC-793).
@@ -17,17 +17,16 @@ import { JOB_NAMES } from '../job-names';
 // DAILY, not weekly. Weekly was the offsite tier; daily was the cadence
 // actually being relied on. This machine runs whether or not anybody is awake.
 //
-// 06:00 UTC: after the whole nightly chain has finished writing (the last of it
-// is `backfill-counterparty` at 05:30), so the dump captures a settled state
-// rather than racing the rollup. It is also ~11h from the laptop's 19:30 UTC
-// fire, which halves the worst-case exposure while both exist.
+// The LAST step of the `nightly` group (SC-1688): after the whole chain has
+// finished writing, so the dump captures a settled state rather than racing
+// the rollup. A failed or timed-out earlier step does not skip it, and
+// `job-heartbeat-probe` alerts when no backup has completed by 07:00 UTC.
 //
 // `lockName` is what puts this under the Postgres advisory lock —
 // `ScheduledJobProcessor` wraps `handle()` in `JOB_LOCK` whenever it is set.
 // Two overlapping fires would otherwise take two dumps of the same database
 // and race each other's upload.
-export const DB_BACKUP_SCHEDULE: ScheduledJobDescriptor = {
+export const DB_BACKUP_SCHEDULE: ScheduledJobStepDescriptor = {
   name: JOB_NAMES.dbBackup,
-  cron: '0 6 * * *',
   lockName: JOB_NAMES.dbBackup,
 };

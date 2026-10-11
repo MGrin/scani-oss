@@ -193,6 +193,14 @@
         "wallet": {
           "description": "Saldos lidos da cadeia, de hora a hora.",
           "title": "Um endereço de carteira"
+        },
+        "valuedAsset": {
+          "title": "Imóvel ou veículo",
+          "description": "Uma casa, um terreno ou um carro que você avalia"
+        },
+        "budgetApp": {
+          "title": "Uma exportação do YNAB, do Actual ou do Mint",
+          "description": "O seu histórico da aplicação de orçamento, conta a conta."
         }
       },
       "sheet": {
@@ -437,6 +445,8 @@
         "sublabel_one": "{{institution}} · {{count}} posição",
         "sublabel_other": "{{institution}} · {{count}} posições",
         "syncOverdue": "Sincronização em atraso",
+        "keyRejected": "Chave recusada",
+        "keyRejectedReconnect": "Chave recusada — Reconectar",
         "toast": {
           "bulkDeletedWithFailures_many": "{{count}} contas eliminadas, {{failed}} falharam",
           "bulkDeletedWithFailures_one": "{{count}} conta eliminada, {{failed}} falharam",
@@ -454,7 +464,13 @@
         "unknownInstitution": "Instituição desconhecida",
         "unknownType": "Tipo desconhecido",
         "valueByAccount": "Valor por conta",
-        "viewHoldings": "Ver posições"
+        "viewHoldings": "Ver posições",
+        "edit": "Editar",
+        "editTitle": "Editar conta",
+        "editDescription": "O nome, o tipo e o invólucro da conta.",
+        "save": "Salvar alterações",
+        "saving": "Salvando…",
+        "saved": "Conta atualizada"
       },
       "institution": {
         "accounts": "Contas",
@@ -534,7 +550,10 @@
         "vendor": "Beneficiário",
         "website": "Site",
         "archivedOwnerId": "ID do proprietário arquivado",
-        "name": "Nome"
+        "name": "Nome",
+        "parent": "Superior",
+        "colour": "Cor",
+        "categorySetBy": "Categoria definida por"
       },
       "provenance": {
         "accountLabel": "Conta",
@@ -566,7 +585,8 @@
         "vaultHoldings": "Posições dos objetivos",
         "vaults": "Objetivos",
         "vendors": "Beneficiários",
-        "archivedOwnership": "Propriedade arquivada"
+        "archivedOwnership": "Propriedade arquivada",
+        "categories": "Categorias"
       },
       "value": {
         "everyUnknown": "{{count}} × {{unit}}",
@@ -583,7 +603,13 @@
         "every_year_one": "{{count}} ano",
         "every_year_other": "{{count}} anos",
         "no": "não",
-        "yes": "sim"
+        "yes": "sim",
+        "categorySetBy": {
+          "person": "Você",
+          "import": "Importação",
+          "rule": "Regra",
+          "ai": "IA"
+        }
       }
     },
     "feedback": {
@@ -780,11 +806,16 @@
         "assignGroups": "Atribuir grupos",
         "deleteConsequence_many": "{{symbols}} são removidos do seu portefólio, e todas as transações registadas contra eles desaparecem também. Isto não pode ser anulado.",
         "deleteConsequence_one": "{{symbols}} é removido do seu portefólio, e todas as transações registadas contra ele desaparecem também. Isto não pode ser anulado.",
-        "deleteConsequence_other": "{{symbols}} são removidos do seu portefólio, e todas as transações registadas contra eles desaparecem também. Isto não pode ser anulado."
+        "deleteConsequence_other": "{{symbols}} são removidos do seu portefólio, e todas as transações registadas contra eles desaparecem também. Isto não pode ser anulado.",
+        "hideConsequence_one": "{{symbols}} fica oculto: sai do total do seu portefólio e mantém as suas transações. Tokens → Ocultos repõe-no.",
+        "hideConsequence_many": "{{symbols}} ficam ocultos: saem do total do seu portefólio e mantêm as suas transações. Tokens → Ocultos repõe-nos.",
+        "hideConsequence_other": "{{symbols}} ficam ocultos: saem do total do seu portefólio e mantêm as suas transações. Tokens → Ocultos repõe-nos."
       },
       "deleteAction": {
         "commit": "Eliminar {{symbol}}",
+        "commitHide": "Ocultar {{symbol}}",
         "consequence": "{{symbol}} em {{account}} é removido, juntamente com todas as transações registadas contra ele — <value/> saem do total do seu portefólio. Nada o repõe; uma nova importação teria de reconstruir o histórico. Para o tirar do total e manter o registo, use Desativar.",
+        "consequenceHide": "{{symbol}} em {{account}} fica oculto — <value/> saem do total do seu portefólio. As suas transações mantêm-se, e Tokens → Ocultos repõe-no.",
         "trigger": "Eliminar"
       },
       "editCause": {
@@ -930,7 +961,8 @@
         "unpriceableNote": "Nenhuma fonte alguma vez cotou este token, e por agora deixámos de perguntar. Fica de fora do seu património líquido, em vez de ser contado como zero.",
         "priceAge": "Idade da cotação",
         "staleNote": "A cotação por trás deste valor é mais antiga do que consideramos atual para este tipo de preço. O valor é o desse momento e continua a contar nos seus totais.",
-        "sinceBought": "desde a compra"
+        "sinceBought": "desde a compra",
+        "moneyPutIn": "Dinheiro aplicado"
       },
       "realized": {
         "costOf": "custo <value/>",
@@ -987,10 +1019,15 @@
         "bulkDeleted_many": "{{count}} posições eliminadas",
         "bulkDeleted_one": "{{count}} posição eliminada",
         "bulkDeleted_other": "{{count}} posições eliminadas",
+        "bulkHidden_one": "{{count}} posição ocultada",
+        "bulkHidden_many": "{{count}} posições ocultadas",
+        "bulkHidden_other": "{{count}} posições ocultadas",
         "bulkDeletingContext": "A eliminar posições",
         "deleted": "Posição eliminada",
+        "hidden": "Posição ocultada. Tokens → Ocultos repõe-na.",
         "deletingContext": "A eliminar a posição",
         "updated": "Posição atualizada",
+        "savedAsCheck": "Salvo como verificação: o feed mostra {{balance}}",
         "updatingContext": "A atualizar a posição"
       },
       "trendLabel": "Valor de {{symbol}} ao longo dos últimos {{period}}",
@@ -1022,10 +1059,52 @@
           "fee": "Taxa",
           "reward": "Recompensa",
           "interest": "Juros",
+          "dividend": "Dividendo",
+          "taxWithheld": "Imposto retido",
           "airdrop": "Airdrop",
           "openingBalance": "Saldo inicial",
           "correction": "Correção"
         }
+      },
+      "handValued": {
+        "updateValue": {
+          "action": "Atualizar valor",
+          "title": "Atualizar valor",
+          "description": "Use quando o investimento subiu ou caiu. A variação conta como ganho ou perda.",
+          "valueLabel": "Valor atual ({{currency}})",
+          "dateLabel": "Valor em",
+          "save": "Salvar valor",
+          "saving": "Salvando…"
+        },
+        "money": {
+          "action": "Aporte / resgate",
+          "title": "Aporte / resgate",
+          "description": "Use quando você colocou ou retirou dinheiro. Não conta como ganho.",
+          "direction": {
+            "in": "Aporte",
+            "out": "Resgate"
+          },
+          "amountLabel": "Valor ({{currency}})",
+          "dateLabel": "Data",
+          "save": "Salvar",
+          "saving": "Salvando…"
+        },
+        "blocker": {
+          "amount": "Informe um valor acima de zero",
+          "date": "Escolha uma data"
+        },
+        "saved": "Salvo",
+        "subject": "valor",
+        "error": {
+          "nothingHeld": "Não havia nada nessa data, então não há valor a definir.",
+          "tooMuch": "Isso é mais do que este investimento vale nessa data.",
+          "noPriceYet": "Defina primeiro um valor nesta data ou antes."
+        }
+      },
+      "undoHide": {
+        "undo": "Anular",
+        "restored": "Reposto",
+        "restoreFailed": "Não foi possível repor"
       }
     },
     "home": {
@@ -1042,11 +1121,6 @@
         "loadingLabel": "a sua alocação",
         "title": "Alocação",
         "groupsOverlap": "Uma posição pode estar em vários grupos e conta em cada um, por isso estes valores não somam o seu património líquido."
-      },
-      "attentionRow": {
-        "needsReview_many": "{{count}} elementos precisam da sua revisão",
-        "needsReview_one": "{{count}} elemento precisa da sua revisão",
-        "needsReview_other": "{{count}} elementos precisam da sua revisão"
       },
       "disclosure": {
         "show": "Mostrar {{label}}",
@@ -1087,7 +1161,8 @@
         "title": "Grupos",
         "billsNext_one": "<amount/> em despesas, próximo {{count}} dia",
         "billsNext_many": "<amount/> em despesas, próximos {{count}} dias",
-        "billsNext_other": "<amount/> em despesas, próximos {{count}} dias"
+        "billsNext_other": "<amount/> em despesas, próximos {{count}} dias",
+        "loadingLabel": "os seus grupos"
       },
       "hero": {
         "changePending": "A apurar a variação deste período",
@@ -1112,7 +1187,12 @@
         "returnsNoChart": "Ainda não há dias medidos suficientes para desenhar a comparação.",
         "returnsOverPeriod": "Rentabilidade · {{period}}",
         "returnsSince": "Rentabilidade · desde {{date}}",
-        "returnsNoRate": "A rentabilidade ainda não foi calculada para este período"
+        "returnsNoRate": "A rentabilidade ainda não foi calculada para este período",
+        "openChart": {
+          "netWorth": "Abrir o gráfico do património líquido",
+          "pnl": "Abrir o gráfico de lucros e perdas",
+          "returns": "Abrir o gráfico do retorno"
+        }
       },
       "historyExport": {
         "action": "Exportar o histórico",
@@ -1180,7 +1260,8 @@
       },
       "topHoldings": {
         "empty": "Ainda não há nada com preço.",
-        "title": "Principais posições"
+        "title": "Principais posições",
+        "loadingLabel": "as suas principais posições"
       },
       "upcoming": {
         "addPayment": "Adicionar um pagamento",
@@ -1190,12 +1271,17 @@
         "incomeExpected_many": "Receita prevista, próximos {{count}} dias",
         "incomeExpected_one": "Receita prevista, próximo {{count}} dia",
         "incomeExpected_other": "Receita prevista, próximos {{count}} dias",
-        "title": "Despesas a vencer"
+        "title": "Despesas a vencer",
+        "subject": "as despesas a vencer",
+        "dueNext_many": "{{count}} a pagar · próximo {{when}}",
+        "dueNext_one": "{{count}} a pagar · próximo {{when}}",
+        "dueNext_other": "{{count}} a pagar · próximo {{when}}"
       },
       "vaults": {
         "ofTarget": "de <target></target>",
         "progress": "{{name}}: {{percent}}% da meta",
-        "title": "Objetivos"
+        "title": "Objetivos",
+        "loadingLabel": "os seus objetivos"
       },
       "returns": {
         "title": "Rentabilidade",
@@ -1263,6 +1349,7 @@
         "unavailable": "Desempenho de investimento indisponível",
         "recordedChange": "Variação do patrimônio registrado",
         "eligibility": {
+          "debt-account": "Conta de empréstimo ou cartão",
           "incomplete-flow-coverage": "Histórico de fluxos incompleto",
           "unresolved-change": "Variação de saldo não resolvida",
           "missing-valuation": "Avaliação ausente",
@@ -1277,12 +1364,118 @@
         "enteredLate": "Desde a primeira data do extrato: {{holdings}}.",
         "unpricedAtZero_one": "{{count}} token sem preço contado como zero.",
         "unpricedAtZero_many": "{{count}} tokens sem preço contados como zero.",
-        "unpricedAtZero_other": "{{count}} tokens sem preço contados como zero."
+        "unpricedAtZero_other": "{{count}} tokens sem preço contados como zero.",
+        "loadingLabel": "a sua rentabilidade"
+      },
+      "income": {
+        "title": "Rendimentos de investimento recebidos",
+        "window": "Recebidos de {{from}} a {{to}}",
+        "chartLabel": "Rendimentos recebidos por mês",
+        "gross": "Bruto",
+        "withheld": "Imposto retido",
+        "net": "Líquido",
+        "group": {
+          "dividend": "Dividendos",
+          "interest": "Juros",
+          "staking": "Staking",
+          "rewards": "Recompensas"
+        },
+        "bySecurity": "Dividendos por título",
+        "payments_one": "{{count}} pagamento",
+        "payments_many": "{{count}} pagamentos",
+        "payments_other": "{{count}} pagamentos",
+        "unpriced_one": "{{count}} pagamento não pôde ser avaliado e não é contado",
+        "unpriced_many": "{{count}} pagamentos não puderam ser avaliados e não são contados",
+        "unpriced_other": "{{count}} pagamentos não puderam ser avaliados e não são contados",
+        "loadingLabel": "os seus rendimentos"
+      },
+      "card": {
+        "asOf": "Dados de {{time}}",
+        "tileFailed": "Não foi possível carregar",
+        "peekEmpty": "Nada para mostrar por enquanto."
+      },
+      "debt": {
+        "loadingLabel": "as suas dívidas"
+      },
+      "needsYou": {
+        "review_many": "{{count}} elementos precisam da sua revisão",
+        "review_one": "{{count}} elemento precisa da sua revisão",
+        "review_other": "{{count}} elementos precisam da sua revisão",
+        "overdue_many": "{{count}} contas em atraso",
+        "overdue_one": "{{count}} conta em atraso",
+        "overdue_other": "{{count}} contas em atraso",
+        "dueSoon_many": "{{count}} contas a pagar nos próximos 3 dias",
+        "dueSoon_one": "{{count}} conta a pagar nos próximos 3 dias",
+        "dueSoon_other": "{{count}} contas a pagar nos próximos 3 dias",
+        "clear": "Nada precisa de você",
+        "failed": "Não foi possível verificar o que precisa de você",
+        "retry": "Tentar de novo",
+        "partlyFailed": "Não foi possível verificar tudo o que precisa de você"
+      },
+      "details": {
+        "failed": "Não foi possível carregar os detalhes deste período.",
+        "measured": "Medido de {{from}} a {{to}}",
+        "realizedVsUnrealized": "Realizado e não realizado",
+        "pnlNote": "A variação do lucro realizado e não realizado desde o início do período. Uma venda move o ganho de não realizado para realizado.",
+        "byAccountType": "Variação por tipo de conta",
+        "empty": "Nada mudou neste período.",
+        "otherType": "Outro",
+        "topPnl": "Principais posições por lucro",
+        "unknownSymbol": "Desconhecido",
+        "topMovers": "Maiores variações"
       }
     },
     "allocation": {
-      "marginDebt": "Dívida de margem",
+      "debt": "Dívida",
+      "debtLiabilities": "Empréstimos e cartões",
+      "debtMargin": "Margem",
       "shareOfAssets": "Parcela dos ativos"
+    },
+    "liabilities": {
+      "addCard": "Adicionar termos do cartão",
+      "addLoan": "Adicionar termos do empréstimo",
+      "addOther": "Adicionar termos",
+      "ahead_many": "{{count}} meses adiantado",
+      "ahead_one": "{{count}} mês adiantado",
+      "ahead_other": "{{count}} meses adiantado",
+      "annualFee": "Anuidade",
+      "available": "Crédito disponível",
+      "behind_many": "{{count}} meses atrasado",
+      "behind_one": "{{count}} mês atrasado",
+      "behind_other": "{{count}} meses atrasado",
+      "contractedPayment": "Prestação mensal",
+      "creditLimit": "Limite de crédito",
+      "editTerms": "Editar termos",
+      "formDescription": "Taxa, prazo e prestação deste empréstimo ou cartão. Deixe em branco o que não souber.",
+      "formTitle": "Termos de empréstimos e cartões",
+      "interestLeft": "Juros restantes",
+      "kind": "Tipo",
+      "kindCard": "Cartão de crédito",
+      "kindLoan": "Empréstimo",
+      "kindOther": "Outro",
+      "minimumPayment": "Pagamento mínimo",
+      "notConverging": "Esta prestação não cobre os juros, então o empréstimo nunca é quitado.",
+      "onTrack": "Em dia",
+      "owed": "Valor devido",
+      "paidOff": "Quitado",
+      "paidOffBy": "Quitado em {{date}}",
+      "payment": "Prestação mensal",
+      "principal": "Valor original",
+      "rate": "Taxa anual (%)",
+      "save": "Salvar termos",
+      "saving": "Salvando…",
+      "startDate": "Data de início",
+      "subject": "estes termos",
+      "termMonths": "Prazo (meses)",
+      "used": "Usado",
+      "showSchedule": "Ver cronograma",
+      "hideSchedule": "Ocultar cronograma",
+      "termsSubject": "as condições do empréstimo",
+      "scheduleDate": "Data",
+      "schedulePayment": "Pagamento",
+      "scheduleInterest": "Juros",
+      "schedulePrincipal": "Principal",
+      "scheduleRemaining": "Restante"
     },
     "jobs": {
       "awaitingYou": "Esta execução está à sua espera. Ainda não entrou nada dela no seu portefólio.",
@@ -1463,6 +1656,7 @@
         "ibkrStatementWindowUnknown": "ibkr: este extrato Flex não diz qual período cobre, portanto não pode ser lido como o histórico completo da conta. O intervalo é uma configuração da sua Flex Query salva e a Scani não o escolhe — para alcançar datas mais antigas, altere o intervalo de datas dessa consulta (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo.",
         "pageCapRetracted": "{{provider}}: {{walks}} — o restante do histórico desta conta nunca foi buscado",
         "pageCapMissingTxIds": "{{provider}}: {{walks}} — alguns depósitos e saques desta execução não têm ID de transação on-chain",
+        "txIdLookupFailed": "{{provider}}: não foi possível ler os registros de depósitos e saques, então os depósitos e saques desta execução não têm ID de transação on-chain ({{reason}})",
         "pageCapAddressHistory": "o histórico do endereço parou no limite de {{pages}} páginas após {{rows}} linhas",
         "pageCapUserTransactionsLedger": "o registro user-transactions parou no limite de {{pages}} páginas após {{rows}} linhas",
         "pageCapCryptoTransactionsLookup": "a consulta crypto-transactions parou no limite de {{pages}} páginas após {{rows}} linhas",
@@ -1489,6 +1683,12 @@
         "ibkrFurtherTypes_one": "mais {{count}} tipo",
         "ibkrFurtherTypes_many": "mais {{count}} tipos",
         "ibkrFurtherTypes_other": "mais {{count}} tipos",
+        "bybitUnlistedLogTypes_one": "bybit: {{count}} linha do registro de transações tinha um tipo que a Scani não importa — {{types}} — então a variação de saldo dela falta neste histórico. Isto cabe a nós corrigir, não a você: por favor, reporte.",
+        "bybitUnlistedLogTypes_many": "bybit: {{count}} linhas do registro de transações tinham um tipo que a Scani não importa — {{types}} — então as variações de saldo delas faltam neste histórico. Isto cabe a nós corrigir, não a você: por favor, reporte.",
+        "bybitUnlistedLogTypes_other": "bybit: {{count}} linhas do registro de transações tinham um tipo que a Scani não importa — {{types}} — então as variações de saldo delas faltam neste histórico. Isto cabe a nós corrigir, não a você: por favor, reporte.",
+        "bybitFurtherTypes_one": "mais {{count}} tipo",
+        "bybitFurtherTypes_many": "mais {{count}} tipos",
+        "bybitFurtherTypes_other": "mais {{count}} tipos",
         "ibkrIncompleteCashRows_one": "ibkr: {{count}} transação de caixa deste extrato chegou com um campo obrigatório em branco — {{blanks}} — então não foi importada. Se faltam essas colunas na sua Flex Query, adicione-as (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo. Se as colunas estão lá, os dados chegaram em branco para nós e isto cabe a nós: por favor, reporte.",
         "ibkrIncompleteCashRows_many": "ibkr: {{count}} transações de caixa deste extrato chegaram com um campo obrigatório em branco — {{blanks}} — então não foram importadas. Se faltam essas colunas na sua Flex Query, adicione-as (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo. Se as colunas estão lá, os dados chegaram em branco para nós e isto cabe a nós: por favor, reporte.",
         "ibkrIncompleteCashRows_other": "ibkr: {{count}} transações de caixa deste extrato chegaram com um campo obrigatório em branco — {{blanks}} — então não foram importadas. Se faltam essas colunas na sua Flex Query, adicione-as (IBKR Client Portal → Performance & Reports → Flex Queries → edit the query), salve e execute a importação de novo. Se as colunas estão lá, os dados chegaram em branco para nós e isto cabe a nós: por favor, reporte.",
@@ -1510,7 +1710,11 @@
         "manualHoldings": "Posições introduzidas à mão",
         "priceRefresh": "Atualização de preços",
         "transactionImport": "Importação do histórico de transações",
-        "walletImport": "Importação de carteira"
+        "walletImport": "Importação de carteira",
+        "backup": "Backup",
+        "restore": "Restauração de backup",
+        "budgetAppImport": "Importação de aplicação de orçamento",
+        "budgetAppUndo": "Desfazer importação de aplicação de orçamento"
       },
       "manual": {
         "addMore": "Adicionar mais",
@@ -1519,7 +1723,8 @@
         "row": {
           "new": "Nova",
           "noPrice": "Ainda sem preço",
-          "updated": "Atualizada"
+          "updated": "Atualizada",
+          "savedAsCheck": "Salva como verificação"
         },
         "saved": "Linhas escritas",
         "title": "Posições guardadas",
@@ -1722,6 +1927,29 @@
           "body": "Esta carteira foi lida, mas a lista de tokens não ficou guardada com o trabalho, por isso não há aqui nada para escolher. Não foi importado nada e não se perdeu nada — volte a correr a importação para recuperar a lista.",
           "title": "A lista detetada não está aqui"
         }
+      },
+      "budgetApp": {
+        "title": "Importação de aplicação de orçamento",
+        "unreadable": "Não foi possível ler este resultado.",
+        "rows": "Linhas adicionadas",
+        "transfersPaired": "Transferências emparelhadas",
+        "newAccount": "Nova",
+        "accountRows_one": "{{count}} linha",
+        "accountRows_many": "{{count}} linhas",
+        "accountRows_other": "{{count}} linhas",
+        "unpaired_one": "{{count}} linha de transferência não tem o outro lado no ficheiro. Ela vai para revisão.",
+        "unpaired_many": "{{count}} linhas de transferência não têm o outro lado no ficheiro. Elas vão para revisão.",
+        "unpaired_other": "{{count}} linhas de transferência não têm o outro lado no ficheiro. Elas vão para revisão.",
+        "skipped_one": "{{count}} linha ignorada: vazia, zero ou ilegível.",
+        "skipped_many": "{{count}} linhas ignoradas: vazias, zero ou ilegíveis.",
+        "skipped_other": "{{count}} linhas ignoradas: vazias, zero ou ilegíveis.",
+        "manage": "Desfazer ou importar outro ficheiro",
+        "undoTitle": "Importação de aplicação de orçamento desfeita",
+        "rowsRemoved": "Linhas removidas",
+        "accountsRemoved": "Contas removidas",
+        "accountsKept_one": "{{count}} conta aberta pela importação foi mantida: algo mais escreveu nela desde então.",
+        "accountsKept_many": "{{count}} contas abertas pela importação foram mantidas: algo mais escreveu nelas desde então.",
+        "accountsKept_other": "{{count}} contas abertas pela importação foram mantidas: algo mais escreveu nelas desde então."
       }
     },
     "membership": {
@@ -1803,6 +2031,17 @@
       "noMembersYet": "Ainda sem membros"
     },
     "money": {
+      "calendar": {
+        "choose": "Mostrar faturas como",
+        "list": "Lista",
+        "calendar": "Calendário",
+        "previous": "Mês anterior",
+        "next": "Mês seguinte",
+        "noneOnDay": "Sem faturas a {{date}}.",
+        "day_one": "{{date}}: {{count}} fatura",
+        "day_many": "{{date}}: {{count}} faturas",
+        "day_other": "{{date}}: {{count}} faturas"
+      },
       "blocker": {
         "chooseCadence": "escolha com que frequência isto se repete",
         "chooseVendor": "escolha um beneficiário",
@@ -2255,7 +2494,8 @@
         "sale": "venda",
         "swap": "troca",
         "transfer": "transferência",
-        "withdrawal": "levantamento"
+        "withdrawal": "levantamento",
+        "derivativeLoss": "perda em derivativos"
       },
       "outcome": {
         "awaitingPair": "Só um dos lados deste movimento foi importado, por isso não foi apurado nenhum ganho.",
@@ -2264,7 +2504,8 @@
         "retainedUnattributed": "Registado como nunca tendo saído do seu controlo, por isso nada foi realizado. Não há registo de ninguém ter respondido a isto.",
         "unpriced": "Não foi possível encontrar um preço para isto, por isso não foi apurado nenhum ganho. O custo continua a ser mostrado.",
         "unreviewed": "À espera da sua resposta, por isso não foi apurado nenhum ganho, em nenhum sentido.",
-        "fee": "Um encargo retirado do que saiu, por isso não se registou qualquer ganho — conta como custo, não como levantamento."
+        "fee": "Um encargo retirado do que saiu, por isso não se registou qualquer ganho — conta como custo, não como levantamento.",
+        "derivativeLoss": "Uma perda numa posição de derivativos, paga com este saldo. O custo é registado como perda realizada."
       },
       "portion": "Parte {{index}} de {{total}} de um mesmo movimento: {{noun}}",
       "valuation": {
@@ -2276,7 +2517,8 @@
         "sold": "Vendido",
         "swapped": "Trocado",
         "transferredOut": "Transferido para fora",
-        "withdrew": "Levantado"
+        "withdrew": "Levantado",
+        "lostOnDerivatives": "Perda em derivativos"
       }
     },
     "review": {
@@ -2441,6 +2683,10 @@
         "unpriceableAirdrops": "Tokens que nada consegue avaliar",
         "unpriceableTokens_one": "{{count}} token chegou às suas carteiras e nada lhe consegue dar preço",
         "unpriceableTokens_other": "{{count}} tokens chegaram às suas carteiras e nada lhes consegue dar preço",
+        "transferNotArrived": "Transferência não chegou",
+        "transferInTransit": "{{amount}} de {{source}} para {{destination}}",
+        "untrackedTransferArrived": "Foi uma transferência?",
+        "untrackedTransferArrivedDetail": "{{amount}} saíram de {{source}} e o mesmo valor chegou a {{destination}}",
         "unpriceableTokens_many": "{{count}} tokens chegaram às suas carteiras e nada lhes consegue dar preço"
       },
       "kind": {
@@ -2730,10 +2976,10 @@
         "internal": {
           "balanceFallback": "o seu saldo",
           "carry": "Os {{amount}} {{symbol}} mantêm o que pagou originalmente por eles ao passarem para {{location}}. Nada é realizado, e nenhum ganho é apurado.",
-          "writeExisting": "É registado aí um depósito de {{amount}} {{symbol}} datado de {{date}}. O saldo mantém-se em {{balance}} — essa conta é sincronizada, e a própria sincronização já reporta o dinheiro como recebido.",
-          "writeExistingMoves": "É registado aí um depósito de {{amount}} {{symbol}} datado de {{date}}, e o saldo sobe de {{balance}} em {{amount}} {{symbol}}. Nada sincroniza essa conta, por isso mais ninguém colocaria o dinheiro — não precisa de o alterar você mesmo.",
+          "writeExisting": "É registado aí um depósito de {{amount}} {{symbol}} datado de {{date}}. O feed dessa conta define o saldo: mantém-se em {{balance}} a menos que o feed não tenha reportado desde {{date}}, e o próximo relatório do feed confirma-o.",
+          "writeExistingMoves": "É registado aí um depósito de {{amount}} {{symbol}} datado de {{date}}, e o saldo sobe de {{balance}} em {{amount}} {{symbol}}. Esse saldo é mantido por si à mão, por isso nada mais colocaria o dinheiro — não precisa de o alterar você mesmo.",
           "writeNew": "É criada lá uma nova posição de {{symbol}} com um saldo de {{amount}} {{symbol}}, contendo um depósito com data de {{date}}.",
-          "writeNewSynced": "É criada aí uma nova posição de {{symbol}}, aberta a zero e com um depósito datado de {{date}}. Essa conta é sincronizada: a próxima sincronização preenche o saldo real."
+          "writeNewSynced": "É criada aí uma nova posição de {{symbol}}, com o depósito de {{amount}} {{symbol}} datado de {{date}} como saldo até que a próxima sincronização dessa conta defina o saldo real."
         },
         "reopen": {
           "declared": "Esta é uma transferência que registou você, por isso anulá-la repõe os dois saldos como estavam antes dela — a conta de onde saiu volta a subir, a conta onde chegou volta a descer — e remove os dois lançamentos. Não regressa à fila: não fica nenhuma pergunta por responder.",
@@ -2744,7 +2990,7 @@
         },
         "split": {
           "balanceNew": "É criada lá uma nova posição de {{symbol}}, com esse depósito como saldo.",
-          "balanceUnchanged": "Nenhum saldo é alterado.",
+          "balanceFeed": "O feed dessa conta define o saldo, e o próximo relatório confirma o depósito.",
           "balanceMoves": "O saldo dessa conta sobe no montante que aí chegou.",
           "clause": {
             "internal": "{{amount}} passam para {{location}}, onde é registado um depósito de {{amount}}",
@@ -2757,15 +3003,17 @@
           "commit": "Registar esta divisão",
           "needTwo": "Atribua um montante a pelo menos duas destas. Juntas têm de perfazer {{amount}} {{symbol}}.",
           "note": "Um levantamento pode ser mais do que uma coisa ao mesmo tempo — parte passou para outra posição sua, parte saiu mesmo. Divida-o e cada parte é tratada por si.",
-          "oneLinkOnly": "Só uma parte pode passar para um sítio que o Scani acompanha — {{paired}} ou {{internal}}, não ambas. O custo de aquisição segue um destino, e dois não o mandariam para nenhum.",
+          "oneDestinationOnly": "Duas partes vão para a mesma posição. Indique esse movimento uma só vez, com o montante total.",
+          "addDestination": "Adicionar outro destino",
           "summary": "{{clauses}}. Só a alienação apura um ganho.",
           "takeRest": "Ficar com o resto — {{amount}} {{symbol}}",
+          "changeWas": "A mudança foi de {{amount}} {{symbol}}",
           "transferWas": "A transferência foi de {{amount}} {{symbol}}",
           "trigger": "Foi mais do que uma destas",
           "sheetTitle": "Dividir esta transferência",
           "blocker": {
             "twoParts": "um montante em pelo menos duas opções",
-            "oneLink": "só uma parte para um sítio que o Scani acompanha",
+            "oneDestination": "uma parte por destino",
             "deposit": "um depósito escolhido para «{{paired}}»",
             "destination": "para onde foi a parte acompanhada",
             "positive": "montantes acima de zero",
@@ -2810,12 +3058,9 @@
         "keepFailed": "Não foi possível guardar a sua escolha. Tente novamente.",
         "partlyFailed_one": "Não foi possível ocultar {{count}} token. Tente novamente.",
         "partlyFailed_other": "Não foi possível ocultar {{count}} tokens. Tente novamente.",
-        "undo": "Anular",
         "toast": {
           "hidden_one": "{{count}} token ocultado",
           "hidden_other": "{{count}} tokens ocultados",
-          "restored": "Tokens restaurados",
-          "restoreFailed": "Não foi possível restaurar os tokens",
           "hidden_many": "{{count}} tokens ocultados",
           "kept_one": "{{count}} token mantido",
           "kept_many": "{{count}} tokens mantidos",
@@ -2823,6 +3068,30 @@
         },
         "hideSome_many": "Ocultar {{count}}",
         "partlyFailed_many": "Não foi possível ocultar {{count}} tokens. Tente novamente."
+      },
+      "transit": {
+        "title": "Transferência não chegou",
+        "description": "{{amount}} saíram de {{source}} para {{destination}} em {{date}} e ainda não chegaram. Continuam a contar no seu património. O que aconteceu?",
+        "arrived": "Chegou: {{amount}} em {{destination}}, {{date}}",
+        "shortfall": "Os {{amount}} restantes ficam registados como comissão",
+        "noArrival": "Ainda não há nenhuma transação em {{destination}} que corresponda",
+        "cameBack": "Voltou para {{source}} em {{date}}",
+        "lostFee": "Perdeu-se pelo caminho",
+        "lostFeeDetail": "Registado como comissão: um custo nesta conta",
+        "leftControl": "Saiu da minha carteira",
+        "leftControlDetail": "Gasto, oferecido ou vendido onde o Scani não vê",
+        "waiting": "Ainda à espera",
+        "waitingDetail": "Nada é registado. Continua a contar, e a Revisão volta a perguntar daqui a 7 dias",
+        "save": "Guardar",
+        "failed": "A resposta não foi guardada"
+      },
+      "untrackedArrival": {
+        "title": "Foi esta a transferência para {{destination}}?",
+        "description": "{{amount}} saíram de {{source}} em {{date}} e disse que foram para uma conta que o Scani não vê. {{arrived}} chegaram a {{destination}} em {{arrivedDate}}.",
+        "keepNote": "Se não, a sua resposta mantém-se e a Revisão não volta a perguntar por esta entrada.",
+        "confirm": "Sim, ligá-las",
+        "decline": "Não, manter a minha resposta",
+        "failed": "A resposta não foi guardada"
       }
     },
     "settings": {
@@ -2862,8 +3131,13 @@
         "nothingCanPrice": "Posições mostradas que nada consegue cotar",
         "nothingCanPriceHint": "Tokens recebidos por airdrop ou retirados de negociação, sem mercado — excluídos da cobertura do gráfico",
         "rowLink": "{{label}}: {{count}} — mostrar em Posições",
+        "rowLinkHidden": "{{label}}: {{count}} — mostrar em Tokens → Ocultos",
         "title": "Qualidade dos dados",
-        "zeroBalanceShown": "Posições com saldo zero ainda mostradas"
+        "zeroBalanceShown": "Posições com saldo zero ainda mostradas",
+        "hiddenNewBalance": "Posições ocultas com um novo saldo",
+        "hiddenNewBalanceHint": "Ocultou-as, e uma fonte indica agora mais do que quando o fez. Uma posição oculta não conta em nenhum total.",
+        "restoredUnmatched": "Posições restauradas com um token não reconhecido",
+        "restoredUnmatchedHint": "Seu backup nomeia um token que este Scani não conhece. A posição mantém esse símbolo em um token seu, sem fonte de preço."
       },
       "device": {
         "browserOnOs": "{{browser}} em {{os}}",
@@ -2884,6 +3158,68 @@
         "workbook": "Livro do Excel",
         "workbookDetail": "Uma folha por conjunto — posições, transações, pagamentos, histórico",
         "ownershipArchive": "Os nomes históricos de proprietários e ligações a contas são preservados na exportação. Já não são editáveis."
+      },
+      "backup": {
+        "title": "Backup",
+        "intro": "Sua conta num único arquivo: cada conta, posição, transação e leitura de saldo, com suas configurações e regras.",
+        "notIncluded": "Ainda não incluído: documentos enviados. As conexões com corretoras e bancos nunca são incluídas: são credenciais, não registros.",
+        "last": "Último backup {{date}} · {{size}}",
+        "make": "Fazer um backup",
+        "making": "Fazendo seu backup…",
+        "download": "Baixar backup",
+        "ready": "Seu backup está pronto para baixar.",
+        "failed": "Não foi possível fazer o backup.",
+        "restoreTitle": "Restaurar de um backup",
+        "restoreIntro": "Carrega um arquivo de backup do Scani nesta conta. Só uma conta vazia pode recebê-lo.",
+        "restoreChoose": "Escolher um arquivo de backup",
+        "restoring": "Restaurando sua conta…",
+        "restored": "Restauração concluída. Registros restaurados: {{rows}}.",
+        "restoredUnmatched": "Tokens que este Scani não conhece: {{tokens}}. A qualidade dos dados os lista.",
+        "restoreFailed": "A restauração não terminou. Nada foi restaurado."
+      },
+      "household": {
+        "title": "Agregado",
+        "intro": "Partilhe acesso só de leitura às contas que escolher com as pessoas com quem vive. Ninguém pode alterar as contas de outro membro.",
+        "subject": "agregado",
+        "nameLabel": "Nome do agregado",
+        "namePlaceholder": "p. ex. Casa",
+        "create": "Criar agregado",
+        "creating": "A criar o agregado",
+        "members": "Membros",
+        "roleAdmin": "Administrador",
+        "roleMember": "Membro",
+        "makeAdmin": "Tornar administrador",
+        "makeAdminConfirm": "Tornar {{name}} administrador",
+        "makeAdminConsequence": "Passa a gerir os convites e os membros. Continua a ser membro.",
+        "handingOver": "A passar o papel de administrador",
+        "remove": "Remover",
+        "removeConfirm": "Remover {{name}}",
+        "removeConsequence": "Deixa de ver as contas partilhadas de imediato, e as contas que partilhava são retiradas.",
+        "removing": "A remover o membro",
+        "invite": "Convidar alguém",
+        "emailLabel": "O email da pessoa",
+        "emailPlaceholder": "nome@exemplo.com",
+        "sendInvite": "Convidar",
+        "inviting": "A enviar o convite",
+        "emailed": "Convite enviado para {{email}}. A ligação abaixo é válida durante 7 dias.",
+        "notEmailed": "Convite criado mas não enviado por email. Copie a ligação e envie-a. É válida durante 7 dias.",
+        "copyLink": "Copiar ligação",
+        "copied": "Copiado",
+        "done": "Concluído",
+        "pending": "Convites pendentes",
+        "expires": "Expira a {{date}}",
+        "revoke": "Revogar",
+        "revoking": "A revogar o convite",
+        "yourAccounts": "As suas contas",
+        "yourAccountsHint": "Os membros veem o saldo e o valor de uma conta partilhada, só de leitura.",
+        "sharing": "A alterar o que partilha",
+        "currency": "Moeda do agregado",
+        "currencyHint": "A vista do agregado mostra os totais nesta moeda.",
+        "settingCurrency": "A alterar a moeda do agregado",
+        "leave": "Sair do agregado",
+        "leaveConfirm": "Sair de {{name}}",
+        "leaveConsequence": "Deixa de ver as contas dos outros membros de imediato, e as suas partilhas são retiradas.",
+        "leaving": "A sair do agregado"
       },
       "maintenance": {
         "intro": "Reconstrói os valores diários em cache a partir dos quais os gráficos de Património líquido e de L&P são desenhados — o mesmo preenchimento de 365 dias que corre todas as noites.",
@@ -2923,7 +3259,10 @@
         "sendingTestNotification": "A enviar uma notificação de teste",
         "signingOutOthers": "A terminar as outras sessões",
         "togglingNotifications": "A alterar a sua definição de notificações",
-        "changingCostBasis": "A alterar como os seus ganhos são calculados"
+        "changingCostBasis": "A alterar como os seus ganhos são calculados",
+        "makingBackup": "Fazendo um backup",
+        "downloadingBackup": "Baixando seu backup",
+        "restoringBackup": "Restaurando um backup"
       },
       "profile": {
         "baseCurrencyHint": "Todos os valores da aplicação são convertidos para esta.",
@@ -2951,6 +3290,90 @@
         "title": "Dispositivos",
         "unknownIp": "IP desconhecido"
       },
+      "billCalendar": {
+        "title": "Calendário de faturas",
+        "intro": "Subscreva as suas próximas faturas no Apple, Google ou Outlook Calendar.",
+        "warning": "Qualquer pessoa com a ligação vê o beneficiário, o valor e a data de cada fatura. Mantenha-a privada e crie uma nova se for divulgada.",
+        "enable": "Ativar",
+        "enabling": "A ativar o calendário de faturas",
+        "copyOnce": "Copie esta ligação para a sua app de calendário agora. Não voltará a ser mostrada.",
+        "addToCalendar": "Adicionar ao calendário",
+        "copy": "Copiar ligação",
+        "copied": "Ligação copiada",
+        "done": "Concluído",
+        "since": "Ativado {{when}}",
+        "rotate": "Nova ligação",
+        "rotateConfirm": "Criar uma nova ligação",
+        "rotateConsequence": "A ligação atual deixa de funcionar de imediato. Os calendários que a usam deixam de atualizar.",
+        "rotating": "A criar uma nova ligação",
+        "disable": "Desativar",
+        "disableConfirm": "Desativar o calendário de faturas",
+        "disableConsequence": "A ligação deixa de funcionar de imediato. Os calendários que a usam deixam de atualizar.",
+        "disabling": "A desativar o calendário de faturas",
+        "disabled": "Calendário de faturas desativado",
+        "subject": "o calendário de faturas"
+      },
+      "agentTokens": {
+        "title": "Agentes de IA",
+        "intro": "Deixe o seu próprio agente de IA (Claude Code, Cursor e outros) ler a sua carteira. O mesmo token serve para os seus próprios scripts, através da API REST em /api/v1. Um token é só de leitura, a menos que permita alterações, e pode ser revogado a qualquer momento.",
+        "nameLabel": "Nome do token",
+        "namePlaceholder": "ex. Claude Code no meu portátil",
+        "create": "Criar token",
+        "creating": "A criar o token",
+        "copyOnce": "Copie este token agora. Não voltará a ser mostrado.",
+        "claudeCode": "Para adicionar o Scani ao Claude Code, execute:",
+        "copyCommand": "Copiar comando",
+        "copied": "Copiado",
+        "done": "Concluído",
+        "subject": "tokens de agentes",
+        "empty": "Ainda não há tokens.",
+        "lastUsed": "{{prefix}}… · último uso {{when}}",
+        "neverUsed": "{{prefix}}… · nunca usado",
+        "revoke": "Revogar",
+        "revokeConfirm": "Revogar {{name}}",
+        "revokeConsequence": "Qualquer agente que use este token perde o acesso de imediato. Não pode ser desfeito.",
+        "revoked": "Token revogado",
+        "revoking": "A revogar o token",
+        "allowWrites": "Permitir alterações",
+        "allowWritesHint": "O agente pode registar movimentos, adicionar posições e responder a perguntas de revisão. Cada alteração aparece em Alterações de agentes e pode ser desfeita.",
+        "canWrite": "pode fazer alterações"
+      },
+      "connectedApps": {
+        "title": "Apps conectados",
+        "intro": "Apps que você autorizou a ler sua carteira ao entrar, como o Claude. Desconectar interrompe o acesso na hora.",
+        "subject": "apps conectados",
+        "connected": "Conectado {{when}}",
+        "disconnect": "Desconectar",
+        "disconnectConfirm": "Desconectar {{name}}",
+        "disconnectConsequence": "Ele perde o acesso na hora e precisa ser conectado de novo para ler sua carteira.",
+        "disconnected": "App desconectado",
+        "disconnecting": "Desconectando o app"
+      },
+      "agentActivity": {
+        "title": "Alterações de agentes",
+        "intro": "O que os seus agentes de IA alteraram. Desfazer repõe cada linha exatamente como estava.",
+        "rows": "Linhas alteradas: {{count}}",
+        "statusUndone": "desfeito {{when}}",
+        "statusFailed": "falhou",
+        "undo": "Desfazer",
+        "undoConfirm": "Desfazer esta alteração",
+        "undoConsequence": "Cada linha que tocou volta ao estado anterior. Recusado se essas linhas mudaram desde então.",
+        "undone": "Alteração desfeita",
+        "undoing": "A desfazer a alteração",
+        "tools": {
+          "record_movement": "Registou um movimento",
+          "create_holdings": "Criou posições",
+          "answer_transfer_review": "Respondeu a uma pergunta de transferência",
+          "answer_balance_gap": "Respondeu a uma pergunta de saldo"
+        }
+      },
+      "agentCalls": {
+        "title": "Chamadas de agentes",
+        "intro": "Cada pedido feito pelos seus agentes de IA, do mais recente ao mais antigo, incluindo os recusados e os que falharam.",
+        "removedAgent": "um agente removido",
+        "outcomeError": "falhou",
+        "outcomeRefused": "recusado"
+      },
       "costBasis": {
         "title": "Base de custo",
         "intro": "A regra que decide com qual compra uma venda é emparelhada ao calcular o seu lucro ou prejuízo.",
@@ -2967,7 +3390,11 @@
         "consequenceUnchanged": "Os seus ganhos já são calculados com {{method}}. Escolha outra regra para ver o que a alteração faria.",
         "changeConfirm": "Recalcular os meus ganhos com {{method}}",
         "changeInFlight": "Os seus ganhos estão a ser recalculados.",
-        "recomputing": "A recalcular os seus ganhos — os números da aplicação ainda estão a assentar."
+        "recomputing": "A recalcular os seus ganhos — os números da aplicação ainda estão a assentar.",
+        "methodShort": {
+          "fifo": "FIFO",
+          "uk_section_104": "Seção 104"
+        }
       },
       "accountDeletion": {
         "failed": "A eliminação da sua conta não foi concluída, por isso a conta continua aqui.",
@@ -2981,6 +3408,65 @@
         "send": "Enviar-me um código",
         "sending": "A enviar…",
         "humanCheck": "conclua a verificação de segurança"
+      },
+      "areas": {
+        "you": {
+          "title": "Você e seus números"
+        },
+        "notifications": {
+          "title": "Notificações e dispositivos",
+          "remindersOn": "Lembretes ativados",
+          "remindersOff": "Lembretes desativados",
+          "devices_many": "{{count}} dispositivos",
+          "devices_one": "{{count}} dispositivo",
+          "devices_other": "{{count}} dispositivos"
+        },
+        "agents": {
+          "title": "Agentes de IA",
+          "off": "O acesso de agentes de IA não está ativado nesta conta.",
+          "keys_many": "{{count}} chaves de agente",
+          "keys_one": "{{count}} chave de agente",
+          "keys_other": "{{count}} chaves de agente"
+        },
+        "data": {
+          "title": "Seus dados",
+          "lastBackup": "Último backup {{date}}",
+          "noBackup": "Nenhum backup ainda"
+        },
+        "account": {
+          "title": "Conta"
+        },
+        "notFound": "Essa página de configurações não existe."
+      },
+      "security": {
+        "title": "Login em duas etapas",
+        "intro": "Peça um código de um app autenticador depois do código ou link por e-mail.",
+        "turnOn": "Ativar login em duas etapas",
+        "scan": "Escaneie com seu app autenticador ou abra neste dispositivo.",
+        "qrAlt": "QR code para seu app autenticador",
+        "openApp": "Abrir no app autenticador",
+        "manualKey": "Ou digite esta chave:",
+        "confirm": "Confirmar",
+        "onNow": "O login em duas etapas está ativado.",
+        "signOutOthers": "Sair de todos os outros lugares",
+        "done": "Concluído",
+        "isOn": "O login em duas etapas está ativado.",
+        "newCodes": "Gerar novos códigos de backup",
+        "turnOff": "Desativar login em duas etapas",
+        "turnOffBody": "Entrar voltará a precisar só do seu e-mail. Seus códigos de backup deixam de funcionar.",
+        "turnedOff": "O login em duas etapas está desativado.",
+        "backupCodesIntro": "Guarde estes códigos de backup em um lugar seguro. Cada um permite entrar uma vez se você perder o celular.",
+        "passkeysTitle": "Chaves de acesso",
+        "passkeysIntro": "Entre com Face ID, Touch ID ou o PIN do dispositivo, sem e-mail.",
+        "passkeyUnnamed": "Chave de acesso",
+        "removePasskey": "Remover chave de acesso",
+        "addPasskey": "Adicionar uma chave de acesso",
+        "passkeyAdded": "Chave de acesso adicionada.",
+        "failed": "Não funcionou",
+        "turnOffConfirm": "Sim, desativar",
+        "confirming": "Confirmando…",
+        "blockerCode": "digite o código de 6 dígitos",
+        "passkeyFailed": "Este dispositivo não conseguiu salvar uma chave de acesso."
       }
     },
     "shell": {
@@ -3093,7 +3579,9 @@
         "crypto": "Criptomoeda",
         "stock": "Ações / ETF / Títulos / Matérias-primas",
         "privateCompany": "Empresa privada",
-        "other": "Outro"
+        "other": "Outro",
+        "property": "Imóvel",
+        "vehicle": "Veículo"
       }
     },
     "vaults": {
@@ -3218,8 +3706,343 @@
       "frankfurter": "Frankfurter (taxas do BCE)",
       "manual": "Definido à mão",
       "baseCurrency": "A sua moeda base",
-      "siblingFallback": "O mesmo ativo, outra listagem",
       "unknown": "Origem desconhecida"
+    },
+    "valuedAssets": {
+      "title": "Adicionar imóvel ou veículo",
+      "description": "Algo que você possui e avalia por conta própria, como uma casa, um terreno ou um carro. Você informa o valor; o Scani guarda o histórico.",
+      "subject": "imóvel ou veículo",
+      "whatFieldset": "O que é",
+      "valueFieldset": "Quanto custou",
+      "kind": {
+        "label": "O que é?",
+        "property": "Imóvel",
+        "vehicle": "Veículo"
+      },
+      "nameLabel": "Nome",
+      "addressLabel": "Endereço",
+      "areaLabel": "Área (m²)",
+      "makeLabel": "Marca",
+      "modelLabel": "Modelo",
+      "yearLabel": "Ano",
+      "mileageLabel": "Quilometragem (km)",
+      "purchaseDateLabel": "Comprado em",
+      "purchasePriceLabel": "Preço de compra ({{currency}})",
+      "currentValueLabel": "Valor atual ({{currency}})",
+      "currentValueHint": "Opcional. Se ficar vazio, permanece no preço de compra.",
+      "save": "Adicionar",
+      "saving": "Adicionando…",
+      "blocker": {
+        "name": "Dê um nome",
+        "purchaseDate": "Escolha o dia da compra",
+        "purchasePrice": "Informe quanto pagou",
+        "currentValue": "O valor atual deve ser positivo"
+      },
+      "details": {
+        "title": "Detalhes",
+        "area": "Área",
+        "vehicle": "Veículo",
+        "mileage": "Quilometragem",
+        "purchase": "Comprado em {{date}}",
+        "gain": "Variação desde a compra"
+      },
+      "history": {
+        "title": "Avaliações",
+        "corrected": "Corrigida"
+      },
+      "addValuation": {
+        "action": "Adicionar avaliação",
+        "title": "Adicionar uma avaliação",
+        "description": "Quanto valia em um dia. Uma segunda avaliação no mesmo dia substitui a primeira.",
+        "valueLabel": "Valor ({{currency}})",
+        "dateLabel": "Em",
+        "save": "Salvar",
+        "saving": "Salvando…",
+        "blocker": {
+          "value": "Informe um valor positivo",
+          "date": "Escolha um dia"
+        }
+      }
+    },
+    "household": {
+      "accept": {
+        "title": "Convite para o agregado",
+        "heading": "{{inviter}} convidou-o para {{household}}",
+        "explain": "Aceitar não move dados. Vê as contas que os membros partilham, só de leitura, e escolhe quais das suas partilhar.",
+        "accept": "Aceitar",
+        "notNow": "Agora não",
+        "accepting": "A aceitar o convite",
+        "joined": "Juntou-se a {{name}}",
+        "expired": "Este convite expirou",
+        "revoked": "Este convite foi retirado",
+        "used": "Este convite já foi usado",
+        "invalid": "Esta ligação de convite não é válida",
+        "home": "Ir para o início"
+      },
+      "view": {
+        "title": "Agregado",
+        "description": "O que o agregado detém em conjunto, a partir das contas que os membros partilham.",
+        "unavailable": "Não foi possível carregar a vista do agregado",
+        "none": "Não pertence a nenhum agregado.",
+        "toSettings": "Crie ou junte-se a um em Definições",
+        "currency": "Em {{currency}}",
+        "chart": "Património do agregado no último ano",
+        "allocation": "Distribuição",
+        "accounts": "Contas partilhadas",
+        "accountOwner": "{{name}} · {{owner}}",
+        "you": "Você",
+        "trackedTwice": "Ambos registam {{name}}: deixe de partilhar uma cópia",
+        "link": "Agregado"
+      }
+    },
+    "budgetApp": {
+      "title": "Importar do YNAB, do Actual ou do Mint",
+      "description": "Traga o seu histórico do YNAB, do Actual Budget ou do Mint para o Scani. Cada conta do ficheiro passa a ser uma conta aqui, e as transferências que o ficheiro liga entre duas delas continuam emparelhadas.",
+      "subject": "a importação da aplicação de orçamento",
+      "fileFieldset": "A sua exportação da aplicação de orçamento",
+      "prompt": "Escolha o ficheiro Register do YNAB, a exportação do Actual ou o transactions.csv do Mint",
+      "formats": "CSV ou TSV, do “Export Plan” do YNAB, do “Export” do Actual ou do Mint",
+      "wrongFile": "Escolha o ficheiro .csv ou .tsv que o YNAB, o Actual ou o Mint exportou.",
+      "notRegister": "Isto não é um registo do YNAB nem uma exportação do Actual ou do Mint. No YNAB, exporte o plano e escolha o ficheiro cujo nome termina em Register. No Actual, escolha Export numa conta. Do Mint, escolha transactions.csv.",
+      "mixedDecimals": "Os valores deste ficheiro usam tanto o ponto como a vírgula como separador decimal, por isso o Scani não os consegue ler.",
+      "dateOrder": {
+        "question": "As datas deste ficheiro servem para as duas ordens. O que vem primeiro?",
+        "dayFirst": "Dia primeiro (31/12)",
+        "monthFirst": "Mês primeiro (12/31)"
+      },
+      "accounts": {
+        "title": "Para onde vai cada conta",
+        "rows_one": "{{count}} linha",
+        "rows_many": "{{count}} linhas",
+        "rows_other": "{{count}} linhas",
+        "choose": "Para onde vai {{name}}",
+        "fedNote": "As contas alimentadas por um fornecedor ou carteira ligados não aparecem: já registam estes movimentos."
+      },
+      "target": {
+        "new": "Nova: {{type}}",
+        "existing": "Em {{name}}",
+        "skip": "Não importar"
+      },
+      "currency": {
+        "label": "Moeda dos valores",
+        "hint": "O ficheiro mostra {{symbol}}. Introduza o código de três letras.",
+        "hintNone": "O ficheiro não mostra símbolo de moeda. Introduza o código de três letras."
+      },
+      "notImported": "Os orçamentos não são importados. Cada linha mantém a sua categoria e, se o ficheiro o indicar, o seu estado de conciliação.",
+      "skipped_one": "{{count}} linha será ignorada: está vazia, é zero ou ilegível.",
+      "skipped_many": "{{count}} linhas serão ignoradas: estão vazias, são zero ou ilegíveis.",
+      "skipped_other": "{{count}} linhas serão ignoradas: estão vazias, são zero ou ilegíveis.",
+      "blocker": {
+        "noFile": "escolha a sua exportação da aplicação de orçamento",
+        "unreadable": "escolha uma exportação que o Scani consiga ler",
+        "noAccount": "importe pelo menos uma conta",
+        "noCurrency": "introduza um código de moeda de três letras",
+        "sameTarget": "importe cada conta para uma conta diferente do Scani"
+      },
+      "submit": "Importar",
+      "busy": "a importação",
+      "history": {
+        "title": "Importações anteriores",
+        "rows_one": "{{count}} linha",
+        "rows_many": "{{count}} linhas",
+        "rows_other": "{{count}} linhas",
+        "accounts_one": "{{count}} conta",
+        "accounts_many": "{{count}} contas",
+        "accounts_other": "{{count}} contas",
+        "undo": "Desfazer",
+        "undone": "Desfeita",
+        "confirm_one": "Remover a {{count}} linha que esta importação adicionou e as contas que ela abriu?",
+        "confirm_many": "Remover as {{count}} linhas que esta importação adicionou e as contas que ela abriu?",
+        "confirm_other": "Remover as {{count}} linhas que esta importação adicionou e as contas que ela abriu?",
+        "remove": "Remover",
+        "keep": "Manter"
+      }
+    },
+    "categories": {
+      "picker": {
+        "legend": "Categoria",
+        "searchPlaceholder": "Procure ou crie uma categoria",
+        "create": "Criar “{{name}}”",
+        "none": "Sem categoria"
+      },
+      "empty": {
+        "title": "Ainda não há categorias.",
+        "namePlaceholder": "Nome da categoria",
+        "suggest": "Adicionar categorias sugeridas",
+        "create": "Criar categoria"
+      },
+      "manage": "Gerir categorias",
+      "uncategorized": "Sem categoria",
+      "suggested": {
+        "income": "Rendimentos",
+        "salary": "Salário",
+        "interest": "Juros",
+        "dividends": "Dividendos",
+        "housing": "Habitação",
+        "rent": "Renda",
+        "utilities": "Contas da casa",
+        "food": "Alimentação",
+        "groceries": "Supermercado",
+        "restaurants": "Restaurantes",
+        "transport": "Transportes",
+        "health": "Saúde",
+        "shopping": "Compras",
+        "travel": "Viagens",
+        "fees": "Taxas",
+        "bankFees": "Taxas bancárias",
+        "exchangeFees": "Taxas de corretora",
+        "taxes": "Impostos"
+      },
+      "page": {
+        "title": "Categorias",
+        "new": "Nova categoria",
+        "newTitle": "Nova categoria",
+        "editTitle": "Editar categoria",
+        "formDescription": "Uma categoria pode ficar dentro de uma categoria principal.",
+        "save": "Guardar",
+        "saving": "A guardar…",
+        "nameRequired": "Dê um nome à categoria.",
+        "parent": "Categoria superior",
+        "topLevel": "Nível principal",
+        "hasChildren": "Tem subcategorias, por isso fica no nível principal.",
+        "count_one": "{{count}} transação",
+        "count_many": "{{count}} transações",
+        "count_other": "{{count}} transações",
+        "deleteAction": "Eliminar"
+      },
+      "delete": {
+        "title": "Eliminar {{name}}",
+        "description": "Escolha para onde vão as suas transações.",
+        "lifted": "As subcategorias passam para o nível principal.",
+        "legend": "Mover as transações para",
+        "submit": "Eliminar categoria",
+        "pending": "A eliminar…",
+        "where_one": "{{count}} transação está em {{name}}.",
+        "where_many": "{{count}} transações estão em {{name}}.",
+        "where_other": "{{count}} transações estão em {{name}}."
+      },
+      "auto": {
+        "marker": "Definida automaticamente",
+        "reasonRule": "Segue o que você escolheu antes para {{payee}}",
+        "keep": "Manter",
+        "kept": "Categoria mantida",
+        "spread_one": "Também aplicada a {{count}} transação semelhante.",
+        "spread_many": "Também aplicada a {{count}} transações semelhantes.",
+        "spread_other": "Também aplicada a {{count}} transações semelhantes."
+      }
+    },
+    "transactions": {
+      "title": "Transações",
+      "empty": {
+        "addAccount": "Adicionar uma conta"
+      },
+      "bulk": {
+        "setCategory": "Definir categoria",
+        "title_one": "Definir a categoria de {{count}} transação",
+        "title_many": "Definir a categoria de {{count}} transações",
+        "title_other": "Definir a categoria de {{count}} transações",
+        "description": "Escolha uma categoria, ou nenhuma para a remover.",
+        "submit": "Definir categoria",
+        "clear": "Remover categoria",
+        "pending": "A guardar…"
+      },
+      "moved_one": "{{count}} transação movida para {{name}}",
+      "moved_many": "{{count}} transações movidas para {{name}}",
+      "moved_other": "{{count}} transações movidas para {{name}}",
+      "cleared_one": "{{count}} transação ficou sem categoria",
+      "cleared_many": "{{count}} transações ficaram sem categoria",
+      "cleared_other": "{{count}} transações ficaram sem categoria",
+      "seeAll": "Ver tudo",
+      "range": {
+        "from": "De",
+        "to": "Até"
+      }
+    },
+    "wrappers": {
+      "code": {
+        "brokerage": "Conta de corretagem",
+        "cash_management": "Gestão de caixa",
+        "401k": "401(k)",
+        "roth_401k": "Roth 401(k)",
+        "403b": "403(b)",
+        "457b": "457(b)",
+        "tsp": "TSP",
+        "ira": "IRA",
+        "roth_ira": "Roth IRA",
+        "sep_ira": "SEP IRA",
+        "simple_ira": "SIMPLE IRA",
+        "529_plan": "529 Plan",
+        "hsa": "HSA",
+        "ugma": "UGMA",
+        "utma": "UTMA",
+        "isa": "ISA",
+        "lisa": "LISA",
+        "sipp": "SIPP",
+        "workplace_pension_uk": "Previdência da empresa",
+        "tfsa": "TFSA",
+        "rrsp": "RRSP",
+        "non_registered": "Não registrada",
+        "fhsa": "FHSA",
+        "rdsp": "RDSP",
+        "resp": "RESP",
+        "dpsp": "DPSP",
+        "prpp": "PRPP",
+        "lira": "LIRA",
+        "rrif": "RRIF",
+        "lif": "LIF",
+        "lrif": "LRIF",
+        "prif": "PRIF",
+        "rlif": "RLIF",
+        "super": "Super",
+        "smsf": "SMSF",
+        "assurance_vie": "AV",
+        "pea": "PEA",
+        "pillar_3a": "Pillar 3a",
+        "riester": "Riester",
+        "pension": "Previdência",
+        "retirement": "Conta de aposentadoria",
+        "mutual_fund": "Fundo de investimento",
+        "gold": "Ouro",
+        "angel": "Investimento anjo",
+        "trust": "Fideicomisso",
+        "other": "Outro"
+      },
+      "bucket": {
+        "general": "Geral",
+        "deferred": "Diferidas (previdência)",
+        "exempt": "Protegidas (ISA, Roth, TFSA)",
+        "advantaged": "Outras com vantagens"
+      },
+      "region": {
+        "us": "Estados Unidos",
+        "uk": "Reino Unido",
+        "ca": "Canadá",
+        "au": "Austrália",
+        "eu": "Europa",
+        "generic": "Qualquer lugar"
+      },
+      "field": {
+        "label": "Invólucro da conta",
+        "none": "Nenhum",
+        "hint": "Por exemplo, um ISA, uma previdência ou um Roth IRA. Deixe vazio para uma conta comum."
+      },
+      "block": {
+        "title": "Ganhos por invólucro da conta",
+        "realized": "Realizados",
+        "unrealized": "Não realizados",
+        "note": "Agrupados pelo invólucro atual de cada conta.",
+        "loadingLabel": "os seus ganhos por invólucro",
+        "carried_one": "{{count}} posição não tinha preço no último dia; usa-se o seu último dia com preço",
+        "carried_other": "{{count}} posições não tinham preço no último dia; usa-se o seu último dia com preço",
+        "carried_many": "{{count}} posições não tinham preço no último dia; usa-se o seu último dia com preço",
+        "tileSums": "O mosaico soma todos os invólucros exceto Geral."
+      },
+      "bucketShort": {
+        "general": "Geral",
+        "deferred": "Diferido",
+        "exempt": "Protegido",
+        "advantaged": "Vantajoso"
+      }
     }
   }
 }

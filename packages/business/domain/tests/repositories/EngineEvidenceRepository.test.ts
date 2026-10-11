@@ -7,7 +7,6 @@ import { PgDialect, parsePgArray } from 'drizzle-orm/pg-core';
 import { Container } from 'typedi';
 import { priceAt } from '../../src/engine/price-at';
 import { LEDGER_KINDS, type PriceReading } from '../../src/engine/types';
-import { SCAM_PROBABILITY_THRESHOLD } from '../../src/lib/constants';
 import { EngineEvidenceRepository } from '../../src/repositories/EngineEvidenceRepository';
 import type { HoldingLabels } from '../../src/services/foundation/legacy-classification';
 import { withTestDb } from '../../test/helpers/db';
@@ -53,6 +52,8 @@ const OBSERVATION_COLUMNS = [
   'supersededAt',
   'createdAt',
 ] as const;
+const DIVIDEND_ROW = '00000000-0000-4000-8000-0000000000d1';
+
 const TRANSACTION_COLUMNS = [
   'id',
   'holdingId',
@@ -282,6 +283,19 @@ describe('findHoldingEvidence', () => {
         rawPayload: { body: 'x'.repeat(1000) },
         description: 'coffee',
         counterparty: 'a shop',
+        sourceMetadata: {
+          income: 'dividend',
+          feeOf: DIVIDEND_ROW,
+          paidBy: { isin: 'ZZ0000000017' },
+        },
+      });
+      // The same keys, not strings, read as absent.
+      const odd = await makeHoldingTransaction(tx, {
+        userId: user.id,
+        holdingId: holding.id,
+        tokenId: token.id,
+        occurredAt: at('2026-01-05T00:00:00Z'),
+        sourceMetadata: { income: { kind: 'dividend' }, feeOf: 7 },
       });
 
       const [evidence] = await repo().findHoldingEvidence({ userId: user.id }, tx);
@@ -293,7 +307,15 @@ describe('findHoldingEvidence', () => {
         loaded(listed),
         loaded(anchor, { origin: 'updateHoldingBalance', legacyAnchor: 'apy-payout' }),
       ]);
-      expect(evidence!.transactions).toEqual([project(entry, TRANSACTION_COLUMNS)]);
+      // In `occurred_at` order: `odd` is dated, `entry` is now.
+      expect(evidence!.transactions).toEqual([
+        { ...project(odd, TRANSACTION_COLUMNS), metadataIncome: null, metadataFeeOf: null },
+        {
+          ...project(entry, TRANSACTION_COLUMNS),
+          metadataIncome: 'dividend',
+          metadataFeeOf: DIVIDEND_ROW,
+        },
+      ]);
     });
   });
 
@@ -496,45 +518,6 @@ describe('findHoldingEvidence', () => {
   });
 });
 
-describe('findLatestReadingsInAnyBase', () => {
-  test('gives the latest row at or before T per token and base, in every base', async () => {
-    await withTestDb(async (tx) => {
-      const x = await makeToken(tx);
-      const y = await makeToken(tx);
-      const unasked = await makeToken(tx);
-      const usd = await makeToken(tx);
-      const gbp = await makeToken(tx);
-      await addPrice(tx, x.id, usd.id, at('2026-03-10T08:00:00Z'), '100', 'intraday');
-      await addPrice(tx, x.id, usd.id, at('2026-03-10T09:00:00Z'), '101', 'daily');
-      await addPrice(tx, x.id, usd.id, at('2026-03-10T11:00:00Z'), '110', 'intraday');
-      await addPrice(tx, x.id, gbp.id, at('2026-03-10T10:00:00Z'), '80', 'intraday', 'manual');
-      await addPrice(tx, y.id, gbp.id, at('2026-03-09T00:00:00Z'), '7', 'daily');
-      await addPrice(tx, unasked.id, usd.id, at('2026-03-10T09:00:00Z'), '1', 'intraday');
-
-      const readings = await repo().findLatestReadingsInAnyBase(
-        [x.id, y.id],
-        at('2026-03-10T10:00:00Z'),
-        tx
-      );
-
-      const key = (tokenId: string, baseTokenId: string) => `${tokenId}|${baseTokenId}`;
-      expect(
-        Object.fromEntries(
-          readings.map((r) => [
-            key(r.tokenId, r.baseTokenId),
-            [r.price, r.at.toISOString(), r.source],
-          ])
-        )
-      ).toEqual({
-        [key(x.id, usd.id)]: ['101', '2026-03-10T09:00:00.000Z', null],
-        [key(x.id, gbp.id)]: ['80', '2026-03-10T10:00:00.000Z', 'manual'],
-        [key(y.id, gbp.id)]: ['7', '2026-03-09T00:00:00.000Z', null],
-      });
-      expect(readings).toHaveLength(3);
-    });
-  });
-});
-
 describe('findPriceReadingsAtInstants', () => {
   const ASKED_AT = at('2026-03-10T12:00:00Z');
 
@@ -731,67 +714,7 @@ describe('findQuoteTokenIds', () => {
   });
 });
 
-describe('findPricedAssets and findUsersWithHoldings', () => {
-  test("lists each token of the user's counted holdings once, with its type code", async () => {
-    await withTestDb(async (tx) => {
-      const { user, account, token: x } = await seedHolding(tx);
-      const elsewhere = await seedAccount(tx, user.id);
-      await makeHolding(tx, { userId: user.id, accountId: elsewhere.id, tokenId: x.id });
-      const hidden = await makeToken(tx);
-      await makeHolding(tx, {
-        userId: user.id,
-        accountId: account.id,
-        tokenId: hidden.id,
-        isHidden: true,
-      });
-      await seedHolding(tx);
-
-      const assets = await repo().findPricedAssets(user.id, tx);
-
-      expect(assets).toEqual([{ token: x, typeCode: 'crypto' }]);
-    });
-  });
-
-  test('findPricedAssets returns the tokens of the holdings the shared rule includes', async () => {
-    await withTestDb(async (tx) => {
-      const { user, account, token: counted } = await seedHolding(tx);
-      const elsewhere = await seedAccount(tx, user.id);
-      const held = async (
-        overrides: Partial<typeof schema.holdings.$inferInsert> = {},
-        tokenOverrides: Partial<typeof schema.tokens.$inferInsert> = {},
-        accountId = account.id
-      ) => {
-        const token = await makeToken(tx, tokenOverrides);
-        await makeHolding(tx, { userId: user.id, accountId, tokenId: token.id, ...overrides });
-        return token;
-      };
-
-      const sweepHidden = await held({ isHidden: true, hiddenBy: 'auto' });
-      const ownerHidden = await held({ isHidden: true, hiddenBy: 'user' });
-      const inactive = await held({ isActive: false });
-      const scam = await held({}, { isScamProbability: SCAM_PROBABILITY_THRESHOLD });
-      const onlyExcluded = await held({ isHidden: true, hiddenBy: 'user' });
-      await makeHolding(tx, {
-        userId: user.id,
-        accountId: elsewhere.id,
-        tokenId: onlyExcluded.id,
-        isActive: false,
-      });
-      const oneCounts = await held({ isHidden: true, hiddenBy: 'user' });
-      await makeHolding(tx, { userId: user.id, accountId: elsewhere.id, tokenId: oneCounts.id });
-
-      const assets = await repo().findPricedAssets(user.id, tx);
-
-      expect(assets.map((a) => a.token.id).toSorted()).toEqual(
-        [counted, sweepHidden, oneCounts].map((t) => t.id).toSorted()
-      );
-      const returned = new Set(assets.map((a) => a.token.id));
-      for (const excluded of [ownerHidden, inactive, scam, onlyExcluded]) {
-        expect(returned.has(excluded.id)).toBe(false);
-      }
-    });
-  });
-
+describe('findUsersWithHoldings', () => {
   test('lists the users with at least one holding, with their base currency', async () => {
     await withTestDb(async (tx) => {
       const { user } = await seedHolding(tx);

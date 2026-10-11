@@ -11,10 +11,8 @@
  *
  * is not zero. Something changed the balance and the ledger holds no reason
  * for it. `unexplainedDrift` in `@scani/domain` is the one implementation of
- * that arithmetic and `BalanceAtTimeService.driftAhead` — which spreads the
- * same quantity across the gap to keep a value series from stepping — calls
- * it, so the queue and the interpolation cannot disagree about what is
- * unexplained.
+ * that arithmetic for the review queue. The value series no longer spreads it:
+ * since A5 the engine holds a balance until the reading that reveals a change.
  *
  * ## What it counts as until it is answered, and after
  *
@@ -28,15 +26,15 @@
  * that a change nobody can explain is not a return.
  *
  * So `drift-rows.ts` in `@scani/domain` books every unexplained change as
- * `drift_in` / `drift_out`, spread across the gap exactly as the value series
- * interpolates it, for the readers of money only. An answer still changes
+ * `drift_in` / `drift_out`, where the engine takes it (SC-1637), for the
+ * readers of money only. An answer still changes
  * that: `flow` and `correction` write their own ledger rows and leave nothing
  * unexplained; `growth` makes the change `drift_growth`, which IS return,
  * because the owner said so; `unknown` leaves it money in or out.
  *
  * The gap stays in the review queue either way. Booking it as a flow is the
  * default reading, not an answer, and the dated `flow` the owner can give is
- * still better than a ramp across the whole interval.
+ * still better than a change dated at the reading that revealed it.
  *
  * ## Why a human is not the preferred channel but the only one
  *
@@ -169,6 +167,12 @@ export const BALANCE_GAP_DATE_PROMPT_MIN_SPAN_MS = 24 * 60 * 60 * 1000;
 /**
  * There is no settling window, and the absence is deliberate (SC-501).
  *
+ * SC-1665 removed the cause rather than the rule: for most providers the
+ * ledger is now read in the same run as the balance and written in the same
+ * transaction, so the gap below cannot open. Where a ledger is still read
+ * apart from its balance, `awaiting-ledger` holds the question until that
+ * read has run — an event, bounded by a day, not a prediction.
+ *
  * A drift CAN be explained by a transaction that has not been imported yet,
  * and the obvious response is to wait — hold a gap back until the feeds that
  * cover its holding have had a chance to deliver. That was the first design
@@ -236,6 +240,20 @@ export const BALANCE_GAP_SUPPRESSIONS = [
   'reversed',
   /** Could not be priced into the owner's base currency at all. */
   'unpriceable',
+  /**
+   * The interval holds the arrival of a transfer still in transit, so the
+   * day-7 transit question owns that money, and a balance-change question
+   * about it would ask twice (SC-1680). It returns once the transit closes.
+   */
+  'in-transit',
+  /**
+   * The holding's ledger is still read nightly, apart from its balance, and
+   * has not been read since this balance landed (SC-1665). Held until a read
+   * passes the observation, and never longer than a day and two hours, so a
+   * ledger that stops arriving cannot hide a gap. A ledger read in the same
+   * run as its balance is never held.
+   */
+  'awaiting-ledger',
 ] as const;
 
 export type BalanceGapSuppression = (typeof BALANCE_GAP_SUPPRESSIONS)[number];

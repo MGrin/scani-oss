@@ -11,8 +11,12 @@ import {
   settledAnswersReviewPath,
   TRANSFER_REVIEW_KIND,
   TRANSFER_REVIEW_PATH,
+  TRANSIT_REVIEW_KIND,
+  transitReviewPath,
   UNPRICEABLE_AIRDROPS_REVIEW_KIND,
   UNPRICEABLE_AIRDROPS_REVIEW_PATH,
+  UNTRACKED_ARRIVAL_REVIEW_KIND,
+  untrackedArrivalReviewPath,
 } from '@scani/shared';
 import Container, { Service } from 'typedi';
 import { DocumentExtractionRepository } from '../repositories/DocumentExtractionRepository';
@@ -20,8 +24,10 @@ import { UserJobRepository } from '../repositories/UserJobRepository';
 import { BalanceGapService } from './holdings/BalanceGapService';
 import { SettlementAnswerReviewService } from './holdings/SettlementAnswerReviewService';
 import { UnpriceableAirdropService } from './holdings/UnpriceableAirdropService';
+import { TransitReviewService } from './portfolio/TransitReviewService';
 import { describePendingReview } from './reviewDetail';
 import { TransferReviewService } from './TransferReviewService';
+import { UntrackedArrivalReviewService } from './UntrackedArrivalReviewService';
 
 /**
  * "What is waiting on the user", across every producer.
@@ -46,6 +52,8 @@ export class ReviewFeedService {
   private readonly balanceGaps = Container.get(BalanceGapService);
   private readonly settledAnswers = Container.get(SettlementAnswerReviewService);
   private readonly unpriceableAirdrops = Container.get(UnpriceableAirdropService);
+  private readonly transits = Container.get(TransitReviewService);
+  private readonly untrackedArrivals = Container.get(UntrackedArrivalReviewService);
 
   async listPending(userId: string): Promise<ReviewItem[]> {
     const sources = await Promise.all([
@@ -56,6 +64,8 @@ export class ReviewFeedService {
       this.fromBalanceGaps(userId),
       this.fromSettledAnswers(userId),
       this.fromUnpriceableAirdrops(userId),
+      this.fromTransits(userId),
+      this.fromUntrackedArrivals(userId),
     ]);
     return sources.flat().sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
   }
@@ -83,7 +93,7 @@ export class ReviewFeedService {
    * permanently. Putting it here rather than in a new channel is the point:
    * this feed is already "what is waiting on you", it already runs
    * server-side across every job rather than the 50 newest, and it already
-   * drives the home screen's attention row, the /review page and the tab
+   * drives the home screen's Needs-you strip, the /review page and the tab
    * badge. A failure that reaches none of those has not reached anyone.
    *
    * `createdAt` is the moment of death, not of enqueue — a job that died
@@ -246,6 +256,55 @@ export class ReviewFeedService {
         Math.max(...holding.answers.map((answer) => Date.parse(answer.answeredAt ?? answer.to)))
       ),
       href: settledAnswersReviewPath(holding.holdingId),
+    }));
+  }
+
+  /**
+   * A transfer still in transit 7 days after it left (SC-1675) — one row per
+   * destination it went to (SC-1684), because each part is answered on its
+   * own: arrived, lost, came back or still waiting. `createdAt` is when it
+   * became due.
+   */
+  private async fromTransits(userId: string): Promise<ReviewItem[]> {
+    const due = await this.transits.listDue(userId);
+    return due.map((question) => ({
+      id: `${TRANSIT_REVIEW_KIND}:${question.outflowId}:${question.destinationHoldingId}`,
+      kind: TRANSIT_REVIEW_KIND,
+      label: { code: 'transferNotArrived' as const },
+      detail: {
+        code: 'transferInTransit' as const,
+        quantity: question.quantity,
+        tokenSymbol: question.tokenSymbol,
+        sourceAccountName: question.sourceAccountName,
+        destinationAccountName: question.destinationAccountName,
+      },
+      represents: 1,
+      createdAt: question.dueAt,
+      href: transitReviewPath(question),
+    }));
+  }
+
+  /**
+   * Money the owner answered `untracked` whose same amount later arrived in an
+   * account Scani tracks (SC-1696): one row per question, each with its own
+   * sheet. `createdAt` is the arrival, which is when it became askable.
+   */
+  private async fromUntrackedArrivals(userId: string): Promise<ReviewItem[]> {
+    const due = await this.untrackedArrivals.listDue(userId);
+    return due.map((question) => ({
+      id: `${UNTRACKED_ARRIVAL_REVIEW_KIND}:${question.outflowId}:${question.inflowId}`,
+      kind: UNTRACKED_ARRIVAL_REVIEW_KIND,
+      label: { code: 'untrackedTransferArrived' as const },
+      detail: {
+        code: 'untrackedTransferArrived' as const,
+        quantity: question.quantity,
+        tokenSymbol: question.tokenSymbol,
+        sourceAccountName: question.sourceAccountName,
+        destinationAccountName: question.destinationAccountName,
+      },
+      represents: 1,
+      createdAt: question.arrivedAt,
+      href: untrackedArrivalReviewPath(question),
     }));
   }
 

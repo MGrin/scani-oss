@@ -1,10 +1,8 @@
-import type { ScheduledJobDescriptor } from '@scani/queue';
+import type { ScheduledJobStepDescriptor } from '@scani/queue';
 import { JOB_NAMES } from '../job-names';
 
-// Scheduled liveness probe over `job_heartbeats`. Every 15 minutes
-// (quarter-hour aligned with the other frequent jobs so Neon's
-// scale-to-zero gets long idle windows between batched wakes) the
-// worker reads the heartbeat row for each known scheduled job and
+// Scheduled liveness probe over `job_heartbeats`. Every 15 minutes, as a
+// step of the `housekeeping` group (SC-1688), the worker reads the heartbeat row for each known scheduled job and
 // escalates to Sentry whenever a job's `last_success_at` falls behind
 // its expected interval × tolerance. Without this, a silently stuck
 // job (worker crashed mid-deploy, advisory lock collision burning
@@ -13,9 +11,8 @@ import { JOB_NAMES } from '../job-names';
 //
 // Advisory lock keeps two machines from double-paging when both probe
 // at the same minute. The probe itself is idempotent and read-only.
-export const JOB_HEARTBEAT_PROBE_SCHEDULE: ScheduledJobDescriptor = {
+export const JOB_HEARTBEAT_PROBE_SCHEDULE: ScheduledJobStepDescriptor = {
   name: JOB_NAMES.jobHeartbeatProbe,
-  cron: '*/15 * * * *',
   lockName: JOB_NAMES.jobHeartbeatProbe,
 };
 
@@ -48,3 +45,16 @@ export const HEARTBEAT_TOLERANCE_MS: Readonly<Record<string, number>> = {
   // Every 15min — alert at 45min.
   [JOB_NAMES.dlqDepthProbe]: 45 * 60 * 1000,
 };
+
+// Jobs that must complete by a fixed UTC hour each day, rather than within a
+// window of their last success. db-backup runs last in the nightly group
+// (SC-1688), so how late it finishes depends on every step before it.
+export const HEARTBEAT_DAILY_DEADLINE_UTC_HOUR: Readonly<Record<string, number>> = {
+  [JOB_NAMES.dbBackup]: 7,
+};
+
+export function missedDailyDeadline(lastSuccess: Date, now: Date, deadlineHour: number): boolean {
+  const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const deadline = dayStart + deadlineHour * 60 * 60 * 1000;
+  return now.getTime() >= deadline && lastSuccess.getTime() < dayStart;
+}

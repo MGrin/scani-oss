@@ -1,6 +1,7 @@
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { useTranslation } from 'react-i18next';
 import { Navigate, Outlet, Route, BrowserRouter as Router, Routes } from 'react-router-dom';
+import { AppOpenRefresher } from '@/components/AppOpenRefresher';
 import { InstallPromptHost } from '@/components/InstallPromptHost';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { TimezoneReporter } from '@/components/TimezoneReporter';
@@ -13,6 +14,7 @@ import { useViewportScrollRecovery } from '@/hooks/useViewportScrollRecovery';
 import { lazyRoute } from '@/lib/lazy-route';
 import { Auth } from '@/pages/Auth';
 import { AuthCallback } from '@/pages/AuthCallback';
+import { TwoFactorChallenge } from '@/pages/TwoFactorChallenge';
 import { LegacyV2PathRedirect, LegacyV3PathRedirect } from '@/v3/components/LegacyPathRedirects';
 
 /**
@@ -29,6 +31,15 @@ import { LegacyV2PathRedirect, LegacyV3PathRedirect } from '@/v3/components/Lega
  * `lazyRoute` carries the rest of that reasoning.
  */
 const V3App = lazyRoute('interface', () => import('@/v3/V3App').then((m) => m.V3App));
+
+// Where Scani's OAuth server sends a browser when an AI client connects
+// (SC-1615). Each checks the session itself, so they sit outside the gate.
+const OAuthAuthorize = lazyRoute('connect an app', () =>
+  import('@/pages/OAuthConnect').then((m) => m.OAuthAuthorize)
+);
+const OAuthConsent = lazyRoute('connect an app', () =>
+  import('@/pages/OAuthConnect').then((m) => m.OAuthConsent)
+);
 
 /**
  * The sign-in screen, except where signing in is not a thing that exists.
@@ -68,6 +79,9 @@ function App() {
             <Route path="/signin" element={<AuthScreen />} />
             <Route path="/signup" element={<AuthScreen />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
+            <Route path="/sign-in/2fa" element={<TwoFactorChallenge />} />
+            <Route path="/oauth/authorize" element={<OAuthAuthorize />} />
+            <Route path="/oauth/consent" element={<OAuthConsent />} />
 
             {/* Everything authenticated hangs off one pathless layout route so
               the auth gate, the base currency and the realtime socket are
@@ -99,6 +113,7 @@ function App() {
                         from Settings is a feature that works only for people
                         who open Settings. */}
                       <TimezoneReporter />
+                      <AppOpenRefresher />
                       <Outlet />
                     </RealtimeProvider>
                   </BaseCurrencyProvider>

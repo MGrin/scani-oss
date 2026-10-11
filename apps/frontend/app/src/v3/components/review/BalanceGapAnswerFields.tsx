@@ -16,11 +16,18 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { balanceGapOccurredAt } from '../../lib/balance-gaps';
+import {
+  type SplitDraftRow,
+  type SplitSubject,
+  splitBlockers,
+  toSplitPortions,
+} from '../../lib/transfer-review';
 import { ChoiceSelect } from '../form/ChoiceSelect';
 import { DateField } from '../form/DateField';
 import { Field } from '../form/Field';
 import { FormSection } from '../form/FormSheet';
 import { TransferDestinationPicker } from './TransferDestinationPicker';
+import { emptySplitRows, TransferSplitEditor } from './TransferSplitEditor';
 
 /**
  * "What was this?" — the same question `useHoldingEditCause` asks about a
@@ -72,15 +79,27 @@ export function useBalanceGapAnswer(gap: BalanceGap, onAnswered: () => void) {
   const [arrivalId, setArrivalId] = useState('');
   const [receivedQuantity, setReceivedQuantity] = useState('');
   const [failure, setFailure] = useState<string | null>(null);
+  // Money that left for several places at once (SC-1665). A gap has no
+  // deposit to pair with, so the `paired` row is not offered.
+  const [split, setSplit] = useState(false);
+  const [splitRows, setSplitRows] = useState<SplitDraftRow[]>(() =>
+    emptySplitRows(null).filter((row) => row.decision !== 'paired')
+  );
+  const splitSubject: SplitSubject = {
+    transactionId: gap.observationId,
+    quantity: new Decimal(gap.drift).abs().toString(),
+    tokenSymbol: gap.tokenSymbol,
+  };
 
   const withdrawal = answer === 'flow' && new Decimal(gap.drift).lt(0);
+  const divided = withdrawal && split;
   const arrivals = trpc.balanceGaps.crossCurrencyDestinations.useQuery(
     { holdingId: gap.holdingId },
     { enabled: crossCurrency && destination === 'internal' }
   );
   const destinations = trpc.transferReview.listDestinationsForHolding.useQuery(
     { holdingId: gap.holdingId },
-    { enabled: withdrawal && destination === 'internal' }
+    { enabled: withdrawal && (destination === 'internal' || split) }
   );
   const arrival = arrivals.data?.find((row) => row.holdingId === arrivalId);
   const target = crossCurrency ? arrival : holdingDestination;
@@ -103,8 +122,10 @@ export function useBalanceGapAnswer(gap: BalanceGap, onAnswered: () => void) {
   if (!answer) blockers.push(t('v3.review.balances.blocker.answer'));
   if (answer === 'flow' && gap.datePrompted && !occurredAt)
     blockers.push(t('v3.review.balances.blocker.date'));
-  if (withdrawal && !destination) blockers.push(t('v3.review.balances.blocker.destination'));
-  if (withdrawal && destination === 'internal') {
+  if (divided) blockers.push(...splitBlockers(t, splitRows, splitSubject));
+  if (withdrawal && !divided && !destination)
+    blockers.push(t('v3.review.balances.blocker.destination'));
+  if (withdrawal && !divided && destination === 'internal') {
     if (!target) blockers.push(t('v3.review.balances.blocker.destination'));
     if (crossCurrency && !receivedValid) blockers.push(t('v3.review.balances.blocker.received'));
     if (!validFee) blockers.push(t('v3.holdings.fee.tooLarge'));
@@ -125,7 +146,8 @@ export function useBalanceGapAnswer(gap: BalanceGap, onAnswered: () => void) {
     mutation.mutate({
       observationId: gap.observationId,
       answer,
-      ...(withdrawal && destination
+      ...(divided ? { parts: toSplitPortions(splitRows) } : {}),
+      ...(withdrawal && !divided && destination
         ? {
             editOutflow: {
               decision: destination,
@@ -138,7 +160,9 @@ export function useBalanceGapAnswer(gap: BalanceGap, onAnswered: () => void) {
             },
           }
         : {}),
-      ...(withdrawal && destination === 'internal' && crossCurrency ? { receivedQuantity } : {}),
+      ...(withdrawal && !divided && destination === 'internal' && crossCurrency
+        ? { receivedQuantity }
+        : {}),
       ...(occurredAt ? { occurredAt } : {}),
     });
   };
@@ -166,6 +190,11 @@ export function useBalanceGapAnswer(gap: BalanceGap, onAnswered: () => void) {
     destinationsLoading: destinations.isLoading,
     receivedQuantity,
     setReceivedQuantity,
+    split,
+    setSplit,
+    splitRows,
+    setSplitRows,
+    splitSubject,
     blockers,
     failure,
     pending: mutation.isPending,
@@ -226,19 +255,40 @@ export function BalanceGapAnswerFields({ form }: { form: BalanceGapAnswerForm })
 
       {form.withdrawal ? (
         <FormSection title={t('v3.holdings.editCause.destinationLabel')}>
-          <Segmented
-            orientation="vertical"
-            value={form.destination ?? ''}
-            onValueChange={(value) => form.setDestination(value as ManualOutflowDestination)}
-            aria-label={t('v3.holdings.editCause.destinationLabel')}
-          >
-            {MANUAL_OUTFLOW_DESTINATIONS.map((option) => (
-              <SegmentedItem key={option} value={option}>
-                {t(`v3.holdings.editCause.destination.${option}`)}
-              </SegmentedItem>
-            ))}
-          </Segmented>
-          {form.destination === 'internal' ? (
+          <div className="flex items-center gap-2">
+            <Checkbox
+              id={`gap-split-${id}`}
+              checked={form.split}
+              onCheckedChange={(checked) => form.setSplit(checked === true)}
+            />
+            <Label htmlFor={`gap-split-${id}`}>{t('v3.review.transfer.split.trigger')}</Label>
+          </div>
+          {form.split ? (
+            <TransferSplitEditor
+              item={form.splitSubject}
+              rows={form.splitRows}
+              onChange={form.setSplitRows}
+              hasMatch={false}
+              destinations={form.destinations}
+              destinationsLoading={form.destinationsLoading}
+              subject="change"
+            />
+          ) : null}
+          {form.split ? null : (
+            <Segmented
+              orientation="vertical"
+              value={form.destination ?? ''}
+              onValueChange={(value) => form.setDestination(value as ManualOutflowDestination)}
+              aria-label={t('v3.holdings.editCause.destinationLabel')}
+            >
+              {MANUAL_OUTFLOW_DESTINATIONS.map((option) => (
+                <SegmentedItem key={option} value={option}>
+                  {t(`v3.holdings.editCause.destination.${option}`)}
+                </SegmentedItem>
+              ))}
+            </Segmented>
+          )}
+          {!form.split && form.destination === 'internal' ? (
             <>
               <div className="flex items-center gap-2">
                 <Checkbox

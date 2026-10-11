@@ -17,7 +17,6 @@ import {
 } from '../../accounts/BalanceSyncOwnershipService';
 import { SYNC_CAPTURE_SOURCE } from '../../foundation/legacy-ledger-kinds';
 import { ObservationLabeller } from '../../foundation/ObservationLabeller';
-import type { BalanceSyncSource } from '../../holdings/balance-sync-sources';
 import { TransferDestinationOpener } from '../../TransferDestinationOpener';
 import { adoptTypedDeposit, anchorIsUnobserved } from '../../transfer-arrival';
 import { deterministicUuid } from '../deterministic-id';
@@ -41,12 +40,6 @@ export interface MirrorSource {
 }
 
 export type MirrorLegResult = { holdingId: string; created: boolean } | { notice: string } | null;
-
-/** An account a leg may land in, with the sync source the anchor rule reads. */
-interface EligibleDestination {
-  account: SyncOwnableAccount;
-  syncSource: BalanceSyncSource | null;
-}
 
 /** Where the leg landed and what it did to the destination, as today's arrival records it. */
 interface Landing {
@@ -87,16 +80,15 @@ export class MirrorLegWriter {
     userId: string,
     accountId: string,
     tx: DatabaseTransaction
-  ): Promise<EligibleDestination | null> {
+  ): Promise<SyncOwnableAccount | null> {
     const account = await this.accounts.findByIdAndUser(accountId, userId, tx);
     if (account === null) return null;
     const metadata = account.metadata as Record<string, unknown> | null;
     const walletId = metadata?.userWalletId;
     if (typeof walletId === 'string' && walletId.length > 0) return null;
     if (await this.inputs.accountHasInput(userId, accountId, tx)) return null;
-    const syncSource = await this.syncOwnership.resolveSyncSource(userId, account, tx);
-    if (syncSource !== null) return null;
-    return { account, syncSource };
+    if ((await this.syncOwnership.resolveSyncSource(userId, account, tx)) !== null) return null;
+    return account;
   }
 
   /**
@@ -145,8 +137,8 @@ export class MirrorLegWriter {
     }
 
     const landing = existing
-      ? await this.reuse(existing, source, quantity, destination.syncSource, tx)
-      : await this.open(destination.account, source, quantity, tx);
+      ? await this.reuse(existing, source, quantity, tx)
+      : await this.open(destination, source, quantity, tx);
     const { holdingId } = landing;
     const groupId = deterministicUuid(source.inputId, `mirror:${source.rowId}`);
     const externalId = `${source.externalId}:mirror`;
@@ -240,7 +232,6 @@ export class MirrorLegWriter {
     holding: Holding,
     source: MirrorSource,
     quantity: Decimal,
-    syncSource: BalanceSyncSource | null,
     tx: DatabaseTransaction
   ): Promise<Landing> {
     const { userId } = source;
@@ -252,11 +243,13 @@ export class MirrorLegWriter {
       quantity,
       source.occurredAt
     );
-    const movedAnchor = adopted === null && anchorIsUnobserved(holding, syncSource);
+    const movedAnchor = adopted === null && anchorIsUnobserved(holding);
     let observationId: string | null = null;
     if (movedAnchor) {
-      const balance = movedBalance(holding.balance, quantity);
-      await this.cacheWriter.apply(userId, [{ holdingId: holding.id, balance }], tx);
+      // The engine's balance, under the row lock it takes, not the column read
+      // above without one; the copy is evidence, so it goes first (A5 D-15).
+      const before = await this.cacheWriter.engineBalance(userId, holding.id, tx);
+      const balance = movedBalance(before, quantity);
       const copy = await this.observations.append(
         {
           userId,
@@ -270,6 +263,7 @@ export class MirrorLegWriter {
         tx
       );
       observationId = copy?.id ?? null;
+      await this.cacheWriter.apply(userId, [{ holdingId: holding.id, balance }], tx);
     }
     await this.holdings.lowerStartsAt(userId, holding.id, source.occurredAt, tx);
     return { holdingId: holding.id, created: false, movedAnchor, adopted, observationId };

@@ -89,3 +89,35 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Top clearance for anything drawn at the top edge (SC-1597). Since iOS 26 an
+ * installed web app gets the system's scroll-edge blur, drawn above the web
+ * view, so a line padded by the inset alone renders blurred. On iOS 27 text is
+ * fully sharp from about 33pt past the status bar, measured with a ruled page
+ * installed to the Home Screen of an iPhone 14 Simulator (SC-1632); 2rem puts
+ * the first line's ink below that. The iOS 26.5 Simulator draws no blur, so
+ * the 2.5rem device reading this replaces cannot be re-taken there. An opaque strip does not stop it; keeping
+ * content below it does (device-verified: thierryvm/TerminalLearning#411).
+ * `-webkit-touch-callout` limits this to iOS WebKit, and landscape hides the
+ * status bar, so Safari tabs, Android and desktop keep the plain inset.
+ *
+ * The same block tightens what sits under that clearance (SC-1632): a shorter
+ * header row with no rule under it, so it reads as part of the top band rather
+ * than a second bar, and less space above the page title. Everywhere else the
+ * values are the ones the shell always had. */
+:root {
+  --scani-inset-top: env(safe-area-inset-top, 0px);
+  --scani-header-row: 3.5rem;
+  --scani-header-border: 1px;
+  --scani-page-top: 1.5rem;
+}
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) and (orientation: portrait) {
+    :root {
+      --scani-inset-top: calc(env(safe-area-inset-top, 0px) + 2rem);
+      --scani-header-row: 2.75rem;
+      --scani-header-border: 0px;
+      --scani-page-top: 0.75rem;
+    }
+  }
+}

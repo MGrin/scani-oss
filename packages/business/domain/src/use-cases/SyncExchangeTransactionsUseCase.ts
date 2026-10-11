@@ -23,12 +23,14 @@
 import { createComponentLogger } from '@scani/logging';
 import { Container, Service } from 'typedi';
 import { AccountRepository } from '../repositories/AccountRepository';
+import { FeedInputRepository } from '../repositories/FeedInputRepository';
 import { HoldingCoverageRepository } from '../repositories/HoldingCoverageRepository';
 import { HoldingTransactionRepository } from '../repositories/HoldingTransactionRepository';
 import { InstitutionRepository } from '../repositories/InstitutionRepository';
 import { UserIntegrationCredentialsRepository } from '../repositories/UserIntegrationCredentialsRepository';
 import { type FullImportHistory, UserJobRepository } from '../repositories/UserJobRepository';
-import { sourceForChainId, sourceForProvider } from '../services/transactions/transaction-source';
+import { BALANCE_RUN_LEDGER_SOURCES } from '../services/transactions/ledger-cadence';
+import { ledgerSourceOf, sourceForProvider } from '../services/transactions/transaction-source';
 
 const logger = createComponentLogger('use-case:sync-exchange-transactions');
 
@@ -70,6 +72,8 @@ export interface SyncExchangeTransactionsResult {
   skippedNoSource: number;
   /** Targets emitted without a `since`: an empty ledger or an unclaimed holding. */
   fullHistoryTargets: number;
+  /** Windowed reads left to the hourly balance run, which reads them with the balance (SC-1665). */
+  ledgerWithBalance: number;
   durationMs: number;
 }
 
@@ -88,6 +92,7 @@ export class SyncExchangeTransactionsUseCase {
   private readonly holdingTransactionRepository = Container.get(HoldingTransactionRepository);
   private readonly holdingCoverageRepository = Container.get(HoldingCoverageRepository);
   private readonly userJobRepository = Container.get(UserJobRepository);
+  private readonly feedInputs = Container.get(FeedInputRepository);
 
   async execute(): Promise<SyncExchangeTransactionsResult> {
     const startTime = Date.now();
@@ -110,7 +115,7 @@ export class SyncExchangeTransactionsUseCase {
           // A wallet institution's name is a display string; its chain id
           // is what the coordinator dispatches on, and it lives on the
           // account because one user can hold several wallets per chain.
-          const source = providerSource ?? sourceForChainId(chainIdOf(account.metadata));
+          const source = providerSource ?? ledgerSourceOf(institution.name, account.metadata);
           if (!source) {
             skippedNoSource++;
             continue;
@@ -125,11 +130,22 @@ export class SyncExchangeTransactionsUseCase {
       }
     }
 
-    const targets = await this.attachSince(candidates, startTime);
+    const targets: TransactionSyncTarget[] = [];
+    let ledgerWithBalance = 0;
+    for (const target of await this.attachSince(candidates, startTime)) {
+      if (await this.ridesBalanceRun(target)) ledgerWithBalance++;
+      else targets.push(target);
+    }
     const fullHistoryTargets = targets.filter((t) => t.since === undefined).length;
 
     logger.info(
-      { accountsFound, targets: targets.length, skippedNoSource, fullHistoryTargets },
+      {
+        accountsFound,
+        targets: targets.length,
+        skippedNoSource,
+        fullHistoryTargets,
+        ledgerWithBalance,
+      },
       'Recurring transaction-sync targets computed'
     );
     return {
@@ -137,8 +153,19 @@ export class SyncExchangeTransactionsUseCase {
       accountsFound,
       skippedNoSource,
       fullHistoryTargets,
+      ledgerWithBalance,
       durationMs: Date.now() - startTime,
     };
+  }
+
+  /**
+   * A windowed read the hourly balance run already makes (SC-1665). A full
+   * walk stays here, and so does a ledger with no read-through point, which
+   * the hourly run skips as never read.
+   */
+  private async ridesBalanceRun(target: TransactionSyncTarget): Promise<boolean> {
+    if (target.since === undefined || !BALANCE_RUN_LEDGER_SOURCES.has(target.source)) return false;
+    return (await this.feedInputs.findLedgerReadThrough(target.accountId, target.source)) !== null;
   }
 
   /**
@@ -210,13 +237,6 @@ export class SyncExchangeTransactionsUseCase {
       since: windowed(candidate) ? since : undefined,
     }));
   }
-}
-
-function chainIdOf(metadata: unknown): string | number | null {
-  const meta = (metadata ?? {}) as { chainId?: unknown };
-  const chainId = meta.chainId;
-  if (typeof chainId === 'string' || typeof chainId === 'number') return chainId;
-  return null;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { Decimal, isValidDecimalString } from '../decimal';
+import { isValidDecimalString } from '../decimal';
 import { MANUAL_EDIT_CAUSES, type ManualEditCause } from '../lib/manual-balance-edit';
 import { manualOutflowAnswerSchema } from './transfer-review';
 
@@ -51,12 +51,11 @@ export const UpdateHoldingDto = z.object({
   balance: z
     .string()
     .refine(
-      (val) => {
-        if (!isValidDecimalString(val)) return false;
-        return new Decimal(val).greaterThanOrEqualTo(0);
-      },
+      // Signed: what a loan or card owes is negative, and
+      // `UpdateHoldingUseCase` refuses a negative anywhere else (SC-1640).
+      (val) => isValidDecimalString(val),
       {
-        message: 'Balance must be a valid decimal number string that is non-negative',
+        message: 'Balance must be a valid decimal number string',
       }
     )
     .optional(),
@@ -185,6 +184,8 @@ export type HoldingWithDetails = {
     name: string;
     type: string;
     typeCode: string;
+    /** `liability` is a loan or card: its balance is what is owed (SC-1640). */
+    class: 'asset' | 'liability';
     institutionId: string;
   };
   institution: {
@@ -213,11 +214,17 @@ export type HoldingWithDetails = {
    *
    * Not derivable from `source`, which is provenance: a row whose exchange
    * was disconnected still names the sync, and a statement-fed row names an
-   * import nobody can be asked about. A row at the `manual` source is never
-   * refreshable, even once an import has written into it: the sync does not
-   * write a row a person keeps, so a refresh would leave it as it stands.
+   * import nobody can be asked about. A person's row a feed took over is a
+   * feed, and is refreshable like one (A5 D-4).
    */
   refreshable: boolean;
+  /**
+   * Whether deleting this holding hides it rather than removing it (A5 #9): a
+   * feed holding is hidden, because its feed would bring it back empty; a
+   * person's snapshot is removed. The server's own rule, so the confirm and
+   * the delete cannot disagree.
+   */
+  deleteHides: boolean;
   apyConfig?: {
     id: string;
     annualRatePct: string;
@@ -232,11 +239,12 @@ export type HoldingWithDetails = {
    * Set when the import flow couldn't gather a complete tx history for
    * this holding (e.g. Helius's parsed-tx index truncates older Solana
    * transactions, an exchange CSV starts mid-history, an API token
-   * lacks deep-history scope). The `BalanceAtTimeService` clamps the
-   * resulting negative reconstructed balance at zero on the chart, so
-   * without this flag the user sees a clean curve that hides a known
-   * reconciliation gap. Surface it in the UI as a "missing earlier
-   * history" badge so the user can re-import or accept.
+   * lacks deep-history scope). The reconstructed balance before the
+   * first recorded inflow can then read low or negative on the chart, and
+   * nothing about the curve itself says why: no layer clamps it (feeds,
+   * SC-1640 F1). Surface it in the UI as a "missing earlier history" badge
+   * so the user can re-import or accept. A loan or card is never flagged:
+   * the reconciler leaves holdings that owe alone.
    *
    * `missingQuantity` is the absolute opening-balance shortfall from
    * `holding_coverage.opening_balance_quantity` (a negative value
@@ -318,10 +326,9 @@ export type HoldingWithDetails = {
    */
   unpriceable?: boolean;
   /**
-   * The price behind `value` is older than the freshness window its
-   * granularity is held to — `MAX_INTRADAY_PRICE_AGE_MS` for an intraday row,
-   * `MAX_DAILY_PRICE_AGE_MS` for a daily close, both unchanged and both
-   * carrying their reasoning in `@scani/domain`'s `constants.ts` (SC-956).
+   * A reading behind `value` is older than the staleness horizon of the asset
+   * it prices — `STALENESS_HORIZON_MS` in `@scani/domain`'s engine
+   * (`engine/price-at.ts`), which carries the reasoning (SC-956, foundation A3).
    *
    * The sibling of `unpriceable` above, and on the wire beside it rather than
    * inside `price` for that reason: both answer "why is this figure weaker

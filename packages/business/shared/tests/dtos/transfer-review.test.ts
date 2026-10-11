@@ -52,10 +52,9 @@ describe('transferReviewSplitSchema', () => {
         { decision: 'left_control', quantity: '500' },
       ]).success
     ).toBe(true);
-    // One portion per decision is the ceiling the array enforces; the
-    // *reachable* ceiling is one lower, because `paired` and `internal` share
-    // the single `transfer_group_id` column and the linking rule below refuses
-    // a division that uses both (SC-187).
+    // Five parts is the ceiling the array enforces. Since SC-1665 every
+    // linking part shares one transfer group, so a pair and a move together
+    // reach it.
     //
     // Five since `fee` joined the decisions (SC-888). Asserted as a literal on
     // purpose: `MAX_TRANSFER_REVIEW_PORTIONS` is derived from the enum's
@@ -73,7 +72,7 @@ describe('transferReviewSplitSchema', () => {
         { decision: 'untracked', quantity: '1500' },
         { decision: 'left_control', quantity: '500' },
       ]).success
-    ).toBe(false);
+    ).toBe(true);
   });
 
   test('rejects one part — that is a whole answer, and has its own write', () => {
@@ -190,7 +189,7 @@ describe('transferReviewSplitSchema — moving to a holding Scani tracks', () =>
     expect(parsed.success).toBe(true);
   });
 
-  test('refuses two linking parts — one group id cannot point at two places', () => {
+  test('accepts a pair and a move together: both join one transfer group (SC-1665)', () => {
     const parsed = transferReviewSplitSchema.safeParse([
       {
         decision: 'paired',
@@ -199,28 +198,19 @@ describe('transferReviewSplitSchema — moving to a holding Scani tracks', () =>
       },
       { decision: 'internal', quantity: '2000', destination: DESTINATION },
     ]);
-    expect(parsed.success).toBe(false);
-    expect(parsed.error?.issues[0]?.message).toContain('Only one part');
+    expect(parsed.success).toBe(true);
   });
 });
 
 /**
- * What the refusal is allowed to SAY (SC-874).
+ * Several tracked destinations for one outflow (SC-1665, feeds E2 #23723).
  *
- * The limit above is sound and stays. What was not sound is that the refusal
- * named a substitute — *"the rest has to be a disposal or untracked"* — and a
- * disposal is not a substitute for a move: it writes a realised gain and
- * retires the lot, so a reader who followed the instruction recorded money
- * they still hold as sold, and cost basis and every rollup downstream
- * inherited it.
- *
- * Two shapes reach the rule and both are checked, because they used to be
- * refused by DIFFERENT rules with different words. A fan-out to two tracked
- * accounts is two `internal` portions, which is two duplicate decisions as
- * well as two links, and it hit `Each outcome can only appear once in a
- * split` first — true, and silent about the only thing the reader needs.
+ * Every linking part shares one transfer group, and cost basis hands each
+ * arrival its pro-rata share of the group's buffer (SC-1365). What stays
+ * refused is two parts landing on the same holding: that is one arrival
+ * written twice. The refusals still name no substitute (SC-874).
  */
-describe('transferReviewSplitSchema — the refusal prescribes nothing', () => {
+describe('transferReviewSplitSchema — several tracked destinations', () => {
   const A = {
     accountId: '11111111-2222-4333-8444-555555555555',
     holdingId: '66666666-7777-4888-8999-aaaaaaaaaaaa',
@@ -230,46 +220,58 @@ describe('transferReviewSplitSchema — the refusal prescribes nothing', () => {
     holdingId: '77777777-8888-4999-8aaa-bbbbbbbbbbbb',
   };
 
-  const LINKING_SPLITS: ReadonlyArray<readonly [string, unknown]> = [
+  test('accepts a fan-out to two tracked destinations', () => {
+    const parsed = transferReviewSplitSchema.safeParse([
+      { decision: 'internal', quantity: '3000', destination: A },
+      { decision: 'internal', quantity: '1000', destination: B },
+      { decision: 'left_control', quantity: '500' },
+    ]);
+    expect(parsed.success).toBe(true);
+  });
+
+  const REFUSED: ReadonlyArray<readonly [string, unknown, string]> = [
     [
-      'a fan-out to two tracked destinations',
+      'two parts to the same holding',
       [
         { decision: 'internal', quantity: '3000', destination: A },
-        { decision: 'internal', quantity: '1000', destination: B },
+        { decision: 'internal', quantity: '1000', destination: A },
       ],
+      'One part per destination',
     ],
     [
-      'one leg whose arrival was imported and one that was not',
+      'two parts that would both open a holding in the same account',
       [
-        {
-          decision: 'paired',
-          quantity: '3000',
-          matchTransactionId: '99999999-8888-4777-8666-555555555555',
-        },
-        { decision: 'internal', quantity: '1000', destination: B },
+        { decision: 'internal', quantity: '3000', destination: { ...A, holdingId: null } },
+        { decision: 'internal', quantity: '1000', destination: { ...A, holdingId: null } },
       ],
+      'One part per destination',
+    ],
+    [
+      'two paired parts',
+      [
+        { decision: 'paired', quantity: '3000', matchTransactionId: crypto.randomUUID() },
+        { decision: 'paired', quantity: '1000', matchTransactionId: crypto.randomUUID() },
+      ],
+      'Each outcome can only appear once in a split',
     ],
   ];
 
-  for (const [label, split] of LINKING_SPLITS) {
-    test(`${label} is refused, and the refusal names the linking limit`, () => {
+  for (const [label, split, message] of REFUSED) {
+    test(`${label} is refused, and the refusal names its rule`, () => {
       const parsed = transferReviewSplitSchema.safeParse(split);
       expect(parsed.success).toBe(false);
-      expect(parsed.error?.issues[0]?.message).toContain('Only one part of a transfer can move');
+      expect(parsed.error?.issues[0]?.message).toContain(message);
     });
 
     test(`${label} is not told to book the rest as a disposal`, () => {
       const parsed = transferReviewSplitSchema.safeParse(split);
-      expect(parsed.success).toBe(false);
-      const message = parsed.error?.issues[0]?.message ?? '';
-      expect(message).not.toContain('has to be');
-      expect(message).not.toContain('disposal');
+      const issue = parsed.error?.issues[0]?.message ?? '';
+      expect(issue).not.toContain('has to be');
+      expect(issue).not.toContain('disposal');
     });
   }
 
-  test('a duplicate that is not a link still gets the duplicate message', () => {
-    // The linking check runs first now, so this is the control: reordering it
-    // must not have swallowed the rule it moved ahead of.
+  test('control: a duplicate that is not a link still gets the duplicate message', () => {
     const parsed = transferReviewSplitSchema.safeParse([
       { decision: 'untracked', quantity: '3000' },
       { decision: 'untracked', quantity: '1000' },
@@ -623,12 +625,11 @@ describe('the bulk vocabulary', () => {
  *
  * Two properties, and the second is the one a later change is most likely to
  * break without meaning to: a fee must never become a LINKING decision.
- * Linking writes the single `transfer_group_id`, and a second row on one group
- * id hands `CostBasisService`'s inflow branch another `transfer_in` to feed
- * after `pending.delete(tgid)` has run, which is SC-150.
+ * A linking part writes an arrival into the transfer group, and a fee arrived
+ * nowhere: its cost joins the buffer the real arrivals inherit.
  */
 describe('a fee is part of an answer, never a destination', () => {
-  test('paired + fee is accepted; paired + internal still is not', () => {
+  test('paired + fee is accepted; a second fee is not', () => {
     const matchTransactionId = crypto.randomUUID();
     expect(
       transferReviewSplitSchema.safeParse([
@@ -636,16 +637,12 @@ describe('a fee is part of an answer, never a destination', () => {
         { decision: 'fee', quantity: '500' },
       ]).success
     ).toBe(true);
-    // The control. Both of these want the one `transfer_group_id`; a fee wants
-    // none, which is the whole reason the first parse is allowed to pass.
+    // The control: a fee is one decision, so it appears once.
     expect(
       transferReviewSplitSchema.safeParse([
-        { decision: 'paired', quantity: '3500', matchTransactionId },
-        {
-          decision: 'internal',
-          quantity: '500',
-          destination: { accountId: crypto.randomUUID(), holdingId: null },
-        },
+        { decision: 'paired', quantity: '3000', matchTransactionId },
+        { decision: 'fee', quantity: '400' },
+        { decision: 'fee', quantity: '100' },
       ]).success
     ).toBe(false);
   });

@@ -14,6 +14,8 @@ import { getCloudClient } from '../runtime';
 // predicate that classifies its errors belongs on the same boundary.
 export { isMissingObjectError, isObjectTooLargeError } from '@scani/storage';
 
+const TEMP_UPLOAD_TIMEOUT_MS = 5 * 60 * 1000;
+
 // Self-hosted tiers always use customer S3. Legacy/managed deployments retain
 // their internal cloud storage transport independently of provider routing.
 @Service()
@@ -55,6 +57,33 @@ export class StorageFacade {
     const cloud = this.cloud();
     if (cloud) return cloud.write(key, bytes, contentType);
     return this.local().write(key, bytes, contentType);
+  }
+
+  /**
+   * Write bytes a server process produced under a fresh `temp/<prefix>/<uuid>.<ext>`
+   * key and return the key (SC-1649). Through the cloud it is a presigned PUT
+   * straight to the bucket, because `write` carries base64 over tRPC and the
+   * data-provider refuses more than 256 KB outside `documents/`.
+   */
+  async writeTemp(
+    opts: { keyPrefix: string; extension: string; contentType: string },
+    bytes: Uint8Array<ArrayBuffer>
+  ): Promise<string> {
+    const cloud = this.cloud();
+    if (!cloud) return this.local().writeTemp(opts, bytes);
+    const upload = await cloud.presignUpload({ ...opts, contentLength: bytes.byteLength });
+    const response = await fetch(upload.uploadUrl, {
+      method: 'PUT',
+      headers: upload.requiredHeaders,
+      body: bytes,
+      signal: AbortSignal.timeout(TEMP_UPLOAD_TIMEOUT_MS),
+    });
+    if (!response.ok) {
+      throw new Error(
+        `StorageFacade.writeTemp: the upload was refused with HTTP ${response.status}`
+      );
+    }
+    return upload.key;
   }
 
   copy(fromKey: string, toKey: string, contentType?: string): Promise<void> {

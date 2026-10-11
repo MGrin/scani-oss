@@ -9,7 +9,7 @@ import { ALLOCATION_OTHER_KEY } from '@scani/ui/v3/lib/chart';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { StaticRouter } from 'react-router-dom';
 import { AllocationBar } from '../../../src/v3/components/charts/AllocationBar';
-import { MarginDebtLine } from '../../../src/v3/components/charts/MarginDebtLine';
+import { DebtLine } from '../../../src/v3/components/charts/DebtLine';
 import { ShareRows } from '../../../src/v3/components/charts/ShareRows';
 
 /**
@@ -130,21 +130,19 @@ describe('AllocationBar', () => {
  * there is debt: a "0.00" row under every bar would be a claim about a loan
  * nobody took, and the committed visual baselines have none.
  */
-describe('MarginDebtLine', () => {
+describe('DebtLine', () => {
   test('renders the label and the signed figure', () => {
-    const html = renderToStaticMarkup(<MarginDebtLine value={-1200} currency="USD" underLegend />);
-    expect(html).toInclude('Margin debt');
+    const html = renderToStaticMarkup(<DebtLine value={-1200} currency="USD" underLegend />);
+    expect(html).toInclude('>Debt<');
     expect(html).toInclude('−$1,200.00');
-    expect(html).toInclude('data-ui="margin-debt"');
+    expect(html).toInclude('data-ui="debt"');
   });
 
   test('with no legend above it, the line drops the swatch indent and the legend column', () => {
     const standalone = renderToStaticMarkup(
-      <MarginDebtLine value={-1200} currency="USD" underLegend={false} />
+      <DebtLine value={-1200} currency="USD" underLegend={false} />
     );
-    const legend = renderToStaticMarkup(
-      <MarginDebtLine value={-1200} currency="USD" underLegend />
-    );
+    const legend = renderToStaticMarkup(<DebtLine value={-1200} currency="USD" underLegend />);
     expect(standalone).toInclude('justify-between');
     expect(standalone).not.toInclude('size-2.5');
     expect(standalone).toInclude('−$1,200.00');
@@ -152,10 +150,30 @@ describe('MarginDebtLine', () => {
     expect(legend).not.toInclude('justify-between');
   });
 
+  test('margin debt and loans together list each part under the one Debt line (SC-1640)', () => {
+    const html = renderToStaticMarkup(
+      <DebtLine value={-5200} liabilities={-4000} currency="USD" underLegend />
+    );
+    expect(html).toInclude('−$5,200.00');
+    expect(html).toInclude('Margin');
+    expect(html).toInclude('−$1,200.00');
+    expect(html).toInclude('Loans and cards');
+    expect(html).toInclude('−$4,000.00');
+  });
+
+  test('with only one kind of debt there is no breakdown', () => {
+    const loansOnly = renderToStaticMarkup(
+      <DebtLine value={-4000} liabilities={-4000} currency="USD" underLegend />
+    );
+    expect(loansOnly).toInclude('−$4,000.00');
+    expect(loansOnly).not.toInclude('Loans and cards');
+    expect(loansOnly).not.toInclude('Margin');
+  });
+
   test('no debt renders nothing at all', () => {
-    expect(
-      renderToStaticMarkup(<MarginDebtLine value={0} currency="USD" underLegend={false} />)
-    ).toBe('');
+    expect(renderToStaticMarkup(<DebtLine value={0} currency="USD" underLegend={false} />)).toBe(
+      ''
+    );
   });
 });
 

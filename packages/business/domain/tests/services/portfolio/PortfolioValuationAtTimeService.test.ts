@@ -7,10 +7,12 @@ import { AccountRepository } from '../../../src/repositories/AccountRepository';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { TokenRepository } from '../../../src/repositories/TokenRepository';
 import { UserRepository } from '../../../src/repositories/UserRepository';
+import { InTransitService } from '../../../src/services/portfolio/InTransitService';
 import { PortfolioValuationAtTimeService } from '../../../src/services/portfolio/PortfolioValuationAtTimeService';
 import { BalanceAtTimeService } from '../../../src/services/pricing/BalanceAtTimeService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub } from '../../../test/helpers/price-series';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -64,15 +66,15 @@ function makeService(
       const h = holdings.find((x) => x.holdingId === holdingId);
       return {
         balance: new Decimal(h?.balance ?? 10),
-        anchor: 'holdings' as const,
+        anchor: 'observation-after' as const,
         anchorAt: AT,
-        txApplied: 0,
         beforeRecords: h?.beforeRecords ?? false,
       };
     },
   } as unknown as BalanceAtTimeService);
-  Container.set(PriceGraphService, {
-    convert: async (amount: Decimal, fromTokenId: string) => {
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal, fromTokenId: string) => {
       const h = holdings.find((x) => x.tokenId === fromTokenId);
       if (!h || h.price === null) return null;
       return {
@@ -82,12 +84,14 @@ function makeService(
         path: 'direct',
         stale: false,
       };
-    },
-  } as unknown as PriceGraphService);
+    })
+  );
   Container.set(UserRepository, {} as unknown as UserRepository);
   Container.set(TokenRepository, {
     findNeverPricedInCooldownTokenIds: async () => new Set(unpriceableTokenIds),
   } as unknown as TokenRepository);
+  // These portfolios hold no transfer in transit; the real read needs uuid ids.
+  Container.set(InTransitService, { amountsAt: async () => [] } as unknown as InTransitService);
   const instance = new PortfolioValuationAtTimeService();
   Container.set(PortfolioValuationAtTimeService, instance);
   return instance;

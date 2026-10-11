@@ -12,6 +12,7 @@ import {
   CsvColumnDetectionService,
   FeedIngestService,
   type IngestResult,
+  LearnedCategoryRules,
   legacyStatementBatch,
   TransferReviewService,
   UploadedFileService,
@@ -32,6 +33,7 @@ import {
 } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService, type ProcessorContext, UserJobProcessor } from '@scani/queue';
+import { emitEntityChange } from '@scani/realtime';
 import type { CsvMapping } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { readUpload } from '../lib/read-upload';
@@ -348,7 +350,27 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
       }
     }
 
+    if (transactionCount > 0) {
+      // Before the app hears of the rows, so they arrive already categorized
+      // where the person has picked for that payee (SC-1695). Never fails the job.
+      await Container.get(LearnedCategoryRules).afterImport(data.userId);
+    }
     if (transactionCount > 0 || positions.length > 0) {
+      // The open app learns of the rows now; the chart follows when the
+      // backfill below finishes (SC-1600). Fire-and-forget.
+      try {
+        emitEntityChange({
+          entityType: 'holding',
+          operationType: 'sync',
+          userId: data.userId,
+          data: { reason: 'file_import' },
+        });
+      } catch (err) {
+        logger.warn(
+          { jobId: ctx.job.id, error: err instanceof Error ? err.message : err },
+          'Failed to announce file-import holdings (non-fatal)'
+        );
+      }
       const tokenIds = [...new Set(holdingsTouched.map((h) => h.tokenId))];
       try {
         await Container.get(BullMqEnqueueService).add(PORTFOLIO_HISTORY_BACKFILL, {

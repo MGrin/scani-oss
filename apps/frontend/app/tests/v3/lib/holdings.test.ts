@@ -36,6 +36,7 @@ import {
   holdingsValue,
   isStalePricedInTotal,
   payoutScheduleLabel,
+  savedAsCheck,
   stalePricedInTotal,
   stalePriceSearch,
   supportsApy,
@@ -73,6 +74,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
       name: 'Spot',
       type: 'Exchange',
       typeCode: 'exchange',
+      class: 'asset',
       institutionId: 'i1',
     },
     institution: { id: 'i1', name: 'Kraken', type: 'Exchange', typeCode: 'exchange' },
@@ -83,6 +85,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
     isHidden: false,
     source: 'import_wallet',
     refreshable: true,
+    deleteHides: false,
     ...overrides,
   };
 }
@@ -902,5 +905,19 @@ describe('balanceIsBelowZero', () => {
   test('an unparseable balance is a different defect and claims nothing', () => {
     expect(balanceIsBelowZero('not a number')).toBe(false);
     expect(balanceIsBelowZero('')).toBe(false);
+  });
+});
+
+describe('savedAsCheck (A5 D-20)', () => {
+  test('a typed figure the server kept is a plain save', () => {
+    expect(savedAsCheck('12.30', '12.3')).toBe(false);
+  });
+
+  test('a typed figure the feed overrode is saved as a check', () => {
+    expect(savedAsCheck('150', '120')).toBe(true);
+  });
+
+  test('an edit that sent no balance claims nothing', () => {
+    expect(savedAsCheck(undefined, '120')).toBe(false);
   });
 });

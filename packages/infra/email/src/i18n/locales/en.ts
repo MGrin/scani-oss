@@ -23,6 +23,17 @@ export const en: EmailStrings = {
       'Open this link in the same browser you started from. It works once and expires in 15 minutes.',
     textIgnore: "Didn't request this? You can ignore this email safely.",
   },
+  householdInvite: {
+    subject: '{inviter} invited you to a household on {app}',
+    headline: 'Join {household}',
+    body: '{inviter} invited you to see the accounts they share in {household} on {app}. Your own accounts stay private unless you choose to share them.',
+    button: 'Accept the invite',
+    preheader: '{inviter} invited you to {household} on {app}.',
+    textIntro: '{inviter} invited you to {household} on {app}.',
+    textBody:
+      'Sign in with this email address, then accept. Your own accounts stay private unless you share them.',
+    expiry: 'The invite expires in 7 days.',
+  },
   otp: {
     headline: {
       signIn: 'Your sign-in code',

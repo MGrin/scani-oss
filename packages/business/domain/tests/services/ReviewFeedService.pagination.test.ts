@@ -5,8 +5,10 @@ import { UserJobRepository } from '../../src/repositories/UserJobRepository';
 import { BalanceGapService } from '../../src/services/holdings/BalanceGapService';
 import { SettlementAnswerReviewService } from '../../src/services/holdings/SettlementAnswerReviewService';
 import { UnpriceableAirdropService } from '../../src/services/holdings/UnpriceableAirdropService';
+import { TransitReviewService } from '../../src/services/portfolio/TransitReviewService';
 import { ReviewFeedService } from '../../src/services/ReviewFeedService';
 import { TransferReviewService } from '../../src/services/TransferReviewService';
+import { UntrackedArrivalReviewService } from '../../src/services/UntrackedArrivalReviewService';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
 
 // Container stubs are process-global; put back whatever this file changes
@@ -58,6 +60,12 @@ function makeService(jobs: unknown[], deadJobs: unknown[] = []): ReviewFeedServi
   Container.set(UnpriceableAirdropService, {
     listPending: async () => [],
   } as unknown as UnpriceableAirdropService);
+  Container.set(TransitReviewService, {
+    listDue: async () => [],
+  } as unknown as TransitReviewService);
+  Container.set(UntrackedArrivalReviewService, {
+    listDue: async () => [],
+  } as unknown as UntrackedArrivalReviewService);
   const instance = new ReviewFeedService();
   Container.set(ReviewFeedService, instance);
   return instance;

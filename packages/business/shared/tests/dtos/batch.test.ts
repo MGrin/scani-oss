@@ -226,3 +226,22 @@ describe('collidingHoldingTokens — which rows are still refused', () => {
     expect([...collidingHoldingTokens(perToken)]).toEqual([]);
   });
 });
+
+describe('CreateHoldingsWithDependenciesDto openedAt (SC-1643 review)', () => {
+  const base = {
+    accountId: '00000000-0000-4000-8000-000000000001',
+    holdings: [{ tokenId: '00000000-0000-4000-8000-000000000002', balance: '1' }],
+  };
+  test('a past openedAt parses', () => {
+    expect(
+      CreateHoldingsWithDependenciesDto.safeParse({ ...base, openedAt: '2019-05-01T00:00:00Z' })
+        .success
+    ).toBe(true);
+  });
+  test('a future openedAt is refused', () => {
+    const later = new Date(Date.now() + 2 * 86_400_000).toISOString();
+    expect(CreateHoldingsWithDependenciesDto.safeParse({ ...base, openedAt: later }).success).toBe(
+      false
+    );
+  });
+});

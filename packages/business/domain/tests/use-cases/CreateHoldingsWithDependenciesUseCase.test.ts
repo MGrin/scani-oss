@@ -40,6 +40,7 @@ import * as schema from '@scani/db/schema';
 import { asc, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { FoundationClassificationService } from '../../src/services/foundation/FoundationClassificationService';
+import { BalanceAtTimeService } from '../../src/services/pricing/BalanceAtTimeService';
 import {
   CreateHoldingsWithDependenciesUseCase,
   duplicateTokenIds,
@@ -417,7 +418,35 @@ describe('CreateHoldingsWithDependenciesUseCase writes through SnapshotWriter (f
     });
   });
 
-  test('an update on a feed holding whose feed has begun writes a verification and sets the balance', async () => {
+  test('openedAt backdates the opening observation, and nothing is held before it (SC-1643)', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx, { baseCurrencyId: (await makeToken(tx)).id });
+      const institution = await makeInstitution(tx);
+      const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+      const flat = await makeToken(tx);
+      const openedAt = '2019-05-01T00:00:00.000Z';
+
+      const result = await useCase().execute(
+        { accountId: account.id, openedAt, holdings: [{ tokenId: flat.id, balance: '1' }] },
+        user,
+        tx
+      );
+
+      const created = result.holdings[0]!;
+      const rows = await observationsOf(tx, created.id);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.observedAt.toISOString()).toBe(openedAt);
+      expect((await holdingRow(tx, created.id)).startsAt?.toISOString()).toBe(openedAt);
+
+      const balances = new BalanceAtTimeService();
+      const before = await balances.getBalance(created.id, new Date('2019-04-30T00:00:00Z'), tx);
+      expect(before.balance === null || Number(before.balance) === 0).toBe(true);
+      const on = await balances.getBalance(created.id, new Date('2019-05-01T12:00:00Z'), tx);
+      expect(Number(on.balance)).toBe(1);
+    });
+  });
+
+  test("an update on a feed holding whose feed has begun writes a verification, and the cache keeps the feed's figure (A5 D-20)", async () => {
     await withTestDb(async (tx) => {
       const user = await makeUser(tx, { baseCurrencyId: (await makeToken(tx)).id });
       const institution = await makeInstitution(tx);
@@ -451,7 +480,7 @@ describe('CreateHoldingsWithDependenciesUseCase writes through SnapshotWriter (f
       const after = Date.now();
       expect(result.updatedHoldingIds).toEqual([feed.id]);
       const row = await holdingRow(tx, feed.id);
-      expect(row.balance).toBe('175');
+      expect(row.balance).toBe('100');
       expect(row.lastUpdated.getTime()).toBeGreaterThanOrEqual(before);
       expect(row.lastUpdated.getTime()).toBeLessThanOrEqual(after);
       expect(row.kind).toBe('feed');
@@ -480,17 +509,19 @@ describe('CreateHoldingsWithDependenciesUseCase writes through SnapshotWriter (f
     const justAfter = new Date();
 
     // Hand-computed from the fixture, and what the path before the move gave.
-    //   existing  15 May   before every record: walks back to the 1 June 100
-    //             15 June  110 now, less the 10 deposited on 1 July
+    //   existing  15 May   before every record: absent since A5 PR-2 (D-10),
+    //                      where the old walk carried the 1 June 100 back
+    //             15 June  the 1 June 100, walked forward
     //             15 July  the 110 the update recorded
-    //   created   15 May   before it existed: its first value, 250
-    const golden: Array<[string, Date, string]> = [
-      [fixture.existing.id, new Date('2026-05-15T00:00:00Z'), '100'],
+    //   created   15 May   before it existed: absent, where the old walk read
+    //                      its first value, 250
+    const golden: Array<[string, Date, string | null]> = [
+      [fixture.existing.id, new Date('2026-05-15T00:00:00Z'), null],
       [fixture.existing.id, new Date('2026-06-15T00:00:00Z'), '100'],
       [fixture.existing.id, new Date('2026-07-15T00:00:00Z'), '110'],
       [fixture.existing.id, justAfter, '110'],
       [fixture.existing.id, new Date(), '110'],
-      [created.id, new Date('2026-05-15T00:00:00Z'), '250'],
+      [created.id, new Date('2026-05-15T00:00:00Z'), null],
       [created.id, justAfter, '250'],
       [created.id, new Date(), '250'],
     ];

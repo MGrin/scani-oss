@@ -18,6 +18,7 @@
  * Dispatch flows through `Container.get(ProviderRegistry).getTransactionsFetcher(institutionCode)`.
  */
 
+import type { DatabaseTransaction } from '@scani/db';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
@@ -36,6 +37,7 @@ import {
   HoldingTransactionRepository,
 } from '../../repositories/HoldingTransactionRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
+import { LearnedCategoryRules } from '../categories/LearnedCategoryRules';
 import { FeedIngestService, type IngestResult } from '../feeds/FeedIngestService';
 import { legacyTransactionBatch } from '../feeds/legacy/transaction-batch';
 import { ManualEditSupersessionService } from '../holdings/ManualEditSupersessionService';
@@ -50,6 +52,7 @@ import {
   GROSS_OF_OWN_FEE_SOURCES,
   isWalletDerivedSource,
   SETTLEMENT_DERIVED_SOURCES,
+  WITHHOLDING_LINKED_SOURCES,
 } from './transaction-sources';
 
 export interface TransactionImportInput {
@@ -59,6 +62,15 @@ export interface TransactionImportInput {
   source: string;
   /** Optional incremental-ingest cutoff. When omitted, full history. */
   since?: Date;
+}
+
+/** A provider read not yet written: what `write` and `finish` take. */
+export interface FetchedLedger {
+  readonly userId: string;
+  readonly accountId: string;
+  readonly source: string;
+  readonly since?: Date;
+  readonly routerResult: TransactionRouterResult;
 }
 
 export interface TransactionImportResult {
@@ -240,11 +252,54 @@ export class TransactionImportCoordinator {
 
   async execute(input: TransactionImportInput): Promise<TransactionImportResult> {
     try {
-      return await this.run(input);
+      const fetched = await this.fetch(input);
+      return await this.finish(fetched, await this.write(fetched));
     } catch (error) {
       await this.retractCompleteHistoryClaim(input.accountId, input.source);
       throw error;
     }
+  }
+
+  /**
+   * The provider read, and nothing written. Split from `write` so a balance
+   * sync can read both halves before opening one transaction for both
+   * (SC-1665): a run that can take minutes must not hold one open.
+   */
+  async fetch(input: TransactionImportInput): Promise<FetchedLedger> {
+    return this.run(input);
+  }
+
+  /** The fetched rows as one feed batch, inside the caller's transaction when given. */
+  write(fetched: FetchedLedger, transaction?: DatabaseTransaction): Promise<IngestResult> {
+    const { userId, accountId, source, since, routerResult } = fetched;
+    return this.feedIngest.ingest(
+      legacyTransactionBatch({
+        userId,
+        accountId,
+        source,
+        events: routerResult.events,
+        context: {
+          since,
+          fetchedAt: routerResult.fetchedAt,
+          historyStartsAt: routerResult.historyStartsAt ?? undefined,
+          horizonMs: routerResult.horizonMs,
+          retracted: routerResult.historyRetractions.length > 0,
+        },
+      }),
+      transaction
+    );
+  }
+
+  /** Everything that follows a committed write; user-wide, so never inside it. */
+  finish(fetched: FetchedLedger, ingested: IngestResult): Promise<TransactionImportResult> {
+    return this.afterIngest(
+      fetched.userId,
+      fetched.accountId,
+      fetched.source,
+      fetched.routerResult,
+      ingested,
+      fetched.since
+    );
   }
 
   /**
@@ -270,7 +325,7 @@ export class TransactionImportCoordinator {
    * Its own failure is swallowed: this is bookkeeping about a failure,
    * and it must not replace the failure the caller needs to see.
    */
-  private async retractCompleteHistoryClaim(accountId: string, source: string): Promise<void> {
+  async retractCompleteHistoryClaim(accountId: string, source: string): Promise<void> {
     try {
       const retracted = await this.coverageRepo.retractCompleteHistoryClaim(accountId, source);
       if (retracted > 0) {
@@ -287,7 +342,7 @@ export class TransactionImportCoordinator {
     }
   }
 
-  private async run(input: TransactionImportInput): Promise<TransactionImportResult> {
+  private async run(input: TransactionImportInput): Promise<FetchedLedger> {
     const { userId, accountId, source, since } = input;
 
     // Fetch the account to confirm ownership and pick up its institutionId
@@ -329,8 +384,7 @@ export class TransactionImportCoordinator {
   }
 
   /**
-   * Fetch transactions through the registry, materialize identities
-   * + holdings, and persist. Throws when no provider claims the
+   * Fetch transactions through the registry. Throws when no provider claims the
    * institution code (which would only happen if a CEX was added to
    * the registry but its source tag wasn't added to
    * `CEX_SOURCE_TO_INSTITUTION` above).
@@ -343,7 +397,7 @@ export class TransactionImportCoordinator {
     institutionCode: string,
     walletAddress: string | undefined,
     since?: Date
-  ): Promise<TransactionImportResult> {
+  ): Promise<FetchedLedger> {
     if (!this.router.hasProviderFor(institutionCode)) {
       throw new TransactionImportUnrecoverableError(
         `No transactions provider registered for institutionCode '${institutionCode}' (source='${source}'). Provider boot wiring may have skipped it.`,
@@ -423,22 +477,7 @@ export class TransactionImportCoordinator {
       throw error;
     }
 
-    const ingested = await this.feedIngest.ingest(
-      legacyTransactionBatch({
-        userId,
-        accountId,
-        source,
-        events: routerResult.events,
-        context: {
-          since,
-          fetchedAt: routerResult.fetchedAt,
-          historyStartsAt: routerResult.historyStartsAt ?? undefined,
-          horizonMs: routerResult.horizonMs,
-          retracted: routerResult.historyRetractions.length > 0,
-        },
-      })
-    );
-    return this.afterIngest(userId, accountId, source, routerResult, ingested, since);
+    return { userId, accountId, source, since, routerResult };
   }
 
   /**
@@ -465,6 +504,19 @@ export class TransactionImportCoordinator {
       if (SETTLEMENT_DERIVED_SOURCES.has(source) || GROSS_OF_OWN_FEE_SOURCES.has(source)) {
         await this.holdingTransactionRepo.linkSettlements(userId);
       }
+      // A withholding names its dividend's security; this links it to the
+      // dividend, which may have arrived in an earlier batch. Non-fatal: an
+      // unlinked withholding is still a fee, and the next run links it.
+      if (WITHHOLDING_LINKED_SOURCES.has(source)) {
+        try {
+          await this.holdingTransactionRepo.linkWithholding(userId);
+        } catch (error) {
+          this.logger.warn(
+            { accountId, source, error: error instanceof Error ? error.message : error },
+            'Linking withholding tax to its dividends failed — the next import will'
+          );
+        }
+      }
       // An outflow to a destination the reader has marked *"always a
       // disposal"* is answered here, when it is written, rather than by
       // whoever reads the queue next — a read that wrote made the PnL caption
@@ -479,6 +531,9 @@ export class TransactionImportCoordinator {
           'Applying destination rules to imported rows failed — the nightly sweep will'
         );
       }
+      // A category the person picked spreads to the new rows from the same
+      // payee (SC-1695). It logs its own failure and never fails the import.
+      await Container.get(LearnedCategoryRules).afterImport(userId);
       // A hand-entered edit the imported rows now describe is removed, so the
       // movement is not counted twice (SC-1468). Non-fatal for the same reason
       // as the rule pass above: the imported rows are already safe.

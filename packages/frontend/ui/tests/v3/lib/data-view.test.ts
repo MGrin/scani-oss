@@ -267,6 +267,36 @@ describe('resolveDataViewSurface', () => {
   });
 });
 
+/**
+ * The same trap for FILTERS (SC-1652). The ledger filters on the server, so a
+ * category that matches nothing arrives as an empty page — and reading that as
+ * an empty account hides the toolbar, taking the chip that would undo it.
+ */
+describe('resolveDataViewSurface with filters applied on the server', () => {
+  const base = {
+    isLoading: false,
+    isError: false,
+    totalCount: 0,
+    filteredCount: 0,
+    partial: false,
+    searchTerm: '',
+    searchIsRemote: true,
+    filtersAreRemote: true,
+  };
+
+  test('a remote filter that matched nothing is not an empty account', () => {
+    const state = resolveDataViewSurface({ ...base, activeFilterCount: 1 });
+    expect(state.hasNothingAtAll).toBe(false);
+    expect(state.surface).toBe('no-match');
+  });
+
+  test('with no filter applied, an empty set is still the onboarding screen', () => {
+    const state = resolveDataViewSurface({ ...base, activeFilterCount: 0 });
+    expect(state.hasNothingAtAll).toBe(true);
+    expect(state.surface).toBe('empty');
+  });
+});
+
 describe('countLabel', () => {
   test('counts, in the form the number selects', () => {
     expect(countLabel(HOLDINGS, 12)).toBe('12 holdings');
@@ -302,5 +332,26 @@ describe('nameList', () => {
 
   test('is empty for an empty selection', () => {
     expect(nameList([])).toBe('');
+  });
+});
+
+describe('resolveActiveFilters with a custom value (SC-1652)', () => {
+  test("the chip names a custom range by the def's own format, not the raw value", () => {
+    const defs = [
+      {
+        key: 'period',
+        labelKey: 'ui.dataView.noun.holdings',
+        options: [{ value: '30', label: 'Last 30 days' }],
+        custom: {
+          labelKey: 'ui.dataView.noun.holdings',
+          matches: (value: string) => value.includes('..'),
+          format: (value: string) => value.replace('..', ' – '),
+          render: () => null,
+        },
+      },
+    ] as unknown as Parameters<typeof resolveActiveFilters>[1];
+    expect(resolveActiveFilters({ period: '2025-04-06..2026-04-05' }, defs)[0]?.value).toBe(
+      '2025-04-06 – 2026-04-05'
+    );
   });
 });

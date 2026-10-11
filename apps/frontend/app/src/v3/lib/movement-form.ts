@@ -25,10 +25,24 @@ import type { buildEnsureAccountInput } from './manual-entry';
 export interface MovementHolding {
   id: string;
   amount: string;
-  token: { symbol: string; name: string };
-  account: { name: string };
+  token: { symbol: string; name: string; typeCode?: string };
+  account: { name: string; class?: 'asset' | 'liability' };
   institution: { id: string; name: string; website?: string | null };
   label?: string | null;
+}
+
+/** Fiat on a loan or card account: an outflow deepens what it owes (SC-1640). */
+function movementHoldingOwes(holding: MovementHolding): boolean {
+  return holding.account.class === 'liability' && holding.token.typeCode === 'fiat';
+}
+
+/**
+ * The ceiling an outflow may not pass: the balance, or none on a holding that
+ * owes, where spending more is borrowing more (SC-1640).
+ */
+export function movementAvailable(holding: MovementHolding | null): string | undefined {
+  if (!holding || movementHoldingOwes(holding)) return undefined;
+  return holding.amount;
 }
 
 export interface MovementSubmission {
@@ -215,9 +229,10 @@ export function movementFeeArrival(draft: MovementDraft): string | null {
  */
 export function movementBalanceBelowZero(
   holdingAmount: string,
-  draft: Pick<MovementDraft, 'direction' | 'amount'>
+  draft: Pick<MovementDraft, 'direction' | 'amount'>,
+  owes = false
 ): string | null {
-  if (draft.direction === 'inflow' || !amountIsPositive(draft.amount)) return null;
+  if (owes || draft.direction === 'inflow' || !amountIsPositive(draft.amount)) return null;
   const after = new Decimal(holdingAmount).minus(draft.amount.trim());
   return after.isNegative() ? after.toString() : null;
 }

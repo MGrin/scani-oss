@@ -206,10 +206,10 @@ export const DEMO_FOREX: readonly ForexSpec[] = [
  * GBP-base user.
  *
  * `historical-price-backfill` never writes a row whose `token_id` is USD — every edge it
- * fetches is `X -> USD`. `PriceGraphService` copes: it inverts the `GBP -> USD`
+ * fetches is `X -> USD`. The price engine copes: it inverts the `GBP -> USD`
  * row and answers `USD -> GBP` correctly, measured at rate 0.789266 against
  * this very seed. But `HoldingQueryService` does not value a holding through
- * the graph; it reads a per-symbol price map built upstream, and a token with
+ * the engine; it reads a per-symbol price map built upstream, and a token with
  * no `token_prices` row of its own is absent from it. The row then renders
  * with a null value and a -100% gain against a real cost basis.
  *

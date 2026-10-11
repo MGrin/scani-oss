@@ -10,8 +10,9 @@ import { HoldingTransactionRepository } from '../../../src/repositories/HoldingT
 import { PeriodDisposalsService } from '../../../src/services/portfolio/PeriodDisposalsService';
 import { RealizedLedgerService } from '../../../src/services/portfolio/RealizedLedgerService';
 import { CostBasisService } from '../../../src/services/pricing/CostBasisService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { noPriceReader } from '../../../test/helpers/price-series';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -118,11 +119,7 @@ function makeService(opts: {
   Container.set(HoldingCoverageRepository, {
     findManyByHoldingIds: async () => opts.coverage ?? new Map(),
   } as unknown as HoldingCoverageRepository);
-  Container.set(PriceGraphService, {
-    convert: async () => {
-      throw new Error('PriceGraphService.convert should not be called in these tests');
-    },
-  } as unknown as PriceGraphService);
+  Container.set(PriceReader, noPriceReader);
   Container.set(CostBasisService, new CostBasisService());
   const ledger = new RealizedLedgerService();
   Container.set(RealizedLedgerService, ledger);

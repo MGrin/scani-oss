@@ -31,6 +31,12 @@ describe('invalidatePortfolioQueries', () => {
     expect(invalidated).toContain('transactions');
   });
 
+  test("refreshes a loan's amount owed and payoff after a balance edit (SC-1640)", async () => {
+    const { utils, invalidated } = recordingUtils();
+    await invalidatePortfolioQueries(utils);
+    expect(invalidated).toContain('liabilities');
+  });
+
   test('still refreshes the holdings and accounts the movement changed', async () => {
     const { utils, invalidated } = recordingUtils();
     await invalidatePortfolioQueries(utils);

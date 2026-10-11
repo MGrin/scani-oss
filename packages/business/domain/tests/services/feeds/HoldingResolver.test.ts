@@ -165,6 +165,61 @@ describe('HoldingResolver.resolveFeedHolding', () => {
     });
   });
 
+  test("the balance syncs' matches skip a snapshot whatever its source, and take a person's row a feed took over (A5 D-4)", async () => {
+    await withTestDb(async (tx) => {
+      const owner = await accountWithToken(tx);
+      const synced = await makeHolding(tx, {
+        ...owner,
+        source: EXCHANGE_BALANCE_SYNC_SOURCE,
+        kind: 'feed',
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+      });
+      await makeHolding(tx, {
+        ...owner,
+        source: EXCHANGE_BALANCE_SYNC_SOURCE,
+        kind: 'snapshot',
+        createdAt: new Date('2026-02-01T00:00:00Z'),
+      });
+      const find = (match: 'token-id' | 'token-id-with-scam' | 'external-id-then-token-id') =>
+        resolver().findFeedHolding({ ...owner, key: 'ANY', match }, tx);
+
+      expect((await find('token-id'))?.id).toBe(synced.id);
+      expect((await find('token-id-with-scam'))?.id).toBe(synced.id);
+      expect((await find('external-id-then-token-id'))?.id).toBe(synced.id);
+
+      const taken = await makeHolding(tx, {
+        ...owner,
+        source: 'manual',
+        kind: 'feed',
+        createdAt: new Date('2026-03-01T00:00:00Z'),
+      });
+
+      expect((await find('token-id'))?.id).toBe(taken.id);
+      expect((await find('token-id-with-scam'))?.id).toBe(taken.id);
+      expect((await find('external-id-then-token-id'))?.id).toBe(taken.id);
+    });
+  });
+
+  test("account-token, the statement import's, finds a hidden row rather than opening a second (A5 #9)", async () => {
+    await withTestDb(async (tx) => {
+      const owner = await accountWithToken(tx);
+      const hidden = await makeHolding(tx, {
+        ...owner,
+        source: 'statement-import',
+        kind: 'feed',
+        isHidden: true,
+        hiddenBy: 'user',
+      });
+
+      const found = await resolver().findFeedHolding(
+        { ...owner, key: null, match: 'account-token' },
+        tx
+      );
+
+      expect(found?.id).toBe(hidden.id);
+    });
+  });
+
   test("token-id leaves out a scam token's holding, which the other two still find", async () => {
     await withTestDb(async (tx) => {
       const userId = (await makeUser(tx)).id;

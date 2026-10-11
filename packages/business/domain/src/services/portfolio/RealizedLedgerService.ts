@@ -4,12 +4,42 @@ import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRep
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
 import {
+  type CostBasisAtTime,
   type CostBasisMethod,
   CostBasisService,
   type DisposalLotMatch,
   type HistoryCompleteness,
   historyCompletenessOf,
+  walkPriceAsks,
 } from '../pricing/CostBasisService';
+import { PriceReader, type PriceSeries } from '../pricing/PriceReader';
+
+/** A lot still held: what is left of one acquisition, in base currency. */
+export interface OpenLot {
+  acquiredAt: Date;
+  quantity: string;
+  /** Total cost of `quantity`, base currency. */
+  cost: string;
+  stale: boolean;
+  unpriced: boolean;
+}
+
+export interface HoldingOpenLots {
+  holdingId: string;
+  basisQuality: CostBasisAtTime['basisQuality'];
+  /** Sum of the lots' cost: the walk's own cost basis. */
+  costBasis: string;
+  openQuantity: string;
+  lots: OpenLot[];
+}
+
+/** One transfer component, read and ready to walk. */
+interface LoadedComponent {
+  ids: string[];
+  txsByHolding: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>>;
+  heldTokenByHolding: ReadonlyMap<string, string>;
+  historyByHolding: ReadonlyMap<string, HistoryCompleteness>;
+}
 
 /**
  * "Why did my realized gain change?" — answered for one holding (SC-152).
@@ -51,6 +81,7 @@ export class RealizedLedgerService {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly coverageRepository = Container.get(HoldingCoverageRepository);
   private readonly costBasisService = Container.get(CostBasisService);
+  private readonly priceReader = Container.get(PriceReader);
 
   /**
    * Every lot match against this holding's outflows at or before `at`, newest
@@ -69,10 +100,11 @@ export class RealizedLedgerService {
     holdingId: string,
     baseCurrencyId: string,
     at: Date = new Date(),
-    method?: CostBasisMethod
+    method?: CostBasisMethod,
+    now: Date = new Date()
   ): Promise<DisposalLotMatch[]> {
     const componentIds = await this.txRepository.findTransferLinkedHoldingIds(userId, [holdingId]);
-    const ledger = await this.walkOneComponent(componentIds, baseCurrencyId, at, method);
+    const ledger = await this.walkAll([componentIds], baseCurrencyId, at, method, now);
 
     return ledger
       .filter((row) => row.holdingId === holdingId)
@@ -113,7 +145,8 @@ export class RealizedLedgerService {
     holdingIds: ReadonlyArray<string>,
     baseCurrencyId: string,
     at: Date = new Date(),
-    method?: CostBasisMethod
+    method?: CostBasisMethod,
+    now: Date = new Date()
   ): Promise<DisposalLotMatch[]> {
     const components: string[][] = [];
     const covered = new Set<string>();
@@ -131,35 +164,124 @@ export class RealizedLedgerService {
       components.push(componentIds);
     }
 
-    const ledger: DisposalLotMatch[] = [];
-    for (const componentIds of components) {
-      ledger.push(...(await this.walkOneComponent(componentIds, baseCurrencyId, at, method)));
-    }
+    const ledger = await this.walkAll(components, baseCurrencyId, at, method, now);
     return ledger.sort((a, b) => b.disposedAt.getTime() - a.disposedAt.getTime());
   }
 
-  /** The walk itself, unfiltered: every row the component emits at or before `at`. */
-  private async walkOneComponent(
-    componentIds: ReadonlyArray<string>,
+  /**
+   * Every row the components emit at or before `at`, unfiltered. One series
+   * covers every component's walk, so the price loads do not grow with the
+   * number of components.
+   */
+  private async walkAll(
+    components: ReadonlyArray<ReadonlyArray<string>>,
     baseCurrencyId: string,
     at: Date,
-    method?: CostBasisMethod
+    method: CostBasisMethod | undefined,
+    now: Date
   ): Promise<DisposalLotMatch[]> {
+    const loaded: LoadedComponent[] = [];
+    for (const componentIds of components) loaded.push(await this.load(componentIds));
+    const prices = await this.priceReader.series(
+      loaded.flatMap((c) =>
+        walkPriceAsks(c.ids, c.txsByHolding, c.heldTokenByHolding, baseCurrencyId, now)
+      ),
+      baseCurrencyId
+    );
+    const ledger: DisposalLotMatch[] = [];
+    for (const component of loaded) {
+      ledger.push(...(await this.walk(component, prices, baseCurrencyId, at, method, now)).ledger);
+    }
+    return ledger;
+  }
+
+  /**
+   * The lots each holding still holds at `at`, oldest first (SC-1616). The
+   * same component walk and the same method as the realized ledger, so an
+   * open lot and a disposal never disagree about which acquisition went first.
+   *
+   * Ownership is the caller's to check, as for `forHolding`.
+   */
+  async openLots(
+    userId: string,
+    holdingIds: ReadonlyArray<string>,
+    baseCurrencyId: string,
+    method?: CostBasisMethod,
+    now: Date = new Date()
+  ): Promise<HoldingOpenLots[]> {
+    const wanted = new Set(holdingIds);
+    const components: string[][] = [];
+    const covered = new Set<string>();
+    for (const holdingId of holdingIds) {
+      if (covered.has(holdingId)) continue;
+      const ids = await this.txRepository.findTransferLinkedHoldingIds(userId, [holdingId]);
+      for (const id of ids) covered.add(id);
+      components.push(ids);
+    }
+    const loaded: LoadedComponent[] = [];
+    for (const ids of components) loaded.push(await this.load(ids));
+    const prices = await this.priceReader.series(
+      loaded.flatMap((c) =>
+        walkPriceAsks(c.ids, c.txsByHolding, c.heldTokenByHolding, baseCurrencyId, now)
+      ),
+      baseCurrencyId
+    );
+    const out: HoldingOpenLots[] = [];
+    for (const component of loaded) {
+      const { atTime } = await this.walk(component, prices, baseCurrencyId, now, method, now);
+      for (const [holdingId, basis] of atTime) {
+        if (!wanted.has(holdingId)) continue;
+        out.push({
+          holdingId,
+          basisQuality: basis.basisQuality,
+          costBasis: basis.costBasis.toString(),
+          openQuantity: basis.openQty.toString(),
+          lots: basis.lots
+            .filter((lot) => lot.qty.gt(0))
+            .map((lot) => ({
+              acquiredAt: lot.date,
+              quantity: lot.qty.toString(),
+              cost: lot.cost.toString(),
+              stale: lot.stale === true,
+              unpriced: lot.unpriced === true,
+            })),
+        });
+      }
+    }
+    return out;
+  }
+
+  private async load(componentIds: ReadonlyArray<string>): Promise<LoadedComponent> {
     const ids = [...componentIds];
     const [txsByHolding, holdings, coverageByHolding] = await Promise.all([
       this.txRepository.findForHoldingsAll(ids),
       this.holdingRepository.findByIds(ids),
       this.coverageRepository.findManyByHoldingIds(ids),
     ]);
-    const heldTokenByHolding = new Map(holdings.map((h) => [h.id, h.tokenId]));
-    const historyByHolding = new Map<string, HistoryCompleteness>(
-      ids.map((h) => [h, historyCompletenessOf(coverageByHolding.get(h))])
-    );
+    return {
+      ids,
+      txsByHolding,
+      heldTokenByHolding: new Map(holdings.map((h) => [h.id, h.tokenId])),
+      historyByHolding: new Map(
+        ids.map((h) => [h, historyCompletenessOf(coverageByHolding.get(h))])
+      ),
+    };
+  }
 
+  private async walk(
+    { ids, txsByHolding, heldTokenByHolding, historyByHolding }: LoadedComponent,
+    prices: PriceSeries,
+    baseCurrencyId: string,
+    at: Date,
+    method: CostBasisMethod | undefined,
+    now: Date
+  ): Promise<{ ledger: DisposalLotMatch[]; atTime: Map<string, CostBasisAtTime> }> {
     const ledger: DisposalLotMatch[] = [];
     const only = ids.length === 1 ? ids[0] : undefined;
     if (only !== undefined) {
-      await this.costBasisService.getCostBasis(only, at, baseCurrencyId, {
+      const basis = await this.costBasisService.getCostBasis(only, at, baseCurrencyId, {
+        now,
+        prices,
         heldTokenId: heldTokenByHolding.get(only) ?? undefined,
         historyCompleteness: historyByHolding.get(only) ?? 'unrecorded',
         txs: txsByHolding.get(only) ?? ([] as ReadonlyArray<HoldingTransaction>),
@@ -167,20 +289,22 @@ export class RealizedLedgerService {
         ...(method ? { method } : {}),
         tx: undefined,
       });
-    } else {
-      await this.costBasisService.walkComponent(
-        undefined,
-        ids,
-        txsByHolding,
-        at,
-        baseCurrencyId,
-        heldTokenByHolding,
-        undefined,
-        historyByHolding,
-        ledger,
-        method
-      );
+      return { ledger, atTime: new Map([[only, basis]]) };
     }
-    return ledger;
+    const atTime = await this.costBasisService.walkComponent(
+      undefined,
+      ids,
+      txsByHolding,
+      at,
+      baseCurrencyId,
+      heldTokenByHolding,
+      prices,
+      historyByHolding,
+      ledger,
+      method,
+      undefined,
+      now
+    );
+    return { ledger, atTime };
   }
 }

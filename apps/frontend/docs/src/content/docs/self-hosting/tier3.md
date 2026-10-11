@@ -57,9 +57,11 @@ you'd like to see it.
 
 ## Switching tiers from a Tier-3 instance
 
-**Scani ships no data-export feature today**, so there is no
-supported way to pull your existing data out of a Tier-3 instance.
-The `user-data-delete` job deletes and does nothing else: its payload
+**Your data comes out, but it does not yet go back in.** Settings →
+Your data exports every record as a workbook or as JSON, and Settings →
+Backup writes a copy of the account with its balance readings, though
+not yet its uploaded documents. Restoring a backup into another instance is not available
+yet, so moving tiers still means rebuilding. The `user-data-delete` job deletes and does nothing else: its payload
 is `{ userId, requestId }` with no flag anywhere in it, and
 `DeleteAllUserDataUseCase` only issues deletes.
 

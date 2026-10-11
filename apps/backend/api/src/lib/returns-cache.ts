@@ -28,16 +28,21 @@ async function readReturnsDataVersion(userId: string): Promise<string> {
 export async function sharedReturnsRun<T>(
   requestKey: string,
   userId: string,
-  compute: () => Promise<T>,
+  /**
+   * Gets the user's data key, `user:day:version`: the windows a Home load asks
+   * for share their loads under it, and a write changes it (SC-1671).
+   */
+  compute: (dataKey: string) => Promise<T>,
   readVersion: (userId: string) => Promise<string> = readReturnsDataVersion,
   today: string = new Date().toISOString().slice(0, 10)
 ): Promise<T> {
-  const key = `${requestKey}:${today}:${await readVersion(userId)}`;
+  const dataKey = `${userId}:${today}:${await readVersion(userId)}`;
+  const key = `${requestKey}:${dataKey}`;
 
   const cached = runs.get(key) as Promise<T> | undefined;
   if (cached) return cached;
 
-  const run = compute();
+  const run = compute(dataKey);
   runs.set(key, run);
   // A failed run must not be served to the next caller for ten minutes.
   run.catch(() => runs.delete(key));

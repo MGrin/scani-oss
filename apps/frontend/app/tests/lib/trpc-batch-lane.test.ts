@@ -24,6 +24,29 @@ describe('trpcBatchLane', () => {
     expect(trpcBatchLane('portfolio.hasReturns')).toBe('default');
   });
 
+  test('income rides its own lane, off the hero chart and off the returns engine (SC-1644)', () => {
+    // A ledger range read priced at receipt: batched with the hero's series it
+    // would hold the chart back, and batched with the returns engine it would
+    // wait on the rollup.
+    expect(trpcBatchLane('portfolio.getIncome')).toBe('income');
+  });
+
+  test("the shell's review feed rides its own lane, off every page's first batch (SC-1671)", () => {
+    // The shell asks for it on every page, so in the default lane it joined
+    // each page's cold batch: Accounts' four ~100 ms reads waited on it, p50
+    // 1.5-2 s and up to 13 s on production.
+    expect(trpcBatchLane('review.listPending')).toBe('review');
+  });
+
+  test("the Accounts page's own reads stay in the default lane (SC-1671)", () => {
+    // The control: only the slow feed moves, so the page's reads still
+    // arrive together in one request.
+    expect(trpcBatchLane('accounts.getByUserIdWithSummary')).toBe('default');
+    expect(trpcBatchLane('groups.getAll')).toBe('default');
+    expect(trpcBatchLane('institutions.getByUserId')).toBe('default');
+    expect(trpcBatchLane('accountTypes.getAll')).toBe('default');
+  });
+
   test('dashboard.* keeps the lane it already had', () => {
     expect(trpcBatchLane('dashboard.getOverview')).toBe('dashboard');
     expect(trpcBatchLane('dashboard.getAssetAllocation')).toBe('dashboard');

@@ -10,6 +10,7 @@ import {
   type MovementHolding,
   type MovementOutflowOption,
   type MovementSubmission,
+  movementAvailable,
   movementFeeArrival,
   movementFeeStated,
 } from '../lib/movement-form';
@@ -97,7 +98,7 @@ export function useMovementForm(
     amount,
     destination,
     fee,
-    available: selected?.amount,
+    available: movementAvailable(selected),
   };
   // Formatted as the field's "Currently …" hint is, so the refusal and the
   // hint above it show one figure.

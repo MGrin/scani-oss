@@ -76,6 +76,12 @@ export interface LinkTransferPairsSummary {
   ambiguous: number;
   /** Of `linked`, how many joined two chains rather than two accounts. */
   bridged: number;
+  /**
+   * The earliest leg of any pair this run linked, or null. A link joins two
+   * lot chains from its date, so a rebuild sized from an edit widens to it
+   * (SC-1607).
+   */
+  earliestLinkedAt: Date | null;
   durationMs: number;
 }
 
@@ -345,6 +351,7 @@ export class LinkTransferPairsUseCase {
     let linked = 0;
     let ambiguous = 0;
     let bridged = 0;
+    let earliestLinkedAt: Date | null = null;
 
     for (const out of outflows) {
       const winStart = out.occurredAt.getTime() - MATCH_WINDOW_MS;
@@ -382,7 +389,7 @@ export class LinkTransferPairsUseCase {
       // more than not linking at all.
       const viable = candidates
         .map((c) => ({
-          row: { id: c.leg.transactionId },
+          row: { id: c.leg.transactionId, occurredAt: c.leg.occurredAt },
           bridge: c.bridge,
           qtyDelta: outQty.sub(c.leg.quantityAbs).abs(),
           timeDelta: Math.abs(c.leg.occurredAt.getTime() - out.occurredAt.getTime()),
@@ -445,6 +452,9 @@ export class LinkTransferPairsUseCase {
       if (!paired) continue;
       linked += 1;
       if (best.bridge) bridged += 1;
+      for (const at of [out.occurredAt, best.row.occurredAt]) {
+        if (!earliestLinkedAt || at < earliestLinkedAt) earliestLinkedAt = at;
+      }
     }
 
     const summary = {
@@ -452,6 +462,7 @@ export class LinkTransferPairsUseCase {
       linked,
       ambiguous,
       bridged,
+      earliestLinkedAt,
       durationMs: Date.now() - startTime,
     };
     logger.info({ summary, userId: opts.userId }, 'Transfer-pair linking complete');

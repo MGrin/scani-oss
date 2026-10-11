@@ -39,7 +39,7 @@ describe('UpdateHoldingDto validation', () => {
   });
 
   test('should reject invalid balance values', () => {
-    const invalidBalances = ['abc', 'NaN', 'Infinity', '-5', '12.34.56', ''];
+    const invalidBalances = ['abc', 'NaN', 'Infinity', '12.34.56', ''];
 
     for (const balance of invalidBalances) {
       const result = UpdateHoldingDto.safeParse({ balance });
@@ -70,8 +70,11 @@ describe('user-entered balances still refuse a negative (SC-1462)', () => {
     tokenId: '550e8400-e29b-41d4-a716-446655440001',
   };
 
-  test('edit', () => {
-    expect(UpdateHoldingDto.safeParse({ balance: margin }).success).toBe(false);
+  // An edit may carry a negative since SC-1640: what a loan or card owes.
+  // `UpdateHoldingUseCase` refuses it on any other holding, which is where
+  // the account's class is known (UpdateHoldingUseCase.owed.test.ts).
+  test('edit carries the sign to the use case', () => {
+    expect(UpdateHoldingDto.safeParse({ balance: margin }).success).toBe(true);
   });
 
   test('batch add', () => {

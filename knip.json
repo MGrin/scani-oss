@@ -5,7 +5,7 @@
       "entry": ["scripts/*.ts"]
     },
     "apps/backend/api": {
-      "entry": ["src/index.ts"],
+      "entry": ["src/index.ts", "src/returns-worker.ts"],
       "project": ["src/**/*.ts"],
       "ignoreDependencies": ["@sentry/node"]
     },

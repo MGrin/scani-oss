@@ -1,32 +1,44 @@
+import type { DatabaseTransaction } from '@scani/db';
 import { db } from '@scani/db/connection';
+import type { Token } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { Decimal } from '@scani/shared';
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { isIncludedInTotal } from '../../lib/holding-inclusion';
-import { isPriceStale } from '../../lib/price-freshness';
 import {
   createPortfolioCacheKey,
   createPortfolioRedisKey,
   getOrComputeFromCache,
 } from '../../lib/request-cache';
 import { effectiveScamProbability, notScamFor } from '../../lib/scam-verdict';
-import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
-import { TokenRepository } from '../../repositories/TokenRepository';
-import { PricingService } from '../pricing/PricingService';
+import { PriceReader } from '../pricing/PriceReader';
 import { UserService } from '../users/UserService';
+import { InTransitService } from './InTransitService';
 import { PortfolioValueCache } from './PortfolioValueCache';
 import { PortfolioValueVersion } from './PortfolioValueVersion';
 
 // Type for request cache (shared with tRPC context)
 export type RequestCache = Map<string, unknown>;
 
+/** One token's price in the base and what dates it; every field absent when unpriced. */
+interface LivePrice {
+  price: string | null;
+  timestamp?: Date;
+  source?: string;
+  stale?: boolean;
+}
+
+type ValuedHolding = {
+  tokenId: string;
+  token: Token;
+};
+
 // Define the return type for portfolio value.
 //
-// `currentPrice` / `value` are `null` when the holding's token has no
-// resolvable price in the user's base currency (no cached price, no
-// stale fallback, no usable fiat-pair rate). Such holdings are
+// `currentPrice` / `value` are `null` when `PriceReader` has no route from
+// the holding's token to the user's base currency. Such holdings are
 // EXCLUDED from `totalValue` so the dashboard total reflects only the
 // portion of the portfolio we can actually price. The UI is expected
 // to render `null` as "—" so the missing-data state is visible —
@@ -35,6 +47,7 @@ export type PortfolioValueResult = {
   totalValue: string;
   baseCurrency: string;
   holdings: Array<{
+    holdingId: string;
     accountId: string;
     tokenId: string;
     tokenSymbol: string;
@@ -44,19 +57,32 @@ export type PortfolioValueResult = {
     priceTimestamp?: Date;
     priceSource?: string;
     /**
-     * The price behind `currentPrice` is older than its granularity's
-     * freshness window — the same `isPriceStale` rule the price graph
-     * applies, and the same two constants (SC-956).
+     * A leg of the route behind `currentPrice` is older than its asset
+     * class's horizon (`PriceReader`'s `stale`).
      *
-     * `undefined` is NOT "fresh". It means the question could not be asked:
-     * no `token_prices` row was found to date this price, which happens for
-     * a converted price whose metadata lookup missed. Three states on
-     * purpose — `true` old, `false` judged and fine, absent unknown — because
-     * the alternative is the failure this codebase keeps writing down, where
-     * an absence renders identically to good news.
+     * `undefined` is NOT "fresh": the holding is unpriced, so there is no
+     * price to call old. Three states on purpose — `true` old, `false`
+     * judged and fine, absent unknown — because the alternative is an
+     * absence that renders identically to good news.
      */
     priceStale?: boolean;
     isActive: boolean;
+  }>;
+  /**
+   * Money answered `internal` to a provider-fed holding that is in neither
+   * balance yet (SC-1675). Counted in `totalValue`; absent on an account's own
+   * valuation, because the money is in neither account.
+   */
+  inTransit?: Array<{
+    outflowId: string;
+    sourceHoldingId: string;
+    destinationHoldingId: string;
+    tokenId: string;
+    tokenSymbol: string;
+    sentAt: Date;
+    quantity: string;
+    currentPrice: string | null;
+    value: string | null;
   }>;
 };
 
@@ -118,12 +144,11 @@ export function sumPortfolioDebtByAccount(
 @Service()
 export class PortfolioValuationService {
   private readonly logger = createComponentLogger('portfolio-valuation');
-  private readonly pricingService = Container.get(PricingService);
+  private readonly priceReader = Container.get(PriceReader);
   private readonly userService = Container.get(UserService);
-  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
-  private readonly tokenRepository = Container.get(TokenRepository);
   private readonly portfolioValueCache = Container.get(PortfolioValueCache);
   private readonly portfolioValueVersion = Container.get(PortfolioValueVersion);
+  private readonly inTransitService = Container.get(InTransitService);
 
   /**
    * Get user portfolio value with request-scoped caching
@@ -159,28 +184,48 @@ export class PortfolioValuationService {
         ]);
         return this.portfolioValueCache.getOrCompute(
           createPortfolioRedisKey(userId, accountId, baseCurrencyId, dataVersion),
-          () => this.computePortfolioValue(userId, userBaseCurrencyId, accountId)
+          () =>
+            this.computePortfolioValueAt(userId, {
+              at: new Date(),
+              userBaseCurrencyId,
+              accountId,
+            })
         );
       }
     );
   }
 
-  /**
-   * Internal method that performs the actual portfolio value computation
-   */
-  private async computePortfolioValue(
+  /** The portfolio valued at `at`. Uncached: `getUserPortfolioValue` is the cached entry. */
+  async computePortfolioValueAt(
     userId: string,
-    userBaseCurrencyId?: string,
-    accountId?: string
+    opts: {
+      at: Date;
+      userBaseCurrencyId?: string;
+      /** Values in this currency instead of the user's own: a household's (SC-1647). */
+      baseCurrencyId?: string;
+      accountId?: string;
+      /** Read inside it: the value shadow compares the cache in the same snapshot (SC-1610). */
+      tx?: DatabaseTransaction;
+    }
   ): Promise<PortfolioValueResult> {
+    const { userBaseCurrencyId, accountId } = opts;
+    const reader = opts.tx ?? db;
     let baseCurrency: { id: string; symbol: string; name: string };
 
-    if (userBaseCurrencyId) {
+    if (opts.baseCurrencyId) {
+      const [token] = await reader
+        .select({ id: schema.tokens.id, symbol: schema.tokens.symbol, name: schema.tokens.name })
+        .from(schema.tokens)
+        .where(eq(schema.tokens.id, opts.baseCurrencyId))
+        .limit(1);
+      if (!token) throw new Error('Base currency token not found');
+      baseCurrency = token;
+    } else if (userBaseCurrencyId) {
       // Use enhanced user context service with caching
       baseCurrency = await this.userService.getBaseCurrency(userId);
     } else {
       // Fallback: get user and base currency in a single query
-      const [userWithBaseCurrency] = await db
+      const [userWithBaseCurrency] = await reader
         .select({
           userId: schema.users.id,
           userBaseCurrencyId: schema.users.baseCurrencyId,
@@ -225,7 +270,7 @@ export class PortfolioValuationService {
     }
     const whereConditions = and(...conditions);
 
-    const holdings = await db
+    const holdings = await reader
       .select({
         holdingId: schema.holdings.id,
         accountId: schema.holdings.accountId,
@@ -244,7 +289,7 @@ export class PortfolioValuationService {
       .where(whereConditions);
 
     // Get unique tokens that need pricing (excluding base currency)
-    const now = new Date();
+    const now = opts.at;
     const tokensToPrice = holdings
       .filter((holding) => holding.tokenId !== baseCurrency.id)
       .map((holding) => holding.token)
@@ -263,101 +308,7 @@ export class PortfolioValuationService {
         : `Processing portfolio value: ${tokensToPrice.length} tokens need pricing`
     );
 
-    // The base as a token, by its id: a symbol names whichever token was
-    // created last under it. Read once, and only when something below asks
-    // for it, so a portfolio with nothing to price reads nothing.
-    let baseTokenRead: ReturnType<TokenRepository['findById']> | undefined;
-    const readBaseToken = () => {
-      baseTokenRead ??= this.tokenRepository.findById(baseCurrency.id);
-      return baseTokenRead;
-    };
-
-    // Fetch all prices at once using cached-only pricing (no external API calls)
-    const priceBase = tokensToPrice.length > 0 ? await readBaseToken() : null;
-    const priceResults = priceBase
-      ? await this.pricingService.getCachedTokenPrices(tokensToPrice, priceBase, now)
-      : new Map<string, string>();
-
-    this.logger.info(
-      {
-        userId,
-        accountId,
-        pricesFetched: priceResults.size,
-        tokensRequested: tokensToPrice.length,
-      },
-      `Pricing complete: ${priceResults.size}/${tokensToPrice.length} prices retrieved`
-    );
-
-    // Fetch price metadata (timestamp and source) from database.
-    //
-    // The fallback has to be as wide as `getCachedTokenPrices`' own,
-    // which resolves a price from ANY base and converts it. Provider
-    // prices are almost all cached against USD, so a EUR-base user hits
-    // the strict query below and gets nothing back — the holding then
-    // carries a converted `currentPrice` (and therefore a `value`) with
-    // `priceTimestamp`/`priceSource` undefined, and the UI renders the
-    // price column as "—" next to a confident value. The any-base
-    // lookup covers provider and manual rows alike; the timestamp and
-    // source it returns describe the same row the price was derived
-    // from, and `currentPrice` is already expressed in the user's base
-    // currency, so nothing needs converting a second time here.
-    const tokenIds = Array.from(new Set(holdings.map((h) => h.tokenId)));
-    // Narrowed to the three fields anyone downstream reads, so the third pass
-    // below can seed a rate the graph derived — which has a timestamp and a
-    // provenance but is not a `token_prices` row and never will be, so it has
-    // no `granularity` either. `isPriceStale` reads that absence as "not
-    // daily" and applies the tighter cap; see its note.
-    const priceMetadata = new Map<
-      string,
-      { timestamp: Date; source: string | null; granularity?: string | null }
-    >(await this.tokenPriceRepository.findLatestPricesForTokens(tokenIds, baseCurrency.id));
-    const tokensWithoutMetadata = tokenIds.filter((id) => !priceMetadata.has(id));
-    if (tokensWithoutMetadata.length > 0) {
-      const anyBase = await this.tokenPriceRepository.findLatestPricesForTokensAnyBase(
-        tokensWithoutMetadata,
-        baseCurrency.id
-      );
-      for (const [tokenId, price] of anyBase.entries()) {
-        priceMetadata.set(tokenId, price);
-      }
-    }
-
-    // Third pass, and the same argument as the second: a fiat holding priced
-    // off the FX graph has no `token_prices` row of its own to date it (that
-    // is the whole of SC-505), so both lookups above miss and the holding
-    // arrives with a value and no price beside it. The rate came from
-    // somewhere and has a timestamp; say so rather than leaving the column
-    // blank under a confident figure.
-    const fiatWithoutMetadata = holdings
-      .filter((h) => !priceMetadata.has(h.tokenId))
-      .map((h) => h.token)
-      .filter((token, index, self) => self.findIndex((t) => t.id === token.id) === index);
-    const fiatBase = fiatWithoutMetadata.length > 0 ? await readBaseToken() : null;
-    if (fiatBase) {
-      const fiatRates = await this.pricingService.resolveFiatRatesToBase(
-        fiatWithoutMetadata,
-        fiatBase,
-        now
-      );
-      for (const [tokenId, rate] of fiatRates.entries()) {
-        priceMetadata.set(tokenId, {
-          timestamp: rate.timestamp,
-          source: rate.source,
-          granularity: null,
-        });
-      }
-    }
-
-    // A holding in the base currency is 1 at every instant, so it is dated now
-    // and can never be stale. Set last, over whatever the lookups found: a
-    // stored row pricing this currency against ANOTHER one is not its price
-    // here, and dating it from that row flagged the user's own cash as an
-    // outdated quote (SC-1447).
-    priceMetadata.set(baseCurrency.id, {
-      timestamp: now,
-      source: 'Base Currency',
-      granularity: null,
-    });
+    const livePrices = await this.engineLivePrices(holdings, baseCurrency.id, now, opts.tx);
 
     // Process holdings as a pure map() transformation. `priceResults`
     // is keyed only by tokens that actually resolved to a price — an
@@ -369,31 +320,23 @@ export class PortfolioValuationService {
       try {
         const balance = new Decimal(holding.balance);
 
-        const currentPrice =
-          holding.tokenId === baseCurrency.id ? '1' : (priceResults.get(holding.tokenId) ?? null);
+        const live = livePrices.get(holding.tokenId);
+        const currentPrice = live?.price ?? null;
 
         const value =
           currentPrice === null ? null : balance.mul(new Decimal(currentPrice)).toString();
 
-        const priceInfo = priceMetadata.get(holding.tokenId);
-
         return {
+          holdingId: holding.holdingId,
           accountId: holding.accountId,
           tokenId: holding.tokenId,
           tokenSymbol: holding.tokenSymbol,
           balance: balance.toString(),
           currentPrice,
           value,
-          priceTimestamp: priceInfo?.timestamp,
-          priceSource: priceInfo?.source || undefined,
-          // Only ever answered where the price it describes exists. A
-          // holding nothing could price has no quote to call old, and
-          // saying `false` there would be a claim about a price that is not
-          // on the row.
-          priceStale:
-            currentPrice !== null && priceInfo
-              ? isPriceStale(priceInfo.timestamp, now, priceInfo.granularity)
-              : undefined,
+          priceTimestamp: live?.timestamp,
+          priceSource: live?.source || undefined,
+          priceStale: live?.stale,
           isActive: holding.isActive,
         };
       } catch (error) {
@@ -409,6 +352,7 @@ export class PortfolioValuationService {
         // Computation error: surface as unpriceable rather than $0.
         const balance = new Decimal(holding.balance);
         return {
+          holdingId: holding.holdingId,
           accountId: holding.accountId,
           tokenId: holding.tokenId,
           tokenSymbol: holding.tokenSymbol,
@@ -446,10 +390,94 @@ export class PortfolioValuationService {
       return sum;
     }, new Decimal(0));
 
+    const inTransit = accountId
+      ? []
+      : await this.transitLines(userId, holdings, livePrices, now, opts.tx);
+    const withTransit = inTransit.reduce(
+      (sum, line) => (line.value === null ? sum : sum.add(new Decimal(line.value))),
+      totalValue
+    );
+
     return {
-      totalValue: totalValue.toString(),
+      totalValue: withTransit.toString(),
       baseCurrency: baseCurrency.symbol,
       holdings: portfolioHoldings,
+      ...(inTransit.length > 0 ? { inTransit } : {}),
     };
+  }
+
+  /** A transit counts where its destination does: an excluded destination takes it out too. */
+  private async transitLines(
+    userId: string,
+    holdings: ReadonlyArray<
+      ValuedHolding & {
+        holdingId: string;
+        tokenSymbol: string;
+        isActive: boolean;
+        isHidden: boolean;
+        scamProbability: number;
+      }
+    >,
+    livePrices: ReadonlyMap<string, LivePrice>,
+    now: Date,
+    tx?: DatabaseTransaction
+  ): Promise<NonNullable<PortfolioValueResult['inTransit']>> {
+    const amounts = await this.inTransitService.amountsAt(userId, [now], tx);
+    const lines: NonNullable<PortfolioValueResult['inTransit']> = [];
+    for (const amount of amounts) {
+      const destination = holdings.find((h) => h.holdingId === amount.destinationHoldingId);
+      if (
+        destination === undefined ||
+        !isIncludedInTotal(
+          { isHidden: destination.isHidden, isActive: destination.isActive },
+          { isScamProbability: destination.scamProbability }
+        )
+      ) {
+        continue;
+      }
+      const currentPrice = livePrices.get(amount.tokenId)?.price ?? null;
+      lines.push({
+        outflowId: amount.outflowId,
+        sourceHoldingId: amount.sourceHoldingId,
+        destinationHoldingId: amount.destinationHoldingId,
+        tokenId: amount.tokenId,
+        tokenSymbol: destination.tokenSymbol,
+        sentAt: amount.sentAt,
+        quantity: amount.quantity.toString(),
+        currentPrice,
+        value: currentPrice === null ? null : amount.quantity.mul(currentPrice).toString(),
+      });
+    }
+    return lines;
+  }
+  /** `PriceReader` (foundation A3): the freshest route, dated by its oldest leg, stale by each leg's horizon. */
+  private async engineLivePrices(
+    holdings: readonly ValuedHolding[],
+    baseCurrencyId: string,
+    now: Date,
+    tx?: DatabaseTransaction
+  ): Promise<Map<string, LivePrice>> {
+    const tokenIds = [...new Set(holdings.map((h) => h.tokenId))].filter(
+      (tokenId) => tokenId !== baseCurrencyId
+    );
+    const answers = await this.priceReader.at(tokenIds, baseCurrencyId, now, tx);
+    const live = new Map<string, LivePrice>([
+      [baseCurrencyId, { price: '1', timestamp: now, source: 'Base Currency', stale: false }],
+    ]);
+    for (const tokenId of tokenIds) {
+      const answer = answers.get(tokenId);
+      live.set(
+        tokenId,
+        answer
+          ? {
+              price: answer.price.toString(),
+              timestamp: answer.readingAt,
+              source: answer.source ?? undefined,
+              stale: answer.stale,
+            }
+          : { price: null }
+      );
+    }
+    return live;
   }
 }

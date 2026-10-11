@@ -29,7 +29,7 @@ export function UpdateBanner() {
       ref={bannerRef}
       className="fixed top-0 inset-x-0 z-[110] bg-blue-600 text-white px-4 flex items-center justify-center gap-3 text-sm shadow-lg animate-in slide-in-from-top duration-300"
       style={{
-        paddingTop: 'calc(0.5rem + env(safe-area-inset-top, 0px))',
+        paddingTop: 'calc(0.5rem + var(--scani-inset-top, env(safe-area-inset-top, 0px)))',
         paddingBottom: '0.5rem',
       }}
     >

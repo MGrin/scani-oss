@@ -40,7 +40,7 @@ const FIVE_YEARS_MS = 5 * 365 * 24 * 60 * 60 * 1000;
 
 // Gate caps the `from`/`to` range at 30 days on every history endpoint this
 // provider walks — "Record query time range cannot exceed 30 days" on
-// /spot/accounts/ledger, /wallet/deposits and /wallet/withdrawals, and "The
+// /spot/account_book, /wallet/deposits and /wallet/withdrawals, and "The
 // range not allowed to exceed 30 days" on /spot/my_trades. The look-back
 // above is five years, so an unsplit walk asks for sixty times the cap and
 // is refused (SC-1302).
@@ -85,7 +85,7 @@ interface GateTrade {
 
 interface GateLedgerRow {
   id: string;
-  time: string;
+  time: string | number;
   currency: string;
   change: string;
   balance: string;
@@ -183,7 +183,7 @@ export class GateProvider
 
   /**
    * Strategy:
-   *   1. /spot/accounts/ledger across every currency — primary "single
+   *   1. /spot/account_book across every currency — primary "single
    *      feed" covering trade/deposit/withdraw/fee/transfer rows. We emit
    *      fee + transfer events directly here; trade rows are skipped
    *      because the per-leg ledger view doesn't carry pair info, and
@@ -373,7 +373,7 @@ export class GateProvider
           page: String(pageNum),
         });
         const rows = await this.signedJson<GateLedgerRow[]>(
-          { method: 'GET', url: '/spot/accounts/ledger', query: params.toString() },
+          { method: 'GET', url: '/spot/account_book', query: params.toString() },
           creds
         );
         if (!Array.isArray(rows) || rows.length === 0) break;
@@ -564,9 +564,12 @@ export class GateProvider
   // Gate.io ledger/wallet timestamps are seconds, sometimes with a
   // fractional component ('1572537065.123'). Wallet timestamps are
   // integer seconds.
-  private parseLedgerTime(value: string): Date {
-    const sec = Number.parseFloat(value);
-    return new Date(Number.isFinite(sec) ? sec * 1000 : Date.now());
+  // `/spot/account_book` documents `time` as integer milliseconds; a value
+  // below 1e12 is still read as seconds, the shape the old path returned.
+  private parseLedgerTime(value: string | number): Date {
+    const n = typeof value === 'number' ? value : Number.parseFloat(value);
+    if (!Number.isFinite(n)) return new Date(Date.now());
+    return new Date(n >= 1e12 ? n : n * 1000);
   }
 
   private assetIdentity(currency: string): Partial<NewToken> {

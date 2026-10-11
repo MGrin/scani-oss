@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as jobs from '@scani/jobs';
-import { SCHEDULED_JOB_DESCRIPTORS } from '@scani/jobs';
+import { SCHEDULED_JOB_DESCRIPTORS, SCHEDULED_JOB_STEPS } from '@scani/jobs';
 
 /**
  * A schedule with no processor is worse than no schedule at all.
@@ -18,15 +18,28 @@ import { SCHEDULED_JOB_DESCRIPTORS } from '@scani/jobs';
  * registry with `cron: '5 * * * *'` while its processor was still unwritten,
  * so main would have failed a job every hour from the moment it deployed.
  * Every gate passed, because nothing anywhere related the two lists.
+ *
+ * Since SC-1688 most jobs are STEPS of a group and carry no cron. The same
+ * failure moves with them: a step with no processor makes its group refuse at
+ * boot. So the jobs that need a processor are every standalone schedule and
+ * every step, and each group must be built from the registry by
+ * `resolveGroups()`.
  */
 
 const WORKER_SRC = join(import.meta.dir, '..', 'src');
 const PROCESSOR_DIR = join(WORKER_SRC, 'processors');
 
-/** Constant name (`PRICING_SCHEDULE`) for each registered descriptor. */
+const GROUPS = SCHEDULED_JOB_DESCRIPTORS.filter((d) => 'steps' in d);
+/** What runs through a processor of its own: standalone schedules and every group step. */
+const JOBS = [
+  ...SCHEDULED_JOB_DESCRIPTORS.filter((d) => !('steps' in d)),
+  ...Object.values(SCHEDULED_JOB_STEPS),
+];
+
+/** Constant name (`PRICING_SCHEDULE`) for each job that needs a processor. */
 function scheduleConstantNames(): Map<string, string> {
   const byDescriptor = new Map<string, string>();
-  for (const descriptor of SCHEDULED_JOB_DESCRIPTORS) {
+  for (const descriptor of JOBS) {
     const entry = Object.entries(jobs as Record<string, unknown>).find(
       ([, value]) => value === descriptor
     );
@@ -61,7 +74,7 @@ function registeredClasses(): Set<string> {
 }
 
 describe('every scheduled job has a processor that is actually registered', () => {
-  test('each descriptor in SCHEDULED_JOB_DESCRIPTORS has a processor binding it', () => {
+  test('each standalone schedule and each group step has a processor binding it', () => {
     const constants = scheduleConstantNames();
     const processors = processorsByConstant();
 
@@ -85,8 +98,29 @@ describe('every scheduled job has a processor that is actually registered', () =
     expect(unregistered).toEqual([]);
   });
 
-  test('the registry is non-empty, so an empty parse cannot pass vacuously', () => {
-    expect(SCHEDULED_JOB_DESCRIPTORS.length).toBeGreaterThan(10);
+  test('every step a group names is one of those jobs', () => {
+    const steps = new Set(Object.keys(SCHEDULED_JOB_STEPS));
+    const unknown = GROUPS.flatMap((g) =>
+      'steps' in g
+        ? g.steps.filter((s) => !steps.has(s.name)).map((s) => `${g.name}/${s.name}`)
+        : []
+    );
+    expect(unknown).toEqual([]);
+  });
+
+  test('the groups are built from the registry and registered beside the processors', () => {
+    const source = readFileSync(join(WORKER_SRC, 'index.ts'), 'utf8');
+    const groups = source.match(/function resolveGroups\([^)]*\)[^{]*\{([\s\S]*?)\n\}/)?.[1];
+    expect(groups).toBeDefined();
+    expect(groups).toContain('SCHEDULED_JOB_DESCRIPTORS.filter(');
+    expect(groups).toContain("'steps' in d");
+    expect(groups).toContain('new ScheduledJobGroupProcessor(');
+    expect(source).toContain('[...processors, ...resolveGroups(processors)]');
+  });
+
+  test('the job list is non-empty, so an empty parse cannot pass vacuously', () => {
+    expect(GROUPS.length).toBeGreaterThan(0);
+    expect(JOBS.length).toBeGreaterThan(10);
     expect(registeredClasses().size).toBeGreaterThan(10);
   });
 });

@@ -76,6 +76,38 @@ describe('AirwallexProvider', () => {
     expect(out.find((h) => h.tokenIdentity.symbol === 'EUR')).toBeUndefined();
   });
 
+  test('pins x-api-version on every request, so one account version cannot change the parsed shape (SC-1572)', async () => {
+    const seen: Array<{ path: string; version: string | undefined }> = [];
+    globalThis.fetch = (async (url: string, init?: RequestInit) => {
+      const headers = (init?.headers ?? {}) as Record<string, string>;
+      seen.push({ path: new URL(url).pathname, version: headers['x-api-version'] });
+      if (url.endsWith('/api/v1/authentication/login')) return loginResponse();
+      if (url.endsWith('/api/v1/balances/current')) {
+        return new Response(JSON.stringify([{ currency: 'USD', total_amount: 1 }]), {
+          status: 200,
+        });
+      }
+      if (url.includes('/api/v1/financial_transactions')) {
+        return new Response(JSON.stringify({ items: [], has_more: false }), { status: 200 });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }) as unknown as typeof fetch;
+
+    const p = new AirwallexProvider(passthroughLimiter());
+    await p.fetchBalances(ctx as never);
+    await p.fetchTransactions({ ...ctx, since: new Date('2026-09-01T00:00:00Z') } as never);
+
+    const paths = new Set(seen.map((r) => r.path));
+    expect(paths).toEqual(
+      new Set([
+        '/api/v1/authentication/login',
+        '/api/v1/balances/current',
+        '/api/v1/financial_transactions',
+      ])
+    );
+    for (const r of seen) expect(r.version).toBe('2026-08-21');
+  });
+
   test('validateCredentials rejects wrong institution', async () => {
     const p = new AirwallexProvider(passthroughLimiter());
     const r = await p.validateCredentials({ clientId: 'cid', apiKey: 'key' }, 'wise');

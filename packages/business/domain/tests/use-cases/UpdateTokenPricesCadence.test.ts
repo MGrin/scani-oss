@@ -26,7 +26,7 @@ import { type RealTimeEvent, RedisRealtimeUpdatesService } from '@scani/realtime
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HoldingQueryService } from '../../src/services/holdings/HoldingQueryService';
-import { CurrencyConverter } from '../../src/services/pricing/CurrencyConverter';
+import { PriceReader } from '../../src/services/pricing/PriceReader';
 import { PriceWarmupService } from '../../src/services/pricing/PriceWarmupService';
 import { PricingProviderRouter } from '../../src/services/pricing/PricingProviderRouter';
 import { PricingService } from '../../src/services/pricing/PricingService';
@@ -96,7 +96,7 @@ afterEach(async () => {
   expect(fetched).toEqual([]);
 });
 
-type TypeCode = 'crypto' | 'fiat' | 'private-company' | 'other';
+type TypeCode = 'crypto' | 'fiat' | 'stock' | 'private-company' | 'other';
 
 async function typeId(code: TypeCode): Promise<string> {
   const [type] = await getDb()
@@ -123,9 +123,14 @@ async function fiat(symbol: string): Promise<Token> {
   return token;
 }
 
-async function commitToken(code: TypeCode = 'crypto'): Promise<Token> {
+async function commitToken(
+  code: TypeCode = 'crypto',
+  marketSegment: string | null = null
+): Promise<Token> {
   const type = await typeId(code);
-  const token = await getDb().transaction((tx) => makeToken(tx, { typeId: type }));
+  const token = await getDb().transaction((tx) =>
+    makeToken(tx, { typeId: type, ...(marketSegment ? { marketSegment } : {}) })
+  );
   rows.tokens.push(token.id);
   return token;
 }
@@ -252,7 +257,15 @@ function hourlyRun(held: Token[], answers: Partial<Record<ProviderKey, Answer>> 
     fetchCurrentPrice: async (token, ctx) => {
       asks.push({ provider: key, tokenId: token.id, baseId: ctx.baseCurrency.id });
       const quote = answer(token, ctx);
-      return quote && { tokenId: token.id, baseTokenId: ctx.baseCurrency.id, ...quote, source };
+      return (
+        quote && {
+          barDay: null,
+          tokenId: token.id,
+          baseTokenId: ctx.baseCurrency.id,
+          ...quote,
+          source,
+        }
+      );
     },
   });
   const registry = new ProviderRegistry();
@@ -266,7 +279,6 @@ function hourlyRun(held: Token[], answers: Partial<Record<ProviderKey, Answer>> 
   withHubs(hubs);
   const router = new PricingProviderRouter();
   Container.set(PricingProviderRouter, router);
-  Container.set(CurrencyConverter, new CurrencyConverter());
   Container.set(PricingService, new PricingService());
   Container.set(HoldingQueryService, {
     getDistinctTokenIds: async () => held.map((token) => token.id),
@@ -295,6 +307,8 @@ function hourlyRun(held: Token[], answers: Partial<Record<ProviderKey, Answer>> 
 
 describe('the hourly run always fetches', () => {
   test('two runs 59 minutes apart both ask the providers', async () => {
+    // Off the 23:00Z hour, where FX is asked once a day (SC-1603).
+    setSystemTime(new Date(Math.floor(Date.now() / DAY) * DAY + 12 * HOUR));
     const usd = await fiat('USD');
     const eur = hub('EUR');
     const token = await commitToken();
@@ -310,15 +324,18 @@ describe('the hourly run always fetches', () => {
       { provider: 'coingecko', tokenId: token.id, baseId: usd.id },
       { provider: 'coingecko', tokenId: token.id, baseId: usd.id },
     ]);
-    expect(asksFor(eur.id)).toHaveLength(2);
-    // One ask of the router per run, carrying every token of the run.
+    // EUR is asked by the first run, never having been priced, and deferred
+    // by the second: FX is read once a day, in the 23:00Z hour (SC-1603).
+    expect(asksFor(eur.id)).toHaveLength(1);
+    // One ask of the router per run, carrying every token due that run.
     const routed = routedIds();
     expect(routed).toHaveLength(2);
     for (const ids of routed) {
       expect(ids).toContain(token.id);
-      expect(ids).toContain(eur.id);
       expect(ids).not.toContain(usd.id);
     }
+    expect(routed[0]).toContain(eur.id);
+    expect(routed[1]).not.toContain(eur.id);
     const stored = await storedFor(token.id, usd.id);
     expect(stored).toHaveLength(2);
     const apart = (stored[1]?.timestamp.getTime() ?? 0) - first.timestamp.getTime();
@@ -430,8 +447,8 @@ describe('the hourly run always fetches', () => {
       stored.map((r) => [r.tokenId, r.baseTokenId, r.price, r.source, r.timestamp.getTime()])
     ).toEqual([[token.id, usd.id, '100', CRYPTO_SOURCE, lastRun.getTime()]]);
     expect(result.errors.map((e) => e.tokenId)).not.toContain(token.id);
-    const read = await Container.get(PricingService).getCachedTokenPrices([token], usd, new Date());
-    expect(read.get(token.id)).toBe('100');
+    const read = await new PriceReader().at([token.id], usd.id, new Date());
+    expect(read.get(token.id)?.price.toString()).toBe('100');
   });
 });
 
@@ -623,6 +640,9 @@ describe('the held tokens the run does not price', () => {
   });
 
   test('CONTROL: neither is sent to a provider, and holding them changes no count', async () => {
+    // In the 23:00Z hour nothing is deferred (SC-1603), so the two runs differ
+    // only by what they hold.
+    setSystemTime(new Date(Math.floor(Date.now() / DAY) * DAY + 23 * HOUR));
     const usd = await fiat('USD');
     const user = await commitUser(usd.id);
     const company = await commitToken('private-company');
@@ -642,5 +662,68 @@ describe('the held tokens the run does not price', () => {
     expect(asksFor(usd.id)).toEqual([]);
     expect(asksFor(company.id)).toEqual([]);
     expect(counts(result)).toEqual(counts(without));
+  });
+});
+
+describe('SC-1603: stocks by exchange hours, FX once a day', () => {
+  /** A reading an hour before `runAt`, as the previous hourly run leaves. */
+  async function pricedAnHourBefore(tokenId: string, runAt: Date) {
+    const usd = await fiat('USD');
+    await commitPrices([
+      {
+        tokenId,
+        baseTokenId: usd.id,
+        price: '1',
+        timestamp: new Date(runAt.getTime() - HOUR),
+        source: CRYPTO_SOURCE,
+      },
+    ]);
+  }
+
+  test('FX read within the day is deferred outside the 23:00Z hour and asked in it', async () => {
+    const noon = new Date('2026-10-06T12:00:00Z');
+    const currency = await commitToken('fiat');
+    await pricedAnHourBefore(currency.id, noon);
+    const { useCase, asksFor } = hourlyRun([currency]);
+
+    setSystemTime(noon);
+    const deferredRun = await useCase.execute();
+    expect(asksFor(currency.id)).toHaveLength(0);
+    expect(deferredRun.tokensDeferred).toBeGreaterThanOrEqual(1);
+    expect(deferredRun.errors.map((e) => e.tokenId)).not.toContain(currency.id);
+
+    setSystemTime(new Date('2026-10-06T23:00:00Z'));
+    await useCase.execute();
+    expect(asksFor(currency.id)).toHaveLength(1);
+  });
+
+  test('a US stock is deferred on a Saturday and asked in a weekday session', async () => {
+    const stock = await commitToken('stock', 'US');
+    const saturday = new Date('2026-10-03T15:00:00Z');
+    const tuesday = new Date('2026-10-06T15:00:00Z'); // 11:00 in New York
+    await pricedAnHourBefore(stock.id, saturday);
+    await pricedAnHourBefore(stock.id, tuesday);
+    // No stock provider is registered here, so what the run hands the router
+    // is the claim, not what a provider was asked.
+    const { useCase, routedIds } = hourlyRun([stock]);
+
+    setSystemTime(saturday);
+    const weekend = await useCase.execute();
+    expect(routedIds().flat()).not.toContain(stock.id);
+    expect(weekend.tokensDeferred).toBeGreaterThanOrEqual(1);
+
+    setSystemTime(tuesday);
+    await useCase.execute();
+    expect(routedIds().flat()).toContain(stock.id);
+  });
+
+  test('a stock never priced is asked whatever the hour', async () => {
+    const stock = await commitToken('stock', 'US');
+    const { useCase, routedIds } = hourlyRun([stock]);
+
+    setSystemTime(new Date('2026-10-03T15:00:00Z'));
+    await useCase.execute();
+
+    expect(routedIds().flat()).toContain(stock.id);
   });
 });

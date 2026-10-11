@@ -26,8 +26,8 @@ export interface BackfillStatementFeesSummary {
   totalFeeMagnitude: string;
   /** Holdings whose ledger changed, and therefore whose opening was re-derived. */
   holdingsTouched: number;
-  /** Of those, the ones the reconciler re-synthesized an opening balance for. */
-  openingsResynthesized: number;
+  /** Of those, the ones whose coverage records an opening position. */
+  openingsRecorded: number;
 }
 
 const DEFAULT_BATCH_SIZE = 500;
@@ -116,11 +116,11 @@ export class BackfillStatementFeesUseCase {
       if (page.length < batchSize) break;
     }
 
-    let openingsResynthesized = 0;
+    let openingsRecorded = 0;
     if (!dryRun) {
       for (const holdingId of touchedHoldings) {
         const result = await this.reconciliation.reconcileHolding(holdingId);
-        if (result?.openingBalanceSynthesized) openingsResynthesized += 1;
+        if (result?.hasOpening) openingsRecorded += 1;
       }
     }
 
@@ -130,7 +130,7 @@ export class BackfillStatementFeesUseCase {
       feesWritten,
       totalFeeMagnitude: totalFee.toString(),
       holdingsTouched: touchedHoldings.size,
-      openingsResynthesized,
+      openingsRecorded,
     };
     this.logger.info({ ...summary, dryRun }, 'Statement fee backfill finished');
     return summary;

@@ -35,6 +35,7 @@ function pHolding(
   isActive = true
 ): PortfolioValueResult['holdings'][number] {
   return {
+    holdingId: `holding-${accountId}-${tokenSymbol}`,
     accountId,
     // These fixtures give every symbol its own token, so a symbol-derived id
     // is unique here. A test that needs two tokens on one symbol builds the

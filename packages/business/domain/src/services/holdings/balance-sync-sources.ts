@@ -1,3 +1,5 @@
+import type { HoldingKind } from '../../engine/types';
+
 /**
  * The `holdings.source` each balance sync stamps on the rows it owns.
  *
@@ -8,16 +10,26 @@
  * drifts produces a holding no sync can ever see, which is half of SC-356.
  */
 /**
- * The `holdings.source` that means "a person maintains this number".
+ * The `holdings.source` that means "a person created this row".
  *
- * Declared here rather than spelled at each site because it is load-bearing at
- * BOTH ends and in opposite directions (SC-856): `HoldingsSyncHelper` skips a
- * row carrying it, and `TransferReviewService`'s `arrivalMovesTheAnchor` moves
- * a row carrying it precisely BECAUSE the sync will not. The two must agree on
- * the string or an arrival is either counted twice or not at all, and neither
- * failure shows up as a test going red.
+ * Since A5 D-4 a row's KIND says who writes it, and this string decides only
+ * for a row whose kind was never set (`holdingKindOf`).
  */
 export const MANUAL_HOLDING_SOURCE = 'manual';
+
+/**
+ * A holding's kind as the balance syncs and an arriving transfer read it (A5
+ * D-4, #2): a feed is the sync's to write and waits for its feed; a snapshot is
+ * a person's and moves when money arrives. A row whose kind was never set is
+ * judged by its source, a person's row a snapshot and any other a feed.
+ * Production holds no such row since A2's backfill, and the column stays
+ * nullable, so the rule stays total. `HoldingRepository`'s `isFeedHolding` is
+ * this rule in SQL; the two must agree, or the sync and the arrival disagree
+ * about who owns a row.
+ */
+export function holdingKindOf(holding: { kind: HoldingKind | null; source: string }): HoldingKind {
+  return holding.kind ?? (holding.source === MANUAL_HOLDING_SOURCE ? 'snapshot' : 'feed');
+}
 
 export const WALLET_BALANCE_SYNC_SOURCE = 'blockchain';
 export const EXCHANGE_BALANCE_SYNC_SOURCE = 'sync_exchange_balances';

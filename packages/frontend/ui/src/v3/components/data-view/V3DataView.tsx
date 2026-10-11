@@ -103,10 +103,13 @@ const SEARCH_DEBOUNCE_MS = 300;
 export function DataViewGroupHeading({
   label,
   count,
+  countLabel,
   aside,
 }: {
   label: string;
   count: number;
+  /** The count in words ("2 bills") where a bare number would not say what it counts. */
+  countLabel?: string;
   /** A figure for the whole group, right-aligned, e.g. what one date adds up to. */
   aside?: ReactNode;
 }) {
@@ -116,8 +119,12 @@ export function DataViewGroupHeading({
       <span className="min-w-0 truncate">{label}</span>
       <span className="shrink-0 tabular-nums">
         <span aria-hidden="true">· </span>
-        {count}
-        <span className="sr-only"> {t('ui.dataView.itemCount', { count })}</span>
+        {countLabel ?? (
+          <>
+            {count}
+            <span className="sr-only"> {t('ui.dataView.itemCount', { count })}</span>
+          </>
+        )}
       </span>
       {aside ? (
         <span className="ms-auto shrink-0 text-end tabular-nums normal-case tracking-normal text-foreground">
@@ -404,6 +411,7 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
     partial,
     searchTerm: dv.searchTerm,
     searchIsRemote,
+    filtersAreRemote: config.filtersAreRemote,
     activeFilterCount: activeFilters.length,
   });
   const showError = surface === 'error';
@@ -547,17 +555,6 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
             onRefine={refine.open}
             activeFilters={activeFilters}
             onRemoveFilter={(key) => url.setFilter(key, '')}
-            trailing={
-              selectable && !isDesktop ? (
-                <Button
-                  variant="ghost"
-                  onClick={() => (selecting ? leaveSelectionMode() : setSelecting(true))}
-                  className="shrink-0"
-                >
-                  {selecting ? t('ui.dataView.toolbar.done') : t('ui.dataView.toolbar.select')}
-                </Button>
-              ) : undefined
-            }
           />
 
           {!query.isLoading ? (
@@ -596,20 +593,35 @@ export function V3DataView<T>({ config, getId, query = SETTLED_QUERY_STATE }: V3
                       })
                     : countLabel(nounKey, dv.totalCount)}
               </p>
-              <button
-                type="button"
-                onClick={exporting.open}
-                className={cn(
-                  'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-caption',
-                  'text-muted-foreground transition-colors duration-fast ease-emphasized',
-                  'hover:text-foreground focus-visible:outline-none focus-visible:ring-2',
-                  'focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
-                )}
-              >
-                <Download className="h-3.5 w-3.5" aria-hidden="true" />
-                {t('ui.dataView.toolbar.export')}
-                <span className="sr-only"> {t(nounKey, { count: 2 })}</span>
-              </button>
+              <div className="flex shrink-0 items-center gap-1">
+                {/* Select sits here for Export's reason: in the control row it
+                  cut the search field's placeholder at 390px once a filter
+                  count widened the sliders button (SC-1652). */}
+                {selectable && !isDesktop ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => (selecting ? leaveSelectionMode() : setSelecting(true))}
+                    className="shrink-0"
+                  >
+                    {selecting ? t('ui.dataView.toolbar.done') : t('ui.dataView.toolbar.select')}
+                  </Button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={exporting.open}
+                  className={cn(
+                    'inline-flex shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-caption',
+                    'text-muted-foreground transition-colors duration-fast ease-emphasized',
+                    'hover:text-foreground focus-visible:outline-none focus-visible:ring-2',
+                    'focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
+                  )}
+                >
+                  <Download className="h-3.5 w-3.5" aria-hidden="true" />
+                  {t('ui.dataView.toolbar.export')}
+                  <span className="sr-only"> {t(nounKey, { count: 2 })}</span>
+                </button>
+              </div>
             </div>
           ) : null}
         </div>

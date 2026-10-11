@@ -7,10 +7,11 @@ import { RETRY_EXTERNAL } from '../retry-policies';
  * Go and get a currency pair we could not answer from storage (SC-222).
  *
  * This job exists because the fetch it performs must not happen on a request.
- * `CurrencyConverter`'s upstream call goes through an outflow limiter of two
- * requests per sixty seconds whose acquire *sleeps*, so on a read path the
- * third uncovered currency waits half a minute — measured at 26 s for three
- * currencies against production. Here the same wait costs nobody anything.
+ * The read path's upstream call (`CurrencyConverter`'s, gone since foundation
+ * A3) went through an outflow limiter of two requests per sixty seconds whose
+ * acquire *sleeps*, so the third uncovered currency waited half a minute —
+ * measured at 26 s for three currencies against production. Here the same
+ * wait costs nobody anything.
  *
  * The user's figure does not block on this. It renders without the pair and
  * says so; the refresh lands, and the next read has it.
@@ -74,9 +75,8 @@ export const CURRENCY_RATE_REFRESH: UserJobDescriptor<CurrencyRateRefreshJob> = 
 
 /**
  * How long one queued refresh stands in for every other request for the same
- * pair. Matches `CurrencyConverter`'s in-memory TTL: a shorter window would
- * queue work whose result the converter is still serving from memory, and a
- * longer one would leave a genuinely missing pair unfetched after the cache
- * that was hiding it expired.
+ * pair. It was `CurrencyConverter`'s in-memory TTL; the converter is gone
+ * (foundation A3), and the window still bounds how often one missing pair is
+ * fetched.
  */
 export const CURRENCY_RATE_REFRESH_COALESCE_MS = 10 * 60 * 1000;

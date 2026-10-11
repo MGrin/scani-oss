@@ -1,5 +1,6 @@
 import { TokenRepository } from '@scani/domain/repositories';
 import { PricingService } from '@scani/domain/services';
+import { CacheWriteCounter } from '@scani/domain/services/feeds/CacheWriteCounter';
 import { CURRENCY_RATE_REFRESH, type CurrencyRateRefreshJob } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { type ProcessorContext, UserJobProcessor } from '@scani/queue';
@@ -15,6 +16,7 @@ export class CurrencyRateRefreshProcessor extends UserJobProcessor<
   readonly descriptor = CURRENCY_RATE_REFRESH;
   private readonly pricing = Container.get(PricingService);
   private readonly tokens = Container.get(TokenRepository);
+  private readonly cacheWrites = Container.get(CacheWriteCounter);
 
   protected async handle(data: CurrencyRateRefreshJob, _ctx: ProcessorContext): Promise<unknown> {
     const { fromTokenId, fromSymbol, toTokenId, toSymbol } = data;
@@ -23,7 +25,9 @@ export class CurrencyRateRefreshProcessor extends UserJobProcessor<
     const tokens = await this.tokens.findByIds(ids);
     const asOf = new Date();
     // Both legs are persisted: the API reads through USD in another process.
-    const prices = await this.pricing.getTokenPrices(tokens, usd, asOf);
+    const changed: Parameters<PricingService['revalueChanged']>[0][number][] = [];
+    const prices = await this.pricing.getTokenPrices(tokens, usd, asOf, changed);
+    await this.cacheWrites.add('fx', await this.pricing.revalueChanged(changed, asOf), asOf);
 
     if (!ids.every((id) => prices.has(id))) {
       // Not an error worth retrying loudly: a pair with no upstream answer is

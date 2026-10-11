@@ -4,13 +4,15 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray, or } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { PortfolioValuationService } from '../../../src/services/portfolio/PortfolioValuationService';
 import { PortfolioValueCache } from '../../../src/services/portfolio/PortfolioValueCache';
 import { PortfolioValueVersion } from '../../../src/services/portfolio/PortfolioValueVersion';
-import { PricingService } from '../../../src/services/pricing/PricingService';
+import { PriceHubResolver } from '../../../src/services/pricing/PriceHubResolver';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { seedHoldingCache } from '../../../test/helpers/engine-guard';
 
 restoreContainerAfterAll();
 
@@ -23,6 +25,7 @@ let holdingId: string;
 let baseId: string;
 let assetId: string;
 let unheldId: string;
+let quoteId: string;
 let tokenTypeId: string;
 let institutionId: string;
 let institutionTypeId: string;
@@ -54,6 +57,20 @@ async function setPrice(tokenId: string, price: string, timestamp: Date): Promis
     });
 }
 
+let pairWrites = 0;
+
+/** A reading of any pair, at a stamp no other write here uses. */
+async function setPair(tokenId: string, baseTokenId: string, price: string): Promise<void> {
+  pairWrites += 1;
+  await db.insert(schema.tokenPrices).values({
+    tokenId,
+    baseTokenId,
+    price,
+    timestamp: new Date(T2.getTime() + pairWrites * 60_000),
+    source: 'coingecko',
+  });
+}
+
 const version = () => new PortfolioValueVersion().read(userId);
 
 beforeAll(async () => {
@@ -65,6 +82,7 @@ beforeAll(async () => {
   baseId = await makeToken(tokenTypeId, `PVVEUR${suffix.toUpperCase()}`);
   assetId = await makeToken(tokenTypeId, `PVVBTC${suffix.toUpperCase()}`);
   unheldId = await makeToken(tokenTypeId, `PVVSOL${suffix.toUpperCase()}`);
+  quoteId = await makeToken(tokenTypeId, `PVVCHF${suffix.toUpperCase()}`);
 
   const [user] = await db
     .insert(schema.users)
@@ -92,10 +110,12 @@ beforeAll(async () => {
     .values({ userId, institutionId, name: 'PVV Account', typeId: accountTypeId })
     .returning();
 
-  const [holding] = await db
-    .insert(schema.holdings)
-    .values({ userId, accountId: account!.id, tokenId: assetId, balance: '2' })
-    .returning();
+  const [holding] = await seedHoldingCache(db, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values({ userId, accountId: account!.id, tokenId: assetId, balance: '2' })
+      .returning()
+  );
   holdingId = holding!.id;
 
   await setPrice(assetId, '60000', T1);
@@ -104,10 +124,13 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await db.delete(schema.users).where(eq(schema.users.id, userId));
+  const made = [baseId, assetId, unheldId, quoteId];
   await db
     .delete(schema.tokenPrices)
-    .where(inArray(schema.tokenPrices.tokenId, [baseId, assetId, unheldId]));
-  await db.delete(schema.tokens).where(inArray(schema.tokens.id, [baseId, assetId, unheldId]));
+    .where(
+      or(inArray(schema.tokenPrices.tokenId, made), inArray(schema.tokenPrices.baseTokenId, made))
+    );
+  await db.delete(schema.tokens).where(inArray(schema.tokens.id, made));
   await db.delete(schema.tokenTypes).where(eq(schema.tokenTypes.id, tokenTypeId));
   await db.delete(schema.accountTypes).where(eq(schema.accountTypes.id, accountTypeId));
   await db.delete(schema.institutions).where(eq(schema.institutions.id, institutionId));
@@ -152,10 +175,60 @@ describe('PortfolioValueVersion (SC-1322)', () => {
     expect(await version()).toBe(before);
   });
 
+  // Every pair `PriceReader` could read to value the holding, not only the
+  // forward ones: a route takes an inverse leg or a hub as readily (Task 16).
+  test('the version changes when an inverse or a hub leg gets a new reading', async () => {
+    const usdId = await Container.get(PriceHubResolver).usdTokenId();
+
+    let before = await version();
+    await setPair(baseId, assetId, '2');
+    expect(await version()).not.toBe(before);
+
+    before = await version();
+    await setPair(usdId, assetId, '3');
+    expect(await version()).not.toBe(before);
+  });
+
+  test('once the asset is quoted in a currency, that currency’s leg to the base moves it', async () => {
+    await setPair(assetId, quoteId, '4');
+    const before = await version();
+    await setPair(quoteId, baseId, '5');
+    expect(await version()).not.toBe(before);
+  });
+
   test('a balance change moves it', async () => {
     const before = await version();
-    await db.update(schema.holdings).set({ balance: '3' }).where(eq(schema.holdings.id, holdingId));
+    await seedHoldingCache(db, (calculator) =>
+      calculator
+        .update(schema.holdings)
+        .set({ balance: '3' })
+        .where(eq(schema.holdings.id, holdingId))
+    );
     expect(await version()).not.toBe(before);
+  });
+});
+
+describe('PortfolioValueVersion sees a transfer answered internal (SC-1675)', () => {
+  test('answering an outflow internal moves it, though no balance changed', async () => {
+    const [outflow] = await db
+      .insert(schema.holdingTransactions)
+      .values({
+        userId,
+        holdingId,
+        tokenId: assetId,
+        kind: 'withdraw',
+        quantity: '-1',
+        occurredAt: T1,
+        source: 'test-fixture',
+        externalId: `pvv-out-${suffix}`,
+      })
+      .returning();
+    const unanswered = await version();
+    await db
+      .update(schema.holdingTransactions)
+      .set({ transferReview: 'internal', transferGroupId: randomUUID(), transferReviewedAt: T2 })
+      .where(eq(schema.holdingTransactions.id, outflow!.id));
+    expect(await version()).not.toBe(unanswered);
   });
 });
 
@@ -164,12 +237,12 @@ describe('PortfolioValuationService keys its cross-request cache on the version 
   let computed = 0;
 
   beforeAll(() => {
-    Container.set(PricingService, {
-      getCachedTokenPrices: async () => {
+    Container.set(PriceReader, {
+      at: async (tokenIds: readonly string[]) => {
         computed += 1;
-        return new Map([[assetId, '61000']]);
+        return new Map(tokenIds.map((tokenId) => [tokenId, null]));
       },
-    } as unknown as PricingService);
+    } as unknown as PriceReader);
     Container.set(PortfolioValueCache, {
       getOrCompute: async (key: string, factory: () => Promise<unknown>) => {
         if (!store.has(key)) store.set(key, await factory());
@@ -181,7 +254,7 @@ describe('PortfolioValuationService keys its cross-request cache on the version 
   });
 
   afterAll(() => {
-    Container.set(PricingService, new PricingService());
+    Container.set(PriceReader, new PriceReader());
     Container.set(PortfolioValueCache, new PortfolioValueCache());
     Container.set(PortfolioValuationService, new PortfolioValuationService());
   });

@@ -243,6 +243,10 @@ export interface HistoryBound {
  * them.
  */
 export interface PriceQuote {
+  /** The provider's close day; null for an observation at an instant. */
+  barDay: string | null;
+  /** Only the cloud adapter sets this for servers predating barDay. */
+  legacyDaily?: true;
   tokenId: string;
   baseTokenId: string;
   /** Decimal.js string — never a JS number to avoid float drift. */
@@ -437,5 +441,12 @@ export interface TransactionEvent {
    * into the ledger is not a question a provider can answer (SC-332).
    */
   swapGroupKey?: string;
+  /**
+   * Facts about the row the ledger's mapping reads, stored in
+   * `holding_transactions.source_metadata`: `income: 'dividend'` makes a
+   * `reward` dividend income, and `paidBy` names the security that paid it
+   * or had tax withheld from it (SC-1644).
+   */
+  sourceMetadata?: Record<string, unknown>;
   rawPayload?: unknown;
 }

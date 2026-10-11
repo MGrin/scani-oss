@@ -49,12 +49,51 @@ describe('demo dataset — determinism', () => {
 });
 
 describe('demo dataset — the ledger is the source of truth', () => {
-  it('gives every holding the balance its transactions add up to', () => {
+  /** What the first reading holds beyond the ledger up to it: the drift ledger's opening. */
+  const openingOf = (key: string): number => {
+    const first = dataset.observations
+      .filter((row) => row.holdingKey === key)
+      .sort((a, b) => a.observedAt.getTime() - b.observedAt.getTime())[0];
+    if (!first) return 0;
+    const explained = dataset.transactions
+      .filter((tx) => tx.holdingKey === key && tx.occurredAt <= first.observedAt)
+      .reduce((total, tx) => total + Number(tx.quantity), 0);
+    return Number(first.balance) - explained;
+  };
+
+  it('gives every holding the balance its opening reading and transactions add up to', () => {
     for (const holding of dataset.holdings) {
       const summed = dataset.transactions
         .filter((tx) => tx.holdingKey === holding.key)
         .reduce((total, tx) => total + Number(tx.quantity), 0);
-      expect(Number(holding.balance)).toBeCloseTo(summed, 6);
+      expect(Number(holding.balance)).toBeCloseTo(openingOf(holding.key) + summed, 6);
+    }
+  });
+
+  it('opens the three cash accounts from a reading, and every other holding from its ledger (A5)', () => {
+    const openings = Object.fromEntries(
+      dataset.holdings
+        .map((holding) => [holding.key, openingOf(holding.key)] as const)
+        .filter(([, opening]) => Math.abs(opening) > 1e-9)
+    );
+    expect(openings).toEqual({
+      'wise-eur-cash': 13_500,
+      'wise-gbp-cash': 12_000,
+      'revolut-gbp-cash': 9400,
+    });
+  });
+
+  it('writes no opening_balance row (A5)', () => {
+    expect(dataset.transactions.filter((tx) => tx.kind === 'opening_balance')).toEqual([]);
+  });
+
+  it('dates each opening reading at its holding start, never before it (A5)', () => {
+    for (const key of ['wise-eur-cash', 'wise-gbp-cash', 'revolut-gbp-cash']) {
+      const holding = dataset.holdings.find((row) => row.key === key);
+      const first = dataset.observations
+        .filter((row) => row.holdingKey === key)
+        .sort((a, b) => a.observedAt.getTime() - b.observedAt.getTime())[0];
+      expect(first?.observedAt.toISOString()).toBe(holding?.startsAt.toISOString());
     }
   });
 
@@ -90,6 +129,11 @@ describe('demo dataset — the ledger is the source of truth', () => {
       if (holding.symbol === 'GBP') continue; // the base currency quotes itself
       for (const day of days) expect(priced.has(`${holding.symbol}|${day}`)).toBe(true);
     }
+  });
+
+  it('writes its daily price rows at T23:59:59.999Z, the close of their UTC day', () => {
+    const stamps = new Set(dataset.prices.map((row) => row.at.toISOString().slice(10)));
+    expect([...stamps]).toEqual(['T23:59:59.999Z']);
   });
 });
 
@@ -436,6 +480,8 @@ describe('demo dataset — kind and starts_at are written with the holding (A2 D
           kindOrigin: null,
           decisionId: null,
           createdAt: seededAt,
+          metadataIncome: null,
+          metadataFeeOf: null,
         })
       ),
     inputs: [],

@@ -87,6 +87,8 @@ export const TOKEN_TYPE_LABELS: readonly { code: string; labelKey: string }[] = 
   { code: 'stock', labelKey: 'v3.tokens.type.stock' },
   { code: 'private-company', labelKey: 'v3.tokens.type.privateCompany' },
   { code: 'other', labelKey: 'v3.tokens.type.other' },
+  { code: 'property', labelKey: 'v3.tokens.type.property' },
+  { code: 'vehicle', labelKey: 'v3.tokens.type.vehicle' },
 ];
 
 /**
@@ -116,18 +118,4 @@ export function isScamFlagged(holding: Pick<HiddenHoldingRow, 'hiddenReason'>): 
   return holding.hiddenReason === 'scam' || holding.hiddenReason === 'both';
 }
 
-/** Kept aligned with `packages/core/src/config/tokens.ts`. */
-const SCAM_PROBABILITY_THRESHOLD = 0.35;
-
-/**
- * Does this token's `isScamProbability` count as scam?
- *
- * NOT `isScamFlagged`, which asks a different question of a different row.
- * That one reads `hiddenReason` off `holdings.getHidden` — the server's record
- * that *this holding* was hidden for being a scam. This one is the score, and
- * it is what a surface holding a plain token uses to decide whether the row is
- * badged or subtracted from a total.
- */
-export function isScamToken(probability: number | null | undefined): boolean {
-  return typeof probability === 'number' && probability >= SCAM_PROBABILITY_THRESHOLD;
-}
+export { isScamToken } from '@scani/shared';

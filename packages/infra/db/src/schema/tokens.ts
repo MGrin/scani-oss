@@ -288,6 +288,30 @@ export const tokenPrices = pgTable(
   })
 );
 
+export type TokenPriceRestampAction = 'restamp' | 'relabel' | 'delete' | 'refetch' | 'insert';
+
+// The backup and record of Ops O1 (foundation A3, task 14): one row per
+// `token_prices` row the operation changed, with the row as it was, written in
+// the same transaction. An `insert` has no old row; undoing it deletes
+// `priceId`, which carries no foreign key because the row may be gone. Every
+// row of one run shares `runAt`, the apply transaction's clock. `action` and
+// the old-row rule are CHECK-constrained in the migration.
+export const tokenPriceRestamps = pgTable(
+  'token_price_restamps',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    runAt: timestamp('run_at', { withTimezone: true }).notNull(),
+    priceId: uuid('price_id').notNull(),
+    action: text('action').$type<TokenPriceRestampAction>().notNull(),
+    category: text('category').notNull(),
+    oldRow: jsonb('old_row').$type<Record<string, unknown>>(),
+  },
+  (table) => ({
+    runAtIdx: index('idx_token_price_restamps_run_at').on(table.runAt),
+    priceIdIdx: index('idx_token_price_restamps_price_id').on(table.priceId),
+  })
+);
+
 // Append-only log of manual price edits on custom tokens (types
 // 'private-company' and 'other'). `previousPrice` is null on the
 // creation entry. Unlocks future abuse-detection / user-flagging without

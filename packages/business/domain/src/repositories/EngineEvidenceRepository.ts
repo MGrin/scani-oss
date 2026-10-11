@@ -1,11 +1,22 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
-import type { Holding, NewHolding, Token, TokenPrice } from '@scani/db/schema';
+import type { Holding, NewHolding, TokenPrice } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, asc, desc, eq, exists, getTableName, inArray, lte, type SQL, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  eq,
+  exists,
+  getTableName,
+  gte,
+  inArray,
+  lt,
+  type SQL,
+  type SQLWrapper,
+  sql,
+} from 'drizzle-orm';
 import { makePgArray, type PgColumn, type PgTable } from 'drizzle-orm/pg-core';
 import { Service } from 'typedi';
 import { PRICE_GRANULARITIES, type PriceGranularity, type PriceReading } from '../engine/types';
-import { includedInTotalSql } from '../lib/holding-inclusion';
 // Type-only, so nothing links the repository to the classifier at runtime.
 import type {
   EvidenceInput,
@@ -15,8 +26,10 @@ import type {
   HoldingLabels,
   LegacyHoldingEvidence,
 } from '../services/foundation/legacy-classification';
+import { STATEMENT_CLOSE_SOURCE } from '../services/foundation/legacy-classification';
 import { LEGACY_ANCHOR_KEY } from '../services/foundation/legacy-ledger-kinds';
 import { LABEL_BATCH_SIZE, MAPPED_ENTRY_LABELS } from './entry-labels';
+import { LEDGER_METADATA_FACTS } from './ledger-metadata-facts';
 
 /**
  * Rows per read of observations or ledger rows. A heavy holding's history is
@@ -121,7 +134,79 @@ const TRANSACTION_EVIDENCE = {
   kindOrigin: ledger.kindOrigin,
   decisionId: ledger.decisionId,
   createdAt: ledger.createdAt,
+  ...LEDGER_METADATA_FACTS,
 };
+
+/**
+ * The observations of `holdings` less every checkpoint that repeats both
+ * neighbours (SC-1671). An hourly sync writes a checkpoint whether or not the
+ * balance moved: 141,927 of one production user's 142,260 readings, of which
+ * 642 change a balance. Between two equal balances with no entry between them,
+ * `balanceAt` walks the same from the earlier neighbour as from the reading
+ * dropped, so the residual steps and the drift rows built on them do not move.
+ *
+ * A reading is left out only when all of these hold, and each is a way the
+ * walk would otherwise change:
+ *  - it is a `checkpoint`, and so are both neighbours. A reading with no role
+ *    never stands in as a neighbour;
+ *  - the one before it and the one after it carry the same balance and the
+ *    same of every field read here, so each run keeps its first and last;
+ *  - none of the three is superseded;
+ *  - no ledger row of that holding lies between the two neighbours, ends
+ *    included: a row at the dropped reading's own instant is absorbed by it;
+ *  - it carries no `gap_review`, which the drift rows read by observation id;
+ *  - it is not a statement close. The classifier reads every close's
+ *    `created_at`: a balance copy written within 120 s of one is the file
+ *    import's own, so a dropped close would relabel that copy;
+ *  - its holding has no `snapshot` reading. A fetch window carries balances
+ *    only while a checkpoint of its input lies in it, so a dropped checkpoint
+ *    could uncover a person's snapshot, which would then anchor.
+ *
+ * Balances compare as text, which is narrower than numeric equality: `1.5`
+ * and `1.50` are kept apart. The ledger bounds are widened to whole
+ * milliseconds, the precision the comparison was proven at.
+ */
+function sayingSomething(holdings: SQLWrapper): SQL {
+  const said = sql`jsonb_build_array(
+    o.balance::text, o.source, o.role, o.authority, o.input_id, o.cause, o.gap_review,
+    o.source_metadata -> 'origin', o.source_metadata -> 'source',
+    o.source_metadata -> ${sql.raw(`'${LEGACY_ANCHOR_KEY}'`)}
+  )`;
+  return sql`(
+    select k.id from (
+      select o.id, o.holding_id, o.superseded_at, o.role, o.gap_review, o.source,
+        ${said} as said,
+        lag(${said}) over w as said_before,
+        lead(${said}) over w as said_after,
+        lag(o.superseded_at) over w as superseded_before,
+        lead(o.superseded_at) over w as superseded_after,
+        lag(o.observed_at) over w as at_before,
+        lead(o.observed_at) over w as at_after,
+        coalesce(bool_or(o.role = 'snapshot') over (partition by o.holding_id), false)
+          as beside_snapshot
+      from ${obs} o
+      where o.holding_id in ${holdings}
+      window w as (partition by o.holding_id order by o.observed_at, o.id)
+    ) k
+    where k.role is distinct from 'checkpoint'
+      or k.gap_review is not null
+      or k.source = ${STATEMENT_CLOSE_SOURCE}
+      or k.beside_snapshot
+      or k.said_before is null
+      or k.said_after is null
+      or k.said <> k.said_before
+      or k.said <> k.said_after
+      or k.superseded_at is not null
+      or k.superseded_before is not null
+      or k.superseded_after is not null
+      or exists (
+        select 1 from ${ledger} t
+        where t.holding_id = k.holding_id
+          and t.occurred_at >= date_trunc('milliseconds', k.at_before)
+          and t.occurred_at < date_trunc('milliseconds', k.at_after) + interval '1 millisecond'
+      )
+  )`;
+}
 
 const ENTRY_LABEL_COLUMNS: readonly LabelColumn<EntryLabel>[] = [
   ...MAPPED_ENTRY_LABELS.map(({ key, column }) => ({ column, value: (l: EntryLabel) => l[key] })),
@@ -143,7 +228,8 @@ export class EngineEvidenceRepository extends BaseRepository<Holding, NewHolding
    */
   async findHoldingEvidence(
     scope: { userId: string; holdingIds?: readonly string[] },
-    tx?: DatabaseTransaction
+    tx?: DatabaseTransaction,
+    options?: { withoutRepeatedCheckpoints?: boolean }
   ): Promise<LegacyHoldingEvidence[]> {
     if (scope.holdingIds?.length === 0) return [];
     const database = this.getDb(tx);
@@ -187,7 +273,15 @@ export class EngineEvidenceRepository extends BaseRepository<Holding, NewHolding
         database
           .select(OBSERVATION_EVIDENCE)
           .from(obs)
-          .where(and(inArray(obs.holdingId, scopedHoldings()), after))
+          .where(
+            and(
+              inArray(obs.holdingId, scopedHoldings()),
+              options?.withoutRepeatedCheckpoints
+                ? inArray(obs.id, sayingSomething(scopedHoldings()))
+                : undefined,
+              after
+            )
+          )
           .orderBy(asc(obs.observedAt), asc(obs.id))
           .limit(EVIDENCE_PAGE_ROWS),
       (row) => internObservation(row, intern),
@@ -283,30 +377,6 @@ export class EngineEvidenceRepository extends BaseRepository<Holding, NewHolding
   }
 
   /**
-   * Per token and base, whatever the base, the latest row at or before `at`:
-   * the rows the live resolver chooses a token's price among.
-   */
-  async findLatestReadingsInAnyBase(
-    tokenIds: readonly string[],
-    at: Date,
-    tx?: DatabaseTransaction
-  ): Promise<PriceReading[]> {
-    if (tokenIds.length === 0) return [];
-    const prices = schema.tokenPrices;
-    const rows = await this.getDb(tx)
-      .selectDistinctOn([prices.tokenId, prices.baseTokenId])
-      .from(prices)
-      .where(and(inArray(prices.tokenId, [...tokenIds]), lte(prices.timestamp, at)))
-      .orderBy(
-        asc(prices.tokenId),
-        asc(prices.baseTokenId),
-        desc(prices.timestamp),
-        asc(prices.id)
-      );
-    return this.readingsOf(rows);
-  }
-
-  /**
    * Per pair and instant: the rows at the latest stamp at or before it. The
    * filter sits inside the seek, because after it a row that is not a reading
    * would hide an older one that is. A row passes when the engine ranks its
@@ -379,6 +449,54 @@ export class EngineEvidenceRepository extends BaseRepository<Holding, NewHolding
    * the planner may take the index that holds the granularity before the
    * time, where `until` bounds nothing and the pair's entries are walked.
    */
+  /**
+   * Each token's earliest stored price, in any base. A token with no row is
+   * absent: base currency needs none, and an unpriceable one never gets one.
+   */
+  async findFirstPriceInstants(
+    tokenIds: readonly string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Map<string, Date>> {
+    if (tokenIds.length === 0) return new Map();
+    const database = this.getDb(transaction);
+    const rows = await database
+      .select({
+        tokenId: schema.tokenPrices.tokenId,
+        first: sql<Date>`min(${schema.tokenPrices.timestamp})`.mapWith(
+          schema.tokenPrices.timestamp
+        ),
+      })
+      .from(schema.tokenPrices)
+      .where(inArray(schema.tokenPrices.tokenId, [...new Set(tokenIds)]))
+      .groupBy(schema.tokenPrices.tokenId);
+    return new Map(rows.map((r) => [r.tokenId, r.first]));
+  }
+
+  /** One pair's rows, oldest first, ties by insertion; within `[from, until)` when given. */
+  async findPairReadings(
+    tokenId: string,
+    baseTokenId: string,
+    range?: { from: Date; until: Date },
+    tx?: DatabaseTransaction
+  ): Promise<{ price: string; timestamp: Date }[]> {
+    return this.getDb(tx)
+      .select({ price: schema.tokenPrices.price, timestamp: schema.tokenPrices.timestamp })
+      .from(schema.tokenPrices)
+      .where(
+        and(
+          eq(schema.tokenPrices.tokenId, tokenId),
+          eq(schema.tokenPrices.baseTokenId, baseTokenId),
+          ...(range
+            ? [
+                gte(schema.tokenPrices.timestamp, range.from),
+                lt(schema.tokenPrices.timestamp, range.until),
+              ]
+            : [])
+        )
+      )
+      .orderBy(asc(schema.tokenPrices.timestamp), asc(schema.tokenPrices.createdAt));
+  }
+
   async findQuoteTokenIds(
     tokenIds: readonly string[],
     until: Date,
@@ -447,23 +565,6 @@ export class EngineEvidenceRepository extends BaseRepository<Holding, NewHolding
       );
     }
     return readings;
-  }
-
-  /** The distinct tokens of the user's holdings that count in a portfolio total. */
-  async findPricedAssets(
-    userId: string,
-    tx?: DatabaseTransaction
-  ): Promise<Array<{ token: Token; typeCode: string | null }>> {
-    return this.getDb(tx)
-      .selectDistinctOn([schema.tokens.id], {
-        token: schema.tokens,
-        typeCode: schema.tokenTypes.code,
-      })
-      .from(schema.holdings)
-      .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
-      .leftJoin(schema.tokenTypes, eq(schema.tokenTypes.id, schema.tokens.typeId))
-      .where(and(eq(schema.holdings.userId, userId), includedInTotalSql()))
-      .orderBy(asc(schema.tokens.id));
   }
 
   /** Users with at least one holding. */
@@ -636,6 +737,7 @@ function internTransaction(row: EvidenceTransaction, intern: Intern): void {
   row.inputId = intern(row.inputId);
   row.executionPriceTokenId = intern(row.executionPriceTokenId);
   row.kindOrigin = intern(row.kindOrigin);
+  row.metadataIncome = intern(row.metadataIncome);
 }
 
 function parameter(value: LabelValue): string | null {

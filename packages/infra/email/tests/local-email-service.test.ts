@@ -83,3 +83,15 @@ describe('LocalEmailService — transport selection', () => {
     expect(captured.from).toBe('override@elsewhere.io');
   });
 });
+
+describe('LocalEmailService — sendsMail (SC-1647)', () => {
+  test('true when SMTP is configured', () => {
+    setEnv({ FASTMAIL_API_TOKEN: undefined, SMTP_URL: 'smtp://x' });
+    expect(new LocalEmailService().sendsMail).toBe(true);
+  });
+
+  test('false when only the logging transport is left', () => {
+    setEnv({ FASTMAIL_API_TOKEN: undefined, SMTP_URL: undefined });
+    expect(new LocalEmailService().sendsMail).toBe(false);
+  });
+});

@@ -19,7 +19,9 @@
       "humanCheckFailed": "人間確認を読み込めませんでした。challenges.cloudflare.com のブロッカーを無効にしてから再読み込みしてください。",
       "cloudTitle": "Scani Cloud にサインイン",
       "cloudSubtitle": "API キーは Scani Cloud コンソールで管理します。メールアドレスを入力してサインインまたはアカウントを作成してください。",
-      "cloudNewAccount": "Scani Cloud は初めてですか？アカウントは自動で作成され、そのままコンソールに戻ります。"
+      "cloudNewAccount": "Scani Cloud は初めてですか？アカウントは自動で作成され、そのままコンソールに戻ります。",
+      "passkey": "パスキーでサインイン",
+      "passkeyFailed": "このデバイスではパスキーを使えませんでした。メールでサインインしてください。"
     },
     "code": {
       "title": "確認コードを入力",
@@ -55,6 +57,16 @@
     },
     "exits": {
       "label": "Scani について"
+    },
+    "twoFactor": {
+      "title": "2段階サインイン",
+      "subtitle": "認証アプリに表示されたコードを入力してください。",
+      "codeLabel": "6桁のコード",
+      "backupLabel": "バックアップコード",
+      "trustDevice": "このデバイスを30日間信頼する",
+      "submit": "続ける",
+      "useBackup": "バックアップコードを使う",
+      "useAuthenticator": "認証アプリを使う"
     }
   },
   "currency": {
@@ -91,6 +103,7 @@
     "vaults": "貯蓄目標",
     "tokens": "トークン",
     "jobs": "処理",
+    "transactions": "取引",
     "settings": "設定",
     "signOut": "サインアウト",
     "more": "その他",
@@ -107,7 +120,6 @@
   },
   "settings": {
     "title": "設定",
-    "subtitle": "各種設定を管理します",
     "profile": "プロフィール",
     "name": "名前",
     "namePlaceholder": "お名前",
@@ -156,7 +168,9 @@
         "customTokens_other": "カスタムトークン",
         "customTokens_counted_other": "{{count}}件のカスタムトークン",
         "balanceChanges_other": "残高の変動",
-        "balanceChanges_counted_other": "{{count}}件の残高変動"
+        "balanceChanges_counted_other": "{{count}}件の残高変動",
+        "transactions_other": "取引",
+        "transactions_counted_other": "{{count}}件の取引"
       },
       "accounts": {
         "col": {
@@ -378,7 +392,8 @@
           "noRecentPrice": "最近の価格なし",
           "noPriceSource": "利用できる価格提供元なし",
           "negativeOpening": "初期残高がマイナス",
-          "noCoverage": "カバレッジ行なし"
+          "noCoverage": "カバレッジ行なし",
+          "restoredUnmatched": "復元時に一致しなかったトークン"
         },
         "priceOption": {
           "stale": "古い相場"
@@ -811,6 +826,29 @@
           "answersLandHere": "残高のキューで答えた内容はここに表示され、取り消すことができます。",
           "nothingAnsweredYet": "まだ説明済みの残高変動はありません"
         }
+      },
+      "transactions": {
+        "col": {
+          "date": "日付",
+          "description": "説明",
+          "account": "口座",
+          "category": "カテゴリ",
+          "amount": "金額"
+        },
+        "empty": {
+          "title": "取引はまだありません",
+          "description": "口座の同期や明細のインポートで行が追加されます。"
+        },
+        "filter": {
+          "category": "カテゴリ",
+          "account": "口座",
+          "holding": "保有資産",
+          "period": "期間"
+        },
+        "period": {
+          "all": "全期間",
+          "custom": "期間を指定"
+        }
       }
     },
     "brand": {
@@ -995,5 +1033,21 @@
     "signInDifferent": "別のメールアドレスでサインイン",
     "connectionIssue": "接続の問題",
     "connectionIssueRetrying": "接続の問題 — 再試行しています"
+  },
+  "oauth": {
+    "continuing": "接続しています…",
+    "failed": "接続を完了できませんでした。接続していたアプリからやり直してください。",
+    "consent": {
+      "title": "{{name}} が Scani のポートフォリオの読み取りを求めています",
+      "account": "{{email}} でサインイン中",
+      "canTitle": "できること",
+      "can": "保有資産、口座、取引、リターン、データ品質レポートの読み取り。",
+      "cannotTitle": "できないこと",
+      "cannot": "変更・追加・削除や送金は一切できません。",
+      "revoke": "設定からいつでも接続を解除できます。",
+      "allow": "許可",
+      "deny": "拒否",
+      "unnamedApp": "アプリ"
+    }
   }
 }

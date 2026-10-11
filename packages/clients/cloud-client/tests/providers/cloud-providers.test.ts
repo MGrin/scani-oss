@@ -276,3 +276,63 @@ test('an input held after an uncertain attempt reaches the worker as transient, 
   });
   expect(calls).toBe(1);
 });
+
+test.each(['2026-01-01', null])(
+  'historical barDay %s survives the Tier 2 HTTP round trip',
+  async (barDay) => {
+    const quote = {
+      tokenId: 'btc',
+      baseTokenId: 'usd',
+      price: '100',
+      timestamp: new Date('2026-01-02T00:00:00Z'),
+      source: 'coingecko_historical',
+      barDay,
+    };
+    state.registry.register({
+      providerKey: 'coingecko',
+      capabilities: ['current-price', 'historical-price'],
+      canPrice: () => true,
+      fetchCurrentPrice: async () => null,
+      fetchHistoricalPrice: async () => quote,
+      fetchHistoricalRange: async () => [quote],
+    });
+    const provider = new CloudPricingProvider(client, 'coingecko');
+    const single = await provider.fetchHistoricalPrice(btc, new Date('2026-01-01T00:00:00Z'), {
+      baseCurrency: usd,
+    });
+    const range = await provider.fetchHistoricalRange?.(
+      btc,
+      new Date('2026-01-01T00:00:00Z'),
+      new Date('2026-01-03T00:00:00Z'),
+      { baseCurrency: usd }
+    );
+    expect(single?.barDay).toBe(barDay);
+    expect(range?.[0]?.barDay).toBe(barDay);
+    expect(single?.timestamp).toEqual(quote.timestamp);
+  }
+);
+
+test('an older cloud response preserves its daily stamp through the explicit legacy adapter', async () => {
+  const quote = {
+    tokenId: 'btc',
+    baseTokenId: 'usd',
+    price: '100',
+    timestamp: '2026-01-02T00:00:00Z',
+    source: 'coingecko_historical',
+  };
+  const legacy = createCloudClient({
+    url: 'https://cloud.example',
+    apiKey: 'test-key',
+    fetch: async () => Response.json([{ result: { data: [quote] } }]),
+  });
+  const provider = new CloudPricingProvider(legacy, 'coingecko');
+  const result = await provider.fetchHistoricalRange?.(
+    btc,
+    new Date('2026-01-01T00:00:00Z'),
+    new Date('2026-01-03T00:00:00Z'),
+    { baseCurrency: usd }
+  );
+  expect(result?.[0]?.barDay).toBeNull();
+  expect(result?.[0]?.legacyDaily).toBe(true);
+  expect(result?.[0]?.timestamp).toEqual(new Date(quote.timestamp));
+});

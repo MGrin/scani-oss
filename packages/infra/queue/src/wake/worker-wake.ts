@@ -1,6 +1,5 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { createComponentLogger } from '@scani/logging';
-import type { Worker } from 'bullmq';
 import { Service } from 'typedi';
 
 const log = createComponentLogger('queue:worker-wake');
@@ -70,7 +69,7 @@ export function verifyWorkerWake(secret: string, headers: Headers, now = Date.no
  * `idle-worker-wakeups.test.ts` drive it for real, so a BullMQ upgrade that
  * renames it goes red there rather than silently leaving the ping inert.
  */
-export function interruptIdleWait(worker: Worker<any, any, string, any>): void {
+export function interruptIdleWait(worker: { backend: unknown }): void {
   (worker.backend as { cancelWait?: () => void }).cancelWait?.();
 }
 

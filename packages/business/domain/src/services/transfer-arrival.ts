@@ -2,9 +2,10 @@ import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { Decimal } from '@scani/shared';
 import { and, eq, gte, isNull, lte } from 'drizzle-orm';
+import type { HoldingKind } from '../engine/types';
 import type { AdoptedBalanceEdit } from '../lib/created-destination';
 import { MANUAL_EDIT_FLOW_SOURCE } from '../lib/person-authored-sources';
-import { type BalanceSyncSource, MANUAL_HOLDING_SOURCE } from './holdings/balance-sync-sources';
+import { holdingKindOf } from './holdings/balance-sync-sources';
 
 /**
  * How an arrival written for a transfer meets a destination that is already
@@ -62,9 +63,11 @@ export async function adoptTypedDeposit(
   };
 }
 
-export function anchorIsUnobserved(
-  holding: { source: string },
-  accountSyncSource: BalanceSyncSource | null
-): boolean {
-  return holding.source === MANUAL_HOLDING_SOURCE || accountSyncSource === null;
+/**
+ * Whether an arrival moves the destination's anchor: on a snapshot, a person's
+ * number nobody else will restate (SC-856); a feed holding waits for its feed,
+ * whatever its source and whoever owns its account (A5 #2).
+ */
+export function anchorIsUnobserved(holding: { kind: HoldingKind | null; source: string }): boolean {
+  return holdingKindOf(holding) === 'snapshot';
 }

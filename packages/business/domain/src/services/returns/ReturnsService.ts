@@ -17,12 +17,14 @@ import {
   resolveReturnWindow,
 } from '../../lib/returns/window';
 import { type Cashflow, type XirrResult, xirr } from '../../lib/returns/xirr';
+import { flowValuationInstant } from '../../lib/tx-valuation';
 import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { PortfolioValueDailyRepository } from '../../repositories/PortfolioValueDailyRepository';
 import { UserJobRepository } from '../../repositories/UserJobRepository';
 import { UserRepository } from '../../repositories/UserRepository';
-import { PriceGraphService } from '../pricing/PriceGraphService';
+import { InTransitService, type OpenTransit } from '../portfolio/InTransitService';
+import { PriceReader } from '../pricing/PriceReader';
 import { AssetCurrencyService } from './AssetCurrencyService';
 import {
   type ExternalFlow,
@@ -35,6 +37,7 @@ import {
   ReturnsScopeResolver,
   type WeightedHolding,
 } from './ReturnsScopeResolver';
+import type { ReturnsSharedLoads } from './ReturnsSharedLoads';
 
 /**
  * How a portfolio PERFORMED, as opposed to what it is worth (SC-457).
@@ -245,9 +248,18 @@ export class ReturnsService {
   private readonly userRepository = Container.get(UserRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly assetCurrencyService = Container.get(AssetCurrencyService);
-  private readonly priceGraphService = Container.get(PriceGraphService);
+  private readonly priceReader = Container.get(PriceReader);
+  private readonly inTransit = Container.get(InTransitService);
 
-  async compute(request: ReturnsRequest): Promise<ReturnsOutcome> {
+  /**
+   * `shared` is the loads this user's other windows over the same data read
+   * too (SC-1671); a caller computing several windows at once passes one.
+   */
+  async compute(
+    request: ReturnsRequest,
+    options: { shared?: ReturnsSharedLoads } = {}
+  ): Promise<ReturnsOutcome> {
+    const { shared } = options;
     const now = request.now ?? new Date();
     const window = resolveReturnWindow(request.window, now);
 
@@ -284,7 +296,10 @@ export class ReturnsService {
       ),
       // Which currency each holding's own price is set in, so the value series
       // can be split by currency as it is folded rather than re-walked after.
-      this.currencyByHolding(holdings.map((h) => h.holdingId)),
+      this.currencyByHolding(
+        holdings.map((h) => h.holdingId),
+        shared
+      ),
     ]);
 
     const weights = new Map(holdings.map((h) => [h.holdingId, h.weight]));
@@ -328,14 +343,28 @@ export class ReturnsService {
     const measuredHoldingIds = new Set(rows.map((row) => row.holdingId));
     const measured = holdings.filter((h) => measuredHoldingIds.has(h.holdingId));
 
-    const [scan, coverageByHolding, rebuilding, rebuildNegative, unchangedSince] =
+    // At user scope the value series carries money in transit from the outflow
+    // until it lands, so the flows must say the same (SC-1675). An account, a
+    // group or a holding carries no transit and keeps its flows as they are.
+    const transits =
+      request.scope.kind === 'user' ? await this.inTransit.openTransits(request.userId) : [];
+    const scanFlows = async (scoped: readonly WeightedHolding[], from: Date, to: Date) => {
+      const found = await this.flowService.forHoldings(
+        scoped,
+        baseCurrencyId,
+        from,
+        to,
+        now,
+        shared
+      );
+      return transits.length === 0
+        ? found
+        : { ...found, flows: withTransitFlows(found.flows, transits, from, to) };
+    };
+
+    const [scan, coverageByHolding, rebuilding, rebuildNegative, unchangedSince, debtHoldings] =
       await Promise.all([
-        this.flowService.forHoldings(
-          measured,
-          baseCurrencyId,
-          endOfDay(fullFirst.date),
-          endOfDay(fullLast.date)
-        ),
+        scanFlows(measured, endOfDay(fullFirst.date), endOfDay(fullLast.date)),
         this.holdingCoverage.findManyByHoldingIds(measured.map((h) => h.holdingId)),
         // An edit queues a full-history recompute; until it has run, the rollup
         // rows still describe the ledger before the edit. Reading the job rather
@@ -345,6 +374,7 @@ export class ReturnsService {
         this.userJobs.findInFlightByName(request.userId, HISTORY_REBUILD_JOB_NAME),
         this.holdingCoverage.findRebuildGoesNegative(measured.map((h) => h.holdingId)),
         this.holdingCoverage.findUnchangedSinceFirstReading(measured.map((h) => h.holdingId)),
+        this.holdingRepository.findIdsOnLiabilityAccounts(measured.map((h) => h.holdingId)),
       ]);
 
     // Eligibility is decided per HOLDING and the scope's figure is taken over
@@ -366,7 +396,8 @@ export class ReturnsService {
       scan.problemsByHolding,
       zeroed,
       rebuildNegative,
-      unchangedSince
+      unchangedSince,
+      debtHoldings
     );
     const included = measured.filter((h) => !reasonsByHolding.has(h.holdingId));
     const partial = included.length > 0 && included.length < measured.length;
@@ -387,9 +418,8 @@ export class ReturnsService {
       const narrowed = points[0]?.date !== fullFirst.date || points.at(-1)?.date !== fullLast.date;
       flowScan =
         points.length > 0 && narrowed
-          ? await this.flowService.forHoldings(
+          ? await scanFlows(
               included,
-              baseCurrencyId,
               endOfDay((points[0] as SeriesPoint).date),
               endOfDay((points[points.length - 1] as SeriesPoint).date)
             )
@@ -445,7 +475,7 @@ export class ReturnsService {
       ? flows.filter((flow) => flow.stale).length
       : flowScan.staleValuedCount;
     const attribution = attributeCurrencyEffect(
-      await this.attributionPoints(points, byDateAndCurrency, baseCurrencyId, window.to)
+      await this.attributionPoints(points, byDateAndCurrency, baseCurrencyId, now)
     );
     const netExternalFlow = valuationPoints.reduce(
       (sum, point) => sum.add(point.netExternalFlow),
@@ -609,7 +639,21 @@ export class ReturnsService {
    * asset. One `holdings` read and two inside `AssetCurrencyService`, for any
    * number of holdings.
    */
-  private async currencyByHolding(
+  private currencyByHolding(
+    holdingIds: readonly string[],
+    shared?: ReturnsSharedLoads
+  ): Promise<Map<string, string | null>> {
+    if (!shared) return this.loadCurrencyByHolding(holdingIds);
+    const key = [...holdingIds].sort().join(',');
+    const known = shared.currencyByHoldings.get(key);
+    if (known) return known;
+    const loading = this.loadCurrencyByHolding(holdingIds);
+    shared.currencyByHoldings.set(key, loading);
+    loading.catch(() => shared.currencyByHoldings.delete(key));
+    return loading;
+  }
+
+  private async loadCurrencyByHolding(
     holdingIds: readonly string[]
   ): Promise<Map<string, string | null>> {
     const byHolding = new Map<string, string | null>();
@@ -629,20 +673,19 @@ export class ReturnsService {
    * carrying every currency the window touched, each with the day's rate into
    * base.
    *
-   * The rate work is bounded by ONE prefetch, whatever the window's length,
-   * and since SC-1306 that prefetch is bounded in TIME as well as in count.
-   * That is not an optimisation — SC-471 is a ticket about this exact request
-   * spending 51 of its 53 seconds on sequential `token_prices` reads, and a
-   * rate per currency per day would have been 1,470 more of them on the
-   * account that produced the measurement. Every conversion below reads the
-   * in-memory index; a currency that IS the base needs no read at all, which
-   * is why a single-currency portfolio pays nothing for this.
+   * The rate work is ONE series load, whatever the window's length, over
+   * exactly the (currency, day) pairs it reads. That is not an optimisation —
+   * SC-471 is a ticket about this exact request spending 51 of its 53 seconds
+   * on sequential `token_prices` reads, and a rate per currency per day would
+   * have been 1,470 more of them on the account that produced the
+   * measurement. A currency that IS the base needs no read at all, which is
+   * why a single-currency portfolio pays nothing for this.
    */
   private async attributionPoints(
     points: readonly SeriesPoint[],
     flowsByDate: ReadonlyMap<string, Map<string | null, Decimal>>,
     baseCurrencyId: string,
-    until: Date
+    now: Date
   ): Promise<AttributionPoint[]> {
     const currencies = new Set<string | null>();
     for (const point of points) for (const key of point.byCurrency.keys()) currencies.add(key);
@@ -652,7 +695,7 @@ export class ReturnsService {
       [...currencies].filter((id): id is string => id !== null && id !== baseCurrencyId),
       baseCurrencyId,
       points.map((point) => point.date),
-      until
+      now
     );
 
     const rateOf = (currencyTokenId: string | null, date: string): Decimal | null => {
@@ -675,45 +718,36 @@ export class ReturnsService {
     }));
   }
 
-  /** `currency token id -> date -> units of base per unit of currency`. */
+  /**
+   * `currency token id -> date -> units of base per unit of currency`, from one
+   * series: each day at its close, and today, which has no close yet, at the
+   * run's instant (`flowValuationInstant`).
+   */
   private async fxRates(
     currencyTokenIds: readonly string[],
     baseCurrencyId: string,
     dates: readonly string[],
-    until: Date
+    now: Date
   ): Promise<Map<string, Map<string, Decimal | null>>> {
     const rates = new Map<string, Map<string, Decimal | null>>();
     if (currencyTokenIds.length === 0) return rates;
 
-    // Bounded to the START of the earliest day this will be asked about
-    // (SC-1306). Every conversion below happens at `<date>T23:59:59.999Z`, so
-    // a bound at the earliest date's midnight sits strictly before the
-    // earliest ask — which is what the repository's carry-in row needs in
-    // order to answer identically to the unbounded fetch.
-    const earliest = dates.length > 0 ? dates.reduce((a, b) => (a < b ? a : b)) : null;
-    const priceLookup = await this.priceGraphService.buildPriceLookup(
-      currencyTokenIds,
-      baseCurrencyId,
-      until,
-      undefined,
-      earliest ? new Date(`${earliest}T00:00:00.000Z`) : undefined
+    const instantOf = (date: string) =>
+      flowValuationInstant(new Date(`${date}T00:00:00.000Z`), now);
+    const prices = await this.priceReader.series(
+      currencyTokenIds.flatMap((tokenId) =>
+        dates.map((date) => ({ tokenId, at: instantOf(date) }))
+      ),
+      baseCurrencyId
     );
-
     for (const currencyTokenId of currencyTokenIds) {
       const byDate = new Map<string, Decimal | null>();
       for (const date of dates) {
-        const conversion = await this.priceGraphService.convert(
-          ONE,
-          currencyTokenId,
-          baseCurrencyId,
-          new Date(`${date}T23:59:59.999Z`),
-          { preferGranularity: 'daily', priceLookup, tx: undefined }
-        );
         // A pair with no rate stays `null` all the way to the attribution,
         // which drops the sub-period rather than reading the gap as a
         // currency that did not move. That substitution is the defect SC-471
         // found one layer down, in the same code path.
-        byDate.set(date, conversion ? conversion.rate : null);
+        byDate.set(date, prices.priceAt(currencyTokenId, instantOf(date))?.price ?? null);
       }
       rates.set(currencyTokenId, byDate);
     }
@@ -775,7 +809,8 @@ function holdingReasons(
   problemsByHolding: ReadonlyMap<string, ReadonlySet<FlowProblem>>,
   zeroed: ReadonlySet<string>,
   rebuildNegative: ReadonlySet<string>,
-  unchangedSince: ReadonlyMap<string, string>
+  unchangedSince: ReadonlyMap<string, string>,
+  debtHoldings: ReadonlySet<string>
 ): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
   const add = (holdingId: string, reason: string) => {
@@ -784,6 +819,8 @@ function holdingReasons(
     out.set(holdingId, set);
   };
   for (const { holdingId } of measured) {
+    // A loan or card is debt, not an investment: its interest would read as return (SC-1640).
+    if (debtHoldings.has(holdingId)) add(holdingId, 'debt-account');
     const coverage = coverageByHolding.get(holdingId);
     if (flowCoverageOf(coverage, unchangedSince.get(holdingId)).kind === 'incomplete') {
       add(holdingId, 'incomplete-flow-coverage');
@@ -799,13 +836,23 @@ function holdingReasons(
     if (problems?.has('stale')) add(holdingId, 'stale-valuation');
   }
   const interpolatedDates = new Map<string, string[]>();
+  const countedDates = new Map<string, string[]>();
+  const gapDates = new Map<string, Set<string>>();
   for (const row of windowRows) {
     // A day before the holding's first record counts nothing for it (SC-1323).
     if (row.holdingsTotal === 0) continue;
-    if (row.coverageQuality !== 'full' && !zeroed.has(row.holdingId))
-      add(row.holdingId, 'missing-valuation');
-    if (row.holdingsStalePriced > 0 || (row.holdingsStaleAnchored ?? 0) > 0)
-      add(row.holdingId, 'stale-valuation');
+    const date = String(row.snapshotDate).slice(0, 10);
+    countedDates.set(row.holdingId, [...(countedDates.get(row.holdingId) ?? []), date]);
+    if (isPriceGapDay(row)) {
+      const gap = gapDates.get(row.holdingId) ?? new Set<string>();
+      gap.add(date);
+      gapDates.set(row.holdingId, gap);
+    } else {
+      if (row.coverageQuality !== 'full' && !zeroed.has(row.holdingId))
+        add(row.holdingId, 'missing-valuation');
+      if (row.holdingsStalePriced > 0 || (row.holdingsStaleAnchored ?? 0) > 0)
+        add(row.holdingId, 'stale-valuation');
+    }
     if ((row.holdingsBeforeRecords ?? 0) > 0) add(row.holdingId, 'insufficient-history');
     if ((row.holdingsInterpolated ?? 0) > 0) {
       const dates = interpolatedDates.get(row.holdingId) ?? [];
@@ -821,10 +868,51 @@ function holdingReasons(
     if (longestConsecutiveRun(dates) > MAX_INTERPOLATED_RUN_DAYS)
       add(holdingId, 'insufficient-history');
   }
+  // A price gap the feed closed inside the window is carried at the last price,
+  // and a holding's return telescopes across days with no flow, so the window's
+  // figure does not move with it; a flow valued during the gap is caught by the
+  // flow scan above. A gap at either end of the window IS that end's value
+  // (SC-1541).
+  for (const [holdingId, gap] of gapDates) {
+    if (closedPriceGaps(countedDates.get(holdingId) ?? [], gap)) continue;
+    add(holdingId, 'stale-valuation');
+    if (!zeroed.has(holdingId)) add(holdingId, 'missing-valuation');
+  }
   return out;
 }
 
 const MAX_INTERPOLATED_RUN_DAYS = 3;
+
+// The age the old resolver still read as a fresh daily close, so no gap it
+// counted in a figure is left out by this one.
+const MAX_CLOSED_PRICE_GAP_DAYS = 45;
+
+/** Valued, and degraded by a stale price alone: the day a price feed skipped. */
+function isPriceGapDay(row: HoldingRow): boolean {
+  return (
+    row.coverageQuality === 'partial' &&
+    row.holdingsStalePriced > 0 &&
+    (row.holdingsStaleAnchored ?? 0) === 0 &&
+    (row.holdingsBeforeRecords ?? 0) === 0
+  );
+}
+
+function closedPriceGaps(counted: readonly string[], gap: ReadonlySet<string>): boolean {
+  const days = [...new Set(counted)].sort();
+  if (gap.has(days[0] as string) || gap.has(days.at(-1) as string)) return false;
+  let runStart: string | null = null;
+  for (let i = 0; i < days.length; i++) {
+    const day = days[i] as string;
+    if (!gap.has(day)) {
+      runStart = null;
+      continue;
+    }
+    runStart ??= day;
+    if ((Date.parse(day) - Date.parse(runStart)) / DAY_MS + 1 > MAX_CLOSED_PRICE_GAP_DAYS)
+      return false;
+  }
+  return true;
+}
 
 function longestConsecutiveRun(dates: readonly string[]): number {
   const days = [...new Set(dates)]
@@ -1033,6 +1121,58 @@ function selectWindowPoints(
   const before = series.filter((point) => point.date < fromDate);
   const anchor = before[before.length - 1];
   return anchor ? [anchor, ...inside] : inside;
+}
+
+/**
+ * Money in transit sits in the destination's value from the outflow until it
+ * lands (SC-1675). While the person's arrival leg stands, both legs share the
+ * outflow's instant and net as they always did. Once the provider's arrival
+ * takes it over, the leg is dated when it landed, so its inflow moves back to
+ * the outflow's instant, valued as the outflow was for the units that arrived:
+ * the same units at the same instant, so a transfer is neither a return nor a
+ * flow at user scope. One that lands after the window still nets inside it.
+ */
+function withTransitFlows(
+  flows: readonly ExternalFlow[],
+  transits: readonly OpenTransit[],
+  from: Date,
+  to: Date
+): ExternalFlow[] {
+  const moved = transits.filter(
+    (t) => t.transit.arrived && t.arrival.at.getTime() !== t.transit.sentAt.getTime()
+  );
+  if (moved.length === 0) return [...flows];
+  const byId = new Map(flows.map((flow) => [flow.transactionId, flow]));
+  const landedIds = new Set(moved.map((t) => t.transit.arrivalId));
+  const out = flows.filter((flow) => !landedIds.has(flow.transactionId));
+  for (const t of moved) {
+    const at = t.transit.sentAt;
+    if (at <= from || at > to) continue;
+    const sent = byId.get(t.outflowId);
+    const landed = byId.get(t.transit.arrivalId);
+    const quantity = new Decimal(t.arrival.quantity);
+    const sentQuantity = sent ? new Decimal(sent.quantity).abs() : null;
+    const value =
+      sent && sentQuantity && !sentQuantity.isZero()
+        ? new Decimal(sent.baseAmount).neg().mul(quantity).div(sentQuantity)
+        : landed
+          ? new Decimal(landed.baseAmount)
+          : null;
+    const basis = sent ?? landed;
+    out.push({
+      transactionId: t.transit.arrivalId,
+      holdingId: t.destinationHoldingId,
+      kind: 'transfer_in',
+      occurredAt: at,
+      tokenId: t.tokenId,
+      quantity: quantity.toString(),
+      baseAmount: (value ?? new Decimal(0)).toString(),
+      valuationBasis: value === null ? null : (basis?.valuationBasis ?? null),
+      stale: basis?.stale ?? false,
+      weight: '1',
+    });
+  }
+  return out.sort((a, b) => a.occurredAt.getTime() - b.occurredAt.getTime());
 }
 
 /**

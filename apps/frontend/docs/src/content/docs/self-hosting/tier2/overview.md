@@ -50,6 +50,11 @@ processing. Token search/identity and Open Graph requests use their existing
 cloud endpoints. Bank connections through Salt Edge are planned and are not
 part of this release.
 
+Cloud pricing does not include Yahoo Finance, whose terms do not allow its data
+to be redistributed. Stocks Finnhub cannot price, such as many non-US listings,
+and currencies outside the central-bank feeds stay unpriced on Tier 2. Tier 1
+prices them directly from your own instance.
+
 Authentication mail uses fixed templates and a fixed Scani self-hosted sender,
 identifying your instance's hostname. Use an HTTPS public application URL. Raw
 `email.send` and all `storage.*` endpoints remain internal and return `403` for

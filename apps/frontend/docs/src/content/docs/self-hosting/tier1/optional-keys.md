@@ -38,11 +38,6 @@ which requires no key.
 |---|---|---|
 | `OPENAI_API_KEY` | [OpenAI](https://platform.openai.com/) | Screenshot and document parsing via Vision. Without a key, starting a parse is refused with `PRECONDITION_FAILED` and nothing is queued. Statement files and manual entry still work. |
 
-`PERPLEXITY_API_KEY` and `DEEPSEEK_API_KEY` are read by provider
-implementations that **no backend service registers**
-(`aiPerplexityFactory` and `aiDeepseekFactory` are exported and never
-passed to `buildProviderRegistry`). Setting them has no effect today.
-
 The model is not configurable: `gpt-5.6-luna` is a constant in
 `packages/clients/providers/src/providers/ai-openai/index.ts`, used for
 both text and vision. It is pinned rather than merely undocumented —

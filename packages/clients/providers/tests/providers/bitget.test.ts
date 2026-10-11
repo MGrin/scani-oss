@@ -109,16 +109,21 @@ describe('BitgetProvider', () => {
 
   test('fetchBalances merges available + frozen + locked, drops zero, uppercases symbol', async () => {
     const p = new BitgetProvider(passthroughLimiter());
-    const fetchHook = queueFetch(() => ({
-      body: {
-        code: '00000',
-        msg: 'success',
-        data: [
-          { coin: 'btc', available: '0.5', frozen: '0', locked: '0.1' },
-          { coin: 'usdt', available: '0', frozen: '0', locked: '0' },
-        ],
-      },
-    }));
+    // A classic account: the V3 account-type probe is refused (SC-1576).
+    const fetchHook = queueFetch((url) =>
+      url.includes('/api/v2/spot/account/assets')
+        ? {
+            body: {
+              code: '00000',
+              msg: 'success',
+              data: [
+                { coin: 'btc', available: '0.5', frozen: '0', locked: '0.1' },
+                { coin: 'usdt', available: '0', frozen: '0', locked: '0' },
+              ],
+            },
+          }
+        : { body: { code: '40084', msg: 'not supported for this account' }, status: 400 }
+    );
     try {
       const out = await p.fetchBalances(ctx as never);
       expect(out).toHaveLength(1);

@@ -1,4 +1,5 @@
 import {
+  isInjectedEvalRefusal,
   isThirdPartyOnlyStack,
   SENTRY_IGNORED_ERROR_PATTERNS,
 } from '@scani/shared/utils/sentry-noise';
@@ -103,7 +104,7 @@ if (SENTRY_DSN) {
     // their error messages faster than we can enumerate them. Then strip
     // PII (emails, JWTs, Authorization values) from whatever survives.
     beforeSend(event) {
-      if (isThirdPartyOnlyStack(event)) return null;
+      if (isThirdPartyOnlyStack(event) || isInjectedEvalRefusal(event)) return null;
       return scrubSentryEvent(event);
     },
     beforeBreadcrumb: scrubSentryBreadcrumb,

@@ -57,6 +57,7 @@ const NOTHING_TO_DO: Summary = {
   providerMissing: 0,
   droppedDays: 0,
   droppedBars: 0,
+  earliestWrittenDay: null,
   skippedUnpriceable: 0,
   attemptsFailed: 0,
   durationMs: 0,

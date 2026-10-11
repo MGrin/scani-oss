@@ -367,3 +367,143 @@ export function rowCatchUpInterval(
     ? 1000
     : false;
 }
+
+/** What `useJobStatus` knows about one job, from realtime events and the status poll. */
+export interface JobStatusSnapshot {
+  state: 'queued' | 'active' | 'progress' | 'completed' | 'failed' | 'unknown';
+  progress: number | null;
+  statusMessage: string | null;
+  result: unknown;
+  /**
+   * The failure in words somebody wrote for this user, or null (SC-551).
+   *
+   * Named for what it IS, not for the field it came from. It used to be
+   * `error` and carry whatever the processor threw — a `DrizzleQueryError`
+   * put a full `select … from "holdings"` in it. A name that says `error`
+   * invites a renderer to show it, which is exactly what happened.
+   */
+  userFacingError: string | null;
+  attemptsMade: number | null;
+  attemptsAllowed: number | null;
+  /**
+   * The job will not run again. A realtime `failed` is one attempt's, and a
+   * retry may still complete, so it is final only once the attempts are spent;
+   * the queue's own `failed` is always final (SC-1599). Act on a failure here,
+   * never on `state === 'failed'` alone.
+   */
+  finalFailure: boolean;
+}
+
+export const EMPTY_JOB_STATUS: JobStatusSnapshot = {
+  state: 'unknown',
+  progress: null,
+  statusMessage: null,
+  result: null,
+  userFacingError: null,
+  attemptsMade: null,
+  attemptsAllowed: null,
+  finalFailure: false,
+};
+
+/** Nothing later can change it: completed, or failed for good. */
+function isSettled(status: JobStatusSnapshot): boolean {
+  return status.state === 'completed' || status.finalFailure;
+}
+
+/** The realtime event's fields this reducer reads. */
+interface JobStatusEvent {
+  state?: string;
+  progress?: number;
+  statusMessage?: string;
+  result?: unknown;
+  error?: string;
+  attemptsMade?: number;
+  attemptsAllowed?: number;
+}
+
+/** One realtime job event applied to what is known. */
+export function applyJobEvent(prev: JobStatusSnapshot, event: JobStatusEvent): JobStatusSnapshot {
+  // Once the job has settled, ignore any later event. Redis pub/sub preserves
+  // order within a publisher but BullMQ's retry semantics + the
+  // lifecycle-publisher setup can re-emit an `active` or `queued` event after
+  // the run already closed — without this guard the UI flips "Completed" back
+  // to "Running" until the next refresh. A failed attempt with attempts left
+  // has not settled: the retry's events are the job's (SC-1599).
+  if (isSettled(prev) && event.state && event.state !== 'completed' && event.state !== 'failed') {
+    return prev;
+  }
+  const state = (event.state as JobStatusSnapshot['state'] | undefined) ?? prev.state;
+  const attemptsMade = event.attemptsMade ?? prev.attemptsMade;
+  const attemptsAllowed = event.attemptsAllowed ?? prev.attemptsAllowed;
+  return {
+    state,
+    progress: event.progress ?? prev.progress,
+    // Latch the latest worker-emitted phase message. JobHeader only renders
+    // it for in-flight states.
+    statusMessage: event.statusMessage ?? prev.statusMessage,
+    result: event.result ?? prev.result,
+    userFacingError: event.error ?? null,
+    attemptsMade,
+    attemptsAllowed,
+    // Unknown attempts read as not final: the status poll then settles it from
+    // the queue's own word.
+    finalFailure:
+      state === 'failed' &&
+      attemptsMade !== null &&
+      attemptsAllowed !== null &&
+      attemptsMade >= attemptsAllowed,
+  };
+}
+
+/** The `jobs.status` answer's fields this reducer reads. */
+interface JobStatusPollAnswer {
+  state: string;
+  progress?: unknown;
+  returnvalue?: unknown;
+  failedReason?: string | null;
+  attemptsMade?: number | null;
+  attemptsAllowed?: number | null;
+}
+
+/** One `jobs.status` poll answer applied to what is known. */
+export function applyJobPoll(
+  prev: JobStatusSnapshot,
+  status: JobStatusPollAnswer
+): JobStatusSnapshot {
+  const nextState = mapBullState(status.state);
+  // Same settled guard as the realtime path — BullMQ's `jobs.status` can
+  // briefly return `waiting` for the follow-up price-warm job on the same
+  // queue, which could flip us off a settled state.
+  if (isSettled(prev) && nextState !== 'completed' && nextState !== 'failed') return prev;
+  return {
+    state: nextState,
+    progress: typeof status.progress === 'number' ? status.progress : null,
+    // The poll can't see the realtime-only `statusMessage`; keep the latched
+    // one so it persists across brief socket drops while the job runs.
+    statusMessage: prev.statusMessage,
+    result: status.returnvalue ?? null,
+    userFacingError: status.failedReason ?? null,
+    attemptsMade: status.attemptsMade ?? null,
+    attemptsAllowed: status.attemptsAllowed ?? null,
+    // BullMQ calls a job `failed` only once its attempts are spent.
+    finalFailure: nextState === 'failed',
+  };
+}
+
+/** BullMQ's state, in the words `useJobStatus` reports. */
+export function mapBullState(state: string): JobStatusSnapshot['state'] {
+  switch (state) {
+    case 'waiting':
+    case 'waiting-children':
+    case 'delayed':
+      return 'queued';
+    case 'active':
+      return 'active';
+    case 'completed':
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    default:
+      return 'unknown';
+  }
+}

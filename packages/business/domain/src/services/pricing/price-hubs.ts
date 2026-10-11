@@ -1,5 +1,5 @@
 /**
- * The routing hubs `PriceGraphService` walks when a pair has no direct
+ * The routing hubs the price engine walks when a pair has no direct
  * edge, and the only definition of them. Three copies of this list used
  * to exist — the service's own default, `CurrencyConverter`'s
  * `FIAT_HUB_SYMBOLS`, and `RollupPortfolioValueDailyUseCase`'s
@@ -34,9 +34,7 @@ export interface PriceHub {
  * Evaluated in order; the first hub whose two legs both resolve wins.
  * USD first because every historical-price-backfill edge is anchored on it, which
  * is also why the two positions behind it are nearly unreachable for
- * fiat pairs. This is the order `PriceGraphService` and the nightly
- * rollup already used; `CurrencyConverter` listed EUR second, and now
- * shares this one.
+ * fiat pairs.
  */
 export const PRICE_HUBS: readonly PriceHub[] = [
   { symbol: 'USD', typeCode: 'fiat' },

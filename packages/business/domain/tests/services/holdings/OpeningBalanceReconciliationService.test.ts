@@ -3,12 +3,12 @@ process.env.DATABASE_URL = process.env.DATABASE_URL || 'postgresql://dummy:dummy
 import { describe, expect, test } from 'bun:test';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
-import { flowRoleOf } from '../../../src/lib/returns/flow-classification';
 import { HoldingBalanceObservationRepository } from '../../../src/repositories/HoldingBalanceObservationRepository';
 import { HoldingCoverageRepository } from '../../../src/repositories/HoldingCoverageRepository';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
 import { OpeningBalanceReconciliationService } from '../../../src/services/holdings/OpeningBalanceReconciliationService';
+import { AccountClassService } from '../../../src/services/liabilities/AccountClassService';
 import { BalanceAtTimeService } from '../../../src/services/pricing/BalanceAtTimeService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 
@@ -64,6 +64,16 @@ function makeService(opts: {
   // holding's ledger SOURCE covers, or undefined for the default — no source
   // has stated one (SC-900).
   historyStartsAt?: Date;
+  // The opening a previous run left, which a delete branch removes (SC-1607).
+  priorOpeningAt?: Date;
+  // What `holding_coverage.opening_balance_quantity` held before this run.
+  previousOpening?: string;
+  // Whether a row an earlier version synthesized still stands (A5).
+  storedOpening?: boolean;
+  // What the upsert reports it moved, when a stored row is rewritten.
+  earliestChangedAt?: Date;
+  // Fiat on a loan or card account: its balance is what is owed (SC-1640).
+  owes?: boolean;
 }): {
   service: OpeningBalanceReconciliationService;
   capturedTxs: CapturedTx[];
@@ -90,6 +100,10 @@ function makeService(opts: {
       (holdingRow && (includeHidden || !holdingRow.isHidden) ? [holdingRow] : []) as never,
   } as unknown as HoldingRepository);
 
+  Container.set(AccountClassService, {
+    holdingMayOwe: async () => opts.owes ?? false,
+  } as unknown as AccountClassService);
+
   const observations = opts.observations ?? [];
   Container.set(HoldingBalanceObservationRepository, {
     findExtremesForHolding: async () =>
@@ -112,15 +126,16 @@ function makeService(opts: {
     sumQuantityForHoldingUntil: async () => opts.txSumAllTime,
     bulkUpsert: async (rows: CapturedTx[]) => {
       capturedTxs.push(...rows);
-      return rows as never;
+      return { rows, earliestChangedAt: opts.earliestChangedAt ?? null } as never;
     },
+    hasReconciliationOpening: async () => opts.storedOpening ?? false,
     findForHoldingInRange: async (_id: string, from: Date, to: Date) =>
       (opts.txsBeforeFirstObs ?? []).filter(
         (t) => t.occurredAt.getTime() > from.getTime() && t.occurredAt.getTime() <= to.getTime()
       ) as never,
     deleteReconciliationOpening: async () => {
       deletedReconciliationOpenings++;
-      return 0;
+      return opts.priorOpeningAt ?? null;
     },
   } as unknown as HoldingTransactionRepository);
 
@@ -129,11 +144,16 @@ function makeService(opts: {
       capturedReconciliations.push(row);
       return row as never;
     },
-    // Only `history_starts_at` is read, and only the null/non-null distinction
-    // decides anything — the rest of the row is left off deliberately so a
-    // future reader cannot key on a column this stub happens to invent.
+    // Only `history_starts_at` and the previous opening are read; the rest of
+    // the row is left off so a future reader cannot key on a column this stub
+    // happens to invent.
     findByHolding: async () =>
-      (opts.historyStartsAt ? { historyStartsAt: opts.historyStartsAt } : null) as never,
+      (opts.historyStartsAt || opts.previousOpening !== undefined
+        ? {
+            historyStartsAt: opts.historyStartsAt ?? null,
+            openingBalanceQuantity: opts.previousOpening ?? null,
+          }
+        : null) as never,
   } as unknown as HoldingCoverageRepository);
 
   // Rebuilt per test: typedi caches by class, and a BalanceAtTimeService
@@ -177,7 +197,7 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
     });
     const r = await service.reconcileHolding('h1');
     expect(r).not.toBeNull();
-    expect(r?.openingBalanceSynthesized).toBe(false);
+    expect(r?.hasOpening).toBe(false);
     expect(r?.openingAt).toBeNull();
     // No opening tx synthesized.
     expect(capturedTxs).toHaveLength(0);
@@ -187,7 +207,7 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
     expect(capturedReconciliations[0]?.reconciliationNotes).toBeNull();
   });
 
-  test('synthesizes a positive opening_balance when holdings exceed tx sum', async () => {
+  test('records a positive opening in coverage and writes no row', async () => {
     const firstTxAt = new Date('2024-03-15T12:00:00Z');
     const { service, capturedTxs, capturedReconciliations } = makeService({
       holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '10' },
@@ -195,20 +215,15 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
       firstTxAt,
     });
     const r = await service.reconcileHolding('h1');
-    expect(r?.openingBalanceSynthesized).toBe(true);
+    expect(r?.hasOpening).toBe(true);
     expect(r?.computedOpening.toString()).toBe('6');
-    expect(capturedTxs).toHaveLength(1);
-    const tx = capturedTxs[0];
-    expect(tx?.kind).toBe('opening_balance');
-    expect(tx?.quantity).toBe('6');
-    expect(tx?.source).toBe('reconciliation-opening');
-    expect(tx?.externalId).toBe('opening_balance');
-    // Opening tx lands one millisecond before the first real tx.
-    expect(tx?.occurredAt.getTime()).toBe(firstTxAt.getTime() - 1);
+    // No row: the drift ledger carries the opening from the first reading (A5).
+    expect(capturedTxs).toHaveLength(0);
+    expect(r?.openingQuantity.toString()).toBe('6');
+    // Dated one millisecond before the first real tx.
+    expect(r?.openingAt?.getTime()).toBe(firstTxAt.getTime() - 1);
     expect(capturedReconciliations[0]?.openingBalanceQuantity).toBe('6');
-    expect(capturedReconciliations[0]?.reconciliationNotes).toContain(
-      'Synthesized opening balance'
-    );
+    expect(capturedReconciliations[0]?.reconciliationNotes).toContain('Opening balance of 6');
   });
 
   test('THE DEFECT: a negative opening is NOT written to the ledger (SC-199)', async () => {
@@ -225,7 +240,7 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
     const r = await service.reconcileHolding('h1');
 
     expect(capturedTxs).toHaveLength(0);
-    expect(r?.openingBalanceSynthesized).toBe(false);
+    expect(r?.hasOpening).toBe(false);
     expect(r?.openingAt).toBeNull();
     // The gap itself is still computed and returned — not writing it to the
     // ledger is not the same as not knowing it.
@@ -298,10 +313,11 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
 
     const r = await service.reconcileHolding('h1');
 
-    expect(r?.openingBalanceSynthesized).toBe(true);
-    expect(capturedTxs[0]?.occurredAt.getTime()).toBe(observedAt.getTime() - 1);
+    expect(r?.hasOpening).toBe(true);
+    expect(r?.openingAt?.getTime()).toBe(observedAt.getTime() - 1);
     // …and emphatically not the old answer.
-    expect(capturedTxs[0]?.occurredAt.getTime()).not.toBe(firstTxAt.getTime() - 1);
+    expect(r?.openingAt?.getTime()).not.toBe(firstTxAt.getTime() - 1);
+    expect(capturedTxs).toHaveLength(0);
   });
 
   test('an imported trade history is UNMOVED — its first tx already precedes every observation', async () => {
@@ -327,7 +343,8 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
     });
 
     const r = await service.reconcileHolding('h1');
-    expect(capturedTxs[0]?.occurredAt.getTime()).toBe(firstTxAt.getTime() - 1);
+    expect(r?.openingAt?.getTime()).toBe(firstTxAt.getTime() - 1);
+    expect(capturedTxs).toHaveLength(0);
     // 20 observed, 3 explained by the trade in between → 17 held at the open,
     // which is the same number the pre-SC-481 rule produced here.
     expect(r?.openingQuantity.toString()).toBe('17');
@@ -358,7 +375,7 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
 
     const r = await service.reconcileHolding('h1');
 
-    expect(capturedTxs[0]?.quantity).toBe('10671.32');
+    expect(capturedTxs).toHaveLength(0);
     expect(r?.openingQuantity.toString()).toBe('10671.32');
     // The gap is still known in full — the 9,365.84 is not lost, it is
     // refused a date it cannot support.
@@ -392,7 +409,7 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
 
     expect(capturedTxs).toHaveLength(0);
     expect(deletes()).toBe(1);
-    expect(r?.openingBalanceSynthesized).toBe(false);
+    expect(r?.hasOpening).toBe(false);
     expect(r?.unexplainedResidual.toString()).toBe('516.2026');
     expect(capturedReconciliations[0]?.reconciliationNotes).toContain('NOT backdated');
   });
@@ -417,7 +434,8 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
     });
 
     const r = await service.reconcileHolding('h1');
-    expect(capturedTxs[0]?.quantity).toBe('6');
+    expect(capturedTxs).toHaveLength(0);
+    expect(r?.openingQuantity.toString()).toBe('6');
     expect(r?.unexplainedResidual.toString()).toBe('0');
   });
 
@@ -440,12 +458,12 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
       observations: [{ observedAt, balance: '10671.32' }],
     };
     const { service, capturedTxs } = makeService(fixture);
-    await service.reconcileHolding('h1');
-    await service.reconcileHolding('h1');
+    const first = await service.reconcileHolding('h1');
+    const second = await service.reconcileHolding('h1');
 
-    expect(capturedTxs).toHaveLength(2);
-    expect(capturedTxs[0]?.occurredAt.getTime()).toBe(capturedTxs[1]?.occurredAt.getTime());
-    expect(capturedTxs[0]?.quantity).toBe(capturedTxs[1]?.quantity);
+    expect(capturedTxs).toHaveLength(0);
+    expect(first?.openingAt?.getTime()).toBe(second?.openingAt?.getTime());
+    expect(first?.openingQuantity.toString()).toBe(second?.openingQuantity.toString());
   });
 
   test('THE DEFECT (SC-613): a tx dated BEFORE the first observation is not double-counted', async () => {
@@ -481,47 +499,15 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
     // The invariant, on the number itself: the synthesized opening plus every
     // real transaction has to come to the balance the holding actually holds.
     // A test that only asserted an opening row EXISTS passes against 6,000.
-    expect(capturedTxs).toHaveLength(1);
-    expect(capturedTxs[0]?.quantity).toBe('4000');
-    expect(new Decimal(capturedTxs[0]?.quantity ?? '0').add(new Decimal('-2000')).toString()).toBe(
+    expect(capturedTxs).toHaveLength(0);
+    expect(r?.openingQuantity.toString()).toBe('4000');
+    expect(new Decimal(r?.openingQuantity ?? '0').add(new Decimal('-2000')).toString()).toBe(
       '2000'
     );
 
     // A negative residual is not a fact either — it is the ledger claiming to
     // explain MORE balance than exists.
     expect(r?.unexplainedResidual.toNumber()).toBe(0);
-  });
-
-  test('…and the returns denominator moves with it: contributions are 4000, not 6000', async () => {
-    // `opening_balance` is an external contribution in
-    // `lib/returns/flow-classification`, so an opening 2,000 too high inflates
-    // every contribution total the performance figures divide by — measured
-    // 6,000 against a true 4,000 on the run above, which understates the
-    // return. This is the number a person reads, one step downstream of the
-    // row.
-    const withdrawAt = new Date('2026-08-24T12:00:00Z');
-    const { service, capturedTxs } = makeService({
-      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '2000' },
-      txSumAllTime: '-2000',
-      firstTxAt: withdrawAt,
-      observations: [
-        { observedAt: new Date('2026-08-25T08:22:42.861Z'), balance: '4000' },
-        { observedAt: new Date('2026-08-25T08:22:42.883Z'), balance: '2000' },
-      ],
-      txsBeforeFirstObs: [
-        { occurredAt: withdrawAt, quantity: '-2000', source: 'user-balance-edit' },
-      ],
-    });
-    await service.reconcileHolding('h1');
-
-    const ledger = [
-      ...capturedTxs.map((t) => ({ kind: t.kind, quantity: t.quantity })),
-      { kind: 'withdraw', quantity: '-2000' },
-    ];
-    const contributions = ledger
-      .filter((t) => flowRoleOf(t.kind) === 'external' && new Decimal(t.quantity).gt(0))
-      .reduce((acc, t) => acc.add(new Decimal(t.quantity)), new Decimal(0));
-    expect(contributions.toString()).toBe('4000');
   });
 
   test('SC-613, second reproduction: a holding created through the app', async () => {
@@ -538,12 +524,11 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
       txsBeforeFirstObs: [{ occurredAt: firstTxAt, quantity: '-1000', source: 'exchange' }],
     });
 
-    await service.reconcileHolding('h2');
+    const r = await service.reconcileHolding('h2');
 
-    expect(capturedTxs[0]?.quantity).toBe('4000');
-    expect(new Decimal(capturedTxs[0]?.quantity ?? '0').add(new Decimal('-3500')).toString()).toBe(
-      '500'
-    );
+    expect(capturedTxs).toHaveLength(0);
+    expect(r?.openingQuantity.toString()).toBe('4000');
+    expect(new Decimal(r?.openingQuantity ?? '0').add(new Decimal('-3500')).toString()).toBe('500');
   });
 
   test('the SC-481 walk still LOWERS an opening — the bound only ever caps it', async () => {
@@ -561,7 +546,8 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
 
     const r = await service.reconcileHolding('h3');
 
-    expect(capturedTxs[0]?.quantity).toBe('10671.32');
+    expect(capturedTxs).toHaveLength(0);
+    expect(r?.openingQuantity.toString()).toBe('10671.32');
     expect(r?.unexplainedResidual.toString()).toBe('9365.84');
   });
 
@@ -574,8 +560,83 @@ describe('OpeningBalanceReconciliationService.reconcileHolding', () => {
     // Default epsilon is 1e-12 — too tight, so this would synthesize.
     // Pass a looser epsilon and confirm reconciliation skips synthesis.
     const r = await service.reconcileHolding('h1', { epsilon: new Decimal('1e-6') });
-    expect(r?.openingBalanceSynthesized).toBe(false);
+    expect(r?.hasOpening).toBe(false);
     expect(capturedTxs).toHaveLength(0);
+  });
+  // A row an earlier version wrote is kept current exactly as before, so it
+  // cannot go stale while it stands. A holding without one never gets one.
+  test('a stored row is kept current, as before, and no row is ever added', async () => {
+    const firstTxAt = new Date('2024-03-15T12:00:00Z');
+    const holding = { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '10' };
+    const stored = makeService({ holding, txSumAllTime: '4', firstTxAt, storedOpening: true });
+    await stored.service.reconcileHolding('h1');
+    expect(stored.capturedTxs).toHaveLength(1);
+    expect(stored.capturedTxs[0]).toMatchObject({
+      kind: 'opening_balance',
+      quantity: '6',
+      source: 'reconciliation-opening',
+      externalId: 'opening_balance',
+    });
+    expect(stored.capturedTxs[0]?.occurredAt.getTime()).toBe(firstTxAt.getTime() - 1);
+    expect(stored.deletes()).toBe(0);
+
+    const fresh = makeService({ holding, txSumAllTime: '4', firstTxAt });
+    await fresh.service.reconcileHolding('h1');
+    await fresh.service.reconcileHolding('h1');
+    expect(fresh.capturedTxs).toHaveLength(0);
+    expect(fresh.deletes()).toBe(0);
+  });
+
+  test('a rewritten stored row reports the date the upsert moved, as before', async () => {
+    const moved = new Date('2024-03-01T00:00:00Z');
+    const { service } = makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '10' },
+      txSumAllTime: '4',
+      firstTxAt: new Date('2024-03-15T12:00:00Z'),
+      storedOpening: true,
+      // Coverage alone would read this run as unchanged and report no date.
+      previousOpening: '6',
+      earliestChangedAt: moved,
+    });
+    const r = await service.reconcileHolding('h1');
+    expect(r?.openingChangedAt?.getTime()).toBe(moved.getTime());
+  });
+
+  test('a holding with rows and no reading records its computed opening in coverage only', async () => {
+    const { service, capturedTxs, capturedReconciliations } = makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '10' },
+      txSumAllTime: '3',
+      firstTxAt: new Date('2024-03-15T12:00:00Z'),
+    });
+    const r = await service.reconcileHolding('h1');
+    expect(capturedTxs).toHaveLength(0);
+    expect(r?.openingQuantity.toString()).toBe('7');
+    expect(capturedReconciliations[0]?.openingBalanceQuantity).toBe('7');
+  });
+
+  test('an opening moved in coverage only reports no date: no stored history reads it (SC-1607)', async () => {
+    const fixture = {
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '10' },
+      txSumAllTime: '4',
+      firstTxAt: new Date('2024-03-15T12:00:00Z'),
+    };
+    const moved = await makeService({ ...fixture, previousOpening: '5' }).service.reconcileHolding(
+      'h1'
+    );
+    expect(moved?.hasOpening).toBe(true);
+    expect(moved?.openingChangedAt ?? null).toBeNull();
+    const fresh = await makeService(fixture).service.reconcileHolding('h1');
+    expect(fresh?.openingChangedAt ?? null).toBeNull();
+  });
+
+  test('an unchanged opening reports no date, so no rebuild is sized from it (SC-1459)', async () => {
+    const r = await makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '10' },
+      txSumAllTime: '4',
+      firstTxAt: new Date('2024-03-15T12:00:00Z'),
+      previousOpening: '6.000',
+    }).service.reconcileHolding('h1');
+    expect(r?.openingChangedAt ?? null).toBeNull();
   });
 });
 
@@ -631,7 +692,7 @@ describe('OpeningBalanceReconciliationService.reconcileUser', () => {
 
     const results = await service.reconcileUser('u1');
 
-    expect(results[0]?.openingBalanceSynthesized).toBe(false);
+    expect(results[0]?.hasOpening).toBe(false);
     expect(capturedTxs).toHaveLength(0);
     expect(deletes()).toBe(1);
     expect(capturedReconciliations[0]?.openingBalanceQuantity).toBe('-4474');
@@ -663,7 +724,7 @@ describe('OpeningBalanceReconciliationService.reconcileUser', () => {
       firstTxAt,
     });
     const clean = await asImported.service.reconcileHolding('h1');
-    expect(clean?.openingBalanceSynthesized).toBe(false);
+    expect(clean?.hasOpening).toBe(false);
     expect(clean?.computedOpening.toString()).toBe('0');
 
     // The same ledger with a -500 `kind='fee'` row added beside the untouched
@@ -675,12 +736,12 @@ describe('OpeningBalanceReconciliationService.reconcileUser', () => {
       firstTxAt,
     });
     const damaged = await withFeeRow.service.reconcileHolding('h1');
-    expect(damaged?.openingBalanceSynthesized).toBe(true);
+    expect(damaged?.hasOpening).toBe(true);
     // 500 of holdings this account never had, dated before its history begins,
     // on the very holding the reader was trying to describe accurately.
     expect(damaged?.computedOpening.toString()).toBe('500');
-    expect(withFeeRow.capturedTxs[0]?.kind).toBe('opening_balance');
-    expect(withFeeRow.capturedTxs[0]?.quantity).toBe('500');
+    expect(withFeeRow.capturedTxs).toHaveLength(0);
+    expect(damaged?.openingQuantity.toString()).toBe('500');
   });
 
   test('a visible holding is still reconciled — the widen did not narrow anything', async () => {
@@ -693,7 +754,7 @@ describe('OpeningBalanceReconciliationService.reconcileUser', () => {
     const results = await service.reconcileUser('u1');
 
     expect(results).toHaveLength(1);
-    expect(results[0]?.openingBalanceSynthesized).toBe(true);
+    expect(results[0]?.hasOpening).toBe(true);
   });
 });
 
@@ -824,7 +885,7 @@ describe('OpeningBalanceReconciliationService — a bounded source is not an une
       without?.unexplainedResidual.toString()
     );
     expect(withWindow?.computedOpening.toString()).toBe('-100');
-    expect(withWindow?.openingBalanceSynthesized).toBe(false);
+    expect(withWindow?.hasOpening).toBe(false);
     // Still on the coverage row with the sign the data-quality UI keys on.
     expect(named.capturedReconciliations[0]?.openingBalanceQuantity).toBe('-100');
     expect(named.capturedReconciliations[0]?.reconciliationNotes).toContain('100');
@@ -918,7 +979,7 @@ describe('OpeningBalanceReconciliationService — the residue is persisted as a 
     });
     const r = await service.reconcileHolding('h1');
 
-    expect(r?.openingBalanceSynthesized).toBe(false);
+    expect(r?.hasOpening).toBe(false);
     expect(capturedReconciliations[0]?.openingBalanceQuantity).toBe('0');
     expect(capturedReconciliations[0]?.unexplainedResidual).toBe('20');
   });
@@ -936,7 +997,7 @@ describe('OpeningBalanceReconciliationService — the residue is persisted as a 
     });
     const r = await service.reconcileHolding('h1');
 
-    expect(r?.openingBalanceSynthesized).toBe(true);
+    expect(r?.hasOpening).toBe(true);
     expect(capturedReconciliations[0]?.openingBalanceQuantity).toBe('5');
     expect(capturedReconciliations[0]?.unexplainedResidual).toBe('15');
   });
@@ -973,5 +1034,64 @@ describe('OpeningBalanceReconciliationService — the residue is persisted as a 
 
     expect(capturedReconciliations[0]?.openingBalanceQuantity).toBeNull();
     expect(capturedReconciliations[0]?.unexplainedResidual).toBeNull();
+  });
+});
+
+// SC-1607: a rebuild sized from the change must reach the day a REMOVED
+// opening sat on, or the days between it and the edit keep the old opening.
+describe('OpeningBalanceReconciliationService — a removed opening is a change (SC-1607)', () => {
+  const PRIOR = new Date('2023-03-01T00:00:00Z');
+  const cases = [
+    { name: 'the ledger now closes', txSumAllTime: '10', balance: '10' },
+    { name: 'the gap is now a missing inflow', txSumAllTime: '12', balance: '5' },
+  ];
+  for (const c of cases) {
+    test(`deleting a prior opening reports its date: ${c.name}`, async () => {
+      const { service } = makeService({
+        holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: c.balance },
+        txSumAllTime: c.txSumAllTime,
+        firstTxAt: new Date('2024-01-01T00:00:00Z'),
+        priorOpeningAt: PRIOR,
+      });
+      const r = await service.reconcileHolding('h1');
+      expect(r?.openingChangedAt).toEqual(PRIOR);
+    });
+  }
+
+  test('control: with no prior opening, nothing changed', async () => {
+    const { service } = makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '10' },
+      txSumAllTime: '10',
+      firstTxAt: new Date('2024-01-01T00:00:00Z'),
+    });
+    const r = await service.reconcileHolding('h1');
+    expect(r?.openingChangedAt ?? null).toBeNull();
+  });
+});
+
+// SC-1640. The opening model is an asset's: a negative opening reads as
+// missing inflows, and the holding as incomplete history. What a loan owes is
+// negative by design, so the reconciler leaves it alone.
+describe('a holding that owes', () => {
+  const FIRST_TX_AT = new Date('2026-03-01T00:00:00Z');
+  const owing = (owes: boolean) =>
+    makeService({
+      holding: { id: 'h1', userId: 'u1', accountId: 'a1', tokenId: 't1', balance: '-480000' },
+      txSumAllTime: '-200',
+      firstTxAt: FIRST_TX_AT,
+      owes,
+    });
+
+  test('is not reconciled, so it never reads as missing inflows', async () => {
+    const { service, capturedReconciliations } = owing(true);
+    expect(await service.projectHolding('h1')).toBeNull();
+    expect(await service.reconcileHolding('h1')).toBeNull();
+    expect(capturedReconciliations).toHaveLength(0);
+  });
+
+  // The control: the same figures on an asset are the SC-199 case.
+  test('the same figures on an asset still read as missing inflows', async () => {
+    const { service } = owing(false);
+    expect((await service.projectHolding('h1'))?.action).toBe('missing-inflows');
   });
 });

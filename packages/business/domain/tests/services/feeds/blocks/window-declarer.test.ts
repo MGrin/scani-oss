@@ -19,6 +19,7 @@ describe('declareWindow: balance-snapshot', () => {
       fetchedAt: FETCHED,
     });
     expect(window).toStrictEqual({
+      shape: 'balance-snapshot',
       from: at('2026-07-10T09:00:00Z'),
       to: FETCHED,
       complete: false,
@@ -63,6 +64,7 @@ describe('declareWindow: statement-upload', () => {
       uploadRef: 'upload-42',
     });
     expect(window).toStrictEqual({
+      shape: 'statement-upload',
       from: at('2026-06-01T00:00:00Z'),
       to: at('2026-06-30T00:00:00Z'),
       complete: false,
@@ -84,7 +86,12 @@ describe('declareWindow: transaction-run', () => {
       fetchedAt: FETCHED,
       retracted: false,
     });
-    expect(window).toStrictEqual({ from: null, to: FETCHED, complete: true });
+    expect(window).toStrictEqual({
+      shape: 'transaction-run',
+      from: null,
+      to: FETCHED,
+      complete: true,
+    });
   });
 
   test('`until` replaces the fetch as the end', () => {
@@ -108,7 +115,12 @@ describe('declareWindow: transaction-run', () => {
       firstEventAt: at('2026-02-01T00:00:00Z'),
       retracted: false,
     });
-    expect(window).toStrictEqual({ from: since, to: FETCHED, complete: true });
+    expect(window).toStrictEqual({
+      shape: 'transaction-run',
+      from: since,
+      to: FETCHED,
+      complete: true,
+    });
   });
 
   test("the provider's `historyStartsAt` bounds a run that has no `since`", () => {
@@ -119,7 +131,12 @@ describe('declareWindow: transaction-run', () => {
       historyStartsAt,
       retracted: false,
     });
-    expect(window).toStrictEqual({ from: historyStartsAt, to: FETCHED, complete: true });
+    expect(window).toStrictEqual({
+      shape: 'transaction-run',
+      from: historyStartsAt,
+      to: FETCHED,
+      complete: true,
+    });
   });
 
   test('a retracted since-run is incomplete and bounded by since', () => {
@@ -130,7 +147,12 @@ describe('declareWindow: transaction-run', () => {
       since,
       retracted: true,
     });
-    expect(window).toStrictEqual({ from: since, to: FETCHED, complete: false });
+    expect(window).toStrictEqual({
+      shape: 'transaction-run',
+      from: since,
+      to: FETCHED,
+      complete: false,
+    });
   });
 
   test('a Gemini-style horizon is incomplete even with no since', () => {
@@ -141,6 +163,7 @@ describe('declareWindow: transaction-run', () => {
       retracted: false,
     });
     expect(window).toStrictEqual({
+      shape: 'transaction-run',
       from: new Date(FETCHED.getTime() - 30 * DAY_MS),
       to: FETCHED,
       complete: false,
@@ -154,7 +177,12 @@ describe('declareWindow: transaction-run', () => {
       horizonMs: 0,
       retracted: false,
     });
-    expect(window).toStrictEqual({ from: FETCHED, to: FETCHED, complete: false });
+    expect(window).toStrictEqual({
+      shape: 'transaction-run',
+      from: FETCHED,
+      to: FETCHED,
+      complete: false,
+    });
   });
 
   test('a retracted run with no `since` starts at the first event it saw', () => {
@@ -165,12 +193,22 @@ describe('declareWindow: transaction-run', () => {
       firstEventAt,
       retracted: true,
     });
-    expect(window).toStrictEqual({ from: firstEventAt, to: FETCHED, complete: false });
+    expect(window).toStrictEqual({
+      shape: 'transaction-run',
+      from: firstEventAt,
+      to: FETCHED,
+      complete: false,
+    });
   });
 
   test('a retracted run with nothing to bound it starts at the fetch, never open', () => {
     const window = declareWindow({ shape: 'transaction-run', fetchedAt: FETCHED, retracted: true });
-    expect(window).toStrictEqual({ from: FETCHED, to: FETCHED, complete: false });
+    expect(window).toStrictEqual({
+      shape: 'transaction-run',
+      from: FETCHED,
+      to: FETCHED,
+      complete: false,
+    });
   });
 
   test('a horizon outranks the first event, and `historyStartsAt` outranks the horizon', () => {

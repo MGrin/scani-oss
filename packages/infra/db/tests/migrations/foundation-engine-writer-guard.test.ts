@@ -3,16 +3,16 @@ import { sql } from 'drizzle-orm';
 import { inRollback, refusal, type Tx } from './foundation-helpers';
 
 /**
- * The trigger that will stop anything but the engine calculator writing
- * `holdings.balance`, `value_base` and `value_priced_at` (plan A5 enables it).
- * Foundation A1 creates it DISABLED, so what is pinned here is two things: on
- * the real table it changes nothing, and attached to a scratch copy of
- * `holdings` it refuses exactly what the spec says it refuses.
+ * The trigger that stops anything but the engine calculator writing
+ * `holdings.balance`, `value_base` and `value_priced_at`. Foundation A1 created
+ * it disabled and A5's PR-3 enables it, so what is pinned here is two things:
+ * on the real table it refuses a bare write and admits the calculator, and
+ * attached to a scratch copy of `holdings` it refuses exactly what the spec
+ * says it refuses.
  *
- * The scratch copy is a temp table, so the real `holdings` is never guarded
- * and never locked by the part of this file that enables a trigger. Every test
- * runs in a transaction that is rolled back, and an expected refusal runs in a
- * savepoint of its own (see `foundation-helpers.ts`).
+ * The scratch copy is a temp table, so the cases below need no user, account
+ * or token rows. Every test runs in a transaction that is rolled back, and an
+ * expected refusal runs in a savepoint of its own (see `foundation-helpers.ts`).
  */
 
 const refused = (column: string) => ({
@@ -25,7 +25,8 @@ async function attachProbe(tx: Tx): Promise<void> {
     sql`CREATE TEMP TABLE holdings_guard_probe (LIKE holdings INCLUDING DEFAULTS) ON COMMIT DROP`
   );
   await tx.execute(
-    sql`CREATE TRIGGER holdings_guard_probe_guard BEFORE INSERT OR UPDATE ON holdings_guard_probe
+    sql`CREATE TRIGGER holdings_guard_probe_guard
+        BEFORE INSERT OR UPDATE OF balance, value_base, value_priced_at ON holdings_guard_probe
         FOR EACH ROW EXECUTE FUNCTION holdings_engine_writer_guard()`
   );
 }
@@ -54,7 +55,7 @@ const probeBalance = async (tx: Tx) =>
     }[]
   )[0]?.balance;
 
-test('the trigger exists on holdings, fires before an insert or update of a row, and is disabled', async () => {
+test('the trigger exists on holdings, fires before an insert or an update of the three columns, and is enabled', async () => {
   await inRollback(async (tx) => {
     const [trigger] = (await tx.execute(
       sql`SELECT tgenabled, pg_get_triggerdef(oid) AS definition
@@ -62,14 +63,17 @@ test('the trigger exists on holdings, fires before an insert or update of a row,
           WHERE tgname = 'holdings_engine_writer_guard' AND tgrelid = 'holdings'::regclass`
     )) as unknown as { tgenabled: string; definition: string }[];
 
-    expect(trigger?.tgenabled).toBe('D');
-    expect(trigger?.definition).toContain('BEFORE INSERT OR UPDATE ON');
+    expect(trigger?.tgenabled).toBe('O');
+    // A5 D-3: an UPDATE that names none of the three never runs the function.
+    expect(trigger?.definition).toContain(
+      'BEFORE INSERT OR UPDATE OF balance, value_base, value_priced_at ON'
+    );
     expect(trigger?.definition).toContain('FOR EACH ROW');
     expect(trigger?.definition).toContain('EXECUTE FUNCTION holdings_engine_writer_guard()');
   });
 });
 
-test('disabled means A1 changes nothing: a funded insert and a direct balance UPDATE on holdings succeed', async () => {
+test('enabled on holdings: a funded insert and a bare balance UPDATE are refused, and the calculator is admitted', async () => {
   await inRollback(async (tx) => {
     const one = async (query: ReturnType<typeof sql>) =>
       ((await tx.execute(query)) as unknown as { id: string }[])[0]?.id;
@@ -86,15 +90,25 @@ test('disabled means A1 changes nothing: a funded insert and a direct balance UP
       sql`INSERT INTO tokens (symbol, name, type_id) VALUES (concat('EG', substr(gen_random_uuid()::text, 1, 8)), 'guard token', (SELECT id FROM token_types LIMIT 1)) RETURNING id`
     );
 
+    expect(
+      await refusal(
+        tx,
+        sql`INSERT INTO holdings (user_id, account_id, token_id, balance) VALUES (${userId}, ${accountId}, ${tokenId}, '10')`
+      )
+    ).toEqual(refused('balance'));
     const holdingId = await one(
-      sql`INSERT INTO holdings (user_id, account_id, token_id, balance) VALUES (${userId}, ${accountId}, ${tokenId}, '10') RETURNING id`
+      sql`INSERT INTO holdings (user_id, account_id, token_id, balance) VALUES (${userId}, ${accountId}, ${tokenId}, '0') RETURNING id`
     );
-    const [updated] = (await tx.execute(
-      sql`UPDATE holdings SET balance = '11', value_base = '1', value_priced_at = now()
+    const update = sql`UPDATE holdings SET balance = '11', value_base = '1', value_priced_at = now()
           WHERE id = ${holdingId}
-          RETURNING balance, value_base`
-    )) as unknown as { balance: string; value_base: string }[];
+          RETURNING balance, value_base`;
 
+    expect(await refusal(tx, update)).toEqual(refused('balance'));
+    await engine(tx);
+    const [updated] = (await tx.execute(update)) as unknown as {
+      balance: string;
+      value_base: string;
+    }[];
     expect(updated).toEqual({ balance: '11', value_base: '1' });
   });
 });
@@ -191,5 +205,27 @@ test('value_priced_at is guarded under its own name, on insert and on update', a
     expect(
       await refusal(tx, sql`UPDATE holdings_guard_probe SET value_priced_at = now()`)
     ).toBeUndefined();
+  });
+});
+
+// A5 D-3 (operator, bus #23101): the guard compares values, not their text, so a
+// rewrite of the same amount in another scale is not a write by anyone.
+test('the same amount in another scale passes; a real change is refused once', async () => {
+  await inRollback(async (tx) => {
+    await attachProbe(tx);
+    await tx.execute(insertProbe('0'));
+    await engine(tx);
+    await tx.execute(sql`UPDATE holdings_guard_probe SET balance = '10', value_base = '5'`);
+    await tx.execute(sql`SELECT set_config('scani.engine_writer', '', true)`);
+
+    expect(
+      await refusal(tx, sql`UPDATE holdings_guard_probe SET balance = '10.00', value_base = '5.0'`)
+    ).toBeUndefined();
+    expect(await refusal(tx, sql`UPDATE holdings_guard_probe SET balance = '11'`)).toEqual(
+      refused('balance')
+    );
+    expect(await refusal(tx, sql`UPDATE holdings_guard_probe SET value_base = '6'`)).toEqual(
+      refused('value_base')
+    );
   });
 });

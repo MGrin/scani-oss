@@ -2,6 +2,7 @@ import { RollupPortfolioValueDailyUseCase } from '@scani/domain/use-cases';
 import { PORTFOLIO_VALUE_ROLLUP_SCHEDULE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { ScheduledJobProcessor } from '@scani/queue';
+import { emitEntityChange } from '@scani/realtime';
 import { Container, Service } from 'typedi';
 
 const logger = createComponentLogger('processor:portfolio-value-rollup');
@@ -25,6 +26,20 @@ export class PortfolioValueRollupProcessor extends ScheduledJobProcessor {
         },
         '✅ Portfolio value rollup complete'
       );
+      // Each user whose chart was rewritten, told once, so an open app
+      // refetches it (SC-1600). Fire-and-forget: a lost event costs freshness.
+      for (const userId of summary.rolledUpUserIds) {
+        try {
+          emitEntityChange({
+            entityType: 'portfolio',
+            operationType: 'sync',
+            userId,
+            data: { reason: 'portfolio-value-rollup' },
+          });
+        } catch (error) {
+          logger.warn({ userId, error }, 'Failed to announce a rolled-up chart');
+        }
+      }
       if (summary.errors.length > 0) {
         logger.warn(
           { errors: summary.errors.slice(0, 10) },

@@ -2,17 +2,18 @@ import { afterAll, describe, expect, test } from 'bun:test';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { BlsClient } from '@scani/providers/providers/bls';
-import Decimal from 'decimal.js';
+import type Decimal from 'decimal.js';
 import { and, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HistoricalPriceBackfillService } from '../../../src/services/pricing/HistoricalPriceBackfillService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import {
   BenchmarkReturnService,
   measuredDayInstant,
 } from '../../../src/services/returns/BenchmarkReturnService';
 import { BackfillBenchmarkPricesUseCase } from '../../../src/use-cases/BackfillBenchmarkPricesUseCase';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { seriesFrom } from '../../../test/helpers/price-series';
 
 /**
  * SC-464. A benchmark is bought and held, so its return is end over start at
@@ -85,14 +86,18 @@ describe('BenchmarkReturnService.over', () => {
     const btc = ensured.find((r) => r.key === 'btc')?.tokenId;
 
     const asked: Array<{ token: string; at: string }> = [];
-    Container.set(PriceGraphService, {
-      convert: async (amount: Decimal, from: string, _to: string, at: Date) => {
-        asked.push({ token: from, at: at.toISOString() });
-        if (from !== btc) return null;
-        const price = at.toISOString().startsWith('2026-01-01') ? 100 : 150;
-        return { amount: new Decimal(amount).mul(price), stale: false };
+    let loads = 0;
+    Container.set(PriceReader, {
+      series: async (asks: ReadonlyArray<{ tokenId: string; at: Date }>, base: string) => {
+        loads += 1;
+        for (const ask of asks) asked.push({ token: ask.tokenId, at: ask.at.toISOString() });
+        return seriesFrom(asks, base, (amount: Decimal, from: string, _to: string, at: Date) => {
+          if (from !== btc) return null;
+          const price = at.toISOString().startsWith('2026-01-01') ? 100 : 150;
+          return { amount: amount.mul(price), stale: false };
+        });
       },
-    } as unknown as PriceGraphService);
+    } as unknown as PriceReader);
 
     // SC-1255. US CPI of 200 in January and 210 in June. Any real values for
     // those months are saved first and restored after.
@@ -134,5 +139,7 @@ describe('BenchmarkReturnService.over', () => {
       '2026-01-01T23:59:59.999Z',
       '2026-06-30T23:59:59.999Z',
     ]);
+    // Both benchmarks, both ends: one load.
+    expect(loads).toBe(1);
   });
 });

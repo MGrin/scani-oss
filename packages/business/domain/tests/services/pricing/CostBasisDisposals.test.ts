@@ -11,8 +11,9 @@ import {
   type DisposalLotMatch,
   type HistoryCompleteness,
 } from '../../../src/services/pricing/CostBasisService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { noPriceReader, priceReaderStub } from '../../../test/helpers/price-series';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -40,11 +41,7 @@ const BTC = 'token-BTC';
 function makeService(): CostBasisService {
   Container.set(HoldingRepository, {} as unknown as HoldingRepository);
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
-  Container.set(PriceGraphService, {
-    convert: async () => {
-      throw new Error('PriceGraphService.convert should not be called in these tests');
-    },
-  } as unknown as PriceGraphService);
+  Container.set(PriceReader, noPriceReader);
   const instance = new CostBasisService();
   Container.set(CostBasisService, instance);
   return instance;
@@ -60,10 +57,12 @@ function makeService(): CostBasisService {
 function makeServiceWithSpot(priceable: string, rate: string): CostBasisService {
   Container.set(HoldingRepository, {} as unknown as HoldingRepository);
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
-  Container.set(PriceGraphService, {
-    convert: async (amount: Decimal, from: string) =>
-      from === priceable ? { amount: amount.mul(rate), stale: false } : null,
-  } as unknown as PriceGraphService);
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal, from: string) =>
+      from === priceable ? { amount: amount.mul(rate), stale: false } : null
+    )
+  );
   const instance = new CostBasisService();
   Container.set(CostBasisService, instance);
   return instance;
@@ -1691,6 +1690,166 @@ describe('a share moved to a holding Scani tracks', () => {
     expect(gainTotal(ledger).toString()).toBe('500');
     expect(ledger).toHaveLength(1);
     expect(ledger[0]?.quantity.toString()).toBe('500');
+  });
+
+  test('two destinations in one group: each gets its share, and the shares sum (SC-1665)', async () => {
+    // Feeds' E2 condition (#23723). 4,000 left at two lot costs: 3,000 moved
+    // to A, 700 to B, 300 left. Each arrival must carry the same average basis,
+    // and the two must sum to what the carried parts took off the source.
+    const svc = makeService();
+    const ledger: DisposalLotMatch[] = [];
+    const group = 'grp-fan-out';
+    const B_DESTINATION = { ...DESTINATION, holdingId: '77777777-8888-4999-8aaa-bbbbbbbbbbbb' };
+    const txs = [
+      tx({
+        holdingId: 'src',
+        kind: 'buy',
+        quantity: '2000',
+        occurredAt: '2024-01-01',
+        priceNative: '1',
+      }),
+      tx({
+        holdingId: 'src',
+        kind: 'buy',
+        quantity: '2000',
+        occurredAt: '2024-02-01',
+        priceNative: '2',
+      }),
+      tx({
+        holdingId: 'src',
+        kind: 'withdraw',
+        quantity: '-4000',
+        occurredAt: '2025-01-01',
+        priceNative: '3',
+        transferGroupId: group,
+        transferReview: 'split',
+        transferReviewSplit: [
+          { decision: 'internal', quantity: '3000', destination: DESTINATION },
+          { decision: 'internal', quantity: '700', destination: B_DESTINATION },
+          { decision: 'left_control', quantity: '300' },
+        ],
+      }),
+      tx({
+        holdingId: 'dstA',
+        kind: 'transfer_in',
+        quantity: '3000',
+        occurredAt: '2025-01-01',
+        transferGroupId: group,
+      }),
+      tx({
+        holdingId: 'dstB',
+        kind: 'transfer_in',
+        quantity: '700',
+        occurredAt: '2025-01-01',
+        transferGroupId: group,
+      }),
+    ];
+
+    const out = await svc.walkComponent(
+      undefined,
+      ['src', 'dstA', 'dstB'],
+      componentInputs(txs),
+      new Date('2025-06-01'),
+      USD,
+      new Map([
+        ['src', BTC],
+        ['dstA', BTC],
+        ['dstB', BTC],
+      ]),
+      undefined,
+      new Map(),
+      ledger
+    );
+
+    const a = out.get('dstA');
+    const b = out.get('dstB');
+    expect(a?.openQty.toString()).toBe('3000');
+    expect(b?.openQty.toString()).toBe('700');
+    // FIFO: the carried 3,700 took 2,000 at 1 and 1,700 at 2, so 5,400.
+    expect(a?.costBasis.add(b?.costBasis ?? 0).toString()).toBe('5400');
+    // The same average basis on both sides, never one side's lots.
+    const perUnitA = a?.costBasis.div(3000);
+    const perUnitB = b?.costBasis.div(700);
+    expect(
+      perUnitA
+        ?.sub(perUnitB ?? 0)
+        .abs()
+        .lt('1e-12')
+    ).toBe(true);
+    // Nothing carried was realized; only the 300 that left, at 3 against 2.
+    expect(out.get('src')?.realizedPnl.toString()).toBe('300');
+    expect(gainTotal(ledger).toString()).toBe('300');
+    expect(out.get('src')?.openQty.toString()).toBe('0');
+  });
+
+  test('a dust last lot never goes negative when an earlier arrival takes its share (SC-1665)', async () => {
+    // Feeds, #23897. Seven lots of 1 and a last lot of 1e-27: three sevenths of
+    // each rounds up, so the residual left for the last lot was -2e-27.
+    const svc = makeService();
+    const group = 'grp-dust';
+    const dust = '0.000000000000000000000000001';
+    const txs = [
+      ...[1, 2, 3, 4, 5, 6, 7].map((day) =>
+        tx({
+          holdingId: 'src',
+          kind: 'buy',
+          quantity: '1',
+          occurredAt: `2024-01-0${day}`,
+          priceNative: '1',
+        })
+      ),
+      tx({
+        holdingId: 'src',
+        kind: 'buy',
+        quantity: dust,
+        occurredAt: '2024-01-08',
+        priceNative: '1',
+      }),
+      tx({
+        holdingId: 'src',
+        kind: 'withdraw',
+        quantity: `-7${dust.slice(1)}`,
+        occurredAt: '2025-01-01',
+        transferGroupId: group,
+        transferReview: 'paired',
+      }),
+      tx({
+        holdingId: 'dstA',
+        kind: 'deposit',
+        quantity: '3',
+        occurredAt: '2025-01-02',
+        transferGroupId: group,
+      }),
+      tx({
+        holdingId: 'dstB',
+        kind: 'deposit',
+        quantity: `4${dust.slice(1)}`,
+        occurredAt: '2025-01-03',
+        transferGroupId: group,
+      }),
+    ];
+
+    const out = await svc.walkComponent(
+      undefined,
+      ['src', 'dstA', 'dstB'],
+      componentInputs(txs),
+      new Date('2025-06-01'),
+      USD,
+      new Map([
+        ['src', BTC],
+        ['dstA', BTC],
+        ['dstB', BTC],
+      ])
+    );
+
+    const lots = [...(out.get('dstA')?.lots ?? []), ...(out.get('dstB')?.lots ?? [])];
+    expect(lots.length).toBeGreaterThan(0);
+    expect(
+      lots
+        .filter((lot) => lot.qty.isNegative() || lot.cost.isNegative())
+        .map((lot) => lot.qty.toString())
+    ).toEqual([]);
+    expect(out.get('dstA')?.openQty.toString()).toBe('3');
   });
 
   test('works when the destination is a second holding in the SAME account', async () => {

@@ -25,6 +25,7 @@ import {
   emptyHolding,
   type HoldingDraft,
   holdingSymbol,
+  targetOwes,
 } from '../lib/manual-entry';
 import { jobDetailPath } from '../lib/routes';
 import { V3_BASE } from '../lib/ui-version';
@@ -89,6 +90,9 @@ export function ManualEntryPage() {
   // What the chosen account already holds for the tokens on the form, so a
   // second BTC is named here rather than failing the whole job (SC-1527).
   const accounts = trpc.accounts.getAll.useQuery();
+  const accountTypes = trpc.accountTypes.getAll.useQuery();
+  // A loan or card asks for the amount owed, typed positive (SC-1640).
+  const owes = targetOwes(target.draft, accounts.data, accountTypes.data);
   const heldAccountId = target.draft.accountMode === 'existing' ? target.draft.accountId : '';
   const heldTokenIds = [...new Set(holdings.map((row) => row.tokenId).filter(Boolean))].sort();
   const heldQuery = trpc.batchOperations.heldPositions.useQuery(
@@ -103,7 +107,7 @@ export function ManualEntryPage() {
   const heldTokens = new Set(held?.positions.map((position) => position.tokenId));
 
   const isSaving = createMutation.isPending;
-  const draft = { ...target.draft, holdings, held };
+  const draft = { ...target.draft, holdings, held, owes };
 
   const contestedTokens = contestedHoldingTokenIds(holdings, held?.positions);
 
@@ -162,7 +166,7 @@ export function ManualEntryPage() {
                 </Field>
 
                 <Field
-                  label={t('v3.capture.page.manual.amount')}
+                  label={owes ? t('v3.liabilities.owed') : t('v3.capture.page.manual.amount')}
                   htmlFor={`manual-balance-${holding.uid}`}
                 >
                   <div className="flex gap-2">

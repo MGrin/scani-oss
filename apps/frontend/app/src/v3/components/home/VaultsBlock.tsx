@@ -1,4 +1,3 @@
-import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
@@ -6,8 +5,9 @@ import { Link } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { cn } from '@/lib/utils';
 import { type VaultRow, vaultRows } from '../../lib/home';
-import { vaultDetailPath } from '../../lib/routes';
+import { V3_ROUTES, vaultDetailPath } from '../../lib/routes';
 import { DisclosureButton } from './DisclosureButton';
+import { HomeCard, type HomeCardVariant, RowsSkeleton } from './HomeCard';
 
 /**
  * Savings goals and how close each one is — v2's `VaultProgressList`, on v3
@@ -110,33 +110,54 @@ export function VaultProgressRow({ row }: { row: VaultRow }) {
   );
 }
 
-export function VaultsBlock() {
+export function VaultsBlock({ variant = 'card' }: { variant?: HomeCardVariant }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const vaults = trpc.vaults.getAll.useQuery();
 
   const rows = vaultRows(vaults.data ?? []);
-  if (vaults.isLoading || rows.length === 0) return null;
 
   const shown = expanded ? rows : rows.slice(0, VAULTS_SHOWN);
 
   return (
-    <Block>
-      <BlockHeader title={t('v3.home.vaults.title')} />
-      <ul className="divide-y divide-border border-t border-border">
-        {shown.map((row) => (
-          <VaultProgressRow key={row.id} row={row} />
-        ))}
-      </ul>
-      {rows.length > VAULTS_SHOWN ? (
-        <div className="flex px-4 pt-2 pb-3">
-          <DisclosureButton
-            expanded={expanded}
-            onToggle={() => setExpanded((open) => !open)}
-            label={t('v3.home.disclosure.theOtherN', { count: rows.length - VAULTS_SHOWN })}
-          />
-        </div>
-      ) : null}
-    </Block>
+    <HomeCard
+      title={t('v3.home.vaults.title')}
+      subject={t('v3.home.vaults.loadingLabel')}
+      href={V3_ROUTES.vaults}
+      action={t('v3.common.action.seeAll')}
+      queries={[vaults]}
+      variant={variant}
+      peekId="vaults"
+      tile={() => {
+        const [first] = rows;
+        return {
+          figure: first ? <Numeric value={first.progress} format="percent" decimals={0} /> : '—',
+          // The name alone: "Tax reserve · £37.7K of £42K" was cut off at
+          // 390 px, and the figure above already says how far along it is.
+          caption: first?.name ?? null,
+        };
+      }}
+      absent={rows.length === 0}
+      skeleton={<RowsSkeleton />}
+    >
+      {() => (
+        <>
+          <ul className="divide-y divide-border border-t border-border">
+            {shown.map((row) => (
+              <VaultProgressRow key={row.id} row={row} />
+            ))}
+          </ul>
+          {rows.length > VAULTS_SHOWN ? (
+            <div className="flex px-4 pt-2 pb-3">
+              <DisclosureButton
+                expanded={expanded}
+                onToggle={() => setExpanded((open) => !open)}
+                label={t('v3.home.disclosure.theOtherN', { count: rows.length - VAULTS_SHOWN })}
+              />
+            </div>
+          ) : null}
+        </>
+      )}
+    </HomeCard>
   );
 }

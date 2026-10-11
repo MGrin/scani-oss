@@ -5,20 +5,17 @@
  * currencies (an LSE-listed stock returns GBP) into the user's base
  * currency. The provider lives in its own workspace and can't reach
  * back into `@scani/domain` (wrong dependency direction), so the
- * conversion runs locally, over the process's one exchangerate-api
- * client: its USD table answers every pair, and it owns the cache and
- * the limiter.
+ * conversion runs locally, over the process's one Frankfurter client: it
+ * reads each pair inside one central bank's table, and it owns the cache
+ * and the limiter.
  */
 
-import {
-  type ExchangeRateApiClient,
-  rateBetween,
-} from '@scani/providers/providers/exchangerate-api';
+import type { FrankfurterClient } from '@scani/providers/providers/frankfurter/client';
 import Decimal from 'decimal.js';
 import type { ConversionOutcome } from './conversion-outcome';
 
 export class GoogleSheetsCurrencyConverter {
-  constructor(private readonly exchangeRates: ExchangeRateApiClient) {}
+  constructor(private readonly frankfurter: FrankfurterClient) {}
 
   async convert(
     price: string,
@@ -27,8 +24,7 @@ export class GoogleSheetsCurrencyConverter {
     _at: Date
   ): Promise<ConversionOutcome> {
     if (fromCurrency === toCurrency) return { ok: true, price };
-    const table = await this.exchangeRates.fetchUsdRates();
-    const rate = table && rateBetween(table.rates, fromCurrency, toCurrency);
+    const rate = await this.frankfurter.latest(fromCurrency, toCurrency);
     if (!rate) {
       return {
         ok: false,
@@ -36,7 +32,7 @@ export class GoogleSheetsCurrencyConverter {
       };
     }
     try {
-      return { ok: true, price: new Decimal(price).mul(rate).toString() };
+      return { ok: true, price: new Decimal(price).mul(rate.price).toString() };
     } catch {
       return {
         ok: false,

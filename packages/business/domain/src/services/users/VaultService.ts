@@ -1,11 +1,10 @@
 import type { VaultHoldingDetail, VaultWithProgress } from '@scani/shared';
 import { Decimal } from '@scani/shared';
 import { Container, Service } from 'typedi';
-import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { VaultRepository } from '../../repositories/VaultRepository';
 import { BaseService } from '../BaseService';
-import { PricingService } from '../pricing/PricingService';
+import { PriceReader } from '../pricing/PriceReader';
 
 /**
  * VaultService
@@ -14,13 +13,15 @@ import { PricingService } from '../pricing/PricingService';
  * - Computing current vault amounts from attached holdings
  * - Recalculating vault amounts when holdings/prices change
  * - Building vault progress data for display
+ *
+ * A holding is priced in the vault's currency by `PriceReader`, from stored
+ * readings: a vault never asks a provider.
  */
 @Service()
 export class VaultService extends BaseService {
   private readonly vaultRepository = Container.get(VaultRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
-  private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
-  private readonly pricingService = Container.get(PricingService);
+  private readonly priceReader = Container.get(PriceReader);
 
   constructor() {
     super('VaultService');
@@ -32,81 +33,69 @@ export class VaultService extends BaseService {
    */
   async recalculateVaultAmount(vaultId: string): Promise<void> {
     try {
-      const vault = await this.vaultRepository.findById(vaultId);
-      if (!vault) {
-        this.logDebug('Vault not found for recalculation', { vaultId });
-        return;
-      }
+      const amount = await this.amountOf(vaultId);
+      if (amount === null) return;
 
-      const vaultCurrency = await this.tokenRepository.findById(vault.currencyId);
-      if (!vaultCurrency) {
-        this.logWarning('Vault currency not found', { vaultId, currencyId: vault.currencyId });
-        return;
-      }
+      await this.vaultRepository.updateCurrentAmount(vaultId, amount);
 
-      const vaultHoldingsData = await this.vaultRepository.findVaultHoldings(vaultId);
-
-      let total = new Decimal(0);
-
-      for (const { vaultHolding, holding, token } of vaultHoldingsData) {
-        const balance = new Decimal(holding.balance);
-        if (balance.isZero()) continue;
-
-        let price: string | null;
-        if (token.id === vaultCurrency.id) {
-          // Token is same as vault currency, price is 1
-          price = '1';
-        } else {
-          // Get latest price in vault currency
-          const latestPrice = await this.tokenPriceRepository.findLatestPrice(
-            token.id,
-            vaultCurrency.id
-          );
-
-          if (latestPrice) {
-            price = latestPrice.price;
-          } else {
-            // Try to fetch via pricing service
-            try {
-              price = await this.pricingService.getTokenPrice(token, vaultCurrency, new Date());
-            } catch {
-              price = null;
-            }
-          }
-        }
-
-        // Unpriceable holding: skip from the vault total rather than
-        // treat it as worth zero. A partial vault total is more honest
-        // than a silently understated one.
-        if (price === null || price === '0') {
-          this.logWarning('Skipping unpriceable holding from vault total', {
-            vaultId,
-            tokenSymbol: token.symbol,
-            holdingId: holding.id,
-            holdingLabel: holding.label,
-          });
-          continue;
-        }
-
-        const holdingValue = balance.times(new Decimal(price));
-        const attributedValue = holdingValue
-          .times(new Decimal(vaultHolding.percentage))
-          .dividedBy(100);
-        total = total.plus(attributedValue);
-      }
-
-      await this.vaultRepository.updateCurrentAmount(vaultId, total.toFixed());
-
-      this.logDebug('Vault amount recalculated', {
-        vaultId,
-        currentAmount: total.toFixed(),
-      });
+      this.logDebug('Vault amount recalculated', { vaultId, currentAmount: amount });
     } catch (error) {
       this.logError('Failed to recalculate vault amount', {
         vaultId,
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  }
+
+  /**
+   * The amount `recalculateVaultAmount` stores, computed and not written; null
+   * when the vault or its currency is gone.
+   */
+  async amountOf(vaultId: string): Promise<string | null> {
+    const vault = await this.vaultRepository.findById(vaultId);
+    if (!vault) {
+      this.logDebug('Vault not found for recalculation', { vaultId });
+      return null;
+    }
+
+    const vaultCurrency = await this.tokenRepository.findById(vault.currencyId);
+    if (!vaultCurrency) {
+      this.logWarning('Vault currency not found', { vaultId, currencyId: vault.currencyId });
+      return null;
+    }
+
+    const vaultHoldingsData = await this.vaultRepository.findVaultHoldings(vaultId);
+    const prices = await this.pricesIn(
+      vaultCurrency.id,
+      vaultHoldingsData.map(({ token }) => token.id)
+    );
+
+    let total = new Decimal(0);
+
+    for (const { vaultHolding, holding, token } of vaultHoldingsData) {
+      const balance = new Decimal(holding.balance);
+      if (balance.isZero()) continue;
+
+      const price = prices.get(token.id) ?? null;
+
+      // Unpriceable holding: skip from the vault total rather than
+      // treat it as worth zero. A partial vault total is more honest
+      // than a silently understated one.
+      if (price === null) {
+        this.logWarning('Skipping unpriceable holding from vault total', {
+          vaultId,
+          tokenSymbol: token.symbol,
+          holdingId: holding.id,
+          holdingLabel: holding.label,
+        });
+        continue;
+      }
+
+      const holdingValue = balance.times(new Decimal(price));
+      total = total.plus(holdingValue.times(new Decimal(vaultHolding.percentage)).dividedBy(100));
+    }
+
+    return total.toFixed();
   }
 
   /**
@@ -180,37 +169,20 @@ export class VaultService extends BaseService {
     if (!vaultCurrency) return null;
 
     const vaultHoldingsData = await this.vaultRepository.findVaultHoldings(vaultId);
+    // The same prices `recalculateVaultAmount` reads, so the detail view
+    // matches the stored aggregate.
+    const prices = await this.pricesIn(
+      vaultCurrency.id,
+      vaultHoldingsData.map(({ token }) => token.id)
+    );
 
     const holdingDetails: VaultHoldingDetail[] = [];
 
     for (const { vaultHolding, holding, token, account, institution } of vaultHoldingsData) {
       const balance = new Decimal(holding.balance);
-      let price: string | null = null;
+      const price = prices.get(token.id) ?? null;
 
-      if (token.id === vaultCurrency.id) {
-        price = '1';
-      } else {
-        // Strict lookup first; if it misses, fall back to PricingService
-        // so custom tokens priced in a different fiat are converted to
-        // the vault's currency. This mirrors `recalculateVaultAmount`
-        // so the detail view matches the stored aggregate.
-        const latestPrice = await this.tokenPriceRepository.findLatestPrice(
-          token.id,
-          vaultCurrency.id
-        );
-        if (latestPrice) {
-          price = latestPrice.price;
-        } else {
-          try {
-            price = await this.pricingService.getTokenPrice(token, vaultCurrency, new Date());
-          } catch {
-            price = null;
-          }
-        }
-      }
-
-      const holdingValue =
-        price !== null && price !== '0' ? balance.times(new Decimal(price)) : null;
+      const holdingValue = price !== null ? balance.times(new Decimal(price)) : null;
       const attributedValue = holdingValue
         ? holdingValue.times(new Decimal(vaultHolding.percentage)).dividedBy(100)
         : null;
@@ -255,6 +227,19 @@ export class VaultService extends BaseService {
       createdAt: vault.createdAt.toISOString(),
       updatedAt: vault.updatedAt.toISOString(),
     };
+  }
+
+  /** Each token's price in the vault's currency now, absent when unpriced. */
+  private async pricesIn(
+    currencyId: string,
+    tokenIds: readonly string[]
+  ): Promise<Map<string, string>> {
+    const answers = await this.priceReader.at([...new Set(tokenIds)], currencyId, new Date());
+    const prices = new Map<string, string>();
+    for (const [tokenId, answer] of answers) {
+      if (answer !== null) prices.set(tokenId, answer.price.toString());
+    }
+    return prices;
   }
 
   /**

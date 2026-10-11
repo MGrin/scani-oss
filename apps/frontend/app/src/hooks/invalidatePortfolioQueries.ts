@@ -62,6 +62,8 @@ export async function invalidatePortfolioQueries(
     // balance edit writes ledger rows, and without this the peek kept its
     // cached list until a reload.
     utils.transactions.invalidate(undefined, { refetchType }),
+    // A liability's amount owed and payoff are read from its holding (SC-1640).
+    utils.liabilities.invalidate(undefined, { refetchType }),
   ]);
 }
 
@@ -100,4 +102,64 @@ export async function invalidateAfterCurrencyChange(utils: TrpcUtils): Promise<v
     invalidatePortfolioQueries(utils, { refetchType: 'all' }),
     utils.portfolio.invalidate(undefined, { refetchType: 'all' }),
   ]);
+}
+
+/**
+ * A `user` realtime event. Every one refreshes the user queries; a
+ * base-currency change, made in another tab or on another device, also
+ * re-denominates every figure.
+ */
+export async function invalidateForUserEvent(
+  utils: TrpcUtils,
+  metadata: Record<string, unknown> | undefined
+): Promise<void> {
+  const refreshes: Promise<unknown>[] = [
+    utils.users.getCurrent.invalidate(),
+    utils.users.getBaseCurrency.invalidate(),
+  ];
+  // The same refresh as the tab that made the change: without `portfolio.*`
+  // the hero and the returns stayed in the old currency here (SC-1599).
+  if (metadata?.source === 'base-currency-change')
+    refreshes.push(invalidateAfterCurrencyChange(utils));
+  await Promise.all(refreshes);
+}
+
+/**
+ * After the socket reopens. Realtime keeps no replay, so every event sent
+ * while it was down is lost; refetch what those events would have refreshed.
+ * `'active'` only: what is off screen is marked stale and refetches when it
+ * mounts, so a reconnect costs one fetch per query on screen (SC-1599).
+ */
+export async function resyncAfterReconnect(utils: TrpcUtils): Promise<void> {
+  await Promise.all([
+    invalidatePortfolioQueries(utils, { refetchType: 'active' }),
+    utils.portfolio.invalidate(undefined, { refetchType: 'active' }),
+    utils.jobs.invalidate(undefined, { refetchType: 'active' }),
+    utils.review.invalidate(undefined, { refetchType: 'active' }),
+    utils.users.invalidate(undefined, { refetchType: 'active' }),
+  ]);
+}
+
+// Realtime entity types whose change moves the portfolio set.
+const PORTFOLIO_ENTITY_TYPES = new Set<string>([
+  'account',
+  'holding',
+  'institution',
+  'vault',
+  'group',
+  'token',
+]);
+
+/** An `account`/`holding`/… realtime event: refresh what is on screen. */
+export async function invalidateForEntityEvent(
+  utils: TrpcUtils,
+  entityType: string | undefined
+): Promise<void> {
+  // The history was rebuilt: only the chart series read it (SC-1600).
+  if (entityType === 'portfolio') {
+    await utils.portfolio.invalidate(undefined, { refetchType: 'active' });
+    return;
+  }
+  if (!entityType || !PORTFOLIO_ENTITY_TYPES.has(entityType)) return;
+  await invalidatePortfolioQueries(utils, { refetchType: 'active' });
 }

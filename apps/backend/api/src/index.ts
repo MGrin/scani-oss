@@ -68,6 +68,7 @@ const dataProviderReachable = await (async () => {
 import { assertQueueBindings, QueueClient, WorkerWakeClient } from '@scani/queue';
 import {
   cameThroughEdge,
+  createInflowLimiter,
   createSessionRevokeLimiter,
   createSignupLimiter,
   createStandardLimiter,
@@ -132,17 +133,31 @@ import { tonFactory } from '@scani/providers/providers/ton';
 import { tronFactory } from '@scani/providers/providers/tron';
 import { wiseFactory } from '@scani/providers/providers/wise';
 import { googleSheetsFactory } from '@scani/providers-google-sheets';
-import { CLIENT_IP_HEADER, createBetterAuth } from './auth/better-auth';
+import { AGENT_HEAVY_READS_PER_MINUTE, AGENT_REQUESTS_PER_MINUTE } from './agent-access/limits';
+import { rebuildAuthRequest } from './auth/auth-request';
+import { createBetterAuth } from './auth/better-auth';
 import { createNewAddressCap } from './auth/new-address-cap';
+import { registerOAuthDiscoveryRoutes } from './auth/oauth-connector';
+import { billCalendarEvents } from './calendar/bill-calendar-events';
+import { BillCalendarFeedService } from './calendar/bill-calendar-feed';
+import { registerBillCalendarRoutes } from './calendar/bill-calendar-routes';
 import {
   buildCorsOptions,
   buildTrustedOrigins,
   isAllowedWebSocketOrigin,
 } from './config/browser-origins';
 import { initializeContainer } from './config/container';
-import { monitorEventLoopStalls } from './lib/event-loop-stalls';
+import {
+  enterProcedure,
+  httpRouteLabel,
+  monitorEventLoopStalls,
+  type ProcedureLoopTime,
+} from './lib/event-loop-stalls';
 import { isLivenessProbe } from './lib/liveness';
 import { isPrivateSessionRead } from './lib/private-session-read';
+import { agentAccessAllowed } from './mcp/access-gate';
+import { registerMcpRoutes } from './mcp/routes';
+import { createMcpDeps } from './mcp/server';
 import { runDeepChecks } from './presentation/health/deep-checks';
 import { registerInstitutionIconRoutes } from './presentation/http/institution-icons';
 import { registerUnsubscribeRoutes } from './presentation/http/unsubscribe';
@@ -151,6 +166,8 @@ import {
   setBetterAuthForContext,
   setSessionRevokeLimiterForContext,
 } from './presentation/trpc';
+import { createRestDeps, REST_DOCS_CSP, REST_DOCS_PATH, registerRestRoutes } from './rest/handler';
+import { ReturnsRunner } from './returns-pool';
 
 initializeContainer();
 
@@ -171,12 +188,25 @@ try {
         frankfurterFactory,
         coingeckoFactory,
         finnhubFactory,
+        // Chain providers — public-endpoint balance + address-validator
+        // dispatch for wallet imports.
+        // STUB_CHAIN_DATA=1 registers a fixture chain provider FIRST so
+        // wallet-import detection + balance fetch resolve locally instead
+        // of calling blockchain.info / Etherscan / a Solana RPC. The env
+        // schemas refuse STUB_CHAIN_DATA=1 in production, so a misconfigured
+        // prod deploy crashes at boot rather than serving fixture balances
+        // (SC-490).
         ...(process.env.STUB_CHAIN_DATA === '1' ? [chainStubFactory] : []),
         etherscanFactory,
         bitcoinFactory,
         solanaFactory,
         tronFactory,
         tonFactory,
+        // AI: STUB_AI=1 registers a fixed-payload provider FIRST so the
+        // e2e suite gets deterministic AI results without an OpenAI key.
+        // The data-provider config schema refuses STUB_AI=1 in production,
+        // so a misconfigured prod deploy crashes the data-provider at boot
+        // before this branch ever fires.
         ...(process.env.STUB_AI === '1' ? [aiStubFactory] : []),
         aiOpenAIFactory,
       ]),
@@ -254,6 +284,15 @@ const redisConnection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null })
 // and, more usefully, turns it into state `/health/deep` can report: how long,
 // how many attempts, and whether the failure is name resolution (which does
 // not self-heal) or connection (which does).
+/**
+ * How long `/health/deep` waits for a Redis PING before calling it unreachable.
+ *
+ * Sized against ioredis's own retry cadence rather than against a latency
+ * budget: the default `retryStrategy` tops out at one attempt every 2000ms, so
+ * a ping unanswered for a full retry interval is not waiting on a slow Redis,
+ * it is waiting on one that is not there. Healthy production latency here is
+ * 1ms (SC-294).
+ */
 const REDIS_PING_TIMEOUT_MS = 2_000;
 
 const redisReachability = observeRedisReachability(redisConnection, logger, 'redis');
@@ -363,6 +402,7 @@ logger.info(
 interface RequestWithTracking extends Request {
   _timer?: { end: () => number };
   _requestId?: string;
+  _leaveStallWatch?: () => ProcedureLoopTime;
 }
 
 // A limiter that cannot reach Redis counts in this process instead (SC-225).
@@ -414,6 +454,30 @@ setSessionRevokeLimiterForContext(sessionRevokeLimiter);
 // Prevents brute-forcing auth tokens over the ws endpoint, which bypasses
 // the HTTP limiters above.
 const wsAuthLimiter = createStrictLimiter(redisConnection, 30);
+// Per personal access token on `/mcp` (SC-1614). Agents behind one hosted
+// client share its egress addresses, so a per-IP budget would pool them.
+const mcpTokenLimiter = createInflowLimiter(redisConnection, {
+  windowMs: 60_000,
+  max: AGENT_REQUESTS_PER_MINUTE,
+  namespace: 'rl:mcp-token',
+});
+
+// The heavy agent reads (returns, net worth, realized gains, lots), per USER
+// across tokens and across /mcp and /api/v1 (SC-1648). `getReturns` stalled
+// production when an app polled it (SC-1671); a script polls harder.
+// Per bills-calendar URL (SC-1654). A calendar app polls a few times an hour;
+// the global per-IP cap still applies on top.
+const billCalendarLimiter = createInflowLimiter(redisConnection, {
+  windowMs: 60 * 60_000,
+  max: 60,
+  namespace: 'rl:bill-calendar',
+});
+
+const agentHeavyLimiter = createInflowLimiter(redisConnection, {
+  windowMs: 60_000,
+  max: AGENT_HEAVY_READS_PER_MINUTE,
+  namespace: 'rl:agent-heavy',
+});
 
 const app = new Elysia()
   // SC-1264. First, so a request that went round Cloudflare reaches nothing.
@@ -448,6 +512,10 @@ const app = new Elysia()
 
     (request as RequestWithTracking)._timer = timer;
     (request as RequestWithTracking)._requestId = requestId;
+    // Named in a stall line while in flight, tRPC or not (SC-1671).
+    (request as RequestWithTracking)._leaveStallWatch = enterProcedure(
+      httpRouteLabel(request.method, url.pathname)
+    );
   })
   .onBeforeHandle(({ request, set }) => {
     // Reject oversized requests before the body is read into memory.
@@ -503,6 +571,8 @@ const app = new Elysia()
     const timer = trackedRequest._timer;
     const requestId = trackedRequest._requestId;
     const duration = timer ? timer.end() : undefined;
+    trackedRequest._leaveStallWatch?.();
+    trackedRequest._leaveStallWatch = undefined;
 
     if (requestId) {
       endConnectionTracking(requestId);
@@ -544,6 +614,8 @@ const app = new Elysia()
     const requestId = trackedRequest._requestId;
     const timer = trackedRequest._timer;
     const duration = timer ? timer.end() : undefined;
+    trackedRequest._leaveStallWatch?.();
+    trackedRequest._leaveStallWatch = undefined;
 
     // Mirror the cleanup in `onAfterHandle` so failed requests don't
     // leak entries in connection-monitor's `requestMetrics` Map. Every
@@ -605,7 +677,7 @@ const app = new Elysia()
     // In dev this also allows loopback on any port — see browser-origins.ts.
     cors(buildCorsOptions(env.FRONTEND_URL, httpOriginOptions))
   )
-  .onAfterHandle(({ set }) => {
+  .onAfterHandle(({ set, path }) => {
     set.headers = set.headers || {};
     set.headers['X-Content-Type-Options'] = 'nosniff';
     set.headers['X-Frame-Options'] = 'DENY';
@@ -618,8 +690,11 @@ const app = new Elysia()
       'camera=(), microphone=(), geolocation=(), interest-cohort=()';
     set.headers['Cross-Origin-Opener-Policy'] = 'same-origin';
     set.headers['Cross-Origin-Resource-Policy'] = 'same-site';
+    // The API reference page is the one HTML answer here (SC-1648).
     set.headers['Content-Security-Policy'] =
-      "default-src 'none'; frame-ancestors 'none'; base-uri 'none'";
+      path === REST_DOCS_PATH
+        ? REST_DOCS_CSP
+        : "default-src 'none'; frame-ancestors 'none'; base-uri 'none'";
     if (isNodeEnvProduction()) {
       set.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains; preload';
     }
@@ -640,6 +715,34 @@ const app = new Elysia()
 if (!demoConfig.enabled) {
   // One-click, no-login digest opt-out (SC-460). Public by design.
   registerUnsubscribeRoutes(app);
+  // The opt-in bills calendar feed (SC-1654). Public by design, keyed by its token.
+  registerBillCalendarRoutes(app, {
+    resolve: (token) => Container.get(BillCalendarFeedService).resolve(token),
+    events: billCalendarEvents,
+    limiter: billCalendarLimiter,
+  });
+  // Read-only agent access with personal access tokens (SC-1614).
+  registerMcpRoutes(
+    app,
+    createMcpDeps({
+      accessAllowed: agentAccessAllowed,
+      limiter: mcpTokenLimiter,
+      heavyLimiter: agentHeavyLimiter,
+      publicBaseUrl: env.BACKEND_URL,
+    })
+  );
+  // The same tools over plain HTTP, for scripts and dashboards (SC-1648).
+  registerRestRoutes(
+    app,
+    createRestDeps({
+      accessAllowed: agentAccessAllowed,
+      limiter: mcpTokenLimiter,
+      heavyLimiter: agentHeavyLimiter,
+      publicBaseUrl: env.BACKEND_URL,
+    })
+  );
+  // OAuth sign-in for AI clients connecting to /mcp (SC-1615).
+  registerOAuthDiscoveryRoutes(app, { apiBaseUrl: env.BACKEND_URL, auth: betterAuthInstance });
 } else {
   logger.warn(
     {},
@@ -726,24 +829,9 @@ app
       logger.warn({ pathname }, 'New-address send budget spent; answering without sending');
       return capped.body;
     }
-    const cloneHeaders = new Headers();
-    for (const [k, v] of Object.entries(headers ?? {})) {
-      if (typeof v === 'string') cloneHeaders.set(k, v);
-    }
-    // Overwrites anything the client sent under this name (SC-1351).
-    cloneHeaders.set(CLIENT_IP_HEADER, defaultInflowKey(request));
-    const init: RequestInit = {
-      method: request.method,
-      headers: cloneHeaders,
-    };
-    if (request.method !== 'GET' && request.method !== 'HEAD' && body !== undefined) {
-      init.body = typeof body === 'string' ? body : JSON.stringify(body);
-      if (!cloneHeaders.has('content-type')) {
-        cloneHeaders.set('content-type', 'application/json');
-      }
-    }
-    const cloned = new Request(request.url, init);
-    return betterAuthInstance.handler(cloned);
+    return betterAuthInstance.handler(
+      rebuildAuthRequest(request, body, headers, defaultInflowKey(request))
+    );
   })
   // `edge` says whether this request carried Cloudflare's x-scani-edge header,
   // which is how the SC-1264 flip is proven before the origin lock enforces.
@@ -1024,6 +1112,15 @@ app
 
 wsLogger.info({ port: PORT, host: HOST }, '🔌 WebSocket endpoint configured');
 
+// The layer that makes SCANI_DEMO_MODE impossible to set in production, as
+// opposed to merely inadvisable (SC-466).
+//
+// Demo mode hands every anonymous request a session, so the only question that
+// matters is whose data is behind it. This one is asked of the database rather
+// than of configuration, because configuration is the thing that was wrong.
+// Production holds real accounts; the flag set there does not open a demo, it
+// stops the process here, before the port is open and before a single request
+// is served. `assertDemoOnlyUsers` states why an EMPTY database refuses too.
 if (demoConfig.enabled) {
   try {
     await assertDemoOnlyDatabase();
@@ -1046,7 +1143,26 @@ monitorEventLoopStalls({
   onStall: (stall) => logger.warn(stall, 'event-loop stall'),
 });
 
-const server = app.listen(PORT, () => {
+// SC-1671: resident memory once a minute, beside the returns worker's own
+// heap, so a peak is read against the machine's 962 MB with no gap between
+// stalls. RSS is the whole process: the main thread and the worker.
+const memoryLog = setInterval(() => {
+  const { rss, heapUsed } = process.memoryUsage();
+  logger.info(
+    {
+      rssMb: Math.round(rss / 2 ** 20),
+      heapUsedMb: Math.round(heapUsed / 2 ** 20),
+      returnsWorker: Container.get(ReturnsRunner).stats(),
+    },
+    'process memory'
+  );
+}, 60_000);
+memoryLog.unref?.();
+
+// `HOST` was dropped here until SC-1674, so every api bound `::` whatever it
+// was told. Production depends on `::`: data-provider reaches this api over
+// Fly 6PN, which is IPv6, so the deployed HOST is `::` and not `0.0.0.0`.
+const server = app.listen({ port: PORT, hostname: HOST }, () => {
   logger.info(
     {
       httpUrl: `http://${HOST}:${PORT}`,
@@ -1098,28 +1214,6 @@ new DataProviderHealthMonitor({
 }).start();
 
 import { client as pgClient } from '@scani/db/connection';
-import { PricingService } from '@scani/domain/services';
-
-// Pre-warm the currency-conversion cache in the background. Errors here are
-// NOT fatal, but the promise MUST be `.catch`-ed so Node's
-// unhandledRejection handler (which we install below) doesn't crash the
-// process during startup.
-void (async () => {
-  try {
-    const pricingService = Container.get(PricingService);
-    await pricingService.preWarmCurrencyConversionCache();
-    logger.info({}, '💰 Currency conversion cache pre-warmed');
-  } catch (error) {
-    logger.error(
-      { error: error instanceof Error ? error.message : String(error) },
-      '⚠️ Failed to pre-warm currency cache - will fetch on demand'
-    );
-  }
-})().catch((error) => {
-  // Defense in depth: if the async IIFE itself rejects (shouldn't, because we
-  // catch inside), surface it without crashing.
-  logger.error({ error }, 'Unexpected rejection from pre-warm task');
-});
 
 // Graceful shutdown: drain in-flight requests (bounded) and close the PG pool
 // before exiting. Prevents torn transactions and leaked connections on

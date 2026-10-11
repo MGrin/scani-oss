@@ -18,15 +18,14 @@
  * `providerMetadata.coingecko.id` carries the same data with
  * provider-namespacing. Behaviour is otherwise unchanged.
  *
- * The provider talks to the API using the user's base currency when
- * CoinGecko supports it (USD/EUR/GBP/CHF/JPY and ~40 others); falls
- * through to USD with an injected `CurrencyConverter` only for
- * exotic bases. Both paths emit the same `PriceQuote` shape so the
- * orchestrator doesn't have to know which path was taken.
+ * The provider asks the API in the base it is given when CoinGecko
+ * supports it (USD/EUR/GBP/CHF/JPY and ~40 others), and gives no quote
+ * for a base it does not. Every caller asks against USD (foundation A3).
  */
 
 import type { NewToken, Token, TokenMetadata } from '@scani/db/schema';
 import { type CustomLogger, createComponentLogger } from '@scani/logging';
+import { captureWarning } from '@scani/logging/sentry';
 import { createOutflowLimiter, type OutflowRateLimiter } from '@scani/rate-limiter';
 import type { ProviderFactory } from '../../core/boot';
 import type {
@@ -35,7 +34,9 @@ import type {
   TokenIdentityProvider,
   TokenSearchResult,
 } from '../../core/capabilities';
+import { recordRefusal } from '../../core/refusals';
 import type { PriceQuote, ProviderContext } from '../../core/types';
+import { closeDayNearMidnight } from '../../core/utils/bar-day';
 import { fetchWithTimeout } from '../../core/utils/fetch';
 import {
   contractRefFromMetadata,
@@ -123,19 +124,6 @@ interface CoinListEntry {
   platforms?: Record<string, string | null>;
 }
 
-/**
- * Optional dependency for converting USD→user-base when CoinGecko
- * doesn't natively support the user's base. Direct mode wires this
- * to a domain-side `CurrencyConverter`; cloud mode calls the
- * data-provider through the cloud client and never needs this path.
- */
-export interface CurrencyConverter {
-  // Returns `null` when no rate is available — the pair isn't covered
-  // by Frankfurter / exchangerate-api, or the upstream call failed.
-  // Providers skip the affected token rather than emit a zero price.
-  convert(price: string, fromSymbol: string, toSymbol: string, at?: Date): Promise<string | null>;
-}
-
 export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentityProvider {
   readonly providerKey = 'coingecko';
   readonly capabilities: readonly Capability[] = [
@@ -149,10 +137,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
 
   constructor(
     private readonly limiter: OutflowRateLimiter,
-    private readonly opts: {
-      apiKey?: string | undefined;
-      converter?: CurrencyConverter | undefined;
-    } = {}
+    private readonly opts: { apiKey?: string | undefined } = {}
   ) {
     this.logger = createComponentLogger('provider:coingecko');
   }
@@ -218,61 +203,22 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
     const ids = [...idMap.keys()].join(',');
     const out = new Map<string, PriceQuote>();
 
-    // Try the user's base currency first. CoinGecko's vs_currencies
-    // covers ~40 fiats + crypto; the request silently returns no
-    // values for unsupported currencies — we detect that and retry
-    // in USD with conversion.
+    // CoinGecko's vs_currencies covers ~40 fiats + crypto; the request
+    // silently returns no values for an unsupported currency, so a token
+    // with none simply gets no quote.
     const primary = await this.requestSimplePrice(ids, baseLower);
     if (!primary) return out;
 
-    const hasAny = tokens.some((t) => {
-      const id = this.coingeckoIdFor(t);
-      if (!id) return false;
-      const v = primary[id]?.[baseLower];
-      return typeof v === 'number' && v > 0;
-    });
-
-    if (hasAny || baseLower === 'usd') {
-      // Direct path — emit quotes in user's base.
-      for (const [id, token] of idMap) {
-        const v = primary[id]?.[baseLower];
-        if (typeof v !== 'number' || v <= 0) continue;
-        out.set(token.id, {
-          tokenId: token.id,
-          baseTokenId: ctx.baseCurrency.id,
-          price: String(v),
-          timestamp: ctx.timestamp ?? new Date(),
-          source: 'coingecko',
-        });
-      }
-      return out;
-    }
-
-    // Fallback: request USD and convert. Requires a `converter` dep —
-    // direct mode injects one; cloud mode never reaches this branch.
-    const converter = this.opts.converter;
-    if (!converter) {
-      this.logger.warn(
-        { baseLower },
-        'CoinGecko returned no rows for base currency and no converter is configured; giving up'
-      );
-      return out;
-    }
-
-    const usdResp = await this.requestSimplePrice(ids, 'usd');
-    if (!usdResp) return out;
-    const baseUpper = ctx.baseCurrency.symbol.toUpperCase();
     for (const [id, token] of idMap) {
-      const v = usdResp[id]?.usd;
+      const v = primary[id]?.[baseLower];
       if (typeof v !== 'number' || v <= 0) continue;
-      const converted = await converter.convert(String(v), 'USD', baseUpper, ctx.timestamp);
-      if (converted === null || converted === '0') continue;
       out.set(token.id, {
         tokenId: token.id,
         baseTokenId: ctx.baseCurrency.id,
-        price: converted,
+        price: String(v),
         timestamp: ctx.timestamp ?? new Date(),
-        source: 'coingecko_usd_converted',
+        barDay: null,
+        source: 'coingecko',
       });
     }
     return out;
@@ -283,10 +229,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
    * returns daily price points for the entire period in a single response.
    * Collapses 365 per-day calls into one, which on a free-tier API key
    * (~10-30 req/min) is the difference between ~15 minutes and ~5 seconds
-   * for a 1Y BTC backfill.
-   *
-   * Falls back to USD-converted prices when the user's base currency
-   * isn't directly quoted by CoinGecko, mirroring the per-day path.
+   * for a 1Y BTC backfill. A base CoinGecko does not quote gets no bars.
    */
   async fetchHistoricalRange(
     t: Token,
@@ -299,46 +242,20 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
     if (to.getTime() < from.getTime()) return [];
 
     const baseLower = ctx.baseCurrency.symbol.toLowerCase();
-    const baseUpper = ctx.baseCurrency.symbol.toUpperCase();
     const fromSec = Math.floor(from.getTime() / 1000);
     const toSec = Math.floor(to.getTime() / 1000);
+    const daily = toSec - fromSec > 90 * 86_400;
 
-    // Try the user's base currency directly first; CoinGecko quotes
-    // most majors (USD, EUR, GBP, JPY, …). Falls back to USD-converted
-    // when the requested base isn't supported (rare for held assets).
-    const direct = await this.fetchMarketChartRange(id, baseLower, fromSec, toSec);
-    if (direct && direct.length > 0) {
-      return direct.map((bar) => ({
-        tokenId: t.id,
-        baseTokenId: ctx.baseCurrency.id,
-        price: String(bar.price),
-        timestamp: new Date(bar.timeMs),
-        source: 'coingecko_historical',
-      }));
-    }
-
-    // USD fallback + per-day FX conversion. Each conversion goes
-    // through the BalanceAtTimeService's price graph, so it's free
-    // when the FX rate is already cached and a single SQL hit otherwise.
-    if (baseLower === 'usd') return [];
-    const usdSeries = await this.fetchMarketChartRange(id, 'usd', fromSec, toSec);
-    if (!usdSeries || usdSeries.length === 0) return [];
-    const converter = this.opts.converter;
-    if (!converter) return [];
-    const out: PriceQuote[] = [];
-    for (const bar of usdSeries) {
-      const at = new Date(bar.timeMs);
-      const converted = await converter.convert(String(bar.price), 'USD', baseUpper, at);
-      if (converted === null || converted === '0') continue;
-      out.push({
-        tokenId: t.id,
-        baseTokenId: ctx.baseCurrency.id,
-        price: converted,
-        timestamp: at,
-        source: 'coingecko_historical_usd_converted',
-      });
-    }
-    return out;
+    // CoinGecko quotes most majors (USD, EUR, GBP, JPY, …).
+    const bars = await this.fetchMarketChartRange(id, baseLower, fromSec, toSec);
+    return (bars ?? []).map((bar) => ({
+      tokenId: t.id,
+      baseTokenId: ctx.baseCurrency.id,
+      price: String(bar.price),
+      timestamp: new Date(bar.timeMs),
+      barDay: daily ? closeDayNearMidnight(new Date(bar.timeMs)) : null,
+      source: 'coingecko_historical',
+    }));
   }
 
   // Hits /coins/{id}/market_chart/range and normalizes to {timeMs, price}
@@ -354,9 +271,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
   ): Promise<Array<{ timeMs: number; price: number }> | null> {
     const url = `${this.baseUrl()}/coins/${encodeURIComponent(id)}/market_chart/range?vs_currency=${vsCurrencyLower}&from=${fromSec}&to=${toSec}`;
     try {
-      const response = await this.limiter.execute(async () =>
-        fetchWithTimeout(url, { headers: this.headers() })
-      );
+      const response = await this.get(url, 'market_chart');
       if (!response.ok) {
         this.logger.warn(
           { status: response.status, id, vsCurrencyLower },
@@ -386,17 +301,17 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
     const id = this.coingeckoIdFor(t);
     if (!id) return null;
 
-    // CoinGecko's /coins/{id}/history wants DD-MM-YYYY.
-    const yyyy = at.getUTCFullYear();
-    const mm = String(at.getUTCMonth() + 1).padStart(2, '0');
-    const dd = String(at.getUTCDate()).padStart(2, '0');
+    // The close of day N is the observation at midnight N + 1.
+    const barDay = at.toISOString().slice(0, 10);
+    const midnight = new Date(Date.parse(`${barDay}T00:00:00Z`) + 86_400_000);
+    const yyyy = midnight.getUTCFullYear();
+    const mm = String(midnight.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(midnight.getUTCDate()).padStart(2, '0');
     const dateStr = `${dd}-${mm}-${yyyy}`;
 
     const url = `${this.baseUrl()}/coins/${encodeURIComponent(id)}/history?date=${dateStr}&localization=false`;
     try {
-      const response = await this.limiter.execute(async () =>
-        fetchWithTimeout(url, { headers: this.headers() })
-      );
+      const response = await this.get(url, 'history');
       if (!response.ok) return null;
       const data = (await response.json()) as HistoryResponse;
       const baseLower = ctx.baseCurrency.symbol.toLowerCase();
@@ -406,24 +321,12 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
           tokenId: t.id,
           baseTokenId: ctx.baseCurrency.id,
           price: String(direct),
-          timestamp: at,
+          timestamp: midnight,
+          barDay,
           source: 'coingecko_historical',
         };
       }
-      const usd = data.market_data?.current_price?.usd;
-      if (typeof usd !== 'number' || usd <= 0) return null;
-      const converter = this.opts.converter;
-      if (!converter) return null;
-      const baseUpper = ctx.baseCurrency.symbol.toUpperCase();
-      const converted = await converter.convert(String(usd), 'USD', baseUpper, at);
-      if (converted === null || converted === '0') return null;
-      return {
-        tokenId: t.id,
-        baseTokenId: ctx.baseCurrency.id,
-        price: converted,
-        timestamp: at,
-        source: 'coingecko_historical_usd_converted',
-      };
+      return null;
     } catch (err) {
       this.logger.debug({ err, id, at }, 'CoinGecko historical lookup failed');
       return null;
@@ -515,9 +418,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
   async searchTokens(query: string, limit = 10): Promise<TokenSearchResult[]> {
     const url = `${this.baseUrl()}/search?query=${encodeURIComponent(query)}`;
     try {
-      const response = await this.limiter.execute(() =>
-        fetchWithTimeout(url, { headers: this.headers() }, 3000, 0)
-      );
+      const response = await this.get(url, 'search', 3000, 0);
       if (!response.ok) {
         this.logger.warn({ status: response.status, query }, 'CoinGecko /search non-OK');
         return [];
@@ -556,9 +457,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
     if (this.coinListCache) return this.coinListCache;
     const url = `${this.baseUrl()}/coins/list?include_platform=true`;
     try {
-      const response = await this.limiter.execute(async () =>
-        fetchWithTimeout(url, { headers: this.headers() })
-      );
+      const response = await this.get(url, 'coins_list');
       if (!response.ok) return null;
       const data = (await response.json()) as CoinListEntry[];
       this.coinListCache = data;
@@ -576,9 +475,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
   private async requestSimplePrice(ids: string, vs: string): Promise<SimplePriceResponse | null> {
     const url = `${this.baseUrl()}/simple/price?ids=${ids}&vs_currencies=${vs}`;
     try {
-      const response = await this.limiter.execute(async () =>
-        fetchWithTimeout(url, { headers: this.headers() })
-      );
+      const response = await this.get(url, 'simple_price');
       if (!response.ok) {
         this.logger.warn(
           { status: response.status, vs },
@@ -591,6 +488,37 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
       this.logger.warn({ err, vs }, 'CoinGecko /simple/price failed');
       return null;
     }
+  }
+
+  /**
+   * Every CoinGecko request, through the shared limiter. Each 429 CoinGecko
+   * sends is counted in Sentry, one issue per tier, retried attempts included,
+   * because production runs keyless on the public tier, the one place a
+   * per-minute cap bites, and nothing else saw it (SC-1602). The limiter
+   * spends one token on up to `retries + 1` upstream requests, so this count
+   * is the pressure the limiter does not see.
+   */
+  private async get(
+    url: string,
+    endpoint: string,
+    timeoutMs?: number,
+    retries?: number
+  ): Promise<Response> {
+    const tier = this.opts.apiKey ? 'pro' : 'public';
+    const response = await this.limiter.execute(() =>
+      fetchWithTimeout(url, { headers: this.headers() }, timeoutMs, retries, (attempt) => {
+        if (attempt.status !== 429) return;
+        this.logger.warn({ endpoint, tier }, 'CoinGecko 429');
+        captureWarning('CoinGecko 429', { provider: 'coingecko', endpoint, tier }, [
+          'coingecko-429',
+          tier,
+        ]);
+      })
+    );
+    // Only a 429 no retry cleared: that is a price not fetched, and what the
+    // quarter-hour run backs off for. Sentry above counts every attempt.
+    if (response.status === 429) recordRefusal('coingecko');
+    return response;
   }
 
   private baseUrl(): string {

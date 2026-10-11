@@ -4,7 +4,9 @@ export { LocalEmailService } from './local-email-service';
 export {
   renderActivationNudgeEmail,
   renderContactReceivedEmail,
+  renderHouseholdInviteEmail,
   renderIntegrationAlertEmail,
+  renderTwoFactorResetEmail,
   renderWeeklyDigestEmail,
   type StaleIntegrationItem,
 } from './templates';

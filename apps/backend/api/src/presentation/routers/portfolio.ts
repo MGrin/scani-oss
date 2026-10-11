@@ -13,12 +13,21 @@
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { periodBreakdown } from '@scani/domain/lib/portfolio/period-breakdown';
 import { getOrComputeFromCache } from '@scani/domain/lib/request-cache';
 import { buildComparison } from '@scani/domain/lib/returns/comparison';
 import { sampleDays } from '@scani/domain/lib/returns/sample-days';
 import { notScamFor } from '@scani/domain/lib/scam-verdict';
 import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
-import { BenchmarkReturnService, ReturnsService } from '@scani/domain/services';
+import {
+  BenchmarkReturnService,
+  GainsByWrapperService,
+  IncomeService,
+  PriceHubResolver,
+  PriceReader,
+  ReturnsService,
+  UNMATCHED_TOKEN_MARKER,
+} from '@scani/domain/services';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
@@ -38,8 +47,15 @@ import {
   toNetWorthHistoryRow,
   unmeasuredDates,
 } from '../../lib/net-worth-series';
+import { loadPeriodBreakdown } from '../../lib/period-breakdown';
 import { sharedReturnsRun } from '../../lib/returns-cache';
+import {
+  findLastComplete,
+  keepLastComplete,
+  type LastComplete,
+} from '../../lib/returns-last-complete';
 import { withoutPeriodSeries } from '../../lib/returns-response';
+import { ReturnsRunner } from '../../returns-pool';
 import { strictInput } from '../lib/strict-input';
 import { assertTokensVisible } from '../lib/token-visibility';
 import { requireAuth } from '../middleware/auth';
@@ -185,6 +201,16 @@ const NetWorthSeriesInput = z
     { message: `Date span must be ≤ ${MAX_NET_WORTH_SPAN_DAYS} days` }
   );
 
+const PeriodBreakdownInput = z
+  .object({ from: z.coerce.date(), to: z.coerce.date() })
+  .refine((v) => v.to.getTime() >= v.from.getTime(), {
+    message: '`to` must be greater than or equal to `from`',
+  })
+  .refine(
+    (v) => (v.to.getTime() - v.from.getTime()) / (24 * 60 * 60 * 1000) <= MAX_NET_WORTH_SPAN_DAYS,
+    { message: `Date span must be ≤ ${MAX_NET_WORTH_SPAN_DAYS} days` }
+  );
+
 // Per-entity scope ownership check. Throws TRPCError NOT_FOUND when
 // the entity doesn't exist or doesn't belong to `userId`. Returns
 // silently when the scope is valid.
@@ -309,12 +335,16 @@ function computeReturns(
   // Shared across requests too, while the user's data is unchanged: see
   // `lib/returns-cache.ts` for the measurement and for what the key carries.
   return getOrComputeFromCache(requestCache, key, () =>
-    sharedReturnsRun(key, request.userId, () =>
-      Container.get(ReturnsService).compute({
-        userId: request.userId,
-        scope: request.scope,
-        window: request.window,
-      })
+    sharedReturnsRun(key, request.userId, (dataKey) =>
+      // Off the API's event loop (SC-1671): `returns-pool.ts`.
+      Container.get(ReturnsRunner).run(
+        {
+          userId: request.userId,
+          scope: request.scope,
+          window: request.window,
+        },
+        dataKey
+      )
     )
   );
 }
@@ -341,23 +371,65 @@ export const portfolioRouter = router({
   getReturns: protectedProcedure.input(strictInput(ReturnsInput)).query(async ({ ctx, input }) => {
     const { dbUser } = await requireAuth(ctx);
     if (input.scope) await assertScopeOwnership(dbUser.id, input.scope);
-    const outcome = await computeReturns(ctx.requestCache, {
+    const request = {
+      userId: dbUser.id,
+      scope: input.scope ?? { kind: 'user' as const },
+      window: input.window,
+    };
+    const outcome = await computeReturns(ctx.requestCache, request);
+    // An account with no base currency has no rollup rows to measure, so
+    // there is nothing to show and nothing has gone wrong.
+    if (outcome.status !== 'ok') {
+      return { returns: null, benchmarks: [], lastComplete: null as LastComplete | null };
+    }
+    const { eligibility, effectiveWindow, baseCurrencyId } = outcome.returns;
+    // Over exactly the days the portfolio was measured on, so the comparison
+    // starts and ends where the return does (SC-464).
+    const benchmarks =
+      effectiveWindow && eligibility.eligible
+        ? await Container.get(BenchmarkReturnService).over(effectiveWindow, baseCurrencyId)
+        : [];
+    const returns = withoutPeriodSeries(outcome.returns);
+    if (eligibility.eligible) keepLastComplete(request, { returns, benchmarks });
+    // While a rebuild runs, the card shows the last answer "as of" its time
+    // rather than nothing for hours (SC-1694).
+    const lastComplete = eligibility.reasons.includes('rebuilding-history')
+      ? await findLastComplete(request, baseCurrencyId)
+      : null;
+    return { returns, benchmarks, lastComplete };
+  }),
+
+  /**
+   * Income received over the same window and scope as the returns card
+   * (SC-1644): dividends, interest, staking and rewards per month, with the
+   * tax withheld beside the gross. One range read of ledger rows rather than
+   * the rollup, so it shares neither the returns cache nor its probe.
+   */
+  getIncome: protectedProcedure.input(strictInput(ReturnsInput)).query(async ({ ctx, input }) => {
+    const { dbUser } = await requireAuth(ctx);
+    if (input.scope) await assertScopeOwnership(dbUser.id, input.scope);
+    const outcome = await Container.get(IncomeService).compute({
       userId: dbUser.id,
       scope: input.scope ?? { kind: 'user' },
       window: input.window,
     });
-    // An account with no base currency has no rollup rows to measure, so
-    // there is nothing to show and nothing has gone wrong.
-    if (outcome.status !== 'ok') return { returns: null, benchmarks: [] };
-    const window = outcome.returns.effectiveWindow;
-    // Over exactly the days the portfolio was measured on, so the comparison
-    // starts and ends where the return does (SC-464).
-    const benchmarks =
-      window && outcome.returns.eligibility.eligible
-        ? await Container.get(BenchmarkReturnService).over(window, outcome.returns.baseCurrencyId)
-        : [];
-    return { returns: withoutPeriodSeries(outcome.returns), benchmarks };
+    return { income: outcome.status === 'ok' ? outcome.income : null };
   }),
+
+  // SC-1645: gains grouped by the bucket of each account's wrapper, user-wide.
+  getGainsByWrapper: protectedProcedure
+    .input(
+      strictInput(
+        ReturnsInput.refine((input) => input.scope === undefined, {
+          message: 'Gains by account wrapper are user-wide; it takes no scope',
+          path: ['scope'],
+        })
+      )
+    )
+    .query(async ({ ctx, input }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return Container.get(GainsByWrapperService).compute(dbUser.id, input.window, new Date());
+    }),
 
   /**
    * The same window, as money rather than as rates (SC-1297): what the change
@@ -505,6 +577,18 @@ export const portfolioRouter = router({
       );
 
       return { series, baseCurrencyId: baseId, granularity, unmeasuredDates: gaps };
+    }),
+
+  // The Home chart peek's details (SC-1692): the period's change by account
+  // type, its top movers and top PnL, from the same rows the user-wide series
+  // sums, so the parts add up to the chart.
+  getPeriodBreakdown: protectedProcedure
+    .input(strictInput(PeriodBreakdownInput))
+    .query(async ({ ctx, input }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const baseId = dbUser.baseCurrencyId ?? null;
+      if (!baseId) return periodBreakdown([], new Map());
+      return loadPeriodBreakdown(dbUser.id, baseId, input.from, input.to);
     }),
 
   // PnL series: same shape as getNetWorthSeries plus cost_basis +
@@ -681,13 +765,13 @@ export const portfolioRouter = router({
      */
     const shownRows = (await db.execute<{
       id: string;
+      token_id: string;
       symbol: string;
       lookalike_of: string | null;
       segment: string | null;
       is_zero: boolean;
       is_positive: boolean;
       is_stale_zero: boolean;
-      is_priced: boolean;
       is_unpriceable: boolean;
       has_price_source: boolean;
       is_fiat: boolean;
@@ -695,11 +779,12 @@ export const portfolioRouter = router({
       opening_negative: boolean;
       has_coverage: boolean;
       has_transactions: boolean;
+      restored_unmatched: boolean;
     }>(sql`
       WITH shown AS (
         SELECT h.id, h.token_id, h.balance::numeric AS balance_n,
                t.symbol, t.lookalike_of, t.market_segment, t.provider_metadata,
-               t.unpriceable_until, tt.code AS type_code
+               t.unpriceable_until, t.created_by_user_id, tt.code AS type_code
         FROM holdings h
         JOIN tokens t ON t.id = h.token_id
         JOIN token_types tt ON tt.id = t.type_id
@@ -717,6 +802,7 @@ export const portfolioRouter = router({
       )
       SELECT
         s.id,
+        s.token_id,
         s.symbol,
         s.lookalike_of,
         s.market_segment AS segment,
@@ -725,10 +811,6 @@ export const portfolioRouter = router({
         (s.balance_n = 0
           AND COALESCE(lt.last_tx_at, '1970-01-01'::timestamptz)
               < NOW() - INTERVAL ${staleInterval}) AS is_stale_zero,
-        EXISTS (
-          SELECT 1 FROM token_prices p
-          WHERE p.token_id = s.token_id AND p.timestamp > NOW() - INTERVAL '7 days'
-        ) AS is_priced,
         -- Never quoted once, and still inside an unpriceable cooldown — the
         -- same behavioural predicate the chart's coverage denominator uses
         -- (SC-146). Split out because an airdrop token with no market is not
@@ -753,19 +835,25 @@ export const portfolioRouter = router({
         (s.symbol IN (SELECT symbol FROM dup)) AS dup_symbol,
         (c.opening_balance_quantity::numeric < 0) AS opening_negative,
         (c.holding_id IS NOT NULL) AS has_coverage,
-        (lt.last_tx_at IS NOT NULL) AS has_transactions
+        (lt.last_tx_at IS NOT NULL) AS has_transactions,
+        -- A token a restore made in place of a shared one this instance lacks
+        -- (SC-1649 Q3). Only the reader's own restore marks one, so a shared
+        -- token carrying the key is not counted.
+        (s.created_by_user_id = ${userId}
+          AND COALESCE((s.provider_metadata ->> ${UNMATCHED_TOKEN_MARKER})::boolean, false)
+        ) AS restored_unmatched
       FROM shown s
       LEFT JOIN last_tx lt ON lt.holding_id = s.id
       LEFT JOIN holding_coverage c ON c.holding_id = s.id
     `)) as unknown as Array<{
       id: string;
+      token_id: string;
       symbol: string;
       lookalike_of: string | null;
       segment: string | null;
       is_zero: boolean;
       is_positive: boolean;
       is_stale_zero: boolean;
-      is_priced: boolean;
       is_unpriceable: boolean;
       has_price_source: boolean;
       is_fiat: boolean;
@@ -773,6 +861,7 @@ export const portfolioRouter = router({
       opening_negative: boolean;
       has_coverage: boolean;
       has_transactions: boolean;
+      restored_unmatched: boolean;
     }>;
 
     // `total` describes the reader's whole holdings table rather than the
@@ -791,6 +880,19 @@ export const portfolioRouter = router({
     `)) as unknown as Array<{ total: number }>;
     const totals = totalsRows[0] ?? { total: 0 };
 
+    // Priced and stale are the engine's one definition (D-13): what
+    // `PriceReader` answers in the reader's base now, stale by each leg's
+    // horizon. The dashboard reads the same answer.
+    const answers = await Container.get(PriceReader).at(
+      [...new Set(shownRows.map((row) => row.token_id))],
+      dbUser.baseCurrencyId ?? (await Container.get(PriceHubResolver).usdTokenId()),
+      new Date()
+    );
+    const isPriced = (row: (typeof shownRows)[number]) =>
+      (answers.get(row.token_id) ?? null) !== null;
+    const isCurrent = (row: (typeof shownRows)[number]) =>
+      answers.get(row.token_id)?.stale === false;
+
     const idsWhere = (predicate: (row: (typeof shownRows)[number]) => boolean): string[] =>
       shownRows.filter(predicate).map((row) => row.id);
 
@@ -800,9 +902,9 @@ export const portfolioRouter = router({
     // cooldown and leaves the row above — which is exactly the case that hid
     // both TRUMP rows for three months.
     const unpriced = (row: (typeof shownRows)[number]) =>
-      row.is_positive && !row.is_priced && !row.is_unpriceable;
+      row.is_positive && !isCurrent(row) && !row.is_unpriceable;
     const noSource = (row: (typeof shownRows)[number]) =>
-      row.is_positive && !row.is_fiat && !row.has_price_source && !row.is_priced;
+      row.is_positive && !row.is_fiat && !row.has_price_source && !isPriced(row);
 
     const flagged = {
       duplicateSymbol: idsWhere((row) => row.dup_symbol),
@@ -812,6 +914,7 @@ export const portfolioRouter = router({
       noPriceSource: idsWhere(noSource),
       negativeOpening: idsWhere((row) => row.opening_negative),
       noCoverage: idsWhere(lacksCoverage),
+      restoredUnmatched: idsWhere((row) => row.restored_unmatched),
     } as const;
 
     /**
@@ -849,6 +952,23 @@ export const portfolioRouter = router({
       );
     };
 
+    // A5 #9: a hide is its owner's and sticks, so money a feed later reports
+    // on a hidden row would sit outside every total unseen. Hidden by its
+    // owner, priced, and holding more than it was hidden at; a row hidden
+    // before that figure was kept is measured from zero. A sweep-hidden row
+    // still counts in totals, so it is not one.
+    const hiddenWithNewBalance = (
+      await db.execute<{ id: string }>(sql`
+        SELECT h.id FROM holdings h JOIN tokens t ON t.id = h.token_id
+        WHERE h.user_id = ${userId}
+          AND h.is_hidden
+          AND h.hidden_by IS DISTINCT FROM 'auto'
+          AND ${notScamFor('h', 't')}
+          AND coalesce(h.value_base::numeric, 0) > 0
+          AND h.balance::numeric > coalesce(h.hidden_balance, '0')::numeric
+        ORDER BY h.id`)
+    ).map((row) => row.id);
+
     return {
       /**
        * The identity of each flagged set — holding ids, in the reader's own
@@ -856,6 +976,8 @@ export const portfolioRouter = router({
        * narrows to exactly these.
        */
       flagged,
+      /** Hidden holdings with a new balance, which the holdings list leaves out (A5 #9). */
+      hiddenWithNewBalance,
       duplicateTokens: symbolsOf((row) => row.dup_symbol).map((entry) => ({
         symbol: entry.symbol,
         count: entry.count,
@@ -881,6 +1003,7 @@ export const portfolioRouter = router({
         unpriceableVisible: shownRows.filter((row) => row.is_positive && row.is_unpriceable).length,
         negativeOpening: flagged.negativeOpening.length,
         missingCoverage: flagged.noCoverage.length,
+        restoredUnmatched: flagged.restoredUnmatched.length,
       },
       thresholds: {
         staleClosedDays: HIDE_CLOSED_HOLDINGS_STALE_DAYS,

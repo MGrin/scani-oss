@@ -20,16 +20,18 @@ import * as schema from '@scani/db/schema';
 import Decimal from 'decimal.js';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
+import type { PriceAsk } from '../../src/engine/types';
 import { HoldingTransactionRepository } from '../../src/repositories/HoldingTransactionRepository';
 import { PortfolioValueDailyRepository } from '../../src/repositories/PortfolioValueDailyRepository';
-import { TokenPriceRepository } from '../../src/repositories/TokenPriceRepository';
 import {
   type PnLAtTimePerHolding,
   PnLAtTimeService,
 } from '../../src/services/portfolio/PnLAtTimeService';
-import { PriceGraphService } from '../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../src/services/pricing/PriceReader';
 import { RollupPortfolioValueDailyUseCase } from '../../src/use-cases/RollupPortfolioValueDailyUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
+import { seedHoldingCache } from '../../test/helpers/engine-guard';
+import { seriesFrom } from '../../test/helpers/price-series';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -170,15 +172,17 @@ async function setupFixture(): Promise<Fixture> {
       typeId: accountType!.id,
     })
     .returning();
-  const [holding] = await db
-    .insert(schema.holdings)
-    .values({
-      userId: userIds[0]!,
-      accountId: account!.id,
-      tokenId: asset[0]!.id,
-      balance: '3',
-    })
-    .returning();
+  const [holding] = await seedHoldingCache(db, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values({
+        userId: userIds[0]!,
+        accountId: account!.id,
+        tokenId: asset[0]!.id,
+        balance: '3',
+      })
+      .returning()
+  );
 
   return {
     userIds,
@@ -225,6 +229,7 @@ beforeEach(async () => {
   // Stubbing the seam closer to the use case bypasses both pricing and
   // cost-basis lookups in one shot.
   Container.set(PnLAtTimeService, {
+    priceAsks: async () => [],
     getPnL: async (userId: string, at: Date, baseCurrencyId: string) => {
       valuationCalls.push({ userId, at, baseCurrencyId });
       return {
@@ -455,9 +460,9 @@ describe('RollupPortfolioValueDailyUseCase', () => {
           anchorSource: null,
           anchorAt: null,
           balanceBeforeRecords: false,
-          balanceInterpolated: false,
           basisQuality: 'partial' as const,
           transfersUnreviewed: 0,
+          debt: false,
         },
         {
           holdingId: 'fresh-and-complete',
@@ -472,9 +477,9 @@ describe('RollupPortfolioValueDailyUseCase', () => {
           anchorSource: null,
           anchorAt: null,
           balanceBeforeRecords: false,
-          balanceInterpolated: false,
           basisQuality: 'known' as const,
           transfersUnreviewed: 0,
+          debt: false,
         },
       ],
     });
@@ -552,9 +557,9 @@ describe('RollupPortfolioValueDailyUseCase', () => {
           anchorSource: null,
           anchorAt: null,
           balanceBeforeRecords: false,
-          balanceInterpolated: false,
           basisQuality: 'known' as const,
           transfersUnreviewed: 0,
+          debt: false,
         },
         {
           holdingId: f.holdingId,
@@ -569,9 +574,9 @@ describe('RollupPortfolioValueDailyUseCase', () => {
           anchorSource: null,
           anchorAt: null,
           balanceBeforeRecords: false,
-          balanceInterpolated: false,
           basisQuality: 'known' as const,
           transfersUnreviewed: 0,
+          debt: false,
         },
       ],
     });
@@ -671,9 +676,9 @@ describe('RollupPortfolioValueDailyUseCase', () => {
           anchorSource: null,
           anchorAt: null,
           balanceBeforeRecords: false,
-          balanceInterpolated: false,
           basisQuality: 'known' as const,
           transfersUnreviewed: 0,
+          debt: false,
         },
         {
           holdingId: f.holdingId,
@@ -688,9 +693,9 @@ describe('RollupPortfolioValueDailyUseCase', () => {
           anchorSource: null,
           anchorAt: null,
           balanceBeforeRecords: false,
-          balanceInterpolated: false,
           basisQuality: 'known' as const,
           transfersUnreviewed: 0,
+          debt: false,
         },
       ],
     });
@@ -732,6 +737,84 @@ describe('RollupPortfolioValueDailyUseCase', () => {
     expect(holdingRow?.costBasis).toBe('0');
     expect(holdingRow?.unrealizedPnl).toBe('0'); // never -9576
     expect(holdingRow?.coverageQuality).toBe('unknown');
+  });
+
+  // SC-1664. Debt is in net worth and nowhere in P&L: a loan's row adds its
+  // value to the scope and nothing to cost, realized or unrealized.
+  test('a debt holding adds value to a scope and nothing to its P&L', async () => {
+    const f = fixture!;
+    const accountId = (
+      await db
+        .select({ id: schema.accounts.id })
+        .from(schema.accounts)
+        .where(eq(schema.accounts.userId, f.userIds[0]!))
+        .limit(1)
+    )[0]!.id;
+    const row = {
+      accountId,
+      tokenId: f.assetTokenId,
+      realizedPnl: new Decimal(0),
+      unpriceable: false,
+      priceStale: false,
+      anchorSource: null,
+      anchorAt: null,
+      balanceBeforeRecords: false,
+      basisQuality: 'known' as const,
+      transfersUnreviewed: 0,
+    };
+    nextValuation = () => ({
+      totalValueInBase: new Decimal(-3000),
+      totalCostBasis: new Decimal(700),
+      totalRealizedPnl: new Decimal(0),
+      totalUnrealizedPnl: new Decimal(300),
+      totalPnl: new Decimal(300),
+      coverageQuality: 'full' as const,
+      holdingsWithKnownValue: 2,
+      holdingsTotal: 2,
+      holdingsUnpriceable: 0,
+      holdingsStalePriced: 0,
+      holdingsBasisUnknown: 0,
+      transfersUnreviewed: 0,
+      perHolding: [
+        {
+          ...row,
+          holdingId: 'asset',
+          value: new Decimal(1000),
+          costBasis: new Decimal(700),
+          unrealizedPnl: new Decimal(300),
+          debt: false,
+        },
+        {
+          ...row,
+          holdingId: f.holdingId,
+          value: new Decimal(-4000),
+          costBasis: new Decimal(0),
+          unrealizedPnl: new Decimal(0),
+          debt: true,
+        },
+      ],
+    });
+
+    await Container.get(RollupPortfolioValueDailyUseCase).execute({
+      userId: f.userIds[0]!,
+      lookbackDays: 1,
+    });
+
+    const repo = Container.get(PortfolioValueDailyRepository);
+    const from = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const to = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const scope = (kind: 'account' | 'holding', id: string) =>
+      repo.findRange(f.userIds[0]!, f.baseCurrencyId, from, to, undefined, { kind, id });
+
+    const [accountRow] = await scope('account', accountId);
+    expect(accountRow?.totalValue).toBe('-3000');
+    expect(accountRow?.costBasis).toBe('700');
+    expect(accountRow?.unrealizedPnl).toBe('300'); // not -3700
+
+    const [loanRow] = await scope('holding', f.holdingId);
+    expect(loanRow?.totalValue).toBe('-4000');
+    expect(loanRow?.costBasis).toBe('0');
+    expect(loanRow?.unrealizedPnl).toBe('0'); // not -4000
   });
 
   test('uses today + earlier days; today snapshot uses the runStart timestamp directly', async () => {
@@ -799,9 +882,9 @@ describe('RollupPortfolioValueDailyUseCase', () => {
           anchorSource: null,
           anchorAt: null,
           balanceBeforeRecords: false,
-          balanceInterpolated: false,
           basisQuality: 'known' as const,
           transfersUnreviewed: 2,
+          debt: false,
         },
       ],
     });
@@ -882,12 +965,12 @@ describe('RollupPortfolioValueDailyUseCase', () => {
           // anchor is forward, the basis is known. Every other quality signal
           // reads clean, which is exactly why the day read 'full'.
           priceStale: false,
-          anchorSource: 'holdings',
+          anchorSource: 'observation-after',
           anchorAt: new Date(),
           balanceBeforeRecords: true,
-          balanceInterpolated: false,
           basisQuality: 'known' as const,
           transfersUnreviewed: 0,
+          debt: false,
         },
       ],
     });
@@ -925,92 +1008,260 @@ describe('RollupPortfolioValueDailyUseCase', () => {
     expect(holdingRow?.holdingsStaleAnchored).toBe(0);
     expect(holdingRow?.holdingsStalePriced).toBe(0);
   });
-  // SC-315. The prefetch exists to preload every (from, to) pair
-  // `PriceGraphService.tryDirect` can ask for during the pass, which
-  // includes each hub. It used to derive those hubs from its own
-  // `PRICE_HUB_SYMBOLS` copy under a "keep in sync" comment; a
-  // disagreement between the two lists is silent, because a missing
-  // pair degrades to a per-leg DB round-trip rather than a wrong
-  // number. Emptying that list failed no test.
-  //
-  // The enumeration itself moved onto `PriceGraphService.buildPriceLookup`
-  // (SC-471), which is why this uses a REAL graph with only its hub
-  // resolution and its conversions stubbed: a fully stubbed graph would
-  // stand in for the code under test and pass no matter what the rollup
-  // handed it. What the rollup still owns is WHICH tokens it asks about.
-  test('the price prefetch preloads exactly the hubs the price graph will walk', async () => {
-    const f = fixture!;
-    const hubIds = ['hub-alpha', 'hub-beta'];
-    let pairs: ReadonlyArray<{ tokenId: string; baseTokenId: string }> = [];
 
-    Container.set(TokenPriceRepository, {
-      findManyForPairsUpTo: async (p: ReadonlyArray<{ tokenId: string; baseTokenId: string }>) => {
-        pairs = p;
-        return [];
-      },
-    } as unknown as TokenPriceRepository);
-    const graph = new PriceGraphService();
-    graph.resolveHubTokenIds = async () => hubIds;
-    graph.convert = async () => null;
-    Container.set(PriceGraphService, graph);
-    Container.set(RollupPortfolioValueDailyUseCase, new RollupPortfolioValueDailyUseCase());
+  // A5 D-14 on the scope rows. The engine walks forward from a reading on
+  // every day after it, which the balance read labels `observation-before`;
+  // the user row stopped counting that as a stale anchor in PR-2 and the
+  // scope rows did not, so the rehearsal turned 13,215 of them 'partial'.
+  test('a holding walked forward from a reading leaves every scope row full', async () => {
+    const f = fixture!;
+    const accountId = (
+      await db
+        .select({ id: schema.accounts.id })
+        .from(schema.accounts)
+        .where(eq(schema.accounts.userId, f.userIds[0]!))
+        .limit(1)
+    )[0]!.id;
+    const anchoredAt = new Date(Date.now() - 40 * 24 * 60 * 60 * 1000);
+
+    nextValuation = () => ({
+      totalValueInBase: new Decimal('586.94'),
+      totalCostBasis: new Decimal(0),
+      totalRealizedPnl: new Decimal(0),
+      totalUnrealizedPnl: new Decimal('586.94'),
+      totalPnl: new Decimal('586.94'),
+      coverageQuality: 'full' as const,
+      holdingsWithKnownValue: 1,
+      holdingsTotal: 1,
+      holdingsUnpriceable: 0,
+      holdingsStalePriced: 0,
+      holdingsBasisUnknown: 0,
+      transfersUnreviewed: 0,
+      perHolding: [
+        {
+          holdingId: f.holdingId,
+          accountId,
+          tokenId: f.assetTokenId,
+          value: new Decimal('586.94'),
+          costBasis: new Decimal(0),
+          realizedPnl: new Decimal(0),
+          unrealizedPnl: new Decimal('586.94'),
+          unpriceable: false,
+          priceStale: false,
+          anchorSource: 'observation-before',
+          anchorAt: anchoredAt,
+          balanceBeforeRecords: false,
+          basisQuality: 'known' as const,
+          transfersUnreviewed: 0,
+          debt: false,
+        },
+      ],
+    });
 
     await Container.get(RollupPortfolioValueDailyUseCase).execute({
       userId: f.userIds[0]!,
       lookbackDays: 1,
     });
 
-    const asked = new Set(pairs.flatMap((p) => [p.tokenId, p.baseTokenId]));
-    for (const hubId of hubIds) {
-      expect(asked.has(hubId)).toBe(true);
-      // Both directions: tryDirect inverts when the forward leg misses.
-      expect(pairs.some((p) => p.tokenId === f.assetTokenId && p.baseTokenId === hubId)).toBe(true);
-      expect(pairs.some((p) => p.tokenId === hubId && p.baseTokenId === f.assetTokenId)).toBe(true);
+    const repo = Container.get(PortfolioValueDailyRepository);
+    const from = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+    const to = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    for (const scope of [
+      { kind: 'holding' as const, id: f.holdingId },
+      { kind: 'account' as const, id: accountId },
+      { kind: 'institution' as const, id: f.institutionId },
+    ]) {
+      const [row] = await repo.findRange(
+        f.userIds[0]!,
+        f.baseCurrencyId,
+        from,
+        to,
+        undefined,
+        scope
+      );
+      expect({
+        scope: scope.kind,
+        quality: row?.coverageQuality,
+        stale: row?.holdingsStaleAnchored,
+        at: row?.oldestAnchorAt ?? null,
+      }).toEqual({
+        scope: scope.kind,
+        quality: 'full',
+        stale: 0,
+        at: null,
+      });
     }
   });
-
-  async function sinceForRun(occurredAt: Date[]): Promise<Date | undefined> {
+  // One series per user per call, over what `getPnL` reads (Task 20). A
+  // chunk is one call, so the load is per chunk; the asks are listed by the
+  // code that reads them, so a holding or row the rollup did not preload is
+  // still in them. The series throws on anything it was not asked for, so a
+  // listing gap surfaces as `summary.errors`, never as a silent DB read.
+  async function loadsForRun(occurredAt: Date[], lookbackDays: number) {
     const f = fixture!;
-    let since: Date | undefined;
+    const loads: Array<{ asks: PriceAsk[]; baseTokenId: string }> = [];
     const realTx = Container.get(HoldingTransactionRepository);
     Container.set(HoldingTransactionRepository, {
       findForHoldingsAll: async () =>
-        new Map([[f.holdingId, occurredAt.map((at) => ({ occurredAt: at, feeTokenId: null }))]]),
+        new Map([
+          [
+            f.holdingId,
+            occurredAt.map((at, i) => ({
+              id: `row-${i}`,
+              holdingId: f.holdingId,
+              tokenId: f.assetTokenId,
+              kind: 'deposit',
+              quantity: '1',
+              occurredAt: at,
+              priceNative: null,
+              priceNativeTokenId: null,
+              feeQuantity: null,
+              feeTokenId: null,
+            })),
+          ],
+        ]),
     } as unknown as HoldingTransactionRepository);
-    Container.set(TokenPriceRepository, {
-      findManyForPairsUpTo: async (_p: unknown, _until: Date, _tx: unknown, s?: Date) => {
-        since = s;
-        return [];
-      },
-    } as unknown as TokenPriceRepository);
-    const graph = new PriceGraphService();
-    graph.resolveHubTokenIds = async () => [];
-    graph.convert = async () => null;
-    Container.set(PriceGraphService, graph);
+    // Only `series` is stubbed: every other method is the real reader's, so a
+    // service first built under this stub (the drift ledger's `firstReadingAt`)
+    // still works, whichever file built it first.
+    const realPrices = Container.get(PriceReader);
+    Container.set(
+      PriceReader,
+      Object.assign(Object.create(realPrices) as PriceReader, {
+        series: async (asks: readonly PriceAsk[], baseTokenId: string) => {
+          loads.push({ asks: [...asks], baseTokenId });
+          return seriesFrom(asks, baseTokenId, () => null);
+        },
+      })
+    );
+    // The real listing beside the file's stubbed valuation: what is asked is
+    // the code under test, what is answered is not.
+    const stubbed = Container.get(PnLAtTimeService);
+    const real = new PnLAtTimeService();
+    Container.set(PnLAtTimeService, {
+      getPnL: stubbed.getPnL,
+      priceAsks: real.priceAsks.bind(real),
+    } as unknown as PnLAtTimeService);
     try {
       Container.set(RollupPortfolioValueDailyUseCase, new RollupPortfolioValueDailyUseCase());
-      await Container.get(RollupPortfolioValueDailyUseCase).execute({
+      const summary = await Container.get(RollupPortfolioValueDailyUseCase).execute({
         userId: f.userIds[0]!,
-        lookbackDays: 3,
+        lookbackDays,
         runStart: new Date('2026-09-26T12:00:00.000Z'),
       });
+      return { loads, summary };
     } finally {
       Container.set(HoldingTransactionRepository, realTx);
+      Container.set(PriceReader, realPrices);
     }
-    return since;
   }
 
-  test('the price prefetch starts at the first transaction when that is the earliest ask', async () => {
-    const since = await sinceForRun([
-      new Date('2025-03-01T10:00:00.000Z'),
-      new Date('2024-07-15T08:30:00.000Z'),
-    ]);
-    expect(since?.toISOString()).toBe('2024-07-15T08:30:00.000Z');
+  const asked = (asks: PriceAsk[]) => asks.map((a) => `${a.tokenId}@${a.at.toISOString()}`);
+
+  test('one series per user per call, over every holding at every day', async () => {
+    const f = fixture!;
+    const { loads, summary } = await loadsForRun([], 3);
+    expect(summary.errors).toEqual([]);
+    expect(loads).toHaveLength(1);
+    expect(loads[0]?.baseTokenId).toBe(f.baseCurrencyId);
+    expect(asked(loads[0]!.asks)).toEqual(
+      expect.arrayContaining([
+        `${f.assetTokenId}@2026-09-26T12:00:00.000Z`,
+        `${f.assetTokenId}@2026-09-25T23:59:59.999Z`,
+        `${f.assetTokenId}@2026-09-24T23:59:59.999Z`,
+      ])
+    );
   });
 
-  test('with no earlier transaction the prefetch starts at the first day of the window', async () => {
-    const since = await sinceForRun([new Date('2026-09-26T09:00:00.000Z')]);
-    // lookbackDays 3 from 2026-09-26: the oldest day is the 24th, valued at its last instant.
-    expect(since?.toISOString()).toBe('2026-09-24T23:59:59.999Z');
+  test('the series lists a ledger row dated before the window, at its own day’s close', async () => {
+    const f = fixture!;
+    const { loads, summary } = await loadsForRun([new Date('2024-07-15T08:30:00.000Z')], 3);
+    expect(summary.errors).toEqual([]);
+    expect(asked(loads[0]!.asks)).toContain(`${f.assetTokenId}@2024-07-15T23:59:59.999Z`);
+  });
+
+  test('CONTROL: a row after the window’s last day is not asked', async () => {
+    const f = fixture!;
+    const { loads } = await loadsForRun([new Date('2026-09-27T08:00:00.000Z')], 3);
+    expect(asked(loads[0]!.asks).some((a) => a.startsWith(`${f.assetTokenId}@2026-09-27`))).toBe(
+      false
+    );
+  });
+});
+
+describe('RollupPortfolioValueDailyUseCase — money in transit (SC-1675)', () => {
+  const transitRows = async (userId: string) =>
+    db
+      .select()
+      .from(schema.portfolioValueDaily)
+      .where(
+        sql`${schema.portfolioValueDaily.userId} = ${userId} AND ${schema.portfolioValueDaily.scopeKind} = 'transit'`
+      );
+
+  function travelling(outflowId: string, value: string | null, ...more: string[]) {
+    return (userId: string, at: Date, baseCurrencyId: string) =>
+      ({
+        ...DEFAULT_VALUATION(userId, at, baseCurrencyId),
+        inTransit: [value, ...more].map((v, i) => ({
+          outflowId: i === 0 ? outflowId : randomUUID(),
+          destinationHoldingId: fixture!.holdingId,
+          tokenId: fixture!.assetTokenId,
+          quantity: new Decimal(5),
+          valueInBase: v === null ? null : new Decimal(v),
+        })),
+      }) as ReturnType<typeof DEFAULT_VALUATION>;
+  }
+
+  test('writes one transit row per destination holding, at its value as its cost', async () => {
+    const f = fixture!;
+    nextValuation = travelling(randomUUID(), '500');
+    await Container.get(RollupPortfolioValueDailyUseCase).execute({
+      userId: f.userIds[0]!,
+      lookbackDays: 1,
+    });
+    const rows = await transitRows(f.userIds[0]!);
+    expect(rows).toHaveLength(1);
+    // Keyed by where the money is going, so Returns and the digest can add it
+    // to that holding and every per-holding rule (inclusion, eligibility,
+    // currency) applies to it unchanged.
+    expect(rows[0]?.scopeId).toBe(f.holdingId);
+    expect(rows[0]?.totalValue).toBe('500');
+    expect(rows[0]?.costBasis).toBe('500');
+    expect(rows[0]?.realizedPnl).toBe('0');
+    expect(rows[0]?.unrealizedPnl).toBe('0');
+  });
+
+  test('two outflows travelling to one holding are one row, summed', async () => {
+    const f = fixture!;
+    nextValuation = travelling(randomUUID(), '500', '200');
+    await Container.get(RollupPortfolioValueDailyUseCase).execute({
+      userId: f.userIds[0]!,
+      lookbackDays: 1,
+    });
+    const rows = await transitRows(f.userIds[0]!);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.totalValue).toBe('700');
+    expect(rows[0]?.costBasis).toBe('700');
+  });
+
+  test('a transit that closes leaves no row behind on the next run of that day', async () => {
+    const f = fixture!;
+    nextValuation = travelling(randomUUID(), '500');
+    const useCase = Container.get(RollupPortfolioValueDailyUseCase);
+    await useCase.execute({ userId: f.userIds[0]!, lookbackDays: 1 });
+    expect(await transitRows(f.userIds[0]!)).toHaveLength(1);
+    nextValuation = DEFAULT_VALUATION;
+    await useCase.execute({ userId: f.userIds[0]!, lookbackDays: 1 });
+    expect(await transitRows(f.userIds[0]!)).toEqual([]);
+  });
+
+  test('an unpriced transit writes no row, as the user row does not count it', async () => {
+    const f = fixture!;
+    nextValuation = travelling(randomUUID(), null);
+    await Container.get(RollupPortfolioValueDailyUseCase).execute({
+      userId: f.userIds[0]!,
+      lookbackDays: 1,
+    });
+    expect(await transitRows(f.userIds[0]!)).toEqual([]);
   });
 });

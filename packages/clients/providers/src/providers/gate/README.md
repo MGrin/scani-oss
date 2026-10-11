@@ -8,7 +8,7 @@ Gate.io spot accounts.
   Headers: `KEY`, `SIGN`, `Timestamp`.
 - **Env**: per-user `apiKey` + `apiSecret`.
 - **Rate limit**: 10 req/s; namespace `gate-private`.
-- **Endpoints used**: `/spot/accounts`, `/spot/accounts/ledger`,
+- **Endpoints used**: `/spot/accounts`, `/spot/account_book`,
   `/spot/my_trades`, `/wallet/deposits`, `/wallet/withdrawals`.
 - **Notes**: extends `BaseHmacCexProvider`. `available + locked` summed
   for the user-facing total. Transactions strategy: the ledger across

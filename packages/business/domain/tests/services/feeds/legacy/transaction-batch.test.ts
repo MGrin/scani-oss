@@ -25,7 +25,12 @@ import { legacyTransactionBatch } from '../../../../src/services/feeds/legacy/tr
 import { TokenIdentityService } from '../../../../src/services/tokens/TokenIdentityService';
 import { withTestDb } from '../../../../test/helpers/db';
 import { makeInstitution, makeUser } from '../../../../test/helpers/factories';
-import { makeAccount, makeHolding, makeToken } from '../../../../test/helpers/factories-extra';
+import {
+  makeAccount,
+  makeHolding,
+  makeToken,
+  seedReading,
+} from '../../../../test/helpers/factories-extra';
 
 const AT = new Date('2026-07-14T14:30:00Z');
 const FETCHED = new Date('2026-07-20T00:00:00Z');
@@ -111,6 +116,20 @@ describe('legacyTransactionBatch — the batch', () => {
     ]);
   });
 
+  test("an event's source metadata reaches the ledger row as written (SC-1644)", () => {
+    const dividend: TransactionEvent = {
+      externalId: 'div-1',
+      occurredAt: AT,
+      kind: 'reward',
+      primary: { tokenIdentity: coin('USD'), quantity: '24', tokenType: 'fiat' },
+      sourceMetadata: { income: 'dividend', paidBy: { symbol: 'ACME', isin: 'ZZ0000000017' } },
+    };
+    expect(batchOf([dividend]).entries[0]?.legacy?.sourceMetadata).toEqual({
+      income: 'dividend',
+      paidBy: { symbol: 'ACME', isin: 'ZZ0000000017' },
+    });
+  });
+
   test('a type hint names one of the five seeded types, and anything else is crypto', () => {
     const typed = (tokenType: string | undefined, i: number): TransactionEvent => ({
       externalId: `e-${i}`,
@@ -168,13 +187,11 @@ describe('legacyTransactionBatch — the batch', () => {
       arrival: null,
       writesCache: false,
       createdWithoutCheckpoint: 'zero',
-      cacheObservation: null,
       derivesTradeLegs: true,
       holdingFailure: 'skip-entry',
       absence: null,
       clearsAbsenceTally: false,
       createdCheckpointMeta: null,
-      unhideOnNonZero: false,
       unchangedCheckpoint: 'append',
       zeroOpensHolding: true,
     });
@@ -243,11 +260,16 @@ describe('legacyTransactionBatch — the batch', () => {
       );
     }
     expect(windows).toEqual({
-      warm: { from: since, to: FETCHED, complete: true },
-      cold: { from: null, to: FETCHED, complete: true },
-      retracted: { from: early, to: FETCHED, complete: false },
-      retractedWithBound: { from: bound, to: FETCHED, complete: false },
-      horizon: { from: new Date(FETCHED.getTime() - 30 * DAY_MS), to: FETCHED, complete: false },
+      warm: { shape: 'transaction-run', from: since, to: FETCHED, complete: true },
+      cold: { shape: 'transaction-run', from: null, to: FETCHED, complete: true },
+      retracted: { shape: 'transaction-run', from: early, to: FETCHED, complete: false },
+      retractedWithBound: { shape: 'transaction-run', from: bound, to: FETCHED, complete: false },
+      horizon: {
+        shape: 'transaction-run',
+        from: new Date(FETCHED.getTime() - 30 * DAY_MS),
+        to: FETCHED,
+        complete: false,
+      },
     });
   });
 
@@ -260,11 +282,13 @@ describe('legacyTransactionBatch — the batch', () => {
       primary: { tokenIdentity: coin('X'), quantity: '1' },
     };
     expect(batchOf([], 'ibkr-api', { retracted: true }).window).toEqual({
+      shape: 'transaction-run',
       from: FETCHED,
       to: FETCHED,
       complete: false,
     });
     expect(batchOf([future], 'ibkr-api', { retracted: true }).window).toEqual({
+      shape: 'transaction-run',
       from: FETCHED,
       to: FETCHED,
       complete: false,
@@ -493,7 +517,9 @@ describe('legacyTransactionBatch through ingest — settlements (SC-1453)', () =
       ).toEqual(
         [s.cash, s.stock].sort().map((token) => ({
           token,
-          balance: '0',
+          // The import applies (A5 D-18), so each reads its ledger's sum, and
+          // the cash paid has no row before the trade, so it reads below zero.
+          balance: token === s.cash ? '-1000' : '2',
           source: 'ingest-backfill',
           externalId: null,
           kind: 'feed',
@@ -1056,8 +1082,9 @@ describe('legacyTransactionBatch through ingest — the holdings it lands on', (
     });
   });
 
-  // Review Focus 5, and the D-4 quirk kept until A5: the import's own matching
-  // falls back to the row a person keeps, writes onto it, and makes it a feed.
+  // Review Focus 5, and A5 PR-5's ruling Q1(b) until SC-1628's merge prompt:
+  // the import's own matching falls back to the row a person keeps, writes
+  // onto it, and makes it a feed.
   test('a tx import into an account holding only a manual row lands on it and flips it to feed', async () => {
     await withTestDb(async (tx) => {
       const who = await owner(tx);
@@ -1070,6 +1097,7 @@ describe('legacyTransactionBatch through ingest — the holdings it lands on', (
         kind: 'snapshot',
         startsAt: FETCHED,
       });
+      await seedReading(tx, { ...who, holdingId: manual.id, balance: '5', at: FETCHED });
       const result = await importInto(tx, who, 'kraken-api', [
         {
           externalId: 'dep-1',
@@ -1079,8 +1107,11 @@ describe('legacyTransactionBatch through ingest — the holdings it lands on', (
         },
       ]);
       const holdings = await holdingsOf(tx, who.accountId);
+      // The run declares its ledger complete from the start, so the person's
+      // earlier 5 verifies rather than anchors, and the cache reads the ledger
+      // (A5 D-18; case 2 of PR-2's golden trace).
       expect(holdings.map((h) => [h.id, h.kind, h.source, h.balance, h.startsAt])).toEqual([
-        [manual.id, 'feed', 'manual', '5', AT],
+        [manual.id, 'feed', 'manual', '1', AT],
       ]);
       expect((await ledger(tx, who.userId)).map((r) => r.holdingId)).toEqual([manual.id]);
       expect(result.createdHoldingIds).toEqual([]);

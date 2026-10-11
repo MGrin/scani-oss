@@ -15,18 +15,20 @@
  *   - Cleaning up via cascade-delete on the user in `afterEach`.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, setSystemTime, test } from 'bun:test';
 import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import type { HistoricalPriceProvider } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
-import { eq, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HistoricalPriceBackfillService } from '../../src/services/pricing/HistoricalPriceBackfillService';
 import { PriceHubResolver } from '../../src/services/pricing/PriceHubResolver';
 import { FX_BASELINE, type PriceHub, priceHubKey } from '../../src/services/pricing/price-hubs';
 import { BackfillHistoricalPricesUseCase } from '../../src/use-cases/BackfillHistoricalPricesUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
+import { seedHoldingCache } from '../../test/helpers/engine-guard';
 import { makeUser } from '../../test/helpers/factories';
 import { makePayment } from '../../test/helpers/factories-extra';
 
@@ -174,15 +176,17 @@ async function setupFixture(): Promise<Fixture> {
     .returning();
   if (!usdToken || !btcToken) throw new Error('token insert failed');
 
-  const [holding] = await db
-    .insert(schema.holdings)
-    .values({
-      userId: user.id,
-      accountId: account.id,
-      tokenId: btcToken.id,
-      balance: '1',
-    })
-    .returning();
+  const [holding] = await seedHoldingCache(db, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values({
+        userId: user.id,
+        accountId: account.id,
+        tokenId: btcToken.id,
+        balance: '1',
+      })
+      .returning()
+  );
   if (!holding) throw new Error('holding insert failed');
 
   return {
@@ -362,6 +366,12 @@ describe('BackfillHistoricalPricesUseCase', () => {
     });
     expect(summary.attempted).toBe(4);
     expect(summary.inserted).toBe(4);
+    // SC-1607: a price written before the edit's day moves every day from it,
+    // so the rebuild must reach the earliest day this run wrote.
+    const oldest = new Date();
+    oldest.setUTCHours(0, 0, 0, 0);
+    oldest.setUTCDate(oldest.getUTCDate() - 3);
+    expect(summary.earliestWrittenDay).toEqual(oldest);
     // Every call addressed the BTC token in USD.
     expect(backfillCalls.every((c) => c.tokenId === f.btcTokenId)).toBe(true);
     expect(backfillCalls.every((c) => c.baseTokenId === f.usdTokenId)).toBe(true);
@@ -496,6 +506,23 @@ describe('BackfillHistoricalPricesUseCase', () => {
     expect(summary.alreadyHad).toBe(1);
     expect(summary.inserted).toBe(2);
     expect(summary.providerMissing).toBe(1);
+  });
+
+  test('control: a run that wrote no price names no day (SC-1607)', async () => {
+    const f = fixture!;
+    nextResult = (tokenId, at, baseTokenId) => ({
+      tokenId,
+      baseTokenId,
+      at,
+      status: 'provider-missing',
+    });
+    const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 3,
+    });
+    expect(summary.inserted).toBe(0);
+    expect(summary.earliestWrittenDay).toBeNull();
   });
 
   test('skips tokens still inside an unpriceable cooldown', async () => {
@@ -901,10 +928,12 @@ describe('BackfillHistoricalPricesUseCase — start date with no coverage row', 
 
   test('a closed position with no coverage row ends at its last transaction', async () => {
     const f = fixture!;
-    await db
-      .update(schema.holdings)
-      .set({ balance: '0' })
-      .where(eq(schema.holdings.id, f.holdingId));
+    await seedHoldingCache(db, (calculator) =>
+      calculator
+        .update(schema.holdings)
+        .set({ balance: '0' })
+        .where(eq(schema.holdings.id, f.holdingId))
+    );
     await addTransaction(f, utcDay(20), 'sc229-open');
     await addTransaction(f, utcDay(10), 'sc229-close');
     const summary = await Container.get(BackfillHistoricalPricesUseCase).execute({
@@ -988,10 +1017,12 @@ describe('BackfillHistoricalPricesUseCase: currencies in use and the FX baseline
     tokenId: string,
     balance = '1'
   ): Promise<{ id: string; tokenId: string }> {
-    const [holding] = await db
-      .insert(schema.holdings)
-      .values({ userId: f.userId, accountId: f.accountId, tokenId, balance })
-      .returning();
+    const [holding] = await seedHoldingCache(db, (calculator) =>
+      calculator
+        .insert(schema.holdings)
+        .values({ userId: f.userId, accountId: f.accountId, tokenId, balance })
+        .returning()
+    );
     if (!holding) throw new Error('holding insert failed');
     return { id: holding.id, tokenId };
   }
@@ -1270,6 +1301,139 @@ describe('BackfillHistoricalPricesUseCase: currencies in use and the FX baseline
     await emptyAnswerRun(f);
 
     expect(await cooldownOf(f.btcTokenId)).toBeInstanceOf(Date);
+  });
+});
+
+/**
+ * Foundation A3, Task 13. A past day is covered by a daily row or by a
+ * non-manual reading in its last hour. An earlier reading on a recent day is
+ * not its close, so the day is asked for; today is asked for only when it has
+ * no reading at all.
+ */
+describe('BackfillHistoricalPricesUseCase: which days are asked for', () => {
+  const HOUR_MS = 60 * 60 * 1000;
+  const dayKey = (at: Date) => at.toISOString().slice(0, 10);
+
+  async function seedBtcPrice(f: Fixture, at: Date, granularity: 'daily' | 'intraday') {
+    await db.insert(schema.tokenPrices).values({
+      tokenId: f.btcTokenId,
+      baseTokenId: f.usdTokenId,
+      price: '50000',
+      timestamp: at,
+      granularity,
+      source: granularity === 'daily' ? 'coingecko_historical' : 'test',
+    });
+  }
+
+  function askedBtcDays(f: Fixture): string[] {
+    return backfillCalls
+      .filter((call) => call.tokenId === f.btcTokenId)
+      .map((call) => dayKey(call.at));
+  }
+
+  test('a day whose only reading is at 03:30 is fetched; one with a 23:10 reading is not', async () => {
+    const f = fixture!;
+    // At 23:30 UTC: the run reads coverage from an instant `lookbackDays`
+    // back, so a seed late in that first day would fall before the read.
+    const now = new Date();
+    setSystemTime(
+      new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 30))
+    );
+    try {
+      await seedBtcPrice(f, new Date(utcDay(2).getTime() + 3.5 * HOUR_MS), 'intraday');
+      await seedBtcPrice(f, new Date(utcDay(1).getTime() + 23 * HOUR_MS + 10 * 60_000), 'intraday');
+
+      await Container.get(BackfillHistoricalPricesUseCase).execute({
+        userId: f.userId,
+        usdTokenId: f.usdTokenId,
+        lookbackDays: 3,
+      });
+
+      const asked = askedBtcDays(f);
+      expect(asked).toContain(dayKey(utcDay(2)));
+      expect(asked).not.toContain(dayKey(utcDay(1)));
+    } finally {
+      setSystemTime();
+    }
+  });
+
+  test('CONTROL: a day with a daily row is not fetched', async () => {
+    const f = fixture!;
+    await seedBtcPrice(f, new Date(utcDay(2).getTime() + DAY_MS - 1), 'daily');
+
+    await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 3,
+    });
+
+    const asked = askedBtcDays(f);
+    expect(asked).not.toContain(dayKey(utcDay(2)));
+    expect(asked).toContain(dayKey(utcDay(1)));
+  });
+
+  test('a token with no reading today gets today’s price from a historical provider', async () => {
+    const f = fixture!;
+    const [crypto] = await db
+      .select({ id: schema.tokenTypes.id })
+      .from(schema.tokenTypes)
+      .where(eq(schema.tokenTypes.code, 'crypto'));
+    if (!crypto) throw new Error('the crypto token type is seeded by migration');
+    await db
+      .update(schema.tokens)
+      .set({ typeId: crypto.id })
+      .where(eq(schema.tokens.id, f.btcTokenId));
+    const todayStart = utcDay(0);
+    // A provider with no current price. Today's bar is in its answer only when
+    // the request reaches past today's start, as Yahoo's `period2` decides.
+    const historicalOnly: HistoricalPriceProvider = {
+      providerKey: 'historical-only',
+      capabilities: ['historical-price'],
+      canPrice: () => true,
+      fetchCurrentPrice: async () => null,
+      fetchHistoricalPrice: async () => null,
+      fetchHistoricalRange: async (token, _from, to) =>
+        to.getTime() > todayStart.getTime()
+          ? [
+              {
+                tokenId: token.id,
+                baseTokenId: f.usdTokenId,
+                price: '50000',
+                timestamp: todayStart,
+                barDay: dayKey(todayStart),
+                source: 'historical-only_historical',
+              },
+            ]
+          : [],
+    };
+    const registry = new ProviderRegistry();
+    registry.register(historicalOnly);
+    Container.set(ProviderRegistry, registry);
+    Container.set(HistoricalPriceBackfillService, new HistoricalPriceBackfillService());
+    Container.set(BackfillHistoricalPricesUseCase, new BackfillHistoricalPricesUseCase());
+    const start = Date.now();
+
+    await Container.get(BackfillHistoricalPricesUseCase).execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 0,
+    });
+
+    const end = Date.now();
+    const rows = await db
+      .select()
+      .from(schema.tokenPrices)
+      .where(
+        and(
+          eq(schema.tokenPrices.tokenId, f.btcTokenId),
+          eq(schema.tokenPrices.baseTokenId, f.usdTokenId)
+        )
+      );
+    expect(rows.map((row) => [row.granularity, row.source])).toEqual([
+      ['intraday', 'historical-only_historical'],
+    ]);
+    expect(rows[0]?.timestamp.getTime()).toBeGreaterThanOrEqual(start);
+    expect(rows[0]?.timestamp.getTime()).toBeLessThanOrEqual(end);
   });
 });
 

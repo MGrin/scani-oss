@@ -19,6 +19,14 @@ const FOUNDATION_MIGRATIONS = [
   '20261001142145_foundation_engine_shadow_reports.sql',
   '20261002114109_feed_input_windows_unique_per_fetch.sql',
   '20261002220617_holding_transactions_unique_per_input.sql',
+  '20261007143836_engine_writer_guard_compares_values_on_three_columns.sql',
+  '20261008134839_engine_writer_guard_enabled.sql',
+  '20261008174525_holding_hidden_balance.sql',
+  '20261009091400_user_backups.sql',
+  '20261009113611_budget_app_imports.sql',
+  '20261009115442_feed_input_windows_shape.sql',
+  '20261009145654_agent_writes_carry_an_idempotency_key.sql',
+  '20261009163407_households_members_invites_account_shares.sql',
 ];
 const BOUND = "SET LOCAL lock_timeout = '5s';";
 const EVIDENCE_COLUMNS = FOUNDATION_MIGRATIONS[1] as string;

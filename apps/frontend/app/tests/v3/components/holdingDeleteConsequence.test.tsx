@@ -70,3 +70,33 @@ describe('v3.holdings.deleteAction.consequence', () => {
     expect(html).not.toContain('<value');
   });
 });
+
+/**
+ * A5 #9: deleting a feed holding hides it, and the confirm says so before the
+ * press — the sentence that promises "Nothing restores it" would be false.
+ */
+describe('v3.holdings.deleteAction.consequenceHide (A5 #9)', () => {
+  const render = (value: string) =>
+    renderToStaticMarkup(
+      <Trans
+        i18nKey="v3.holdings.deleteAction.consequenceHide"
+        values={{ symbol: 'BTC', account: 'Kraken' }}
+        components={{ value: <span data-testid="figure">{value}</span> }}
+      />
+    );
+
+  test('says the row is hidden, keeps its figure in the sentence, and names the way back', () => {
+    const html = render('$1,234.56');
+    expect(html).toContain('BTC in Kraken is hidden');
+    expect(html).toContain('$1,234.56');
+    expect(html).toContain('Tokens → Hidden brings it back');
+    expect(html).not.toContain('Nothing restores it');
+    expect(html.indexOf('$1,234.56')).toBeLessThan(html.indexOf('comes off your portfolio total'));
+    expect(html).not.toContain('{{');
+    expect(html).not.toContain('<value');
+  });
+
+  test('the commit says Hide, not Delete', () => {
+    expect(i18n.t('v3.holdings.deleteAction.commitHide', { symbol: 'BTC' })).toBe('Hide BTC');
+  });
+});

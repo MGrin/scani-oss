@@ -3,6 +3,7 @@ import { WALLET_BALANCES_SCHEDULE } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { ScheduledJobProcessor } from '@scani/queue';
 import { Container, Service } from 'typedi';
+import { afterLedgerRows } from '../lib/after-ledger-rows';
 
 const logger = createComponentLogger('processor:wallet-balances');
 
@@ -30,6 +31,13 @@ export class WalletBalancesProcessor extends ScheduledJobProcessor {
         },
         '✅ Wallet balances sync completed'
       );
+      // Each ledger read with its balance that wrote rows (SC-1665).
+      for (const write of result.ledgerWrites) {
+        await afterLedgerRows(
+          { userId: write.userId, accountId: write.accountId, source: write.result.source },
+          write.result
+        );
+      }
       if (result.errors.length > 0) {
         logger.warn(
           {

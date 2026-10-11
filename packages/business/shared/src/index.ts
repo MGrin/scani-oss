@@ -57,9 +57,20 @@ export {
   type MoneyAttributionRates,
   splitChangeIntoMoney,
 } from './lib/returns-money';
-export { UPLOADED_FILE_MAX_BYTES } from './lib/uploaded-file';
+export { SUGGESTED_CATEGORIES, SUGGESTED_CATEGORY_KEYS } from './lib/suggested-categories';
+export { BACKUP_UPLOAD_MAX_BYTES, UPLOADED_FILE_MAX_BYTES } from './lib/uploaded-file';
 export * from './token-validatiion';
 export * from './usage/outcomes';
+export {
+  countsTowardTotal,
+  type HoldingGainLoss,
+  holdingGainLoss,
+  holdingsDebt,
+  holdingsValue,
+  holdingTypeTotals,
+  isBaseCurrencyHolding,
+  isScamToken,
+} from './utils/holding-figures';
 export { safeExternalUrl } from './utils/safe-external-url';
 export { safeRedirectPath } from './utils/safe-redirect';
 export {

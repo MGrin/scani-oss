@@ -10,7 +10,9 @@ Bitstamp v2.
 - **Env**: per-user `apiKey` + `apiSecret`.
 - **Rate limit**: 5 req/s (8000/10min upstream); namespace `bitstamp-private`.
 - **Endpoints used**:
-  - POST `/api/v2/balance/` — current balances.
+  - POST `/api/v2/account_balances/` — current balances, one row per
+    currency (`total`, `available`, `reserved`). Replaced the deprecated
+    `/api/v2/balance/` (SC-1574).
   - POST `/api/v2/user_transactions/` — unified ledger
     (`offset` + `limit` ≤ 1000, `sort=asc`); per-row shape varies by
     pair (`btc`, `usd`, `btc_usd`, `fee`, …) — see `pair-resolver.ts`.
@@ -19,8 +21,8 @@ Bitstamp v2.
   - POST `/api/v2/crypto-transactions/` — explicit on-chain
     deposits/withdrawals; we walk it for `txid` enrichment of the
     user_transactions deposit/withdraw rows.
-- **Notes**: extends `BaseHmacCexProvider`. Balance response is one big
-  object with `{currency}_balance` keys; we extract via regex.
+- **Notes**: extends `BaseHmacCexProvider`. A holding's balance is the
+  row's `total`, reserved funds included.
   user_transactions row shape is per-pair dynamic, so a sibling
   `pair-resolver.ts` walks numeric keys to detect the
   `<base>_<quote>` price field. No public sandbox — the live test

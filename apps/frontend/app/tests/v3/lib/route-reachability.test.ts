@@ -69,6 +69,8 @@ const UNTABLED_ROUTES: Record<string, string> = {
   files: 'a redirect to /documents kept for links minted before V3-43 renamed it',
   'payments/forecast': 'a redirect to Bills kept for links to the Forecast view SC-1396 retired',
   'wealth/planning': 'a redirect to Bills kept for links to the Planning page SC-1409 removed',
+  'household/accept':
+    'where an emailed household invite lands (SC-1647); the link carries a token only the email holds, so nothing in the app can link to it',
   '*': 'the terminal 404 (SC-423), which is every path that matched nothing',
 };
 

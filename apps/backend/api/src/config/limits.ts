@@ -59,10 +59,14 @@ export const CLIENT_ERROR_LIMITS = {
 export const USER_BUDGETS = {
   /** Full-account exports per user per hour. */
   EXPORTS_PER_HOUR: 10,
+  /** Backups per user per hour. Each reads the whole account (SC-1649). */
+  BACKUPS_PER_HOUR: 3,
   /** Bytes of presigned uploads per user per UTC day: 30 max-size files. */
   UPLOAD_BYTES_PER_DAY: 30 * UPLOAD_LIMITS.PRESIGN_UPLOAD_BYTES,
   /** Client error reports per caller per 10 minutes; past it they are dropped. */
   CLIENT_ERRORS_PER_10_MIN: 30,
   /** Test notifications per user per hour; each one POSTs to every device (SC-1346). */
   PUSH_TESTS_PER_HOUR: 10,
+  /** Household invites per user per hour; each may send a mail (SC-1647). */
+  HOUSEHOLD_INVITES_PER_HOUR: 10,
 } as const;

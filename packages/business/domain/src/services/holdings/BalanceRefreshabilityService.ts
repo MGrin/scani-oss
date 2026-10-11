@@ -4,22 +4,17 @@ import { Container, Service } from 'typedi';
 import { AccountRepository } from '../../repositories/AccountRepository';
 import { BalanceSyncOwnershipService } from '../accounts/BalanceSyncOwnershipService';
 import { BaseService } from '../BaseService';
-import { MANUAL_HOLDING_SOURCE } from './balance-sync-sources';
 
 /**
  * Whether a holding's balance can be re-fetched from where it came from, and
- * when it cannot, which part is missing: no feed states it (`not-a-feed`); one
- * does, on a row the balance sync never writes (`sync-cannot-write`); or the
- * sync could write it and no live wallet or credential is left to ask
- * (`no-live-sync`).
+ * when it cannot, which part is missing: no feed states it (`not-a-feed`), or
+ * no live wallet or credential is left to ask (`no-live-sync`). A feed holding
+ * is the sync's to write whatever its source (A5 D-4), so a person's row a feed
+ * took over is answered like any other.
  */
-export type BalanceRefreshability =
-  | 'refreshable'
-  | 'not-a-feed'
-  | 'sync-cannot-write'
-  | 'no-live-sync';
+export type BalanceRefreshability = 'refreshable' | 'not-a-feed' | 'no-live-sync';
 
-type RefreshCandidate = Pick<Holding, 'id' | 'kind' | 'source' | 'accountId'>;
+type RefreshCandidate = Pick<Holding, 'id' | 'kind' | 'accountId'>;
 
 /**
  * The one answer behind the holdings list's `refreshable` and the
@@ -65,9 +60,7 @@ export class BalanceRefreshabilityService extends BaseService {
   ): Promise<Set<string>> {
     const accountIds = [
       ...new Set(
-        holdings
-          .filter((holding) => settledByItsRow(holding) === null)
-          .map((holding) => holding.accountId)
+        holdings.filter((holding) => holding.kind === 'feed').map((holding) => holding.accountId)
       ),
     ];
     if (accountIds.length === 0) return new Set();
@@ -79,23 +72,10 @@ export class BalanceRefreshabilityService extends BaseService {
   }
 }
 
-/** What the holding's own row settles, before its account is asked about; null when it settles nothing. */
-function settledByItsRow(holding: RefreshCandidate): 'not-a-feed' | 'sync-cannot-write' | null {
-  if (holding.kind !== 'feed') return 'not-a-feed';
-  // The balance sync's matcher never returns a row at this source
-  // (`HoldingResolver.findFeedHolding`, `exceptSource`): a refresh would open
-  // a row beside this one and leave it as it stands. D-4 lifts that at A5, and
-  // this clause and its answer go with it.
-  if (holding.source === MANUAL_HOLDING_SOURCE) return 'sync-cannot-write';
-  return null;
-}
-
 function answerFor(
   holding: RefreshCandidate,
   accountsWithLiveSync: ReadonlySet<string>
 ): BalanceRefreshability {
-  return (
-    settledByItsRow(holding) ??
-    (accountsWithLiveSync.has(holding.accountId) ? 'refreshable' : 'no-live-sync')
-  );
+  if (holding.kind !== 'feed') return 'not-a-feed';
+  return accountsWithLiveSync.has(holding.accountId) ? 'refreshable' : 'no-live-sync';
 }

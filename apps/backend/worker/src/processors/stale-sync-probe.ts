@@ -1,4 +1,8 @@
 import { InstitutionRepository, OperatorAlarmRepository } from '@scani/domain/repositories';
+import {
+  IDLE_SYNC_EVERY_HOURS,
+  IdleUserSyncPolicy,
+} from '@scani/domain/services/users/IdleUserSyncPolicy';
 import { STALE_SYNC_ALARM, STALE_SYNC_PROBE_SCHEDULE, STALE_SYNC_RENOTIFY_MS } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { captureException } from '@scani/logging/sentry';
@@ -42,8 +46,14 @@ async function runStaleSyncProbe(
   const repo = Container.get(InstitutionRepository);
   const alarms = Container.get(OperatorAlarmRepository);
   const cutoff = new Date(now.getTime() - thresholdHours * 60 * 60 * 1000);
+  // One missed idle run plus an hour's slack (SC-1629).
+  const idleHours = Math.max(thresholdHours, IDLE_SYNC_EVERY_HOURS + 1);
+  const idleUserIds = await Container.get(IdleUserSyncPolicy).idleUserIds(now);
 
-  const targets = await repo.findStaleSyncTargets(cutoff);
+  const targets = await repo.findStaleSyncTargets(cutoff, undefined, {
+    userIds: [...idleUserIds],
+    cutoff: new Date(now.getTime() - idleHours * 60 * 60 * 1000),
+  });
   const byCredential = new Map(targets.map((t) => [t.credentialId, t]));
 
   const { entered, restated, cleared, suppressed } = await alarms.sync(
@@ -85,7 +95,11 @@ async function runStaleSyncProbe(
       const found = byCredential.get(id);
       return found ? [found] : [];
     });
-    const names = fired.map((t) => `${t.institutionName}(${t.kind})`).join(', ');
+    // The refusal the sync recorded says why, which "check credentials/provider"
+    // left to whoever read it (SC-1686).
+    const names = fired
+      .map((t) => `${t.institutionName}(${t.kind}${t.lastError ? `: ${t.lastError}` : ''})`)
+      .join(', ');
     const err = new Error(
       transition === 'entered'
         ? `${fired.length} integration(s) not syncing past ${thresholdHours}h: ${names}. ` +

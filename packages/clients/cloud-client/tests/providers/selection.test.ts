@@ -78,3 +78,13 @@ test('Kraken retains optional range absence so historical backfill uses daily lo
   expect(provider.fetchHistoricalPrice).toBeFunction();
   expect(provider.fetchHistoricalRange).toBeUndefined();
 });
+// SC-1586: the cloud refuses Yahoo to customer keys, so a Tier 2 install
+// must not register a pricer that every run would see refused.
+test('Tier 2 registers no cloud pricer for a Scani-only provider', async () => {
+  configure('2');
+  setCloudClient({} as CloudClient);
+  const providers = (await platformProviderFactories([])[0]?.(deps)) as { providerKey: string }[];
+  const keys = providers.map((p) => p.providerKey);
+  expect(keys).toContain('finnhub');
+  expect(keys).not.toContain('yahoo-finance');
+});

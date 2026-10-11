@@ -7,8 +7,9 @@
  * like `EPJFWDD5` that no pricing provider could resolve, leaving 30+
  * production holdings with `coverage_quality='estimated'` forever.
  *
- * Endpoint: `https://lite-api.jup.ag/tokens/v2/search?query=<mint>`
- * — Jupiter's lite tier is free and does not require an API key.
+ * Endpoint: `https://api.jup.ag/tokens/v2/search?query=<mint>`, keyless at
+ * 0.5 req/s. It replaces the retiring `lite-api.jup.ag` host
+ * (developers.jup.ag/docs/portal/migration.md, SC-1579).
  *
  * Cache: per-process Map, 24 h TTL on hits, 1 h TTL on misses (so a
  * brand-new mint or Jupiter outage doesn't lock us out for a day).
@@ -16,7 +17,7 @@
 
 import { fetchWithTimeout } from '../../core/utils/fetch';
 
-const JUPITER_ENDPOINT = 'https://lite-api.jup.ag/tokens/v2/search';
+const JUPITER_ENDPOINT = 'https://api.jup.ag/tokens/v2/search';
 const REQUEST_TIMEOUT_MS = 3000;
 const TTL_HIT_MS = 24 * 60 * 60 * 1000;
 const TTL_MISS_MS = 60 * 60 * 1000;

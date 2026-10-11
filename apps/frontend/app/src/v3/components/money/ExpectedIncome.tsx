@@ -175,6 +175,10 @@ export function ExpectedIncome({
                 <ArrowDownLeft aria-hidden="true" className="size-4 text-muted-foreground" />
               }
               label={vendorName}
+              // The date is this row's whole claim, and "· older rate" can widen
+              // the value column on a phone; it wraps rather than being cut
+              // (SC-1697).
+              wrapIdentity
               // Every row carries its own date: this block is not grouped by
               // date, because a quarter of income is a handful of rows and
               // eleven single-row date headings would be longer than the list.

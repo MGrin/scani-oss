@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
   buildProcedureCallUpsert,
+  buildProcedureMinuteUpsert,
   createProcedureCallRecorder,
   type ProcedureCallTally,
+  type ProcedureMinute,
 } from '../src/procedure-call-recorder';
 
 function collector() {
@@ -151,5 +153,135 @@ describe('procedure call recorder', () => {
       at.toISOString(),
       at.toISOString(),
     ]);
+  });
+});
+
+/**
+ * SC-1689. A memory spike at minute M on machine X is attributed by joining
+ * Prometheus to these rows, so each finished call lands in the row for the
+ * minute it finished in, on this machine, with the worst figures of the minute.
+ */
+describe('procedure minutes', () => {
+  function minuteRecorder(clock: { at: Date }, rssBytes = () => 300 * 2 ** 20) {
+    const minutes: ProcedureMinute[][] = [];
+    const rec = createProcedureCallRecorder(async () => {}, {
+      flushIntervalMs: 60_000,
+      now: () => clock.at,
+      machine: 'e2862626b1d218',
+      readRssBytes: rssBytes,
+      writeMinutes: async (rows) => {
+        minutes.push(rows);
+      },
+    });
+    return { rec, minutes };
+  }
+
+  test('finished calls roll up per minute and procedure: calls summed, the worst figures kept', async () => {
+    const clock = { at: new Date('2026-10-10T00:44:10.000Z') };
+    let rss = 700;
+    const { rec, minutes } = minuteRecorder(clock, () => rss * 2 ** 20);
+
+    rec.complete('portfolio.getReturns', { durationMs: 900, loopBlockedMs: 40 });
+    rss = 753;
+    rec.complete('portfolio.getReturns', { durationMs: 300, loopBlockedMs: 120 });
+    rec.complete('users.getCurrent', { durationMs: 5, loopBlockedMs: 0 });
+    clock.at = new Date('2026-10-10T00:45:02.000Z');
+    rec.complete('portfolio.getReturns', { durationMs: 50, loopBlockedMs: 0 });
+    await rec.flush();
+
+    expect(minutes).toHaveLength(1);
+    const rows = minutes[0]!.map((r) => ({ ...r, minute: r.minute.toISOString() }));
+    expect(rows).toEqual([
+      {
+        minute: '2026-10-10T00:44:00.000Z',
+        machine: 'e2862626b1d218',
+        procedure: 'portfolio.getReturns',
+        calls: 2,
+        maxDurationMs: 900,
+        maxLoopBlockedMs: 120,
+        maxRssMb: 753,
+      },
+      {
+        minute: '2026-10-10T00:44:00.000Z',
+        machine: 'e2862626b1d218',
+        procedure: 'users.getCurrent',
+        calls: 1,
+        maxDurationMs: 5,
+        maxLoopBlockedMs: 0,
+        maxRssMb: 753,
+      },
+      {
+        minute: '2026-10-10T00:45:00.000Z',
+        machine: 'e2862626b1d218',
+        procedure: 'portfolio.getReturns',
+        calls: 1,
+        maxDurationMs: 50,
+        maxLoopBlockedMs: 0,
+        maxRssMb: 753,
+      },
+    ]);
+  });
+
+  test('a finished call arms the flush on its own, and a flush empties the minutes', async () => {
+    const minutes: ProcedureMinute[][] = [];
+    const rec = createProcedureCallRecorder(async () => {}, {
+      flushIntervalMs: 5,
+      writeMinutes: async (rows) => {
+        minutes.push(rows);
+      },
+    });
+
+    // A call that outlives the flush its record() armed finishes into an empty
+    // buffer; nothing else would ever write its minute.
+    rec.complete('a.one', { durationMs: 1, loopBlockedMs: 0 });
+    expect(rec.pendingMinutes()).toEqual(['a.one']);
+    await Bun.sleep(30);
+    expect(minutes).toHaveLength(1);
+    expect(rec.pendingMinutes()).toEqual([]);
+    await rec.flush();
+    expect(minutes).toHaveLength(1);
+  });
+
+  test('a failing minutes write does not lose the call tallies', async () => {
+    const tallies: ProcedureCallTally[][] = [];
+    const rec = createProcedureCallRecorder(
+      async (t) => {
+        tallies.push(t);
+      },
+      {
+        flushIntervalMs: 60_000,
+        writeMinutes: async () => {
+          throw new Error('connection terminated');
+        },
+      }
+    );
+    rec.record('a.one');
+    rec.complete('a.one', { durationMs: 1, loopBlockedMs: 0 });
+    await rec.flush();
+    expect(tallies.map((t) => t[0]!.procedure)).toEqual(['a.one']);
+  });
+
+  test('the minutes upsert adds the calls and keeps the greatest of each figure', () => {
+    const { sql: rendered } = buildProcedureMinuteUpsert([
+      {
+        minute: new Date('2026-10-10T00:44:00Z'),
+        machine: 'm',
+        procedure: 'a.one',
+        calls: 1,
+        maxDurationMs: 1,
+        maxLoopBlockedMs: 0,
+        maxRssMb: 300,
+      },
+    ]).toSQL();
+    const update = rendered.slice(rendered.indexOf('do update set'));
+    expect(update).not.toBe('');
+    expect(update).toContain('+ excluded.calls');
+    expect(update).toContain(
+      'greatest("api_procedure_minutes"."max_duration_ms", excluded.max_duration_ms)'
+    );
+    expect(update).toContain(
+      'greatest("api_procedure_minutes"."max_loop_blocked_ms", excluded.max_loop_blocked_ms)'
+    );
+    expect(update).toContain('greatest("api_procedure_minutes"."max_rss_mb", excluded.max_rss_mb)');
   });
 });

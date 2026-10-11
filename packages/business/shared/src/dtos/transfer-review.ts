@@ -389,38 +389,22 @@ export type TransferReviewSplitPortion = z.infer<typeof transferReviewSplitPorti
  * 1. **At least two portions.** One portion is a whole answer and must be
  *    written as one, or the same state has two representations and every
  *    reader has to handle both.
- * 2. **At most one LINKING portion** — one `paired` or one `internal`, never
- *    both and never two of either. This is a real limit, not an oversight:
- *    linking writes a shared `transfer_group_id`, that is one column on the
- *    outflow row, and `buildTransferComponents` walks it to decide which
- *    holdings share a lot ledger. Two arrivals on one group id do not need a
- *    second column to go wrong — `CostBasisService`'s inflow branch hands the
- *    FIRST `transfer_in` every buffered lot (`rehome`, then `pending.delete`),
- *    so the second finds nothing buffered and opens a fresh market-value lot.
- *    That is the exact defect SC-150 closed. A withdrawal spread across two
- *    *tracked* destinations is therefore still one question this cannot
- *    answer, and it is honest to refuse it rather than half-record it.
+ * 2. **Several `internal` portions, one per destination holding** (SC-1665,
+ *    feeds E2 #23723). Every linking portion shares the outflow's one
+ *    `transfer_group_id`, and `CostBasisService` hands each arrival its pro-rata
+ *    share of the group's buffer (SC-1365), so a withdrawal spread across two
+ *    tracked accounts is answerable. Until SC-1665 this refused a second
+ *    linking portion, when the first arrival still took every buffered lot.
+ *    Two portions on one holding stay refused: that is one arrival written
+ *    twice. A `null` holding counts as its account's, because both portions
+ *    would open the same holding there.
  *
- *    **What the refusal may NOT do is name a substitute (SC-874).** This
- *    message used to end *"the rest has to be a disposal or untracked"*, and a
- *    reader who followed it recorded money they still hold as SOLD — a
- *    disposal writes a realised gain and retires the lot, which then feeds
- *    cost basis and every rollup downstream. The limit is correct; that
- *    instruction was not, and a validator naming the only path it will accept
- *    is read as the product telling you what to do. It states the limit and
- *    the trap now, and prescribes nothing.
- *
- *    **It is checked BEFORE rule 3**, so the fan-out shape reaches it. Two
- *    `internal` portions are two duplicate decisions as well as two links,
- *    and in the other order they were refused with *"Each outcome can only
- *    appear once in a split"* — true, opaque, and silent about the one thing
- *    the reader needs to know.
- *
- *    SC-187 widened what "linking" covers without widening how many there can
- *    be, which is why the rule reads on the pair of decisions rather than on
- *    `paired` alone. `internal` is the same claim reached differently — the
- *    deposit is written rather than found — and it consumes the same column.
- * 3. **Each decision at most once.** See `MAX_TRANSFER_REVIEW_PORTIONS`.
+ *    **The refusal may NOT name a substitute (SC-874).** An earlier message
+ *    ended *"the rest has to be a disposal or untracked"*, and a reader who
+ *    followed it recorded money they still hold as SOLD.
+ * 3. **Each other decision at most once**, `paired` included: several
+ *    deposits for one withdrawal are a whole `paired` answer (SC-1365). See
+ *    `MAX_TRANSFER_REVIEW_PORTIONS`.
  * 4. **A linking portion carries its target**: `paired` its deposit,
  *    `internal` its destination. Without one there is nothing to write the
  *    group id on, so the portion is not a smaller version of a valid answer —
@@ -433,17 +417,24 @@ export const transferReviewSplitSchema = z
   .min(2, { message: 'A split needs at least two parts' })
   .max(MAX_TRANSFER_REVIEW_PORTIONS)
   .superRefine((portions, ctx) => {
-    const linking = portions.filter((p) => isLinkingDecision(p.decision));
-    if (linking.length > 1) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message:
-          'Only one part of a transfer can move to somewhere Scani tracks — cost basis follows one destination, and two would send it to neither. A second tracked destination cannot be recorded here; recording it as something that left your control would book money you still hold as sold.',
-      });
-      return;
+    const destinations = new Set<string>();
+    for (const portion of portions) {
+      if (portion.decision !== 'internal' || !portion.destination) continue;
+      const { accountId, holdingId } = portion.destination;
+      const key = holdingId ?? `new:${accountId}`;
+      if (destinations.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            'One part per destination: two parts moved to the same holding are one move. Enter it once with the combined amount.',
+        });
+        return;
+      }
+      destinations.add(key);
     }
     const seen = new Set<TransferReviewDecision>();
     for (const portion of portions) {
+      if (portion.decision === 'internal') continue;
       if (seen.has(portion.decision)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -461,8 +452,8 @@ export const transferReviewSplitSchema = z
         path: [pairedIndex, 'matchTransactionId'],
       });
     }
-    const internalIndex = portions.findIndex((p) => p.decision === 'internal');
-    if (internalIndex >= 0 && !portions[internalIndex]?.destination) {
+    const internalIndex = portions.findIndex((p) => p.decision === 'internal' && !p.destination);
+    if (internalIndex >= 0) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'Moving part of a transfer requires the holding it moved to',
@@ -1197,7 +1188,7 @@ export type BulkTransferRefusal = z.infer<typeof bulkTransferRefusalSchema>;
  * the answered list — `AnsweredTransferReview` carries no price, on purpose.
  *
  * So the figure is computed server-side, over the same rows the write will
- * take, by the same `PriceGraphService` call `listPending` uses for the "if it
+ * take, by the same `PriceReader` series `listPending` uses for the "if it
  * was a sale" column. The confirmation and the write cannot disagree about
  * which rows they are about, because they are handed the same list.
  */

@@ -1,13 +1,14 @@
-import { formatDate } from '@scani/shared';
+import { formatDate, formatDateTime } from '@scani/shared';
 import { Segmented, SegmentedItem } from '@scani/ui/ui/segmented';
-import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { ChevronDown } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
+import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import { useViewPreference } from '../../hooks/useViewPreference';
+import { formatRelative } from '../../lib/relative-time';
 import {
   BENCHMARK_LABEL_KEYS,
   offeredReturnsWindows,
@@ -21,6 +22,7 @@ import {
 import { type ComparisonView, comparisonView } from '../../lib/returns-comparison';
 import { VIEW_PREFERENCE_KEYS } from '../../lib/view-preference';
 import { AttributionBar } from './AttributionBar';
+import { HomeCard, type HomeCardVariant, RowsSkeleton } from './HomeCard';
 import { ReturnsComparisonChart } from './ReturnsComparisonChart';
 import { ReturnsHeadline } from './ReturnsHeadline';
 import { ReturnsSubsetNote } from './ReturnsSubsetNote';
@@ -31,8 +33,11 @@ export type ReturnsCardScope = { kind: 'account' | 'institution'; id: string };
 export function ReturnsBlock({
   scope,
   heroWindow = null,
+  variant = 'card',
 }: {
   scope?: ReturnsCardScope;
+  /** As a tile it reads YTD whatever the card's own picker holds (mgrin, SC-1669). */
+  variant?: HomeCardVariant;
   /**
    * Non-null while the home chart's Returns tab is on (SC-1301): the window
    * the hero is measuring, which this card then shares rather than picking its
@@ -46,6 +51,8 @@ export function ReturnsBlock({
    */
   heroWindow?: ReturnsWindowRequest | null;
 } = {}) {
+  const { t } = useTranslation();
+  useRelativeTimeTick();
   const [ownWindow, setOwnWindow] = useViewPreference<ReturnsWindow>(
     VIEW_PREFERENCE_KEYS.homeReturnsWindow,
     'ytd',
@@ -57,8 +64,12 @@ export function ReturnsBlock({
   // All is offered only when it starts earlier than 1Y (SC-1439), which takes
   // both windows' resolved starts. The query for the chosen window is the same
   // key, so choosing either of them costs no second request.
-  const ownProbe = trpc.portfolio.hasReturns.useQuery({ window: { kind: ownWindow }, scope });
-  const canCompare = heroWindow === null && ownProbe.data?.hasReturns === true;
+  const isTile = variant === 'tile';
+  const ownProbe = trpc.portfolio.hasReturns.useQuery({
+    window: { kind: isTile ? 'ytd' : ownWindow },
+    scope,
+  });
+  const canCompare = !isTile && heroWindow === null && ownProbe.data?.hasReturns === true;
   const allStart = trpc.portfolio.getReturns.useQuery(
     { window: { kind: 'all' }, scope },
     { enabled: canCompare }
@@ -75,7 +86,9 @@ export function ReturnsBlock({
     allStart.isSuccess && yearStart.isSuccess && !windows.some((w) => w.key === 'all');
   // A saved All that is not offered reads as 1Y, which is the same window.
   const shownWindow: ReturnsWindow = ownWindow === 'all' && allWithheld ? '1y' : ownWindow;
-  const request: ReturnsWindowRequest = heroWindow ?? { kind: shownWindow };
+  const request: ReturnsWindowRequest = isTile
+    ? { kind: 'ytd' }
+    : (heroWindow ?? { kind: shownWindow });
   const { symbol } = useBaseCurrency();
   const historyQuery = trpc.portfolio.hasReturns.useQuery({ window: request, scope });
   const hasHistory = historyQuery.data?.hasReturns === true;
@@ -83,7 +96,11 @@ export function ReturnsBlock({
     { window: request, scope },
     { enabled: hasHistory }
   );
-  const view = returnsView(query.data?.returns, query.data?.benchmarks);
+  const view = returnsView(
+    query.data?.returns,
+    query.data?.benchmarks,
+    query.data?.lastComplete ?? null
+  );
 
   const comparisonQuery = trpc.portfolio.getReturnsComparison.useQuery(
     { window: request },
@@ -92,28 +109,98 @@ export function ReturnsBlock({
     // this feature paid for nothing.
     {
       enabled:
-        scope === undefined && hasHistory && query.data?.returns?.eligibility?.eligible === true,
+        !isTile &&
+        scope === undefined &&
+        hasHistory &&
+        query.data?.returns?.eligibility?.eligible === true,
     }
   );
   const comparison = comparisonView(comparisonQuery.data, view?.benchmarks);
 
-  // Keep the card standing while another window loads, so the switch does not
-  // collapse and re-grow the row it sits in. The probe counts as loading too:
-  // without it a window change would collapse the card for one round trip
-  // before `getReturns` is even enabled.
-  if (!view && !query.isFetching && !historyQuery.isFetching) return null;
-
+  // The window picker is the card's control rather than part of its body, so
+  // it stays up while another window loads: a switch does not collapse the
+  // card for the round trip before `getReturns` is even enabled.
   return (
-    <ReturnsCard
-      view={view}
-      comparison={scope ? null : comparison}
-      comparisonFailed={scope === undefined && comparisonQuery.isError}
-      currency={symbol}
-      windowKey={shownWindow}
-      windows={windows}
-      onWindowChange={setOwnWindow}
-      promotedToHero={heroWindow !== null}
-    />
+    <HomeCard
+      title={t('v3.home.returns.title')}
+      subject={t('v3.home.returns.loadingLabel')}
+      queries={[historyQuery, query]}
+      variant={variant}
+      peekId="returns"
+      tile={() => ({
+        figure: (
+          <Numeric
+            value={view?.twr?.cumulative ?? null}
+            format="percent"
+            decimals={1}
+            delta
+            indicator="sign"
+          />
+        ),
+        // The tile always reads YTD whatever the card's picker holds, so it
+        // says so: a bare +34.5% names no period (bus #23822).
+        // Relative on the tile: a half-width caption cuts a full date and
+        // time, and the peek carries the exact one.
+        caption: view?.asOf ? (
+          t('v3.home.card.asOf', { time: formatRelative(t, view.asOf) })
+        ) : (
+          <>
+            <Numeric value={view?.money?.gain ?? null} currency={symbol} delta indicator="sign" />
+            {' · '}
+            {t('v3.home.returns.window.ytd')}
+          </>
+        ),
+      })}
+      absent={!view}
+      skeleton={<RowsSkeleton />}
+      controls={
+        heroWindow === null ? (
+          <ReturnsWindowPicker
+            windowKey={shownWindow}
+            windows={windows}
+            onWindowChange={setOwnWindow}
+          />
+        ) : undefined
+      }
+    >
+      {() => (
+        <ReturnsCard
+          view={view}
+          comparison={scope ? null : comparison}
+          comparisonFailed={scope === undefined && comparisonQuery.isError}
+          currency={symbol}
+          promotedToHero={heroWindow !== null}
+          ratesOpen={variant === 'peek'}
+        />
+      )}
+    </HomeCard>
+  );
+}
+
+/** The periods the card reads, while the hero does not own the window. */
+export function ReturnsWindowPicker({
+  windowKey,
+  windows,
+  onWindowChange,
+}: {
+  windowKey: ReturnsWindow;
+  /** All only when it covers more than 1Y. */
+  windows: readonly { key: ReturnsWindow; labelKey: string }[];
+  onWindowChange: (key: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <Segmented
+      value={windowKey}
+      onValueChange={onWindowChange}
+      aria-label={t('v3.home.returns.chooseWindow')}
+    >
+      {windows.map((option) => (
+        <SegmentedItem key={option.key} value={option.key}>
+          {t(option.labelKey)}
+        </SegmentedItem>
+      ))}
+    </Segmented>
   );
 }
 
@@ -122,19 +209,13 @@ export function ReturnsCard({
   comparison,
   comparisonFailed,
   currency,
-  windowKey,
-  windows = offeredReturnsWindows(null, null),
-  onWindowChange,
   promotedToHero = false,
+  ratesOpen = false,
 }: {
   view: ReturnsView | null;
   comparison: ComparisonView | null;
   comparisonFailed: boolean;
   currency: string;
-  windowKey: ReturnsWindow;
-  /** The periods the picker offers; All only when it covers more than 1Y. */
-  windows?: readonly { key: ReturnsWindow; labelKey: string }[];
-  onWindowChange: (key: string) => void;
   /**
    * The home chart's Returns tab is on, so the money figure, the chart and the
    * window control are all up in the hero (SC-1301).
@@ -148,28 +229,14 @@ export function ReturnsCard({
    * the figure rather than at the wording.
    */
   promotedToHero?: boolean;
+  /** Open in a details peek, where the rates are what was asked for (SC-1692). */
+  ratesOpen?: boolean;
 }) {
   const { t } = useTranslation();
   const money = view?.money ?? null;
 
   return (
-    <Block>
-      <BlockHeader title={t('v3.home.returns.title')} />
-      {promotedToHero ? null : (
-        <div className="px-4 pb-3">
-          <Segmented
-            value={windowKey}
-            onValueChange={onWindowChange}
-            aria-label={t('v3.home.returns.chooseWindow')}
-          >
-            {windows.map((option) => (
-              <SegmentedItem key={option.key} value={option.key}>
-                {t(option.labelKey)}
-              </SegmentedItem>
-            ))}
-          </Segmented>
-        </div>
-      )}
+    <>
       {view ? (
         <>
           {view.unavailableReasons ? (
@@ -190,6 +257,18 @@ export function ReturnsCard({
           ) : null}
           {money && !promotedToHero ? (
             <ReturnsHeadline money={money} currency={currency} className="px-4 pb-3" />
+          ) : null}
+          {/* A stored answer, shown while a rebuild runs, says how old it is
+              right under the figure it dates (SC-1694). */}
+          {view.asOf ? (
+            <p className="px-4 pb-3 text-caption text-muted-foreground">
+              {[
+                t('v3.home.card.asOf', { time: formatDateTime(view.asOf) }),
+                ...(view.updatingReasons ?? []).map((reason) =>
+                  t(`v3.home.returns.eligibility.${reason}`)
+                ),
+              ].join(' · ')}
+            </p>
           ) : null}
           {/* Directly under the figure it qualifies: a caveat at the foot of
               the card is one nobody reads (SC-1439). */}
@@ -217,7 +296,7 @@ export function ReturnsCard({
             <Gaps gaps={comparison.gaps} currency={currency} />
           ) : null}
 
-          <Details view={view} money={money} />
+          <Details view={view} money={money} open={ratesOpen} />
 
           {view.subset ? (
             <ReturnsSubsetNote
@@ -239,7 +318,7 @@ export function ReturnsCard({
           ) : null}
         </>
       ) : null}
-    </Block>
+    </>
   );
 }
 
@@ -314,10 +393,18 @@ function Gaps({ gaps, currency }: { gaps: ComparisonView['gaps']; currency: stri
  * reach them. Closed by default — an open one has put the rates back above the
  * money while looking as though it had not.
  */
-function Details({ view, money }: { view: ReturnsView; money: ReturnsMoney | null }) {
+function Details({
+  view,
+  money,
+  open,
+}: {
+  view: ReturnsView;
+  money: ReturnsMoney | null;
+  open: boolean;
+}) {
   const { t } = useTranslation();
   return (
-    <details className="group border-t border-border px-4">
+    <details className="group border-t border-border px-4" open={open}>
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-3 text-caption text-muted-foreground transition-colors duration-fast ease-emphasized hover:text-foreground [&::-webkit-details-marker]:hidden">
         {t('v3.home.returns.details')}
         <ChevronDown

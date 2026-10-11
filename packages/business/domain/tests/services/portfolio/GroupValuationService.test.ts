@@ -379,7 +379,7 @@ describe('GroupValuationService — the inactive figure (SC-1128)', () => {
       getUserPortfolioValue: async () => ({
         totalValue: '200',
         baseCurrency: 'USD',
-        holdings: [{ tokenId: 'token-AAPL', balance: '1', value: '200' }],
+        holdings: [{ tokenId: 'token-AAPL', balance: '1', currentPrice: '200', value: '200' }],
       }),
     };
     stub.holdingRepository = {

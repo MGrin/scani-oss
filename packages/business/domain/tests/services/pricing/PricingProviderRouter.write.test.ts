@@ -75,6 +75,7 @@ describe('PricingProviderRouter write-back', () => {
     const callAt = new Date();
     const providerStamp = new Date(callAt.getTime() - 3 * 60 * 60 * 1000);
     const { router, asked } = routerAnswering((t) => ({
+      barDay: null,
       tokenId: t.id,
       // The quote names a different base; the router writes the one it was called with.
       baseTokenId: otherBase.id,
@@ -120,6 +121,7 @@ describe('PricingProviderRouter write-back', () => {
     );
     const callAt = new Date();
     const { router } = routerAnswering((t) => ({
+      barDay: null,
       tokenId: t.id,
       baseTokenId: base.id,
       price: priceOf.get(t.id) ?? '',
@@ -143,6 +145,7 @@ describe('PricingProviderRouter write-back', () => {
     const callAt = new Date();
     const stamp = new Date(callAt.getTime() - 2 * 60 * 60 * 1000);
     const first = routerAnswering((t) => ({
+      barDay: null,
       tokenId: t.id,
       baseTokenId: base.id,
       price: '100',
@@ -151,6 +154,7 @@ describe('PricingProviderRouter write-back', () => {
     }));
     await first.router.routeAndFetch([token], base, callAt);
     const second = routerAnswering((t) => ({
+      barDay: null,
       tokenId: t.id,
       baseTokenId: base.id,
       price: '101',
@@ -177,6 +181,7 @@ describe('PricingProviderRouter write-back', () => {
     const stamp = new Date(secondCall.getTime() - 5 * 60 * 60 * 1000);
     const prices = ['100', '101'];
     const { router } = routerAnswering((t) => ({
+      barDay: null,
       tokenId: t.id,
       baseTokenId: base.id,
       price: prices.shift() ?? '',
@@ -201,6 +206,7 @@ describe('PricingProviderRouter write-back', () => {
     const missingBase: Token = { ...base, id: randomUUID() };
     const callAt = new Date();
     const { router } = routerAnswering((t) => ({
+      barDay: null,
       tokenId: t.id,
       baseTokenId: missingBase.id,
       price: '100',
@@ -237,6 +243,7 @@ describe('PricingProviderRouter write-back', () => {
     const callAt = new Date();
     const providerStamp = new Date(callAt.getTime() - 15 * 60 * 60 * 1000);
     const { router } = routerAnswering((t) => ({
+      barDay: null,
       tokenId: t.id,
       baseTokenId: missingBase.id,
       price: '100',

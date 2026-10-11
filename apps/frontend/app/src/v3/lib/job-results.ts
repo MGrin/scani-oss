@@ -1,4 +1,6 @@
 import { AI_COLUMN_MAPPING_WARNING, type CsvMapping, CsvMappingDto } from '@scani/shared';
+import { rowsLost } from '@/v3/lib/budget-app-import';
+import { savedAsCheck } from '@/v3/lib/holdings';
 
 /**
  * The four remaining job results, read before they are rendered.
@@ -409,6 +411,9 @@ interface ManualHoldingRow {
   typeCode: string;
   balance: string;
   isUpdate: boolean;
+  /** An update kept as a check rather than as the balance: the holding has a
+   *  feed, and `balance` is the feed's figure (A5 D-20). */
+  savedAsCheck: boolean;
   /** In the reader's base currency despite the producer's field name, which
    *  says USD (`manual-holdings-create.ts` prices against `baseCurrencySymbol`). */
   price: string | null;
@@ -438,6 +443,7 @@ export function readManualHoldings(result: unknown): ManualHoldingsView | null {
     const pricingFailed = typeof holding.error === 'string' && holding.error.length > 0;
     const numericPrice = Number(price);
     const numericBalance = Number(balance);
+    const typedBalance = typeof holding.typedBalance === 'string' ? holding.typedBalance : '';
     const priceable =
       price !== null &&
       !pricingFailed &&
@@ -450,6 +456,13 @@ export function readManualHoldings(result: unknown): ManualHoldingsView | null {
       typeCode: typeof holding.typeCode === 'string' ? holding.typeCode : '',
       balance,
       isUpdate: holding.isUpdate === true,
+      savedAsCheck:
+        holding.isUpdate === true &&
+        balance !== '' &&
+        typedBalance !== '' &&
+        Number.isFinite(numericBalance) &&
+        Number.isFinite(Number(typedBalance)) &&
+        savedAsCheck(typedBalance, balance),
       price,
       priceSource: typeof holding.priceSource === 'string' ? holding.priceSource : null,
       value: priceable ? numericBalance * numericPrice : null,
@@ -462,6 +475,70 @@ export function readManualHoldings(result: unknown): ManualHoldingsView | null {
     rows,
     pricedCount: rows.filter((row) => row.value !== null).length,
     unpricedCount: rows.filter((row) => row.value === null).length,
+  };
+}
+
+// ── budget app imports (SC-1649) ─────────────────────────────────────────────
+
+interface BudgetAppAccountLine {
+  name: string;
+  accountId: string | null;
+  created: boolean;
+  rowsInserted: number;
+  rowsUpdated: number;
+}
+
+export interface BudgetAppImportView {
+  importId: string;
+  /** Accounts that took rows; a skipped one has no account and is left out. */
+  accounts: BudgetAppAccountLine[];
+  rowsInserted: number;
+  transfersPaired: number;
+  transfersUnpaired: number;
+  skippedRows: number;
+}
+
+export function readBudgetAppImport(result: unknown): BudgetAppImportView | null {
+  const record = asRecord(result);
+  const summary = asRecord(record.summary);
+  if (typeof record.importId !== 'string' || !Array.isArray(summary.accounts)) return null;
+  const accounts = summary.accounts
+    .map((entry): BudgetAppAccountLine => {
+      const account = asRecord(entry);
+      return {
+        name: typeof account.name === 'string' ? account.name : '',
+        accountId: typeof account.accountId === 'string' ? account.accountId : null,
+        created: account.created === true,
+        rowsInserted: asFiniteNumber(account.rowsInserted),
+        rowsUpdated: asFiniteNumber(account.rowsUpdated),
+      };
+    })
+    .filter((account) => account.accountId !== null);
+  return {
+    importId: record.importId,
+    accounts,
+    rowsInserted: accounts.reduce((n, account) => n + account.rowsInserted, 0),
+    transfersPaired: asFiniteNumber(summary.transfersPaired),
+    transfersUnpaired: asFiniteNumber(summary.transfersUnpaired),
+    skippedRows: Array.isArray(summary.skippedRows)
+      ? rowsLost(summary.skippedRows.map((row) => ({ reason: String(asRecord(row).reason) })))
+      : 0,
+  };
+}
+
+export interface BudgetAppUndoView {
+  rowsRemoved: number;
+  accountsRemoved: number;
+  accountsKept: number;
+}
+
+export function readBudgetAppUndo(result: unknown): BudgetAppUndoView | null {
+  const record = asRecord(result);
+  if (typeof record.rowsRemoved !== 'number') return null;
+  return {
+    rowsRemoved: asFiniteNumber(record.rowsRemoved),
+    accountsRemoved: asFiniteNumber(record.accountsRemoved),
+    accountsKept: asFiniteNumber(record.accountsKept),
   };
 }
 

@@ -10,6 +10,7 @@ import {
   cloudRangeInput,
   cloudWalletInput,
   fromCloudAsset,
+  SCANI_ONLY_CLOUD_PRICING,
 } from '@scani/providers/core/cloud-contract';
 import { AIUnavailableError } from '@scani/providers/core/errors';
 import { ProviderRegistry } from '@scani/providers/core/registry';
@@ -47,16 +48,27 @@ const leg = (v: TransactionEvent['primary']) => ({
 });
 const quote = (row: PriceQuote) => ({ ...row, timestamp: row.timestamp.toISOString() });
 
+const servable = (provider: string, auth: { internal: boolean }) =>
+  auth.internal || !SCANI_ONLY_CLOUD_PRICING.has(provider);
+const refuseScaniOnly = (provider: string, auth: { internal: boolean }) => {
+  if (!servable(provider, auth))
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: `${provider} prices are not available to Cloud API keys.`,
+    });
+};
+
 export const processingRouter = router({
   v1: router({
-    capabilities: bearerProcedure.query(async () => {
+    capabilities: bearerProcedure.query(async ({ ctx }) => {
       const providers = registry().getAIProviders();
       const states = await Promise.all(providers.map(aiAvailability));
       return {
         version: 1,
         pricing: registry()
           .getAllCurrentPricers()
-          .map((p) => p.providerKey),
+          .map((p) => p.providerKey)
+          .filter((key) => servable(key, ctx.auth)),
         aiAvailability: await combinedAIAvailability(providers),
         ai: providers.flatMap((p, index) => {
           const state = states[index]!;
@@ -66,7 +78,8 @@ export const processingRouter = router({
         }),
       };
     }),
-    prices: bearerProcedure.input(cloudPricesInput).mutation(async ({ input }) => {
+    prices: bearerProcedure.input(cloudPricesInput).mutation(async ({ input, ctx: { auth } }) => {
+      refuseScaniOnly(input.provider, auth);
       const provider = registry()
         .getAllCurrentPricers()
         .find((p) => p.providerKey === input.provider);
@@ -94,7 +107,7 @@ export const processingRouter = router({
         const fallback = registry()
           .getAllCurrentPricers()
           .find((p) => p.providerKey === 'yahoo-finance');
-        if (fallback) candidates.push(fallback);
+        if (fallback && servable(fallback.providerKey, auth)) candidates.push(fallback);
       }
       const rows = new Map<string, PriceQuote>();
       for (const candidate of candidates) {
@@ -113,7 +126,8 @@ export const processingRouter = router({
       }
       return [...rows.values()].map(quote);
     }),
-    range: bearerProcedure.input(cloudRangeInput).mutation(async ({ input }) => {
+    range: bearerProcedure.input(cloudRangeInput).mutation(async ({ input, ctx: { auth } }) => {
+      refuseScaniOnly(input.provider, auth);
       const provider = registry()
         .getAllHistoricalPricers()
         .find((p) => p.providerKey === input.provider);

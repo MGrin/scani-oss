@@ -43,12 +43,13 @@ Sample fields you'll see:
   "level": "info",
   "time": "2026-05-24T11:00:00.000Z",
   "service": "worker",
-  "component": "service:PriceGraphService",
-  "msg": "convert",
-  "fromToken": "<hashed>",
-  "toToken": "<hashed>",
-  "path": "one-hop-USD",
-  "stale": false
+  "component": "processor:pricing",
+  "msg": "✅ Pricing run completed",
+  "tokensFound": 50,
+  "tokensUpdated": 37,
+  "tokensFailed": 0,
+  "errorCount": 0,
+  "totalDurationMs": 8412
 }
 ```
 

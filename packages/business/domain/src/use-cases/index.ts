@@ -17,10 +17,17 @@ export {
   CreatePaymentFromExtractionUseCase,
   ExtractionNotFoundError,
 } from './CreatePaymentFromExtractionUseCase';
+export { CreateValuedAssetUseCase } from './CreateValuedAssetUseCase';
 export { DeleteAccountUseCase } from './DeleteAccountUseCase';
 export { DeleteAllUserDataUseCase } from './DeleteAllUserDataUseCase';
 export { DeleteHoldingUseCase } from './DeleteHoldingUseCase';
 export { DetachHoldingFromVaultUseCase } from './DetachHoldingFromVaultUseCase';
+export {
+  HandValuedHoldingUseCase,
+  NoPriceYetError,
+  NotHandValuedError,
+  NothingHeldThenError,
+} from './HandValuedHoldingUseCase';
 export {
   HIDE_CLOSED_HOLDINGS_STALE_DAYS,
   HideClosedHoldingsUseCase,
@@ -37,6 +44,8 @@ export {
   type HistoryRecomputeCohort,
   PlanHistoryRecomputeUseCase,
 } from './PlanHistoryRecomputeUseCase';
+export { PriceActiveUsersCryptoUseCase } from './PriceActiveUsersCryptoUseCase';
+export { ReconcilePaymentsUseCase } from './ReconcilePaymentsUseCase';
 export {
   MovementExceedsBalanceError,
   MovementHoldingNotFoundError,

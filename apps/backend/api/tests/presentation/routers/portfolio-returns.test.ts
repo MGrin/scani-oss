@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type * as schema from '@scani/db/schema';
+import { ReturnsLastCompleteRepository } from '@scani/domain/repositories';
 import {
   BenchmarkReturnService,
   type ReturnsRequest,
@@ -9,6 +10,7 @@ import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import Decimal from 'decimal.js';
 import { Container } from 'typedi';
 import { _resetReturnsCache } from '../../../src/lib/returns-cache';
+import { ReturnsRunner } from '../../../src/returns-pool';
 import { makeAuthedCaller } from '../../helpers/test-caller';
 
 // SC-1159: `getReturns` hands Home's card the engine's answer for the CALLER,
@@ -35,6 +37,12 @@ Container.set(BenchmarkReturnService, {
   },
 } as unknown as BenchmarkReturnService);
 
+// Off the event loop in production (SC-1671); here the runner calls the
+// stubbed engine in this thread, which a worker's own container cannot see.
+Container.set(ReturnsRunner, {
+  run: (request: ReturnsRequest) => Container.get(ReturnsService).compute(request),
+} as unknown as ReturnsRunner);
+
 function stub(outcome: unknown, hasHistory = true) {
   // A fresh engine per test, so a run shared from an earlier test's engine
   // would answer with that test's outcome.
@@ -52,6 +60,24 @@ function stub(outcome: unknown, hasHistory = true) {
   } as unknown as ReturnsService);
   return asked;
 }
+
+// The last eligible answer per key (SC-1694), in memory: the procedure's
+// contract, not Postgres's, is what these tests pin.
+type StoredAnswer = Parameters<ReturnsLastCompleteRepository['save']>[0];
+const stored = new Map<string, StoredAnswer>();
+const storeFails = { find: false, save: false };
+const storeKey = (userId: string, scopeKey: string, windowKey: string) =>
+  `${userId}|${scopeKey}|${windowKey}`;
+Container.set(ReturnsLastCompleteRepository, {
+  find: async (userId: string, scopeKey: string, windowKey: string) => {
+    if (storeFails.find) throw new Error('store down');
+    return stored.get(storeKey(userId, scopeKey, windowKey)) ?? null;
+  },
+  save: async (row: StoredAnswer) => {
+    if (storeFails.save) throw new Error('store down');
+    stored.set(storeKey(row.userId, row.scopeKey, row.windowKey), row);
+  },
+} as unknown as ReturnsLastCompleteRepository);
 
 /** Every `hasHistory` the router issued, in call order. */
 const historyAsked: ReturnsRequest[] = [];
@@ -114,6 +140,7 @@ describe('portfolio.getReturns (SC-1159)', () => {
     expect(await makeAuthedCaller(USER).portfolio.getReturns({ window: { kind: 'all' } })).toEqual({
       returns: null,
       benchmarks: [],
+      lastComplete: null,
     });
   });
 
@@ -419,5 +446,111 @@ describe('the daily series does not ride along on getReturns (SC-471, SC-1297)',
       window: { kind: 'ytd' },
     });
     expect(returns && 'series' in returns).toBe(false);
+  });
+});
+
+describe('the last complete answer, while history rebuilds (SC-1694)', () => {
+  const REBUILDING = {
+    ...RESULT,
+    eligibility: { eligible: false, reasons: ['rebuilding-history'] },
+  };
+
+  async function settle() {
+    // The save is not awaited by the procedure; let it land.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  test('an eligible answer is kept, and carries no lastComplete of its own', async () => {
+    stored.clear();
+    stub({ status: 'ok', returns: RESULT });
+    const answer = await makeAuthedCaller(USER).portfolio.getReturns({ window: { kind: 'ytd' } });
+    await settle();
+    expect(answer.lastComplete).toBeNull();
+    const row = stored.get(storeKey(USER.id, '{"kind":"user"}', 'ytd'));
+    expect(row?.baseCurrencyId).toBe('usd');
+    expect(row?.answer).toEqual({ returns: answer.returns, benchmarks: answer.benchmarks });
+  });
+
+  test('while history rebuilds, the kept answer comes back with when it was computed', async () => {
+    stored.clear();
+    stub({ status: 'ok', returns: RESULT });
+    const before = await makeAuthedCaller(USER).portfolio.getReturns({ window: { kind: 'ytd' } });
+    await settle();
+    stub({ status: 'ok', returns: REBUILDING });
+    const during = await makeAuthedCaller(USER).portfolio.getReturns({ window: { kind: 'ytd' } });
+    expect(during.returns?.eligibility.reasons).toEqual(['rebuilding-history']);
+    expect(during.benchmarks).toEqual([]);
+    expect(during.lastComplete?.returns).toEqual(before.returns ?? undefined);
+    expect(during.lastComplete?.benchmarks).toEqual(before.benchmarks);
+    expect(Number.isNaN(Date.parse(during.lastComplete?.computedAt ?? ''))).toBe(false);
+  });
+
+  test('an ineligible answer is never kept', async () => {
+    stored.clear();
+    stub({ status: 'ok', returns: REBUILDING });
+    await makeAuthedCaller(USER).portfolio.getReturns({ window: { kind: 'ytd' } });
+    await settle();
+    expect(stored.size).toBe(0);
+  });
+
+  test('withheld for another reason, nothing old is shown', async () => {
+    stored.clear();
+    stub({ status: 'ok', returns: RESULT });
+    await makeAuthedCaller(USER).portfolio.getReturns({ window: { kind: 'ytd' } });
+    await settle();
+    stub({
+      status: 'ok',
+      returns: { ...RESULT, eligibility: { eligible: false, reasons: ['insufficient-history'] } },
+    });
+    const answer = await makeAuthedCaller(USER).portfolio.getReturns({ window: { kind: 'ytd' } });
+    expect(answer.lastComplete).toBeNull();
+  });
+
+  test('an answer kept in another base currency is not shown', async () => {
+    stored.clear();
+    stub({ status: 'ok', returns: RESULT });
+    await makeAuthedCaller(USER).portfolio.getReturns({ window: { kind: 'ytd' } });
+    await settle();
+    stub({ status: 'ok', returns: { ...REBUILDING, baseCurrencyId: 'eur' } });
+    const answer = await makeAuthedCaller(USER).portfolio.getReturns({ window: { kind: 'ytd' } });
+    expect(answer.lastComplete).toBeNull();
+  });
+
+  test('a custom window is kept by its length, so the same period a day later finds it', async () => {
+    stored.clear();
+    const day = (iso: string) => new Date(`${iso}T00:00:00.000Z`);
+    stub({ status: 'ok', returns: RESULT });
+    await makeAuthedCaller(USER).portfolio.getReturns({
+      window: { kind: 'custom', from: day('2026-09-09'), to: day('2026-10-09') },
+    });
+    await settle();
+    stub({ status: 'ok', returns: REBUILDING });
+    const nextDay = await makeAuthedCaller(USER).portfolio.getReturns({
+      window: { kind: 'custom', from: day('2026-09-10'), to: day('2026-10-10') },
+    });
+    expect(nextDay.lastComplete).not.toBeNull();
+    // Control: a different length is a different period.
+    const longer = await makeAuthedCaller(USER).portfolio.getReturns({
+      window: { kind: 'custom', from: day('2026-07-10'), to: day('2026-10-10') },
+    });
+    expect(longer.lastComplete).toBeNull();
+  });
+
+  test('a store that fails never fails the answer', async () => {
+    stored.clear();
+    storeFails.save = true;
+    storeFails.find = true;
+    try {
+      stub({ status: 'ok', returns: RESULT });
+      const kept = await makeAuthedCaller(USER).portfolio.getReturns({ window: { kind: 'ytd' } });
+      await settle();
+      expect(kept.returns?.twr?.cumulative).toBe('0.3');
+      stub({ status: 'ok', returns: REBUILDING });
+      const during = await makeAuthedCaller(USER).portfolio.getReturns({ window: { kind: 'ytd' } });
+      expect(during.lastComplete).toBeNull();
+    } finally {
+      storeFails.save = false;
+      storeFails.find = false;
+    }
   });
 });

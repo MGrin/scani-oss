@@ -30,3 +30,12 @@ export const AuthContext = createContext<AuthContextType | undefined>(undefined)
 export function useIsDemo(): boolean {
   return useContext(AuthContext)?.isDemo ?? false;
 }
+
+/**
+ * The signed-in user, for a component that only reads it. Through this module
+ * rather than `useAuth`, so the reader does not load the auth client, which
+ * throws at import where `VITE_API_URL` is unset.
+ */
+export function useSignedInUser(): AuthContextType['user'] | null {
+  return useContext(AuthContext)?.user ?? null;
+}

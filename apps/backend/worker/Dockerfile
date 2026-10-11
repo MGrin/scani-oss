@@ -71,30 +71,27 @@ COPY packages ./packages
 
 RUN cd apps/backend/worker && bun run build
 
-# SC-518. BullMQ v6's Postgres backend loads every SQL command with
-# `readFileSync` at RUNTIME (`sql-loader.ts` joins `__dirname` with
-# `commands/`), and `bun build --compile` bundles JavaScript but NOT data
-# files. So the compiled binary looks for these on disk and the runtime image
-# has no `node_modules`. Without them every enqueue returns 500 — the image
-# builds and passes every check, and fails on first use.
+# SC-518. BullMQ 6.2's Postgres backend read every SQL command with
+# `readFileSync` at RUNTIME, which `bun build --compile` does not bundle, so the
+# image used to copy the .sql files beside the binary. 6.3 inlines them into
+# `sql-scripts.js` (taskforcesh/bullmq#4603) and has no .sql files at all, which
+# is how the old file check aborted deploy #461 (SC-1677).
 #
-# THIS ASSERTION IS A CONDITION, NOT A NICETY. It is the only thing standing
-# between a bullmq patch release relocating these files and a green image that
-# 500s in production: `COPY` does not fail when it matches an empty directory,
-# so without this the breakage is silent. Assert on a FILE THE LOADER ACTUALLY
-# READS, not on the directory — a directory can exist and be empty.
-#
-# Remove it only when bullmq inlines its SQL — upstream taskforcesh/bullmq#4603
-# (see also
-# taskforcesh/bullmq#4601).
-RUN test -s node_modules/bullmq/dist/esm/postgres/commands/add_job.sql \
-    && test -s node_modules/bullmq/dist/esm/postgres/migrations/0001_schema.sql \
-    || (echo "SC-518: bullmq Postgres SQL assets missing — the compiled binary cannot enqueue" && exit 1)
+# THIS ASSERTION IS STILL A CONDITION. Without the SQL every enqueue returns
+# 500 from an image that builds and passes every other check. So assert both
+# halves of "the binary needs nothing on disk": the loader imports the inlined
+# scripts and reads no file, and the compiled binary itself carries add_job's
+# SQL. A release that goes back to reading files fails here, not in production.
+RUN grep -q "from './sql-scripts'" node_modules/bullmq/dist/esm/postgres/sql-loader.js \
+    && ! grep -q readFileSync node_modules/bullmq/dist/esm/postgres/sql-loader.js \
+    && grep -q 'Insert a single job, routing it to waiting or delayed' apps/backend/worker/dist/server \
+    || (echo "SC-518: the compiled binary does not carry bullmq's Postgres SQL — it cannot enqueue" && exit 1)
 
 # SC-963. A patch that did not apply builds a worker that pins the Neon compute
 # awake again, and nothing else fails. Assert on the patched line itself.
-RUN grep -q 'opts.maximumBlockTimeout' node_modules/bullmq/dist/esm/classes/worker.js \
-    || (echo "SC-963: patches/bullmq@6.2.0.patch is not applied — the idle worker would poll Postgres every 10s" && exit 1)
+RUN grep -q 'deferStalledCheckWhileIdle' node_modules/bullmq/dist/esm/classes/worker.js \
+    && grep -q 'reconnectsListenOnNextWait' node_modules/bullmq/dist/esm/postgres/postgres-queue-backend.js \
+    || (echo "SC-963: patches/bullmq@6.3.12.patch is not applied — the idle worker would keep Postgres awake" && exit 1)
 
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
@@ -190,9 +187,6 @@ RUN setpriv --reuid app --regid app --init-groups sh -c 'cd "$HOME"' \
 
 COPY --from=build --chown=app:app /app/apps/backend/worker/dist/server /app/server
 
-# SC-518: the SQL the compiled binary reads at runtime. Path must match the
-# build-time `__dirname` baked into the binary, which is /app/node_modules/...
-COPY --from=build --chown=app:app /app/node_modules/bullmq/dist/esm/postgres /app/node_modules/bullmq/dist/esm/postgres
 COPY --chown=app:app apps/backend/worker/docker-entrypoint.sh /app/docker-entrypoint.sh
 COPY --chown=app:app apps/backend/worker/memory-watchdog.sh /app/memory-watchdog.sh
 RUN chmod +x /app/docker-entrypoint.sh /app/memory-watchdog.sh

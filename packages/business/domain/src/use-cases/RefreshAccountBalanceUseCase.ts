@@ -28,6 +28,9 @@ import {
   type HoldingProbeCandidate,
 } from '../services/holdings/ExitedPositionProbe';
 import { HoldingsSyncHelper } from '../services/holdings/HoldingsSyncHelper';
+import { AccountLedgerSync } from '../services/transactions/AccountLedgerSync';
+import type { TransactionImportResult } from '../services/transactions/TransactionImportCoordinator';
+import { ledgerSourceOf } from '../services/transactions/transaction-source';
 import { IntegrationCredentialsService } from '../services/users/IntegrationCredentialsService';
 import { WalletDiscoveryService } from '../services/users/WalletDiscoveryService';
 
@@ -66,6 +69,12 @@ export interface RefreshAccountBalanceResult {
    * something true to say instead of an error (SC-852).
    */
   exitedSymbols: string[];
+  /**
+   * The ledger read with this balance (SC-1665): the import's summary when
+   * rows were read and written in the balance's transaction, else null — no
+   * ledger, one still on the nightly run, or a read that failed.
+   */
+  ledger: TransactionImportResult | null;
   durationMs: number;
 }
 
@@ -89,6 +98,7 @@ export class RefreshAccountBalanceUseCase {
   private readonly walletDiscovery = Container.get(WalletDiscoveryService);
   private readonly credentialsService = Container.get(IntegrationCredentialsService);
   private readonly exitProbe = Container.get(ExitedPositionProbe);
+  private readonly ledgerSync = Container.get(AccountLedgerSync);
 
   async execute(input: RefreshAccountBalanceInput): Promise<RefreshAccountBalanceResult> {
     const start = Date.now();
@@ -209,6 +219,7 @@ export class RefreshAccountBalanceUseCase {
         // the outage case, and asking it N more questions in the same breath
         // spends the shared rate-limit window to learn the same thing twice.
         exitedSymbols: [],
+        ledger: null,
         durationMs: Date.now() - start,
       };
     }
@@ -257,9 +268,19 @@ export class RefreshAccountBalanceUseCase {
     // statement_timeout ends that wait. A shorter race would report a failure
     // for a transaction that then commits; this one outlasts the longest wait
     // by as long again for the writes.
-    const result = await withTransaction(
-      (tx) =>
-        this.holdingsSyncHelper.processSnapshotsForAccount({
+    // Balance first, then the ledger: a row posted between the two reads is
+    // dated after the balance anchor and counts once (SC-1665, Q-1).
+    const ledgerRead = await this.ledgerSync.read({
+      userId: input.userId,
+      accountId: account.id,
+      source: ledgerSourceOf(await this.institutionNameOf(institutionId), meta),
+    });
+
+    const { result, ingested } = await withTransaction(
+      async (tx) => ({
+        ingested:
+          ledgerRead.kind === 'read' ? await this.ledgerSync.write(ledgerRead.fetched, tx) : null,
+        result: await this.holdingsSyncHelper.processSnapshotsForAccount({
           userId: input.userId,
           accountId: account.id,
           inputSource,
@@ -278,7 +299,11 @@ export class RefreshAccountBalanceUseCase {
           staleStrategy: 'preserve',
           sourceTag: isWallet ? WALLET_BALANCE_SYNC_SOURCE : EXCHANGE_BALANCE_SYNC_SOURCE,
           respectHiddenForCounts: isWallet,
-          skipUnchangedUpdates: false,
+          // A refresh writes no observation for an unchanged balance, as the
+          // wallet cron does, and still stamps `last_updated`, so the person
+          // who tapped Refresh reads "just now" (SC-1601). Exchanges too: the
+          // exchange cron's outright skip would leave that stamp stale.
+          unchangedCheckpoint: 'skip-observation',
           // Wallet refresh refuses to auto-create holdings: chain
           // discovery surfaces every airdropped scam-dust contract,
           // and the user's curated set must not be silently re-expanded.
@@ -291,8 +316,13 @@ export class RefreshAccountBalanceUseCase {
           arrival: 'auto_discovered',
           tx,
         }),
+      }),
       { name: 'refresh-account-balance', timeout: 2 * STATEMENT_TIMEOUT_MS }
     );
+    const ledger =
+      ledgerRead.kind === 'read' && ingested
+        ? await this.ledgerSync.finish(ledgerRead.fetched, ingested)
+        : null;
     const holdingsUpdated = result.updated;
     const holdingsCreated = result.created;
     const holdingsRemoved = result.removed;
@@ -355,6 +385,7 @@ export class RefreshAccountBalanceUseCase {
       syncedSymbols,
       missingSymbols,
       exitedSymbols,
+      ledger,
       durationMs,
     };
   }
@@ -475,6 +506,7 @@ export class RefreshAccountBalanceUseCase {
       syncedSymbols: [],
       missingSymbols: [],
       exitedSymbols: [],
+      ledger: null,
       durationMs: Date.now() - start,
     };
   }

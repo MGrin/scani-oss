@@ -71,6 +71,9 @@ export interface AuthAttemptResult {
   /** Present on failure. `offline` / `timeout` / `unreachable` are worth
    *  retrying by themselves; `server` is not. */
   kind?: AuthFailureKind;
+  /** The email step passed and the account has 2FA on: no session yet, the
+   *  second factor comes next (SC-1646). */
+  twoFactor?: boolean;
 }
 
 export interface AuthContextType {
@@ -94,6 +97,13 @@ export interface AuthContextType {
   /** Always a 6-digit code, never a magic link: used to confirm the signed-in
    *  person before an irreversible action, without leaving the page (SC-1351). */
   sendCode: (email: string, turnstileToken?: string | null) => Promise<AuthAttemptResult>;
+  /** Completes a 2FA challenge with an authenticator code or a backup code (SC-1646). */
+  verifyTwoFactor: (
+    code: string,
+    options: { backup: boolean; trustDevice: boolean }
+  ) => Promise<AuthAttemptResult>;
+  /** Passwordless sign-in; a passkey with user verification skips TOTP (SC-1646). */
+  signInWithPasskey: (options?: { autoFill?: boolean }) => Promise<AuthAttemptResult>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
 }
@@ -267,7 +277,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
 
   const verifyCode = async (email: string, code: string): Promise<AuthAttemptResult> => {
-    const result = await attempt(() => authClient.signIn.emailOtp({ email, otp: code }));
+    let twoFactor = false;
+    const result = await attempt(async () => {
+      const answer = await authClient.signIn.emailOtp({ email, otp: code });
+      twoFactor =
+        (answer.data as { twoFactorRedirect?: boolean } | null)?.twoFactorRedirect === true;
+      return answer;
+    });
+    if (result.error) return result;
+    if (twoFactor) return { twoFactor: true };
+    await resolveSession();
+    return {};
+  };
+
+  const verifyTwoFactor = async (
+    code: string,
+    options: { backup: boolean; trustDevice: boolean }
+  ): Promise<AuthAttemptResult> => {
+    const result = await attempt(() =>
+      options.backup
+        ? authClient.twoFactor.verifyBackupCode({ code, trustDevice: options.trustDevice })
+        : authClient.twoFactor.verifyTotp({ code, trustDevice: options.trustDevice })
+    );
+    if (result.error) return result;
+    await resolveSession();
+    return {};
+  };
+
+  const signInWithPasskey = async (options?: {
+    autoFill?: boolean;
+  }): Promise<AuthAttemptResult> => {
+    const result = await attempt(() =>
+      authClient.signIn.passkey({ autoFill: options?.autoFill ?? false })
+    );
+    // A device with no platform authenticator rejects the ceremony with the
+    // browser's own text; the reader needs the way out, which is their email.
+    if (result.kind === 'server') return { ...result, error: t('auth.signIn.passkeyFailed') };
     if (result.error) return result;
     await resolveSession();
     return {};
@@ -342,6 +387,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     authenticate,
     verifyCode,
     sendCode,
+    verifyTwoFactor,
+    signInWithPasskey,
     signOut: handleSignOut,
     resetPassword,
   };

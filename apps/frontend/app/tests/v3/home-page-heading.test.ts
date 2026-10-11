@@ -37,10 +37,12 @@ async function pageSource(file: string): Promise<string> {
 /**
  * The ways a v3 page legitimately reaches a top-level heading. Five of them
  * are shared headers that render the `h1` themselves, which is why a scan for
- * `<h1` alone reports pages that are perfectly correct.
+ * `<h1` alone reports pages that are perfectly correct. `SettingsAreas` is the
+ * Settings shell, which titles the list or the open area through `PageHeader`
+ * (SC-1670); `tests/v3/pages/settingsPage.test.tsx` holds it to one `h1`.
  */
 const REACHES_A_HEADING =
-  /<h1|PageHeader|CaptureHeader|HomeHeading|PeekHeader|JobDetailHeader|DocumentDetailHeader|ReviewQueueHeader/;
+  /<h1|PageHeader|CaptureHeader|HomeHeading|PeekHeader|JobDetailHeader|DocumentDetailHeader|ReviewQueueHeader|SettingsAreas/;
 
 /**
  * Enumerated rather than pattern-matched, because an exception needs a reason

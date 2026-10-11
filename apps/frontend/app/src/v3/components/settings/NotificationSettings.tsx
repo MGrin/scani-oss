@@ -13,6 +13,7 @@ import {
   pushTestLines,
   urlBase64ToUint8Array,
 } from '../../lib/push';
+import { readLocalPushEndpoint } from '../../lib/push-local';
 
 /**
  * Turn the payment-due reminder on for THIS device (SC-226).
@@ -59,23 +60,13 @@ export function NotificationSettings() {
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
 
-  // What THIS browser currently holds. The server's device count is not a
-  // substitute: it counts other devices too, so a laptop would report the
-  // phone's subscription as its own.
+  // What THIS browser currently holds; until it answers the control stays off.
   useEffect(() => {
     setPermission(typeof Notification === 'undefined' ? null : Notification.permission);
-    if (!('serviceWorker' in navigator)) return;
     let cancelled = false;
-    navigator.serviceWorker.ready
-      .then((registration) => registration.pushManager.getSubscription())
-      .then((subscription) => {
-        if (!cancelled) setLocalEndpoint(subscription?.endpoint ?? null);
-      })
-      .catch(() => {
-        // A registration that is not ready is not an error the reader can act
-        // on; the control simply stays off.
-        if (!cancelled) setLocalEndpoint(null);
-      });
+    readLocalPushEndpoint().then((endpoint) => {
+      if (!cancelled) setLocalEndpoint(endpoint);
+    });
     return () => {
       cancelled = true;
     };

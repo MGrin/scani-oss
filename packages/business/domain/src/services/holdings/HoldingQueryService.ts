@@ -13,6 +13,7 @@ import { TokenRepository } from '../../repositories/TokenRepository';
 import { BaseService } from '../BaseService';
 import { PortfolioValuationService } from '../portfolio/PortfolioValuationService';
 import { BalanceRefreshabilityService } from './BalanceRefreshabilityService';
+import { holdingKindOf } from './balance-sync-sources';
 
 /** A holding hidden from the dashboard, plus why it's hidden. */
 interface HiddenHoldingRow {
@@ -220,6 +221,7 @@ export class HoldingQueryService extends BaseService {
             name: account.name,
             type: account.typeName,
             typeCode: account.typeCode,
+            class: account.class,
             institutionId: account.institutionId,
           },
           institution: {
@@ -240,6 +242,7 @@ export class HoldingQueryService extends BaseService {
           isHidden: holding.isHidden,
           source: holding.source,
           refreshable: refreshability.get(holding.id) === 'refreshable',
+          deleteHides: holdingKindOf(holding) === 'feed',
           // The last answer this holding's owner gave to "what did that edit
           // mean" (SC-510), so the edit control can pre-select it. Null until
           // somebody has answered, and the client must ask when it is null and

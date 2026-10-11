@@ -63,6 +63,14 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
     userColumn: schema.portfolioValueDaily.userId,
     echo: schema.portfolioValueDaily.snapshotDate,
   },
+  // The last eligible returns answer per window (SC-1694): derived from the
+  // rows above, so it goes with them.
+  {
+    kind: 'delete',
+    table: schema.returnsLastComplete,
+    userColumn: schema.returnsLastComplete.userId,
+    echo: schema.returnsLastComplete.windowKey,
+  },
   // Copies of ledger rows the owner retired (SC-1453). Append-only everywhere
   // else, and this is the one delete it has: the account's own data going.
   {
@@ -85,6 +93,12 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
     table: schema.holdingTransactions,
     userColumn: schema.holdingTransactions.userId,
     echo: schema.holdingTransactions.id,
+  },
+  {
+    kind: 'delete',
+    table: schema.transactionCategories,
+    userColumn: schema.transactionCategories.userId,
+    echo: schema.transactionCategories.id,
   },
   {
     kind: 'delete',
@@ -117,6 +131,21 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
     userColumn: schema.documents.userId,
     echo: schema.documents.r2Key,
     note: 'Takes `document_extractions` with it by cascade.',
+  },
+  // A backup holds every ledger row and reading the account has, so its
+  // stored object goes with the account, after the commit, like a document's.
+  {
+    kind: 'delete',
+    table: schema.userBackups,
+    userColumn: schema.userBackups.userId,
+    echo: schema.userBackups.storageKey,
+  },
+  {
+    kind: 'delete',
+    table: schema.budgetAppImports,
+    userColumn: schema.budgetAppImports.userId,
+    echo: schema.budgetAppImports.id,
+    note: 'Takes `budget_app_import_entries` with it by cascade.',
   },
   {
     kind: 'delete',
@@ -155,6 +184,33 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
     echo: schema.outboxEvents.id,
   },
 
+  // Household rows (SC-1647). Only the owner shares an account, so `shared_by`
+  // names the owner, and the shares go before the accounts they echo.
+  {
+    kind: 'delete',
+    table: schema.accountShares,
+    userColumn: schema.accountShares.sharedBy,
+    echo: schema.accountShares.accountId,
+  },
+  {
+    kind: 'delete',
+    table: schema.householdInvites,
+    userColumn: schema.householdInvites.invitedBy,
+    echo: schema.householdInvites.id,
+  },
+  {
+    kind: 'delete',
+    table: schema.householdMembers,
+    userColumn: schema.householdMembers.userId,
+    echo: schema.householdMembers.householdId,
+  },
+  {
+    kind: 'anonymise',
+    table: schema.households,
+    userColumn: schema.households.createdBy,
+    reason:
+      'The household outlives its creator: the other members keep it, so only the link to the person is severed.',
+  },
   // `holding_coverage` is keyed by (accountId, tokenId) with no userId of its
   // own; its accountId FK cascades, so this delete cleans it.
   {
@@ -251,6 +307,68 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
     userColumn: schema.pushSubscriptions.userId,
     echo: schema.pushSubscriptions.id,
   },
+  // An agent's token reads the data being erased, so it goes with it (SC-1614).
+  {
+    kind: 'delete',
+    table: schema.personalAccessTokens,
+    userColumn: schema.personalAccessTokens.userId,
+    echo: schema.personalAccessTokens.id,
+  },
+  // A calendar feed URL reads the bills being erased (SC-1654).
+  {
+    kind: 'delete',
+    table: schema.billCalendarFeeds,
+    userColumn: schema.billCalendarFeeds.userId,
+    echo: schema.billCalendarFeeds.userId,
+  },
+  // An AI app connected through OAuth reads the data this flow empties, so
+  // its consent and tokens go with it (SC-1615).
+  {
+    kind: 'delete',
+    table: schema.oauthAccessTokens,
+    userColumn: schema.oauthAccessTokens.userId,
+    echo: schema.oauthAccessTokens.id,
+  },
+  {
+    kind: 'delete',
+    table: schema.oauthRefreshTokens,
+    userColumn: schema.oauthRefreshTokens.userId,
+    echo: schema.oauthRefreshTokens.id,
+  },
+  {
+    kind: 'delete',
+    table: schema.oauthConsents,
+    userColumn: schema.oauthConsents.userId,
+    echo: schema.oauthConsents.id,
+  },
+  {
+    kind: 'delete',
+    table: schema.oauthClients,
+    userColumn: schema.oauthClients.userId,
+    echo: schema.oauthClients.id,
+  },
+  // The agent activity log holds whole before/after copies of the rows this
+  // flow erases, so it goes with them; its changes and snapshots cascade
+  // (SC-1617).
+  {
+    kind: 'delete',
+    table: schema.agentWrites,
+    userColumn: schema.agentWrites.userId,
+    echo: schema.agentWrites.id,
+  },
+  {
+    kind: 'delete',
+    table: schema.agentWriteLocks,
+    userColumn: schema.agentWriteLocks.userId,
+    echo: schema.agentWriteLocks.userId,
+  },
+  // What the user's agents asked for, arguments included (SC-1618).
+  {
+    kind: 'delete',
+    table: schema.agentCalls,
+    userColumn: schema.agentCalls.userId,
+    echo: schema.agentCalls.id,
+  },
   {
     kind: 'delete',
     table: schema.userCostBasisMethodChanges,
@@ -298,6 +416,20 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
       'The live sessions are the login. Deleting them signs the account out of every device including the browser that asked for the deletion, which turns "your login remains" into a logout. The residual is bounded and nothing else here is: each row carries its own `expires_at` and disappears on its own.',
   },
   {
+    kind: 'keep',
+    table: schema.userTwoFactors,
+    userColumn: schema.userTwoFactors.userId,
+    reason:
+      "The account's second factor (SC-1646): a TOTP secret and its backup codes. They are part of the login, like `user_accounts`, and the flow keeps the login working. Removing them would silently turn two-factor sign-in off for an account that asked only to empty its data. Deleting the account itself still takes them, through ON DELETE CASCADE.",
+  },
+  {
+    kind: 'keep',
+    table: schema.userPasskeys,
+    userColumn: schema.userPasskeys.userId,
+    reason:
+      "The account's passkeys (SC-1646): public keys that sign it in without an email. They are login, not portfolio content, so the flow keeps them for the same reason as `user_accounts`. Deleting the account itself still takes them, through ON DELETE CASCADE.",
+  },
+  {
     kind: 'anonymise',
     table: schema.tokenPriceEditHistory,
     userColumn: schema.tokenPriceEditHistory.editedByUserId,
@@ -340,6 +472,12 @@ export const USER_ROW_COLUMN_DISPOSITIONS: readonly UserColumnDisposition[] = [
     column: schema.users.emailVerified,
     reason:
       'A property of the login, and clearing it would lock the account out of flows it has already passed.',
+  },
+  {
+    kind: 'keep',
+    column: schema.users.twoFactorEnabled,
+    reason:
+      'Whether sign-in asks for a second factor (SC-1646). A property of the login, kept with `user_two_factors`; clearing it alone would leave a secret the sign-in no longer asks for.',
   },
   {
     kind: 'keep',
@@ -421,6 +559,12 @@ export const USER_ROW_COLUMN_DISPOSITIONS: readonly UserColumnDisposition[] = [
     column: schema.users.activationNudgeSentAt,
     reason:
       'The once-only guard for the activation nudge. Clearing it would mail the nudge a second time to an account that has just emptied itself (SC-1503).',
+  },
+  {
+    kind: 'keep',
+    column: schema.users.appSeenAt,
+    reason:
+      'When the app was last open, stamped by the session rather than typed; it holds no portfolio content, and the login that remains goes on writing it (SC-1602).',
   },
   {
     kind: 'keep',

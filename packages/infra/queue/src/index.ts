@@ -18,12 +18,21 @@ export {
 } from './consumer/job-lock';
 export { LIFECYCLE_MIRROR, type LifecycleMirror } from './consumer/lifecycle-mirror';
 export { ResourceLock } from './consumer/resource-lock';
+export {
+  type GroupRunSummary,
+  ScheduledJobGroupProcessor,
+  type StepOutcome,
+  type StepStatus,
+} from './consumer/scheduled-job-group';
 export { ScheduledJobProcessor } from './consumer/scheduled-job-processor';
 export { UserJobProcessor } from './consumer/user-job-processor';
 export { WorkerClient } from './consumer/worker-client';
 export { DEFAULT_DLQ_NAME, DEFAULT_QUEUE_NAME } from './core/default-names';
 export type {
   ScheduledJobDescriptor,
+  ScheduledJobGroupDescriptor,
+  ScheduledJobGroupStep,
+  ScheduledJobStepDescriptor,
   UserJobDescriptor,
 } from './core/job-descriptor';
 export { reasonLine } from './core/reason-line';

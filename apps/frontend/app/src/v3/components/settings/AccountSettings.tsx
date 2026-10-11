@@ -88,7 +88,7 @@ export function AccountSettings() {
       setJobId(null);
       utils.invalidate();
       navigate(V3_BASE);
-    } else if (status.state === 'failed') {
+    } else if (status.finalFailure) {
       // A `string`, not `new Error(string)`. `showError` renders
       // `userFacingMessage`, for which a plain `Error` passes none of the three
       // doors — so wrapping this discarded it and every failed delete toasted
@@ -109,7 +109,7 @@ export function AccountSettings() {
     // `t` is a dependency: the effect fires a toast, and without it the
     // message keeps the language the effect was created in. A delete runs for
     // a while, which is exactly long enough for someone to change it.
-  }, [jobId, status.state, status.userFacingError, navigate, utils, t]);
+  }, [jobId, status.state, status.finalFailure, status.userFacingError, navigate, utils, t]);
 
   const deleting = deleteAll.isPending || jobId !== null || deleteAccount.isPending;
 

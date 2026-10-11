@@ -127,6 +127,12 @@ describe('resolveActiveV3Path', () => {
     expect(resolveActiveV3Path(V3_ROUTES.holdings)).toBe(V3_ROUTES.holdings);
   });
 
+  test('a Home tile peek keeps the Home tab lit (SC-1669)', () => {
+    expect(resolveActiveV3Path(`${V3_ROUTES.homePeek}/returns`)).toBe(V3_ROUTES.home);
+    // The control: a path that only starts with the same letters is not Home.
+    expect(resolveActiveV3Path('/homework')).not.toBe(V3_ROUTES.home);
+  });
+
   test('a detail page inherits the list it lives under', () => {
     expect(resolveActiveV3Path(`${V3_ROUTES.holdings}/abc123`)).toBe(V3_ROUTES.holdings);
   });
@@ -292,5 +298,18 @@ describe('the Files routes (V3-43)', () => {
     // — an unlit Money tab there would say the reader had left the section.
     expect(resolveActiveTabPath('/payments/recurring', '?vendor=v1')).toBe(V3_ROUTES.money);
     expect(resolveActiveV3Path('/payments/recurring')).toBe(V3_ROUTES.money);
+  });
+});
+
+describe('the ledger is reachable (SC-1652)', () => {
+  test('desktop lists Transactions under Activity', () => {
+    const activity = V3_SIDEBAR_SECTIONS.find(
+      (section) => section.titleKey === 'nav.sections.activity'
+    );
+    expect(activity?.items.map((item) => item.path)).toContain(V3_ROUTES.transactions);
+  });
+
+  test('the phone drawer lists it too, below the grid, so the grid keeps its six', () => {
+    expect(V3_DRAWER_SECONDARY.map((item) => item.path)).toContain(V3_ROUTES.transactions);
   });
 });

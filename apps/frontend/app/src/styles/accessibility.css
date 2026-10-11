@@ -55,18 +55,6 @@
   border: 0;
 }
 
-/* Show on focus for keyboard navigation */
-.sr-only:focus {
-  position: static;
-  width: auto;
-  height: auto;
-  padding: inherit;
-  margin: inherit;
-  overflow: visible;
-  clip: auto;
-  white-space: inherit;
-}
-
 /* Reduced motion support */
 @media (prefers-reduced-motion: reduce) {
   *,

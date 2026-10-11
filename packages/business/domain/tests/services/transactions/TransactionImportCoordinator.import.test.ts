@@ -23,8 +23,10 @@ import type { NoticeInput, TransactionEvent } from '@scani/providers/core/types'
 import { asc, eq, inArray, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
+import { LearnedCategoryRules } from '../../../src/services/categories/LearnedCategoryRules';
 import { FeedBatchRejected } from '../../../src/services/feeds/FeedIngestService';
 import { FoundationClassificationService } from '../../../src/services/foundation/FoundationClassificationService';
+import { BalanceAtTimeService } from '../../../src/services/pricing/BalanceAtTimeService';
 import { TokenIdentityService } from '../../../src/services/tokens/TokenIdentityService';
 import { TransactionImportCoordinator } from '../../../src/services/transactions/TransactionImportCoordinator';
 import { IntegrationCredentialsService } from '../../../src/services/users/IntegrationCredentialsService';
@@ -35,6 +37,14 @@ import { captureHistory } from '../../../test/helpers/history-neutrality';
 import { expectLabelsSettled } from '../../../test/helpers/labels-settled';
 
 restoreContainerAfterAll();
+
+/** Who the learned-category spread ran for (SC-1695); its own behaviour is tested beside it. */
+const learned: string[] = [];
+Container.set(LearnedCategoryRules, {
+  afterImport: async (userId: string) => {
+    learned.push(userId);
+  },
+} as unknown as LearnedCategoryRules);
 
 Container.set(IntegrationCredentialsService, {
   getDecryptedCredentials: async () => ({ apiKey: 'stub-key', apiSecret: 'stub-secret' }),
@@ -341,8 +351,10 @@ const HISTORY_INSTANTS = [
 describe('TransactionImportCoordinator.execute — a broker ledger', () => {
   test('the rows, the legs, the holdings, the coverage, the summary and the history', async () => {
     const { owner, manual, cash, cash2, stock } = await brokerLedger();
+    learned.length = 0;
 
     const result = await run({ ...owner, source: 'ibkr-api' });
+    expect(learned).toEqual([owner.userId]);
 
     const { accountHoldings, name, idOf } = await namedHoldings(owner.accountId, manual.id);
     const warning = mergeWarning(idOf(cash));
@@ -353,8 +365,9 @@ describe('TransactionImportCoordinator.execute — a broker ledger', () => {
       observations: 0,
       firstEventAt: at(1).toISOString(),
       lastEventAt: at(7).toISOString(),
-      // The opening the reconciler synthesized for the manual holding.
-      earliestWrittenAt: '2026-05-19T23:59:59.999Z',
+      // The first imported row. The manual holding's opening is recorded in
+      // coverage only, which no stored history reads, so it widens nothing (SC-1607).
+      earliestWrittenAt: at(1).toISOString(),
       hasCompleteTxHistory: true,
       warnings: [warning],
       warningDetails: [{ key: null, text: warning }],
@@ -363,10 +376,12 @@ describe('TransactionImportCoordinator.execute — a broker ledger', () => {
 
     // A created holding is a feed position starting at its earliest row (D-4,
     // D-6), and the person's row the import's matching fell back to is now a
-    // feed (the D-4 quirk, kept until A5). The three are created in one
+    // feed (A5 PR-5's ruling Q1(b), until SC-1628). The three are created in one
     // transaction, so they share a `created_at` and are read by name.
     const order = ['manual', cash, stock, cash2];
-    const createdHolding = { balance: '0', source: 'ingest-backfill', externalId: null };
+    // The import now applies (A5 D-18), so each cache reads what history reads
+    // at the last instant below, where it used to wait for the next write.
+    const createdHolding = { source: 'ingest-backfill', externalId: null };
     expect(
       accountHoldings
         .map((h) => ({
@@ -381,15 +396,15 @@ describe('TransactionImportCoordinator.execute — a broker ledger', () => {
     ).toEqual([
       {
         holding: 'manual',
-        balance: '5',
+        balance: '7',
         source: 'manual',
         externalId: null,
         kind: 'feed',
         startsAt: MANUAL_AT,
       },
-      { holding: cash, ...createdHolding, kind: 'feed', startsAt: at(1) },
-      { holding: stock, ...createdHolding, kind: 'feed', startsAt: at(3) },
-      { holding: cash2, ...createdHolding, kind: 'feed', startsAt: at(5) },
+      { holding: cash, balance: '7302', ...createdHolding, kind: 'feed', startsAt: at(1) },
+      { holding: stock, balance: '6', ...createdHolding, kind: 'feed', startsAt: at(3) },
+      { holding: cash2, balance: '500', ...createdHolding, kind: 'feed', startsAt: at(5) },
     ]);
 
     // The run's one input, and the window it read (D-7, D-11).
@@ -399,7 +414,7 @@ describe('TransactionImportCoordinator.execute — a broker ledger', () => {
     expect(input.source).toBe('ibkr-api');
     expect((await windowsOf(input.id)).map((w) => [w.fromAt, w.complete])).toEqual([[null, true]]);
 
-    // Every imported row carries the input (D-5); the reconciler's opening does not.
+    // Every imported row carries the input (D-5).
     const inputId: string | null = input.id;
     const row = (
       externalId: string,
@@ -418,12 +433,8 @@ describe('TransactionImportCoordinator.execute — a broker ledger', () => {
       swapGroupId: null,
       inputId,
     });
+    // The manual holding's opening of 3 is on coverage, not the ledger (A5).
     expect(await readLedger(owner.userId, name)).toEqual([
-      {
-        ...row('opening_balance', 'manual', 'opening_balance', '3'),
-        source: 'reconciliation-opening',
-        inputId: null,
-      },
       row('dep-1', cash, 'deposit', '10000'),
       row('buy-1', 'manual', 'buy', '2'),
       row('buy-1:fee', cash, 'fee', '-1', 'buy-1'),
@@ -464,7 +475,6 @@ describe('TransactionImportCoordinator.execute — a broker ledger', () => {
       feeQuantity: fee?.[1] ?? null,
     });
     expect(await readValuation(owner.userId)).toEqual([
-      valued('opening_balance'),
       valued('dep-1'),
       valued('buy-1', trade('500', '-1000', [cash, '-1'])),
       valued('buy-1:fee', { feeOf: 'buy-1' }),
@@ -480,7 +490,7 @@ describe('TransactionImportCoordinator.execute — a broker ledger', () => {
       valued('wd-1'),
     ]);
 
-    const coverage = (holding: string, first: Date, last: Date, opening: string) => ({
+    const coverage = (holding: string, first: Date, last: Date, opening: string | null) => ({
       holding,
       txSources: ['ibkr-api'],
       hasCompleteTxHistory: true,
@@ -506,36 +516,65 @@ describe('TransactionImportCoordinator.execute — a broker ledger', () => {
             [cash, cash2, 'manual', stock].indexOf(b.holding)
         )
     ).toEqual([
-      coverage(cash, at(1), at(7), '-7302'),
-      coverage(cash2, at(5), at(5), '-500'),
-      coverage('manual', new Date('2026-05-19T23:59:59.999Z'), at(2), '3'),
-      coverage(stock, at(3), at(4), '-6'),
+      // The opening is the cache less the ledger, and the cache is the engine's
+      // now (A5 D-18): a created holding holds its ledger's sum and needs none,
+      // where the placeholder 0 used to need minus its whole ledger.
+      coverage(cash, at(1), at(7), null),
+      coverage(cash2, at(5), at(5), null),
+      // No opening row: the first transaction is the buy itself (A5). What it
+      // held before the buy is its 05-20 reading of 5.
+      coverage('manual', at(2), at(2), '5'),
+      coverage(stock, at(3), at(4), null),
     ]);
 
-    // Golden figures, recorded on the code before the move.
+    // Golden figures. Since A5 PR-2 the engine reads them (D-10), and every
+    // move from the old walk's figures is named:
+    //   - an instant before a holding's start reads absent: manual's 05-19, and
+    //     each created holding before its first row;
+    //   - manual walks FORWARD from its 05-20 reading of 5 across the buy of 2,
+    //     where the old walk anchored on the stored 5 and never applied it;
+    //   - cash, stock and cash2 have no reading (the import opens them at a
+    //     placeholder 0), so each reads its ledger's sum. The ledger is
+    //     declared complete, so these are the true figures; the old walk
+    //     anchored on the placeholder and floored everything before it.
     const history = await captureHistory(order.map(idOf), HISTORY_INSTANTS);
     expect(history.map((h) => [name(h.holdingId), h.balance])).toEqual([
-      ['manual', '2'],
+      ['manual', null],
       ['manual', '5'],
-      ['manual', '5'],
-      ['manual', '5'],
-      ['manual', '5'],
-      [cash, '0'],
-      [cash, '0'],
-      [cash, '1697'],
-      [cash, '50'],
-      [cash, '0'],
-      [stock, '0'],
-      [stock, '0'],
-      [stock, '0'],
-      [stock, '0'],
-      [stock, '0'],
-      [cash2, '0'],
-      [cash2, '0'],
-      [cash2, '0'],
-      [cash2, '0'],
-      [cash2, '0'],
+      ['manual', '7'],
+      ['manual', '7'],
+      ['manual', '7'],
+      [cash, null],
+      [cash, null],
+      [cash, '8999'],
+      [cash, '7352'],
+      [cash, '7302'],
+      [stock, null],
+      [stock, null],
+      [stock, null],
+      [stock, '6'],
+      [stock, '6'],
+      [cash2, null],
+      [cash2, null],
+      [cash2, null],
+      [cash2, '500'],
+      [cash2, '500'],
     ]);
+
+    // The manual holding's first record is at midnight on 05-20. The opening
+    // row sat 1 ms before it, at 05-19's closing instant, so the holding used
+    // to be valued on 05-19, a day before anything recorded it. With no row
+    // there, 05-19 counts it absent and 05-20 is its first day (A5).
+    const balances = Container.get(BalanceAtTimeService);
+    const closeOf0519 = new Date(MANUAL_AT.getTime() - 1);
+    for (const instant of [HISTORY_INSTANTS[0]!, closeOf0519]) {
+      expect((await balances.getBalance(idOf('manual'), instant, undefined)).beforeRecords).toBe(
+        true
+      );
+    }
+    expect((await balances.getBalance(idOf('manual'), MANUAL_AT, undefined)).beforeRecords).toBe(
+      false
+    );
     await expectLabelsSettled(owner.userId);
   });
 
@@ -838,8 +877,10 @@ describe('TransactionImportCoordinator.execute — a run with something it canno
   test('a zero-event run records its input and window', async () => {
     const owner = await seed();
     serve({ institutionCode: 'binance', events: [] });
+    learned.length = 0;
 
     const result = await run({ ...owner, source: 'binance-api' });
+    expect(learned).toEqual([]);
 
     expect({ status: result.status, transactions: result.transactions }).toEqual({
       status: 'ok',

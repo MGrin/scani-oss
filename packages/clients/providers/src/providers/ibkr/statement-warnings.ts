@@ -1,5 +1,6 @@
 import type { JobNotice, JobNoticeList } from '../../core/types';
 import { englishList } from '../../core/utils/english-list';
+import { namedTypeCounts } from '../../core/utils/named-type-counts';
 
 /** One section of an Activity Flex Query. */
 export interface FlexSection {
@@ -95,9 +96,6 @@ export function describeMissingSections(missing: readonly WarnedFlexSection[]): 
   };
 }
 
-/** How many distinct type strings the warning names before it summarizes. */
-const TYPES_NAMED = 4;
-
 /**
  * Cash rows that arrived and could not be placed.
  *
@@ -116,21 +114,9 @@ const TYPES_NAMED = 4;
  * every plural is the client's `count` rather than an English suffix.
  */
 export function describeUnmappedCashTypes(counts: ReadonlyMap<string, number>): JobNotice | null {
-  if (counts.size === 0) return null;
-  const rows = [...counts.entries()].sort((a, b) => b[1] - a[1]);
-  const items: JobNotice[] = rows
-    .slice(0, TYPES_NAMED)
-    .map(([type, n]) => ({ key: null, text: `"${type}" (${n})` }));
-  const rest = rows.length - items.length;
-  if (rest > 0) {
-    items.push({
-      key: 'v3.jobs.notices.ibkrFurtherTypes',
-      params: { count: rest },
-      text: `${rest} further type${rest === 1 ? '' : 's'}`,
-    });
-  }
-  const types: JobNoticeList = { type: 'conjunction', items };
-  const total = rows.reduce((sum, [, n]) => sum + n, 0);
+  const named = namedTypeCounts(counts, 'v3.jobs.notices.ibkrFurtherTypes');
+  if (!named) return null;
+  const { types, total } = named;
   return {
     key: 'v3.jobs.notices.ibkrUnmappedCashTypes',
     params: { count: total },

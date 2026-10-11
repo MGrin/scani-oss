@@ -53,6 +53,9 @@ export const feedInputs = pgTable(
 // are reserved words; a NULL `from_at` is an unbounded start, and `to_at` is
 // never open. A fetch records at most one window, and an open start is a value
 // there: two NULL `from_at` are the same window.
+const FEED_WINDOW_SHAPES = ['balance-snapshot', 'statement-upload', 'transaction-run'] as const;
+export type FeedWindowShape = (typeof FEED_WINDOW_SHAPES)[number];
+
 export const feedInputWindows = pgTable(
   'feed_input_windows',
   {
@@ -65,6 +68,8 @@ export const feedInputWindows = pgTable(
     complete: boolean('complete').notNull(),
     fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull(),
     uploadRef: text('upload_ref'),
+    // NULL on rows written before SC-1665; the ledger read-through reads 'transaction-run' only.
+    shape: text('shape').$type<FeedWindowShape>(),
   },
   (table) => ({
     inputToIdx: index('idx_feed_input_windows_input_to').on(table.inputId, table.toAt.desc()),

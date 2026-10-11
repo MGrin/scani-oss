@@ -12,11 +12,18 @@ import {
 } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
-import { DRIFT_GROWTH_KIND, DRIFT_IN_KIND, DRIFT_OUT_KIND } from '../../lib/balances/drift-rows';
+import type { PriceAsk } from '../../engine/types';
+import {
+  DRIFT_GROWTH_KIND,
+  DRIFT_IN_KIND,
+  DRIFT_OUT_KIND,
+  isOpeningArrival,
+} from '../../lib/balances/drift-rows';
 import { sortLedgerEvents } from '../../lib/ledger-order';
 import {
   type CostBasisMethod,
   DEFAULT_COST_BASIS_METHOD,
+  drawPooled,
   EMPTY_SECTION_104_PLAN,
   type PlanAcquisition,
   type PlanDisposal,
@@ -29,14 +36,14 @@ import {
   type FeeValuation,
   type TxValuation,
   type ValuationBasis,
+  valuationInstantsOf,
   valueRowInBase,
   valueTradeFeeInBase,
   withTradeFee,
 } from '../../lib/tx-valuation';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
-import { PriceGraphService } from './PriceGraphService';
-import type { PriceLookup } from './PriceLookup';
+import { PriceReader, type PriceSeries } from './PriceReader';
 
 // FIFO lot tracking state. `cost` is the per-unit cost summed across
 // the lot's `qty`, denominated in the user's base currency at
@@ -149,6 +156,24 @@ export function historyCompletenessOf(
 }
 
 /**
+ * Every price a walk over these holdings reads. A caller walking several
+ * components loads one series over all of them with it.
+ */
+export function walkPriceAsks(
+  holdingIds: ReadonlyArray<string>,
+  txsByHolding: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>>,
+  heldTokenByHolding: ReadonlyMap<string, string>,
+  baseCurrencyId: string,
+  now: Date
+): PriceAsk[] {
+  return holdingIds.flatMap((holdingId) =>
+    (txsByHolding.get(holdingId) ?? []).flatMap((t) =>
+      valuationInstantsOf(t, baseCurrencyId, heldTokenByHolding.get(t.holdingId) ?? null, now)
+    )
+  );
+}
+
+/**
  * What the walk did with one outflow, and therefore why realized PnL moved —
  * or did not (SC-152).
  *
@@ -176,6 +201,10 @@ export function historyCompletenessOf(
  *   before the inflow occurred it is also simply correct, and it resolves
  *   itself the day the pair completes. Deliberately not `unreviewed`: the
  *   queue does not hold it, so there is nothing for a reader to go and answer.
+ * - `derivative_loss` — a `realized_pnl` loss (SC-1563): the result of a
+ *   derivatives position, paid in the margin coin. Its units leave at zero
+ *   proceeds and their cost is realized, as a standalone fee's is, but it is
+ *   not a charge and the ledger says so.
  */
 export type DisposalOutcome =
   | 'realized'
@@ -183,7 +212,8 @@ export type DisposalOutcome =
   | 'unreviewed'
   | 'retained'
   | 'awaiting_pair'
-  | 'fee';
+  | 'fee'
+  | 'derivative_loss';
 
 /**
  * Which of `txValueInBase`'s two routes produced a row's figure (SC-397).
@@ -318,8 +348,8 @@ const INFLOW_BUY_KINDS = new Set(['buy', 'swap_in']);
 // Other inflow kinds — deposits, rewards, airdrops, transfers in,
 // opening balances. Cost basis is the inflow's fair-market value at
 // receipt: priceNative when the importer recorded one, otherwise
-// the held token's spot price at occurredAt converted to base via
-// PriceGraphService. This is what brokerages and tax software call
+// the held token's spot price at occurredAt converted to base through
+// the walk's price series. This is what brokerages and tax software call
 // "FMV at receipt" — for stocks-as-rewards or fiat deposits it
 // produces a non-zero cost basis matching what the user effectively
 // "paid" for the position. Only when no price reference exists at
@@ -344,6 +374,14 @@ const INFLOW_OTHER_KINDS = new Set([
 // bought them, and the same money was cost twice (SC-1467).
 const OUTFLOW_SELL_KINDS = new Set(['sell', 'swap_out', 'settle_out']);
 const INCOME_KINDS = new Set(['reward', 'interest', 'airdrop', DRIFT_GROWTH_KIND]);
+/**
+ * A derivatives result settled in the margin coin (SC-1563). Its sign decides
+ * what it is: a gain arrives as income, like `interest`; a loss leaves at zero
+ * proceeds, like a standalone `fee` (`feeLeavingPool`).
+ */
+function isPnlGain(tx: HoldingTransaction): boolean {
+  return tx.kind === 'realized_pnl' && new Decimal(tx.quantity).isPositive();
+}
 function isSettlingFee(tx: HoldingTransaction, sameHoldingRowIds: ReadonlySet<string>): boolean {
   return tx.kind === 'fee' && flowRoleOfRow(tx, sameHoldingRowIds) === 'external';
 }
@@ -361,12 +399,15 @@ function isSettlingFee(tx: HoldingTransaction, sameHoldingRowIds: ReadonlySet<st
  *   is the exception: it is valued at par, so the walk realizes it there.
  *
  * A fee settling a trade on ANOTHER holding is the trade's (`isSettlingFee`).
+ * A `realized_pnl` loss is walked as `realize` (SC-1563).
  */
 function feeLeavingPool(
   tx: HoldingTransaction,
   sameHoldingRowIds: ReadonlySet<string>
 ): 'realize' | 'cut' | null {
-  if (tx.kind !== 'fee' || !new Decimal(tx.quantity).isNegative()) return null;
+  if (!new Decimal(tx.quantity).isNegative()) return null;
+  if (tx.kind === 'realized_pnl') return 'realize';
+  if (tx.kind !== 'fee') return null;
   if (!tx.settlesTransactionId) return 'realize';
   if (isSettlingFee(tx, sameHoldingRowIds)) return null;
   return sameHoldingRowIds.has(tx.settlesTransactionId) ? 'cut' : null;
@@ -641,7 +682,7 @@ const OUTFLOW_NEUTRAL_KINDS = new Set(['withdraw', 'transfer_out']);
  *   - A trade fee paid in a third token is valued, never disposed of
  *   - deposit / reward / airdrop / interest / transfer_in lots use
  *     fair-market value at receipt (priceNative when set, otherwise
- *     held-token spot price → base via PriceGraphService); only when
+ *     held-token spot price → base through the price series); only when
  *     no price reference exists do we fall back to a zero-cost lot
  *   - unlinked withdraw / transfer_out realize PnL at FMV (proceeds
  *     minus popped cost), treating the exit as a sale against the
@@ -649,7 +690,7 @@ const OUTFLOW_NEUTRAL_KINDS = new Set(['withdraw', 'transfer_out']);
  *     `walkComponent`) stay neutral — lots inherit to the destination
  *     holding intact.
  *
- * The `at`-time FX conversion runs through PriceGraphService so the
+ * The `at`-time FX conversion reads the walk's price series so the
  * cost basis is preserved in the user's home currency at the moment
  * of purchase — matches what a brokerage statement would show.
  */
@@ -657,19 +698,18 @@ const OUTFLOW_NEUTRAL_KINDS = new Set(['withdraw', 'transfer_out']);
 export class CostBasisService {
   private readonly txRepository = Container.get(HoldingTransactionRepository);
   private readonly holdingRepository = Container.get(HoldingRepository);
-  private readonly priceGraphService = Container.get(PriceGraphService);
-  // Keyed weakly on the snapshot, so the fees go when the rollup drops it.
-  private readonly tradeFeesBySnapshot = new WeakMap<
-    PriceLookup,
-    Map<string, FeeValuation | null>
-  >();
+  private readonly priceReader = Container.get(PriceReader);
+  // Keyed weakly on the series, so the fees go when the rollup drops it.
+  private readonly tradeFeesBySeries = new WeakMap<PriceSeries, Map<string, FeeValuation | null>>();
 
   async getCostBasis(
     holdingId: string,
     at: Date,
     baseCurrencyId: string,
     opts: {
-      priceLookup?: PriceLookup;
+      now?: Date;
+      /** Loaded over every instant this walk reads. Omitted, the walk loads one. */
+      prices?: PriceSeries;
       heldTokenId?: string;
       // Pre-loaded full tx history for this holding (sorted by
       // occurredAt ASC). Lets the rollup loop pay one DB read per
@@ -710,6 +750,7 @@ export class CostBasisService {
       ruleHiddenTxIds?: ReadonlySet<string>;
     }
   ): Promise<CostBasisAtTime> {
+    const now = opts.now ?? new Date();
     const [txs, heldTokenId] = await Promise.all([
       opts.txs
         ? Promise.resolve(filterTxsUpTo(opts.txs, at))
@@ -723,11 +764,12 @@ export class CostBasisService {
       txs,
       baseCurrencyId,
       heldTokenId,
-      opts.priceLookup,
+      opts.prices,
       opts.historyCompleteness,
       opts.collect,
       opts.method,
-      opts.ruleHiddenTxIds
+      opts.ruleHiddenTxIds,
+      now
     );
   }
 
@@ -736,11 +778,12 @@ export class CostBasisService {
     txs: ReadonlyArray<HoldingTransaction>,
     baseCurrencyId: string,
     heldTokenId: string | null,
-    priceLookup?: PriceLookup,
+    prices?: PriceSeries,
     historyCompleteness: HistoryCompleteness = 'unrecorded',
     collect?: DisposalLotMatch[],
     method: CostBasisMethod = DEFAULT_COST_BASIS_METHOD,
-    ruleHiddenTxIds: ReadonlySet<string> = NO_RULE_HIDDEN_TX_IDS
+    ruleHiddenTxIds: ReadonlySet<string> = NO_RULE_HIDDEN_TX_IDS,
+    now: Date = new Date()
   ): Promise<CostBasisAtTime> {
     const holdingId = txs[0]?.holdingId ?? SOLE_HOLDING;
     // A single shared lot pool is this signature's contract — it takes rows,
@@ -756,11 +799,12 @@ export class CostBasisService {
       new Map([[holdingId, rows]]),
       baseCurrencyId,
       heldTokenId === null ? new Map() : new Map([[holdingId, heldTokenId]]),
-      priceLookup,
+      prices,
       new Map([[holdingId, historyCompleteness]]),
       collect,
       method,
-      ruleHiddenTxIds
+      ruleHiddenTxIds,
+      now
     );
     const result = walked.get(holdingId);
     // `walkPool` emits a row for every holding it is asked about, so this
@@ -800,11 +844,12 @@ export class CostBasisService {
     at: Date,
     baseCurrencyId: string,
     heldTokenByHolding: ReadonlyMap<string, string>,
-    priceLookup?: PriceLookup,
+    prices?: PriceSeries,
     historyByHolding: ReadonlyMap<string, HistoryCompleteness> = new Map(),
     collect?: DisposalLotMatch[],
     method: CostBasisMethod = DEFAULT_COST_BASIS_METHOD,
-    ruleHiddenTxIds: ReadonlySet<string> = NO_RULE_HIDDEN_TX_IDS
+    ruleHiddenTxIds: ReadonlySet<string> = NO_RULE_HIDDEN_TX_IDS,
+    now: Date = new Date()
   ): Promise<Map<string, CostBasisAtTime>> {
     const upTo = new Map<string, ReadonlyArray<HoldingTransaction>>();
     for (const h of holdingIds) upTo.set(h, filterTxsUpTo(txsByHolding.get(h) ?? [], at));
@@ -814,11 +859,12 @@ export class CostBasisService {
       upTo,
       baseCurrencyId,
       heldTokenByHolding,
-      priceLookup,
+      prices,
       historyByHolding,
       collect,
       method,
-      ruleHiddenTxIds
+      ruleHiddenTxIds,
+      now
     );
   }
 
@@ -837,11 +883,12 @@ export class CostBasisService {
     txsByHolding: ReadonlyMap<string, ReadonlyArray<HoldingTransaction>>,
     baseCurrencyId: string,
     heldTokenByHolding: ReadonlyMap<string, string>,
-    priceLookup?: PriceLookup,
+    prices?: PriceSeries,
     historyByHolding: ReadonlyMap<string, HistoryCompleteness> = new Map(),
     collect?: DisposalLotMatch[],
     method: CostBasisMethod = DEFAULT_COST_BASIS_METHOD,
-    ruleHiddenTxIds: ReadonlySet<string> = NO_RULE_HIDDEN_TX_IDS
+    ruleHiddenTxIds: ReadonlySet<string> = NO_RULE_HIDDEN_TX_IDS,
+    now: Date = new Date()
   ): Promise<Map<string, CostBasisAtTime>> {
     // Flatten + globally order every tx in the component, in the canonical
     // ledger order (`lib/ledger-order.ts`). On equal timestamps an outflow
@@ -855,7 +902,17 @@ export class CostBasisService {
       hasTxByHolding.set(h, txs.length > 0);
       for (const tx of txs) events.push(tx);
     }
-    const ordered = deferEarlyArrivals(unlinkedArrivalsFirst(sortLedgerEvents(events)));
+    const ordered = deferEarlyArrivals(
+      unlinkedArrivalsFirst(openingsFirst(sortLedgerEvents(events)))
+    );
+    // One load over every instant the walk reads, whoever calls it.
+    const series =
+      prices ??
+      (await this.priceReader.series(
+        walkPriceAsks(holdingIds, txsByHolding, heldTokenByHolding, baseCurrencyId, now),
+        baseCurrencyId,
+        dbTx
+      ));
     const idsByHolding = rowIdsByHolding(ordered);
     const settlesTrade = (t: HoldingTransaction) =>
       isSettlingFee(t, idsByHolding.get(t.holdingId) ?? new Set());
@@ -876,7 +933,7 @@ export class CostBasisService {
     const tradeFee = (t: HoldingTransaction, heldTokenId: string | null) =>
       paidByOwnFeeRow.has(t.id)
         ? null
-        : this.tradeFeeInBase(dbTx, t, baseCurrencyId, heldTokenId, priceLookup);
+        : this.tradeFeeInBase(series, t, baseCurrencyId, heldTokenId, now);
     // Cash a trade settles against can go below zero (a margin debit, which
     // mgrin ruled is negative net worth). The pool cannot hold a negative lot,
     // so what an outflow spends past the open lots is held here as a SHORT, at
@@ -937,6 +994,10 @@ export class CostBasisService {
     // cost intact, so a stale valuation on the source is a fact about
     // the source's basis.
     const doubtByHolding = new Map<string, Doubt>();
+    // Units corrections up added with no price, per holding (SC-1563). A later
+    // correction down nets against them first: an owner who mistypes and then
+    // reverts removed units that were never priced, not real lots.
+    const unpricedCorrectionQty = new Map<string, Decimal>();
     // Attributed the same way and for the same reason: an unanswered exit is
     // a fact about the holding it left, and the queue row names that holding.
     const unreviewedByHolding = new Map<string, number>();
@@ -1026,15 +1087,15 @@ export class CostBasisService {
       if (hit !== undefined) return hit;
       const heldTokenId = heldTokenByHolding.get(tx.holdingId) ?? null;
       const value = withTradeFee(
-        await this.txValueInBase(
-          dbTx,
+        this.txValueInBase(
+          series,
           tx,
           new Decimal(tx.quantity).abs(),
           baseCurrencyId,
           heldTokenId,
-          priceLookup
+          now
         ),
-        await tradeFee(tx, heldTokenId),
+        tradeFee(tx, heldTokenId),
         WHOLE_ROW
       );
       acquisitionValues.set(tx.id, value);
@@ -1110,6 +1171,27 @@ export class CostBasisService {
       const heldTokenId = heldTokenByHolding.get(holdingId) ?? null;
 
       if (tx.kind === DRIFT_GROWTH_KIND && new Decimal(tx.quantity).isNegative()) continue;
+      // A correction restates a figure (SC-1563). Units it adds have no honest
+      // price: they open no lot, and while any are left the basis says it is
+      // incomplete rather than letting a later sale read them as gain. Units a
+      // correction removes were only ever a typo, so they net against those
+      // first and the rest leave at the pool's AVERAGE cost under every method:
+      // no lot is more theirs than another, and the cost per unit must not
+      // move. Nothing is realized either way.
+      if (tx.kind === 'correction') {
+        const unpriced = unpricedCorrectionQty.get(holdingId) ?? new Decimal(0);
+        if (new Decimal(tx.quantity).isPositive()) {
+          unpricedCorrectionQty.set(holdingId, unpriced.add(qtyAbs));
+          continue;
+        }
+        const netted = Decimal.min(unpriced, qtyAbs);
+        unpricedCorrectionQty.set(holdingId, unpriced.minus(netted));
+        const want = qtyAbs.minus(netted);
+        const drawn = drawPooled(lots, holdingId, want);
+        if (drawn.reduce((sum, l) => sum.add(l.qty), new Decimal(0)).lt(want))
+          doubtFor(holdingId).observe(null);
+        continue;
+      }
       // An unexplained fall is money out (mgrin, SC-1470): it leaves at pool
       // cost and realizes nothing, so it can be neither a gain nor a loss.
       if (tx.kind === DRIFT_OUT_KIND) {
@@ -1122,7 +1204,7 @@ export class CostBasisService {
         continue;
       }
 
-      if (INFLOW_BUY_KINDS.has(tx.kind) || INFLOW_OTHER_KINDS.has(tx.kind)) {
+      if (INFLOW_BUY_KINDS.has(tx.kind) || INFLOW_OTHER_KINDS.has(tx.kind) || isPnlGain(tx)) {
         const tgid = tx.transferGroupId;
         const buffered = tgid ? pending.get(tgid) : undefined;
         if (
@@ -1158,7 +1240,7 @@ export class CostBasisService {
         // lot then costs that much, so only its moves since are unrealized;
         // booked as cost alone, the income itself was in no PnL while Returns
         // counted it.
-        if (cost && INCOME_KINDS.has(tx.kind))
+        if (cost && (INCOME_KINDS.has(tx.kind) || isPnlGain(tx)))
           incomeByHolding.set(
             holdingId,
             (incomeByHolding.get(holdingId) ?? new Decimal(0)).add(cost.amount)
@@ -1192,8 +1274,8 @@ export class CostBasisService {
       // spends the cash the way `settle_out` does, not as a cost of the cash.
       if (OUTFLOW_SELL_KINDS.has(tx.kind) || settlesTrade(tx)) {
         const proceeds = withTradeFee(
-          await this.txValueInBase(dbTx, tx, qtyAbs, baseCurrencyId, heldTokenId, priceLookup),
-          await tradeFee(tx, heldTokenId),
+          this.txValueInBase(series, tx, qtyAbs, baseCurrencyId, heldTokenId, now),
+          tradeFee(tx, heldTokenId),
           WHOLE_ROW.neg()
         );
         doubtFor(holdingId).observe(proceeds);
@@ -1231,6 +1313,11 @@ export class CostBasisService {
         // Base cash carries its value as cost basis (SC-1467), so a commission's
         // cost kept on its lots would reach PnL on the next spend and again
         // through baseCashFees: there it is realized, once.
+        if (tx.kind === 'realized_pnl') {
+          addRealized(holdingId, cost.neg());
+          record(tx, qtyAbs, null, popped, 'derivative_loss');
+          continue;
+        }
         const baseCash = heldTokenByHolding.get(holdingId) === baseCurrencyId;
         if (feeOutcome === 'realize' || baseCash || !keepCostOnLots(lots, holdingId, cost)) {
           addRealized(holdingId, cost.neg());
@@ -1334,15 +1421,8 @@ export class CostBasisService {
             // The fee is the whole row's, so this share bears its part of it
             // and a share that realizes nothing bears none.
             const proceeds = withTradeFee(
-              await this.txValueInBase(
-                dbTx,
-                tx,
-                portion.qty,
-                baseCurrencyId,
-                heldTokenId,
-                priceLookup
-              ),
-              await tradeFee(tx, heldTokenId),
+              this.txValueInBase(series, tx, portion.qty, baseCurrencyId, heldTokenId, now),
+              tradeFee(tx, heldTokenId),
               portion.qty.div(qtyAbs).neg()
             );
             doubtFor(holdingId).observe(proceeds);
@@ -1414,15 +1494,8 @@ export class CostBasisService {
         }
         const popped = atPar(acc.holdingId, acc.qtyAbs, acc.popped, acc.tx.occurredAt);
         const proceeds = withTradeFee(
-          await this.txValueInBase(
-            dbTx,
-            acc.tx,
-            acc.qtyAbs,
-            baseCurrencyId,
-            acc.heldTokenId,
-            priceLookup
-          ),
-          await tradeFee(acc.tx, acc.heldTokenId),
+          this.txValueInBase(series, acc.tx, acc.qtyAbs, baseCurrencyId, acc.heldTokenId, now),
+          tradeFee(acc.tx, acc.heldTokenId),
           acc.qtyAbs.div(new Decimal(acc.tx.quantity).abs()).neg()
         );
         doubtFor(acc.holdingId).observe(proceeds);
@@ -1441,6 +1514,9 @@ export class CostBasisService {
       }
     }
     pendingRealization.clear();
+
+    for (const [h, unpriced] of unpricedCorrectionQty)
+      if (unpriced.gt(0)) doubtFor(h).observe(null);
 
     const out = new Map<string, CostBasisAtTime>();
     for (const h of holdingIds) {
@@ -1485,66 +1561,44 @@ export class CostBasisService {
    * answers to one question, and the difference would land as an unexplained
    * gap between the return figure and the gain beside it.
    */
-  private async txValueInBase(
-    dbTx: DatabaseTransaction | undefined,
+  private txValueInBase(
+    prices: PriceSeries,
     tx: HoldingTransaction,
     qtyAbs: Decimal,
     baseCurrencyId: string,
     heldTokenId: string | null,
-    priceLookup?: PriceLookup
-  ): Promise<TxValuation | null> {
-    return valueRowInBase(
-      this.priceGraphService,
-      dbTx,
-      tx,
-      qtyAbs,
-      baseCurrencyId,
-      heldTokenId,
-      priceLookup
-    );
+    now: Date
+  ): TxValuation | null {
+    return valueRowInBase(prices, tx, qtyAbs, baseCurrencyId, heldTokenId, now);
   }
 
   /**
    * This row's trade fee in base currency at `occurredAt` — see
-   * `valueTradeFeeInBase` — remembered for as long as `priceLookup` lives.
+   * `valueTradeFeeInBase` — remembered for as long as `prices` lives.
    *
-   * A fee is valued at its own row's instant, so one price snapshot gives it
-   * one answer however many times it is walked. The rollup walks every holding
+   * A fee is valued at its own row's instant, so one series gives it one
+   * answer however many times it is walked. The rollup walks every holding
    * once per day of its window, so valuing each fee afresh on each of those
-   * walks cost fees x days conversions — and a round trip each wherever the
-   * prefetch does not cover the pair (SC-1145). The answer is remembered, not
-   * approximated: a remembered fee is the value the first walk computed.
-   *
-   * Bypassed under a database transaction, for the reason `PriceHubResolver`
-   * bypasses its cache (SC-600): a value read through a transaction must not
-   * answer for a later read that is not in it.
+   * walks cost fees x days conversions (SC-1145). The answer is remembered,
+   * not approximated: a remembered fee is the value the first walk computed,
+   * from readings that cannot change while the series lives.
    */
-  private async tradeFeeInBase(
-    dbTx: DatabaseTransaction | undefined,
+  private tradeFeeInBase(
+    prices: PriceSeries,
     tx: HoldingTransaction,
     baseCurrencyId: string,
     heldTokenId: string | null,
-    priceLookup?: PriceLookup
-  ): Promise<FeeValuation | null> {
-    const value = () =>
-      valueTradeFeeInBase(
-        this.priceGraphService,
-        dbTx,
-        tx,
-        baseCurrencyId,
-        heldTokenId,
-        priceLookup
-      );
-    if (!priceLookup || dbTx !== undefined) return value();
-    let remembered = this.tradeFeesBySnapshot.get(priceLookup);
+    now: Date
+  ): FeeValuation | null {
+    let remembered = this.tradeFeesBySeries.get(prices);
     if (!remembered) {
       remembered = new Map();
-      this.tradeFeesBySnapshot.set(priceLookup, remembered);
+      this.tradeFeesBySeries.set(prices, remembered);
     }
     const key = `${tx.id}|${baseCurrencyId}|${heldTokenId}`;
     const hit = remembered.get(key);
     if (hit !== undefined) return hit;
-    const fee = await value();
+    const fee = valueTradeFeeInBase(prices, tx, baseCurrencyId, heldTokenId, now);
     remembered.set(key, fee);
     return fee;
   }
@@ -1557,7 +1611,8 @@ const WHOLE_ROW = new Decimal(1);
 // Two of them, both one-directional in their effect on reported gain: a
 // leg valued from a price beyond the staleness cap, and a leg nothing
 // could value at all (which books a zero-cost lot, so the whole disposal
-// becomes gain).
+// becomes gain). Units a `correction` added carry no price and open no
+// lot; while any are left they count as the second.
 class Doubt {
   stalePriced = false;
   unpriced = false;
@@ -1658,7 +1713,7 @@ function carriesAcross(
  * How far ahead of its departure a linked arrival may be stamped and still be
  * walked after it. Production's widest is 145 seconds (SC-1486).
  */
-const EARLY_ARRIVAL_WINDOW_MS = 10 * 60 * 1000;
+export const EARLY_ARRIVAL_WINDOW_MS = 10 * 60 * 1000;
 
 const isLinkedArrival = (tx: HoldingTransaction) =>
   tx.transferGroupId !== null && (tx.kind === 'transfer_in' || tx.kind === 'deposit');
@@ -1736,6 +1791,29 @@ const isUnlinkedLeg = (tx: HoldingTransaction) =>
  * a sale still cannot spend a buy stamped with it.
  */
 function unlinkedArrivalsFirst(ordered: HoldingTransaction[]): HoldingTransaction[] {
+  return firstWithinInstant(ordered, isUnlinkedLeg, (t) => t.kind === 'transfer_in');
+}
+
+/**
+ * At one instant on one holding, walks the drift opening before every other
+ * row (A5). See `isOpeningArrival`: with no stored opening row, a first record
+ * at 00:00Z puts the opening on that record's instant.
+ */
+function openingsFirst(ordered: HoldingTransaction[]): HoldingTransaction[] {
+  if (!ordered.some(isOpeningArrival)) return ordered;
+  return firstWithinInstant(ordered, () => true, isOpeningArrival);
+}
+
+/**
+ * At each instant, on each holding, puts the rows `among` picks and `first`
+ * picks ahead of the other rows `among` picks, into the slots those rows
+ * already held. Everything else stays where the ledger order put it.
+ */
+function firstWithinInstant(
+  ordered: HoldingTransaction[],
+  among: (tx: HoldingTransaction) => boolean,
+  first: (tx: HoldingTransaction) => boolean
+): HoldingTransaction[] {
   const out = ordered.slice();
   let start = 0;
   while (start < out.length) {
@@ -1745,17 +1823,14 @@ function unlinkedArrivalsFirst(ordered: HoldingTransaction[]): HoldingTransactio
     const slotsByHolding = new Map<string, number[]>();
     for (let i = start; i < end; i += 1) {
       const row = out[i];
-      if (!row || !isUnlinkedLeg(row)) continue;
+      if (!row || !among(row)) continue;
       const slots = slotsByHolding.get(row.holdingId) ?? [];
       slots.push(i);
       slotsByHolding.set(row.holdingId, slots);
     }
     for (const slots of slotsByHolding.values()) {
-      const legs = slots.map((i) => out[i] as HoldingTransaction);
-      const reordered = [
-        ...legs.filter((t) => t.kind === 'transfer_in'),
-        ...legs.filter((t) => t.kind === 'transfer_out'),
-      ];
+      const rows = slots.map((i) => out[i] as HoldingTransaction);
+      const reordered = [...rows.filter(first), ...rows.filter((t) => !first(t))];
       slots.forEach((slot, k) => {
         out[slot] = reordered[k] as HoldingTransaction;
       });
@@ -1803,9 +1878,20 @@ function shareOf(
   const fraction = arrivedQty.div(sent);
   const taken: ComponentLot[] = [];
   const left: ComponentLot[] = [];
-  for (const lot of buffered) {
-    const qty = lot.qty.mul(fraction);
-    const cost = lot.cost.mul(fraction);
+  // The share is exactly what arrived: a fraction like 3000/3700 does not
+  // terminate, and a share a hair short makes a later sale of the whole emit a
+  // shortfall priced as pure gain. The LARGEST lot takes the residual; a dust
+  // lot handed it could go negative (feeds, #23897).
+  const shares = buffered.map((lot) => lot.qty.mul(fraction));
+  const residual = arrivedQty.minus(shares.reduce((sum, qty) => sum.add(qty), new Decimal(0)));
+  let largest = 0;
+  for (const [index, lot] of buffered.entries()) {
+    if (lot.qty.gt(buffered[largest]?.qty ?? 0)) largest = index;
+  }
+  for (const [index, lot] of buffered.entries()) {
+    const share = shares[index] ?? new Decimal(0);
+    const qty = index === largest ? share.add(residual) : share;
+    const cost = lot.qty.isZero() ? new Decimal(0) : lot.cost.mul(qty.div(lot.qty));
     taken.push({ ...lot, qty, cost, holdingId });
     left.push({ ...lot, qty: lot.qty.minus(qty), cost: lot.cost.minus(cost) });
   }
@@ -1888,7 +1974,8 @@ function skippedOutcome(tx: HoldingTransaction): DisposalOutcome {
  * treats it as one.
  */
 function isPlannableAcquisition(tx: HoldingTransaction): boolean {
-  if (!INFLOW_BUY_KINDS.has(tx.kind) && !INFLOW_OTHER_KINDS.has(tx.kind)) return false;
+  if (!INFLOW_BUY_KINDS.has(tx.kind) && !INFLOW_OTHER_KINDS.has(tx.kind) && !isPnlGain(tx))
+    return false;
   if (new Decimal(tx.quantity).abs().isZero()) return false;
   return !(tx.transferGroupId !== null && (tx.kind === 'transfer_in' || tx.kind === 'deposit'));
 }

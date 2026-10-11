@@ -30,7 +30,7 @@ interface JobStateBadgeProps {
 
 export function JobStateBadge({ state, needsAction, failure }: JobStateBadgeProps) {
   const { t } = useTranslation();
-  // `--interactive`, the same accent `AttentionRow` spends on the home screen:
+  // `--interactive`, the same accent `NeedsYou` spends on the home screen:
   // the palette's rule is that the accent marks what you can act on, and this
   // is the only chip on the list that is an instruction.
   if (needsAction) {

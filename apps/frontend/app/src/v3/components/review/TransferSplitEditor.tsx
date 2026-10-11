@@ -9,16 +9,20 @@ import { AmountInput } from '@scani/ui/v3/components/AmountInput';
 import { Check } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
+  addDestinationRow,
   allocationHint,
   allocationOf,
   DECISION_LABELS,
   destinationLocation,
+  lastMoveIndex,
   remainderFor,
   SPLIT_LABELS,
   SPLIT_NOTE_KEY,
   type SplitDraftRow,
+  type SplitSubject,
   splitBlockers,
   splitConsequence,
+  takenDestinationKeys,
 } from '../../lib/transfer-review';
 import { FormActions, FormSheet } from '../form/FormSheet';
 import { TransferDestinationPicker } from './TransferDestinationPicker';
@@ -58,7 +62,7 @@ import { TransferDestinationPicker } from './TransferDestinationPicker';
  */
 
 interface TransferSplitEditorProps {
-  item: PendingTransferReview;
+  item: SplitSubject;
   rows: SplitDraftRow[];
   onChange: (rows: SplitDraftRow[]) => void;
   /** Whether a candidate deposit has been picked, which `Same money` needs. */
@@ -66,6 +70,8 @@ interface TransferSplitEditorProps {
   /** Holdings the `internal` part can move to (SC-187). */
   destinations: TransferDestination[];
   destinationsLoading: boolean;
+  /** What the total divides: a transaction, or a change in a balance (a gap). */
+  subject?: 'transfer' | 'change';
 }
 
 /**
@@ -82,6 +88,7 @@ export function TransferSplitSheet({
   error,
   ...editor
 }: TransferSplitEditorProps & {
+  item: PendingTransferReview;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSubmit: () => void;
@@ -118,13 +125,14 @@ export function TransferSplitSheet({
   );
 }
 
-function TransferSplitEditor({
+export function TransferSplitEditor({
   item,
   rows,
   onChange,
   hasMatch,
   destinations,
   destinationsLoading,
+  subject = 'transfer',
 }: TransferSplitEditorProps) {
   const { t } = useTranslation();
   const allocation = allocationOf(rows, item.quantity);
@@ -148,17 +156,20 @@ function TransferSplitEditor({
           const disabled = row.decision === 'paired' && !hasMatch;
           const rest = remainderFor(rows, index, item.quantity);
           const needsDestination = row.decision === 'internal' && row.amount.trim() !== '';
+          // A second destination is offered once this move has one (SC-1665).
+          const offersAnother =
+            row.decision === 'internal' &&
+            row.destination !== null &&
+            lastMoveIndex(rows) === index;
+          const inputId = `split-${item.transactionId}-${row.decision}-${index}`;
           return (
-            <div key={row.decision} className="flex flex-col gap-1">
+            <div key={`${row.decision}-${index}`} className="flex flex-col gap-1">
               <div className="flex items-center gap-2">
-                <label
-                  className="min-w-0 flex-1 text-body"
-                  htmlFor={`split-${item.transactionId}-${row.decision}`}
-                >
+                <label className="min-w-0 flex-1 text-body" htmlFor={inputId}>
                   {t(DECISION_LABELS[row.decision].triggerKey)}
                 </label>
                 <AmountInput
-                  id={`split-${item.transactionId}-${row.decision}`}
+                  id={inputId}
                   value={row.amount}
                   onValueChange={(value) => setAmount(index, value)}
                   decimalScale={decimalScale}
@@ -206,12 +217,24 @@ function TransferSplitEditor({
                   <TransferDestinationPicker
                     destinations={destinations}
                     tokenSymbol={item.tokenSymbol}
-                    groupName={`split-destination-${item.transactionId}`}
+                    groupName={`split-destination-${item.transactionId}-${index}`}
                     selected={row.destination}
                     onSelect={(destination) => setDestination(index, destination)}
                     isLoading={destinationsLoading}
+                    taken={takenDestinationKeys(rows, index)}
                   />
                 </div>
+              ) : null}
+              {offersAnother ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-11 self-start px-2 text-caption"
+                  onClick={() => onChange(addDestinationRow(rows))}
+                >
+                  {t('v3.review.transfer.split.addDestination')}
+                </Button>
               ) : null}
             </div>
           );
@@ -220,10 +243,12 @@ function TransferSplitEditor({
 
       <div className="flex items-baseline justify-between gap-3 border-t border-border pt-2">
         <span className="text-caption text-muted-foreground">
-          {t('v3.review.transfer.split.transferWas', {
-            amount: qtyLabel(item.quantity),
-            symbol: item.tokenSymbol,
-          })}
+          {t(
+            subject === 'change'
+              ? 'v3.review.transfer.split.changeWas'
+              : 'v3.review.transfer.split.transferWas',
+            { amount: qtyLabel(item.quantity), symbol: item.tokenSymbol }
+          )}
         </span>
         {hint === null ? (
           <span className="flex items-center gap-1 text-caption text-foreground">

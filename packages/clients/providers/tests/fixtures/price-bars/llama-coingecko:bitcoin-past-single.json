@@ -1,0 +1,16 @@
+{
+  "url": "https://coins.llama.fi/prices/historical/1783987200/coingecko:bitcoin?searchWidth=24h",
+  "fetchedAt": "2026-10-05T02:22:09.902199Z",
+  "status": 200,
+  "data": {
+    "coins": {
+      "coingecko:bitcoin": {
+        "symbol": "BTC",
+        "price": 754,
+        "timestamp": 1783987197,
+        "confidence": 100
+      }
+    }
+  },
+  "normalization": "Price values are synthetic integer ranks. Equal values and ordering are preserved across these fixtures; timestamps and response shape are recorded. Raw public responses are retained in the PR5 rehearsal evidence."
+}

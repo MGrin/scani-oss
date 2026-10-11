@@ -2,6 +2,7 @@ import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { Monitor } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import { formatRelative } from '../../lib/relative-time';
 import { summariseUserAgent } from '../../lib/settings';
 
@@ -42,6 +43,7 @@ interface SessionRowProps {
 }
 
 export function SessionRow({ session, isPending, onRevoke }: SessionRowProps) {
+  useRelativeTimeTick();
   const { t } = useTranslation();
   const [confirming, setConfirming] = useState(false);
   const device = summariseUserAgent(t, session.userAgent);

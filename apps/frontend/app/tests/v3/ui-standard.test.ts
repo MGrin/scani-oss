@@ -310,8 +310,10 @@ describe('UI standard (SC-1410)', () => {
     // editors into FormSheets.
     expect(found).toEqual({
       // Capture flows are pages by design (rule 7, `CaptureHeader`).
+      'pages/BudgetAppImportPage.tsx': 1,
       'pages/IntegrationConnectPage.tsx': 1,
       'pages/ManualEntryPage.tsx': 1,
+      'pages/ValuedAssetPage.tsx': 1,
       'pages/WalletImportPage.tsx': 1,
       // The component gallery shows every primitive on purpose.
       'pages/KitchenSinkPage.tsx': 1,
@@ -357,9 +359,18 @@ describe('UI standard (SC-1410)', () => {
       'components/review/BalanceGapAnswerFields.tsx': 1,
       // Settings is a form page of its own, and its fields auto-save.
       'components/settings/ProfileSettings.tsx': 1,
+      // A new agent token's name, typed once when it is created. No record
+      // is edited: a token is never renamed, only revoked (SC-1614).
+      'components/settings/AgentTokensSettings.tsx': 1,
+      // A household's name, typed once to create it, and an invitee's email,
+      // typed once per invite. No record is edited (SC-1647).
+      'components/settings/HouseholdSettings.tsx': 1,
       // A destructive action's chooser (rule 6): the box filters which payee
       // to merge in, and no value is typed into any record.
       'components/money/DuplicateVendorPicker.tsx': 1,
+      // A chooser rendered inside a peek or a FormSheet: its box filters the
+      // categories, or names a new one, and no record is edited in place (SC-1652).
+      'components/categories/CategoryPicker.tsx': 1,
       // A form page's own form: the import review edits every parsed row and
       // submits them once, as a capture page does.
       'components/jobs/ReviewHoldingsCard.tsx': 1,

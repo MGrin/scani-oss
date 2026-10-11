@@ -1,4 +1,5 @@
 import { AlertTriangle } from 'lucide-react';
+import { cn } from '../../../lib/cn';
 import { Button } from '../../../ui/button';
 import { describeQueryError } from '../../lib/errors';
 
@@ -19,15 +20,20 @@ interface QueryErrorProps {
   /** What failed to load, lowercase — "your portfolio", "upcoming payments". */
   subject: string;
   onRetry: () => void;
+  /** `inline` sits inside a `Block`, whose edge is already the panel's edge. */
+  variant?: 'block' | 'inline';
 }
 
-export function QueryError({ error, subject, onRetry }: QueryErrorProps) {
+export function QueryError({ error, subject, onRetry, variant = 'block' }: QueryErrorProps) {
   const copy = describeQueryError(error, subject);
 
   return (
     <div
       role="alert"
-      className="flex flex-col items-start gap-3 rounded-lg border border-border-strong bg-surface-1 p-4"
+      className={cn(
+        'flex flex-col items-start gap-3',
+        variant === 'block' && 'rounded-lg border border-border-strong bg-surface-1 p-4'
+      )}
     >
       <div className="flex items-start gap-3">
         <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-loss" aria-hidden="true" />

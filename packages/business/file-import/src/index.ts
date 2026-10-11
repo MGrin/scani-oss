@@ -1,9 +1,12 @@
+export type { BudgetAppRegisterParse } from './budget-app-register';
+export { parseBudgetAppRegister } from './budget-app-register';
 export { statementFeeFromRawPayload } from './csv-parser';
 export { statementPayee } from './statement-payee';
 export type {
   ParsedTransaction,
   ParseResult,
 } from './types';
+export type { BudgetAppAccount, BudgetAppRow, SkipReason } from './ynab-register';
 
 import { createComponentLogger } from '@scani/logging';
 import { AI_COLUMN_MAPPING_WARNING } from '@scani/shared';

@@ -61,7 +61,7 @@ import { ScrollBody } from './scroll-body';
  * installed PWA.
  */
 const DRAWER_HEIGHT =
-  'calc(100dvh - max(var(--scani-banner-offset, 0px), env(safe-area-inset-top, 0px)))';
+  'calc(100dvh - max(var(--scani-banner-offset, 0px), var(--scani-inset-top, env(safe-area-inset-top, 0px))))';
 
 const BottomDrawer = DrawerPrimitive.Root;
 const BottomDrawerPortal = DrawerPrimitive.Portal;
@@ -525,7 +525,7 @@ const BottomDrawerContent = React.forwardRef<
             // avoid. A caller that genuinely needs a different ceiling passes
             // `style.height`, which still wins via the spread below.
             height: keyboard
-              ? `min(${DRAWER_HEIGHT}, calc(${keyboard.height}px - max(var(--scani-banner-offset, 0px), env(safe-area-inset-top, 0px))))`
+              ? `min(${DRAWER_HEIGHT}, calc(${keyboard.height}px - max(var(--scani-banner-offset, 0px), var(--scani-inset-top, env(safe-area-inset-top, 0px)))))`
               : DRAWER_HEIGHT,
             // Standing on the keyboard rather than behind it (SC-1434).
             bottom: keyboard ? `${keyboard.bottom}px` : 0,

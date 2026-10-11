@@ -9,6 +9,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
+import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import { formatRelative } from '../../lib/relative-time';
 import { BALANCE_GAP_ANSWERED_PATH, BALANCE_GAP_REVIEW_PATH } from '../../lib/routes';
 
@@ -35,6 +36,7 @@ export function AnsweredBalanceGapList({
   items: AnsweredBalanceGap[];
   query: V3QueryState;
 }) {
+  useRelativeTimeTick();
   const { t } = useTranslation();
   const subject = (row: AnsweredBalanceGap) =>
     t('v3.review.balances.subject', { account: row.accountName, symbol: row.tokenSymbol });

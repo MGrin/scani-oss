@@ -41,6 +41,17 @@ export const pt: EmailStrings = {
       'Abra esta ligação no navegador onde começou. Só funciona uma vez e caduca dentro de 15 minutos.',
     textIgnore: 'Não pediu nada? Pode ignorar esta mensagem sem problema.',
   },
+  householdInvite: {
+    subject: '{inviter} convidou-o para um agregado familiar em {app}',
+    headline: 'Junte-se a {household}',
+    body: '{inviter} convidou-o a ver as contas que partilha em {household} em {app}. As suas contas continuam privadas, a menos que decida partilhá-las.',
+    button: 'Aceitar o convite',
+    preheader: '{inviter} convidou-o para {household} em {app}.',
+    textIntro: '{inviter} convidou-o para {household} em {app}.',
+    textBody:
+      'Inicie sessão com este endereço de email e depois aceite. As suas contas continuam privadas, a menos que as partilhe.',
+    expiry: 'O convite caduca dentro de 7 dias.',
+  },
   otp: {
     headline: {
       signIn: 'O seu código de acesso',

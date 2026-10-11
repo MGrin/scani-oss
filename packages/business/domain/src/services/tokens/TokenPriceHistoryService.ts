@@ -1,3 +1,4 @@
+import type { DatabaseTransaction } from '@scani/db';
 import {
   attributeDecimals,
   type Token,
@@ -5,6 +6,10 @@ import {
   type TokenPriceEditHistory,
 } from '@scani/db/schema';
 import { Container, Service } from 'typedi';
+import {
+  CUSTOM_TOKEN_TYPE_CODES,
+  VALUED_ASSET_TYPE_CODES,
+} from '../../lib/custom-token-visibility';
 import { TokenTypeRepository } from '../../repositories/EnumRepositories';
 import {
   TokenPriceEditHistoryRepository,
@@ -13,6 +18,7 @@ import {
 import { TokenPriceRepository } from '../../repositories/TokenPriceRepository';
 import { TokenRepository } from '../../repositories/TokenRepository';
 import { BaseService } from '../BaseService';
+import { HoldingCacheWriter } from '../feeds/HoldingCacheWriter';
 import { PriceWriter } from '../pricing/PriceWriter';
 
 // TokenPriceHistoryService — custom-token (private-company / other) CRUD
@@ -24,13 +30,14 @@ export class TokenPriceHistoryService extends BaseService {
   private readonly tokenPriceRepository = Container.get(TokenPriceRepository);
   private readonly tokenPriceEditHistoryRepository = Container.get(TokenPriceEditHistoryRepository);
   private readonly priceWriter = Container.get(PriceWriter);
+  private readonly valueCache = Container.get(HoldingCacheWriter);
 
   constructor() {
     super('TokenPriceHistoryService');
   }
 
   private isPrivateToken(typeCode: string): boolean {
-    return typeCode === 'private-company' || typeCode === 'other';
+    return (CUSTOM_TOKEN_TYPE_CODES as readonly string[]).includes(typeCode);
   }
 
   /**
@@ -45,15 +52,22 @@ export class TokenPriceHistoryService extends BaseService {
     data: {
       symbol: string;
       name: string;
-      typeCode: 'private-company' | 'other';
+      typeCode: (typeof CUSTOM_TOKEN_TYPE_CODES)[number];
       manualPrice: number;
       baseCurrencyCode: string;
       priceDescription?: string;
       description?: string;
       decimals?: number;
       iconUrl?: string | null;
+      /** Kept beside the provider namespaces, such as a valued asset's details (SC-1643). */
+      metadata?: Record<string, unknown>;
+      /** When the price holds from, if not now: a valued asset's purchase (SC-1643). */
+      priceAt?: Date;
     },
-    userId: string
+    userId: string,
+    // A caller that creates more than the token in one unit of work, such as a
+    // valued asset with its holding (SC-1643), passes its own transaction.
+    transaction?: DatabaseTransaction
   ): Promise<Token> {
     try {
       this.validateNonEmptyString(data.symbol, 'symbol');
@@ -67,7 +81,9 @@ export class TokenPriceHistoryService extends BaseService {
       const symbol = data.symbol.toUpperCase();
       const baseSymbol = data.baseCurrencyCode.toUpperCase();
 
-      return await this.withTransaction(async (tx) => {
+      const run = <T>(work: (tx: DatabaseTransaction) => Promise<T>) =>
+        transaction ? work(transaction) : this.withTransaction(work);
+      return await run(async (tx) => {
         const tokenType = await this.tokenTypeRepository.findByCode(data.typeCode, tx);
         this.assertExists(tokenType, `Token type '${data.typeCode}' not found`);
 
@@ -99,6 +115,7 @@ export class TokenPriceHistoryService extends BaseService {
           provider: 'manual',
           manual: { description: data.description || '' },
           validatedAt: new Date().toISOString(),
+          ...data.metadata,
         };
 
         const createdToken = await this.tokenRepository.create(
@@ -128,12 +145,12 @@ export class TokenPriceHistoryService extends BaseService {
         this.assertExists(createdToken, 'Failed to create custom token');
 
         const priceStr = data.manualPrice.toString();
-        const { written } = await this.priceWriter.writeManual(
+        const { written, changed } = await this.priceWriter.writeManual(
           {
             tokenId: createdToken.id,
             baseTokenId: baseCurrencyToken.id,
             price: priceStr,
-            at: new Date(),
+            at: data.priceAt ?? new Date(),
             granularity: 'intraday',
             source: 'manual',
           },
@@ -142,6 +159,7 @@ export class TokenPriceHistoryService extends BaseService {
         // Positive is checked above; the writer also refuses what the column
         // would, such as Infinity. No token is created without its price.
         if (written !== 1) throw new Error('manualPrice must be a positive number');
+        await this.valueCache.revalueAffected(changed, new Date(), { tx });
 
         await this.tokenPriceEditHistoryRepository.create(
           {
@@ -208,9 +226,15 @@ export class TokenPriceHistoryService extends BaseService {
 
         const tokenType = await this.tokenTypeRepository.findById(token.typeId, tx);
         this.assertExists(tokenType, `Token type ${token.typeId} not found`);
+        if ((VALUED_ASSET_TYPE_CODES as readonly string[]).includes(tokenType.code)) {
+          // Its value is its valuation history, in its own currency (SC-1643).
+          throw new Error(
+            `${token.symbol} is a ${tokenType.code}: change its value by adding a valuation.`
+          );
+        }
         if (!this.isPrivateToken(tokenType.code)) {
           throw new Error(
-            `Token ${token.symbol} (${tokenType.code}) is not a custom token — only 'private-company' and 'other' types support manual price editing.`
+            `Token ${token.symbol} (${tokenType.code}) is not a custom token — only custom types (${CUSTOM_TOKEN_TYPE_CODES.join(', ')}) support manual price editing.`
           );
         }
 
@@ -237,7 +261,7 @@ export class TokenPriceHistoryService extends BaseService {
         const previousBaseCurrencyId = latest?.baseTokenId ?? null;
         const newPriceStr = input.newPrice.toString();
 
-        const { written } = await this.priceWriter.writeManual(
+        const { written, changed } = await this.priceWriter.writeManual(
           {
             tokenId: token.id,
             baseTokenId: baseCurrencyToken.id,
@@ -249,6 +273,8 @@ export class TokenPriceHistoryService extends BaseService {
           tx
         );
         if (written !== 1) throw new Error('newPrice must be a positive number');
+        // A custom price never refreshes: the edit itself revalues (SC-1610).
+        await this.valueCache.revalueAffected(changed, new Date(), { tx });
 
         const historyRow = await this.tokenPriceEditHistoryRepository.create(
           {

@@ -124,12 +124,12 @@ describe('margin debt', () => {
   const inDebt = account({
     id: 'margin',
     name: 'Margin',
-    summary: { holdingsCount: 2, totalValue: '-500', marginDebt: '-2500' },
+    summary: { holdingsCount: 2, totalValue: '-500', totalDebt: '-2500' },
   });
   const clean = account({
     id: 'spot',
     name: 'Spot',
-    summary: { holdingsCount: 1, totalValue: '1200.50', marginDebt: '0' },
+    summary: { holdingsCount: 1, totalValue: '1200.50', totalDebt: '0' },
   });
 
   test('an account reads its debt, and a row without the field has none', () => {
@@ -161,12 +161,12 @@ describe('margin debt', () => {
   const ibkr = institution({
     id: 'ibkr',
     name: 'IBKR',
-    summary: { accountCount: 1, totalValue: '7500.10', marginDebt: '-2500.25' },
+    summary: { accountCount: 1, totalValue: '7500.10', totalDebt: '-2500.25' },
   });
   const kraken = institution({
     id: 'kraken',
     name: 'Kraken',
-    summary: { accountCount: 2, totalValue: '4000', marginDebt: '0' },
+    summary: { accountCount: 2, totalValue: '4000', totalDebt: '0' },
   });
 
   test('an institution reads its debt, and one with no summary has none', () => {

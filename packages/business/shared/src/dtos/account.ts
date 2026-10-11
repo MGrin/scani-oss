@@ -19,6 +19,8 @@ export const CreateAccountDto = z.object({
   name: z.string().min(1).max(100),
   typeId: z.string().uuid(),
   description: z.string().max(500).optional(),
+  // SC-1645: a code from `account_wrappers`; null or absent means general.
+  wrapper: z.string().max(40).nullable().optional(),
   // No `metadata`: server code reads keys in it (`userWalletId`,
   // `walletAddress`, `chainId`) as trusted, and no client sends any (SC-1341).
 });
@@ -26,16 +28,19 @@ export const CreateAccountDto = z.object({
 export type AccountWihSumaryDTO = Account & {
   summary: {
     holdingsCount: number;
-    /** Net: assets plus `marginDebt`. */
+    /** Net: assets plus `totalDebt`. */
     totalValue: string;
     /** Signed: `"0"`, or the negative sum of the account's debt holdings (SC-1463). */
-    marginDebt: string;
+    totalDebt: string;
   };
   groups: Array<{
     id: string;
     name: string;
     color?: string;
   }>;
+  /** The provider refused this account's key; its owner must reconnect (SC-1686).
+   *  `providerKey` names the connect page, null when no manifest matches. */
+  keyRejected: { providerKey: string | null } | null;
 };
 export type CreateAccountInput = z.infer<typeof CreateAccountDto>;
 
@@ -44,4 +49,5 @@ export const UpdateAccountDto = z.object({
   typeId: z.string().uuid().optional(),
   institutionId: z.string().uuid().optional(),
   description: z.string().max(500).optional().nullable(),
+  wrapper: z.string().max(40).nullable().optional(),
 });

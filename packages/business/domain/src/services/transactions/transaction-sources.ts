@@ -57,6 +57,12 @@ export const CEX_SOURCE_TO_INSTITUTION: Record<string, string> = {
  */
 export const GROSS_OF_OWN_FEE_SOURCES: ReadonlySet<string> = new Set(['kraken-api', 'bybit-api']);
 
+/**
+ * Sources whose withholding rows name the security that paid the dividend, so
+ * the import links each one to its dividend (SC-1644).
+ */
+export const WITHHOLDING_LINKED_SOURCES: ReadonlySet<string> = new Set(['ibkr-api']);
+
 export const SETTLEMENT_DERIVED_SOURCES: ReadonlySet<string> = new Set([
   'ibkr-api',
   'binance-api',

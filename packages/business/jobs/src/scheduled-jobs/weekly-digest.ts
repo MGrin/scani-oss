@@ -5,8 +5,9 @@ import { JOB_NAMES } from '../job-names';
 //
 // **Monday after the Sunday-night chain, not before it.** The digest quotes
 // `portfolio_value_daily` and computes its movers from the same table, which
-// the nightly rollup fills at 04:00 after the 03:00/03:30/03:45 backfills feed
-// it. Firing earlier would mail Saturday's figure and call it this week's.
+// the nightly group's rollup step fills after the backfill steps before it
+// (SC-1688). That group starts at 00:00, so 08:00 leaves hours of margin.
+// Firing earlier would mail Saturday's figure and call it this week's.
 //
 // **:00 rather than a quieter-looking minute.** The hourly jobs already wake
 // the database on the hour and the quarter-hour probes cluster on :00/:15/:30/

@@ -6,10 +6,11 @@ import Decimal from 'decimal.js';
 import { Container } from 'typedi';
 import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { DriftLedgerService } from '../../../src/services/returns/DriftLedgerService';
 import { ExternalFlowService } from '../../../src/services/returns/ExternalFlowService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { priceReaderStub } from '../../../test/helpers/price-series';
 
 /**
  * SC-1438: a swap leg is valued at the market value of the token that ARRIVED.
@@ -113,14 +114,14 @@ function makeService(rows: HoldingTransaction[], unpriced: string[] = []): Exter
       { id: ETH_HOLDING, tokenId: ETH },
     ],
   } as unknown as HoldingRepository);
-  Container.set(PriceGraphService, {
-    buildPriceLookup: async () => ({ covers: () => false }),
-    convert: async (amount: Decimal, from: string) => {
+  Container.set(
+    PriceReader,
+    priceReaderStub((amount: Decimal, from: string) => {
       if (unpriced.includes(from)) return null;
       const rate = RATES[from];
       return rate ? { amount: new Decimal(amount).mul(rate), stale: false } : null;
-    },
-  } as unknown as PriceGraphService);
+    })
+  );
   Container.set(DriftLedgerService, {
     forHoldings: async () => new Map(),
   } as unknown as DriftLedgerService);

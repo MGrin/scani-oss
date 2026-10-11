@@ -1,7 +1,7 @@
 import { createComponentLogger } from '@scani/logging';
 import type { Job } from 'bullmq';
 import { Container } from 'typedi';
-import type { ScheduledJobDescriptor } from '../core/job-descriptor';
+import type { ScheduledJobStepDescriptor } from '../core/job-descriptor';
 import { JOB_HEARTBEAT_WRITER, type JobHeartbeatWriter } from './job-heartbeat-writer';
 import { JOB_LOCK, type JobLock } from './job-lock';
 
@@ -16,11 +16,22 @@ const log = createComponentLogger('queue:scheduled-job-processor');
 // Reconcile-* style sweepers leave `lockName` undefined: they're
 // idempotent re-scans and a missed lock is fine.
 export abstract class ScheduledJobProcessor {
-  abstract readonly descriptor: ScheduledJobDescriptor;
+  abstract readonly descriptor: ScheduledJobStepDescriptor;
 
   protected abstract handle(job: Job): Promise<unknown>;
 
   async process(job: Job): Promise<unknown> {
+    return (await this.execute(job)).result;
+  }
+
+  // The same run as `process`, for a group step (SC-1688): it also says
+  // whether `handle` ran or another worker held the lock, which `process`
+  // cannot, since both return undefined.
+  async runAsStep(job: Job): Promise<{ ran: boolean }> {
+    return { ran: (await this.execute(job)).ran };
+  }
+
+  private async execute(job: Job): Promise<{ ran: boolean; result?: unknown }> {
     await this.applyJitter();
     const lockName = this.descriptor.lockName;
     const startedAt = new Date();
@@ -30,7 +41,7 @@ export abstract class ScheduledJobProcessor {
       if (!lockName) {
         const result = await this.handle(job);
         success = true;
-        return result;
+        return { ran: true, result };
       }
       const lock = this.tryGetLock();
       if (!lock) {
@@ -38,7 +49,7 @@ export abstract class ScheduledJobProcessor {
         // shared Postgres lock falls through here.
         const result = await this.handle(job);
         success = true;
-        return result;
+        return { ran: true, result };
       }
       const outcome = await lock.withLock(lockName, () => this.handle(job));
       if (!outcome.ran) {
@@ -50,10 +61,10 @@ export abstract class ScheduledJobProcessor {
         // owns the lock will record its own success heartbeat. We
         // don't update the heartbeat here so a stuck worker holding
         // the lock without progress is still detectable.
-        return undefined;
+        return { ran: false };
       }
       success = true;
-      return outcome.result;
+      return { ran: true, result: outcome.result };
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : String(err);
       throw err;

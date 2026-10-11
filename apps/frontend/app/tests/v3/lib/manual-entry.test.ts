@@ -14,6 +14,7 @@ import {
   type ManualEntryDraft,
   normalizeWebsite,
   repeatedHoldingTokenIds,
+  targetOwes,
 } from '@/v3/lib/manual-entry';
 
 // Resolved through the real instance against the shipped `en.json`.
@@ -186,6 +187,23 @@ describe('repeatedHoldingTokenIds', () => {
       // Never asked for, so never sent — otherwise a name typed while the rows
       // still collided would survive on a holding that ends up alone.
       { tokenId: 'tok-usd', label: undefined, balance: '3' },
+    ]);
+  });
+
+  // SC-1640. On a loan or card account the amount is what is owed: typed
+  // positive, stored negative.
+  test('on a liability account the owed amount is sent negative', () => {
+    const input = buildHoldingsBatchInput(
+      draft({
+        owes: true,
+        holdings: [
+          { uid: 'a', tokenId: 'tok-usd', tokenLabel: 'USD', balance: '480000', label: '' },
+        ],
+      }),
+      'req-1'
+    );
+    expect(input?.newHoldings).toEqual([
+      { tokenId: 'tok-usd', label: undefined, balance: '-480000' },
     ]);
   });
 
@@ -512,5 +530,36 @@ describe('amounts a new holding cannot have (SC-1527)', () => {
       'correct the amount for ETH — it is not a number Scani can read',
     ]);
     expect(buildHoldingsBatchInput(unreadable, 'req-1')).toBeNull();
+  });
+});
+
+describe('targetOwes (SC-1640)', () => {
+  const types = [
+    { id: 'ty-check', class: 'asset' },
+    { id: 'ty-mort', class: 'liability' },
+  ];
+  const accounts = [
+    { id: 'acc-mort', typeId: 'ty-mort' },
+    { id: 'acc-check', typeId: 'ty-check' },
+  ];
+
+  test('an existing account owes by its type, a new one by the type picked', () => {
+    const existing = (accountId: string) => ({
+      ...draft({}),
+      accountMode: 'existing' as const,
+      accountId,
+    });
+    expect(targetOwes(existing('acc-mort'), accounts, types)).toBe(true);
+    expect(targetOwes(existing('acc-check'), accounts, types)).toBe(false);
+    const fresh = (typeId: string) => {
+      const base = draft({});
+      return { ...base, accountMode: 'new' as const, newAccount: { ...base.newAccount, typeId } };
+    };
+    expect(targetOwes(fresh('ty-mort'), accounts, types)).toBe(true);
+    expect(targetOwes(fresh('ty-check'), accounts, types)).toBe(false);
+  });
+
+  test('nothing loaded yet reads as an asset, never as owed', () => {
+    expect(targetOwes(draft({}), undefined, undefined)).toBe(false);
   });
 });

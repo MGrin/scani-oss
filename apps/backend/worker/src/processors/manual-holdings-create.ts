@@ -55,6 +55,24 @@ const logger = createComponentLogger('processor:manual-holdings-create');
  * the refusal, and the paths that build it (worker) and reject on it (form)
  * are in different apps.
  */
+/**
+ * An update row reports the balance STORED after the commit, with the typed
+ * figure beside it. On a feed holding a typed value is kept as a check and the
+ * feed's figure stands (A5 D-20), so reporting the typed one would claim a
+ * save that did not happen.
+ */
+export function updateRowBalances(
+  updates: ReadonlyArray<{ holdingId: string; balance: string }>,
+  stored: ReadonlyMap<string, string>
+): Map<string, { balance: string; typedBalance: string }> {
+  return new Map(
+    updates.map((u) => [
+      u.holdingId,
+      { balance: stored.get(u.holdingId) ?? u.balance, typedBalance: u.balance },
+    ])
+  );
+}
+
 export function describeDuplicateHoldingTokens(labels: string[]): string {
   return `${labels.join(', ')} ${labels.length === 1 ? 'is' : 'are'} listed more than once under the same name, or already in this account. If these are separate pots, give each one a name; otherwise combine the rows or edit the existing holding instead.`;
 }
@@ -67,6 +85,9 @@ interface HoldingResultRow {
   typeCode: string;
   balance: string;
   isUpdate: boolean;
+  /** On an update, the figure the person entered. `balance` is what was
+   *  stored, and the two differ when a feed holding kept it as a check. */
+  typedBalance?: string;
   // `null` when the price fetch ran without error but no provider had a
   // quote and no stale fallback was usable. Undefined when the row
   // never reached pricing (e.g. failed earlier).
@@ -198,6 +219,7 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
       ...dbResult.updatedHoldingIds,
     ];
     const tokenIdByHoldingId = new Map<string, string>();
+    const storedBalanceById = new Map<string, string>();
     for (const h of dbResult.holdings) tokenIdByHoldingId.set(h.id, h.tokenId);
     if (dbResult.updatedHoldingIds.length > 0) {
       const updatedRows = await db
@@ -208,7 +230,10 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
         })
         .from(schema.holdings)
         .where(inArray(schema.holdings.id, dbResult.updatedHoldingIds));
-      for (const r of updatedRows) tokenIdByHoldingId.set(r.id, r.tokenId);
+      for (const r of updatedRows) {
+        tokenIdByHoldingId.set(r.id, r.tokenId);
+        storedBalanceById.set(r.id, r.balance);
+      }
     }
     const tokenIds = Array.from(new Set(tokenIdByHoldingId.values()));
     interface TokenInfo {
@@ -244,7 +269,8 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
     type SettlementRow = HoldingResultRow;
     const initialBalanceById = new Map<string, string>();
     for (const h of dbResult.holdings) initialBalanceById.set(h.id, h.balance);
-    for (const u of data.updateHoldings) initialBalanceById.set(u.holdingId, u.balance);
+    const updateBalances = updateRowBalances(data.updateHoldings, storedBalanceById);
+    for (const [id, { balance }] of updateBalances) initialBalanceById.set(id, balance);
 
     if (allAffectedHoldingIds.length > 0) {
       await ctx.reportStatus(
@@ -258,6 +284,7 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
         const tokenInfo = tokenInfoById.get(tokenId);
         const balance = initialBalanceById.get(holdingId) ?? '0';
         const isUpdate = !dbResult.holdings.some((h) => h.id === holdingId);
+        const typedBalance = updateBalances.get(holdingId)?.typedBalance;
         const baseRow: SettlementRow = {
           id: holdingId,
           tokenId,
@@ -266,6 +293,7 @@ export class ManualHoldingsCreateProcessor extends UserJobProcessor<
           typeCode: tokenInfo?.typeCode ?? 'other',
           balance,
           isUpdate,
+          ...(typedBalance === undefined ? {} : { typedBalance }),
         };
         if (tokenId === baseCurrencyTokenId) {
           return { ...baseRow, priceUsd: '1', priceSource: 'base-currency' };

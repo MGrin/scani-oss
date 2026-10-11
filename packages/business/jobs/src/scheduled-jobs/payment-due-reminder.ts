@@ -1,4 +1,4 @@
-import type { ScheduledJobDescriptor } from '@scani/queue';
+import type { ScheduledJobStepDescriptor } from '@scani/queue';
 import { JOB_NAMES } from '../job-names';
 
 // One push a day, at ~17:00 in the user's OWN local time, summarising the
@@ -11,16 +11,13 @@ import { JOB_NAMES } from '../job-names';
 // therefore reminded exactly once a day, by their own clock, and the job does
 // nothing at all for the other 23 fires of theirs.
 //
-// Minute 5 rather than 0: the quarter-hour-aligned probes already cluster on
-// :00/:15/:30/:45 so their advisory locks batch into one wake and Neon can
-// scale to zero between them. This reads payments and pushes, has no reason to
-// contend with them, and five minutes past the hour is still "around 5PM".
+// The last step of the `hourly` group (SC-1688), so it shares the hour's
+// wake and runs inside the same UTC hour it selects for: still "around 5PM".
 //
 // The advisory lock is what makes a retry safe: being told twice that $500 is
 // due tomorrow is worse than being told once, because the second one teaches
 // you to distrust the first.
-export const PAYMENT_DUE_REMINDER_SCHEDULE: ScheduledJobDescriptor = {
+export const PAYMENT_DUE_REMINDER_SCHEDULE: ScheduledJobStepDescriptor = {
   name: JOB_NAMES.paymentDueReminder,
-  cron: '5 * * * *',
   lockName: JOB_NAMES.paymentDueReminder,
 };

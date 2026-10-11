@@ -1,16 +1,16 @@
 import type { Decimal } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
-import { Block, BlockHeader } from '@scani/ui/v3/components/Block';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { peekOpenState, peekPath } from '@scani/ui/v3/lib/peek';
 import { CalendarClock } from 'lucide-react';
-import { useMemo } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { type BaseCurrencyRates, useBaseCurrencyRates } from '@/hooks/useBaseCurrencyRates';
 import { trpc } from '@/lib/trpc';
 import { formatDueIn, nextPayments } from '../../lib/home';
+import type { HomeCardQuery } from '../../lib/home-card';
 import {
   type EstimatedOccurrenceTotals,
   estimatedTotals,
@@ -25,6 +25,7 @@ import { historyEstimatesByPaymentId, todayDateString } from '../../lib/paymentT
 import { V3_ROUTES } from '../../lib/routes';
 import { BaseEquivalent } from '../BaseEquivalent';
 import { ConvertedFigure } from '../ConvertedFigure';
+import { HomeCard, type HomeCardVariant, RowsSkeleton } from './HomeCard';
 
 /**
  * What is due — V3-09's fifth block, moved out of `HomePage` unchanged so every
@@ -134,12 +135,76 @@ export function UpcomingFootLine({
   );
 }
 
+/**
+ * The block's card, by the state of its queries (SC-1667, SC-1668).
+ *
+ * "Nothing due" is a claim about a successful read, so it is rendered only
+ * from one: `HomeCard` holds a skeleton while loading and says a failed query
+ * could not load, with a retry. Both used to fall through to the empty copy
+ * and its "Add a payment", which a reader takes as no bills due. Exported for
+ * the reason `<UpcomingFootLine>` is: the block owns four tRPC queries, and
+ * this is the part a test can render.
+ */
+export function UpcomingCard({
+  queries,
+  empty,
+  rows,
+  foot,
+  variant = 'card',
+  tile,
+}: {
+  queries: readonly HomeCardQuery[];
+  variant?: HomeCardVariant;
+  /** The Bills tile: the 30-day total, and how many are due and when the next one is. */
+  tile?: () => { figure: ReactNode; caption?: ReactNode };
+  /** The bills query succeeded and nothing falls due in the window. */
+  empty: boolean;
+  /** The next bills, in place of the empty copy. */
+  rows: ReactNode;
+  /** The overdue and income lines: shown under either, since neither depends on bills being ahead. */
+  foot: ReactNode;
+}) {
+  const { t } = useTranslation();
+  return (
+    <HomeCard
+      title={t('v3.home.upcoming.title')}
+      subject={t('v3.home.upcoming.subject')}
+      href={V3_ROUTES.money}
+      action={t('v3.common.action.seeAll')}
+      queries={queries}
+      skeleton={<RowsSkeleton />}
+      variant={variant}
+      peekId="bills"
+      tile={tile}
+    >
+      {() => (
+        <>
+          {empty ? (
+            <div className="flex flex-col items-start gap-3 px-4 pb-4">
+              <p className="text-body text-muted-foreground">
+                {t('v3.home.upcoming.empty', { count: PAYMENTS_HORIZON_DAYS })}
+              </p>
+              <Button asChild variant="outline" size="sm">
+                <Link to={V3_ROUTES.recurring}>{t('v3.home.upcoming.addPayment')}</Link>
+              </Button>
+            </div>
+          ) : (
+            rows
+          )}
+          {foot}
+        </>
+      )}
+    </HomeCard>
+  );
+}
+
 interface UpcomingBlockProps {
   /** Fallback for an occurrence whose own currency token is unknown. */
   currency: string;
+  variant?: HomeCardVariant;
 }
 
-export function UpcomingBlock({ currency }: UpcomingBlockProps) {
+export function UpcomingBlock({ currency, variant = 'card' }: UpcomingBlockProps) {
   const { t } = useTranslation();
   // The income window, which is the longer one — the same query the Money tab
   // issues, so the two share a cache entry and can never disagree about the
@@ -158,7 +223,12 @@ export function UpcomingBlock({ currency }: UpcomingBlockProps) {
 
   const today = todayDateString();
   const { bills, income } = splitByDirection(payments.data ?? []);
-  const due = nextPayments(withinDays(bills, today, PAYMENTS_HORIZON_DAYS), today, PAYMENTS_SHOWN);
+  const ahead = nextPayments(
+    withinDays(bills, today, PAYMENTS_HORIZON_DAYS),
+    today,
+    Number.POSITIVE_INFINITY
+  );
+  const due = ahead.slice(0, PAYMENTS_SHOWN);
   const incomeTotals = occurrenceTotals(income);
   // `nextPayments` keeps only what is still ahead, so overdue bills were not
   // three rows down this block — they were absent from the home screen
@@ -174,6 +244,7 @@ export function UpcomingBlock({ currency }: UpcomingBlockProps) {
   // the home screen at all.
   const estimatedOverdue = estimatedTotals(overdue, historyEstimates);
   const estimatedIncome = estimatedTotals(income, historyEstimates);
+  const estimatedAhead = estimatedTotals(ahead, historyEstimates);
 
   const vendorNameById = new Map(
     (vendors.data ?? []).map((vendor) => [vendor.id, vendor.displayName])
@@ -185,28 +256,38 @@ export function UpcomingBlock({ currency }: UpcomingBlockProps) {
   // too, and a rate query that covered only the bills would leave it printing
   // a currency list under a screen full of converted numbers.
   const rates = useBaseCurrencyRates([
-    ...due.map((occurrence) => occurrence.payment.currencyTokenId),
+    ...ahead.map((occurrence) => occurrence.payment.currencyTokenId),
     ...overdue.map((occurrence) => occurrence.payment.currencyTokenId),
     ...income.map((occurrence) => occurrence.payment.currencyTokenId),
   ]);
 
   return (
-    <Block>
-      <BlockHeader
-        title={t('v3.home.upcoming.title')}
-        href={V3_ROUTES.money}
-        action={t('v3.common.action.seeAll')}
-      />
-      {due.length === 0 ? (
-        <div className="flex flex-col items-start gap-3 px-4 pb-4">
-          <p className="text-body text-muted-foreground">
-            {t('v3.home.upcoming.empty', { count: PAYMENTS_HORIZON_DAYS })}
-          </p>
-          <Button asChild variant="outline" size="sm">
-            <Link to={V3_ROUTES.recurring}>{t('v3.home.upcoming.addPayment')}</Link>
-          </Button>
-        </div>
-      ) : (
+    <UpcomingCard
+      queries={[payments, vendors, tokens, forecast]}
+      variant={variant}
+      tile={() => ({
+        figure: (
+          <>
+            {/* A bill priced from its own history counts 0 in the plain total
+                (SC-818), and the tile has no room for the card's exclusion
+                line, so the estimate is folded in and marked. */}
+            {estimatedAhead.count > 0 ? <span aria-hidden="true">≈ </span> : null}
+            <ConvertedFigure
+              totals={sumTotals(occurrenceTotals(ahead), estimatedAhead.totals)}
+              tokenSymbolById={tokenSymbolById}
+              rates={rates}
+            />
+          </>
+        ),
+        caption: ahead[0]
+          ? t('v3.home.upcoming.dueNext', {
+              count: ahead.length,
+              when: formatDueIn(ahead[0].dueDate, today, t).toLocaleLowerCase(),
+            })
+          : t('v3.home.upcoming.empty', { count: PAYMENTS_HORIZON_DAYS }),
+      })}
+      empty={due.length === 0}
+      rows={
         <DataRowList className="border-t border-border">
           {due.map((occurrence) => {
             const vendorName =
@@ -249,50 +330,62 @@ export function UpcomingBlock({ currency }: UpcomingBlockProps) {
             );
           })}
         </DataRowList>
-      )}
-
-      {/* One line, not three rows: "plan the income" is a question about a
+      }
+      foot={
+        <>
+          {/* One line, not three rows: "plan the income" is a question about a
           total over a horizon, and listing each expected payment as its own
           item is what put income among the chores in the first place. One
           *number* on that line, too — `<ConvertedFigure>` is the inline form of
           the conversion the Money tab's figures get, so an income invoice in
           another currency is folded in rather than trailing the line. */}
-      {overdue.length > 0 ? (
-        <UpcomingFootLine
-          label={t('v3.money.upcoming.overdueTotal', { count: overdue.length })}
-          totals={overdueTotals}
-          estimated={estimatedOverdue}
-          // The Money tab's overdue tile says this, and this line makes the
-          // same claim about the same set: bills already late, priced from a
-          // settlement rather than declared. SC-807 kept the COMMITTED
-          // headline's sentence off that tile because the two figures assert
-          // different things; here the two figures assert the same thing, and a
-          // second key with one meaning is a drift hazard — the day one is
-          // retranslated the home screen and the Money tab state different
-          // facts about the same bills.
-          exclusionKey="v3.money.upcoming.estimatedExcludedOverdue"
-          tokenSymbolById={tokenSymbolById}
-          rates={rates}
-        />
-      ) : null}
+          {overdue.length > 0 ? (
+            <UpcomingFootLine
+              label={t('v3.money.upcoming.overdueTotal', { count: overdue.length })}
+              totals={overdueTotals}
+              estimated={estimatedOverdue}
+              // The Money tab's overdue tile says this, and this line makes the
+              // same claim about the same set: bills already late, priced from a
+              // settlement rather than declared. SC-807 kept the COMMITTED
+              // headline's sentence off that tile because the two figures assert
+              // different things; here the two figures assert the same thing, and a
+              // second key with one meaning is a drift hazard — the day one is
+              // retranslated the home screen and the Money tab state different
+              // facts about the same bills.
+              exclusionKey="v3.money.upcoming.estimatedExcludedOverdue"
+              tokenSymbolById={tokenSymbolById}
+              rates={rates}
+            />
+          ) : null}
 
-      {income.length > 0 ? (
-        <UpcomingFootLine
-          delta
-          label={t('v3.home.upcoming.incomeExpected', { count: INCOME_HORIZON_DAYS })}
-          totals={incomeTotals}
-          estimated={estimatedIncome}
-          // Neither of the other two sentences fits a forecast. "An estimate is
-          // not a commitment" is false by category — nothing on an income
-          // figure is owed by the reader — and "its real amount is still
-          // unknown" is a statement about lateness that no income row makes.
-          // Shared with `<ExpectedIncome>` on the Money tab, which prints the
-          // same figure over the same 90-day set from the same query.
-          exclusionKey="v3.money.expectedIncome.estimatedExcluded"
-          tokenSymbolById={tokenSymbolById}
-          rates={rates}
-        />
-      ) : null}
-    </Block>
+          {income.length > 0 ? (
+            <UpcomingFootLine
+              delta
+              label={t('v3.home.upcoming.incomeExpected', { count: INCOME_HORIZON_DAYS })}
+              totals={incomeTotals}
+              estimated={estimatedIncome}
+              // Neither of the other two sentences fits a forecast. "An estimate is
+              // not a commitment" is false by category — nothing on an income
+              // figure is owed by the reader — and "its real amount is still
+              // unknown" is a statement about lateness that no income row makes.
+              // Shared with `<ExpectedIncome>` on the Money tab, which prints the
+              // same figure over the same 90-day set from the same query.
+              exclusionKey="v3.money.expectedIncome.estimatedExcluded"
+              tokenSymbolById={tokenSymbolById}
+              rates={rates}
+            />
+          ) : null}
+        </>
+      }
+    />
   );
+}
+
+function sumTotals(
+  a: ReadonlyMap<string, Decimal>,
+  b: ReadonlyMap<string, Decimal>
+): Map<string, Decimal> {
+  const sum = new Map(a);
+  for (const [token, amount] of b) sum.set(token, sum.get(token)?.plus(amount) ?? amount);
+  return sum;
 }

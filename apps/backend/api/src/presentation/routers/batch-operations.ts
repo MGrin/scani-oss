@@ -1,5 +1,10 @@
 import { AccountRepository, HoldingRepository } from '@scani/domain/repositories';
-import { CreateHoldingsWithDependenciesUseCase } from '@scani/domain/use-cases';
+import { PricingService } from '@scani/domain/services';
+import {
+  CreateHoldingsWithDependenciesUseCase,
+  DuplicateHoldingTokenError,
+  UpdateHoldingPriceUseCase,
+} from '@scani/domain/use-cases';
 import { MANUAL_HOLDINGS_CREATE } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
@@ -13,7 +18,9 @@ import {
 import { TRPCError } from '@trpc/server';
 import Container from 'typedi';
 import { z } from 'zod';
+import { rethrowAccountRefusal } from '../lib/account-refusal';
 import { refuseHeldDuplicates } from '../lib/held-duplicates';
+import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
 import { strictInput } from '../lib/strict-input';
 import { assertTokensVisible } from '../lib/token-visibility';
 import { requireAuth } from '../middleware/auth';
@@ -102,6 +109,69 @@ export const batchOperationsRouter = router({
         parentJobIdToStampOnSuccess: input.parentJobIdToStampOnSuccess,
       });
       return { jobId };
+    }),
+
+  /**
+   * The same create, in the request rather than a job (SC-1617), for an
+   * agent: its change is recorded as the rows it wrote, so the write has to
+   * have finished when the call returns. Existing account only, and pricing
+   * is best-effort, as in the job.
+   */
+  createHoldingsNow: protectedProcedure
+    .input(
+      strictInput(
+        z.object({
+          accountId: z.string().uuid(),
+          newHoldings: z.array(newHoldingInputSchema).min(1).max(20),
+        })
+      )
+    )
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      if (!dbUser.baseCurrencyId) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Set a base currency first' });
+      }
+      const tokenIds = input.newHoldings.map((h) => h.tokenId);
+      await assertTokensVisible(dbUser.id, tokenIds);
+      await refuseHeldDuplicates(dbUser.id, input.accountId, input.newHoldings);
+      const created = await Container.get(CreateHoldingsWithDependenciesUseCase)
+        .execute({ accountId: input.accountId, holdings: input.newHoldings }, dbUser)
+        .catch((error: unknown) => {
+          if (error instanceof DuplicateHoldingTokenError) {
+            throw new TRPCError({ code: 'BAD_REQUEST', message: error.message });
+          }
+          throw error;
+        });
+      const base = await Container.get(PricingService).baseToken(dbUser.baseCurrencyId);
+      const priced = await Promise.all(
+        created.holdings.map(async (h) => {
+          if (h.tokenId === base.id) return { holdingId: h.id, priced: true };
+          try {
+            await Container.get(UpdateHoldingPriceUseCase).execute(h.id, dbUser.id, base);
+            return { holdingId: h.id, priced: true };
+          } catch {
+            return { holdingId: h.id, priced: false };
+          }
+        })
+      );
+      for (const h of created.holdings) {
+        emitEntityChange({
+          entityType: 'holding',
+          operationType: 'create',
+          entityId: h.id,
+          userId: dbUser.id,
+        });
+      }
+      void enqueuePortfolioRollup(dbUser.id);
+      return {
+        accountId: created.accountId,
+        holdings: created.holdings.map((h) => ({
+          id: h.id,
+          tokenId: h.tokenId,
+          balance: h.balance,
+          priced: priced.find((p) => p.holdingId === h.id)?.priced ?? false,
+        })),
+      };
     }),
 
   /**
@@ -195,14 +265,9 @@ export const batchOperationsRouter = router({
           };
         }
       }
-      const result = await Container.get(CreateHoldingsWithDependenciesUseCase).execute(
-        {
-          institution: input.institution,
-          account: input.account,
-          holdings: [],
-        },
-        dbUser
-      );
+      const result = await Container.get(CreateHoldingsWithDependenciesUseCase)
+        .execute({ institution: input.institution, account: input.account, holdings: [] }, dbUser)
+        .catch(rethrowAccountRefusal);
       if (result.createdInstitution && result.institutionId) {
         emitEntityChange({
           entityType: 'institution',

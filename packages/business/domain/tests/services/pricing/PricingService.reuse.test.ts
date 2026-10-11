@@ -1,12 +1,12 @@
 /**
- * What `PricingService` reads from `token_prices` before it asks a provider
- * (foundation A3, Tasks 5 and 8).
+ * What `PricingService` reads from `token_prices` around asking a provider
+ * (foundation A3, Tasks 5, 8 and 18).
  *
- * `getTokenPrices`, the batch path, reuses a stored row only inside the window
- * its caller gives: the import warm-up gives one hour, and the hourly run
- * gives none, so it reads nothing stored (D-6). The single-token path,
- * `getTokenPrice`, which the refresh button and the vault take, keeps a window
- * of an hour either side of the time asked.
+ * `fetchUnlessCurrent`, which the import warm-up and the refresh button take,
+ * leaves a token unasked when it has a reading against USD under an hour old
+ * or a price a person typed. `getTokenPrices`, the hourly run's call, reads
+ * nothing stored before it asks (D-6), and falls back to the last reading in
+ * the base it was given only for a token no provider answered.
  *
  * The service reads and writes through the global connection, so every row
  * here is committed and removed after each test.
@@ -20,10 +20,10 @@ import type { CurrentPriceProvider } from '@scani/providers/core/capabilities';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { and, asc, eq } from 'drizzle-orm';
 import { Container } from 'typedi';
-import { CurrencyConverter } from '../../../src/services/pricing/CurrencyConverter';
+import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWriter';
 import { PricingProviderRouter } from '../../../src/services/pricing/PricingProviderRouter';
 import { PricingService } from '../../../src/services/pricing/PricingService';
-import { LIVE_PRICE_WINDOW_MS } from '../../../src/services/pricing/price-windows';
+import { ACTIVE_PRICE_WINDOW_MS } from '../../../src/services/pricing/price-windows';
 import { committedRows, dropPricesOf } from '../../../test/helpers/committed-rows';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 import { makeToken } from '../../../test/helpers/factories-extra';
@@ -32,8 +32,6 @@ restoreContainerAfterAll();
 
 const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
-/** What the import warm-up passes. */
-const WARM_UP = { reuseStoredWithinMs: LIVE_PRICE_WINDOW_MS };
 
 const rows = committedRows();
 let fiatTypeId: string;
@@ -76,10 +74,14 @@ function storedFor(tokenId: string, baseTokenId: string) {
 
 /**
  * A `PricingService` whose only provider is CoinGecko in the registry, which
- * answers every token with 200 stamped at the run's clock and records what it
- * was asked. A fresh converter, so no rate cached by another test is read.
+ * records what it was asked and answers every token but the `declined` with
+ * 200 stamped at the run's clock. The router does not consult `canPrice`, so a
+ * declined token is asked and gets no quote.
  */
-function pricingService(): { service: PricingService; asked: string[] } {
+function pricingService(declined: readonly string[] = []): {
+  service: PricingService;
+  asked: string[];
+} {
   const asked: string[] = [];
   const coingecko: CurrentPriceProvider = {
     providerKey: 'coingecko',
@@ -87,12 +89,14 @@ function pricingService(): { service: PricingService; asked: string[] } {
     canPrice: () => true,
     fetchCurrentPrice: async (token, ctx) => {
       asked.push(token.id);
+      if (declined.includes(token.id)) return null;
       return {
         tokenId: token.id,
         baseTokenId: ctx.baseCurrency.id,
         price: '200',
         timestamp: ctx.timestamp ?? new Date(),
         source: 'coingecko',
+        barDay: null,
       };
     },
   };
@@ -100,14 +104,43 @@ function pricingService(): { service: PricingService; asked: string[] } {
   registry.register(coingecko);
   Container.set(ProviderRegistry, registry);
   Container.set(PricingProviderRouter, new PricingProviderRouter());
-  Container.set(CurrencyConverter, new CurrencyConverter());
   return { service: new PricingService(), asked };
 }
 
-describe('PricingService.getTokenPrices one-hour reuse, for a caller that asks for it', () => {
-  test('a row stamped one hour before the run is reused: no provider call', async () => {
+/** The fiat USD the migrations seed: what the warm-up and the refresh ask against. */
+function usd(): Promise<Token> {
+  return new PricingService().baseToken();
+}
+
+describe('PricingService.fetchUnlessCurrent, the warm-up and the refresh', () => {
+  test('the quarter-hour window re-asks what the previous run fetched; a 15-minute one would skip it (SC-1602)', async () => {
     const token = await commitToken();
-    const base = await commitToken('fiat');
+    const base = await usd();
+    const previousRun = new Date(Date.UTC(2026, 9, 7, 12, 18, 0));
+    const thisRun = new Date(previousRun.getTime() + 15 * MINUTE);
+    // The previous run's answer, stamped when it arrived, seconds into that run.
+    await commitPrices([
+      {
+        tokenId: token.id,
+        baseTokenId: base.id,
+        price: '100',
+        timestamp: new Date(previousRun.getTime() + 5_000),
+        source: 'coingecko',
+      },
+    ]);
+
+    const fifteen = pricingService();
+    await fifteen.service.fetchUnlessCurrent([token], thisRun, 15 * MINUTE);
+    expect(fifteen.asked).toEqual([]);
+
+    const active = pricingService();
+    await active.service.fetchUnlessCurrent([token], thisRun, ACTIVE_PRICE_WINDOW_MS);
+    expect(active.asked).toEqual([token.id]);
+  });
+
+  test('a USD reading stamped one hour before is current: no provider call', async () => {
+    const token = await commitToken();
+    const base = await usd();
     const run = new Date();
     await commitPrices([
       {
@@ -120,16 +153,39 @@ describe('PricingService.getTokenPrices one-hour reuse, for a caller that asks f
     ]);
     const { service, asked } = pricingService();
 
-    const prices = await service.getTokenPrices([token], base, run, WARM_UP);
+    await service.fetchUnlessCurrent([token], run);
 
-    expect(prices.get(token.id)).toBe('100');
     expect(asked).toEqual([]);
     expect(await storedFor(token.id, base.id)).toHaveLength(1);
   });
 
-  test('a row stamped 61 minutes before the run is fetched', async () => {
+  // The quarter-hour run's cache writes are counted apart from the hourly
+  // run's, so its share of SC-1610's writes per day can be read (SC-1610).
+  test.each([
+    ['the writes the cache made', async () => ['h1', 'h2'], 2],
+    ['0 when the cache write fails', async () => Promise.reject(new Error('down')), 0],
+  ] as const)('reports %s', async (_, revalueAffected, cacheWrites) => {
     const token = await commitToken();
-    const base = await commitToken('fiat');
+    const base = await usd();
+    const run = new Date();
+    await commitPrices([
+      {
+        tokenId: token.id,
+        baseTokenId: base.id,
+        price: '100',
+        timestamp: new Date(run.getTime() - 61 * MINUTE),
+        source: 'coingecko',
+      },
+    ]);
+    Container.set(HoldingCacheWriter, { revalueAffected } as unknown as HoldingCacheWriter);
+    const { service } = pricingService();
+
+    expect(await service.fetchUnlessCurrent([token], run)).toEqual({ asked: 1, cacheWrites });
+  });
+
+  test('a USD reading stamped 61 minutes before is fetched, and the answer lands at the run', async () => {
+    const token = await commitToken();
+    const base = await usd();
     const run = new Date();
     await commitPrices([
       {
@@ -142,30 +198,38 @@ describe('PricingService.getTokenPrices one-hour reuse, for a caller that asks f
     ]);
     const { service, asked } = pricingService();
 
-    const prices = await service.getTokenPrices([token], base, run, WARM_UP);
+    await service.fetchUnlessCurrent([token], run);
 
-    expect(prices.get(token.id)).toBe('200');
     expect(asked).toEqual([token.id]);
     const stored = await storedFor(token.id, base.id);
     expect(stored.map((r) => r.price)).toEqual(['100', '200']);
     expect(stored[1]?.timestamp.getTime()).toBe(run.getTime());
   });
 
-  test('a manual row is reused whatever its age', async () => {
-    const manual = await commitToken();
+  test('a price a person typed is current whatever its age, in any base', async () => {
+    const typedInUsd = await commitToken();
+    const typedElsewhere = await commitToken();
     const marketPriced = await commitToken();
-    const base = await commitToken('fiat');
+    const base = await usd();
+    const other = await commitToken('fiat');
     const run = new Date();
     const monthAgo = new Date(run.getTime() - 30 * DAY);
     await commitPrices([
       {
-        tokenId: manual.id,
+        tokenId: typedInUsd.id,
         baseTokenId: base.id,
         price: '100',
         timestamp: monthAgo,
         source: 'manual',
       },
-      // CONTROL: the same age from a provider is not reused, so the provider was reachable.
+      {
+        tokenId: typedElsewhere.id,
+        baseTokenId: other.id,
+        price: '100',
+        timestamp: monthAgo,
+        source: 'manual',
+      },
+      // CONTROL: the same age from a provider is not current, so the provider was reachable.
       {
         tokenId: marketPriced.id,
         baseTokenId: base.id,
@@ -176,51 +240,45 @@ describe('PricingService.getTokenPrices one-hour reuse, for a caller that asks f
     ]);
     const { service, asked } = pricingService();
 
-    const prices = await service.getTokenPrices([manual, marketPriced], base, run, WARM_UP);
+    await service.fetchUnlessCurrent([typedInUsd, typedElsewhere, marketPriced], run);
 
-    expect(prices.get(manual.id)).toBe('100');
-    expect(prices.get(marketPriced.id)).toBe('200');
     expect(asked).toEqual([marketPriced.id]);
-    expect(await storedFor(manual.id, base.id)).toHaveLength(1);
   });
 
-  test('a fresh row in another base is converted, and no row is written in the base asked', async () => {
+  test('a fresh provider reading in another base is not current: the provider is asked against USD', async () => {
     const token = await commitToken();
-    const requested = await commitToken('fiat');
+    const base = await usd();
     const other = await commitToken('fiat');
     const run = new Date();
-    const tenMinutesAgo = new Date(run.getTime() - 10 * MINUTE);
     await commitPrices([
       {
         tokenId: token.id,
         baseTokenId: other.id,
         price: '100',
-        timestamp: tenMinutesAgo,
+        timestamp: new Date(run.getTime() - 10 * MINUTE),
         source: 'coingecko',
-      },
-      // The rate the converter reads: one unit of `other` is three of
-      // `requested`, so the converted 300 is not the provider's 200.
-      {
-        tokenId: other.id,
-        baseTokenId: requested.id,
-        price: '3',
-        timestamp: tenMinutesAgo,
-        source: 'frankfurter',
       },
     ]);
     const { service, asked } = pricingService();
 
-    const prices = await service.getTokenPrices([token], requested, run, WARM_UP);
+    await service.fetchUnlessCurrent([token], run);
 
-    expect(prices.get(token.id)).toBe('300');
+    expect(asked).toEqual([token.id]);
+    expect((await storedFor(token.id, base.id)).map((r) => r.price)).toEqual(['200']);
+  });
+
+  test('USD itself is never asked', async () => {
+    const base = await usd();
+    const { service, asked } = pricingService();
+
+    await service.fetchUnlessCurrent([base], new Date());
+
     expect(asked).toEqual([]);
-    expect(await storedFor(token.id, requested.id)).toHaveLength(0);
-    expect(await storedFor(token.id, other.id)).toHaveLength(1);
   });
 });
 
-// The hourly run's call: no window, so nothing stored is read before the fetch.
-describe('PricingService.getTokenPrices with no reuse window', () => {
+// The hourly run's call: nothing stored is read before the fetch.
+describe('PricingService.getTokenPrices', () => {
   test('a row stamped one minute before the run is not read: the provider is asked', async () => {
     const token = await commitToken();
     const base = await commitToken('fiat');
@@ -266,6 +324,45 @@ describe('PricingService.getTokenPrices with no reuse window', () => {
     expect(asked).toEqual([token.id]);
   });
 
+  test('a token no provider answers keeps its last reading in the base, and nothing is written', async () => {
+    const answered = await commitToken();
+    const lastRead = await commitToken();
+    const typed = await commitToken();
+    const elsewhere = await commitToken();
+    const base = await commitToken('fiat');
+    const other = await commitToken('fiat');
+    const run = new Date();
+    const dayAgo = new Date(run.getTime() - DAY);
+    await commitPrices([
+      {
+        tokenId: lastRead.id,
+        baseTokenId: base.id,
+        price: '90',
+        timestamp: dayAgo,
+        source: 'coingecko',
+      },
+      // A person's price does not stand in for a provider's reading.
+      { tokenId: typed.id, baseTokenId: base.id, price: '80', timestamp: dayAgo, source: 'manual' },
+      // Nor does a reading in another base: nothing converts it.
+      {
+        tokenId: elsewhere.id,
+        baseTokenId: other.id,
+        price: '70',
+        timestamp: dayAgo,
+        source: 'coingecko',
+      },
+    ]);
+    const { service, asked } = pricingService([lastRead.id, typed.id, elsewhere.id]);
+
+    const prices = await service.getTokenPrices([answered, lastRead, typed, elsewhere], base, run);
+
+    expect(Object.fromEntries(prices)).toEqual({ [answered.id]: '200', [lastRead.id]: '90' });
+    // CONTROL: every token was asked; the three with no answer twice, by the retry pass.
+    const unanswered = [lastRead, typed, elsewhere].flatMap((t) => [t.id, t.id]);
+    expect([...asked].sort()).toEqual([answered.id, ...unanswered].sort());
+    expect((await storedFor(lastRead.id, base.id)).map((r) => r.price)).toEqual(['90']);
+  });
+
   test('a fresh row in another base is not converted: the provider is asked in the base given', async () => {
     const token = await commitToken();
     const requested = await commitToken('fiat');
@@ -296,98 +393,5 @@ describe('PricingService.getTokenPrices with no reuse window', () => {
     expect(prices.get(token.id)).toBe('200');
     expect(asked).toEqual([token.id]);
     expect((await storedFor(token.id, requested.id)).map((r) => r.price)).toEqual(['200']);
-  });
-});
-
-// The time asked sits 90 minutes back, so it is still a live ask (under two
-// hours old) and the window is one hour, while an hour after it is still in
-// the past and can hold a stored row.
-describe('PricingService.getTokenPrice one-hour reuse, either side of the time asked', () => {
-  test('a row stamped 59 minutes AFTER the time asked is reused: no provider call', async () => {
-    const token = await commitToken();
-    const base = await commitToken('fiat');
-    const asked = new Date(Date.now() - 90 * MINUTE);
-    await commitPrices([
-      {
-        tokenId: token.id,
-        baseTokenId: base.id,
-        price: '100',
-        timestamp: new Date(asked.getTime() + 59 * MINUTE),
-        source: 'coingecko',
-      },
-    ]);
-    const { service, asked: providerAsked } = pricingService();
-
-    expect(await service.getTokenPrice(token, base, asked)).toBe('100');
-    expect(providerAsked).toEqual([]);
-    expect(await storedFor(token.id, base.id)).toHaveLength(1);
-  });
-
-  test('a row stamped exactly an hour before the time asked is reused', async () => {
-    const token = await commitToken();
-    const base = await commitToken('fiat');
-    const asked = new Date(Date.now() - 90 * MINUTE);
-    await commitPrices([
-      {
-        tokenId: token.id,
-        baseTokenId: base.id,
-        price: '100',
-        timestamp: new Date(asked.getTime() - 60 * MINUTE),
-        source: 'coingecko',
-      },
-    ]);
-    const { service, asked: providerAsked } = pricingService();
-
-    expect(await service.getTokenPrice(token, base, asked)).toBe('100');
-    expect(providerAsked).toEqual([]);
-  });
-
-  test('of two rows in the window, the nearer one answers, even when it is after the time asked', async () => {
-    const token = await commitToken();
-    const base = await commitToken('fiat');
-    const asked = new Date(Date.now() - 90 * MINUTE);
-    await commitPrices([
-      {
-        tokenId: token.id,
-        baseTokenId: base.id,
-        price: '100',
-        timestamp: new Date(asked.getTime() - 50 * MINUTE),
-        source: 'coingecko',
-      },
-      {
-        tokenId: token.id,
-        baseTokenId: base.id,
-        price: '110',
-        timestamp: new Date(asked.getTime() + 10 * MINUTE),
-        source: 'coingecko',
-      },
-    ]);
-    const { service, asked: providerAsked } = pricingService();
-
-    expect(await service.getTokenPrice(token, base, asked)).toBe('110');
-    expect(providerAsked).toEqual([]);
-  });
-
-  test('CONTROL: a row stamped 61 minutes after the time asked is not reused: the provider is asked', async () => {
-    const token = await commitToken();
-    const base = await commitToken('fiat');
-    const asked = new Date(Date.now() - 90 * MINUTE);
-    await commitPrices([
-      {
-        tokenId: token.id,
-        baseTokenId: base.id,
-        price: '100',
-        timestamp: new Date(asked.getTime() + 61 * MINUTE),
-        source: 'coingecko',
-      },
-    ]);
-    const { service, asked: providerAsked } = pricingService();
-
-    expect(await service.getTokenPrice(token, base, asked)).toBe('200');
-    expect(providerAsked).toEqual([token.id]);
-    // The quote lands at the time asked, before the row that was not reused.
-    const stored = await storedFor(token.id, base.id);
-    expect(stored.map((r) => r.price)).toEqual(['200', '100']);
-    expect(stored[0]?.timestamp.getTime()).toBe(asked.getTime());
   });
 });

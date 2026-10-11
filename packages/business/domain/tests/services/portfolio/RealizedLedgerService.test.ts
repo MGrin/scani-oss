@@ -8,8 +8,9 @@ import { HoldingRepository } from '../../../src/repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../../../src/repositories/HoldingTransactionRepository';
 import { RealizedLedgerService } from '../../../src/services/portfolio/RealizedLedgerService';
 import { CostBasisService } from '../../../src/services/pricing/CostBasisService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { noPriceReader, seriesFrom } from '../../../test/helpers/price-series';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -79,6 +80,7 @@ function makeService(opts: {
   component: string[] | ((seed: string) => string[]);
   txsByHolding: Map<string, HoldingTransaction[]>;
   coverage?: Map<string, HoldingCoverage>;
+  priceReader?: PriceReader;
 }): RealizedLedgerService {
   Container.set(HoldingTransactionRepository, {
     findTransferLinkedHoldingIds: async (_userId: string, ids: string[]) =>
@@ -98,11 +100,7 @@ function makeService(opts: {
   Container.set(HoldingCoverageRepository, {
     findManyByHoldingIds: async () => opts.coverage ?? new Map(),
   } as unknown as HoldingCoverageRepository);
-  Container.set(PriceGraphService, {
-    convert: async () => {
-      throw new Error('PriceGraphService.convert should not be called in these tests');
-    },
-  } as unknown as PriceGraphService);
+  Container.set(PriceReader, opts.priceReader ?? noPriceReader);
   Container.set(CostBasisService, new CostBasisService());
   const instance = new RealizedLedgerService();
   Container.set(RealizedLedgerService, instance);
@@ -435,5 +433,74 @@ describe('RealizedLedgerService.forComponentsOf', () => {
 
     expect(rows.map((r) => r.holdingId).sort()).toEqual(['kraken', 'kraken', 'solo', 'wallet']);
     expect(gainOf(rows)).toBe(1840);
+  });
+});
+
+describe('RealizedLedgerService: one series for every component it walks', () => {
+  /** A reader that records how many asks each series load carried. */
+  function recordingReader(loads: number[]): PriceReader {
+    return {
+      series: async (asks: ReadonlyArray<{ tokenId: string; at: Date }>, baseTokenId: string) => {
+        loads.push(asks.length);
+        return seriesFrom(asks, baseTokenId, (amount) => ({
+          amount: amount.mul(100),
+          stale: false,
+        }));
+      },
+    } as unknown as PriceReader;
+  }
+
+  /** `count` holdings, each its own component, each with a deposit and a sale priced from the series. */
+  function unrelated(count: number, rowsEach = 2): Map<string, HoldingTransaction[]> {
+    const txsByHolding = new Map<string, HoldingTransaction[]>();
+    for (let h = 0; h < count; h++) {
+      const id = `h${h}`;
+      const rows: HoldingTransaction[] = [];
+      for (let r = 0; r < rowsEach; r += 2) {
+        const day = String((r % 27) + 1).padStart(2, '0');
+        rows.push(
+          tx({ holdingId: id, kind: 'deposit', quantity: '1', occurredAt: `2024-01-${day}` })
+        );
+        rows.push(
+          tx({ holdingId: id, kind: 'sell', quantity: '-1', occurredAt: `2024-02-${day}` })
+        );
+      }
+      txsByHolding.set(id, rows);
+    }
+    return txsByHolding;
+  }
+
+  test('the realized ledger over three components loads one series', async () => {
+    const loads: number[] = [];
+    const txsByHolding = unrelated(3);
+    const svc = makeService({
+      component: (seed) => [seed],
+      txsByHolding,
+      priceReader: recordingReader(loads),
+    });
+
+    const rows = await svc.forComponentsOf('u', ['h0', 'h1', 'h2'], USD, new Date('2026-01-01'));
+
+    expect(rows).toHaveLength(3);
+    expect(loads).toHaveLength(1);
+  });
+
+  test('CONTROL: the price-read count is the same for 20 and 200 rows, and above 0', async () => {
+    const loadsFor = async (rowsEach: number) => {
+      const loads: number[] = [];
+      const svc = makeService({
+        component: (seed) => [seed],
+        txsByHolding: unrelated(3, rowsEach),
+        priceReader: recordingReader(loads),
+      });
+      await svc.forComponentsOf('u', ['h0', 'h1', 'h2'], USD, new Date('2026-01-01'));
+      return loads;
+    };
+    const few = await loadsFor(20);
+    const many = await loadsFor(200);
+    expect(few).toHaveLength(1);
+    expect(many).toHaveLength(1);
+    expect(few[0]).toBeGreaterThan(0);
+    expect(many[0]).toBeGreaterThan(few[0] as number);
   });
 });

@@ -10,6 +10,7 @@ import { amountDecimals, BALANCE_EDIT_SCALE } from '../../lib/holdings';
 import {
   MOVEMENT_OUTFLOW_OPTIONS,
   type MovementHolding,
+  movementAvailable,
   movementBalanceBelowZero,
 } from '../../lib/movement-form';
 import { AccountTargetFields } from '../capture/AccountTargetFields';
@@ -47,7 +48,11 @@ function plain(amount: string): string {
 
 function balanceHint(form: MovementForm, selected: MovementHolding, t: TFunction): string {
   const symbol = selected.token.symbol;
-  const after = movementBalanceBelowZero(selected.amount, form);
+  const after = movementBalanceBelowZero(
+    selected.amount,
+    form,
+    movementAvailable(selected) === undefined
+  );
   return after === null
     ? t('v3.holdings.movement.currentBalance', { amount: plain(selected.amount), symbol })
     : t('v3.holdings.movement.belowZero', {

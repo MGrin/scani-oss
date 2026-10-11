@@ -10,8 +10,12 @@ import {
   TokenRepository,
   UserTokenScamVerdictRepository,
 } from '@scani/domain/repositories';
-import { TokenPriceRepository } from '@scani/domain/repositories/TokenPriceRepository';
-import { CurrencyConverter, TokenPriceHistoryService, TokenService } from '@scani/domain/services';
+import {
+  PriceHubResolver,
+  PriceReader,
+  TokenPriceHistoryService,
+  TokenService,
+} from '@scani/domain/services';
 import { createComponentLogger } from '@scani/logging';
 import { isFiatCode } from '@scani/providers/core/utils/fiat-codes';
 import { emitEntityChange } from '@scani/realtime';
@@ -33,7 +37,6 @@ import { protectedProcedure, router } from '../trpc';
 const tokensLogger = createComponentLogger('router:tokens');
 const tokenService = Container.get(TokenService);
 const tokenPriceHistoryService = Container.get(TokenPriceHistoryService);
-const tokenPriceRepository = Container.get(TokenPriceRepository);
 
 import { SCAM_PROBABILITY_THRESHOLD } from '@scani/domain/lib/constants';
 import { strictInput } from '../lib/strict-input';
@@ -126,6 +129,7 @@ async function setOwnScamVerdict(
     userId: dbUser.id,
     data: { scamProbability: verdict === 'scam' ? 1 : 0 },
   });
+  // A full rebuild until the Neon falsifier proves a range for this edit (SC-1607).
   void enqueuePortfolioRollup(dbUser.id);
   return { success: true as const, tokenId: token.id };
 }
@@ -201,24 +205,26 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
           uniqueIds.filter((id) => visibleIds.has(id))
         );
         const tokenById = new Map(tokens.map((token) => [token.id, token]));
-        const at = new Date();
-        const converter = Container.get(CurrencyConverter);
-
-        const rates = await Promise.all(
-          uniqueIds.map(async (currencyTokenId) => {
-            const token = tokenById.get(currencyTokenId);
-            if (!token) {
-              return { currencyTokenId, symbol: null, rate: null, asOf: null };
-            }
-            const detail = await converter.getStoredRateDetail(token, base, at);
-            return {
-              currencyTokenId,
-              symbol: token.symbol,
-              rate: detail?.rate ?? null,
-              asOf: detail?.asOf.toISOString() ?? null,
-            };
-          })
+        // From stored readings alone, dated by the reading each rate binds to.
+        const answers = await Container.get(PriceReader).at(
+          tokens.map((token) => token.id),
+          base.id,
+          new Date()
         );
+
+        const rates = uniqueIds.map((currencyTokenId) => {
+          const token = tokenById.get(currencyTokenId);
+          if (!token) {
+            return { currencyTokenId, symbol: null, rate: null, asOf: null };
+          }
+          const answer = answers.get(currencyTokenId) ?? null;
+          return {
+            currencyTokenId,
+            symbol: token.symbol,
+            rate: answer?.price.toString() ?? null,
+            asOf: answer?.readingAt.toISOString() ?? null,
+          };
+        });
 
         // Fire-and-forget: the answer above does not wait on it, and a queue
         // that is down must not turn a partial figure into a failed request.
@@ -601,14 +607,15 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
      * recorded in. Used by the /tokens catalog page.
      *
      * "In force", not "the latest manual price": this used to ask
-     * `findLatestManualPricesForTokensAnyBase`, while every valuation asks
-     * `findLatestPricesForTokensAnyBase` through `PricingService`. Two lookups
-     * over one table give two answers whenever the latest row is not a manual
-     * one — /tokens said "Never priced" about a token the holdings peek was
-     * pricing at €14.75 and the home screen was calling 8% of net worth
-     * (SC-77 2). One lookup, one answer. `source` comes back with it so the
-     * peek can say whether a human set the number or a provider did; for a
-     * private-company token those are very different claims.
+     * `findLatestManualPricesForTokensAnyBase`, while every valuation asked
+     * another lookup. Two lookups over one table give two answers whenever the
+     * latest row is not a manual one — /tokens said "Never priced" about a
+     * token the holdings peek was pricing at €14.75 and the home screen was
+     * calling 8% of net worth (SC-77 2). One lookup, one answer: the
+     * valuation's own, `PriceReader` in the caller's base (foundation A3).
+     * `source` comes back with it so the peek can say whether a human set the
+     * number or a provider did; for a private-company token those are very
+     * different claims.
      */
     listCustom: protectedProcedure.query(async ({ ctx }) => {
       const { dbUser } = await requireAuth(ctx);
@@ -646,41 +653,31 @@ export function createTokensRouter(db: DbType, schemaObj: typeof schema) {
 
       if (tokenRows.length === 0) return [];
 
-      // The reader's own base currency is the tie-break, exactly as it is in
-      // `PortfolioValuationService`: when a token carries prices against
-      // several bases, both surfaces pick the same row.
-      const priceMap = await tokenPriceRepository.findLatestPricesForTokensAnyBase(
-        tokenRows.map((t) => t.id),
-        dbUser.baseCurrencyId ?? ''
-      );
-
-      const baseTokenIds = Array.from(
-        new Set(
-          Array.from(priceMap.values())
-            .map((p) => p.baseTokenId)
-            .filter((id): id is string => !!id)
-        )
-      );
-      const baseTokenSymbolMap = new Map<string, string>();
-      if (baseTokenIds.length > 0) {
-        const baseTokens = await db
-          .select({ id: schemaObj.tokens.id, symbol: schemaObj.tokens.symbol })
+      // The price in force, as every valuation reads it: `PriceReader` in the
+      // caller's base, so a person's latest price stands whatever currency it
+      // was typed in.
+      const baseId = dbUser.baseCurrencyId ?? (await Container.get(PriceHubResolver).usdTokenId());
+      const [answers, [baseToken]] = await Promise.all([
+        Container.get(PriceReader).at(
+          tokenRows.map((t) => t.id),
+          baseId,
+          new Date()
+        ),
+        db
+          .select({ symbol: schemaObj.tokens.symbol })
           .from(schemaObj.tokens)
-          .where(inArray(schemaObj.tokens.id, baseTokenIds));
-        for (const b of baseTokens) baseTokenSymbolMap.set(b.id, b.symbol);
-      }
+          .where(eq(schemaObj.tokens.id, baseId)),
+      ]);
 
       return tokenRows.map((t) => {
-        const latest = priceMap.get(t.id);
+        const answer = answers.get(t.id) ?? null;
         return {
           ...t,
           typeCode: customTypeCodeById.get(t.typeId) ?? null,
-          latestPrice: latest?.price ?? null,
-          latestPriceAt: latest?.timestamp ?? null,
-          latestPriceSource: latest?.source ?? null,
-          latestPriceBaseCurrency: latest?.baseTokenId
-            ? (baseTokenSymbolMap.get(latest.baseTokenId) ?? null)
-            : null,
+          latestPrice: answer?.price.toString() ?? null,
+          latestPriceAt: answer?.readingAt ?? null,
+          latestPriceSource: answer?.source ?? null,
+          latestPriceBaseCurrency: answer ? (baseToken?.symbol ?? null) : null,
         };
       });
     }),

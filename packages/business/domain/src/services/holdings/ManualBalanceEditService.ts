@@ -198,11 +198,11 @@ export interface ManualBalanceEditResult {
  * investor's cashflows so it is not read as money paid in. Neither, which is
  * what a restatement is.
  *
- * It creates and disposes no cost-basis lot either — `correction` is in
- * neither `INFLOW_OTHER_KINDS` nor `OUTFLOW_SELL_KINDS` in `CostBasisService`,
- * so the walk passes over it. That is the conservative reading: there is no
- * honest acquisition price for units that were only ever a typo, and a later
- * disposal degrades its own `basisQuality` rather than inventing one.
+ * In `CostBasisService` it creates no lot (SC-1563): there is no honest
+ * acquisition price for units that were only ever a typo, so a positive one
+ * marks the holding's `basisQuality` partial instead of inventing one. A
+ * negative one removes its units at pool cost with nothing realized, so the
+ * pool matches the balance.
  *
  * ## Why every branch feeds reconciliation for free
  *

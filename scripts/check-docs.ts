@@ -224,6 +224,54 @@ function checkApiRouters(): void {
 }
 
 // =============================================================================
+// Check — `/api/v1` routes in reference/rest-api.md (SC-1648)
+// =============================================================================
+//
+// The route table in `apps/backend/api/src/rest/routes.ts` is the whole REST
+// surface, and the OpenAPI document is generated from it. The reference page
+// lists the routes by hand, so it is held to the table in both directions: a
+// route nobody documented, and a documented route that does not exist.
+
+function checkRestRoutes(): void {
+  const NAME = 'rest-routes';
+  const source = 'apps/backend/api/src/rest/routes.ts';
+  const actual = new Set<string>();
+  for (const m of read(source).matchAll(/method:\s*'(GET|POST)',\s*path:\s*'([^']+)'/g)) {
+    actual.add(`${m[1]} /api/v1${m[2]}`);
+  }
+  if (actual.size === 0) {
+    fail(
+      NAME,
+      `found no route in ${source}; the pattern this check reads it with no longer matches`
+    );
+    return;
+  }
+
+  const page = 'reference/rest-api.md';
+  const doc = read(`apps/frontend/docs/src/content/docs/${page}`);
+  const section = doc.split(/^## Routes$/m)[1]?.split(/^## /m)[0] ?? '';
+  const documented = new Set<string>();
+  for (const m of section.matchAll(/^\|\s*`([A-Z]+ \/api\/v1[^`]*)`\s*\|/gm)) {
+    documented.add(m[1]!);
+  }
+
+  const missing = [...actual].filter((route) => !documented.has(route));
+  const ghosts = [...documented].filter((route) => !actual.has(route));
+  if (missing.length > 0) {
+    fail(
+      NAME,
+      `${page} is missing ${missing.length} route(s): ${missing.join(', ')}. Source of truth: ${source}`
+    );
+  }
+  if (ghosts.length > 0) {
+    fail(
+      NAME,
+      `${page} lists ${ghosts.length} route(s) that do not exist: ${ghosts.join(', ')}. Source of truth: ${source}`
+    );
+  }
+}
+
+// =============================================================================
 // Check 3 — scheduled-job catalogue: name + cron + registration
 // =============================================================================
 //
@@ -253,6 +301,7 @@ function checkApiRouters(): void {
 const SCHEDULED_JOBS_DOC = 'apps/frontend/docs/src/content/docs/reference/jobs.md';
 const LIVE_HEADING = 'Scheduled jobs';
 const UNREGISTERED_HEADING = 'Scheduled jobs — declared but not registered';
+const STEPS_HEADING = 'Grouped steps';
 
 // Exact-heading section slice. A `startsWith` split would match the
 // unregistered heading with the live one's prefix and silently merge them.
@@ -292,23 +341,52 @@ function checkScheduledJobs(): void {
     Array.from(registryBlock.matchAll(/^\s*([A-Z][A-Z0-9_]*_SCHEDULE)\s*,/gm)).map((m) => m[1])
   );
 
+  // Every `export const *_SCHEDULE = { … }` in the folder, named by its
+  // `JOB_NAMES` key. One with a cron is a schedule; one with `steps:` is a
+  // group (SC-1688); one with no cron is a step, scheduled only by its group.
+  const wireName = new Map(
+    Array.from(
+      read('packages/business/jobs/src/job-names.ts').matchAll(/^\s*(\w+):\s*'([^']+)'/gm)
+    ).map((m) => [m[1]!, m[2]!])
+  );
   const cron = new Map<string, string>();
   const isRegistered = new Map<string, boolean>();
+  const groupSteps = new Map<string, string[]>();
+  const stepSource = new Map<string, string>();
+  const source = new Map<string, string>();
   for (const file of files) {
-    const name = file.replace(/\.ts$/, '');
     const src = read(`${dir}/${file}`);
-    const cronMatch = src.match(/cron:\s*['"`]([^'"`]+)['"`]/);
-    const constMatch = src.match(/export const ([A-Z][A-Z0-9_]*_SCHEDULE)/);
-    if (!cronMatch) {
-      fail(NAME, `could not parse cron from ${dir}/${file}`);
-      continue;
-    }
-    if (!constMatch) {
+    const blocks = src.split(/(?=^export const [A-Z][A-Z0-9_]*_SCHEDULE\b)/m).slice(1);
+    if (blocks.length === 0) {
       fail(NAME, `could not parse the exported \`*_SCHEDULE\` const from ${dir}/${file}`);
       continue;
     }
-    cron.set(name, cronMatch[1]!);
-    isRegistered.set(name, registered.has(constMatch[1]));
+    for (const block of blocks) {
+      const constName = block.match(/^export const ([A-Z][A-Z0-9_]*_SCHEDULE)/)![1]!;
+      const key = block.match(/name:\s*JOB_NAMES\.(\w+)/)?.[1];
+      const name = key === undefined ? undefined : wireName.get(key);
+      if (name === undefined) {
+        fail(NAME, `could not parse the job name of ${constName} in ${dir}/${file}`);
+        continue;
+      }
+      source.set(name, `${dir}/${file}`);
+      const cronMatch = block.match(/cron:\s*['"`]([^'"`]+)['"`]/);
+      if (!cronMatch) {
+        stepSource.set(name, `${dir}/${file}`);
+        continue;
+      }
+      cron.set(name, cronMatch[1]!);
+      isRegistered.set(name, registered.has(constName));
+      const stepsBlock = block.split(/steps:\s*\[/)[1];
+      if (stepsBlock !== undefined) {
+        groupSteps.set(
+          name,
+          Array.from(stepsBlock.matchAll(/name:\s*JOB_NAMES\.(\w+)/g)).map(
+            (m) => wireName.get(m[1]!) ?? m[1]!
+          )
+        );
+      }
+    }
   }
 
   const doc = read(SCHEDULED_JOBS_DOC);
@@ -342,7 +420,7 @@ function checkScheduledJobs(): void {
       } else {
         fail(
           NAME,
-          `reference/jobs.md is missing scheduled job \`${name}\` (cron \`${expectedCron}\`) from \`## ${rightHeading}\`. Source: ${dir}/${name}.ts`
+          `reference/jobs.md is missing scheduled job \`${name}\` (cron \`${expectedCron}\`) from \`## ${rightHeading}\`. Source: ${source.get(name)}`
         );
       }
       continue;
@@ -371,7 +449,7 @@ function checkScheduledJobs(): void {
     if (docCron !== expectedCron) {
       fail(
         NAME,
-        `reference/jobs.md cron for \`${name}\` is \`${docCron}\` but source has \`${expectedCron}\`. Source: ${dir}/${name}.ts`
+        `reference/jobs.md cron for \`${name}\` is \`${docCron}\` but source has \`${expectedCron}\`. Source: ${source.get(name)}`
       );
     }
   }
@@ -387,6 +465,61 @@ function checkScheduledJobs(): void {
           `reference/jobs.md \`## ${heading}\` lists scheduled job \`${name}\` that does not exist under ${dir}/`
         );
       }
+    }
+  }
+
+  // Steps (SC-1688): each one in exactly one group, and listed under
+  // `## Grouped steps` beside that group. A row with the wrong group says the
+  // job runs at another time than it does.
+  const stepsSection = docSection(doc, STEPS_HEADING);
+  if (stepsSection === null) {
+    if (stepSource.size > 0) fail(NAME, `reference/jobs.md has no \`## ${STEPS_HEADING}\` section`);
+    return;
+  }
+  const stepRows = tableRows(stepsSection);
+  const groupOf = new Map<string, string>();
+  for (const [group, steps] of groupSteps) {
+    for (const step of steps) {
+      if (groupOf.has(step)) {
+        fail(NAME, `step \`${step}\` is in both \`${groupOf.get(step)}\` and \`${group}\``);
+      }
+      groupOf.set(step, group);
+      if (!stepSource.has(step)) {
+        fail(
+          NAME,
+          `group \`${group}\` names step \`${step}\`, which has no step descriptor under ${dir}/`
+        );
+      }
+    }
+  }
+  for (const [step, file] of stepSource) {
+    const group = groupOf.get(step);
+    if (group === undefined) {
+      fail(
+        NAME,
+        `step descriptor \`${step}\` has no cron and is in no group, so it never runs. Source: ${file}`
+      );
+      continue;
+    }
+    const cell = stepRows.get(step);
+    if (cell === undefined) {
+      fail(
+        NAME,
+        `reference/jobs.md is missing step \`${step}\` (group \`${group}\`) from \`## ${STEPS_HEADING}\`. Source: ${file}`
+      );
+    } else if (cell.match(/`([a-z0-9-]+)`/)?.[1] !== group) {
+      fail(
+        NAME,
+        `reference/jobs.md lists step \`${step}\` under group "${cell}", but it runs in \`${group}\`. Source: ${file}`
+      );
+    }
+  }
+  for (const step of stepRows.keys()) {
+    if (!stepSource.has(step)) {
+      fail(
+        NAME,
+        `reference/jobs.md \`## ${STEPS_HEADING}\` lists step \`${step}\` that does not exist under ${dir}/`
+      );
     }
   }
 }
@@ -673,7 +806,7 @@ function checkGlossaryTerms(): void {
     {
       label: 'BalanceAtTimeResult.anchor',
       file: 'packages/business/domain/src/services/pricing/BalanceAtTimeService.ts',
-      pattern: /anchor: ('holdings'[^;]+);/,
+      pattern: /anchor: ('[a-z-]+' \| [^;]+);/,
     },
   ];
 
@@ -1306,6 +1439,7 @@ function checkAgentInstructionsSize(): void {
 const CHECKS: Array<() => void> = [
   checkDataProviderRouters,
   checkApiRouters,
+  checkRestRoutes,
   checkScheduledJobs,
   checkUserJobs,
   checkWorkerProcessors,

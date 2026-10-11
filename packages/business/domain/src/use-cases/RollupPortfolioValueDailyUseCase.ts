@@ -15,16 +15,15 @@
 
 import { withAdvisoryLock } from '@scani/db';
 import { db } from '@scani/db/connection';
-import type { CoverageQuality } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { parseCostBasisMethod } from '@scani/shared';
 import Decimal from 'decimal.js';
 import { and, eq, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { coverageQualityOf } from '../lib/coverage-quality';
 import { holdingIsRolledUp } from '../lib/holding-inclusion';
 import { AccountRepository } from '../repositories/AccountRepository';
-import { HoldingBalanceObservationRepository } from '../repositories/HoldingBalanceObservationRepository';
 import { HoldingCoverageRepository } from '../repositories/HoldingCoverageRepository';
 import { HoldingRepository } from '../repositories/HoldingRepository';
 import { HoldingTransactionRepository } from '../repositories/HoldingTransactionRepository';
@@ -32,16 +31,11 @@ import { PortfolioValueDailyRepository } from '../repositories/PortfolioValueDai
 import { TokenRepository } from '../repositories/TokenRepository';
 import { PnLAtTimeService } from '../services';
 import type { PnLAtTimePerHolding } from '../services/portfolio/PnLAtTimeService';
-import type { BalanceAtTimeCaches } from '../services/pricing/BalanceAtTimeService';
-import { PriceGraphService } from '../services/pricing/PriceGraphService';
-
-// Coverage thresholds — keep in sync with
-// PortfolioValuationAtTimeService. Aggregation logic mirrors that
-// service's per-day pass so per-entity scope rows match what the
-// `scope='institution'/'account'/'holding'` valuation calls would
-// have produced.
-const COVERAGE_FULL_THRESHOLD = 0.95;
-const COVERAGE_PARTIAL_THRESHOLD = 0.5;
+import {
+  type BalanceAtTimeCaches,
+  BalanceAtTimeService,
+} from '../services/pricing/BalanceAtTimeService';
+import { PriceReader } from '../services/pricing/PriceReader';
 
 const logger = createComponentLogger('use-case:rollup-portfolio-value-daily');
 
@@ -64,11 +58,13 @@ export interface RollupSummary {
   usersSkipped: number;
   errors: Array<{ userId: string; error: string }>;
   durationMs: number;
+  /** Users whose rollup wrote at least one day, so their chart changed (SC-1600). */
+  rolledUpUserIds: string[];
 }
 
 @Service()
 export class RollupPortfolioValueDailyUseCase {
-  // Class-field DI — see note in BalanceAtTimeService.ts. Previously
+  // Class-field DI — see `.claude/rules/typedi-di.md`. Previously
   // used `= Container.get(Dep)` as constructor-param defaults, but
   // typedi overrode the default with a ContainerInstance because Bun
   // lacks reflect-metadata emit.
@@ -77,9 +73,9 @@ export class RollupPortfolioValueDailyUseCase {
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly accountRepository = Container.get(AccountRepository);
   private readonly tokenRepository = Container.get(TokenRepository);
-  private readonly priceGraphService = Container.get(PriceGraphService);
+  private readonly priceReader = Container.get(PriceReader);
   private readonly txRepository = Container.get(HoldingTransactionRepository);
-  private readonly observationRepository = Container.get(HoldingBalanceObservationRepository);
+  private readonly balanceAtTimeService = Container.get(BalanceAtTimeService);
   private readonly coverageRepository = Container.get(HoldingCoverageRepository);
 
   // Compute rollup rows for every active user for every day in
@@ -114,6 +110,7 @@ export class RollupPortfolioValueDailyUseCase {
       usersSkipped: 0,
       errors: [],
       durationMs: 0,
+      rolledUpUserIds: [],
     };
 
     // Freeze "now" once per run so all users land on the same day
@@ -178,14 +175,13 @@ export class RollupPortfolioValueDailyUseCase {
           // portfolio-history-backfill, two cron containers overlapping
           // on a redeploy, …). Lock-held users are skipped — the holder
           // is producing fresh rows; we'll catch this user the next tick.
-          const outcome = await withAdvisoryLock(rollupLockKey(user.id), async () => {
-            // Pre-load every per-user state BalanceAtTimeService and
-            // CostBasisService would otherwise hit the DB for —
-            // holdings (anchor 2), observations (anchors 1 and 3),
-            // and transactions (every walk). Three bulk queries up
+          const outcome = await withAdvisoryLock(rollupLockKey(user.id), async (lock) => {
+            // Pre-load every per-user state the valuation and
+            // CostBasisService would otherwise hit the DB for: each
+            // holding's balance on each day, and the ledger. Bulk reads up
             // front replace ~350k per-(holding, day) DB reads. Falls
-            // through silently to the per-call DB path for anything
-            // a future code path needs but the prefetch missed.
+            // through to the per-call DB path for anything a future code
+            // path needs but the prefetch missed.
             //
             // Hidden holdings are fetched and `holdingIsRolledUp` decides,
             // because the valuation counts the ones the closed-position sweep
@@ -198,37 +194,20 @@ export class RollupPortfolioValueDailyUseCase {
             // Coverage joins the same prefetch: `has_complete_tx_history`
             // is a property of the import, not of the snapshot date, so
             // one read serves all `lookback` days (SC-149).
-            // Observations are read for THIS call's days only: the first
-            // row and the two bracketing each day, which is all the balance
-            // walk consults. The whole history was 112k rows per chunk on
-            // the portfolio that ran the worker out of memory (SC-1283).
-            const [txHistory, observations, coverageByHolding] = await Promise.all([
+            // Balances are answered here for THIS call's days, a batch of
+            // holdings' evidence at a time, so no whole history is held for
+            // the loop below (A5 D-11; the shape that ran the worker out of
+            // memory was 112k observation rows per chunk, SC-1283).
+            const [txHistory, balances, coverageByHolding] = await Promise.all([
               this.txRepository.findForHoldingsAll(holdingIds),
-              this.observationRepository.findAnchorsForInstants(
+              this.balanceAtTimeService.balancesFor(
+                user.id,
                 holdingIds,
-                days.map((d) => d.at)
+                days.map((d) => d.at),
+                undefined
               ),
               this.coverageRepository.findManyByHoldingIds(holdingIds),
             ]);
-
-            // Prefetch all the prices the inner per-(day, holding)
-            // loop is about to ask for — single query instead of
-            // ~80k. Any pair the prefetch did not cover falls through
-            // to the per-call DB path rather than answering "no price".
-            // Fee tokens join the held ones because the walk values every
-            // trade fee on every day it re-walks (SC-1142), and a fee paid
-            // in a token the user no longer holds would otherwise take the
-            // per-call path once per fee per day.
-            const feeTokenIds = [...txHistory.values()].flatMap((txs) =>
-              txs.flatMap((t) => (t.feeTokenId ? [t.feeTokenId] : []))
-            );
-            const priceLookup = await this.priceGraphService.buildPriceLookup(
-              [...userHoldings.map((h) => h.tokenId), ...feeTokenIds],
-              baseCurrencyId,
-              runStart,
-              undefined,
-              earliestPriceAsk(days, txHistory)
-            );
 
             // Resolved once for all `lookback` days: "never had a price
             // row and still in cooldown" is a statement about the token's
@@ -239,11 +218,20 @@ export class RollupPortfolioValueDailyUseCase {
                 [...new Set(userHoldings.map((h) => h.tokenId))],
                 runStart
               );
-            const caches: BalanceAtTimeCaches = {
-              holdings: new Map(userHoldings.map((h) => [h.id, h])),
-              observations,
-              transactions: txHistory,
-            };
+            const caches: BalanceAtTimeCaches = { balances, transactions: txHistory };
+            // One series for this call's days, over every price `getPnL`
+            // reads on them. A chunk is one call and keeps no state between
+            // calls, and the worker frees a chunk before the next starts
+            // (SC-1283), so there is nowhere to keep one for a whole run.
+            const prices = await this.priceReader.series(
+              await this.pnlService.priceAsks(
+                user.id,
+                days.map((d) => d.at),
+                baseCurrencyId,
+                { now: runStart, caches, tx: undefined }
+              ),
+              baseCurrencyId
+            );
 
             // Resolve institution membership once: each account → its
             // institution_id. Drives the per-scope aggregation below.
@@ -258,7 +246,8 @@ export class RollupPortfolioValueDailyUseCase {
               // to derive every smaller scope below by filtering and
               // aggregating in-memory — no extra DB or pricing work.
               const userResult = await this.pnlService.getPnL(user.id, at, baseCurrencyId, {
-                priceLookup,
+                now: runStart,
+                prices,
                 caches,
                 unpriceableTokenIds,
                 coverageByHolding,
@@ -272,6 +261,10 @@ export class RollupPortfolioValueDailyUseCase {
                 // reader rather than applied silently.
                 costBasisMethod: parseCostBasisMethod(user.costBasisMethod),
               });
+
+              // Checked after the day's reads and right before its writes, which
+              // autocommit, so a lost lock lets no later row land (SC-1613).
+              await lock.assertHeld();
 
               // Write the user-scope row directly from the result.
               await this.dailyRepository.upsert({
@@ -296,6 +289,25 @@ export class RollupPortfolioValueDailyUseCase {
                 realizedPnl: userResult.totalRealizedPnl.toString(),
                 unrealizedPnl: userResult.totalUnrealizedPnl.toString(),
               });
+
+              // Money in transit: in the user row above and in no scope below.
+              // An unpriced line is in neither, as the valuation leaves it out
+              // of the total (SC-1675).
+              await this.dailyRepository.replaceTransitRows(
+                user.id,
+                baseCurrencyId,
+                snapshotDate,
+                (userResult.inTransit ?? []).flatMap((line) =>
+                  line.valueInBase
+                    ? [
+                        {
+                          destinationHoldingId: line.destinationHoldingId,
+                          valueInBase: line.valueInBase,
+                        },
+                      ]
+                    : []
+                )
+              );
 
               // Now derive per-institution / per-account / per-holding
               // rows by filtering the same perHolding[] and aggregating.
@@ -350,6 +362,7 @@ export class RollupPortfolioValueDailyUseCase {
 
           summary.usersProcessed++;
           summary.daysComputed += outcome.result;
+          if (outcome.result > 0) summary.rolledUpUserIds.push(user.id);
         } catch (error) {
           summary.errors.push({
             userId: user.id,
@@ -402,22 +415,16 @@ export class RollupPortfolioValueDailyUseCase {
     let totalValue = new Decimal(0);
     let totalCost = new Decimal(0);
     let totalRealized = new Decimal(0);
+    let debtValue = new Decimal(0);
     let knownCount = 0;
     let unpriceableCount = 0;
     let stalePricedCount = 0;
     // Re-derived per scope rather than inherited from the user row: a
-    // stale anchor on one holding is a fact about the institution, account
-    // and holding rows that contain it, and not about the ones that do not.
-    // Copying the user-wide number down would mark every scope 'partial'
-    // because one unrelated holding was.
-    let staleAnchoredCount = 0;
-    // Re-derived per scope for the same reason `staleAnchoredCount` is: a
     // balance projected below its holding's first evidence is a fact about
-    // the scopes containing that holding and about no others.
+    // the institution, account and holding rows that contain it, and not
+    // about the ones that do not. Copying the user-wide number down would
+    // mark every scope 'partial' because one unrelated holding was.
     let beforeRecordsCount = 0;
-    // Re-derived per scope for the same reason the two counts above are.
-    let interpolatedCount = 0;
-    let oldestAnchorAt: Date | null = null;
     let basisUnknownCount = 0;
     let transfersUnreviewed = 0;
     for (const ph of slice) {
@@ -425,14 +432,7 @@ export class RollupPortfolioValueDailyUseCase {
         totalValue = totalValue.add(ph.value);
         knownCount++;
         if (ph.priceStale) stalePricedCount++;
-        if (ph.anchorSource === 'observation-before') {
-          staleAnchoredCount++;
-          if (ph.anchorAt && (!oldestAnchorAt || ph.anchorAt < oldestAnchorAt)) {
-            oldestAnchorAt = ph.anchorAt;
-          }
-        }
         if (ph.balanceBeforeRecords) beforeRecordsCount++;
-        if (ph.balanceInterpolated) interpolatedCount++;
       }
       if (ph.unpriceable) unpriceableCount++;
       // Out of the value side, out of the cost side — gated on whether we
@@ -443,6 +443,11 @@ export class RollupPortfolioValueDailyUseCase {
       // basis stays in a total its value never reaches is drawn as a total
       // loss the user never took (SC-505, reproduced at exactly -100%).
       if (ph.value === null) continue;
+      // In net worth, nowhere in P&L (SC-1664).
+      if (ph.debt) {
+        debtValue = debtValue.add(ph.value);
+        continue;
+      }
       if (ph.basisQuality !== 'known') basisUnknownCount++;
       // Written here and not only on the user-scope row above: the home
       // chart, the PnL series and both exports are built from these
@@ -453,40 +458,19 @@ export class RollupPortfolioValueDailyUseCase {
       totalCost = totalCost.add(ph.costBasis);
       totalRealized = totalRealized.add(ph.realizedPnl);
     }
-    const totalUnrealized = totalValue.minus(totalCost);
+    const totalUnrealized = totalValue.minus(debtValue).minus(totalCost);
     const holdingsTotal = slice.length;
-    const priceableTotal = holdingsTotal - unpriceableCount;
-    let coverageQuality: CoverageQuality;
-    if (priceableTotal === 0) {
-      coverageQuality = 'unknown';
-    } else {
-      const knownRatio = knownCount / priceableTotal;
-      if (knownRatio >= COVERAGE_FULL_THRESHOLD)
-        // `staleAnchoredCount` was missing from this condition until SC-249,
-        // and its absence made the scoped rows disagree with the user row
-        // about the same holdings. `PortfolioValuationAtTimeService` has
-        // always downgraded on a backward anchor; this mirror of its logic
-        // only downgraded on a stale price. So an account whose one holding
-        // was reconstructed from an observation 71 days back read 'full' on
-        // its own detail chart while the user-wide chart above it read
-        // 'partial' — and the detail chart is the one a reader opens to find
-        // out why.
-        //
-        // `beforeRecordsCount` joined it in SC-252, and this mirror is the
-        // half that matters: the home chart, the PnL series and both exports
-        // read these per-holding rows, so a downgrade applied only in
-        // `PortfolioValuationAtTimeService` above would reach no reader at
-        // all. The shape to picture: a row carrying a non-zero `total_value`
-        // and `coverage_quality = 'full'` for a date a year BEFORE the
-        // holding's first transaction — every other quality signal on that
-        // row reads clean, which is precisely why it read 'full'.
-        coverageQuality =
-          staleAnchoredCount > 0 || stalePricedCount > 0 || beforeRecordsCount > 0
-            ? 'partial'
-            : 'full';
-      else if (knownRatio >= COVERAGE_PARTIAL_THRESHOLD) coverageQuality = 'estimated';
-      else coverageQuality = 'unknown';
-    }
+    // `beforeRecordsCount` joined the downgrade in SC-252. These scope rows are
+    // what the home chart, the PnL series and both exports read, so a downgrade
+    // applied only to the user row reaches no reader at all: a row with a non-zero `total_value`
+    // for a date a year before the holding's first transaction would read
+    // 'full' on every other signal.
+    const coverageQuality = coverageQualityOf({
+      withKnownValue: knownCount,
+      total: holdingsTotal,
+      unpriceable: unpriceableCount,
+      degraded: stalePricedCount > 0 || beforeRecordsCount > 0,
+    });
     await this.dailyRepository.upsert({
       userId,
       scopeKind,
@@ -499,16 +483,17 @@ export class RollupPortfolioValueDailyUseCase {
       holdingsTotal,
       holdingsUnpriceable: unpriceableCount,
       holdingsStalePriced: stalePricedCount,
-      holdingsStaleAnchored: staleAnchoredCount,
-      oldestAnchorAt,
+      // The engine walks forward from a reading on every day after it, which
+      // is not a stale anchor; a balance's staleness is A4's (A5 D-14). The
+      // user row says the same, so a scope row must not downgrade on it.
+      holdingsStaleAnchored: 0,
+      oldestAnchorAt: null,
       // Recorded, not just consulted (SC-317). It has driven the downgrade
       // since SC-252 and reached no column, so the row said 'partial' with
       // every count at zero — confidence reduced, cause unstated.
       holdingsBeforeRecords: beforeRecordsCount,
-      // Recorded and not consulted, unlike every count beside it: it does not
-      // move `coverageQuality` (SC-475). See the note on
-      // `PortfolioValueAtTimeResult.holdingsInterpolated`.
-      holdingsInterpolated: interpolatedCount,
+      // See `PortfolioValueAtTimeResult.holdingsInterpolated`.
+      holdingsInterpolated: 0,
       holdingsBasisUnknown: basisUnknownCount,
       transfersUnreviewed,
       costBasis: totalCost.toString(),
@@ -516,16 +501,4 @@ export class RollupPortfolioValueDailyUseCase {
       unrealizedPnl: totalUnrealized.toString(),
     });
   }
-}
-
-function earliestPriceAsk(
-  days: ReadonlyArray<{ at: Date }>,
-  txHistory: ReadonlyMap<string, ReadonlyArray<{ occurredAt: Date }>>
-): Date | undefined {
-  let earliest = Number.POSITIVE_INFINITY;
-  for (const { at } of days) earliest = Math.min(earliest, at.getTime());
-  for (const txs of txHistory.values()) {
-    for (const tx of txs) earliest = Math.min(earliest, tx.occurredAt.getTime());
-  }
-  return Number.isFinite(earliest) ? new Date(earliest) : undefined;
 }

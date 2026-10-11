@@ -56,6 +56,17 @@ export class EmailFacade extends EmailService {
     return client;
   }
 
+  /**
+   * Whether a mail this instance renders itself (an invite) would reach
+   * anyone. Tier 2 sends only template sign-in mail, and an instance with no
+   * transport only logs (SC-1647).
+   */
+  canSendCustomMail(): boolean {
+    if (loadCloudClientConfig().SCANI_DEPLOYMENT_TIER === '2') return false;
+    if (this.cloud()) return true;
+    return this.local().sendsMail;
+  }
+
   protected async sendMessage(message: EmailMessage): Promise<void> {
     if (loadCloudClientConfig().SCANI_DEPLOYMENT_TIER === '2')
       throw new Error('Tier 2 only supports template-based auth email');

@@ -17,6 +17,9 @@ interface V3TabBarProps {
   onMorePress: () => void;
   /** When > 0, marks More with a dot: something behind it needs the user. */
   actionRequiredCount?: number;
+  /** Slid below the screen while the page scrolls down (SC-1631). */
+  hidden?: boolean;
+  onFocusCapture?: () => void;
 }
 
 /** Every slot is at least `--tap-target` (44px) in both axes. The bar is
@@ -53,6 +56,8 @@ export function V3TabBar({
   onCapturePress,
   onMorePress,
   actionRequiredCount = 0,
+  hidden = false,
+  onFocusCapture,
 }: V3TabBarProps) {
   const navRef = useRef<HTMLElement | null>(null);
   useVisualViewportPin(navRef);
@@ -62,13 +67,18 @@ export function V3TabBar({
   return (
     <nav
       ref={navRef}
+      onFocusCapture={onFocusCapture}
       aria-label={t('v3.shell.tabBar.landmark')}
       className="fixed inset-x-0 bottom-0 z-40 flex items-stretch border-t border-border bg-surface-1 lg:hidden"
       style={{
         height: `calc(${BAR_HEIGHT} + env(safe-area-inset-bottom, 0px))`,
         paddingBottom: 'env(safe-area-inset-bottom, 0px)',
-        transition: 'transform var(--motion-fast) var(--motion-ease)',
-        willChange: 'transform',
+        // `translate`, not `transform`: the keyboard pin writes `transform`
+        // directly, and the two properties compose rather than overwrite.
+        translate: hidden ? '0 100%' : '0 0',
+        transition:
+          'transform var(--motion-fast) var(--motion-ease), translate var(--motion-base) var(--motion-ease)',
+        willChange: 'transform, translate',
       }}
     >
       {V3_TAB_ITEMS.map((item) => {

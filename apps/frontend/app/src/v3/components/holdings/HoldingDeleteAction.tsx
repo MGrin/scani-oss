@@ -25,8 +25,10 @@ import { Trans, useTranslation } from 'react-i18next';
  * are still on screen while the sentence is read. That is the property a modal
  * over the sheet gave away.
  *
- * `destructive`, unlike `HoldingStatusAction` directly beside it: deactivating
- * has an exact inverse and this has none — the transactions go with the row.
+ * `destructive` for a snapshot, unlike `HoldingStatusAction` directly beside
+ * it: deactivating has an exact inverse and deleting a snapshot has none — the
+ * transactions go with the row. A feed holding is hidden instead (A5 #9), which
+ * Tokens → Hidden undoes, so its confirm says Hide and is not destructive.
  * The consequence names the figure and the account for the same reason
  * `HoldingStatusAction` does: "this holding" identifies nothing on a screen
  * where the same token is held in four accounts.
@@ -48,6 +50,7 @@ export function HoldingDeleteAction({
 }: HoldingDeleteActionProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const hides = holding.deleteHides;
 
   return (
     <ConfirmAction
@@ -58,8 +61,11 @@ export function HoldingDeleteAction({
         </>
       }
       triggerClassName="text-destructive hover:text-destructive"
-      confirmLabel={t('v3.holdings.deleteAction.commit', { symbol: holding.token.symbol })}
-      destructive
+      confirmLabel={t(
+        hides ? 'v3.holdings.deleteAction.commitHide' : 'v3.holdings.deleteAction.commit',
+        { symbol: holding.token.symbol }
+      )}
+      destructive={!hides}
       open={open}
       onOpenChange={setOpen}
       isPending={isPending}
@@ -71,7 +77,11 @@ export function HoldingDeleteAction({
         // put the amount between "recorded against it" and "comes off your
         // portfolio total". One sentence, one key, the figure as a slot.
         <Trans
-          i18nKey="v3.holdings.deleteAction.consequence"
+          i18nKey={
+            hides
+              ? 'v3.holdings.deleteAction.consequenceHide'
+              : 'v3.holdings.deleteAction.consequence'
+          }
           values={{ symbol: holding.token.symbol, account: holding.account.name }}
           components={{
             value: <Numeric value={holding.value} currency={currency} className="text-caption" />,

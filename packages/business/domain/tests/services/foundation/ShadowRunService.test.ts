@@ -3,10 +3,6 @@ import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { Container } from 'typedi';
 import { BalanceShadowService } from '../../../src/services/foundation/BalanceShadowService';
-import {
-  ShadowRunService,
-  type ShadowTally,
-} from '../../../src/services/foundation/ShadowRunService';
 import { withTestDb } from '../../../test/helpers/db';
 import { makeInstitution, makeUser } from '../../../test/helpers/factories';
 import { makeAccount, makeHolding, makeToken } from '../../../test/helpers/factories-extra';
@@ -37,17 +33,17 @@ async function storedAboveItsEvidence(tx: DatabaseTransaction, userId: string): 
 }
 
 describe('ShadowRunService.run', () => {
-  test('a balance run writes its summary byte for byte as before any kind could add to it', async () => {
+  test('a balance run writes exactly the summary it counts, byte for byte', async () => {
     await withTestDb(async (tx) => {
       const user = await makeUser(tx);
       await storedAboveItsEvidence(tx, user.id);
 
       const { runId, summary } = await Container.get(BalanceShadowService).run(
-        { asOf: AS_OF, pastInstants: [at('2026-02-15T00:00:00Z')], userId: user.id },
+        { asOf: AS_OF, userId: user.id },
         tx
       );
 
-      // Not vacuous: the run found a difference a summary could have counted by instant.
+      // Not vacuous: the run found a difference to count.
       expect((await differencesOf(tx, runId)).length).toBeGreaterThan(0);
       const established = {
         compared: summary.compared,
@@ -60,55 +56,6 @@ describe('ShadowRunService.run', () => {
       };
       expect(JSON.stringify(summary)).toBe(JSON.stringify(established));
       expect((await runRow(tx, runId)).summary).toEqual(established);
-    });
-  });
-
-  test("a kind's summarize adds its keys to the summary, stored with the run", async () => {
-    await withTestDb(async (tx) => {
-      const difference: ShadowTally['differences'][number] = {
-        comparator: 'price-graph',
-        category: 'unexplained',
-        at: AS_OF,
-        engineValue: '1',
-        legacyValue: '2',
-        detail: {},
-        userId: null,
-        holdingId: null,
-        tokenId: null,
-        baseTokenId: null,
-      };
-
-      const { runId, summary } = await Container.get(ShadowRunService).run(
-        {
-          kind: 'price',
-          asOf: AS_OF,
-          userId: undefined,
-          units: async () => ['one'],
-          describe: (unit) => unit,
-          compare: async () => ({ compared: 2, differences: [difference] }),
-          summarize: (differences) => ({
-            byInstant: { [AS_OF.toISOString()]: { unexplained: differences.length } },
-            valueImpactByBase: {},
-          }),
-        },
-        tx
-      );
-
-      expect(Object.keys(summary)).toEqual([
-        'compared',
-        'matched',
-        'byCategory',
-        'byInstant',
-        'valueImpactByBase',
-        'durationMs',
-      ]);
-      expect(summary).toMatchObject({
-        compared: 2,
-        matched: 1,
-        byInstant: { [AS_OF.toISOString()]: { unexplained: 1 } },
-        valueImpactByBase: {},
-      });
-      expect((await runRow(tx, runId)).summary).toEqual(summary);
     });
   });
 });

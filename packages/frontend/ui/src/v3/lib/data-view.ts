@@ -155,6 +155,22 @@ export interface V3FilterDef extends FilterDefBase {
    * decision of its own rather than a rename.
    */
   options: V3FilterOption[];
+  /**
+   * A value no option names, chosen in the same Refine row as the options
+   * (SC-1652). The ledger's period has presets and a custom date range: a tax
+   * year is not a preset, and a second filter control beside the sheet is the
+   * two-mechanism page mgrin rejected. The host draws the editor, because the
+   * date field lives in the app and this package cannot reach it.
+   */
+  custom?: {
+    labelKey: UiTranslationKey;
+    /** Whether a stored value is the custom one rather than an option's. */
+    matches: (value: string) => boolean;
+    /** The chip and the row summary for a custom value. */
+    format: (value: string) => string;
+    /** The editor, drawn under the options while the custom choice is active. */
+    render: (value: string, onChange: (next: string) => void) => ReactNode;
+  };
 }
 
 export interface V3SortDef extends SortDefBase {
@@ -284,6 +300,14 @@ export interface V3DataViewConfig<T>
    * over the same page cannot say that.
    */
   onSearch?: (term: string) => void;
+  /**
+   * The filters are applied by the SERVER, the way `onSearch` moves search
+   * there (SC-1652). The page reads the filter values from the URL into its
+   * query, and each def's `fn` passes every row the server sent. An empty
+   * reply is then a no-match over the whole set, never an empty account, so the
+   * toolbar and its chips stay up to undo it.
+   */
+  filtersAreRemote?: boolean;
   renderRow: (item: T) => RowSpec;
   /**
    * Names the row list's value zone on the phone surface, where there is no
@@ -432,7 +456,8 @@ export function resolveActiveFilters(
       label: uiT(def.labelKey),
       value: (() => {
         const option = def.options.find((o) => o.value === value);
-        return option ? filterOptionLabel(option) : value;
+        if (option) return filterOptionLabel(option);
+        return def.custom?.matches(value) ? def.custom.format(value) : value;
       })(),
     });
   }
@@ -526,6 +551,8 @@ export interface DataViewSurfaceInput {
   searchTerm: string;
   /** The search ran on the server, over every row. */
   searchIsRemote: boolean;
+  /** The filters ran on the server too, so an empty page is their answer (SC-1652). */
+  filtersAreRemote?: boolean;
   activeFilterCount: number;
 }
 
@@ -544,7 +571,9 @@ export interface DataViewSurfaceState {
 
 export function resolveDataViewSurface(input: DataViewSurfaceInput): DataViewSurfaceState {
   const searchedRemotely = input.searchIsRemote && input.searchTerm.length > 0;
-  const hasNothingAtAll = input.totalCount === 0 && !input.partial && !searchedRemotely;
+  const filteredRemotely = input.filtersAreRemote === true && input.activeFilterCount > 0;
+  const hasNothingAtAll =
+    input.totalCount === 0 && !input.partial && !searchedRemotely && !filteredRemotely;
 
   // A failed refetch behind a list already on screen leaves the list standing:
   // the data is stale, not gone. The error only takes the surface when there is
@@ -558,7 +587,8 @@ export function resolveDataViewSurface(input: DataViewSurfaceInput): DataViewSur
   // one of those: the server read every row, so its empty answer is about the
   // whole set even on page one.
   const narrowedLocally =
-    input.activeFilterCount > 0 || (input.searchTerm.length > 0 && !input.searchIsRemote);
+    (input.activeFilterCount > 0 && input.filtersAreRemote !== true) ||
+    (input.searchTerm.length > 0 && !input.searchIsRemote);
   return {
     surface: input.partial && narrowedLocally ? 'no-match-loaded' : 'no-match',
     hasNothingAtAll,

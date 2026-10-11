@@ -56,8 +56,8 @@ rebuilds from the same primitives.
 
 | Derived | Source | Computed by |
 |---|---|---|
-| Balance at past time T | observations + transactions + current holding | [`BalanceAtTimeService`](/concepts/balance-reconstruction/) |
-| FX/price conversion | `token_prices` graph | [`PriceGraphService`](/concepts/pricing/), hub-routed |
+| Balance at past time T | observations + transactions | [`BalanceAtTimeService`](/concepts/balance-reconstruction/) |
+| FX/price conversion | `token_prices` graph | [`PriceReader`](/concepts/pricing/), hub-routed |
 | Daily portfolio totals | the four above, per scope | [`portfolio_value_daily`](/concepts/rollup/), nightly |
 | Holding coverage quality | per-holding tx + observation timestamps | [`holding_coverage`](/concepts/observations/), per-ingest |
 
@@ -95,8 +95,9 @@ the start of known history.
 There is **no USD-canonical column**. Every price is stored in its
 native quote (a Kraken BTC/EUR trade has `priceNativeTokenId = EUR`,
 not USD). Conversions walk the implicit graph implied by
-`token_prices` rows: direct, then reverse direct, then one-hop via
-USD / USDT / EUR. See [Pricing & the price graph](/concepts/pricing/)
+`token_prices` rows: direct, inverse, through a USD / USDT / EUR hub,
+or through the asset's own quote currency, and the freshest route
+wins. See [Pricing & the price graph](/concepts/pricing/)
 for the routing rules and the staleness contract.
 
 ## The headline reconciles with the chart

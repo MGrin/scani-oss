@@ -11,8 +11,9 @@ import {
   CostBasisService,
   type DisposalLotMatch,
 } from '../../../src/services/pricing/CostBasisService';
-import { PriceGraphService } from '../../../src/services/pricing/PriceGraphService';
+import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
+import { noPriceReader } from '../../../test/helpers/price-series';
 
 // Container stubs are process-global; put back whatever this file changes
 // so no later test file resolves them (SC-448).
@@ -56,11 +57,7 @@ const HOLDING = 'holding-A';
 function makeService(): CostBasisService {
   Container.set(HoldingRepository, {} as unknown as HoldingRepository);
   Container.set(HoldingTransactionRepository, {} as unknown as HoldingTransactionRepository);
-  Container.set(PriceGraphService, {
-    convert: async () => {
-      throw new Error('PriceGraphService.convert should not be called');
-    },
-  } as unknown as PriceGraphService);
+  Container.set(PriceReader, noPriceReader);
   const instance = new CostBasisService();
   Container.set(CostBasisService, instance);
   return instance;

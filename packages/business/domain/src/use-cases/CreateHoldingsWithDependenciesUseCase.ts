@@ -242,7 +242,7 @@ export class CreateHoldingsWithDependenciesUseCase {
 
       const createdHoldings: Holding[] = [];
       for (const h of input.holdings) {
-        const at = new Date();
+        const at = input.openedAt ? new Date(input.openedAt) : new Date();
         const holding = await this.holdingResolver.createSnapshotHolding(
           {
             userId,

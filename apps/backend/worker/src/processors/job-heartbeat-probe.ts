@@ -1,6 +1,11 @@
 import { db } from '@scani/db/connection';
 import { jobHeartbeats } from '@scani/db/schema';
-import { HEARTBEAT_TOLERANCE_MS, JOB_HEARTBEAT_PROBE_SCHEDULE } from '@scani/jobs';
+import {
+  HEARTBEAT_DAILY_DEADLINE_UTC_HOUR,
+  HEARTBEAT_TOLERANCE_MS,
+  JOB_HEARTBEAT_PROBE_SCHEDULE,
+  missedDailyDeadline,
+} from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { captureException } from '@scani/logging/sentry';
 import { ScheduledJobProcessor } from '@scani/queue';
@@ -15,6 +20,7 @@ export class JobHeartbeatProbeProcessor extends ScheduledJobProcessor {
 
   protected async handle(): Promise<void> {
     const monitored = Object.keys(HEARTBEAT_TOLERANCE_MS);
+    const withDeadline = Object.keys(HEARTBEAT_DAILY_DEADLINE_UTC_HOUR);
     const rows = await db
       .select({
         jobName: jobHeartbeats.jobName,
@@ -22,7 +28,7 @@ export class JobHeartbeatProbeProcessor extends ScheduledJobProcessor {
         lastError: jobHeartbeats.lastError,
       })
       .from(jobHeartbeats)
-      .where(inArray(jobHeartbeats.jobName, monitored));
+      .where(inArray(jobHeartbeats.jobName, [...monitored, ...withDeadline]));
 
     const seenAt = new Map<string, Date | null>();
     const errors = new Map<string, string | null>();
@@ -62,9 +68,34 @@ export class JobHeartbeatProbeProcessor extends ScheduledJobProcessor {
       }
     }
 
+    // Same first-run rule as above: no heartbeat yet is not a missed deadline.
+    const late = Object.entries(HEARTBEAT_DAILY_DEADLINE_UTC_HOUR).filter(([name, hour]) => {
+      const lastSuccess = seenAt.get(name) ?? null;
+      return lastSuccess !== null && missedDailyDeadline(lastSuccess, new Date(now), hour);
+    });
+    for (const [name, hour] of late) {
+      const lastErr = errors.get(name) ?? null;
+      const lastSuccess = seenAt.get(name) as Date;
+      const err = new Error(
+        `scheduled job '${name}' has not completed today by ${String(hour).padStart(2, '0')}:00 UTC ` +
+          `(last success ${lastSuccess.toISOString()})${lastErr ? ` — last error: ${lastErr}` : ''}`
+      );
+      logger.error(
+        { jobName: name, deadlineUtcHour: hour, lastError: lastErr },
+        '🚨 Daily deadline missed'
+      );
+      captureException(err, {
+        component: 'worker',
+        kind: 'job-deadline-missed',
+        jobName: name,
+        deadlineUtcHour: String(hour),
+      });
+    }
+
     logger.info(
       {
         monitored: monitored.length,
+        late: late.length,
         seen: rows.length,
         stale: stale.length,
         missing: missing.length,

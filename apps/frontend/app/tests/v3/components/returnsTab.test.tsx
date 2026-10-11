@@ -128,8 +128,6 @@ function renderScreen({
         comparison={comparison}
         comparisonFailed={comparisonFailed}
         currency="GBP"
-        windowKey="ytd"
-        onWindowChange={() => undefined}
         promotedToHero={returnsTab}
       />
     </>
@@ -192,9 +190,16 @@ describe('the Returns hero is a stat tile', () => {
 });
 
 describe('one control, and the card gives its picker up', () => {
-  test('the card hides its own window picker while the hero owns the window', () => {
+  // The picker is the card's control since SC-1668, mounted by `ReturnsBlock`
+  // only while the hero does not own the window, so the card body never
+  // draws one of its own.
+  test('the card hides its own window picker while the hero owns the window', async () => {
     expect(renderScreen({ returnsTab: true })).not.toContain(copy.chooseWindow);
-    expect(renderScreen({ returnsTab: false })).toContain(copy.chooseWindow);
+    expect(renderScreen({ returnsTab: false })).not.toContain(copy.chooseWindow);
+    const source = await Bun.file(
+      new URL('../../../src/v3/components/home/ReturnsBlock.tsx', import.meta.url)
+    ).text();
+    expect(source).toMatch(/controls=\{\s*heroWindow === null \? \(\s*<ReturnsWindowPicker/);
   });
 
   test('the comparison chart moves up rather than being drawn twice', () => {

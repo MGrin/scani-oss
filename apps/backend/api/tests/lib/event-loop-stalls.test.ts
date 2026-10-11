@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from 'bun:test';
 import {
   type EventLoopStall,
   enterProcedure,
+  httpRouteLabel,
   monitorEventLoopStalls,
 } from '../../src/lib/event-loop-stalls';
 
@@ -16,7 +17,7 @@ const INTERVAL = 20;
  * or lag: two assertions in this file failed on busy CI agents while they read
  * the real event loop.
  */
-function fakeMonitor(readHeapBytes?: () => number) {
+function fakeMonitor(readHeapBytes?: () => number, readRssBytes?: () => number) {
   let now = 0;
   let fire = () => {};
   const stalls: EventLoopStall[] = [];
@@ -30,6 +31,7 @@ function fakeMonitor(readHeapBytes?: () => number) {
       return () => {};
     },
     ...(readHeapBytes ? { readHeapBytes } : {}),
+    ...(readRssBytes ? { readRssBytes } : {}),
   });
   return {
     stalls,
@@ -108,6 +110,15 @@ describe('monitorEventLoopStalls (SC-1322)', () => {
     expect(m.stalls[0]).toMatchObject({ heapBeforeMb: 300, heapAfterMb: 120 });
   });
 
+  test("a stall carries the process's resident memory, the figure the machine runs out of (SC-1671)", () => {
+    const m = fakeMonitor(undefined, () => 640 * 2 ** 20);
+    m.tick();
+    m.hold(120);
+    m.tick();
+
+    expect(m.stalls[0]?.rssMb).toBe(640);
+  });
+
   // The control: a stall with no collection in it does not read as one.
   test('a stall with no collection inside it reports a heap that did not fall', () => {
     let bytes = 100 * 2 ** 20;
@@ -151,7 +162,7 @@ describe('enterProcedure reports the thread time held while it ran (SC-1369)', (
     const m = fakeMonitor();
     const leave = enterProcedure('portfolio.hasReturns');
     for (let i = 0; i < 8; i++) m.tick();
-    expect(leave()).toBe(0);
+    expect(leave().blockedMs).toBe(0);
   });
 
   test("a neighbour's CPU is charged to a procedure that was waiting beside it", () => {
@@ -161,7 +172,7 @@ describe('enterProcedure reports the thread time held while it ran (SC-1369)', (
     m.hold(150);
     m.tick();
     m.tick();
-    expect(leave()).toBe(150);
+    expect(leave().blockedMs).toBe(150);
   });
 
   // It exists for the last 20ms of the 150ms late interval, so that is all it
@@ -173,6 +184,74 @@ describe('enterProcedure reports the thread time held while it ran (SC-1369)', (
     const leave = enterProcedure('portfolio.hasReturns');
     m.tick();
     m.tick();
-    expect(leave()).toBe(20);
+    expect(leave().blockedMs).toBe(20);
+  });
+});
+
+describe('blocked time has a 5ms floor per tick (SC-1671)', () => {
+  // Measured 2026-10-10: a procedure that only slept read 67-71ms of "blocked"
+  // per second on a loaded Mac, and prod getReturns 24-35ms/s with no stall,
+  // because every tick's sub-millisecond lateness was summed for the whole call.
+  test('timer jitter below the floor is not blocked time', () => {
+    const m = fakeMonitor();
+    const leave = enterProcedure('portfolio.getReturns');
+    for (let i = 0; i < 50; i++) {
+      m.hold(4);
+      m.tick();
+    }
+    expect(leave().blockedMs).toBe(0);
+  });
+
+  test('a late tick at the floor is counted in full', () => {
+    const m = fakeMonitor();
+    const leave = enterProcedure('portfolio.getReturns');
+    m.tick();
+    m.hold(5);
+    m.tick();
+    expect(leave().blockedMs).toBe(5);
+  });
+
+  test('the old unfloored sum is still reported, as lagSumMs', () => {
+    const m = fakeMonitor();
+    const leave = enterProcedure('portfolio.getReturns');
+    m.tick();
+    m.hold(4);
+    m.tick();
+    m.hold(30);
+    m.tick();
+    expect(leave()).toEqual({ blockedMs: 30, lagSumMs: 34 });
+  });
+});
+
+describe('httpRouteLabel (SC-1671)', () => {
+  // The stall line named tRPC procedures only, so on 2026-10-09 three trivial
+  // procedures were listed in flight while whatever held the thread was not.
+  test('a route outside tRPC is named by method and path', () => {
+    expect(httpRouteLabel('POST', '/mcp')).toBe('http POST /mcp');
+    expect(httpRouteLabel('GET', '/billing/status')).toBe('http GET /billing/status');
+  });
+
+  test('a tRPC request is one label whatever it batches: its procedures name themselves', () => {
+    expect(httpRouteLabel('GET', '/trpc/users.getCurrent,users.getBaseCurrency')).toBe(
+      'http GET /trpc'
+    );
+    expect(httpRouteLabel('POST', '/trpc/users.appOpened')).toBe('http POST /trpc');
+  });
+
+  test('ids in a path collapse, so the label set stays bounded', () => {
+    expect(httpRouteLabel('GET', '/documents/0b7db385-c0de-4000-8000-00000000abcd/file')).toBe(
+      'http GET /documents/:id/file'
+    );
+    expect(httpRouteLabel('GET', '/exports/12345')).toBe('http GET /exports/:id');
+  });
+
+  test('a request registered under its label is named in the stall it sat through', () => {
+    const m = fakeMonitor();
+    const leave = enterProcedure(httpRouteLabel('POST', '/mcp'));
+    m.tick();
+    m.hold(200);
+    m.tick();
+    leave();
+    expect(m.stalls[0]?.inFlight).toEqual(['http POST /mcp']);
   });
 });

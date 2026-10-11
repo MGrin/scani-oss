@@ -1,58 +1,87 @@
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
-import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
+import { Bell, Bot, Database, UserRound, UserX } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router-dom';
 import { AccountSettings } from '../components/settings/AccountSettings';
+import { AgentsSections } from '../components/settings/AgentsSections';
+import { BackupSettings } from '../components/settings/BackupSettings';
+import { BillCalendarSettings } from '../components/settings/BillCalendarSettings';
 import { CostBasisSettings } from '../components/settings/CostBasisSettings';
 import { DataExportSettings } from '../components/settings/DataExportSettings';
 import { DataQualitySettings } from '../components/settings/DataQualitySettings';
+import { HouseholdSettings } from '../components/settings/HouseholdSettings';
 import { MaintenanceSettings } from '../components/settings/MaintenanceSettings';
 import { NotificationSettings } from '../components/settings/NotificationSettings';
 import { ProfileSettings } from '../components/settings/ProfileSettings';
+import { SecuritySettings } from '../components/settings/SecuritySettings';
 import { SessionsSettings } from '../components/settings/SessionsSettings';
+import { SettingsAreas } from '../components/settings/SettingsAreas';
+import type { SettingsArea } from '../lib/settings-areas';
 
-/**
- * Everything about the account rather than the portfolio.
- *
- * A form surface, so `PageLayout` at the `narrow` measure and `FieldSet`/`Field`
- * throughout — never `V3DataView`, even where a block happens to render a run
- * of rows. The blocks are ordered by how often anyone opens the page for them:
- * who you are and what currency you read in, then what this device is allowed
- * to do, then where you are signed in, then the two diagnostic blocks, then
- * leaving.
- *
- * Cost basis sits directly under the profile block because it belongs to the
- * same question those fields answer — what the figures on every other screen
- * MEAN — and not with Maintenance further down, which is about rebuilding a
- * cache rather than changing what is computed. It is a block of its own rather
- * than a field inside `ProfileSettings` because that block auto-saves and this
- * control must not: see the note on `CostBasisSettings` (SC-980).
- *
- * Notifications sit with the preferences rather than with the devices below
- * because a push subscription is per BROWSER, not per session — signing out
- * does not end it — and grouping it with the sessions list would suggest the
- * two revoke together.
- *
- * Theme and the v2/v3 switch are deliberately absent. Both live in the shell —
- * the sidebar's footer on a desktop, the More drawer's on a phone — where they
- * are reachable from every screen, and a second copy here would be a second
- * control for the same state.
- */
+/** In the list's order: what a person changes most comes first. */
+const AREAS: SettingsArea[] = [
+  {
+    id: 'you',
+    icon: UserRound,
+    titleKey: 'v3.settings.areas.you.title',
+    sections: () => (
+      <>
+        <ProfileSettings />
+        <CostBasisSettings />
+      </>
+    ),
+  },
+  {
+    id: 'notifications',
+    icon: Bell,
+    titleKey: 'v3.settings.areas.notifications.title',
+    sections: () => (
+      <>
+        <NotificationSettings />
+        <SessionsSettings />
+      </>
+    ),
+  },
+  {
+    id: 'agents',
+    icon: Bot,
+    titleKey: 'v3.settings.areas.agents.title',
+    sections: () => <AgentsSections />,
+  },
+  {
+    id: 'data',
+    icon: Database,
+    titleKey: 'v3.settings.areas.data.title',
+    sections: () => (
+      <>
+        <DataExportSettings />
+        <BackupSettings />
+        <BillCalendarSettings />
+        <HouseholdSettings />
+        <DataQualitySettings />
+        <MaintenanceSettings />
+      </>
+    ),
+  },
+  {
+    id: 'account',
+    icon: UserX,
+    titleKey: 'v3.settings.areas.account.title',
+    sections: () => (
+      <>
+        <SecuritySettings />
+        <AccountSettings />
+      </>
+    ),
+  },
+];
+
+/** Settings: the list of areas, and the area an address names (SC-1670). */
 export function SettingsPage() {
   const { t } = useTranslation();
-  useDocumentTitle(t('settings.title'));
+  const { area: areaId } = useParams();
+  const area = AREAS.find((candidate) => candidate.id === areaId);
+  useDocumentTitle(area ? t(area.titleKey) : t('settings.title'));
 
-  return (
-    <PageLayout>
-      <PageHeader title={t('settings.title')} description={t('settings.subtitle')} />
-
-      <ProfileSettings />
-      <CostBasisSettings />
-      <NotificationSettings />
-      <SessionsSettings />
-      <DataExportSettings />
-      <MaintenanceSettings />
-      <DataQualitySettings />
-      <AccountSettings />
-    </PageLayout>
-  );
+  return <SettingsAreas areas={AREAS} areaId={areaId} />;
 }

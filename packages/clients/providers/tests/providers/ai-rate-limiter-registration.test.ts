@@ -2,9 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import type { ProviderFactory, ProviderFactoryDeps } from '../../src/core/boot';
 import { RateLimiterRegistry } from '../../src/core/rate-limiter-registry';
-import { aiDeepseekFactory } from '../../src/providers/ai-deepseek';
 import { aiOpenAIFactory, OpenAIProvider } from '../../src/providers/ai-openai';
-import { aiPerplexityFactory } from '../../src/providers/ai-perplexity';
 
 /**
  * SC-1090. `RateLimiterRegistry` exists for uniqueness ("two providers can't
@@ -21,8 +19,8 @@ import { aiPerplexityFactory } from '../../src/providers/ai-perplexity';
  * about the text than about the app, and SC-1092 is a live example of two
  * guards reading green over a directory their scan cannot see.
  *
- * The one thing derived from the tree is the SET of AI providers (below), so a
- * fourth one cannot be added without either registering or turning this red.
+ * The one thing derived from the tree is the SET of AI providers (below), so
+ * another one cannot be added without either registering or turning this red.
  */
 
 const PROVIDERS_DIR = 'packages/clients/providers/src/providers';
@@ -35,8 +33,6 @@ const STUBS = new Set(['ai-stub', 'chain-stub']);
 /** The factories under test, by the directory each one lives in. */
 const AI_FACTORIES: ReadonlyArray<readonly [string, ProviderFactory, string]> = [
   ['ai-openai', aiOpenAIFactory, 'OPENAI_API_KEY'],
-  ['ai-deepseek', aiDeepseekFactory, 'DEEPSEEK_API_KEY'],
-  ['ai-perplexity', aiPerplexityFactory, 'PERPLEXITY_API_KEY'],
 ];
 
 function makeDeps(registry: RateLimiterRegistry, env: Record<string, string>): ProviderFactoryDeps {
@@ -49,7 +45,7 @@ function makeDeps(registry: RateLimiterRegistry, env: Record<string, string>): P
 }
 
 /**
- * Every provider directory whose class extends the shared chat-completions
+ * Every provider directory whose class extends the shared Responses
  * base, read from the tracked tree. A git failure THROWS: an unread tree and a
  * tree with no AI providers both yield an empty set, and the empty one would
  * satisfy every assertion below (SC-844's shape).
@@ -63,12 +59,12 @@ function aiProviderDirs(): Set<string> {
   for (const file of ls.stdout.toString().split('\n')) {
     if (!file.endsWith('.ts')) continue;
     const rest = file.slice(PROVIDERS_DIR.length + 1);
-    // A file directly under `providers/` (`_chat-completions.ts` itself)
+    // A file directly under `providers/` (`_openai-responses.ts` itself)
     // carries no slash, so the slash is what says "directory" — SC-1033's rule.
     if (!rest.includes('/')) continue;
     const dir = rest.slice(0, rest.indexOf('/'));
     if (STUBS.has(dir)) continue;
-    if (readFileSync(`${REPO_ROOT}${file}`, 'utf8').includes('extends ChatCompletionsProvider')) {
+    if (readFileSync(`${REPO_ROOT}${file}`, 'utf8').includes('extends ResponsesProvider')) {
       dirs.add(dir);
     }
   }
@@ -86,7 +82,7 @@ describe('the AI providers register their rate-limiter namespace at boot', () =>
   });
 
   test('every AI provider directory is covered by a factory under test', () => {
-    // The reconciliation. A fourth OpenAI-compatible provider added without a
+    // The reconciliation. Another OpenAI-compatible provider added without a
     // line here fails this rather than quietly re-opening SC-1090.
     const tested = new Set(AI_FACTORIES.map(([dir]) => dir));
     expect([...aiProviderDirs()].sort()).toEqual([...tested].sort());
@@ -117,7 +113,7 @@ describe('the AI providers register their rate-limiter namespace at boot', () =>
     });
   }
 
-  test('all three share one registry without colliding, and list() carries all three', async () => {
+  test('the AI providers share one registry without colliding, and list() carries each', async () => {
     const registry = new RateLimiterRegistry();
     for (const [, factory] of AI_FACTORIES) {
       await factory(makeDeps(registry, {}));
@@ -127,7 +123,7 @@ describe('the AI providers register their rate-limiter namespace at boot', () =>
         .list()
         .map((e) => e.namespace)
         .sort()
-    ).toEqual(['ai:ai-deepseek', 'ai:ai-openai', 'ai:ai-perplexity']);
+    ).toEqual(AI_FACTORIES.map(([dir]) => `ai:${dir}`).sort());
     // `get()` resolving is what makes the entry useful rather than decorative.
     expect(registry.get('ai:ai-openai')).not.toBeNull();
   });

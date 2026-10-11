@@ -1,3 +1,4 @@
+import { Decimal } from '@scani/shared';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { useTranslation } from 'react-i18next';
 import { amountDecimals, balanceIsBelowZero } from '../../lib/holdings';
@@ -33,16 +34,24 @@ interface HoldingAmountFactProps {
    * this sheet had no badge anywhere, so the unit brings its own.
    */
   lookalikeOf?: string | null;
+  /** A loan or card balance: show it as the amount owed (SC-1640). */
+  owes?: boolean;
 }
 
-export function HoldingAmountFact({ amount, symbol, lookalikeOf }: HoldingAmountFactProps) {
+export function HoldingAmountFact({
+  amount,
+  symbol,
+  lookalikeOf,
+  owes = false,
+}: HoldingAmountFactProps) {
   const { t } = useTranslation();
+  const shown = owes ? new Decimal(amount).neg().toFixed() : amount;
 
   return (
     <span className="flex min-w-0 flex-col items-end gap-0.5">
       <span className="flex min-w-0 items-center justify-end gap-2">
         <span className="flex min-w-0 items-baseline gap-1.5">
-          <Numeric value={amount} format="plain" decimals={amountDecimals(amount)} />
+          <Numeric value={shown} format="plain" decimals={amountDecimals(shown)} />
           <span className="truncate">{symbol}</span>
         </span>
         {lookalikeOf ? <LookalikeBadge symbol={symbol} impersonates={lookalikeOf} t={t} /> : null}
@@ -53,7 +62,11 @@ export function HoldingAmountFact({ amount, symbol, lookalikeOf }: HoldingAmount
           any request a person can make (see `balanceIsBelowZero`), so left
           bare it reads as the app having lost their money rather than as a
           figure they are free to correct — through the peek's Edit (SC-632). */}
-      {balanceIsBelowZero(amount) ? (
+      {owes ? (
+        <span className="text-caption text-muted-foreground text-end">
+          {t('v3.liabilities.owed')}
+        </span>
+      ) : balanceIsBelowZero(amount) ? (
         <span className="text-caption text-muted-foreground text-end">
           {t('v3.holdings.amountFact.belowZero')}
         </span>

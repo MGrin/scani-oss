@@ -18,7 +18,7 @@ import { randomUUID } from 'node:crypto';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { counterpartyFromPayload, normalizeCounterparty, undoEntriesFor } from '@scani/shared';
-import { and, desc, eq, inArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { Container } from 'typedi';
 
 import { counterpartyKeySql, pendingPredicate } from '../../src/lib/transfer-review-queue';
@@ -36,6 +36,8 @@ import { LinkTransferPairsUseCase } from '../../src/use-cases/LinkTransferPairsU
 import { RecordHoldingMovementUseCase } from '../../src/use-cases/RecordHoldingMovementUseCase';
 import { UpdateHoldingUseCase } from '../../src/use-cases/UpdateHoldingUseCase';
 import { restoreContainerAfterAll } from '../../test/helpers/container';
+import { seedHoldingCache } from '../../test/helpers/engine-guard';
+import { seedReading } from '../../test/helpers/factories-extra';
 import { expectHistoryUnchanged, type HistoryReading } from '../../test/helpers/history-neutrality';
 import { expectLabelsSettled } from '../../test/helpers/labels-settled';
 import { raceBehind } from '../../test/helpers/lock-wait';
@@ -77,6 +79,19 @@ let fixture: Fixture | null = null;
 /** Recent enough that nothing ages out of any lookback window. */
 function anchor(): Date {
   return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+}
+
+/**
+ * A holding's balance as a reading: by default its starting balance, dated
+ * before every withdrawal the tests answer, which the engine walks forward
+ * from (A5 D-1). At `now`, what it holds after everything before.
+ */
+async function setBalance(
+  holdingId: string,
+  balance: string,
+  at = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+): Promise<void> {
+  await seedReading(db, { userId: fixture!.userId, holdingId, balance, at });
 }
 
 async function setupFixture(): Promise<Fixture> {
@@ -230,44 +245,57 @@ async function setupFixture(): Promise<Fixture> {
     .returning();
   if (!bridgeToken) throw new Error('bridgeToken insert failed');
 
-  const [outHolding] = await db
-    .insert(schema.holdings)
-    .values({ userId: user.id, accountId: outAccount.id, tokenId: token.id, balance: '0' })
-    .returning();
-  const [inHolding] = await db
-    .insert(schema.holdings)
-    .values({
-      userId: user.id,
-      accountId: inAccount.id,
-      tokenId: token.id,
-      balance: '1',
-      source: 'manual',
-    })
-    .returning();
+  const [outHolding] = await seedHoldingCache(db, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values({ userId: user.id, accountId: outAccount.id, tokenId: token.id, balance: '0' })
+      .returning()
+  );
+  const [inHolding] = await seedHoldingCache(db, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values({
+        userId: user.id,
+        accountId: inAccount.id,
+        tokenId: token.id,
+        balance: '1',
+        source: 'manual',
+      })
+      .returning()
+  );
   // The destination in the reported case: a manually-maintained holding whose
   // balance ALREADY includes the money that moved, because the user raised it
   // by hand when it landed. 6500.32 is the production figure.
-  const [sameAccountHolding] = await db
-    .insert(schema.holdings)
-    .values({
-      userId: user.id,
-      accountId: outAccount.id,
-      tokenId: token.id,
-      balance: '6500.32',
-      source: 'manual',
-    })
-    .returning();
-  const [bridgeHolding] = await db
-    .insert(schema.holdings)
-    .values({
-      userId: user.id,
-      accountId: bridgeAccount.id,
-      tokenId: bridgeToken.id,
-      balance: '0',
-    })
-    .returning();
+  const [sameAccountHolding] = await seedHoldingCache(db, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values({
+        userId: user.id,
+        accountId: outAccount.id,
+        tokenId: token.id,
+        balance: '6500.32',
+        source: 'manual',
+      })
+      .returning()
+  );
+  const [bridgeHolding] = await seedHoldingCache(db, (calculator) =>
+    calculator
+      .insert(schema.holdings)
+      .values({
+        userId: user.id,
+        accountId: bridgeAccount.id,
+        tokenId: bridgeToken.id,
+        balance: '0',
+      })
+      .returning()
+  );
   if (!outHolding || !inHolding || !sameAccountHolding || !bridgeHolding) {
     throw new Error('holding insert failed');
+  }
+  // The readings their balances come from, dated before every withdrawal.
+  const readBefore = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000);
+  for (const { id, balance } of [inHolding, sameAccountHolding]) {
+    await seedReading(db, { userId: user.id, holdingId: id, balance, at: readBefore });
   }
 
   return {
@@ -1207,12 +1235,11 @@ describe('TransferReviewService — a divided answer', () => {
     expect(rows.filter((r) => r.kind === 'fee')).toHaveLength(0);
   });
 
-  test('a fee part is not a second tracked destination — paired + internal still refused', async () => {
-    // The control for the test above. `paired + fee` is accepted because a fee
-    // takes no group id; `paired + internal` is still refused because both
-    // want the one column. If `isLinkingDecision` ever grew a `fee` member the
-    // first would start failing here and this would keep passing, which is
-    // what tells the two apart.
+  test('a paired part and a moved part on the SAME holding are refused, and write nothing', async () => {
+    // One part per destination holding (SC-1665, feeds E2). The deposit is on
+    // `inHolding`, so moving another part there would be a second arrival on
+    // the one holding. The schema cannot see the deposit's holding; the
+    // service reads the group's arrivals after writing and rolls back.
     const f = fixture!;
     const at = anchor();
     const outId = await insertOutflow(f, { at, quantity: '-4000', externalId: 's-fee-2' });
@@ -1230,8 +1257,13 @@ describe('TransferReviewService — a divided answer', () => {
         destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
       },
     ]);
-    expect(refused.ok).toBe(false);
+    expect(refused).toMatchObject({ ok: false, reason: 'invalid' });
     expect((await service().pendingSummary(f.userId)).count).toBe(1);
+    const [deposit] = await db
+      .select({ transferGroupId: schema.holdingTransactions.transferGroupId })
+      .from(schema.holdingTransactions)
+      .where(eq(schema.holdingTransactions.id, inId));
+    expect(deposit?.transferGroupId).toBeNull();
   });
 
   test('a whole withdrawal can be answered `fee`', async () => {
@@ -1684,10 +1716,12 @@ describe('TransferReviewService — moved to a holding Scani tracks', () => {
     // The owner raised the savings pot by hand when the money landed, two
     // hours after it left. The balance already includes it.
     await typeDeposit(f, new Date(at.getTime() + 2 * 3600_000), '4000', 'a');
-    await db
-      .update(schema.holdings)
-      .set({ balance: '4001' })
-      .where(eq(schema.holdings.id, f.inHoldingId));
+    await seedHoldingCache(db, (calculator) =>
+      calculator
+        .update(schema.holdings)
+        .set({ balance: '4001' })
+        .where(eq(schema.holdings.id, f.inHoldingId))
+    );
     const outId = await insertOutflow(f, { at, quantity: '-4000', externalId: 'i-adopt' });
 
     expect(
@@ -1762,6 +1796,99 @@ describe('TransferReviewService — moved to a holding Scani tracks', () => {
     const out = await outflowRow(outId);
     expect(out?.transferReview).toBe('split');
     expect(inflow?.transferGroupId).toBe(out?.transferGroupId ?? '');
+  });
+
+  test('fans out to two destinations under ONE group, each arrival its own part (SC-1665)', async () => {
+    const f = fixture!;
+    const outId = await insertOutflow(f, { at: anchor(), quantity: '-4000', externalId: 'i-e2' });
+
+    expect(
+      await service().resolveSplit(f.userId, outId, [
+        {
+          decision: 'internal',
+          quantity: '3000',
+          destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+        },
+        {
+          decision: 'internal',
+          quantity: '700',
+          destination: { accountId: f.emptyAccountId, holdingId: null },
+        },
+        { decision: 'left_control', quantity: '300' },
+      ])
+    ).toEqual({ ok: true });
+
+    const created = await createdHoldingIn(f, f.emptyAccountId);
+    const arrivals = await createdInflows(f, outId);
+    expect(new Map(arrivals.map((a) => [a.holdingId, a.quantity]))).toEqual(
+      new Map([
+        [f.inHoldingId, '3000'],
+        [created.id, '700'],
+      ])
+    );
+    const out = await outflowRow(outId);
+    expect(out?.transferGroupId).not.toBeNull();
+    expect(arrivals.map((a) => a.transferGroupId)).toEqual([
+      out?.transferGroupId ?? '',
+      out?.transferGroupId ?? '',
+    ]);
+    expect(await balanceOf(f.inHoldingId)).toBe('3001');
+
+    // Reopening takes back every arrival the answer wrote, not only the first.
+    expect(await service().reopen(f.userId, outId)).toBe(true);
+    expect(await createdInflows(f, outId)).toEqual([]);
+  });
+
+  test('a second destination that is gone writes nothing at all, not half an answer', async () => {
+    const f = fixture!;
+    const outId = await insertOutflow(f, { at: anchor(), quantity: '-4000', externalId: 'i-e2x' });
+
+    const result = await service().resolveSplit(f.userId, outId, [
+      {
+        decision: 'internal',
+        quantity: '3000',
+        destination: { accountId: f.inAccountId, holdingId: f.inHoldingId },
+      },
+      {
+        decision: 'internal',
+        quantity: '1000',
+        destination: { accountId: randomUUID(), holdingId: null },
+      },
+    ]);
+
+    expect(result).toEqual({ ok: false, reason: 'destination_gone' });
+    expect(await createdInflows(f, outId)).toEqual([]);
+    expect(await balanceOf(f.inHoldingId)).toBe('1');
+    expect((await outflowRow(outId))?.transferGroupId).toBeNull();
+  });
+
+  test('a paired part and a moved part share one group id (SC-1665)', async () => {
+    const f = fixture!;
+    const at = anchor();
+    const outId = await insertOutflow(f, { at, quantity: '-4000', externalId: 'i-e2p' });
+    const inId = await insertInflow(f, {
+      at: new Date(at.getTime() + 60_000),
+      quantity: '3000',
+      externalId: 'i-e2p-in',
+    });
+
+    expect(
+      await service().resolveSplit(f.userId, outId, [
+        { decision: 'paired', quantity: '3000', matchTransactionId: inId },
+        {
+          decision: 'internal',
+          quantity: '1000',
+          destination: { accountId: f.emptyAccountId, holdingId: null },
+        },
+      ])
+    ).toEqual({ ok: true });
+
+    const out = await outflowRow(outId);
+    const deposit = await outflowRow(inId);
+    const [arrival] = await createdInflows(f, outId);
+    expect(out?.transferGroupId).not.toBeNull();
+    expect(deposit?.transferGroupId).toBe(out?.transferGroupId ?? '');
+    expect(arrival?.transferGroupId).toBe(out?.transferGroupId ?? '');
   });
 
   test('sends money to a second holding of the same token in the SAME account', async () => {
@@ -1945,7 +2072,7 @@ describe('TransferReviewService — who owns the balance of a holding it had to 
     return rows;
   }
 
-  test('opens a wallet destination as the sync’s own row, at zero', async () => {
+  test('opens a wallet destination as the sync’s own row, at its arrival until the sync reads', async () => {
     const f = fixture!;
     const outId = await insertOutflow(f, { at: anchor(), quantity: '-1000', externalId: 's356-1' });
 
@@ -1957,11 +2084,12 @@ describe('TransferReviewService — who owns the balance of a holding it had to 
 
     const rows = await createdHolding(f, f.walletSyncedAccountId);
     expect(rows).toHaveLength(1);
-    // Zero, not 1000. The wallet path runs `staleStrategy: 'preserve'`, so a
-    // token the chain does not report is never visited — a non-zero opening
-    // for a token the wallet does not hold would outlive every future sync
-    // even though the row is now the sync's to write.
-    expect(rows[0]?.balance).toBe('0');
+    // The 1000 that arrived, as history has read it since A5 PR-2: no reading
+    // yet, so the engine sums the ledger. The sync's first reading supersedes
+    // it. The wallet path runs `staleStrategy: 'preserve'`, so a token the
+    // chain never reports is never visited and the 1000 stands until the
+    // person corrects it; production held no such row at the flip (A5 PR-3).
+    expect(rows[0]?.balance).toBe('1000');
     expect(rows[0]?.source).toBe('blockchain');
     // A person picked this account in the form. That is what the column says.
     expect(rows[0]?.arrival).toBe('user_confirmed');
@@ -1973,7 +2101,7 @@ describe('TransferReviewService — who owns the balance of a holding it had to 
     expect(inflow?.quantity).toBe('1000');
   });
 
-  test('opens an exchange destination as the sync’s own row, at zero', async () => {
+  test('opens an exchange destination as the sync’s own row, at its arrival until the sync reads', async () => {
     const f = fixture!;
     const outId = await insertOutflow(f, { at: anchor(), quantity: '-3250', externalId: 's356-2' });
 
@@ -1985,7 +2113,8 @@ describe('TransferReviewService — who owns the balance of a holding it had to 
 
     const rows = await createdHolding(f, f.exchangeSyncedAccountId);
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.balance).toBe('0');
+    // What arrived, until the exchange sync's next reading (A5 PR-3).
+    expect(rows[0]?.balance).toBe('3250');
     expect(rows[0]?.source).toBe('sync_exchange_balances');
 
     const [inflow] = await createdInflows(f, outId);
@@ -2054,7 +2183,8 @@ describe('TransferReviewService — who owns the balance of a holding it had to 
 
     const rows = await createdHolding(f, f.walletSyncedAccountId);
     expect(rows).toHaveLength(1);
-    expect(rows[0]?.balance).toBe('0');
+    // The portion that arrived, until the sync reads (A5 PR-3).
+    expect(rows[0]?.balance).toBe('3500');
     expect(rows[0]?.source).toBe('blockchain');
     const [inflow] = await createdInflows(f, outId);
     expect(inflow?.quantity).toBe('3500');
@@ -2248,10 +2378,6 @@ describe('TransferReviewService — an arrival nobody else will observe (SC-856)
     return row?.balance;
   }
 
-  async function setBalance(holdingId: string, balance: string): Promise<void> {
-    await db.update(schema.holdings).set({ balance }).where(eq(schema.holdings.id, holdingId));
-  }
-
   async function arrivals(f: Fixture, outflowId: string) {
     return db
       .select()
@@ -2273,13 +2399,43 @@ describe('TransferReviewService — an arrival nobody else will observe (SC-856)
     return rows.length;
   }
 
-  /** A holding in the given account, at the given `holdings.source`. */
-  async function holdingIn(f: Fixture, accountId: string, source: string, balance: string) {
-    const [row] = await db
-      .insert(schema.holdings)
-      .values({ userId: f.userId, accountId, tokenId: f.tokenId, balance, source })
-      .returning();
+  /**
+   * A holding in the given account, at the given `holdings.source`. A stated
+   * kind decides whose reading it carries; without one, its source does.
+   */
+  async function holdingIn(
+    f: Fixture,
+    accountId: string,
+    source: string,
+    balance: string,
+    kind?: 'feed' | 'snapshot'
+  ) {
+    const [row] = await seedHoldingCache(db, (calculator) =>
+      calculator
+        .insert(schema.holdings)
+        .values({
+          userId: f.userId,
+          accountId,
+          tokenId: f.tokenId,
+          balance,
+          source,
+          ...(kind === undefined ? {} : { kind }),
+        })
+        .returning()
+    );
     if (!row) throw new Error('holding insert failed');
+    if (kind === undefined ? source === 'manual' : kind === 'snapshot') {
+      await setBalance(row.id, balance);
+    } else {
+      // Its sync's latest reading, taken after the money landed (A5 D-1).
+      await seedReading(db, {
+        userId: f.userId,
+        holdingId: row.id,
+        balance,
+        at: new Date(),
+        authority: 'provider',
+      });
+    }
     return row.id;
   }
 
@@ -2375,6 +2531,56 @@ describe('TransferReviewService — an arrival nobody else will observe (SC-856)
     expect(await balanceOf(manualOnSynced)).toBe('2500');
   });
 
+  test("a person's row a feed took over waits for its feed: no anchor moves and nothing is written in the person's name (A5 #2)", async () => {
+    const f = fixture!;
+    const taken = await holdingIn(f, f.exchangeSyncedAccountId, 'manual', '500', 'feed');
+    const before = await observationCount(taken);
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'a5-taken-row',
+    });
+
+    expect(
+      await service().resolve(f.userId, outId, 'internal', {
+        destination: { accountId: f.exchangeSyncedAccountId, holdingId: taken },
+      })
+    ).toEqual({ ok: true });
+
+    // Its feed reported after the money landed, so the reading stands; the
+    // answer writes the arrival and no value of its own.
+    expect(await balanceOf(taken)).toBe('500');
+    expect(await observationCount(taken)).toBe(before);
+    const written = await arrivals(f, outId);
+    expect(written).toHaveLength(1);
+    expect(written[0]?.sourceMetadata).toMatchObject({ movedDestinationAnchor: false });
+  });
+
+  test('a snapshot in an account a sync owns moves, whatever its source (A5 #2)', async () => {
+    const f = fixture!;
+    const kept = await holdingIn(
+      f,
+      f.exchangeSyncedAccountId,
+      'sync_exchange_balances',
+      '500',
+      'snapshot'
+    );
+    // Its person's latest value postdates the money, so only the moved anchor
+    // can bring the arrival in.
+    await setBalance(kept, '500', new Date());
+    const outId = await insertOutflow(f, {
+      at: anchor(),
+      quantity: '-2000',
+      externalId: 'a5-sync-snapshot',
+    });
+
+    await service().resolve(f.userId, outId, 'internal', {
+      destination: { accountId: f.exchangeSyncedAccountId, holdingId: kept },
+    });
+
+    expect(await balanceOf(kept)).toBe('2500');
+  });
+
   test('the moved anchor is observed, so history is not reconstructed from a gap', async () => {
     const f = fixture!;
     await setBalance(f.inHoldingId, '500');
@@ -2405,19 +2611,27 @@ describe('TransferReviewService — an arrival nobody else will observe (SC-856)
    */
   test('the moved anchor is a person snapshot, labelled at write as the backfill labels it (R74)', async () => {
     const f = fixture!;
-    const [opened] = await db
-      .insert(schema.holdings)
-      .values({
-        userId: f.userId,
-        accountId: f.emptyAccountId,
-        tokenId: f.tokenId,
-        balance: '500',
-        source: 'manual',
-        kind: 'snapshot',
-        startsAt: new Date(anchor().getTime() - 24 * 60 * 60 * 1000),
-      })
-      .returning();
+    const [opened] = await seedHoldingCache(db, (calculator) =>
+      calculator
+        .insert(schema.holdings)
+        .values({
+          userId: f.userId,
+          accountId: f.emptyAccountId,
+          tokenId: f.tokenId,
+          balance: '500',
+          source: 'manual',
+          kind: 'snapshot',
+          startsAt: new Date(anchor().getTime() - 24 * 60 * 60 * 1000),
+        })
+        .returning()
+    );
     if (!opened) throw new Error('holding insert failed');
+    await seedReading(db, {
+      userId: f.userId,
+      holdingId: opened.id,
+      balance: '500',
+      at: opened.startsAt!,
+    });
     const outId = await insertOutflow(f, {
       at: anchor(),
       quantity: '-2000',
@@ -2434,19 +2648,24 @@ describe('TransferReviewService — an arrival nobody else will observe (SC-856)
       })
     ).toEqual({ ok: true });
 
+    // The reading its 500 came from, then the moved anchor.
     const rows = await db
       .select()
       .from(schema.holdingBalanceObservations)
-      .where(eq(schema.holdingBalanceObservations.holdingId, opened.id));
-    expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({
+      .where(eq(schema.holdingBalanceObservations.holdingId, opened.id))
+      .orderBy(asc(schema.holdingBalanceObservations.observedAt));
+    expect(rows.map((r) => r.balance)).toEqual(['500', '2500']);
+    expect(rows[1]).toMatchObject({
       balance: '2500',
       source: 'sync-capture',
       sourceMetadata: { origin: 'updateHolding' },
       role: 'snapshot',
       authority: 'person',
       inputId: null,
-      cause: 'flow',
+      // The arrival row explains 500 -> 2500, so the derived cause is none;
+      // a holding with no reading before it derived 'flow' (A5 PR-3 fixture).
+      cause: null,
+      previousBalance: '500',
       gapReview: null,
       supersededAt: null,
     });
@@ -2528,7 +2747,8 @@ describe('TransferReviewService — an arrival nobody else will observe (SC-856)
           eq(schema.holdingTransactions.externalId, outId)
         )
       );
-    await setBalance(f.inHoldingId, '500');
+    // Before the fix the anchor stayed put: 500 is what it read after the arrival.
+    await setBalance(f.inHoldingId, '500', new Date());
 
     expect(await service().reopen(f.userId, outId)).toBe(true);
 
@@ -2576,6 +2796,14 @@ describe('TransferReviewService — an arrival nobody else will observe (SC-856)
       quantity: '-2000',
       externalId: 'sc856-picker',
     });
+    const taken = await holdingIn(f, f.exchangeSyncedAccountId, 'manual', '500', 'feed');
+    const kept = await holdingIn(
+      f,
+      f.exchangeSyncedAccountId,
+      'sync_exchange_balances',
+      '500',
+      'snapshot'
+    );
 
     const offered = await service().listDestinations(f.userId, outId);
     const by = (holdingId: string | null, accountId: string) =>
@@ -2586,6 +2814,9 @@ describe('TransferReviewService — an arrival nobody else will observe (SC-856)
     // cannot say whether a sync owns the ACCOUNT.
     expect(by(f.inHoldingId, f.inAccountId)?.movesBalance).toBe(true);
     expect(by(syncedHoldingId, f.exchangeSyncedAccountId)?.movesBalance).toBe(false);
+    // The holding's kind decides, not its source (A5 #2).
+    expect(by(taken, f.exchangeSyncedAccountId)?.movesBalance).toBe(false);
+    expect(by(kept, f.exchangeSyncedAccountId)?.movesBalance).toBe(true);
     // No holding yet: the opener opens at the moved amount where nobody
     // syncs, and at zero where somebody does.
     expect(by(null, f.emptyAccountId)?.movesBalance).toBe(true);
@@ -4543,10 +4774,6 @@ describe('TransferReviewService — the entity boundary', () => {
  *   undone.
  */
 describe('TransferReviewService — reopening a transfer the OWNER declared (SC-618)', () => {
-  async function setBalance(holdingId: string, balance: string): Promise<void> {
-    await db.update(schema.holdings).set({ balance }).where(eq(schema.holdings.id, holdingId));
-  }
-
   async function balance(holdingId: string): Promise<string | undefined> {
     const [row] = await db
       .select({ balance: schema.holdings.balance })
@@ -4837,7 +5064,8 @@ describe('TransferReviewService — the opening observation of a holding it crea
     ).toEqual({ ok: true });
 
     const holding = await createdHoldingIn(f, f.walletSyncedAccountId);
-    expect(holding.balance).toBe('0');
+    // No observation, so its cache is the arrival the ledger holds (A5 PR-3).
+    expect(holding.balance).toBe('1000');
     // Deliberate asymmetry. The next test is the reason.
     expect(await observationsOn(holding.id)).toEqual([]);
   });
@@ -5060,7 +5288,7 @@ describe('an internal answer’s created destination, pinned before it moves (fo
     });
   });
 
-  test('a sync-owned account’s destination opens at zero under the sync’s source, with no observation: blockchain for a wallet, sync_exchange_balances for an exchange', async () => {
+  test('a sync-owned account’s destination opens under the sync’s source, with no observation, its cache the arrival until the sync reads: blockchain for a wallet, sync_exchange_balances for an exchange', async () => {
     const f = fixture!;
     const at = anchor();
     for (const [accountId, source, quantity, externalId] of [
@@ -5073,7 +5301,7 @@ describe('an internal answer’s created destination, pinned before it moves (fo
       expect(visibleRow(holding)).toEqual({
         accountId,
         tokenId: f.tokenId,
-        balance: '0',
+        balance: quantity,
         source,
         arrival: 'user_confirmed',
         externalId: null,
@@ -5186,23 +5414,39 @@ describe('an internal answer’s created destination, pinned before it moves (fo
     const opened = (await createdHoldingIn(f, f.emptyAccountId)).id;
     const openedAtZero = (await createdHoldingIn(f, f.walletSyncedAccountId)).id;
 
-    // Read on the path before the move. Each destination reads what it held
-    // before the arrival and the arrival after it; the source, which nothing
-    // here writes, reads the three withdrawals walked back from its zero.
+    // The source is an exchange holding, and a real one carries its balance
+    // sync's reading. This fixture's has none, so give it the zero the sync
+    // would read after the three withdrawals.
+    await db.insert(schema.holdingBalanceObservations).values({
+      userId: f.userId,
+      holdingId: f.outHoldingId,
+      balance: '0',
+      observedAt: new Date(at.getTime() + 60 * 60 * 1000),
+      source: 'sync-capture',
+      sourceMetadata: { origin: 'updateHoldingBalanceWithEvent' },
+    });
+
+    // Read on the engine since A5 PR-2 (D-10). A day before the answer each
+    // holding the answers opened reads absent: it starts at the arrival or the
+    // withdrawal, where the old walk carried a figure back. The existing
+    // anchor reads the 1 its fixture reading gives it. After it, `opened` and
+    // the existing anchor read their readings; `openedAtZero` has no reading yet, so it
+    // reads the 1000 the person declared arrived, where the old walk read the
+    // placeholder 0 the opener stores until the sync reads.
     const now = new Date();
     const before = new Date(at.getTime() - day);
     const after = new Date(at.getTime() + day);
     const golden: Array<[string, Date, string | null]> = [
-      [opened, before, '0'],
+      [opened, before, null],
       [opened, after, '250'],
       [opened, now, '250'],
-      [openedAtZero, before, '0'],
-      [openedAtZero, after, '0'],
-      [openedAtZero, now, '0'],
+      [openedAtZero, before, null],
+      [openedAtZero, after, '1000'],
+      [openedAtZero, now, '1000'],
       [f.inHoldingId, before, '1'],
       [f.inHoldingId, after, '41'],
       [f.inHoldingId, now, '41'],
-      [f.outHoldingId, before, '1290'],
+      [f.outHoldingId, before, null],
       [f.outHoldingId, after, '0'],
       [f.outHoldingId, now, '0'],
     ];
@@ -5293,12 +5537,16 @@ describe('an internal answer’s created destination comes from the resolver and
       ])
     ).toEqual({ ok: true });
 
-    for (const accountId of [f.exchangeSyncedAccountId, f.walletSyncedAccountId]) {
+    // Each cache is what arrived, until its sync reads (A5 PR-3).
+    for (const [accountId, arrived] of [
+      [f.exchangeSyncedAccountId, '3250'],
+      [f.walletSyncedAccountId, '3500'],
+    ] as const) {
       const holding = await createdHoldingIn(f, accountId);
       expect({ kind: holding.kind, startsAt: holding.startsAt, balance: holding.balance }).toEqual({
         kind: 'feed',
         startsAt: at,
-        balance: '0',
+        balance: arrived,
       });
       expect(await labelledObservations(holding.id)).toEqual([]);
     }
@@ -5350,10 +5598,12 @@ describe('an internal answer into an existing destination lowers its start to th
     accountId: string,
     values: { source: string; kind: 'snapshot' | 'feed'; startsAt: Date | null }
   ): Promise<string> {
-    const [row] = await db
-      .insert(schema.holdings)
-      .values({ userId: f.userId, accountId, tokenId: f.tokenId, balance: '0', ...values })
-      .returning({ id: schema.holdings.id });
+    const [row] = await seedHoldingCache(db, (calculator) =>
+      calculator
+        .insert(schema.holdings)
+        .values({ userId: f.userId, accountId, tokenId: f.tokenId, balance: '0', ...values })
+        .returning({ id: schema.holdings.id })
+    );
     if (!row) throw new Error('holding insert failed');
     return row.id;
   }
@@ -5378,10 +5628,12 @@ describe('an internal answer into an existing destination lowers its start to th
     const f = fixture!;
     const at = anchor();
     const later = new Date(at.getTime() + 6 * DAY);
-    await db
-      .update(schema.holdings)
-      .set({ kind: 'snapshot', startsAt: later })
-      .where(eq(schema.holdings.id, f.inHoldingId));
+    await seedHoldingCache(db, (calculator) =>
+      calculator
+        .update(schema.holdings)
+        .set({ kind: 'snapshot', startsAt: later })
+        .where(eq(schema.holdings.id, f.inHoldingId))
+    );
     const synced = await heldIn(f, f.walletSyncedAccountId, {
       source: 'blockchain',
       kind: 'feed',
@@ -5392,6 +5644,16 @@ describe('an internal answer into an existing destination lowers its start to th
       kind: 'snapshot',
       startsAt: later,
     });
+    // What each start means: the feed's first checkpoint, and the reading the
+    // person's holding opened with (A2 Rule P).
+    await seedReading(db, {
+      userId: f.userId,
+      holdingId: synced,
+      balance: '0',
+      at: later,
+      authority: 'provider',
+    });
+    await seedReading(db, { userId: f.userId, holdingId: observed, balance: '0', at: later });
 
     await answer(f, { accountId: f.inAccountId, holdingId: f.inHoldingId }, at, 'd6-moved');
     await answer(f, { accountId: f.walletSyncedAccountId, holdingId: synced }, at, 'd6-synced');
@@ -5437,10 +5699,6 @@ describe('the queue writes amounts below 1e-6 in plain notation (foundation A2, 
       .from(schema.holdings)
       .where(eq(schema.holdings.id, holdingId));
     return row?.balance;
-  }
-
-  async function setBalance(holdingId: string, balance: string) {
-    await db.update(schema.holdings).set({ balance }).where(eq(schema.holdings.id, holdingId));
   }
 
   /** The newest observation's figure, which the anchor move records beside the cache. */
@@ -5550,10 +5808,6 @@ describe('the queue writes amounts below 1e-6 in plain notation (foundation A2, 
  * on two connections; the answer is seen blocked by the edit before it lands.
  */
 describe('TransferReviewService — an anchor move racing an edit of the holding (SC-1525)', () => {
-  async function setBalance(holdingId: string, balance: string): Promise<void> {
-    await db.update(schema.holdings).set({ balance }).where(eq(schema.holdings.id, holdingId));
-  }
-
   async function balance(holdingId: string): Promise<string | undefined> {
     const [row] = await db
       .select({ balance: schema.holdings.balance })

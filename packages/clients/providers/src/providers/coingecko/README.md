@@ -59,11 +59,8 @@ attempts). After retries:
   Outside of that list, callers must seed
   `providerMetadata.coingecko.id` explicitly.
 - **Currency support**: CoinGecko natively supports ~50 fiat + crypto
-  bases (USD/EUR/GBP/CHF/JPY/RUB/TRY/CAD/AUD/CNY/…). For exotic bases
-  the provider falls back to USD then converts via the injected
-  `CurrencyConverter` (domain-side `CurrencyConverter` in direct mode;
-  cloud mode never reaches this path because data-provider performs the
-  call).
+  bases (USD/EUR/GBP/CHF/JPY/RUB/TRY/CAD/AUD/CNY/…). An exotic base gets
+  no quote; every caller asks against USD.
 - **`/coins/{id}/history` returns `market_data.current_price[base]` but
   only if the token had liquidity that day**. Tokens that didn't exist
   yet (or ones too obscure on that date) come back with `market_data`

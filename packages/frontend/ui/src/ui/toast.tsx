@@ -18,7 +18,7 @@ const ToastViewport = React.forwardRef<
       // (UpdateBanner / InstallPromptBanner publish their height into
       // `--scani-banner-offset`; see useBannerOffset). Falls back to the
       // notch inset when no banner is shown. Desktop: bottom-right.
-      'fixed top-[var(--scani-banner-offset,env(safe-area-inset-top,0px))] z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:end-0 sm:top-auto sm:flex-col md:max-w-[420px]',
+      'fixed top-[var(--scani-banner-offset,var(--scani-inset-top,env(safe-area-inset-top,0px)))] z-[100] flex max-h-screen w-full flex-col-reverse p-4 sm:bottom-0 sm:end-0 sm:top-auto sm:flex-col md:max-w-[420px]',
       '[padding-top:0.75rem] sm:[padding-top:1rem] sm:[padding-bottom:calc(1rem+env(safe-area-inset-bottom))]',
       className
     )}

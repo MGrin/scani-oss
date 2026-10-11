@@ -33,6 +33,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
       name: 'Spot',
       type: 'Exchange',
       typeCode: 'exchange',
+      class: 'asset',
       institutionId: 'i1',
     },
     institution: { id: 'i1', name: 'Kraken', type: 'Exchange', typeCode: 'exchange' },
@@ -43,6 +44,7 @@ function holding(overrides: Partial<HoldingWithDetails> = {}): HoldingWithDetail
     isHidden: false,
     source: 'import_wallet',
     refreshable: true,
+    deleteHides: false,
     ...overrides,
   };
 }
@@ -243,14 +245,14 @@ describe('HoldingsSummary margin debt', () => {
   test('the hero stays net, the debt is its own line, and the shares are of assets', () => {
     const html = render(rows);
     expect(html).toInclude('12,500.00');
-    expect(html).toInclude('data-ui="margin-debt"');
+    expect(html).toInclude('data-ui="debt"');
     expect(html).toInclude('−$2,500.00');
     expect(html).toInclude('Share of assets');
   });
 
   test('without debt, neither the line nor the caption renders', () => {
     const html = render([rows[0] as HoldingWithDetails, rows[2] as HoldingWithDetails]);
-    expect(html).not.toInclude('margin-debt');
+    expect(html).not.toInclude('data-ui="debt"');
     expect(html).not.toInclude('Share of assets');
   });
 });

@@ -196,9 +196,15 @@ describe('confirmAbsences — what is not an absence', () => {
 
 describe('confirmAbsences — immediate (an integration import)', () => {
   const immediate = (reportedKeys: string[]) =>
-    ({ mode: 'immediate', guardEmptySnapshot: false, reportedKeys }) satisfies AbsencePolicy;
+    ({
+      mode: 'immediate',
+      guardEmptySnapshot: false,
+      confirmations: null,
+      reportedKeys,
+      statementAsOf: day('2026-07-20'),
+    }) satisfies AbsencePolicy;
 
-  test('immediate zeroes on the first absence', () => {
+  test('immediate with no confirmations zeroes on the first absence', () => {
     const decision = confirmAbsences({
       policy: immediate(['BTC']),
       reportedKeys: new Set(['BTC']),
@@ -226,5 +232,36 @@ describe('confirmAbsences — immediate (an integration import)', () => {
     });
     expect(decision.guardTripped).toBe(false);
     expect(decision.zero).toEqual(['a', 'b']);
+  });
+
+  test("immediate with the provider's confirmations tallies absent cash as the sync does (A5 D-22)", () => {
+    const policy = {
+      ...immediate(['BTC']),
+      confirmations: { typeCode: 'fiat', statements: 3 },
+    } satisfies AbsencePolicy;
+    const owned = [
+      candidate({ holdingId: 'btc', key: 'BTC' }),
+      candidate({ holdingId: 'eth', key: 'ETH' }),
+    ];
+
+    const second = confirmAbsences({
+      policy,
+      reportedKeys: new Set(['BTC']),
+      owned: [...owned, cash(['2026-07-19'])],
+    });
+    const third = confirmAbsences({
+      policy,
+      reportedKeys: new Set(['BTC']),
+      owned: [...owned, cash(['2026-07-18', '2026-07-19'])],
+    });
+
+    expect({ zero: second.zero, tally: isoDays(second.tally.get('cad')) }).toEqual({
+      zero: ['eth'],
+      tally: ['2026-07-19', '2026-07-20'],
+    });
+    expect({ zero: third.zero, cleared: third.cleared }).toEqual({
+      zero: ['eth', 'cad'],
+      cleared: ['cad'],
+    });
   });
 });

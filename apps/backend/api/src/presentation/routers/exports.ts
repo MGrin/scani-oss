@@ -106,122 +106,151 @@ export const exportsRouter = router({
       });
     }
 
-    const [accounts, holdings, vendors, payments, groups, vaults, documents] = await Promise.all([
-      db
-        .select({
-          id: schema.accounts.id,
-          archivedEntityId: schema.accounts.entityId,
-          name: schema.accounts.name,
-          institutionId: schema.accounts.institutionId,
-          institutionName: schema.institutions.name,
-          type: schema.accountTypes.name,
-          description: schema.accounts.description,
-          isHidden: schema.accounts.isHidden,
-          isActive: schema.accounts.isActive,
-          createdAt: schema.accounts.createdAt,
-        })
-        .from(schema.accounts)
-        .innerJoin(schema.institutions, eq(schema.institutions.id, schema.accounts.institutionId))
-        .innerJoin(schema.accountTypes, eq(schema.accountTypes.id, schema.accounts.typeId))
-        .where(eq(schema.accounts.userId, userId)),
+    const [accounts, holdings, vendors, payments, groups, vaults, documents, categoryRows] =
+      await Promise.all([
+        db
+          .select({
+            id: schema.accounts.id,
+            archivedEntityId: schema.accounts.entityId,
+            name: schema.accounts.name,
+            institutionId: schema.accounts.institutionId,
+            institutionName: schema.institutions.name,
+            type: schema.accountTypes.name,
+            description: schema.accounts.description,
+            isHidden: schema.accounts.isHidden,
+            isActive: schema.accounts.isActive,
+            createdAt: schema.accounts.createdAt,
+          })
+          .from(schema.accounts)
+          .innerJoin(schema.institutions, eq(schema.institutions.id, schema.accounts.institutionId))
+          .innerJoin(schema.accountTypes, eq(schema.accountTypes.id, schema.accounts.typeId))
+          .where(eq(schema.accounts.userId, userId)),
 
-      db
-        .select({
-          id: schema.holdings.id,
-          accountId: schema.holdings.accountId,
-          accountName: schema.accounts.name,
-          institutionName: schema.institutions.name,
-          tokenId: schema.holdings.tokenId,
-          symbol: schema.tokens.symbol,
-          tokenName: schema.tokens.name,
-          balance: schema.holdings.balance,
-          source: schema.holdings.source,
-          isHidden: schema.holdings.isHidden,
-          isActive: schema.holdings.isActive,
-          lastUpdated: schema.holdings.lastUpdated,
-          createdAt: schema.holdings.createdAt,
-        })
-        .from(schema.holdings)
-        .innerJoin(schema.accounts, eq(schema.accounts.id, schema.holdings.accountId))
-        .innerJoin(schema.institutions, eq(schema.institutions.id, schema.accounts.institutionId))
-        .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
-        .where(eq(schema.holdings.userId, userId)),
+        db
+          .select({
+            id: schema.holdings.id,
+            accountId: schema.holdings.accountId,
+            accountName: schema.accounts.name,
+            institutionName: schema.institutions.name,
+            tokenId: schema.holdings.tokenId,
+            symbol: schema.tokens.symbol,
+            tokenName: schema.tokens.name,
+            balance: schema.holdings.balance,
+            source: schema.holdings.source,
+            isHidden: schema.holdings.isHidden,
+            isActive: schema.holdings.isActive,
+            lastUpdated: schema.holdings.lastUpdated,
+            createdAt: schema.holdings.createdAt,
+          })
+          .from(schema.holdings)
+          .innerJoin(schema.accounts, eq(schema.accounts.id, schema.holdings.accountId))
+          .innerJoin(schema.institutions, eq(schema.institutions.id, schema.accounts.institutionId))
+          .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
+          .where(eq(schema.holdings.userId, userId)),
 
-      db
-        .select({
-          id: schema.vendors.id,
-          displayName: schema.vendors.displayName,
-          category: schema.vendors.category,
-          website: schema.vendors.website,
-          createdAt: schema.vendors.createdAt,
-        })
-        .from(schema.vendors)
-        .where(eq(schema.vendors.userId, userId)),
+        db
+          .select({
+            id: schema.vendors.id,
+            displayName: schema.vendors.displayName,
+            category: schema.vendors.category,
+            website: schema.vendors.website,
+            createdAt: schema.vendors.createdAt,
+          })
+          .from(schema.vendors)
+          .where(eq(schema.vendors.userId, userId)),
 
-      db
-        .select({
-          id: schema.payments.id,
-          vendorId: schema.payments.vendorId,
-          vendorName: schema.vendors.displayName,
-          direction: schema.payments.direction,
-          kind: schema.payments.kind,
-          expectedAmount: schema.payments.expectedAmount,
-          currency: schema.tokens.symbol,
-          intervalUnit: schema.payments.intervalUnit,
-          intervalCount: schema.payments.intervalCount,
-          anchorDate: schema.payments.anchorDate,
-          endDate: schema.payments.endDate,
-          status: schema.payments.status,
-          origin: schema.payments.origin,
-          notes: schema.payments.notes,
-          createdAt: schema.payments.createdAt,
-        })
-        .from(schema.payments)
-        .innerJoin(schema.vendors, eq(schema.vendors.id, schema.payments.vendorId))
-        .innerJoin(schema.tokens, eq(schema.tokens.id, schema.payments.currencyTokenId))
-        .where(eq(schema.payments.userId, userId)),
+        db
+          .select({
+            id: schema.payments.id,
+            vendorId: schema.payments.vendorId,
+            vendorName: schema.vendors.displayName,
+            direction: schema.payments.direction,
+            kind: schema.payments.kind,
+            expectedAmount: schema.payments.expectedAmount,
+            currency: schema.tokens.symbol,
+            intervalUnit: schema.payments.intervalUnit,
+            intervalCount: schema.payments.intervalCount,
+            anchorDate: schema.payments.anchorDate,
+            endDate: schema.payments.endDate,
+            status: schema.payments.status,
+            origin: schema.payments.origin,
+            notes: schema.payments.notes,
+            createdAt: schema.payments.createdAt,
+          })
+          .from(schema.payments)
+          .innerJoin(schema.vendors, eq(schema.vendors.id, schema.payments.vendorId))
+          .innerJoin(schema.tokens, eq(schema.tokens.id, schema.payments.currencyTokenId))
+          .where(eq(schema.payments.userId, userId)),
 
-      db
-        .select({
-          id: schema.groups.id,
-          name: schema.groups.name,
-          description: schema.groups.description,
-          color: schema.groups.color,
-          isActive: schema.groups.isActive,
-          createdAt: schema.groups.createdAt,
-        })
-        .from(schema.groups)
-        .where(eq(schema.groups.userId, userId)),
+        db
+          .select({
+            id: schema.groups.id,
+            name: schema.groups.name,
+            description: schema.groups.description,
+            color: schema.groups.color,
+            isActive: schema.groups.isActive,
+            createdAt: schema.groups.createdAt,
+          })
+          .from(schema.groups)
+          .where(eq(schema.groups.userId, userId)),
 
-      db
-        .select({
-          id: schema.vaults.id,
-          name: schema.vaults.name,
-          description: schema.vaults.description,
-          targetAmount: schema.vaults.targetAmount,
-          currentAmount: schema.vaults.currentAmount,
-          currency: schema.tokens.symbol,
-          isActive: schema.vaults.isActive,
-          createdAt: schema.vaults.createdAt,
-        })
-        .from(schema.vaults)
-        .innerJoin(schema.tokens, eq(schema.tokens.id, schema.vaults.currencyId))
-        .where(eq(schema.vaults.userId, userId)),
+        db
+          .select({
+            id: schema.vaults.id,
+            name: schema.vaults.name,
+            description: schema.vaults.description,
+            targetAmount: schema.vaults.targetAmount,
+            currentAmount: schema.vaults.currentAmount,
+            currency: schema.tokens.symbol,
+            isActive: schema.vaults.isActive,
+            createdAt: schema.vaults.createdAt,
+          })
+          .from(schema.vaults)
+          .innerJoin(schema.tokens, eq(schema.tokens.id, schema.vaults.currencyId))
+          .where(eq(schema.vaults.userId, userId)),
 
-      db
-        .select({
-          id: schema.documents.id,
-          filename: schema.documents.originalFilename,
-          purpose: schema.documents.purpose,
-          mimeType: schema.documents.mimeType,
-          byteSize: schema.documents.byteSize,
-          sourceKind: schema.documents.sourceKind,
-          classification: schema.documents.classification,
-          createdAt: schema.documents.createdAt,
-        })
-        .from(schema.documents)
-        .where(eq(schema.documents.userId, userId)),
-    ]);
+        db
+          .select({
+            id: schema.documents.id,
+            filename: schema.documents.originalFilename,
+            purpose: schema.documents.purpose,
+            mimeType: schema.documents.mimeType,
+            byteSize: schema.documents.byteSize,
+            sourceKind: schema.documents.sourceKind,
+            classification: schema.documents.classification,
+            createdAt: schema.documents.createdAt,
+          })
+          .from(schema.documents)
+          .where(eq(schema.documents.userId, userId)),
+
+        db
+          .select({
+            id: schema.transactionCategories.id,
+            name: schema.transactionCategories.name,
+            parentId: schema.transactionCategories.parentId,
+            color: schema.transactionCategories.color,
+          })
+          .from(schema.transactionCategories)
+          .where(eq(schema.transactionCategories.userId, userId))
+          .orderBy(schema.transactionCategories.name),
+      ]);
+
+    // Named as `Parent › Child`, the way the app shows them (SC-1652).
+    const categoryName = new Map(categoryRows.map((row) => [row.id, row.name]));
+    const categoryPath = new Map(
+      categoryRows.map((row) => {
+        const parent = row.parentId ? categoryName.get(row.parentId) : undefined;
+        return [row.id, parent ? `${parent} › ${row.name}` : row.name];
+      })
+    );
+    const categories = categoryRows
+      .filter((row) => row.parentId === null)
+      .flatMap((parent) => [parent, ...categoryRows.filter((row) => row.parentId === parent.id)])
+      .map((row) => ({
+        name: row.name,
+        parent: row.parentId ? (categoryName.get(row.parentId) ?? null) : null,
+        color: row.color,
+      }));
 
     const paymentIds = payments.map((payment) => payment.id);
     const groupIds = groups.map((group) => group.id);
@@ -245,6 +274,8 @@ export const exportsRouter = router({
             externalId: schema.holdingTransactions.externalId,
             counterparty: schema.holdingTransactions.counterparty,
             description: schema.holdingTransactions.description,
+            categoryId: schema.holdingTransactions.categoryId,
+            categorySetBy: schema.holdingTransactions.categorySetBy,
           })
           .from(schema.holdingTransactions)
           .innerJoin(schema.holdings, eq(schema.holdings.id, schema.holdingTransactions.holdingId))
@@ -375,7 +406,11 @@ export const exportsRouter = router({
       })),
       accounts,
       holdings,
-      transactions,
+      transactions: transactions.map(({ categoryId, ...row }) => ({
+        ...row,
+        category: categoryId ? (categoryPath.get(categoryId) ?? null) : null,
+      })),
+      categories,
       vendors,
       payments,
       groups,

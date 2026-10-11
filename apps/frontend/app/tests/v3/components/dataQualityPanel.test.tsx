@@ -58,6 +58,7 @@ function report(overrides: Partial<DataQualityReport> = {}): DataQualityReport {
       noPriceSource: ids(1, 'nosource'),
       negativeOpening: ids(3, 'neg'),
       noCoverage: ids(5, 'nocov'),
+      restoredUnmatched: ids(2, 'restored'),
     },
     duplicateTokens: [{ symbol: 'USDC', count: 2 }],
     unroutableTokens: [{ symbol: 'TRUMP', segment: null }],
@@ -71,6 +72,7 @@ function report(overrides: Partial<DataQualityReport> = {}): DataQualityReport {
       unpriceableVisible: 1,
       negativeOpening: 3,
       missingCoverage: 5,
+      restoredUnmatched: 2,
     },
     thresholds: { staleClosedDays: 30 },
     ...overrides,
@@ -136,10 +138,11 @@ describe('data-quality panel', () => {
   test('flags the rows that are over threshold', () => {
     const html = renderPanel();
     const flag = i18n.t('v3.settings.dataQuality.flagged');
-    // Seven, not the six the ticket listed: SC-271 added the lookalike row
+    // Eight, not the six the ticket listed: SC-271 added the lookalike row,
+    // and SC-1649 the row for a holding a restore could not match.
     // after it was written. The literal count is the point — a row that stops
     // flagging is exactly the regression this panel exists to prevent.
-    expect(rowsOf(html).split(flag).length - 1).toBe(7);
+    expect(rowsOf(html).split(flag).length - 1).toBe(8);
   });
 
   test('every flagged row links to the holdings behind it', () => {
@@ -164,9 +167,22 @@ describe('data-quality panel', () => {
       })
     );
     const flag = i18n.t('v3.settings.dataQuality.flagged');
-    expect(rowsOf(html).split(flag).length - 1).toBe(7);
+    expect(rowsOf(html).split(flag).length - 1).toBe(8);
     expect(hrefs(html)).not.toContain('/holdings?quality=negativeOpening');
     expect(hrefs(html)).not.toContain('/holdings?quality=noCoverage');
+  });
+
+  test('an account no restore touched is not shown a restore row (SC-1649)', () => {
+    const label = i18n.t('v3.settings.dataQuality.restoredUnmatched');
+    const html = renderPanel(
+      report({
+        flagged: { restoredUnmatched: [] },
+        holdings: { ...report().holdings, restoredUnmatched: 0 },
+      })
+    );
+    expect(rowsOf(html)).not.toContain(label);
+    // CONTROL: the fixture's own report carries two, and shows the row.
+    expect(rowsOf(renderPanel())).toContain(label);
   });
 
   test('an API with no ids at all links nothing', () => {
@@ -251,5 +267,25 @@ describe('data-quality panel', () => {
     expect(html).toContain(i18n.t('v3.settings.dataQuality.duplicateRows'));
     expect(rowsOf(html)).not.toContain(i18n.t('v3.settings.dataQuality.flagged'));
     expect(hrefs(html)).toEqual([]);
+  });
+});
+
+/**
+ * A5 #9: a hide sticks, so a hidden row that later holds money would sit
+ * outside every total unseen. The panel names it and links to where hidden
+ * rows are brought back, which is not the holdings list.
+ */
+describe('a hidden holding with a new balance', () => {
+  test('is a flagged row linking to Tokens → Hidden', () => {
+    const html = renderPanel(report({ hiddenWithNewBalance: ids(2, 'hid') }));
+    expect(rowsOf(html)).toContain('Hidden holdings with a new balance');
+    expect(hrefs(html)).toContain('/tokens/hidden');
+    expect(html).toContain('Hidden holdings with a new balance: 2 — show in Tokens → Hidden');
+  });
+
+  test('with none, the row reads 0 and links nowhere', () => {
+    const html = renderPanel(report({ hiddenWithNewBalance: [] }));
+    expect(rowsOf(html)).toContain('Hidden holdings with a new balance');
+    expect(hrefs(html)).not.toContain('/tokens/hidden');
   });
 });

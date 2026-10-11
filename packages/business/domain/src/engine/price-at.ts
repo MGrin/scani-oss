@@ -49,6 +49,8 @@ export function assetClassOf(typeCode: string | null | undefined): AssetClass {
       return typeCode;
     case 'private-company':
     case 'other':
+    case 'property':
+    case 'vehicle':
       return 'custom';
     default:
       return 'unknown';
@@ -143,7 +145,7 @@ function waysToBase(from: string, base: string, hops: readonly string[]): Array<
   ];
 }
 
-/** One hop at most, as today's default `maxDepth: 2`. */
+/** One hop at most: a hub that is neither the asset nor the base. */
 function hopsBetween(asset: string, base: string, hubs: readonly string[]): string[] {
   return hubs.filter((hub) => hub !== asset && hub !== base);
 }

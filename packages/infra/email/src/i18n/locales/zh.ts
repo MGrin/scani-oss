@@ -21,6 +21,16 @@ export const zh: EmailStrings = {
     textBody: '请在你发起操作的同一个浏览器中打开这个链接。它只能使用一次，15 分钟后过期。',
     textIgnore: '不是你发起的？可以放心忽略这封邮件。',
   },
+  householdInvite: {
+    subject: '{inviter} 邀请你加入 {app} 上的家庭',
+    headline: '加入 {household}',
+    body: '{inviter} 邀请你查看其在 {app} 的 {household} 中共享的账户。除非你选择共享，你自己的账户将保持私密。',
+    button: '接受邀请',
+    preheader: '{inviter} 邀请你加入 {app} 上的 {household}。',
+    textIntro: '{inviter} 邀请你加入 {app} 上的 {household}。',
+    textBody: '请使用此邮箱地址登录，然后接受邀请。除非你选择共享，你的账户将保持私密。',
+    expiry: '邀请将在 7 天后过期。',
+  },
   otp: {
     headline: {
       signIn: '你的登录验证码',

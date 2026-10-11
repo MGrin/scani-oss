@@ -1,12 +1,18 @@
 import { describe, expect, test } from 'bun:test';
 import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
+import Decimal from 'decimal.js';
 import { eq, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { PortfolioValueDailyRepository } from '../../src/repositories/PortfolioValueDailyRepository';
 import { withTestDb } from '../../test/helpers/db';
-import { makeUser } from '../../test/helpers/factories';
-import { makeHoldingTransaction, makeToken } from '../../test/helpers/factories-extra';
+import { makeInstitution, makeUser } from '../../test/helpers/factories';
+import {
+  makeAccount,
+  makeHolding,
+  makeHoldingTransaction,
+  makeToken,
+} from '../../test/helpers/factories-extra';
 
 const repo = () => Container.get(PortfolioValueDailyRepository);
 
@@ -369,6 +375,122 @@ describe('PortfolioValueDailyRepository.findHistoryLookbackDays', () => {
         holdingsTotal: 1,
       });
       expect(await repo().findHistoryLookbackDays(stored.userId, FLOOR, tx)).toBe(602);
+    });
+  });
+});
+
+describe('PortfolioValueDailyRepository — money in transit (SC-1675)', () => {
+  const day = '2026-09-01';
+  const from = new Date(`${day}T00:00:00Z`);
+  const to = new Date(`${day}T23:59:59Z`);
+
+  /** One holding at 1000 (cost 800) and 500 travelling to it, plus the controls. */
+  async function travelling(tx: DatabaseTransaction) {
+    const user = await makeUser(tx);
+    const other = await makeUser(tx);
+    const usd = await makeToken(tx);
+    const institution = await makeInstitution(tx);
+    const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+    const holding = await makeHolding(tx, {
+      userId: user.id,
+      accountId: account.id,
+      tokenId: usd.id,
+    });
+    const hidden = await makeHolding(tx, {
+      userId: user.id,
+      accountId: account.id,
+      tokenId: usd.id,
+      isHidden: true,
+      hiddenBy: 'user',
+    });
+    const otherAccount = await makeAccount(tx, { userId: other.id, institutionId: institution.id });
+    const otherHolding = await makeHolding(tx, {
+      userId: other.id,
+      accountId: otherAccount.id,
+      tokenId: usd.id,
+    });
+    const row = (
+      userId: string,
+      scopeKind: 'holding' | 'transit',
+      scopeId: string,
+      value: string
+    ) => ({
+      userId,
+      scopeKind,
+      scopeId,
+      snapshotDate: day,
+      baseCurrencyId: usd.id,
+      coverageQuality: 'full' as const,
+      totalValue: value,
+      costBasis: scopeKind === 'holding' ? '800' : value,
+      realizedPnl: '0',
+      unrealizedPnl: scopeKind === 'holding' ? new Decimal(value).minus(800).toString() : '0',
+      holdingsWithKnownValue: scopeKind === 'holding' ? 1 : 0,
+      holdingsTotal: scopeKind === 'holding' ? 1 : 0,
+    });
+    await repo().bulkUpsert(
+      [
+        row(user.id, 'holding', holding.id, '1000'),
+        row(user.id, 'transit', holding.id, '500'),
+        // CONTROL: travelling to a holding its owner hid counts nowhere, as the
+        // holding itself does not.
+        row(user.id, 'transit', hidden.id, '300'),
+        // CONTROL: another person's transit on the same day.
+        row(other.id, 'transit', otherHolding.id, '70'),
+      ],
+      tx
+    );
+    return { userId: user.id, baseId: usd.id, holdingId: holding.id };
+  }
+
+  test("the daily sum adds the day's transit: value and cost, and no gain", async () => {
+    await withTestDb(async (tx) => {
+      const t = await travelling(tx);
+      const [totals] = await repo().findIncludedHoldingDailyTotals(
+        t.userId,
+        t.baseId,
+        from,
+        to,
+        tx
+      );
+      expect(totals?.totalValue).toBe('1500');
+      expect(totals?.costBasis).toBe('1300');
+      expect(totals?.unrealizedPnl).toBe('200');
+      expect(totals?.holdingsTotal).toBe(1);
+    });
+  });
+
+  test('at user scope the per-holding reads add transit to its destination', async () => {
+    await withTestDb(async (tx) => {
+      const t = await travelling(tx);
+      const values = await repo().findIncludedHoldingValueRange(
+        t.userId,
+        t.baseId,
+        from,
+        to,
+        undefined,
+        tx
+      );
+      expect(values.map((r) => [r.holdingId, r.totalValue])).toEqual([[t.holdingId, '1500']]);
+      const scoped = await repo().findIncludedHoldingScopeRange(t.userId, t.baseId, from, to, tx);
+      expect(scoped.map((r) => [r.holdingId, r.totalValue, r.costBasis])).toEqual([
+        [t.holdingId, '1500', '1300'],
+      ]);
+    });
+  });
+
+  test('CONTROL: a narrowed read (an account, a group) carries no transit', async () => {
+    await withTestDb(async (tx) => {
+      const t = await travelling(tx);
+      const values = await repo().findIncludedHoldingValueRange(
+        t.userId,
+        t.baseId,
+        from,
+        to,
+        [t.holdingId],
+        tx
+      );
+      expect(values.map((r) => r.totalValue)).toEqual(['1000']);
     });
   });
 });

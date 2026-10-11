@@ -18,8 +18,7 @@ describe('RateLimiterRegistry', () => {
       registeredFrom: 'tests',
       description: 'test limiter',
     });
-    expect(returned).toBe(limiter);
-    expect(reg.get('foo')).toBe(limiter);
+    expect(reg.get('foo')).toBe(returned);
   });
 
   test('get returns null for unknown namespace', () => {

@@ -2,10 +2,13 @@ import { type SQL, sql } from 'drizzle-orm';
 
 /**
  * A custom token is private to the user who created it (SC-1285, mgrin
- * 2026-09-21). Custom means these two types and nothing else — the same
+ * 2026-09-21). Custom means these four types and nothing else — the same
  * definition `TokenService` and `TokenPriceHistoryService` use.
  */
-export const CUSTOM_TOKEN_TYPE_CODES = ['private-company', 'other'] as const;
+export const CUSTOM_TOKEN_TYPE_CODES = ['private-company', 'other', 'property', 'vehicle'] as const;
+
+/** The custom types that carry asset details and a valuation history (SC-1643). */
+export const VALUED_ASSET_TYPE_CODES = ['property', 'vehicle'] as const;
 
 /**
  * Whether `userId` may see, price or hold a token, as SQL for a query over

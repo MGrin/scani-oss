@@ -14,7 +14,7 @@ import type { BaseCurrencyRate, ConversionContext, RatesStatus } from '@/v3/lib/
  * request, and a surface that gains a currency refetches only that once.
  *
  * The rates themselves come from `tokens.getBaseCurrencyRates`, i.e. the same
- * `CurrencyConverter` a portfolio valuation goes through. Nothing here fetches
+ * `PriceReader` a portfolio valuation goes through. Nothing here fetches
  * or derives a rate of its own.
  */
 

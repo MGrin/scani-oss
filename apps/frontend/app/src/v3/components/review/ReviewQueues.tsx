@@ -19,7 +19,7 @@ import { BALANCE_GAP_REVIEW_PATH, TRANSFER_REVIEW_PATH } from '../../lib/routes'
  * whether to offer.
  *
  * **Rendered at every count, including zero**, which is the opposite of what
- * `AttentionRow` does on home and the difference is the whole point. Home
+ * `NeedsYou` does on home and the difference is the whole point. Home
  * answers "is anything wrong", so an all-clear row there is chrome on every
  * visit. This is a hub: a destination that disappears when its queue empties
  * takes `answered` and `rules` with it, and those two exist precisely for the

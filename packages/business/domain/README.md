@@ -56,7 +56,7 @@ Constructor-param injection (`constructor(private readonly repo: MyRepository)`)
 - Layout: `tests/<dir>/X.test.ts` mirrors `src/<dir>/X.ts`. New tests must use this layout.
 - Preload: `test-preload.ts` loads `reflect-metadata` and a default `DATABASE_URL` pointed at the docker-compose Postgres on `localhost:5433`.
 - Per-test isolation: repository tests wrap in `withTestDb` from `test/helpers/db` and roll back on exit.
-- Stubbed-DI pattern: `Container.set(Dep, stub); new Service();`. Never `Container.reset()` (it wipes the `@Service()` registration). Reference: `tests/services/BalanceAtTimeService.test.ts`.
+- Stubbed-DI pattern: `Container.set(Dep, stub); new Service();`. Never `Container.reset()` (it wipes the `@Service()` registration). Reference: `tests/services/portfolio/PortfolioValuationAtTimeService.test.ts`.
 
 ```bash
 # from the repo root

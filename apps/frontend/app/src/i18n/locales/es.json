@@ -51,10 +51,22 @@
       "humanCheckFailed": "No se pudo cargar la verificación humana. Desactiva cualquier bloqueador para challenges.cloudflare.com y recarga.",
       "cloudTitle": "Inicia sesión en Scani Cloud",
       "cloudSubtitle": "Tus claves de API están en la consola de Scani Cloud. Introduce tu correo para iniciar sesión o crear una cuenta.",
-      "cloudNewAccount": "¿Nuevo en Scani Cloud? Tu cuenta se crea automáticamente y vuelves directamente a la consola."
+      "cloudNewAccount": "¿Nuevo en Scani Cloud? Tu cuenta se crea automáticamente y vuelves directamente a la consola.",
+      "passkey": "Iniciar sesión con una llave de acceso",
+      "passkeyFailed": "Este dispositivo no pudo usar una llave de acceso. Inicia sesión con tu correo."
     },
     "exits": {
       "label": "Más sobre Scani"
+    },
+    "twoFactor": {
+      "title": "Inicio de sesión en dos pasos",
+      "subtitle": "Introduce el código de tu app de autenticación.",
+      "codeLabel": "Código de 6 dígitos",
+      "backupLabel": "Código de respaldo",
+      "trustDevice": "Confiar en este dispositivo durante 30 días",
+      "submit": "Continuar",
+      "useBackup": "Usar un código de respaldo",
+      "useAuthenticator": "Usar mi app de autenticación"
     }
   },
   "currency": {
@@ -72,6 +84,7 @@
     "home": "Inicio",
     "institutions": "Instituciones",
     "jobs": "Tareas",
+    "transactions": "Transacciones",
     "money": "Facturas",
     "more": "Más",
     "payments": "Pagos",
@@ -119,7 +132,6 @@
     "regionHint": "Las fechas y los números se muestran así: {{sample}}.",
     "saving": "Guardando...",
     "signOut": "Cerrar sesión",
-    "subtitle": "Gestiona tus preferencias",
     "title": "Ajustes"
   },
   "ui": {
@@ -413,6 +425,7 @@
           "lookalike": "El símbolo imita a otro",
           "negativeOpening": "Saldo de apertura negativo",
           "noCoverage": "Sin línea de cobertura",
+          "restoredUnmatched": "Token no reconocido al restaurar",
           "noPriceSource": "Ninguna fuente de precios utilizable",
           "noRecentPrice": "Ningún precio reciente",
           "zeroBalance": "Saldo cero"
@@ -629,7 +642,13 @@
         "balanceChanges_one": "cambio de saldo",
         "balanceChanges_counted_one": "{{count}} cambio de saldo",
         "balanceChanges_other": "cambios de saldo",
-        "balanceChanges_counted_other": "{{count}} cambios de saldo"
+        "balanceChanges_counted_other": "{{count}} cambios de saldo",
+        "transactions_one": "transacción",
+        "transactions_many": "transacciones",
+        "transactions_other": "transacciones",
+        "transactions_counted_one": "{{count}} transacción",
+        "transactions_counted_many": "{{count}} transacciones",
+        "transactions_counted_other": "{{count}} transacciones"
       },
       "payments": {
         "col": {
@@ -894,6 +913,29 @@
           "answersLandHere": "Las respuestas que des en la cola de saldos aparecen aquí para que puedas deshacer alguna.",
           "nothingAnsweredYet": "Aún no has explicado ningún cambio de saldo"
         }
+      },
+      "transactions": {
+        "col": {
+          "date": "Fecha",
+          "description": "Descripción",
+          "account": "Cuenta",
+          "category": "Categoría",
+          "amount": "Importe"
+        },
+        "empty": {
+          "title": "Aún no hay transacciones",
+          "description": "Las filas llegan cuando tus cuentas se sincronizan o importas extractos."
+        },
+        "filter": {
+          "category": "Categoría",
+          "account": "Cuenta",
+          "holding": "Activo",
+          "period": "Periodo"
+        },
+        "period": {
+          "all": "Todo el tiempo",
+          "custom": "Rango personalizado"
+        }
       }
     },
     "dialog": {
@@ -1067,5 +1109,21 @@
     "unpriced_one": "{{count}} liquidación no tiene importe registrado y no está en este total.",
     "unpriced_other": "{{count}} liquidaciones no tienen importe registrado y no están en este total.",
     "withUnconverted": "{{base}} + {{rest}} sin convertir"
+  },
+  "oauth": {
+    "continuing": "Conectando…",
+    "failed": "No se pudo completar la conexión. Vuelve a empezar desde la app que estabas conectando.",
+    "consent": {
+      "title": "{{name}} quiere leer tu cartera de Scani",
+      "account": "Sesión iniciada como {{email}}",
+      "canTitle": "Podrá",
+      "can": "Leer tus posiciones, cuentas, transacciones, rentabilidades e informe de calidad de datos.",
+      "cannotTitle": "No podrá",
+      "cannot": "Cambiar, añadir ni borrar nada, ni mover dinero.",
+      "revoke": "Puedes desconectarla en cualquier momento en Ajustes.",
+      "allow": "Permitir",
+      "deny": "Denegar",
+      "unnamedApp": "Una app"
+    }
   }
 }

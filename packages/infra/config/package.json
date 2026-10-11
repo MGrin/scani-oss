@@ -6,6 +6,7 @@
   "description": "Shared env-validation primitives: isProduction, requiredInProd, url shapes.",
   "exports": {
     ".": "./src/index.ts",
+    "./api-reference": "./src/api-reference.ts",
     "./core-build": "./src/core-build.ts",
     "./postgres-direct-tls": "./src/postgres-direct-tls.ts"
   },

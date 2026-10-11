@@ -7,6 +7,7 @@ import Container, { Service } from 'typedi';
 import { candidatePairClass, MATCH_WINDOW_MS, type TransferLeg } from '../lib/transfer-matching';
 import {
   type GroupLegFacts,
+  isReturnedTransit,
   type SameHoldingGroupVerdict,
   sameHoldingGroupVerdict,
   upstreamEventKey,
@@ -454,6 +455,7 @@ function toGroupLegFacts(row: LegRow): GroupLegFacts {
     holdingId: row.tx.holdingId,
     source: row.tx.source,
     eventKey: upstreamEventKey(row.tx.source, row.tx.externalId, row.tx.rawPayload),
+    returned: isReturnedTransit(row.tx.sourceMetadata),
   };
 }
 

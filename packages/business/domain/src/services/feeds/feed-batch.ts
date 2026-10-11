@@ -1,4 +1,4 @@
-import type { NewHoldingTransaction, NewToken, TokenType } from '@scani/db/schema';
+import type { FeedWindowShape, NewHoldingTransaction, NewToken, TokenType } from '@scani/db/schema';
 import type { HoldingArrival } from '@scani/shared';
 import type { AbsencePolicy } from './blocks/absence-confirmer';
 
@@ -17,6 +17,7 @@ export interface AssetRef {
 }
 
 export interface FeedWindow {
+  shape: FeedWindowShape;
   from: Date | null;
   to: Date;
   complete: boolean;
@@ -140,12 +141,6 @@ export interface LegacyBatchOptions {
   /** `sum-of-entries` is what `balanceWithoutClose` computes today. */
   createdWithoutCheckpoint: 'zero' | 'sum-of-entries';
   /**
-   * The unlabelled copy of the balance today's path writes beside each cache
-   * write, which legacy history anchors on until A5 (rulings R11, R19). It is
-   * not a checkpoint: never held to the window, never evidence. Null writes none.
-   */
-  cacheObservation: { source: string; meta: Record<string, unknown> } | null;
-  /**
    * Derive each landed trade's cash leg and own-token fee leg as the
    * transaction router did (`lib/transactions/trade-settlement.ts`, SC-1453,
    * SC-1486). Ingest does it after resolution, because whether a leg exists
@@ -180,17 +175,14 @@ export interface LegacyBatchOptions {
    */
   createdCheckpointMeta: Record<string, unknown> | null;
   /**
-   * A hidden holding the batch reports at a nonzero balance is shown again, as
-   * the integration import does: `is_hidden` and `last_updated`, and nothing else.
-   */
-  unhideOnNonZero: boolean;
-  /**
    * `skip` is the exchange sync's: a checkpoint equal to the balance its holding
    * held when the batch found it is neither appended nor written to the cache.
    * It is dropped after placement, so the holding still counts as reported
-   * (R62 Q2).
+   * (R62 Q2). `skip-observation` is the wallet sync's: the checkpoint is not
+   * appended, but the cache is still written, so `last_updated` says when the
+   * balance was last confirmed (SC-1601).
    */
-  unchangedCheckpoint: 'append' | 'skip';
+  unchangedCheckpoint: 'append' | 'skip' | 'skip-observation';
   /**
    * Whether a checkpoint at zero opens a holding under `holdingPolicy: 'create'`.
    * The balance syncs never opened one for a zero: the checkpoint is dropped

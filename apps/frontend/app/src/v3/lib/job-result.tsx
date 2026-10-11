@@ -1,4 +1,8 @@
 import type { ReactNode } from 'react';
+import {
+  BudgetAppImportResult,
+  BudgetAppUndoResult,
+} from '../components/jobs/BudgetAppImportResult';
 import { DocumentParseResult } from '../components/jobs/DocumentParseResult';
 import { ExchangeImportResult } from '../components/jobs/ExchangeImportResult';
 import { FileImportResult } from '../components/jobs/FileImportResult';
@@ -86,6 +90,14 @@ const RENDERERS: Record<string, ReviewRenderer> = {
   'document-parse': {
     kind: 'document-parse',
     render: ({ result }) => <DocumentParseResult result={result} />,
+  },
+  'budget-app-import': {
+    kind: 'budget-app-import',
+    render: ({ result }) => <BudgetAppImportResult result={result} />,
+  },
+  'budget-app-import-undo': {
+    kind: 'budget-app-import-undo',
+    render: ({ result }) => <BudgetAppUndoResult result={result} />,
   },
   'manual-holdings-create': {
     kind: 'manual-holdings-create',

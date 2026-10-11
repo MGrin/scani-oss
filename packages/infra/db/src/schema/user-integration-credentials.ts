@@ -72,6 +72,8 @@ export const userIntegrationCredentials = pgTable(
     syncBlockedUntil: timestamp('sync_blocked_until', { withTimezone: true }),
     syncLastError: text('sync_last_error'),
     syncFailureCount: integer('sync_failure_count').notNull().default(0),
+    /** `ProviderError.kind` of the last refusal; 'auth-failed' asks the owner to reconnect (SC-1686). */
+    syncRefusalKind: text('sync_refusal_kind'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

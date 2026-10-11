@@ -126,7 +126,7 @@ const envSchema = z.object({
   DIAGNOSTICS_TOKEN: z.string().min(32).optional(),
 
   // Per-provider keys (CoinGecko, Finnhub, Google Sheets, OpenAI,
-  // Perplexity, DeepSeek, Etherscan, Helius, AI_DEFAULT_PROVIDER) are
+  // Etherscan, Helius, AI_DEFAULT_PROVIDER) are
   // owned by @scani/providers' env schema (loadProvidersConfig). The
   // data-provider always boots in `direct` mode, so all keys for the
   // providers it actually registers must be set here at deploy time.

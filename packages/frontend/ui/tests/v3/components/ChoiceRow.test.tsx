@@ -33,7 +33,7 @@ describe('ChoiceRow', () => {
   // SC-977: both money-moving pickers once carried their own copy of this row,
   // byte-identical, so a change to one never reached the other.
   test('neither picker hand-rolls the row again', () => {
-    const shell = 'min-h-11 w-full cursor-pointer items-start gap-3';
+    const shell = 'min-h-11 w-full items-start gap-3';
     const callers = [
       'packages/frontend/ui/src/v3/components/AccountPicker.tsx',
       'apps/frontend/app/src/v3/components/review/TransferDecision.tsx',

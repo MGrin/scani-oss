@@ -147,6 +147,24 @@ export function captureException(
 }
 
 /**
+ * A warning worth counting rather than paging on, such as an upstream's 429
+ * (SC-1602). Events are not sampled the way spans are (`tracesSampleRate`
+ * 0.1), so a fingerprinted message gives an exact count per hour in one issue.
+ */
+export function captureWarning(
+  message: string,
+  tags: Record<string, string>,
+  fingerprint: readonly string[]
+): void {
+  if (!initialized) return;
+  try {
+    Sentry.captureMessage(message, { level: 'warning', tags, fingerprint: [...fingerprint] });
+  } catch {
+    // A failing Sentry capture must not bubble into the caller's error path.
+  }
+}
+
+/**
  * An error that happened somewhere else and was reported here, such as a
  * browser's error boundary posting to the api (SC-1333). There is no Error
  * object on this side, so it is a message at level error, with the stack the

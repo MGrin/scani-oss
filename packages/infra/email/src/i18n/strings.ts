@@ -69,6 +69,17 @@ export interface EmailStrings {
     readonly textBody: string;
     readonly textIgnore: string;
   };
+  /** `{inviter}` and `{household}` are what people typed; templates escape them (SC-1647). */
+  readonly householdInvite: {
+    readonly subject: string;
+    readonly headline: string;
+    readonly body: string;
+    readonly button: string;
+    readonly preheader: string;
+    readonly textIntro: string;
+    readonly textBody: string;
+    readonly expiry: string;
+  };
   readonly otp: {
     readonly headline: Record<OtpStringKey, string>;
     readonly purpose: Record<OtpStringKey, string>;

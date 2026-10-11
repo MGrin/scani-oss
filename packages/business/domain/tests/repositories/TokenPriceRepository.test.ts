@@ -1,7 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import type { DatabaseTransaction } from '@scani/db';
-import * as schema from '@scani/db/schema';
-import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { TokenPriceRepository } from '../../src/repositories/TokenPriceRepository';
 import { withTestDb } from '../../test/helpers/db';
@@ -10,8 +8,8 @@ import { makeToken } from '../../test/helpers/factories-extra';
 // TokenPriceRepository is the pricing read path for every dashboard query.
 // The two subtle bits are: (1) `bulkUpsert` must not drop rows on conflict
 // with the (tokenId, baseTokenId, timestamp) composite unique, and (2)
-// `findLatestPricesForTokens` must group-by-token in memory — pin the
-// "one row per tokenId" semantics so a refactor doesn't regress.
+// `findLatestPricesForTokens` must answer one row per token — pin it so a
+// refactor doesn't regress.
 
 const repo = () => Container.get(TokenPriceRepository);
 
@@ -129,547 +127,6 @@ describe('TokenPriceRepository', () => {
     });
   });
 
-  test('findClosestPrice returns the most recent row at-or-before a given timestamp', async () => {
-    await withTestDb(async (tx) => {
-      const token = await makeToken(tx);
-      const base = await makeToken(tx);
-      await repo().create(
-        {
-          tokenId: token.id,
-          baseTokenId: base.id,
-          price: '10',
-          timestamp: new Date('2026-01-01T00:00:00Z'),
-          source: 'test',
-        },
-        tx
-      );
-      await repo().create(
-        {
-          tokenId: token.id,
-          baseTokenId: base.id,
-          price: '20',
-          timestamp: new Date('2026-02-01T00:00:00Z'),
-          source: 'test',
-        },
-        tx
-      );
-      await repo().create(
-        {
-          tokenId: token.id,
-          baseTokenId: base.id,
-          price: '30',
-          timestamp: new Date('2026-03-01T00:00:00Z'),
-          source: 'test',
-        },
-        tx
-      );
-      // Query at mid-Feb — the Jan + early-Feb rows qualify; latest wins.
-      const closest = await repo().findClosestPrice(
-        token.id,
-        base.id,
-        new Date('2026-02-15T00:00:00Z'),
-        tx
-      );
-      expect(closest?.price).toBe('20');
-    });
-  });
-
-  // SC-1543. The same rule as PriceLookup.findClosestByGranularity, which
-  // answers from memory what this answers from the table: the nearest
-  // reading at or before T, and the preferred granularity only at a tie.
-  const CLOSE_OF_OCT_1 = new Date('2026-10-01T23:59:59.999Z');
-
-  async function seed(
-    tx: DatabaseTransaction,
-    rows: Array<{ price: string; at: string; granularity: schema.TokenPriceGranularity }>
-  ): Promise<{ tokenId: string; baseId: string }> {
-    const token = await makeToken(tx);
-    const base = await makeToken(tx);
-    for (const row of rows) {
-      await repo().create(
-        {
-          tokenId: token.id,
-          baseTokenId: base.id,
-          price: row.price,
-          timestamp: new Date(row.at),
-          source: 'test',
-          granularity: row.granularity,
-        },
-        tx
-      );
-    }
-    return { tokenId: token.id, baseId: base.id };
-  }
-
-  describe('findClosestPriceByGranularity', () => {
-    test('a nearer reading beats an older row of the preferred granularity', async () => {
-      await withTestDb(async (tx) => {
-        const { tokenId, baseId } = await seed(tx, [
-          { price: '100', at: '2026-09-25T00:00:00Z', granularity: 'daily' },
-          { price: '110', at: '2026-10-01T23:00:00Z', granularity: 'intraday' },
-        ]);
-        const found = await repo().findClosestPriceByGranularity(
-          tokenId,
-          baseId,
-          CLOSE_OF_OCT_1,
-          'daily',
-          tx
-        );
-        expect(found?.price).toBe('110');
-      });
-    });
-
-    test('at one instant the preferred granularity wins', async () => {
-      await withTestDb(async (tx) => {
-        const { tokenId, baseId } = await seed(tx, [
-          { price: '101', at: '2026-10-01T00:00:00Z', granularity: 'intraday' },
-          { price: '100', at: '2026-10-01T00:00:00Z', granularity: 'daily' },
-        ]);
-        const daily = await repo().findClosestPriceByGranularity(
-          tokenId,
-          baseId,
-          CLOSE_OF_OCT_1,
-          'daily',
-          tx
-        );
-        const intraday = await repo().findClosestPriceByGranularity(
-          tokenId,
-          baseId,
-          CLOSE_OF_OCT_1,
-          'intraday',
-          tx
-        );
-        expect(daily?.price).toBe('100');
-        expect(intraday?.price).toBe('101');
-      });
-    });
-
-    test('a reading after T is never read', async () => {
-      await withTestDb(async (tx) => {
-        const { tokenId, baseId } = await seed(tx, [
-          { price: '100', at: '2026-09-25T00:00:00Z', granularity: 'daily' },
-          { price: '130', at: '2026-10-02T10:00:00Z', granularity: 'intraday' },
-        ]);
-        const found = await repo().findClosestPriceByGranularity(
-          tokenId,
-          baseId,
-          CLOSE_OF_OCT_1,
-          'daily',
-          tx
-        );
-        expect(found?.price).toBe('100');
-      });
-    });
-
-    test('daily rows only, as past the downsample window: the latest daily row (control)', async () => {
-      await withTestDb(async (tx) => {
-        const { tokenId, baseId } = await seed(tx, [
-          { price: '90', at: '2026-09-20T00:00:00Z', granularity: 'daily' },
-          { price: '95', at: '2026-09-21T00:00:00Z', granularity: 'daily' },
-        ]);
-        const found = await repo().findClosestPriceByGranularity(
-          tokenId,
-          baseId,
-          new Date('2026-09-21T23:59:59.999Z'),
-          'daily',
-          tx
-        );
-        expect(found?.price).toBe('95');
-      });
-    });
-
-    test('no preference: the nearest reading (control)', async () => {
-      await withTestDb(async (tx) => {
-        const { tokenId, baseId } = await seed(tx, [
-          { price: '100', at: '2026-09-25T00:00:00Z', granularity: 'daily' },
-          { price: '110', at: '2026-10-01T23:00:00Z', granularity: 'intraday' },
-        ]);
-        const found = await repo().findClosestPriceByGranularity(
-          tokenId,
-          baseId,
-          CLOSE_OF_OCT_1,
-          null,
-          tx
-        );
-        expect(found?.price).toBe('110');
-      });
-    });
-  });
-
-  // findLatestPricesForTokensAnyBase is the dashboard hot-path read for
-  // users whose base currency differs from the base every cached price
-  // is stored against (the EUR-user-with-USD-priced-holdings case that
-  // zeroed the dashboard on currency switch). The strict
-  // `findLatestPricesForTokens(ids, EUR)` returned an empty map; this
-  // method returns one row per token in whatever base exists, so the
-  // downstream conversion path can do its work.
-  describe('findLatestPricesForTokensAnyBase', () => {
-    test('returns prices stored against a non-preferred base when no preferred-base row exists', async () => {
-      await withTestDb(async (tx) => {
-        const btc = await makeToken(tx);
-        const eth = await makeToken(tx);
-        const usd = await makeToken(tx);
-        const eur = await makeToken(tx);
-
-        // Both holdings priced against USD only — exactly the
-        // production state that zeroed the dashboard for an EUR user.
-        await repo().create(
-          {
-            tokenId: btc.id,
-            baseTokenId: usd.id,
-            price: '65000',
-            timestamp: new Date('2026-05-01T12:00:00Z'),
-            source: 'coingecko',
-          },
-          tx
-        );
-        await repo().create(
-          {
-            tokenId: eth.id,
-            baseTokenId: usd.id,
-            price: '3500',
-            timestamp: new Date('2026-05-01T12:00:00Z'),
-            source: 'coingecko',
-          },
-          tx
-        );
-
-        const prices = await repo().findLatestPricesForTokensAnyBase([btc.id, eth.id], eur.id, tx);
-
-        expect(prices.size).toBe(2);
-        expect(prices.get(btc.id)?.price).toBe('65000');
-        expect(prices.get(btc.id)?.baseTokenId).toBe(usd.id);
-        expect(prices.get(eth.id)?.price).toBe('3500');
-        expect(prices.get(eth.id)?.baseTokenId).toBe(usd.id);
-      });
-    });
-
-    test('prefers a row in the requested base when one exists, ignoring more recent rows in other bases', async () => {
-      await withTestDb(async (tx) => {
-        const btc = await makeToken(tx);
-        const usd = await makeToken(tx);
-        const eur = await makeToken(tx);
-
-        // Newer USD row, older EUR row — must return the EUR row
-        // because EUR is the caller's preferred base. (Skips the
-        // unnecessary USD→EUR conversion at read time when a direct
-        // EUR price is already on disk.)
-        await repo().create(
-          {
-            tokenId: btc.id,
-            baseTokenId: eur.id,
-            price: '60000',
-            timestamp: new Date('2026-05-01T09:00:00Z'),
-            source: 'coingecko',
-          },
-          tx
-        );
-        await repo().create(
-          {
-            tokenId: btc.id,
-            baseTokenId: usd.id,
-            price: '65000',
-            timestamp: new Date('2026-05-01T12:00:00Z'),
-            source: 'coingecko',
-          },
-          tx
-        );
-
-        const prices = await repo().findLatestPricesForTokensAnyBase([btc.id], eur.id, tx);
-        expect(prices.get(btc.id)?.price).toBe('60000');
-        expect(prices.get(btc.id)?.baseTokenId).toBe(eur.id);
-      });
-    });
-
-    test('picks the most recent row when multiple bases have prices and none match the preferred', async () => {
-      await withTestDb(async (tx) => {
-        const btc = await makeToken(tx);
-        const usd = await makeToken(tx);
-        const gbp = await makeToken(tx);
-        const eur = await makeToken(tx);
-
-        await repo().create(
-          {
-            tokenId: btc.id,
-            baseTokenId: usd.id,
-            price: '65000',
-            timestamp: new Date('2026-05-01T09:00:00Z'),
-            source: 'coingecko',
-          },
-          tx
-        );
-        await repo().create(
-          {
-            tokenId: btc.id,
-            baseTokenId: gbp.id,
-            price: '50000',
-            timestamp: new Date('2026-05-01T12:00:00Z'),
-            source: 'coingecko',
-          },
-          tx
-        );
-
-        const prices = await repo().findLatestPricesForTokensAnyBase([btc.id], eur.id, tx);
-        // GBP row is newer; neither matches EUR; the timestamp tiebreak wins.
-        expect(prices.get(btc.id)?.baseTokenId).toBe(gbp.id);
-      });
-    });
-
-    test('returns an empty map for an empty input', async () => {
-      await withTestDb(async (tx) => {
-        const eur = await makeToken(tx);
-        const prices = await repo().findLatestPricesForTokensAnyBase([], eur.id, tx);
-        expect(prices.size).toBe(0);
-      });
-    });
-
-    // Regression guard for the DISTINCT ON rewrite: a naive
-    // `ORDER BY timestamp DESC LIMIT 1`-per-token read would let the newer
-    // other-base row win. The preferred base must win regardless of
-    // timestamp ordering between bases.
-    test('prefers matching base over newer other-base', async () => {
-      await withTestDb(async (tx) => {
-        const usd = await makeToken(tx);
-        const eur = await makeToken(tx);
-        const btc = await makeToken(tx);
-
-        await repo().bulkUpsert(
-          [
-            {
-              tokenId: btc.id,
-              baseTokenId: usd.id,
-              price: '100',
-              timestamp: new Date('2026-01-01'),
-              granularity: 'daily',
-              source: 'test',
-            },
-            {
-              tokenId: btc.id,
-              baseTokenId: eur.id,
-              price: '200',
-              timestamp: new Date('2026-06-01'),
-              granularity: 'daily',
-              source: 'test',
-            },
-          ],
-          tx
-        );
-
-        const map = await repo().findLatestPricesForTokensAnyBase([btc.id], usd.id, tx);
-        expect(map.get(btc.id)?.baseTokenId).toBe(usd.id);
-        expect(map.get(btc.id)?.price).toBe('100');
-      });
-    });
-  });
-
-  describe('downsampleIntradayToDaily', () => {
-    const DAY = 24 * 60 * 60 * 1000;
-    const daysAgo = (n: number) => new Date(Date.now() - n * DAY);
-
-    const seedIntraday = (
-      tx: DatabaseTransaction,
-      tokenId: string,
-      baseId: string,
-      at: Date,
-      price: string
-    ) =>
-      repo().create(
-        {
-          tokenId,
-          baseTokenId: baseId,
-          price,
-          timestamp: at,
-          source: 'test',
-          granularity: 'intraday',
-        },
-        tx
-      );
-
-    test('collapses old intraday to one daily (last-of-day) and keeps recent intraday', async () => {
-      await withTestDb(async (tx) => {
-        const token = await makeToken(tx);
-        const base = await makeToken(tx);
-        // Two intraday points on the same old UTC day — the later one wins.
-        const oldDay = daysAgo(30);
-        oldDay.setUTCHours(3, 0, 0, 0);
-        const oldDayLater = new Date(oldDay);
-        oldDayLater.setUTCHours(21, 0, 0, 0);
-        await seedIntraday(tx, token.id, base.id, oldDay, '100');
-        await seedIntraday(tx, token.id, base.id, oldDayLater, '110');
-        // A recent intraday point that must be left intact.
-        await seedIntraday(tx, token.id, base.id, daysAgo(1), '999');
-
-        const { aggregated, deleted } = await repo().downsampleIntradayToDaily(7, tx);
-        expect(aggregated).toBe(1);
-        expect(deleted).toBe(2);
-
-        const rows = await tx
-          .select()
-          .from(schema.tokenPrices)
-          .where(eq(schema.tokenPrices.tokenId, token.id));
-        const daily = rows.filter((r) => r.granularity === 'daily');
-        const intraday = rows.filter((r) => r.granularity === 'intraday');
-        expect(daily).toHaveLength(1);
-        expect(daily[0]?.price).toBe('110'); // last reading of the day
-        expect(daily[0]?.timestamp.toISOString()).toBe(
-          `${oldDay.toISOString().slice(0, 10)}T00:00:00.000Z`
-        );
-        expect(intraday).toHaveLength(1); // the recent one survives
-        expect(intraday[0]?.price).toBe('999');
-      });
-    });
-
-    test('preserves an authoritative existing daily row (no overwrite)', async () => {
-      await withTestDb(async (tx) => {
-        const token = await makeToken(tx);
-        const base = await makeToken(tx);
-        const oldDay = daysAgo(30);
-        oldDay.setUTCHours(0, 0, 0, 0);
-        await repo().create(
-          {
-            tokenId: token.id,
-            baseTokenId: base.id,
-            price: '500',
-            timestamp: oldDay,
-            source: 'provider',
-            granularity: 'daily',
-          },
-          tx
-        );
-        const intra = new Date(oldDay);
-        intra.setUTCHours(15, 0, 0, 0);
-        await seedIntraday(tx, token.id, base.id, intra, '111');
-
-        const { aggregated, deleted } = await repo().downsampleIntradayToDaily(7, tx);
-        expect(aggregated).toBe(0); // conflict -> do nothing
-        expect(deleted).toBe(1);
-
-        const daily = (
-          await tx.select().from(schema.tokenPrices).where(eq(schema.tokenPrices.tokenId, token.id))
-        ).filter((r) => r.granularity === 'daily');
-        expect(daily).toHaveLength(1);
-        expect(daily[0]?.price).toBe('500'); // provider close kept, not '111'
-      });
-    });
-
-    /**
-     * SC-77 2, as arithmetic on the table.
-     *
-     * A custom token's manual price is written intraday, and it is the only
-     * price that token will ever have. Collapsing it rewrote `source` to
-     * 'downsample-daily' and deleted the original, so the price kept valuing
-     * the holding (`findLatestPricesForTokensAnyBase` found the survivor) while
-     * `findLatestManualPricesForTokensAnyBase` — what `tokens.listCustom`
-     * asked — found nothing. /tokens said "Never priced" about a €177,000
-     * position. Both lookups have to see the same row a week later, which is
-     * what this pins.
-     */
-    test('leaves manual prices alone — they are marks, not samples', async () => {
-      await withTestDb(async (tx) => {
-        const token = await makeToken(tx);
-        const base = await makeToken(tx);
-        const setAt = daysAgo(30);
-        setAt.setUTCHours(11, 0, 0, 0);
-        await repo().create(
-          {
-            tokenId: token.id,
-            baseTokenId: base.id,
-            price: '14.75',
-            timestamp: setAt,
-            source: 'manual',
-            granularity: 'intraday',
-          },
-          tx
-        );
-
-        const { aggregated, deleted } = await repo().downsampleIntradayToDaily(7, tx);
-        expect(aggregated).toBe(0);
-        expect(deleted).toBe(0);
-
-        const rows = await tx
-          .select()
-          .from(schema.tokenPrices)
-          .where(eq(schema.tokenPrices.tokenId, token.id));
-        expect(rows).toHaveLength(1);
-        expect(rows[0]?.source).toBe('manual');
-        expect(rows[0]?.granularity).toBe('intraday');
-
-        // The two lookups the two screens use, on the same row.
-        const anyBase = await repo().findLatestPricesForTokensAnyBase([token.id], base.id, tx);
-        const manualOnly = await repo().findLatestManualPricesForTokensAnyBase([token.id], tx);
-        expect(anyBase.get(token.id)?.price).toBe('14.75');
-        expect(manualOnly.get(token.id)?.price).toBe('14.75');
-      });
-    });
-
-    test('still collapses provider intraday rows on the same token', async () => {
-      await withTestDb(async (tx) => {
-        const token = await makeToken(tx);
-        const base = await makeToken(tx);
-        const day = daysAgo(30);
-        day.setUTCHours(9, 0, 0, 0);
-        await repo().create(
-          {
-            tokenId: token.id,
-            baseTokenId: base.id,
-            price: '3',
-            timestamp: day,
-            source: 'manual',
-            granularity: 'intraday',
-          },
-          tx
-        );
-        const later = new Date(day);
-        later.setUTCHours(19, 0, 0, 0);
-        await seedIntraday(tx, token.id, base.id, later, '4');
-
-        const { aggregated, deleted } = await repo().downsampleIntradayToDaily(7, tx);
-        expect(aggregated).toBe(1);
-        expect(deleted).toBe(1);
-
-        const rows = await tx
-          .select()
-          .from(schema.tokenPrices)
-          .where(eq(schema.tokenPrices.tokenId, token.id));
-        // The manual row survives untouched; the provider row became a daily.
-        expect(rows.filter((r) => r.source === 'manual')).toHaveLength(1);
-        // The synthesized close comes from the newest COLLAPSIBLE row, so the
-        // manual price is not laundered into a daily bar attributed to nobody.
-        const daily = rows.filter((r) => r.granularity === 'daily');
-        expect(daily).toHaveLength(1);
-        expect(daily[0]?.price).toBe('4');
-      });
-    });
-
-    test('never touches tx-exact rows', async () => {
-      await withTestDb(async (tx) => {
-        const token = await makeToken(tx);
-        const base = await makeToken(tx);
-        await repo().create(
-          {
-            tokenId: token.id,
-            baseTokenId: base.id,
-            price: '77',
-            timestamp: daysAgo(30),
-            source: 'tx',
-            granularity: 'tx-exact',
-          },
-          tx
-        );
-
-        const { deleted } = await repo().downsampleIntradayToDaily(7, tx);
-        expect(deleted).toBe(0);
-
-        const rows = await tx
-          .select()
-          .from(schema.tokenPrices)
-          .where(eq(schema.tokenPrices.tokenId, token.id));
-        expect(rows).toHaveLength(1);
-        expect(rows[0]?.granularity).toBe('tx-exact');
-      });
-    });
-  });
-
   // SC-1283. The per-user history backfill asks which of its tokens' days are
   // already priced. Unscoped, that read returned every token on the platform
   // and its first allocation grew with the whole table.
@@ -734,178 +191,135 @@ describe('TokenPriceRepository', () => {
       });
     });
   });
-  describe('fingerprintForPairsUpTo', () => {
-    const SINCE = new Date('2026-01-01T00:00:00Z');
-    const UNTIL = new Date('2026-04-01T00:00:00Z');
+});
 
-    async function seeded(tx: DatabaseTransaction) {
-      const token = await makeToken(tx);
-      const base = await makeToken(tx);
-      const write = (timestamp: string, price: string, granularity = 'daily') =>
-        tx
-          .insert(schema.tokenPrices)
-          .values({
-            tokenId: token.id,
-            baseTokenId: base.id,
-            price,
-            timestamp: new Date(timestamp),
-            granularity,
-            source: 'test',
-          })
-          .returning();
-      await write('2020-01-01T00:00:00Z', '1');
-      await write('2023-06-01T00:00:00Z', '2');
-      const [inWindow] = await write('2026-02-01T00:00:00Z', '4');
-      const pairs = [{ tokenId: token.id, baseTokenId: base.id }];
-      const read = () => repo().fingerprintForPairsUpTo(pairs, UNTIL, SINCE, tx);
-      return { write, read, inWindowId: inWindow!.id };
-    }
+// Foundation A3, Task 13. A past day is covered by a daily row, by a non-manual
+// reading in its last hour, or, once older than SETTLED_HISTORY_DAYS, by any
+// reading. Today is covered by any reading since it began.
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
-    test('unchanged rows read the same fingerprint — the control', async () => {
-      await withTestDb(async (tx) => {
-        const { read } = await seeded(tx);
-        expect(await read()).toBe(await read());
-      });
-    });
+/** The UTC midnight `n` days before today's. */
+function dayStart(n: number): Date {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - n * DAY_MS);
+}
 
-    test('a price that lands inside the window changes it', async () => {
-      await withTestDb(async (tx) => {
-        const { write, read } = await seeded(tx);
-        const before = await read();
-        await write('2026-03-01T00:00:00Z', '5');
-        expect(await read()).not.toBe(before);
-      });
-    });
+const dayOf = (at: Date) => at.toISOString().slice(0, 10);
 
-    test('a corrected price inside the window changes it', async () => {
-      await withTestDb(async (tx) => {
-        const { read, inWindowId } = await seeded(tx);
-        const before = await read();
-        await tx
-          .update(schema.tokenPrices)
-          .set({ price: '4.5' })
-          .where(eq(schema.tokenPrices.id, inWindowId));
-        expect(await read()).not.toBe(before);
-      });
-    });
+async function seedPrice(
+  tx: DatabaseTransaction,
+  pair: { tokenId: string; baseTokenId: string },
+  at: Date,
+  row: { price?: string; granularity?: 'daily' | 'intraday'; source?: string } = {}
+) {
+  await repo().create(
+    {
+      ...pair,
+      price: row.price ?? '2',
+      timestamp: at,
+      granularity: row.granularity ?? 'intraday',
+      source: row.source ?? 'test',
+    },
+    tx
+  );
+}
 
-    test('a newer carry-in row before the window changes it', async () => {
-      await withTestDb(async (tx) => {
-        const { write, read } = await seeded(tx);
-        const before = await read();
-        await write('2025-12-01T00:00:00Z', '3');
-        expect(await read()).not.toBe(before);
-      });
-    });
+async function pricePair(tx: DatabaseTransaction) {
+  return { tokenId: (await makeToken(tx)).id, baseTokenId: (await makeToken(tx)).id };
+}
 
-    test('rows the lookup never reads leave it alone', async () => {
-      await withTestDb(async (tx) => {
-        const { write, read } = await seeded(tx);
-        const before = await read();
-        // Superseded by the 2023 carry-in, and after `until`.
-        await write('2019-01-01T00:00:00Z', '0.5');
-        await write('2026-05-01T00:00:00Z', '9');
-        expect(await read()).toBe(before);
-      });
+async function coveredDays(
+  tx: DatabaseTransaction,
+  pair: { tokenId: string; baseTokenId: string }
+): Promise<string[]> {
+  const keys = await repo().findPricedDayKeys(
+    { baseTokenId: pair.baseTokenId, tokenIds: [pair.tokenId], since: dayStart(40) },
+    tx
+  );
+  return [...keys].map((key) => key.slice(pair.tokenId.length + 1)).sort();
+}
+
+describe('findPricedDayKeys: what covers a day', () => {
+  test('a past day whose only reading is at 03:30 is not covered; one with a 23:10 reading is', async () => {
+    await withTestDb(async (tx) => {
+      const pair = await pricePair(tx);
+      await seedPrice(tx, pair, new Date(dayStart(2).getTime() + 3.5 * HOUR_MS));
+      await seedPrice(tx, pair, new Date(dayStart(3).getTime() + 23 * HOUR_MS + 10 * 60_000));
+
+      expect(await coveredDays(tx, pair)).toEqual([dayOf(dayStart(3))]);
     });
   });
 
-  describe('findManyForPairsUpTo with a lower bound', () => {
-    async function seedPair(tx: DatabaseTransaction) {
-      const token = await makeToken(tx);
-      const base = await makeToken(tx);
-      const write = async (timestamp: string, price: string, granularity: 'daily' | 'hourly') => {
-        await tx.insert(schema.tokenPrices).values({
-          tokenId: token.id,
-          baseTokenId: base.id,
-          price,
-          timestamp: new Date(timestamp),
-          granularity,
-          source: 'test',
-        });
-      };
-      await write('2020-01-01T00:00:00Z', '1', 'daily');
-      await write('2023-06-01T00:00:00Z', '2', 'daily');
-      await write('2023-07-01T00:00:00Z', '3', 'hourly');
-      await write('2026-02-01T00:00:00Z', '4', 'daily');
-      await write('2026-03-01T00:00:00Z', '5', 'daily');
-      return { token, base };
-    }
-
-    const SINCE = new Date('2026-01-01T00:00:00Z');
-    const UNTIL = new Date('2026-04-01T00:00:00Z');
-
-    test('no `since` still reads the whole history, so every other caller is untouched', async () => {
-      await withTestDb(async (tx) => {
-        const { token, base } = await seedPair(tx);
-        const rows = await repo().findManyForPairsUpTo(
-          [{ tokenId: token.id, baseTokenId: base.id }],
-          UNTIL,
-          tx
-        );
-        expect(rows.map((r) => r.price).sort()).toEqual(['1', '2', '3', '4', '5']);
+  test('CONTROL: a past day with a daily row of any source is covered', async () => {
+    await withTestDb(async (tx) => {
+      const pair = await pricePair(tx);
+      await seedPrice(tx, pair, new Date(dayStart(2).getTime() + DAY_MS - 1), {
+        granularity: 'daily',
+        source: 'coingecko_historical',
       });
+      await seedPrice(tx, pair, dayStart(3), { granularity: 'daily', source: 'downsample-daily' });
+
+      expect(await coveredDays(tx, pair)).toEqual([dayOf(dayStart(3)), dayOf(dayStart(2))]);
     });
+  });
 
-    test('`since` keeps the window and ONE carry-in row per granularity', async () => {
-      await withTestDb(async (tx) => {
-        const { token, base } = await seedPair(tx);
-        const rows = await repo().findManyForPairsUpTo(
-          [{ tokenId: token.id, baseTokenId: base.id }],
-          UNTIL,
-          tx,
-          SINCE
-        );
-        // 4 and 5 are inside the window. 2 is the newest daily before it and 3
-        // the newest hourly; 1 is superseded by 2 and is the row this drops.
-        expect(rows.map((r) => r.price).sort()).toEqual(['2', '3', '4', '5']);
-      });
+  test('a 14:00 reading more than 7 days old still covers its day', async () => {
+    await withTestDb(async (tx) => {
+      const pair = await pricePair(tx);
+      await seedPrice(tx, pair, new Date(dayStart(30).getTime() + 14 * HOUR_MS));
+
+      expect(await coveredDays(tx, pair)).toEqual([dayOf(dayStart(30))]);
     });
+  });
 
-    test('a pair whose ONLY price predates the window still answers', async () => {
-      await withTestDb(async (tx) => {
-        const token = await makeToken(tx);
-        const base = await makeToken(tx);
-        await tx.insert(schema.tokenPrices).values({
-          tokenId: token.id,
-          baseTokenId: base.id,
-          price: '7',
-          timestamp: new Date('2019-05-05T00:00:00Z'),
-          granularity: 'daily',
-          source: 'test',
-        });
-        const rows = await repo().findManyForPairsUpTo(
-          [{ tokenId: token.id, baseTokenId: base.id }],
-          UNTIL,
-          tx,
-          SINCE
-        );
-        // Dropping it would turn a priced flow into an unvalued one — the
-        // exact substitution `PriceLookup.covers` exists to prevent.
-        expect(rows.map((r) => r.price)).toEqual(['7']);
-      });
+  test('a 14:00 reading two days old does not cover its day', async () => {
+    await withTestDb(async (tx) => {
+      const pair = await pricePair(tx);
+      await seedPrice(tx, pair, new Date(dayStart(2).getTime() + 14 * HOUR_MS));
+
+      expect(await coveredDays(tx, pair)).toEqual([]);
     });
+  });
 
-    test('the carry-in row does not leak across pairs', async () => {
-      await withTestDb(async (tx) => {
-        const { token, base } = await seedPair(tx);
-        const other = await makeToken(tx);
-        await tx.insert(schema.tokenPrices).values({
-          tokenId: other.id,
-          baseTokenId: base.id,
-          price: '99',
-          timestamp: new Date('2021-01-01T00:00:00Z'),
-          granularity: 'daily',
-          source: 'test',
-        });
-        const rows = await repo().findManyForPairsUpTo(
-          [{ tokenId: token.id, baseTokenId: base.id }],
-          UNTIL,
-          tx,
-          SINCE
-        );
-        expect(rows.some((r) => r.price === '99')).toBe(false);
+  test('a day seven days old is not settled: neither its 00:00 nor its 14:00 reading covers it', async () => {
+    await withTestDb(async (tx) => {
+      const pair = await pricePair(tx);
+      await seedPrice(tx, pair, dayStart(7));
+      await seedPrice(tx, pair, new Date(dayStart(7).getTime() + 14 * HOUR_MS));
+
+      expect(await coveredDays(tx, pair)).toEqual([]);
+    });
+  });
+
+  test('a 14:00 reading eight days old covers its day', async () => {
+    await withTestDb(async (tx) => {
+      const pair = await pricePair(tx);
+      await seedPrice(tx, pair, new Date(dayStart(8).getTime() + 14 * HOUR_MS));
+
+      expect(await coveredDays(tx, pair)).toEqual([dayOf(dayStart(8))]);
+    });
+  });
+
+  test('a manual reading at 23:30 does not cover a recent past day', async () => {
+    await withTestDb(async (tx) => {
+      const pair = await pricePair(tx);
+      await seedPrice(tx, pair, new Date(dayStart(2).getTime() + 23.5 * HOUR_MS), {
+        source: 'manual',
       });
+
+      expect(await coveredDays(tx, pair)).toEqual([]);
+    });
+  });
+
+  test('CONTROL: today is covered by any reading since it began', async () => {
+    await withTestDb(async (tx) => {
+      const pair = await pricePair(tx);
+      // Its first instant: a reading in the last hour would cover the day by
+      // that rule alone, so a run in UTC hour 23 would prove nothing here.
+      await seedPrice(tx, pair, dayStart(0));
+
+      expect(await coveredDays(tx, pair)).toEqual([dayOf(dayStart(0))]);
     });
   });
 });

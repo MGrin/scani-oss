@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { invalidatePortfolioQueries } from '@/hooks/invalidatePortfolioQueries';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
+import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import {
   currencyIdForSymbol,
   currencySymbolForId,
@@ -55,6 +56,7 @@ export function PriceEditHistory({
   isLoading: boolean;
   t: TFunction;
 }) {
+  useRelativeTimeTick();
   if (isLoading) {
     return (
       <p role="status" className="text-caption text-muted-foreground">

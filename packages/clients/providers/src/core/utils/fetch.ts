@@ -55,7 +55,8 @@ export async function fetchWithTimeout(
   url: string,
   init?: RequestInit,
   timeoutMs: number = DEFAULT_FETCH_TIMEOUT_MS,
-  maxRetries: number = DEFAULT_MAX_RETRIES
+  maxRetries: number = DEFAULT_MAX_RETRIES,
+  onResponse?: (response: Response) => void
 ): Promise<Response> {
   let lastError: Error | null = null;
   const safeUrl = redactUrl(url);
@@ -88,6 +89,10 @@ export async function fetchWithTimeout(
       } finally {
         if (timer) clearTimeout(timer);
       }
+
+      // Every answer, the retried ones too: a 429 a retry cleared is still the
+      // upstream pushing back, and the caller is the only one who can count it.
+      onResponse?.(response);
 
       if (attempt < maxRetries && shouldRetry(response)) {
         lastError = new Error(

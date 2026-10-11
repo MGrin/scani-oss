@@ -1,0 +1,18 @@
+{
+  "evidence": "published-example; not a live authenticated response",
+  "url": "https://finnhub.io/docs/api/stock-candles",
+  "retrievedAt": "2026-10-05T03:23:00Z",
+  "resolution": "D",
+  "symbol": "AAPL",
+  "data": {
+    "c": [649, 654, 652],
+    "h": [656, 655, 653],
+    "l": [648, 647, 651],
+    "o": [654, 650, 220],
+    "s": "ok",
+    "t": [1569297600, 1569384000, 1569470400],
+    "v": [33463820, 24018876, 20730608]
+  },
+  "access": "Premium Access Required",
+  "normalization": "Price values are synthetic integer ranks. Equal values and ordering are preserved across these fixtures; timestamps and response shape are recorded. Raw public responses are retained in the PR5 rehearsal evidence."
+}

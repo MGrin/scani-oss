@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { Container } from 'typedi';
 import { UserIntegrationCredentialsRepository } from '../../src/repositories/UserIntegrationCredentialsRepository';
 import { withTestDb } from '../../test/helpers/db';
-import { makeInstitution, makeUser } from '../../test/helpers/factories';
+import { makeCredential, makeInstitution, makeUser } from '../../test/helpers/factories';
 
 // Regression lock-in for the `credentials_import_status` pgEnum trap that
 // shipped broken for weeks before we caught it. If Drizzle ever loses the
@@ -70,6 +70,45 @@ describe('UserIntegrationCredentialsRepository', () => {
       );
       const stale = await repoDirect.findPendingEnqueueOlderThan(new Date(), tx);
       expect(stale.length).toBe(1);
+    });
+  });
+});
+
+describe('a refused key (SC-1686)', () => {
+  test('a refusal records its kind, and a success clears it', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const institution = await makeInstitution(tx);
+      const cred = await makeCredential(tx, { userId: user.id, institutionId: institution.id });
+      const refused = await repo().markSyncRefused(cred.id, 'expired', null, 'auth-failed', tx);
+      expect(refused?.syncRefusalKind).toBe('auth-failed');
+      const cleared = await repo().clearSyncRefusal(cred.id, tx);
+      expect(cleared?.syncRefusalKind).toBeNull();
+    });
+  });
+
+  test("findKeyRejected names only this user's active credentials refused as auth-failed", async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const other = await makeUser(tx);
+      const bybit = await makeInstitution(tx, { name: 'Bybit SC-1686' });
+      const kraken = await makeInstitution(tx, { name: 'Kraken SC-1686' });
+      const gone = await makeInstitution(tx, { name: 'Gone SC-1686' });
+      const mine = await makeCredential(tx, { userId: user.id, institutionId: bybit.id });
+      const generic = await makeCredential(tx, { userId: user.id, institutionId: kraken.id });
+      const off = await makeCredential(tx, {
+        userId: user.id,
+        institutionId: gone.id,
+        isActive: false,
+      });
+      const theirs = await makeCredential(tx, { userId: other.id, institutionId: bybit.id });
+      await repo().markSyncRefused(mine.id, 'expired', null, 'auth-failed', tx);
+      await repo().markSyncRefused(generic.id, 'params', null, 'unrecoverable', tx);
+      await repo().markSyncRefused(off.id, 'expired', null, 'auth-failed', tx);
+      await repo().markSyncRefused(theirs.id, 'expired', null, 'auth-failed', tx);
+      expect(await repo().findKeyRejected(user.id, tx)).toEqual([
+        { institutionId: bybit.id, institutionName: 'Bybit SC-1686' },
+      ]);
     });
   });
 });

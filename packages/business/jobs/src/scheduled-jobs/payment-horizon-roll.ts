@@ -1,4 +1,4 @@
-import type { ScheduledJobDescriptor } from '@scani/queue';
+import type { ScheduledJobStepDescriptor } from '@scani/queue';
 import { JOB_NAMES } from '../job-names';
 
 // Advances the forward edge of every active payment's materialised
@@ -13,17 +13,14 @@ import { JOB_NAMES } from '../job-names';
 // a 365-day horizon, so this is the one nightly job with nothing
 // depending on it having run.
 //
-// 04:45 UTC: after the rollup (04:00) and the closed-holdings sweep
-// (04:30), before the counterparty backfill (05:30), and quarter-hour
-// aligned like the rest so the advisory locks batch into one wake and
-// Neon can scale to zero between them.
+// A step of the `nightly` group, after the rollup and the closed-holdings
+// sweep (SC-1688).
 //
 // The lock makes a retry safe on top of the insert already being safe:
 // the roll is an `onConflictDoNothing` upsert on `(payment_id, due_date)`,
 // so a second pass over a payment inserts nothing rather than duplicating
 // a due date.
-export const PAYMENT_HORIZON_ROLL_SCHEDULE: ScheduledJobDescriptor = {
+export const PAYMENT_HORIZON_ROLL_SCHEDULE: ScheduledJobStepDescriptor = {
   name: JOB_NAMES.paymentHorizonRoll,
-  cron: '45 4 * * *',
   lockName: JOB_NAMES.paymentHorizonRoll,
 };

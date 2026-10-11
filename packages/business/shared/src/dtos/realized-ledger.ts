@@ -39,6 +39,8 @@ export const DISPOSAL_OUTCOMES = [
   'retained',
   'awaiting_pair',
   'fee',
+  // A `realized_pnl` loss (SC-1563): realized like a fee, and not a charge.
+  'derivative_loss',
 ] as const;
 
 const disposalOutcomeSchema = z.enum(DISPOSAL_OUTCOMES);

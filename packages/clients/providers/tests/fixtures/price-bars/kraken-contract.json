@@ -1,0 +1,9 @@
+{
+  "evidence": "published-contract; live calls refused connection in curl and urllib",
+  "url": "https://docs.kraken.com/api-reference/market-data/get-ohlc-data",
+  "retrievedAt": "2026-10-05T03:23:00Z",
+  "intervalMinutes": 1440,
+  "lastBar": "current, not-yet-committed timeframe",
+  "maxBars": 720,
+  "normalization": "Price values are synthetic integer ranks. Equal values and ordering are preserved across these fixtures; timestamps and response shape are recorded. Raw public responses are retained in the PR5 rehearsal evidence."
+}

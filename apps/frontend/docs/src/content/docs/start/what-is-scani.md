@@ -16,8 +16,7 @@ traditional assets. One database, one ledger, one dashboard across:
   TON, plus ENS resolution.
 - **Pricing** — CoinGecko, Finnhub, DeFiLlama, Frankfurter (FX), Yahoo
   Finance, and Google Sheets for manual-asset prices.
-- **AI-assisted import** — OpenAI for screenshot parsing; Perplexity and
-  DeepSeek for token-identity backfill.
+- **AI-assisted import** — OpenAI for screenshot and document parsing.
 - **Anything else** — manual holdings with manual prices. Home equity,
   private-company shares, an off-grid commodity position, a friend's IOU.
 

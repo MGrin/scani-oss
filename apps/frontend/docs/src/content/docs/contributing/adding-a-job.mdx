@@ -48,26 +48,31 @@ separate cron container.
 2. **Write the descriptor.**
    ```ts
    // packages/business/jobs/src/scheduled-jobs/my-new-job.ts
-   import type { ScheduledJobDescriptor } from '@scani/queue';
+   import type { ScheduledJobStepDescriptor } from '@scani/queue';
    import { JOB_NAMES } from '../job-names';
 
-   export const MY_NEW_JOB_SCHEDULE: ScheduledJobDescriptor = {
+   // A step of the nightly group: no cron, the group owns the schedule.
+   export const MY_NEW_JOB_SCHEDULE: ScheduledJobStepDescriptor = {
      name: JOB_NAMES.myNewJob,
-     cron: '0 4 * * *',             // 04:00 UTC daily
      lockName: JOB_NAMES.myNewJob,  // opt into overlap protection
    };
    ```
 
-   `ScheduledJobDescriptor`
+   `ScheduledJobStepDescriptor`
    (`packages/infra/queue/src/core/job-descriptor.ts`) has `name`
-   and `cron`, plus the optional `timezone`, `defaultOpts`,
-   `lockName` and `jitterMs`. It has **no `retryPolicy` and no
+   plus the optional `lockName` and `jitterMs`. A job that needs a
+   schedule of its own uses `ScheduledJobDescriptor`, which adds
+   `cron`, `timezone` and `defaultOpts`; since SC-1688 only
+   `active-pricing` and `weekly-digest` do. It has **no `retryPolicy` and no
    `payloadSchema`** — those belong to user-initiated jobs, and
    [Retry policies](#retry-policies) below says where.
 
-3. **Add it to the registry.** Re-export from
-   `packages/business/jobs/src/scheduled-jobs/index.ts` so the
-   worker's boot-time iterator picks it up.
+3. **Put it in a group.** Add a `{ name: JOB_NAMES.myNewJob }`
+   line to its group in `packages/business/jobs/src/scheduled-jobs/groups.ts`,
+   at the place its dependencies put it, and add the descriptor to
+   `SCHEDULED_JOB_STEPS` in that directory's `index.ts`. A step can
+   take `runOn` (a weekly step in the nightly group) and
+   `timeoutMs` (default 30 minutes).
 
 4. **Write the processor.** Extend `ScheduledJobProcessor`. The base
    class applies `jitterMs`, takes the lock when the descriptor
@@ -175,23 +180,25 @@ export const WALLET_IMPORT: UserJobDescriptor<WalletImportJob> = {
 ```
 
 A scheduled descriptor *may* set `defaultOpts` if it genuinely
-needs BullMQ options, but none does today: a scheduled run that
-fails is normally left to its next fire rather than retried inside
-the tick.
+needs BullMQ options, but none does today. A failing step is
+retried inside its group's run (3 attempts, 5s then 10s apart);
+after that it waits for the group's next run, and the steps after
+it run regardless.
 
 ## Schedule conventions
 
 | Frequency | Convention |
 |---|---|
-| Every minute | `* * * * *` — reserved for reconcilers. |
-| Hourly | `0 * * * *` — pricing, balance syncs. |
-| Nightly heavy | Pick a slot between 03:00–05:00 UTC; coordinate with existing jobs. |
-| Weekly | `0 2 * * 0` — Sunday early. |
+| Every 15 minutes | A step of `housekeeping` (`2-59/15 * * * *`) — probes and reconcilers. |
+| Hourly | A step of `hourly` (`0 * * * *`) — pricing, balance syncs. |
+| Nightly | A step of `nightly` (`0 0 * * *`), placed after what it reads. |
+| Weekly | A `nightly` step with `runOn` for its day. |
+| Morning mail | A step of `morning` (`0 9 * * *`). |
 
 The current schedule allocations are documented in
-[Job catalogue](/reference/jobs/). When adding a heavy job, avoid
-clashing with the existing nightly chain (3:00 → 3:30 → 4:00 →
-5:00).
+[Job catalogue](/reference/jobs/). A heavy nightly job goes in the
+nightly group at the point its dependencies allow; the step order,
+not the clock, is what orders the chain.
 
 ## User-initiated jobs (not the same thing)
 

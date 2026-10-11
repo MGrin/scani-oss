@@ -2,6 +2,7 @@ import { relations, sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   boolean,
+  foreignKey,
   index,
   jsonb,
   pgTable,
@@ -16,6 +17,7 @@ import { accounts } from './accounts';
 import { feedInputs, judgmentDecisions } from './feeds';
 import { holdingGroups } from './groups';
 import { tokens } from './tokens';
+import { transactionCategories } from './transaction-categories';
 import { transferReviewRules } from './transfer-review-rules';
 import { users } from './users';
 import { vaultHoldings } from './vaults';
@@ -57,6 +59,10 @@ export const holdings = pgTable(
     // holding still counts in value history, PnL, returns and flows. 'user', or
     // null on a hidden row, is the owner's, and it counts nowhere.
     hiddenBy: text('hidden_by').$type<'user' | 'auto'>(),
+    // The balance its owner hid it at (A5 #9). A hidden holding that later
+    // holds more is named on the data-quality page; null on a row hidden
+    // before this was kept, read as zero.
+    hiddenBalance: text('hidden_balance'),
     isActive: boolean('is_active').notNull().default(true),
     // What the owner last said a manual balance edit on THIS holding meant —
     // 'flow' | 'correction' | 'growth' (SC-510). The remembered default for
@@ -141,6 +147,9 @@ export const holdings = pgTable(
 // source: chain tx, CEX trade, statement line, screenshot extraction,
 // manual entry, plus synthesized 'opening_balance' rows from
 // reconciliation. Never overrides holdings.balance — strictly additive.
+/** 'cleared' is a person's "none", and carries no category (SC-1695). */
+export type CategorySetBy = 'person' | 'import' | 'rule' | 'ai' | 'cleared';
+
 export const holdingTransactions = pgTable(
   'holding_transactions',
   {
@@ -279,6 +288,11 @@ export const holdingTransactions = pgTable(
     decisionId: uuid('decision_id').references(() => judgmentDecisions.id, {
       onDelete: 'set null',
     }),
+    // Who set the category: a person, an import (SC-1652), a rule learned
+    // from the person's picks, or AI (SC-1695); or 'cleared', a person's
+    // "none". Writers keep the precedence person > import > rule = ai.
+    categoryId: uuid('category_id'),
+    categorySetBy: text('category_set_by').$type<CategorySetBy>(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -290,6 +304,23 @@ export const holdingTransactions = pgTable(
     inputExternalUq: unique('holding_tx_input_external_uq').on(table.inputId, table.externalId),
     userOccurredIdx: index('idx_holding_tx_user_occurred').on(
       table.userId,
+      table.occurredAt.desc()
+    ),
+    // `ON DELETE SET NULL (category_id)`, and the trigger that clears
+    // `category_set_by` with it, are in migration 20261010054834.
+    categoryFk: foreignKey({
+      name: 'holding_tx_category_fk',
+      columns: [table.categoryId, table.userId],
+      foreignColumns: [transactionCategories.id, transactionCategories.userId],
+    }),
+    // The function is defined in migration 20261010112916 (SC-1695).
+    userPayeeKeyIdx: index('idx_holding_tx_user_payee_key').on(
+      table.userId,
+      sql`transaction_payee_key(${table.counterparty}, ${table.description})`
+    ),
+    userCategoryOccurredIdx: index('idx_holding_tx_user_category_occurred').on(
+      table.userId,
+      table.categoryId,
       table.occurredAt.desc()
     ),
     holdingOccurredIdx: index('idx_holding_tx_holding_occurred').on(

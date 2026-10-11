@@ -14,6 +14,7 @@ import { DemoBanner } from '../components/DemoBanner';
 import { PaymentFormSheet } from '../components/money/PaymentFormSheet';
 import { PullToRefreshIndicator } from '../components/PullToRefreshIndicator';
 import { V3TokenScope } from '../components/V3TokenScope';
+import { useHideChromeOnScroll } from '../hooks/useHideChromeOnScroll';
 import { usePullToRefresh } from '../hooks/usePullToRefresh';
 import { resolveActiveTabPath, resolveActiveV3Path } from '../lib/routes';
 import { ScaniBrand } from './ScaniBrand';
@@ -68,10 +69,20 @@ export function V3Shell() {
   const utils = trpc.useUtils();
   const refresh = useCallback(() => utils.invalidate(), [utils]);
   const pull = usePullToRefresh(scrollerRef, refresh);
+  // On a phone the header and the tab bar slide away while the page is read
+  // and return on any scroll up (SC-1631). A route or a `?sheet=` brings them
+  // back, which covers every sheet this shell opens.
+  const chrome = useHideChromeOnScroll(scrollerRef, {
+    suspended: pull.phase !== 'idle',
+    resetKey: `${pathname}${search}`,
+  });
+  const slide = 'var(--motion-base) var(--motion-ease)';
 
   return (
     <V3TokenScope
       rootRef={shellRef}
+      // `styles/v3-shell.css` keys the header's top inset on this (SC-1597).
+      shell
       // A column, so the demo label can span the sidebar as well as the
       // content — it is a statement about the deployment, not about the page.
       // `DemoBanner` renders null everywhere else, so this is one empty flex
@@ -94,16 +105,41 @@ export function V3Shell() {
         />
 
         <div className="flex min-w-0 flex-1 flex-col">
+          {/* Hidden, the whole header collapses, the status bar's inset
+              included, so the page scrolls up under the clock and iOS's own
+              fade covers it (SC-1631). The row slides up while it collapses,
+              so the page gains the height without a jump. */}
           <header
-            className="flex shrink-0 items-center gap-2 border-b border-border px-4 lg:hidden"
+            className="shrink-0 lg:hidden"
+            onFocusCapture={chrome.reveal}
             style={{
-              paddingTop: 'env(safe-area-inset-top)',
-              minHeight: 'calc(3.5rem + env(safe-area-inset-top))',
+              paddingTop: chrome.hidden ? 0 : 'var(--scani-header-inset)',
+              minHeight: chrome.hidden
+                ? 0
+                : 'calc(var(--scani-header-row) + var(--scani-header-inset))',
+              transition: `padding-top ${slide}, min-height ${slide}`,
             }}
           >
-            <ScaniBrand />
-            <div className="ms-auto flex items-center gap-1">
-              <ThemeToggle variant="icon" side="bottom" align="end" />
+            <div
+              className="overflow-hidden"
+              style={{
+                height: chrome.hidden ? 0 : 'var(--scani-header-row)',
+                transition: `height ${slide}`,
+              }}
+            >
+              <div
+                className="flex h-full items-center gap-2 border-b border-border px-4"
+                style={{
+                  borderBottomWidth: 'var(--scani-header-border)',
+                  translate: chrome.hidden ? '0 -100%' : '0 0',
+                  transition: `translate ${slide}`,
+                }}
+              >
+                <ScaniBrand />
+                <div className="ms-auto flex items-center gap-1">
+                  <ThemeToggle variant="icon" side="bottom" align="end" />
+                </div>
+              </div>
             </div>
           </header>
 
@@ -180,8 +216,17 @@ export function V3Shell() {
                 <Outlet />
               </CaptureSheetProvider>
               {/* The tab bar is fixed to the viewport so it cannot drift with
-                  dvh shifts; this reserves the height it covers. */}
-              <div aria-hidden="true" className="lg:hidden" style={{ height: V3_TAB_BAR_SPACER }} />
+                  dvh shifts; this reserves the height it covers. Hidden, only
+                  the home indicator's inset stays, so no gap is left under the
+                  last card (SC-1631). */}
+              <div
+                aria-hidden="true"
+                className="lg:hidden"
+                style={{
+                  height: chrome.hidden ? 'env(safe-area-inset-bottom, 0px)' : V3_TAB_BAR_SPACER,
+                  transition: `height ${slide}`,
+                }}
+              />
             </main>
           </div>
         </div>
@@ -195,6 +240,8 @@ export function V3Shell() {
         onCapturePress={openCapture}
         onMorePress={more.open}
         actionRequiredCount={actionRequiredCount}
+        hidden={chrome.hidden}
+        onFocusCapture={chrome.reveal}
       />
       <CaptureSheet open={capture.isOpen} onOpenChange={capture.setOpen} />
       {/* The bill form opens over any screen, from the URL (SC-1414). */}

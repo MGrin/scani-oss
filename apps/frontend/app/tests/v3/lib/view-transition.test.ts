@@ -15,6 +15,11 @@ import {
  */
 
 describe('shouldTransitionRoute — which navigations are worth animating', () => {
+  test('opening or closing a Home tile peek does not cross-fade the page under its sheet', () => {
+    expect(shouldTransitionRoute('/', '/home/returns')).toBe(false);
+    expect(shouldTransitionRoute('/home/returns', '/')).toBe(false);
+  });
+
   test('a move between destinations is', () => {
     expect(shouldTransitionRoute('/', '/payments')).toBe(true);
     expect(shouldTransitionRoute('/holdings', '/vendors')).toBe(true);

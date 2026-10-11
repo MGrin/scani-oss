@@ -199,7 +199,7 @@ describe('allocationItems', () => {
   /**
    * Invariant, Home (SC-1463): the account cut of one account in debt (10 000
    * of stock, −2 500 of cash) beside one without (5 000). The server keeps the
-   * cash out of the slices and reports it as `marginDebt`, so the bar plus the
+   * cash out of the slices and reports it as `totalDebt`, so the bar plus the
    * debt line is the net total the hero shows.
    */
   test('invariant, Home: slices plus margin debt is the net total, to the cent', () => {
@@ -208,13 +208,13 @@ describe('allocationItems', () => {
         { id: 'margin', code: 'Margin', name: 'Margin', value: '10000.10' },
         { id: 'wallet', code: 'Wallet', name: 'Wallet', value: '5000' },
       ],
-      marginDebt: '-2500.25',
+      totalDebt: '-2500.25',
       totalValue: '12499.85',
     };
     const slices = allocationItems(t, wire.items, 'account');
     expect(slices.map((slice) => slice.key)).toEqual(['margin', 'wallet']);
     const sum = slices.reduce((total, slice) => total + slice.value, 0);
-    expect((sum + Number(wire.marginDebt)).toFixed(2)).toBe(Number(wire.totalValue).toFixed(2));
+    expect((sum + Number(wire.totalDebt)).toFixed(2)).toBe(Number(wire.totalValue).toFixed(2));
   });
 
   /**

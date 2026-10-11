@@ -4,14 +4,17 @@ import { describe, expect, test } from 'bun:test';
 import type { PendingTransferReview, TransferDestination } from '@scani/shared';
 import i18n from 'i18next';
 import {
+  addDestinationRow,
   decisionConsequence,
   destinationDetail,
   destinationGroup,
+  destinationKey,
   destinationScale,
   type SplitDraftRow,
   splitBlockers,
   splitConsequence,
   splitIsCommittable,
+  takenDestinationKeys,
   toSplitPortions,
 } from '../../src/v3/lib/transfer-review';
 
@@ -94,6 +97,27 @@ function rows(overrides: Partial<Record<string, Partial<SplitDraftRow>>> = {}): 
   }));
 }
 
+/** The draft with a second `internal` row after the first. */
+function withSecondDestination(
+  draft: SplitDraftRow[],
+  row: Partial<SplitDraftRow>
+): SplitDraftRow[] {
+  const at = draft.findIndex((r) => r.decision === 'internal') + 1;
+  return [
+    ...draft.slice(0, at),
+    { decision: 'internal', amount: '', matchTransactionId: null, destination: null, ...row },
+    ...draft.slice(at),
+  ];
+}
+
+const WISE: TransferDestination = {
+  ...SAVINGS,
+  accountId: '55555555-5555-4555-8555-555555555555',
+  holdingId: '66666666-6666-4666-8666-666666666666',
+  accountName: 'Wise Savings',
+  institutionName: 'Wise',
+};
+
 describe('destinationDetail', () => {
   test('renders every balance in one picker at the same scale', () => {
     // The first phone capture read `1,201.5` directly above `6,500.32`. These
@@ -140,15 +164,17 @@ describe('decisionConsequence — moved somewhere Scani tracks', () => {
     // told the reader to raise it themselves if it did not already include the
     // money — an instruction whose hand edit writes a SECOND arrival row.
     expect(text).toContain('its balance goes from 6,500.32 USD up by 4,000 USD');
+    expect(text).toContain('You keep that balance by hand');
     expect(text).toContain('you do not need to change it yourself');
   });
 
-  test('promises the balance is untouched where a sync owns it — the double-count answer', () => {
+  test('says a feed sets the balance and when the deposit shows — the double-count answer (A5 #2)', () => {
     // MUST-BE-ABSENT against the test above, on the same amount and the same
     // account: the only difference is who owns the balance, which is what
     // shows the sentence follows `movesBalance` and not the answer.
     const text = decisionConsequence(t, 'internal', ITEM, null, SYNCED_SAVINGS);
-    expect(text).toContain('Its balance stays at 6,500.32 USD');
+    expect(text).toContain('That account’s feed sets its balance');
+    expect(text).toContain('it stays at 6,500.32 USD unless the feed has not reported since');
     expect(text).not.toContain('goes from');
   });
 
@@ -159,15 +185,15 @@ describe('decisionConsequence — moved somewhere Scani tracks', () => {
     expect(text).not.toContain('stays at');
   });
 
-  test('a new holding on a SYNCED account opens at zero, and says so', () => {
-    // SC-356 opens it at zero for the sync to restate, and this sentence
-    // claimed the moved amount on every destination until SC-856.
+  test('a new holding on a SYNCED account shows the deposit until its sync, and says so', () => {
+    // SC-356 opens it at zero for the sync to restate; since A5 the engine
+    // shows the deposit on it until that sync, so "opening at zero" is gone.
     const text = decisionConsequence(t, 'internal', ITEM, null, {
       ...NO_HOLDING_YET,
       movesBalance: false,
     });
-    expect(text).toContain('opening at zero');
-    expect(text).not.toContain('with a balance of 4,000 USD');
+    expect(text).toContain('as its balance until that account’s next sync sets the real one');
+    expect(text).not.toContain('opening at zero');
   });
 
   test('asks for the destination before it promises anything', () => {
@@ -199,16 +225,80 @@ describe('splitIsCommittable — the reported division', () => {
     expect(splitIsCommittable(draft, ITEM)).toBe(false);
   });
 
-  test('refuses two linking parts, and says why rather than asking for amounts', () => {
-    // One `transfer_group_id` column cannot point at two destinations; a
-    // second link would leave one of them opening a fresh market-value lot,
-    // which is the defect SC-150 closed.
+  test('accepts a pair and a move together: both join one transfer group (SC-1665)', () => {
     const draft = rows({
       paired: { amount: '2000', matchTransactionId: 'dep-1' },
       internal: { amount: '2000', destination: SAVINGS },
     });
+    expect(splitIsCommittable(draft, ITEM)).toBe(true);
+  });
+
+  test('accepts two destinations, each its own part (SC-1665)', () => {
+    const draft = withSecondDestination(
+      rows({ internal: { amount: '3000', destination: SAVINGS }, left_control: { amount: '300' } }),
+      { amount: '700', destination: WISE }
+    );
+    expect(splitIsCommittable(draft, ITEM)).toBe(true);
+    expect(toSplitPortions(draft).filter((p) => p.decision === 'internal')).toEqual([
+      {
+        decision: 'internal',
+        quantity: '3000',
+        destination: { accountId: SAVINGS.accountId, holdingId: SAVINGS.holdingId },
+      },
+      {
+        decision: 'internal',
+        quantity: '700',
+        destination: { accountId: WISE.accountId, holdingId: WISE.holdingId },
+      },
+    ]);
+  });
+
+  test('refuses two parts to the same holding, and says why', () => {
+    const draft = withSecondDestination(
+      rows({ internal: { amount: '3000', destination: SAVINGS } }),
+      { amount: '1000', destination: SAVINGS }
+    );
     expect(splitIsCommittable(draft, ITEM)).toBe(false);
-    expect(splitConsequence(t, draft, ITEM, () => null)).toContain('Only one part');
+    expect(splitConsequence(t, draft, ITEM, () => null)).toContain('the same holding');
+  });
+});
+
+describe('addDestinationRow', () => {
+  test('adds an empty move right after the last one, and changes nothing else', () => {
+    const before = rows({ internal: { amount: '3000', destination: SAVINGS } });
+    const after = addDestinationRow(before);
+    expect(after.map((r) => r.decision)).toEqual([
+      'paired',
+      'internal',
+      'internal',
+      'left_control',
+      'untracked',
+    ]);
+    expect(after[2]).toEqual({
+      decision: 'internal',
+      amount: '',
+      matchTransactionId: null,
+      destination: null,
+    });
+    expect(after[1]).toEqual(before[1]!);
+  });
+});
+
+describe('takenDestinationKeys', () => {
+  const draft = withSecondDestination(
+    rows({ internal: { amount: '3000', destination: SAVINGS } }),
+    { amount: '1000', destination: WISE }
+  );
+
+  test('a move cannot pick a holding another move already took', () => {
+    expect([...takenDestinationKeys(draft, 2)]).toEqual([destinationKey(SAVINGS)]);
+    expect([...takenDestinationKeys(draft, 1)]).toEqual([destinationKey(WISE)]);
+  });
+
+  test("a move's own pick, and a row with none, take nothing", () => {
+    const one = rows({ internal: { amount: '3000', destination: SAVINGS } });
+    expect([...takenDestinationKeys(one, 1)]).toEqual([]);
+    expect([...takenDestinationKeys(withSecondDestination(one, { amount: '1' }), 1)]).toEqual([]);
   });
 });
 
@@ -220,10 +310,17 @@ describe('splitBlockers — what Save waits on (SC-1433)', () => {
     ['one part', rows({ left_control: { amount: '4000' } })],
     ['no destination', rows({ internal: { amount: '3500' }, left_control: { amount: '500' } })],
     [
-      'two links',
+      'a pair and a move',
       rows({
         paired: { amount: '2000', matchTransactionId: 'dep-1' },
         internal: { amount: '2000', destination: SAVINGS },
+      }),
+    ],
+    [
+      'the same holding twice',
+      withSecondDestination(rows({ internal: { amount: '3000', destination: SAVINGS } }), {
+        amount: '1000',
+        destination: SAVINGS,
       }),
     ],
     ['short', rows({ left_control: { amount: '100' }, untracked: { amount: '100' } })],
@@ -260,16 +357,18 @@ describe('splitConsequence — moved somewhere Scani tracks', () => {
     // Nothing syncs this destination, so the anchor moves (SC-856). This read
     // `No balance is changed.` until then, over a write that now does.
     expect(text).toContain('balance goes up by the amount that arrived there');
-    expect(text).not.toContain('No balance is changed');
+    expect(text).not.toContain('feed sets its balance');
   });
 
-  test('still says no balance is changed where a sync owns it', () => {
+  test('says the feed sets the balance where a sync owns it (A5 #2)', () => {
     const draft = rows({
       internal: { amount: '3500', destination: SYNCED_SAVINGS },
       left_control: { amount: '500' },
     });
     const text = splitConsequence(t, draft, ITEM, () => null);
-    expect(text).toContain('No balance is changed.');
+    expect(text).toContain(
+      'That account’s feed sets its balance, and its next report confirms the deposit.'
+    );
   });
 
   test('does not claim no balance changed when a holding is being created', () => {
@@ -279,6 +378,6 @@ describe('splitConsequence — moved somewhere Scani tracks', () => {
     });
     const text = splitConsequence(t, draft, ITEM, () => null);
     expect(text).toContain('A new USD holding is created there');
-    expect(text).not.toContain('No balance is changed');
+    expect(text).not.toContain('feed sets its balance');
   });
 });

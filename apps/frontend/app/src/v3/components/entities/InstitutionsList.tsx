@@ -85,7 +85,7 @@ export function InstitutionsList({ institutions, currency, types, query }: Insti
     summary: (items) => (
       <EntityValueSummary
         value={institutionsValue(items)}
-        marginDebt={institutionsDebt(items)}
+        totalDebt={institutionsDebt(items)}
         currency={currency}
         allocation={namedAllocation(items, institutionAssets)}
         allocationLabel={t('v3.entities.institution.valueByInstitution')}

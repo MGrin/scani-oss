@@ -9,9 +9,13 @@
 
 import { afterEach, describe, expect, test } from 'bun:test';
 import { RecordNotAccessibleError, RefreshAccountBalanceUseCase } from '@scani/domain';
+import { HoldingRepository, PortfolioValueDailyRepository } from '@scani/domain/repositories';
+import { PortfolioValueCache } from '@scani/domain/services';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
+import { ReconcilePaymentsUseCase } from '@scani/domain/use-cases';
 import type { RefreshAccountBalanceJob } from '@scani/jobs';
 import {
+  BullMqEnqueueService,
   PostgresResourceLock,
   type ProcessorContext,
   UnrecoverableError,
@@ -91,5 +95,69 @@ describe('RefreshAccountBalanceProcessor error classification', () => {
     expect((err as Error).message).toBe('socket hang up');
     expect(userFacingMessage(err)).toBeNull();
     expect(released).toBe(1);
+  });
+});
+
+/**
+ * SC-1665. A refresh that read the ledger with the balance and wrote rows is
+ * followed exactly as an import that wrote them: the chart rebuild is queued
+ * and the bills those rows pay are matched.
+ */
+describe('a refresh whose ledger read wrote rows', () => {
+  function refreshWriting(ledger: { transactions: number } | null) {
+    const queued: string[] = [];
+    const reconciled: string[] = [];
+    Container.set(PostgresResourceLock, {
+      acquire: async () => ({ ok: true, release: async () => undefined }),
+    } as unknown as PostgresResourceLock);
+    Container.set(RefreshAccountBalanceUseCase, {
+      execute: async () => ({
+        accountId: 'acct-1',
+        source: 'exchange',
+        ledger: ledger && {
+          ...ledger,
+          source: 'airwallex-api',
+          earliestWrittenAt: new Date().toISOString(),
+          warnings: [],
+          warningDetails: [],
+        },
+      }),
+    } as unknown as RefreshAccountBalanceUseCase);
+    Container.set(PortfolioValueCache, {
+      bust: async () => undefined,
+    } as unknown as PortfolioValueCache);
+    Container.set(PortfolioValueDailyRepository, {
+      findLatestSnapshotDate: async () =>
+        new Date(Date.now() - 86_400_000).toISOString().slice(0, 10),
+    } as unknown as PortfolioValueDailyRepository);
+    Container.set(HoldingRepository, {
+      hasHoldingCreatedAfter: async () => false,
+    } as unknown as HoldingRepository);
+    Container.set(BullMqEnqueueService, {
+      add: async (descriptor: { name: string }) => {
+        queued.push(descriptor.name);
+      },
+    } as unknown as BullMqEnqueueService);
+    Container.set(ReconcilePaymentsUseCase, {
+      execute: async (userId: string) => {
+        reconciled.push(userId);
+        return { scanned: 0, matched: 0 };
+      },
+    } as unknown as ReconcilePaymentsUseCase);
+    return { run: () => new TestableProcessor().run(JOB), queued, reconciled };
+  }
+
+  test('rows written: the rebuild is queued and the bills are matched', async () => {
+    const { run, queued, reconciled } = refreshWriting({ transactions: 3 });
+    await run();
+    expect(queued).toEqual(['portfolio-history-backfill']);
+    expect(reconciled).toEqual(['user-1']);
+  });
+
+  test('control: no ledger read, nothing follows', async () => {
+    const { run, queued, reconciled } = refreshWriting(null);
+    await run();
+    expect(queued).toEqual([]);
+    expect(reconciled).toEqual([]);
   });
 });

@@ -21,7 +21,12 @@ import { RecordHoldingMovementUseCase } from '../../src/use-cases/RecordHoldingM
 import { UpdateHoldingUseCase } from '../../src/use-cases/UpdateHoldingUseCase';
 import { committedRows } from '../../test/helpers/committed-rows';
 import { makeInstitution, makeUser } from '../../test/helpers/factories';
-import { makeAccount, makeHolding, makeToken } from '../../test/helpers/factories-extra';
+import {
+  makeAccount,
+  makeHolding,
+  makeToken,
+  seedReading,
+} from '../../test/helpers/factories-extra';
 import { raceBehind } from '../../test/helpers/lock-wait';
 
 const created = committedRows();
@@ -54,6 +59,10 @@ async function committedPair() {
       balance: '130',
       source: 'manual',
     });
+    // The readings a manual holding carries since A2; the engine funds both from them.
+    const read = new Date('2026-08-01T00:00:00.000Z');
+    await seedReading(tx, { userId: user.id, holdingId: source.id, balance: '500', at: read });
+    await seedReading(tx, { userId: user.id, holdingId: destination.id, balance: '130', at: read });
     created.users.push(user.id);
     created.tokens.push(token.id);
     created.institutions.push(institution.id);

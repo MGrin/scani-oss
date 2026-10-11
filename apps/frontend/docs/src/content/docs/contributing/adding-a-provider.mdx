@@ -42,9 +42,7 @@ The provider directory layout (each is a self-contained adapter):
   - tron/
   - wise/
   - yahoo-finance/
-  - ai-deepseek/
   - ai-openai/
-  - ai-perplexity/
 </FileTree>
 
 ## The capability-based interface model
@@ -197,7 +195,7 @@ The merged `TokenMetadata` is written back to
   `@scani/rate-limiter`'s per-provider buckets. Configure your
   provider's limit in its own boot factory: create the limiter there
   and register it under the provider's namespace on
-  `deps.rateLimiterRegistry`, as `frankfurter/index.ts` does, so noisy
+  `deps.rateLimiterRegistry`, as `coingecko/index.ts` does, so noisy
   backfills don't blow past the upstream's quota.
 </Aside>
 

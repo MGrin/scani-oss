@@ -98,6 +98,7 @@ if (!looksLocal && process.env.ALLOW_REMOTE_TEST_DB !== '1') {
 // reads decorator metadata at class-init time.
 import 'reflect-metadata';
 import { installContainerLeakGuard } from './test/helpers/container';
+import { installDateAwareToMatchObject } from './test/helpers/date-aware-to-match-object';
 import { installSharedConfigGuard, scrubGitLocation } from './test-git-guard';
 
 // One suite per database, or none. Two `bun run test` runs both land here on
@@ -118,6 +119,9 @@ if (process.env.SCANI_ALLOW_SHARED_TEST_DB !== '1') {
 // default file order (SC-448). Installed last, so the patched `Container.set`
 // is in place before any test file loads.
 installContainerLeakGuard();
+
+// bun's `toMatchObject` passes two different Dates (SC-1568).
+installDateAwareToMatchObject();
 
 // SC-1512. A run started under a git hook inherits its GIT_DIR, and every
 // scratch `git init` a test makes would then land on the real repository.

@@ -5,7 +5,8 @@
   "version": "1.0.0",
   "description": "Bank-statement parsing primitives (CSV / OFX / QIF / IB-CSV + format detection). Pure functions; AI fallback for CSV column mapping is provided via an optional caller-injected callback so this package never imports @scani/domain.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./budget-app-register": "./src/budget-app-register.ts"
   },
   "scripts": {
     "lint": "biome check .",
