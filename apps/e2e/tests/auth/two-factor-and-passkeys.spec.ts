@@ -49,6 +49,9 @@ async function followMagicLink(page: Page, email: string) {
     headers: { 'content-type': 'application/json', origin: ORIGIN },
   });
   const message = await mailpit.waitForMessageTo(email);
+  // A signed-in tab whose cookies were just cleared navigates itself to the
+  // sign-in page, and that navigation aborts this one (net::ERR_ABORTED).
+  await page.goto('about:blank');
   await page.goto(mailpit.extractMagicLinkFromBody(await mailpit.getBody(message.ID)));
 }
 
