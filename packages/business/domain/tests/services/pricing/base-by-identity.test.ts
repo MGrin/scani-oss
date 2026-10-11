@@ -270,11 +270,19 @@ describe('a base is a token, never a symbol', () => {
     });
     pricingStack();
     computeEveryValuation();
+    // Restored by hand: the container restore keeps a PriceReader built before this
+    // file, spy and all, and HoldingCacheWriter's test then recursed into it (SC-1698).
     const read = spyOn(Container.get(PriceReader), 'at');
+    let portfolio: Awaited<ReturnType<PortfolioValuationService['getUserPortfolioValue']>>;
+    let baseTokenIds: unknown[];
+    try {
+      portfolio = await new PortfolioValuationService().getUserPortfolioValue(user.id);
+      baseTokenIds = read.mock.calls.map(([, baseTokenId]) => baseTokenId);
+    } finally {
+      read.mockRestore();
+    }
 
-    const portfolio = await new PortfolioValuationService().getUserPortfolioValue(user.id);
-
-    expect(read.mock.calls.map(([, baseTokenId]) => baseTokenId)).toEqual([eur.id]);
+    expect(baseTokenIds).toEqual([eur.id]);
     expect(portfolio.baseCurrency).toBe('EUR');
     expect(
       portfolio.holdings.map((h) => [h.tokenId, h.currentPrice, h.value, h.priceSource])
