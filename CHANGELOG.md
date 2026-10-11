@@ -19,6 +19,13 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.54.1](https://github.com/MGrin/scani-oss/compare/v0.54.0...v0.54.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* **self-host:** bind, record and print the port compose will use (SC-1709) ([972b510](https://github.com/MGrin/scani-oss/commit/972b510d3a9477e6cff2c527405464e1329b2f9a))
+
 ## [0.54.0](https://github.com/MGrin/scani-oss/compare/v0.53.0...v0.54.0) (2026-10-11)
 
 
