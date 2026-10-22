@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { APP_OPEN_REFRESH } from '../../src/user-jobs/app-open-refresh';
 import { REFRESH_ACCOUNT_BALANCE } from '../../src/user-jobs/refresh-account-balance';
 
 describe('REFRESH_ACCOUNT_BALANCE descriptor', () => {
@@ -47,6 +48,17 @@ describe('REFRESH_ACCOUNT_BALANCE descriptor', () => {
     ).toEqual({
       holdingId: undefined,
       accountId: 'a',
+      requestId: 'r',
     });
+  });
+
+  // SC-1724: the Jobs page folds the refreshes one app-open queued into one row
+  // by this id, so both halves must record the same one.
+  test("summary carries the requestId the app-open's own summary carries", () => {
+    const requestId = 'open-1';
+    expect(
+      REFRESH_ACCOUNT_BALANCE.summarizePayload({ userId: 'u', requestId, accountId: 'a' }).requestId
+    ).toBe(APP_OPEN_REFRESH.summarizePayload({ userId: 'u', requestId }).requestId);
+    expect(APP_OPEN_REFRESH.summarizePayload({ userId: 'u', requestId })).toEqual({ requestId });
   });
 });

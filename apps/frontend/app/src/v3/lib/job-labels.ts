@@ -25,6 +25,7 @@ import {
   Import,
   Keyboard,
   Link2,
+  RefreshCw,
   Trash2,
   Undo2,
 } from 'lucide-react';
@@ -56,6 +57,8 @@ const BY_NAME: Record<string, { labelKey: string; icon: LucideIcon }> = {
   'transaction-import': { labelKey: 'v3.jobs.label.transactionImport', icon: History },
   'budget-app-import': { labelKey: 'v3.jobs.label.budgetAppImport', icon: Import },
   'budget-app-import-undo': { labelKey: 'v3.jobs.label.budgetAppUndo', icon: Undo2 },
+  'refresh-account-balance': { labelKey: 'v3.jobs.label.accountRefresh', icon: RefreshCw },
+  'app-open-refresh': { labelKey: 'v3.jobs.label.accountRefresh', icon: RefreshCw },
 };
 
 /**
