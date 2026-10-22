@@ -1,4 +1,6 @@
 import { formatDate } from '@scani/shared';
+import type { TFunction } from 'i18next';
+import { formatRelative } from './relative-time';
 
 /**
  * Accounts and institutions, as lists rather than as destinations.
@@ -33,7 +35,11 @@ export interface AccountRow {
   summary: { holdingsCount: number; totalValue: string; totalDebt?: string };
   groups: readonly { id: string; name: string }[];
   /** The provider refused the key; null or absent when it did not (SC-1686). */
-  keyRejected?: { providerKey: string | null } | null;
+  keyRejected?: {
+    providerKey: string | null;
+    credentialNoun?: 'key' | 'token';
+    credentialLifetimeDays?: number | null;
+  } | null;
 }
 
 export interface InstitutionRow {
@@ -238,4 +244,81 @@ export function compareInstitutions(
     default:
       return 0;
   }
+}
+
+/**
+ * What a refused credential's account says. One with a fixed lifetime has most
+ * likely expired, so it names that and asks for a new one, in the provider's
+ * own noun (SC-1733: a Fio token lasts at most 180 days).
+ */
+export function keyRejectedLabels(
+  t: TFunction,
+  rejected: NonNullable<AccountRow['keyRejected']>
+): { badge: string; action: string } {
+  if (rejected.credentialLifetimeDays == null) {
+    return {
+      badge: t('v3.entities.account.keyRejected'),
+      action: t('v3.entities.account.keyRejectedReconnect'),
+    };
+  }
+  return rejected.credentialNoun === 'token'
+    ? {
+        badge: t('v3.entities.account.tokenExpired'),
+        action: t('v3.entities.account.addNewToken'),
+      }
+    : {
+        badge: t('v3.entities.account.keyExpired'),
+        action: t('v3.entities.account.addNewKey'),
+      };
+}
+
+/**
+ * The line under the account sheet's title when an expiring credential was
+ * refused: a reader who opens the sheet from a link never sees the badge
+ * (design, SC-1733). Null for any other refusal: its button already says why.
+ */
+export function keyRejectedNotice(
+  t: TFunction,
+  rejected: NonNullable<AccountRow['keyRejected']>,
+  institutionName: string
+): string | null {
+  const days = rejected.credentialLifetimeDays;
+  if (days == null) return null;
+  return t(
+    rejected.credentialNoun === 'token'
+      ? 'v3.entities.account.tokenStoppedNotice'
+      : 'v3.entities.account.keyStoppedNotice',
+    { name: institutionName, days }
+  );
+}
+
+/**
+ * The whole answer to "when did this account last sync", for the sheet. An
+ * account with a credential behind it is never "maintained by hand", even
+ * before its first sync (design, SC-1733).
+ */
+export function lastSyncFact(
+  t: TFunction,
+  account: { metadata?: unknown; keyRejected?: AccountRow['keyRejected'] }
+): string {
+  const lastSync = accountLastSync(account.metadata);
+  if (!lastSync) {
+    return t(
+      account.keyRejected
+        ? 'v3.entities.account.neverSyncedConnected'
+        : 'v3.entities.account.neverSynced'
+    );
+  }
+  return isStaleSync(lastSync)
+    ? t('v3.entities.account.lastSyncOverdue', { when: formatRelative(t, lastSync) })
+    : formatRelative(t, lastSync);
+}
+
+/** The table column's short form of `lastSyncFact` (SC-114): "By hand" only for an account with no credential. */
+export function lastSyncColumn(
+  t: TFunction,
+  account: { metadata?: unknown; keyRejected?: AccountRow['keyRejected'] }
+): string {
+  if (accountLastSync(account.metadata)) return lastSyncFact(t, account);
+  return t(account.keyRejected ? 'v3.entities.account.notSyncedYet' : 'v3.entities.account.byHand');
 }

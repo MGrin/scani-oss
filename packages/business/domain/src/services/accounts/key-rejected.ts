@@ -1,4 +1,10 @@
-export type KeyRejected = { providerKey: string | null };
+export type KeyRejected = {
+  providerKey: string | null;
+  /** The provider's word for its credential (SC-1732). */
+  credentialNoun: 'key' | 'token';
+  /** The credential's longest life in days, so a refusal reads as expiry (SC-1733). */
+  credentialLifetimeDays: number | null;
+};
 
 /**
  * Which institutions' keys were refused, keyed by institution, with the
@@ -8,13 +14,25 @@ export type KeyRejected = { providerKey: string | null };
  */
 export function keyRejectedByInstitution(
   rejected: ReadonlyArray<{ institutionId: string; institutionName: string }>,
-  manifests: ReadonlyArray<{ institutionName: string; providerKey: string }>
+  manifests: ReadonlyArray<{
+    institutionName: string;
+    providerKey: string;
+    credentialNoun?: 'key' | 'token';
+    credentialLifetimeDays?: number;
+  }>
 ): Map<string, KeyRejected> {
-  const providerKeyByName = new Map(manifests.map((m) => [m.institutionName, m.providerKey]));
+  const manifestByName = new Map(manifests.map((m) => [m.institutionName, m]));
   return new Map(
-    rejected.map((r) => [
-      r.institutionId,
-      { providerKey: providerKeyByName.get(r.institutionName) ?? null },
-    ])
+    rejected.map((r) => {
+      const manifest = manifestByName.get(r.institutionName);
+      return [
+        r.institutionId,
+        {
+          providerKey: manifest?.providerKey ?? null,
+          credentialNoun: manifest?.credentialNoun ?? 'key',
+          credentialLifetimeDays: manifest?.credentialLifetimeDays ?? null,
+        },
+      ];
+    })
   );
 }

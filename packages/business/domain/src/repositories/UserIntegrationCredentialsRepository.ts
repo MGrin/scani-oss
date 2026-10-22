@@ -285,6 +285,9 @@ export class UserIntegrationCredentialsRepository extends BaseRepository<
       .set({
         syncLastError: errorMessage.slice(0, 2000),
         syncRefusalKind: kind,
+        // The run of refusals of one kind keeps the time it began, so a
+        // suspect answer can be confirmed an hour later (SC-1733).
+        syncRefusalSince: sql`CASE WHEN ${schema.userIntegrationCredentials.syncRefusalKind} IS NOT DISTINCT FROM ${kind} THEN COALESCE(${schema.userIntegrationCredentials.syncRefusalSince}, now()) ELSE now() END`,
         syncFailureCount: sql`${schema.userIntegrationCredentials.syncFailureCount} + 1`,
         ...(blockedUntil ? { syncBlockedUntil: blockedUntil } : {}),
         updatedAt: new Date(),
@@ -334,6 +337,7 @@ export class UserIntegrationCredentialsRepository extends BaseRepository<
         syncBlockedUntil: null,
         syncLastError: null,
         syncRefusalKind: null,
+        syncRefusalSince: null,
         syncFailureCount: 0,
         updatedAt: new Date(),
       })

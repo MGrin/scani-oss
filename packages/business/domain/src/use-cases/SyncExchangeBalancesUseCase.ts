@@ -45,6 +45,7 @@ import {
 } from '../services/transactions/AccountLedgerSync';
 import { ledgerSourceOf } from '../services/transactions/transaction-source';
 import { IdleUserSyncPolicy } from '../services/users/IdleUserSyncPolicy';
+import { syncRefusalKind } from './sync-refusal-kind';
 
 const logger = createComponentLogger('use-case:sync-exchange-balances');
 
@@ -61,6 +62,8 @@ export interface SyncExchangeBalancesResult {
   credentialsBlocked: number;
   /** Credentials left out of this run because their user is idle (SC-1602). */
   credentialsIdleSkipped: number;
+  /** Credentials skipped because the provider rejected their key (SC-1728). */
+  credentialsNeedReconnect: number;
   /** Total holdings updated */
   holdingsUpdated: number;
   /** Total holdings created */
@@ -107,6 +110,16 @@ export function isSyncBlocked(
   );
 }
 
+/**
+ * The provider refused this key as expired or revoked, and only its owner can
+ * replace it. A scheduled run must not use it: every attempt fails the same
+ * way, and repeated bad-key calls are what exchanges ban an IP for (SC-1728).
+ * Storing a new key clears the refusal.
+ */
+export function needsReconnect(credential: { syncRefusalKind: string | null }): boolean {
+  return credential.syncRefusalKind === 'auth-failed';
+}
+
 @Service()
 export class SyncExchangeBalancesUseCase {
   private readonly walletDiscovery = Container.get(WalletDiscoveryService);
@@ -126,6 +139,7 @@ export class SyncExchangeBalancesUseCase {
     let accountsFailed = 0;
     let credentialsBlocked = 0;
     let credentialsIdleSkipped = 0;
+    let credentialsNeedReconnect = 0;
     let holdingsUpdated = 0;
     let holdingsCreated = 0;
     let holdingsRemoved = 0;
@@ -161,6 +175,7 @@ export class SyncExchangeBalancesUseCase {
           accountsFailed: 0,
           credentialsBlocked: 0,
           credentialsIdleSkipped: 0,
+          credentialsNeedReconnect: 0,
           holdingsUpdated: 0,
           holdingsCreated: 0,
           holdingsRemoved: 0,
@@ -254,6 +269,14 @@ export class SyncExchangeBalancesUseCase {
             // reads credentials or touches the network.
             if (idleUsers.has(userCredential.userId)) {
               credentialsIdleSkipped++;
+              return;
+            }
+            if (needsReconnect(userCredential)) {
+              credentialsNeedReconnect++;
+              logger.info(
+                { credentialsId: userCredential.id, institutionId },
+                'Skipping credential — its key was rejected and has not been replaced'
+              );
               return;
             }
             if (isSyncBlocked(userCredential)) {
@@ -430,7 +453,7 @@ export class SyncExchangeBalancesUseCase {
                     userCredential.id,
                     message,
                     retryAfterMs ? new Date(Date.now() + retryAfterMs) : null,
-                    error instanceof ProviderError ? error.kind : null
+                    syncRefusalKind(error, userCredential, new Date())
                   )
                   .catch((writeError: unknown) => {
                     // Never let bookkeeping mask the sync failure itself.
@@ -574,6 +597,7 @@ export class SyncExchangeBalancesUseCase {
           accountsFailed,
           credentialsBlocked,
           credentialsIdleSkipped,
+          credentialsNeedReconnect,
           holdingsUpdated,
           holdingsCreated,
           holdingsRemoved,
@@ -589,6 +613,7 @@ export class SyncExchangeBalancesUseCase {
         accountsFailed,
         credentialsBlocked,
         credentialsIdleSkipped,
+        credentialsNeedReconnect,
         holdingsUpdated,
         holdingsCreated,
         holdingsRemoved,

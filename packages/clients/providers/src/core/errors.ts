@@ -52,17 +52,32 @@ export class ProviderError extends Error {
    */
   readonly retryAfterMs?: number;
 
+  /**
+   * The answer usually means the credential is dead, but one such answer can
+   * also be an outage (SC-1733: a Fio 500). The error stays `retryable`; the
+   * sync confirms it with a second answer before treating the key as refused,
+   * because an `auth-failed` key is not used again until replaced (SC-1728).
+   */
+  readonly suspectCredential?: boolean;
+
   constructor(
     message: string,
     readonly kind: 'auth-failed' | 'rate-limited' | 'retryable' | 'unrecoverable' | 'not-supported',
     readonly providerKey?: string,
-    options?: { cause?: unknown; status?: number; body?: string; retryAfterMs?: number }
+    options?: {
+      cause?: unknown;
+      status?: number;
+      body?: string;
+      retryAfterMs?: number;
+      suspectCredential?: boolean;
+    }
   ) {
     super(message, options);
     this.name = 'ProviderError';
     this.status = options?.status;
     this.body = options?.body;
     this.retryAfterMs = options?.retryAfterMs;
+    this.suspectCredential = options?.suspectCredential;
   }
 
   /**

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { UserIntegrationCredentialsRepository } from '../../src/repositories/UserIntegrationCredentialsRepository';
 import { withTestDb } from '../../test/helpers/db';
@@ -84,6 +85,28 @@ describe('a refused key (SC-1686)', () => {
       expect(refused?.syncRefusalKind).toBe('auth-failed');
       const cleared = await repo().clearSyncRefusal(cred.id, tx);
       expect(cleared?.syncRefusalKind).toBeNull();
+    });
+  });
+
+  // SC-1733: when the current run of refusals of one kind began, so a suspect
+  // answer can be confirmed an hour later.
+  test('a run of refusals of one kind keeps the time it began; a new kind or a success resets it', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const institution = await makeInstitution(tx);
+      const cred = await makeCredential(tx, { userId: user.id, institutionId: institution.id });
+      const first = await repo().markSyncRefused(cred.id, '500', null, 'credential-suspect', tx);
+      const began = first?.syncRefusalSince;
+      expect(began).toBeInstanceOf(Date);
+      await tx.execute(
+        sql`update user_integration_credentials set sync_refusal_since = now() - interval '2 hours' where id = ${cred.id}`
+      );
+      const again = await repo().markSyncRefused(cred.id, '500', null, 'credential-suspect', tx);
+      expect(Date.now() - (again?.syncRefusalSince?.getTime() ?? 0)).toBeGreaterThan(110 * 60_000);
+      const other = await repo().markSyncRefused(cred.id, '429', null, 'rate-limited', tx);
+      expect(Date.now() - (other?.syncRefusalSince?.getTime() ?? 0)).toBeLessThan(60_000);
+      const cleared = await repo().clearSyncRefusal(cred.id, tx);
+      expect(cleared?.syncRefusalSince).toBeNull();
     });
   });
 

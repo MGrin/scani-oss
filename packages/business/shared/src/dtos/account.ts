@@ -40,7 +40,11 @@ export type AccountWihSumaryDTO = Account & {
   }>;
   /** The provider refused this account's key; its owner must reconnect (SC-1686).
    *  `providerKey` names the connect page, null when no manifest matches. */
-  keyRejected: { providerKey: string | null } | null;
+  keyRejected: {
+    providerKey: string | null;
+    credentialNoun: 'key' | 'token';
+    credentialLifetimeDays: number | null;
+  } | null;
 };
 export type CreateAccountInput = z.infer<typeof CreateAccountDto>;
 

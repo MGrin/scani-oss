@@ -95,6 +95,17 @@ describe('PeekHeader — what survives at the 50% rest height', () => {
     expect(PEEK_SOURCE).not.toContain('BottomDrawerClose');
   });
 
+  // SC-1733: a reader who opens the sheet from a link never sees the row's
+  // badge, so the sheet says why in a line under the title (design).
+  test('a notice sits under the title, and nothing renders without one', () => {
+    const html = render(
+      <PeekHeader spec={{ ...SPEC, notice: 'Fio banka stopped accepting this token.' }} />
+    );
+    expect(html).toInclude('data-peek-notice');
+    expect(html).toInclude('Fio banka stopped accepting this token.');
+    expect(render(<PeekHeader spec={SPEC} />)).not.toInclude('data-peek-notice');
+  });
+
   test('describes itself even when the record has no subtitle', () => {
     const html = render(<PeekHeader spec={{ title: 'CASH', primary: [] }} />);
     expect(html).toInclude('sr-only');
