@@ -10,10 +10,12 @@
  */ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { OpeningBalanceReconciliationService } from '@scani/domain/services/holdings/OpeningBalanceReconciliationService';
 import { makeHolding, makeToken } from '@scani/domain/test-helpers';
 import { InMemoryInflowRateLimiter } from '@scani/rate-limiter';
 import { TRPCError } from '@trpc/server';
 import { eq, sql } from 'drizzle-orm';
+import { Container } from 'typedi';
 import { createMcpDeps, handleMcpRequest } from '../../src/mcp/server';
 import { appRouter } from '../../src/presentation/router';
 import { createAgentContext } from '../../src/presentation/trpc';
@@ -222,6 +224,45 @@ describe('agent write, then undo, is byte-identical (SC-1617)', () => {
     const after = await row();
     expect(after?.balance).toBe('40');
     expect(after?.image).toBe(before?.image);
+  });
+});
+
+/**
+ * SC-1682: the first movement on a holding that has a balance and no ledger is
+ * followed, outside the journaled write, by the portfolio-history job's
+ * opening-balance reconcile. It records the opening position on the holding's
+ * coverage row, and the undo used to read that as somebody else's change.
+ */
+describe('the first movement on a holding, then the follow-up reconcile (SC-1682)', () => {
+  test('the undo still succeeds and puts back every row', async () => {
+    const token = await makeToken(seedDb, { symbol: `F${suffix}`.slice(0, 18) });
+    tokenIds.push(token.id);
+    const fresh = await makeHolding(seedDb, {
+      userId: alice.userId,
+      accountId: alice.accountId,
+      tokenId: token.id,
+      balance: '1000',
+    });
+    await reading(alice.userId, fresh.id, '1000', new Date('2026-09-02T00:00:00Z'));
+    const before = await userData(alice.userId);
+
+    const id = await write(alice, 'record_movement', {
+      direction: 'inflow',
+      holdingId: fresh.id,
+      amount: '5',
+      occurredAt: '2026-10-01T09:00:00Z',
+    });
+    // What `portfolio-history-backfill` runs after the write commits, for this
+    // holding: `reconcileUser` also reaches alice's other holdings, outside the undo.
+    const opening = await Container.get(OpeningBalanceReconciliationService).reconcileHolding(
+      fresh.id
+    );
+    expect(opening?.hasOpening).toBe(true);
+
+    const undone = await undo(alice, id);
+    expect(undone.text).not.toContain('changed again');
+    expect(undone.isError).toBe(false);
+    expect(await userData(alice.userId)).toEqual(before);
   });
 });
 
