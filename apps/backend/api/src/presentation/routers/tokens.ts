@@ -26,9 +26,9 @@ import { z } from 'zod';
 import { LruCache } from '../../lib/lru-cache';
 import { enqueueCurrencyRateRefresh } from '../lib/currency-rate-refresh';
 import {
+  confirmExternalPick,
   type ExternalSearchItem,
   externalSearchMetadata,
-  matchVerifiedExternalToken,
 } from '../lib/external-token';
 import { enqueuePortfolioRollup } from '../lib/portfolio-rollup';
 import { requireAuth } from '../middleware/auth';
@@ -134,8 +134,6 @@ async function setOwnScamVerdict(
   return { success: true as const, tokenId: token.id };
 }
 
-// The provider search dedupes one hit per provider and symbol, so a pick made
-// from a NAME search may not be the hit a ticker search keeps: ask both.
 async function verifyExternalPick(pick: {
   symbol: string;
   provider: 'finnhub' | 'coingecko';
@@ -143,13 +141,9 @@ async function verifyExternalPick(pick: {
 }): Promise<Record<string, unknown> | null> {
   const cloudClient = getCloudClient();
   if (!cloudClient) return null;
-  const name = typeof pick.metadata.name === 'string' ? pick.metadata.name.slice(0, 100) : '';
-  const queries = [...new Set([pick.symbol, name].filter((q) => q.length > 0))];
-  const settled = await Promise.allSettled(
-    queries.map((query) => cloudClient.tokens.search.query({ query, limit: 50 }))
+  return confirmExternalPick(pick, (query) =>
+    cloudClient.tokens.search.query({ query, limit: 50 })
   );
-  const serverResults = settled.flatMap((r) => (r.status === 'fulfilled' ? r.value : []));
-  return matchVerifiedExternalToken(serverResults, pick);
 }
 
 export function createTokensRouter(db: DbType, schemaObj: typeof schema) {

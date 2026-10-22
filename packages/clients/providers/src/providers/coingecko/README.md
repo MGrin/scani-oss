@@ -40,7 +40,9 @@ map of the ~50 most-traded symbols → CoinGecko ids).
 - Rate-limiter namespace: `coingecko`.
 - A user's search (`/search`) asks with `high` priority: it takes the next
   slot of the same budget ahead of background price calls, and gives up empty
-  when none frees within its 3 s timeout. The budget is unchanged (SC-1766).
+  when none frees within 7 s, past keyless's 6 s spacing. Answers are kept for
+  10 minutes per query, so a confirm search repeating one costs no slot. The
+  budget is unchanged (SC-1766).
 
 ## Error taxonomy
 

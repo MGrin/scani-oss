@@ -71,13 +71,14 @@ describe('CoinGecko search priority (SC-1766)', () => {
     expect(asked.every((a) => a.priority === undefined && !a.signal)).toBe(true);
   });
 
-  test('a search with no slot free gives up within its timeout, empty', async () => {
+  test('a search with no slot free gives up after its wait, empty', async () => {
     answer({ coins: [] });
     const started = performance.now();
     const results = await new CoinGeckoProvider(exhausted).searchTokens('btc');
     expect(results).toEqual([]);
-    expect(performance.now() - started).toBeLessThan(4500);
-  });
+    // Longer than keyless's 6 s spacing (SC-1766), never the 30 s it hung.
+    expect(performance.now() - started).toBeLessThan(8500);
+  }, 15_000);
 
   test('there is one CoinGecko budget, never a second one beside it', async () => {
     const registry = new RateLimiterRegistry();
@@ -88,5 +89,57 @@ describe('CoinGecko search priority (SC-1766)', () => {
       reportCredentialStatus: () => {},
     });
     expect(registry.list().map((l) => l.description)).toEqual(['CoinGecko: 1 req / 6s']);
+  });
+});
+
+describe('CoinGecko search, then a pick confirmed by search (SC-1766)', () => {
+  // The order production refused on: the user's search takes the one keyless
+  // slot, and the confirm search arrives within the same 6 s.
+  test("a confirm search right after the user's own search is answered, not dropped", async () => {
+    const { InMemoryOutflowRateLimiter } = await import('@scani/rate-limiter');
+    let fetches = 0;
+    globalThis.fetch = (async () => {
+      fetches++;
+      return new Response(
+        JSON.stringify({ coins: [{ id: 'bitcoin', symbol: 'btc', name: 'Bitcoin' }] }),
+        { status: 200 }
+      );
+    }) as unknown as typeof fetch;
+    const provider = new CoinGeckoProvider(new InMemoryOutflowRateLimiter(1, 6000));
+    expect((await provider.searchTokens('btc'))[0]?.symbol).toBe('BTC');
+    const confirm = await provider.searchTokens('Bitcoin');
+    expect(confirm[0]?.symbol).toBe('BTC');
+    expect(fetches).toBe(2);
+  }, 15_000);
+
+  test('the same query again is answered from the last answer, with no call', async () => {
+    const { InMemoryOutflowRateLimiter } = await import('@scani/rate-limiter');
+    let fetches = 0;
+    globalThis.fetch = (async () => {
+      fetches++;
+      return new Response(
+        JSON.stringify({ coins: [{ id: 'bitcoin', symbol: 'btc', name: 'Bitcoin' }] }),
+        { status: 200 }
+      );
+    }) as unknown as typeof fetch;
+    const provider = new CoinGeckoProvider(new InMemoryOutflowRateLimiter(1, 6000));
+    await provider.searchTokens('Bitcoin');
+    const again = await provider.searchTokens('  bitcoin ');
+    expect(again[0]?.symbol).toBe('BTC');
+    expect(fetches).toBe(1);
+  });
+
+  test('control: an answer CoinGecko refused is not kept', async () => {
+    let fetches = 0;
+    globalThis.fetch = (async () => {
+      fetches++;
+      return new Response('no', { status: 500 });
+    }) as unknown as typeof fetch;
+    const provider = new CoinGeckoProvider({
+      execute: async <T>(fn: () => Promise<T>) => fn(),
+    } as OutflowRateLimiter);
+    expect(await provider.searchTokens('eth')).toEqual([]);
+    expect(await provider.searchTokens('eth')).toEqual([]);
+    expect(fetches).toBe(2);
   });
 });

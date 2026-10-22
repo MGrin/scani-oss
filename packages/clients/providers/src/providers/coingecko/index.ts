@@ -50,6 +50,14 @@ const COINGECKO_BASE_URL = 'https://api.coingecko.com/api/v3';
 const COINGECKO_PRO_BASE_URL = 'https://pro-api.coingecko.com/api/v3';
 // The keyless tier serves 365 days of history; one day of slack for the clock.
 const PUBLIC_HISTORY_DAYS = 364;
+// A user's search waits this long for a slot: past keyless's one call per
+// 6 s, so a pick confirmed right after the user's own search is answered
+// rather than refused (SC-1766).
+const SEARCH_SLOT_WAIT_MS = 7_000;
+// A confirm search often repeats a query just asked. Kept briefly, so it costs
+// no slot; bounded, as the queries are users' free text.
+const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
+const SEARCH_CACHE_MAX = 200;
 
 // ISO-4217 fiat codes the federated identity flow must NOT enrich
 // with a CoinGecko id. CG uses these as quote currencies, not coins;
@@ -137,6 +145,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
 
   private readonly logger: CustomLogger;
   private coinListCache: CoinListEntry[] | null = null;
+  private readonly searchCache = new Map<string, { at: number; results: TokenSearchResult[] }>();
 
   constructor(
     private readonly limiter: OutflowRateLimiter,
@@ -420,7 +429,11 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
    * caller merges results across providers via Promise.allSettled.
    */
   async searchTokens(query: string, limit = 10): Promise<TokenSearchResult[]> {
-    const url = `${this.baseUrl()}/search?query=${encodeURIComponent(query)}`;
+    const asked = query.trim();
+    const key = asked.toLowerCase();
+    const kept = this.searchCache.get(key);
+    if (kept && Date.now() - kept.at < SEARCH_CACHE_TTL_MS) return kept.results.slice(0, limit);
+    const url = `${this.baseUrl()}/search?query=${encodeURIComponent(asked)}`;
     try {
       const response = await this.get(url, 'search', 3000, 0, 'interactive');
       if (!response.ok) {
@@ -435,8 +448,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
           large?: string;
         }>;
       };
-      const coins = data.coins ?? [];
-      return coins.slice(0, limit).map((coin) => ({
+      const results: TokenSearchResult[] = (data.coins ?? []).map((coin) => ({
         symbol: coin.symbol.toUpperCase(),
         name: coin.name,
         type: 'Crypto',
@@ -447,6 +459,13 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
           searchResult: coin,
         },
       }));
+      this.searchCache.delete(key);
+      this.searchCache.set(key, { at: Date.now(), results });
+      const oldest = this.searchCache.keys().next().value;
+      if (this.searchCache.size > SEARCH_CACHE_MAX && oldest !== undefined) {
+        this.searchCache.delete(oldest);
+      }
+      return results.slice(0, limit);
     } catch (err) {
       this.logger.debug({ err, query }, 'CoinGecko search failed');
       return [];
@@ -524,7 +543,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
       const last = attempt >= retries;
       let response: Response;
       try {
-        response = await this.slot(lane, timeoutMs, () =>
+        response = await this.slot(lane, () =>
           fetchWithTimeout(url, { headers: this.headers() }, timeoutMs, 0, onResponse)
         );
       } catch (error) {
@@ -545,17 +564,12 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
 
   /**
    * An interactive call goes first inside the same budget, and waits for a
-   * slot no longer than its own timeout: a user's search answers empty rather
+   * slot at most `SEARCH_SLOT_WAIT_MS`: a user's search answers empty rather
    * than hanging behind price calls (SC-1766).
    */
-  private slot<T>(
-    lane: 'background' | 'interactive',
-    timeoutMs: number | undefined,
-    fn: () => Promise<T>
-  ): Promise<T> {
+  private slot<T>(lane: 'background' | 'interactive', fn: () => Promise<T>): Promise<T> {
     if (lane === 'background') return this.limiter.execute(fn);
-    const signal = timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs);
-    return this.limiter.execute(fn, undefined, signal, 'high');
+    return this.limiter.execute(fn, undefined, AbortSignal.timeout(SEARCH_SLOT_WAIT_MS), 'high');
   }
 
   private baseUrl(): string {
