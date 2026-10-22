@@ -1,2 +1,2 @@
 export type { CloudClient } from './client';
-export { loadCloudClientConfig } from './config';
+export { loadCloudClientConfig, resetCloudClientConfig } from './config';

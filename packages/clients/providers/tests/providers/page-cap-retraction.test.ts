@@ -406,6 +406,7 @@ describe('every provider that can claim a complete history can also retract it',
   test('the scan finds the providers that cap pages while claiming completeness', () => {
     expect(canClaimAndCaps.map((s) => s.name).sort()).toEqual([
       'bitstamp',
+      'bunq',
       'coinbase',
       'kraken',
       'kucoin',

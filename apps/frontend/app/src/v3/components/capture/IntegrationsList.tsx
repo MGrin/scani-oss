@@ -40,6 +40,12 @@ export function IntegrationsList({
 
   const category = (integration: Integration) =>
     integrationCategoryLabel(t, integration.institution.type?.code);
+  // Listed, so nobody wonders whether Scani knows the service; marked, so
+  // nobody finds out only after pasting a key (SC-1729).
+  const selfHostedOnly = (integration: Integration) =>
+    integration.availability === 'self-hosted-only'
+      ? t('v3.capture.integration.selfHostedOnly')
+      : null;
 
   const config: V3DataViewConfig<Integration> = {
     pageKey: 'integrations',
@@ -78,7 +84,13 @@ export function IntegrationsList({
       // The kind, not a figure: this is the one v3 list whose rows have no
       // value of their own — nothing is connected yet, which is the point of
       // being here.
-      value: <span className="text-caption text-muted-foreground">{category(integration)}</span>,
+      value: (
+        <span className="text-caption text-muted-foreground">
+          {selfHostedOnly(integration)
+            ? `${category(integration)} · ${selfHostedOnly(integration)}`
+            : category(integration)}
+        </span>
+      ),
     }),
     columns: [
       {
@@ -94,6 +106,11 @@ export function IntegrationsList({
               size="size-5"
             />
             <span className="truncate">{integration.institution.name}</span>
+            {selfHostedOnly(integration) ? (
+              <span className="shrink-0 text-caption text-muted-foreground">
+                {selfHostedOnly(integration)}
+              </span>
+            ) : null}
           </span>
         ),
       },
