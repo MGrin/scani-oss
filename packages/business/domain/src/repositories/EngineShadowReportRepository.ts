@@ -37,6 +37,12 @@ export type ShadowRunSummary = {
    * changed since the backfill: the drift A2's writers re-label (plan D-4).
    */
   staleLabels?: number;
+  /**
+   * Live typed values on feed holdings beside the engine's balance at their own
+   * instant (SC-1628). A disagreeing one changes nothing shown until
+   * Reconciliation proposes it, so a rise here is the only signal.
+   */
+  verifications?: { compared: number; disagreeing: number };
   durationMs: number;
 };
 

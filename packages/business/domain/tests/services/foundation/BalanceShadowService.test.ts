@@ -154,6 +154,57 @@ async function perUserDifferences(tx: DatabaseTransaction, userId: string, asOf:
   return found;
 }
 
+/**
+ * A synced wallet the provider put at 100 on Feb 1, then a value the person
+ * typed on Feb 10. After the feed began, the classifier reads it as a
+ * verification (D7).
+ */
+async function walletWithTypedValue(
+  tx: DatabaseTransaction,
+  userId: string,
+  typed: string
+): Promise<HoldingRow> {
+  const holding = await holdingOf(tx, userId, { balance: '100', source: 'blockchain' });
+  await observe(tx, holding, at('2026-02-01T00:00:00Z'), '100', 'updateHoldingBalanceWithEvent');
+  await observe(tx, holding, at('2026-02-10T00:00:00Z'), typed, 'updateHolding');
+  return holding;
+}
+
+describe('BalanceShadowService.run counts verifications (SC-1628)', () => {
+  test('a typed value that differs from the checkpoint raises the count by one', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      await walletWithTypedValue(tx, user.id, '120');
+
+      const { summary } = await service().run({ asOf: AS_OF, userId: user.id }, tx);
+
+      expect(summary.verifications).toEqual({ compared: 1, disagreeing: 1 });
+    });
+  });
+
+  test('CONTROL: a matching typed value leaves the count unchanged', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      await walletWithTypedValue(tx, user.id, '100');
+
+      const { summary } = await service().run({ asOf: AS_OF, userId: user.id }, tx);
+
+      expect(summary.verifications).toEqual({ compared: 1, disagreeing: 0 });
+    });
+  });
+
+  test('a run with no verification reports zero, not nothing', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      await matchingManual(tx, user.id);
+
+      const { summary } = await service().run({ asOf: AS_OF, userId: user.id }, tx);
+
+      expect(summary.verifications).toEqual({ compared: 0, disagreeing: 0 });
+    });
+  });
+});
+
 describe('BalanceShadowService.run', () => {
   test('a matching holding is counted and not reported', async () => {
     await withTestDb(async (tx) => {

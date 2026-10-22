@@ -44,6 +44,7 @@ export class EngineShadowProcessor extends ScheduledJobProcessor {
             compared: run.summary.compared,
             matched: run.summary.matched,
             byCategory: run.summary.byCategory,
+            verifications: run.summary.verifications,
           },
           'Engine shadow run recorded'
         );

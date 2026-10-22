@@ -4,9 +4,12 @@ import { EngineEvidenceRepository } from '../../repositories/EngineEvidenceRepos
 import { addClassified, type ClassifiedCounts, emptyClassifiedCounts } from './classified-counts';
 import { classifyHoldingEvidence } from './legacy-classification';
 import { type ShadowRunResult, ShadowRunService, type ShadowTally } from './ShadowRunService';
-import { compareBalance } from './shadow-comparison';
+import { compareBalance, compareVerifications } from './shadow-comparison';
 
-type BalanceTally = ShadowTally & { classified: ClassifiedCounts };
+type BalanceTally = ShadowTally & {
+  classified: ClassifiedCounts;
+  verifications: { compared: number; disagreeing: number };
+};
 
 export interface BalanceShadowInput {
   /** The instant compared with each holding's stored balance. */
@@ -56,6 +59,7 @@ export class BalanceShadowService {
       compared: 0,
       differences: [],
       classified: emptyClassifiedCounts(),
+      verifications: { compared: 0, disagreeing: 0 },
     };
     for (const holdingId of await this.evidence.findHoldingIds(userId, tx)) {
       await this.compareHolding(userId, holdingId, input, tx, tally);
@@ -83,6 +87,10 @@ export class BalanceShadowService {
     Bun.gc(true);
     const holding = classifyHoldingEvidence(raw);
     addClassified(tally.classified, holding);
+
+    const verified = compareVerifications(holding.evidence, input.asOf);
+    tally.verifications.compared += verified.compared;
+    tally.verifications.disagreeing += verified.disagreeing;
 
     tally.compared += 1;
     const difference = compareBalance(holding, input.asOf, {
