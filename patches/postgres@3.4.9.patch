@@ -1,0 +1,141 @@
+diff --git a/node_modules/postgres/.bun-tag-68c4dcc87a36911a b/.bun-tag-68c4dcc87a36911a
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/cf/src/connection.js b/cf/src/connection.js
+index 8e79170aeb13efe8c3c77ccede0cd3a115b5e1b5..8f31826f6a685108f7b67a2dc3867c9aae5dc537 100644
+--- a/cf/src/connection.js
++++ b/cf/src/connection.js
+@@ -159,6 +159,12 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     if (terminated)
+       return queryError(q, Errors.connection('CONNECTION_DESTROYED', options))
+ 
++    // scani SC-1761: a reserved connection outlives its socket. Reject here,
++    // and return true so the reserve handler does not park the connection
++    // in `full` and queue every later query forever.
++    if (!socket)
++      return (queryError(q, Errors.connection('CONNECTION_CLOSED', options)), true)
++
+     if (stream)
+       return queryError(q, Errors.generic('COPY_IN_PROGRESS', 'You cannot execute queries during copy'))
+ 
+@@ -254,6 +260,16 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+   }
+ 
+   function nextWrite(fn) {
++    // scani SC-1761, porsager/postgres#1208: closed() nulls the socket, and a
++    // write after that threw from a socket handler, uncatchable. Settle it:
++    // reject the pending queries with CONNECTION_CLOSED instead.
++    if (!socket) {
++      chunk = null
++      nextWriteTimer !== null && clearImmediate(nextWriteTimer)
++      nextWriteTimer = null
++      error(Errors.connection('CONNECTION_CLOSED', options, socket))
++      return false
++    }
+     const x = socket.write(chunk, fn)
+     nextWriteTimer !== null && clearImmediate(nextWriteTimer)
+     chunk = nextWriteTimer = null
+@@ -452,7 +468,10 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     if (initial)
+       return reconnect()
+ 
+-    !hadError && (query || sent.length) && error(Errors.connection('CONNECTION_CLOSED', options, socket))
++    // scani SC-1761: an errored close (ECONNRESET) used to skip this, so a
++    // query queued between the socket's error and its close never settled.
++    if (query || sent.length)
++      error(Errors.connection('CONNECTION_CLOSED', options, socket))
+     closedTime = performance.now()
+     hadError && options.shared.retries++
+     delay = (typeof backoff === 'function' ? backoff(options.shared.retries) : backoff) * 1000
+diff --git a/cjs/src/connection.js b/cjs/src/connection.js
+index 07f6716702ac888215c86ad6e0071aaf55ae519c..41b354e65bd7ca79da30c5f4760e097f7d11af7c 100644
+--- a/cjs/src/connection.js
++++ b/cjs/src/connection.js
+@@ -157,6 +157,12 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     if (terminated)
+       return queryError(q, Errors.connection('CONNECTION_DESTROYED', options))
+ 
++    // scani SC-1761: a reserved connection outlives its socket. Reject here,
++    // and return true so the reserve handler does not park the connection
++    // in `full` and queue every later query forever.
++    if (!socket)
++      return (queryError(q, Errors.connection('CONNECTION_CLOSED', options)), true)
++
+     if (stream)
+       return queryError(q, Errors.generic('COPY_IN_PROGRESS', 'You cannot execute queries during copy'))
+ 
+@@ -252,6 +258,16 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+   }
+ 
+   function nextWrite(fn) {
++    // scani SC-1761, porsager/postgres#1208: closed() nulls the socket, and a
++    // write after that threw from a socket handler, uncatchable. Settle it:
++    // reject the pending queries with CONNECTION_CLOSED instead.
++    if (!socket) {
++      chunk = null
++      nextWriteTimer !== null && clearImmediate(nextWriteTimer)
++      nextWriteTimer = null
++      error(Errors.connection('CONNECTION_CLOSED', options, socket))
++      return false
++    }
+     const x = socket.write(chunk, fn)
+     nextWriteTimer !== null && clearImmediate(nextWriteTimer)
+     chunk = nextWriteTimer = null
+@@ -450,7 +466,10 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     if (initial)
+       return reconnect()
+ 
+-    !hadError && (query || sent.length) && error(Errors.connection('CONNECTION_CLOSED', options, socket))
++    // scani SC-1761: an errored close (ECONNRESET) used to skip this, so a
++    // query queued between the socket's error and its close never settled.
++    if (query || sent.length)
++      error(Errors.connection('CONNECTION_CLOSED', options, socket))
+     closedTime = performance.now()
+     hadError && options.shared.retries++
+     delay = (typeof backoff === 'function' ? backoff(options.shared.retries) : backoff) * 1000
+diff --git a/src/connection.js b/src/connection.js
+index 1b1cccde43b4570d5d071d6ffaab2669b3c2065a..2241f713d619d667a73b733d97a8a6f8d76dfeca 100644
+--- a/src/connection.js
++++ b/src/connection.js
+@@ -157,6 +157,12 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     if (terminated)
+       return queryError(q, Errors.connection('CONNECTION_DESTROYED', options))
+ 
++    // scani SC-1761: a reserved connection outlives its socket. Reject here,
++    // and return true so the reserve handler does not park the connection
++    // in `full` and queue every later query forever.
++    if (!socket)
++      return (queryError(q, Errors.connection('CONNECTION_CLOSED', options)), true)
++
+     if (stream)
+       return queryError(q, Errors.generic('COPY_IN_PROGRESS', 'You cannot execute queries during copy'))
+ 
+@@ -252,6 +258,16 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+   }
+ 
+   function nextWrite(fn) {
++    // scani SC-1761, porsager/postgres#1208: closed() nulls the socket, and a
++    // write after that threw from a socket handler, uncatchable. Settle it:
++    // reject the pending queries with CONNECTION_CLOSED instead.
++    if (!socket) {
++      chunk = null
++      nextWriteTimer !== null && clearImmediate(nextWriteTimer)
++      nextWriteTimer = null
++      error(Errors.connection('CONNECTION_CLOSED', options, socket))
++      return false
++    }
+     const x = socket.write(chunk, fn)
+     nextWriteTimer !== null && clearImmediate(nextWriteTimer)
+     chunk = nextWriteTimer = null
+@@ -450,7 +466,10 @@ function Connection(options, queues = {}, { onopen = noop, onend = noop, onclose
+     if (initial)
+       return reconnect()
+ 
+-    !hadError && (query || sent.length) && error(Errors.connection('CONNECTION_CLOSED', options, socket))
++    // scani SC-1761: an errored close (ECONNRESET) used to skip this, so a
++    // query queued between the socket's error and its close never settled.
++    if (query || sent.length)
++      error(Errors.connection('CONNECTION_CLOSED', options, socket))
+     closedTime = performance.now()
+     hadError && options.shared.retries++
+     delay = (typeof backoff === 'function' ? backoff(options.shared.retries) : backoff) * 1000
