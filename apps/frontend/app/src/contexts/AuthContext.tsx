@@ -205,9 +205,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [resolveSession]);
 
   /** Wraps a better-auth call so it always settles and always yields wording a
-   *  reader can act on. */
+   *  reader can act on. `deadlineMs: null` leaves the call unbounded, for a call
+   *  that waits on the person rather than the network. */
   const attempt = async (
-    run: () => Promise<{ error?: { message?: string } | null }>
+    run: () => Promise<{ error?: { message?: string } | null }>,
+    deadlineMs: number | null = AUTH_CALL_TIMEOUT_MS
   ): Promise<AuthAttemptResult> => {
     if (!isOnline()) {
       // Asking a dead network to send an email wastes the whole deadline
@@ -215,7 +217,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { error: authFailureMessage(t, 'offline'), kind: 'offline' };
     }
     try {
-      const { error } = await withDeadline(run(), AUTH_CALL_TIMEOUT_MS);
+      const { error } = await (deadlineMs === null ? run() : withDeadline(run(), deadlineMs));
       if (error) {
         const kind = classifyAuthFailure(error, isOnline());
         return { error: authFailureMessage(t, kind, error.message), kind };
@@ -307,8 +309,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithPasskey = async (options?: {
     autoFill?: boolean;
   }): Promise<AuthAttemptResult> => {
-    const result = await attempt(() =>
-      authClient.signIn.passkey({ autoFill: options?.autoFill ?? false })
+    // The ceremony waits on the person: choosing a passkey, Touch ID, or a phone
+    // scanning a QR, which routinely takes over 15 s (SC-1752). Its two
+    // requests are still bounded, each by `fetchWithDeadline`.
+    const result = await attempt(
+      () => authClient.signIn.passkey({ autoFill: options?.autoFill ?? false }),
+      null
     );
     // A device with no platform authenticator rejects the ceremony with the
     // browser's own text; the reader needs the way out, which is their email.

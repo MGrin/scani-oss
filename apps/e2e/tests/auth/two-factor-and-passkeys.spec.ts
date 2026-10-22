@@ -137,6 +137,31 @@ test.describe('auth: passkeys (SC-1646)', () => {
     expect(await sessionEmail(page)).toBe(email);
   });
 
+  // SC-1752: a phone over hybrid/QR keeps the prompt open longer than the 15 s
+  // auth deadline, and the screen said "took too long, check your connection".
+  test('a person who takes 20 s in the passkey prompt is still signed in', async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(90_000);
+    const { email } = await signIn({ page, testInfo });
+    await enrol(page);
+    await authenticator(page, true);
+    await page.goto('/settings/account');
+    await page.getByRole('button', { name: 'Add a passkey' }).click();
+    await expect(page.getByText('Passkey added.').first()).toBeVisible();
+
+    await page.addInitScript(() => {
+      const get = navigator.credentials.get.bind(navigator.credentials);
+      navigator.credentials.get = (options) =>
+        new Promise((resolve) => setTimeout(resolve, 20_000)).then(() => get(options));
+    });
+    await page.context().clearCookies();
+    await page.goto('/auth');
+    await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
+    await expect(page).not.toHaveURL(/\/auth|\/sign-in\/2fa/, { timeout: 40_000 });
+    expect(await sessionEmail(page)).toBe(email);
+  });
+
   test('a passkey that cannot verify the user is refused', async ({ page }, testInfo) => {
     await signIn({ page, testInfo });
     const { cdp, authenticatorId } = await authenticator(page, true);
