@@ -26,6 +26,7 @@ import type {
   Capability,
   TransactionsProvider,
 } from '../../core/capabilities';
+import { ProviderError } from '../../core/errors';
 import type {
   HoldingSnapshot,
   ProviderContext,
@@ -89,6 +90,21 @@ const TX_PAGE_SIZE = 50;
 const BLOCK_TIME_SKEW_MS = 2 * 60 * 60 * 1000;
 
 /**
+ * How long blockchain.info is left alone after it answers 429 (SC-1716).
+ *
+ * Its 429 is a long penalty on the caller's IP, not a per-second throttle:
+ * SC-364 saw it hold through 40 minutes of probes, and on 2026-10-11 it held
+ * from 05:03Z past 07:19Z while the worker kept asking, up to nine requests
+ * an hour. Asking inside the window is what keeps it open, so nothing does.
+ */
+const BLOCKCHAIN_INFO_PENALTY_MS = 60 * 60 * 1000;
+
+interface MempoolAddressStats {
+  funded_txo_sum: number;
+  spent_txo_sum: number;
+}
+
+/**
  * Structural check for the three canonical Bitcoin address formats —
  * P2PKH (`1…`), P2SH (`3…`), Bech32 (`bc1…`). Pure and offline; the
  * chain-stub provider reuses it so a stubbed boot answers address
@@ -112,6 +128,7 @@ export class BitcoinProvider
   ];
 
   private readonly logger: CustomLogger;
+  private penaltyUntil = 0;
 
   constructor(private readonly limiter: OutflowRateLimiter) {
     this.logger = createComponentLogger('provider:bitcoin');
@@ -161,11 +178,9 @@ export class BitcoinProvider
     _ctx: ProviderContext
   ): Promise<boolean> {
     if (!this.isValidAddress(address)) return false;
-    const url = `https://blockchain.info/rawaddr/${address}?limit=0`;
-    const response = await this.limiter.execute(async () => fetchWithTimeout(url));
-    if (!response.ok) {
-      throw new Error(`blockchain.info: HTTP ${response.status} for ${address}`);
-    }
+    const response = await this.blockchainInfo(
+      `https://blockchain.info/rawaddr/${address}?limit=0`
+    );
     const data = (await response.json()) as { n_tx?: number };
     return typeof data.n_tx === 'number' && data.n_tx > 0;
   }
@@ -184,14 +199,7 @@ export class BitcoinProvider
       return [];
     }
 
-    const url = `https://blockchain.info/rawaddr/${address}`;
-    const response = await this.limiter.execute(async () => fetchWithTimeout(url));
-    if (!response.ok) {
-      throw new Error(`blockchain.info: HTTP ${response.status} for ${address}`);
-    }
-    const data = (await response.json()) as BlockchainInfoAddress;
-    const balanceSatoshis = new Decimal(data.final_balance);
-    const balanceBTC = balanceSatoshis.div(SATOSHIS_PER_BTC);
+    const balanceBTC = (await this.balanceSatoshis(address)).div(SATOSHIS_PER_BTC);
     if (balanceBTC.isZero()) return [];
 
     const tokenIdentity: Partial<NewToken> = {
@@ -252,11 +260,9 @@ export class BitcoinProvider
     const capped = new PageCapWatch();
     let offset = 0;
     while (true) {
-      const url = `https://blockchain.info/rawaddr/${address}?limit=${TX_PAGE_SIZE}&offset=${offset}`;
-      const response = await this.limiter.execute(async () => fetchWithTimeout(url));
-      if (!response.ok) {
-        throw new Error(`blockchain.info: HTTP ${response.status} for ${address}`);
-      }
+      const response = await this.blockchainInfo(
+        `https://blockchain.info/rawaddr/${address}?limit=${TX_PAGE_SIZE}&offset=${offset}`
+      );
       const data = (await response.json()) as BlockchainInfoAddressFull;
       const txs = data.txs ?? [];
       for (const tx of txs) {
@@ -311,6 +317,47 @@ export class BitcoinProvider
       kind: netBtc.gt(0) ? 'transfer_in' : 'transfer_out',
       primary: { tokenIdentity, quantity: netBtc.toString() },
     };
+  }
+
+  /** One try, and none at all inside a penalty: a retry there extends it (SC-1716). */
+  private async blockchainInfo(url: string): Promise<Response> {
+    if (Date.now() < this.penaltyUntil) {
+      throw new ProviderError(
+        `blockchain.info is rate-limiting this server until ${new Date(this.penaltyUntil).toISOString()}`,
+        'rate-limited',
+        this.providerKey,
+        { status: 429, retryAfterMs: this.penaltyUntil - Date.now() }
+      );
+    }
+    const response = await this.limiter.execute(async () =>
+      fetchWithTimeout(url, undefined, undefined, 0)
+    );
+    if (response.status === 429) this.penaltyUntil = Date.now() + BLOCKCHAIN_INFO_PENALTY_MS;
+    if (!response.ok) throw ProviderError.fromHttp(this.providerKey, response);
+    return response;
+  }
+
+  /** blockchain.info's `final_balance`, or mempool.space's confirmed plus pending while it is rate-limited. */
+  private async balanceSatoshis(address: string): Promise<Decimal> {
+    try {
+      const response = await this.blockchainInfo(`https://blockchain.info/rawaddr/${address}`);
+      const data = (await response.json()) as BlockchainInfoAddress;
+      return new Decimal(data.final_balance);
+    } catch (error) {
+      if (!(error instanceof ProviderError) || error.kind !== 'rate-limited') throw error;
+      const response = await this.limiter.execute(async () =>
+        fetchWithTimeout(`https://mempool.space/api/address/${address}`)
+      );
+      if (!response.ok) throw ProviderError.fromHttp(this.providerKey, response);
+      const { chain_stats, mempool_stats } = (await response.json()) as {
+        chain_stats: MempoolAddressStats;
+        mempool_stats: MempoolAddressStats;
+      };
+      return new Decimal(chain_stats.funded_txo_sum)
+        .minus(chain_stats.spent_txo_sum)
+        .plus(mempool_stats.funded_txo_sum)
+        .minus(mempool_stats.spent_txo_sum);
+    }
   }
 }
 
