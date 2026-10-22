@@ -2,7 +2,9 @@ import type { DatabaseTransaction } from '@scani/db';
 import { withTransaction } from '@scani/db/transaction';
 import { createComponentLogger } from '@scani/logging';
 import { type SQL, sql } from 'drizzle-orm';
-import { Service } from 'typedi';
+import { Container, Service } from 'typedi';
+import { KindCategoryAssigner } from './KindCategoryAssigner';
+import { TAKES_A_CATEGORY } from './outside-categories-sql';
 
 const logger = createComponentLogger('learned-category-rules');
 
@@ -16,8 +18,8 @@ type Scope = { fromIds?: readonly string[] };
  * on at least two thirds of the rows a person or an import categorized. A tie
  * can never reach two thirds, so it teaches nothing.
  *
- * It writes only rows nobody categorized and rows an earlier rule did, so a
- * correction moves that payee's guesses with it, and a person's pick, a
+ * It writes only rows nobody categorized and rows an earlier rule or the AI
+ * did, so a correction moves that payee's guesses with it, and a person's pick, a
  * person's clear and an import's category are never touched. Each call is one statement on the per-user payee
  * key index (`transaction_payee_key`, migration 20261010112916).
  */
@@ -84,10 +86,17 @@ export class LearnedCategoryRules {
    */
   async afterImport(userId: string): Promise<void> {
     try {
-      await withTransaction((tx) => this.apply(userId, tx), {
-        name: 'learned-category-rules',
-        timeout: 60_000,
-      });
+      // The type goes first, so a person's rule can still move what it set.
+      await withTransaction(
+        async (tx) => {
+          await Container.get(KindCategoryAssigner).apply(tx, userId);
+          return this.apply(userId, tx);
+        },
+        {
+          name: 'learned-category-rules',
+          timeout: 60_000,
+        }
+      );
     } catch (error) {
       logger.warn(
         { userId, error: error instanceof Error ? error.message : error },
@@ -96,10 +105,16 @@ export class LearnedCategoryRules {
     }
   }
 
-  /** Rows an automatic step may write: nobody's, or an earlier rule's, and not already right. */
+  /**
+   * Rows an automatic step may write: nobody's, an earlier rule's, the AI's or
+   * the type's, not already right, and rows that take a category at all. A
+   * rule is the person's own evidence, so it moves an automatic guess for the
+   * same payee.
+   */
   private targets(userId: string): SQL {
     return sql`h.user_id = ${userId}
-      and (h.category_set_by is null or h.category_set_by = 'rule')
+      and (h.category_set_by is null or h.category_set_by in ('rule', 'ai', 'kind'))
+      and ${TAKES_A_CATEGORY}
       and h.category_id is distinct from r.category_id`;
   }
 

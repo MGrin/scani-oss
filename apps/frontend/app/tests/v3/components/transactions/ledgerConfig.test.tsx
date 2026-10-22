@@ -228,6 +228,7 @@ describe('a ledger row looks like a Bills row (SC-1652, design review)', () => {
     categoryColor: null,
     categorySetBy: null,
     payee: 'Bookshop',
+    outsideCategories: false,
   };
   const rowSpec = (
     row: typeof base & { quantity: string; symbol: string; tokenTypeCode: string }
@@ -335,5 +336,67 @@ describe('automatic categories in the ledger (SC-1695)', () => {
     expect(setCategoryMessage(t as never, { updated: 2, spread: 0 }, null)).toEqual({
       message: 'v3.transactions.cleared:{"count":2}',
     });
+  });
+});
+
+describe('rows outside categories (SC-1720)', () => {
+  const holdings = [
+    {
+      id: 'h1',
+      account: { name: 'Main' },
+      institution: { name: 'Interactive Brokers' },
+      token: { symbol: 'USD', typeCode: 'fiat' },
+    },
+  ];
+  const source = (
+    kind: string,
+    transferGroupId: string | null = null,
+    categorySetBy: string | null = null
+  ) => ({
+    id: `tx-${kind}`,
+    occurredAt: '2026-09-22T00:00:00Z',
+    description: null,
+    counterparty: null,
+    quantity: '-10',
+    holdingId: 'h1',
+    categoryId: categorySetBy ? 'fees' : null,
+    categorySetBy,
+    kind,
+    transferGroupId,
+  });
+  const nodes = [{ id: 'fees', name: 'Bank fees', color: null, children: [] }];
+  const html = (node: unknown) => renderToStaticMarkup(<>{node as React.ReactNode}</>);
+  const spec = (row: ReturnType<typeof toLedgerRows>[number]) =>
+    ledgerConfig({
+      rows: [row],
+      filterDefs: [],
+      onSearch: () => {},
+      emptyAction: null,
+      peek: () => null,
+      bulkActions: () => null,
+    });
+
+  test('a trade, a settlement or a transfer leg is outside categories; a fee is not', () => {
+    const rows = toLedgerRows(
+      [source('buy'), source('settle_out'), source('withdraw', 'g1'), source('fee')],
+      holdings,
+      nodes,
+      () => 'x'
+    );
+    expect(rows.map((r) => r.outsideCategories)).toEqual([true, true, true, false]);
+  });
+
+  test('its category cell does not call it uncategorized', () => {
+    expect(renderToStaticMarkup(<CategoryCell path={null} color={null} outside />)).not.toInclude(
+      'Uncategorized'
+    );
+    const [row] = toLedgerRows([source('buy')], holdings, nodes, () => 'x');
+    const column = spec(row!).columns?.find((c) => c.key === 'category');
+    expect(html(column?.render(row!))).not.toInclude('Uncategorized');
+  });
+
+  test('a category the transaction type set is marked Set automatically', () => {
+    const [row] = toLedgerRows([source('fee', null, 'kind')], holdings, nodes, () => 'x');
+    expect(html(spec(row!).renderRow(row!).sublabel)).toInclude('Set automatically');
   });
 });

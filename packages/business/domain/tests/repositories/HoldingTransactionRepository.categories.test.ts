@@ -238,3 +238,47 @@ describe('automatic categories (SC-1695)', () => {
     });
   });
 });
+
+describe('rows outside categories (SC-1720)', () => {
+  test("'uncategorized' leaves out trades, settlements, transfers, opening balances and transfer legs", async () => {
+    await withTestDb(async (tx) => {
+      const { user } = await tree(tx);
+      const spend = await makeHoldingTransaction(tx, { userId: user.id, kind: 'withdraw' });
+      const fee = await makeHoldingTransaction(tx, { userId: user.id, kind: 'fee' });
+      for (const kind of [
+        'buy',
+        'sell',
+        'swap_out',
+        'settle_in',
+        'transfer_out',
+        'opening_balance',
+      ]) {
+        await makeHoldingTransaction(tx, { userId: user.id, kind });
+      }
+      await makeHoldingTransaction(tx, {
+        userId: user.id,
+        kind: 'withdraw',
+        transferGroupId: crypto.randomUUID(),
+      });
+      const rows = await repo().findByRange({ userId: user.id, category: 'uncategorized' }, tx);
+      expect(rows.map((r) => r.id).sort()).toEqual([spend.id, fee.id].sort());
+    });
+  });
+
+  test("'auto' includes a category set from the transaction type, and Keep makes it the person's", async () => {
+    await withTestDb(async (tx) => {
+      const { user, fees } = await tree(tx);
+      const row = await makeHoldingTransaction(tx, { userId: user.id, kind: 'fee' });
+      await tx.execute(
+        sql`update holding_transactions set category_id = ${fees}, category_set_by = 'kind' where id = ${row.id}`
+      );
+      const rows = await repo().findByRange({ userId: user.id, category: 'auto' }, tx);
+      expect(rows.map((r) => r.id)).toEqual([row.id]);
+      expect(await repo().confirmCategories(user.id, [row.id], tx)).toEqual({ confirmed: 1 });
+      expect(await categoryOf(tx, row.id)).toEqual({
+        category_id: fees,
+        category_set_by: 'person',
+      });
+    });
+  });
+});

@@ -34,6 +34,11 @@ export {
   UserBackupService,
 } from './backup/UserBackupService';
 export {
+  AI_CATEGORIZE_BATCH,
+  type AiCategoryRun,
+  AiCategorySuggester,
+} from './categories/AiCategorySuggester';
+export {
   CategoryNameError,
   parseImportedCategory,
 } from './categories/category-names';
@@ -41,6 +46,7 @@ export {
   ImportedCategoryAssigner,
   type ImportedCategoryRow,
 } from './categories/ImportedCategoryAssigner';
+export { KindCategoryAssigner } from './categories/KindCategoryAssigner';
 export { LearnedCategoryRules, type PlannedCategory } from './categories/LearnedCategoryRules';
 export {
   CategoryConflictError,
@@ -210,12 +216,25 @@ export { ReviewFeedService } from './ReviewFeedService';
 // returns/
 export { BenchmarkReturnService } from './returns/BenchmarkReturnService';
 export {
+  type LastComplete,
+  lastCompleteWindowKey,
+  type ReturnsAnswer,
+  ReturnsLastCompleteService,
+} from './returns/ReturnsLastCompleteService';
+export {
   type ReturnsOutcome,
   type ReturnsRequest,
   type ReturnsResult,
   ReturnsService,
 } from './returns/ReturnsService';
 export { ReturnsSharedLoads } from './returns/ReturnsSharedLoads';
+// tokens/
+// statements/
+export {
+  type AccountStatement,
+  type AccountStatements,
+  StatementVaultService,
+} from './statements/StatementVaultService';
 export {
   type CreateRuleResult,
   TransferReviewRuleService,
@@ -226,7 +245,6 @@ export {
   type SplitResolveResult,
   TransferReviewService,
 } from './TransferReviewService';
-// tokens/
 export {
   SCAM_SCORE_VERSION,
   ScamTokenDetectionService,
