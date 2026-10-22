@@ -162,9 +162,9 @@ test.describe('auth: passkeys (SC-1646)', () => {
     expect(await sessionEmail(page)).toBe(email);
   });
 
-  // SC-1767: with autofill on, the button's ceremony and the autofill's are
-  // both in flight. The autofill's options are held until the button's
-  // ceremony has started, so the button cannot lose its click to the autofill.
+  // SC-1767, the order scani-oss#707 hit: the button's options land first and
+  // its prompt is open when the autofill's options land and start a second
+  // ceremony. The person must still end up signed in, not on /auth.
   test('the button signs in even when the autofill request lands after it', async ({
     page,
   }, testInfo) => {
@@ -175,6 +175,25 @@ test.describe('auth: passkeys (SC-1646)', () => {
     await page.getByRole('button', { name: 'Add a passkey' }).click();
     await expect(page.getByText('Passkey added.').first()).toBeVisible();
 
+    // Like a person: the autofill offer waits until somebody picks it, which
+    // nobody does here, and the button's prompt takes a moment to answer.
+    await page.addInitScript(() => {
+      const get = navigator.credentials.get.bind(navigator.credentials);
+      navigator.credentials.get = (options) => {
+        if (options?.mediation === 'conditional') {
+          return new Promise((_resolve, reject) => {
+            options.signal?.addEventListener('abort', () => reject(options.signal?.reason));
+          });
+        }
+        return new Promise((resolve, reject) => {
+          const timer = setTimeout(() => get(options).then(resolve, reject), 1500);
+          options?.signal?.addEventListener('abort', () => {
+            clearTimeout(timer);
+            reject(options.signal?.reason);
+          });
+        });
+      };
+    });
     let releaseAutofill: () => void = () => {};
     const autofillHeld = new Promise<void>((resolve) => {
       releaseAutofill = resolve;

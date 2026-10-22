@@ -155,6 +155,7 @@
         "@scani/shared": "workspace:*",
         "@scani/ui": "workspace:*",
         "@sentry/react": "^10.75.3",
+        "@simplewebauthn/browser": "^13.3.0",
         "@tanstack/react-query": "^4.44.0",
         "@trpc/client": "^10.45.4",
         "@trpc/react-query": "^10.45.4",
