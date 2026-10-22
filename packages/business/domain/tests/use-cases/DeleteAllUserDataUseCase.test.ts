@@ -104,6 +104,10 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
     categoryId: category!.id,
     categorySetBy: 'person',
   });
+  // An AI answer references the category, so it has to go first (SC-1695).
+  await tx
+    .insert(schema.transactionCategoryAiAnswers)
+    .values({ userId, payeeKey: 'tesco', categoryId: category!.id });
 
   await tx.insert(schema.holdingBalanceObservations).values({
     userId,
