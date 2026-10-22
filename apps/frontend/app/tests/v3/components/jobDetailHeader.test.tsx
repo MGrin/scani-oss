@@ -112,6 +112,42 @@ describe('a terminal failure never points at a detail block it is not rendering'
   });
 });
 
+/**
+ * SC-1736: a binary .xls fails as unrecoverable with the detail "Save it as
+ * .xlsx or CSV and upload again". The shared sentence above it said "Check the
+ * details below, correct them" — there is nothing to correct — and the detail
+ * sat in the mono box meant for an upstream system's rejection code. A
+ * file-import failure's detail is our own sentence for the owner.
+ */
+describe('a file-import failure reads as a sentence for the owner', () => {
+  const SAVE_AS = 'Save it as .xlsx or CSV and upload again.';
+  const html = () =>
+    renderToStaticMarkup(
+      <Harness>
+        <JobDetailHeader job={{ ...failedJob(SAVE_AS), jobName: 'file-import' }} />
+      </Harness>
+    );
+
+  test('it does not ask the owner to correct details', () => {
+    expect(html()).not.toContain(POINTS_AT_DETAIL);
+    expect(html()).toContain('be imported as it is, and another attempt');
+  });
+
+  test('its detail is prose, not the mono box', () => {
+    const page = html();
+    expect(page).toContain(SAVE_AS);
+    expect(
+      page.slice(page.lastIndexOf('<p', page.indexOf(SAVE_AS)), page.indexOf(SAVE_AS))
+    ).not.toContain('font-mono');
+  });
+
+  test('CONTROL: an exchange import keeps the shared sentence and the mono box', () => {
+    const page = render('Kraken rejected request: EAPI:Invalid key');
+    expect(page).toContain(POINTS_AT_DETAIL);
+    expect(page).toContain('font-mono');
+  });
+});
+
 // SC-1519: a failed attempt stamps `finishedAt` before the retry runs, and the
 // header read "Attempt 2 of 3 · Finished just now" over a live progress bar.
 describe('JobDetailHeader — a job between attempts', () => {
@@ -165,5 +201,52 @@ describe('JobDetailHeader — Retry only where retrying can help', () => {
     expect(html).toContain('Retry');
     expect(html).toContain('Try it again later');
     expect(html).not.toContain('won&#x27;t retry');
+  });
+});
+
+// SC-1711: mgrin's screenshot. A Bitcoin refresh tried twice against
+// blockchain.info's 429 read "Failed, won't retry · tried 2 times" and said
+// nothing about why.
+describe('JobDetailHeader — a failed job always says why', () => {
+  function exhausted(userFacingError: string | null): string {
+    return renderToStaticMarkup(
+      <Harness>
+        <JobDetailHeader
+          job={{
+            ...failedJob(userFacingError),
+            jobName: 'refresh-account-balance',
+            attemptsMade: 2,
+            attemptsAllowed: 2,
+            failureReason: 'retries_exhausted',
+            retry: { available: true, queueHasJob: true },
+          }}
+        />
+      </Harness>
+    );
+  }
+  const UNEXPLAINED = 'It stopped on an unforeseen error';
+
+  test('with no reason recorded, the page says the error was unforeseen', () => {
+    const html = exhausted(null);
+    expect(html).toContain('tried 2 times');
+    expect(html).toContain(UNEXPLAINED);
+  });
+
+  test('with a reason recorded, the reason renders and the fallback does not', () => {
+    const REASON =
+      'The Bitcoin data source is limiting how often Scani may ask it, so this stopped. Try again later.';
+    const html = exhausted(REASON);
+    expect(html).toContain(REASON);
+    expect(html).not.toContain(UNEXPLAINED);
+  });
+
+  test('CONTROL: a cancelled job already says why, and gets no fallback', () => {
+    const html = renderToStaticMarkup(
+      <Harness>
+        <JobDetailHeader job={{ ...failedJob(null), failureReason: 'cancelled' }} />
+      </Harness>
+    );
+    expect(html).toContain('You stopped this job');
+    expect(html).not.toContain(UNEXPLAINED);
   });
 });

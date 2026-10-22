@@ -5,6 +5,7 @@ import {
   type JobOutcome,
   outcomeState,
   readJobOutcome,
+  statementFormatLabel,
 } from '@scani/shared';
 import type { TFunction } from 'i18next';
 
@@ -62,6 +63,16 @@ export interface JobRow {
   /** What a completed run produced, as counts — the list row's stand-in for
    *  the `result` it does not carry (SC-1527). */
   outcome?: JobOutcome | null;
+  /** Set on a row that stands for a whole app-open refresh (SC-1724). */
+  burst?: RefreshBurst;
+}
+
+/** The per-account refreshes one app-open queued, as counts. */
+interface RefreshBurst {
+  total: number;
+  done: number;
+  failed: number;
+  running: number;
 }
 
 /** BullMQ's own states, in the order a run moves through them. */
@@ -145,14 +156,15 @@ export function jobFailureLabel(
 export function jobFailureSentence(
   t: JobFailureTranslate,
   description: JobFailureDescription,
-  options: { detailShown?: boolean } = {}
+  options: { detailShown?: boolean; jobName?: string } = {}
 ): string {
   switch (description.code) {
     case 'unrecoverable':
+      if (!options.detailShown) return t('v3.jobs.failure.unrecoverable.sentence');
       return t(
-        options.detailShown
-          ? 'v3.jobs.failure.unrecoverable.sentenceWithDetail'
-          : 'v3.jobs.failure.unrecoverable.sentence'
+        failureDetailIsOurs(options.jobName)
+          ? 'v3.jobs.failure.unrecoverable.sentenceWithFileDetail'
+          : 'v3.jobs.failure.unrecoverable.sentenceWithDetail'
       );
     case 'retrying':
       return t('v3.jobs.failure.retrying.sentence', {
@@ -167,6 +179,15 @@ export function jobFailureSentence(
     default:
       return t(`v3.jobs.failure.${description.code}.sentence`);
   }
+}
+
+/**
+ * A file import's failure detail is a sentence Scani wrote for the owner ("Save
+ * it as .xlsx or CSV"), not an upstream rejection code. So it reads as prose,
+ * and the sentence above it does not ask them to correct anything (SC-1736).
+ */
+export function failureDetailIsOurs(jobName: string | undefined): boolean {
+  return jobName === 'file-import';
 }
 
 const RUNNING_STATES = new Set(['queued', 'active', 'progress']);
@@ -318,7 +339,7 @@ export function summariseJobPayload(
     // named (SC-1527): "csv · enriched" told a reader nothing they could use.
     case 'file-import':
       return typeof summary.fileType === 'string' && summary.fileType.length > 0
-        ? t('v3.jobs.kind.fileOfType', { type: summary.fileType.toUpperCase() })
+        ? t('v3.jobs.kind.fileOfType', { type: statementFormatLabel(summary.fileType) })
         : t('v3.jobs.kind.fileFallback');
     case 'holding-price-update':
       return t('v3.jobs.kind.holdingPriceRefresh');
@@ -506,4 +527,123 @@ export function mapBullState(state: string): JobStatusSnapshot['state'] {
     default:
       return 'unknown';
   }
+}
+
+const OPEN_REFRESH = 'app-open-refresh';
+const ACCOUNT_REFRESH = 'refresh-account-balance';
+
+function burstRequestId(job: JobRow): string | null {
+  if (job.jobName !== OPEN_REFRESH && job.jobName !== ACCOUNT_REFRESH) return null;
+  const requestId = asRecord(job.payloadSummary).requestId;
+  return typeof requestId === 'string' && requestId.length > 0 ? requestId : null;
+}
+
+/** The app-open a job's page should list the refreshes of, if it is one. */
+export function burstRequestIdOf(job: Pick<JobRow, 'jobName' | 'payloadSummary'>): string | null {
+  if (job.jobName !== OPEN_REFRESH) return null;
+  const requestId = asRecord(job.payloadSummary).requestId;
+  return typeof requestId === 'string' && requestId.length > 0 ? requestId : null;
+}
+
+/**
+ * One app-open queues one `refresh-account-balance` per synced account, each
+ * carrying the `requestId` of the `app-open-refresh` that queued it (SC-1724).
+ * Listed one per row they read as a backlog, so a burst of two or more is one
+ * row: the open's own row when it is still listed, so the row opens the page
+ * that lists the accounts, otherwise the burst's first refresh.
+ *
+ * A refresh someone started by hand has a `requestId` of its own and stays a
+ * row of its own; so does any row written before refreshes recorded one.
+ */
+export function foldRefreshBursts(jobs: JobRow[]): JobRow[] {
+  const members = new Map<string, { open?: JobRow; refreshes: JobRow[] }>();
+  for (const job of jobs) {
+    const requestId = burstRequestId(job);
+    if (!requestId) continue;
+    const entry = members.get(requestId) ?? { refreshes: [] };
+    if (job.jobName === OPEN_REFRESH) entry.open = job;
+    else entry.refreshes.push(job);
+    members.set(requestId, entry);
+  }
+
+  const folded: JobRow[] = [];
+  const emitted = new Set<string>();
+  for (const job of jobs) {
+    const requestId = burstRequestId(job);
+    const entry = requestId ? members.get(requestId) : undefined;
+    if (!requestId || !entry || entry.refreshes.length < 2) {
+      folded.push(job);
+      continue;
+    }
+    if (emitted.has(requestId)) continue;
+    emitted.add(requestId);
+    const { refreshes } = entry;
+    const running = refreshes.filter(isJobRunning).length;
+    const failed = refreshes.filter((r) => r.state === 'failed').length;
+    const done = refreshes.length - running - failed;
+    const head = entry.open ?? refreshes[0] ?? job;
+    folded.push({
+      ...head,
+      state: running > 0 ? 'active' : done > 0 ? 'completed' : 'failed',
+      deadAt: null,
+      failureReason: null,
+      outcome: null,
+      burst: { total: refreshes.length, done: done + failed, failed, running },
+    });
+  }
+  return folded;
+}
+
+/** A row's title: the burst's, when the row stands for one (SC-1724). */
+export function jobRowLabel(t: TFunction, job: JobRow, fallback: string): string {
+  const { burst } = job;
+  if (!burst) return fallback;
+  return burst.running > 0
+    ? t('v3.jobs.burst.refreshing', { count: burst.total })
+    : t('v3.jobs.burst.refreshed', { count: burst.total });
+}
+
+/**
+ * A row's second line: a burst's progress while it runs, its failures after;
+ * a single refresh's account name (SC-1724).
+ */
+export function jobRowSummary(
+  t: TFunction,
+  job: JobRow,
+  accountNames?: ReadonlyMap<string, string>
+): string | null {
+  const { burst } = job;
+  if (!burst && job.jobName === ACCOUNT_REFRESH) {
+    const accountId = asRecord(job.payloadSummary).accountId;
+    return (typeof accountId === 'string' && accountNames?.get(accountId)) || null;
+  }
+  if (!burst) return summariseJobPayload(t, job.jobName, job.payloadSummary);
+  if (burst.running > 0)
+    return t('v3.jobs.burst.progress', { done: burst.done, total: burst.total });
+  return burst.failed > 0 ? t('v3.jobs.burst.failed', { count: burst.failed }) : null;
+}
+
+export interface BurstAccountRow {
+  job: JobRow;
+  /** The account's name; the job's own label when it is no longer listed. */
+  label: string;
+}
+
+/**
+ * The per-account refreshes one app-open queued, each under its account's
+ * name (SC-1724). `names` maps account id to name.
+ */
+export function burstAccountRows(
+  t: TFunction,
+  jobs: JobRow[],
+  requestId: string,
+  names: ReadonlyMap<string, string>
+): BurstAccountRow[] {
+  return jobs
+    .filter((job) => job.jobName === ACCOUNT_REFRESH && burstRequestId(job) === requestId)
+    .map((job) => {
+      const accountId = asRecord(job.payloadSummary).accountId;
+      const name = typeof accountId === 'string' ? names.get(accountId) : undefined;
+      return { job, label: name ?? t('v3.jobs.label.accountRefresh') };
+    });
 }

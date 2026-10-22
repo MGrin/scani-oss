@@ -1,4 +1,9 @@
-import { AI_COLUMN_MAPPING_WARNING, type CsvMapping, CsvMappingDto } from '@scani/shared';
+import {
+  AI_COLUMN_MAPPING_WARNING,
+  type CsvMapping,
+  CsvMappingDto,
+  StatementFileTypeDto,
+} from '@scani/shared';
 import { rowsLost } from '@/v3/lib/budget-app-import';
 import { savedAsCheck } from '@/v3/lib/holdings';
 
@@ -244,6 +249,16 @@ interface FileImportHolding {
   isNew: boolean;
 }
 
+/** A balance this import had to infer, or could not: the row says so (SC-1324). */
+export function balanceIsInferred(
+  holding: Pick<FileImportHolding, 'closingBalance' | 'balanceFrom'>
+): boolean {
+  return (
+    !holding.closingBalance &&
+    (holding.balanceFrom === 'imported-rows' || holding.balanceFrom === 'unknown')
+  );
+}
+
 type FileImportBalanceFrom = 'statement-close' | 'imported-rows' | 'unknown' | 'unchanged';
 
 const BALANCE_FROM: readonly FileImportBalanceFrom[] = [
@@ -263,6 +278,27 @@ export interface FileImportCurrencyPrompt {
   preview: Array<{ date: string; description: string; amount: number }>;
   /** Chosen on an earlier date-order prompt; the re-parse must keep it. */
   dateOrder?: FileImportDateOrder;
+  /** A currency the file names without a Currency column (SC-1735). */
+  suggestedCurrency?: string;
+}
+
+/**
+ * Where the currency question starts: the currency the file names, or nothing.
+ * Never the owner's base currency — one tap would import a EUR statement as
+ * USD with no warning (SC-1735).
+ */
+export function initialStatementCurrency(
+  prompt: FileImportCurrencyPrompt,
+  currencies: ReadonlyArray<{ id: string; symbol: string }> | undefined
+): string {
+  if (!prompt.suggestedCurrency) return '';
+  return currencies?.find((currency) => currency.symbol === prompt.suggestedCurrency)?.id ?? '';
+}
+
+export function currencyPromptBodyKey(prompt: FileImportCurrencyPrompt): string {
+  return prompt.suggestedCurrency
+    ? 'v3.jobs.file.currency.bodySuggested'
+    : 'v3.jobs.file.currency.body';
 }
 
 export interface FileImportDateOrderPrompt {
@@ -285,6 +321,26 @@ export interface FileImportColumnPrompt {
   headers: string[];
   defaultCurrency?: string;
   dateOrder?: FileImportDateOrder;
+}
+
+/** What "Apply mapping and import" sends: the same upload, re-read with the owner's columns. */
+export function columnMappingRequest(
+  prompt: FileImportColumnPrompt,
+  accountId: string,
+  customMapping: CsvMapping,
+  requestId: string
+) {
+  return {
+    r2Key: prompt.r2Key,
+    // A sheet that is not a zip, such as an HTML `.xls`, is told from a CSV
+    // only by this name, so the retry must carry it (SC-1734).
+    fileType: StatementFileTypeDto.catch('csv').parse(prompt.fileType),
+    accountId,
+    requestId,
+    customMapping,
+    dateOrder: prompt.dateOrder,
+    defaultCurrency: prompt.defaultCurrency,
+  };
 }
 
 function readMapping(value: unknown): CsvMapping | undefined {
@@ -382,6 +438,11 @@ export function readFileImport(result: unknown): FileImportView | null {
             };
           }),
           dateOrder: asDateOrder(needsCurrencyRaw.dateOrder),
+          suggestedCurrency:
+            typeof needsCurrencyRaw.suggestedCurrency === 'string' &&
+            /^[A-Z]{3}$/.test(needsCurrencyRaw.suggestedCurrency)
+              ? needsCurrencyRaw.suggestedCurrency
+              : undefined,
         }
       : null,
     needsDateOrder:

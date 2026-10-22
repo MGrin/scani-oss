@@ -1,4 +1,10 @@
-import { CsvMappingDto, formatDate, quantityDecimals } from '@scani/shared';
+import {
+  CsvMappingDto,
+  formatDate,
+  quantityDecimals,
+  type StatementFileType,
+  statementFormatLabel,
+} from '@scani/shared';
 import { Badge } from '@scani/ui/ui/badge';
 import { Button } from '@scani/ui/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
@@ -10,14 +16,17 @@ import { Loader2 } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
-import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
 import { columnChoices, columnFromOption, columnOption, NO_COLUMN } from '../../lib/csv-columns';
 import {
+  balanceIsInferred,
+  columnMappingRequest,
+  currencyPromptBodyKey,
   type FileImportColumnPrompt,
   type FileImportCurrencyPrompt,
   type FileImportDateOrder,
   type FileImportDateOrderPrompt,
+  initialStatementCurrency,
   readFileImport,
 } from '../../lib/job-results';
 import { jobDetailPath, V3_CAPTURE_ROUTES, V3_ROUTES } from '../../lib/routes';
@@ -98,7 +107,7 @@ export function FileImportResult({ result, jobId }: { result: unknown; jobId: st
         <BlockHeader title={t(`v3.jobs.file.title.${wroteNothing ? 'nothing' : 'imported'}`)} />
         <DataRowList className="border-t border-border">
           {view.format ? (
-            <DataRow label={t('v3.jobs.file.format')} value={view.format.toUpperCase()} />
+            <DataRow label={t('v3.jobs.file.format')} value={statementFormatLabel(view.format)} />
           ) : null}
           <DataRow
             label={t('v3.jobs.file.transactions')}
@@ -150,7 +159,31 @@ export function FileImportResult({ result, jobId }: { result: unknown; jobId: st
                     </Badge>
                   </span>
                 }
-                sublabel={t('v3.jobs.file.row.transactions', { count: holding.transactionCount })}
+                // SC-1736: the balance note is a sentence, so it wraps under the
+                // transaction count. In `delta` it sat in the never-wrapping value
+                // zone and pushed the figure past the card edge on a phone.
+                wrapIdentity={balanceIsInferred(holding)}
+                sublabel={
+                  balanceIsInferred(holding) ? (
+                    <>
+                      <span className="block">
+                        {t('v3.jobs.file.row.transactions', { count: holding.transactionCount })}
+                      </span>
+                      {/* SC-1324: a balance this import had to infer, or could not,
+                          says so and points at the one place to correct it. */}
+                      <Link
+                        to={`${V3_ROUTES.holdings}/${encodeURIComponent(holding.holdingId)}`}
+                        className="block underline underline-offset-2"
+                      >
+                        {holding.balanceFrom === 'imported-rows'
+                          ? t('v3.jobs.file.row.fromRows')
+                          : t('v3.jobs.file.row.setBalance')}
+                      </Link>
+                    </>
+                  ) : (
+                    t('v3.jobs.file.row.transactions', { count: holding.transactionCount })
+                  )
+                }
                 value={
                   (holding.closingBalance ?? holding.rowsBalance) ? (
                     // The symbol beside the figure, never inside `Intl` as a
@@ -179,18 +212,6 @@ export function FileImportResult({ result, jobId }: { result: unknown; jobId: st
                     <span className="text-muted-foreground">
                       {t('v3.jobs.file.row.statementClose')}
                     </span>
-                  ) : holding.balanceFrom === 'imported-rows' ||
-                    holding.balanceFrom === 'unknown' ? (
-                    // SC-1324: a balance this import had to infer, or could not,
-                    // says so and points at the one place to correct it.
-                    <Link
-                      to={`${V3_ROUTES.holdings}/${encodeURIComponent(holding.holdingId)}`}
-                      className="text-muted-foreground underline underline-offset-2"
-                    >
-                      {holding.balanceFrom === 'imported-rows'
-                        ? t('v3.jobs.file.row.fromRows')
-                        : t('v3.jobs.file.row.setBalance')}
-                    </Link>
                   ) : undefined
                 }
               />
@@ -239,11 +260,11 @@ function CurrencyPrompt({
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { token, isResolved } = useBaseCurrency();
-  const [currencyId, setCurrencyId] = useState(isResolved ? token.id : '');
+  const [picked, setPicked] = useState<string | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
 
   const currencies = trpc.users.getSupportedCurrencies.useQuery();
+  const currencyId = picked ?? initialStatementCurrency(prompt, currencies.data);
   const chosen = currencies.data?.find((currency) => currency.id === currencyId) ?? null;
 
   // Stamps the picker job the moment the re-parse is accepted. Without it the
@@ -267,7 +288,10 @@ function CurrencyPrompt({
       <Block className="flex flex-col">
         <BlockHeader title={t('v3.jobs.file.currency.title')} />
         <p className="px-4 pb-4 text-body text-muted-foreground">
-          {t('v3.jobs.file.currency.body', { count: prompt.transactionCount })}
+          {t(currencyPromptBodyKey(prompt), {
+            count: prompt.transactionCount,
+            currency: prompt.suggestedCurrency,
+          })}
         </p>
 
         {prompt.preview.length > 0 ? (
@@ -307,7 +331,7 @@ function CurrencyPrompt({
             <FiatCurrencyField
               id="file-import-currency"
               value={currencyId}
-              onChange={setCurrencyId}
+              onChange={setPicked}
               disabled={reparse.isPending}
             />
           </Field>
@@ -328,7 +352,7 @@ function CurrencyPrompt({
               setFailure(null);
               reparse.mutate({
                 r2Key: prompt.r2Key,
-                fileType: prompt.fileType as 'csv' | 'ofx' | 'qif',
+                fileType: prompt.fileType as StatementFileType,
                 accountId,
                 requestId: crypto.randomUUID(),
                 defaultCurrency: chosen.symbol,
@@ -395,7 +419,7 @@ function DateOrderPrompt({
     setFailure(null);
     reparse.mutate({
       r2Key: prompt.r2Key,
-      fileType: prompt.fileType as 'csv' | 'ofx' | 'qif',
+      fileType: prompt.fileType as StatementFileType,
       accountId,
       requestId: crypto.randomUUID(),
       defaultCurrency: prompt.defaultCurrency,
@@ -516,15 +540,9 @@ function ColumnMappingPrompt({
         disabled={!parsed.success || reparse.isPending}
         onClick={() => {
           if (parsed.success)
-            reparse.mutate({
-              r2Key: prompt.r2Key,
-              fileType: 'csv',
-              accountId,
-              requestId: crypto.randomUUID(),
-              customMapping: parsed.data,
-              dateOrder: prompt.dateOrder,
-              defaultCurrency: prompt.defaultCurrency,
-            });
+            reparse.mutate(
+              columnMappingRequest(prompt, accountId, parsed.data, crypto.randomUUID())
+            );
         }}
       >
         {t('v3.jobs.file.columns.apply')}
