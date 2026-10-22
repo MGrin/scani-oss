@@ -66,6 +66,7 @@ describe('AIRouter — the AI budget is charged per provider attempt', () => {
   function setup(refuseOnAttempt: number | null) {
     const attempts: string[] = [];
     let charged = 0;
+    const kinds: Array<string | undefined> = [];
     const failing = (key: string) => ({
       providerKey: key,
       capabilities: ['ai-inference'] as const,
@@ -102,8 +103,9 @@ describe('AIRouter — the AI budget is charged per provider attempt', () => {
     for (const p of [failing('a'), failing('b'), working]) registry.register(p as never);
     Container.set(ProviderRegistry, registry);
     Container.set(AiSpendBudget, {
-      reserve: async (_userId: string, calls: number) => {
+      reserve: async (_userId: string, calls: number, _now?: Date, kind?: string) => {
         charged += calls;
+        kinds.push(kind);
         // Refuses ONLY that attempt, so a refusal swallowed as a provider
         // failure would let the next attempt succeed and be caught here.
         if (charged === refuseOnAttempt) {
@@ -111,8 +113,14 @@ describe('AIRouter — the AI budget is charged per provider attempt', () => {
         }
       },
     } as unknown as AiSpendBudget);
-    return { router: new AIRouter(), attempts, charged: () => charged };
+    return { router: new AIRouter(), attempts, charged: () => charged, kinds };
   }
+
+  test('a categorize completion spends the categorize allowance on every attempt (SC-1695)', async () => {
+    const { router, kinds } = setup(null);
+    await router.completeText('prompt', { userId: 'u1', spend: 'categorize' });
+    expect(kinds).toEqual(['categorize', 'categorize', 'categorize']);
+  });
 
   test.each([
     ['parseScreenshot', (r: AIRouter) => r.parseScreenshot('img', { userId: 'u1' })],

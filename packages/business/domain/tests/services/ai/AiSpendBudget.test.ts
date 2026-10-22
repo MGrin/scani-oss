@@ -3,6 +3,8 @@ import { Container } from 'typedi';
 import {
   AI_CALLS_GLOBAL_PER_HOUR,
   AI_CALLS_PER_USER_PER_DAY,
+  AI_CATEGORIZE_CALLS_GLOBAL_PER_HOUR,
+  AI_CATEGORIZE_CALLS_PER_USER_PER_DAY,
   AiBudgetCounter,
   AiBudgetExceededError,
   AiSpendBudget,
@@ -165,5 +167,55 @@ describe('AiSpendBudget', () => {
       expect(refused).toBeInstanceOf(AiBudgetExceededError);
       expect(refused.scope).toBe('user');
     });
+  });
+});
+
+describe('the categorize budget (SC-1695)', () => {
+  test('its own five calls a day, then a refusal; parsing is not spent', async () => {
+    expect(AI_CATEGORIZE_CALLS_PER_USER_PER_DAY).toBe(5);
+    const b = budget();
+    for (let i = 0; i < 5; i++) await b.reserve('u1', 1, NOW, 'categorize');
+    const refused = await b.reserve('u1', 1, NOW, 'categorize').catch((e) => e);
+    expect(refused).toBeInstanceOf(AiBudgetExceededError);
+    expect(refused.scope).toBe('user');
+    for (let i = 0; i < AI_CALLS_PER_USER_PER_DAY; i++) await b.reserve('u1', 1, NOW);
+  });
+
+  test('parsing does not spend it either', async () => {
+    const b = budget();
+    for (let i = 0; i < AI_CALLS_PER_USER_PER_DAY; i++) await b.reserve('u1', 1, NOW);
+    await b.reserve('u1', 1, NOW, 'categorize');
+  });
+
+  test('the global hour counts both kinds', async () => {
+    const b = budget();
+    counter.values.set('ai:budget:global:2026-09-19T11', AI_CALLS_GLOBAL_PER_HOUR);
+    const refused = await b.reserve('u1', 1, NOW, 'categorize').catch((e) => e);
+    expect(refused.scope).toBe('global');
+  });
+
+  test('it may take only its share of the hour, so parsing is never starved', async () => {
+    expect(AI_CATEGORIZE_CALLS_GLOBAL_PER_HOUR).toBe(50);
+    const b = budget();
+    counter.values.set(
+      'ai:budget:categorize-global:2026-09-19T11',
+      AI_CATEGORIZE_CALLS_GLOBAL_PER_HOUR
+    );
+    const refused = await b.reserve('u9', 1, NOW, 'categorize').catch((e) => e);
+    expect(refused.scope).toBe('global');
+    await b.reserve('u9', 1, NOW);
+  });
+
+  test("the plan's monthly cap does not apply to it", async () => {
+    const calls = { n: 0 };
+    registerPlanResolver({
+      forUser: async (): Promise<PlanAccess> => {
+        calls.n++;
+        return { ...UNLIMITED_ACCESS, aiMonthlyCap: 0 };
+      },
+    });
+    const b = budget();
+    await b.reserve('u1', 1, NOW, 'categorize');
+    expect(calls.n).toBe(0);
   });
 });

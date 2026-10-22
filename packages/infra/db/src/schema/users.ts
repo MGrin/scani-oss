@@ -49,6 +49,9 @@ export const users = pgTable(
     // realized figure ever shown was computed FIFO, so a default that changed
     // the rule would move all of them silently.
     costBasisMethod: text('cost_basis_method').notNull().default('fifo'),
+    // When this person turned on AI category suggestions (SC-1695). NULL is
+    // off, the default: their payees go to the AI provider only after this.
+    aiCategoriesAt: timestamp('ai_categories_at', { withTimezone: true }),
     // First time this account got a file out of the product — an
     // "export everything" or a rendered statement (SC-450). Written once,
     // `WHERE first_export_at IS NULL`, and never updated after. It is the only
