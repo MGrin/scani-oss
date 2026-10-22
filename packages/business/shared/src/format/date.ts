@@ -146,6 +146,30 @@ export function formatDate(input: DateInput, locale?: DateLocale): string {
   return date.toLocaleDateString(locale ?? defaultDateLocale(), { dateStyle: 'medium' });
 }
 
+const utcDay = (day: string) => new Date(`${day}T00:00:00Z`);
+
+/**
+ * A span of calendar days, `YYYY-MM-DD` each, as one range: `1–31 Mar 2026`
+ * in English (SC-1656). UTC, because the inputs are days rather than instants.
+ */
+export function formatDateRange(from: string, to: string, locale?: DateLocale): string {
+  return new Intl.DateTimeFormat(locale ?? defaultDateLocale(), {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).formatRange(utcDay(from), utcDay(to));
+}
+
+/** A `YYYY-MM` month as its short name and year: `Mar 2026` in English (SC-1656). */
+export function formatMonthYear(month: string, locale?: DateLocale): string {
+  return new Intl.DateTimeFormat(locale ?? defaultDateLocale(), {
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(utcDay(`${month}-01`));
+}
+
 /**
  * The name of a weekday, from `Intl` (SC-300).
  *

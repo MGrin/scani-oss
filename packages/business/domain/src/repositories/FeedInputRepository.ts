@@ -375,6 +375,7 @@ export class FeedInputRepository extends BaseRepository<FeedInput, NewFeedInput>
         complete: window.complete,
         fetchedAt,
         uploadRef: window.uploadRef ?? null,
+        documentId: window.documentId ?? null,
         shape: window.shape,
       })
       .onConflictDoNothing()

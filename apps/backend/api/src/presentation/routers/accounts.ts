@@ -3,10 +3,15 @@ import {
   AccountWrapperRepository,
   GroupRepository,
 } from '@scani/domain/repositories';
-import { AccountService } from '@scani/domain/services';
+import {
+  AccountService,
+  RecordNotAccessibleError,
+  StatementVaultService,
+} from '@scani/domain/services';
 import { BulkAssignAccountGroupsUseCase } from '@scani/domain/use-cases';
 import { emitBulkEntityChanges, emitEntityChange } from '@scani/realtime';
 import { IdInputDto, UpdateAccountDto } from '@scani/shared';
+import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
 import { rethrowAccountRefusal } from '../lib/account-refusal';
@@ -27,6 +32,25 @@ export const accountsRouter = router({
     await requireAuth(ctx);
     return Container.get(AccountWrapperRepository).list();
   }),
+
+  // SC-1656: the account's statements and the months none covers.
+  listStatements: protectedProcedure
+    .input(strictInput(IdInputDto))
+    .query(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      const answer = await Container.get(StatementVaultService)
+        .forAccount(dbUser.id, input.id, new Date())
+        .catch((error: unknown) => {
+          if (error instanceof RecordNotAccessibleError) {
+            throw new TRPCError({ code: 'NOT_FOUND', message: error.message });
+          }
+          throw error;
+        });
+      return {
+        statements: answer.statements.map((s) => ({ ...s, readAt: s.readAt.toISOString() })),
+        gaps: answer.gaps,
+      };
+    }),
 
   getByUserIdWithSummary: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);

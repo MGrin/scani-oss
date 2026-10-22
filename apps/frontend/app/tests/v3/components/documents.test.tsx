@@ -38,6 +38,7 @@ const FILES: DocumentRow[] = [
     createdAt: '2026-08-10T09:00:00.000Z',
     extractionCount: 2,
     downloadable: true,
+    accounts: [],
   },
   {
     id: 'doc-2',
@@ -48,6 +49,7 @@ const FILES: DocumentRow[] = [
     createdAt: '2026-08-09T09:00:00.000Z',
     extractionCount: 0,
     downloadable: true,
+    accounts: [],
   },
   {
     id: 'doc-3',
@@ -58,6 +60,7 @@ const FILES: DocumentRow[] = [
     createdAt: '2026-08-08T09:00:00.000Z',
     extractionCount: 0,
     downloadable: false,
+    accounts: [],
   },
 ];
 

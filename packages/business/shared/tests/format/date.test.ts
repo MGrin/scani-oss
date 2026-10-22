@@ -1,5 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { formatDate, formatDateTime, formatIsoDate, formatRelative } from '../../src/format/date';
+import {
+  APP_LOCALE,
+  formatDate,
+  formatDateRange,
+  formatDateTime,
+  formatIsoDate,
+  formatMonthYear,
+  formatRelative,
+} from '../../src/format/date';
 
 const MIN = 60 * 1000;
 const HOUR = 60 * MIN;
@@ -195,5 +203,38 @@ describe('formatDateTime / formatDate', () => {
   test('both return "—" for invalid input', () => {
     expect(formatDate(null)).toBe('—');
     expect(formatDateTime(null)).toBe('—');
+  });
+});
+
+// SC-1656: a statement's period and a missing month, in the app's day-first
+// order (design, bus #24519). ICU spaces the range dash differently across
+// runtimes, so the spacing around it is normalised; March and April avoid the
+// Sep/Sept difference between runtimes.
+const tight = (text: string) => text.replace(/\s*–\s*/g, '–').replace(/\s/g, ' ');
+
+describe('formatDateRange', () => {
+  test('two calendar days in one month read day-first, the month once', () => {
+    expect(tight(formatDateRange('2026-03-01', '2026-03-31', 'en-GB'))).toBe('1–31 Mar 2026');
+  });
+
+  test('across months, each side names its month', () => {
+    expect(tight(formatDateRange('2026-03-25', '2026-04-03', 'en-GB'))).toBe('25 Mar–3 Apr 2026');
+  });
+
+  test('one day is one date', () => {
+    expect(tight(formatDateRange('2026-03-01', '2026-03-01', 'en-GB'))).toBe('1 Mar 2026');
+  });
+
+  test('omitting the locale is the app locale', () => {
+    expect(formatDateRange('2026-03-01', '2026-03-31')).toBe(
+      formatDateRange('2026-03-01', '2026-03-31', APP_LOCALE)
+    );
+  });
+});
+
+describe('formatMonthYear', () => {
+  test('a YYYY-MM month reads as its short name and year', () => {
+    expect(formatMonthYear('2026-03', 'en-GB')).toBe('Mar 2026');
+    expect(formatMonthYear('2026-12')).toBe(formatMonthYear('2026-12', APP_LOCALE));
   });
 });

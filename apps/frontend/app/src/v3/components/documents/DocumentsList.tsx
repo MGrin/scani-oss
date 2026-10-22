@@ -12,6 +12,7 @@ import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import {
   compareDocuments,
   type DocumentRow,
+  documentAccountOptions,
   documentIcon,
   documentPurposeLabel,
   documentPurposeOptions,
@@ -74,6 +75,13 @@ export function DocumentsList({ documents, query, onSearch }: DocumentsListProps
         labelKey: 'ui.dataView.files.filter.invoices',
         options: extractionOutcomeOptions(t, documents),
         fn: (document: DocumentRow, value) => extractionOutcome(document) === value,
+      },
+      {
+        key: 'account',
+        labelKey: 'ui.dataView.files.filter.account',
+        options: documentAccountOptions(documents),
+        fn: (document: DocumentRow, value) =>
+          document.accounts.some((account) => account.id === value),
       },
     ],
     sortDefs: [

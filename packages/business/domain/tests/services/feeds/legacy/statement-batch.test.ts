@@ -156,6 +156,20 @@ describe('legacyStatementBatch', () => {
     });
   });
 
+  // SC-1656: the statement vault reads which file a window came from.
+  test('the window names the stored file it was read from, when there is one', () => {
+    const batch = legacyStatementBatch({
+      userId: 'user-1',
+      accountId: 'account-1',
+      result: statement(),
+      uploadRef: 'temp/file-import/user-1/upload.csv',
+      documentId: 'document-1',
+      fetchedAt: FETCHED,
+    });
+    expect(batch.window.documentId).toBe('document-1');
+    expect(batchOf(statement()).window.documentId).toBeUndefined();
+  });
+
   test('the close is a statement checkpoint written as the statement-close row was', () => {
     expect(batchOf(statement()).checkpoints).toEqual([
       {

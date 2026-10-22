@@ -31,6 +31,7 @@ import {
   DocumentDownloadService,
   DocumentReparseService,
   DocumentRetentionService,
+  StatementVaultService,
 } from '@scani/domain/services';
 import { DOCUMENT_PARSE } from '@scani/jobs';
 import { BullMqEnqueueService } from '@scani/queue';
@@ -148,7 +149,11 @@ function decodeCursor(cursor: string): DocumentListCursor {
 
 // Deliberately NOT the whole row: `r2Key` and `contentHash` are internal
 // (a key is the thing the presigner signs) and the list is a list.
-function serializeListItem(item: DocumentListItem, isRetained: (key: string) => boolean) {
+function serializeListItem(
+  item: DocumentListItem,
+  isRetained: (key: string) => boolean,
+  accounts: { id: string; name: string }[]
+) {
   const { document } = item;
   return {
     id: document.id,
@@ -162,6 +167,8 @@ function serializeListItem(item: DocumentListItem, isRetained: (key: string) => 
     // retention failed) have no object left, so the UI can grey the
     // download out instead of handing the user a URL that 404s.
     downloadable: isRetained(document.r2Key),
+    // The accounts this file was read into as a statement (SC-1656).
+    accounts,
   };
 }
 
@@ -342,9 +349,15 @@ export const documentsRouter = router({
       const page = hasMore ? rows.slice(0, input.limit) : rows;
       const isRetained = (key: string) => Container.get(DocumentRetentionService).isRetained(key);
       const last = page.at(-1);
+      const accounts = await Container.get(StatementVaultService).accountsByDocument(
+        ctx.userId,
+        page.map((item) => item.document.id)
+      );
 
       return {
-        items: page.map((item) => serializeListItem(item, isRetained)),
+        items: page.map((item) =>
+          serializeListItem(item, isRetained, accounts.get(item.document.id) ?? [])
+        ),
         nextCursor: hasMore && last ? encodeCursor(last.document) : null,
       };
     }),

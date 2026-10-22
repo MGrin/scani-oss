@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import {
+  type BackupFileSource,
   type BackupRecord,
   BackupWriter,
   backupLine,
@@ -12,14 +13,18 @@ import { withTestDb } from '../../../test/helpers/db';
 import {
   makeCredential,
   makeDocument,
+  makeDocumentExtraction,
   makeInstitution,
   makeUser,
+  makeVendor,
 } from '../../../test/helpers/factories';
 import {
   makeAccount,
   makeCheckpoint,
   makeHolding,
   makeHoldingTransaction,
+  makePayment,
+  makePaymentOccurrence,
   makeToken,
 } from '../../../test/helpers/factories-extra';
 
@@ -206,10 +211,11 @@ describe('BackupWriter (SC-1649)', () => {
       const mine = await seedAccount(tx);
       const records = await collect(new BackupWriter().records(mine.user.id, tx, 2));
 
-      expect(records[0]).toMatchObject({ type: 'header', format: 'scani-backup', version: 1 });
+      expect(records[0]).toMatchObject({ type: 'header', format: 'scani-backup', version: 2 });
       const header = records[0];
       const left = header?.type === 'header' ? header.notIncluded.map((n) => n.table) : [];
-      expect(left).toContain('documents');
+      expect(left).toContain('user_integration_credentials');
+      expect(left).not.toContain('documents');
       expect(left).not.toContain('holdings');
       const end = records.at(-1);
       if (end?.type !== 'end') throw new Error('no end record');
@@ -245,5 +251,185 @@ describe('BackupWriter.file (SC-1649)', () => {
       expect(file.records).toBe(lines.length);
       expect(file.counts.holding_transactions).toBe(5);
       expect(file.sha256).toBe(createHash('sha256').update(file.bytes).digest('hex'));
+    }));
+});
+
+/** Stored files by key, as a backup reads them. */
+function memoryFiles(stored: Map<string, Uint8Array>): BackupFileSource {
+  return {
+    exists: async (key) => stored.has(key),
+    read: async (key) => {
+      const bytes = stored.get(key);
+      if (!bytes) throw new Error(`no object ${key}`);
+      return bytes;
+    },
+  };
+}
+
+async function seedDocuments(tx: DatabaseTransaction) {
+  const user = await makeUser(tx);
+  const vendor = await makeVendor(tx, { userId: user.id });
+  const stored = await makeDocument(tx, {
+    userId: user.id,
+    r2Key: `documents/${user.id}/stored.pdf`,
+    originalFilename: 'march.pdf',
+    byteSize: 5,
+  });
+  const temp = await makeDocument(tx, {
+    userId: user.id,
+    r2Key: `temp/document/${user.id}/never-kept.png`,
+    originalFilename: 'screenshot.png',
+    mimeType: 'image/png',
+    byteSize: 7,
+  });
+  const gone = await makeDocument(tx, {
+    userId: user.id,
+    r2Key: `documents/${user.id}/gone.pdf`,
+    originalFilename: 'april.pdf',
+    byteSize: 9,
+  });
+  const kept = await makeDocumentExtraction(tx, { documentId: stored.id, vendorId: vendor.id });
+  const dropped = await makeDocumentExtraction(tx, { documentId: temp.id });
+  const payment = await makePayment(tx, { userId: user.id, vendorId: vendor.id });
+  const matchedKept = await makePaymentOccurrence(tx, {
+    paymentId: payment.id,
+    dueDate: '2026-08-01',
+    status: 'matched',
+    matchedExtractionId: kept.id,
+  });
+  const matchedDropped = await makePaymentOccurrence(tx, {
+    paymentId: payment.id,
+    dueDate: '2026-09-01',
+    status: 'matched',
+    matchedExtractionId: dropped.id,
+  });
+  const bytes = new Uint8Array([37, 80, 68, 70, 45]);
+  const files = new Map([[stored.r2Key, bytes]]);
+  return { user, stored, temp, gone, kept, dropped, matchedKept, matchedDropped, bytes, files };
+}
+
+const occurrence = (records: BackupRecord[], id: string) =>
+  records.find((r) => r.type === 'row' && r.table === 'payment_occurrences' && r.row.id === id);
+
+describe('BackupWriter uploaded documents (SC-1662)', () => {
+  test('carries a stored document, its extraction and its file, and names the ones it cannot', () =>
+    withTestDb(async (tx) => {
+      const s = await seedDocuments(tx);
+      const records = await collect(
+        new BackupWriter().records(s.user.id, tx, 1000, memoryFiles(s.files))
+      );
+
+      expect(rowIds(records, 'documents')).toEqual([s.stored.id]);
+      expect(rowIds(records, 'document_extractions')).toEqual([s.kept.id]);
+      const files = records.filter((r) => r.type === 'file');
+      expect(files).toHaveLength(1);
+      const file = files[0];
+      if (file?.type !== 'file') throw new Error('no file record');
+      expect(file.documentId).toBe(s.stored.id);
+      expect(new Uint8Array(Buffer.from(file.data, 'base64'))).toEqual(s.bytes);
+      expect(file.sha256).toBe(createHash('sha256').update(s.bytes).digest('hex'));
+      // Every file follows its document's row, so a restore knows where to put it.
+      const at = (pred: (r: BackupRecord) => boolean) => records.findIndex(pred);
+      expect(at((r) => r.type === 'file')).toBeGreaterThan(
+        at((r) => r.type === 'row' && r.table === 'documents')
+      );
+
+      const header = records[0];
+      if (header?.type !== 'header' || !header.files) throw new Error('no header with files');
+      expect(header.files.included).toBe(true);
+      expect(
+        [...header.files.omitted].sort((a, b) => a.filename.localeCompare(b.filename))
+      ).toEqual([
+        { documentId: s.gone.id, filename: 'april.pdf', byteSize: 9, reason: 'not-stored' },
+        { documentId: s.temp.id, filename: 'screenshot.png', byteSize: 7, reason: 'not-stored' },
+      ]);
+
+      // A bill matched to a left-out extraction keeps the match on this side only.
+      const kept = occurrence(records, s.matchedKept.id);
+      const dropped = occurrence(records, s.matchedDropped.id);
+      expect(kept?.type === 'row' ? kept.row.matchedExtractionId : 'missing').toBe(s.kept.id);
+      expect(dropped?.type === 'row' ? dropped.row.matchedExtractionId : 'missing').toBeNull();
+
+      const end = records.at(-1);
+      if (end?.type !== 'end') throw new Error('no end record');
+      expect(end.counts.files).toBe(1);
+      expect(end.records).toBe(records.length);
+    }));
+
+  // SC-1656: a statement window names the file it was read from. Like a bill
+  // matched to a left-out extraction, it keeps that link on the source only.
+  test('a statement window keeps the link to a carried document, and loses one to a left-out document', () =>
+    withTestDb(async (tx) => {
+      const s = await seedDocuments(tx);
+      const institution = await makeInstitution(tx);
+      const account = await makeAccount(tx, { userId: s.user.id, institutionId: institution.id });
+      const [input] = await tx
+        .insert(schema.feedInputs)
+        .values({ userId: s.user.id, accountId: account.id, source: 'statement' })
+        .returning();
+      const window = async (documentId: string, day: string) => {
+        const [row] = await tx
+          .insert(schema.feedInputWindows)
+          .values({
+            inputId: input!.id,
+            fromAt: new Date(`${day}T00:00:00Z`),
+            toAt: new Date(`${day}T12:00:00Z`),
+            complete: false,
+            fetchedAt: new Date(`${day}T13:00:00Z`),
+            uploadRef: 'temp/file-import/statement.csv',
+            documentId,
+            shape: 'statement-upload',
+          })
+          .returning();
+        return row!.id;
+      };
+      const toStored = await window(s.stored.id, '2026-08-01');
+      const toTemp = await window(s.temp.id, '2026-09-01');
+
+      const records = await collect(
+        new BackupWriter().records(s.user.id, tx, 1000, memoryFiles(s.files))
+      );
+      const linkOf = (id: string) => {
+        const record = records.find(
+          (r) => r.type === 'row' && r.table === 'feed_input_windows' && r.row.id === id
+        );
+        return record?.type === 'row' ? record.row.documentId : 'missing';
+      };
+      expect(linkOf(toStored)).toBe(s.stored.id);
+      expect(linkOf(toTemp)).toBeNull();
+    }));
+
+  test('without its files, it carries no document and names every one as too large', () =>
+    withTestDb(async (tx) => {
+      const s = await seedDocuments(tx);
+      const records = await collect(new BackupWriter().records(s.user.id, tx));
+
+      expect(rowIds(records, 'documents')).toEqual([]);
+      expect(rowIds(records, 'document_extractions')).toEqual([]);
+      expect(records.filter((r) => r.type === 'file')).toEqual([]);
+      const header = records[0];
+      if (header?.type !== 'header' || !header.files) throw new Error('no header with files');
+      expect(header.files.included).toBe(false);
+      expect(header.files.omitted.map((o) => [o.documentId, o.reason]).sort()).toEqual(
+        [
+          [s.stored.id, 'too-large'],
+          [s.temp.id, 'too-large'],
+          [s.gone.id, 'too-large'],
+        ].sort()
+      );
+      const kept = occurrence(records, s.matchedKept.id);
+      expect(kept?.type === 'row' ? kept.row.matchedExtractionId : 'missing').toBeNull();
+      // The control: the rest of the account is still carried.
+      expect(rowIds(records, 'payment_occurrences')).toHaveLength(2);
+    }));
+
+  test('file() says how many files it carried and how many it left out as too large', () =>
+    withTestDb(async (tx) => {
+      const s = await seedDocuments(tx);
+      const writer = new BackupWriter();
+      const withFiles = await writer.file(s.user.id, tx, memoryFiles(s.files));
+      expect([withFiles.filesIncluded, withFiles.filesLeftOut]).toEqual([1, 0]);
+      const without = await writer.file(s.user.id, tx);
+      expect([without.filesIncluded, without.filesLeftOut]).toEqual([0, 3]);
     }));
 });

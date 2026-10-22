@@ -59,6 +59,7 @@ export function legacyStatementBatch(input: {
   accountId: string;
   result: StatementIngesterResult;
   uploadRef: string;
+  documentId?: string;
   fetchedAt: Date;
 }): FeedBatch {
   const { result } = input;
@@ -84,6 +85,7 @@ export function legacyStatementBatch(input: {
         ...result.closes.map((close) => close.at),
       ],
       uploadRef: input.uploadRef,
+      documentId: input.documentId,
     }),
     checkpoints: [
       ...result.closes.map((close) => ({
