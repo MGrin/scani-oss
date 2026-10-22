@@ -19,6 +19,80 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.55.0](https://github.com/MGrin/scani-oss/compare/v0.54.0...v0.55.0) (2026-10-22)
+
+
+### Features
+
+* **accounts:** a Statements section in the account details (SC-1656) ([d1b2a7b](https://github.com/MGrin/scani-oss/commit/d1b2a7bc7e85749563198bc8713e422455a911cf))
+* **accounts:** delete one account from its own peek (SC-1746) ([3a2d447](https://github.com/MGrin/scani-oss/commit/3a2d4475795d26dd48cc52bcbed3167dd4bfb665))
+* add Litecoin wallet imports with validated mainnet addresses ([80b4339](https://github.com/MGrin/scani-oss/commit/80b4339eb8e26bf2169912e5c6fec887dd01b0ec))
+* **app:** a Settings switch for AI category suggestions, and their note (SC-1695) ([ec5d1a2](https://github.com/MGrin/scani-oss/commit/ec5d1a21e2e962806f24567c7a66adabebcc7442))
+* **app:** the alert sheet starts on the linked account, figure fields first (SC-1727) ([2793fc2](https://github.com/MGrin/scani-oss/commit/2793fc2cd968e5d6bdf5a0da7a284d48f6c27724))
+* **backup:** uploaded documents travel with a backup (SC-1662) ([bafab2b](https://github.com/MGrin/scani-oss/commit/bafab2b8fe2600951bf7ebf272a0d5e5a8b57def))
+* categorize by transaction type where there is no payee text (SC-1720) ([1c30dcf](https://github.com/MGrin/scani-oss/commit/1c30dcf21b5b15d9c727a7333b7399c5fe3e02e5))
+* **dev-stack:** frozen installs fetch through a local npm cache when one answers (SC-1748) ([f5c8d8f](https://github.com/MGrin/scani-oss/commit/f5c8d8f84814d5aabf7a5be7cf58d6a577e767f1))
+* **domain:** a person with no categories gets the whole starter set (SC-1722) ([91762a3](https://github.com/MGrin/scani-oss/commit/91762a301bfc1c7a2d0da7d1ad658f011fb27ee3))
+* **file-import:** MT940 and CAMT.053 statements import (SC-1726) ([9c80951](https://github.com/MGrin/scani-oss/commit/9c809518968fcbe8c2099635de8de403b6bc3897))
+* **household:** Household page follows the Accounts pattern; More drawer reorder (SC-1712) ([2dab5f1](https://github.com/MGrin/scani-oss/commit/2dab5f16ef6c9419f0f15df69a49ac2227a3f3e4))
+* **import:** XLSX statements, and .xls files that are really HTML or XML (SC-1734) ([b4fd3ac](https://github.com/MGrin/scani-oss/commit/b4fd3acb76532bfa68df4dc041f49c3ffe147b0f))
+* **integrations:** hosted bunq notice names the statement to export (SC-1729) ([5a059c2](https://github.com/MGrin/scani-oss/commit/5a059c2baec230a0cfd9b6fb290e5737f7d36289))
+* **integrations:** say a bunq key can move money; guard read-only (SC-1729) ([f7a6c7e](https://github.com/MGrin/scani-oss/commit/f7a6c7ec9b7325c5da43f3319ea4071c0af6d3b5))
+* **jobs:** a single account refresh row names its account (SC-1724) ([b426390](https://github.com/MGrin/scani-oss/commit/b426390f803edd871b6d8bb2c8287301ba278a54))
+* **observability:** trace every getReturns call, tagged cold or warm (SC-1745) ([7930ba7](https://github.com/MGrin/scani-oss/commit/7930ba7be825d08c33ea3f3322760deb678c6724))
+* **providers:** Fio banka read-only token connector, self-hosted only (SC-1732) ([656deac](https://github.com/MGrin/scani-oss/commit/656deac0f5cdc2f7a5e8371f190cc2d8085cbae5))
+* **providers:** Investec connector, read-only, self-hosted only (SC-1731) ([2d258e1](https://github.com/MGrin/scani-oss/commit/2d258e10cbac663d4c9d71beebf2e2fffb0ed90e))
+* **shadow:** count typed values that disagree with the engine (SC-1628) ([936a717](https://github.com/MGrin/scani-oss/commit/936a71779f42069cf381b07f3e86d29e2cbd0332))
+
+
+### Bug Fixes
+
+* a 7-day history rebuild asks only for its 7 days of prices, and remembers what providers lacked (SC-1725) ([274cafb](https://github.com/MGrin/scani-oss/commit/274cafb00b62168dd06aab73398c1fdfd22dbfb1))
+* a rejected exchange key is not used again until its owner replaces it (SC-1728) ([abbd078](https://github.com/MGrin/scani-oss/commit/abbd0783432338f291eb2ef17c059fe17a881f93))
+* **accounts:** the sheet says why a token stopped, and a connected account is not "by hand" (SC-1733) ([c432221](https://github.com/MGrin/scani-oss/commit/c432221316e0e8af0bb6b93a2b89d258763e422f))
+* **agent-writes:** the first movement on a holding can be undone (SC-1682) ([15dcfa5](https://github.com/MGrin/scani-oss/commit/15dcfa5539eedef306166e5f599bb4f58f4f7e4c))
+* **api:** a token check that cannot reach the database answers 503, not 500 (SC-1762) ([7d08ce8](https://github.com/MGrin/scani-oss/commit/7d08ce8db1c7ce04bd14211a1c81744742fb3e83))
+* **app:** coalesce realtime invalidations, one refresh per burst (SC-1754) ([28c6bb4](https://github.com/MGrin/scani-oss/commit/28c6bb4d4f928e5875ab6a6c054913f3a791451b))
+* **app:** the Bills tile says "Nothing due soon"; the allocation-fold visual opens the peek (SC-1703) ([4115052](https://github.com/MGrin/scani-oss/commit/411505250cbea052cc5a62ea5e13e81164b77740))
+* **app:** the returnTo allow-list is read per call, not frozen at import (SC-1752) ([4fa1b2e](https://github.com/MGrin/scani-oss/commit/4fa1b2e27ca531ded6cb8e138655bdc4b0706262))
+* **auth:** the passkey prompt is not bounded by the 15 s auth deadline (SC-1752) ([0f45900](https://github.com/MGrin/scani-oss/commit/0f45900f3697333fef3e96f0d816c3fdc47d1159))
+* **db:** BaseRepository list reads return rows in id order (SC-1635) ([5ffbd77](https://github.com/MGrin/scani-oss/commit/5ffbd77e8a094b7ce26a8fc5bc7f5098c17c2d35))
+* **db:** settle every query on a reserved connection after its socket dies (SC-1761) ([745a22d](https://github.com/MGrin/scani-oss/commit/745a22df8202ddba1b57bd9e494f03ac697fa56b))
+* **feeds:** a holding's cache is rewritten once evidence dated after now happens (SC-1633) ([804a5d8](https://github.com/MGrin/scani-oss/commit/804a5d810a848dd1dff8ab75a3132a528af8eeca))
+* **gaps:** retire and undo keep a copied row in SQL, so its numbers come back exact (SC-1626) ([e3f80d8](https://github.com/MGrin/scani-oss/commit/e3f80d86e723cc9a74b2a74594c824de9b841f6c))
+* **holdings:** match statement sources with starts_with in the SC-1634 migration ([8b61c37](https://github.com/MGrin/scani-oss/commit/8b61c377972840a4d52ca1004fa659f0c161e5d8))
+* **holdings:** superseding an edit refreshes the holding's cache (SC-1666) ([d98c8b7](https://github.com/MGrin/scani-oss/commit/d98c8b79d4f4361cd874dba424fbcf7293b90326))
+* **home,settings:** pages show once, together, and nothing moves after (SC-1742) ([feb8d44](https://github.com/MGrin/scani-oss/commit/feb8d4416ef8d2df22e4c4b14b2c162f6dffda58))
+* **home:** Top holdings lists each symbol once, and returns survive a rebuild (SC-1707) ([bae17f5](https://github.com/MGrin/scani-oss/commit/bae17f59bbefad139565655cd1628a41e670abb8))
+* **import:** the currency question starts on the file's own currency, or on nothing (SC-1735) ([d6f3228](https://github.com/MGrin/scani-oss/commit/d6f32280542b8b89fc304f601d244e9fa2114455))
+* **jobs:** a cancelled or finished job row stays terminal (SC-1607) ([960b4f6](https://github.com/MGrin/scani-oss/commit/960b4f6a97adc177fb450135d265d23420f504f6))
+* **jobs:** a failed job says why it failed (SC-1711) ([0e9e040](https://github.com/MGrin/scani-oss/commit/0e9e0408af742a57d1edbd9cedf9711e793b0dd5))
+* **jobs:** a scheduled job's lock lives on its own client, so a dropped connection cannot hang the step (SC-1763) ([b1ffb3a](https://github.com/MGrin/scani-oss/commit/b1ffb3aff195dffcbc706167397392ab843975a8))
+* **jobs:** job progress survives a status report, and review items refresh when a job ends (SC-1715) ([0df8619](https://github.com/MGrin/scani-oss/commit/0df86198ed0165b294ba75bc80651d790a82ab25))
+* **jobs:** no payload value can put ':' in a user job id (SC-1710) ([7736935](https://github.com/MGrin/scani-oss/commit/773693559ee098294b290218caf43ab12c8e26be))
+* **jobs:** the balance note says what was computed (SC-1736) ([b9a0598](https://github.com/MGrin/scani-oss/commit/b9a0598c98c990471b5980b4057a2290385641bc))
+* **landing:** walkthrough opens Returns and Bills on their titles; captions are whole sentences (SC-1719) ([6a91a6b](https://github.com/MGrin/scani-oss/commit/6a91a6b226aab080d19420786c1add976a15deee))
+* name the kept alert tables until their drop (SC-1727) ([a2e696c](https://github.com/MGrin/scani-oss/commit/a2e696cea7dc0c166b9b26cd26b2302cce56e03c))
+* **privacy:** migration archive tables go with the rows they copied (SC-1753) ([d320a4c](https://github.com/MGrin/scani-oss/commit/d320a4c5d63696dbe2bab2b7b16ad1b8e994c7a3))
+* **providers:** keyless CoinGecko spaces its calls, and a retry takes a slot (SC-1706) ([50cfe18](https://github.com/MGrin/scani-oss/commit/50cfe1821e5e64f30b9eb31d782ebf5668c71ec5))
+* **providers:** leave blockchain.info alone after a 429, read the balance from mempool.space (SC-1716) ([a759e66](https://github.com/MGrin/scani-oss/commit/a759e66c5eafd489a1a901d6077ba713cb9c01c1))
+* **returns:** drift evidence judges checkpoints in one pass (SC-1745) ([87c1220](https://github.com/MGrin/scani-oss/commit/87c1220c83d6f290e84f1653010e31c053b48e99))
+* **returns:** skip the days before a holding counts in the value range (SC-1745) ([0cb75f0](https://github.com/MGrin/scani-oss/commit/0cb75f0a44a6cd5b15e5c39dbae630015bfb231d))
+* **rollup:** full rebuilds stop creeping back, and rollup rows go with what they describe (SC-1627) ([9c947e1](https://github.com/MGrin/scani-oss/commit/9c947e1984525057d15119ee5f96bcf10dcca504))
+* **self-host:** bind, record and print the port compose will use (SC-1709) ([972b510](https://github.com/MGrin/scani-oss/commit/972b510d3a9477e6cff2c527405464e1329b2f9a))
+* **settings:** rows on a full account arrive with their area, and nothing moves (SC-1743) ([d958b0c](https://github.com/MGrin/scani-oss/commit/d958b0cea91e39b603e83cd08a3459fd816f277a))
+* **ui:** a row's mark shows its letter until the logo has loaded (SC-1699) ([4f38a4a](https://github.com/MGrin/scani-oss/commit/4f38a4a83978ba6535c090ed7e3cae67cb0bcc73))
+* **v3:** the page moves 1:1 with the finger while the phone bars slide (SC-1714) ([f1bc4f7](https://github.com/MGrin/scani-oss/commit/f1bc4f75463b253d12c94de4504bd451861e1ff8))
+* **worker:** a Postgres connection drop the worker survives reports as a warning (SC-1738) ([4b0ef92](https://github.com/MGrin/scani-oss/commit/4b0ef9290c8e62525c740303b22886c21645b376))
+* **worker:** an expired exchange key waits on its owner, not on a page (SC-1749) ([a95d585](https://github.com/MGrin/scani-oss/commit/a95d585fd84d1fb23ca5cf8f0c52984da977d2e8))
+* **worker:** the hourly AI categorize step stops in time and resumes next hour (SC-1704) ([6b1a826](https://github.com/MGrin/scani-oss/commit/6b1a8263931d8f3c09eb5da78dc2925afb21b236))
+
+
+### Performance Improvements
+
+* **portfolio:** read each holding's newest rollup row by LATERAL (SC-1741) ([0258a26](https://github.com/MGrin/scani-oss/commit/0258a2672b8d6a9e364c80f2a6383b759cde637e))
+* **returns:** bounded reads for measured days and the data version (SC-1741) ([644a440](https://github.com/MGrin/scani-oss/commit/644a44003e0b37237c81151fa1fde10cd44dad22))
+
 ## [0.54.0](https://github.com/MGrin/scani-oss/compare/v0.53.0...v0.54.0) (2026-10-11)
 
 
