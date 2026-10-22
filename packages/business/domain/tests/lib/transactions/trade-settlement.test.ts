@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  ownFeeLegFor,
   settlementLegsFor,
   tradesWithReportedCashSide,
 } from '../../../src/lib/transactions/trade-settlement';
@@ -195,5 +196,28 @@ describe('tradesWithReportedCashSide', () => {
 
   test('a mirror with a different amount is not the same conversion', () => {
     expect(tradesWithReportedCashSide([base, { ...quote, quantity: '-545.26' }]).size).toBe(0);
+  });
+});
+
+/**
+ * A KuCoin ledger row's `amount` is the balance change with its fee included,
+ * so the fee is not taken again as a row of its own (SC-1575). Kraken's amount
+ * is gross of its fee, which is why it gets one; it is the control.
+ */
+describe('a fee already inside the row it rides on (SC-1575)', () => {
+  const withdrawal = {
+    kind: 'withdraw',
+    tokenId: 'token-btc',
+    feeQuantity: '-0.0005',
+    feeTokenId: 'token-btc',
+    externalId: 'ledger:L-wd',
+  } as const;
+
+  test('a KuCoin withdrawal writes no fee row: its ledger amount already includes the fee', () => {
+    expect(ownFeeLegFor({ ...withdrawal, source: 'kucoin-api' })).toBeNull();
+  });
+
+  test('control: a Kraken withdrawal, gross of its fee, gets one', () => {
+    expect(ownFeeLegFor({ ...withdrawal, source: 'kraken-api' })?.quantity).toBe('-0.0005');
   });
 });
