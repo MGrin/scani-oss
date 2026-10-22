@@ -535,6 +535,13 @@ jobs:
           # One suite run signs in more new addresses than the api's hourly
           # cap on them allows (SC-1260).
           AUTH_NEW_ADDRESS_SENDS_PER_HOUR: "100000"
+          # Every test that signs up a user starts that user's history
+          # backfill, about 15 chunks of a second each, and on this 4-vCPU
+          # runner they hold all four default slots long enough that a short
+          # job waits past the fixture's 60 s budget (SC-1765). Measured
+          # locally on one suite slice: queue-wait p90 12.6 s at 4, 1.5 s at 8;
+          # a lone backfill costs the same on main and on this tree.
+          WORKER_CONCURRENCY: "8"
 
       # `docker compose up` reports only `service "x" didn't complete
       # successfully: exit 1` and discards the container's own output, so a

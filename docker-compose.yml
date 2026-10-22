@@ -411,7 +411,7 @@ services:
       # Must match the api's ENCRYPTION_KEY so integration credentials
       # persisted by the api can be decrypted at job-run time.
       ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef
-      WORKER_CONCURRENCY: "4"
+      WORKER_CONCURRENCY: "${WORKER_CONCURRENCY:-4}"
       S3_ENDPOINT: http://seaweedfs:8333
       S3_PUBLIC_ENDPOINT: "http://localhost:${SEAWEEDFS_S3_HOST_PORT:-9000}"
       S3_ACCESS_KEY_ID: scani-dev
