@@ -215,28 +215,53 @@ function install(fixture: Fixture): ReturnsService {
         wanted
           ? undefined
           : fixture.transitDays?.find((t) => t.date === d.date && t.holdingId === d.holdingId);
-      return fixture.days
-        .filter((d) => d.date >= fromStr && d.date <= toStr)
-        .filter((d) => !wanted || wanted.has(d.holdingId))
-        .map((d) => ({
-          snapshotDate: d.date,
-          holdingId: d.holdingId,
-          totalValue: transitOf(d)
-            ? new Decimal(d.value).add(transitOf(d)?.value ?? '0').toString()
-            : d.value,
-          costBasis: null,
-          realizedPnl: null,
-          unrealizedPnl: null,
-          coverageQuality: d.quality ?? 'full',
-          holdingsWithKnownValue: d.known ?? 1,
-          holdingsTotal: d.total ?? 1,
-          holdingsUnpriceable: 0,
-          holdingsStalePriced: d.stale ?? 0,
-          holdingsInterpolated: d.interpolated ?? 0,
-          holdingsBeforeRecords: d.beforeRecords ?? 0,
-          holdingsBasisUnknown: 0,
-          transfersUnreviewed: 0,
-        }));
+      return (
+        fixture.days
+          .filter((d) => d.date >= fromStr && d.date <= toStr)
+          .filter((d) => !wanted || wanted.has(d.holdingId))
+          // As the repository does: a day before the holding counts is not read,
+          // unless money in transit sits on it (SC-1745).
+          .filter((d) => (d.total ?? 1) > 0 || transitOf(d) !== undefined)
+          .map((d) => ({
+            snapshotDate: d.date,
+            holdingId: d.holdingId,
+            totalValue: transitOf(d)
+              ? new Decimal(d.value).add(transitOf(d)?.value ?? '0').toString()
+              : d.value,
+            costBasis: null,
+            realizedPnl: null,
+            unrealizedPnl: null,
+            coverageQuality: d.quality ?? 'full',
+            holdingsWithKnownValue: d.known ?? 1,
+            holdingsTotal: d.total ?? 1,
+            holdingsUnpriceable: 0,
+            holdingsStalePriced: d.stale ?? 0,
+            holdingsInterpolated: d.interpolated ?? 0,
+            holdingsBeforeRecords: d.beforeRecords ?? 0,
+            holdingsBasisUnknown: 0,
+            transfersUnreviewed: 0,
+          }))
+      );
+    },
+    // Every holding with a row in range, counted or not: what the range read
+    // no longer shows (SC-1745).
+    findHoldingIdsInRange: async (
+      _userId: string,
+      baseCurrencyId: string,
+      from: Date,
+      to: Date,
+      holdingIds?: readonly string[]
+    ) => {
+      if (baseCurrencyId !== (fixture.userBaseCurrencyId ?? BASE)) return new Set<string>();
+      const fromStr = from.toISOString().slice(0, 10);
+      const toStr = to.toISOString().slice(0, 10);
+      const wanted = holdingIds ? new Set(holdingIds) : null;
+      return new Set(
+        fixture.days
+          .filter((d) => d.date >= fromStr && d.date <= toStr)
+          .filter((d) => !wanted || wanted.has(d.holdingId))
+          .map((d) => d.holdingId)
+      );
     },
     // Derived from the SAME `fixture.days` as the range read above, and
     // filtered the same way, so the two cannot drift apart inside a test and
@@ -1675,6 +1700,31 @@ describe('Returns eligibility is decided per holding (SC-1421)', () => {
       measuredHoldings: 2,
       excluded: [{ reason: 'incomplete-flow-coverage', holdings: 1 }],
       excludedValue: '2000',
+      enteredLate: 0,
+      unpricedAtZero: 0,
+    });
+  });
+
+  test('a holding whose window is all before it counts is still measured (SC-1745)', async () => {
+    // The range read skips those days; the holding must not vanish with them,
+    // or its reasons stop withholding it and the subset stops naming it.
+    const result = ok(
+      await install({
+        ...fixture,
+        days: [
+          ...fixture.days.filter((d) => d.holdingId === 'h1'),
+          { holdingId: 'h2', date: '2026-03-01', value: '0', known: 0, total: 0 },
+          { holdingId: 'h2', date: '2026-03-10', value: '0', known: 0, total: 0 },
+        ],
+        incompleteHoldings: ['h2'],
+      }).compute(request())
+    );
+    expect(Number(result.twr?.cumulative)).toBeCloseTo(0.1, 12);
+    expect(result.subset).toEqual({
+      includedHoldings: 1,
+      measuredHoldings: 2,
+      excluded: [{ reason: 'incomplete-flow-coverage', holdings: 1 }],
+      excludedValue: '0',
       enteredLate: 0,
       unpricedAtZero: 0,
     });

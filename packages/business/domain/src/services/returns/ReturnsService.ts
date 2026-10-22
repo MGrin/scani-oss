@@ -127,6 +127,12 @@ export interface ReturnsRequest {
   window: ReturnWindowRequest;
   /** Injected so a YTD window is testable. Defaults to now. */
   now?: Date;
+  /**
+   * A rebuild that has just finished, asking from inside its own job: its row
+   * is still in flight until the job returns, and must not withhold the
+   * history it wrote (SC-1707). Any other pending rebuild still does.
+   */
+  ignoreRebuildJobId?: string;
 }
 
 /**
@@ -286,13 +292,21 @@ export class ReturnsService {
     // the gap, and the flows counted for it span exactly the same gap, so the
     // arithmetic stays right and only the reported `effectiveWindow` widens.
     const anchorFrom = new Date(window.from.getTime() - ANCHOR_LOOKBACK_DAYS * DAY_MS);
-    const [rows, currencyByHolding] = await Promise.all([
+    const scopedIds = request.scope.kind === 'user' ? undefined : holdings.map((h) => h.holdingId);
+    const [rows, presentHoldingIds, currencyByHolding] = await Promise.all([
       this.dailyRepository.findIncludedHoldingValueRange(
         request.userId,
         baseCurrencyId,
         anchorFrom,
         window.to,
-        request.scope.kind === 'user' ? undefined : holdings.map((h) => h.holdingId)
+        scopedIds
+      ),
+      this.dailyRepository.findHoldingIdsInRange(
+        request.userId,
+        baseCurrencyId,
+        anchorFrom,
+        window.to,
+        scopedIds
       ),
       // Which currency each holding's own price is set in, so the value series
       // can be split by currency as it is folded rather than re-walked after.
@@ -340,8 +354,9 @@ export class ReturnsService {
     // flows. A holding with transactions but no rollup row is absent from the
     // value side too, and booking its flows against a value that never moved
     // would be a pure fabrication.
-    const measuredHoldingIds = new Set(rows.map((row) => row.holdingId));
-    const measured = holdings.filter((h) => measuredHoldingIds.has(h.holdingId));
+    // Named by its own read: the rows above leave out a holding's days before
+    // it counts, and a holding with only those is still measured (SC-1745).
+    const measured = holdings.filter((h) => presentHoldingIds.has(h.holdingId));
 
     // At user scope the value series carries money in transit from the outflow
     // until it lands, so the flows must say the same (SC-1675). An account, a
@@ -371,7 +386,12 @@ export class ReturnsService {
         // than comparing timestamps is what lets this clear: the post-import
         // rollup only rewrites recent days, so a timestamp check stayed on for
         // most accounts (SC-1396, measured on production).
-        this.userJobs.findInFlightByName(request.userId, HISTORY_REBUILD_JOB_NAME),
+        this.userJobs.findInFlightByName(
+          request.userId,
+          HISTORY_REBUILD_JOB_NAME,
+          undefined,
+          request.ignoreRebuildJobId
+        ),
         this.holdingCoverage.findRebuildGoesNegative(measured.map((h) => h.holdingId)),
         this.holdingCoverage.findUnchangedSinceFirstReading(measured.map((h) => h.holdingId)),
         this.holdingRepository.findIdsOnLiabilityAccounts(measured.map((h) => h.holdingId)),
