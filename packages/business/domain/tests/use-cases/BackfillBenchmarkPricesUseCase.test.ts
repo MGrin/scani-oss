@@ -32,6 +32,7 @@ const THREE_DAYS_DROPPED: RangeOutcome = {
   inserted: 0,
   alreadyHad: 0,
   providerMissing: 0,
+  missingDays: [],
   droppedDays: 3,
   droppedBars: 5,
   providerUsed: null,

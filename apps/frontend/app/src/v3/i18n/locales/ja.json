@@ -131,7 +131,8 @@
         "empty_other": "今後{{count}}日間に期日の予定はありません。",
         "addPayment": "支払を追加",
         "incomeExpected_other": "見込み収入（今後{{count}}日間）",
-        "dueNext_other": "支払い{{count}}件 · 次回は{{when}}"
+        "dueNext_other": "支払い{{count}}件 · 次回は{{when}}",
+        "tileEmpty": "近日中の支払いなし"
       },
       "metric": {
         "netWorth": "純資産",
@@ -1363,7 +1364,8 @@
       "backup": {
         "title": "バックアップ",
         "intro": "アカウントを1つのファイルにまとめます。すべての口座、保有資産、取引、残高の記録に加え、設定とルールも含まれます。",
-        "notIncluded": "まだ含まれないもの：アップロードした書類。取引所や銀行との接続は常に含まれません。これらは認証情報であり、記録ではないためです。",
+        "notIncluded": "取引所や銀行との接続は常に含まれません。これらは認証情報であり、記録ではないためです。",
+        "filesLeftOut": "このバックアップに含まれないアップロードファイル: {{files}}。含めると、復元で受け付ける上限 {{limit}} を超えるためです。",
         "last": "最終バックアップ {{date}} · {{size}}",
         "make": "バックアップを作成",
         "making": "バックアップを作成中…",
@@ -1692,6 +1694,13 @@
         "confirming": "確認中…",
         "blockerCode": "6桁のコードを入力",
         "passkeyFailed": "このデバイスではパスキーを保存できませんでした。"
+      },
+      "aiCategories": {
+        "title": "AIによるカテゴリの提案",
+        "label": "AIでカテゴリを提案する",
+        "sent": "オンにすると、各支払先の説明・名前・方向（入金または出金）・通貨が、数字をすべて除いたうえでAIプロバイダーに送信されます。金額・日付・カード番号・口座名は送信されません。提案は1時間以内に届き、「AIによる提案」と表示されます。",
+        "unavailable": "このインスタンスには提案用のAIプロバイダーがありません。",
+        "saving": "AI提案の設定を保存しています"
       }
     },
     "feedback": {
@@ -2223,7 +2232,7 @@
         },
         "exchange": {
           "title": "取引所・証券会社のログイン",
-          "description": "読み取り専用のAPIキーです。保存時に暗号化されます。"
+          "description": "Scaniは追加されたキーを読み取りにのみ使い、保存時に暗号化します。"
         },
         "manual": {
           "title": "数値そのもの",
@@ -2253,7 +2262,7 @@
         },
         "statement": {
           "title": "明細ファイルをアップロード",
-          "description": "銀行や証券会社が出力したCSV、TSV、OFX、QIFです。保有資産と取引をすぐに取り込み、そのあとで追加された内容をお見せします。"
+          "description": "銀行や証券会社が出力したCSV、TSV、OFX、QIF、MT940、CAMT.053です。保有資産と取引をすぐに取り込み、そのあとで追加された内容をお見せします。"
         },
         "either": {
           "title": "ファイルをアップロード",
@@ -2262,7 +2271,7 @@
         "whereItBelongs": "登録先"
       },
       "formats": {
-        "import": "PNG、JPG、WEBP、PDF、CSV、TSV、OFX、QIF",
+        "import": "PNG、JPG、WEBP、PDF、CSV、TSV、XLSX、XLS、OFX、QIF、MT940、CAMT.053",
         "invoice": "PDF、PNG、JPG、WEBP"
       },
       "stage": {
@@ -2418,18 +2427,31 @@
       "integration": {
         "title": "サービスを接続",
         "subtitle": "読み取り専用のキーを1組。保存時に暗号化されます。",
-        "listSubtitle": "読み取り専用のAPIキーで、保存時に暗号化されます。残高は1時間ごとに同期されます。同じサービスをもう一度接続すると、そのキーが置き換えられます。",
+        "listSubtitle": "Scaniは追加されたキーを読み取りにのみ使い、保存時に暗号化します。残高は1時間ごとに同期されます。同じサービスをもう一度接続すると、そのキーが置き換えられます。",
         "allServices": "すべてのサービス",
         "thisService": "このサービス",
         "notFoundTitle": "対応していないサービスです",
         "notFoundBody": "その名前の連携はScaniにありません。名称が変わったか、リンクが古い可能性があります。",
         "connectNamed": "{{name}} を接続",
         "permissions": "Scaniに必要なのは読み取り専用の権限だけです。キーは保存時に暗号化され、当方のワーカーの外に出ることはありません。",
+        "permissionsOnYourServer": "Scaniはこのキーを読み取りにのみ使います。キーは保存時に暗号化され、Scaniが動作するサーバー上にとどまります。",
+        "permissionsOnYourServerPlural": "Scaniはこの認証情報を読み取りにのみ使います。認証情報は保存時に暗号化され、Scaniが動作するサーバー上にとどまります。",
+        "permissionsOnYourServerToken": "Scaniはこのトークンを読み取りにのみ使います。トークンは保存時に暗号化され、Scaniが動作するサーバー上にとどまります。",
         "whereToGet": "キーの取得方法",
+        "whereToGetOne": "取得方法",
         "credentials": "認証情報",
         "ownDocs": "{{name}} の公式ドキュメント",
         "unverifiedTitle": "{{name}} のキーを確認できませんでした",
-        "unverifiedDetail": "{{name}} から応答がなかったため、キーが正しいかどうか判断できません。何も保存していません。1分ほど待って再試行してください。"
+        "unverifiedDetail": "{{name}} から応答がなかったため、キーが正しいかどうか判断できません。何も保存していません。1分ほど待って再試行してください。",
+        "selfHostedOnly": "セルフホストのみ",
+        "selfHostedOnlyTitle": "セルフホスト版 Scani で利用可能",
+        "selfHostedOnlyBody": "{{reason}}{{name}} を接続するにはご自身のサーバーで Scani を運用するか、代わりに明細ファイルをアップロードしてください。",
+        "selfHostedOnlyBodyExport": "{{reason}}{{name}} から明細を {{formats}} 形式でエクスポートしてここにアップロードするか、ご自身のサーバーで Scani を運用して {{name}} を接続してください。",
+        "selfHostedOnlyReasonBunq": "{{name}} は個人用 API キーをご自身で運用するソフトウェアでのみ使用することを認めているため、ホスト版 Scani では接続できません。",
+        "selfHostedOnlyReasonFio": "{{name}} はトークンを第三者が使用した場合の責任をすべてご本人に負わせるため、ホスト版 Scani ではトークンをお預かりしません。",
+        "selfHostedOnlyReasonInvestec": "{{name}} はこの認証情報をご本人またはご自身の事業専用に発行しているため、ホスト版 Scani では接続できません。",
+        "selfHostedOnlyReasonOther": "{{name}} はセルフホスト版 Scani でのみ接続できます。",
+        "keyCanMoveMoney": "{{name}} の API キーは支払いもできます。{{name}} には読み取り専用のキーがありません。Scani はこのキーを読み取りにのみ使い、暗号化して保存します。"
       },
       "demoNote": "ここで入力した内容は保存されません。これはデモです。",
       "backChoices": "選択肢に戻る",
@@ -2560,13 +2582,21 @@
         "unknownInstitution": "金融機関不明",
         "unknownType": "種類不明",
         "neverSynced": "なし — この口座は手動で管理されています",
+        "neverSyncedConnected": "未同期 — この接続はまだ同期されていません",
         "valueByAccount": "口座別の評価額",
         "byHand": "手動",
+        "notSyncedYet": "未同期",
         "lastSyncOverdue": "{{when}} · 遅延",
         "sublabel_other": "{{institution}} · 保有資産{{count}}件",
         "syncOverdue": "同期が遅延しています",
-        "keyRejected": "キーが拒否されました",
+        "keyRejected": "再接続が必要です",
         "keyRejectedReconnect": "キーが拒否されました — 再接続",
+        "tokenExpired": "トークンの期限切れ",
+        "keyExpired": "キーの期限切れ",
+        "addNewToken": "新しいトークンを追加",
+        "addNewKey": "新しいキーを追加",
+        "tokenStoppedNotice": "{{name}} はこのトークンを受け付けなくなりました。{{name}} のトークンの有効期間は最長 {{days}} 日です。",
+        "keyStoppedNotice": "{{name}} はこのキーを受け付けなくなりました。{{name}} のキーの有効期間は最長 {{days}} 日です。",
         "viewHoldings": "保有資産を見る",
         "assignGroups": "グループを割り当て",
         "pageTitle": "口座",
@@ -2577,6 +2607,11 @@
         "balancesAsOf": "残高の基準日時",
         "groups": "グループ",
         "bulkDeleteConsequence_other": "{{names}} が削除され、その中のすべての保有資産と取引履歴も削除されます。この操作は取り消せません。",
+        "deleteAction": {
+          "trigger": "削除",
+          "commit": "{{name}} を削除",
+          "consequence": "{{name}} と、その中のすべての保有資産が削除されます。この口座の評価額は純資産チャートの過去のすべての日から消え、実現損益も一緒に消えます。この操作は取り消せません。"
+        },
         "toast": {
           "deleted": "口座を削除しました",
           "deletingContext": "口座を削除しています",
@@ -2885,7 +2920,8 @@
         "backup": "バックアップ",
         "restore": "バックアップの復元",
         "budgetAppImport": "家計簿アプリのインポート",
-        "budgetAppUndo": "家計簿アプリのインポートの取り消し"
+        "budgetAppUndo": "家計簿アプリのインポートの取り消し",
+        "accountRefresh": "口座の更新"
       },
       "review": {
         "title": "読み取った保有資産を確認",
@@ -3089,7 +3125,7 @@
           "statementClose": "明細の締め残高",
           "noClosingBalance": "締め残高なし",
           "balanceUnknown": "残高不明",
-          "fromRows": "これらの行から算出。以前から残高があった場合は実際の残高を設定してください",
+          "fromRows": "残高はこれらの行から算出。以前から残高があった場合は実際の残高を設定してください",
           "setBalance": "残高を設定"
         },
         "warningsTitle_other": "警告{{count}}件",
@@ -3098,6 +3134,7 @@
         "currency": {
           "title": "この明細の通貨はどれですか？",
           "body_other": "このファイルから{{count}}件の取引を読み取りましたが、通貨の記載がなく、判別もできませんでした。まだ何も取り込まれていません。",
+          "bodySuggested_other": "このファイルから{{count}}件の取引を読み取りました。ファイルに{{currency}}の記載があるため、下で{{currency}}を選択しています。取り込む前に確認してください。まだ何も取り込まれていません。",
           "preview": "{{total}} 中 {{shown}}",
           "noDescription": "説明なし",
           "fieldLabel": "明細の通貨",
@@ -3114,7 +3151,7 @@
           "monthFirst": "月が先 — 12/31"
         },
         "columns": {
-          "title": "CSV列を対応付け",
+          "title": "ファイルの列を対応付け",
           "body": "ファイルの列を選択してください。まだ何もインポートされていません。符号付き金額、または入金と出金の別々の列を選びます。",
           "date": "日付",
           "description": "説明",
@@ -3169,7 +3206,8 @@
         "unrecoverable": {
           "label": "失敗 — 再試行しません",
           "sentence": "再度試しても解消しない理由で失敗し、お見せできる記録も残っていません。そのまま再実行しても同じように失敗します。",
-          "sentenceWithDetail": "再度試しても解消しない理由で失敗しました。下の詳細を確認して修正したうえで、もう一度実行してください。"
+          "sentenceWithDetail": "再度試しても解消しない理由で失敗しました。下の詳細を確認して修正したうえで、もう一度実行してください。",
+          "sentenceWithFileDetail": "このファイルはこのままではインポートできません。再度試しても結果は変わりません。"
         },
         "sourceUnavailable": {
           "label": "失敗 — 後で再試行してください",
@@ -3194,6 +3232,9 @@
         "settling": {
           "label": "失敗",
           "sentence": "前回の試行が失敗しました。他に待機中のものがあるか確認しています。"
+        },
+        "unexplained": {
+          "sentence": "予期しないエラーで停止したため、お見せできる理由はありません。詳細は Scani チーム向けに保存されています。"
         }
       },
       "budgetApp": {
@@ -3210,6 +3251,13 @@
         "rowsRemoved": "削除した行",
         "accountsRemoved": "削除した口座",
         "accountsKept_other": "インポートで開設した{{count}}口座は残しました。その後、別の記録が書き込まれています。"
+      },
+      "burst": {
+        "refreshing_other": "{{count}}件の口座を更新中",
+        "refreshed_other": "{{count}}件の口座を更新しました",
+        "progress": "{{total}}件中{{done}}件完了",
+        "failed_other": "{{count}}件失敗",
+        "accountsHeading": "更新した口座"
       }
     },
     "membership": {
@@ -3367,10 +3415,17 @@
         "chart": "過去1年の世帯の純資産",
         "allocation": "配分",
         "accounts": "共有口座",
-        "accountOwner": "{{name}} · {{owner}}",
         "you": "あなた",
         "trackedTwice": "お二人とも {{name}} を記録しています。片方の共有を解除してください",
-        "link": "世帯"
+        "link": "世帯",
+        "members": "メンバー",
+        "manage": "管理",
+        "invited": "招待中",
+        "memberYou": "{{name}}（あなた）",
+        "memberShares_other": "{{role}} · {{count}} 件の口座を共有",
+        "memberSharesNothing": "{{role}} · まだ共有なし",
+        "accountSublabel": "{{owner}} · {{institution}}",
+        "shareAccounts": "口座を共有"
       }
     },
     "budgetApp": {
@@ -3488,6 +3543,8 @@
       "auto": {
         "marker": "自動で設定",
         "reasonRule": "{{payee}} に以前選んだカテゴリと一致",
+        "reasonAi": "AIによる提案",
+        "reasonKind": "取引の種類から設定",
         "keep": "このままにする",
         "kept": "カテゴリを確定しました",
         "spread_other": "似た取引 {{count}} 件にも設定しました。"
@@ -3597,6 +3654,12 @@
         "exempt": "非課税枠",
         "advantaged": "優遇"
       }
+    },
+    "statements": {
+      "fileNotKept": "ファイルは保存されていません",
+      "gaps": "{{months}}の明細書がありません。",
+      "noGaps": "最初の明細書以降、すべての月に明細書があります。",
+      "title": "取引明細書"
     }
   }
 }

@@ -65,7 +65,8 @@ const RENDERED_BY: Record<string, string> = {
 };
 
 const SRC = join(import.meta.dir, '../../../src');
-const RELATIVE_CALL = /\b(formatRelative|occurredLabel)\(/;
+// lastSyncFact and lastSyncColumn call formatRelative from a .ts lib, out of this scan's sight.
+const RELATIVE_CALL = /\b(formatRelative|occurredLabel|lastSyncFact|lastSyncColumn)\(/;
 const TICK_CALL = /\buseRelativeTimeTick\(\)/;
 
 function tsxFiles(dir: string): string[] {

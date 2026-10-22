@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { OutflowRateLimiter } from '@scani/rate-limiter';
+import { ProviderError } from '../../src/core/errors';
 import { BitcoinProvider } from '../../src/providers/bitcoin';
 
 function passthroughLimiter(): OutflowRateLimiter {
@@ -369,3 +370,135 @@ test.skipIf(process.env.SCANI_LIVE !== '1')(
   },
   60_000
 );
+
+// SC-1711: a plain Error made a 429 indistinguishable from a bug, so the job
+// page could say nothing about why a refresh failed.
+describe('BitcoinProvider: a non-2xx answer is a classified ProviderError (SC-1711)', () => {
+  async function thrownBy(status: number, call: (p: BitcoinProvider) => Promise<unknown>) {
+    const p = new BitcoinProvider(passthroughLimiter());
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response('Rate limited', { status })) as unknown as typeof fetch;
+    try {
+      await call(p);
+    } catch (error) {
+      return error;
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+    throw new Error('expected a throw');
+  }
+
+  const paths: Array<[string, (p: BitcoinProvider) => Promise<unknown>]> = [
+    ['fetchBalances', (p) => p.fetchBalances(ctx as never)],
+    ['fetchTransactions', (p) => p.fetchTransactions(ctx as never)],
+    ['hasActivity', (p) => p.hasActivity(WALLET, 'bitcoin', ctx as never)],
+  ];
+
+  for (const [name, call] of paths) {
+    test(`${name}: 429 is rate-limited, from bitcoin, without the address`, async () => {
+      const error = await thrownBy(429, call);
+      expect(error).toBeInstanceOf(ProviderError);
+      expect((error as ProviderError).kind).toBe('rate-limited');
+      expect((error as ProviderError).providerKey).toBe('bitcoin');
+      expect((error as ProviderError).status).toBe(429);
+      expect((error as Error).message).not.toContain(WALLET);
+    });
+  }
+
+  test('CONTROL: a 503 is retryable, not rate-limited', async () => {
+    const error = await thrownBy(503, (p) => p.fetchBalances(ctx as never));
+    expect((error as ProviderError).kind).toBe('retryable');
+  });
+});
+
+// SC-1716: blockchain.info's 429 is a long penalty on the server's IP, and
+// every retry inside it kept it alive: the worker's one Bitcoin wallet went
+// unsynced from 05:03Z to past 07:19Z on 2026-10-11 while mempool.space and
+// blockchain.info itself answered 200 from elsewhere.
+describe('BitcoinProvider: blockchain.info is left alone after a 429 (SC-1716)', () => {
+  const MEMPOOL = {
+    chain_stats: { funded_txo_sum: 100_000_000, spent_txo_sum: 40_000_000 },
+    mempool_stats: { funded_txo_sum: 5_000_000, spent_txo_sum: 0 },
+  };
+
+  function stubFetch(blockchainInfoStatus: number) {
+    const calls = { blockchainInfo: 0, mempool: 0 };
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      if (String(url).includes('mempool.space')) {
+        calls.mempool++;
+        return new Response(JSON.stringify(MEMPOOL), { status: 200 });
+      }
+      calls.blockchainInfo++;
+      if (blockchainInfoStatus !== 200)
+        return new Response('Rate limited', { status: blockchainInfoStatus });
+      return new Response(
+        JSON.stringify({
+          address: WALLET,
+          final_balance: 50_000_000,
+          n_tx: 3,
+          total_received: 0,
+          txs: [],
+        }),
+        { status: 200 }
+      );
+    }) as unknown as typeof fetch;
+    return { calls, restore: () => (globalThis.fetch = originalFetch) };
+  }
+
+  test('a 429 costs one request, and the balance comes from mempool.space', async () => {
+    const { calls, restore } = stubFetch(429);
+    try {
+      const out = await new BitcoinProvider(passthroughLimiter()).fetchBalances(ctx as never);
+      expect(calls.blockchainInfo).toBe(1);
+      expect(out[0]?.balance).toBe('0.65');
+    } finally {
+      restore();
+    }
+  });
+
+  test('inside the penalty, no call reaches blockchain.info', async () => {
+    const { calls, restore } = stubFetch(429);
+    try {
+      const p = new BitcoinProvider(passthroughLimiter());
+      await p.fetchBalances(ctx as never);
+      const second = await p.fetchBalances(ctx as never);
+      const activity = await p.hasActivity(WALLET, 'bitcoin', ctx as never).catch((e) => e);
+      const txs = await p.fetchTransactions(ctx as never).catch((e) => e);
+
+      expect(calls.blockchainInfo).toBe(1);
+      expect(second[0]?.balance).toBe('0.65');
+      expect((activity as ProviderError).kind).toBe('rate-limited');
+      expect((activity as ProviderError).retryAfterMs).toBeGreaterThan(0);
+      expect((txs as ProviderError).kind).toBe('rate-limited');
+    } finally {
+      restore();
+    }
+  });
+
+  test('CONTROL: with no 429, mempool.space is never asked', async () => {
+    const { calls, restore } = stubFetch(200);
+    try {
+      const out = await new BitcoinProvider(passthroughLimiter()).fetchBalances(ctx as never);
+      expect(out[0]?.balance).toBe('0.5');
+      expect(calls.mempool).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+
+  test('a 503 is not a penalty: the next call asks blockchain.info again', async () => {
+    const { calls, restore } = stubFetch(503);
+    try {
+      const p = new BitcoinProvider(passthroughLimiter());
+      await p.fetchBalances(ctx as never).catch(() => undefined);
+      const before = calls.blockchainInfo;
+      await p.fetchBalances(ctx as never).catch(() => undefined);
+      expect(calls.blockchainInfo).toBeGreaterThan(before);
+      expect(calls.mempool).toBe(0);
+    } finally {
+      restore();
+    }
+  });
+});

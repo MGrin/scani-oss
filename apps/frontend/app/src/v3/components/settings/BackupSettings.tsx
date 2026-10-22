@@ -1,4 +1,4 @@
-import { formatBytes, formatDate } from '@scani/shared';
+import { BACKUP_UPLOAD_MAX_BYTES, formatBytes, formatDate } from '@scani/shared';
 import { Button } from '@scani/ui/ui/button';
 import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { Block } from '@scani/ui/v3/components/Block';
@@ -13,8 +13,9 @@ import { uploadToR2 } from '@/v3/lib/r2-upload';
  * A backup (SC-1649): every row the account owns, in one file the worker
  * writes. Unlike the export above it carries the balance readings and decisions
  * the figures are computed from, which is what makes it restorable. The copy
- * says what is NOT in it before the person relies on it: uploaded documents are
- * not included until SC-1662, so nothing here says "full" (operator, bus #23688).
+ * says what is NOT in it before the person relies on it (operator, bus #23688):
+ * uploaded files travel with it unless together they would take it past what a
+ * restore accepts, and then the card says how many were left out (SC-1662).
  *
  * Restoring is offered only to an empty account (ruling Q1): the server checks
  * that again, inside the job's own transaction, before it writes anything.
@@ -136,6 +137,14 @@ export function BackupSettings() {
             {t('v3.settings.backup.last', {
               date: formatDate(backup.createdAt),
               size: formatBytes(backup.byteSize),
+            })}
+          </p>
+        ) : null}
+        {backup && backup.filesLeftOut > 0 ? (
+          <p className="text-caption text-foreground">
+            {t('v3.settings.backup.filesLeftOut', {
+              files: backup.filesLeftOut,
+              limit: formatBytes(BACKUP_UPLOAD_MAX_BYTES),
             })}
           </p>
         ) : null}

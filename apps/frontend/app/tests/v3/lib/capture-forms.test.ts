@@ -58,7 +58,7 @@ describe('what a file is', () => {
     expect(planImportFile({ name: 'export.csv', type: '' })?.contentType).toBe('text/plain');
   });
 
-  test('a statement names which of the three parsers reads it', () => {
+  test('a statement names which parser reads it', () => {
     expect(planImportFile({ name: 'a.csv', type: 'text/csv' })?.format).toBe('csv');
     expect(planImportFile({ name: 'a.tsv', type: '' })?.format).toBe('csv');
     expect(planImportFile({ name: 'a.ofx', type: '' })?.format).toBe('ofx');
@@ -67,11 +67,47 @@ describe('what a file is', () => {
     expect(planImportFile({ name: 'a.qfx', type: '' })?.format).toBe('ofx');
   });
 
+  test('an MT940 or CAMT.053 statement names its parser and uploads as plain text (SC-1726)', () => {
+    for (const name of ['a.sta', 'a.mt940', 'a.940']) {
+      expect(planImportFile({ name, type: '' })).toEqual({
+        purpose: 'file-import',
+        contentType: 'text/plain',
+        format: 'mt940',
+      });
+    }
+    // A browser calls `.xml` text/xml. The upload allow-list takes no markup
+    // type, and no parser reads the type, so the browser loses here.
+    expect(planImportFile({ name: 'statement.XML', type: 'text/xml' })).toEqual({
+      purpose: 'file-import',
+      contentType: 'text/plain',
+      format: 'camt053',
+    });
+  });
+
+  test('a spreadsheet names its parser and uploads under a type the allow-list takes (SC-1734)', () => {
+    const ooxml = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    expect(planImportFile({ name: 'export.XLSX', type: ooxml })).toEqual({
+      purpose: 'file-import',
+      contentType: 'application/octet-stream',
+      format: 'xlsx',
+    });
+    expect(planImportFile({ name: 'export.xls', type: '' })).toEqual({
+      purpose: 'file-import',
+      contentType: 'application/vnd.ms-excel',
+      format: 'xls',
+    });
+    expect(IMPORT_ACCEPT).toContain('.xlsx');
+    expect(IMPORT_ACCEPT).toContain('.xls');
+  });
+
   test('anything else is refused, and the refusal names what would work', () => {
     expect(planImportFile({ name: 'notes.docx', type: '' })).toBeNull();
     const problem = describeImportFileProblem(t, 'notes.docx');
     expect(problem).toContain('.docx');
     expect(problem).toContain('CSV');
+    expect(problem).toContain('MT940');
+    expect(problem).toContain('CAMT.053');
+    expect(problem).toContain('XLSX');
     expect(describeImportFileProblem(t, 'balances.png')).toBeNull();
   });
 

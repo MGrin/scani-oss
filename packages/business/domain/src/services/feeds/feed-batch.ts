@@ -22,6 +22,7 @@ export interface FeedWindow {
   to: Date;
   complete: boolean;
   uploadRef?: string;
+  documentId?: string;
 }
 
 export interface FeedCheckpoint {

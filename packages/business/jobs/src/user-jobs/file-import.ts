@@ -1,6 +1,12 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
-import { type CsvMapping, CsvMappingDto } from '@scani/shared';
+import {
+  type CsvMapping,
+  CsvMappingDto,
+  type StatementFileType,
+  StatementFileTypeDto,
+} from '@scani/shared';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 import { RETRY_HEAVY } from '../retry-policies';
 
@@ -11,7 +17,7 @@ export interface FileImportJob extends UserJobBase {
    *  validate; without it the `documents` row falls back to the
    *  presigner's generated key name. */
   originalFilename?: string;
-  fileType: 'csv' | 'ofx' | 'qif';
+  fileType: StatementFileType;
   accountId: string;
   enrich?: boolean;
   // ISO-4217 fallback used when the file has no Currency column AND
@@ -29,14 +35,12 @@ const fileImportSchema: z.ZodType<FileImportJob> = z.object({
   requestId: z.string().min(1),
   r2Key: z.string().min(1),
   originalFilename: z.string().min(1).max(512).optional(),
-  fileType: z.enum(['csv', 'ofx', 'qif']),
+  fileType: StatementFileTypeDto,
   accountId: z.string().min(1),
   enrich: z.boolean().optional(),
   defaultCurrency: z.string().min(1).max(8).optional(),
   dateOrder: z.enum(['day-first', 'month-first']).optional(),
 });
-
-const JOB_ID_SEP = '_';
 
 export const FILE_IMPORT: UserJobDescriptor<FileImportJob> = {
   name: JOB_NAMES.fileImport,
@@ -46,7 +50,7 @@ export const FILE_IMPORT: UserJobDescriptor<FileImportJob> = {
     removeOnComplete: 100,
     removeOnFail: 500,
   },
-  computeJobId: (d) => [JOB_NAMES.fileImport, d.userId, d.accountId, d.requestId].join(JOB_ID_SEP),
+  computeJobId: (d) => jobIdOf(JOB_NAMES.fileImport, d.userId, d.accountId, d.requestId),
   summarizePayload: (d) => ({
     fileType: d.fileType,
     accountId: d.accountId,

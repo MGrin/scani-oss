@@ -82,22 +82,24 @@ describe('every v3 page names itself at the top level', () => {
 
 describe('the home screen, in every state it renders', () => {
   /**
-   * `HomePage` returns from four places: the overview failed, the overview has
-   * not answered, the account is empty, and the dashboard proper. The demo and
-   * every real user are on the last one, which is exactly the branch that had
-   * no heading — a fresh account reads 1 through `FirstRunPanel`'s own `h1`,
-   * so the bug was invisible to anyone looking at a new account.
+   * `HomePage` returns from three places: the overview failed, the account is
+   * empty, and the dashboard proper. The demo and every real user are on the
+   * last one, which is exactly the branch that had no heading — a fresh
+   * account reads 1 through `FirstRunPanel`'s own `h1`, so the bug was
+   * invisible to anyone looking at a new account. The loading state was a
+   * fourth return until SC-1742; it now renders inside the dashboard's
+   * `RevealTogether`, under the same heading, so its skeleton never restarts.
    */
-  test('each of its four branches names the page', async () => {
+  test('each of its three branches names the page', async () => {
     const source = await pageSource('HomePage.tsx');
     // From the component only: `HomeSkeleton` above it also returns JSX, and
     // counting that as a branch would make this pass for the wrong reason.
     const body = source.slice(source.indexOf('export function HomePage()'));
-    // Three of the four are inside an `if`, so the indent varies; the anchor
+    // Two of the three are inside an `if`, so the indent varies; the anchor
     // is "a return of JSX", not a column.
     const branches = body.split(/\n {2,4}return \(/).slice(1);
 
-    expect(branches).toHaveLength(4);
+    expect(branches).toHaveLength(3);
     for (const [index, branch] of branches.entries()) {
       const named = branch.includes('<HomeHeading />') || branch.includes('<FirstRun ');
       expect(named, `HomePage branch ${index + 1} renders no top-level heading`).toBe(true);
@@ -131,7 +133,9 @@ describe('the home screen, in every state it renders', () => {
     const mounts = source.split('<HomeHeading />');
     // Control: it IS mounted, so the claim below is about placement rather
     // than about a component nothing renders.
-    expect(mounts).toHaveLength(4);
+    // Two mounts: the error branch and the dashboard (which also holds the
+    // loading state). The empty branch is named by `FirstRun`'s own `h1`.
+    expect(mounts).toHaveLength(3);
     for (const before of mounts.slice(0, -1)) {
       expect(before.trimEnd().endsWith('<>'), 'HomeHeading is not a fragment’s first child').toBe(
         true

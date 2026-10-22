@@ -1,6 +1,6 @@
-import type { ReturnAttribution } from '@scani/domain/lib/returns/fx-attribution';
-import type { TwrResult } from '@scani/domain/lib/returns/twr';
-import type { ReturnsResult } from '@scani/domain/services';
+import type { ReturnsResult } from '../../services/returns/ReturnsService';
+import type { ReturnAttribution } from './fx-attribution';
+import type { TwrResult } from './twr';
 
 /**
  * What a returns response owes the wire (SC-471, extended by SC-458).

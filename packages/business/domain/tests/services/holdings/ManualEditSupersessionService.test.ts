@@ -4,10 +4,16 @@ import * as schema from '@scani/db/schema';
 import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { MANUAL_EDIT_FLOW_SOURCE } from '../../../src/lib/person-authored-sources';
+import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWriter';
 import { ManualEditSupersessionService } from '../../../src/services/holdings/ManualEditSupersessionService';
 import { withTestDb } from '../../../test/helpers/db';
 import { makeInstitution, makeInstitutionType, makeUser } from '../../../test/helpers/factories';
-import { makeAccount, makeHolding, makeToken } from '../../../test/helpers/factories-extra';
+import {
+  makeAccount,
+  makeHolding,
+  makeObservations,
+  makeToken,
+} from '../../../test/helpers/factories-extra';
 
 /**
  * A hand-typed edit equal to the SUM of rows the importer later wrote is the
@@ -51,6 +57,14 @@ const edit = (a: Acct, quantity: string, extra: Record<string, unknown> = {}) =>
     sourceMetadata: { cause: 'flow', editedAt: '2026-08-27T09:00:00Z' },
     ...extra,
   });
+
+async function cached(t: DatabaseTransaction, holdingId: string) {
+  const [row] = await t
+    .select({ balance: schema.holdings.balance })
+    .from(schema.holdings)
+    .where(eq(schema.holdings.id, holdingId));
+  return row?.balance;
+}
 
 async function sources(t: DatabaseTransaction, holdingId: string) {
   const rows = await t
@@ -116,6 +130,62 @@ describe('ManualEditSupersessionService', () => {
 
       expect(out.removedEditRowIds).toHaveLength(1);
       expect(await sources(t, a.holdingId)).toEqual(['airwallex']);
+    });
+  });
+
+  /**
+   * SC-1666: a delete is an evidence write (A5 D-18). A holding whose only
+   * reading predates the edit has no anchor after it, so the cache counted
+   * the edit and the imported rows twice until the next write to the holding.
+   */
+  test('the cache is brought to the engine figure once the edit rows go', async () => {
+    await withTestDb(async (t) => {
+      const a = await account(t);
+      await makeObservations(t, [
+        {
+          userId: a.userId,
+          holdingId: a.holdingId,
+          balance: '1000',
+          observedAt: new Date('2026-08-26T00:00:00Z'),
+          source: 'sync-capture',
+          sourceMetadata: { origin: 'updateHoldingBalanceWithEvent' },
+        },
+      ]);
+      await t
+        .insert(schema.holdingTransactions)
+        .values([
+          edit(a, '5600.75'),
+          tx(a, { quantity: '5617.60', occurredAt: new Date('2026-08-28T03:00:00Z') }),
+          tx(a, { kind: 'fee', quantity: '-16.85', occurredAt: new Date('2026-08-28T03:00:00Z') }),
+        ]);
+      // The cache as an ingest leaves it: the edit and the imported rows both counted.
+      await Container.get(HoldingCacheWriter).refresh(a.userId, [a.holdingId], t);
+      expect(await cached(t, a.holdingId)).toBe('12201.5');
+
+      await service().supersede(a.userId, [a.holdingId], t);
+
+      const engine = await Container.get(HoldingCacheWriter).engineBalance(
+        a.userId,
+        a.holdingId,
+        t
+      );
+      expect(engine).toBe('6600.75');
+      expect(await cached(t, a.holdingId)).toBe(engine);
+    });
+  });
+
+  test('CONTROL: a run that removes nothing leaves the cache as it was', async () => {
+    await withTestDb(async (t) => {
+      const a = await account(t);
+      await t
+        .insert(schema.holdingTransactions)
+        .values([edit(a, '-1000', { transferReview: 'left_control' })]);
+      const before = await cached(t, a.holdingId);
+
+      const out = await service().supersede(a.userId, [a.holdingId], t);
+
+      expect(out.removedEditRowIds).toHaveLength(0);
+      expect(await cached(t, a.holdingId)).toBe(before);
     });
   });
 });

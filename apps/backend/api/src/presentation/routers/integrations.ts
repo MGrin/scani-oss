@@ -17,6 +17,7 @@
  *     worker validates), and enqueues the EXCHANGE_IMPORT job.
  */
 
+import { loadCloudClientConfig } from '@scani/cloud-client';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { IntegrationCredentialsService } from '@scani/domain/services';
@@ -51,6 +52,24 @@ const validateKeysLimiter = createOutflowLimiter({
 });
 
 /**
+ * Tiers 1 and 2 are installs the customer runs; tier 3, or no tier at all, is
+ * the hosted product (`packages/clients/cloud-client/README.md`).
+ */
+function isSelfHostedInstall(): boolean {
+  const tier = loadCloudClientConfig().SCANI_DEPLOYMENT_TIER;
+  return tier === '1' || tier === '2';
+}
+
+/**
+ * Whether this install may connect a provider. A `selfHostedOnly` provider is
+ * still LISTED on the hosted product, so the connect screen can say why it is
+ * not connectable here rather than leave it missing (SC-1729).
+ */
+function availability(manifest: IntegrationManifest): 'available' | 'self-hosted-only' {
+  return manifest.selfHostedOnly && !isSelfHostedInstall() ? 'self-hosted-only' : 'available';
+}
+
+/**
  * Store credentials + enqueue import as a single guarded operation.
  *
  * The write to `user_integration_credentials` and the enqueue to BullMQ are
@@ -70,7 +89,7 @@ const validateKeysLimiter = createOutflowLimiter({
 async function storeAndEnqueueImport(
   userId: string,
   institutionName: string,
-  credentials: Record<string, string>,
+  credentials: Record<string, unknown>,
   requestId: string
 ): Promise<{ institutionId: string; jobId: string }> {
   const credentialsService = Container.get(IntegrationCredentialsService);
@@ -178,6 +197,11 @@ export const integrationsRouter = router({
         }
         return {
           providerKey: manifest.providerKey,
+          availability: availability(manifest),
+          credentialCanMoveMoney: manifest.credentialCanMoveMoney === true,
+          selfHostedOnly: manifest.selfHostedOnly === true,
+          statementExportFormats: [...(manifest.statementExportFormats ?? [])],
+          credentialNoun: manifest.credentialNoun ?? 'key',
           credentialFields: manifest.credentialFields,
           instructions: manifest.instructions,
           institution: {
@@ -229,7 +253,20 @@ export const integrationsRouter = router({
         });
       }
 
+      // Before anything else touches the key: a credential this install may
+      // not hold is not one it may send upstream to test either.
+      if (availability(manifest) === 'self-hosted-only') {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: `${manifest.institutionName} can be connected only on a self-hosted Scani: its terms allow the API key only in software you run yourself.`,
+        });
+      }
+
       assertCredentialsMatchManifest(manifest, input.credentials);
+
+      // What gets stored: the submitted map, unless the provider's check
+      // returns its own (bunq hands back the key's registration).
+      let toStore: Record<string, unknown> = input.credentials;
 
       // Some providers (IBKR's Flex Web Service) defer validation to
       // the worker — the upstream is rate-limited per token, so a
@@ -254,6 +291,7 @@ export const integrationsRouter = router({
               message: credentialRejectedMessage(manifest.institutionName, result.message),
             });
           }
+          if (result.credentials) toStore = result.credentials;
         } catch (error) {
           // `toCredentialCheckError`, not `toTRPCError`: this call site is the
           // one place a 5xx and a rejected key have to reach the reader as
@@ -268,7 +306,7 @@ export const integrationsRouter = router({
         const { institutionId, jobId } = await storeAndEnqueueImport(
           ctx.userId,
           manifest.institutionName,
-          input.credentials,
+          toStore,
           input.requestId
         );
         return {

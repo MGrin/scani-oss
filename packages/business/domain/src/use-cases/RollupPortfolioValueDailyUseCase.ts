@@ -348,6 +348,20 @@ export class RollupPortfolioValueDailyUseCase {
               }
               daysForUser++;
             }
+
+            // A window that includes the day before the earliest record has
+            // rewritten all of this user's history, so a row dated before it is
+            // one no rebuild will write again: a deleted first record's, or one
+            // a past rebuild crept back to (SC-1627). Only the call holding the
+            // window's oldest day can tell.
+            const oldest = days.at(-1)?.snapshotDate;
+            if (oldest && toOffset === lookback) {
+              const earliest = await this.dailyRepository.findEarliestRecordDay(user.id);
+              if (earliest === null || oldest < earliest) {
+                await lock.assertHeld();
+                await this.dailyRepository.deleteBefore(user.id, baseCurrencyId, oldest);
+              }
+            }
             return daysForUser;
           });
 

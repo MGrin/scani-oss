@@ -1,6 +1,7 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { HOLDING_LABEL_MAX_LENGTH } from '@scani/shared';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 import { RETRY_NONE } from '../retry-policies';
 
@@ -71,7 +72,7 @@ export const MANUAL_HOLDINGS_CREATE: UserJobDescriptor<ManualHoldingsCreateJob> 
     removeOnComplete: 100,
     removeOnFail: 500,
   },
-  computeJobId: (d) => [JOB_NAMES.manualHoldingsCreate, d.userId, d.requestId].join('_'),
+  computeJobId: (d) => jobIdOf(JOB_NAMES.manualHoldingsCreate, d.userId, d.requestId),
   summarizePayload: (d) => ({
     newCount: d.newHoldings.length,
     updateCount: d.updateHoldings.length,

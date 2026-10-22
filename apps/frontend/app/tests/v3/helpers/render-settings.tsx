@@ -1,5 +1,4 @@
 import '../../i18n-preload';
-import './api-env';
 import { QueryClient, QueryClientProvider, type QueryKey } from '@tanstack/react-query';
 import { httpBatchLink } from '@trpc/client';
 import { getQueryKey } from '@trpc/react-query';

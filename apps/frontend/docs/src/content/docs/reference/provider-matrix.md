@@ -54,6 +54,9 @@ leave your api.
 | Interactive Brokers | _user-supplied Flex Web Service token_ | balance, transaction | Flex token + query ID configured per user. |
 | Wise | _user-supplied API token_ | balance, transaction | |
 | Airwallex | _user-supplied Client ID + API key_ | balance, transaction | Client ID + API key exchanged for a 30-min bearer token per call. |
+| bunq | _user-supplied personal API key_ | balance, transaction | **Self-hosted Scani only.** bunq allows a personal API key only in software you run yourself, so the hosted product lists bunq and refuses to connect it. There, export a statement from bunq as MT940 or CSV and import that instead; bunq offers no CAMT.053. Connecting registers the key with bunq once and stores that registration encrypted beside it. A standard key is tied to the IPv4 address it was first used from, so the API and the worker must reach bunq from the same address, or the key must allow all IP addresses (a setting in the bunq app). |
+| Investec | _user-supplied client ID, secret and API key_ | balance, transaction | **Self-hosted Scani only.** Investec lets your own credentials serve you or your business; a platform for many clients needs Investec's own onboarding, so the hosted product lists Investec and refuses to connect it. South Africa Private Bank accounts. Connecting refuses an API key that can transfer or pay, so give it only account, balance and transaction access. With no start date, Investec returns the last 180 days. |
+| Fio banka | _user-supplied API token_ | balance, transaction | **Self-hosted Scani only.** Fio holds you liable for any use of your token by someone else, so the hosted product lists Fio banka and refuses to connect it; it points to a CSV statement instead. One token covers one account, and Fio allows one call per token every 30 seconds. With no start date the read covers 90 days: older movements need an unlock in internetbanking first. Choose the "Sledování účtu" (account monitoring) permission; even a token that may enter payment orders cannot authorise them. |
 
 ## Blockchains
 
@@ -100,6 +103,9 @@ work with per-user credentials only.
 | Binance, Coinbase, Bybit, OKX | Solid for balance + recent transactions. Edge cases on multi-account / sub-account setups. |
 | KuCoin, Gate, HTX, Bitstamp, Gemini, MEXC, Bitget | Functional. Less battle-tested. |
 | IBKR (Flex), Wise, Airwallex | Functional. Flex query setup is the main user friction. |
+| bunq | New. Built and tested against bunq's sandbox; not yet run against a real account. |
+| Investec | New. Built and tested against Investec's sandbox; not yet run against a real account. |
+| Fio banka | New. Built from Fio's API document; Fio has no sandbox, so it has not run against an account. |
 | Bitcoin, Tron, TON, ENS | Functional. Public RPCs are slow on big wallets. |
 | Litecoin | New adapter. Automated tests cover pagination, address checksums and normalization; large-wallet history is bounded and reported as partial when capped. |
 | OpenAI Vision | Solid for screenshots; quality degrades on dark-mode or non-English UIs. |

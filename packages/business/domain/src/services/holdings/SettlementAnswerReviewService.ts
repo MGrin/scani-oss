@@ -2,7 +2,7 @@ import { type DatabaseTransaction, getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { TRANSFER_REVIEW_CREATED_SOURCE } from '@scani/shared';
 import Decimal from 'decimal.js';
-import { and, eq, getTableColumns, gt, inArray, lte, sql } from 'drizzle-orm';
+import { and, eq, getTableColumns, gt, inArray, lte, type SQL, sql } from 'drizzle-orm';
 import { getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import { Container, Service } from 'typedi';
 import {
@@ -205,12 +205,15 @@ export class SettlementAnswerReviewService {
     if (arrivals.some((row) => readMovedDestinationAnchor(row.sourceMetadata) === 'moved'))
       return { refusal: 'linked-elsewhere' };
 
-    const rows = await snapshotRows(transaction, schema.holdingTransactions, [...removedIds]);
-    const removedHoldings: RemovedHolding[] = [];
+    const rows = snapshotRows(schema.holdingTransactions, [...removedIds]);
+    const kept: SQL[] = [];
     for (const arrival of arrivals) {
       if (readCreatedDestination(arrival.sourceMetadata) !== 'created') continue;
-      removedHoldings.push(await snapshotHolding(transaction, arrival.holdingId));
+      kept.push(await snapshotHolding(transaction, arrival.holdingId));
     }
+    const removedHoldings = kept.length
+      ? sql`jsonb_build_array(${sql.join(kept, sql`, `)})`
+      : sql`'[]'::jsonb`;
     const answer = await snapshotObservation(transaction, observationId);
     const [retired] = await transaction
       .insert(schema.retiredGapAnswers)
@@ -330,7 +333,12 @@ export class SettlementAnswerReviewService {
 
     const unclassified: string[] = [];
     const funded: CacheWrite[] = [];
-    for (const bundle of bundles) {
+    // The copy is restored from the stored jsonb, never from the parsed rows
+    // above: parsing turns every jsonb number into a double (SC-1626).
+    const stored = (path: SQL) =>
+      sql`(SELECT ${path} FROM ${schema.retiredGapAnswers} WHERE ${schema.retiredGapAnswers.id} = ${retiredId})`;
+    for (const [index, bundle] of bundles.entries()) {
+      const removed = sql`${schema.retiredGapAnswers.removedHoldings} -> ${index}::int`;
       const [exists] = await transaction
         .select({ id: schema.holdings.id })
         .from(schema.holdings)
@@ -338,21 +346,31 @@ export class SettlementAnswerReviewService {
       if (exists) continue;
       // The copy comes back unfunded and the calculator funds it once its
       // evidence is back, as the one writer of the cache (A5 D-4).
-      await restoreRows(transaction, schema.holdings, [
-        { ...bundle.holding, balance: '0', value_base: null, value_priced_at: null },
-      ]);
+      await restoreRows(
+        transaction,
+        schema.holdings,
+        sql`jsonb_build_array(${stored(sql`${removed} -> 'holding'`)} || '{"balance": "0", "value_base": null, "value_priced_at": null}'::jsonb)`
+      );
       funded.push({
         holdingId: String(bundle.holding.id),
         balance: String(bundle.holding.balance),
         lastUpdated: null,
       });
-      await restoreRows(transaction, schema.holdingBalanceObservations, bundle.observations);
-      await restoreRows(transaction, schema.holdingCoverage, bundle.coverage);
+      await restoreRows(
+        transaction,
+        schema.holdingBalanceObservations,
+        stored(sql`${removed} -> 'observations'`)
+      );
+      await restoreRows(transaction, schema.holdingCoverage, stored(sql`${removed} -> 'coverage'`));
       if (bundle.holding.kind == null || bundle.holding.starts_at == null) {
         unclassified.push(String(bundle.holding.id));
       }
     }
-    await restoreRows(transaction, schema.holdingTransactions, rows);
+    await restoreRows(
+      transaction,
+      schema.holdingTransactions,
+      stored(sql`${schema.retiredGapAnswers.rows}`)
+    );
     await this.coverage.syncTxBoundsFromLedger(needed, transaction);
     // A copy taken before A1 carries no label, and a row comes back as it was
     // copied. The ledger rows are labelled as any written row is (D-5), and a
@@ -613,44 +631,29 @@ function group(assessed: Assessed[]): SettlementAnswerHolding[] {
   return [...byHolding.values()];
 }
 
-/** Every column of each row, as Postgres renders it, so a restore is exact. */
-async function snapshotRows(
-  transaction: DatabaseTransaction,
-  table: typeof schema.holdingTransactions,
-  ids: string[]
-): Promise<Record<string, unknown>[]> {
-  if (ids.length === 0) return [];
-  const rows = await transaction
-    .select({ row: sql<Record<string, unknown>>`to_jsonb(${table})` })
-    .from(table)
-    .where(inArray(table.id, ids));
-  return rows.map(({ row }) => row);
+/**
+ * Every column of each row, as Postgres renders it, so a restore is exact. Kept
+ * in SQL: read into JavaScript, every jsonb number became a double (SC-1626).
+ */
+function snapshotRows(table: typeof schema.holdingTransactions, ids: string[]): SQL {
+  if (ids.length === 0) return sql`'[]'::jsonb`;
+  return sql`(SELECT coalesce(jsonb_agg(to_jsonb(${table})), '[]'::jsonb) FROM ${table} WHERE ${inArray(table.id, ids)})`;
 }
 
-async function snapshotHolding(
-  transaction: DatabaseTransaction,
-  holdingId: string
-): Promise<RemovedHolding> {
+/** A destination holding with its readings and coverage, as `snapshotRows` keeps them. */
+async function snapshotHolding(transaction: DatabaseTransaction, holdingId: string): Promise<SQL> {
   const [holding] = await transaction
-    .select({ row: sql<Record<string, unknown>>`to_jsonb(${schema.holdings})` })
+    .select({ id: schema.holdings.id })
     .from(schema.holdings)
     .where(eq(schema.holdings.id, holdingId));
   if (!holding) throw new Error(`Destination holding ${holdingId} is not there to keep`);
-  const observations = await transaction
-    .select({
-      row: sql<Record<string, unknown>>`to_jsonb(${schema.holdingBalanceObservations})`,
-    })
-    .from(schema.holdingBalanceObservations)
-    .where(eq(schema.holdingBalanceObservations.holdingId, holdingId));
-  const coverage = await transaction
-    .select({ row: sql<Record<string, unknown>>`to_jsonb(${schema.holdingCoverage})` })
-    .from(schema.holdingCoverage)
-    .where(eq(schema.holdingCoverage.holdingId, holdingId));
-  return {
-    holding: holding.row,
-    observations: observations.map(({ row }) => row),
-    coverage: coverage.map(({ row }) => row),
-  };
+  const observations = schema.holdingBalanceObservations;
+  const coverage = schema.holdingCoverage;
+  return sql`jsonb_build_object(
+    'holding', (SELECT to_jsonb(${schema.holdings}) FROM ${schema.holdings} WHERE ${eq(schema.holdings.id, holdingId)}),
+    'observations', (SELECT coalesce(jsonb_agg(to_jsonb(${observations})), '[]'::jsonb) FROM ${observations} WHERE ${eq(observations.holdingId, holdingId)}),
+    'coverage', (SELECT coalesce(jsonb_agg(to_jsonb(${coverage})), '[]'::jsonb) FROM ${coverage} WHERE ${eq(coverage.holdingId, holdingId)})
+  )`;
 }
 
 async function snapshotObservation(
@@ -674,15 +677,15 @@ async function snapshotObservation(
 }
 
 /**
- * Insert rows captured by `to_jsonb`, every stored column by name. A generated
+ * Insert rows captured by `to_jsonb`, every stored column by name, from `rows`:
+ * a jsonb array read in SQL, so no number passes through a double. A generated
  * column is skipped, since Postgres computes it again.
  */
 async function restoreRows(
   transaction: DatabaseTransaction,
   table: PgTable,
-  rows: Record<string, unknown>[]
+  rows: SQL
 ): Promise<void> {
-  if (rows.length === 0) return;
   const name = sql.identifier(getTableConfig(table).name);
   const columns = sql.join(
     Object.values(getTableColumns(table))
@@ -692,6 +695,6 @@ async function restoreRows(
   );
   await transaction.execute(sql`
     INSERT INTO ${name} (${columns})
-    SELECT ${columns} FROM jsonb_populate_recordset(NULL::${name}, ${JSON.stringify(rows)}::jsonb)
+    SELECT ${columns} FROM jsonb_populate_recordset(NULL::${name}, coalesce(${rows}, '[]'::jsonb))
   `);
 }

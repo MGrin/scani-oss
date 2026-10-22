@@ -42,6 +42,7 @@ export const HEARTBEAT_TOLERANCE_MS: Readonly<Record<string, number>> = {
   // Quarter-hour reconcilers — alert at 45min (three missed runs).
   [JOB_NAMES.reconcilePendingCredentials]: 45 * 60 * 1000,
   [JOB_NAMES.reconcileOrphanedUserJobs]: 45 * 60 * 1000,
+  [JOB_NAMES.holdingCacheDue]: 45 * 60 * 1000,
   // Every 15min — alert at 45min.
   [JOB_NAMES.dlqDepthProbe]: 45 * 60 * 1000,
 };

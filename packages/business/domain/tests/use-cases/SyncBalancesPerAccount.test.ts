@@ -512,6 +512,110 @@ describe('a key the exchange refuses (SC-1686)', () => {
       [credential?.id, 'Bybit retCode=33004: Your api key has expired.', null, 'auth-failed'],
     ]);
   });
+
+  /** One sync over a credential whose last refusal was `kind`; the provider calls it made. */
+  async function syncAfterRefusal(kind: string) {
+    const exchange = await institution();
+    const owner = await exchangeOwner(exchange);
+    await getDb()
+      .update(schema.userIntegrationCredentials)
+      .set({ syncRefusalKind: kind, syncLastError: 'refused', syncFailureCount: 1 })
+      .where(eq(schema.userIntegrationCredentials.userId, owner.userId));
+    Container.set(InstitutionRepository, {
+      findSyncableInstitutions: async () => [exchange],
+    } as unknown as InstitutionRepository);
+    stubInstitutionCode('zz-exchange');
+    let decrypted = 0;
+    Container.set(IntegrationCredentialsService, {
+      getDecryptedCredentials: async () => {
+        decrypted++;
+        return { apiKey: 'key', apiSecret: 'secret' };
+      },
+      clearSyncRefusal: async () => {},
+      recordSyncRefusal: async () => {},
+    } as unknown as IntegrationCredentialsService);
+    let providerCalls = 0;
+    stubRegistry({
+      fetchBalances: async () => {
+        providerCalls++;
+        return [];
+      },
+    });
+    const result = await new SyncExchangeBalancesUseCase().execute();
+    return { result, providerCalls, decrypted };
+  }
+
+  test('a key recorded as rejected is not tried again until it is replaced (SC-1728)', async () => {
+    const { result, providerCalls, decrypted } = await syncAfterRefusal('auth-failed');
+    expect([providerCalls, decrypted]).toEqual([0, 0]);
+    expect(result.credentialsNeedReconnect).toBe(1);
+    expect(result.accountsFailed).toBe(0);
+  });
+
+  test('CONTROL: any other refusal is still tried on the next run', async () => {
+    const { result, providerCalls } = await syncAfterRefusal('rate-limited');
+    expect(providerCalls).toBe(1);
+    expect(result.credentialsNeedReconnect).toBe(0);
+  });
+
+  // SC-1733: one Fio 500 may be an outage, so it is a suspect, and a suspect
+  // key is still tried on the next run.
+  test('CONTROL: a key under suspicion is still tried on the next run', async () => {
+    const { result, providerCalls } = await syncAfterRefusal('credential-suspect');
+    expect(providerCalls).toBe(1);
+    expect(result.credentialsNeedReconnect).toBe(0);
+  });
+});
+
+// SC-1733: Fio answers 500 for a token past its 180 days, and possibly in an
+// outage too. A single suspect answer must not pause the account; a second at
+// least an hour after the first confirms it.
+describe('a suspect answer is confirmed before it pauses anything (SC-1733)', () => {
+  async function syncWithSuspect(prior: { kind: string | null; since: Date | null }) {
+    const exchange = await institution();
+    const owner = await exchangeOwner(exchange);
+    await getDb()
+      .update(schema.userIntegrationCredentials)
+      .set({ syncRefusalKind: prior.kind, syncRefusalSince: prior.since })
+      .where(eq(schema.userIntegrationCredentials.userId, owner.userId));
+    const refusals: unknown[][] = [];
+    Container.set(InstitutionRepository, {
+      findSyncableInstitutions: async () => [exchange],
+    } as unknown as InstitutionRepository);
+    stubInstitutionCode('zz-exchange');
+    Container.set(IntegrationCredentialsService, {
+      getDecryptedCredentials: async () => ({ token: 'token' }),
+      clearSyncRefusal: async () => {},
+      recordSyncRefusal: async (...args: unknown[]) => {
+        refusals.push(args);
+      },
+    } as unknown as IntegrationCredentialsService);
+    stubRegistry({
+      fetchBalances: async () => {
+        throw new ProviderError('Fio answered 500', 'retryable', 'fio', {
+          suspectCredential: true,
+        });
+      },
+    });
+    await new SyncExchangeBalancesUseCase().execute();
+    return refusals.map((r) => r[3]);
+  }
+
+  test('CONTROL: a first suspect answer is recorded as a suspect, not as a rejected key', async () => {
+    expect(await syncWithSuspect({ kind: null, since: null })).toEqual(['credential-suspect']);
+  });
+
+  test('a suspect answer 10 minutes after the first is still a suspect', async () => {
+    const since = new Date(Date.now() - 10 * 60_000);
+    expect(await syncWithSuspect({ kind: 'credential-suspect', since })).toEqual([
+      'credential-suspect',
+    ]);
+  });
+
+  test('a suspect answer over an hour after the first is a rejected key', async () => {
+    const since = new Date(Date.now() - 61 * 60_000);
+    expect(await syncWithSuspect({ kind: 'credential-suspect', since })).toEqual(['auth-failed']);
+  });
 });
 
 describe('which holding a sync writes into', () => {

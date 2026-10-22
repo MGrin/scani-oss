@@ -2,7 +2,12 @@ import type { FeedWindow } from '../feed-batch';
 
 export type WindowDeclaration =
   | { shape: 'balance-snapshot'; capturedAt: readonly Date[]; fetchedAt: Date }
-  | { shape: 'statement-upload'; rowDates: readonly Date[]; uploadRef: string }
+  | {
+      shape: 'statement-upload';
+      rowDates: readonly Date[];
+      uploadRef: string;
+      documentId?: string;
+    }
   | {
       shape: 'transaction-run';
       fetchedAt: Date;
@@ -48,6 +53,7 @@ export function declareWindow(declaration: WindowDeclaration): FeedWindow {
         to,
         complete: false,
         uploadRef: declaration.uploadRef,
+        ...(declaration.documentId ? { documentId: declaration.documentId } : {}),
       };
     }
     case 'transaction-run': {

@@ -7,9 +7,15 @@ import { trpc } from '@/lib/trpc';
 import { useJobStatus } from '@/v3/hooks/useJobStatus';
 import { BackLink } from '../components/BackLink';
 import { JobDetailHeader } from '../components/jobs/JobDetailHeader';
+import { RefreshBurstAccounts } from '../components/jobs/RefreshBurstAccounts';
 import { jobLabelFor } from '../lib/job-labels';
 import { resolveV3ReviewRenderer } from '../lib/job-result';
-import { deriveJobOutcomeState, displayedJobState, rowCatchUpInterval } from '../lib/jobs';
+import {
+  burstRequestIdOf,
+  deriveJobOutcomeState,
+  displayedJobState,
+  rowCatchUpInterval,
+} from '../lib/jobs';
 import { V3_ROUTES } from '../lib/routes';
 
 /**
@@ -71,6 +77,7 @@ export function JobDetailPage() {
   const job = jobQuery.data;
   const { state } = displayedJobState(job.state, live.state);
   const result = job.result ?? live.result;
+  const burstRequestId = burstRequestIdOf(job);
 
   return (
     <PageLayout measure="wide">
@@ -103,6 +110,7 @@ export function JobDetailPage() {
             reviewOutcome: job.reviewOutcome,
           })
         : null}
+      {burstRequestId ? <RefreshBurstAccounts requestId={burstRequestId} /> : null}
     </PageLayout>
   );
 }

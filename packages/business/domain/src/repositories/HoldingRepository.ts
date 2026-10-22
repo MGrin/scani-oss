@@ -470,6 +470,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           holdingStartsAt: schema.holdings.startsAt,
           holdingValueBase: schema.holdings.valueBase,
           holdingValuePricedAt: schema.holdings.valuePricedAt,
+          holdingCacheDueAt: schema.holdings.cacheDueAt,
           holdingLastUpdated: schema.holdings.lastUpdated,
           holdingCreatedAt: schema.holdings.createdAt,
           // Token data with type
@@ -532,6 +533,7 @@ export class HoldingRepository extends BaseRepository<Holding, NewHolding> {
           startsAt: r.holdingStartsAt,
           valueBase: r.holdingValueBase,
           valuePricedAt: r.holdingValuePricedAt,
+          cacheDueAt: r.holdingCacheDueAt,
           lastUpdated: r.holdingLastUpdated,
           createdAt: r.holdingCreatedAt,
         },

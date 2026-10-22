@@ -1,5 +1,6 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 
 export type UserBackupJob = UserJobBase;
@@ -8,8 +9,6 @@ const userBackupSchema: z.ZodType<UserBackupJob> = z.object({
   userId: z.string().min(1),
   requestId: z.string().min(1),
 });
-
-const JOB_ID_SEP = '_';
 
 /**
  * A backup of one account (SC-1649): every backed-up row, gzipped NDJSON,
@@ -25,6 +24,6 @@ export const USER_BACKUP: UserJobDescriptor<UserBackupJob> = {
     removeOnComplete: 100,
     removeOnFail: 500,
   },
-  computeJobId: (d) => [JOB_NAMES.userBackup, d.userId, d.requestId].join(JOB_ID_SEP),
+  computeJobId: (d) => jobIdOf(JOB_NAMES.userBackup, d.userId, d.requestId),
   summarizePayload: () => ({}),
 };

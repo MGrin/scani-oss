@@ -23,8 +23,9 @@
 // `bun run dev:stack:down -- --volumes` discards this worktree's data and
 // nobody else's.
 
-import { readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { mkdirSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
+import { dirname, join, resolve } from 'node:path';
 import { SQL } from 'bun';
 import {
   type DockerProbe,
@@ -280,10 +281,43 @@ export function stackEnv(
     COMPOSE_PROJECT_NAME: chosen(env.COMPOSE_PROJECT_NAME, composeProjectName(worktreePath)),
     SCANI_STACK_TAG: chosen(env.SCANI_STACK_TAG, worktreeSuffix(worktreePath)),
     SCANI_DEV_DB: chosen(env.SCANI_DEV_DB, devDatabaseName(worktreePath)),
+    // One host directory for every checkout, unlike everything above: bun's
+    // cache is content-addressed, so sharing it is what spares each new
+    // worktree a cold download (SC-1748).
+    SCANI_BUN_CACHE: chosen(env.SCANI_BUN_CACHE, join(homedir(), '.cache', 'scani', 'bun-install')),
     ...Object.fromEntries(
       Object.entries(resolveStackPorts(worktreePath, primary, env)).map(([k, v]) => [k, String(v)])
     ),
   };
+}
+
+const PUBLIC_NPM_REGISTRY = 'https://registry.npmjs.org/';
+const NPM_CACHE_PING = 'http://127.0.0.1:4873/-/ping';
+
+/**
+ * Where the stack's FROZEN installs fetch tarballs (SC-1748). On a dev Mac a
+ * local npm cache on :4873 may retry stalled downloads, which a cold install
+ * otherwise hangs on. A container reaches it as `host.docker.internal`. Only
+ * frozen installs read this: a non-frozen one would write the URL into
+ * `bun.lock`, which CI cannot fetch.
+ */
+export function npmRegistryChoice(
+  fromEnv: string | undefined,
+  cacheAnswers: boolean
+): { url: string; why: string } {
+  if (fromEnv?.trim()) return { url: fromEnv.trim(), why: 'SCANI_NPM_REGISTRY is set' };
+  return cacheAnswers
+    ? { url: 'http://host.docker.internal:4873/', why: 'the npm cache on 127.0.0.1:4873 answered' }
+    : { url: PUBLIC_NPM_REGISTRY, why: 'no npm cache answered on 127.0.0.1:4873' };
+}
+
+/** A refused, slow or non-2xx ping is no answer; it never throws. */
+export async function npmCacheAnswers(url = NPM_CACHE_PING, timeoutMs = 1000): Promise<boolean> {
+  try {
+    return (await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })).ok;
+  } catch {
+    return false;
+  }
 }
 
 function reachableAt(env: Record<string, string>, mode: StackMode = 'full'): string {
@@ -944,6 +978,19 @@ async function main(): Promise<never> {
   // materializes the per-app files once the stack is already coming up.
   const synced = await run(['bun', 'scripts/sync-env.ts'], env);
   if (synced !== 0) process.exit(synced);
+
+  // Created here rather than by docker, which would make it root-owned.
+  if (composeInterpolates().has('SCANI_BUN_CACHE') && env.SCANI_BUN_CACHE?.startsWith('/'))
+    mkdirSync(env.SCANI_BUN_CACHE, { recursive: true });
+
+  if (composeInterpolates().has('SCANI_NPM_REGISTRY')) {
+    const registry = npmRegistryChoice(
+      process.env.SCANI_NPM_REGISTRY,
+      process.env.SCANI_NPM_REGISTRY?.trim() ? false : await npmCacheAnswers()
+    );
+    env.SCANI_NPM_REGISTRY = registry.url;
+    process.stderr.write(`dev-stack: npm registry ${registry.url} (${registry.why})\n`);
+  }
 
   const code = await run(upArgs(passthrough, mode), env);
   if (code !== 0) process.stderr.write(explainPortConflicts(env));

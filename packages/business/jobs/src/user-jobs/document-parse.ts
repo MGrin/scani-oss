@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 
 export interface DocumentParseJob extends UserJobBase {
@@ -28,8 +29,6 @@ const documentParseSchema: z.ZodType<DocumentParseJob> = z.object({
   reparseOf: z.string().uuid().optional(),
 });
 
-const JOB_ID_SEP = '_';
-
 export const DOCUMENT_PARSE: UserJobDescriptor<DocumentParseJob> = {
   name: JOB_NAMES.documentParse,
   schema: documentParseSchema,
@@ -49,7 +48,7 @@ export const DOCUMENT_PARSE: UserJobDescriptor<DocumentParseJob> = {
     // ONLY part that differs from the original parse: callers must mint a
     // fresh one or BullMQ dedups the re-parse away as a double-submit.
     const keyDigest = createHash('sha256').update(d.r2Key).digest('hex').slice(0, 16);
-    return [JOB_NAMES.documentParse, d.userId, keyDigest, d.requestId].join(JOB_ID_SEP);
+    return jobIdOf(JOB_NAMES.documentParse, d.userId, keyDigest, d.requestId);
   },
   summarizePayload: (d) => ({
     mimeType: d.mimeType,

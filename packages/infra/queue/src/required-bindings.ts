@@ -1,5 +1,6 @@
 import { createComponentLogger } from '@scani/logging';
 import { Container, type Token } from 'typedi';
+import { FAILURE_EXPLAINER } from './consumer/failure-explainer';
 import { JOB_HEARTBEAT_WRITER } from './consumer/job-heartbeat-writer';
 import { JOB_LOCK } from './consumer/job-lock';
 import { LIFECYCLE_MIRROR } from './consumer/lifecycle-mirror';
@@ -55,13 +56,19 @@ const logger = createComponentLogger('queue:bindings');
  * silently disabling every job record. A comment cannot do that, and in this
  * repo a comment is what failed last time (SC-272).
  */
-export type QueueBinding = 'enqueue-mirror' | 'lifecycle-mirror' | 'job-lock' | 'heartbeat-writer';
+export type QueueBinding =
+  | 'enqueue-mirror'
+  | 'lifecycle-mirror'
+  | 'job-lock'
+  | 'heartbeat-writer'
+  | 'failure-explainer';
 
 const TOKENS: Record<QueueBinding, Token<unknown>> = {
   'enqueue-mirror': ENQUEUE_MIRROR,
   'lifecycle-mirror': LIFECYCLE_MIRROR,
   'job-lock': JOB_LOCK,
   'heartbeat-writer': JOB_HEARTBEAT_WRITER,
+  'failure-explainer': FAILURE_EXPLAINER,
 };
 
 /** What each binding does, so the error says what breaks rather than what is absent. */
@@ -70,6 +77,7 @@ const CONSEQUENCE: Record<QueueBinding, string> = {
   'lifecycle-mirror': 'job state transitions are never persisted',
   'job-lock': 'scheduled jobs run with no advisory lock, so overlapping fires race',
   'heartbeat-writer': 'job heartbeats are never recorded, so the stuck-job probe is blind',
+  'failure-explainer': 'a failure no processor marked shows its owner no reason',
 };
 
 export function isQueueBindingRegistered(binding: QueueBinding): boolean {

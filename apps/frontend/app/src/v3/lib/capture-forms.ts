@@ -1,3 +1,4 @@
+import type { StatementFileType } from '@scani/shared';
 import { isLitecoinAddress } from '@scani/shared/validators/litecoin';
 import type { TFunction } from 'i18next';
 import { type AccountTargetDraft, describeAccountTargetBlockers } from './manual-entry';
@@ -21,10 +22,33 @@ import { type AccountTargetDraft, describeAccountTargetBlockers } from './manual
  */
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp'] as const;
-const STATEMENT_EXTENSIONS = ['csv', 'tsv', 'ofx', 'qfx', 'qif'] as const;
+/**
+ * Which statement parser reads each extension. `.xml` is CAMT.053: OFX's own
+ * XML flavour still goes by `.ofx`.
+ */
+const STATEMENT_FORMATS = new Map<string, StatementFileType>([
+  ['csv', 'csv'],
+  ['tsv', 'csv'],
+  ['ofx', 'ofx'],
+  // `.qfx` is Quicken's name for OFX, and `@scani/file-import`'s own detector
+  // reads it as one. v2 sent it as CSV, which dead-ended every QFX on a
+  // column-mapping form with nothing mapped (SC-1519).
+  ['qfx', 'ofx'],
+  ['qif', 'qif'],
+  ['sta', 'mt940'],
+  ['mt940', 'mt940'],
+  ['940', 'mt940'],
+  ['xml', 'camt053'],
+  ['xlsx', 'xlsx'],
+  ['xls', 'xls'],
+]);
 
 /** Everything `/v3/import` takes, in the order the accept attribute lists it. */
-const IMPORT_EXTENSIONS: readonly string[] = [...IMAGE_EXTENSIONS, 'pdf', ...STATEMENT_EXTENSIONS];
+const IMPORT_EXTENSIONS: readonly string[] = [
+  ...IMAGE_EXTENSIONS,
+  'pdf',
+  ...STATEMENT_FORMATS.keys(),
+];
 
 export const IMPORT_ACCEPT = IMPORT_EXTENSIONS.map((ext) => `.${ext}`).join(',');
 
@@ -40,14 +64,24 @@ export interface ImportFilePlan {
   /** `storage.getUploadUrl`'s `purpose`. */
   purpose: 'screenshot' | 'file-import';
   contentType: string;
-  /** Which of the three statement parsers reads it. Absent for a screenshot. */
-  format?: 'csv' | 'ofx' | 'qif';
+  /** Which statement parser reads it. Absent for a screenshot. */
+  format?: StatementFileType;
 }
 
 function fileExtension(filename: string): string {
   const dot = filename.lastIndexOf('.');
   return dot === -1 ? '' : filename.slice(dot + 1).toLowerCase();
 }
+
+/**
+ * A spreadsheet goes up under a type the upload allow-list already takes. The
+ * browser calls `.xlsx` by its OOXML type, which the list does not carry, and
+ * no parser reads the type anyway: the worker sniffs the bytes (SC-1734).
+ */
+const SPREADSHEET_UPLOAD_TYPES: Partial<Record<StatementFileType, string>> = {
+  xlsx: 'application/octet-stream',
+  xls: 'application/vnd.ms-excel',
+};
 
 /** Null for an extension neither parser reads. */
 export function planImportFile(file: { name: string; type?: string }): ImportFilePlan | null {
@@ -59,15 +93,19 @@ export function planImportFile(file: { name: string; type?: string }): ImportFil
     return { purpose: 'screenshot', contentType: file.type || 'image/png' };
   }
   if (ext === 'pdf') return { purpose: 'screenshot', contentType: 'application/pdf' };
-  if (!(STATEMENT_EXTENSIONS as readonly string[]).includes(ext)) return null;
+  const format = STATEMENT_FORMATS.get(ext);
+  if (!format) return null;
 
+  // A browser calls `.xml` text/xml and has no type for `.sta`. The upload
+  // allow-list takes no markup type and no parser reads the type, so MT940
+  // and CAMT.053 always go up as plain text (SC-1726).
+  const plainText = format === 'mt940' || format === 'camt053';
   return {
     purpose: 'file-import',
-    contentType: file.type || 'text/plain',
-    // `.qfx` is Quicken's name for OFX, and `@scani/file-import`'s own
-    // detector reads it as one. v2 sent it as CSV, which dead-ended every QFX
-    // on a column-mapping form with nothing mapped (SC-1519).
-    format: ext === 'ofx' || ext === 'qfx' ? 'ofx' : ext === 'qif' ? 'qif' : 'csv',
+    contentType: plainText
+      ? 'text/plain'
+      : (SPREADSHEET_UPLOAD_TYPES[format] ?? (file.type || 'text/plain')),
+    format,
   };
 }
 
@@ -446,4 +484,42 @@ export function integrationCategoryLabel(
   typeCode: string | null | undefined
 ): string {
   return t((typeCode && CATEGORY_LABEL_KEYS[typeCode]) || INTEGRATION_CATEGORY_FALLBACK_KEY);
+}
+
+// A key that can also pay is not "read-only", and the money warning under the
+// header says so; the header must not promise otherwise (SC-1729). A
+// self-hosted-only service is only connected on the user's own server, where
+// "never leave our workers" is wrong (SC-1731). One credential is named with
+// the provider's own noun, key or token (SC-1732).
+export function connectHeaderDescription(
+  t: TFunction,
+  integration: {
+    credentialCanMoveMoney: boolean;
+    selfHostedOnly: boolean;
+    credentialNoun: 'key' | 'token';
+    credentialFields: readonly unknown[];
+  }
+): string {
+  if (!integration.credentialCanMoveMoney && !integration.selfHostedOnly) {
+    return t('v3.capture.integration.permissions');
+  }
+  if (integration.credentialFields.length > 1) {
+    return t('v3.capture.integration.permissionsOnYourServerPlural');
+  }
+  return t(
+    integration.credentialNoun === 'token'
+      ? 'v3.capture.integration.permissionsOnYourServerToken'
+      : 'v3.capture.integration.permissionsOnYourServer'
+  );
+}
+
+export function connectInstructionsTitle(
+  t: TFunction,
+  integration: { credentialFields: readonly unknown[] }
+): string {
+  return t(
+    integration.credentialFields.length > 1
+      ? 'v3.capture.integration.whereToGet'
+      : 'v3.capture.integration.whereToGetOne'
+  );
 }

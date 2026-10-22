@@ -4,6 +4,7 @@ import type { ClassifiedHolding } from '../../../src/services/foundation/legacy-
 import {
   BALANCE_DIFF_CATEGORIES,
   compareBalance,
+  compareVerifications,
   type LegacyBalanceReading,
   type ShadowDifference,
 } from '../../../src/services/foundation/shadow-comparison';
@@ -276,5 +277,54 @@ describe('compareBalance', () => {
     expect(
       compareBalance(classified(snapshot100()), utc('2025-12-20'), stored('5'))?.detail
     ).toEqual({ kind: 'snapshot', method: null, anchorAt: null, entriesApplied: null });
+  });
+});
+
+/**
+ * SC-1628: a typed value on a feed holding is a verification and never anchors
+ * (D7), so one that disagrees with the engine changes nothing shown. The
+ * nightly shadow counts them so a rise is visible before Reconciliation ships.
+ */
+describe('compareVerifications', () => {
+  const feed = (...observations: HoldingEvidence['observations'][number][]) =>
+    evidence({
+      kind: 'feed',
+      observations: [statementCheckpoint(), ...observations],
+      entries: [deposit()],
+    });
+
+  test('a typed value that differs from the engine at its own instant disagrees', () => {
+    expect(compareVerifications(feed(verification('v', utc('2026-01-15'), '120')), AT)).toEqual({
+      compared: 1,
+      disagreeing: 1,
+    });
+  });
+
+  test('CONTROL: a typed value equal to the engine there agrees, whatever its formatting', () => {
+    expect(compareVerifications(feed(verification('v', utc('2026-01-15'), '105.00')), AT)).toEqual({
+      compared: 1,
+      disagreeing: 0,
+    });
+  });
+
+  test('each verification is read at its own instant, not at the run', () => {
+    // 100 before the Jan 12 deposit, 105 after it.
+    const holding = feed(
+      verification('before', utc('2026-01-11'), '100'),
+      verification('after', utc('2026-01-13'), '100')
+    );
+    expect(compareVerifications(holding, AT)).toEqual({ compared: 2, disagreeing: 1 });
+  });
+
+  test('a superseded verification, or one after the run, is not compared', () => {
+    const holding = feed(
+      verification('gone', utc('2026-01-15'), '120', { supersededAt: utc('2026-01-16') }),
+      verification('future', utc('2026-01-25'), '120')
+    );
+    expect(compareVerifications(holding, AT)).toEqual({ compared: 0, disagreeing: 0 });
+  });
+
+  test('a holding with no verification compares nothing', () => {
+    expect(compareVerifications(feed(), AT)).toEqual({ compared: 0, disagreeing: 0 });
   });
 });

@@ -1,0 +1,45 @@
+<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+ xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:x="urn:schemas-microsoft-com:office:excel"
+ xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Worksheet ss:Name="Empty">
+  <Table/>
+ </Worksheet>
+ <Worksheet ss:Name="Statement">
+  <Table>
+   <Row>
+    <Cell><Data ss:Type="String">Account statement</Data></Cell>
+   </Row>
+   <Row>
+    <Cell><Data ss:Type="String">Period</Data></Cell>
+    <Cell><Data ss:Type="String">01.03.2026 - 31.03.2026</Data></Cell>
+   </Row>
+   <Row/>
+   <Row>
+    <Cell><Data ss:Type="String">Date</Data></Cell>
+    <Cell><Data ss:Type="String">Description</Data></Cell>
+    <Cell><Data ss:Type="String">Amount</Data></Cell>
+    <Cell><Data ss:Type="String">Balance</Data></Cell>
+   </Row>
+   <Row>
+    <Cell><Data ss:Type="DateTime">2026-03-02T00:00:00.000</Data></Cell>
+    <Cell><Data ss:Type="String">Card payment Example Store &amp; Co</Data></Cell>
+    <Cell><Data ss:Type="Number">-12.5</Data></Cell>
+    <Cell><Data ss:Type="Number">987.5</Data></Cell>
+   </Row>
+   <Row>
+    <Cell><Data ss:Type="DateTime">2026-03-03T00:00:00.000</Data></Cell>
+    <Cell ss:Index="3"><Data ss:Type="Number">200</Data></Cell>
+    <Cell><Data ss:Type="Number">1187.5</Data></Cell>
+   </Row>
+   <Row>
+    <Cell><Data ss:Type="DateTime">2026-03-05T00:00:00.000</Data></Cell>
+    <Cell><Data ss:Type="String">Interest</Data></Cell>
+    <Cell><Data ss:Type="Number">0.75</Data></Cell>
+    <Cell><Data ss:Type="Number">1188.25</Data></Cell>
+   </Row>
+  </Table>
+ </Worksheet>
+</Workbook>

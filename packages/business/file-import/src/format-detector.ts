@@ -8,9 +8,12 @@ export function detectFormat(content: string, filename?: string): StatementForma
 
   // Extension-based detection
   if (ext === 'ofx' || ext === 'qfx') return 'ofx';
-  if (ext === 'sta' || ext === 'mt940') return 'mt940';
+  if (ext === 'sta' || ext === 'mt940' || ext === '940') return 'mt940';
+  if (ext === 'camt053') return 'camt053';
   if (ext === 'pdf') return 'pdf';
   if (ext === 'qif') return 'qif';
+  if (ext === 'xlsx') return 'xlsx';
+  if (ext === 'xls') return 'xls';
   if (ext === 'csv' || ext === 'tsv') {
     // Check if this is an Interactive Brokers multi-section CSV
     if (isInteractiveBrokersCsv(content)) return 'ib-csv';
@@ -23,8 +26,14 @@ export function detectFormat(content: string, filename?: string): StatementForma
   // OFX files start with OFXHEADER or <?OFX
   if (trimmed.startsWith('OFXHEADER') || trimmed.includes('<OFX>')) return 'ofx';
 
-  // MT940 files start with :20: (Transaction Reference Number)
-  if (/^:20:/.test(trimmed)) return 'mt940';
+  // MT940 files start with :20: (Transaction Reference Number), or with a
+  // SWIFT envelope whose text block does.
+  if (/^(\{1:[^\n]*\{4:\s*)?:20:/.test(trimmed)) return 'mt940';
+
+  // ISO 20022 cash management. A camt.052 report or camt.054 notification
+  // goes to the same parser, which refuses it by name rather than leaving it
+  // to be read as a CSV.
+  if (/urn:iso:std:iso:20022:tech:xsd:camt\.05\d/.test(trimmed.slice(0, 2000))) return 'camt053';
 
   // QIF files start with !Type:
   if (trimmed.startsWith('!Type:')) return 'qif';

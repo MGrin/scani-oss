@@ -89,4 +89,27 @@ export const en: EmailStrings = {
     textUnsubscribe: 'Stop these emails: {url}',
     textPrivacy: 'Privacy policy: {url}',
   },
+  integrationAlert: {
+    subject: '{app}: a connection needs attention',
+    preheader: 'Figures in {app} are missing anything that has happened there since.',
+    greeting: 'Hi {name},',
+    greetingNoName: 'Hi there,',
+    headlineOne: '{name} is not syncing',
+    headlineMany: '{count} connections are not syncing',
+    listIntro: '{count} of your connections are not syncing:',
+    reasonStopped: 'has stopped sending updates',
+    reasonNeverSynced: 'connected, but nothing has ever come through',
+    consequenceOne:
+      'Until it is reconnected, the balances and totals in {app} do not include anything that has happened there since.',
+    consequenceMany:
+      'Until they are reconnected, the balances and totals in {app} do not include anything that has happened there since.',
+    button: 'Open Integrations',
+    textActionOne: 'Open Integrations in {app} to update it: {url}',
+    textActionMany: 'Open Integrations in {app} to update them: {url}',
+    textStop: 'Stop these alerts: {url}',
+    footer:
+      'You get this because a connection you set up in {appLink} stopped working. {stopLink} — one click, no sign-in. That leaves the weekly digest running; {digestLink}.',
+    stop: 'Stop these alerts',
+    stopDigest: 'stop that too',
+  },
 };

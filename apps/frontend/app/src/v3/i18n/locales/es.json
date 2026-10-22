@@ -62,7 +62,7 @@
           "title": "Subir una captura de pantalla"
         },
         "statement": {
-          "description": "Una exportación en CSV, TSV, OFX o QIF de un banco o un bróker. Importamos sus posiciones y movimientos en el momento y después te enseñamos lo que se ha añadido.",
+          "description": "Una exportación en CSV, TSV, OFX, QIF, MT940 o CAMT.053 de un banco o un bróker. Importamos sus posiciones y movimientos en el momento y después te enseñamos lo que se ha añadido.",
           "title": "Subir un archivo de extracto"
         },
         "whereItBelongs": "Dónde encaja"
@@ -73,7 +73,7 @@
         "pasteField": "Pega tu {{label}}"
       },
       "formats": {
-        "import": "PNG, JPG, WEBP, PDF, CSV, TSV, OFX o QIF",
+        "import": "PNG, JPG, WEBP, PDF, CSV, TSV, XLSX, XLS, OFX, QIF, MT940 o CAMT.053",
         "invoice": "PDF, PNG, JPG o WEBP"
       },
       "group": {
@@ -101,17 +101,30 @@
         "allServices": "Todos los servicios",
         "connectNamed": "Conectar {{name}}",
         "credentials": "Credenciales",
-        "listSubtitle": "Claves de API de solo lectura, cifradas en reposo. Los saldos se sincronizan cada hora. Conectar de nuevo el mismo servicio sustituye sus claves.",
+        "listSubtitle": "Scani solo lee con las claves que añades y las cifra en reposo. Los saldos se sincronizan cada hora. Conectar de nuevo el mismo servicio sustituye sus claves.",
         "notFoundBody": "Scani no tiene ninguna integración con ese nombre. Puede que se haya cambiado de nombre, o que el enlace ya no esté actualizado.",
         "notFoundTitle": "No es una de las nuestras",
         "ownDocs": "la documentación de {{name}}",
         "permissions": "A Scani le bastan los permisos de solo lectura. Las claves se cifran en reposo y nunca salen de nuestros procesos.",
+        "permissionsOnYourServer": "Scani solo lee con esta clave. Se cifra en reposo y se queda en el servidor donde se ejecuta Scani.",
+        "permissionsOnYourServerPlural": "Scani solo lee con estas credenciales. Se cifran en reposo y se quedan en el servidor donde se ejecuta Scani.",
+        "permissionsOnYourServerToken": "Scani solo lee con este token. Se cifra en reposo y se queda en el servidor donde se ejecuta Scani.",
         "subtitle": "Un solo juego de claves de solo lectura, cifradas en reposo.",
         "thisService": "este servicio",
         "title": "Conectar un servicio",
         "unverifiedDetail": "{{name}} no ha respondido, así que no podemos decir si las claves son correctas. No se ha guardado nada — inténtalo de nuevo dentro de un minuto.",
         "unverifiedTitle": "No se han podido comprobar tus claves de {{name}}",
-        "whereToGet": "Dónde conseguirlas"
+        "whereToGet": "Dónde conseguirlas",
+        "whereToGetOne": "Dónde conseguirla",
+        "selfHostedOnly": "Solo autoalojado",
+        "selfHostedOnlyTitle": "Disponible en Scani autoalojado",
+        "selfHostedOnlyBody": "{{reason}} Ejecuta Scani en tu propio servidor para conectar {{name}}, o sube un archivo de extracto.",
+        "selfHostedOnlyBodyExport": "{{reason}} Exporta un extracto de {{name}} en formato {{formats}} y súbelo aquí, o ejecuta Scani en tu propio servidor para conectar {{name}}.",
+        "selfHostedOnlyReasonBunq": "{{name}} solo permite usar su clave de API personal en software que ejecutas tú mismo, así que el Scani alojado no puede conectarlo.",
+        "selfHostedOnlyReasonFio": "{{name}} te hace responsable de cualquier uso de tu token por parte de otra persona, así que el Scani alojado no lo acepta.",
+        "selfHostedOnlyReasonInvestec": "{{name}} emite estas credenciales solo para ti o tu empresa, así que el Scani alojado no puede conectarlas.",
+        "selfHostedOnlyReasonOther": "{{name}} solo se puede conectar en Scani autoalojado.",
+        "keyCanMoveMoney": "Una clave de API de {{name}} también puede hacer pagos: {{name}} no ofrece claves de solo lectura. Scani solo la usa para leer y la guarda cifrada."
       },
       "integrations": {
         "uploadInstead": "Subir un extracto en su lugar"
@@ -163,7 +176,7 @@
       },
       "route": {
         "exchange": {
-          "description": "Claves de API de solo lectura, cifradas en reposo.",
+          "description": "Scani solo lee con las claves que añades y las cifra en reposo.",
           "title": "Un acceso a un exchange o un bróker"
         },
         "invoice": {
@@ -436,19 +449,32 @@
         "bulkDeleteConsequence_many": "{{names}} se eliminan, y todas las posiciones que contienen desaparecen también, junto con su historial de transacciones. Esta acción no se puede deshacer.",
         "bulkDeleteConsequence_one": "{{names}} se elimina, y todas las posiciones que contiene desaparecen también, junto con su historial de transacciones. Esta acción no se puede deshacer.",
         "bulkDeleteConsequence_other": "{{names}} se eliminan, y todas las posiciones que contienen desaparecen también, junto con su historial de transacciones. Esta acción no se puede deshacer.",
+        "deleteAction": {
+          "trigger": "Eliminar",
+          "commit": "Eliminar {{name}}",
+          "consequence": "Se elimina {{name}}, con todas sus posiciones. Su valor desaparece de cada día pasado de tu gráfico de patrimonio neto, y sus ganancias realizadas también. Esta acción no se puede deshacer."
+        },
         "byHand": "A mano",
+        "notSyncedYet": "Aún sin sincronizar",
         "groups": "Grupos",
         "holdings": "Posiciones",
         "lastSyncOverdue": "{{when}} · con retraso",
         "lastSynced": "Última sincronización",
         "neverSynced": "Nunca — esta cuenta se mantiene a mano",
+        "neverSyncedConnected": "Nunca — esta conexión aún no se ha sincronizado",
         "pageTitle": "Cuentas",
         "sublabel_many": "{{institution}} · {{count}} posiciones",
         "sublabel_one": "{{institution}} · {{count}} posición",
         "sublabel_other": "{{institution}} · {{count}} posiciones",
         "syncOverdue": "Sincronización con retraso",
-        "keyRejected": "Clave rechazada",
+        "keyRejected": "Requiere reconexión",
         "keyRejectedReconnect": "Clave rechazada — Volver a conectar",
+        "tokenExpired": "Token caducado",
+        "keyExpired": "Clave caducada",
+        "addNewToken": "Añadir un token nuevo",
+        "addNewKey": "Añadir una clave nueva",
+        "tokenStoppedNotice": "{{name}} dejó de aceptar este token. Los tokens de {{name}} duran hasta {{days}} días.",
+        "keyStoppedNotice": "{{name}} dejó de aceptar esta clave. Las claves de {{name}} duran hasta {{days}} días.",
         "toast": {
           "bulkDeletedWithFailures_many": "{{count}} cuentas eliminadas, {{failed}} con error",
           "bulkDeletedWithFailures_one": "{{count}} cuenta eliminada, {{failed}} con error",
@@ -1277,7 +1303,8 @@
         "subject": "las próximas facturas",
         "dueNext_many": "{{count}} por pagar · el próximo {{when}}",
         "dueNext_one": "{{count}} por pagar · el próximo {{when}}",
-        "dueNext_other": "{{count}} por pagar · el próximo {{when}}"
+        "dueNext_other": "{{count}} por pagar · el próximo {{when}}",
+        "tileEmpty": "Nada pendiente pronto"
       },
       "vaults": {
         "ofTarget": "de <target></target>",
@@ -1551,11 +1578,15 @@
         "unrecoverable": {
           "label": "Con error — no se reintentará",
           "sentence": "Esto ha fallado por un motivo que otro intento no va a corregir, y no se ha registrado nada que podamos enseñarte. Volver a ejecutarlo sin cambios fallará igual.",
-          "sentenceWithDetail": "Esto ha fallado por un motivo que otro intento no va a corregir. Revisa los detalles de abajo, corrígelos y vuelve a lanzarlo."
+          "sentenceWithDetail": "Esto ha fallado por un motivo que otro intento no va a corregir. Revisa los detalles de abajo, corrígelos y vuelve a lanzarlo.",
+          "sentenceWithFileDetail": "Este archivo no se puede importar tal como está, y otro intento no lo va a cambiar."
         },
         "sourceUnavailable": {
           "label": "Con error — inténtalo más tarde",
           "sentence": "No se pudo conectar con un servicio del que depende esto, así que se detuvo antes de tiempo. Vuelve a intentarlo más tarde."
+        },
+        "unexplained": {
+          "sentence": "Se detuvo por un error inesperado, así que no hay ningún motivo que podamos mostrarte. Los detalles quedan guardados para el equipo de Scani."
         }
       },
       "file": {
@@ -1566,6 +1597,9 @@
           "body_many": "Hemos leído {{count}} transacciones de este archivo, pero no nombra ninguna divisa y no se ha podido detectar ninguna. Todavía no se ha importado nada.",
           "body_one": "Hemos leído {{count}} transacción de este archivo, pero no nombra ninguna divisa y no se ha podido detectar ninguna. Todavía no se ha importado nada.",
           "body_other": "Hemos leído {{count}} transacciones de este archivo, pero no nombra ninguna divisa y no se ha podido detectar ninguna. Todavía no se ha importado nada.",
+          "bodySuggested_many": "Hemos leído {{count}} transacciones de este archivo. Menciona {{currency}}, así que {{currency}} está seleccionada abajo. Compruébalo antes de importar. Todavía no se ha importado nada.",
+          "bodySuggested_one": "Hemos leído {{count}} transacción de este archivo. Menciona {{currency}}, así que {{currency}} está seleccionada abajo. Compruébalo antes de importar. Todavía no se ha importado nada.",
+          "bodySuggested_other": "Hemos leído {{count}} transacciones de este archivo. Menciona {{currency}}, así que {{currency}} está seleccionada abajo. Compruébalo antes de importar. Todavía no se ha importado nada.",
           "fieldLabel": "Divisa del extracto",
           "noDescription": "Sin descripción",
           "preview": "{{shown}} de {{total}}",
@@ -1588,7 +1622,7 @@
           "new": "Nueva",
           "noClosingBalance": "Sin saldo de cierre",
           "balanceUnknown": "Saldo desconocido",
-          "fromRows": "Según estas filas. Indica el saldo real si ya tenía dinero antes",
+          "fromRows": "Saldo según estas filas. Indica el saldo real si ya tenía dinero antes",
           "setBalance": "Indicar el saldo",
           "statementClose": "Cierre del extracto",
           "transactions_many": "{{count}} transacciones",
@@ -1606,7 +1640,7 @@
         "warningsTitle_one": "{{count}} aviso",
         "warningsTitle_other": "{{count}} avisos",
         "columns": {
-          "title": "Asignar columnas CSV",
+          "title": "Asignar columnas del archivo",
           "body": "Elige las columnas del archivo. No se ha importado nada. Selecciona un importe con signo o columnas separadas de abonos y cargos.",
           "date": "Fecha",
           "description": "Descripción",
@@ -1716,7 +1750,8 @@
         "backup": "Copia de seguridad",
         "restore": "Restauración de copia",
         "budgetAppImport": "Importación de app de presupuestos",
-        "budgetAppUndo": "Deshacer importación de app de presupuestos"
+        "budgetAppUndo": "Deshacer importación de app de presupuestos",
+        "accountRefresh": "Actualización de cuenta"
       },
       "manual": {
         "addMore": "Añadir más",
@@ -1952,6 +1987,19 @@
         "accountsKept_one": "Se conserva {{count}} cuenta que abrió la importación: desde entonces algo más ha escrito en ella.",
         "accountsKept_many": "Se conservan {{count}} cuentas que abrió la importación: desde entonces algo más ha escrito en ellas.",
         "accountsKept_other": "Se conservan {{count}} cuentas que abrió la importación: desde entonces algo más ha escrito en ellas."
+      },
+      "burst": {
+        "refreshing_one": "Actualizando {{count}} cuenta",
+        "refreshing_many": "Actualizando {{count}} de cuentas",
+        "refreshing_other": "Actualizando {{count}} cuentas",
+        "refreshed_one": "{{count}} cuenta actualizada",
+        "refreshed_many": "{{count}} de cuentas actualizadas",
+        "refreshed_other": "{{count}} cuentas actualizadas",
+        "progress": "{{done}} de {{total}} listas",
+        "failed_one": "{{count}} con error",
+        "failed_many": "{{count}} con error",
+        "failed_other": "{{count}} con error",
+        "accountsHeading": "Cuentas actualizadas"
       }
     },
     "membership": {
@@ -3164,7 +3212,8 @@
       "backup": {
         "title": "Copia de seguridad",
         "intro": "Tu cuenta en un solo archivo: cada cuenta, posición, transacción y lectura de saldo, con tus ajustes y reglas.",
-        "notIncluded": "Aún no incluye: los documentos subidos. Las conexiones con exchanges y bancos nunca se incluyen: son credenciales, no registros.",
+        "notIncluded": "Las conexiones con exchanges y bancos nunca se incluyen: son credenciales, no registros.",
+        "filesLeftOut": "Archivos subidos que no están en esta copia de seguridad: {{files}}. Con ellos, superaría los {{limit}} que acepta una restauración.",
         "last": "Última copia {{date}} · {{size}}",
         "make": "Crear una copia de seguridad",
         "making": "Creando tu copia de seguridad…",
@@ -3469,6 +3518,13 @@
         "confirming": "Confirmando…",
         "blockerCode": "introduce el código de 6 dígitos",
         "passkeyFailed": "Este dispositivo no pudo guardar una llave de acceso."
+      },
+      "aiCategories": {
+        "title": "Sugerencias de categoría con IA",
+        "label": "Sugerir categorías con IA",
+        "sent": "Si está activado, la descripción, el nombre, la dirección (entrada o salida) y la moneda de cada beneficiario se envían al proveedor de IA, sin ningún número. Nunca se envían importes, fechas, números de tarjeta ni nombres de cuentas. Las sugerencias llegan en una hora, marcadas como «Sugerido por IA».",
+        "unavailable": "Esta instancia no tiene un proveedor de IA para sugerencias.",
+        "saving": "Guardando el ajuste de sugerencias con IA"
       }
     },
     "shell": {
@@ -3791,10 +3847,19 @@
         "chart": "Patrimonio del hogar en el último año",
         "allocation": "Distribución",
         "accounts": "Cuentas compartidas",
-        "accountOwner": "{{name}} · {{owner}}",
         "you": "Tú",
         "trackedTwice": "Ambos registráis {{name}}: deja de compartir una copia",
-        "link": "Hogar"
+        "link": "Hogar",
+        "members": "Miembros",
+        "manage": "Gestionar",
+        "invited": "Invitado",
+        "memberYou": "{{name}} (tú)",
+        "memberShares_one": "{{role}} · comparte {{count}} cuenta",
+        "memberShares_many": "{{role}} · comparte {{count}} cuentas",
+        "memberShares_other": "{{role}} · comparte {{count}} cuentas",
+        "memberSharesNothing": "{{role}} · aún no comparte nada",
+        "accountSublabel": "{{owner}} · {{institution}}",
+        "shareAccounts": "Compartir cuentas"
       }
     },
     "budgetApp": {
@@ -3926,6 +3991,8 @@
       "auto": {
         "marker": "Puesta automáticamente",
         "reasonRule": "Coincide con lo que elegiste antes para {{payee}}",
+        "reasonAi": "Sugerido por IA",
+        "reasonKind": "Asignada según el tipo de transacción",
         "keep": "Mantener",
         "kept": "Categoría mantenida",
         "spread_one": "También se puso en {{count}} transacción similar.",
@@ -4045,6 +4112,12 @@
         "exempt": "Protegido",
         "advantaged": "Ventajoso"
       }
+    },
+    "statements": {
+      "fileNotKept": "Archivo no conservado",
+      "gaps": "Sin extracto de {{months}}.",
+      "noGaps": "Cada mes desde el primer extracto tiene uno.",
+      "title": "Extractos"
     }
   }
 }

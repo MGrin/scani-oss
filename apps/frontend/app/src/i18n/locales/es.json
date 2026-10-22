@@ -81,6 +81,7 @@
     "files": "Archivos",
     "groups": "Grupos",
     "holdings": "Posiciones",
+    "household": "Hogar",
     "home": "Inicio",
     "institutions": "Instituciones",
     "jobs": "Tareas",
@@ -316,6 +317,7 @@
           "noFilesYet": "Aún no hay archivos"
         },
         "filter": {
+          "account": "Cuenta",
           "invoices": "Facturas",
           "kind": "Clase"
         },
@@ -935,6 +937,18 @@
         "period": {
           "all": "Todo el tiempo",
           "custom": "Rango personalizado"
+        }
+      },
+      "householdAccounts": {
+        "col": {
+          "member": "Miembro"
+        },
+        "filter": {
+          "member": "Miembro"
+        },
+        "empty": {
+          "title": "Aún no hay cuentas compartidas",
+          "description": "Cada miembro elige en Ajustes qué cuentas ve el hogar."
         }
       }
     },

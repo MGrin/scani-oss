@@ -110,6 +110,10 @@ function refusedAdmission(admission: Extract<Admission, { ok: false }>): Respons
       return failure(429, 'rate_limited', 'Too many requests for this token. Retry later.', {
         headers: { 'retry-after': String(admission.retryAfterSec) },
       });
+    case 'unavailable':
+      return failure(503, 'unavailable', 'Scani is briefly unavailable. Try again shortly.', {
+        headers: { 'retry-after': String(admission.retryAfterSec) },
+      });
     case 'agent_access_off':
       return failure(403, 'agent_access_off', 'Agent access is not enabled for this account.');
     default:

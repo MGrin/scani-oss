@@ -1,24 +1,19 @@
 import { HoldingRepository, PortfolioValueDailyRepository } from '@scani/domain/repositories';
 import { noteOnResult, PortfolioValueCache } from '@scani/domain/services';
 import { ReconcilePaymentsUseCase } from '@scani/domain/use-cases';
-import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
+import {
+  backfillQueueOf,
+  enqueueCoalescedBackfill,
+  PORTFOLIO_HISTORY_LOOKBACK_DAYS,
+} from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { captureException } from '@scani/logging/sentry';
-import { BullMqEnqueueService } from '@scani/queue';
+import { BullMqEnqueueService, QueueClient } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { Container } from 'typedi';
 import { LOOKBACK_SAFETY_PAD_DAYS, widenToEarliestWrite } from './rebuild-window';
 
 const logger = createComponentLogger('worker:after-ledger-rows');
-
-// 5 minutes: an import wave (4 EVM accounts × ~30s each + the kraken
-// /Ledgers paginator at ~2.2s/page × ~20 pages) easily spans more than
-// 30s. The previous 30s window meant every account-finish enqueued a
-// new full-history backfill jobId, all of which got de-duped
-// downstream — but only after each one had already paid the cost of
-// scheduling and crash-recovery bookkeeping. 5 min collapses an
-// import session to one backfill.
-const ROLLUP_COALESCE_WINDOW_MS = 5 * 60_000;
 
 // Hard ceiling; a fresh user (no rollup rows yet) backfills the full
 // chart window. Shares PORTFOLIO_HISTORY_LOOKBACK_DAYS so the post-
@@ -43,31 +38,20 @@ export async function afterLedgerRows(
   job: { userId: string; accountId: string; source: string },
   result: LedgerRowsWritten
 ): Promise<void> {
-  // If the ingester actually produced rows, enqueue a per-user
-  // history backfill. Coalesced to a 30s window so all 4 EVM
-  // tx-imports kicked off from a single wallet-import confirm land
-  // ONE backfill — and that backfill runs after the longest-running
-  // tx-import finishes, so the rollup sees the full transaction
-  // ledger. The per-user advisory lock inside the processor blocks
-  // any concurrent runs.
+  // If the ingester actually produced rows, enqueue a per-user history
+  // backfill under one stable id. A trigger while a rebuild is waiting joins
+  // it and widens it; one while a rebuild runs queues a single follow-up. A
+  // 5-minute bucket id made every hourly sync during a ~18-minute run a new
+  // job, so rebuilds ran back to back (SC-1725).
   if (result.transactions > 0) {
-    const bucket = Math.floor(Date.now() / ROLLUP_COALESCE_WINDOW_MS);
     const snapshotWindow = await computeLookbackDays(job.userId);
     const lookbackDays = widenToEarliestWrite(snapshotWindow, result.earliestWrittenAt);
-    // A window widened by a backdated row gets its own id, so it is never
-    // collapsed into a narrower job already queued in this bucket (the
-    // SC-1323 shape). The per-user lock runs the two one after the other.
-    const requestId =
-      lookbackDays > snapshotWindow
-        ? `tx-import-${bucket}-${lookbackDays}d`
-        : `tx-import-${bucket}`;
     try {
-      await Container.get(BullMqEnqueueService).add(PORTFOLIO_HISTORY_BACKFILL, {
-        userId: job.userId,
-        requestId,
-        tokenIds: [],
-        lookbackDays,
-      });
+      await enqueueCoalescedBackfill(
+        backfillQueueOf(Container.get(BullMqEnqueueService), Container.get(QueueClient).get()),
+        'tx-import',
+        (requestId) => ({ userId: job.userId, requestId, tokenIds: [], lookbackDays })
+      );
     } catch (error) {
       // Backfill enqueue failures don't fail the parent tx-import
       // (the ledger rows are already persisted), but they DO leave

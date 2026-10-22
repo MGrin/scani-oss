@@ -2,6 +2,9 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import {
   capList,
+  columnMappingRequest,
+  currencyPromptBodyKey,
+  initialStatementCurrency,
   readBudgetAppImport,
   readBudgetAppUndo,
   readExchangeImport,
@@ -148,6 +151,49 @@ describe('file-import', () => {
     ]);
   });
 
+  test('reads a suggested currency only when it is a three-letter code (SC-1735)', () => {
+    const prompt = (suggestedCurrency: unknown) =>
+      readFileImport({
+        ...base,
+        needsCurrency: { r2Key: 'k', fileType: 'csv', transactionCount: 1, suggestedCurrency },
+      })?.needsCurrency?.suggestedCurrency;
+    expect(prompt('EUR')).toBe('EUR');
+    expect(prompt('eur')).toBeUndefined();
+    expect(prompt('<b>EUR</b>')).toBeUndefined();
+    expect(prompt(undefined)).toBeUndefined();
+  });
+
+  test('the currency question starts on what the file names, or on nothing (SC-1735)', () => {
+    const currencies = [
+      { id: 'usd-id', symbol: 'USD' },
+      { id: 'eur-id', symbol: 'EUR' },
+    ];
+    const prompt = (suggestedCurrency?: string) => ({
+      r2Key: 'k',
+      fileType: 'xls',
+      transactionCount: 26,
+      preview: [],
+      suggestedCurrency,
+    });
+    expect(initialStatementCurrency(prompt('EUR'), currencies)).toBe('eur-id');
+    // The owner's base currency is USD here, and it must not be the answer.
+    expect(initialStatementCurrency(prompt(), currencies)).toBe('');
+    expect(initialStatementCurrency(prompt('CHF'), currencies)).toBe('');
+    expect(initialStatementCurrency(prompt('EUR'), undefined)).toBe('');
+  });
+
+  test('the currency question says what the file named, when it named one (SC-1735)', () => {
+    const prompt = (suggestedCurrency?: string) => ({
+      r2Key: 'k',
+      fileType: 'csv',
+      transactionCount: 2,
+      preview: [],
+      suggestedCurrency,
+    });
+    expect(currencyPromptBodyKey(prompt())).toBe('v3.jobs.file.currency.body');
+    expect(currencyPromptBodyKey(prompt('EUR'))).toBe('v3.jobs.file.currency.bodySuggested');
+  });
+
   test('carries a date order already chosen into the currency prompt (SC-1291)', () => {
     const view = readFileImport({
       ...base,
@@ -287,5 +333,33 @@ describe('a budget app import result (SC-1649)', () => {
       accountsKept: 1,
     });
     expect(readBudgetAppUndo({})).toBeNull();
+  });
+});
+
+describe('the column-mapping retry (SC-1734)', () => {
+  const prompt = {
+    r2Key: 'temp/file-import/u/s.xls',
+    fileType: 'xls',
+    headers: ['Data', 'Importo'],
+  };
+  const mapping = { date: 'Data', description: '', amount: 'Importo' };
+
+  test('re-imports the file as the type it was uploaded as, not as CSV', () => {
+    const request = columnMappingRequest(prompt, 'acct-1', mapping, 'req-1');
+    expect(request).toEqual({
+      r2Key: 'temp/file-import/u/s.xls',
+      fileType: 'xls',
+      accountId: 'acct-1',
+      requestId: 'req-1',
+      customMapping: mapping,
+      dateOrder: undefined,
+      defaultCurrency: undefined,
+    });
+  });
+
+  test('a stored type no parser takes falls back to CSV rather than failing the request', () => {
+    expect(columnMappingRequest({ ...prompt, fileType: 'pdf' }, 'a', mapping, 'r').fileType).toBe(
+      'csv'
+    );
   });
 });

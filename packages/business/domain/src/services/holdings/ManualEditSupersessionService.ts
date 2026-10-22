@@ -5,7 +5,7 @@ import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
 import { and, eq, inArray, notInArray } from 'drizzle-orm';
-import { Service } from 'typedi';
+import { Container, Service } from 'typedi';
 import {
   MANUAL_EDIT_CORRECTION_SOURCE,
   MANUAL_EDIT_FLOW_SOURCE,
@@ -17,6 +17,7 @@ import {
   type ManualEditCandidate,
   type RowAnswer,
 } from '../../lib/transactions/manual-edit-supersession';
+import { HoldingCacheWriter } from '../feeds/HoldingCacheWriter';
 
 export interface SupersessionOutcome {
   readonly removedEditRowIds: readonly string[];
@@ -42,6 +43,7 @@ export interface SupersessionOutcome {
 @Service()
 export class ManualEditSupersessionService {
   private readonly logger = createComponentLogger('service:ManualEditSupersession');
+  private readonly cache = Container.get(HoldingCacheWriter);
 
   async supersede(
     userId: string,
@@ -79,14 +81,23 @@ export class ManualEditSupersessionService {
     }
 
     if (removed.length > 0) {
-      await executor
-        .delete(schema.holdingTransactions)
-        .where(
-          and(
-            eq(schema.holdingTransactions.userId, userId),
-            inArray(schema.holdingTransactions.id, removed)
-          )
-        );
+      const gone = new Set(removed);
+      const touched = [...new Set(rows.filter((r) => gone.has(r.id)).map((r) => r.holdingId))];
+      // A delete is an evidence write (A5 D-18): a holding with no anchor after
+      // the edit kept counting it until its next write (SC-1666).
+      const removeAndRefresh = async (tx: DatabaseTransaction) => {
+        await tx
+          .delete(schema.holdingTransactions)
+          .where(
+            and(
+              eq(schema.holdingTransactions.userId, userId),
+              inArray(schema.holdingTransactions.id, removed)
+            )
+          );
+        await this.cache.refresh(userId, touched, tx);
+      };
+      if (transaction) await removeAndRefresh(transaction);
+      else await db.transaction((tx) => removeAndRefresh(tx));
     }
     if (removed.length > 0 || kept.length > 0) {
       this.logger.info(

@@ -52,24 +52,19 @@ describe('the v3 chrome hides on scroll down and returns on scroll up (SC-1631)'
     expect(scrollThrough([-40, -80, -20, 0, -10]).hidden).toBe(false);
   });
 
-  test('the rubber-band past the bottom does not read as a scroll up', () => {
-    const atBottom = scrollThrough(steps(1000, MAX_Y, 50));
-    expect(atBottom.hidden).toBe(true);
-    expect(scrollThrough([MAX_Y + 60, MAX_Y + 30, MAX_Y], atBottom).hidden).toBe(true);
+  // SC-1714. The page keeps the tab bar's room at its end whether the bars are
+  // shown or not, since resizing anything mid-scroll moved the page under the
+  // finger. So the bars come back at the end and cover that room, rather than
+  // leaving it as a band under the last card.
+  test('reaching the end of the page brings it back', () => {
+    const hidden = scrollThrough(steps(1000, MAX_Y - 100, 50));
+    expect(hidden.hidden).toBe(true);
+    expect(scrollThrough([MAX_Y], hidden).hidden).toBe(false);
   });
 
-  // Hiding the tab bar shrinks the spacer that reserves its room, and at the
-  // end of the page the browser clamps the offset down with it. That is not
-  // the reader scrolling up, and reading it as one would bring the bar back
-  // and grow the spacer again, on a loop (SC-1631).
-  test('the end of the page clamping in as the spacer shrinks does not bring it back', () => {
+  test('the rubber-band past the bottom keeps it shown', () => {
     const atEnd = scrollThrough(steps(1000, MAX_Y, 50));
-    const clamped = [MAX_Y - 10, MAX_Y - 30, MAX_Y - 56].reduce(
-      (state, y) => nextChromeScroll(state, { y, maxY: y }),
-      atEnd
-    );
-    expect(clamped.hidden).toBe(true);
-    expect(nextChromeScroll(clamped, { y: MAX_Y - 56 - 20, maxY: MAX_Y - 56 }).hidden).toBe(false);
+    expect(scrollThrough([MAX_Y + 60, MAX_Y + 30, MAX_Y], atEnd).hidden).toBe(false);
   });
 
   test('a long downward run that starts at the top hides only once the bar has scrolled by', () => {

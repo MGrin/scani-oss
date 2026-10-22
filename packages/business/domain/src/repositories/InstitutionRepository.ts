@@ -18,6 +18,8 @@ export type StaleSyncTarget = {
   kind: 'stale-account' | 'orphaned-credential';
   /** What the last scheduled sync recorded when the provider refused it, or null (SC-1686). */
   lastError: string | null;
+  /** `ProviderError.kind` of that refusal; 'auth-failed' waits on the owner (SC-1749). */
+  refusalKind: string | null;
 };
 
 @Service()
@@ -80,7 +82,7 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
     const idleCutoff = (idle?.cutoff ?? cutoff).toISOString();
     const rows = (await database.execute(sql`
       select uic.id as credential_id, uic.user_id, i.id as institution_id, i.name as institution_name,
-        uic.sync_last_error as last_error,
+        uic.sync_last_error as last_error, uic.sync_refusal_kind as refusal_kind,
         case when count(a.id) = 0 then 'orphaned-credential'
              else 'stale-account' end as kind
       from user_integration_credentials uic
@@ -124,6 +126,7 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
       institution_name: string;
       kind: 'stale-account' | 'orphaned-credential';
       last_error: string | null;
+      refusal_kind: string | null;
     }>;
     return rows.map((r) => ({
       credentialId: r.credential_id,
@@ -132,6 +135,7 @@ export class InstitutionRepository extends BaseRepository<Institution, NewInstit
       institutionName: r.institution_name,
       kind: r.kind,
       lastError: r.last_error,
+      refusalKind: r.refusal_kind,
     }));
   }
 

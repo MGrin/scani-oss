@@ -512,6 +512,7 @@ describe('FileImportProcessor', () => {
           toAt: CLOSE_AT,
           complete: false,
           fetchedAt: document!.createdAt,
+          documentId: document!.id,
           uploadRef: job.r2Key,
           shape: 'statement-upload',
         },
@@ -696,6 +697,26 @@ describe('FileImportProcessor', () => {
     });
   });
 
+  test('the currency question carries a currency the file names, and still writes nothing (SC-1735)', async () => {
+    const fixture = await seed('A');
+    const named = await run(
+      upload(
+        fixture,
+        'Date,Description,Amount\n2026-08-01,Coffee,€ -3.50\n2026-08-02,Tea,€ -2.00\n'
+      )
+    );
+    const silent = await run(
+      upload(fixture, 'Date,Description,Amount\n2026-08-01,Coffee,-3.50\n2026-08-02,Tea,-2.00\n')
+    );
+
+    expect({
+      named: named.result.needsCurrency?.suggestedCurrency,
+      silent: silent.result.needsCurrency?.suggestedCurrency,
+      written: named.result.transactionCount + silent.result.transactionCount,
+      ledger: await ledgerOf(fixture.userId),
+    }).toEqual({ named: 'EUR', silent: undefined, written: 0, ledger: [] });
+  });
+
   test('an import that wrote rows spreads learned categories once, after its commit (SC-1695)', async () => {
     const { fixture, csv } = await twoCurrencies();
     learned.length = 0;
@@ -809,6 +830,7 @@ describe('FileImportProcessor', () => {
       ...period,
       inputId: input!.id,
       fetchedAt: document!.createdAt,
+      documentId: document!.id,
       uploadRef: first.r2Key,
       shape: 'statement-upload' as const,
     };
@@ -827,6 +849,7 @@ describe('FileImportProcessor', () => {
         ...period,
         inputId: input!.id,
         fetchedAt: otherDocument!.createdAt,
+        documentId: otherDocument!.id,
         uploadRef: other.r2Key,
         shape: 'statement-upload',
       },
@@ -974,7 +997,7 @@ describe('FileImportProcessor', () => {
       balanceFrom: result.holdingsTouched.map((h) => h.balanceFrom),
     }).toEqual({
       // The balance now: the last row counts from its own instant (A5 D-16).
-      // Nothing rewrites the cache when that instant passes (SC-1633).
+      // The cache is due again then, and housekeeping rewrites it (SC-1633).
       balance: '100',
       rows: ['100', '-3.5'],
       observations: [{ source: 'statement-close', balance: '96.5', atTheLastRow: true }],
@@ -1139,6 +1162,66 @@ describe('FileImportProcessor', () => {
         [cash.symbol, '1234.5', 'statement-close', 0],
       ].sort()
     );
+  });
+  // SC-1726. An MT940 or CAMT.053 statement is the first to carry both lines
+  // and a balance it states itself: IBKR's has positions and no lines.
+  test('a CAMT.053 statement writes its entries, and its stated closing balance as the statement checkpoint', async () => {
+    const fixture = await seed('C');
+    const [cash] = fixture.tokens;
+    const amount = (value: string) => `<Amt Ccy="${cash.symbol}">${value}</Amt>`;
+    const balance = (code: string, value: string) =>
+      `<Bal><Tp><CdOrPrtry><Cd>${code}</Cd></CdOrPrtry></Tp>${amount(value)}<CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2026-08-06</Dt></Dt></Bal>`;
+    const entry = (reference: string, value: string, indicator: string, text: string) =>
+      `<Ntry>${amount(value)}<CdtDbtInd>${indicator}</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts><BookgDt><Dt>2026-08-06</Dt></BookgDt><AcctSvcrRef>${reference}</AcctSvcrRef><AddtlNtryInf>${text}</AddtlNtryInf></Ntry>`;
+    const xml = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08"><BkToCstmrStmt><Stmt>',
+      `<Acct><Id><IBAN>NL00BANK0000000001</IBAN></Id><Ccy>${cash.symbol}</Ccy></Acct>`,
+      balance('OPBD', '100.00'),
+      balance('CLBD', '85.00'),
+      entry('R1', '40.00', 'DBIT', 'Rent'),
+      entry('R2', '25.00', 'CRDT', 'Refund'),
+      '</Stmt></BkToCstmrStmt></Document>',
+    ].join('\n');
+    const closeAt = new Date('2026-08-06T23:59:59.999Z');
+
+    const { result } = await run(
+      upload(fixture, xml, { fileType: 'camt053', originalFilename: 'statement.xml' })
+    );
+
+    const [held] = await holdingsOf(fixture.accountId);
+    expect([held?.tokenId, held?.balance]).toEqual([cash.id, '85']);
+    expect(
+      (await ledgerOf(fixture.userId)).map((row) => [
+        row.externalId,
+        Number(row.quantity),
+        row.source,
+      ])
+    ).toEqual([
+      ['natural:R1:DBIT:40', -40, 'statement-camt053'],
+      ['natural:R2:CRDT:25', 25, 'statement-camt053'],
+    ]);
+    expect(
+      (await observationsOf(fixture.userId))
+        .filter((o) => o.source === 'statement-close')
+        .map((o) => [o.holdingId, o.balance, o.observedAt])
+    ).toEqual([[held!.id, '85', closeAt]]);
+    expect(result).toMatchObject({
+      format: 'camt053',
+      transactionCount: 2,
+      observationCount: 1,
+      warnings: [],
+    });
+    // The upload is kept as plain text, never as markup.
+    expect((await documentsOf(fixture.userId)).map((d) => d.mimeType)).toEqual(['text/plain']);
+
+    // The close already holds both entries. An engine that added them again
+    // on top of it would read 70.
+    const readings = await captureHistory(
+      [held!.id],
+      [new Date('2026-08-05T12:00:00Z'), closeAt, new Date('2026-09-01T00:00:00Z')]
+    );
+    expect(readings.map((reading) => reading.balance)).toEqual([null, '85', '85']);
   });
   // SC-1529, feeds' review: a ticker two catalog listings share is not guessed
   // between. A wrong listing is a wrong price (SC-1510).

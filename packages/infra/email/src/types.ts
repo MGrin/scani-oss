@@ -4,12 +4,15 @@ export interface EmailMessage {
   subject: string;
   text: string;
   html?: string;
+  /** Extra header fields, written as given: `List-Unsubscribe` (SC-1721). */
+  headers?: Record<string, string>;
 }
 
 export interface EmailContent {
   subject: string;
   text: string;
   html: string;
+  headers?: Record<string, string>;
 }
 
 export type OtpType = 'sign-in' | 'email-verification' | 'forget-password' | 'change-email';

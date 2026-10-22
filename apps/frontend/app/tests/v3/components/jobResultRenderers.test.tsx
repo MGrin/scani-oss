@@ -244,6 +244,14 @@ describe('FileImportResult', () => {
     expect(html).toContain('Balances recorded');
   });
 
+  test('the format row names CAMT.053 the way the upload form does (SC-1726)', () => {
+    const html = render(
+      <FileImportResult result={{ ...SUMMARY, format: 'camt053' }} jobId="job-1" />
+    );
+    expect(html).toContain('CAMT.053');
+    expect(html).not.toContain('CAMT053');
+  });
+
   test('an AI-matched column mapping is stated as a fact, not listed as a warning', () => {
     const html = render(<FileImportResult result={TRANSACTIONS_ONLY} jobId="job-1" />);
     expect(html).not.toContain('Column mapping detected by AI');
@@ -263,6 +271,41 @@ describe('FileImportResult', () => {
     );
     expect(html).toContain('1 warning');
     expect(html).toContain('row 4 skipped');
+  });
+
+  /**
+   * SC-1736, measured at 390x844: "From these rows. Set the real balance if it
+   * held money before" sat in the row's delta slot, under the figure, where the
+   * zone never wraps. It ran past the card edge and cut the amount beside it.
+   * The note now wraps in the identity zone, so the nearest zone class before
+   * it is the wrapping one, not the value zone's `whitespace-nowrap`.
+   */
+  test('the "from these rows" note wraps beside the label, not under the figure (SC-1736)', () => {
+    const html = render(
+      <FileImportResult
+        result={{
+          ...TRANSACTIONS_ONLY,
+          holdingsTouched: [
+            {
+              holdingId: 'h1',
+              symbol: 'EUR',
+              name: 'Euro',
+              transactionCount: 26,
+              closingBalance: null,
+              rowsBalance: '2202.94',
+              balanceFrom: 'imported-rows',
+            },
+          ],
+        }}
+        jobId="job-1"
+      />
+    );
+    const note = html.indexOf('Balance from these rows');
+    expect(note).toBeGreaterThan(-1);
+    expect(html.lastIndexOf('text-pretty', note)).toBeGreaterThan(
+      html.lastIndexOf('whitespace-nowrap', note)
+    );
+    expect(html).toContain('2,202.94');
   });
 
   test('a payload it cannot read is stated rather than rendered as zeroes', () => {

@@ -216,15 +216,23 @@
         "unknownInstitution": "Établissement inconnu",
         "unknownType": "Type inconnu",
         "neverSynced": "Jamais — ce compte est tenu à la main",
+        "neverSyncedConnected": "Jamais — cette connexion ne s'est pas encore synchronisée",
         "valueByAccount": "Valeur par compte",
         "byHand": "À la main",
+        "notSyncedYet": "Pas encore synchronisé",
         "lastSyncOverdue": "{{when}} · en retard",
         "sublabel_one": "{{institution}} · {{count}} position",
         "sublabel_many": "{{institution}} · {{count}} positions",
         "sublabel_other": "{{institution}} · {{count}} positions",
         "syncOverdue": "Synchronisation en retard",
-        "keyRejected": "Clé refusée",
+        "keyRejected": "À reconnecter",
         "keyRejectedReconnect": "Clé refusée — Reconnecter",
+        "tokenExpired": "Jeton expiré",
+        "keyExpired": "Clé expirée",
+        "addNewToken": "Ajouter un nouveau jeton",
+        "addNewKey": "Ajouter une nouvelle clé",
+        "tokenStoppedNotice": "{{name}} n'accepte plus ce jeton. Les jetons {{name}} durent au plus {{days}} jours.",
+        "keyStoppedNotice": "{{name}} n'accepte plus cette clé. Les clés {{name}} durent au plus {{days}} jours.",
         "viewHoldings": "Voir les positions",
         "assignGroups": "Attribuer des groupes",
         "pageTitle": "Comptes",
@@ -237,6 +245,11 @@
         "bulkDeleteConsequence_one": "{{names}} est supprimé, et toutes les positions qu’il contient disparaissent également, avec leur historique de transactions. Cette action est irréversible.",
         "bulkDeleteConsequence_many": "{{names}} sont supprimés, et toutes les positions qu’ils contiennent disparaissent également, avec leur historique de transactions. Cette action est irréversible.",
         "bulkDeleteConsequence_other": "{{names}} sont supprimés, et toutes les positions qu’ils contiennent disparaissent également, avec leur historique de transactions. Cette action est irréversible.",
+        "deleteAction": {
+          "trigger": "Supprimer",
+          "commit": "Supprimer {{name}}",
+          "consequence": "{{name}} est supprimé, avec toutes les positions qu’il contient. Sa valeur disparaît de chaque jour passé de votre graphique de patrimoine net, et ses plus-values réalisées aussi. Cette action est irréversible."
+        },
         "toast": {
           "deleted": "Compte supprimé",
           "deletingContext": "Échec de la suppression du compte",
@@ -876,7 +889,8 @@
       "backup": {
         "title": "Sauvegarde",
         "intro": "Votre compte dans un seul fichier : chaque compte, position, transaction et relevé de solde, avec vos réglages et vos règles.",
-        "notIncluded": "Pas encore inclus : les documents importés. Les connexions aux plateformes d'échange et aux banques ne sont jamais incluses : ce sont des identifiants, pas des données.",
+        "notIncluded": "Les connexions aux plateformes d'échange et aux banques ne sont jamais incluses : ce sont des identifiants, pas des données.",
+        "filesLeftOut": "Fichiers importés absents de cette sauvegarde : {{files}}. Avec eux, elle dépasserait les {{limit}} qu'accepte une restauration.",
         "last": "Dernière sauvegarde {{date}} · {{size}}",
         "make": "Créer une sauvegarde",
         "making": "Création de votre sauvegarde…",
@@ -1217,6 +1231,13 @@
         "confirming": "Confirmation…",
         "blockerCode": "saisissez le code à 6 chiffres",
         "passkeyFailed": "Cet appareil n'a pas pu enregistrer de clé d'accès."
+      },
+      "aiCategories": {
+        "title": "Suggestions de catégories par l’IA",
+        "label": "Suggérer des catégories avec l’IA",
+        "sent": "Si activé, la description, le nom, le sens (entrée ou sortie) et la devise de chaque bénéficiaire sont envoyés au fournisseur d’IA, sans aucun chiffre. Les montants, les dates, les numéros de carte et les noms de comptes ne sont jamais envoyés. Les suggestions arrivent dans l’heure, marquées « Suggéré par l’IA ».",
+        "unavailable": "Cette instance n’a pas de fournisseur d’IA pour les suggestions.",
+        "saving": "Enregistrement du réglage des suggestions par l’IA"
       }
     },
     "home": {
@@ -1290,7 +1311,8 @@
         "incomeExpected_other": "Revenus attendus, {{count}} prochains jours",
         "dueNext_one": "{{count}} à payer · prochain {{when}}",
         "dueNext_many": "{{count}} à payer · prochain {{when}}",
-        "dueNext_other": "{{count}} à payer · prochain {{when}}"
+        "dueNext_other": "{{count}} à payer · prochain {{when}}",
+        "tileEmpty": "Rien à payer bientôt"
       },
       "metric": {
         "netWorth": "Patrimoine net",
@@ -1977,7 +1999,7 @@
         },
         "exchange": {
           "title": "Un accès à une plateforme d’échange ou à un courtier",
-          "description": "Clés d’API en lecture seule, chiffrées au repos."
+          "description": "Scani ne fait que lire avec les clés que vous ajoutez, et les chiffre au repos."
         },
         "manual": {
           "title": "Les chiffres eux-mêmes",
@@ -2007,7 +2029,7 @@
         },
         "statement": {
           "title": "Envoyer un fichier de relevé",
-          "description": "Un export CSV, TSV, OFX ou QIF d’une banque ou d’un courtier. Nous importons aussitôt ses positions et ses transactions, puis vous montrons ce qui a été ajouté."
+          "description": "Un export CSV, TSV, OFX, QIF, MT940 ou CAMT.053 d’une banque ou d’un courtier. Nous importons aussitôt ses positions et ses transactions, puis vous montrons ce qui a été ajouté."
         },
         "either": {
           "title": "Envoyer un fichier",
@@ -2016,7 +2038,7 @@
         "whereItBelongs": "Où cela se range"
       },
       "formats": {
-        "import": "PNG, JPG, WEBP, PDF, CSV, TSV, OFX ou QIF",
+        "import": "PNG, JPG, WEBP, PDF, CSV, TSV, XLSX, XLS, OFX, QIF, MT940 ou CAMT.053",
         "invoice": "PDF, PNG, JPG ou WEBP"
       },
       "stage": {
@@ -2174,18 +2196,31 @@
       "integration": {
         "title": "Connecter un service",
         "subtitle": "Un seul jeu de clés en lecture seule, chiffrées au repos.",
-        "listSubtitle": "Clés d’API en lecture seule, chiffrées au repos. Les soldes sont synchronisés toutes les heures. Connecter à nouveau le même service remplace ses clés.",
+        "listSubtitle": "Scani ne fait que lire avec les clés que vous ajoutez, et les chiffre au repos. Les soldes sont synchronisés toutes les heures. Connecter à nouveau le même service remplace ses clés.",
         "allServices": "Tous les services",
         "thisService": "ce service",
         "notFoundTitle": "Ce n’est pas l’un des nôtres",
         "notFoundBody": "Scani n’a aucune intégration de ce nom. Elle a peut-être été renommée, ou le lien n’est plus à jour.",
         "connectNamed": "Connecter {{name}}",
         "permissions": "Des autorisations en lecture seule suffisent à Scani. Les clés sont chiffrées au repos et ne quittent jamais nos serveurs de traitement.",
+        "permissionsOnYourServer": "Scani ne fait que lire avec cette clé. Elle est chiffrée au repos et reste sur le serveur où tourne Scani.",
+        "permissionsOnYourServerPlural": "Scani ne fait que lire avec ces identifiants. Ils sont chiffrés au repos et restent sur le serveur où tourne Scani.",
+        "permissionsOnYourServerToken": "Scani ne fait que lire avec ce jeton. Il est chiffré au repos et reste sur le serveur où tourne Scani.",
         "whereToGet": "Où les obtenir",
+        "whereToGetOne": "Où l'obtenir",
         "credentials": "Identifiants",
         "ownDocs": "la documentation de {{name}}",
         "unverifiedTitle": "Impossible de vérifier vos clés {{name}}",
-        "unverifiedDetail": "{{name}} n’a pas répondu : nous ne pouvons donc pas dire si les clés sont correctes. Rien n’a été enregistré — réessayez dans une minute."
+        "unverifiedDetail": "{{name}} n’a pas répondu : nous ne pouvons donc pas dire si les clés sont correctes. Rien n’a été enregistré — réessayez dans une minute.",
+        "selfHostedOnly": "Auto-hébergé uniquement",
+        "selfHostedOnlyTitle": "Disponible sur Scani auto-hébergé",
+        "selfHostedOnlyBody": "{{reason}} Exécutez Scani sur votre propre serveur pour connecter {{name}}, ou importez plutôt un fichier de relevé.",
+        "selfHostedOnlyBodyExport": "{{reason}} Exportez un relevé depuis {{name}} au format {{formats}} et importez-le ici, ou exécutez Scani sur votre propre serveur pour connecter {{name}}.",
+        "selfHostedOnlyReasonBunq": "{{name}} n'autorise sa clé API personnelle que dans un logiciel que vous exécutez vous-même : le Scani hébergé ne peut donc pas s'y connecter.",
+        "selfHostedOnlyReasonFio": "{{name}} vous tient responsable de tout usage de votre jeton par quelqu'un d'autre : le Scani hébergé ne le prend donc pas.",
+        "selfHostedOnlyReasonInvestec": "{{name}} délivre ces identifiants pour vous ou votre entreprise uniquement : le Scani hébergé ne peut donc pas s'y connecter.",
+        "selfHostedOnlyReasonOther": "{{name}} ne peut être connecté que sur Scani auto-hébergé.",
+        "keyCanMoveMoney": "Une clé API {{name}} peut aussi effectuer des paiements : {{name}} ne propose pas de clé en lecture seule. Scani ne s'en sert que pour lire et la conserve chiffrée."
       },
       "demoNote": "Rien de ce que vous saisissez ici n'est enregistré — c'est une démo.",
       "backChoices": "Retour aux choix",
@@ -2304,7 +2339,8 @@
         "backup": "Sauvegarde",
         "restore": "Restauration de sauvegarde",
         "budgetAppImport": "Import d’appli de budget",
-        "budgetAppUndo": "Annulation d’un import d’appli de budget"
+        "budgetAppUndo": "Annulation d’un import d’appli de budget",
+        "accountRefresh": "Actualisation du compte"
       },
       "review": {
         "title": "Vérifier les positions extraites",
@@ -2548,7 +2584,7 @@
           "statementClose": "Clôture du relevé",
           "noClosingBalance": "Aucun solde de clôture",
           "balanceUnknown": "Solde inconnu",
-          "fromRows": "D’après ces lignes. Indiquez le vrai solde s’il contenait déjà de l’argent",
+          "fromRows": "Solde d’après ces lignes. Indiquez le vrai solde s’il contenait déjà de l’argent",
           "setBalance": "Indiquer le solde"
         },
         "warningsTitle_one": "{{count}} avertissement",
@@ -2561,6 +2597,9 @@
           "body_one": "Nous avons lu {{count}} transaction dans ce fichier, mais il ne nomme aucune devise et aucune n’a pu être détectée. Rien n’a encore été importé.",
           "body_many": "Nous avons lu {{count}} transactions dans ce fichier, mais il ne nomme aucune devise et aucune n’a pu être détectée. Rien n’a encore été importé.",
           "body_other": "Nous avons lu {{count}} transactions dans ce fichier, mais il ne nomme aucune devise et aucune n’a pu être détectée. Rien n’a encore été importé.",
+          "bodySuggested_one": "Nous avons lu {{count}} transaction dans ce fichier. Il mentionne {{currency}}, donc {{currency}} est sélectionnée ci-dessous. Vérifiez-la avant d’importer. Rien n’a encore été importé.",
+          "bodySuggested_many": "Nous avons lu {{count}} transactions dans ce fichier. Il mentionne {{currency}}, donc {{currency}} est sélectionnée ci-dessous. Vérifiez-la avant d’importer. Rien n’a encore été importé.",
+          "bodySuggested_other": "Nous avons lu {{count}} transactions dans ce fichier. Il mentionne {{currency}}, donc {{currency}} est sélectionnée ci-dessous. Vérifiez-la avant d’importer. Rien n’a encore été importé.",
           "preview": "{{shown}} sur {{total}}",
           "noDescription": "Aucune description",
           "fieldLabel": "Devise du relevé",
@@ -2577,7 +2616,7 @@
           "monthFirst": "Mois d’abord — 12/31"
         },
         "columns": {
-          "title": "Associer les colonnes CSV",
+          "title": "Associer les colonnes du fichier",
           "body": "Choisissez les colonnes du fichier. Rien n’a été importé. Sélectionnez un montant signé ou des colonnes séparées de crédit et débit.",
           "date": "Date",
           "description": "Description",
@@ -2638,7 +2677,8 @@
         "unrecoverable": {
           "label": "En échec — pas de nouvelle tentative",
           "sentence": "L’échec vient d’une cause qu’une nouvelle tentative ne corrigera pas, et rien n’a été enregistré que nous puissions vous montrer. La relancer telle quelle échouera de la même façon.",
-          "sentenceWithDetail": "L’échec vient d’une cause qu’une nouvelle tentative ne corrigera pas. Consultez les détails ci-dessous, corrigez-les, et relancez-la."
+          "sentenceWithDetail": "L’échec vient d’une cause qu’une nouvelle tentative ne corrigera pas. Consultez les détails ci-dessous, corrigez-les, et relancez-la.",
+          "sentenceWithFileDetail": "Ce fichier ne peut pas être importé tel quel, et une nouvelle tentative n’y changera rien."
         },
         "sourceUnavailable": {
           "label": "En échec — réessayez plus tard",
@@ -2665,6 +2705,9 @@
         "settling": {
           "label": "En échec",
           "sentence": "La dernière tentative a échoué. Vérification qu’une autre est en file pour elle."
+        },
+        "unexplained": {
+          "sentence": "Elle s’est arrêtée sur une erreur inattendue : il n’y a donc aucune raison à vous montrer. Les détails sont conservés pour l’équipe Scani."
         }
       },
       "budgetApp": {
@@ -2689,6 +2732,19 @@
         "accountsKept_one": "{{count}} compte ouvert par l’import est conservé : autre chose y a écrit depuis.",
         "accountsKept_many": "{{count}} comptes ouverts par l’import sont conservés : autre chose y a écrit depuis.",
         "accountsKept_other": "{{count}} comptes ouverts par l’import sont conservés : autre chose y a écrit depuis."
+      },
+      "burst": {
+        "refreshing_one": "Actualisation de {{count}} compte",
+        "refreshing_many": "Actualisation de {{count}} de comptes",
+        "refreshing_other": "Actualisation de {{count}} comptes",
+        "refreshed_one": "{{count}} compte actualisé",
+        "refreshed_many": "{{count}} de comptes actualisés",
+        "refreshed_other": "{{count}} comptes actualisés",
+        "progress": "{{done}} sur {{total}} terminés",
+        "failed_one": "{{count}} en échec",
+        "failed_many": "{{count}} en échec",
+        "failed_other": "{{count}} en échec",
+        "accountsHeading": "Comptes actualisés"
       }
     },
     "review": {
@@ -3794,10 +3850,19 @@
         "chart": "Patrimoine du foyer sur la dernière année",
         "allocation": "Répartition",
         "accounts": "Comptes partagés",
-        "accountOwner": "{{name}} · {{owner}}",
         "you": "Vous",
         "trackedTwice": "Vous suivez tous les deux {{name}} : arrêtez de partager une copie",
-        "link": "Foyer"
+        "link": "Foyer",
+        "members": "Membres",
+        "manage": "Gérer",
+        "invited": "Invité",
+        "memberYou": "{{name}} (vous)",
+        "memberShares_one": "{{role}} · partage {{count}} compte",
+        "memberShares_many": "{{role}} · partage {{count}} comptes",
+        "memberShares_other": "{{role}} · partage {{count}} comptes",
+        "memberSharesNothing": "{{role}} · ne partage rien pour l’instant",
+        "accountSublabel": "{{owner}} · {{institution}}",
+        "shareAccounts": "Partager des comptes"
       }
     },
     "budgetApp": {
@@ -3929,6 +3994,8 @@
       "auto": {
         "marker": "Définie automatiquement",
         "reasonRule": "Reprend votre choix précédent pour {{payee}}",
+        "reasonAi": "Suggéré par l’IA",
+        "reasonKind": "Définie d’après le type de transaction",
         "keep": "Garder",
         "kept": "Catégorie gardée",
         "spread_one": "Aussi appliquée à {{count}} transaction similaire.",
@@ -4048,6 +4115,12 @@
         "exempt": "Abrité",
         "advantaged": "Avantagé"
       }
+    },
+    "statements": {
+      "fileNotKept": "Fichier non conservé",
+      "gaps": "Aucun relevé pour {{months}}.",
+      "noGaps": "Chaque mois depuis le premier relevé en a un.",
+      "title": "Relevés"
     }
   }
 }

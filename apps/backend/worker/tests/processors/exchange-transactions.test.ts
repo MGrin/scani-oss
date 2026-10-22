@@ -36,6 +36,7 @@ function wire(failOn?: string) {
       targets: TARGETS,
       accountsFound: TARGETS.length,
       skippedNoSource: 0,
+      skippedNeedsReconnect: 0,
       fullHistoryTargets: 0,
     }),
   } as unknown as SyncExchangeTransactionsUseCase);

@@ -5,6 +5,7 @@
 
 export type { JobsOptions } from 'bullmq';
 export { UnrecoverableError } from 'bullmq';
+export { FAILURE_EXPLAINER, FailureExplainer } from './consumer/failure-explainer';
 export {
   JOB_HEARTBEAT_WRITER,
   JobHeartbeatWriter,

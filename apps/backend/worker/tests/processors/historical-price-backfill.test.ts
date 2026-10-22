@@ -59,6 +59,7 @@ const NOTHING_TO_DO: Summary = {
   droppedBars: 0,
   earliestWrittenDay: null,
   skippedUnpriceable: 0,
+  skippedRecentMisses: 0,
   attemptsFailed: 0,
   durationMs: 0,
 };

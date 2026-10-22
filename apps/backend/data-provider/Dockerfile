@@ -30,7 +30,10 @@ COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.js
 # flag stays so no optional peer bun.lock resolves elsewhere lands here.
 # elysia's required `file-type` peer is declared in this app's package.json so
 # the flag cannot drop it.
-RUN bun install --frozen-lockfile --filter @scani/data-provider --linker=hoisted --omit=peer
+# The npm-cache on a dev Mac, or the public registry (SC-1748). Frozen only,
+# so bun.lock never records it.
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+RUN BUN_CONFIG_REGISTRY=$NPM_REGISTRY bun install --frozen-lockfile --filter @scani/data-provider --linker=hoisted --omit=peer
 
 # ---------- build ----------
 FROM oven/bun:${BUN_VERSION} AS build

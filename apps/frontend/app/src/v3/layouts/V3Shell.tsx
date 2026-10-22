@@ -104,41 +104,37 @@ export function V3Shell() {
           onCapturePress={openCapture}
         />
 
-        <div className="flex min-w-0 flex-1 flex-col">
-          {/* Hidden, the whole header collapses, the status bar's inset
-              included, so the page scrolls up under the clock and iOS's own
-              fade covers it (SC-1631). The row slides up while it collapses,
-              so the page gains the height without a jump. */}
+        {/* `data-chrome` publishes where the header ends as `--v3-chrome-top`
+            (styles/v3-shell.css), so a page's sticky bar stops below it. */}
+        <div
+          className="relative flex min-w-0 flex-1 flex-col"
+          data-chrome={chrome.hidden ? 'hidden' : 'shown'}
+        >
+          {/* The header floats over the page and slides away by transform,
+              the status bar's inset with it, so the page shows under the clock
+              (SC-1631). It never changes size: collapsing it moved the page
+              under the finger, 56px past it going down and back going up
+              (SC-1714). The page keeps its room with a spacer of its own. */}
           <header
-            className="shrink-0 lg:hidden"
+            className="absolute inset-x-0 top-0 z-30 bg-background lg:hidden"
             onFocusCapture={chrome.reveal}
             style={{
-              paddingTop: chrome.hidden ? 0 : 'var(--scani-header-inset)',
-              minHeight: chrome.hidden
-                ? 0
-                : 'calc(var(--scani-header-row) + var(--scani-header-inset))',
-              transition: `padding-top ${slide}, min-height ${slide}`,
+              paddingTop: 'var(--scani-header-inset)',
+              minHeight: 'calc(var(--scani-header-row) + var(--scani-header-inset))',
+              translate: chrome.hidden ? '0 -100%' : '0 0',
+              transition: `translate ${slide}`,
             }}
           >
             <div
-              className="overflow-hidden"
+              className="flex items-center gap-2 border-b border-border px-4"
               style={{
-                height: chrome.hidden ? 0 : 'var(--scani-header-row)',
-                transition: `height ${slide}`,
+                height: 'var(--scani-header-row)',
+                borderBottomWidth: 'var(--scani-header-border)',
               }}
             >
-              <div
-                className="flex h-full items-center gap-2 border-b border-border px-4"
-                style={{
-                  borderBottomWidth: 'var(--scani-header-border)',
-                  translate: chrome.hidden ? '0 -100%' : '0 0',
-                  transition: `translate ${slide}`,
-                }}
-              >
-                <ScaniBrand />
-                <div className="ms-auto flex items-center gap-1">
-                  <ThemeToggle variant="icon" side="bottom" align="end" />
-                </div>
+              <ScaniBrand />
+              <div className="ms-auto flex items-center gap-1">
+                <ThemeToggle variant="icon" side="bottom" align="end" />
               </div>
             </div>
           </header>
@@ -150,11 +146,15 @@ export function V3Shell() {
               scroll away mid-refresh. `overflow-hidden` is what lets the chip
               start off the top edge instead of over the header. */}
           <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-            <PullToRefreshIndicator
-              distance={pull.distance}
-              phase={pull.phase}
-              progress={pull.progress}
-            />
+            {/* Clipped below the header, which now floats over this wrapper,
+                so the chip still starts off the top of the page. */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 top-[calc(var(--scani-header-row)+var(--scani-header-inset))] overflow-hidden lg:top-0">
+              <PullToRefreshIndicator
+                distance={pull.distance}
+                phase={pull.phase}
+                progress={pull.progress}
+              />
+            </div>
 
             {/* `data-v3-route-region` is the only element in v3 carrying a
                 `view-transition-name` (styles/v3-motion.css). Naming the content
@@ -212,21 +212,19 @@ export function V3Shell() {
               {/* The opener reaches the outlet so an empty screen can carry the
                   capture sheet as its call to action — which is the place it is
                   worth the most. */}
+              {/* The header's room, kept whether it shows or not (SC-1714). */}
+              <div
+                aria-hidden="true"
+                className="lg:hidden"
+                style={{ height: 'calc(var(--scani-header-row) + var(--scani-header-inset))' }}
+              />
               <CaptureSheetProvider value={openCapture}>
                 <Outlet />
               </CaptureSheetProvider>
               {/* The tab bar is fixed to the viewport so it cannot drift with
-                  dvh shifts; this reserves the height it covers. Hidden, only
-                  the home indicator's inset stays, so no gap is left under the
-                  last card (SC-1631). */}
-              <div
-                aria-hidden="true"
-                className="lg:hidden"
-                style={{
-                  height: chrome.hidden ? 'env(safe-area-inset-bottom, 0px)' : V3_TAB_BAR_SPACER,
-                  transition: `height ${slide}`,
-                }}
-              />
+                  dvh shifts; this reserves the height it covers, shown or not.
+                  At the end of the page the bar comes back over it (SC-1714). */}
+              <div aria-hidden="true" className="lg:hidden" style={{ height: V3_TAB_BAR_SPACER }} />
             </main>
           </div>
         </div>

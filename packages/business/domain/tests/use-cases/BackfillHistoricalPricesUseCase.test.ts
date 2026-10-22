@@ -256,7 +256,7 @@ beforeEach(async () => {
     backfillTokenRange: async (tokenId: string, baseTokenId: string, neededDays: Date[]) => {
       let inserted = 0;
       let alreadyHad = 0;
-      let providerMissing = 0;
+      const missingDays: string[] = [];
       let droppedDays = 0;
       let providerUsed: string | null = null;
       for (const day of neededDays) {
@@ -275,16 +275,17 @@ beforeEach(async () => {
           } else if (result.status === 'dropped') {
             droppedDays++;
           } else {
-            providerMissing++;
+            missingDays.push(day.toISOString().slice(0, 10));
           }
         } catch {
-          providerMissing++;
+          missingDays.push(day.toISOString().slice(0, 10));
         }
       }
       return {
         inserted,
         alreadyHad,
-        providerMissing,
+        providerMissing: missingDays.length,
+        missingDays,
         droppedDays,
         droppedBars: droppedDays + nextDroppedBarsOutsideNeededDays,
         providerUsed,
@@ -1498,5 +1499,136 @@ describe('every execute in this file is scoped to the fixture user', () => {
     }
 
     expect(unscoped).toEqual([]);
+  });
+});
+
+describe('BackfillHistoricalPricesUseCase: the window and remembered misses (SC-1725)', () => {
+  const uc = () => Container.get(BackfillHistoricalPricesUseCase);
+  const missing = (tokenId: string, at: Date, baseTokenId: string): DayResult => ({
+    tokenId,
+    baseTokenId,
+    at,
+    status: 'provider-missing',
+  });
+
+  test('boundToLookback asks only for days inside the window, even for a token with older history', async () => {
+    const f = fixture!;
+    await addTransaction(f, utcDay(20), `bhp-${randomUUID()}`);
+    const summary = await uc().execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 3,
+      boundToLookback: true,
+    });
+    expect(summary.attempted).toBe(4);
+    expect(backfillCalls.every((c) => c.at >= utcDay(3))).toBe(true);
+  });
+
+  test('CONTROL: without it a token is asked from its first transaction', async () => {
+    const f = fixture!;
+    await addTransaction(f, utcDay(20), `bhp-${randomUUID()}`);
+    const summary = await uc().execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 3,
+    });
+    expect(summary.attempted).toBe(21);
+  });
+
+  test('a day no provider had is not asked again within a week, and is asked after it', async () => {
+    const f = fixture!;
+    await addTransaction(f, utcDay(20), `bhp-${randomUUID()}`);
+    nextResult = missing;
+    const run = () =>
+      uc().execute({ userId: f.userId, usdTokenId: f.usdTokenId, lookbackDays: 20 });
+
+    await run();
+    expect(backfillCalls).toHaveLength(21);
+
+    // Only days older than a week are remembered, so the last eight are asked again.
+    backfillCalls = [];
+    const second = await run();
+    expect(backfillCalls).toHaveLength(8);
+    expect(backfillCalls.every((c) => c.at >= utcDay(7))).toBe(true);
+    expect(second.skippedRecentMisses).toBe(13);
+
+    await db
+      .update(schema.tokenPriceMisses)
+      .set({ checkedAt: new Date(Date.now() - 8 * DAY_MS) })
+      .where(eq(schema.tokenPriceMisses.tokenId, f.btcTokenId));
+    backfillCalls = [];
+    await run();
+    expect(backfillCalls).toHaveLength(21);
+  });
+
+  const rememberMisses = async (f: Fixture, fromDay: number, toDay: number) => {
+    const rows = [];
+    for (let d = fromDay; d >= toDay; d--) {
+      rows.push({
+        tokenId: f.btcTokenId,
+        baseTokenId: f.usdTokenId,
+        day: utcDay(d).toISOString().slice(0, 10),
+        checkedAt: new Date(Date.now() - DAY_MS),
+      });
+    }
+    await db.insert(schema.tokenPriceMisses).values(rows);
+  };
+  const cooldownOf = async (f: Fixture) => {
+    const [token] = await db
+      .select({ unpriceableUntil: schema.tokens.unpriceableUntil })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.id, f.btcTokenId));
+    return token?.unpriceableUntil ?? null;
+  };
+
+  // SC-1625: every older day was answered empty last night, so tonight asks only
+  // the newest eight. The token has still been empty for 41 days.
+  test('days remembered as missing count toward the 30-day floor', async () => {
+    const f = fixture!;
+    await addTransaction(f, utcDay(40), `bhp-${randomUUID()}`);
+    await rememberMisses(f, 40, 8);
+    nextResult = missing;
+    const summary = await uc().execute({
+      userId: f.userId,
+      usdTokenId: f.usdTokenId,
+      lookbackDays: 40,
+    });
+    expect(backfillCalls).toHaveLength(8);
+    expect(summary.skippedRecentMisses).toBe(33);
+    expect(await cooldownOf(f)).toBeInstanceOf(Date);
+  });
+
+  test('CONTROL: a token empty for 21 days, most of them remembered, is not marked', async () => {
+    const f = fixture!;
+    await addTransaction(f, utcDay(20), `bhp-${randomUUID()}`);
+    await rememberMisses(f, 20, 8);
+    nextResult = missing;
+    await uc().execute({ userId: f.userId, usdTokenId: f.usdTokenId, lookbackDays: 20 });
+    expect(backfillCalls).toHaveLength(8);
+    expect(await cooldownOf(f)).toBeNull();
+  });
+
+  test('a provider that errored records no miss, so the days are asked again', async () => {
+    const f = fixture!;
+    await addTransaction(f, utcDay(20), `bhp-${randomUUID()}`);
+    nextResult = missing;
+    nextAttemptFailed = true;
+    const run = () =>
+      uc().execute({ userId: f.userId, usdTokenId: f.usdTokenId, lookbackDays: 20 });
+    await run();
+    backfillCalls = [];
+    await run();
+    expect(backfillCalls).toHaveLength(21);
+  });
+
+  test('a day that got a price is not recorded as a miss', async () => {
+    const f = fixture!;
+    await addTransaction(f, utcDay(20), `bhp-${randomUUID()}`);
+    await uc().execute({ userId: f.userId, usdTokenId: f.usdTokenId, lookbackDays: 20 });
+    const rows = await db
+      .select()
+      .from(schema.tokenPriceMisses)
+      .where(eq(schema.tokenPriceMisses.tokenId, f.btcTokenId));
+    expect(rows).toEqual([]);
   });
 });

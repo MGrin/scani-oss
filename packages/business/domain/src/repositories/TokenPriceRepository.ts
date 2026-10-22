@@ -289,4 +289,48 @@ export class TokenPriceRepository extends BaseRepository<TokenPrice, NewTokenPri
     for (const r of rows) keys.add(`${r.tokenId}:${r.day}`);
     return keys;
   }
+
+  /**
+   * `tokenId:YYYY-MM-DD` for each day a provider answered with nothing since
+   * `checkedAfter`, so the backfill skips it until the check is stale (SC-1725).
+   */
+  async findRecentMissDayKeys(
+    opts: { baseTokenId: string; tokenIds: readonly string[]; checkedAfter: Date },
+    transaction?: DatabaseTransaction
+  ): Promise<Set<string>> {
+    const keys = new Set<string>();
+    if (opts.tokenIds.length === 0) return keys;
+    const m = schema.tokenPriceMisses;
+    const rows = await this.getDb(transaction)
+      .select({ tokenId: m.tokenId, day: m.day })
+      .from(m)
+      .where(
+        and(
+          eq(m.baseTokenId, opts.baseTokenId),
+          inArray(m.tokenId, [...opts.tokenIds]),
+          gte(m.checkedAt, opts.checkedAfter)
+        )
+      );
+    for (const r of rows) keys.add(`${r.tokenId}:${r.day}`);
+    return keys;
+  }
+
+  /** Remembers each `{ tokenId, day }` as checked now and not found. */
+  async recordMisses(
+    baseTokenId: string,
+    misses: ReadonlyArray<{ tokenId: string; day: string }>,
+    now: Date,
+    transaction?: DatabaseTransaction
+  ): Promise<void> {
+    const m = schema.tokenPriceMisses;
+    for (let at = 0; at < misses.length; at += 1000) {
+      await this.getDb(transaction)
+        .insert(m)
+        .values(misses.slice(at, at + 1000).map((x) => ({ ...x, baseTokenId, checkedAt: now })))
+        .onConflictDoUpdate({
+          target: [m.tokenId, m.baseTokenId, m.day],
+          set: { checkedAt: now },
+        });
+    }
+  }
 }

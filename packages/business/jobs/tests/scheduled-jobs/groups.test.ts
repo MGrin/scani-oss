@@ -8,6 +8,9 @@ import { SCHEDULED_JOB_DESCRIPTORS, SCHEDULED_JOB_STEPS } from '../../src/schedu
  * active-pricing and weekly-digest, as a schedule of its own.
  */
 
+/** Jobs added after the grouping, each once, in a group or alone. */
+const JOBS_ADDED_SINCE = ['categorize-transactions', 'holding-cache-due'];
+
 const EVERY_JOB_BEFORE_SC1688 = [
   'activation-nudge',
   'active-pricing',
@@ -58,7 +61,9 @@ describe('grouped schedules (SC-1688)', () => {
   test('every job that had its own schedule still runs, exactly once', () => {
     const standalone = SCHEDULED_JOB_DESCRIPTORS.filter((d) => !isGroup(d)).map((d) => d.name);
     const steps = groups.flatMap((g) => g.steps.map((s) => s.name));
-    expect([...standalone, ...steps].sort()).toEqual([...EVERY_JOB_BEFORE_SC1688].sort());
+    expect([...standalone, ...steps].sort()).toEqual(
+      [...EVERY_JOB_BEFORE_SC1688, ...JOBS_ADDED_SINCE].sort()
+    );
   });
 
   test('every step has its descriptor, so each keeps its own lock and heartbeat name', () => {

@@ -350,7 +350,7 @@ describe('PortfolioValueDailyRepository.findHistoryLookbackDays', () => {
     });
   });
 
-  test('a balance reading or a stored day older than the ledger sets it', async () => {
+  test('a balance reading older than the ledger sets it', async () => {
     await withTestDb(async (tx) => {
       const read = await userWithLedgerRow(tx, 410);
       await tx.insert(schema.holdingBalanceObservations).values({
@@ -361,20 +361,98 @@ describe('PortfolioValueDailyRepository.findHistoryLookbackDays', () => {
         source: 'sync-capture',
       });
       expect(await repo().findHistoryLookbackDays(read.userId, FLOOR, tx)).toBe(452);
+    });
+  });
 
+  // The rollup's own output is not history: counting it made every full
+  // rebuild start one day before the oldest row the last one wrote (SC-1627).
+  test('a stored day older than every record does not move it', async () => {
+    await withTestDb(async (tx) => {
       const stored = await userWithLedgerRow(tx, 410);
-      await tx.insert(schema.portfolioValueDaily).values({
-        userId: stored.userId,
-        scopeKind: 'user',
-        scopeId: stored.userId,
-        snapshotDate: sql`current_date - 600`,
-        baseCurrencyId: (await makeToken(tx)).id,
-        totalValue: '1',
-        coverageQuality: 'full',
-        holdingsWithKnownValue: 1,
-        holdingsTotal: 1,
+      await storedRow(tx, stored.userId, sql`current_date - 600`);
+      expect(await repo().findHistoryLookbackDays(stored.userId, FLOOR, tx)).toBe(412);
+    });
+  });
+});
+
+/** One user-scope rollup row on `day`, in a fresh base currency unless one is given. */
+async function storedRow(
+  tx: DatabaseTransaction,
+  userId: string,
+  day: ReturnType<typeof sql> | string,
+  opts: { baseCurrencyId?: string; scopeKind?: string; scopeId?: string } = {}
+) {
+  await tx.insert(schema.portfolioValueDaily).values({
+    userId,
+    scopeKind: opts.scopeKind ?? 'user',
+    scopeId: opts.scopeId ?? userId,
+    snapshotDate: day as string,
+    baseCurrencyId: opts.baseCurrencyId ?? (await makeToken(tx)).id,
+    totalValue: '1',
+    coverageQuality: 'full',
+    holdingsWithKnownValue: 1,
+    holdingsTotal: 1,
+  });
+}
+
+describe('PortfolioValueDailyRepository — rows before the earliest record (SC-1627)', () => {
+  test('the earliest record day is the older of a ledger row and a reading, never a stored day', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const row = await makeHoldingTransaction(tx, { userId: user.id });
+      await tx
+        .update(schema.holdingTransactions)
+        .set({ occurredAt: new Date('2025-06-10T12:00:00Z') })
+        .where(eq(schema.holdingTransactions.id, row.id));
+      await tx.insert(schema.holdingBalanceObservations).values({
+        userId: user.id,
+        holdingId: row.holdingId,
+        balance: '1',
+        observedAt: new Date('2025-06-03T08:00:00Z'),
+        source: 'sync-capture',
       });
-      expect(await repo().findHistoryLookbackDays(stored.userId, FLOOR, tx)).toBe(602);
+      await storedRow(tx, user.id, '2025-01-01');
+      expect(await repo().findEarliestRecordDay(user.id, tx)).toBe('2025-06-03');
+
+      const fresh = await makeUser(tx);
+      await storedRow(tx, fresh.id, '2025-01-01');
+      expect(await repo().findEarliestRecordDay(fresh.id, tx)).toBeNull();
+    });
+  });
+
+  test('deleteBefore removes every scope of that user and base currency before the day, and nothing else', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const other = await makeUser(tx);
+      const base = (await makeToken(tx)).id;
+      const otherBase = (await makeToken(tx)).id;
+      const holdingId = crypto.randomUUID();
+      for (const scope of [
+        { scopeKind: 'user', scopeId: user.id },
+        { scopeKind: 'holding', scopeId: holdingId },
+        { scopeKind: 'transit', scopeId: holdingId },
+      ]) {
+        await storedRow(tx, user.id, '2025-03-01', { baseCurrencyId: base, ...scope });
+        await storedRow(tx, user.id, '2025-03-02', { baseCurrencyId: base, ...scope });
+      }
+      await storedRow(tx, user.id, '2025-03-01', { baseCurrencyId: otherBase });
+      await storedRow(tx, other.id, '2025-03-01', { baseCurrencyId: base });
+
+      expect(await repo().deleteBefore(user.id, base, '2025-03-02', tx)).toBe(3);
+
+      const left = await tx
+        .select({
+          userId: schema.portfolioValueDaily.userId,
+          day: schema.portfolioValueDaily.snapshotDate,
+          base: schema.portfolioValueDaily.baseCurrencyId,
+        })
+        .from(schema.portfolioValueDaily)
+        .where(sql`${schema.portfolioValueDaily.userId} in (${user.id}, ${other.id})`);
+      expect(left.filter((r) => r.userId === user.id && r.base === base).map((r) => r.day)).toEqual(
+        ['2025-03-02', '2025-03-02', '2025-03-02']
+      );
+      expect(left.filter((r) => r.base === otherBase)).toHaveLength(1);
+      expect(left.filter((r) => r.userId === other.id)).toHaveLength(1);
     });
   });
 });
@@ -491,6 +569,163 @@ describe('PortfolioValueDailyRepository — money in transit (SC-1675)', () => {
         tx
       );
       expect(values.map((r) => r.totalValue)).toEqual(['1000']);
+    });
+  });
+});
+
+describe('PortfolioValueDailyRepository — days before a holding counts (SC-1745)', () => {
+  const before = '2026-09-01';
+  const after = '2026-09-02';
+  const from = new Date(`${before}T00:00:00Z`);
+  const to = new Date(`${after}T23:59:59Z`);
+
+  /**
+   * `early` has a day before its first record and one after; `late` has only a
+   * day before; `travelling` has a day before with money in transit to it.
+   */
+  async function rollup(tx: DatabaseTransaction) {
+    const user = await makeUser(tx);
+    const usd = await makeToken(tx);
+    const institution = await makeInstitution(tx);
+    const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+    const holding = () =>
+      makeHolding(tx, { userId: user.id, accountId: account.id, tokenId: usd.id });
+    const [early, late, travelling, outside] = [
+      await holding(),
+      await holding(),
+      await holding(),
+      await holding(),
+    ];
+    const row = (
+      scopeId: string,
+      snapshotDate: string,
+      counted: boolean,
+      scopeKind: 'holding' | 'transit' = 'holding',
+      value = counted ? '100' : '0'
+    ) => ({
+      userId: user.id,
+      scopeKind,
+      scopeId,
+      snapshotDate,
+      baseCurrencyId: usd.id,
+      coverageQuality: counted ? ('full' as const) : ('unknown' as const),
+      totalValue: value,
+      costBasis: value,
+      realizedPnl: '0',
+      unrealizedPnl: '0',
+      holdingsWithKnownValue: counted ? 1 : 0,
+      holdingsTotal: counted ? 1 : 0,
+    });
+    await repo().bulkUpsert(
+      [
+        row(early.id, before, false),
+        row(early.id, after, true),
+        row(late.id, before, false),
+        row(travelling.id, before, false),
+        row(travelling.id, before, false, 'transit', '40'),
+        row(outside.id, '2026-08-01', true),
+      ],
+      tx
+    );
+    return {
+      userId: user.id,
+      baseId: usd.id,
+      early: early.id,
+      late: late.id,
+      travelling: travelling.id,
+      outside: outside.id,
+    };
+  }
+
+  test('the value range skips a day before a holding counts', async () => {
+    await withTestDb(async (tx) => {
+      const r = await rollup(tx);
+      const scoped = await repo().findIncludedHoldingValueRange(
+        r.userId,
+        r.baseId,
+        from,
+        to,
+        [r.early, r.late],
+        tx
+      );
+      expect(scoped.map((v) => [v.holdingId, v.snapshotDate])).toEqual([[r.early, after]]);
+    });
+  });
+
+  test('at user scope a transit destination keeps its day before it counts', async () => {
+    // `subsetOf` adds that value on the last day, so dropping the row would
+    // change an answer rather than only its cost.
+    await withTestDb(async (tx) => {
+      const r = await rollup(tx);
+      const all = await repo().findIncludedHoldingValueRange(
+        r.userId,
+        r.baseId,
+        from,
+        to,
+        undefined,
+        tx
+      );
+      expect(all.map((v) => [v.holdingId, v.snapshotDate, v.totalValue]).sort()).toEqual(
+        [
+          [r.early, after, '100'],
+          [r.travelling, before, '40'],
+        ].sort()
+      );
+    });
+  });
+
+  test("a day's rows come in holding order, so a sum never depends on the plan", async () => {
+    // Ordered by day alone, two plans summed one day in different orders and
+    // a return moved in its 28th digit between two reads of the same data.
+    await withTestDb(async (tx) => {
+      const r = await rollup(tx);
+      const [counted] = await repo().findIncludedHoldingValueRange(
+        r.userId,
+        r.baseId,
+        from,
+        to,
+        [r.early],
+        tx
+      );
+      const second = await tx
+        .select()
+        .from(schema.portfolioValueDaily)
+        .where(eq(schema.portfolioValueDaily.scopeId, r.early));
+      const template = second.find((row) => row.holdingsTotal > 0);
+      if (!counted || !template) throw new Error('fixture has no counted day');
+      // Written in descending holding order, so storage order is not the answer.
+      const descending = [r.early, r.late, r.outside, r.travelling].sort().reverse();
+      for (const scopeId of descending) {
+        await repo().bulkUpsert([{ ...template, scopeId, snapshotDate: '2026-08-15' }], tx);
+      }
+      const rows = await repo().findIncludedHoldingValueRange(
+        r.userId,
+        r.baseId,
+        new Date('2026-08-01T00:00:00Z'),
+        to,
+        undefined,
+        tx
+      );
+      const keys = rows.map((v) => `${v.snapshotDate}|${v.holdingId}`);
+      expect(keys).toEqual([...keys].sort());
+      expect(new Set(rows.map((v) => v.snapshotDate)).size).toBeLessThan(rows.length);
+    });
+  });
+
+  test('every holding with a row in range is named, counted or not', async () => {
+    await withTestDb(async (tx) => {
+      const r = await rollup(tx);
+      const ids = await repo().findHoldingIdsInRange(r.userId, r.baseId, from, to, undefined, tx);
+      expect([...ids].sort()).toEqual([r.early, r.late, r.travelling].sort());
+      const narrowed = await repo().findHoldingIdsInRange(
+        r.userId,
+        r.baseId,
+        from,
+        to,
+        [r.late],
+        tx
+      );
+      expect([...narrowed]).toEqual([r.late]);
     });
   });
 });

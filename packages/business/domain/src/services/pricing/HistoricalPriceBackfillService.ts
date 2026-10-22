@@ -111,6 +111,8 @@ export class HistoricalPriceBackfillService {
     inserted: number;
     alreadyHad: number;
     providerMissing: number;
+    // The needed days counted in `providerMissing`, as `YYYY-MM-DD`.
+    missingDays: string[];
     // Needed days a provider answered only with bars the writer does not
     // store. Neither inserted nor missing, so with those two and `alreadyHad`
     // they add up to the days asked.
@@ -128,17 +130,22 @@ export class HistoricalPriceBackfillService {
       inserted: 0,
       alreadyHad: 0,
       providerMissing: 0,
+      missingDays: [] as string[],
       droppedDays: 0,
       droppedBars: 0,
       providerUsed: null,
       attemptFailed: false,
     };
+    const allMissing = () => ({
+      providerMissing: neededDays.length,
+      missingDays: neededDays.map(dayOf),
+    });
     if (neededDays.length === 0) return empty;
 
     const token = await this.tokenRepository.findWithType(tokenId);
     const baseToken = await this.tokenRepository.findById(baseTokenId);
     if (!token || !baseToken) {
-      return { ...empty, providerMissing: neededDays.length };
+      return { ...empty, ...allMissing() };
     }
 
     // One clock read: the request's end, what "today" is, and the stamp of
@@ -162,7 +169,7 @@ export class HistoricalPriceBackfillService {
       token.typeCode
     );
     if (providers.length === 0) {
-      return { ...empty, providerMissing: neededDays.length };
+      return { ...empty, ...allMissing() };
     }
 
     // Try providers in registration order; first one that returns ≥1
@@ -221,7 +228,7 @@ export class HistoricalPriceBackfillService {
       const acceptedDays = new Set(written.accepted.map((key) => dayOf(key.at)));
       let inserted = 0;
       let alreadyHad = 0;
-      let providerMissing = 0;
+      const missingDays: string[] = [];
       let droppedDays = 0;
       for (const day of neededDays) {
         const key = dayOf(day);
@@ -229,12 +236,13 @@ export class HistoricalPriceBackfillService {
         else if (acceptedDays.has(key)) inserted++;
         else if (sentDays.has(key)) alreadyHad++;
         else if (answeredDays.has(key)) droppedDays++;
-        else providerMissing++;
+        else missingDays.push(key);
       }
       return {
         inserted,
         alreadyHad,
-        providerMissing,
+        providerMissing: missingDays.length,
+        missingDays,
         droppedDays,
         droppedBars: written.dropped,
         providerUsed: provider.providerKey,
@@ -242,7 +250,7 @@ export class HistoricalPriceBackfillService {
       };
     }
 
-    return { ...empty, providerMissing: neededDays.length, attemptFailed };
+    return { ...empty, ...allMissing(), attemptFailed };
   }
 
   // Range fetch via the provider's optional fetchHistoricalRange. One

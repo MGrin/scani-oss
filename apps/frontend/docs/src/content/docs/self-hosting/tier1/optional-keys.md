@@ -36,7 +36,7 @@ which requires no key.
 
 | Variable | Provider | What it unlocks |
 |---|---|---|
-| `OPENAI_API_KEY` | [OpenAI](https://platform.openai.com/) | Screenshot and document parsing via Vision. Without a key, starting a parse is refused with `PRECONDITION_FAILED` and nothing is queued. Statement files and manual entry still work. |
+| `OPENAI_API_KEY` | [OpenAI](https://platform.openai.com/) | Screenshot and document parsing via Vision. Without a key, starting a parse is refused with `PRECONDITION_FAILED` and nothing is queued. Statement files and manual entry still work. Also AI category suggestions, for people who turn them on in Settings: each payee's description, name, direction and currency are sent for bank and card rows, with every digit removed, so never amounts or dates. Without a key the switch is disabled. |
 
 The model is not configurable: `gpt-5.6-luna` is a constant in
 `packages/clients/providers/src/providers/ai-openai/index.ts`, used for

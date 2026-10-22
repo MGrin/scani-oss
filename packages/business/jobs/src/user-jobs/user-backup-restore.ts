@@ -1,5 +1,6 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 
 export interface UserBackupRestoreJob extends UserJobBase {
@@ -12,8 +13,6 @@ const userBackupRestoreSchema: z.ZodType<UserBackupRestoreJob> = z.object({
   requestId: z.string().min(1),
   r2Key: z.string().min(1),
 });
-
-const JOB_ID_SEP = '_';
 
 /**
  * Restores a backup into an empty account (SC-1649). It writes in one
@@ -29,6 +28,6 @@ export const USER_BACKUP_RESTORE: UserJobDescriptor<UserBackupRestoreJob> = {
     removeOnComplete: 100,
     removeOnFail: 500,
   },
-  computeJobId: (d) => [JOB_NAMES.userBackupRestore, d.userId, d.requestId].join(JOB_ID_SEP),
+  computeJobId: (d) => jobIdOf(JOB_NAMES.userBackupRestore, d.userId, d.requestId),
   summarizePayload: () => ({}),
 };

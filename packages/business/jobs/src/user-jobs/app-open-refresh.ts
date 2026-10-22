@@ -1,5 +1,6 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 
 // The app came back to the front (SC-1602). Working out which accounts to
@@ -23,6 +24,7 @@ export const APP_OPEN_REFRESH: UserJobDescriptor<AppOpenRefreshJob> = {
   },
   // One per user: a second open while the first is queued collapses onto it,
   // and the per-account jobs it enqueues dedupe on their own ids.
-  computeJobId: (d) => [JOB_NAMES.appOpenRefresh, d.userId].join('_'),
-  summarizePayload: () => ({}),
+  computeJobId: (d) => jobIdOf(JOB_NAMES.appOpenRefresh, d.userId),
+  // The refreshes this queues carry the same `requestId` (SC-1724).
+  summarizePayload: (d) => ({ requestId: d.requestId }),
 };

@@ -52,6 +52,7 @@ describe('ShadowRunService.run', () => {
         unlabelled: summary.unlabelled,
         excluded: summary.excluded,
         staleLabels: summary.staleLabels,
+        verifications: summary.verifications,
         durationMs: summary.durationMs,
       };
       expect(JSON.stringify(summary)).toBe(JSON.stringify(established));

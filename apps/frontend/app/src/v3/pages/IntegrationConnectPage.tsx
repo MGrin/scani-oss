@@ -16,11 +16,15 @@ import { trpc } from '@/lib/trpc';
 import { CaptureHeader } from '../components/capture/CaptureHeader';
 import { CaptureSubmit } from '../components/capture/CaptureSubmit';
 import type { Integration } from '../components/capture/IntegrationsList';
+import { KeyCanMoveMoneyNote } from '../components/capture/KeyCanMoveMoneyNote';
+import { SelfHostedOnlyNotice } from '../components/capture/SelfHostedOnlyNotice';
 import { InstitutionMark } from '../components/entities/InstitutionMark';
 import { Field, FieldSet } from '../components/form/Field';
 import {
   buildCredentials,
   type CaptureStage,
+  connectHeaderDescription,
+  connectInstructionsTitle,
   describeCredentialBlockers,
 } from '../lib/capture-forms';
 import { connectErrorCopy } from '../lib/connect-error';
@@ -111,6 +115,10 @@ export function IntegrationConnectPage() {
     );
   }
 
+  if (integration.availability === 'self-hosted-only') {
+    return <SelfHostedOnlyNotice integration={integration} />;
+  }
+
   // Keyed on the provider so moving between two services never carries one
   // service's half-typed secret into the other's form.
   return <ConnectForm key={integration.providerKey} integration={integration} />;
@@ -162,19 +170,22 @@ function ConnectForm({ integration }: { integration: Integration }) {
     <PageLayout>
       <CaptureHeader
         title={t('v3.capture.integration.connectNamed', { name: institution.name })}
-        description={t('v3.capture.integration.permissions')}
+        description={connectHeaderDescription(t, integration)}
         backTo={V3_CAPTURE_ROUTES.integrations}
         backLabel={t('v3.capture.integration.allServices')}
       />
 
       {instructions.steps.length > 0 ? (
         <Block>
-          <FieldSet title={t('v3.capture.integration.whereToGet')}>
+          <FieldSet title={connectInstructionsTitle(t, integration)}>
             <ol className="flex list-decimal flex-col gap-1.5 ps-5 text-body text-muted-foreground marker:text-caption">
               {instructions.steps.map((step) => (
                 <li key={step}>{step}</li>
               ))}
             </ol>
+            {instructions.note ? (
+              <p className="text-body text-muted-foreground">{instructions.note}</p>
+            ) : null}
             {docsUrl ? (
               <a
                 href={docsUrl}
@@ -206,6 +217,10 @@ function ConnectForm({ integration }: { integration: Integration }) {
             <InstitutionMark name={institution.name} institution={institution} size="size-5" />
             <span className="text-label">{institution.name}</span>
           </div>
+
+          {integration.credentialCanMoveMoney ? (
+            <KeyCanMoveMoneyNote name={institution.name} />
+          ) : null}
 
           {credentialFields.map((field) => {
             const id = `credential-${field.name}`;

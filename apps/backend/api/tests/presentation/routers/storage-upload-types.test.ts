@@ -85,6 +85,102 @@ describe('storage.getUploadUrl statement PDFs (SC-1519)', () => {
   });
 });
 
+/**
+ * SC-1726. MT940 and CAMT.053 statements arrive as `.sta`, `.mt940`, `.940` and
+ * `.xml`. They upload as plain text: the allow-list gains extensions and no
+ * markup type, so nothing stored here can be served back as XML.
+ */
+describe('storage.getUploadUrl MT940 and CAMT.053 statements (SC-1726)', () => {
+  function caller() {
+    Container.set(StorageFacade, {
+      async presignUpload() {
+        return {
+          uploadUrl: 'https://s3.test/put',
+          key: 'k',
+          expiresAt: new Date(),
+          requiredHeaders: {},
+        };
+      },
+    } as unknown as StorageFacade);
+    return makeAuthedCaller({
+      id: crypto.randomUUID(),
+      email: 'statements@example.invalid',
+    } as schema.User);
+  }
+
+  test('file-import: each statement extension is accepted as plain text', async () => {
+    for (const filename of ['a.sta', 'a.mt940', 'a.940', 'a.xml']) {
+      const res = await caller().storage.getUploadUrl({
+        purpose: 'file-import',
+        contentType: 'text/plain',
+        filename,
+        sizeBytes: 1_000,
+      });
+      expect(res.method).toBe('PUT');
+    }
+  });
+
+  test('file-import: control, an XML content type is still refused', async () => {
+    await expect(
+      caller().storage.getUploadUrl({
+        purpose: 'file-import',
+        contentType: 'text/xml',
+        filename: 'a.xml',
+        sizeBytes: 1_000,
+      })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+});
+
+/**
+ * SC-1734. A spreadsheet goes up under a type the allow-list already had:
+ * `.xlsx` as octet-stream, `.xls` as Excel's own. No OOXML type is added.
+ */
+describe('storage.getUploadUrl spreadsheets (SC-1734)', () => {
+  function caller() {
+    Container.set(StorageFacade, {
+      async presignUpload() {
+        return {
+          uploadUrl: 'https://s3.test/put',
+          key: 'k',
+          expiresAt: new Date(),
+          requiredHeaders: {},
+        };
+      },
+    } as unknown as StorageFacade);
+    return makeAuthedCaller({
+      id: crypto.randomUUID(),
+      email: 'spreadsheets@example.invalid',
+    } as schema.User);
+  }
+
+  test('file-import: an .xlsx as octet-stream and an .xls as Excel are accepted', async () => {
+    for (const [filename, contentType] of [
+      ['a.xlsx', 'application/octet-stream'],
+      ['a.xls', 'application/vnd.ms-excel'],
+    ] as const) {
+      const res = await caller().storage.getUploadUrl({
+        purpose: 'file-import',
+        contentType,
+        filename,
+        sizeBytes: 1_000,
+      });
+      expect(res.method).toBe('PUT');
+    }
+  });
+
+  test('file-import: control, the OOXML content type is still refused', async () => {
+    await expect(
+      caller().storage.getUploadUrl({
+        purpose: 'file-import',
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        filename: 'a.xlsx',
+        sizeBytes: 1_000,
+      })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+  });
+});
+
 describe('storage.getUploadUrl size (SC-1492)', () => {
   function caller() {
     Container.set(StorageFacade, {

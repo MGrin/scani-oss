@@ -48,6 +48,8 @@ interface IntegrationInstructions {
   docsUrl?: string;
   /** Optional warning rendered when the visitor is on a mobile device. */
   mobileNote?: string;
+  /** A rule that applies to every step, rendered under the list. */
+  note?: string;
 }
 
 export interface IntegrationManifest {
@@ -84,4 +86,34 @@ export interface IntegrationManifest {
    * configuration on their holdings).
    */
   defaultAccountTypeCode?: AccountTypeCode;
+  /**
+   * The provider's terms allow its credential only in software the customer
+   * runs themselves, so only a self-hosted install may connect it. The hosted
+   * product lists it and refuses the connect (SC-1729: bunq's personal API key).
+   */
+  selfHostedOnly?: boolean;
+  /**
+   * The credential can do more than read — move money — because the provider
+   * offers no read-only kind. The connect form says so before a key is pasted
+   * (SC-1729: bunq keys "grant broad permissions").
+   */
+  credentialCanMoveMoney?: boolean;
+  /**
+   * Statement formats the provider exports that Scani imports. Where the
+   * connector cannot be used, the notice names them, so the customer knows
+   * which file to download (SC-1729: hosted bunq).
+   */
+  statementExportFormats?: readonly string[];
+  /**
+   * What the provider calls its one credential, so the connect page names it
+   * the same way: "this key" or "this token". Defaults to "key". A service
+   * with several credential fields says "these credentials" (SC-1732).
+   */
+  credentialNoun?: 'key' | 'token';
+  /**
+   * The longest the provider's credential lives, in days. A refused one has
+   * most likely expired, so the account says so, names the lifetime and asks
+   * for a new one rather than a reconnect (SC-1733: a Fio token, 180).
+   */
+  credentialLifetimeDays?: number;
 }

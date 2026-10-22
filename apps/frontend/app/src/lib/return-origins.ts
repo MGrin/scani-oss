@@ -12,22 +12,24 @@ function originOf(configured: string | undefined): string[] {
 
 /**
  * Origins a sign-in may send the browser back to: the Cloud console and the
- * admin app, each only when configured.
+ * admin app, each only when configured. Read per call, not at import: the
+ * build inlines both either way, and a test that loads this module before
+ * another sets the variables would otherwise freeze an empty list (SC-1752).
  */
-const CLOUD_ORIGINS = originOf(import.meta.env.VITE_CLOUD_URL);
-const RETURN_ORIGINS: readonly string[] = [
-  ...CLOUD_ORIGINS,
+const cloudOrigins = (): string[] => originOf(import.meta.env.VITE_CLOUD_URL);
+const returnOrigins = (): string[] => [
+  ...cloudOrigins(),
   ...originOf(import.meta.env.VITE_ADMIN_URL),
 ];
 
 export function safeReturnTo(input: string | null | undefined, fallback: string): string {
-  return safeReturnTarget(input, fallback, RETURN_ORIGINS);
+  return safeReturnTarget(input, fallback, returnOrigins());
 }
 
 /** Whether a validated return target is the Cloud console, so sign-in can say so (SC-1520). */
 export function isCloudReturn(target: string): boolean {
   if (target.startsWith('/')) return false;
-  return CLOUD_ORIGINS.some((origin) => originOf(target)[0] === origin);
+  return cloudOrigins().some((origin) => originOf(target)[0] === origin);
 }
 
 export function goToReturnTarget(target: string, navigate: NavigateFunction): void {

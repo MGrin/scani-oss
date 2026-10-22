@@ -2,7 +2,9 @@ import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { HoldingTransaction, NewHoldingTransaction } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import {
+  AUTO_CATEGORY_SOURCES,
   Decimal,
+  KINDS_OUTSIDE_CATEGORIES,
   TRANSFER_REVIEW_CREATED_SOURCE,
   TRANSFER_REVIEW_SPLIT,
   type TransferReviewSplit,
@@ -1749,7 +1751,11 @@ export class HoldingTransactionRepository extends BaseRepository<
       .update(h)
       .set({ categorySetBy: 'person', updatedAt: new Date() })
       .where(
-        and(eq(h.userId, userId), inArray(h.id, unique), inArray(h.categorySetBy, ['rule', 'ai']))
+        and(
+          eq(h.userId, userId),
+          inArray(h.id, unique),
+          inArray(h.categorySetBy, [...AUTO_CATEGORY_SOURCES])
+        )
       )
       .returning({ id: h.id });
     return { confirmed: confirmed.length };
@@ -1803,9 +1809,17 @@ export class HoldingTransactionRepository extends BaseRepository<
         conditions.push(eq(schema.holdingTransactions.source, opts.source));
       }
       if (opts.category === 'uncategorized') {
-        conditions.push(isNull(schema.holdingTransactions.categoryId));
+        // A trade, a settlement or a transfer leg takes no category, so it is
+        // not waiting for one (SC-1720).
+        conditions.push(
+          isNull(schema.holdingTransactions.categoryId),
+          isNull(schema.holdingTransactions.transferGroupId),
+          notInArray(schema.holdingTransactions.kind, [...KINDS_OUTSIDE_CATEGORIES])
+        );
       } else if (opts.category === 'auto') {
-        conditions.push(inArray(schema.holdingTransactions.categorySetBy, ['rule', 'ai']));
+        conditions.push(
+          inArray(schema.holdingTransactions.categorySetBy, [...AUTO_CATEGORY_SOURCES])
+        );
       } else if (opts.category) {
         // The row's key carries its user, so a category id from another user
         // can match none of this user's rows.

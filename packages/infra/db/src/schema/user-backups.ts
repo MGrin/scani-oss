@@ -20,6 +20,8 @@ export const userBackups = pgTable(
     byteSize: bigint('byte_size', { mode: 'number' }).notNull(),
     sha256: text('sha256').notNull(),
     recordCount: integer('record_count').notNull(),
+    /** Documents left out because their files together were over what a restore accepts (SC-1662). */
+    filesLeftOut: integer('files_left_out').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({

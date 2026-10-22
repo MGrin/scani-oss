@@ -112,6 +112,7 @@ import { binanceFactory } from '@scani/providers/providers/binance';
 import { bitcoinFactory } from '@scani/providers/providers/bitcoin';
 import { bitgetFactory } from '@scani/providers/providers/bitget';
 import { bitstampFactory } from '@scani/providers/providers/bitstamp';
+import { bunqFactory } from '@scani/providers/providers/bunq';
 import { bybitFactory } from '@scani/providers/providers/bybit';
 import { chainStubFactory } from '@scani/providers/providers/chain-stub';
 import { coinbaseFactory } from '@scani/providers/providers/coinbase';
@@ -119,11 +120,13 @@ import { coingeckoFactory } from '@scani/providers/providers/coingecko';
 import { defillamaFactory } from '@scani/providers/providers/defillama';
 import { etherscanFactory } from '@scani/providers/providers/etherscan';
 import { finnhubFactory } from '@scani/providers/providers/finnhub';
+import { fioFactory } from '@scani/providers/providers/fio';
 import { frankfurterFactory } from '@scani/providers/providers/frankfurter';
 import { gateFactory } from '@scani/providers/providers/gate';
 import { geminiFactory } from '@scani/providers/providers/gemini';
 import { huobiFactory } from '@scani/providers/providers/huobi';
 import { ibkrFactory } from '@scani/providers/providers/ibkr';
+import { investecFactory } from '@scani/providers/providers/investec';
 import { krakenFactory } from '@scani/providers/providers/kraken';
 import { kucoinFactory } from '@scani/providers/providers/kucoin';
 import { litecoinFactory } from '@scani/providers/providers/litecoin';
@@ -230,6 +233,9 @@ try {
         ibkrFactory,
         wiseFactory,
         airwallexFactory,
+        bunqFactory,
+        fioFactory,
+        investecFactory,
       ]),
     ],
   });

@@ -4,6 +4,7 @@ import * as schema from '@scani/db/schema';
 import { and, asc, eq, getTableColumns, gt, inArray, isNotNull, type SQL, sql } from 'drizzle-orm';
 import { type AnyPgColumn, getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import { Service } from 'typedi';
+import { RETAINED_KEY_PREFIX } from '../documents/DocumentRetentionService';
 import {
   BACKED_UP_TABLES,
   BACKED_UP_USER_COLUMNS,
@@ -17,19 +18,45 @@ import {
 type Reader = DatabaseTransaction | ReturnType<typeof getDb>;
 type Row = Record<string, unknown>;
 
+/** Where a backup reads the account's stored files from. */
+export interface BackupFileSource {
+  exists(r2Key: string): Promise<boolean>;
+  read(r2Key: string): Promise<Uint8Array>;
+}
+
+/**
+ * An uploaded document a backup leaves out, with its rows (SC-1662).
+ * `not-stored`: its file was never kept, or is gone, so it is already a broken
+ * download. `too-large`: the files together would take the backup past what a
+ * restore accepts, so the backup was built without any of them.
+ */
+interface OmittedFile {
+  documentId: string;
+  filename: string;
+  byteSize: number;
+  reason: 'not-stored' | 'too-large';
+}
+
 export type BackupRecord =
   | {
       type: 'header';
       format: typeof BACKUP_FORMAT;
       version: number;
       exportedAt: string;
-      /** Every account table the file leaves out, and why: uploaded documents among them (SC-1662). */
+      /** Every account table the file leaves out, and why. */
       notIncluded: Array<{ table: string; reason: string }>;
+      /** Absent before format 2, which carried no document. */
+      files?: { included: boolean; omitted: OmittedFile[] };
     }
   | { type: 'catalog'; table: string; row: Row }
   | { type: 'user'; row: Row }
   | { type: 'row'; table: string; row: Row }
+  /** A document's stored file, after the document's row. */
+  | { type: 'file'; documentId: string; mimeType: string; sha256: string; data: string }
   | { type: 'end'; counts: Record<string, number>; records: number };
+
+/** Extra conditions narrowing which rows of a table the backup carries. */
+type Scope = ReadonlyMap<PgTable, SQL>;
 
 const PAGE = 1000;
 const ID_CHUNK = 500;
@@ -41,6 +68,10 @@ export interface BackupFile {
   sha256: string;
   records: number;
   counts: Record<string, number>;
+  /** Stored files the backup carries. */
+  filesIncluded: number;
+  /** Documents left out because their files together were too large to carry. */
+  filesLeftOut: number;
 }
 
 const nameOf = (table: PgTable) => getTableConfig(table).name;
@@ -66,7 +97,11 @@ export class BackupWriter {
    * the uncompressed file: the largest account measured is about 99 MB of row
    * JSON (2026-10-09).
    */
-  async file(userId: string, db: Reader = getDb()): Promise<BackupFile> {
+  async file(
+    userId: string,
+    db: Reader = getDb(),
+    files: BackupFileSource | null = null
+  ): Promise<BackupFile> {
     const gzip = new CompressionStream('gzip');
     const writer = gzip.writable.getWriter();
     const chunks: Uint8Array[] = [];
@@ -81,11 +116,15 @@ export class BackupWriter {
     const encoder = new TextEncoder();
     let pending = '';
     let end: Extract<BackupRecord, { type: 'end' }> | undefined;
-    for await (const record of this.records(userId, db)) {
+    let leftOut = 0;
+    for await (const record of this.records(userId, db, PAGE, files)) {
       pending += backupLine(record);
       if (pending.length >= FLUSH_BYTES) {
         await writer.write(encoder.encode(pending));
         pending = '';
+      }
+      if (record.type === 'header') {
+        leftOut = (record.files?.omitted ?? []).filter((o) => o.reason === 'too-large').length;
       }
       if (record.type === 'end') end = record;
     }
@@ -95,22 +134,56 @@ export class BackupWriter {
     if (!end) throw new Error('BackupWriter: the records ended without an end record');
     const bytes = new Uint8Array(Buffer.concat(chunks));
     const sha256 = createHash('sha256').update(bytes).digest('hex');
-    return { bytes, sha256, records: end.records, counts: end.counts };
+    return {
+      bytes,
+      sha256,
+      records: end.records,
+      counts: end.counts,
+      filesIncluded: end.counts.files ?? 0,
+      filesLeftOut: leftOut,
+    };
   }
 
-  async *records(userId: string, db: Reader = getDb(), page = PAGE): AsyncGenerator<BackupRecord> {
+  /**
+   * Without `files`, no document is carried and every one is named as too
+   * large: that is the build a backup falls back to when its files would not
+   * fit (SC-1662).
+   */
+  async *records(
+    userId: string,
+    db: Reader = getDb(),
+    page = PAGE,
+    files: BackupFileSource | null = null
+  ): AsyncGenerator<BackupRecord> {
     const counts: Record<string, number> = {};
     let records = 0;
+    const documents = await this.documentsOf(userId, db, files);
+    const included = documents.carried.map((d) => d.id);
+    const carried = new Set(included);
+    const scope: Scope = new Map([
+      [schema.documents, included.length > 0 ? inArray(schema.documents.id, included) : sql`false`],
+    ]);
+    const extractions = new Set(
+      included.length === 0
+        ? []
+        : (
+            await db
+              .select({ id: schema.documentExtractions.id })
+              .from(schema.documentExtractions)
+              .where(inArray(schema.documentExtractions.documentId, included))
+          ).map((e) => e.id)
+    );
     yield {
       type: 'header',
       format: BACKUP_FORMAT,
       version: BACKUP_VERSION,
       exportedAt: new Date().toISOString(),
       notIncluded: NOT_BACKED_UP.map(({ table, reason }) => ({ table: nameOf(table), reason })),
+      files: { included: files !== null, omitted: documents.omitted },
     };
     records++;
 
-    for (const [table, rows] of await this.catalog(userId, db)) {
+    for (const [table, rows] of await this.catalog(userId, db, scope)) {
       for (const row of rows) {
         yield { type: 'catalog', table: nameOf(table), row };
         records++;
@@ -129,25 +202,97 @@ export class BackupWriter {
     for (const entry of BACKED_UP_TABLES) {
       const name = nameOf(entry.table);
       let n = 0;
-      for await (const row of this.rowsOf(entry, userId, db, page)) {
+      for await (const row of this.rowsOf(entry, userId, db, page, scope)) {
+        // A bill matched to an extraction this file leaves out keeps the match
+        // on the source only: the restore has nothing to point it at.
+        if (
+          entry.table === schema.paymentOccurrences &&
+          typeof row.matchedExtractionId === 'string' &&
+          !extractions.has(row.matchedExtractionId)
+        ) {
+          row.matchedExtractionId = null;
+        }
+        // Likewise a statement window naming a document this file leaves out.
+        if (
+          entry.table === schema.feedInputWindows &&
+          typeof row.documentId === 'string' &&
+          !carried.has(row.documentId)
+        ) {
+          row.documentId = null;
+        }
         yield { type: 'row', table: name, row };
         n++;
       }
       counts[name] = n;
       records += n;
+      if (entry.table === schema.documents && files) {
+        let carried = 0;
+        for (const document of documents.carried) {
+          const bytes = await files.read(document.r2Key);
+          yield {
+            type: 'file',
+            documentId: document.id,
+            mimeType: document.mimeType,
+            sha256: createHash('sha256').update(bytes).digest('hex'),
+            data: Buffer.from(bytes).toString('base64'),
+          };
+          carried++;
+        }
+        counts.files = carried;
+        records += carried;
+      }
     }
 
     records++;
     yield { type: 'end', counts, records };
   }
 
+  /**
+   * The account's documents split into the ones this file carries with their
+   * files and the ones it names as left out. A document is carried only when
+   * its file is stored under the retained prefix and is still there.
+   */
+  private async documentsOf(userId: string, db: Reader, files: BackupFileSource | null) {
+    const rows = await db
+      .select({
+        id: schema.documents.id,
+        r2Key: schema.documents.r2Key,
+        mimeType: schema.documents.mimeType,
+        filename: schema.documents.originalFilename,
+        byteSize: schema.documents.byteSize,
+      })
+      .from(schema.documents)
+      .where(eq(schema.documents.userId, userId))
+      .orderBy(asc(schema.documents.id));
+    const carried: typeof rows = [];
+    const omitted: OmittedFile[] = [];
+    for (const row of rows) {
+      const stored =
+        files !== null &&
+        row.r2Key.startsWith(RETAINED_KEY_PREFIX) &&
+        (await files.exists(row.r2Key));
+      if (stored) {
+        carried.push(row);
+      } else {
+        omitted.push({
+          documentId: row.id,
+          filename: row.filename,
+          byteSize: row.byteSize,
+          reason: files === null ? 'too-large' : 'not-stored',
+        });
+      }
+    }
+    return { carried, omitted };
+  }
+
   private async *rowsOf(
     entry: BackedUpTable,
     userId: string,
     db: Reader,
-    page: number
+    page: number,
+    scope: Scope
   ): AsyncGenerator<Row> {
-    const owned = this.ownedBy(entry, userId, db);
+    const owned = this.ownedBy(entry, userId, db, scope);
     const id = getTableColumns(entry.table).id as AnyPgColumn | undefined;
     if (!id) {
       yield* (await db.select().from(entry.table).where(owned)) as Row[];
@@ -167,7 +312,13 @@ export class BackupWriter {
     }
   }
 
-  private ownedBy(entry: BackedUpTable, userId: string, db: Reader): SQL {
+  private ownedBy(entry: BackedUpTable, userId: string, db: Reader, scope: Scope): SQL {
+    const narrowed = scope.get(entry.table);
+    const owned = this.ownerOf(entry, userId, db, scope);
+    return narrowed ? (and(owned, narrowed) as SQL) : owned;
+  }
+
+  private ownerOf(entry: BackedUpTable, userId: string, db: Reader, scope: Scope): SQL {
     if (entry.owner.by === 'user') return eq(entry.owner.column, userId);
     const parentTable = entry.owner.parent;
     const parent = BACKED_UP_TABLES.find((e) => e.table === parentTable);
@@ -178,7 +329,7 @@ export class BackupWriter {
       db
         .select({ id: parentId })
         .from(parent.table)
-        .where(this.ownedBy(parent, userId, db))
+        .where(this.ownedBy(parent, userId, db, scope))
     );
   }
 
@@ -187,7 +338,7 @@ export class BackupWriter {
    * table the account also owns rows in (`tokens`, `institutions`) contributes
    * only the rows it does not own: those travel as rows.
    */
-  private async catalog(userId: string, db: Reader): Promise<Map<PgTable, Row[]>> {
+  private async catalog(userId: string, db: Reader, scope: Scope): Promise<Map<PgTable, Row[]>> {
     const wanted = new Map<PgTable, Set<string>>(BACKUP_CATALOG_TABLES.map((t) => [t, new Set()]));
     const add = (table: PgTable, id: unknown) => {
       if (typeof id === 'string') wanted.get(table)?.add(id);
@@ -203,7 +354,7 @@ export class BackupWriter {
         const ids = await db
           .selectDistinct({ id: column })
           .from(entry.table)
-          .where(and(this.ownedBy(entry, userId, db), isNotNull(column)));
+          .where(and(this.ownedBy(entry, userId, db, scope), isNotNull(column)));
         for (const { id } of ids) add(target, id);
       }
     }

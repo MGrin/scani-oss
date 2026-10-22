@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type { DatabaseTransaction } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { HISTORY_REBUILD_JOB_NAME } from '@scani/shared';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import {
   type GainsByWrapper,
   GainsByWrapperService,
@@ -304,6 +304,40 @@ describe('GainsByWrapperService (SC-1645)', () => {
         realized: '0',
         unrealized: '0',
       });
+    });
+  });
+
+  // SC-1741: DISTINCT ON read every row of every holding's history to keep the
+  // newest, tens of thousands of rows to answer a few dozen, and a Neon compute
+  // fresh from a suspend fetched each of those pages from storage: 17.6 s. The
+  // newest row per holding is a bounded read whatever the history's length.
+  test("reads each holding's newest rows, not its whole history", async () => {
+    await withTestDb(async (tx) => {
+      const w = await world(tx);
+      const isa = await w.holding('isa');
+      const days = 400;
+      for (let i = 0; i < days; i++) {
+        const date = new Date(Date.UTC(2025, 8, 1) + i * 86_400_000).toISOString().slice(0, 10);
+        await w.row(isa.id, date, String(i), '1');
+      }
+      // Planner statistics as production has them; an unanalysed table reads as
+      // empty, and a scan of an "empty" table is what the planner then picks.
+      await tx.execute(sql`analyze portfolio_value_daily`);
+      const rowsRead = async () => {
+        const [stats] = await tx.execute<{ n: string }>(
+          sql`select coalesce(seq_tup_read, 0) + coalesce(idx_tup_fetch, 0) as n from pg_stat_xact_user_tables where relname = 'portfolio_value_daily'`
+        );
+        return Number(stats?.n ?? 0);
+      };
+
+      const before = await rowsRead();
+      const result = await w.compute();
+      const read = (await rowsRead()) - before;
+
+      // Non-vacuous: the answer still comes from those rows.
+      expect(bucket(result, 'exempt')?.realized).not.toBe('0');
+      expect(read).toBeGreaterThan(0);
+      expect(read).toBeLessThan(30);
     });
   });
 

@@ -89,3 +89,14 @@ describe('renderWeeklyDigestEmail', () => {
     expect(render().text.startsWith('Hi Alice,')).toBe(true);
   });
 });
+
+// The digest goes to the same mailboxes as the alert, so it carries the same
+// one-click unsubscribe headers (RFC 8058, SC-1721).
+describe('renderWeeklyDigestEmail — headers (SC-1721)', () => {
+  test('it carries one-click unsubscribe headers for the digest stream', () => {
+    expect(render().headers).toEqual({
+      'List-Unsubscribe': `<${UNSUB}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    });
+  });
+});

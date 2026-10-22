@@ -3,12 +3,16 @@ import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import type { QueryKey } from '@tanstack/react-query';
 import i18n from 'i18next';
+import { RealtimeProvider } from '../../../src/contexts/RealtimeContext';
+import { BackupSettings } from '../../../src/v3/components/settings/BackupSettings';
 import {
   renderSettings,
   SETTINGS_KEYS,
   SETTINGS_USER,
   settledSettings,
+  TEST_AREAS,
 } from '../helpers/render-settings';
 
 const SKELETON = 'h-3 w-40';
@@ -128,5 +132,50 @@ describe('the area table', () => {
     const keys = [...source.matchAll(/titleKey: '([^']+)'/g)].map((match) => match[1] ?? '');
     expect(keys.length).toBe(5);
     for (const key of keys) expect(i18n.exists(key)).toBe(true);
+  });
+});
+
+describe('the Backup card (SC-1662)', () => {
+  const areas = TEST_AREAS.map((area) =>
+    area.id === 'data'
+      ? {
+          ...area,
+          // A static render runs no effect, so the provider opens no socket.
+          sections: () => (
+            <RealtimeProvider>
+              <BackupSettings />
+            </RealtimeProvider>
+          ),
+        }
+      : area
+  );
+  const withBackup = (filesLeftOut: number) =>
+    settledSettings().map(([key, data]) =>
+      JSON.stringify(key) === JSON.stringify(SETTINGS_KEYS.backup)
+        ? [
+            key,
+            {
+              id: 'b1',
+              createdAt: '2026-10-10T10:00:00.000Z',
+              byteSize: 2048,
+              recordCount: 10,
+              filesLeftOut,
+            },
+          ]
+        : [key, data]
+    ) as [QueryKey, unknown][];
+
+  test('says plainly when uploaded files were left out of the last backup, and why', () => {
+    const html = renderSettings('/settings/data', { answered: withBackup(3), areas });
+    expect(html).toContain('Uploaded files left out of this backup: 3.');
+    expect(html).toContain('64 MB');
+    expect(html).not.toContain('Not included yet: uploaded documents');
+  });
+
+  test('says nothing about left-out files when every file is in', () => {
+    const html = renderSettings('/settings/data', { answered: withBackup(0), areas });
+    expect(html).not.toContain('left out of this backup');
+    // The control: the card itself rendered.
+    expect(html).toContain('Exchange and bank connections are never included');
   });
 });

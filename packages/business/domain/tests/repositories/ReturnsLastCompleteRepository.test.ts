@@ -21,8 +21,8 @@ describe('ReturnsLastCompleteRepository (SC-1694)', () => {
         answer: { returns: { twr: '0.3' }, benchmarks: [] },
         computedAt: AT,
       };
-      await repo().save(row, tx);
-      await repo().save({ ...row, windowKey: 'all', answer: { other: true } }, tx);
+      await repo().save(row, { tx });
+      await repo().save({ ...row, windowKey: 'all', answer: { other: true } }, { tx });
 
       const ytd = await repo().find(user.id, '{"kind":"user"}', 'ytd', tx);
       expect(ytd?.answer).toEqual({ returns: { twr: '0.3' }, benchmarks: [] });
@@ -42,15 +42,35 @@ describe('ReturnsLastCompleteRepository (SC-1694)', () => {
         answer: { n: 1 },
         computedAt: AT,
       };
-      await repo().save(row, tx);
-      await repo().save({ ...row, answer: { n: 2 }, computedAt: minutesAfter(2) }, tx);
+      await repo().save(row, { tx });
+      await repo().save({ ...row, answer: { n: 2 }, computedAt: minutesAfter(2) }, { tx });
       expect((await repo().find(user.id, row.scopeKey, 'ytd', tx))?.answer).toEqual({ n: 1 });
 
       // Control: past the five minutes it is replaced.
-      await repo().save({ ...row, answer: { n: 3 }, computedAt: minutesAfter(6) }, tx);
+      await repo().save({ ...row, answer: { n: 3 }, computedAt: minutesAfter(6) }, { tx });
       const later = await repo().find(user.id, row.scopeKey, 'ytd', tx);
       expect(later?.answer).toEqual({ n: 3 });
       expect(later?.computedAt.toISOString()).toBe(minutesAfter(6).toISOString());
+    });
+  });
+
+  test('a forced save replaces even a fresh answer', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const row = {
+        userId: user.id,
+        scopeKey: '{"kind":"user"}',
+        windowKey: 'ytd',
+        baseCurrencyId: 'usd',
+        answer: { n: 1 },
+        computedAt: AT,
+      };
+      await repo().save(row, { tx });
+      await repo().save(
+        { ...row, answer: { n: 2 }, computedAt: minutesAfter(1) },
+        { tx, force: true }
+      );
+      expect((await repo().find(user.id, row.scopeKey, 'ytd', tx))?.answer).toEqual({ n: 2 });
     });
   });
 
@@ -65,10 +85,10 @@ describe('ReturnsLastCompleteRepository (SC-1694)', () => {
         answer: { n: 1 },
         computedAt: AT,
       };
-      await repo().save(row, tx);
+      await repo().save(row, { tx });
       await repo().save(
         { ...row, baseCurrencyId: 'eur', answer: { n: 2 }, computedAt: minutesAfter(1) },
-        tx
+        { tx }
       );
       const kept = await repo().find(user.id, row.scopeKey, 'ytd', tx);
       expect(kept?.baseCurrencyId).toBe('eur');

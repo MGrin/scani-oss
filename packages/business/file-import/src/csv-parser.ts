@@ -1,4 +1,5 @@
 import Papa from 'papaparse';
+import { suggestStatementCurrency } from './currency-hint';
 import { type DateOrder, parseStatementDate, resolveDateOrder } from './dates';
 import { detectBankTemplate } from './format-detector';
 import type { CsvColumnMapping, ParsedTransaction, ParseResult } from './types';
@@ -111,6 +112,26 @@ export function parseCsvStatement(
   // Detect currency from data
   const currencies = new Set(transactions.map((t) => t.currency).filter(Boolean));
   const detectedCurrency = currencies.size === 1 ? [...currencies][0] : undefined;
+  const suggestedCurrency =
+    currencies.size === 0
+      ? suggestStatementCurrency({
+          headers,
+          rows,
+          amountColumns: [mapping.amount, mapping.credit, mapping.debit, mapping.balance].filter(
+            (column): column is string => !!column
+          ),
+          mappedColumns: [
+            mapping.date,
+            mapping.description,
+            mapping.amount,
+            mapping.credit,
+            mapping.debit,
+            mapping.currency,
+            mapping.balance,
+            mapping.fee,
+          ].filter((column): column is string => !!column),
+        })
+      : undefined;
 
   return {
     transactions,
@@ -118,6 +139,7 @@ export function parseCsvStatement(
     format: 'csv',
     bankTemplate: detectedTemplate,
     detectedCurrency,
+    suggestedCurrency,
     warnings,
   };
 }

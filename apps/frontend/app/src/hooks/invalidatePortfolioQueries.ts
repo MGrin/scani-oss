@@ -150,16 +150,84 @@ const PORTFOLIO_ENTITY_TYPES = new Set<string>([
   'token',
 ]);
 
-/** An `account`/`holding`/… realtime event: refresh what is on screen. */
-export async function invalidateForEntityEvent(
-  utils: TrpcUtils,
-  entityType: string | undefined
-): Promise<void> {
-  // The history was rebuilt: only the chart series read it (SC-1600).
-  if (entityType === 'portfolio') {
-    await utils.portfolio.invalidate(undefined, { refetchType: 'active' });
-    return;
-  }
-  if (!entityType || !PORTFOLIO_ENTITY_TYPES.has(entityType)) return;
-  await invalidatePortfolioQueries(utils, { refetchType: 'active' });
+export interface RealtimeInvalidator {
+  /** An `account`/`holding`/… event: refresh what is on screen. */
+  entity(entityType: string | undefined): void;
+  /**
+   * A job lifecycle event. A finished job (an import, a sync) can add review
+   * items, and only the Jobs page used to refresh them, so NeedsYou on Home
+   * missed them until a navigation (SC-1715).
+   */
+  job(event: { state: string }): void;
+  flush(): Promise<void>;
+  dispose(): void;
+}
+
+/**
+ * Realtime refreshes, one per burst (SC-1754). A sync emits one event per
+ * entity, and every event used to invalidate the whole portfolio set.
+ * React Query does not dedupe that: `invalidateQueries` refetches with
+ * `cancelRefetch: true`, so each event cancelled the fetch in flight and
+ * started another while the server kept computing the cancelled one —
+ * production ran the home set 5-15 times in one minute.
+ *
+ * So events only mark what needs refreshing, and the union flushes once the
+ * stream has been quiet for `quietMs`, or after `maxWaitMs` at the latest, so
+ * a stream that never pauses still refreshes. A user's own mutation does not
+ * come through here: its `onSuccess` invalidates at once.
+ */
+export function createRealtimeInvalidator(
+  getUtils: () => TrpcUtils,
+  { quietMs = 400, maxWaitMs = 2000 }: { quietMs?: number; maxWaitMs?: number } = {}
+): RealtimeInvalidator {
+  let pending = { portfolioSet: false, series: false, review: false };
+  let quietTimer: ReturnType<typeof setTimeout> | null = null;
+  let maxTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearTimers = () => {
+    if (quietTimer) clearTimeout(quietTimer);
+    if (maxTimer) clearTimeout(maxTimer);
+    quietTimer = null;
+    maxTimer = null;
+  };
+
+  const flush = async () => {
+    clearTimers();
+    const due = pending;
+    pending = { portfolioSet: false, series: false, review: false };
+    const utils = getUtils();
+    const refreshes: Promise<unknown>[] = [];
+    if (due.portfolioSet)
+      refreshes.push(invalidatePortfolioQueries(utils, { refetchType: 'active' }));
+    // The history was rebuilt: only the chart series read it (SC-1600).
+    if (due.series)
+      refreshes.push(utils.portfolio.invalidate(undefined, { refetchType: 'active' }));
+    if (due.review) refreshes.push(utils.review.invalidate(undefined, { refetchType: 'active' }));
+    await Promise.all(refreshes);
+  };
+
+  const schedule = () => {
+    if (quietTimer) clearTimeout(quietTimer);
+    quietTimer = setTimeout(() => void flush(), quietMs);
+    maxTimer ??= setTimeout(() => void flush(), maxWaitMs);
+  };
+
+  return {
+    entity(entityType) {
+      if (entityType === 'portfolio') pending.series = true;
+      else if (entityType && PORTFOLIO_ENTITY_TYPES.has(entityType)) pending.portfolioSet = true;
+      else return;
+      schedule();
+    },
+    job(event) {
+      if (event.state !== 'completed' && event.state !== 'failed') return;
+      pending.review = true;
+      schedule();
+    },
+    flush,
+    dispose() {
+      clearTimers();
+      pending = { portfolioSet: false, series: false, review: false };
+    },
+  };
 }

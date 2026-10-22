@@ -135,7 +135,7 @@ function shouldRetry(response: Response): boolean {
   return false;
 }
 
-function isRetryableError(error: Error): boolean {
+export function isRetryableError(error: Error): boolean {
   const message = error.message.toLowerCase();
   if (message.includes('timeout')) return true;
   if (message.includes('network')) return true;

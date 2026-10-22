@@ -3,6 +3,7 @@ import {
   IDLE_SYNC_EVERY_HOURS,
   IdleUserSyncPolicy,
 } from '@scani/domain/services/users/IdleUserSyncPolicy';
+import { needsReconnect } from '@scani/domain/use-cases';
 import { STALE_SYNC_ALARM, STALE_SYNC_PROBE_SCHEDULE, STALE_SYNC_RENOTIFY_MS } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { captureException } from '@scani/logging/sentry';
@@ -50,10 +51,15 @@ async function runStaleSyncProbe(
   const idleHours = Math.max(thresholdHours, IDLE_SYNC_EVERY_HOURS + 1);
   const idleUserIds = await Container.get(IdleUserSyncPolicy).idleUserIds(now);
 
-  const targets = await repo.findStaleSyncTargets(cutoff, undefined, {
+  const stale = await repo.findStaleSyncTargets(cutoff, undefined, {
     userIds: [...idleUserIds],
     cutoff: new Date(now.getTime() - idleHours * 60 * 60 * 1000),
   });
+  // A key the provider refused is the owner's to replace: the app asks them to
+  // reconnect and the sync stops calling with it, so a page has nothing for
+  // us to act on (SC-1749). It stays in the count logged below.
+  const awaitingOwner = stale.filter((t) => needsReconnect({ syncRefusalKind: t.refusalKind }));
+  const targets = stale.filter((t) => !awaitingOwner.includes(t));
   const byCredential = new Map(targets.map((t) => [t.credentialId, t]));
 
   const { entered, restated, cleared, suppressed } = await alarms.sync(
@@ -68,7 +74,8 @@ async function runStaleSyncProbe(
   // somewhere, and this is that somewhere.
   logger.info(
     {
-      count: targets.length,
+      count: stale.length,
+      awaitingOwner: awaitingOwner.length,
       thresholdHours,
       entered: entered.length,
       restated: restated.length,

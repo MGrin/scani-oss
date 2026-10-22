@@ -37,6 +37,8 @@ export interface DocumentRow {
   /** False for files ingested before retention shipped, and for the rare row
    *  whose retention failed — the object is gone, the record is not. */
   downloadable: boolean;
+  /** The accounts this file was read into as a statement (SC-1656). */
+  accounts: { id: string; name: string }[];
 }
 
 const PURPOSE_LABELS = {
@@ -85,6 +87,18 @@ export function documentPurposeOptions(
   const present = [...new Set(documents.map((document) => document.purpose))];
   return present
     .map((purpose) => ({ value: purpose, label: documentPurposeLabel(purpose) }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+}
+
+/** Account options for the filter sheet: the accounts present, as `documentPurposeOptions`. */
+export function documentAccountOptions(
+  documents: readonly DocumentRow[]
+): { value: string; label: string }[] {
+  const present = new Map(
+    documents.flatMap((document) => document.accounts).map((account) => [account.id, account.name])
+  );
+  return [...present]
+    .map(([value, label]) => ({ value, label }))
     .sort((a, b) => a.label.localeCompare(b.label));
 }
 

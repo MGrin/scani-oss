@@ -11,6 +11,7 @@ import { trpc } from '@/lib/trpc';
 import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import { jobLabelFor } from '../../lib/job-labels';
 import {
+  failureDetailIsOurs,
   isJobRunning,
   jobFailureSentence,
   jobNeedsAction,
@@ -77,6 +78,11 @@ const RETRY_UNAVAILABLE_KEYS: Record<string, string> = {
  *  failure's sentence already says re-running it unchanged fails the same way
  *  (SC-1527). */
 const SENTENCE_SAYS_IT = new Set(['never_delivered', 'cancelled', 'unrecoverable']);
+
+// Final failures whose sentence counts the attempts and names no cause. With
+// no recorded reason they would end the page there, as mgrin's Bitcoin
+// refresh did (SC-1711), so they say the cause was unexpected.
+const NAMES_NO_CAUSE = new Set(['exhausted', 'noRetry', 'notQueued']);
 
 export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
   useRelativeTimeTick();
@@ -260,10 +266,20 @@ export function JobDetailHeader({ job }: { job: JobDetailHeaderJob }) {
               usually cannot act on. */}
           {failure ? (
             <p className="text-body">
-              {jobFailureSentence(t, failure, { detailShown: Boolean(job.userFacingError) })}
+              {jobFailureSentence(t, failure, {
+                detailShown: Boolean(job.userFacingError),
+                jobName: job.jobName,
+              })}
             </p>
           ) : null}
-          {job.userFacingError ? (
+          {failure && !job.userFacingError && NAMES_NO_CAUSE.has(failure.code) ? (
+            <p className="text-caption text-muted-foreground">
+              {t('v3.jobs.failure.unexplained.sentence')}
+            </p>
+          ) : null}
+          {job.userFacingError && failureDetailIsOurs(job.jobName) ? (
+            <p className="text-body">{job.userFacingError}</p>
+          ) : job.userFacingError ? (
             // Only ever a sentence a processor marked `userFacing(...)` — the
             // provider's own rejection, or copy written for whoever started
             // this job (SC-551). It used to be `job.error`, the raw throw, and

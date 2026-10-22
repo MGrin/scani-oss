@@ -1,5 +1,6 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 import { RETRY_EXTERNAL } from '../retry-policies';
 
@@ -17,8 +18,6 @@ const walletImportSchema: z.ZodType<WalletImportJob> = z.object({
   label: z.string().optional(),
 });
 
-const JOB_ID_SEP = '_';
-
 function redactAddress(addr: string): string {
   if (typeof addr !== 'string' || addr.length <= 12) return addr;
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -33,9 +32,7 @@ export const WALLET_IMPORT: UserJobDescriptor<WalletImportJob> = {
     removeOnFail: 500,
   },
   computeJobId: (d) =>
-    [JOB_NAMES.walletImport, d.userId, d.chain, d.address.toLowerCase(), d.requestId].join(
-      JOB_ID_SEP
-    ),
+    jobIdOf(JOB_NAMES.walletImport, d.userId, d.chain, d.address.toLowerCase(), d.requestId),
   summarizePayload: (d) => ({
     chain: d.chain,
     address: redactAddress(d.address),

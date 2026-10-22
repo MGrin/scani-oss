@@ -76,6 +76,19 @@ describe('the backup plan names every account-owned table (SC-1649)', () => {
     expect(required).toEqual([]);
   });
 
+  // A document names only its user; the extraction names the vendor. So the
+  // documents come before the feed windows that name them (SC-1656), and the
+  // extractions after the vendors.
+  test('carries uploaded documents before the feed windows that name them, and their extractions after vendors and before the payments that match them (SC-1662)', () => {
+    const at = (name: string) => backedUp.indexOf(name);
+    expect(at('feed_input_windows')).toBeGreaterThan(at('documents'));
+    expect(at('document_extractions')).toBeGreaterThan(at('vendors'));
+    expect(at('document_extractions')).toBeGreaterThan(at('documents'));
+    expect(at('payment_occurrences')).toBeGreaterThan(at('document_extractions'));
+    expect(leftOut).not.toContain('documents');
+    expect(leftOut).not.toContain('document_extractions');
+  });
+
   test('every users column is carried or left out, and none is both', () => {
     const columns = Object.keys(getTableColumns(schema.users)).sort();
     const listed = [...BACKED_UP_USER_COLUMNS, ...USER_COLUMNS_LEFT_OUT] as string[];

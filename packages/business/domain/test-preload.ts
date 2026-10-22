@@ -57,6 +57,13 @@ if (!process.env.DATABASE_URL) {
   process.env.DATABASE_URL = 'postgres://scani:scani@localhost:5433/scani?sslmode=disable';
 }
 
+// The SPA's API base, the same for every run (SC-1702). `api-base-url.ts`
+// reads it once, when it first loads, and test files share one module cache,
+// so only a preload sets it before any file can read it. It overrides a local
+// `.env` on purpose: CI has none, and a value only some machines carry is how
+// a load-order crash passed locally and failed in CI.
+process.env.VITE_API_URL = 'http://api.test';
+
 // Refuse to run the suite against a non-local database.
 //
 // Bun auto-loads a root `.env`, so anyone who writes one to point the dev

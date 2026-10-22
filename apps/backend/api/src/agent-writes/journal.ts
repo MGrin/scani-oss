@@ -28,7 +28,11 @@ interface TrackedTable {
   name: string;
   key: string;
   scope: (userId: string) => SQL;
-  /** Rewritten by pricing on its own schedule; ignored when checking for a later edit. */
+  /**
+   * Rewritten by a background job on its own schedule (pricing, the opening
+   * balance reconcile); ignored when checking for a later edit. An undo still
+   * writes them back from the image before the write.
+   */
   volatile?: readonly string[];
   /**
    * The engine calculator's columns. An undo never writes them back: a row it
@@ -57,6 +61,16 @@ const TABLES: readonly TrackedTable[] = [
     name: 'holding_coverage',
     key: 'holding_id',
     scope: (userId) => sql`holding_id IN (SELECT id FROM holdings WHERE user_id = ${userId})`,
+    // The columns only `upsertReconciliation` writes. The portfolio-history job
+    // runs it after the first movement on a holding, outside the journal, and it
+    // is no change of the user's (SC-1682).
+    volatile: [
+      'last_reconciled_at',
+      'opening_balance_quantity',
+      'unexplained_residual',
+      'reconciliation_notes',
+      'updated_at',
+    ],
   },
   { name: 'holding_transactions', key: 'id', scope: owned('user_id') },
   { name: 'holding_balance_observations', key: 'id', scope: owned('user_id') },

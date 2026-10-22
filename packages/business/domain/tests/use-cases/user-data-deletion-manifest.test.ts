@@ -15,10 +15,12 @@
  */
 
 import { describe, expect, test } from 'bun:test';
+import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
-import { getTableColumns, is } from 'drizzle-orm';
+import { getTableColumns, is, sql } from 'drizzle-orm';
 import { type AnyPgColumn, getTableConfig, PgTable } from 'drizzle-orm/pg-core';
 import {
+  NON_SCHEMA_TABLE_DISPOSITIONS,
   USER_DATA_TABLE_DISPOSITIONS,
   USER_ROW_COLUMN_DISPOSITIONS,
 } from '../../src/use-cases/user-data-deletion-manifest';
@@ -146,5 +148,81 @@ describe('user-row column manifest', () => {
         notNull: false,
       });
     }
+  });
+});
+
+type CascadeEdge = { child: string; parent: string };
+
+/** True when following ON DELETE CASCADE edges upward from `table` reaches any
+ *  of `targets`: deleting a target row then deletes this table's row too. */
+function cascadesFrom(table: string, targets: ReadonlySet<string>, edges: CascadeEdge[]): boolean {
+  const seen = new Set<string>();
+  const queue = [table];
+  while (queue.length > 0) {
+    const at = queue.shift() as string;
+    if (seen.has(at)) continue;
+    seen.add(at);
+    for (const edge of edges) {
+      if (edge.child !== at) continue;
+      if (targets.has(edge.parent)) return true;
+      queue.push(edge.parent);
+    }
+  }
+  return false;
+}
+
+describe('tables outside the drizzle schema (SC-1753)', () => {
+  test('CONTROL: the cascade walk follows a chain and stops at a non-cascading edge', () => {
+    const edges = [
+      { child: 'archive', parent: 'ledger' },
+      { child: 'ledger', parent: 'holdings' },
+    ];
+    expect(cascadesFrom('archive', new Set(['holdings']), edges)).toBe(true);
+    expect(cascadesFrom('archive', new Set(['users']), edges)).toBe(false);
+    expect(cascadesFrom('orphan', new Set(['holdings']), edges)).toBe(false);
+  });
+
+  test('every live table the schema does not declare is classified, and its cascade is real', async () => {
+    const declared = new Set(
+      Object.values(schema)
+        .filter((t) => is(t, PgTable))
+        .map((t) => getTableConfig(t as PgTable).name)
+    );
+    const live = await db.execute<{ name: string }>(sql`
+      select table_name as name from information_schema.tables
+       where table_schema = 'public' and table_type = 'BASE TABLE'`);
+    const outside = live
+      .map((r) => r.name)
+      .filter((name) => !declared.has(name))
+      .sort();
+    // The control: the two archives this ticket was filed about are outside the
+    // schema, so an empty list means the catalog read nothing.
+    expect(outside).toContain('_sc357_solana_rekey_20260817');
+    expect(outside).toContain('_sc328_kraken_eth_pairs_20260817');
+
+    const classified = new Map(NON_SCHEMA_TABLE_DISPOSITIONS.map((d) => [d.table, d]));
+    expect(outside.filter((name) => !classified.has(name))).toEqual([]);
+
+    const edges = await db.execute<CascadeEdge>(sql`
+      select child.relname as child, parent.relname as parent
+        from pg_constraint c
+        join pg_class child on child.oid = c.conrelid
+        join pg_class parent on parent.oid = c.confrelid
+        join pg_namespace ns on ns.oid = child.relnamespace
+       where c.contype = 'f' and c.confdeltype = 'c' and ns.nspname = 'public'`);
+    const deletedByFlow = new Set(
+      USER_DATA_TABLE_DISPOSITIONS.filter((d) => d.kind === 'delete').map(
+        (d) => getTableConfig(d.table).name
+      )
+    );
+    const broken = outside.flatMap((name) => {
+      const entry = classified.get(name);
+      if (entry?.kind === 'cascade' && !cascadesFrom(name, deletedByFlow, [...edges]))
+        return [`${name}: no ON DELETE CASCADE chain to a table "delete all my data" deletes`];
+      if (entry?.kind === 'keep' && !cascadesFrom(name, new Set(['users']), [...edges]))
+        return [`${name}: no ON DELETE CASCADE chain to users, so deleting the account leaves it`];
+      return [];
+    });
+    expect(broken).toEqual([]);
   });
 });

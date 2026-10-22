@@ -166,6 +166,12 @@ export function PeekHeader({ spec }: { spec: PeekSpec }) {
         </div>
       </div>
 
+      {spec.notice ? (
+        <p data-peek-notice="" className="text-body text-destructive">
+          {spec.notice}
+        </p>
+      ) : null}
+
       {spec.value ? (
         <p
           // The line for the SC-72 fit rule is this paragraph rather than the

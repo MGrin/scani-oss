@@ -32,16 +32,19 @@ map of the ~50 most-traded symbols → CoinGecko ids).
 
 ## Rate limit + namespace
 
-- Free tier: ~25 req/min (CoinGecko's published cap; in practice
-  ~30 burst then throttle).
-- Pro tier: 500–10k req/min depending on plan.
+- Keyless: one request every 6 s. CoinGecko answered 429 every night under
+  25 a minute, and still did under 10 a minute, because a sliding window let
+  all ten out at once (SC-1706). History is served for the last 365 days only;
+  an older range gets a 401, so the range fetch asks for the last 364.
+- Keyed: 25 req/min; the Pro tier allows 500–10k depending on plan.
 - Rate-limiter namespace: `coingecko`.
 
 ## Error taxonomy
 
 The provider doesn't extend `BaseHmacCexProvider`, so it owns its own
-error mapping. `fetchWithTimeout` retries 429/5xx with backoff (4
-attempts). After retries:
+error mapping. A 429, a 5xx or a network error is retried twice, 1 s and
+2 s apart, and every attempt takes its own limiter slot (SC-1706). After
+retries:
 
 - 401/403 → bubbles up as `Error` (treat as misconfigured `COINGECKO_API_KEY`).
 - 404 on `/coins/{id}/history` → returns `null` (no quote at that date).

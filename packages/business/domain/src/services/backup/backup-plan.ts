@@ -2,7 +2,7 @@ import * as schema from '@scani/db/schema';
 import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 
 export const BACKUP_FORMAT = 'scani-backup';
-export const BACKUP_VERSION = 1;
+export const BACKUP_VERSION = 2;
 
 /**
  * How a backed-up table's rows are found for one account: by a column naming
@@ -50,6 +50,10 @@ export const BACKED_UP_TABLES: readonly BackedUpTable[] = [
   byParent(schema.holdingCoverage, schema.holdingCoverage.holdingId, schema.holdings),
   byUser(schema.transferReviewRules, schema.transferReviewRules.userId),
   byUser(schema.judgmentDecisions, schema.judgmentDecisions.userId),
+  // Uploaded documents travel with their files (SC-1662, format 2): the writer
+  // carries only a document whose file it read, so no row comes back a broken
+  // download. Before the feed windows, which name the file they read (SC-1656).
+  byUser(schema.documents, schema.documents.userId),
   byUser(schema.feedInputs, schema.feedInputs.userId),
   byParent(schema.feedInputWindows, schema.feedInputWindows.inputId, schema.feedInputs),
   byUser(schema.feedMatchRules, schema.feedMatchRules.userId),
@@ -66,6 +70,9 @@ export const BACKED_UP_TABLES: readonly BackedUpTable[] = [
   byUser(schema.vendors, schema.vendors.userId),
   byParent(schema.vendorAliases, schema.vendorAliases.vendorId, schema.vendors),
   byParent(schema.vendorGroups, schema.vendorGroups.vendorId, schema.vendors),
+  // Extractions after the vendors they name, and before the payments, whose
+  // occurrences point at an extraction.
+  byParent(schema.documentExtractions, schema.documentExtractions.documentId, schema.documents),
   byUser(schema.payments, schema.payments.userId),
   byParent(schema.paymentOccurrences, schema.paymentOccurrences.paymentId, schema.payments),
   byParent(schema.paymentGroups, schema.paymentGroups.paymentId, schema.payments),
@@ -103,8 +110,6 @@ const HOUSEHOLD =
   'Membership is a relation between people; a restore lands in an empty account that belongs to no household.';
 const UPLOAD_UNDO =
   'The undo handle of an upload into the source instance. A restore writes every row anew, so there is no upload to undo.';
-const FILES =
-  'The stored files are not in a backup (v1). Their rows without the files would be broken downloads.';
 
 /**
  * Every account-owned table a backup leaves out, with the reason. With
@@ -131,11 +136,14 @@ export const NOT_BACKED_UP: ReadonlyArray<{ table: PgTable; reason: string }> = 
     table: schema.pushSubscriptions,
     reason: "Bound to one browser and to the source instance's push key.",
   },
-  { table: schema.documents, reason: FILES },
-  { table: schema.documentExtractions, reason: FILES },
   { table: schema.portfolioValueDaily, reason: DERIVED },
   { table: schema.returnsLastComplete, reason: DERIVED },
   { table: schema.engineShadowDifferences, reason: DERIVED },
+  {
+    table: schema.transactionCategoryAiAnswers,
+    reason:
+      "A cache of the AI's answers on the source instance. A restore starts with AI suggestions off, and the keys are asked again if they are turned on.",
+  },
   { table: schema.userJobs, reason: INSTANCE_HISTORY },
   { table: schema.outboxEvents, reason: INSTANCE_HISTORY },
   { table: schema.agentCalls, reason: INSTANCE_HISTORY },
@@ -183,6 +191,7 @@ export const USER_COLUMNS_LEFT_OUT = [
   'activationNudgeSentAt',
   'onboardingOptOutAt',
   'appSeenAt',
+  'aiCategoriesAt',
   'createdAt',
   'updatedAt',
 ] as const satisfies ReadonlyArray<keyof typeof schema.users.$inferSelect>;

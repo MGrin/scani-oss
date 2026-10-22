@@ -1,5 +1,6 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 import { RETRY_HEAVY } from '../retry-policies';
 
@@ -205,7 +206,7 @@ export const PORTFOLIO_HISTORY_BACKFILL: UserJobDescriptor<PortfolioHistoryBackf
     removeOnComplete: 100,
     removeOnFail: 500,
   },
-  computeJobId: (d) => [JOB_NAMES.portfolioHistoryBackfill, d.userId, d.requestId].join('_'),
+  computeJobId: (d) => jobIdOf(JOB_NAMES.portfolioHistoryBackfill, d.userId, d.requestId),
   summarizePayload: (d) => ({
     tokenCount: d.tokenIds.length,
     lookbackDays: d.lookbackDays,

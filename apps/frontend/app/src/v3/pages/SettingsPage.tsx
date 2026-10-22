@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router-dom';
 import { AccountSettings } from '../components/settings/AccountSettings';
 import { AgentsSections } from '../components/settings/AgentsSections';
+import { AiCategorySettings } from '../components/settings/AiCategorySettings';
 import { BackupSettings } from '../components/settings/BackupSettings';
 import { BillCalendarSettings } from '../components/settings/BillCalendarSettings';
 import { CostBasisSettings } from '../components/settings/CostBasisSettings';
@@ -55,11 +56,15 @@ const AREAS: SettingsArea[] = [
     sections: () => (
       <>
         <DataExportSettings />
+        <AiCategorySettings />
         <BackupSettings />
         <BillCalendarSettings />
-        <HouseholdSettings />
         <DataQualitySettings />
         <MaintenanceSettings />
+        {/* Last: on a phone its read lands past the area's reveal, and its
+            height depends on who is in it, so nothing may sit below it while
+            it fills (SC-1743). */}
+        <HouseholdSettings />
       </>
     ),
   },

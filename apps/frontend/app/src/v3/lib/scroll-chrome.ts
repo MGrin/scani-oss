@@ -7,10 +7,10 @@
  * nudge never moves the chrome. Any scroll up past `UP_JITTER_PX` brings it
  * back: wanting the bar back is the reason people scroll up. `y` is clamped
  * to `[0, maxY]`, because iOS reports the rubber-band as offsets beyond
- * either end, and its bounce back would otherwise read as a scroll up. A move
- * back that lands on the bottom edge is the page end clamping in as the tab
- * bar's spacer shrinks, not the reader: counting it would bring the bar back
- * and grow the spacer again, on a loop.
+ * either end, and its bounce back would otherwise read as a scroll up. At the
+ * end of the page the bars come back too: the page keeps the tab bar's room
+ * there either way, since nothing may resize while the finger is on it
+ * (SC-1714), and the bars cover that room instead of leaving a band.
  */
 export interface ChromeScrollState {
   hidden: boolean;
@@ -30,8 +30,9 @@ export function nextChromeScroll(
   const at = Math.min(Math.max(y, 0), Math.max(maxY, 0));
   if (at <= 0) return CHROME_AT_REST;
 
+  if (at >= maxY - 1) return { hidden: false, lastY: at, downRun: 0 };
+
   const delta = at - prev.lastY;
-  if (delta < 0 && at >= maxY - 1) return { ...prev, lastY: at };
   if (delta < -UP_JITTER_PX) return { hidden: false, lastY: at, downRun: 0 };
   if (delta <= 0) return { ...prev, lastY: at };
 

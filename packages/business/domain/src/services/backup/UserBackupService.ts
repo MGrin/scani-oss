@@ -3,9 +3,10 @@ import { getDb } from '@scani/db';
 import type { UserBackup } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
+import { BACKUP_UPLOAD_MAX_BYTES, UPLOADED_FILE_MAX_BYTES } from '@scani/shared';
 import { and, desc, eq, ne } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
-import { BackupWriter } from './BackupWriter';
+import { type BackupFileSource, BackupWriter } from './BackupWriter';
 import { BACKUP_VERSION } from './backup-plan';
 
 /** Long enough to start a download on a slow connection, short enough that a leaked URL dies fast. */
@@ -44,7 +45,21 @@ export class UserBackupService {
   private readonly storage = Container.get(StorageFacade);
 
   async create(userId: string): Promise<UserBackup & { counts: Record<string, number> }> {
-    const file = await this.writer.file(userId);
+    const files: BackupFileSource = {
+      exists: (key) => this.storage.exists(key),
+      read: (key) => this.storage.read(key, { maxBytes: UPLOADED_FILE_MAX_BYTES }),
+    };
+    let file = await this.writer.file(userId, getDb(), files);
+    // A backup the restore would refuse is no backup. When the files are what
+    // takes it past the restore's limit, build it again without them, and the
+    // Backup card says how many were left out (SC-1662).
+    if (file.bytes.byteLength > BACKUP_UPLOAD_MAX_BYTES && file.filesIncluded > 0) {
+      this.logger.info(
+        { userId, bytes: file.bytes.byteLength, files: file.filesIncluded },
+        'Backup with files is over the restore limit; building it without them'
+      );
+      file = await this.writer.file(userId, getDb(), null);
+    }
     if (file.bytes.byteLength > MAX_BACKUP_BYTES) {
       throw new BackupTooLargeError(file.bytes.byteLength);
     }
@@ -63,6 +78,7 @@ export class UserBackupService {
           byteSize: file.bytes.byteLength,
           sha256: file.sha256,
           recordCount: file.records,
+          filesLeftOut: file.filesLeftOut,
         })
         .returning();
       if (!backup) throw new Error('UserBackupService: the backup row was not written');

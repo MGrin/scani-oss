@@ -1,5 +1,6 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 import { RETRY_NONE } from '../retry-policies';
 
@@ -14,8 +15,6 @@ const userDataDeleteSchema: z.ZodType<UserDataDeleteJob> = z.object({
   deleteAccount: z.boolean().optional(),
 });
 
-const JOB_ID_SEP = '_';
-
 export const USER_DATA_DELETE: UserJobDescriptor<UserDataDeleteJob> = {
   name: JOB_NAMES.userDataDelete,
   schema: userDataDeleteSchema,
@@ -29,7 +28,7 @@ export const USER_DATA_DELETE: UserJobDescriptor<UserDataDeleteJob> = {
     removeOnComplete: true,
     removeOnFail: 500,
   },
-  computeJobId: (d) => [JOB_NAMES.userDataDelete, d.userId, d.requestId].join(JOB_ID_SEP),
+  computeJobId: (d) => jobIdOf(JOB_NAMES.userDataDelete, d.userId, d.requestId),
   // The only field recorded: it is how the next sign-in finds an account
   // deletion that did not finish (SC-1276).
   summarizePayload: (d) => (d.deleteAccount ? { deleteAccount: true } : {}),

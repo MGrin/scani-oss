@@ -37,6 +37,7 @@ function holding(fields: Partial<Holding> = {}): Holding {
     startsAt: null,
     valueBase: null,
     valuePricedAt: null,
+    cacheDueAt: null,
     lastUpdated: CREATED,
     createdAt: CREATED,
     ...fields,
@@ -197,6 +198,7 @@ function inputWindow(
     complete: true,
     fetchedAt: toAt,
     uploadRef: null,
+    documentId: null,
     shape: 'transaction-run',
   };
 }

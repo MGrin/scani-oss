@@ -1,8 +1,10 @@
 import { sql } from 'drizzle-orm';
 import {
   foreignKey,
+  index,
   integer,
   pgTable,
+  primaryKey,
   text,
   timestamp,
   unique,
@@ -40,6 +42,27 @@ export const transactionCategories = pgTable(
       sql`coalesce(${table.parentId}, '00000000-0000-0000-0000-000000000000'::uuid)`,
       sql`lower(${table.name})`
     ),
+  })
+);
+
+// What the AI answered for a payee key, so a key is asked once (SC-1695).
+// `category_id` NULL is a remembered "no clear match". Deleting the category
+// deletes the answer, so that key is asked again.
+export const transactionCategoryAiAnswers = pgTable(
+  'transaction_category_ai_answers',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    payeeKey: text('payee_key').notNull(),
+    categoryId: uuid('category_id').references(() => transactionCategories.id, {
+      onDelete: 'cascade',
+    }),
+    askedAt: timestamp('asked_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.payeeKey] }),
+    categoryIdx: index('idx_tx_category_ai_answers_category').on(table.categoryId),
   })
 );
 

@@ -89,7 +89,10 @@ const ALLOWED_CONTENT_TYPES: Record<Purpose, readonly string[]> = {
 // later mishandled.
 const ALLOWED_EXTENSIONS: Record<Purpose, readonly string[]> = {
   screenshot: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'pdf'],
-  'file-import': ['csv', 'txt', 'ofx', 'qfx', 'qif', 'xls'],
+  // MT940 (`sta`, `mt940`, `940`) and CAMT.053 (`xml`) upload as `text/plain`:
+  // the list above gains no markup type for them (SC-1726). `xlsx` uploads as
+  // octet-stream, so no OOXML type joins it either (SC-1734).
+  'file-import': ['csv', 'txt', 'ofx', 'qfx', 'qif', 'xls', 'xlsx', 'sta', 'mt940', '940', 'xml'],
   document: ['pdf', 'png', 'jpg', 'jpeg', 'webp'],
   backup: ['gz'],
 };

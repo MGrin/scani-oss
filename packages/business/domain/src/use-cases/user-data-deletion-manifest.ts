@@ -96,6 +96,13 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
   },
   {
     kind: 'delete',
+    table: schema.transactionCategoryAiAnswers,
+    userColumn: schema.transactionCategoryAiAnswers.userId,
+    echo: schema.transactionCategoryAiAnswers.payeeKey,
+    note: 'What the AI answered per payee (SC-1695). Before the categories, which it references.',
+  },
+  {
+    kind: 'delete',
     table: schema.transactionCategories,
     userColumn: schema.transactionCategories.userId,
     echo: schema.transactionCategories.id,
@@ -562,6 +569,12 @@ export const USER_ROW_COLUMN_DISPOSITIONS: readonly UserColumnDisposition[] = [
   },
   {
     kind: 'keep',
+    column: schema.users.aiCategoriesAt,
+    reason:
+      'Consent to AI category suggestions, given by the login that remains; clearing it would silently withdraw a choice the person made, and with no rows left nothing is sent (SC-1695).',
+  },
+  {
+    kind: 'keep',
     column: schema.users.appSeenAt,
     reason:
       'When the app was last open, stamped by the session rather than typed; it holds no portfolio content, and the login that remains goes on writing it (SC-1602).',
@@ -582,5 +595,69 @@ export const USER_ROW_COLUMN_DISPOSITIONS: readonly UserColumnDisposition[] = [
     column: schema.users.updatedAt,
     reason:
       'Row bookkeeping written by the ORM rather than by the user, and this flow writes the row, so whatever is here is about the deletion itself.',
+  },
+];
+
+/**
+ * A table in the database that the drizzle schema above does not declare, and
+ * what each deletion does to it (SC-1753).
+ *
+ * The FK enumeration reads `@scani/db/schema`, so a table created only by a
+ * migration, or by another package, is invisible to it. Two repair-migration
+ * archives sat there holding a deleted account's ledger copies. The test reads
+ * the live catalog instead, and fails on a table missing from this list.
+ *
+ * - `cascade`: a chain of `ON DELETE CASCADE` foreign keys reaches a table this
+ *   flow deletes, so both deletions take the row with them.
+ * - `keep`: it cascades from `users` only, so deleting the account removes it
+ *   and "delete all my data", which keeps the user row, keeps it too.
+ * - `no-user-data`: nothing in it identifies or describes a user.
+ */
+export type NonSchemaTableDisposition =
+  | { kind: 'cascade'; table: string; note: string }
+  | { kind: 'keep'; table: string; reason: string }
+  | { kind: 'no-user-data'; table: string; reason: string };
+
+export const NON_SCHEMA_TABLE_DISPOSITIONS: readonly NonSchemaTableDisposition[] = [
+  {
+    kind: 'cascade',
+    table: '_sc357_solana_rekey_20260817',
+    note: 'SC-357 archive of rewritten Solana ledger rows; cascades from holdings.',
+  },
+  {
+    kind: 'cascade',
+    table: '_sc328_kraken_eth_pairs_20260817',
+    note: 'SC-328 archive of prior transfer-review state; cascades from holding_transactions.',
+  },
+  {
+    kind: 'cascade',
+    table: '_sc1634_apy_balance_copies_20261017',
+    note: 'SC-1634 archive of deleted APY balance copies; cascades from holdings and users.',
+  },
+  {
+    kind: 'keep',
+    table: 'user_roles',
+    reason: 'Admin role of the login. It is account state, not data the user entered.',
+  },
+  {
+    kind: 'keep',
+    table: 'user_blocks',
+    reason: 'A block on the login. Wiping data must not lift it; deleting the account removes it.',
+  },
+  {
+    kind: 'keep',
+    table: 'feature_flag_user_overrides',
+    reason: 'Per-login feature flag overrides, set by an admin. Account state, not user data.',
+  },
+  {
+    kind: 'no-user-data',
+    table: 'feature_flags',
+    reason: 'Global flag definitions: a key, a description and two booleans.',
+  },
+  {
+    kind: 'no-user-data',
+    table: 'queue_resource_locks',
+    reason:
+      'Short-lived locks keyed by an opaque holding, account or user id, each with an expires_at. No name, email or figure, and the row lapses within minutes.',
   },
 ];

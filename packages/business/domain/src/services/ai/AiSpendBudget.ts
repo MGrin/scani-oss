@@ -13,6 +13,21 @@ import { getPlanResolver } from '../plan/plan-resolver';
  */
 export const AI_CALLS_PER_USER_PER_DAY = 20;
 export const AI_CALLS_GLOBAL_PER_HOUR = 200;
+/**
+ * Category suggestions have their own day, so a person who turned them on
+ * keeps every parse, and outside the plan's monthly cap (SC-1695, operator
+ * ruling #24461). They share the global hour with everything else.
+ */
+export const AI_CATEGORIZE_CALLS_PER_USER_PER_DAY = 5;
+/**
+ * The most of the global hour category suggestions may take. Every opted-in
+ * person's day resets at once, and without a share of its own the first
+ * hourly run could spend the whole hour and refuse every parse until the next.
+ */
+export const AI_CATEGORIZE_CALLS_GLOBAL_PER_HOUR = 50;
+
+/** Which allowance a call spends from. */
+export type AiSpendKind = 'parse' | 'categorize';
 
 const MONTH_KEY_TTL_SECONDS = 32 * 86_400;
 
@@ -78,16 +93,30 @@ export class AiSpendBudget {
    * A counter that cannot be reached refuses too. Failing open would make
    * "Redis is down" the way around the cap.
    */
-  async reserve(userId: string, calls: number, now: Date = new Date()): Promise<void> {
+  async reserve(
+    userId: string,
+    calls: number,
+    now: Date = new Date(),
+    kind: AiSpendKind = 'parse'
+  ): Promise<void> {
     const iso = now.toISOString();
-    const userKey = `ai:budget:user:${userId}:${iso.slice(0, 10)}`;
+    const categorize = kind === 'categorize';
+    const userKey = `ai:budget:${categorize ? 'categorize' : 'user'}:${userId}:${iso.slice(0, 10)}`;
+    const dayCap = categorize ? AI_CATEGORIZE_CALLS_PER_USER_PER_DAY : AI_CALLS_PER_USER_PER_DAY;
     const globalKey = `ai:budget:global:${iso.slice(0, 13)}`;
     const taken: string[] = [];
-    const aiMonthlyCap = await this.monthlyCap(userId, now);
+    const aiMonthlyCap = categorize ? null : await this.monthlyCap(userId, now);
     try {
       const perUser = await this.counter.incrBy(userKey, calls, 2 * 86_400);
       taken.push(userKey);
-      if (perUser > AI_CALLS_PER_USER_PER_DAY) throw new AiBudgetExceededError('user');
+      if (perUser > dayCap) throw new AiBudgetExceededError('user');
+
+      if (categorize) {
+        const shareKey = `ai:budget:categorize-global:${iso.slice(0, 13)}`;
+        const share = await this.counter.incrBy(shareKey, calls, 2 * 3_600);
+        taken.push(shareKey);
+        if (share > AI_CATEGORIZE_CALLS_GLOBAL_PER_HOUR) throw new AiBudgetExceededError('global');
+      }
 
       const global = await this.counter.incrBy(globalKey, calls, 2 * 3_600);
       taken.push(globalKey);

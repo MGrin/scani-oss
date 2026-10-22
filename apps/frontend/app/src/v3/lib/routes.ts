@@ -337,12 +337,11 @@ export const V3_TAB_ITEMS: readonly V3TabItem[] = [
  */
 export const V3_DRAWER_PRIMARY: readonly V3NavItem[] = [
   { labelKey: 'nav.review', icon: 'ClipboardCheck', path: V3_ROUTES.review },
-  // Holdings sits directly above Institutions because the two answer the same
-  // question at different grains, and it takes the slot Accounts vacated when
-  // V3-40 promoted it to the tab bar. Nothing about the holdings list changed;
-  // only which surface offers the way in.
-  { labelKey: 'nav.holdings', icon: 'PieChart', path: V3_ROUTES.holdings },
-  { labelKey: 'nav.institutions', icon: 'Building2', path: V3_ROUTES.institutions },
+  // Household and Transactions take the grid, Holdings and Institutions the
+  // list below it (mgrin, SC-1712). Holdings stays one tap away there, and on
+  // Home's Allocation and Top holdings tiles.
+  { labelKey: 'nav.household', icon: 'Users', path: V3_ROUTES.household },
+  { labelKey: 'nav.transactions', icon: 'ArrowLeftRight', path: V3_ROUTES.transactions },
   { labelKey: 'nav.vaults', icon: 'Vault', path: V3_ROUTES.vaults },
   { labelKey: 'nav.files', icon: 'Files', path: V3_ROUTES.files },
   { labelKey: 'nav.settings', icon: 'Settings', path: V3_ROUTES.settings },
@@ -351,7 +350,8 @@ export const V3_DRAWER_PRIMARY: readonly V3NavItem[] = [
 /** Everything else, as a list below the grid. Reaching it is what the
  * drawer's full-height snap point is for. */
 export const V3_DRAWER_SECONDARY: readonly V3NavItem[] = [
-  { labelKey: 'nav.transactions', icon: 'ArrowLeftRight', path: V3_ROUTES.transactions },
+  { labelKey: 'nav.holdings', icon: 'PieChart', path: V3_ROUTES.holdings },
+  { labelKey: 'nav.institutions', icon: 'Building2', path: V3_ROUTES.institutions },
   { labelKey: 'nav.groups', icon: 'Tags', path: V3_ROUTES.groups },
   { labelKey: 'nav.tokens', icon: 'Coins', path: V3_ROUTES.tokens },
   { labelKey: 'nav.jobs', icon: 'ListChecks', path: V3_ROUTES.jobs },

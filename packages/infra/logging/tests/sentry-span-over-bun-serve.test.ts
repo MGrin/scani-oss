@@ -33,6 +33,9 @@ type FixtureResult = {
   armB_withSpanTransactions: number;
   armB_names: string[];
   armB_ops: string[];
+  armC_calls: number;
+  armC_transactions: number;
+  armC_tagged: number;
 };
 
 async function runFixture(): Promise<FixtureResult> {
@@ -79,5 +82,10 @@ describe('a Sentry span over Bun.serve', () => {
     expect(result.armB_withSpanTransactions).toBeGreaterThan(0);
     expect(result.armB_names).toEqual(['trpc/sc751.probe']);
     expect(result.armB_ops).toEqual(['rpc.server']);
+  });
+
+  test('getReturns is sampled whole, and a tag set after an await reaches it (SC-1745)', () => {
+    expect(result.armC_transactions).toBe(result.armC_calls);
+    expect(result.armC_tagged).toBe(result.armC_calls);
   });
 });

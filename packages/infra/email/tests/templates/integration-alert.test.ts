@@ -5,10 +5,11 @@ import { SCANI_BRAND } from '../../src/types';
 const ALERTS_UNSUB = 'https://api.scani.xyz/e/a/8b1f1a2e-0000-4000-8000-000000000000';
 const DIGEST_UNSUB = 'https://api.scani.xyz/e/u/8b1f1a2e-0000-4000-8000-000000000000';
 
-const render = (integrations: StaleIntegrationItem[]) =>
+const render = (integrations: StaleIntegrationItem[], language?: string | null) =>
   renderIntegrationAlertEmail({
     brand: SCANI_BRAND,
     name: 'Alice Example',
+    language,
     integrations,
     integrationsUrl: 'https://app.scani.xyz/integrations',
     unsubscribeUrl: ALERTS_UNSUB,
@@ -19,12 +20,41 @@ const KRAKEN: StaleIntegrationItem = { name: 'Kraken', reason: 'stopped' };
 const WISE: StaleIntegrationItem = { name: 'Wise', reason: 'never-synced' };
 
 describe('renderIntegrationAlertEmail (SC-459)', () => {
-  test('the subject names the broken connection, so it is readable in a list', () => {
-    expect(render([KRAKEN]).subject).toContain('Kraken');
+  // mx.yandex.ru refused "Scani: Bybit is not syncing" as spam (SC-1721): an
+  // exchange's name in the subject over a "Reconnect" link is the shape of
+  // credential phishing. The body still names the connection.
+  test('the subject names no connection', () => {
+    expect(render([KRAKEN]).subject).toBe('Scani: a connection needs attention');
+    expect(render([KRAKEN, WISE]).subject).toBe('Scani: a connection needs attention');
+    expect(render([KRAKEN]).text).toContain('Kraken');
   });
 
-  test('several broken connections give a count rather than a list in the subject', () => {
-    expect(render([KRAKEN, WISE]).subject).toContain('2 connections');
+  test('the call to action names the page, not "Reconnect"', () => {
+    const out = render([KRAKEN]);
+    expect(out.text).not.toMatch(/reconnect:/i);
+    expect(out.html).not.toMatch(/>\s*Reconnect/);
+    expect(out.text).toContain(
+      'Open Integrations in Scani to update it: https://app.scani.xyz/integrations'
+    );
+    expect(out.html).toContain('Open Integrations');
+  });
+
+  test('it carries one-click unsubscribe headers for the alerts stream (RFC 8058)', () => {
+    expect(render([KRAKEN]).headers).toEqual({
+      'List-Unsubscribe': `<${ALERTS_UNSUB}>`,
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    });
+  });
+
+  test("it is written in the reader's language", () => {
+    const out = render([KRAKEN], 'ru-RU');
+    expect(out.subject).toBe('Scani: подключение требует внимания');
+    expect(out.text).toContain('Kraken');
+    expect(out.html).toContain('lang="ru"');
+  });
+
+  test('control: a language we cannot write in gets the English letter', () => {
+    expect(render([KRAKEN], 'xx').subject).toBe('Scani: a connection needs attention');
   });
 
   test('the unsubscribe link is in both bodies', () => {

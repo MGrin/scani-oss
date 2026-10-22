@@ -153,7 +153,7 @@ export function Auth() {
 
     if (result.error) {
       setError(result.error);
-      throw new Error(result.error);
+      return;
     }
     if (result.twoFactor) {
       navigate(`/sign-in/2fa?returnTo=${encodeURIComponent(returnTo)}`);
@@ -196,7 +196,7 @@ export function Auth() {
     turnstile.reset();
     if (result.error) {
       setError(result.error);
-      throw new Error(result.error);
+      return;
     }
   };
 

@@ -75,13 +75,22 @@ function inviteUrl(token: string): string {
 export const householdRouter = router({
   mine: protectedProcedure.query(async ({ ctx }) => {
     const household = await Container.get(HouseholdAccessService).membershipOf(ctx.userId);
-    if (!household) return { household: null, members: [], invites: [], sharedAccountIds: [] };
+    if (!household) {
+      return {
+        viewerId: ctx.userId,
+        household: null,
+        members: [],
+        invites: [],
+        sharedAccountIds: [],
+      };
+    }
     const [members, invites, visible] = await Promise.all([
       memberships().members(ctx.userId),
       household.role === 'admin' ? memberships().pendingInvites(ctx.userId) : Promise.resolve([]),
       Container.get(HouseholdAccessService).visibleAccounts(ctx.userId),
     ]);
     return {
+      viewerId: ctx.userId,
       household,
       members,
       invites,

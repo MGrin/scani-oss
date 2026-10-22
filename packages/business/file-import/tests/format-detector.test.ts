@@ -53,6 +53,38 @@ describe('detectFormat', () => {
     expect(detectFormat(':20:TRANSREF\n:25:ACCOUNT', undefined)).toBe('mt940');
   });
 
+  it('should detect MT940 inside a SWIFT envelope, and by the .940 extension', () => {
+    const enveloped = '{1:F01INGBNL2ABXXX0000000000}{2:I940INGBNL2AXXXN}{4:\n:20:REF\n:25:ACCOUNT';
+    expect(detectFormat(enveloped, undefined)).toBe('mt940');
+    expect(detectFormat('data', 'statement.940')).toBe('mt940');
+  });
+
+  it('names a spreadsheet by its extension, whatever its text looks like (SC-1734)', () => {
+    expect(detectFormat('<table><tr><td>Date</td></tr></table>', 'import.xls')).toBe('xls');
+    expect(detectFormat('date,amount\n2026-01-02,5', 'import.XLSX')).toBe('xlsx');
+  });
+
+  it('should detect CAMT.053 by content, and by the name the worker gives an upload', () => {
+    const camt =
+      '<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08"><BkToCstmrStmt/></Document>';
+    expect(detectFormat(camt, undefined)).toBe('camt053');
+    expect(detectFormat(camt, 'statement.xml')).toBe('camt053');
+    expect(detectFormat('data', 'import.camt053')).toBe('camt053');
+  });
+
+  it('CONTROL: an .xml that is not a cash-management message is not CAMT.053', () => {
+    expect(detectFormat('<?xml version="1.0"?><?OFX OFXHEADER="200"?><OFX>', 'bank.xml')).toBe(
+      'ofx'
+    );
+    expect(detectFormat('<?xml version="1.0"?><html/>', 'page.xml')).not.toBe('camt053');
+  });
+
+  it('sends a camt.052 report to the CAMT.053 parser, which refuses it by name', () => {
+    const report =
+      '<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.052.001.02"><BkToCstmrAcctRpt/></Document>';
+    expect(detectFormat(report, 'report.xml')).toBe('camt053');
+  });
+
   it('should detect CSV by comma content', () => {
     expect(detectFormat('date,amount,desc', undefined)).toBe('csv');
   });

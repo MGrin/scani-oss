@@ -96,6 +96,7 @@
     },
     "home": "Beranda",
     "holdings": "Kepemilikan",
+    "household": "Rumah tangga",
     "accounts": "Akun",
     "institutions": "Institusi",
     "groups": "Grup",
@@ -274,6 +275,7 @@
           "noFilesYet": "Belum ada berkas"
         },
         "filter": {
+          "account": "Akun",
           "invoices": "Faktur",
           "kind": "Jenis"
         },
@@ -848,6 +850,18 @@
         "period": {
           "all": "Sepanjang waktu",
           "custom": "Rentang khusus"
+        }
+      },
+      "householdAccounts": {
+        "col": {
+          "member": "Anggota"
+        },
+        "filter": {
+          "member": "Anggota"
+        },
+        "empty": {
+          "title": "Belum ada akun bersama",
+          "description": "Setiap anggota memilih di Pengaturan akun mana yang dilihat rumah tangga."
         }
       }
     },

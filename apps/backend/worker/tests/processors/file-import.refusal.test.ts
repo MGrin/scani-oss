@@ -112,3 +112,51 @@ describe('FileImportProcessor error classification', () => {
     expect(userFacingMessage(err)).toBeNull();
   });
 });
+
+describe('FileImportProcessor: a spreadsheet the parser refuses (SC-1734)', () => {
+  async function refusalOf(bytes: Uint8Array, fileType: 'xls' | 'xlsx'): Promise<unknown> {
+    Container.set(StorageFacade, {
+      read: async () => Buffer.from(bytes),
+    } as unknown as StorageFacade);
+    Container.set(UploadedFileService, {
+      record: async () => null,
+    } as unknown as UploadedFileService);
+    try {
+      await new TestableProcessor().run({
+        ...JOB,
+        fileType,
+        r2Key: `temp/file-import/user-1/s.${fileType}`,
+      });
+    } catch (err) {
+      return err;
+    }
+    throw new Error('expected the processor to throw');
+  }
+
+  test('a binary .xls fails once, telling the owner to save it as .xlsx or CSV', async () => {
+    const ole = new Uint8Array([
+      0xd0,
+      0xcf,
+      0x11,
+      0xe0,
+      0xa1,
+      0xb1,
+      0x1a,
+      0xe1,
+      ...new Uint8Array(504),
+    ]);
+    const err = await refusalOf(ole, 'xls');
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect(userFacingMessage(err)).toBe(
+      'This is an old binary Excel file, which Scani cannot read. Save it as .xlsx or CSV and upload again. Nothing was imported.'
+    );
+  });
+
+  test('a zip that is not a workbook fails once, with the same way out', async () => {
+    const err = await refusalOf(new Uint8Array([0x50, 0x4b, 0x03, 0x04, 1, 2, 3, 4]), 'xlsx');
+    expect(err).toBeInstanceOf(UnrecoverableError);
+    expect(userFacingMessage(err)).toBe(
+      'Scani could not read this file as a spreadsheet. Save it as .xlsx or CSV and upload again. Nothing was imported.'
+    );
+  });
+});

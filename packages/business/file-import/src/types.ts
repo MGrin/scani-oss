@@ -5,6 +5,7 @@ export type { ExtractedHolding } from '@scani/shared';
 
 import type { ExtractedHolding } from '@scani/shared';
 import type { AmbiguousDateOrder } from './dates';
+import type { SpreadsheetRefusalReason } from './spreadsheet';
 
 /** Common transaction format normalized from any bank statement */
 export interface ParsedTransaction {
@@ -40,6 +41,12 @@ export interface ParseResult {
   bankTemplate?: string;
   /** Currency detected from the file */
   detectedCurrency?: string;
+  /**
+   * A currency the file names without a Currency column — a symbol or code
+   * in the amounts, the amount header, a column of one code, or a sheet's
+   * preamble. Only ever preselected for the owner to confirm (SC-1735).
+   */
+  suggestedCurrency?: string;
   /** Errors encountered during parsing (non-fatal) */
   warnings: string[];
   /**
@@ -48,9 +55,17 @@ export interface ParseResult {
    * caller asks and re-parses with a `dateOrder` (SC-1291).
    */
   ambiguousDateOrder?: AmbiguousDateOrder;
-  /** What the account held when the statement's period ended, for a statement that says (IB). */
+  /**
+   * What the account held when the statement's period ended, for a statement
+   * that says (IB, MT940, CAMT.053).
+   */
   positions?: StatementPositions;
   needsColumnMapping?: { headers: string[]; rowCount: number };
+  /**
+   * Set when the file is one this package will not read, such as a binary
+   * `.xls`. `transactions` is then empty, and the caller tells the owner why.
+   */
+  refusal?: SpreadsheetRefusalReason;
 }
 
 /**
@@ -64,7 +79,16 @@ export interface StatementPositions {
   securities: Array<{ symbol: string; quantity: string }>;
 }
 
-export type StatementFormat = 'csv' | 'ofx' | 'mt940' | 'ib-csv' | 'pdf' | 'qif';
+export type StatementFormat =
+  | 'csv'
+  | 'ofx'
+  | 'mt940'
+  | 'camt053'
+  | 'ib-csv'
+  | 'pdf'
+  | 'qif'
+  | 'xlsx'
+  | 'xls';
 
 /** Column mapping for CSV files — maps logical fields to column names/indices */
 export interface CsvColumnMapping {

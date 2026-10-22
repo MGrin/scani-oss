@@ -7,7 +7,7 @@ import { authClient } from './auth-client';
 import { QUERY_DEFAULTS } from './query-defaults';
 import { trpc } from './trpc';
 import { getTrpcAuthHeaders } from './trpc-auth-headers';
-import { trpcBatchLane } from './trpc-batch-lane';
+import { LANES, type TrpcBatchLane, trpcBatchLane } from './trpc-batch-lane';
 
 const isNetworkError = (error: unknown): boolean => {
   if (error instanceof TRPCClientError && error.data?.code === 'UNAUTHORIZED') return false;
@@ -96,27 +96,18 @@ export function TRPCProvider({ children }: TRPCProviderProps) {
         },
       });
 
-    return trpc.createClient({
-      links: [
-        splitLink({
-          condition: (op) => trpcBatchLane(op.path) === 'dashboard',
-          true: makeBatchLink(),
-          false: splitLink({
-            condition: (op) => trpcBatchLane(op.path) === 'returns',
-            true: makeBatchLink(),
-            false: splitLink({
-              condition: (op) => trpcBatchLane(op.path) === 'income',
-              true: makeBatchLink(),
-              false: splitLink({
-                condition: (op) => trpcBatchLane(op.path) === 'review',
-                true: makeBatchLink(),
-                false: makeBatchLink(),
-              }),
-            }),
-          }),
-        }),
-      ],
-    });
+    // One batch per lane: a lane's slow read holds only its own lane.
+    const route = (lanes: readonly TrpcBatchLane[]): ReturnType<typeof makeBatchLink> => {
+      const [lane, ...rest] = lanes;
+      if (lane === undefined || rest.length === 0) return makeBatchLink();
+      return splitLink({
+        condition: (op) => trpcBatchLane(op.path, op.context) === lane,
+        true: makeBatchLink(),
+        false: route(rest),
+      });
+    };
+
+    return trpc.createClient({ links: [route(LANES)] });
   });
 
   return (

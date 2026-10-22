@@ -32,7 +32,7 @@ import { DocumentRepository } from '../../repositories/DocumentRepository';
 const logger = createComponentLogger('service:document-retention');
 
 /** Permanent home for an ingested file. Never swept, never job-deleted. */
-const RETAINED_KEY_PREFIX = 'documents/';
+export const RETAINED_KEY_PREFIX = 'documents/';
 
 // Same shape the upload presigner allows, so a retained key can always be
 // rebuilt from the temp key it was promoted from.
@@ -49,8 +49,7 @@ export class DocumentRetentionService {
   }
 
   retainedKeyFor(document: Pick<Document, 'id' | 'userId' | 'r2Key' | 'originalFilename'>): string {
-    const ext = extensionOf(document.r2Key) ?? extensionOf(document.originalFilename);
-    return `${RETAINED_KEY_PREFIX}${document.userId}/${document.id}${ext ? `.${ext}` : ''}`;
+    return retainedDocumentKey(document);
   }
 
   /**
@@ -79,6 +78,14 @@ export class DocumentRetentionService {
     }
     return updated;
   }
+}
+
+/** Where a document's file lives for good: also where a restore puts it (SC-1662). */
+export function retainedDocumentKey(
+  document: Pick<Document, 'id' | 'userId' | 'r2Key' | 'originalFilename'>
+): string {
+  const ext = extensionOf(document.r2Key) ?? extensionOf(document.originalFilename);
+  return `${RETAINED_KEY_PREFIX}${document.userId}/${document.id}${ext ? `.${ext}` : ''}`;
 }
 
 function extensionOf(candidate: string): string | null {

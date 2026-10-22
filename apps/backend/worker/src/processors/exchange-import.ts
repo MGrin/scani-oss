@@ -15,7 +15,6 @@ import {
 } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { captureException } from '@scani/logging/sentry';
-import { ProviderError } from '@scani/providers/core/errors';
 import {
   BullMqEnqueueService,
   type ProcessorContext,
@@ -25,6 +24,7 @@ import {
 } from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import { Container, Service } from 'typedi';
+import { providerErrorIn } from '../lib/provider-error';
 
 const logger = createComponentLogger('processor:exchange-import');
 
@@ -68,19 +68,6 @@ function isUnrecoverableExchangeError(err: unknown): boolean {
 
 // Exported for unit tests.
 export const __test_isUnrecoverableExchangeError = isUnrecoverableExchangeError;
-
-// A use case wraps a per-account failure in its own summary and keeps the
-// provider's error as `cause`. Only a ProviderError's message was written by a
-// provider about the venue's answer; anything else may be internal text
-// (SC-551), so it is never what the job's owner is shown.
-function providerErrorIn(err: unknown): ProviderError | null {
-  let current: unknown = err;
-  for (let depth = 0; depth < 5 && current instanceof Error; depth++) {
-    if (current instanceof ProviderError) return current;
-    current = current.cause;
-  }
-  return null;
-}
 
 // A terminal import failure must be reflected on the credential row —
 // otherwise it stays `enqueued` and looks healthy forever. Best-effort:

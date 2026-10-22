@@ -11,6 +11,7 @@ import { useRelativeTimeTick } from '@/v3/hooks/useRelativeTimeTick';
 import { jobLabelFor } from '../../lib/job-labels';
 import {
   compareJobs,
+  foldRefreshBursts,
   type JobBucket,
   type JobRow,
   jobBucket,
@@ -19,8 +20,9 @@ import {
   jobFailureLabel,
   jobNeedsAction,
   jobOutcomeState,
+  jobRowLabel,
+  jobRowSummary,
   jobStateLabel,
-  summariseJobPayload,
 } from '../../lib/jobs';
 import { formatRelative } from '../../lib/relative-time';
 import { jobDetailPath } from '../../lib/routes';
@@ -46,13 +48,15 @@ import { JobStateBadge } from './JobStateBadge';
 interface JobsListProps {
   jobs: JobRow[];
   query: V3QueryState;
+  /** Account id to name, so a single refresh row can say which account. */
+  accountNames?: ReadonlyMap<string, string>;
 }
 
 /** Urgency, then newest first. The tie-break is what makes the default sort
  *  usable at all: within a bucket, recency is the only order that matters. */
 const BUCKET_RANK: Record<JobBucket, number> = { review: 0, running: 1, failed: 2, completed: 3 };
 
-export function JobsList({ jobs, query }: JobsListProps) {
+export function JobsList({ jobs, query, accountNames }: JobsListProps) {
   useRelativeTimeTick();
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -61,19 +65,22 @@ export function JobsList({ jobs, query }: JobsListProps) {
   // without navigating away from the screen the reader is already on.
   const openCapture = useOpenCapture();
 
+  const rows = foldRefreshBursts(jobs);
+  const labelOf = (job: JobRow) => jobRowLabel(t, job, jobLabelFor(t, job.jobName).label);
+
   const config: V3DataViewConfig<JobRow> = {
     pageKey: 'jobs',
-    data: jobs,
+    data: rows,
     nounKey: 'ui.dataView.noun.jobs',
     searchPlaceholderKey: 'ui.dataView.jobs.config.searchJobs',
     searchFn: (job, query) =>
-      jobLabelFor(t, job.jobName).label.toLowerCase().includes(query) ||
-      (summariseJobPayload(t, job.jobName, job.payloadSummary) ?? '').toLowerCase().includes(query),
+      labelOf(job).toLowerCase().includes(query) ||
+      (jobRowSummary(t, job, accountNames) ?? '').toLowerCase().includes(query),
     filterDefs: [
       {
         key: 'bucket',
         labelKey: 'ui.dataView.jobs.filter.status',
-        options: jobBucketOptions(t, jobs),
+        options: jobBucketOptions(t, rows),
         fn: (job: JobRow, value) => jobBucket(job) === value,
       },
     ],
@@ -96,7 +103,8 @@ export function JobsList({ jobs, query }: JobsListProps) {
       },
     ],
     renderRow: (job) => {
-      const { label, icon: Icon } = jobLabelFor(t, job.jobName);
+      const { icon: Icon } = jobLabelFor(t, job.jobName);
+      const label = labelOf(job);
       const needsAction = jobNeedsAction(job);
       // The chip and the screen-reader label read the same description, so a
       // row cannot say "Failed" aloud while showing "Retrying (1 of 3)".
@@ -104,7 +112,7 @@ export function JobsList({ jobs, query }: JobsListProps) {
       return {
         leading: <Icon className="size-5 shrink-0 text-muted-foreground" aria-hidden="true" />,
         label,
-        sublabel: summariseJobPayload(t, job.jobName, job.payloadSummary) ?? undefined,
+        sublabel: jobRowSummary(t, job, accountNames) ?? undefined,
         value: (
           <JobStateBadge state={jobOutcomeState(job)} needsAction={needsAction} failure={job} />
         ),
@@ -118,7 +126,8 @@ export function JobsList({ jobs, query }: JobsListProps) {
         headerKey: 'ui.dataView.jobs.col.job',
         width: 'w-[34%]',
         render: (job) => {
-          const { label, icon: Icon } = jobLabelFor(t, job.jobName);
+          const { icon: Icon } = jobLabelFor(t, job.jobName);
+          const label = labelOf(job);
           return (
             <span className="flex min-w-0 items-center gap-2">
               <Icon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -126,14 +135,14 @@ export function JobsList({ jobs, query }: JobsListProps) {
             </span>
           );
         },
-        exportValue: (job) => exportText(jobLabelFor(t, job.jobName).label),
+        exportValue: (job) => exportText(labelOf(job)),
       },
       {
         key: 'detail',
         headerKey: 'ui.dataView.jobs.col.detail',
         render: (job) => (
           <span className="truncate text-muted-foreground">
-            {summariseJobPayload(t, job.jobName, job.payloadSummary) ?? '—'}
+            {jobRowSummary(t, job, accountNames) ?? '—'}
           </span>
         ),
       },

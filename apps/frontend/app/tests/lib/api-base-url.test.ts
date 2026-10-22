@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readdirSync, readFileSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
-import { resolveApiBaseUrl } from '../../src/lib/api-base-url';
+import { authBaseUrl, resolveApiBaseUrl } from '../../src/lib/api-base-url';
 
 /**
  * SC-467. The published `scani/frontend-app` image is built with
@@ -149,5 +149,16 @@ describe('nothing reaches Better-Auth or WebSocket unresolved', () => {
     // quietly approving nothing.
     expect([...found].filter((file) => !listed.has(file)).sort()).toEqual([]);
     expect([...listed].filter((file) => !found.has(file)).sort()).toEqual([]);
+  });
+});
+
+describe('VITE_API_URL under bun test (SC-1702)', () => {
+  // This module reads the variable once, when it first loads, and every test
+  // file in a run shares one module cache. So whichever file loads it first
+  // fixes the value for the run, and a setter imported by a later file is too
+  // late: #2382's card test imported one and still crashed in CI.
+  test('the shared preload set it before any file loaded, over any local .env', () => {
+    expect(process.env.VITE_API_URL).toBe('http://api.test');
+    expect(authBaseUrl()).toBe('http://api.test/api/auth');
   });
 });

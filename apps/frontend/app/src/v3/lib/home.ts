@@ -1036,6 +1036,16 @@ export function topHoldingRows(
   });
 }
 
+/**
+ * The Top holdings tile's one-line caption: up to four symbols, each once, in
+ * holding order. Two USD holdings read "USD · USD" as though one were a
+ * duplicate, and naming where each is held made the first item eat a caption
+ * that is cut at one line; the rows say where (SC-1707).
+ */
+export function topHoldingsCaption(rows: readonly TopHoldingRow[]): string {
+  return [...new Set(rows.map((row) => row.symbol))].slice(0, 4).join(' · ');
+}
+
 /** The subset of `groups.getAllWithCounts`'s rows the groups block reads. */
 export interface GroupItem {
   id: string;

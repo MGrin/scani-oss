@@ -1,5 +1,6 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 
 const target = z.discriminatedUnion('kind', [
@@ -45,6 +46,6 @@ export const BUDGET_APP_IMPORT: UserJobDescriptor<BudgetAppImportJob> = {
     removeOnComplete: 100,
     removeOnFail: 500,
   },
-  computeJobId: (d) => [JOB_NAMES.budgetAppImport, d.userId, d.requestId].join('_'),
+  computeJobId: (d) => jobIdOf(JOB_NAMES.budgetAppImport, d.userId, d.requestId),
   summarizePayload: (d) => ({ app: d.app, accounts: d.accounts.length }),
 };

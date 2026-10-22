@@ -12,6 +12,7 @@ import {
   emptyClassifiedCounts,
 } from './classified-counts';
 import { failureOf } from './failure-message';
+import type { VerificationCounts } from './shadow-comparison';
 
 /** What one unit of a shadow run found, or the whole run's so far. */
 export interface ShadowTally {
@@ -19,6 +20,8 @@ export interface ShadowTally {
   differences: RecordShadowRunInput['differences'][number][];
   /** What classifying the unit's holdings found; only the balance shadow classifies. */
   classified?: ClassifiedCounts;
+  /** Typed values beside the engine (SC-1628); only the balance shadow counts them. */
+  verifications?: VerificationCounts;
 }
 
 export interface ShadowRunResult {
@@ -131,6 +134,7 @@ export class ShadowRunService {
             staleLabels: tally.classified.staleLabels,
           }
         : {}),
+      ...(tally.verifications ? { verifications: { ...tally.verifications } } : {}),
       durationMs: finishedAt.getTime() - startedAt.getTime(),
     };
     const runId = await this.reports.recordRun(
@@ -167,4 +171,9 @@ function addTally(into: ShadowTally, from: ShadowTally): void {
   // A loop, not a spread: a unit's differences can outnumber the arguments a call takes.
   for (const difference of from.differences) into.differences.push(difference);
   if (into.classified && from.classified) addClassifiedCounts(into.classified, from.classified);
+  if (from.verifications) {
+    into.verifications ??= { compared: 0, disagreeing: 0 };
+    into.verifications.compared += from.verifications.compared;
+    into.verifications.disagreeing += from.verifications.disagreeing;
+  }
 }

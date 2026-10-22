@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { type DatabaseTransaction, getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
@@ -7,6 +7,7 @@ import { and, eq, getTableColumns, isNull, type SQL, sql } from 'drizzle-orm';
 import { type AnyPgColumn, getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import { Container, Service } from 'typedi';
 import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRepository';
+import { retainedDocumentKey } from '../documents/DocumentRetentionService';
 import { HoldingCacheWriter } from '../feeds/HoldingCacheWriter';
 import { TokenIdentityService } from '../tokens/TokenIdentityService';
 import type { BackupRecord } from './BackupWriter';
@@ -26,6 +27,7 @@ export type RestoreRefusal =
   | 'not-a-backup'
   | 'newer-version'
   | 'cut-short'
+  | 'damaged-file'
   | 'no-such-user'
   | 'not-empty'
   | 'unknown-catalog';
@@ -54,6 +56,12 @@ export interface RestoreReport {
   tokenIds: string[];
   /** Every id the file issued, to the id it was restored under. */
   ids: ReadonlyMap<string, string>;
+}
+
+/** Where a restore writes the documents' files: the target's storage. */
+export interface BackupFileStore {
+  write(key: string, bytes: Uint8Array, contentType: string): Promise<void>;
+  delete(key: string): Promise<void>;
 }
 
 export const RESTORE_NEEDS_EMPTY =
@@ -121,18 +129,42 @@ export class BackupRestorer {
    * `open` is called twice and must yield the same records both times.
    * Without `tx`, shared tokens are created outside the restore's own
    * transaction, since a token's identity lookup may call a provider.
+   *
+   * A file carrying documents (format 2) needs `files`: each document's file
+   * is written there before the transaction commits, and deleted again if the
+   * restore fails, so a failed restore leaves no object behind (SC-1662).
    */
   async restore(
     userId: string,
     open: () => AsyncIterable<BackupRecord>,
-    tx?: DatabaseTransaction
+    tx?: DatabaseTransaction,
+    files?: BackupFileStore
   ): Promise<RestoreReport> {
     const scan = await this.scan(open);
+    if (scan.files > 0 && !files) {
+      throw new Error('BackupRestorer: this backup carries files and no store was given');
+    }
     const ids = new Map(scan.ids);
     for (const sourceUser of scan.users) ids.set(sourceUser, userId);
     const fallbacks = await this.resolveCatalog(scan.catalog, ids, tx);
-    const write = (t: DatabaseTransaction) => this.write(userId, open, ids, fallbacks, t);
-    return tx ? write(tx) : getDb().transaction(write);
+    const written: string[] = [];
+    const write = (t: DatabaseTransaction) =>
+      this.write(userId, open, ids, fallbacks, t, { store: files, written });
+    try {
+      return await (tx ? write(tx) : getDb().transaction(write));
+    } catch (error) {
+      for (const key of written) {
+        await files
+          ?.delete(key)
+          .catch((cleanup: unknown) =>
+            this.logger.warn(
+              { userId, key, error: cleanup instanceof Error ? cleanup.message : String(cleanup) },
+              'A restored file was not deleted after the restore failed'
+            )
+          );
+      }
+      throw error;
+    }
   }
 
   /** Pass one: the file is a whole backup, and every row it holds has a new id. */
@@ -142,6 +174,7 @@ export class BackupRestorer {
     const groups = new Set<string>();
     const catalog = new Map<string, Row[]>();
     const counts: Record<string, number> = {};
+    const documents = new Set<string>();
     let records = 0;
     let end: Extract<BackupRecord, { type: 'end' }> | undefined;
 
@@ -174,6 +207,7 @@ export class BackupRestorer {
         counts[record.table] = (counts[record.table] ?? 0) + 1;
         const id = record.row.id;
         if (typeof id === 'string') ids.set(id.toLowerCase(), randomUUID());
+        if (record.table === 'documents' && typeof id === 'string') documents.add(id.toLowerCase());
         for (const key of links.users) {
           const value = record.row[key];
           if (typeof value === 'string') users.add(value.toLowerCase());
@@ -182,6 +216,18 @@ export class BackupRestorer {
           const value = record.row[key];
           if (typeof value === 'string') groups.add(value.toLowerCase());
         }
+      } else if (record.type === 'file') {
+        const bytes = Buffer.from(record.data, 'base64');
+        if (
+          !documents.has(record.documentId.toLowerCase()) ||
+          createHash('sha256').update(bytes).digest('hex') !== record.sha256
+        ) {
+          throw new RestoreRefused(
+            'damaged-file',
+            'A stored file in the backup is damaged: its bytes do not match the hash it was written with.'
+          );
+        }
+        counts.files = (counts.files ?? 0) + 1;
       } else if (record.type === 'end') {
         end = record;
       }
@@ -199,7 +245,7 @@ export class BackupRestorer {
       );
     }
     for (const group of groups) if (!ids.has(group)) ids.set(group, randomUUID());
-    return { ids, users, catalog };
+    return { ids, users, catalog, files: counts.files ?? 0 };
   }
 
   /**
@@ -344,9 +390,12 @@ export class BackupRestorer {
     open: () => AsyncIterable<BackupRecord>,
     ids: Map<string, string>,
     fallbacks: { tokens: Row[]; institutions: Row[] },
-    tx: DatabaseTransaction
+    tx: DatabaseTransaction,
+    files: { store: BackupFileStore | undefined; written: string[] }
   ): Promise<RestoreReport> {
     await this.refuseUnlessEmpty(userId, tx);
+    /** Each restored document's new key and type, by its new id. */
+    const homes = new Map<string, { key: string; contentType: string }>();
 
     for (const row of fallbacks.institutions) {
       await insertRows(tx, schema.institutions, [
@@ -425,6 +474,16 @@ export class BackupRestorer {
         await updateSettings(tx, userId, rewriteIds(record.row, ids));
         continue;
       }
+      if (record.type === 'file') {
+        // A document's row precedes its file, so its new key is already known.
+        const home = homes.get(ids.get(record.documentId.toLowerCase()) ?? '');
+        if (!home || !files.store) {
+          throw new Error(`BackupRestorer: no restored document for file ${record.documentId}`);
+        }
+        await files.store.write(home.key, Buffer.from(record.data, 'base64'), home.contentType);
+        files.written.push(home.key);
+        continue;
+      }
       if (record.type !== 'row') continue;
       if (record.table !== table) {
         await finish();
@@ -451,6 +510,16 @@ export class BackupRestorer {
         row.valuePricedAt = null;
       }
       if (record.table === 'feed_input_windows') row.uploadRef = null;
+      if (record.table === 'documents') {
+        const key = retainedDocumentKey({
+          id: String(row.id),
+          userId,
+          r2Key: String(record.row.r2Key),
+          originalFilename: String(row.originalFilename),
+        });
+        homes.set(String(row.id), { key, contentType: String(row.mimeType) });
+        row.r2Key = key;
+      }
       if (record.table === 'payment_occurrences' && row.settledVendorId != null) settled.push(row);
       if (record.table === 'holding_transactions') seen(row.occurredAt);
       if (record.table === 'holding_balance_observations') seen(row.observedAt);

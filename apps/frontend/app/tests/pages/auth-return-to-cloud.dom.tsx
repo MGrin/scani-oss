@@ -10,8 +10,9 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
  * process `packages/frontend/ui/tests/helpers/dom-specs.ts` starts, because the
  * pages are effects-driven.
  *
- * The env and the mocks are in place before the modules under test load: the
- * allow-list is read from `VITE_CLOUD_URL` and `VITE_ADMIN_URL` once, at import.
+ * The env and the mocks are in place before the modules under test load. The
+ * allow-list reads `VITE_CLOUD_URL` and `VITE_ADMIN_URL` on each call, so a spec
+ * that loaded it earlier in this process cannot freeze it empty (SC-1752).
  */
 process.env.VITE_CLOUD_URL = 'https://cloud.scani.xyz/';
 process.env.VITE_ADMIN_URL = 'https://admin.example.com';

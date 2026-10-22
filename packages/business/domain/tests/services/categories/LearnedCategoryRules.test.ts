@@ -2,16 +2,20 @@ import { describe, expect, test } from 'bun:test';
 import type { DatabaseTransaction } from '@scani/db';
 import { sql } from 'drizzle-orm';
 import { Container } from 'typedi';
+import { KindCategoryAssigner } from '../../../src/services/categories/KindCategoryAssigner';
 import { LearnedCategoryRules } from '../../../src/services/categories/LearnedCategoryRules';
 import { TransactionCategoryService } from '../../../src/services/categories/TransactionCategoryService';
+import { restoreContainerAfterAll } from '../../../test/helpers/container';
 import { withTestDb } from '../../../test/helpers/db';
 import { makeUser } from '../../../test/helpers/factories';
 import { makeHoldingTransaction } from '../../../test/helpers/factories-extra';
 
+restoreContainerAfterAll();
+
 const rules = () => Container.get(LearnedCategoryRules);
 const categories = () => Container.get(TransactionCategoryService);
 
-type SetBy = 'person' | 'import' | 'rule' | 'cleared' | null;
+type SetBy = 'person' | 'import' | 'rule' | 'ai' | 'kind' | 'cleared' | null;
 
 /** A small ledger for one user: every row on one holding, seeded as given. */
 async function ledger(tx: DatabaseTransaction, userId: string) {
@@ -48,15 +52,21 @@ async function category(tx: DatabaseTransaction, userId: string, name: string): 
 }
 
 describe('LearnedCategoryRules.afterImport (SC-1695)', () => {
-  test('runs the whole-user spread for that user', async () => {
+  test('categorizes by type, then runs the whole-user spread, for that user', async () => {
     const seen: string[] = [];
+    Container.set(KindCategoryAssigner, {
+      apply: async (_tx: unknown, userId?: string) => {
+        seen.push(`kind:${userId}`);
+        return 0;
+      },
+    } as unknown as KindCategoryAssigner);
     const rules = new LearnedCategoryRules();
     rules.apply = async (userId) => {
       seen.push(userId);
       return { categorized: 0 };
     };
     await rules.afterImport('user-1');
-    expect(seen).toEqual(['user-1']);
+    expect(seen).toEqual(['kind:user-1', 'user-1']);
   });
 
   test('a failure is logged and never fails the import', async () => {
@@ -112,6 +122,19 @@ describe('LearnedCategoryRules (SC-1695)', () => {
       await row('Tesco', food, 'person');
 
       await rules().apply(user.id, tx);
+      expect(await stateOf(tx, guessed)).toEqual([shop, 'rule']);
+    });
+  });
+
+  test("a person's pick moves the AI's guesses for that payee too", async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const food = await category(tx, user.id, 'Food');
+      const shop = await category(tx, user.id, 'Shopping');
+      const row = await ledger(tx, user.id);
+      const guessed = await row('Tesco', food, 'ai');
+      const picked = await row('Tesco', shop, 'person');
+      await rules().spreadFrom(user.id, tx, [picked], shop);
       expect(await stateOf(tx, guessed)).toEqual([shop, 'rule']);
     });
   });
@@ -236,6 +259,57 @@ describe('LearnedCategoryRules (SC-1695)', () => {
       expect(await stateOf(tx, open)).toEqual([shop, 'rule']);
       expect(await rules().spreadFrom(user.id, tx, [netflix], food)).toBe(1);
       expect(await stateOf(tx, netflixOpen)).toEqual([food, 'rule']);
+    });
+  });
+});
+
+describe('LearnedCategoryRules and linked transfers (SC-1695)', () => {
+  test('a rule never writes a linked transfer leg, and plan does not list it', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const food = await category(tx, user.id, 'Food');
+      const row = await ledger(tx, user.id);
+      await row('Tesco', food, 'person');
+      const open = await row('Tesco');
+      const leg = await row('Tesco');
+      await tx.execute(
+        sql`update holding_transactions set transfer_group_id = gen_random_uuid() where id = ${leg}`
+      );
+
+      expect((await rules().plan(user.id, tx)).map((p) => p.transactionId)).toEqual([open]);
+      expect(await rules().apply(user.id, tx)).toEqual({ categorized: 1 });
+      expect(await stateOf(tx, open)).toEqual([food, 'rule']);
+      expect(await stateOf(tx, leg)).toEqual([null, null]);
+    });
+  });
+});
+
+describe('LearnedCategoryRules and the transaction type (SC-1720)', () => {
+  test("a person's rule moves a category the type set, as it moves the AI's", async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const gas = await category(tx, user.id, 'Gas');
+      const fees = await category(tx, user.id, 'Bank fees');
+      const row = await ledger(tx, user.id);
+      await row('0xrouter', gas, 'person');
+      const typed = await row('0xrouter', fees, 'kind');
+      await rules().apply(user.id, tx);
+      expect(await stateOf(tx, typed)).toEqual([gas, 'rule']);
+    });
+  });
+
+  test('a rule never writes a trade, a settlement or an opening balance', async () => {
+    await withTestDb(async (tx) => {
+      const user = await makeUser(tx);
+      const food = await category(tx, user.id, 'Food');
+      const row = await ledger(tx, user.id);
+      await row('Tesco', food, 'person');
+      const open = await row('Tesco');
+      const trade = await row('Tesco');
+      await tx.execute(sql`update holding_transactions set kind = 'buy' where id = ${trade}`);
+      await rules().apply(user.id, tx);
+      expect(await stateOf(tx, open)).toEqual([food, 'rule']);
+      expect(await stateOf(tx, trade)).toEqual([null, null]);
     });
   });
 });

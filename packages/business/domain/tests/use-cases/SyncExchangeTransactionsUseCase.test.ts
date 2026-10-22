@@ -23,7 +23,7 @@ type Acc = { id: string; institutionId: string; isActive: boolean; metadata?: un
 
 function makeUseCase(opts: {
   institutions: Inst[];
-  credsByInstitution: Record<string, Array<{ userId: string }>>;
+  credsByInstitution: Record<string, Array<{ userId: string; syncRefusalKind?: string | null }>>;
   accountsByUser: Record<string, Acc[]>;
   /** Account ids whose ledger already holds rows, keyed by source. */
   warmBySource?: Record<string, string[]>;
@@ -459,5 +459,34 @@ describe('a ledger that rides its balance run', () => {
       readThroughBySource: { tron: ['acc1'] },
     });
     expect((await res.execute()).targets).toHaveLength(1);
+  });
+});
+
+describe('a key the exchange rejected (SC-1728)', () => {
+  const twoUsers = (kind: string | null) =>
+    makeUseCase({
+      institutions: [{ id: 'inst-ibkr', name: 'Interactive Brokers' }],
+      credsByInstitution: {
+        'inst-ibkr': [{ userId: 'u1', syncRefusalKind: kind }, { userId: 'u2' }],
+      },
+      accountsByUser: {
+        u1: [{ id: 'acc1', institutionId: 'inst-ibkr', isActive: true }],
+        u2: [{ id: 'acc2', institutionId: 'inst-ibkr', isActive: true }],
+      },
+      warmBySource: { 'ibkr-api': ['acc1', 'acc2'] },
+    });
+
+  test('its accounts get no nightly import until the key is replaced', async () => {
+    const res = await twoUsers('auth-failed').execute();
+    expect(res.targets.map((t) => t.accountId)).toEqual(['acc2']);
+    expect(res.skippedNeedsReconnect).toBe(1);
+  });
+
+  test('CONTROL: another refusal kind, or none, still gets its import', async () => {
+    for (const kind of ['rate-limited', null]) {
+      const res = await twoUsers(kind).execute();
+      expect(res.targets.map((t) => t.accountId).sort()).toEqual(['acc1', 'acc2']);
+      expect(res.skippedNeedsReconnect).toBe(0);
+    }
   });
 });

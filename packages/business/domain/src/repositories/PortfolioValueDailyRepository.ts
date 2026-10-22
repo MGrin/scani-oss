@@ -7,7 +7,21 @@ import type {
 import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import Decimal from 'decimal.js';
-import { and, asc, desc, eq, gt, gte, inArray, isNotNull, lte, notInArray, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  gte,
+  inArray,
+  isNotNull,
+  lt,
+  lte,
+  notInArray,
+  or,
+  sql,
+} from 'drizzle-orm';
 import { Service } from 'typedi';
 import { includedInTotalSql } from '../lib/holding-inclusion';
 
@@ -86,6 +100,12 @@ export type IncludedHoldingValueRow = Omit<
 >;
 
 const daily = schema.portfolioValueDaily;
+
+/** The days of a user's ledger rows and balance readings: the records a rebuild has to reach. */
+const earliestRecordDays = (userId: string) => sql`
+  SELECT occurred_at::date AS day FROM holding_transactions WHERE user_id = ${userId}
+  UNION ALL SELECT observed_at::date FROM holding_balance_observations WHERE user_id = ${userId}
+`;
 
 // Every column the rollup derives. The PnL three are here because leaving them
 // out once left them stale on a re-run (the rollup wrote them on INSERT only).
@@ -255,6 +275,12 @@ export class PortfolioValueDailyRepository {
    * it read seventeen columns per row and used eleven. The six it never read
    * include the only timestamp, and the date comes back as text, so neither
    * pays a Date parse per row.
+   *
+   * A day before a holding counts (`holdings_total = 0`) is not read: every
+   * reader of these rows skips it, and it was 64% of one production user's
+   * `all` window, 110k of 173k rows (SC-1745). `findHoldingIdsInRange` names
+   * the holdings that have only such days. At user scope a transit
+   * destination keeps them, because the transit's value lands on them.
    */
   async findIncludedHoldingValueRange(
     userId: string,
@@ -266,6 +292,12 @@ export class PortfolioValueDailyRepository {
   ): Promise<IncludedHoldingValueRow[]> {
     if (holdingIds !== undefined && holdingIds.length === 0) return [];
     try {
+      const transit =
+        holdingIds === undefined
+          ? await this.transitByDestination(userId, baseCurrencyId, from, to, transaction)
+          : new Map<string, { value: string; cost: string }>();
+      const destinations = [...new Set([...transit.keys()].map((key) => key.slice(11)))];
+      const counted = gt(daily.holdingsTotal, 0);
       const results = await this.getDb(transaction)
         .select({
           snapshotDate: sql<string>`${daily.snapshotDate}::text`,
@@ -283,17 +315,17 @@ export class PortfolioValueDailyRepository {
         .from(daily)
         .innerJoin(schema.holdings, eq(schema.holdings.id, daily.scopeId))
         .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
-        .where(this.includedHoldingRows(userId, baseCurrencyId, from, to, holdingIds))
-        .orderBy(asc(daily.snapshotDate));
+        .where(
+          and(
+            this.includedHoldingRows(userId, baseCurrencyId, from, to, holdingIds),
+            destinations.length > 0 ? or(counted, inArray(daily.scopeId, destinations)) : counted
+          )
+        )
+        // A holding tiebreak: summed in plan order, the same data moved a
+        // return in its 28th digit between two plans (SC-1745).
+        .orderBy(asc(daily.snapshotDate), asc(daily.scopeId));
       const rows = results as IncludedHoldingValueRow[];
       if (holdingIds !== undefined) return rows;
-      const transit = await this.transitByDestination(
-        userId,
-        baseCurrencyId,
-        from,
-        to,
-        transaction
-      );
       return rows.map((row) => {
         const t = transit.get(transitKey(row.snapshotDate, row.holdingId));
         return t
@@ -544,6 +576,44 @@ export class PortfolioValueDailyRepository {
   }
 
   /**
+   * Every included holding with a holding row in the range, counted or not,
+   * under `findIncludedHoldingValueRange`'s contract: that read skips the days
+   * before a holding counts, and `ReturnsService` still measures a holding
+   * that has only those (SC-1745). One index probe per holding.
+   */
+  async findHoldingIdsInRange(
+    userId: string,
+    baseCurrencyId: string,
+    from: Date,
+    to: Date,
+    holdingIds?: readonly string[],
+    transaction?: DatabaseTransaction
+  ): Promise<Set<string>> {
+    if (holdingIds !== undefined && holdingIds.length === 0) return new Set();
+    const rows = await this.getDb(transaction)
+      .select({ id: schema.holdings.id })
+      .from(schema.holdings)
+      .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
+      .where(
+        and(
+          eq(schema.holdings.userId, userId),
+          includedInTotalSql(),
+          ...(holdingIds ? [inArray(schema.holdings.id, [...holdingIds])] : []),
+          sql`exists (
+            select 1 from ${daily}
+            where ${daily.userId} = ${userId}
+              and ${daily.scopeKind} = 'holding'
+              and ${daily.scopeId} = ${schema.holdings.id}
+              and ${daily.baseCurrencyId} = ${baseCurrencyId}
+              and ${daily.snapshotDate} >= ${from.toISOString().slice(0, 10)}
+              and ${daily.snapshotDate} <= ${to.toISOString().slice(0, 10)}
+          )`
+        )
+      );
+    return new Set(rows.map((row) => row.id));
+  }
+
+  /**
    * The newest `limit` distinct days that carry a MEASUREMENT, under exactly
    * the inclusion contract `findIncludedHoldingScopeRange` applies (SC-1306).
    *
@@ -558,9 +628,11 @@ export class PortfolioValueDailyRepository {
    * than plotted at zero, so counting it here would offer a tab with nothing
    * behind it.
    *
-   * Newest-first and capped, so the planner walks the date index backwards and
-   * stops. Two rows is all any caller has needed: see `ReturnsService.hasHistory`
-   * for why that is the whole question and not an approximation of it.
+   * Newest-first and capped, and bounded per holding: the "walks the date
+   * index backwards and stops" this said until SC-1741 never happened, and the
+   * planner read every holding row in the window. Two rows is all any caller has
+   * needed: see `ReturnsService.hasHistory` for why that is the whole question
+   * and not an approximation of it.
    */
   async findLatestMeasuredDays(
     userId: string,
@@ -575,32 +647,42 @@ export class PortfolioValueDailyRepository {
     if (limit <= 0) return [];
     try {
       const db = this.getDb(transaction);
-      const includedHoldings = db
-        .select({ id: schema.holdings.id })
+      const pvd = schema.portfolioValueDaily;
+      // Each included holding's newest `limit` measured days, one bounded read
+      // on idx_pvd_valued_holding_newest each (SC-1741). The newest `limit`
+      // distinct days overall are among them: a holding measured on one of
+      // those days has at most `limit - 1` newer measured days. Reading every
+      // holding row in the window to find them cost a year of rows.
+      const newest = db
+        .select({ day: pvd.snapshotDate })
+        .from(pvd)
+        .where(
+          and(
+            eq(pvd.userId, userId),
+            eq(pvd.scopeKind, 'holding'),
+            eq(pvd.scopeId, schema.holdings.id),
+            eq(pvd.baseCurrencyId, baseCurrencyId),
+            gte(pvd.snapshotDate, from.toISOString().slice(0, 10)),
+            lte(pvd.snapshotDate, to.toISOString().slice(0, 10)),
+            gt(pvd.holdingsWithKnownValue, 0)
+          )
+        )
+        .orderBy(desc(pvd.snapshotDate))
+        .limit(limit)
+        .as('newest');
+      const rows = await db
+        .selectDistinct({ snapshotDate: newest.day })
         .from(schema.holdings)
         .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
+        .crossJoinLateral(newest)
         .where(
           and(
             eq(schema.holdings.userId, userId),
             includedInTotalSql(),
             ...(holdingIds ? [inArray(schema.holdings.id, [...holdingIds])] : [])
           )
-        );
-      const rows = await db
-        .selectDistinct({ snapshotDate: schema.portfolioValueDaily.snapshotDate })
-        .from(schema.portfolioValueDaily)
-        .where(
-          and(
-            eq(schema.portfolioValueDaily.userId, userId),
-            eq(schema.portfolioValueDaily.scopeKind, 'holding'),
-            eq(schema.portfolioValueDaily.baseCurrencyId, baseCurrencyId),
-            gte(schema.portfolioValueDaily.snapshotDate, from.toISOString().slice(0, 10)),
-            lte(schema.portfolioValueDaily.snapshotDate, to.toISOString().slice(0, 10)),
-            gt(schema.portfolioValueDaily.holdingsWithKnownValue, 0),
-            sql`${schema.portfolioValueDaily.scopeId} = ANY(ARRAY(${includedHoldings}))`
-          )
         )
-        .orderBy(desc(schema.portfolioValueDaily.snapshotDate))
+        .orderBy(desc(newest.day))
         .limit(limit);
       return rows.map((row) => String(row.snapshotDate).slice(0, 10));
     } catch (error) {
@@ -793,9 +875,12 @@ export class PortfolioValueDailyRepository {
   }
 
   /**
-   * How many days back a rebuild of this user's whole stored history has to
-   * reach: to their earliest ledger row, balance reading or stored day, plus
-   * two, and never fewer than `atLeastDays`.
+   * How many days back a rebuild of this user's whole history has to reach: to
+   * their earliest ledger row or balance reading, plus two, and never fewer
+   * than `atLeastDays`.
+   *
+   * Stored rollup days are not history. Counting them made each full rebuild
+   * start one day before the oldest row the previous one wrote (SC-1627).
    *
    * A failure is the caller's to handle and is not logged here: the api asks
    * on every holding and account mutation and carries on without an answer.
@@ -806,13 +891,45 @@ export class PortfolioValueDailyRepository {
     transaction?: DatabaseTransaction
   ): Promise<number> {
     const [history] = await this.getDb(transaction).execute<{ days: number }>(sql`
-      SELECT greatest(${atLeastDays}, coalesce(current_date - min(day)::date + 2, 0))::integer AS days FROM (
-        SELECT occurred_at::date AS day FROM holding_transactions WHERE user_id = ${userId}
-        UNION ALL SELECT observed_at::date FROM holding_balance_observations WHERE user_id = ${userId}
-        UNION ALL SELECT snapshot_date FROM portfolio_value_daily WHERE user_id = ${userId}
-      ) history
+      SELECT greatest(${atLeastDays}, coalesce(current_date - min(day)::date + 2, 0))::integer AS days
+      FROM (${earliestRecordDays(userId)}) history
     `);
     return Number(history?.days ?? atLeastDays);
+  }
+
+  /** The UTC day of the user's earliest ledger row or balance reading; null when they have neither. */
+  async findEarliestRecordDay(
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<string | null> {
+    const [row] = await this.getDb(transaction).execute<{ day: string | null }>(sql`
+      SELECT min(day)::text AS day FROM (${earliestRecordDays(userId)}) history
+    `);
+    return row?.day ?? null;
+  }
+
+  /**
+   * Deletes the user's rows of every scope in this base currency dated before
+   * `day`: what a rebuild reaching past their earliest record leaves behind it
+   * and will never write again (SC-1627).
+   */
+  async deleteBefore(
+    userId: string,
+    baseCurrencyId: string,
+    day: string,
+    transaction?: DatabaseTransaction
+  ): Promise<number> {
+    const results = await this.getDb(transaction)
+      .delete(daily)
+      .where(
+        and(
+          eq(daily.userId, userId),
+          eq(daily.baseCurrencyId, baseCurrencyId),
+          lt(daily.snapshotDate, day)
+        )
+      )
+      .returning({ userId: daily.userId });
+    return results.length;
   }
 
   /** Null when the row already held these values, so nothing was written. */

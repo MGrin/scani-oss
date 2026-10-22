@@ -1,5 +1,5 @@
 import { createComponentLogger } from '@scani/logging';
-import { eq, inArray, type SQL, sql } from 'drizzle-orm';
+import { asc, eq, inArray, type SQL, sql } from 'drizzle-orm';
 import type { PgColumn, PgTable, PgTransaction, TableConfig } from 'drizzle-orm/pg-core';
 import type { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { Service } from 'typedi';
@@ -60,13 +60,19 @@ export abstract class BaseRepository<TEntity, TNewEntity = Partial<TEntity>> {
   }
 
   /**
-   * Find multiple entities by their IDs
+   * Find multiple entities by their IDs, in id order. The list reads here
+   * order by id because Postgres returns no order without ORDER BY, and a
+   * caller or test that leans on one goes red by chance (SC-1635).
    */
   async findByIds(ids: string[], transaction?: DatabaseTransaction): Promise<TEntity[]> {
     if (ids.length === 0) return [];
     try {
       const database = this.getDb(transaction);
-      const results = await database.select().from(this.table).where(inArray(this.table.id, ids));
+      const results = await database
+        .select()
+        .from(this.table)
+        .where(inArray(this.table.id, ids))
+        .orderBy(asc(this.table.id));
 
       return results as TEntity[];
     } catch (error) {
@@ -79,7 +85,7 @@ export abstract class BaseRepository<TEntity, TNewEntity = Partial<TEntity>> {
   }
 
   /**
-   * Find all entities with optional filtering
+   * Find all entities with optional filtering, in id order
    */
   async findAll(
     filters?: Record<string, unknown>,
@@ -97,7 +103,7 @@ export abstract class BaseRepository<TEntity, TNewEntity = Partial<TEntity>> {
         }
       }
 
-      const results = await query;
+      const results = await query.orderBy(asc(this.table.id));
       return results as TEntity[];
     } catch (error) {
       this.logger.error(
@@ -109,7 +115,8 @@ export abstract class BaseRepository<TEntity, TNewEntity = Partial<TEntity>> {
   }
 
   /**
-   * Find entities with pagination
+   * Find entities with pagination, in id order, so a page is the same rows on
+   * every read
    */
   async findWithPagination(
     page: number,
@@ -136,7 +143,7 @@ export abstract class BaseRepository<TEntity, TNewEntity = Partial<TEntity>> {
       }
 
       const [data, countResult] = await Promise.all([
-        dataQuery.limit(limit).offset(offset),
+        dataQuery.orderBy(asc(this.table.id)).limit(limit).offset(offset),
         countQuery,
       ]);
 

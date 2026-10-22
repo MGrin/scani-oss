@@ -184,6 +184,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -301,6 +304,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -734,6 +740,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -868,6 +877,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -1014,6 +1026,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -1232,6 +1247,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -1364,6 +1382,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -1512,6 +1533,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       },
@@ -1648,6 +1672,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -1772,6 +1799,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -1928,6 +1958,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -2032,6 +2065,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -2352,6 +2388,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -2428,6 +2467,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -2573,6 +2615,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -2704,6 +2749,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -2857,6 +2905,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -2918,6 +2969,9 @@
           },
           "500": {
             "$ref": "#/components/responses/Internal"
+          },
+          "503": {
+            "$ref": "#/components/responses/Unavailable"
           }
         }
       }
@@ -2952,7 +3006,8 @@
                   "not_found",
                   "method_not_allowed",
                   "conflict",
-                  "internal"
+                  "internal",
+                  "unavailable"
                 ]
               },
               "message": {
@@ -3046,6 +3101,24 @@
             "schema": {
               "$ref": "#/components/schemas/Error"
             }
+          }
+        }
+      },
+      "Unavailable": {
+        "description": "Scani could not be reached just now. `Retry-After` says when to try again.",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "headers": {
+          "Retry-After": {
+            "schema": {
+              "type": "integer"
+            },
+            "description": "Seconds to wait before trying again."
           }
         }
       }

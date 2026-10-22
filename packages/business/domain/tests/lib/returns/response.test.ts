@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { ReturnsResult } from '@scani/domain/services';
-import { withoutPeriodSeries } from '../../src/lib/returns-response';
+import { withoutPeriodSeries } from '../../../src/lib/returns/response';
 
 /**
  * SC-471 — the sub-period series is trimmed from the WIRE, never from the

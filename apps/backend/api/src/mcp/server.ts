@@ -109,6 +109,12 @@ export async function handleMcpRequest(req: Request, deps: McpDeps): Promise<Res
           { error: 'Too Many Requests' },
           { 'retry-after': String(admission.retryAfterSec) }
         );
+      case 'unavailable':
+        return json(
+          503,
+          { error: 'Service Unavailable' },
+          { 'retry-after': String(admission.retryAfterSec) }
+        );
       case 'agent_access_off':
         return json(403, { error: 'Agent access is not enabled for this account' });
       case 'unknown_user':

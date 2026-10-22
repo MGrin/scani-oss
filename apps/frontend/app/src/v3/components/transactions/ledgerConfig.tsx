@@ -1,4 +1,10 @@
-import { accountLabel, balanceDecimals, formatDate } from '@scani/shared';
+import {
+  AUTO_CATEGORY_SOURCES,
+  accountLabel,
+  balanceDecimals,
+  formatDate,
+  isOutsideCategories,
+} from '@scani/shared';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import type { V3DataViewConfig, V3FilterDef } from '@scani/ui/v3/lib/data-view';
 import { exportDateTime, exportNumber, exportText } from '@scani/ui/v3/lib/export/cell';
@@ -223,11 +229,13 @@ export interface LedgerRow {
   categorySetBy: string | null;
   /** Who the row is with, as a rule matches it. */
   payee: string | null;
+  /** A trade, settlement or transfer leg: it takes no category (SC-1720). */
+  outsideCategories: boolean;
 }
 
-/** A guess, not a choice: a rule or AI set it (SC-1695). */
+/** A guess, not a choice: a rule, AI or the row's type set it (SC-1695, SC-1720). */
 function isAutoCategory(row: Pick<LedgerRow, 'categorySetBy'>): boolean {
-  return row.categorySetBy === 'rule' || row.categorySetBy === 'ai';
+  return (AUTO_CATEGORY_SOURCES as readonly (string | null)[]).includes(row.categorySetBy);
 }
 
 interface LedgerSource {
@@ -239,6 +247,8 @@ interface LedgerSource {
   holdingId: string;
   categoryId: string | null;
   categorySetBy: string | null;
+  kind?: string;
+  transferGroupId?: string | null;
 }
 
 interface LedgerHolding {
@@ -284,6 +294,10 @@ export function toLedgerRows<T extends LedgerSource>(
       categoryColor: category?.color ?? null,
       categorySetBy: row.categorySetBy,
       payee: row.counterparty?.trim() || row.description?.trim() || null,
+      outsideCategories: isOutsideCategories({
+        kind: row.kind ?? '',
+        transferGroupId: row.transferGroupId ?? null,
+      }),
     };
   });
 }
@@ -328,12 +342,16 @@ export function CategoryCell({
   path,
   color,
   auto = false,
+  outside = false,
 }: {
   path: string | null;
   color: string | null;
   auto?: boolean;
+  /** A trade, settlement or transfer leg: not waiting for a category (SC-1720). */
+  outside?: boolean;
 }) {
   const { t } = useTranslation();
+  if (!path && outside) return null;
   if (!path) {
     return (
       <span className="text-label text-muted-foreground">{t('v3.categories.uncategorized')}</span>
@@ -470,6 +488,7 @@ export function ledgerConfig({
             path={row.categoryPath}
             color={row.categoryColor}
             auto={isAutoCategory(row)}
+            outside={row.outsideCategories}
           />
         ),
         exportValue: (row) => exportText(row.categoryPath),

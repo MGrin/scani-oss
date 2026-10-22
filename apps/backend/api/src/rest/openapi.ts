@@ -37,6 +37,10 @@ const ERRORS = {
   '409': ['Conflict', 'The change cannot be made as things stand; nothing was changed.'],
   '429': ['RateLimited', 'A budget is spent. `Retry-After` says when to try again.'],
   '500': ['Internal', 'The request failed on the server.'],
+  '503': [
+    'Unavailable',
+    'Scani could not be reached just now. `Retry-After` says when to try again.',
+  ],
 } as const;
 
 const DESCRIPTION = `Read and change a Scani portfolio over plain HTTP: holdings, accounts, transactions, returns, review questions, and the writes that record a movement or answer a question.
@@ -112,8 +116,8 @@ function operation(route: RestRoute, tool: McpTool): OpenAPIV3_1.OperationObject
 
   const statuses = (
     route.method === 'POST'
-      ? ['400', '401', '403', '404', '409', '429', '500']
-      : ['400', '401', '403', '404', '429', '500']
+      ? ['400', '401', '403', '404', '409', '429', '500', '503']
+      : ['400', '401', '403', '404', '429', '500', '503']
   ) as (keyof typeof ERRORS)[];
 
   const notes = [
@@ -211,12 +215,15 @@ export function buildRestOpenApi(): OpenAPIV3_1.Document {
           {
             description,
             content: errorContent,
-            ...(status === '429'
+            ...(status === '429' || status === '503'
               ? {
                   headers: {
                     'Retry-After': {
                       schema: { type: 'integer' },
-                      description: 'Seconds until the budget has room again.',
+                      description:
+                        status === '429'
+                          ? 'Seconds until the budget has room again.'
+                          : 'Seconds to wait before trying again.',
                     },
                   },
                 }

@@ -404,11 +404,15 @@ export interface CredentialValidator extends ProviderBase {
    * were rejected", so answering it for a transient condition sends someone
    * to regenerate a credential that was never wrong. `credentialRejection`
    * in `core/errors.ts` is the one-line catch that gets this right.
+   *
+   * `credentials`, when returned, is stored IN PLACE of what was submitted: a
+   * provider whose check registers the credential with the venue (bunq's
+   * installation and key pair) hands back what every later sync needs.
    */
   validateCredentials(
     creds: DecryptedCredentials,
     institutionCode: string
-  ): Promise<{ valid: boolean; message?: string }>;
+  ): Promise<{ valid: boolean; message?: string; credentials?: DecryptedCredentials }>;
 }
 
 /**

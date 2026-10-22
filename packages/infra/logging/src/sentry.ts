@@ -29,9 +29,32 @@ type Scrub = <T>(value: T) => T;
  * in by the app because it lives in `@scani/shared`, which an infra package
  * may not import (SC-1350).
  */
-export function prepareSentryEvent<T extends Sentry.Event>(event: T, scrub?: Scrub): T | null {
+export function prepareSentryEvent<T extends Sentry.Event>(
+  event: T,
+  scrub?: Scrub,
+  adjust?: Scrub
+): T | null {
   if (isBotScanEvent(event)) return null;
-  return scrub ? scrub(event) : event;
+  const scrubbed = scrub ? scrub(event) : event;
+  return adjust ? adjust(scrubbed) : scrubbed;
+}
+
+const DEFAULT_TRACE_RATE = 0.1;
+
+// Kept whole because a slow procedure's latency is read from its spans, and at
+// 10% getReturns gave 8 spans a day: too few to tell a cold database from a
+// slow calculation (SC-1745). About 80 calls a day, so the cost is small.
+const FULLY_TRACED = new Set(['trpc/portfolio.getReturns']);
+
+export function traceSampleRate(ctx: { name: string; parentSampled?: boolean }): number {
+  if (ctx.parentSampled !== undefined) return ctx.parentSampled ? 1 : 0;
+  return FULLY_TRACED.has(ctx.name) ? 1 : DEFAULT_TRACE_RATE;
+}
+
+/** Tags the span the caller runs inside; a no-op outside one or without Sentry. */
+export function setSpanAttributes(attributes: Record<string, string | number | boolean>): void {
+  if (!initialized) return;
+  Sentry.getActiveSpan()?.setAttributes(attributes);
 }
 
 export function initSentry(opts: {
@@ -39,6 +62,8 @@ export function initSentry(opts: {
   release?: string;
   scrubEvent?: Scrub;
   scrubBreadcrumb?: Scrub;
+  /** Last word on an event before it is sent, e.g. its level (SC-1738). */
+  adjustEvent?: Scrub;
 }): void {
   const dsn = process.env.SENTRY_DSN;
   if (!dsn || initialized) return;
@@ -46,10 +71,10 @@ export function initSentry(opts: {
     dsn,
     environment: process.env.SENTRY_ENVIRONMENT || getNodeEnv() || 'development',
     release: opts.release || process.env.SENTRY_RELEASE || undefined,
-    tracesSampleRate: 0.1,
+    tracesSampler: traceSampleRate,
     initialScope: opts.component ? { tags: { component: opts.component } } : undefined,
     integrations: (defaults) => defaults,
-    beforeSend: (event) => prepareSentryEvent(event, opts.scrubEvent),
+    beforeSend: (event) => prepareSentryEvent(event, opts.scrubEvent, opts.adjustEvent),
     beforeBreadcrumb: (breadcrumb) =>
       opts.scrubBreadcrumb ? opts.scrubBreadcrumb(breadcrumb) : breadcrumb,
   });
@@ -148,8 +173,8 @@ export function captureException(
 
 /**
  * A warning worth counting rather than paging on, such as an upstream's 429
- * (SC-1602). Events are not sampled the way spans are (`tracesSampleRate`
- * 0.1), so a fingerprinted message gives an exact count per hour in one issue.
+ * (SC-1602). Events are not sampled the way spans are (`traceSampleRate`,
+ * 10% for most), so a fingerprinted message gives an exact count per hour in one issue.
  */
 export function captureWarning(
   message: string,

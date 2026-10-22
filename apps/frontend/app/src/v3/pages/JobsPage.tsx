@@ -2,6 +2,7 @@ import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { loadingOnly } from '@scani/ui/v3/lib/query-state';
 import { useTranslation } from 'react-i18next';
+import { trpc } from '@/lib/trpc';
 import { useUserJobs } from '@/v3/hooks/useUserJobs';
 import { JobsList } from '../components/jobs/JobsList';
 
@@ -18,11 +19,13 @@ export function JobsPage() {
   const { t } = useTranslation();
   useDocumentTitle(t('v3.jobs.page.title'));
   const { jobs, isLoading } = useUserJobs();
+  const accounts = trpc.accounts.getAll.useQuery();
+  const accountNames = new Map((accounts.data ?? []).map((account) => [account.id, account.name]));
 
   return (
     <PageLayout measure="wide">
       <PageHeader title={t('v3.jobs.page.title')} />
-      <JobsList jobs={jobs} query={loadingOnly(isLoading)} />
+      <JobsList jobs={jobs} query={loadingOnly(isLoading)} accountNames={accountNames} />
     </PageLayout>
   );
 }

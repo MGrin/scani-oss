@@ -34,10 +34,11 @@ import type {
   TokenIdentityProvider,
   TokenSearchResult,
 } from '../../core/capabilities';
+import { ProviderError } from '../../core/errors';
 import { recordRefusal } from '../../core/refusals';
 import type { PriceQuote, ProviderContext } from '../../core/types';
 import { closeDayNearMidnight } from '../../core/utils/bar-day';
-import { fetchWithTimeout } from '../../core/utils/fetch';
+import { fetchWithTimeout, isRetryableError } from '../../core/utils/fetch';
 import {
   contractRefFromMetadata,
   contradictsDeployments,
@@ -47,6 +48,8 @@ import {
 
 const COINGECKO_BASE_URL = 'https://api.coingecko.com/api/v3';
 const COINGECKO_PRO_BASE_URL = 'https://pro-api.coingecko.com/api/v3';
+// The keyless tier serves 365 days of history; one day of slack for the clock.
+const PUBLIC_HISTORY_DAYS = 364;
 
 // ISO-4217 fiat codes the federated identity flow must NOT enrich
 // with a CoinGecko id. CG uses these as quote currencies, not coins;
@@ -242,7 +245,13 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
     if (to.getTime() < from.getTime()) return [];
 
     const baseLower = ctx.baseCurrency.symbol.toLowerCase();
-    const fromSec = Math.floor(from.getTime() / 1000);
+    // Keyless, CoinGecko refuses a range reaching back past 365 days with a
+    // 401, so ask for the year it serves (SC-1706).
+    const floorMs = this.opts.apiKey
+      ? from.getTime()
+      : Math.max(from.getTime(), Date.now() - PUBLIC_HISTORY_DAYS * 86_400_000);
+    if (to.getTime() < floorMs) return [];
+    const fromSec = Math.floor(floorMs / 1000);
     const toSec = Math.floor(to.getTime() / 1000);
     const daily = toSec - fromSec > 90 * 86_400;
 
@@ -270,31 +279,26 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
     toSec: number
   ): Promise<Array<{ timeMs: number; price: number }> | null> {
     const url = `${this.baseUrl()}/coins/${encodeURIComponent(id)}/market_chart/range?vs_currency=${vsCurrencyLower}&from=${fromSec}&to=${toSec}`;
-    try {
-      const response = await this.get(url, 'market_chart');
-      if (!response.ok) {
-        this.logger.warn(
-          { status: response.status, id, vsCurrencyLower },
-          'CoinGecko /market_chart/range non-OK'
-        );
-        return null;
-      }
-      const data = (await response.json()) as { prices?: Array<[number, number]> };
-      if (!Array.isArray(data.prices)) return null;
-      const out: Array<{ timeMs: number; price: number }> = [];
-      for (const tuple of data.prices) {
-        if (!Array.isArray(tuple) || tuple.length < 2) continue;
-        const [ts, price] = tuple;
-        if (typeof ts !== 'number' || typeof price !== 'number' || !Number.isFinite(price)) {
-          continue;
-        }
-        out.push({ timeMs: ts, price });
-      }
-      return out;
-    } catch (err) {
-      this.logger.debug({ err, id, vsCurrencyLower }, 'CoinGecko range fetch failed');
-      return null;
+    const response = await this.get(url, 'market_chart');
+    // Only an unknown coin is an answer. Anything else unanswered throws, so
+    // the backfill records a failed attempt rather than a day with no price
+    // (SC-1706).
+    if (response.status === 404) return null;
+    if (!response.ok) {
+      throw ProviderError.fromHttp('coingecko', response, await response.text());
     }
+    const data = (await response.json()) as { prices?: Array<[number, number]> };
+    if (!Array.isArray(data.prices)) return null;
+    const out: Array<{ timeMs: number; price: number }> = [];
+    for (const tuple of data.prices) {
+      if (!Array.isArray(tuple) || tuple.length < 2) continue;
+      const [ts, price] = tuple;
+      if (typeof ts !== 'number' || typeof price !== 'number' || !Number.isFinite(price)) {
+        continue;
+      }
+      out.push({ timeMs: ts, price });
+    }
+    return out;
   }
 
   async fetchHistoricalPrice(t: Token, at: Date, ctx: ProviderContext): Promise<PriceQuote | null> {
@@ -494,31 +498,48 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
    * Every CoinGecko request, through the shared limiter. Each 429 CoinGecko
    * sends is counted in Sentry, one issue per tier, retried attempts included,
    * because production runs keyless on the public tier, the one place a
-   * per-minute cap bites, and nothing else saw it (SC-1602). The limiter
-   * spends one token on up to `retries + 1` upstream requests, so this count
-   * is the pressure the limiter does not see.
+   * per-minute cap bites, and nothing else saw it (SC-1602).
+   *
+   * Every attempt takes its own slot (SC-1706). Retried inside one slot, a
+   * refused request went out again 1 s and 3 s later, which no per-minute cap
+   * forgives, so a 429 sent more requests rather than fewer.
    */
   private async get(
     url: string,
     endpoint: string,
     timeoutMs?: number,
-    retries?: number
+    retries = 2
   ): Promise<Response> {
     const tier = this.opts.apiKey ? 'pro' : 'public';
-    const response = await this.limiter.execute(() =>
-      fetchWithTimeout(url, { headers: this.headers() }, timeoutMs, retries, (attempt) => {
-        if (attempt.status !== 429) return;
-        this.logger.warn({ endpoint, tier }, 'CoinGecko 429');
-        captureWarning('CoinGecko 429', { provider: 'coingecko', endpoint, tier }, [
-          'coingecko-429',
-          tier,
-        ]);
-      })
-    );
-    // Only a 429 no retry cleared: that is a price not fetched, and what the
-    // quarter-hour run backs off for. Sentry above counts every attempt.
-    if (response.status === 429) recordRefusal('coingecko');
-    return response;
+    const onResponse = (attempt: Response) => {
+      if (attempt.status !== 429) return;
+      this.logger.warn({ endpoint, tier }, 'CoinGecko 429');
+      captureWarning('CoinGecko 429', { provider: 'coingecko', endpoint, tier }, [
+        'coingecko-429',
+        tier,
+      ]);
+    };
+    for (let attempt = 0; ; attempt++) {
+      const last = attempt >= retries;
+      let response: Response;
+      try {
+        response = await this.limiter.execute(() =>
+          fetchWithTimeout(url, { headers: this.headers() }, timeoutMs, 0, onResponse)
+        );
+      } catch (error) {
+        if (last || !(error instanceof Error) || !isRetryableError(error)) throw error;
+        await Bun.sleep(2 ** attempt * 1000);
+        continue;
+      }
+      const retryable = response.status === 429 || response.status >= 500;
+      if (!retryable || last) {
+        // Only a 429 no retry cleared: that is a price not fetched, and what
+        // the quarter-hour run backs off for. Sentry above counts every attempt.
+        if (response.status === 429) recordRefusal('coingecko');
+        return response;
+      }
+      await Bun.sleep(2 ** attempt * 1000);
+    }
   }
 
   private baseUrl(): string {
@@ -533,12 +554,16 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
 }
 
 export const coingeckoFactory: ProviderFactory = async (deps) => {
-  // CoinGecko Demo/Public API: ~30 calls/min (we use 25 for safety
-  // margin); Pro tiers go higher but the namespace + rate window
-  // pattern is the same.
+  // Keyed, 25 a minute. Keyless, CoinGecko still answered 429 under 25 every
+  // night (SC-1706): its public cap is lower, and a retry spends no token.
+  const keyed = Boolean(deps.env.COINGECKO_API_KEY);
+  // Keyless, one call every 6 s: a 10-a-minute window let all ten out in the
+  // same second, and the public tier refused the burst it allowed.
+  const maxRequests = keyed ? 25 : 1;
+  const windowMs = keyed ? 60_000 : 6_000;
   const limiter = createOutflowLimiter({
-    maxRequests: 25,
-    windowMs: 60 * 1000,
+    maxRequests,
+    windowMs,
     redis: deps.redis ?? undefined,
     namespace: 'coingecko',
   });
@@ -546,7 +571,7 @@ export const coingeckoFactory: ProviderFactory = async (deps) => {
     namespace: 'coingecko',
     limiter,
     registeredFrom: 'providers/coingecko',
-    description: 'CoinGecko: 25 req / 60s',
+    description: `CoinGecko: ${maxRequests} req / ${windowMs / 1000}s`,
   });
   // No warn lived here before SC-536: an unkeyed CoinGecko silently
   // resolves `baseUrl()` to the free host and omits the `x-cg-pro-api-key`
@@ -554,7 +579,7 @@ export const coingeckoFactory: ProviderFactory = async (deps) => {
   deps.reportCredentialStatus({
     provider: 'coingecko',
     envVar: 'COINGECKO_API_KEY',
-    keyed: Boolean(deps.env.COINGECKO_API_KEY),
+    keyed,
     degradedBehaviour: 'drops to the public rate-limited tier instead of the Pro host',
   });
   return new CoinGeckoProvider(registered, {

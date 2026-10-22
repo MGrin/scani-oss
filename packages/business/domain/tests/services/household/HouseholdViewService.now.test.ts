@@ -125,7 +125,9 @@ describe('HouseholdViewService.now (SC-1647)', () => {
         {
           accountId: shared.id,
           name: 'Shared',
+          institutionId: institution.id,
           institutionName: institution.name,
+          institutionWebsite: institution.website,
           ownerId: alice.id,
           ownerName: 'Alice',
           ownedByViewer: false,

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useRealtimeConnection } from '@/contexts/RealtimeContext';
 import { type RouterOutputs, trpc } from '@/lib/trpc';
+import { foldRefreshBursts } from '../lib/jobs';
 
 // Coalesce bursts of WS job events (progress ticks, state changes)
 // into one `jobs.listMine` invalidate. The recompute flow can fire
@@ -13,40 +14,11 @@ const INVALIDATE_DEBOUNCE_MS = 250;
 
 const ACTIVE_STATES = new Set(['queued', 'active', 'progress']);
 
-// Jobs whose outcome can change the shape of the net-worth chart.
-// While any of these are in flight the chart shows a loading
-// overlay; if any of these recently failed the chart shows a
-// warning banner so the user knows the curve is incomplete.
-//
-// `wallet-import` itself only writes the picker payload, no holdings,
-// so it doesn't move the chart. The downstream `transaction-import`
-// (driven by confirm) DOES, because BalanceAtTimeService needs the
-// transaction ledger to compute past balances correctly.
-const CHART_AFFECTING_JOB_NAMES = new Set([
-  'transaction-import',
-  'portfolio-history-backfill',
-  'manual-holdings-create',
-  'file-import',
-  'screenshot-parse',
-  'exchange-import',
-  'holding-price-update',
-]);
-
-// "Recent" failure window for the chart warning banner. A failure
-// older than this is assumed already-acted-on by the user (or
-// orphaned by a prior session) and shouldn't poison the dashboard.
-const RECENT_FAILURE_MS = 30 * 60 * 1000;
-
 type UserJobRow = RouterOutputs['jobs']['listMine'][number];
 
 export interface UseUserJobsResult {
   jobs: UserJobRow[];
   activeCount: number;
-  // True when a job that can change the chart shape is queued/active/progress.
-  chartAffectingActive: boolean;
-  // Most recent failed chart-affecting job within RECENT_FAILURE_MS, if any.
-  // Used by the chart warning banner.
-  chartAffectingFailure: UserJobRow | null;
   isLoading: boolean;
 }
 
@@ -73,38 +45,24 @@ export function useUserJobs(): UseUserJobsResult {
       debounceRef.current = setTimeout(() => {
         debounceRef.current = null;
         void utils.jobs.listMine.invalidate();
-        void utils.review.listPending.invalidate();
       }, INVALIDATE_DEBOUNCE_MS);
     });
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
       unsubscribe();
     };
-  }, [subscribeToAllJobsForUser, utils.jobs.listMine, utils.review.listPending]);
+  }, [subscribeToAllJobsForUser, utils.jobs.listMine]);
 
   const jobs = query.data ?? [];
-  const activeCount = jobs.reduce((acc, job) => acc + (ACTIVE_STATES.has(job.state) ? 1 : 0), 0);
-  const chartAffectingActive = jobs.some(
-    (job) => CHART_AFFECTING_JOB_NAMES.has(job.jobName) && ACTIVE_STATES.has(job.state)
+  // An app-open's refreshes count once, as the Jobs page lists them (SC-1724).
+  const activeCount = foldRefreshBursts(jobs).reduce(
+    (acc, job) => acc + (ACTIVE_STATES.has(job.state) ? 1 : 0),
+    0
   );
-
-  const cutoff = Date.now() - RECENT_FAILURE_MS;
-  let chartAffectingFailure: UserJobRow | null = null;
-  for (const job of jobs) {
-    if (job.state !== 'failed') continue;
-    if (!CHART_AFFECTING_JOB_NAMES.has(job.jobName)) continue;
-    const finishedAt = job.finishedAt ? new Date(job.finishedAt).getTime() : 0;
-    if (finishedAt < cutoff) continue;
-    // jobs are sorted desc by createdAt — first match is the most recent.
-    chartAffectingFailure = job;
-    break;
-  }
 
   return {
     jobs,
     activeCount,
-    chartAffectingActive,
-    chartAffectingFailure,
     isLoading: query.isLoading,
   };
 }

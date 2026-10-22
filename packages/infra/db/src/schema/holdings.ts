@@ -90,11 +90,17 @@ export const holdings = pgTable(
     startsAt: timestamp('starts_at', { withTimezone: true }),
     valueBase: text('value_base'),
     valuePricedAt: timestamp('value_priced_at', { withTimezone: true }),
+    // The earliest evidence instant after the last cache write: the balance is
+    // due to be rewritten then. Null when nothing is ahead of now (SC-1633).
+    cacheDueAt: timestamp('cache_due_at', { withTimezone: true }),
     lastUpdated: timestamp('last_updated', { withTimezone: true }).notNull().defaultNow(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     userIdIdx: index('idx_holdings_user_id').on(table.userId),
+    cacheDueAtIdx: index('idx_holdings_cache_due_at')
+      .on(table.cacheDueAt)
+      .where(sql`${table.cacheDueAt} IS NOT NULL`),
     accountIdIdx: index('idx_holdings_account_id').on(table.accountId),
     tokenIdIdx: index('idx_holdings_token_id').on(table.tokenId),
     userAccountTokenIdx: index('idx_holdings_user_account_token').on(
@@ -148,7 +154,7 @@ export const holdings = pgTable(
 // manual entry, plus synthesized 'opening_balance' rows from
 // reconciliation. Never overrides holdings.balance — strictly additive.
 /** 'cleared' is a person's "none", and carries no category (SC-1695). */
-export type CategorySetBy = 'person' | 'import' | 'rule' | 'ai' | 'cleared';
+export type CategorySetBy = 'person' | 'import' | 'rule' | 'ai' | 'kind' | 'cleared';
 
 export const holdingTransactions = pgTable(
   'holding_transactions',
@@ -446,6 +452,12 @@ export const holdingBalanceObservations = pgTable(
     balanceMovedIdx: index('idx_holding_obs_balance_moved')
       .on(table.userId)
       .where(sql`balance_moved`),
+    // The returns data version's newest observation write and review, each
+    // a single index read (SC-1741).
+    userCreatedIdx: index('idx_holding_obs_user_created').on(table.userId, table.createdAt.desc()),
+    userGapReviewedIdx: index('idx_holding_obs_user_gap_reviewed')
+      .on(table.userId, table.gapReviewedAt.desc())
+      .where(sql`gap_reviewed_at IS NOT NULL`),
     // A deleted input clears its observations' reference by SET NULL, which
     // walks the table by that column.
     inputIdIdx: index('idx_holding_obs_input_id')

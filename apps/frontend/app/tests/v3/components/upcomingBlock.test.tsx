@@ -1,8 +1,9 @@
 import '../../i18n-preload';
 import { describe, expect, test } from 'bun:test';
+import i18n from 'i18next';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
-import { UpcomingCard } from '../../../src/v3/components/home/UpcomingBlock';
+import { UpcomingCard, upcomingTileCaption } from '../../../src/v3/components/home/UpcomingBlock';
 import en from '../../../src/v3/i18n/locales/en.json';
 import type { HomeCardQuery } from '../../../src/v3/lib/home-card';
 
@@ -102,5 +103,24 @@ describe('the Bills tile (SC-1669)', () => {
   test('a failed query never draws the tile figure', () => {
     const html = tile({ isError: true, error: new Error('boom'), data: undefined });
     expect(html).not.toContain('£420.00');
+  });
+});
+
+describe('the Bills tile caption fits its tile (SC-1703)', () => {
+  const t = i18n.t.bind(i18n);
+
+  test('nothing due is a short line, never the card\u2019s full sentence', () => {
+    const caption = upcomingTileCaption(t, [], '2026-10-10');
+    expect(caption).toBe(en.v3.home.upcoming.tileEmpty);
+    expect(caption).not.toContain(NOTHING_DUE);
+  });
+
+  test('bills due still say how many and when the next one is', () => {
+    const caption = upcomingTileCaption(
+      t,
+      [{ dueDate: '2026-10-12' }, { dueDate: '2026-10-20' }],
+      '2026-10-10'
+    );
+    expect(caption).toContain('2');
   });
 });

@@ -57,28 +57,33 @@ you'd like to see it.
 
 ## Switching tiers from a Tier-3 instance
 
-**Your data comes out, but it does not yet go back in.** Settings →
-Your data exports every record as a workbook or as JSON, and Settings →
-Backup writes a copy of the account with its balance readings, though
-not yet its uploaded documents. Restoring a backup into another instance is not available
-yet, so moving tiers still means rebuilding. The `user-data-delete` job deletes and does nothing else: its payload
-is `{ userId, requestId }` with no flag anywhere in it, and
-`DeleteAllUserDataUseCase` only issues deletes.
+**A backup moves the account.** On the Tier-3 instance, Settings →
+Backup writes a copy of it: every record, the balance readings and
+decisions its figures come from, your settings and rules, and uploaded
+documents with their files. On the new instance, sign up, then choose
+Settings → Backup → Restore from a backup. Only an empty account can
+take one, and a restore refuses a backup made by a newer Scani than the
+one it runs on, so upgrade the new instance first.
 
-What does work is rebuilding on Tier 2 rather than transferring:
+What a backup does not carry:
 
-1. Spin up a self-hosted Tier-2 stack
-   ([Tier 2 overview](/self-hosting/tier2/overview/)).
-2. Re-add your exchange and wallet connections there. Connected
-   accounts backfill from the source on first sync
-   (`exchange-import`, `wallet-import`), so that history comes back
-   without needing anything from the Tier-3 instance.
-3. Re-upload any statements or CSVs through the ordinary file-import
-   flow (`file-import`). Manual holdings and manually edited prices
-   are the part with no source to re-read, and have to be re-entered.
+1. **Connections.** Exchange and bank credentials are never in a
+   backup. Re-add them on the new instance; connected accounts backfill
+   from the source on first sync (`exchange-import`).
+2. **Sign-in.** Passkeys, two-factor, agent keys and calendar feed
+   links stay behind. Set them up again.
+3. **Household sharing and push notifications.** Invite members and
+   turn notifications on again.
+4. **Documents over the limit.** When the files together would take a
+   backup past the 64 MB a restore accepts, it is built without them,
+   and the Backup card says how many were left out. Re-upload those
+   through the ordinary file-import flow (`file-import`).
 
-Both a data export and a migration tool that automates this are on
-the wishlist.
+Tokens the new instance does not know are listed under Data quality
+after the restore. The `user-data-delete` job deletes and does nothing
+else: its payload is `{ userId, requestId }` with no flag anywhere in
+it, and `DeleteAllUserDataUseCase` only issues deletes. So delete the
+Tier-3 account only once the restore has finished.
 
 ## See also
 

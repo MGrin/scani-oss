@@ -102,6 +102,7 @@
     },
     "home": "Accueil",
     "holdings": "Positions",
+    "household": "Foyer",
     "accounts": "Comptes",
     "institutions": "Établissements",
     "groups": "Groupes",
@@ -344,6 +345,7 @@
           "noFilesYet": "Aucun fichier pour l’instant"
         },
         "filter": {
+          "account": "Compte",
           "invoices": "Factures",
           "kind": "Nature"
         },
@@ -934,6 +936,18 @@
         "period": {
           "all": "Toute la période",
           "custom": "Période personnalisée"
+        }
+      },
+      "householdAccounts": {
+        "col": {
+          "member": "Membre"
+        },
+        "filter": {
+          "member": "Membre"
+        },
+        "empty": {
+          "title": "Aucun compte partagé pour l’instant",
+          "description": "Chaque membre choisit dans les Réglages les comptes que le foyer voit."
         }
       }
     },

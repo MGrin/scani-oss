@@ -948,6 +948,8 @@ function checkMarkdownPlacement(): void {
     // when a file its `paths:` glob matches is opened. Moved anywhere else it
     // never loads at all.
     if (file.startsWith('.claude/rules/')) return true;
+    // A project skill loads only from `.claude/skills/<name>/SKILL.md` (SC-1747).
+    if (file.startsWith('.claude/skills/')) return true;
     // The published docs site at docs.scani.xyz. This content IS the product,
     // not documentation about the repo.
     if (file.startsWith('apps/frontend/docs/src/content/')) return true;

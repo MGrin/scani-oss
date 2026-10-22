@@ -13,6 +13,7 @@ import {
   uuid,
 } from 'drizzle-orm/pg-core';
 import { accounts } from './accounts';
+import { documents } from './documents';
 import { userIntegrationCredentials } from './user-integration-credentials';
 import { userWallets } from './user-wallets';
 import { users } from './users';
@@ -68,11 +69,17 @@ export const feedInputWindows = pgTable(
     complete: boolean('complete').notNull(),
     fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull(),
     uploadRef: text('upload_ref'),
+    // The stored file a statement upload was read from (SC-1656). A document
+    // is per user and content hash, so the link is the window's.
+    documentId: uuid('document_id').references(() => documents.id, { onDelete: 'set null' }),
     // NULL on rows written before SC-1665; the ledger read-through reads 'transaction-run' only.
     shape: text('shape').$type<FeedWindowShape>(),
   },
   (table) => ({
     inputToIdx: index('idx_feed_input_windows_input_to').on(table.inputId, table.toAt.desc()),
+    documentIdx: index('idx_feed_input_windows_document_id')
+      .on(table.documentId)
+      .where(sql`document_id IS NOT NULL`),
     // Drizzle cannot express NULLS NOT DISTINCT on an index; the migration is the source of truth for that clause.
     fetchUq: uniqueIndex('feed_input_windows_fetch_uq').on(
       table.inputId,

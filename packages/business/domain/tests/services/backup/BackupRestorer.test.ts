@@ -5,12 +5,14 @@ import { eq } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 import { Container } from 'typedi';
 import {
+  type BackupFileStore,
   BackupRestorer,
   backupRecords,
   RestoreRefused,
   UNMATCHED_TOKEN_MARKER,
 } from '../../../src/services/backup/BackupRestorer';
 import {
+  type BackupFileSource,
   type BackupRecord,
   BackupWriter,
   backupLine,
@@ -20,7 +22,13 @@ import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWrit
 import { TokenIdentityService } from '../../../src/services/tokens/TokenIdentityService';
 import { restoreContainerAfterAll } from '../../../test/helpers/container';
 import { withTestDb } from '../../../test/helpers/db';
-import { makeInstitution, makeUser, makeVendor } from '../../../test/helpers/factories';
+import {
+  makeDocument,
+  makeDocumentExtraction,
+  makeInstitution,
+  makeUser,
+  makeVendor,
+} from '../../../test/helpers/factories';
 import {
   makeAccount,
   makeHolding,
@@ -431,4 +439,196 @@ describe('backupRecords (SC-1649)', () => {
     ).catch((e: unknown) => e);
     expect((notJson as RestoreRefused).reason).toBe('not-a-backup');
   });
+});
+
+/** The target's storage, in memory: what a restore wrote, by key. */
+function memoryStore(opts: { failOnWrite?: number } = {}) {
+  const objects = new Map<string, { bytes: Uint8Array; contentType: string }>();
+  let writes = 0;
+  const store: BackupFileStore = {
+    write: async (key, bytes, contentType) => {
+      writes++;
+      if (writes === opts.failOnWrite) throw new Error('storage refused the write');
+      objects.set(key, { bytes, contentType });
+    },
+    delete: async (key) => {
+      objects.delete(key);
+    },
+  };
+  return { store, objects };
+}
+
+async function seedWithDocument(tx: DatabaseTransaction) {
+  const user = await makeUser(tx);
+  const vendor = await makeVendor(tx, { userId: user.id });
+  const stored = new Map<string, Uint8Array>();
+  const docs = [];
+  for (const [name, mime] of [
+    ['march.pdf', 'application/pdf'],
+    ['receipt.png', 'image/png'],
+  ] as const) {
+    const ext = name.split('.')[1];
+    const doc = await makeDocument(tx, {
+      userId: user.id,
+      r2Key: `documents/${user.id}/${crypto.randomUUID()}.${ext}`,
+      originalFilename: name,
+      mimeType: mime,
+      byteSize: 4,
+    });
+    stored.set(doc.r2Key, new Uint8Array([docs.length + 1, 2, 3, 4]));
+    docs.push(doc);
+  }
+  const extraction = await makeDocumentExtraction(tx, {
+    documentId: docs[0]?.id as string,
+    vendorId: vendor.id,
+  });
+  const payment = await makePayment(tx, { userId: user.id, vendorId: vendor.id });
+  const occurrence = await makePaymentOccurrence(tx, {
+    paymentId: payment.id,
+    dueDate: '2026-08-01',
+    status: 'matched',
+    matchedExtractionId: extraction.id,
+  });
+  const files: BackupFileSource = {
+    exists: async (key) => stored.has(key),
+    read: async (key) => stored.get(key) as Uint8Array,
+  };
+  return { user, docs, extraction, occurrence, stored, files };
+}
+
+async function fileWithDocuments(userId: string, files: BackupFileSource, tx: DatabaseTransaction) {
+  const out: BackupRecord[] = [];
+  for await (const record of new BackupWriter().records(userId, tx, 3, files)) {
+    out.push(JSON.parse(backupLine(record)) as BackupRecord);
+  }
+  return out;
+}
+
+describe('BackupRestorer uploaded documents (SC-1662)', () => {
+  test('restores each document and its file under the new account, and the bill matched to it', () =>
+    withTestDb(async (tx) => {
+      const source = await seedWithDocument(tx);
+      const records = await fileWithDocuments(source.user.id, source.files, tx);
+      const target = await makeUser(tx);
+      const { store, objects } = memoryStore();
+
+      const report = await new BackupRestorer().restore(target.id, opener(records), tx, store);
+
+      expect(report.rows.documents).toBe(2);
+      for (const doc of source.docs) {
+        const id = report.ids.get(doc.id) as string;
+        expect(id).not.toBe(doc.id);
+        const [row] = await tx.select().from(schema.documents).where(eq(schema.documents.id, id));
+        const ext = doc.originalFilename.split('.')[1];
+        expect(row?.userId).toBe(target.id);
+        expect(row?.r2Key).toBe(`documents/${target.id}/${id}.${ext}`);
+        expect(objects.get(row?.r2Key as string)).toEqual({
+          bytes: source.stored.get(doc.r2Key) as Uint8Array,
+          contentType: doc.mimeType,
+        });
+      }
+      const extraction = report.ids.get(source.extraction.id) as string;
+      const [restored] = await tx
+        .select()
+        .from(schema.documentExtractions)
+        .where(eq(schema.documentExtractions.id, extraction));
+      expect(restored?.documentId).toBe(report.ids.get(source.docs[0]?.id as string) as string);
+      const [occurrence] = await tx
+        .select()
+        .from(schema.paymentOccurrences)
+        .where(eq(schema.paymentOccurrences.id, report.ids.get(source.occurrence.id) as string));
+      expect(occurrence?.matchedExtractionId).toBe(extraction);
+    }));
+
+  // SC-1656: a statement window names the file it was read from, and that
+  // name follows the document to its new id.
+  test('a statement window comes back naming the restored document', () =>
+    withTestDb(async (tx) => {
+      const source = await seedWithDocument(tx);
+      const institution = await makeInstitution(tx);
+      const account = await makeAccount(tx, {
+        userId: source.user.id,
+        institutionId: institution.id,
+      });
+      const [input] = await tx
+        .insert(schema.feedInputs)
+        .values({ userId: source.user.id, accountId: account.id, source: 'statement' })
+        .returning();
+      const [window] = await tx
+        .insert(schema.feedInputWindows)
+        .values({
+          inputId: input!.id,
+          fromAt: new Date('2026-08-01T00:00:00Z'),
+          toAt: new Date('2026-08-31T00:00:00Z'),
+          complete: false,
+          fetchedAt: new Date('2026-09-01T00:00:00Z'),
+          documentId: source.docs[0]?.id as string,
+          shape: 'statement-upload',
+        })
+        .returning();
+      const records = await fileWithDocuments(source.user.id, source.files, tx);
+      const target = await makeUser(tx);
+
+      const report = await new BackupRestorer().restore(
+        target.id,
+        opener(records),
+        tx,
+        memoryStore().store
+      );
+
+      const [restored] = await tx
+        .select({ documentId: schema.feedInputWindows.documentId })
+        .from(schema.feedInputWindows)
+        .where(eq(schema.feedInputWindows.id, report.ids.get(window!.id) as string));
+      expect(restored?.documentId).toBe(report.ids.get(source.docs[0]?.id as string) as string);
+    }));
+
+  test('refuses a file whose bytes do not match its hash, and writes nothing', () =>
+    withTestDb(async (tx) => {
+      const source = await seedWithDocument(tx);
+      const records = await fileWithDocuments(source.user.id, source.files, tx);
+      const damaged = records.map((r) =>
+        r.type === 'file' ? { ...r, data: Buffer.from([9, 9, 9, 9]).toString('base64') } : r
+      );
+      const target = await makeUser(tx);
+      const { store, objects } = memoryStore();
+
+      await expect(
+        new BackupRestorer().restore(target.id, opener(damaged), tx, store)
+      ).rejects.toBeInstanceOf(RestoreRefused);
+      expect(objects.size).toBe(0);
+      const rows = await tx
+        .select()
+        .from(schema.documents)
+        .where(eq(schema.documents.userId, target.id));
+      expect(rows).toEqual([]);
+    }));
+
+  test('a restore that fails after writing a file deletes what it wrote', () =>
+    withTestDb(async (tx) => {
+      const source = await seedWithDocument(tx);
+      const records = await fileWithDocuments(source.user.id, source.files, tx);
+      const target = await makeUser(tx);
+      const { store, objects } = memoryStore({ failOnWrite: 2 });
+
+      await expect(
+        new BackupRestorer().restore(target.id, opener(records), tx, store)
+      ).rejects.toThrow('storage refused the write');
+      expect([...objects.keys()]).toEqual([]);
+    }));
+
+  test('still restores a version 1 backup, which carries no documents', () =>
+    withTestDb(async (tx) => {
+      const source = await seedWithDocument(tx);
+      const records = (await fileOf(source.user.id, tx)).map((r) => {
+        if (r.type !== 'header') return r;
+        const { files: _files, ...v1 } = r;
+        return { ...v1, version: 1 } as BackupRecord;
+      });
+      const target = await makeUser(tx);
+
+      const report = await new BackupRestorer().restore(target.id, opener(records), tx);
+      expect(report.rows.documents ?? 0).toBe(0);
+      expect(report.rows.payment_occurrences).toBe(1);
+    }));
 });

@@ -19,12 +19,31 @@ export function MagicCodeInput({
   const { t } = useUiTranslation();
   const [code, setCode] = useState(['', '', '', '', '', '']);
   const [isResending, setIsResending] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submitting = useRef(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   // Focus first input on mount
   useEffect(() => {
     inputRefs.current[0]?.focus();
   }, []);
+
+  // A code is spent once it signs in, so a second send of it is refused. The
+  // auto-submit and a Verify tap can both fire for one code (SC-1750).
+  const submit = async (value: string) => {
+    if (submitting.current || isLoading) return;
+    submitting.current = true;
+    setIsSubmitting(true);
+    try {
+      await onSubmit(value);
+    } catch {
+      // The caller reports a refused code through `error`; rethrowing here
+      // only reaches the global handler, which reported it as a crash.
+    } finally {
+      submitting.current = false;
+      setIsSubmitting(false);
+    }
+  };
 
   const handleChange = (index: number, value: string) => {
     // Only allow digits
@@ -40,8 +59,8 @@ export function MagicCodeInput({
     }
 
     // Auto-submit when complete
-    if (newCode.every((digit) => digit !== '') && !isLoading) {
-      onSubmit(newCode.join(''));
+    if (newCode.every((digit) => digit !== '')) {
+      void submit(newCode.join(''));
     }
   };
 
@@ -74,23 +93,28 @@ export function MagicCodeInput({
     inputRefs.current[lastIndex]?.focus();
 
     // Auto-submit if complete
-    if (pastedData.length === 6 && !isLoading) {
-      onSubmit(pastedData);
+    if (pastedData.length === 6) {
+      void submit(pastedData);
     }
   };
 
   const handleResend = async () => {
     setIsResending(true);
     setCode(['', '', '', '', '', '']);
-    await onResend();
-    setIsResending(false);
+    try {
+      await onResend();
+    } catch {
+      // As for a code: the caller reports a failed resend through `error`.
+    } finally {
+      setIsResending(false);
+    }
     inputRefs.current[0]?.focus();
   };
 
   const handleManualSubmit = () => {
     const codeString = code.join('');
     if (codeString.length === 6) {
-      onSubmit(codeString);
+      void submit(codeString);
     }
   };
 
@@ -111,7 +135,7 @@ export function MagicCodeInput({
               value={digit}
               onChange={(e) => handleChange(index, e.target.value)}
               onKeyDown={(e) => handleKeyDown(index, e)}
-              disabled={isLoading || isResending}
+              disabled={isLoading || isSubmitting || isResending}
               className="w-12 h-14 text-center text-2xl font-bold border-2 rounded-lg focus:border-primary focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               aria-label={t('ui.magicCode.digit', { index: index + 1 })}
             />
@@ -124,10 +148,10 @@ export function MagicCodeInput({
         <Button
           type="button"
           onClick={handleManualSubmit}
-          disabled={code.join('').length !== 6 || isLoading}
+          disabled={code.join('').length !== 6 || isLoading || isSubmitting}
           className="w-full"
         >
-          {isLoading && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
+          {(isLoading || isSubmitting) && <Loader2 className="me-2 h-4 w-4 animate-spin" />}
           {t('ui.magicCode.verify')}
         </Button>
 
@@ -135,7 +159,7 @@ export function MagicCodeInput({
           type="button"
           variant="ghost"
           onClick={handleResend}
-          disabled={isResending || isLoading}
+          disabled={isResending || isLoading || isSubmitting}
           className="w-full"
         >
           {isResending && <Loader2 className="me-2 h-4 w-4 animate-spin" />}

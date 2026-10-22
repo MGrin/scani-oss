@@ -48,6 +48,12 @@ export interface PeekSection {
 export interface PeekSpec {
   title: string;
   subtitle?: string;
+  /**
+   * One line under the title that the record needs read before anything
+   * else, e.g. why its connection stopped (SC-1733). A reader who opens the
+   * sheet from a link never saw the row's badge.
+   */
+  notice?: string;
   /** Favicon or avatar, next to the title. */
   leading?: ReactNode;
   /** The one figure the record is about. */

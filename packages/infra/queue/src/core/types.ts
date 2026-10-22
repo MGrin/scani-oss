@@ -35,7 +35,8 @@ export type LifecycleEvent =
       jobId: string;
       userId: string;
       jobName: string;
-      progress: number;
+      /** Absent on a status report: a phase is not a figure (SC-1715). */
+      progress?: number;
       statusMessage?: string;
     }
   | { type: 'completed'; jobId: string; userId: string; jobName: string; result: unknown }

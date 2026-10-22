@@ -41,8 +41,8 @@ import { Container, Service } from 'typedi';
 import { DEFAULT_DLQ_NAME, DEFAULT_QUEUE_NAME } from '../core/default-names';
 import { isUserJobDescriptor } from '../core/job-descriptor';
 import { jobDeathReason } from '../core/source-unavailable';
-import { userFacingMessage } from '../core/user-facing';
 import { interruptIdleWait } from '../wake/worker-wake';
+import { ownerReason } from './failure-explainer';
 import { LIFECYCLE_MIRROR, type LifecycleMirror } from './lifecycle-mirror';
 import type { ScheduledJobGroupProcessor } from './scheduled-job-group';
 import type { ScheduledJobProcessor } from './scheduled-job-processor';
@@ -419,7 +419,7 @@ export class WorkerClient {
         // (SC-551). It has to be read again rather than reused from the
         // processor's own catch: a payload that fails validation throws before
         // any other lifecycle event exists, and this is the only write it gets.
-        userFacingError: userFacingMessage(err),
+        userFacingError: ownerReason(err),
         attemptsMade: job.attemptsMade,
         attemptsAllowed: (job.opts.attempts as number | undefined) ?? 1,
         reason: jobDeathReason(err, unrecoverable),

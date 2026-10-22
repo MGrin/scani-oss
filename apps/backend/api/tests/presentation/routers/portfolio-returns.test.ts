@@ -3,6 +3,7 @@ import type * as schema from '@scani/db/schema';
 import { ReturnsLastCompleteRepository } from '@scani/domain/repositories';
 import {
   BenchmarkReturnService,
+  ReturnsLastCompleteService,
   type ReturnsRequest,
   ReturnsService,
 } from '@scani/domain/services';
@@ -78,6 +79,8 @@ Container.set(ReturnsLastCompleteRepository, {
     stored.set(storeKey(row.userId, row.scopeKey, row.windowKey), row);
   },
 } as unknown as ReturnsLastCompleteRepository);
+// Built after the fake store, so it reads that rather than one an earlier file made.
+Container.set(ReturnsLastCompleteService, new ReturnsLastCompleteService());
 
 /** Every `hasHistory` the router issued, in call order. */
 const historyAsked: ReturnsRequest[] = [];

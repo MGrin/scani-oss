@@ -5,6 +5,7 @@ import i18n from 'i18next';
 import {
   compareDocuments,
   type DocumentRow,
+  documentAccountOptions,
   documentIcon,
   documentPurposeLabel,
   documentPurposeOptions,
@@ -28,9 +29,28 @@ function file(overrides: Partial<DocumentRow> = {}): DocumentRow {
     createdAt: '2026-08-10T09:00:00.000Z',
     extractionCount: 2,
     downloadable: true,
+    accounts: [],
     ...overrides,
   };
 }
+
+// SC-1656: the Files account filter offers the accounts a file was read into.
+describe('documentAccountOptions', () => {
+  test('only the accounts present, each once, sorted by name', () => {
+    const current = { id: 'a-1', name: 'Current' };
+    const savings = { id: 'a-2', name: 'Savings' };
+    expect(
+      documentAccountOptions([
+        file({ id: 'd-1', accounts: [savings, current] }),
+        file({ id: 'd-2', accounts: [savings] }),
+        file({ id: 'd-3', accounts: [] }),
+      ])
+    ).toEqual([
+      { value: 'a-1', label: 'Current' },
+      { value: 'a-2', label: 'Savings' },
+    ]);
+  });
+});
 
 describe('extractionOutcome', () => {
   /**

@@ -23,6 +23,14 @@ export class ExpiredCredentialsError extends Error {
  * Service for managing user integration credentials with encryption
  * Handles OAuth tokens, API keys, and other sensitive credentials
  */
+// A recorded refusal is about the key that was refused. `syncBlockedUntil` is
+// left alone: a provider's lockout window can outlive the key (SC-279).
+const NEW_KEY_CLEARS_REFUSAL = {
+  syncRefusalKind: null,
+  syncLastError: null,
+  syncFailureCount: 0,
+} as const;
+
 @Service()
 export class IntegrationCredentialsService extends BaseService {
   private readonly credentialsRepository = Container.get(UserIntegrationCredentialsRepository);
@@ -151,6 +159,7 @@ export class IntegrationCredentialsService extends BaseService {
           importJobId: null,
           importEnqueuedAt: null,
           importLastError: null,
+          ...NEW_KEY_CLEARS_REFUSAL,
         });
         this.assertExists(updated, 'Failed to update credentials');
         this.logDebug('Credentials updated successfully', { credentialsId: updated.id });
@@ -282,6 +291,7 @@ export class IntegrationCredentialsService extends BaseService {
       const updated = await this.credentialsRepository.update(existing.id, {
         encryptedCredentials: encrypted,
         lastUsedAt: new Date(),
+        ...NEW_KEY_CLEARS_REFUSAL,
       });
       this.assertExists(updated, 'Failed to update credentials');
 

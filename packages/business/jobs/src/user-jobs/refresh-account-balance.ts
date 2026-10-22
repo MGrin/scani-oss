@@ -1,5 +1,6 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 
 // Per-account balance refresh, queued by the user clicking "Refresh
@@ -25,8 +26,6 @@ const refreshAccountBalanceSchema: z.ZodType<RefreshAccountBalanceJob> = z.objec
   accountId: z.string().min(1),
 });
 
-const JOB_ID_SEP = '_';
-
 export const REFRESH_ACCOUNT_BALANCE: UserJobDescriptor<RefreshAccountBalanceJob> = {
   name: JOB_NAMES.refreshAccountBalance,
   schema: refreshAccountBalanceSchema,
@@ -48,6 +47,12 @@ export const REFRESH_ACCOUNT_BALANCE: UserJobDescriptor<RefreshAccountBalanceJob
   // `BullMqEnqueueService` evicts a finished namesake before adding;
   // read `evictFinishedNamesake` there before changing this id or
   // `removeOnComplete` / `removeOnFail`.
-  computeJobId: (d) => [JOB_NAMES.refreshAccountBalance, d.userId, d.accountId].join(JOB_ID_SEP),
-  summarizePayload: (d) => ({ holdingId: d.holdingId, accountId: d.accountId }),
+  computeJobId: (d) => jobIdOf(JOB_NAMES.refreshAccountBalance, d.userId, d.accountId),
+  // `requestId` is the app-open that queued this, when one did: the Jobs page
+  // folds every refresh sharing it into one row (SC-1724).
+  summarizePayload: (d) => ({
+    holdingId: d.holdingId,
+    accountId: d.accountId,
+    requestId: d.requestId,
+  }),
 };

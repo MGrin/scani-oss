@@ -1,5 +1,10 @@
 import { UserJobRepository } from '@scani/domain/repositories';
-import { InvalidBaseCurrencyError, TokenService, UserService } from '@scani/domain/services';
+import {
+  AIRouter,
+  InvalidBaseCurrencyError,
+  TokenService,
+  UserService,
+} from '@scani/domain/services';
 import {
   APP_OPEN_REFRESH,
   PORTFOLIO_HISTORY_BACKFILL,
@@ -210,6 +215,29 @@ export const usersRouter = router({
         requestId: input.requestId,
       });
       return { queued: true };
+    }),
+
+  /**
+   * AI category suggestions (SC-1695): off until the person turns them on.
+   * `available` says whether this instance has an AI provider for them.
+   */
+  getAiCategories: protectedProcedure
+    .output(z.object({ enabled: z.boolean(), available: z.boolean() }))
+    .query(async ({ ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      return {
+        enabled: dbUser.aiCategoriesAt != null,
+        available: (await Container.get(AIRouter).getAvailability()).completion,
+      };
+    }),
+
+  setAiCategories: protectedProcedure
+    .input(strictInput(z.object({ enabled: z.boolean() })))
+    .output(z.object({ enabled: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      const { dbUser } = await requireAuth(ctx);
+      await Container.get(UserService).setAiCategories(dbUser.id, input.enabled);
+      return { enabled: input.enabled };
     }),
 
   /**

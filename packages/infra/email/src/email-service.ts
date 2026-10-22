@@ -138,6 +138,7 @@ export abstract class EmailService {
         subject: input.content.subject,
         text: input.content.text,
         html: input.content.html,
+        ...(input.content.headers ? { headers: input.content.headers } : {}),
       },
       signal
     );

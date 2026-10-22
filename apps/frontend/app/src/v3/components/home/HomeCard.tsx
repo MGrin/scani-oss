@@ -183,15 +183,24 @@ function HomeTile({
     >
       <Block className="flex h-full min-h-24 flex-col gap-1 p-3 transition-colors duration-fast ease-emphasized hover:bg-surface-hover">
         <span className="text-label text-muted-foreground">{title}</span>
+        {/* One figure line and one caption line in every state, so a tile
+            never changes height as it fills in and pushes the grid (SC-1742). */}
         {state.kind === 'loading' ? (
-          showSkeleton ? (
-            <>
-              <Skeleton aria-hidden="true" className="h-6 w-24" />
-              <Skeleton aria-hidden="true" className="h-3 w-28" />
-            </>
-          ) : null
+          <>
+            <div className="flex h-[1lh] items-center text-title">
+              {showSkeleton ? <Skeleton aria-hidden="true" className="h-6 w-24" /> : null}
+            </div>
+            <div className="flex h-[1lh] items-center text-caption">
+              {showSkeleton ? <Skeleton aria-hidden="true" className="h-3 w-28" /> : null}
+            </div>
+          </>
         ) : state.kind === 'error' ? (
-          <span className="text-caption text-loss">{t('v3.home.card.tileFailed')}</span>
+          <>
+            <div className="h-[1lh] text-title" />
+            <span className="h-[1lh] truncate text-caption text-loss">
+              {t('v3.home.card.tileFailed')}
+            </span>
+          </>
         ) : (
           <TileFigure
             render={tile}
@@ -220,15 +229,13 @@ function TileFigure({
   const { figure, caption } = render();
   return (
     <>
-      <div className="text-title tabular-nums">
+      <div className="h-[1lh] truncate text-title tabular-nums">
         <MaskedFigure hidden={hidden}>{figure}</MaskedFigure>
       </div>
-      {asOf !== null || caption ? (
-        <span className="truncate text-caption text-muted-foreground">
-          {/* Whole, because captions mix money with counts and names. */}
-          {asOf ?? <MaskedFigure hidden={hidden}>{caption}</MaskedFigure>}
-        </span>
-      ) : null}
+      <span className="h-[1lh] truncate text-caption text-muted-foreground">
+        {/* Whole, because captions mix money with counts and names. */}
+        {asOf ?? (caption ? <MaskedFigure hidden={hidden}>{caption}</MaskedFigure> : null)}
+      </span>
     </>
   );
 }

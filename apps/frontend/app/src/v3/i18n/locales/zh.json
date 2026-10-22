@@ -131,7 +131,8 @@
         "empty_other": "未来 {{count}} 天内没有到期项。",
         "addPayment": "添加一笔付款",
         "incomeExpected_other": "未来 {{count}} 天的预计收入",
-        "dueNext_other": "{{count}} 笔待付 · 下一笔{{when}}"
+        "dueNext_other": "{{count}} 笔待付 · 下一笔{{when}}",
+        "tileEmpty": "近期无到期账单"
       },
       "metric": {
         "netWorth": "净资产",
@@ -1363,7 +1364,8 @@
       "backup": {
         "title": "备份",
         "intro": "将账户保存到一个文件中：所有账户、持仓、交易和余额读数，以及你的设置和规则。",
-        "notIncluded": "暂不包含：上传的文档。与交易所和银行的连接始终不包含：它们是凭证，而非记录。",
+        "notIncluded": "与交易所和银行的连接始终不包含：它们是凭证，而非记录。",
+        "filesLeftOut": "未包含在此备份中的上传文件数：{{files}}。若包含它们，备份将超过恢复所能接受的 {{limit}}。",
         "last": "上次备份 {{date}} · {{size}}",
         "make": "创建备份",
         "making": "正在创建备份…",
@@ -1692,6 +1694,13 @@
         "confirming": "正在确认…",
         "blockerCode": "输入 6 位验证码",
         "passkeyFailed": "此设备无法保存通行密钥。"
+      },
+      "aiCategories": {
+        "title": "AI 分类建议",
+        "label": "使用 AI 建议分类",
+        "sent": "开启后，每个收付款方的描述、名称、方向（收入或支出）和币种会在去掉所有数字后发送给 AI 服务商。金额、日期、卡号和账户名称永远不会发送。建议会在一小时内出现，并标记为“AI 建议”。",
+        "unavailable": "此实例没有可用于建议的 AI 服务商。",
+        "saving": "正在保存 AI 建议设置"
       }
     },
     "feedback": {
@@ -2223,7 +2232,7 @@
         },
         "exchange": {
           "title": "交易所或券商登录",
-          "description": "只读 API 密钥，静态加密存储。"
+          "description": "Scani 仅使用你添加的密钥读取数据，并对其进行静态加密存储。"
         },
         "manual": {
           "title": "直接填写数字",
@@ -2253,7 +2262,7 @@
         },
         "statement": {
           "title": "上传一份对账单文件",
-          "description": "来自银行或券商的 CSV、TSV、OFX 或 QIF 导出文件。我们会立即导入其中的持仓和交易，然后向你展示新增了哪些内容。"
+          "description": "来自银行或券商的 CSV、TSV、OFX、QIF、MT940 或 CAMT.053 导出文件。我们会立即导入其中的持仓和交易，然后向你展示新增了哪些内容。"
         },
         "either": {
           "title": "上传一个文件",
@@ -2262,7 +2271,7 @@
         "whereItBelongs": "它属于哪里"
       },
       "formats": {
-        "import": "PNG、JPG、WEBP、PDF、CSV、TSV、OFX 或 QIF",
+        "import": "PNG、JPG、WEBP、PDF、CSV、TSV、XLSX、XLS、OFX、QIF、MT940 或 CAMT.053",
         "invoice": "PDF、PNG、JPG 或 WEBP"
       },
       "stage": {
@@ -2418,18 +2427,31 @@
       "integration": {
         "title": "连接一项服务",
         "subtitle": "一组只读密钥，静态加密存储。",
-        "listSubtitle": "只读 API 密钥，静态加密存储。余额每小时同步一次。再次连接同一项服务会替换它的密钥。",
+        "listSubtitle": "Scani 仅使用你添加的密钥读取数据，并对其进行静态加密存储。余额每小时同步一次。再次连接同一项服务会替换它的密钥。",
         "allServices": "全部服务",
         "thisService": "这项服务",
         "notFoundTitle": "不是我们支持的",
         "notFoundBody": "Scani 没有叫这个名字的集成。它可能已改名，或者链接已经过期。",
         "connectNamed": "连接 {{name}}",
         "permissions": "Scani 只需要只读权限。密钥会静态加密存储，且绝不会离开我们的工作节点。",
+        "permissionsOnYourServer": "Scani 仅使用此密钥读取数据。密钥会静态加密存储，并保留在运行 Scani 的服务器上。",
+        "permissionsOnYourServerPlural": "Scani 仅使用这些凭据读取数据。凭据会静态加密存储，并保留在运行 Scani 的服务器上。",
+        "permissionsOnYourServerToken": "Scani 仅使用此令牌读取数据。令牌会静态加密存储，并保留在运行 Scani 的服务器上。",
         "whereToGet": "在哪里获取",
+        "whereToGetOne": "在哪里获取",
         "credentials": "凭据",
         "ownDocs": "{{name}} 的官方文档",
         "unverifiedTitle": "无法校验你的 {{name}} 密钥",
-        "unverifiedDetail": "{{name}} 没有响应，因此我们无法确定密钥是否正确。没有保存任何内容——请过一分钟再试。"
+        "unverifiedDetail": "{{name}} 没有响应，因此我们无法确定密钥是否正确。没有保存任何内容——请过一分钟再试。",
+        "selfHostedOnly": "仅限自托管",
+        "selfHostedOnlyTitle": "可在自托管的 Scani 中使用",
+        "selfHostedOnlyBody": "{{reason}}请在你自己的服务器上运行 Scani 来连接 {{name}}，或改为上传对账单文件。",
+        "selfHostedOnlyBodyExport": "{{reason}}请从 {{name}} 导出 {{formats}} 格式的对账单并在此上传，或在你自己的服务器上运行 Scani 来连接 {{name}}。",
+        "selfHostedOnlyReasonBunq": "{{name}} 只允许在你自己运行的软件中使用其个人 API 密钥，因此托管版 Scani 无法连接它。",
+        "selfHostedOnlyReasonFio": "{{name}} 要求你对他人使用你的令牌所造成的一切后果负责，因此托管版 Scani 不接收该令牌。",
+        "selfHostedOnlyReasonInvestec": "{{name}} 仅为你本人或你的企业签发这些凭据，因此托管版 Scani 无法连接它们。",
+        "selfHostedOnlyReasonOther": "{{name}} 只能在自托管的 Scani 中连接。",
+        "keyCanMoveMoney": "{{name}} 的 API 密钥也能付款：{{name}} 不提供只读密钥。Scani 只用它读取数据，并加密保存。"
       },
       "demoNote": "在这里输入的内容不会保存——这是演示。",
       "backChoices": "返回选项",
@@ -2560,13 +2582,21 @@
         "unknownInstitution": "未知机构",
         "unknownType": "未知类型",
         "neverSynced": "从未——这个账户由手工维护",
+        "neverSyncedConnected": "从未 — 此连接尚未同步",
         "valueByAccount": "按账户划分的价值",
         "byHand": "手工维护",
+        "notSyncedYet": "尚未同步",
         "lastSyncOverdue": "{{when}} · 已逾期",
         "sublabel_other": "{{institution}} · {{count}} 个持仓",
         "syncOverdue": "同步已逾期",
-        "keyRejected": "密钥被拒绝",
+        "keyRejected": "需要重新连接",
         "keyRejectedReconnect": "密钥被拒绝 — 重新连接",
+        "tokenExpired": "令牌已过期",
+        "keyExpired": "密钥已过期",
+        "addNewToken": "添加新令牌",
+        "addNewKey": "添加新密钥",
+        "tokenStoppedNotice": "{{name}} 已不再接受此令牌。{{name}} 的令牌最长有效 {{days}} 天。",
+        "keyStoppedNotice": "{{name}} 已不再接受此密钥。{{name}} 的密钥最长有效 {{days}} 天。",
         "viewHoldings": "查看持仓",
         "assignGroups": "分配分组",
         "pageTitle": "账户",
@@ -2577,6 +2607,11 @@
         "balancesAsOf": "余额截至",
         "groups": "分组",
         "bulkDeleteConsequence_other": "{{names}} 会被移除，其中的每一笔持仓及其交易历史也会一并删除。此操作无法撤销。",
+        "deleteAction": {
+          "trigger": "删除",
+          "commit": "删除 {{name}}",
+          "consequence": "{{name}} 及其中的所有持仓将被删除。它的价值会从净资产图表过去的每一天中移除，已实现收益也会随之移除。此操作无法撤销。"
+        },
         "toast": {
           "deleted": "账户已成功删除",
           "deletingContext": "删除账户失败",
@@ -2885,7 +2920,8 @@
         "backup": "备份",
         "restore": "备份恢复",
         "budgetAppImport": "预算应用导入",
-        "budgetAppUndo": "撤销预算应用导入"
+        "budgetAppUndo": "撤销预算应用导入",
+        "accountRefresh": "账户刷新"
       },
       "review": {
         "title": "核对提取到的持仓",
@@ -3089,7 +3125,7 @@
           "statementClose": "对账单期末",
           "noClosingBalance": "没有期末余额",
           "balanceUnknown": "余额未知",
-          "fromRows": "根据这些记录计算。如果账户之前已有资金，请设置实际余额",
+          "fromRows": "余额根据这些记录计算。如果账户之前已有资金，请设置实际余额",
           "setBalance": "设置余额"
         },
         "warningsTitle_other": "{{count}} 条警告",
@@ -3098,6 +3134,7 @@
         "currency": {
           "title": "这份对账单使用的是哪种货币？",
           "body_other": "我们从这个文件中读到了 {{count}} 笔交易，但它没有注明货币，也无法自动识别。目前还没有导入任何内容。",
+          "bodySuggested_other": "我们从这个文件中读到了 {{count}} 笔交易。文件中提到了 {{currency}}，因此下方已选中 {{currency}}。请在导入前确认。目前还没有导入任何内容。",
           "preview": "{{total}} 中的 {{shown}}",
           "noDescription": "没有描述",
           "fieldLabel": "对账单货币",
@@ -3114,7 +3151,7 @@
           "monthFirst": "月在前 — 12/31"
         },
         "columns": {
-          "title": "匹配 CSV 列",
+          "title": "匹配文件列",
           "body": "选择文件中的列。尚未导入任何数据。请选择带正负号的金额列，或分别选择收入与支出列。",
           "date": "日期",
           "description": "描述",
@@ -3169,7 +3206,8 @@
         "unrecoverable": {
           "label": "已失败——不会重试",
           "sentence": "它失败的原因不是再试一次能解决的，而且没有记录下任何我们可以展示给你的内容。原样重新运行会以同样的方式失败。",
-          "sentenceWithDetail": "它失败的原因不是再试一次能解决的。请查看下面的详情，更正后重新开始。"
+          "sentenceWithDetail": "它失败的原因不是再试一次能解决的。请查看下面的详情，更正后重新开始。",
+          "sentenceWithFileDetail": "这个文件无法按原样导入，再试一次也不会改变结果。"
         },
         "sourceUnavailable": {
           "label": "已失败——请稍后重试",
@@ -3194,6 +3232,9 @@
         "settling": {
           "label": "已失败",
           "sentence": "上一次尝试失败。正在检查是否还有为它排队的尝试。"
+        },
+        "unexplained": {
+          "sentence": "它因意外错误而停止，因此没有可以展示给你的原因。详细信息已为 Scani 团队保留。"
         }
       },
       "budgetApp": {
@@ -3210,6 +3251,13 @@
         "rowsRemoved": "删除的行",
         "accountsRemoved": "删除的账户",
         "accountsKept_other": "保留了导入新建的 {{count}} 个账户：此后有其他记录写入。"
+      },
+      "burst": {
+        "refreshing_other": "正在刷新 {{count}} 个账户",
+        "refreshed_other": "已刷新 {{count}} 个账户",
+        "progress": "已完成 {{done}}/{{total}}",
+        "failed_other": "{{count}} 个失败",
+        "accountsHeading": "已刷新的账户"
       }
     },
     "membership": {
@@ -3367,10 +3415,17 @@
         "chart": "过去一年的家庭净资产",
         "allocation": "配置",
         "accounts": "共享账户",
-        "accountOwner": "{{name}} · {{owner}}",
         "you": "你",
         "trackedTwice": "你们都在记录 {{name}}：请取消共享其中一份",
-        "link": "家庭"
+        "link": "家庭",
+        "members": "成员",
+        "manage": "管理",
+        "invited": "已邀请",
+        "memberYou": "{{name}}（你）",
+        "memberShares_other": "{{role}} · 共享 {{count}} 个账户",
+        "memberSharesNothing": "{{role}} · 尚未共享任何账户",
+        "accountSublabel": "{{owner}} · {{institution}}",
+        "shareAccounts": "共享账户"
       }
     },
     "budgetApp": {
@@ -3488,6 +3543,8 @@
       "auto": {
         "marker": "自动设置",
         "reasonRule": "与你之前为 {{payee}} 选的类别一致",
+        "reasonAi": "AI 建议",
+        "reasonKind": "根据交易类型设置",
         "keep": "保留",
         "kept": "已保留类别",
         "spread_other": "也已应用到 {{count}} 笔类似交易。"
@@ -3597,6 +3654,12 @@
         "exempt": "免税保护",
         "advantaged": "优惠"
       }
+    },
+    "statements": {
+      "fileNotKept": "文件未保留",
+      "gaps": "{{months}}没有对账单。",
+      "noGaps": "自第一份对账单起，每个月都有对账单。",
+      "title": "对账单"
     }
   }
 }

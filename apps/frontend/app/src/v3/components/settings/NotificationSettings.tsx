@@ -3,7 +3,7 @@ import { Button } from '@scani/ui/ui/button';
 import { showError } from '@scani/ui/ui/use-toast';
 import { Block } from '@scani/ui/v3/components/Block';
 import { Bell, BellOff, Loader2, Send } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import {
@@ -13,7 +13,7 @@ import {
   pushTestLines,
   urlBase64ToUint8Array,
 } from '../../lib/push';
-import { readLocalPushEndpoint } from '../../lib/push-local';
+import { useLocalPushEndpoint } from '../../lib/push-local';
 
 /**
  * Turn the payment-due reminder on for THIS device (SC-226).
@@ -48,7 +48,10 @@ export function NotificationSettings() {
   const unsubscribe = trpc.push.unsubscribe.useMutation();
   const sendTest = trpc.push.test.useMutation();
 
-  const [permission, setPermission] = useState<NotificationPermission | null>(null);
+  // What THIS browser allows. Synchronous, so it is known on the first frame.
+  const [permission, setPermission] = useState<NotificationPermission | null>(() =>
+    typeof Notification === 'undefined' ? null : Notification.permission
+  );
   /**
    * THIS browser's own endpoint, not merely whether it has one.
    *
@@ -56,21 +59,10 @@ export function NotificationSettings() {
    * "did it arrive" is the one for the device in the reader's hand — which
    * needs the endpoint to identify, not a boolean.
    */
-  const [localEndpoint, setLocalEndpoint] = useState<string | null>(null);
+  const { endpoint, set: setLocalEndpoint } = useLocalPushEndpoint();
+  const localEndpoint = endpoint ?? null;
   const [busy, setBusy] = useState(false);
   const [testing, setTesting] = useState(false);
-
-  // What THIS browser currently holds; until it answers the control stays off.
-  useEffect(() => {
-    setPermission(typeof Notification === 'undefined' ? null : Notification.permission);
-    let cancelled = false;
-    readLocalPushEndpoint().then((endpoint) => {
-      if (!cancelled) setLocalEndpoint(endpoint);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   const hasLocalSubscription = localEndpoint !== null;
 
@@ -115,7 +107,7 @@ export function NotificationSettings() {
       throw new Error(t('v3.settings.notifications.serverUnconfigured'));
     }
     setLocalEndpoint(subscription.endpoint);
-  }, [keyQuery.data?.publicKey, subscribe, t]);
+  }, [keyQuery.data?.publicKey, subscribe, t, setLocalEndpoint]);
 
   const disable = useCallback(async () => {
     const registration = await navigator.serviceWorker.ready;
@@ -127,7 +119,7 @@ export function NotificationSettings() {
       await subscription.unsubscribe();
     }
     setLocalEndpoint(null);
-  }, [unsubscribe]);
+  }, [unsubscribe, setLocalEndpoint]);
 
   const onToggle = useCallback(async () => {
     setBusy(true);

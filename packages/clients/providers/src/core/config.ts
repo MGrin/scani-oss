@@ -59,6 +59,9 @@ const envSchema = z.object({
   SCANI_TESTNET_COINBASE_BASE_URL: z.string().optional(),
   SCANI_TESTNET_GEMINI_BASE_URL: z.string().optional(),
   SCANI_TESTNET_WISE_BASE_URL: z.string().optional(),
+  SCANI_TESTNET_BUNQ_BASE_URL: z.string().optional(),
+  SCANI_TESTNET_INVESTEC_BASE_URL: z.string().optional(),
+  SCANI_TESTNET_FIO_BASE_URL: z.string().optional(),
 });
 
 export type ProvidersConfig = z.infer<typeof envSchema>;

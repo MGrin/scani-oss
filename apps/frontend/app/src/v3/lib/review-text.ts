@@ -5,6 +5,7 @@ import {
   type ReviewAmount,
   type ReviewDetail,
   type ReviewLabel,
+  statementFormatLabel,
 } from '@scani/shared';
 import type { TFunction } from 'i18next';
 import { jobLabelFor } from './job-labels';
@@ -103,14 +104,14 @@ export function reviewDetailText(
       return detail.fileType
         ? texts.t('v3.review.item.needsCurrencyWithType', {
             count: detail.transactions,
-            fileType: detail.fileType.toUpperCase(),
+            fileType: statementFormatLabel(detail.fileType),
           })
         : texts.t('v3.review.item.needsCurrency', { count: detail.transactions });
     case 'datesNeedOrder':
       return detail.fileType
         ? texts.t('v3.review.item.needsDateOrderWithType', {
             count: detail.transactions,
-            fileType: detail.fileType.toUpperCase(),
+            fileType: statementFormatLabel(detail.fileType),
           })
         : texts.t('v3.review.item.needsDateOrder', { count: detail.transactions });
     case 'walletCandidates': {

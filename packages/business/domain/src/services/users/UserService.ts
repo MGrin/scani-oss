@@ -186,6 +186,18 @@ export class UserService extends BaseService {
     }
   }
 
+  /**
+   * AI category suggestions, on or off (SC-1695). On records when the person
+   * consented; off clears it, and their payees stop going to the AI.
+   */
+  async setAiCategories(userId: string, enabled: boolean): Promise<void> {
+    try {
+      await this.userRepository.update(userId, { aiCategoriesAt: enabled ? new Date() : null });
+    } catch (error) {
+      throw this.handleError(error, 'setAiCategories');
+    }
+  }
+
   async reportTimezone(userId: string, timezone: string): Promise<{ changed: boolean }> {
     try {
       const existingUser = await this.userRepository.findById(userId);

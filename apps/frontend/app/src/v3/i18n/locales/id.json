@@ -131,7 +131,8 @@
         "empty_other": "Tidak ada yang jatuh tempo dalam {{count}} hari ke depan.",
         "addPayment": "Tambahkan pembayaran",
         "incomeExpected_other": "Pemasukan yang diharapkan, {{count}} hari ke depan",
-        "dueNext_other": "{{count}} jatuh tempo · berikutnya {{when}}"
+        "dueNext_other": "{{count}} jatuh tempo · berikutnya {{when}}",
+        "tileEmpty": "Tidak ada tagihan dalam waktu dekat"
       },
       "metric": {
         "netWorth": "Kekayaan bersih",
@@ -1363,7 +1364,8 @@
       "backup": {
         "title": "Cadangan",
         "intro": "Akun Anda dalam satu file: setiap akun, aset, transaksi, dan pembacaan saldo, beserta pengaturan dan aturan Anda.",
-        "notIncluded": "Belum termasuk: dokumen yang diunggah. Koneksi ke bursa dan bank tidak pernah termasuk: itu kredensial, bukan catatan.",
+        "notIncluded": "Koneksi ke bursa dan bank tidak pernah termasuk: itu kredensial, bukan catatan.",
+        "filesLeftOut": "File unggahan yang tidak ada di cadangan ini: {{files}}. Jika disertakan, cadangan akan melebihi {{limit}}, batas yang diterima pemulihan.",
         "last": "Cadangan terakhir {{date}} · {{size}}",
         "make": "Buat cadangan",
         "making": "Membuat cadangan Anda…",
@@ -1692,6 +1694,13 @@
         "confirming": "Mengonfirmasi…",
         "blockerCode": "masukkan kode 6 digit",
         "passkeyFailed": "Perangkat ini tidak dapat menyimpan passkey."
+      },
+      "aiCategories": {
+        "title": "Saran kategori dengan AI",
+        "label": "Sarankan kategori dengan AI",
+        "sent": "Jika aktif, deskripsi, nama, arah (masuk atau keluar), dan mata uang setiap penerima dikirim ke penyedia AI, tanpa angka apa pun. Jumlah, tanggal, nomor kartu, dan nama akun tidak pernah dikirim. Saran muncul dalam satu jam, ditandai “Disarankan oleh AI”.",
+        "unavailable": "Instans ini tidak memiliki penyedia AI untuk saran.",
+        "saving": "Menyimpan pengaturan saran AI"
       }
     },
     "feedback": {
@@ -2223,7 +2232,7 @@
         },
         "exchange": {
           "title": "Login bursa atau pialang",
-          "description": "Kunci API hanya-baca, terenkripsi saat disimpan."
+          "description": "Scani hanya membaca dengan kunci yang Anda tambahkan, dan mengenkripsinya saat disimpan."
         },
         "manual": {
           "title": "Angkanya langsung",
@@ -2253,7 +2262,7 @@
         },
         "statement": {
           "title": "Unggah berkas rekening koran",
-          "description": "Ekspor CSV, TSV, OFX, atau QIF dari bank atau pialang. Kami langsung mengimpor kepemilikan dan transaksinya, lalu menunjukkan apa saja yang ditambahkan."
+          "description": "Ekspor CSV, TSV, OFX, QIF, MT940, atau CAMT.053 dari bank atau pialang. Kami langsung mengimpor kepemilikan dan transaksinya, lalu menunjukkan apa saja yang ditambahkan."
         },
         "either": {
           "title": "Unggah sebuah berkas",
@@ -2262,7 +2271,7 @@
         "whereItBelongs": "Di mana tempatnya"
       },
       "formats": {
-        "import": "PNG, JPG, WEBP, PDF, CSV, TSV, OFX, atau QIF",
+        "import": "PNG, JPG, WEBP, PDF, CSV, TSV, XLSX, XLS, OFX, QIF, MT940, atau CAMT.053",
         "invoice": "PDF, PNG, JPG, atau WEBP"
       },
       "stage": {
@@ -2418,18 +2427,31 @@
       "integration": {
         "title": "Hubungkan sebuah layanan",
         "subtitle": "Satu set kunci hanya-baca, terenkripsi saat disimpan.",
-        "listSubtitle": "Kunci API hanya-baca, terenkripsi saat disimpan. Saldo disinkronkan setiap jam. Menghubungkan layanan yang sama lagi akan mengganti kuncinya.",
+        "listSubtitle": "Scani hanya membaca dengan kunci yang Anda tambahkan, dan mengenkripsinya saat disimpan. Saldo disinkronkan setiap jam. Menghubungkan layanan yang sama lagi akan mengganti kuncinya.",
         "allServices": "Semua layanan",
         "thisService": "layanan ini",
         "notFoundTitle": "Bukan milik kami",
         "notFoundBody": "Scani tidak punya integrasi dengan nama itu. Mungkin sudah diganti nama, atau tautannya sudah tidak berlaku.",
         "connectNamed": "Hubungkan {{name}}",
         "permissions": "Izin hanya-baca sudah cukup bagi Scani. Kunci dienkripsi saat disimpan dan tidak pernah keluar dari worker kami.",
+        "permissionsOnYourServer": "Scani hanya membaca dengan kunci ini. Kunci dienkripsi saat disimpan dan tetap berada di server tempat Scani berjalan.",
+        "permissionsOnYourServerPlural": "Scani hanya membaca dengan kredensial ini. Kredensial dienkripsi saat disimpan dan tetap berada di server tempat Scani berjalan.",
+        "permissionsOnYourServerToken": "Scani hanya membaca dengan token ini. Token dienkripsi saat disimpan dan tetap berada di server tempat Scani berjalan.",
         "whereToGet": "Di mana mendapatkannya",
+        "whereToGetOne": "Di mana mendapatkannya",
         "credentials": "Kredensial",
         "ownDocs": "dokumentasi resmi {{name}}",
         "unverifiedTitle": "Tidak dapat memeriksa kunci {{name}} Anda",
-        "unverifiedDetail": "{{name}} tidak menjawab, jadi kami tidak bisa memastikan apakah kuncinya benar. Tidak ada yang tersimpan — coba lagi sebentar lagi."
+        "unverifiedDetail": "{{name}} tidak menjawab, jadi kami tidak bisa memastikan apakah kuncinya benar. Tidak ada yang tersimpan — coba lagi sebentar lagi.",
+        "selfHostedOnly": "Hanya self-hosted",
+        "selfHostedOnlyTitle": "Tersedia di Scani self-hosted",
+        "selfHostedOnlyBody": "{{reason}} Jalankan Scani di server Anda sendiri untuk menghubungkan {{name}}, atau unggah file laporan rekening.",
+        "selfHostedOnlyBodyExport": "{{reason}} Ekspor laporan rekening dari {{name}} dalam format {{formats}} lalu unggah di sini, atau jalankan Scani di server Anda sendiri untuk menghubungkan {{name}}.",
+        "selfHostedOnlyReasonBunq": "{{name}} hanya mengizinkan kunci API pribadinya dipakai di perangkat lunak yang Anda jalankan sendiri, jadi Scani yang di-hosting tidak dapat menghubungkannya.",
+        "selfHostedOnlyReasonFio": "{{name}} menganggap Anda bertanggung jawab atas apa pun yang dilakukan orang lain dengan token Anda, jadi Scani yang di-hosting tidak menerimanya.",
+        "selfHostedOnlyReasonInvestec": "{{name}} menerbitkan kredensial ini hanya untuk Anda atau usaha Anda, jadi Scani yang di-hosting tidak dapat menghubungkannya.",
+        "selfHostedOnlyReasonOther": "{{name}} hanya dapat dihubungkan di Scani self-hosted.",
+        "keyCanMoveMoney": "Kunci API {{name}} juga bisa melakukan pembayaran: {{name}} tidak menyediakan kunci hanya-baca. Scani hanya memakainya untuk membaca dan menyimpannya terenkripsi."
       },
       "demoNote": "Apa pun yang Anda masukkan di sini tidak disimpan — ini demo.",
       "backChoices": "Kembali ke pilihan",
@@ -2560,13 +2582,21 @@
         "unknownInstitution": "Institusi tidak dikenal",
         "unknownType": "Tipe tidak dikenal",
         "neverSynced": "Tidak pernah — akun ini dikelola secara manual",
+        "neverSyncedConnected": "Belum pernah — koneksi ini belum disinkronkan",
         "valueByAccount": "Nilai menurut akun",
         "byHand": "Manual",
+        "notSyncedYet": "Belum disinkronkan",
         "lastSyncOverdue": "{{when}} · terlambat",
         "sublabel_other": "{{institution}} · {{count}} kepemilikan",
         "syncOverdue": "Sinkronisasi terlambat",
-        "keyRejected": "Kunci ditolak",
+        "keyRejected": "Perlu dihubungkan ulang",
         "keyRejectedReconnect": "Kunci ditolak — Hubungkan ulang",
+        "tokenExpired": "Token kedaluwarsa",
+        "keyExpired": "Kunci kedaluwarsa",
+        "addNewToken": "Tambahkan token baru",
+        "addNewKey": "Tambahkan kunci baru",
+        "tokenStoppedNotice": "{{name}} tidak lagi menerima token ini. Token {{name}} berlaku paling lama {{days}} hari.",
+        "keyStoppedNotice": "{{name}} tidak lagi menerima kunci ini. Kunci {{name}} berlaku paling lama {{days}} hari.",
         "viewHoldings": "Lihat kepemilikan",
         "assignGroups": "Tetapkan grup",
         "pageTitle": "Akun",
@@ -2577,6 +2607,11 @@
         "balancesAsOf": "Saldo per",
         "groups": "Grup",
         "bulkDeleteConsequence_other": "{{names}} dihapus, dan setiap kepemilikan di dalamnya ikut terhapus, beserta riwayat transaksinya. Tindakan ini tidak dapat dibatalkan.",
+        "deleteAction": {
+          "trigger": "Hapus",
+          "commit": "Hapus {{name}}",
+          "consequence": "{{name}} dihapus, beserta setiap aset di dalamnya. Nilainya hilang dari setiap hari sebelumnya di grafik kekayaan bersih Anda, dan keuntungan yang direalisasikan ikut hilang. Tindakan ini tidak dapat dibatalkan."
+        },
         "toast": {
           "deleted": "Akun berhasil dihapus",
           "deletingContext": "Gagal menghapus akun",
@@ -2885,7 +2920,8 @@
         "backup": "Cadangan",
         "restore": "Pemulihan cadangan",
         "budgetAppImport": "Impor aplikasi anggaran",
-        "budgetAppUndo": "Urungkan impor aplikasi anggaran"
+        "budgetAppUndo": "Urungkan impor aplikasi anggaran",
+        "accountRefresh": "Penyegaran akun"
       },
       "review": {
         "title": "Tinjau kepemilikan yang dibaca",
@@ -3089,7 +3125,7 @@
           "statementClose": "Saldo penutup",
           "noClosingBalance": "Tidak ada saldo penutup",
           "balanceUnknown": "Saldo tidak diketahui",
-          "fromRows": "Dari baris ini. Atur saldo sebenarnya jika sebelumnya sudah ada dana",
+          "fromRows": "Saldo dari baris ini. Atur saldo sebenarnya jika sebelumnya sudah ada dana",
           "setBalance": "Atur saldo"
         },
         "warningsTitle_other": "{{count}} peringatan",
@@ -3098,6 +3134,7 @@
         "currency": {
           "title": "Rekening koran ini dalam mata uang apa?",
           "body_other": "Kami membaca {{count}} transaksi dari berkas ini, tetapi berkasnya tidak menyebutkan mata uang dan tidak ada yang bisa dideteksi. Belum ada yang diimpor.",
+          "bodySuggested_other": "Kami membaca {{count}} transaksi dari berkas ini. Berkas ini menyebutkan {{currency}}, jadi {{currency}} sudah dipilih di bawah. Periksa sebelum mengimpor. Belum ada yang diimpor.",
           "preview": "{{shown}} dari {{total}}",
           "noDescription": "Tanpa deskripsi",
           "fieldLabel": "Mata uang rekening koran",
@@ -3114,7 +3151,7 @@
           "monthFirst": "Bulan dulu — 12/31"
         },
         "columns": {
-          "title": "Cocokkan kolom CSV",
+          "title": "Cocokkan kolom file",
           "body": "Pilih kolom dalam berkas. Belum ada data yang diimpor. Pilih jumlah bertanda atau kolom kredit dan debit terpisah.",
           "date": "Tanggal",
           "description": "Deskripsi",
@@ -3169,7 +3206,8 @@
         "unrecoverable": {
           "label": "Gagal — tidak akan diulang",
           "sentence": "Ini gagal karena alasan yang tidak akan teratasi oleh percobaan lain, dan tidak ada yang tercatat yang bisa kami tunjukkan kepada Anda. Menjalankannya ulang tanpa perubahan akan gagal dengan cara yang sama.",
-          "sentenceWithDetail": "Ini gagal karena alasan yang tidak akan teratasi oleh percobaan lain. Periksa detail di bawah, perbaiki, lalu mulai lagi."
+          "sentenceWithDetail": "Ini gagal karena alasan yang tidak akan teratasi oleh percobaan lain. Periksa detail di bawah, perbaiki, lalu mulai lagi.",
+          "sentenceWithFileDetail": "Berkas ini tidak dapat diimpor apa adanya, dan percobaan lain tidak akan mengubahnya."
         },
         "sourceUnavailable": {
           "label": "Gagal — coba lagi nanti",
@@ -3194,6 +3232,9 @@
         "settling": {
           "label": "Gagal",
           "sentence": "Percobaan terakhir gagal. Sedang memeriksa apakah ada percobaan lain yang masuk antrean untuknya."
+        },
+        "unexplained": {
+          "sentence": "Ini berhenti karena galat yang tidak terduga, jadi tidak ada alasan yang bisa kami tunjukkan. Detailnya disimpan untuk tim Scani."
         }
       },
       "budgetApp": {
@@ -3210,6 +3251,13 @@
         "rowsRemoved": "Baris dihapus",
         "accountsRemoved": "Akun dihapus",
         "accountsKept_other": "{{count}} akun yang dibuka impor tetap disimpan: sejak itu ada hal lain yang menulis ke akun tersebut."
+      },
+      "burst": {
+        "refreshing_other": "Menyegarkan {{count}} akun",
+        "refreshed_other": "{{count}} akun disegarkan",
+        "progress": "{{done}} dari {{total}} selesai",
+        "failed_other": "{{count}} gagal",
+        "accountsHeading": "Akun yang disegarkan"
       }
     },
     "membership": {
@@ -3367,10 +3415,17 @@
         "chart": "Kekayaan bersih rumah tangga setahun terakhir",
         "allocation": "Alokasi",
         "accounts": "Akun yang dibagikan",
-        "accountOwner": "{{name}} · {{owner}}",
         "you": "Anda",
         "trackedTwice": "Kalian berdua mencatat {{name}}: berhenti membagikan satu salinan",
-        "link": "Rumah tangga"
+        "link": "Rumah tangga",
+        "members": "Anggota",
+        "manage": "Kelola",
+        "invited": "Diundang",
+        "memberYou": "{{name}} (Anda)",
+        "memberShares_other": "{{role}} · membagikan {{count}} akun",
+        "memberSharesNothing": "{{role}} · belum membagikan apa pun",
+        "accountSublabel": "{{owner}} · {{institution}}",
+        "shareAccounts": "Bagikan akun"
       }
     },
     "budgetApp": {
@@ -3488,6 +3543,8 @@
       "auto": {
         "marker": "Diatur otomatis",
         "reasonRule": "Sesuai pilihan Anda sebelumnya untuk {{payee}}",
+        "reasonAi": "Disarankan oleh AI",
+        "reasonKind": "Ditetapkan dari jenis transaksi",
         "keep": "Simpan",
         "kept": "Kategori disimpan",
         "spread_other": "Juga diterapkan ke {{count}} transaksi serupa."
@@ -3597,6 +3654,12 @@
         "exempt": "Terlindung",
         "advantaged": "Istimewa"
       }
+    },
+    "statements": {
+      "fileNotKept": "File tidak disimpan",
+      "gaps": "Tidak ada rekening koran untuk {{months}}.",
+      "noGaps": "Setiap bulan sejak rekening koran pertama sudah ada.",
+      "title": "Rekening koran"
     }
   }
 }

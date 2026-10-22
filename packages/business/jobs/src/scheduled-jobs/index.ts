@@ -6,6 +6,7 @@ export { ALERT_SWEEP_SCHEDULE } from './alert-sweep';
 export { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
 export { BACKFILL_COUNTERPARTY_SCHEDULE } from './backfill-counterparty';
 export { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from './backfill-token-identity';
+export { CATEGORIZE_TRANSACTIONS_SCHEDULE } from './categorize-transactions';
 export { DB_BACKUP_SCHEDULE } from './db-backup';
 export { DEMO_RESET_SCHEDULE } from './demo-reset';
 export {
@@ -26,6 +27,7 @@ export {
 } from './groups';
 export { HIDE_CLOSED_HOLDINGS_SCHEDULE } from './hide-closed-holdings';
 export { HISTORICAL_PRICE_BACKFILL_SCHEDULE } from './historical-price-backfill';
+export { HOLDING_CACHE_DUE_SCHEDULE } from './holding-cache-due';
 export {
   HEARTBEAT_DAILY_DEADLINE_UTC_HOUR,
   HEARTBEAT_TOLERANCE_MS,
@@ -55,6 +57,7 @@ import { ALERT_SWEEP_SCHEDULE } from './alert-sweep';
 import { APY_PAYOUTS_SCHEDULE } from './apy-payouts';
 import { BACKFILL_COUNTERPARTY_SCHEDULE } from './backfill-counterparty';
 import { BACKFILL_TOKEN_IDENTITY_SCHEDULE } from './backfill-token-identity';
+import { CATEGORIZE_TRANSACTIONS_SCHEDULE } from './categorize-transactions';
 import { DB_BACKUP_SCHEDULE } from './db-backup';
 import { DLQ_DEPTH_PROBE_SCHEDULE } from './dlq-depth-probe';
 import { ENGINE_SHADOW_SCHEDULE } from './engine-shadow';
@@ -68,6 +71,7 @@ import {
 } from './groups';
 import { HIDE_CLOSED_HOLDINGS_SCHEDULE } from './hide-closed-holdings';
 import { HISTORICAL_PRICE_BACKFILL_SCHEDULE } from './historical-price-backfill';
+import { HOLDING_CACHE_DUE_SCHEDULE } from './holding-cache-due';
 import { JOB_HEARTBEAT_PROBE_SCHEDULE } from './job-heartbeat-probe';
 import { PAYMENT_DUE_REMINDER_SCHEDULE } from './payment-due-reminder';
 import { PAYMENT_HORIZON_ROLL_SCHEDULE } from './payment-horizon-roll';
@@ -107,6 +111,7 @@ export const SCHEDULED_JOB_STEPS: Readonly<Record<string, ScheduledJobStepDescri
       APY_PAYOUTS_SCHEDULE,
       BACKFILL_COUNTERPARTY_SCHEDULE,
       BACKFILL_TOKEN_IDENTITY_SCHEDULE,
+      CATEGORIZE_TRANSACTIONS_SCHEDULE,
       DB_BACKUP_SCHEDULE,
       DLQ_DEPTH_PROBE_SCHEDULE,
       ENGINE_SHADOW_SCHEDULE,
@@ -114,6 +119,7 @@ export const SCHEDULED_JOB_STEPS: Readonly<Record<string, ScheduledJobStepDescri
       EXCHANGE_TRANSACTIONS_SCHEDULE,
       HIDE_CLOSED_HOLDINGS_SCHEDULE,
       HISTORICAL_PRICE_BACKFILL_SCHEDULE,
+      HOLDING_CACHE_DUE_SCHEDULE,
       JOB_HEARTBEAT_PROBE_SCHEDULE,
       PAYMENT_DUE_REMINDER_SCHEDULE,
       PAYMENT_HORIZON_ROLL_SCHEDULE,

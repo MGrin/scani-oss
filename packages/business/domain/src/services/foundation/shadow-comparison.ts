@@ -133,6 +133,30 @@ function restoredBalanceAt(
   );
 }
 
+export interface VerificationCounts {
+  compared: number;
+  disagreeing: number;
+}
+
+/**
+ * Each live verification at or before `asOf` beside the engine's balance at its
+ * own instant (SC-1628). A verification never anchors (D7), so one that
+ * disagrees changes nothing the engine shows; until Reconciliation proposes it,
+ * this count is where it surfaces. One the engine has no balance for is not
+ * compared.
+ */
+export function compareVerifications(evidence: HoldingEvidence, asOf: Date): VerificationCounts {
+  const counts: VerificationCounts = { compared: 0, disagreeing: 0 };
+  for (const o of evidence.observations) {
+    if (o.role !== 'verification' || o.supersededAt !== null || o.at > asOf) continue;
+    const engine = balanceAt(evidence, o.at);
+    if (engine.status !== 'derived') continue;
+    counts.compared += 1;
+    if (!engine.balance.eq(o.amount)) counts.disagreeing += 1;
+  }
+  return counts;
+}
+
 /** Ties at one instant go to the later recorded, then the higher id, whatever the input order. */
 function latestVerification(
   observations: readonly Observation[],

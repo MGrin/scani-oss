@@ -27,7 +27,7 @@ import {
 import { AIUnavailableError } from '@scani/providers/core/errors';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { Container, Service } from 'typedi';
-import { AiSpendBudget } from './AiSpendBudget';
+import { AiSpendBudget, type AiSpendKind } from './AiSpendBudget';
 
 export type ParsedAssetType = 'fiat' | 'crypto' | 'stock';
 
@@ -73,6 +73,8 @@ export interface CompleteTextOptions {
   temperature?: number;
   jsonMode?: boolean;
   fallbackProviders?: boolean;
+  /** Which allowance each attempt spends; parsing's unless named (SC-1695). */
+  spend?: AiSpendKind;
 }
 
 export interface ParseScreenshotOptions {
@@ -254,7 +256,7 @@ export class AIRouter {
     let lastError: Error | null = null;
     for (const provider of providers) {
       if (!provider.completeText || !(await aiAvailability(provider)).completion) continue;
-      await this.budget.reserve(opts.userId, 1);
+      await this.budget.reserve(opts.userId, 1, new Date(), opts.spend);
       try {
         const result = await provider.completeText(prompt, {
           maxTokens: opts.maxTokens,

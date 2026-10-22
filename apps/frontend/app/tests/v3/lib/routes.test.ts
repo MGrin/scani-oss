@@ -76,7 +76,7 @@ describe('the tab bar', () => {
     const paths = V3_TAB_ITEMS.map((item) => item.path);
 
     expect(paths).not.toContain(V3_ROUTES.holdings);
-    expect(V3_DRAWER_PRIMARY.map((item) => item.path)).toContain(V3_ROUTES.holdings);
+    expect(V3_DRAWER_SECONDARY.map((item) => item.path)).toContain(V3_ROUTES.holdings);
   });
 });
 
@@ -90,6 +90,24 @@ describe('the More drawer', () => {
     // AppShell.tsx:71-79. If Review ever falls out of the grid, the hack
     // becomes necessary again and this test is the warning.
     expect(V3_DRAWER_PRIMARY[0]?.path).toBe(V3_ROUTES.review);
+  });
+
+  test('the grid and the list are in the order mgrin set (SC-1712)', () => {
+    expect(V3_DRAWER_PRIMARY.map((item) => item.path)).toEqual([
+      V3_ROUTES.review,
+      V3_ROUTES.household,
+      V3_ROUTES.transactions,
+      V3_ROUTES.vaults,
+      V3_ROUTES.files,
+      V3_ROUTES.settings,
+    ]);
+    expect(V3_DRAWER_SECONDARY.map((item) => item.path)).toEqual([
+      V3_ROUTES.holdings,
+      V3_ROUTES.institutions,
+      V3_ROUTES.groups,
+      V3_ROUTES.tokens,
+      V3_ROUTES.jobs,
+    ]);
   });
 
   test('the grid and the overflow list never offer the same destination twice', () => {
@@ -309,7 +327,7 @@ describe('the ledger is reachable (SC-1652)', () => {
     expect(activity?.items.map((item) => item.path)).toContain(V3_ROUTES.transactions);
   });
 
-  test('the phone drawer lists it too, below the grid, so the grid keeps its six', () => {
-    expect(V3_DRAWER_SECONDARY.map((item) => item.path)).toContain(V3_ROUTES.transactions);
+  test('the phone drawer lists it in the grid, where SC-1712 moved it', () => {
+    expect(V3_DRAWER_PRIMARY.map((item) => item.path)).toContain(V3_ROUTES.transactions);
   });
 });

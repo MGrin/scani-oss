@@ -15,6 +15,7 @@ import {
   Settings,
   Store,
   Tags,
+  Users,
   Wallet,
 } from 'lucide-react';
 
@@ -35,6 +36,7 @@ const ICONS: Record<string, LucideIcon> = {
   Settings,
   Store,
   Tags,
+  Users,
   // lucide's `Vault` is a rounded square with four diagonal spokes running to a
   // centre circle — a safe's dial at 48px, and a boxed ✗ at the 20px a tab or a
   // drawer cell actually draws it, which reads as "delete" on the row that
