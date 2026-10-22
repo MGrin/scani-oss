@@ -32,6 +32,7 @@ import { binanceFactory } from '@scani/providers/providers/binance';
 import { bitcoinFactory } from '@scani/providers/providers/bitcoin';
 import { bitgetFactory } from '@scani/providers/providers/bitget';
 import { bitstampFactory } from '@scani/providers/providers/bitstamp';
+import { bunqFactory } from '@scani/providers/providers/bunq';
 import { bybitFactory } from '@scani/providers/providers/bybit';
 import { chainStubFactory } from '@scani/providers/providers/chain-stub';
 import { coinbaseFactory } from '@scani/providers/providers/coinbase';
@@ -39,11 +40,13 @@ import { coingeckoFactory } from '@scani/providers/providers/coingecko';
 import { defillamaFactory } from '@scani/providers/providers/defillama';
 import { etherscanFactory } from '@scani/providers/providers/etherscan';
 import { finnhubFactory } from '@scani/providers/providers/finnhub';
+import { fioFactory } from '@scani/providers/providers/fio';
 import { frankfurterFactory } from '@scani/providers/providers/frankfurter';
 import { gateFactory } from '@scani/providers/providers/gate';
 import { geminiFactory } from '@scani/providers/providers/gemini';
 import { huobiFactory } from '@scani/providers/providers/huobi';
 import { ibkrFactory } from '@scani/providers/providers/ibkr';
+import { investecFactory } from '@scani/providers/providers/investec';
 import { krakenFactory } from '@scani/providers/providers/kraken';
 import { kucoinFactory } from '@scani/providers/providers/kucoin';
 import { litecoinFactory } from '@scani/providers/providers/litecoin';
@@ -57,6 +60,7 @@ import { yahooFinanceFactory } from '@scani/providers/providers/yahoo-finance';
 import { googleSheetsFactory } from '@scani/providers-google-sheets';
 import {
   assertQueueBindings,
+  FAILURE_EXPLAINER,
   JobScheduler,
   PostgresResourceLock,
   QueueClient,
@@ -76,11 +80,13 @@ import {
 } from '@scani/rate-limiter';
 import { scrubSentryBreadcrumb, scrubSentryEvent } from '@scani/shared';
 
+const transientReport = new PostgresTransientReport();
 initSentry({
   component: 'worker',
   release: env.SENTRY_RELEASE,
   scrubEvent: scrubSentryEvent,
   scrubBreadcrumb: scrubSentryBreadcrumb,
+  adjustEvent: (event) => transientReport.adjust(event),
 });
 
 // Probe the data-provider at boot. The previous version exited on
@@ -110,7 +116,8 @@ import { Container } from 'typedi';
 // Side-effect imports so each processor's @Service decorator runs and
 // the class registers with the typedi Container before WorkerClient
 // pulls them out and registers them.
-import { isPostgresTransientError } from './lib/postgres-transient-error';
+import { ProviderFailureExplainer } from './lib/failure-explainer';
+import { isPostgresTransientError, PostgresTransientReport } from './lib/postgres-transient-error';
 import { startOutboxDispatchLoop } from './outbox/outbox-dispatch-loop';
 import { ActivationNudgeProcessor } from './processors/activation-nudge';
 import { ActivePricingProcessor } from './processors/active-pricing';
@@ -123,6 +130,7 @@ import {
   BudgetAppImportProcessor,
   BudgetAppImportUndoProcessor,
 } from './processors/budget-app-import';
+import { CategorizeTransactionsProcessor } from './processors/categorize-transactions';
 import { CurrencyRateRefreshProcessor } from './processors/currency-rate-refresh';
 import { DbBackupProcessor } from './processors/db-backup';
 import { DemoResetProcessor } from './processors/demo-reset';
@@ -135,6 +143,7 @@ import { ExchangeTransactionsProcessor } from './processors/exchange-transaction
 import { FileImportProcessor } from './processors/file-import';
 import { HideClosedHoldingsProcessor } from './processors/hide-closed-holdings';
 import { HistoricalPriceBackfillProcessor } from './processors/historical-price-backfill';
+import { HoldingCacheDueProcessor } from './processors/holding-cache-due';
 import { HoldingPriceUpdateProcessor } from './processors/holding-price-update';
 import { IngestTransactionsProcessor } from './processors/ingest-transactions';
 import { JobHeartbeatProbeProcessor } from './processors/job-heartbeat-probe';
@@ -181,11 +190,13 @@ function resolveProcessors() {
     Container.get(BackfillCounterpartyProcessor),
     Container.get(HideClosedHoldingsProcessor),
     Container.get(ReconcilePendingCredentialsProcessor),
+    Container.get(HoldingCacheDueProcessor),
     Container.get(ReconcileOrphanedUserJobsProcessor),
     Container.get(DlqDepthProbeProcessor),
     Container.get(DbBackupProcessor),
     Container.get(JobHeartbeatProbeProcessor),
     Container.get(StaleSyncProbeProcessor),
+    Container.get(CategorizeTransactionsProcessor),
     Container.get(SplitHoldingProbeProcessor),
     Container.get(EngineShadowProcessor),
     Container.get(RescoreScamTokensProcessor),
@@ -315,6 +326,9 @@ async function main(): Promise<void> {
           ibkrFactory,
           wiseFactory,
           airwallexFactory,
+          bunqFactory,
+          fioFactory,
+          investecFactory,
         ]),
       ],
     });
@@ -400,7 +414,14 @@ async function main(): Promise<void> {
   // by name from that module, so removing the bare side-effect import would not
   // trip this. It catches the registration being genuinely absent, and it states
   // in code which bindings this process depends on.
-  assertQueueBindings(['enqueue-mirror', 'lifecycle-mirror', 'job-lock', 'heartbeat-writer']);
+  Container.set(FAILURE_EXPLAINER, new ProviderFailureExplainer());
+  assertQueueBindings([
+    'enqueue-mirror',
+    'lifecycle-mirror',
+    'job-lock',
+    'heartbeat-writer',
+    'failure-explainer',
+  ]);
 
   // Consumer side: WorkerClient owns the BullMQ Worker + dispatch table
   // + DLQ push on terminal failure.

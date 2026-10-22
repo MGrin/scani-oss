@@ -8,7 +8,7 @@ import { JOB_NAMES } from '../job-names';
 
 const sundaysOnly = (at: Date) => at.getUTCDay() === 0;
 
-// The four quarter-hour probes and reconcilers. Two minutes past each quarter,
+// The quarter-hour probes and reconcilers. Two minutes past each quarter,
 // so they do not queue behind the :00 syncs (SC-1601); that is inside Neon's
 // 300s suspend timeout, so the database still idles between bursts.
 export const HOUSEKEEPING_SCHEDULE: ScheduledJobGroupDescriptor = {
@@ -19,6 +19,7 @@ export const HOUSEKEEPING_SCHEDULE: ScheduledJobGroupDescriptor = {
     { name: JOB_NAMES.jobHeartbeatProbe },
     { name: JOB_NAMES.reconcileOrphanedUserJobs },
     { name: JOB_NAMES.reconcilePendingCredentials },
+    { name: JOB_NAMES.holdingCacheDue },
   ],
 };
 
@@ -34,6 +35,8 @@ export const HOURLY_SCHEDULE: ScheduledJobGroupDescriptor = {
     { name: JOB_NAMES.exchangeBalances },
     { name: JOB_NAMES.staleSyncProbe },
     { name: JOB_NAMES.paymentDueReminder },
+    // Last: the AI calls are the slowest step, and nothing waits on them.
+    { name: JOB_NAMES.categorizeTransactions },
   ],
 };
 

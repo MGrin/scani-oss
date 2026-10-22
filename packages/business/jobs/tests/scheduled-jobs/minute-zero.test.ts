@@ -30,6 +30,7 @@ describe('the top of the hour', () => {
     expect(stepsOf('housekeeping')?.sort()).toEqual(
       [
         'dlq-depth-probe',
+        'holding-cache-due',
         'job-heartbeat-probe',
         'reconcile-orphaned-user-jobs',
         'reconcile-pending-credentials',

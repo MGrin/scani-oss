@@ -4,11 +4,12 @@
  * edit and transfer does (SC-1557).
  */
 
-import { describe, expect, spyOn, test } from 'bun:test';
+import { describe, expect, setSystemTime, spyOn, test } from 'bun:test';
 import * as schema from '@scani/db/schema';
 import { Decimal } from '@scani/shared';
 import { eq, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
+import { HoldingCacheDueSweep } from '../../../src/services/feeds/HoldingCacheDueSweep';
 import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWriter';
 import { SnapshotWriter } from '../../../src/services/feeds/SnapshotWriter';
 import { PriceHubResolver } from '../../../src/services/pricing/PriceHubResolver';
@@ -634,6 +635,89 @@ describe('HoldingCacheWriter — the engine writes the balance (A5 D-1, D-16)', 
 
       expect(await stored(tx, h.holdingId)).toBe('12.30');
       expect(written.get(h.holdingId)).toBe('12.30');
+    });
+  });
+});
+
+describe('HoldingCacheWriter — evidence dated after now (SC-1633)', () => {
+  const HOUR = 3_600_000;
+
+  async function aheadByTwoHours(tx: Tx) {
+    const user = await makeUser(tx);
+    const institution = await makeInstitution(tx);
+    const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+    const token = await makeToken(tx);
+    const holding = await makeHolding(tx, {
+      userId: user.id,
+      accountId: account.id,
+      tokenId: token.id,
+      balance: '0',
+    });
+    const ahead = new Date(Date.now() + 2 * HOUR);
+    ahead.setUTCMilliseconds(0);
+    await makeHoldingTransaction(tx, {
+      userId: user.id,
+      holdingId: holding.id,
+      kind: 'deposit',
+      quantity: '100',
+      occurredAt: new Date(Date.now() - HOUR),
+    });
+    await makeHoldingTransaction(tx, {
+      userId: user.id,
+      holdingId: holding.id,
+      kind: 'withdraw',
+      quantity: '-3.5',
+      occurredAt: ahead,
+    });
+    await Container.get(HoldingCacheWriter).refresh(user.id, [holding.id], tx);
+    return { userId: user.id, holdingId: holding.id, ahead };
+  }
+
+  async function cacheOf(tx: Tx, holdingId: string) {
+    const [row] = await tx
+      .select({ balance: schema.holdings.balance, dueAt: schema.holdings.cacheDueAt })
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, holdingId));
+    return row;
+  }
+
+  test('the cache counts only what has happened, and is due again at the next instant', async () => {
+    await withTestDb(async (tx) => {
+      const h = await aheadByTwoHours(tx);
+      expect(await cacheOf(tx, h.holdingId)).toEqual({ balance: '100', dueAt: h.ahead });
+    });
+  });
+
+  test('CONTROL: a holding with nothing ahead of now is never due', async () => {
+    await withTestDb(async (tx) => {
+      const { userId, holdingId } = await hiddenHolding(tx, null);
+      await evidenceFor(tx, userId, holdingId, '7');
+      await Container.get(HoldingCacheWriter).refresh(userId, [holdingId], tx);
+      expect(await cacheOf(tx, holdingId)).toEqual({ balance: '7', dueAt: null });
+    });
+  });
+
+  test('once the instant passes, the due sweep brings the cache to the balance now', async () => {
+    await withTestDb(async (tx) => {
+      const h = await aheadByTwoHours(tx);
+      const later = new Date(h.ahead.getTime() + HOUR);
+      setSystemTime(later);
+      try {
+        const swept = await Container.get(HoldingCacheDueSweep).refreshDue(tx, later, 100);
+        expect(swept).toBe(1);
+      } finally {
+        setSystemTime();
+      }
+      expect(await cacheOf(tx, h.holdingId)).toEqual({ balance: '96.5', dueAt: null });
+    });
+  });
+
+  test('CONTROL: before the instant the sweep touches nothing', async () => {
+    await withTestDb(async (tx) => {
+      const h = await aheadByTwoHours(tx);
+      const swept = await Container.get(HoldingCacheDueSweep).refreshDue(tx, new Date(), 100);
+      expect(swept).toBe(0);
+      expect(await cacheOf(tx, h.holdingId)).toEqual({ balance: '100', dueAt: h.ahead });
     });
   });
 });

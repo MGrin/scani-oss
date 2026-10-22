@@ -35,6 +35,7 @@ src/
 │   ├── apy-payouts.ts
 │   ├── reconcile-pending-credentials.ts   (no lock — idempotent re-scan)
 │   ├── reconcile-orphaned-user-jobs.ts    (no lock — idempotent re-scan)
+│   ├── holding-cache-due.ts               (locked)
 │   ├── historical-price-backfill.ts
 │   ├── portfolio-value-rollup.ts
 │   ├── transfer-linking.ts

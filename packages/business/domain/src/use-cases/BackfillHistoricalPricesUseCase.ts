@@ -42,6 +42,8 @@ const UNPRICEABLE_MIN_RANGE_DAYS = 30;
 const CURRENCY_FLOOR_DAYS = 6;
 
 const DAY_MS = 86_400_000;
+// How long a provider's "no price for this day" stands before it is asked again.
+const MISS_RECHECK_MS = 7 * DAY_MS;
 
 function utcDayStart(at: Date): number {
   return Date.UTC(at.getUTCFullYear(), at.getUTCMonth(), at.getUTCDate());
@@ -68,6 +70,9 @@ export interface BackfillSummary {
   // Tokens we skipped entirely because they're inside an unpriceable
   // cooldown window from a previous failed backfill.
   skippedUnpriceable: number;
+  // Token-days skipped because a provider had nothing for them within the
+  // last week (SC-1725).
+  skippedRecentMisses: number;
   // Tokens whose providers ERRORED rather than answering. Deliberately
   // not folded into `providerMissing`: that number reads as "nobody has
   // this data", and these are runs that never found out. A non-zero
@@ -145,6 +150,10 @@ export class BackfillHistoricalPricesUseCase {
       /** Compute the per-token windows and return WITHOUT calling any
        *  provider or writing a row. What `--dry-run` is made of. */
       planOnly?: boolean;
+      /** Ask only for days inside `lookbackDays`, not from each token's first
+       *  transaction. A short portfolio rebuild values only those days, and
+       *  the nightly run owns the lifetime gaps (SC-1725). */
+      boundToLookback?: boolean;
     } = { usdTokenId: '' }
   ): Promise<BackfillSummary> {
     if (!opts.usdTokenId) {
@@ -172,6 +181,7 @@ export class BackfillHistoricalPricesUseCase {
         droppedBars: 0,
         earliestWrittenDay: null,
         skippedUnpriceable: 0,
+        skippedRecentMisses: 0,
         attemptsFailed: 0,
         skippedDueToLock: true,
         durationMs: 0,
@@ -186,6 +196,7 @@ export class BackfillHistoricalPricesUseCase {
     userId?: string;
     tokenIds?: string[];
     planOnly?: boolean;
+    boundToLookback?: boolean;
   }): Promise<BackfillSummary> {
     const start = Date.now();
     const lookback = opts.lookbackDays ?? 365 * 5;
@@ -308,11 +319,11 @@ export class BackfillHistoricalPricesUseCase {
     // as far back as the earliest per-token start or they would re-request
     // days we already hold.
     let discoverySince = since;
-    for (const lifetime of tokenLifetime.values()) {
+    for (const lifetime of opts.boundToLookback ? [] : tokenLifetime.values()) {
       const first = lifetime.firstTxAt;
       if (first && first < discoverySince) discoverySince = first;
     }
-    for (const startDay of currencyStartDay.values()) {
+    for (const startDay of opts.boundToLookback ? [] : currencyStartDay.values()) {
       if (startDay < discoverySince.getTime()) discoverySince = new Date(startDay);
     }
 
@@ -359,6 +370,17 @@ export class BackfillHistoricalPricesUseCase {
       ...(opts.userId ? { tokenIds: [...userTokenSet] } : {}),
     });
 
+    // A provider rarely fills an old day overnight, so a day it lacked within
+    // the last week is not asked again until the check goes stale. Without
+    // this, every rebuild re-asked the same 6,677 empty days (SC-1725).
+    const recentMisses = await this.tokenPriceRepository.findRecentMissDayKeys({
+      baseTokenId: opts.usdTokenId,
+      tokenIds: [...userTokenSet],
+      checkedAfter: new Date(now.getTime() - MISS_RECHECK_MS),
+    });
+    let skippedRecentMisses = 0;
+    const rememberedEmptyDays = new Map<string, number>();
+
     // Day series in JS: step by a day until each token's last day inclusive.
     const normalized: Array<{ tokenId: string; day: Date }> = [];
     let alreadyHadCount = 0;
@@ -390,11 +412,17 @@ export class BackfillHistoricalPricesUseCase {
         tokenStart = lifetime ? Math.min(tokenStart, currencyStart) : currencyStart;
         tokenEnd = todayDay;
       }
+      if (opts.boundToLookback) tokenStart = Math.max(tokenStart, sinceDay);
       for (let t = tokenStart; t <= tokenEnd; t += DAY_MS) {
         const dayAt = new Date(t);
         const key = `${tokenId}:${dayAt.toISOString().slice(0, 10)}`;
         if (havePriced.has(key)) {
           alreadyHadCount++;
+          continue;
+        }
+        if (recentMisses.has(key)) {
+          skippedRecentMisses++;
+          rememberedEmptyDays.set(tokenId, (rememberedEmptyDays.get(tokenId) ?? 0) + 1);
           continue;
         }
         normalized.push({ tokenId, day: dayAt });
@@ -406,6 +434,7 @@ export class BackfillHistoricalPricesUseCase {
         pending: normalized.length,
         alreadyHad: alreadyHadCount,
         skippedUnpriceable,
+        skippedRecentMisses,
         lookbackDays: lookback,
       },
       'Historical price backfill candidates identified'
@@ -420,6 +449,7 @@ export class BackfillHistoricalPricesUseCase {
       droppedBars: 0,
       earliestWrittenDay: null,
       skippedUnpriceable,
+      skippedRecentMisses,
       attemptsFailed: 0,
       durationMs: 0,
     };
@@ -493,6 +523,9 @@ export class BackfillHistoricalPricesUseCase {
 
     const markUnpriceable: string[] = [];
     const clearUnpriceable: string[] = [];
+    // Only days older than a week: a provider often fills the last few late.
+    const rememberBefore = new Date(todayDay - MISS_RECHECK_MS).toISOString().slice(0, 10);
+    const misses: Array<{ tokenId: string; day: string }> = [];
     for (let i = 0; i < tokenIds.length; i += TOKEN_CONCURRENCY) {
       const batch = tokenIds.slice(i, i + TOKEN_CONCURRENCY);
       const settled = await Promise.allSettled(
@@ -510,8 +543,17 @@ export class BackfillHistoricalPricesUseCase {
           summary.providerMissing += result.value.providerMissing;
           summary.droppedDays += result.value.droppedDays;
           summary.droppedBars += result.value.droppedBars;
+          if (tokenId && canAsk && !result.value.attemptFailed) {
+            for (const day of result.value.missingDays) {
+              if (day < rememberBefore) misses.push({ tokenId, day });
+            }
+          }
           if (tokenId) {
-            const requested = daysByToken.get(tokenId)?.length ?? 0;
+            // A day skipped as a remembered miss was answered empty within the
+            // week, so it counts toward the floor. Without it a token asks only
+            // its newest days each night and never reaches 30 (SC-1625).
+            const requested =
+              (daysByToken.get(tokenId)?.length ?? 0) + (rememberedEmptyDays.get(tokenId) ?? 0);
             // A needed day whose bar the writer drops was written, and so
             // counted inserted, before PriceWriter: it clears the cooldown as
             // it did then. A dropped bar on a day nobody asked for does not.
@@ -575,6 +617,10 @@ export class BackfillHistoricalPricesUseCase {
         { considered: markUnpriceable.length, marked: markable.length },
         'Some tokens were not marked unpriceable because they already have stored prices'
       );
+    }
+
+    if (misses.length > 0) {
+      await this.tokenPriceRepository.recordMisses(opts.usdTokenId, misses, now);
     }
 
     if (markable.length > 0 || clearUnpriceable.length > 0) {

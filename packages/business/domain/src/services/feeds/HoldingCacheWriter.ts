@@ -6,7 +6,7 @@ import { and, asc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { balanceAt } from '../../engine/balance-at';
 import { assetClassOf, readingPairsFor } from '../../engine/price-at';
-import type { AssetClass } from '../../engine/types';
+import type { AssetClass, HoldingEvidence } from '../../engine/types';
 import { EngineEvidenceRepository } from '../../repositories/EngineEvidenceRepository';
 import { classifyHoldingEvidence } from '../foundation/legacy-classification';
 import { PriceHubResolver } from '../pricing/PriceHubResolver';
@@ -50,6 +50,18 @@ export interface CacheWrite {
  * computes it, dated by the reading. The data-quality flag for a hidden
  * holding with a new balance reads `value_base` (A5 #9).
  */
+function nextInstantAfter(evidence: HoldingEvidence, now: Date): Date | null {
+  let next: Date | null = null;
+  for (const at of [
+    evidence.startsAt,
+    ...evidence.observations.map((o) => o.at),
+    ...evidence.entries.map((e) => e.at),
+  ]) {
+    if (at > now && (next === null || at < next)) next = at;
+  }
+  return next;
+}
+
 @Service()
 export class HoldingCacheWriter {
   private readonly prices = Container.get(PriceReader);
@@ -63,11 +75,12 @@ export class HoldingCacheWriter {
     tx: DatabaseTransaction
   ): Promise<Map<string, string>> {
     if (writes.length === 0) return new Map();
-    const balances = await this.engineBalances(
+    const answers = await this.engineAnswers(
       userId,
       writes.map((w) => w.holdingId),
       tx
     );
+    const balances = new Map([...answers].map(([id, a]) => [id, a.balance]));
     for (const { holdingId, balance } of writes) {
       const engine = balances.get(holdingId);
       if (balance === undefined || engine === undefined) continue;
@@ -88,6 +101,7 @@ export class HoldingCacheWriter {
           .update(schema.holdings)
           .set({
             balance,
+            cacheDueAt: answers.get(holdingId)?.dueAt ?? null,
             ...(lastUpdated === null ? {} : { lastUpdated: lastUpdated ?? new Date() }),
             isHidden: sql`${schema.holdings.isHidden} AND NOT (${schema.holdings.hiddenBy} IS NOT DISTINCT FROM 'auto' AND ${balance}::numeric <> 0)`,
           })
@@ -148,8 +162,22 @@ export class HoldingCacheWriter {
     tx: DatabaseTransaction,
     without: ReadonlySet<string> = new Set()
   ): Promise<Map<string, string>> {
+    const answers = await this.engineAnswers(userId, holdingIds, tx, without);
+    return new Map([...answers].map(([id, a]) => [id, a.balance]));
+  }
+
+  /**
+   * Each balance with the earliest evidence instant after `now`, when one is
+   * the cache is due to be rewritten then, as nothing else writes it (SC-1633).
+   */
+  private async engineAnswers(
+    userId: string,
+    holdingIds: readonly string[],
+    tx: DatabaseTransaction,
+    without: ReadonlySet<string> = new Set()
+  ): Promise<Map<string, { balance: string; dueAt: Date | null }>> {
     const ids = [...new Set(holdingIds)].sort();
-    const balances = new Map<string, string>();
+    const balances = new Map<string, { balance: string; dueAt: Date | null }>();
     if (ids.length === 0) return balances;
     const locked = await tx
       .select({ id: schema.holdings.id })
@@ -177,8 +205,12 @@ export class HoldingCacheWriter {
             ? found
             : { ...found, transactions: found.transactions.filter((t) => !without.has(t.id)) };
         rows += raw.observations.length + raw.transactions.length;
-        const answer = balanceAt(classifyHoldingEvidence(raw).evidence, now);
-        balances.set(raw.holding.id, answer.status === 'absent' ? '0' : answer.balance.toFixed());
+        const evidence = classifyHoldingEvidence(raw).evidence;
+        const answer = balanceAt(evidence, now);
+        balances.set(raw.holding.id, {
+          balance: answer.status === 'absent' ? '0' : answer.balance.toFixed(),
+          dueAt: nextInstantAfter(evidence, now),
+        });
       }
     }
     this.logger.debug(
