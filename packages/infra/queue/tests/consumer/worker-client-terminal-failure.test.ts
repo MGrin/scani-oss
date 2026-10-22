@@ -6,8 +6,14 @@ import {
   Queue,
   UnrecoverableError,
 } from 'bullmq';
+import { Container } from 'typedi';
+// This workspace cannot depend on @scani/domain, so the shared helper is reached by path.
+import { restoreContainerAfterAll } from '../../../../business/domain/test/helpers/container';
 import { userFacing } from '../../src';
+import { FAILURE_EXPLAINER } from '../../src/consumer/failure-explainer';
+import { LIFECYCLE_MIRROR } from '../../src/consumer/lifecycle-mirror';
 import { WorkerClient } from '../../src/consumer/worker-client';
+import type { LifecycleEvent } from '../../src/core/types';
 import { runQueueMigrations } from '../../src/migrate';
 
 /**
@@ -25,6 +31,8 @@ import { runQueueMigrations } from '../../src/migrate';
  * attempt was therefore dead-lettered, which for a single-attempt job is every
  * refusal. So the refusal is asserted at one attempt as well as at three.
  */
+
+restoreContainerAfterAll();
 
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error('DATABASE_URL must be set — the test preload sets it');
@@ -48,7 +56,8 @@ afterEach(async () => {
 
 async function runFailingJob(
   fail: () => Error,
-  attempts: number
+  attempts: number,
+  data: Record<string, unknown> = {}
 ): Promise<{ hookCalls: string[]; failures: number; deadLetters: number }> {
   const queueName = `sc1381-${crypto.randomUUID()}`;
   const queue = new Queue(
@@ -71,7 +80,8 @@ async function runFailingJob(
   clients.push(client);
   client.configure({ connection: databaseUrl!, queueName, dlqName: `${queueName}-dlq` });
   client.register({
-    descriptor: { name: 'refusal' },
+    // A `schema` is what makes it a user job, and only a user job is mirrored as dead.
+    descriptor: 'userId' in data ? { name: 'refusal', schema: {} } : { name: 'refusal' },
     process: async (_job: Job) => {
       throw fail();
     },
@@ -86,7 +96,7 @@ async function runFailingJob(
   });
   await worker.waitUntilReady();
 
-  await queue.add('refusal', {}, { attempts });
+  await queue.add('refusal', data, { attempts });
   const deadline = Date.now() + 10_000;
   while (failures === 0 && Date.now() < deadline) await Bun.sleep(25);
   // Long enough for a retry to start, and for the hook, which runs after
@@ -123,5 +133,29 @@ describe('terminal-failure hooks and a by-design refusal (SC-1381)', () => {
     const { hookCalls, deadLetters } = await runFailingJob(() => new Error('upstream exploded'), 1);
     expect(hookCalls).toEqual(['upstream exploded']);
     expect(deadLetters).toBe(1);
+  });
+});
+
+// SC-1711. `markDead` writes the owner's reason a second time, after the
+// processor's own failed event. Reading only the marked message there would
+// overwrite an explained reason with null the moment the job died.
+describe('the dead event carries the explained reason (SC-1711)', () => {
+  test('an unmarked error the app explains dies with the explanation, not null', async () => {
+    const events: LifecycleEvent[] = [];
+    Container.set(LIFECYCLE_MIRROR, {
+      onLifecycle: async (event: LifecycleEvent) => {
+        events.push(event);
+      },
+    } as never);
+    Container.set(FAILURE_EXPLAINER, {
+      explain: (error: unknown) =>
+        error instanceof Error && error.message === 'bitcoin HTTP 429' ? 'EXPLAINED' : null,
+    });
+
+    await runFailingJob(() => new Error('bitcoin HTTP 429'), 1, { userId: 'u1' });
+
+    const dead = events.find((e) => e.type === 'dead');
+    expect(dead).toBeDefined();
+    expect(dead?.type === 'dead' ? dead.userFacingError : undefined).toBe('EXPLAINED');
   });
 });
