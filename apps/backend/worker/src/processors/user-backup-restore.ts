@@ -54,7 +54,16 @@ export class UserBackupRestoreProcessor extends UserJobProcessor<
     await ctx.reportStatus('Restoring your account…');
     let report: Awaited<ReturnType<BackupRestorer['restore']>>;
     try {
-      report = await Container.get(BackupRestorer).restore(data.userId, () => backupRecords(bytes));
+      // Uploaded documents' files go into this instance's storage (SC-1662).
+      report = await Container.get(BackupRestorer).restore(
+        data.userId,
+        () => backupRecords(bytes),
+        undefined,
+        {
+          write: (key, file, contentType) => storage.write(key, file, contentType),
+          delete: (key) => storage.delete(key),
+        }
+      );
     } catch (error) {
       if (error instanceof RestoreRefused) {
         throw userFacing(new UnrecoverableError(`${error.message} Nothing was restored.`));

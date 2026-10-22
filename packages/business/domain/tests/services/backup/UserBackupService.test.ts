@@ -2,6 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'bun:tes
 import { StorageFacade } from '@scani/cloud-client/facades/storage-facade';
 import { getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
+import { BACKUP_UPLOAD_MAX_BYTES } from '@scani/shared';
 import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { type BackupFile, BackupWriter } from '../../../src/services/backup/BackupWriter';
@@ -58,6 +59,8 @@ beforeEach(async () => {
     sha256: 'abc',
     records: 7,
     counts: { holdings: 2 },
+    filesIncluded: 0,
+    filesLeftOut: 0,
   };
   written = [];
   deleted = [];
@@ -74,7 +77,7 @@ describe('UserBackupService (SC-1649)', () => {
     expect(backup).toMatchObject({
       userId: me,
       storageKey: written[0]?.key,
-      formatVersion: 1,
+      formatVersion: 2,
       byteSize: 3,
       sha256: 'abc',
       recordCount: 7,
@@ -102,6 +105,43 @@ describe('UserBackupService (SC-1649)', () => {
     await expect(service().create(me)).rejects.toBeInstanceOf(BackupTooLargeError);
     expect(written).toEqual([]);
     expect(await service().latest(me)).toBeNull();
+  });
+
+  test('files that would take the backup past what a restore accepts are left out, and counted (SC-1662)', async () => {
+    const asked: string[] = [];
+    service();
+    Container.set(BackupWriter, {
+      file: async (_userId: string, _db: unknown, files: unknown) => {
+        asked.push(files ? 'with files' : 'without files');
+        return files
+          ? {
+              ...file,
+              bytes: { byteLength: BACKUP_UPLOAD_MAX_BYTES + 1 } as Uint8Array<ArrayBuffer>,
+              filesIncluded: 3,
+            }
+          : { ...file, filesLeftOut: 3 };
+      },
+    } as unknown as BackupWriter);
+    const backup = await new UserBackupService().create(me);
+
+    expect(asked).toEqual(['with files', 'without files']);
+    expect(backup).toMatchObject({ byteSize: 3, filesLeftOut: 3 });
+    expect(written).toHaveLength(1);
+  });
+
+  test('files that fit are carried, and the backup is built once', async () => {
+    const asked: string[] = [];
+    service();
+    Container.set(BackupWriter, {
+      file: async (_userId: string, _db: unknown, files: unknown) => {
+        asked.push(files ? 'with files' : 'without files');
+        return { ...file, filesIncluded: 2 };
+      },
+    } as unknown as BackupWriter);
+    const backup = await new UserBackupService().create(me);
+
+    expect(asked).toEqual(['with files']);
+    expect(backup).toMatchObject({ filesLeftOut: 0 });
   });
 
   test('a download is signed only for its owner, and an expired object says so', async () => {

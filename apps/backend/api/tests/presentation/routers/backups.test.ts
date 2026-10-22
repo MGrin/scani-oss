@@ -121,3 +121,30 @@ describe('backups.restore (SC-1649)', () => {
     expect(await makeAuthedCaller(user('u-1')).backups.restorable()).toEqual({ empty: false });
   });
 });
+
+describe('backups.latest (SC-1662)', () => {
+  test('says how many documents the last backup left out, for the caller', async () => {
+    const asked: string[] = [];
+    Container.set(UserBackupService, {
+      latest: async (userId: string) => {
+        asked.push(userId);
+        return {
+          id: BACKUP_ID,
+          createdAt: new Date('2026-10-10T10:00:00.000Z'),
+          byteSize: 2048,
+          recordCount: 10,
+          filesLeftOut: 3,
+        };
+      },
+    } as unknown as UserBackupService);
+
+    expect(await makeAuthedCaller(user('u-1')).backups.latest()).toEqual({
+      id: BACKUP_ID,
+      createdAt: '2026-10-10T10:00:00.000Z',
+      byteSize: 2048,
+      recordCount: 10,
+      filesLeftOut: 3,
+    });
+    expect(asked).toEqual(['u-1']);
+  });
+});

@@ -46,6 +46,7 @@ export const backupsRouter = router({
       createdAt: backup.createdAt.toISOString(),
       byteSize: backup.byteSize,
       recordCount: backup.recordCount,
+      filesLeftOut: backup.filesLeftOut,
     };
   }),
 
