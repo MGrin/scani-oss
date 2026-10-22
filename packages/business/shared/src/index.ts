@@ -43,6 +43,11 @@ export {
   runwayDenominator,
 } from './lib/burn';
 export {
+  AUTO_CATEGORY_SOURCES,
+  isOutsideCategories,
+  KINDS_OUTSIDE_CATEGORIES,
+} from './lib/category-sources';
+export {
   HOLDING_MOVEMENT_DIRECTIONS,
   type HoldingMovementDirection,
   movementOutflowRefusesInternal,
@@ -57,7 +62,11 @@ export {
   type MoneyAttributionRates,
   splitChangeIntoMoney,
 } from './lib/returns-money';
-export { SUGGESTED_CATEGORIES, SUGGESTED_CATEGORY_KEYS } from './lib/suggested-categories';
+export {
+  STARTER_CATEGORY_NAMES,
+  SUGGESTED_CATEGORIES,
+  SUGGESTED_CATEGORY_KEYS,
+} from './lib/suggested-categories';
 export { BACKUP_UPLOAD_MAX_BYTES, UPLOADED_FILE_MAX_BYTES } from './lib/uploaded-file';
 export * from './token-validatiion';
 export * from './usage/outcomes';
