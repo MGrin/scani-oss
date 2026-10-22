@@ -7,9 +7,9 @@
 // folder and apt's archive, where apt looks before downloading.
 //
 //   bun apps/e2e/scripts/apt-debs.ts seed      before the install
-//   bun apps/e2e/scripts/apt-debs.ts collect   after it; writes kept=<n> to $GITHUB_OUTPUT
+//   bun apps/e2e/scripts/apt-debs.ts collect   after it; prints kept=<n> on stdout
 
-import { appendFileSync, copyFileSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { $ } from 'bun';
@@ -48,8 +48,8 @@ if (mode === 'seed') {
   const downloaded = debs(ARCHIVE);
   for (const name of downloaded) copyFileSync(join(ARCHIVE, name), join(KEPT, name));
   const kept = debs(KEPT).length;
-  console.log(`apt-debs: kept ${kept} package(s) in ${KEPT}`);
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `kept=${kept}\n`);
+  console.error(`apt-debs: kept ${kept} package(s) in ${KEPT}`);
+  console.log(`kept=${kept}`);
 } else {
   console.error('usage: bun apps/e2e/scripts/apt-debs.ts seed|collect');
   process.exit(2);

@@ -551,7 +551,7 @@ jobs:
       - name: Collect apt packages
         id: apt-collect
         if: steps.apt-debs.outputs.cache-hit != 'true'
-        run: bun apps/e2e/scripts/apt-debs.ts collect
+        run: bun apps/e2e/scripts/apt-debs.ts collect >> "$GITHUB_OUTPUT"
 
       - name: Save apt packages
         if: steps.apt-debs.outputs.cache-hit != 'true' && steps.apt-collect.outputs.kept != '0'
