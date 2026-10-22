@@ -636,6 +636,36 @@ describe('SettlementAnswerReviewService.undoRetire', () => {
     });
   });
 
+  // A copy read into JavaScript turns every jsonb number into a double, so 18
+  // significant digits came back as 17 (SC-1626). Compared as Postgres prints
+  // the rows, because the parsed helper above rounds both sides alike.
+  test('puts a long number in a row’s payload back exactly', async () => {
+    await withTestDb(async (tx) => {
+      const { user, closing } = await movedFixture(tx, { createDestination: true });
+      await tx.execute(sql`
+        UPDATE holding_transactions
+        SET raw_payload = '{"amount": 0.123456789012345678, "legs": [1.00000000000000000001]}'::jsonb
+        WHERE user_id = ${user.id}`);
+      const printed = async () =>
+        (
+          (await tx.execute(sql`
+            SELECT h.id::text, to_jsonb(h)::text AS row FROM holding_transactions h
+            WHERE h.user_id = ${user.id} ORDER BY h.id`)) as unknown as Array<{ row: string }>
+        ).map((r) => r.row);
+      const before = await printed();
+      expect(before.join()).toContain('0.123456789012345678');
+
+      const service = new SettlementAnswerReviewService();
+      const outcome = await service.retire(user.id, closing.id, { confirmOtherHolding: true }, tx);
+      if (!('retired' in outcome)) throw new Error('not retired');
+      expect(await printed()).not.toEqual(before);
+      expect(await service.undoRetire(user.id, outcome.retired.id, new Date(), tx)).toHaveProperty(
+        'restored'
+      );
+      expect(await printed()).toEqual(before);
+    });
+  });
+
   test('a destination holding the answer had opened comes back with its arrival', async () => {
     await withTestDb(async (tx) => {
       const { user, closing } = await movedFixture(tx, { createDestination: true });
