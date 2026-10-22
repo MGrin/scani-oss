@@ -5,7 +5,7 @@ import { rowName } from '@scani/ui/v3/lib/data-view';
 import { resolveNumeric } from '@scani/ui/v3/lib/numeric';
 import { peekOpenState, peekPath } from '@scani/ui/v3/lib/peek';
 import { useTranslation } from 'react-i18next';
-import { type TopHoldingItem, topHoldingRows } from '../../lib/home';
+import { type TopHoldingItem, topHoldingRows, topHoldingsCaption } from '../../lib/home';
 import type { HomeCardQuery } from '../../lib/home-card';
 import { V3_ROUTES } from '../../lib/routes';
 import { HomeCard, type HomeCardVariant } from './HomeCard';
@@ -55,11 +55,11 @@ export function TopHoldingsBlock({
       variant={variant}
       peekId="holdings"
       tile={() => {
-        const [first, ...rest] = rows;
+        const [first] = rows;
         return first
           ? {
               figure: <Numeric value={first.value} currency={currency} compact />,
-              caption: [first.symbol, ...rest.slice(0, 3).map((row) => row.symbol)].join(' · '),
+              caption: topHoldingsCaption(rows),
             }
           : { figure: '—', caption: t('v3.home.topHoldings.empty') };
       }}

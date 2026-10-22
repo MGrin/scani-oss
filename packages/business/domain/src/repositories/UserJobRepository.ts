@@ -78,7 +78,34 @@ export class UserJobRepository {
         payloadSummary: input.payloadSummary,
         attemptsAllowed: input.attemptsAllowed,
       })
-      .onConflictDoNothing({ target: schema.userJobs.jobId });
+      // BullMQ reuses a job id once the job with it has finished: a lock-held
+      // retry re-arms under the same one. A finished row is a new job's, so it
+      // starts over; otherwise its first start and last finish read as one
+      // long run, and a reused cancelled id could never be marked active
+      // (SC-1707). A row still pending or running is the same job, left alone.
+      .onConflictDoUpdate({
+        target: schema.userJobs.jobId,
+        set: {
+          state: 'queued',
+          progress: 0,
+          result: null,
+          error: null,
+          userFacingError: null,
+          attemptsMade: 0,
+          attemptsAllowed: input.attemptsAllowed,
+          payloadSummary: input.payloadSummary,
+          createdAt: new Date(),
+          startedAt: null,
+          finishedAt: null,
+          updatedAt: new Date(),
+          actionTakenAt: null,
+          reviewOutcome: null,
+          deadAt: null,
+          failureReason: null,
+          dismissedAt: null,
+        },
+        setWhere: sql`${schema.userJobs.state} IN ('completed','failed')`,
+      });
   }
 
   /** Worker picked up the job; mark active + stamp startedAt. */
@@ -96,7 +123,14 @@ export class UserJobRepository {
         startedAt: sql`COALESCE(${schema.userJobs.startedAt}, now())`,
         updatedAt: new Date(),
       })
-      .where(eq(schema.userJobs.jobId, jobId));
+      // A retry may revive a failed row; a cancel is the user's decision and
+      // its next attempt must not undo it (SC-1607).
+      .where(
+        and(
+          eq(schema.userJobs.jobId, jobId),
+          sql`${schema.userJobs.failureReason} IS DISTINCT FROM 'cancelled'`
+        )
+      );
   }
 
   async updateProgress(
@@ -113,7 +147,15 @@ export class UserJobRepository {
         progress: clamped,
         updatedAt: new Date(),
       })
-      .where(eq(schema.userJobs.jobId, jobId));
+      // Only while the attempt is in flight. A cancelled job ran on and wrote
+      // its row back to 'progress', and Returns then read a rebuild in flight
+      // for 16 hours with nothing left to finish (SC-1607).
+      .where(
+        and(
+          eq(schema.userJobs.jobId, jobId),
+          sql`${schema.userJobs.state} IN ('queued','active','progress')`
+        )
+      );
   }
 
   async markCompleted(
@@ -691,10 +733,13 @@ export class UserJobRepository {
   // name for a user. Lets the API endpoints dedup repeated user clicks
   // by returning the existing jobId instead of enqueuing a duplicate
   // when one is already running for the same purpose.
+  // `exceptJobId` lets a job read past its own row: a rebuild finishing asks
+  // whether any OTHER rebuild is pending (SC-1707).
   async findInFlightByName(
     userId: string,
     jobName: string,
-    transaction?: DatabaseTransaction
+    transaction?: DatabaseTransaction,
+    exceptJobId?: string
   ): Promise<UserJob | null> {
     const db = this.getDb(transaction);
     const [row] = await db
@@ -704,7 +749,8 @@ export class UserJobRepository {
         and(
           eq(schema.userJobs.userId, userId),
           eq(schema.userJobs.jobName, jobName),
-          sql`${schema.userJobs.state} IN ('queued','active','progress')`
+          sql`${schema.userJobs.state} IN ('queued','active','progress')`,
+          exceptJobId === undefined ? undefined : ne(schema.userJobs.jobId, exceptJobId)
         )
       )
       .orderBy(desc(schema.userJobs.createdAt))

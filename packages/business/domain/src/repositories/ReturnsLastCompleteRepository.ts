@@ -29,11 +29,18 @@ export class ReturnsLastCompleteRepository {
     return row ?? null;
   }
 
-  /** Replaces the stored answer once it is REPLACE_AFTER_MS old, or at once if the currency moved. */
-  async save(row: NewReturnsLastComplete, tx?: DatabaseTransaction): Promise<void> {
+  /**
+   * Replaces the stored answer once it is REPLACE_AFTER_MS old, or at once if
+   * the currency moved. `force` replaces it regardless: a finished rebuild
+   * changed the data the stored answer was computed from (SC-1707).
+   */
+  async save(
+    row: NewReturnsLastComplete,
+    options: { force?: boolean; tx?: DatabaseTransaction } = {}
+  ): Promise<void> {
     const table = schema.returnsLastComplete;
     const staleBefore = new Date(row.computedAt.getTime() - REPLACE_AFTER_MS);
-    await (tx ?? getDb())
+    await (options.tx ?? getDb())
       .insert(table)
       .values(row)
       .onConflictDoUpdate({
@@ -43,10 +50,9 @@ export class ReturnsLastCompleteRepository {
           answer: row.answer,
           computedAt: row.computedAt,
         },
-        setWhere: or(
-          lt(table.computedAt, staleBefore),
-          ne(table.baseCurrencyId, row.baseCurrencyId)
-        ),
+        setWhere: options.force
+          ? undefined
+          : or(lt(table.computedAt, staleBefore), ne(table.baseCurrencyId, row.baseCurrencyId)),
       });
   }
 }

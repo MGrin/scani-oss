@@ -43,6 +43,7 @@ import {
   sparklineSeries,
   summariseQuality,
   topHoldingRows,
+  topHoldingsCaption,
   type UpcomingOccurrence,
   unreviewedTransfersNote,
   vaultRows,
@@ -1507,5 +1508,57 @@ describe('groupsOverlap', () => {
     ];
     expect(groupsOverlap(parts, 1000)).toBe(false);
     expect(groupsOverlap([], 0)).toBe(false);
+  });
+});
+
+// mgrin's tile read "EDGECAP · USD · USD": two USD cash holdings, printed as
+// though one were a duplicate (SC-1707). Naming where each is held made the
+// first item eat the one-line caption, so the tile lists each symbol once and
+// the rows below say where (design, 2026-10-11).
+describe('topHoldingsCaption', () => {
+  const row = (symbol: string, institutionName?: string, accountName?: string) => ({
+    id: `${symbol}-${institutionName ?? accountName ?? 'none'}-0`,
+    symbol,
+    name: symbol,
+    value: '1000',
+    institutionName,
+    accountName,
+  });
+
+  test('a symbol held twice is listed once, in holding order', () => {
+    const rows = topHoldingRows(
+      t,
+      [
+        row('EDGECAP', 'Edge Capital'),
+        row('USD', 'Wise'),
+        row('USD', 'IBKR'),
+        row('BTC', 'Kraken'),
+      ],
+      '10000'
+    );
+    expect(topHoldingsCaption(rows)).toBe('EDGECAP · USD · BTC');
+  });
+
+  test('the rows still say where each is held', () => {
+    const rows = topHoldingRows(
+      t,
+      [row('USD', 'Wise', 'Main'), row('USD', 'IBKR', 'Main')],
+      '10000'
+    );
+    expect(rows.map((r) => r.sublabel)).toEqual(['USD · Wise · Main', 'USD · IBKR · Main']);
+  });
+
+  test('control: symbols that do not repeat are all listed', () => {
+    const rows = topHoldingRows(t, [row('BTC', 'Kraken'), row('ETH', 'Kraken')], '10000');
+    expect(topHoldingsCaption(rows)).toBe('BTC · ETH');
+  });
+
+  test('the caption names at most four symbols', () => {
+    const rows = topHoldingRows(
+      t,
+      ['A', 'A', 'B', 'C', 'D', 'E'].map((symbol) => row(symbol, 'X')),
+      '10000'
+    );
+    expect(topHoldingsCaption(rows)).toBe('A · B · C · D');
   });
 });
