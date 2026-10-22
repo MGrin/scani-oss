@@ -78,6 +78,8 @@ describe('chainsRouter.listConfigs', () => {
     const eth = out.find((c) => c.chainId === 1);
     expect(eth?.type).toBe('evm');
     expect(eth?.nativeSymbol).toBe('ETH');
+    const ltc = out.find((c) => c.chainId === -3);
+    expect(ltc).toMatchObject({ type: 'litecoin', nativeSymbol: 'LTC', nativeName: 'Litecoin' });
   });
 
   test('its EVM rows are exactly the chains the Etherscan provider serves (SC-1524)', async () => {

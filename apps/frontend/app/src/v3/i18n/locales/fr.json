@@ -2066,14 +2066,16 @@
           "bitcoin": "bc1 suivi de 39 à 59 lettres minuscules et chiffres",
           "ton": "EQ ou UQ suivi de 46 caractères, 48 en tout",
           "tron": "T suivi de 33 autres caractères, 34 en tout",
-          "solana": "32 à 44 lettres et chiffres, sans aucun 0, O, I ni l"
+          "solana": "32 à 44 lettres et chiffres, sans aucun 0, O, I ni l",
+          "litecoin": "34 caractères Base58 commençant par L ou M, ou 43 ou 63 caractères Bech32/Bech32m commençant par ltc1"
         },
-        "everyShape": "Ethereum et les autres chaînes EVM sont en 0x suivi de 40 caractères hexadécimaux ; Bitcoin commence par 1, 3 ou bc1 ; Solana fait 32 à 44 lettres et chiffres ; Tron commence par T ; TON commence par EQ ou UQ.",
+        "everyShape": "Ethereum et les autres chaînes EVM sont en 0x suivi de 40 caractères hexadécimaux ; Bitcoin commence par 1, 3 ou bc1 ; Solana fait 32 à 44 lettres et chiffres ; Tron commence par T ; TON commence par EQ ou UQ. Litecoin commence par L, M ou ltc1.",
         "incomplete_one": "Ce n’est pas une adresse {{chain}} complète — une adresse est {{shape}}, et celle-ci fait {{count}} caractère.",
         "incomplete_many": "Ce n’est pas une adresse {{chain}} complète — une adresse est {{shape}}, et celle-ci fait {{count}} caractères.",
         "incomplete_other": "Ce n’est pas une adresse {{chain}} complète — une adresse est {{shape}}, et celle-ci fait {{count}} caractères.",
         "unrecognised": "Scani ne lit aucune chaîne dont les adresses ressemblent à cela. {{shapes}}",
         "innerSpace": "Il y a une espace à l’intérieur de cette adresse. Supprimez-la : une adresse est une suite de caractères sans coupure.",
+        "invalidLitecoin": "Cette adresse du réseau principal Litecoin est invalide. Copiez-la à nouveau depuis votre portefeuille.",
         "ensName": "C’est un nom ENS. Scani suit des adresses, pas des noms : collez l’adresse 0x vers laquelle il pointe."
       },
       "institution": {

@@ -9,7 +9,8 @@
     "./utils/sentry-noise": "./src/utils/sentry-noise.ts",
     "./utils/sentry-scrubber": "./src/utils/sentry-scrubber.ts",
     "./validators": "./src/validators/index.ts",
-    "./validators/email": "./src/validators/email.ts"
+    "./validators/email": "./src/validators/email.ts",
+    "./validators/litecoin": "./src/validators/litecoin.ts"
   },
   "scripts": {
     "clean": "rm -rf dist",
@@ -25,6 +26,8 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
+    "@noble/hashes": "^1.8.0",
+    "@scure/base": "^2.4.0",
     "decimal.js": "^10.6.0",
     "zod": "^3.25.76"
   }

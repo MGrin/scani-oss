@@ -42,6 +42,7 @@ describe('sourceForChainId', () => {
 
   test('every non-EVM chain resolves from its sentinel', () => {
     expect(sourceForChainId(-2)).toBe('solana');
+    expect(sourceForChainId(-3)).toBe('litecoin');
     // Bitcoin predates the negative-sentinel convention and uses 0, which
     // has to survive every falsy check on the way here (SC-364).
     expect(sourceForChainId(0)).toBe('bitcoin');
@@ -68,7 +69,7 @@ describe('sourceForChainId', () => {
 // that pairing is the SC-364 guard.
 describe('NON_EVM_WALLET_SOURCES', () => {
   test('holds every source the non-EVM sentinels resolve to', () => {
-    for (const chainId of [0, -1, -2, -15]) {
+    for (const chainId of [0, -1, -2, -3, -15]) {
       const source = sourceForChainId(chainId);
       expect(source).not.toBeNull();
       expect(NON_EVM_WALLET_SOURCES.has(source as string)).toBe(true);

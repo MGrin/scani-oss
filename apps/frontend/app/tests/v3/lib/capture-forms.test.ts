@@ -201,12 +201,57 @@ describe('the wallet form', () => {
     expect(describeWalletAddressProblem(t, 'bc1qar0srrr')).toContain('Bitcoin');
   });
 
-  // SC-1519: a Litecoin address matched the Solana pattern, was accepted, and
-  // dead-ended on `/jobs` with a Retry that could never succeed.
-  test('base58 that does not decode to a 32-byte key is not a Solana address', () => {
-    expect(describeWalletAddressProblem(t, 'LcHKx1bVWG3pVxvA4sVmDbeYNvSbumhxyH')).not.toBeNull();
+  test('a Litecoin Base58 address is accepted as Litecoin rather than Solana', () => {
+    expect(describeWalletAddressProblem(t, 'LKDyUEtTR1HXamkiEphisSiBJu6o3ZPE34')).toBeNull();
     expect(describeWalletAddressProblem(t, SOLANA)).toBeNull();
     expect(describeWalletAddressProblem(t, '11111111111111111111111111111111')).toBeNull();
+  });
+
+  test('Litecoin validation accepts common and future witness program lengths', () => {
+    expect(describeWalletAddressProblem(t, `L${'a'.repeat(44)}`)).not.toBeNull();
+    expect(describeWalletAddressProblem(t, `ltc1${'q'.repeat(40)}`)).not.toBeNull();
+    expect(
+      describeWalletAddressProblem(
+        t,
+        'ltc1pqqqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0sts9tf8'
+      )
+    ).toBeNull();
+    const futureWitness = 'ltc1zqqqsxr8tzy';
+    expect(describeWalletAddressProblem(t, futureWitness)).toBeNull();
+    expect(
+      buildWalletImportInput({ address: futureWitness, displayName: '' }, 'req-1')?.address
+    ).toBe(futureWitness);
+  });
+
+  test.each([
+    'LKDyUEtTR1HXamkiEphisSiBJu6o3ZPE35',
+    'M7uBSTV2qNDHDe2tHfNMqhFkZucgRMpJQm',
+    'ltc1qqqqsyqcyq5rqwzqfpg9scrgwpugpzysn3s44dq',
+    'ltc1pqqqsyqcyq5rqwzqfpg9scrgwpugpzysnzs23v9ccrydpk8qarc0sts9tfq',
+  ])('a plausible Litecoin address with a bad checksum cannot enqueue: %s', (address) => {
+    const draft = { address, displayName: '' };
+    expect(describeWalletAddressProblem(t, address)).toBe(
+      'That is not a valid Litecoin mainnet address. Copy it again from your wallet.'
+    );
+    expect(describeWalletImportBlockers(t, draft)).toEqual(['check the wallet address']);
+    expect(buildWalletImportInput(draft, 'req-1')).toBeNull();
+  });
+
+  test('a truncated Litecoin SegWit address retains the common length hint', () => {
+    const problem = describeWalletAddressProblem(t, 'ltc1qqqqsyqcyq5rqwzqfpg9scrgwpugpzysn3s44d');
+    expect(problem).toContain('Litecoin');
+    expect(problem).toContain('43 or 63');
+    expect(problem).toContain('42 characters');
+  });
+
+  test('Base58 casing and legacy P2SH Bitcoin ambiguity are preserved', () => {
+    for (const address of [
+      'LKDyUEtTR1HXamkiEphisSiBJu6o3ZPE34',
+      'M7uBSTV2qNDHDe2tHfNMqhFkZucgRMpJQk',
+      '31h38a54tFMrR8kzBnP2241MFD2EUHtGha',
+    ]) {
+      expect(buildWalletImportInput({ address, displayName: '' }, 'req-1')?.address).toBe(address);
+    }
   });
 
   test('an all-capitals bech32 address is accepted and sent in lower case', () => {
@@ -215,6 +260,19 @@ describe('the wallet form', () => {
     expect(buildWalletImportInput({ address: upper, displayName: '' }, 'req-1')?.address).toBe(
       BITCOIN_BECH32
     );
+  });
+
+  test('a Litecoin address is accepted and kept out of the Solana probe path', () => {
+    const address = 'LKDyUEtTR1HXamkiEphisSiBJu6o3ZPE34';
+    expect(describeWalletAddressProblem(t, address)).toBeNull();
+    expect(buildWalletImportInput({ address, displayName: '' }, 'req-1')?.address).toBe(address);
+  });
+
+  test('an all-capitals Litecoin Bech32 address is normalized before import', () => {
+    const address = 'ltc1qqqqsyqcyq5rqwzqfpg9scrgwpugpzysn3s44dy';
+    expect(
+      buildWalletImportInput({ address: address.toUpperCase(), displayName: '' }, 'req-1')?.address
+    ).toBe(address);
   });
 
   test('a space inside an address is named as a space, not as a short address', () => {

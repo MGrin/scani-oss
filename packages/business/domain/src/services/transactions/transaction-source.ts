@@ -48,6 +48,7 @@ const EVM_CHAIN_IDS: ReadonlySet<number> = new Set(ETHERSCAN_CHAINS.map((c) => c
 // registers under are the same slug.
 const NON_EVM_CHAIN_SOURCE_MAP: Record<string, string> = {
   '0': 'bitcoin',
+  '-3': 'litecoin',
   '-1': 'tron',
   '-2': 'solana',
   '-15': 'ton',

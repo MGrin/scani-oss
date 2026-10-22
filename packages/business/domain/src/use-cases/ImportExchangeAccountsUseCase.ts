@@ -305,6 +305,7 @@ const BLOCKCHAIN_INSTITUTION_CODES = new Set([
   'gnosis',
   'celo',
   'bitcoin',
+  'litecoin',
   'solana',
   'tron',
   'ton',

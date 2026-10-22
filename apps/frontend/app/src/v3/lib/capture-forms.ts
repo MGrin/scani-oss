@@ -1,3 +1,4 @@
+import { isLitecoinAddress } from '@scani/shared/validators/litecoin';
 import type { TFunction } from 'i18next';
 import { type AccountTargetDraft, describeAccountTargetBlockers } from './manual-entry';
 
@@ -204,7 +205,7 @@ export function emptyWalletImportDraft(): WalletImportDraft {
 interface WalletAddressShape {
   /** How the chain is named in a sentence. */
   chain: string;
-  valid: RegExp;
+  valid: RegExp | ((address: string) => boolean);
   /** Bytes the base58 text must decode to. The pattern alone admits a
    *  Bitcoin or Litecoin address as Solana, which then fails on `/jobs`
    *  rather than at the field (SC-1519). */
@@ -224,6 +225,7 @@ function base58ByteLength(value: string): number {
 }
 
 function matchesShape(shape: WalletAddressShape, value: string): boolean {
+  if (typeof shape.valid === 'function') return shape.valid(value);
   if (!shape.valid.test(value)) return false;
   return shape.base58Bytes === undefined || base58ByteLength(value) === shape.base58Bytes;
 }
@@ -240,6 +242,12 @@ const WALLET_ADDRESS_SHAPES: readonly WalletAddressShape[] = [
     valid: /^(?:[13][a-km-zA-HJ-NP-Z1-9]{25,34}|bc1[a-z0-9]{39,59}|BC1[A-Z0-9]{39,59})$/,
     claim: /^bc1/i,
     looksLikeKey: 'v3.capture.wallet.shape.bitcoin',
+  },
+  {
+    chain: 'Litecoin',
+    valid: isLitecoinAddress,
+    claim: /^ltc1/i,
+    looksLikeKey: 'v3.capture.wallet.shape.litecoin',
   },
   {
     chain: 'TON',
@@ -276,9 +284,14 @@ function walletAddressStatus(address: string): WalletAddressVerdict['status'] {
   if (!value) return 'empty';
   if (WALLET_ADDRESS_SHAPES.some((shape) => matchesShape(shape, value))) return 'valid';
   if (/\s/.test(value) || /\.eth$/i.test(value)) return 'unrecognised';
+  if (looksLikeInvalidLitecoinAddress(value)) return 'unrecognised';
   return WALLET_ADDRESS_SHAPES.some((shape) => shape.claim?.test(value))
     ? 'incomplete'
     : 'unrecognised';
+}
+
+function looksLikeInvalidLitecoinAddress(value: string): boolean {
+  return (/^ltc1/i.test(value) && value.length >= 43) || /^[LM].{33}$/.test(value);
 }
 
 function classifyWalletAddress(t: TFunction, address: string): WalletAddressVerdict {
@@ -291,6 +304,10 @@ function classifyWalletAddress(t: TFunction, address: string): WalletAddressVerd
   }
   if (/\.eth$/i.test(value)) {
     return { status: 'unrecognised', problem: t('v3.capture.wallet.ensName') };
+  }
+
+  if (looksLikeInvalidLitecoinAddress(value)) {
+    return { status: 'unrecognised', problem: t('v3.capture.wallet.invalidLitecoin') };
   }
 
   const claimed = WALLET_ADDRESS_SHAPES.find((shape) => shape.claim?.test(value));
@@ -358,7 +375,7 @@ export function buildWalletImportInput(
   return {
     // bech32 is case-insensitive, and an all-capitals one (a QR code's
     // alphanumeric mode) is the same address as its lower-case spelling.
-    address: /^BC1/.test(draft.address.trim())
+    address: /^(?:BC1|LTC1)/.test(draft.address.trim())
       ? draft.address.trim().toLowerCase()
       : draft.address.trim(),
     displayName: draft.displayName.trim() || undefined,

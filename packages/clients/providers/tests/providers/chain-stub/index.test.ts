@@ -3,11 +3,13 @@ import type { ProviderContext, WithUserCreds } from '../../../src/core/types';
 import { BitcoinProvider } from '../../../src/providers/bitcoin';
 import { ChainStubProvider } from '../../../src/providers/chain-stub';
 import { ETHERSCAN_CHAINS } from '../../../src/providers/etherscan/chains';
+import { LitecoinProvider } from '../../../src/providers/litecoin';
 import { SolanaProvider } from '../../../src/providers/solana';
 import { TonProvider } from '../../../src/providers/ton';
 import { TronProvider } from '../../../src/providers/tron';
 
 const GENESIS = '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa';
+const LTC_WALLET = 'LKDyUEtTR1HXamkiEphisSiBJu6o3ZPE34';
 const UNKNOWN_BTC = '1BvBMSEYstWetqTFn5Au4m4GFg7xJaNVN2';
 
 // The stub never touches these — an outflow limiter is only needed to
@@ -30,12 +32,12 @@ const stub = new ChainStubProvider();
 const emptyCtx = {} as ProviderContext;
 
 describe('ChainStubProvider', () => {
-  test('claims every EVM chain in the Etherscan catalog plus the four non-EVM chains', () => {
+  test('claims every EVM chain in the Etherscan catalog plus the five non-EVM chains', () => {
     for (const chain of ETHERSCAN_CHAINS) {
       expect(stub.canValidate(chain.institutionCode)).toBe(true);
       expect(stub.canFetchBalances(chain.institutionCode)).toBe(true);
     }
-    for (const code of ['bitcoin', 'solana', 'tron', 'ton']) {
+    for (const code of ['bitcoin', 'litecoin', 'solana', 'tron', 'ton']) {
       expect(stub.canValidate(code)).toBe(true);
       expect(stub.canFetchBalances(code)).toBe(true);
     }
@@ -66,6 +68,14 @@ describe('ChainStubProvider', () => {
     expect(snapshots[0]?.tokenIdentity.decimals).toBe(8);
   });
 
+  test('fetchBalances returns the Litecoin fixture balance', async () => {
+    expect(await stub.hasActivity(LTC_WALLET, 'litecoin', emptyCtx)).toBe(true);
+    const snapshots = await stub.fetchBalances(ctxFor('litecoin', LTC_WALLET));
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0]?.balance).toBe('2.5');
+    expect(snapshots[0]?.tokenIdentity.symbol).toBe('LTC');
+  });
+
   test('fetchBalances returns nothing for an address with no fixture', async () => {
     expect(await stub.fetchBalances(ctxFor('bitcoin', UNKNOWN_BTC))).toEqual([]);
     expect(await stub.fetchBalances(ctxFor('bitcoin'))).toEqual([]);
@@ -84,6 +94,7 @@ describe('ChainStubProvider', () => {
 
 describe('ChainStubProvider address shape matches the real providers', () => {
   const bitcoin = new BitcoinProvider(NEVER_CALLED);
+  const litecoin = new LitecoinProvider(NEVER_CALLED);
   const solana = new SolanaProvider(NEVER_CALLED, 'https://example.invalid');
   const tron = new TronProvider(NEVER_CALLED, 'https://example.invalid', undefined);
   const ton = new TonProvider(NEVER_CALLED, 'https://example.invalid', undefined);
@@ -93,6 +104,7 @@ describe('ChainStubProvider address shape matches the real providers', () => {
     UNKNOWN_BTC,
     '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy',
     'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq',
+    LTC_WALLET,
     '0x742d35Cc6634C0532925a3b844Bc454e4438f44e',
     '0xNOTHEX',
     'So11111111111111111111111111111111111111112',
@@ -104,6 +116,7 @@ describe('ChainStubProvider address shape matches the real providers', () => {
 
   test.each([
     ['bitcoin', (a: string) => bitcoin.isValidAddress(a)],
+    ['litecoin', (a: string) => litecoin.isValidAddress(a)],
     ['solana', (a: string) => solana.isValidAddress(a)],
     ['tron', (a: string) => tron.isValidAddress(a)],
     ['ton', (a: string) => ton.isValidAddress(a)],

@@ -224,7 +224,7 @@
         "searchPlaceholder": "BTC, AAPL, EUR…"
       },
       "wallet": {
-        "everyShape": "Ethereum e as restantes cadeias EVM são 0x seguido de 40 carateres hexadecimais; Bitcoin começa por 1, 3 ou bc1; Solana tem de 32 a 44 letras e dígitos; Tron começa por T; TON começa por EQ ou UQ.",
+        "everyShape": "Ethereum e as restantes cadeias EVM são 0x seguido de 40 carateres hexadecimais; Bitcoin começa por 1, 3 ou bc1; Solana tem de 32 a 44 letras e dígitos; Tron começa por T; TON começa por EQ ou UQ. Litecoin começa por L, M ou ltc1.",
         "incomplete_many": "Esse não é um endereço {{chain}} completo — um endereço é {{shape}}, e este tem {{count}} carateres.",
         "incomplete_one": "Esse não é um endereço {{chain}} completo — um endereço é {{shape}}, e este tem {{count}} caráter.",
         "incomplete_other": "Esse não é um endereço {{chain}} completo — um endereço é {{shape}}, e este tem {{count}} carateres.",
@@ -233,10 +233,12 @@
           "ethereum": "0x seguido de 40 carateres hexadecimais, 42 ao todo",
           "solana": "32 a 44 letras e dígitos, sem 0, O, I nem l entre eles",
           "ton": "EQ ou UQ seguido de 46 carateres, 48 ao todo",
-          "tron": "T seguido de mais 33 carateres, 34 ao todo"
+          "tron": "T seguido de mais 33 carateres, 34 ao todo",
+          "litecoin": "34 caracteres Base58 começando com L ou M, ou 43 ou 63 caracteres Bech32/Bech32m começando com ltc1"
         },
         "unrecognised": "O Scani não lê nenhuma cadeia cujos endereços se pareçam com esse. {{shapes}}",
         "innerSpace": "Há um espaço no meio deste endereço. Remova-o — um endereço é uma sequência contínua de caracteres.",
+        "invalidLitecoin": "Este não é um endereço válido da rede principal Litecoin. Copie-o novamente da sua carteira.",
         "ensName": "Isso é um nome ENS. O Scani acompanha endereços, não nomes — cole o endereço 0x para onde ele aponta."
       },
       "backChoices": "Voltar às opções",

@@ -2312,12 +2312,14 @@
           "bitcoin": "bc1 lalu 39 sampai 59 huruf kecil dan angka",
           "ton": "EQ atau UQ lalu 46 karakter, 48 seluruhnya",
           "tron": "T lalu 33 karakter lagi, 34 seluruhnya",
-          "solana": "32 sampai 44 huruf dan angka, tanpa 0, O, I, atau l di antaranya"
+          "solana": "32 sampai 44 huruf dan angka, tanpa 0, O, I, atau l di antaranya",
+          "litecoin": "34 karakter Base58 yang diawali L atau M, atau 43 atau 63 karakter Bech32/Bech32m yang diawali ltc1"
         },
-        "everyShape": "Ethereum dan rantai EVM lainnya memakai 0x dan 40 karakter heksadesimal; Bitcoin diawali 1, 3, atau bc1; Solana 32 sampai 44 huruf dan angka; Tron diawali T; TON diawali EQ atau UQ.",
+        "everyShape": "Ethereum dan rantai EVM lainnya memakai 0x dan 40 karakter heksadesimal; Bitcoin diawali 1, 3, atau bc1; Solana 32 sampai 44 huruf dan angka; Tron diawali T; TON diawali EQ atau UQ. Litecoin diawali L, M, atau ltc1.",
         "incomplete_other": "Itu bukan alamat {{chain}} yang lengkap — bentuknya {{shape}}, sedangkan ini {{count}} karakter.",
         "unrecognised": "Scani tidak membaca rantai mana pun yang alamatnya berbentuk seperti itu. {{shapes}}",
         "innerSpace": "Ada spasi di dalam alamat ini. Hapus spasinya — alamat adalah satu rangkaian karakter tanpa jeda.",
+        "invalidLitecoin": "Alamat mainnet Litecoin ini tidak valid. Salin lagi dari dompet Anda.",
         "ensName": "Itu nama ENS. Scani memantau alamat, bukan nama — tempelkan alamat 0x yang dirujuknya."
       },
       "institution": {
