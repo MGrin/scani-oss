@@ -21,13 +21,18 @@ import {
   balancesAsOfFact,
   compareAccounts,
   isStaleSync,
+  keyRejectedLabels,
+  keyRejectedNotice,
+  lastSyncColumn,
+  lastSyncFact,
   namedAllocation,
 } from '../../lib/accounts';
-import { formatRelative } from '../../lib/relative-time';
 import { accountHoldingsPath, V3_ROUTES } from '../../lib/routes';
 import { EditAccountSheet } from '../accounts/EditAccountSheet';
+import { StatementsBlock } from '../accounts/StatementsBlock';
 import { useOpenCapture } from '../capture/CaptureSheetContext';
 import { ReturnsBlock } from '../home/ReturnsBlock';
+import { AccountDeleteAction } from './AccountDeleteAction';
 import { AccountReconnect } from './AccountReconnect';
 import { EntityValueSummary } from './EntityValueSummary';
 import { InstitutionMark } from './InstitutionMark';
@@ -68,6 +73,10 @@ export interface AccountsListProps {
   onBulkDelete: (ids: string[], clearSelection: () => void) => void;
   /** True while `accounts.bulkDelete` is in flight. */
   isBulkDeleting?: boolean;
+  /** The peek's single delete, after its own inline confirmation (SC-1746). */
+  onDelete: (account: AccountRow) => void;
+  /** True while `accounts.delete` is in flight. */
+  isDeleting?: boolean;
 }
 
 /** The names behind a selection, for the confirmation to be checkable against
@@ -109,6 +118,8 @@ export function AccountsList({
   onAssignGroups,
   onBulkDelete,
   isBulkDeleting,
+  onDelete,
+  isDeleting,
 }: AccountsListProps) {
   useRelativeTimeTick();
   const { t } = useTranslation();
@@ -124,18 +135,6 @@ export function AccountsList({
     typeById.get(account.typeId)?.name ?? t('v3.entities.account.unknownType');
 
   /**
-   * The whole answer — for the peek and for the file, where there is room for
-   * a sentence and a reader who has asked about this one account.
-   */
-  const lastSyncFact = (account: AccountRow) => {
-    const lastSync = accountLastSync(account.metadata);
-    if (!lastSync) return t('v3.entities.account.neverSynced');
-    return isStaleSync(lastSync)
-      ? t('v3.entities.account.lastSyncOverdue', { when: formatRelative(t, lastSync) })
-      : formatRelative(t, lastSync);
-  };
-
-  /**
    * The column's answer (SC-114, second half). The sentence above was a badge's
    * job written as prose: repeated identically down all ten rows and cut to
    * "Never — this accou…" on every one of them, which reads as an error where
@@ -143,8 +142,7 @@ export function AccountsList({
    * fit; the sentence stays one tap away in the peek, and the export writes it
    * in full.
    */
-  const lastSyncCell = (account: AccountRow) =>
-    accountLastSync(account.metadata) ? lastSyncFact(account) : t('v3.entities.account.byHand');
+  const lastSyncCell = (account: AccountRow) => lastSyncColumn(t, account);
 
   const config: V3DataViewConfig<AccountRow> = {
     pageKey: 'accounts',
@@ -227,7 +225,7 @@ export function AccountsList({
       // A refused key outranks "overdue": it names the cause, and the cure is
       // the owner's (SC-1686).
       const badge = account.keyRejected
-        ? t('v3.entities.account.keyRejected')
+        ? keyRejectedLabels(t, account.keyRejected).badge
         : stale
           ? t('v3.entities.account.syncOverdue')
           : null;
@@ -309,7 +307,7 @@ export function AccountsList({
         ),
         // The file keeps the sentence: a spreadsheet has no peek to open, and
         // "By hand" in a cell is the abbreviation, not the fact.
-        exportValue: (account) => exportText(lastSyncFact(account)),
+        exportValue: (account) => exportText(lastSyncFact(t, account)),
       },
       {
         key: 'holdings',
@@ -368,6 +366,9 @@ export function AccountsList({
         return {
           title: account.name,
           subtitle: institutionName(account),
+          notice: account.keyRejected
+            ? (keyRejectedNotice(t, account.keyRejected, institutionName(account)) ?? undefined)
+            : undefined,
           leading: (
             <InstitutionMark
               name={institutionName(account)}
@@ -382,7 +383,7 @@ export function AccountsList({
               value: <Numeric value={account.summary.holdingsCount} format="plain" decimals={0} />,
             },
             { label: t('v3.entities.account.type'), value: typeName(account) },
-            { label: t('v3.entities.account.lastSynced'), value: lastSyncFact(account) },
+            { label: t('v3.entities.account.lastSynced'), value: lastSyncFact(t, account) },
             // SC-384's whole point, and the only fact here that is sometimes
             // absent. "Last synced: just now" was true and answered a question
             // nobody asked — the request was minutes ago, the IBKR positions in
@@ -402,7 +403,12 @@ export function AccountsList({
                   : 'None',
             },
           ],
-          content: <ReturnsBlock scope={{ kind: 'account', id: account.id }} />,
+          content: (
+            <>
+              <ReturnsBlock scope={{ kind: 'account', id: account.id }} />
+              <StatementsBlock accountId={account.id} />
+            </>
+          ),
           // The row is this link now (SC-560), so the sheet keeps it only for
           // the reader who arrived at the sheet directly — a shared
           // `/accounts/<id>`, or the back gesture landing on one. Removing it
@@ -411,7 +417,10 @@ export function AccountsList({
           actions: (
             <>
               {account.keyRejected ? (
-                <AccountReconnect providerKey={account.keyRejected.providerKey} />
+                <AccountReconnect
+                  providerKey={account.keyRejected.providerKey}
+                  label={keyRejectedLabels(t, account.keyRejected).action}
+                />
               ) : null}
               <Button variant="outline" size="sm" onClick={() => setEditing(account)}>
                 <Pencil className="me-2 size-4" aria-hidden="true" />
@@ -423,6 +432,11 @@ export function AccountsList({
                   {t('v3.entities.account.viewHoldings')}
                 </Link>
               </Button>
+              <AccountDeleteAction
+                name={account.name}
+                isPending={isDeleting}
+                onDelete={() => onDelete(account)}
+              />
             </>
           ),
         };

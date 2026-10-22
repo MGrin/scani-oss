@@ -227,6 +227,7 @@ describe('AccountsList', () => {
         query={SETTLED_QUERY_STATE}
         onAssignGroups={noop}
         onBulkDelete={noop}
+        onDelete={noop}
       />
     );
   }

@@ -147,7 +147,8 @@
         "incomeExpected_one": "Income expected, next {{count}} day",
         "incomeExpected_other": "Income expected, next {{count}} days",
         "dueNext_one": "{{count}} due · next {{when}}",
-        "dueNext_other": "{{count}} due · next {{when}}"
+        "dueNext_other": "{{count}} due · next {{when}}",
+        "tileEmpty": "Nothing due soon"
       },
       "metric": {
         "netWorth": "Net worth",
@@ -1462,7 +1463,8 @@
       "backup": {
         "title": "Backup",
         "intro": "Your account in one file: every account, holding, transaction and balance reading, with your settings and rules.",
-        "notIncluded": "Not included yet: uploaded documents. Exchange and bank connections are never included: they are credentials, not records.",
+        "notIncluded": "Exchange and bank connections are never included: they are credentials, not records.",
+        "filesLeftOut": "Uploaded files left out of this backup: {{files}}. With them, it would be over the {{limit}} a restore accepts.",
         "last": "Last backup {{date}} · {{size}}",
         "make": "Make a backup",
         "making": "Making your backup…",
@@ -1797,6 +1799,13 @@
         "confirming": "Confirming…",
         "blockerCode": "enter the 6-digit code",
         "passkeyFailed": "This device couldn't save a passkey."
+      },
+      "aiCategories": {
+        "title": "AI category suggestions",
+        "label": "Suggest categories with AI",
+        "sent": "When on, each payee's description, name, direction (in or out) and currency go to the AI provider, with every number removed. Amounts, dates, card numbers and account names are never sent. Suggestions arrive within the hour, marked “Suggested by AI”.",
+        "unavailable": "This instance has no AI provider for suggestions.",
+        "saving": "Saving the AI suggestions setting"
       }
     },
     "feedback": {
@@ -2385,7 +2394,7 @@
         },
         "exchange": {
           "title": "An exchange or broker login",
-          "description": "Read-only API keys, encrypted at rest."
+          "description": "Scani only reads with the keys you add, and encrypts them at rest."
         },
         "manual": {
           "title": "The figures themselves",
@@ -2415,7 +2424,7 @@
         },
         "statement": {
           "title": "Upload a statement file",
-          "description": "A CSV, TSV, OFX or QIF export from a bank or a broker. We import its holdings and transactions straight away, then show you what was added."
+          "description": "A CSV, TSV, OFX, QIF, MT940 or CAMT.053 export from a bank or a broker. We import its holdings and transactions straight away, then show you what was added."
         },
         "either": {
           "title": "Upload a file",
@@ -2424,7 +2433,7 @@
         "whereItBelongs": "Where it belongs"
       },
       "formats": {
-        "import": "PNG, JPG, WEBP, PDF, CSV, TSV, OFX or QIF",
+        "import": "PNG, JPG, WEBP, PDF, CSV, TSV, XLSX, XLS, OFX, QIF, MT940 or CAMT.053",
         "invoice": "PDF, PNG, JPG or WEBP"
       },
       "stage": {
@@ -2581,18 +2590,31 @@
       "integration": {
         "title": "Connect a service",
         "subtitle": "One set of read-only keys, encrypted at rest.",
-        "listSubtitle": "Read-only API keys, encrypted at rest. Balances are synced hourly. Connecting the same service again replaces its keys.",
+        "listSubtitle": "Scani only reads with the keys you add, and encrypts them at rest. Balances sync hourly. Connecting the same service again replaces its keys.",
         "allServices": "All services",
         "thisService": "this service",
         "notFoundTitle": "Not one of ours",
         "notFoundBody": "Scani has no integration by that name. It may have been renamed, or the link may be out of date.",
         "connectNamed": "Connect {{name}}",
         "permissions": "Read-only permissions are all Scani needs. Keys are encrypted at rest and never leave our workers.",
+        "permissionsOnYourServer": "Scani only reads with this key. It is encrypted at rest and stays on the server Scani runs on.",
+        "permissionsOnYourServerPlural": "Scani only reads with these credentials. They are encrypted at rest and stay on the server Scani runs on.",
+        "permissionsOnYourServerToken": "Scani only reads with this token. It is encrypted at rest and stays on the server Scani runs on.",
         "whereToGet": "Where to get them",
+        "whereToGetOne": "Where to get it",
         "credentials": "Credentials",
         "ownDocs": "{{name}}'s own documentation",
         "unverifiedTitle": "Couldn't check your {{name}} keys",
-        "unverifiedDetail": "{{name}} didn't answer, so we can't say whether the keys are right. Nothing was saved — try again in a minute."
+        "unverifiedDetail": "{{name}} didn't answer, so we can't say whether the keys are right. Nothing was saved — try again in a minute.",
+        "selfHostedOnly": "Self-hosted only",
+        "selfHostedOnlyTitle": "Available on self-hosted Scani",
+        "selfHostedOnlyBody": "{{reason}} Run Scani on your own server to connect {{name}}, or upload a statement file instead.",
+        "selfHostedOnlyBodyExport": "{{reason}} Export a statement from {{name}} as {{formats}} and upload it here, or run Scani on your own server to connect {{name}}.",
+        "selfHostedOnlyReasonBunq": "{{name}} lets its personal API key be used only in software you run yourself, so the hosted Scani can't connect it.",
+        "selfHostedOnlyReasonFio": "{{name}} holds you liable for anything done with your token by someone else, so the hosted Scani doesn't take it.",
+        "selfHostedOnlyReasonInvestec": "{{name}} issues these credentials for you or your business only, so the hosted Scani can't connect them.",
+        "selfHostedOnlyReasonOther": "{{name}} can be connected only on self-hosted Scani.",
+        "keyCanMoveMoney": "A {{name}} API key can also make payments: {{name}} offers no read-only key. Scani only reads with it, and stores it encrypted."
       },
       "demoNote": "Nothing you enter here is saved — this is the demo.",
       "backChoices": "Back to choices",
@@ -2723,14 +2745,22 @@
         "unknownInstitution": "Unknown institution",
         "unknownType": "Unknown type",
         "neverSynced": "Never — this account is maintained by hand",
+        "neverSyncedConnected": "Never — this connection has not synced yet",
         "valueByAccount": "Value by account",
         "byHand": "By hand",
+        "notSyncedYet": "Not synced yet",
         "lastSyncOverdue": "{{when}} · overdue",
         "sublabel_one": "{{institution}} · {{count}} holding",
         "sublabel_other": "{{institution}} · {{count}} holdings",
         "syncOverdue": "Sync overdue",
-        "keyRejected": "Key rejected",
+        "keyRejected": "Needs reconnecting",
         "keyRejectedReconnect": "Key rejected — Reconnect",
+        "tokenExpired": "Token expired",
+        "keyExpired": "Key expired",
+        "addNewToken": "Add a new token",
+        "addNewKey": "Add a new key",
+        "tokenStoppedNotice": "{{name}} stopped accepting this token. {{name}} tokens last up to {{days}} days.",
+        "keyStoppedNotice": "{{name}} stopped accepting this key. {{name}} keys last up to {{days}} days.",
         "viewHoldings": "View holdings",
         "assignGroups": "Assign groups",
         "pageTitle": "Accounts",
@@ -2742,6 +2772,11 @@
         "groups": "Groups",
         "bulkDeleteConsequence_one": "{{names}} is removed, and every holding inside it goes too, along with its transaction history. This cannot be undone.",
         "bulkDeleteConsequence_other": "{{names}} are removed, and every holding inside them goes too, along with its transaction history. This cannot be undone.",
+        "deleteAction": {
+          "trigger": "Delete",
+          "commit": "Delete {{name}}",
+          "consequence": "{{name}} is removed, with every holding in it. Its value leaves every past day of your net worth chart, and its realized gains go with it. This cannot be undone."
+        },
         "toast": {
           "deleted": "Account deleted successfully",
           "deletingContext": "Failed to delete account",
@@ -3059,7 +3094,8 @@
         "backup": "Backup",
         "restore": "Restore from backup",
         "budgetAppImport": "Budget app import",
-        "budgetAppUndo": "Undo budget app import"
+        "budgetAppUndo": "Undo budget app import",
+        "accountRefresh": "Account refresh"
       },
       "review": {
         "title": "Review extracted holdings",
@@ -3283,7 +3319,7 @@
           "statementClose": "Statement close",
           "noClosingBalance": "No closing balance",
           "balanceUnknown": "Balance unknown",
-          "fromRows": "From these rows. Set the real balance if it held money before",
+          "fromRows": "Balance from these rows. Set the real balance if it held money before",
           "setBalance": "Set the balance"
         },
         "warningsTitle_one": "{{count}} warning",
@@ -3294,6 +3330,8 @@
           "title": "Which currency is this statement in?",
           "body_one": "We read {{count}} transaction from this file, but it names no currency and none could be detected. Nothing has been imported yet.",
           "body_other": "We read {{count}} transactions from this file, but it names no currency and none could be detected. Nothing has been imported yet.",
+          "bodySuggested_one": "We read {{count}} transaction from this file. It mentions {{currency}}, so {{currency}} is picked below. Check it before importing. Nothing has been imported yet.",
+          "bodySuggested_other": "We read {{count}} transactions from this file. It mentions {{currency}}, so {{currency}} is picked below. Check it before importing. Nothing has been imported yet.",
           "preview": "{{shown}} of {{total}}",
           "noDescription": "No description",
           "fieldLabel": "Statement currency",
@@ -3310,7 +3348,7 @@
           "monthFirst": "Month first — 12/31"
         },
         "columns": {
-          "title": "Match CSV columns",
+          "title": "Match the file's columns",
           "body": "Choose the columns in your file. Nothing has been imported. Select either a signed amount or separate credit and debit columns.",
           "date": "Date",
           "description": "Description",
@@ -3368,7 +3406,8 @@
         "unrecoverable": {
           "label": "Failed — won't retry",
           "sentence": "This failed for a reason another attempt will not fix, and nothing was recorded that we can show you. Re-running it unchanged will fail the same way.",
-          "sentenceWithDetail": "This failed for a reason another attempt will not fix. Check the details below, correct them, and start it again."
+          "sentenceWithDetail": "This failed for a reason another attempt will not fix. Check the details below, correct them, and start it again.",
+          "sentenceWithFileDetail": "This file can't be imported as it is, and another attempt won't change that."
         },
         "sourceUnavailable": {
           "label": "Failed — try again later",
@@ -3394,6 +3433,9 @@
         "settling": {
           "label": "Failed",
           "sentence": "The last attempt failed. Checking whether anything else is queued for it."
+        },
+        "unexplained": {
+          "sentence": "It stopped on an unforeseen error, so there is no reason we can show you. The details are kept for the Scani team."
         }
       },
       "budgetApp": {
@@ -3414,6 +3456,16 @@
         "accountsRemoved": "Accounts removed",
         "accountsKept_one": "{{count}} account the import opened is kept: something else has written to it since.",
         "accountsKept_other": "{{count}} accounts the import opened are kept: something else has written to them since."
+      },
+      "burst": {
+        "refreshing_one": "Refreshing {{count}} account",
+        "refreshing_other": "Refreshing {{count}} accounts",
+        "refreshed_one": "Refreshed {{count}} account",
+        "refreshed_other": "Refreshed {{count}} accounts",
+        "progress": "{{done}} of {{total}} done",
+        "failed_one": "{{count}} failed",
+        "failed_other": "{{count}} failed",
+        "accountsHeading": "Accounts refreshed"
       }
     },
     "membership": {
@@ -3581,10 +3633,18 @@
         "chart": "Household net worth over the last year",
         "allocation": "Allocation",
         "accounts": "Shared accounts",
-        "accountOwner": "{{name}} · {{owner}}",
         "you": "You",
         "trackedTwice": "Both of you track {{name}}: un-share one copy",
-        "link": "Household"
+        "link": "Household",
+        "members": "Members",
+        "manage": "Manage",
+        "invited": "Invited",
+        "memberYou": "{{name}} (you)",
+        "memberShares_one": "{{role}} · shares {{count}} account",
+        "memberShares_other": "{{role}} · shares {{count}} accounts",
+        "memberSharesNothing": "{{role}} · shares nothing yet",
+        "accountSublabel": "{{owner}} · {{institution}}",
+        "shareAccounts": "Share accounts"
       }
     },
     "budgetApp": {
@@ -3709,6 +3769,8 @@
       "auto": {
         "marker": "Set automatically",
         "reasonRule": "Matched your earlier pick for {{payee}}",
+        "reasonAi": "Suggested by AI",
+        "reasonKind": "Set from the transaction type",
         "keep": "Keep",
         "kept": "Category kept",
         "spread_one": "Also set on {{count}} similar transaction.",
@@ -3823,6 +3885,12 @@
         "exempt": "Sheltered",
         "advantaged": "Advantaged"
       }
+    },
+    "statements": {
+      "fileNotKept": "File not kept",
+      "gaps": "No statement for {{months}}.",
+      "noGaps": "Every month since the first statement has one.",
+      "title": "Statements"
     }
   }
 }

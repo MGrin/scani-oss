@@ -3,13 +3,14 @@ import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { mergeQueries } from '@scani/ui/v3/lib/query-state';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
 import { useAccountActions } from '@/v3/hooks/useAccountActions';
 import { AccountsList } from '../components/entities/AccountsList';
 import { AssignGroupsSheet } from '../components/groups/AssignGroupsSheet';
 import { accountFiltersFromParams } from '../lib/accounts';
+import { V3_ROUTES } from '../lib/routes';
 
 /**
  * The accounts a portfolio is held in.
@@ -34,6 +35,7 @@ export function AccountsPage() {
   const accountTypesQuery = trpc.accountTypes.getAll.useQuery();
 
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { symbol: currency } = useBaseCurrency();
   const actions = useAccountActions();
 
@@ -62,6 +64,15 @@ export function AccountsPage() {
         // (SC-63) — this is the write it commits to.
         onBulkDelete={(ids, clear) => actions.bulkDelete(ids, { onSuccess: clear })}
         isBulkDeleting={actions.isBulkDeleting}
+        // The confirmation is `AccountDeleteAction`'s, in the peek's action row
+        // (SC-1746). The account is out of the cache after this, so the peek
+        // leaves its own URL rather than showing its not-found copy.
+        onDelete={(account) =>
+          actions.deleteAccount(account.id, {
+            onSuccess: () => navigate(V3_ROUTES.accounts, { replace: true }),
+          })
+        }
+        isDeleting={actions.isDeleting}
       />
 
       {/* Mounted only while targeted, so the checked set starts from the
