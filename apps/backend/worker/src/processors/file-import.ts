@@ -17,7 +17,7 @@ import {
   TransferReviewService,
   UploadedFileService,
 } from '@scani/domain/services';
-import { parseStatement } from '@scani/file-import';
+import { parseStatement, type SpreadsheetRefusalReason } from '@scani/file-import';
 import {
   type StatementClose,
   type StatementLine,
@@ -32,7 +32,13 @@ import {
   PORTFOLIO_HISTORY_LOOKBACK_DAYS,
 } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
-import { BullMqEnqueueService, type ProcessorContext, UserJobProcessor } from '@scani/queue';
+import {
+  BullMqEnqueueService,
+  type ProcessorContext,
+  UnrecoverableError,
+  UserJobProcessor,
+  userFacing,
+} from '@scani/queue';
 import { emitEntityChange } from '@scani/realtime';
 import type { CsvMapping } from '@scani/shared';
 import { Container, Service } from 'typedi';
@@ -89,6 +95,8 @@ interface FileImportSummary {
       amount: number;
       balance: number | null;
     }>;
+    /** A currency the file names without a Currency column; preselected, never applied (SC-1735). */
+    suggestedCurrency?: string;
   };
   // Set when nothing in the file says whether `03/04` is 3 April or 4 March
   // (SC-1291). The job-detail UI asks and re-enqueues with `dateOrder`; like
@@ -104,6 +112,15 @@ interface FileImportSummary {
 }
 
 type FileImportResult = FileImportSummary;
+
+const SPREADSHEET_REFUSALS: Record<SpreadsheetRefusalReason, string> = {
+  'binary-xls':
+    'This is an old binary Excel file, which Scani cannot read. Save it as .xlsx or CSV and upload again.',
+  'too-large':
+    'This spreadsheet unpacks to more than Scani reads. Export a shorter period, or save it as CSV.',
+  unreadable:
+    'Scani could not read this file as a spreadsheet. Save it as .xlsx or CSV and upload again.',
+};
 
 @Service()
 export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImportResult> {
@@ -135,12 +152,18 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
     // file stays alive until R2 sweeps it — by which point the retained
     // copy under `documents/` is the one that survives.
     await ctx.reportStatus(`Parsing ${data.fileType.toUpperCase()} statement…`);
-    const parsed = await parseStatement(buf.toString('utf-8'), `import.${data.fileType}`, {
+    const parsed = await parseStatement(buf, `import.${data.fileType}`, {
       aiColumnDetector: (headers, sampleRows) =>
         csvColumnDetection.detectColumns(data.userId, headers, sampleRows),
       dateOrder: data.dateOrder,
       customMapping: data.customMapping,
     });
+
+    if (parsed.refusal) {
+      throw userFacing(
+        new UnrecoverableError(`${SPREADSHEET_REFUSALS[parsed.refusal]} Nothing was imported.`)
+      );
+    }
 
     logger.info(
       {
@@ -225,6 +248,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
             amount: tx.amount,
             balance: tx.balance ?? null,
           })),
+          suggestedCurrency: parsed.suggestedCurrency,
         },
       };
     }
@@ -272,6 +296,7 @@ export class FileImportProcessor extends UserJobProcessor<FileImportJob, FileImp
                 accountId: data.accountId,
                 result: statement,
                 uploadRef: data.r2Key,
+                documentId: document?.id,
                 // The same file is the same document, so it is the same fetch and
                 // a second upload of it records no second window.
                 fetchedAt: document?.createdAt ?? new Date(),
@@ -503,4 +528,8 @@ const STATEMENT_MIME_TYPES: Record<string, string> = {
   csv: 'text/csv',
   ofx: 'application/x-ofx',
   qif: 'application/x-qif',
+  // CAMT.053 is XML, and is kept as plain text so that nothing serves a
+  // statement back as markup.
+  mt940: 'text/plain',
+  camt053: 'text/plain',
 };

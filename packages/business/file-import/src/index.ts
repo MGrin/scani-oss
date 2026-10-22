@@ -1,6 +1,7 @@
 export type { BudgetAppRegisterParse } from './budget-app-register';
 export { parseBudgetAppRegister } from './budget-app-register';
 export { statementFeeFromRawPayload } from './csv-parser';
+export type { SpreadsheetRefusalReason } from './spreadsheet';
 export { statementPayee } from './statement-payee';
 export type {
   ParsedTransaction,
@@ -11,12 +12,22 @@ export type { BudgetAppAccount, BudgetAppRow, SkipReason } from './ynab-register
 import { createComponentLogger } from '@scani/logging';
 import { AI_COLUMN_MAPPING_WARNING } from '@scani/shared';
 import Papa from 'papaparse';
+import { parseCamt053Statement } from './camt053-parser';
 import { parseCsvStatement } from './csv-parser';
+import { agreedCurrency, preambleCurrency } from './currency-hint';
 import type { DateOrder } from './dates';
 import { detectFormat } from './format-detector';
 import { parseIbCsvStatement } from './ib-csv-parser';
+import { parseMt940Statement } from './mt940-parser';
 import { parseOfxStatement } from './ofx-parser';
 import { parseQifStatement } from './qif-parser';
+import {
+  isSpreadsheetBinary,
+  readSpreadsheetTable,
+  SpreadsheetRefusal,
+  type SpreadsheetTable,
+  sniffSpreadsheet,
+} from './spreadsheet';
 import type { CsvColumnMapping, ExtractedHolding, ParsedTransaction, ParseResult } from './types';
 
 const logger = createComponentLogger('file-import');
@@ -72,10 +83,17 @@ function extractHoldingsFromTransactions(
  * by the caller so this package stays free of any AI / DI dependency.
  */
 export async function parseStatement(
-  content: string,
+  content: string | Uint8Array,
   filename?: string,
   options?: ParseStatementOptions
 ): Promise<ParseResult> {
+  if (typeof content !== 'string') {
+    if (isSpreadsheetBinary(content) || /\.xlsx?$/i.test(filename ?? '')) {
+      return parseSpreadsheet(content, options);
+    }
+    // `ignoreBOM` keeps a BOM in the text, as `Buffer#toString` did before bytes came here.
+    content = new TextDecoder('utf-8', { ignoreBOM: true }).decode(content);
+  }
   const { bankTemplate, customMapping, aiColumnDetector, dateOrder } = options ?? {};
   const format = detectFormat(content, filename);
 
@@ -172,11 +190,40 @@ export async function parseStatement(
       };
 
     case 'mt940':
-      return {
-        transactions: [],
-        holdings: [],
-        format: 'mt940',
-        warnings: ['MT940 format support coming soon. Please export as CSV or OFX instead.'],
-      };
+      return parseMt940Statement(content);
+
+    case 'camt053':
+      return parseCamt053Statement(content);
+
+    case 'xlsx':
+    case 'xls':
+      return parseSpreadsheet(new TextEncoder().encode(content), options);
   }
+}
+
+/**
+ * A sheet becomes CSV text and takes the CSV path, so header detection, the AI
+ * fallback and the owner's column mapping are the ones a CSV gets (SC-1734).
+ */
+async function parseSpreadsheet(
+  bytes: Uint8Array,
+  options?: ParseStatementOptions
+): Promise<ParseResult> {
+  const format = sniffSpreadsheet(bytes) === 'xlsx' ? 'xlsx' : 'xls';
+  let table: SpreadsheetTable;
+  try {
+    table = await readSpreadsheetTable(bytes);
+  } catch (error) {
+    if (!(error instanceof SpreadsheetRefusal)) throw error;
+    return { transactions: [], holdings: [], format, warnings: [], refusal: error.reason };
+  }
+  const result = await parseStatement(Papa.unparse(table.rows), 'import.csv', options);
+  result.format = format;
+  if (result.transactions.length > 0 && !result.detectedCurrency) {
+    result.suggestedCurrency = agreedCurrency(
+      result.suggestedCurrency,
+      preambleCurrency(table.preamble)
+    );
+  }
+  return result;
 }
