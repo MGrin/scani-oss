@@ -38,6 +38,9 @@ map of the ~50 most-traded symbols → CoinGecko ids).
   an older range gets a 401, so the range fetch asks for the last 364.
 - Keyed: 25 req/min; the Pro tier allows 500–10k depending on plan.
 - Rate-limiter namespace: `coingecko`.
+- A user's search (`/search`) asks with `high` priority: it takes the next
+  slot of the same budget ahead of background price calls, and gives up empty
+  when none frees within its 3 s timeout. The budget is unchanged (SC-1766).
 
 ## Error taxonomy
 

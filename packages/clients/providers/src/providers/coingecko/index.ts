@@ -422,7 +422,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
   async searchTokens(query: string, limit = 10): Promise<TokenSearchResult[]> {
     const url = `${this.baseUrl()}/search?query=${encodeURIComponent(query)}`;
     try {
-      const response = await this.get(url, 'search', 3000, 0);
+      const response = await this.get(url, 'search', 3000, 0, 'interactive');
       if (!response.ok) {
         this.logger.warn({ status: response.status, query }, 'CoinGecko /search non-OK');
         return [];
@@ -508,7 +508,8 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
     url: string,
     endpoint: string,
     timeoutMs?: number,
-    retries = 2
+    retries = 2,
+    lane: 'background' | 'interactive' = 'background'
   ): Promise<Response> {
     const tier = this.opts.apiKey ? 'pro' : 'public';
     const onResponse = (attempt: Response) => {
@@ -523,7 +524,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
       const last = attempt >= retries;
       let response: Response;
       try {
-        response = await this.limiter.execute(() =>
+        response = await this.slot(lane, timeoutMs, () =>
           fetchWithTimeout(url, { headers: this.headers() }, timeoutMs, 0, onResponse)
         );
       } catch (error) {
@@ -540,6 +541,21 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
       }
       await Bun.sleep(2 ** attempt * 1000);
     }
+  }
+
+  /**
+   * An interactive call goes first inside the same budget, and waits for a
+   * slot no longer than its own timeout: a user's search answers empty rather
+   * than hanging behind price calls (SC-1766).
+   */
+  private slot<T>(
+    lane: 'background' | 'interactive',
+    timeoutMs: number | undefined,
+    fn: () => Promise<T>
+  ): Promise<T> {
+    if (lane === 'background') return this.limiter.execute(fn);
+    const signal = timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs);
+    return this.limiter.execute(fn, undefined, signal, 'high');
   }
 
   private baseUrl(): string {

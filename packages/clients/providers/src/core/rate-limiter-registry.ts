@@ -25,7 +25,7 @@
  *     await limiter.execute(fn, credentialBucketKey(apiKey));
  */
 
-import type { OutflowRateLimiter } from '@scani/rate-limiter';
+import type { OutflowPriority, OutflowRateLimiter } from '@scani/rate-limiter';
 import { Container, Service } from 'typedi';
 import { ApiCallCounter } from './api-call-counter';
 
@@ -99,14 +99,20 @@ function counted(
   return new Proxy(limiter, {
     get(target, prop) {
       if (prop === 'execute') {
-        return <T>(fn: () => Promise<T>, subKey?: string, signal?: AbortSignal) =>
+        return <T>(
+          fn: () => Promise<T>,
+          subKey?: string,
+          signal?: AbortSignal,
+          priority?: OutflowPriority
+        ) =>
           target.execute(
             () => {
               calls.add(namespace);
               return fn();
             },
             subKey,
-            signal
+            signal,
+            priority
           );
       }
       const value = Reflect.get(target, prop, target);
