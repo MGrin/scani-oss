@@ -392,6 +392,7 @@ Thanks goes to these people ([emoji key](https://allcontributors.org/docs/en/emo
   <tbody>
     <tr>
       <td align="center" valign="top" width="14.28%"><a href="https://github.com/MGrin"><img src="https://avatars.githubusercontent.com/u/2393862?v=4?s=100" width="100px;" alt="MGrin"/><br /><sub><b>MGrin</b></sub></a><br /><a href="https://github.com/MGrin/scani-oss/commits?author=MGrin" title="Code">💻</a> <a href="#maintenance-MGrin" title="Maintenance">🚧</a> <a href="https://github.com/MGrin/scani-oss/commits?author=MGrin" title="Documentation">📖</a> <a href="#infra-MGrin" title="Infrastructure (Hosting, Build-Tools, etc)">🚇</a> <a href="https://github.com/MGrin/scani-oss/pulls?q=is%3Apr+reviewed-by%3AMGrin" title="Reviewed Pull Requests">👀</a></td>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/NuperSu"><img src="https://avatars.githubusercontent.com/u/93143246?v=4?s=100" width="100px;" alt="NuperSu"/><br /><sub><b>NuperSu</b></sub></a><br /><a href="https://github.com/MGrin/scani-oss/commits?author=NuperSu" title="Code">💻</a></td>
     </tr>
   </tbody>
 </table>
