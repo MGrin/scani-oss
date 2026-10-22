@@ -1,4 +1,4 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
   date,
   index,
@@ -155,6 +155,12 @@ export const portfolioValueDaily = pgTable(
     // on every returns request (SC-1369); without this it scans every rollup
     // row the user has.
     userComputedAtIdx: index('idx_pvd_user_computed_at').on(table.userId, table.computedAt.desc()),
+    // A holding's newest VALUED rows (SC-1741). Most holding rows carry no
+    // known value, so a newest-valued read on the scope index walked back
+    // past hundreds of them per holding.
+    valuedHoldingNewestIdx: index('idx_pvd_valued_holding_newest')
+      .on(table.userId, table.scopeId, table.baseCurrencyId, table.snapshotDate.desc())
+      .where(sql`scope_kind = 'holding' AND holdings_with_known_value > 0`),
   })
 );
 
