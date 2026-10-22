@@ -68,7 +68,7 @@ export interface SupportedChain {
   /** Human-readable chain name. */
   name: string;
   /** Chain type. */
-  type: 'evm' | 'bitcoin' | 'solana' | 'tron' | 'ton';
+  type: 'evm' | 'bitcoin' | 'litecoin' | 'solana' | 'tron' | 'ton';
   /** Native token symbol. */
   nativeSymbol: string;
   /** Native token name. */
@@ -222,6 +222,14 @@ const NON_EVM_CHAINS: SupportedChain[] = [
     isActive: true,
   },
   {
+    chainId: -3,
+    name: 'Litecoin',
+    type: 'litecoin',
+    nativeSymbol: 'LTC',
+    nativeName: 'Litecoin',
+    isActive: true,
+  },
+  {
     chainId: -2,
     name: 'Solana',
     type: 'solana',
@@ -258,6 +266,7 @@ const EVM_CHAIN_ID_TO_INSTITUTION_CODE: Record<number, string> = Object.fromEntr
 
 const NON_EVM_CHAIN_ID_TO_INSTITUTION_CODE: Record<string, string> = {
   '0': 'bitcoin',
+  '-3': 'litecoin',
   '-2': 'solana',
   '-1': 'tron',
   '-15': 'ton',
@@ -420,7 +429,7 @@ export class WalletDiscoveryService {
     // Each validator covers one or more institution codes. For EVM
     // we ask once per EVM institution code (the Etherscan provider's
     // `canValidate` returns true for any of them); for chain-specific
-    // providers (bitcoin, solana, tron, ton) we ask once with the
+    // providers (bitcoin, litecoin, solana, tron, ton) we ask once with the
     // matching institution code.
     const candidates: Array<{ institutionCode: string }> = [
       ...EVM_CHAINS.map((c) => ({

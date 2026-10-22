@@ -2312,12 +2312,14 @@
           "bitcoin": "以 bc1 开头，后接 39 到 59 个小写字母和数字",
           "ton": "以 EQ 或 UQ 开头，后接 46 个字符，共 48 位",
           "tron": "以 T 开头，后接 33 个字符，共 34 位",
-          "solana": "32 到 44 个字母和数字，其中不含 0、O、I 或 l"
+          "solana": "32 到 44 个字母和数字，其中不含 0、O、I 或 l",
+          "litecoin": "34 个以 L 或 M 开头的 Base58 字符，或 43 或 63 个以 ltc1 开头的 Bech32/Bech32m 字符"
         },
-        "everyShape": "以太坊及其他 EVM 链是 0x 加 40 个十六进制字符；比特币以 1、3 或 bc1 开头；Solana 是 32 到 44 个字母和数字；波场以 T 开头；TON 以 EQ 或 UQ 开头。",
+        "everyShape": "以太坊及其他 EVM 链是 0x 加 40 个十六进制字符；比特币以 1、3 或 bc1 开头；Solana 是 32 到 44 个字母和数字；波场以 T 开头；TON 以 EQ 或 UQ 开头。Litecoin 以 L、M 或 ltc1 开头。",
         "incomplete_other": "这不是一个完整的 {{chain}} 地址——完整地址{{shape}}，而这个只有 {{count}} 个字符。",
         "unrecognised": "Scani 无法识别地址形如这样的任何一条链。{{shapes}}",
         "innerSpace": "这个地址中间有空格。请删掉它——地址是一串连续的字符。",
+        "invalidLitecoin": "这不是有效的莱特币主网地址。请从钱包中重新复制。",
         "ensName": "这是一个 ENS 名称。Scani 跟踪的是地址而不是名称——请粘贴它指向的 0x 地址。"
       },
       "institution": {

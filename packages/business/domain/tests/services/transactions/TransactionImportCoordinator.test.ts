@@ -420,6 +420,9 @@ describe('resolveInstitutionCode', () => {
 
   test('the newly wired chains reach their providers', () => {
     expect(resolveInstitutionCode(sourceForChainId(0) as string, { chainId: 0 })).toBe('bitcoin');
+    expect(resolveInstitutionCode(sourceForChainId(-3) as string, { chainId: -3 })).toBe(
+      'litecoin'
+    );
     expect(resolveInstitutionCode(sourceForChainId(-1) as string, { chainId: -1 })).toBe('tron');
     expect(resolveInstitutionCode(sourceForChainId(-15) as string, { chainId: -15 })).toBe('ton');
   });

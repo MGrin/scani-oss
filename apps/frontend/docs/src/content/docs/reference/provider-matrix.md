@@ -62,6 +62,7 @@ leave your api.
 | Etherscan V2 | `ETHERSCAN_API_KEY` | balance, transaction, token-identity | **One key covers every EVM chain Scani reads** (Ethereum, Polygon, Arbitrum, Optimism, Base, BNB, …). |
 | Helius | `HELIUS_API_KEY` | balance, transaction, token-identity | Solana SPL + native. |
 | Bitcoin | _none_ | balance, transaction | Public RPC. |
+| Litecoin | _none_ | balance, transaction, address validation | Litecoin Space mainnet API. Confirmed transaction history; current balance includes mempool changes. Supports Base58Check and Bech32/Bech32m addresses. MWEB addresses are not supported. |
 | Tron | _none_ | balance, transaction | |
 | TON | _none_ | balance, transaction | |
 | ENS | _none_ | identity | Resolves `vitalik.eth` → address. |
@@ -100,6 +101,7 @@ work with per-user credentials only.
 | KuCoin, Gate, HTX, Bitstamp, Gemini, MEXC, Bitget | Functional. Less battle-tested. |
 | IBKR (Flex), Wise, Airwallex | Functional. Flex query setup is the main user friction. |
 | Bitcoin, Tron, TON, ENS | Functional. Public RPCs are slow on big wallets. |
+| Litecoin | New adapter. Automated tests cover pagination, address checksums and normalization; large-wallet history is bounded and reported as partial when capped. |
 | OpenAI Vision | Solid for screenshots; quality degrades on dark-mode or non-English UIs. |
 
 ## Adding a provider

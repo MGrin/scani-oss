@@ -16,6 +16,7 @@ import type {
 } from '@scani/providers/core/types';
 import { isBitcoinAddress } from '@scani/providers/providers/bitcoin';
 import { findChainConfig } from '@scani/providers/providers/etherscan';
+import { isLitecoinAddress } from '@scani/providers/providers/litecoin';
 import { isSolanaAddress } from '@scani/providers/providers/solana';
 import { isTonAddress } from '@scani/providers/providers/ton';
 import { isTronAddress } from '@scani/providers/providers/tron';
@@ -32,7 +33,7 @@ export class CloudWalletProvider
   ];
   constructor(
     private readonly client: CloudClient,
-    readonly providerKey: 'etherscan' | 'bitcoin' | 'solana' | 'tron' | 'ton'
+    readonly providerKey: 'etherscan' | 'bitcoin' | 'litecoin' | 'solana' | 'tron' | 'ton'
   ) {
     if (providerKey === 'etherscan') {
       this.fetchExitedPositions = async (ctx) => (await this.call('exited', ctx)).exited;
@@ -61,6 +62,8 @@ export class CloudWalletProvider
         return /^0x[0-9a-fA-F]{40}$/.test(address);
       case 'bitcoin':
         return isBitcoinAddress(address);
+      case 'litecoin':
+        return isLitecoinAddress(address);
       case 'solana':
         return isSolanaAddress(address);
       case 'tron':

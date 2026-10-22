@@ -2474,13 +2474,15 @@
           "bitcoin": "bc1 and then 39 to 59 lowercase letters and digits",
           "ton": "EQ or UQ and then 46 characters, 48 in all",
           "tron": "T and then 33 more characters, 34 in all",
-          "solana": "32 to 44 letters and digits, with no 0, O, I or l among them"
+          "solana": "32 to 44 letters and digits, with no 0, O, I or l among them",
+          "litecoin": "34 Base58 characters starting with L or M, or 43 or 63 Bech32/Bech32m characters starting with ltc1"
         },
-        "everyShape": "Ethereum and the other EVM chains are 0x and 40 hexadecimal characters; Bitcoin starts 1, 3 or bc1; Solana is 32 to 44 letters and digits; Tron starts T; TON starts EQ or UQ.",
+        "everyShape": "Ethereum and the other EVM chains are 0x and 40 hexadecimal characters; Bitcoin starts 1, 3 or bc1; Solana is 32 to 44 letters and digits; Tron starts T; TON starts EQ or UQ. Litecoin starts L, M or ltc1.",
         "incomplete_one": "That is not a complete {{chain}} address — one is {{shape}}, and this is {{count}} character.",
         "incomplete_other": "That is not a complete {{chain}} address — one is {{shape}}, and this is {{count}} characters.",
         "unrecognised": "Scani does not read any chain whose addresses look like that. {{shapes}}",
         "innerSpace": "There is a space inside this address. Remove it — an address is one unbroken run of characters.",
+        "invalidLitecoin": "That is not a valid Litecoin mainnet address. Copy it again from your wallet.",
         "ensName": "That is an ENS name. Scani watches addresses, not names — paste the 0x address it points to."
       },
       "institution": {

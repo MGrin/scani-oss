@@ -4,7 +4,7 @@ import { expect, test } from '../../fixtures/test';
 const API_BASE_URL = process.env.API_BASE_URL ?? 'http://localhost:3011';
 
 test.describe('wallet-import: supported chains list', () => {
-  test('walletRouter.getSupportedChains returns at least Ethereum + Bitcoin + Solana', async ({
+  test('walletRouter.getSupportedChains returns Ethereum, Bitcoin, Litecoin, and Solana', async ({
     page,
   }, testInfo) => {
     await signIn({ page, testInfo });
@@ -16,6 +16,7 @@ test.describe('wallet-import: supported chains list', () => {
     const names = body.result.data.map((c) => c.name.toLowerCase());
     expect(names.some((n) => n.includes('ethereum'))).toBe(true);
     expect(names.some((n) => n.includes('bitcoin'))).toBe(true);
+    expect(names.some((n) => n.includes('litecoin'))).toBe(true);
     expect(names.some((n) => n.includes('solana'))).toBe(true);
   });
 });

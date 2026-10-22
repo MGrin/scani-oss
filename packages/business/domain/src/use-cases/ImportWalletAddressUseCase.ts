@@ -11,6 +11,7 @@ import * as schema from '@scani/db/schema';
 import { createComponentLogger } from '@scani/logging';
 import { ProviderRegistry } from '@scani/providers/core/registry';
 import { type HoldingSnapshot, toJobNotice } from '@scani/providers/core/types';
+import { isLitecoinAddress } from '@scani/shared/validators/litecoin';
 import { and, eq } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { makeProviderContext, type SelfCredentialedProviderContext } from '../lib/provider-context';
@@ -724,7 +725,12 @@ export class ImportWalletAddressUseCase {
       /^bc1[a-z0-9]{39,59}$/.test(displayName);
     const isSolanaAddress = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(displayName);
 
-    const isAddress = isEthereumAddress || isTronAddress || isBitcoinAddress || isSolanaAddress;
+    const isAddress =
+      isEthereumAddress ||
+      isTronAddress ||
+      isBitcoinAddress ||
+      isLitecoinAddress(displayName) ||
+      isSolanaAddress;
 
     if (isAddress && displayName.length > 20) {
       const shortened = `${displayName.substring(0, 6)}...${displayName.substring(displayName.length - 4)}`;

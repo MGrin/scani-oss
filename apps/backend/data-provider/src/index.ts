@@ -25,6 +25,7 @@ import { defillamaFactory } from '@scani/providers/providers/defillama';
 import { etherscanFactory } from '@scani/providers/providers/etherscan';
 import { finnhubFactory } from '@scani/providers/providers/finnhub';
 import { frankfurterFactory } from '@scani/providers/providers/frankfurter';
+import { litecoinFactory } from '@scani/providers/providers/litecoin';
 import { solanaFactory } from '@scani/providers/providers/solana';
 import { tonFactory } from '@scani/providers/providers/ton';
 import { tronFactory } from '@scani/providers/providers/tron';
@@ -558,6 +559,7 @@ void (async () => {
           ...(process.env.STUB_CHAIN_DATA === '1' ? [chainStubFactory] : []),
           etherscanFactory,
           bitcoinFactory,
+          litecoinFactory,
           solanaFactory,
           tronFactory,
           tonFactory,

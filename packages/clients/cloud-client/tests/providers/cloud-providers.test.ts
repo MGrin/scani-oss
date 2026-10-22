@@ -157,6 +157,14 @@ test('wallet adapter transmits only address and restores history retractions ove
   expect(provider.fetchExitedPositions).toBeUndefined();
 });
 
+test('cloud wallet adapter validates Litecoin addresses and institution codes', () => {
+  const provider = new CloudWalletProvider(client, 'litecoin');
+  expect(provider.canValidate('litecoin')).toBe(true);
+  expect(provider.canValidate('bitcoin')).toBe(false);
+  expect(provider.isValidAddress('LKDyUEtTR1HXamkiEphisSiBJu6o3ZPE34')).toBe(true);
+  expect(provider.isValidAddress('bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh')).toBe(false);
+});
+
 test('wallet position probes batch more than twenty IDs without dropping positions', async () => {
   const batchSizes: number[] = [];
   state.registry.register({

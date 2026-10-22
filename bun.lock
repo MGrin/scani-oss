@@ -276,6 +276,8 @@
     "packages/business/shared": {
       "name": "@scani/shared",
       "dependencies": {
+        "@noble/hashes": "^1.8.0",
+        "@scure/base": "^2.4.0",
         "decimal.js": "^10.6.0",
         "zod": "^3.25.76",
       },
@@ -312,6 +314,7 @@
         "@scani/deadline": "workspace:*",
         "@scani/logging": "workspace:*",
         "@scani/rate-limiter": "workspace:*",
+        "@scani/shared": "workspace:*",
         "decimal.js": "^10.6.0",
         "ioredis": "^5.11.1",
         "typedi": "^0.10.0",
@@ -1307,6 +1310,8 @@
     "@scani/ui": ["@scani/ui@workspace:packages/frontend/ui"],
 
     "@scani/worker": ["@scani/worker@workspace:apps/backend/worker"],
+
+    "@scure/base": ["@scure/base@2.4.0", "", {}, "sha512-thZ1TuJwFwBblOhgsjDKvvGirBxNp+wSvY/DR6tJBJOTDhdAAcHJ8Vbr2eFnqaxeca4+t0i9KBf+uHYGWwZORg=="],
 
     "@sentry/browser": ["@sentry/browser@10.75.3", "", { "dependencies": { "@sentry/browser-utils": "10.75.3", "@sentry/conventions": "^0.16.0", "@sentry/core": "10.75.3", "@sentry/feedback": "10.75.3", "@sentry/replay": "10.75.3", "@sentry/replay-canvas": "10.75.3" } }, "sha512-tqjrG3dnk7LHPDiIxg/5MVF+ONV3VI33fJbAdlSODZD9/i09gXXfp5yoI70HBuasYVMGoCwoUowDfuRoZWEBuA=="],
 

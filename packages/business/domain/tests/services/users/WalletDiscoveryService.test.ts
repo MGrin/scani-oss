@@ -105,7 +105,20 @@ describe('WalletDiscoveryService EVM catalog', () => {
     await new WalletDiscoveryService().detectWalletChains(
       '0x0000000000000000000000000000000000000001'
     );
-    const nonEvm = new Set(['bitcoin', 'solana', 'tron', 'ton']);
+    const nonEvm = new Set(['bitcoin', 'litecoin', 'solana', 'tron', 'ton']);
     expect(asked.filter((c) => !nonEvm.has(c)).sort()).toEqual(etherscanCodes);
+  });
+});
+
+describe('WalletDiscoveryService Litecoin catalog', () => {
+  test('exposes Litecoin as a distinct non-EVM chain with its native token', () => {
+    expect(new WalletDiscoveryService().getAllSupportedChains()).toContainEqual({
+      chainId: -3,
+      name: 'Litecoin',
+      type: 'litecoin',
+      nativeSymbol: 'LTC',
+      nativeName: 'Litecoin',
+      isActive: true,
+    });
   });
 });

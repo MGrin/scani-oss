@@ -27,7 +27,7 @@ export function platformProviderFactories(
         ...['coingecko', 'defillama', 'finnhub'].map(
           (key) => new CloudIdentityProvider(client, key)
         ),
-        ...(['etherscan', 'bitcoin', 'solana', 'tron', 'ton'] as const).map(
+        ...(['etherscan', 'bitcoin', 'litecoin', 'solana', 'tron', 'ton'] as const).map(
           (key) => new CloudWalletProvider(client, key)
         ),
         new CloudAIProvider(client),

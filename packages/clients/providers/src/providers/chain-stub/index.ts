@@ -45,6 +45,7 @@ import type {
 import { isBitcoinAddress } from '../bitcoin';
 import { isEvmAddress } from '../etherscan';
 import { ETHERSCAN_CHAINS } from '../etherscan/chains';
+import { isLitecoinAddress } from '../litecoin';
 import { isSolanaAddress } from '../solana';
 import { isTonAddress } from '../ton';
 import { isTronAddress } from '../tron';
@@ -58,6 +59,10 @@ interface StubChain {
 
 const NON_EVM: Readonly<Record<string, StubChain>> = {
   bitcoin: { matches: isBitcoinAddress, native: { symbol: 'BTC', name: 'Bitcoin', decimals: 8 } },
+  litecoin: {
+    matches: isLitecoinAddress,
+    native: { symbol: 'LTC', name: 'Litecoin', decimals: 8 },
+  },
   solana: { matches: isSolanaAddress, native: { symbol: 'SOL', name: 'Solana', decimals: 9 } },
   tron: { matches: isTronAddress, native: { symbol: 'TRX', name: 'Tron', decimals: 6 } },
   ton: { matches: isTonAddress, native: { symbol: 'TON', name: 'Toncoin', decimals: 9 } },
@@ -94,6 +99,7 @@ const STUB_WALLETS: Readonly<Record<string, Readonly<Record<string, string>>>> =
   // it and asserts BTC reaches the review payload; 50 BTC is what the
   // live address has held, unspendable, since 2009.
   '1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa': { bitcoin: '50' },
+  LKDyUEtTR1HXamkiEphisSiBJu6o3ZPE34: { litecoin: '2.5' },
 };
 
 function fixtureBalance(address: string, institutionCode: string): string | null {

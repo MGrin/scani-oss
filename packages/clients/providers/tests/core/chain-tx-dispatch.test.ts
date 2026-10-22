@@ -16,6 +16,7 @@ import type { ProviderFactory, ProviderFactoryDeps } from '../../src/core/boot';
 import { RateLimiterRegistry } from '../../src/core/rate-limiter-registry';
 import { ProviderRegistry } from '../../src/core/registry';
 import { bitcoinFactory } from '../../src/providers/bitcoin';
+import { litecoinFactory } from '../../src/providers/litecoin';
 import { solanaFactory } from '../../src/providers/solana';
 import { tonFactory } from '../../src/providers/ton';
 import { tronFactory } from '../../src/providers/tron';
@@ -25,6 +26,7 @@ import { tronFactory } from '../../src/providers/tron';
 // `sourceForChainId` answers with for the non-EVM sentinels.
 const NON_EVM_CHAIN_PROVIDERS: ReadonlyArray<[string, ProviderFactory]> = [
   ['bitcoin', bitcoinFactory],
+  ['litecoin', litecoinFactory],
   ['solana', solanaFactory],
   ['tron', tronFactory],
   ['ton', tonFactory],

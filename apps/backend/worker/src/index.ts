@@ -46,6 +46,7 @@ import { huobiFactory } from '@scani/providers/providers/huobi';
 import { ibkrFactory } from '@scani/providers/providers/ibkr';
 import { krakenFactory } from '@scani/providers/providers/kraken';
 import { kucoinFactory } from '@scani/providers/providers/kucoin';
+import { litecoinFactory } from '@scani/providers/providers/litecoin';
 import { mexcFactory } from '@scani/providers/providers/mexc';
 import { okxFactory } from '@scani/providers/providers/okx';
 import { solanaFactory } from '@scani/providers/providers/solana';
@@ -282,6 +283,7 @@ async function main(): Promise<void> {
           ...(process.env.STUB_CHAIN_DATA === '1' ? [chainStubFactory] : []),
           etherscanFactory,
           bitcoinFactory,
+          litecoinFactory,
           solanaFactory,
           tronFactory,
           tonFactory,

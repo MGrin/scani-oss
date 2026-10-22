@@ -73,8 +73,8 @@ export const institutionBlockchainMappings = pgTable(
       .notNull()
       .references(() => institutions.id, { onDelete: 'cascade' })
       .unique(), // Each institution can only map to one chain
-    chainId: text('chain_id').notNull(), // Blockchain chain ID (e.g., '1' for Ethereum, 'bitcoin', 'solana')
-    chainType: text('chain_type').notNull(), // 'evm', 'bitcoin', 'solana', 'tron', 'ton'
+    chainId: text('chain_id').notNull(), // Blockchain chain ID (e.g., '1' for Ethereum, 'bitcoin', 'litecoin')
+    chainType: text('chain_type').notNull(), // 'evm', 'bitcoin', 'litecoin', 'solana', 'tron', 'ton'
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

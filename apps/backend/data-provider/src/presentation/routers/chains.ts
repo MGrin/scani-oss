@@ -4,7 +4,7 @@
  *
  * Dispatch goes through `Container.get(ProviderRegistry)` — every
  * chain provider in
- * `@scani/providers/providers/{etherscan,bitcoin,solana,tron,ton}`
+ * `@scani/providers/providers/{etherscan,bitcoin,litecoin,solana,tron,ton}`
  * implements `BalanceProvider` + `AddressValidatorProvider`. This
  * router translates `(chainId, address)` → `(institutionCode, ctx)`
  * and forwards into the registry.
@@ -52,6 +52,7 @@ const EVM_CHAIN_ID_TO_INSTITUTION_CODE: Record<string, string> = Object.fromEntr
 
 const NON_EVM_CHAIN_ID_TO_INSTITUTION_CODE: Record<string, string> = {
   '0': 'bitcoin',
+  '-3': 'litecoin',
   '-2': 'solana',
   '-1': 'tron',
   '-15': 'ton',
@@ -100,7 +101,7 @@ function makeCtx(): ProviderContext {
 interface ChainConfig {
   chainId: number | string;
   name: string;
-  type: 'evm' | 'bitcoin' | 'solana' | 'tron' | 'ton';
+  type: 'evm' | 'bitcoin' | 'litecoin' | 'solana' | 'tron' | 'ton';
   nativeSymbol: string;
   nativeName: string;
   isActive: boolean;
@@ -226,6 +227,14 @@ const CHAIN_CATALOG: ChainConfig[] = [
     isActive: true,
   },
   {
+    chainId: -3,
+    name: 'Litecoin',
+    type: 'litecoin',
+    nativeSymbol: 'LTC',
+    nativeName: 'Litecoin',
+    isActive: true,
+  },
+  {
     chainId: -2,
     name: 'Solana',
     type: 'solana',
@@ -260,7 +269,7 @@ const chainIdSchema = z.union([z.string(), z.number()]);
 const chainConfigOut = z.object({
   chainId: chainIdSchema,
   name: z.string(),
-  type: z.enum(['evm', 'bitcoin', 'solana', 'tron', 'ton']),
+  type: z.enum(['evm', 'bitcoin', 'litecoin', 'solana', 'tron', 'ton']),
   nativeSymbol: z.string(),
   nativeName: z.string(),
   isActive: z.boolean(),
