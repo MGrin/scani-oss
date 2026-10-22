@@ -104,7 +104,10 @@ describe('SC-804 — backend images install no optional peers and lose no requir
   for (const image of IMAGES) {
     test(`${image.dockerfile} installs its own graph with --omit=peer`, () => {
       const text = readFileSync(join(ROOT, image.dockerfile), 'utf8');
-      const install = text.split('\n').filter((line) => /^RUN bun install\b/.test(line));
+      // An env assignment may lead the install: the registry override (SC-1748).
+      const install = text
+        .split('\n')
+        .filter((line) => /^RUN (?:[A-Z_]+=\S+ )*bun install\b/.test(line));
       expect(install).toHaveLength(1);
       expect(install[0]).toContain(`--filter ${image.workspace}`);
       expect(install[0]).toContain('--omit=peer');

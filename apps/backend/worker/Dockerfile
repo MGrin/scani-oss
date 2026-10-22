@@ -52,7 +52,10 @@ COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.js
 #     && echo ok || echo BROKEN'
 # The second is a must-be-FOUND control and is not optional: the subject reads
 # ABSENT, so a probe that finds nothing at all reads exactly like a clean pass.
-RUN bun install --frozen-lockfile --filter @scani/worker --linker=hoisted --production
+# The npm-cache on a dev Mac, or the public registry (SC-1748). Frozen only,
+# so bun.lock never records it.
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+RUN BUN_CONFIG_REGISTRY=$NPM_REGISTRY bun install --frozen-lockfile --filter @scani/worker --linker=hoisted --production
 
 FROM oven/bun:${BUN_VERSION} AS build
 WORKDIR /app

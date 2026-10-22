@@ -28,7 +28,10 @@ COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.js
 # entire backend tree + every provider adapter, which keeps the build
 # stage small (frontend deps are roughly React + Vite + shadcn + tRPC
 # client; backend deps add ~hundreds of MB).
-RUN bun install --frozen-lockfile --filter @scani/frontend-v2
+# The npm-cache on a dev Mac, or the public registry (SC-1748). Frozen only,
+# so bun.lock never records it.
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+RUN BUN_CONFIG_REGISTRY=$NPM_REGISTRY bun install --frozen-lockfile --filter @scani/frontend-v2
 
 # Source after deps for layer caching.
 COPY . .

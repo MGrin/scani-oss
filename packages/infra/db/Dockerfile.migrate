@@ -54,7 +54,10 @@ COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.js
 # schema as well as the application one. Dropping it is what made the shipped
 # image the one caller that never created the `bullmq` schema, so a
 # self-hoster's first enqueue returned 500.
-RUN bun install --frozen-lockfile \
+# The npm-cache on a dev Mac, or the public registry (SC-1748). Frozen only,
+# so bun.lock never records it.
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+RUN BUN_CONFIG_REGISTRY=$NPM_REGISTRY bun install --frozen-lockfile \
     --filter @scani/db --filter @scani/queue --linker=hoisted
 
 # ---------- build ----------

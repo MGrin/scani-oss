@@ -34,7 +34,10 @@ COPY --parents apps/*/package.json apps/*/*/package.json packages/*/*/package.js
 # are declared in apps/backend/api/package.json, where a dependency is not a
 # peer and survives. `scripts/tests/backend-images-omit-peers.test.ts` fails
 # when a required peer of this graph is left undeclared.
-RUN bun install --frozen-lockfile --filter @scani/backend --linker=hoisted --omit=peer
+# The npm-cache on a dev Mac, or the public registry (SC-1748). Frozen only,
+# so bun.lock never records it.
+ARG NPM_REGISTRY=https://registry.npmjs.org/
+RUN BUN_CONFIG_REGISTRY=$NPM_REGISTRY bun install --frozen-lockfile --filter @scani/backend --linker=hoisted --omit=peer
 
 # ---------- build ----------
 FROM oven/bun:${BUN_VERSION} AS build

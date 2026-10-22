@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { existsSync, readFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
   awaitPostgresOverTcp,
@@ -11,6 +12,8 @@ import {
   downVerdict,
   expectedServices,
   longRunningServices,
+  npmCacheAnswers,
+  npmRegistryChoice,
   parseMode,
   publishedServices,
   stackEnv,
@@ -339,6 +342,99 @@ describe('dev:stack passes the override through to compose', () => {
     expect(stackEnv(WORKTREE, { POSTGRES_HOST_PORT: '7233' }).SCANI_DEV_DB).toBe(
       stackEnv(WORKTREE, {}).SCANI_DEV_DB
     );
+  });
+});
+
+describe('one bun cache for every checkout (SC-1748)', () => {
+  const ROOT = resolve(import.meta.dir, '..', '..');
+
+  test('dev:stack points the deps cache at one host directory, not a per-worktree one', () => {
+    const env = stackEnv(ROOT, {});
+    expect(env.SCANI_BUN_CACHE).toBe(join(homedir(), '.cache', 'scani', 'bun-install'));
+    // CONTROL: the per-worktree identity really is in the env, so the cache
+    // path above not carrying it is a choice and not an accident.
+    expect(env.SCANI_BUN_CACHE).not.toContain(env.SCANI_STACK_TAG as string);
+  });
+
+  test('an exported SCANI_BUN_CACHE wins', () => {
+    expect(stackEnv(ROOT, { SCANI_BUN_CACHE: '/tmp/x' }).SCANI_BUN_CACHE).toBe('/tmp/x');
+  });
+
+  test('the deps service installs through that cache, with a per-project volume as the fallback', () => {
+    const compose = readFileSync(join(ROOT, 'docker-compose.yml'), 'utf8');
+    const deps = /^ {2}deps:\n([\s\S]*?)(?=^ {2}\S|^\S)/m.exec(compose)?.[1] ?? '';
+    expect(deps).toContain('BUN_INSTALL_CACHE_DIR: /bun-cache');
+    expect(deps).toContain('- ${SCANI_BUN_CACHE:-bun-install-cache}:/bun-cache');
+    expect(compose).toMatch(/^volumes:\n(?: {2}\S.*\n)*? {2}bun-install-cache:/m);
+  });
+});
+
+describe('frozen installs go through a local npm cache when one answers (SC-1748)', () => {
+  const PUBLIC = 'https://registry.npmjs.org/';
+  const ROOT = resolve(import.meta.dir, '..', '..');
+
+  test('an answering cache is used, reached from the container side', () => {
+    expect(npmRegistryChoice(undefined, true).url).toBe('http://host.docker.internal:4873/');
+  });
+
+  test('control: no answer means the public registry, so CI is unchanged', () => {
+    expect(npmRegistryChoice(undefined, false).url).toBe(PUBLIC);
+  });
+
+  test('an exported SCANI_NPM_REGISTRY wins over the probe', () => {
+    expect(npmRegistryChoice('https://r.example/', true).url).toBe('https://r.example/');
+    expect(npmRegistryChoice('  ', true).url).toBe('http://host.docker.internal:4873/');
+  });
+
+  test('the probe reads a live ping as an answer and a closed port as none', async () => {
+    const server = Bun.serve({ port: 0, fetch: () => Response.json({}) });
+    try {
+      expect(await npmCacheAnswers(`http://127.0.0.1:${server.port}/-/ping`)).toBe(true);
+    } finally {
+      server.stop(true);
+    }
+    expect(await npmCacheAnswers(`http://127.0.0.1:${server.port}/-/ping`, 500)).toBe(false);
+  });
+
+  // A non-frozen install through the cache writes its URL into bun.lock, which
+  // CI cannot fetch. So the override rides ONLY a frozen install, and its
+  // default everywhere is the public registry.
+  test('every image install is frozen and defaults to the public registry', () => {
+    const files = [
+      'apps/backend/api/Dockerfile',
+      'apps/backend/data-provider/Dockerfile',
+      'apps/backend/worker/Dockerfile',
+      'apps/frontend/app/Dockerfile',
+      'packages/infra/db/Dockerfile.migrate',
+    ];
+    for (const f of files) {
+      const text = readFileSync(join(ROOT, f), 'utf8');
+      const installs = text.match(/^RUN .*bun install.*$/gm) ?? [];
+      expect(installs.length).toBeGreaterThan(0);
+      for (const line of installs) {
+        expect(line).toStartWith(
+          'RUN BUN_CONFIG_REGISTRY=$NPM_REGISTRY bun install --frozen-lockfile'
+        );
+      }
+      expect(text).toContain(`ARG NPM_REGISTRY=${PUBLIC}`);
+    }
+  });
+
+  test('compose defaults the deps install and every image build to the public registry', () => {
+    const compose = readFileSync(join(ROOT, 'docker-compose.yml'), 'utf8');
+    const deps = /^ {2}deps:\n([\s\S]*?)(?=^ {2}\S|^\S)/m.exec(compose)?.[1] ?? '';
+    expect(deps).toContain(`BUN_CONFIG_REGISTRY: \${SCANI_NPM_REGISTRY:-${PUBLIC}}`);
+    expect(deps).toContain('"--frozen-lockfile"');
+    const builds = compose.match(/^ {6}dockerfile: .*Dockerfile.*$/gm) ?? [];
+    const args =
+      compose.match(
+        new RegExp(
+          `^ {8}NPM_REGISTRY: \\$\\{SCANI_NPM_REGISTRY:-${PUBLIC.replace(/[./]/g, '\\$&')}\\}$`,
+          'gm'
+        )
+      ) ?? [];
+    expect(builds.length).toBeGreaterThan(0);
+    expect(args.length).toBe(builds.length);
   });
 });
 
