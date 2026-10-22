@@ -10,6 +10,9 @@ const HOUR_MS = 60 * 60 * 1000;
  */
 export const BALANCE_RUN_LEDGER_SOURCES: ReadonlySet<string> = new Set([
   'airwallex-api',
+  'bunq-api',
+  'fio-api',
+  'investec-api',
   'kraken-api',
   'bybit-api',
   'okx-api',

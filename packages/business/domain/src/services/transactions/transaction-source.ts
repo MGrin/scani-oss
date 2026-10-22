@@ -25,6 +25,9 @@ const PROVIDER_SOURCE_MAP: Record<string, string> = {
   ibkr: 'ibkr-api',
   'interactive brokers': 'ibkr-api',
   airwallex: 'airwallex-api',
+  bunq: 'bunq-api',
+  fio: 'fio-api',
+  investec: 'investec-api',
 };
 
 /** `StatementTransactionIngester` tags each statement's rows `statement-<format>`. */

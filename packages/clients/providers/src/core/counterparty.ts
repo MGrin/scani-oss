@@ -75,6 +75,52 @@ function extractAirwallex(raw: unknown): CounterpartyExtraction {
 }
 
 /**
+ * bunq: the trimmed `Payment` the provider stores (`providers/bunq/index.ts`)
+ * — `{ id, created, amount, description?, counterparty_alias?: { display_name?,
+ * iban? } }`. Unlike Wise and Airwallex, bunq names the other party in its own
+ * field, so the payee and the statement line stay apart.
+ */
+function extractBunq(raw: unknown): CounterpartyExtraction {
+  const root = asRecord(raw);
+  const counterparty = asNonEmptyString(asRecord(root?.counterparty_alias)?.display_name);
+  const description = asNonEmptyString(root?.description);
+  return {
+    ...(counterparty ? { counterparty } : {}),
+    ...(description ? { description } : {}),
+  };
+}
+
+/**
+ * investec: the trimmed transaction the provider stores
+ * (`providers/investec/index.ts`) — `{ uuid?, accountId, type, description?,
+ * postingDate?, amount, ... }`. Investec gives only the statement line, so it
+ * stands for both, as with Wise.
+ */
+function extractInvestec(raw: unknown): CounterpartyExtraction {
+  const description = asNonEmptyString(asRecord(raw)?.description);
+  if (!description) return {};
+  return { counterparty: description, description };
+}
+
+/**
+ * fio: the trimmed movement the provider stores (`providers/fio/index.ts`) —
+ * `{ id, date, amount, currency, counterpartyName?, counterpartyAccount?,
+ * message?, comment?, ... }`. Fio names the other party apart from the
+ * message, so they stay apart; the account number stands in for a missing
+ * name.
+ */
+function extractFio(raw: unknown): CounterpartyExtraction {
+  const root = asRecord(raw);
+  const counterparty =
+    asNonEmptyString(root?.counterpartyName) ?? asNonEmptyString(root?.counterpartyAccount);
+  const description = asNonEmptyString(root?.message) ?? asNonEmptyString(root?.comment);
+  return {
+    ...(counterparty ? { counterparty } : {}),
+    ...(description ? { description } : {}),
+  };
+}
+
+/**
  * etherscan: a normal-transaction / token-transfer row — `{ from, to,
  * hash, value, ... }`. Both sides are always present, so which one is
  * the counterparty depends on which way the value moved: for an outflow
@@ -120,6 +166,12 @@ const EXTRACTORS: Record<string, (raw: unknown, kind?: string) => CounterpartyEx
   wise: extractWise,
   'airwallex-api': extractAirwallex,
   airwallex: extractAirwallex,
+  'bunq-api': extractBunq,
+  bunq: extractBunq,
+  'investec-api': extractInvestec,
+  investec: extractInvestec,
+  'fio-api': extractFio,
+  fio: extractFio,
   etherscan: extractEtherscan,
 };
 

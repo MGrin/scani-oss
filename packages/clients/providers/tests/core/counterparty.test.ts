@@ -104,6 +104,76 @@ describe('extractCounterparty — airwallex', () => {
   });
 });
 
+describe('extractCounterparty — bunq', () => {
+  // Shape: the trimmed `Payment` the bunq provider stores (SC-1729), whose
+  // fields are the sandbox's own names.
+  test('keeps the payee and the statement line apart, since bunq names both', () => {
+    const raw = {
+      id: 35793980,
+      description: 'Coffee',
+      counterparty_alias: { display_name: 'Sugar Daddy', iban: 'NL00BUNQ0000000002' },
+    };
+    expect(extractCounterparty('bunq-api', raw)).toEqual({
+      counterparty: 'Sugar Daddy',
+      description: 'Coffee',
+    });
+  });
+
+  test('a payment with no description still names its payee', () => {
+    const raw = { id: 1, counterparty_alias: { display_name: 'Sugar Daddy' } };
+    expect(extractCounterparty('bunq', raw)).toEqual({ counterparty: 'Sugar Daddy' });
+  });
+
+  for (const value of [null, {}, { counterparty_alias: null }, { description: 42 }]) {
+    test(`${JSON.stringify(value)} returns {} rather than throwing`, () => {
+      expect(extractCounterparty('bunq-api', value)).toEqual({});
+    });
+  }
+});
+
+describe('extractCounterparty — investec', () => {
+  // Shape: the trimmed transaction the Investec provider stores (SC-1731),
+  // whose fields are the sandbox's own names.
+  test('uses the statement line for both, since Investec gives nothing else', () => {
+    const raw = { uuid: '87446202607140010600', description: 'CORNER CAFE CAPE TOWN ZA' };
+    expect(extractCounterparty('investec-api', raw)).toEqual({
+      counterparty: 'CORNER CAFE CAPE TOWN ZA',
+      description: 'CORNER CAFE CAPE TOWN ZA',
+    });
+  });
+
+  for (const value of [null, {}, { description: '' }, { description: 42 }]) {
+    test(`${JSON.stringify(value)} returns {} rather than throwing`, () => {
+      expect(extractCounterparty('investec', value)).toEqual({});
+    });
+  }
+});
+
+describe('extractCounterparty — fio', () => {
+  // Shape: the trimmed movement the Fio provider stores (SC-1732).
+  test('keeps the other party and the message apart, since Fio names both', () => {
+    const raw = { id: 1148734530, counterpartyName: 'Pavel, Novák', message: 'Nájem' };
+    expect(extractCounterparty('fio-api', raw)).toEqual({
+      counterparty: 'Pavel, Novák',
+      description: 'Nájem',
+    });
+  });
+
+  test('the account number stands in for a missing name', () => {
+    const raw = { id: 1, counterpartyAccount: '2900233333', comment: 'Rent' };
+    expect(extractCounterparty('fio', raw)).toEqual({
+      counterparty: '2900233333',
+      description: 'Rent',
+    });
+  });
+
+  for (const value of [null, {}, { counterpartyName: '' }, { message: 42 }]) {
+    test(`${JSON.stringify(value)} returns {} rather than throwing`, () => {
+      expect(extractCounterparty('fio-api', value)).toEqual({});
+    });
+  }
+});
+
 describe('extractCounterparty — asset-centric sources have no payee, by design', () => {
   // Crypto exchange trades and chain swaps have no counterparty to find —
   // returning {} for them is correct, not a gap. No extractor is

@@ -40,6 +40,9 @@ export const CEX_SOURCE_TO_INSTITUTION: Record<string, string> = {
   'gemini-api': 'gemini',
   'ibkr-api': 'ibkr',
   'airwallex-api': 'airwallex',
+  'bunq-api': 'bunq',
+  'fio-api': 'fio',
+  'investec-api': 'investec',
 };
 
 /**
