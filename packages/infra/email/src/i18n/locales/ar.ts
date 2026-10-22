@@ -107,4 +107,27 @@ export const ar: EmailStrings = {
     textUnsubscribe: 'إيقاف هذه الرسائل: {url}',
     textPrivacy: 'سياسة الخصوصية: {url}',
   },
+  integrationAlert: {
+    subject: '{app}: اتصال يحتاج إلى انتباهك',
+    preheader: 'لا تتضمن الأرقام في {app} أي شيء حدث هناك منذ ذلك الحين.',
+    greeting: 'مرحبًا {name}،',
+    greetingNoName: 'مرحبًا،',
+    headlineOne: '{name} لا يتزامن',
+    headlineMany: '{count} اتصالات لا تتزامن',
+    listIntro: 'لا تتزامن {count} من اتصالاتك:',
+    reasonStopped: 'توقف عن إرسال التحديثات',
+    reasonNeverSynced: 'متصل، لكن لم يصل أي شيء حتى الآن',
+    consequenceOne:
+      'إلى أن تتم إعادة الاتصال، لا تتضمن الأرصدة والإجماليات في {app} أي شيء حدث هناك منذ ذلك الحين.',
+    consequenceMany:
+      'إلى أن تتم إعادة الاتصال، لا تتضمن الأرصدة والإجماليات في {app} أي شيء حدث هناك منذ ذلك الحين.',
+    button: 'افتح التكاملات',
+    textActionOne: 'افتح التكاملات في {app} لتحديثه: {url}',
+    textActionMany: 'افتح التكاملات في {app} لتحديثها: {url}',
+    textStop: 'إيقاف هذه التنبيهات: {url}',
+    footer:
+      'تصلك هذه الرسالة لأن اتصالًا أعددته في {appLink} توقف عن العمل. {stopLink} — بنقرة واحدة، دون تسجيل الدخول. سيستمر وصول الملخص الأسبوعي؛ {digestLink}.',
+    stop: 'إيقاف هذه التنبيهات',
+    stopDigest: 'أوقفه أيضًا',
+  },
 };

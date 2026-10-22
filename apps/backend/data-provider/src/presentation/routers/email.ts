@@ -19,6 +19,7 @@ const sendInput = z.object({
   subject: z.string(),
   text: z.string(),
   html: z.string().optional(),
+  headers: z.record(z.string(), z.string()).optional(),
 });
 
 export const emailRouter = router({

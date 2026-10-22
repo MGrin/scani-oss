@@ -2,7 +2,10 @@ import { describe, expect, test } from 'bun:test';
 import { EMAIL_STREAMS, UserRepository } from '@scani/domain/repositories';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { Container } from 'typedi';
-import { handleUnsubscribe } from '../../../src/presentation/http/unsubscribe';
+import {
+  handleUnsubscribe,
+  registerUnsubscribeRoutes,
+} from '../../../src/presentation/http/unsubscribe';
 
 restoreContainerAfterAll();
 
@@ -97,5 +100,23 @@ describe('handleUnsubscribe (SC-460, SC-459)', () => {
     expect(body).toContain('reminders about setting up Scani');
     expect(body).toContain(`/e/u/${TOKEN}`);
     expect(body).toContain(`/e/a/${TOKEN}`);
+  });
+});
+
+// RFC 8058: a mailbox provider's one-click unsubscribe POSTs to the
+// List-Unsubscribe URL. The alert and digest carry that header (SC-1721), so
+// every stream answers POST as well as the GET a reader's click sends.
+describe('one-click unsubscribe (SC-1721)', () => {
+  test('every stream answers POST on the same path as GET', () => {
+    const routes: string[] = [];
+    const app = {
+      get: (path: string) => routes.push(`GET ${path}`),
+      post: (path: string) => routes.push(`POST ${path}`),
+    };
+    registerUnsubscribeRoutes(app);
+    for (const path of ['/e/u/:token', '/e/a/:token', '/e/n/:token']) {
+      expect(routes).toContain(`GET ${path}`);
+      expect(routes).toContain(`POST ${path}`);
+    }
   });
 });

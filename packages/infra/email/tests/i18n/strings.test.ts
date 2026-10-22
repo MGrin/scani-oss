@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { EMAIL_STRINGS, type EmailStrings, fill, resolveEmailStrings } from '../../src/i18n';
 import { renderActivationNudgeEmail } from '../../src/templates/activation-nudge';
 import { renderHouseholdInviteEmail } from '../../src/templates/household-invite';
+import { renderIntegrationAlertEmail } from '../../src/templates/integration-alert';
 import { escapeHtml } from '../../src/templates/layout';
 import { renderMagicLinkEmail } from '../../src/templates/magic-link';
 import { renderOtpEmail } from '../../src/templates/otp';
@@ -237,6 +238,24 @@ describe('the fallback is the WHOLE letter, never a key of it', () => {
         appUrl: 'https://app.scani.xyz',
         unsubscribeUrl: 'https://api.scani.xyz/e/n/8b1f1a2e-0000-4000-8000-000000000000',
         privacyUrl: 'https://scani.xyz/privacy',
+      })
+    ),
+    // One connection and several, both reasons, so every alert key renders (SC-1721).
+    ...[
+      [{ name: 'Kraken', reason: 'stopped' as const }],
+      [
+        { name: 'Kraken', reason: 'stopped' as const },
+        { name: 'Wise', reason: 'never-synced' as const },
+      ],
+    ].map((integrations) =>
+      renderIntegrationAlertEmail({
+        brand: SCANI_BRAND,
+        name: 'Ada Lovelace',
+        language,
+        integrations,
+        integrationsUrl: 'https://app.scani.xyz/integrations',
+        unsubscribeUrl: 'https://api.scani.xyz/e/a/8b1f1a2e-0000-4000-8000-000000000000',
+        digestUnsubscribeUrl: 'https://api.scani.xyz/e/u/8b1f1a2e-0000-4000-8000-000000000000',
       })
     ),
   ];

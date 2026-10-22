@@ -218,6 +218,7 @@ export class SendIntegrationAlertsUseCase {
         content: renderIntegrationAlertEmail({
           brand: SCANI_BRAND,
           name: recipient.name,
+          language: recipient.language,
           integrations: describe(claimed, targets),
           integrationsUrl: `${appBase}/integrations`,
           unsubscribeUrl: `${base}/e/a/${recipient.unsubscribeToken}`,

@@ -54,6 +54,14 @@ export class FastmailEmailService extends EmailService {
                 },
                 textBody: [{ partId: 'body', type: 'text/plain' }],
                 ...(input.html ? { htmlBody: [{ partId: 'htmlBody', type: 'text/html' }] } : {}),
+                // JMAP's text form writes the value after the colon as given,
+                // so it carries the space a header field starts with (RFC 8621).
+                ...Object.fromEntries(
+                  Object.entries(input.headers ?? {}).map(([name, value]) => [
+                    `header:${name}:asText`,
+                    ` ${value}`,
+                  ])
+                ),
               },
             },
           },

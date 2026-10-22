@@ -127,15 +127,20 @@ export async function handleUnsubscribe(stream: EmailStream, token: string): Pro
   }
 }
 
+const ROUTES: Array<[string, EmailStream]> = [
+  ['/e/u/:token', EMAIL_STREAMS.digest],
+  ['/e/a/:token', EMAIL_STREAMS.alerts],
+  ['/e/n/:token', EMAIL_STREAMS.onboarding],
+];
+
+// GET is a reader's click. POST is a mailbox provider's one-click unsubscribe
+// from the List-Unsubscribe header (RFC 8058, SC-1721); it acts the same way.
 // biome-ignore lint/suspicious/noExplicitAny: Elysia accumulates route types; match whatever shape the caller has.
 export function registerUnsubscribeRoutes(app: any): void {
-  app.get('/e/u/:token', ({ params }: { params: { token: string } }) =>
-    handleUnsubscribe(EMAIL_STREAMS.digest, params.token)
-  );
-  app.get('/e/a/:token', ({ params }: { params: { token: string } }) =>
-    handleUnsubscribe(EMAIL_STREAMS.alerts, params.token)
-  );
-  app.get('/e/n/:token', ({ params }: { params: { token: string } }) =>
-    handleUnsubscribe(EMAIL_STREAMS.onboarding, params.token)
-  );
+  for (const [path, stream] of ROUTES) {
+    const handler = ({ params }: { params: { token: string } }) =>
+      handleUnsubscribe(stream, params.token);
+    app.get(path, handler);
+    app.post(path, handler);
+  }
 }

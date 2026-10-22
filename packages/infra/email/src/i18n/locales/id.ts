@@ -99,4 +99,27 @@ export const id: EmailStrings = {
     textUnsubscribe: 'Berhenti menerima email ini: {url}',
     textPrivacy: 'Kebijakan privasi: {url}',
   },
+  integrationAlert: {
+    subject: '{app}: sebuah koneksi perlu perhatian',
+    preheader: 'Angka di {app} tidak mencakup apa pun yang terjadi di sana sejak itu.',
+    greeting: 'Halo {name},',
+    greetingNoName: 'Halo,',
+    headlineOne: '{name} tidak tersinkron',
+    headlineMany: '{count} koneksi tidak tersinkron',
+    listIntro: '{count} koneksi Anda tidak tersinkron:',
+    reasonStopped: 'berhenti mengirim pembaruan',
+    reasonNeverSynced: 'terhubung, tetapi belum pernah ada data yang masuk',
+    consequenceOne:
+      'Sampai dihubungkan kembali, saldo dan total di {app} tidak mencakup apa pun yang terjadi di sana sejak itu.',
+    consequenceMany:
+      'Sampai dihubungkan kembali, saldo dan total di {app} tidak mencakup apa pun yang terjadi di sana sejak itu.',
+    button: 'Buka Integrasi',
+    textActionOne: 'Buka Integrasi di {app} untuk memperbaruinya: {url}',
+    textActionMany: 'Buka Integrasi di {app} untuk memperbaruinya: {url}',
+    textStop: 'Hentikan peringatan ini: {url}',
+    footer:
+      'Anda menerima ini karena koneksi yang Anda siapkan di {appLink} berhenti berfungsi. {stopLink} — satu klik, tanpa masuk. Ringkasan mingguan tetap dikirim; {digestLink}.',
+    stop: 'Hentikan peringatan ini',
+    stopDigest: 'hentikan juga',
+  },
 };

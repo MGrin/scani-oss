@@ -109,4 +109,27 @@ export const pt: EmailStrings = {
     textUnsubscribe: 'Parar de receber estes e-mails: {url}',
     textPrivacy: 'Política de privacidade: {url}',
   },
+  integrationAlert: {
+    subject: '{app}: uma conexão precisa de atenção',
+    preheader: 'Os números do {app} não incluem nada do que aconteceu lá desde então.',
+    greeting: 'Olá, {name},',
+    greetingNoName: 'Olá,',
+    headlineOne: '{name} não está sincronizando',
+    headlineMany: '{count} conexões não estão sincronizando',
+    listIntro: '{count} das suas conexões não estão sincronizando:',
+    reasonStopped: 'parou de enviar atualizações',
+    reasonNeverSynced: 'conectada, mas nada chegou até agora',
+    consequenceOne:
+      'Até que seja reconectada, os saldos e totais no {app} não incluem nada do que aconteceu lá desde então.',
+    consequenceMany:
+      'Até que sejam reconectadas, os saldos e totais no {app} não incluem nada do que aconteceu lá desde então.',
+    button: 'Abrir Integrações',
+    textActionOne: 'Abra Integrações no {app} para atualizá-la: {url}',
+    textActionMany: 'Abra Integrações no {app} para atualizá-las: {url}',
+    textStop: 'Parar estes alertas: {url}',
+    footer:
+      'Você recebe isto porque uma conexão que configurou no {appLink} parou de funcionar. {stopLink} — um clique, sem login. O resumo semanal continua chegando; {digestLink}.',
+    stop: 'Parar estes alertas',
+    stopDigest: 'pare-o também',
+  },
 };

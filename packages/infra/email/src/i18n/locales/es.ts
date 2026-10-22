@@ -104,4 +104,27 @@ export const es: EmailStrings = {
     textUnsubscribe: 'Dejar de recibir estos correos: {url}',
     textPrivacy: 'Política de privacidad: {url}',
   },
+  integrationAlert: {
+    subject: '{app}: una conexión necesita atención',
+    preheader: 'A las cifras de {app} les falta todo lo que ha pasado allí desde entonces.',
+    greeting: 'Hola, {name}:',
+    greetingNoName: 'Hola:',
+    headlineOne: '{name} no se está sincronizando',
+    headlineMany: '{count} conexiones no se están sincronizando',
+    listIntro: '{count} de tus conexiones no se están sincronizando:',
+    reasonStopped: 'ha dejado de enviar actualizaciones',
+    reasonNeverSynced: 'conectada, pero nunca ha llegado nada',
+    consequenceOne:
+      'Hasta que se vuelva a conectar, los saldos y totales de {app} no incluyen nada de lo que haya pasado allí desde entonces.',
+    consequenceMany:
+      'Hasta que se vuelvan a conectar, los saldos y totales de {app} no incluyen nada de lo que haya pasado allí desde entonces.',
+    button: 'Abrir Integraciones',
+    textActionOne: 'Abre Integraciones en {app} para actualizarla: {url}',
+    textActionMany: 'Abre Integraciones en {app} para actualizarlas: {url}',
+    textStop: 'Dejar de recibir estas alertas: {url}',
+    footer:
+      'Recibes esto porque una conexión que configuraste en {appLink} dejó de funcionar. {stopLink}: un clic, sin iniciar sesión. El resumen semanal seguirá llegando; {digestLink}.',
+    stop: 'Dejar de recibir estas alertas',
+    stopDigest: 'detenlo también',
+  },
 };

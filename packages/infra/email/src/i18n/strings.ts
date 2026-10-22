@@ -125,6 +125,32 @@ export interface EmailStrings {
     readonly textUnsubscribe: string;
     readonly textPrivacy: string;
   };
+  /** A connection that stopped syncing (SC-459, localised in SC-1721). */
+  readonly integrationAlert: {
+    readonly subject: string;
+    readonly preheader: string;
+    /** `{name}` is the first name. */
+    readonly greeting: string;
+    readonly greetingNoName: string;
+    /** `{name}` is the connection; it appears in the body, never the subject (SC-1721). */
+    readonly headlineOne: string;
+    /** `{count}` is the number of connections. */
+    readonly headlineMany: string;
+    readonly listIntro: string;
+    readonly reasonStopped: string;
+    readonly reasonNeverSynced: string;
+    readonly consequenceOne: string;
+    readonly consequenceMany: string;
+    readonly button: string;
+    /** `{url}` is the bare URL in the plain-text part. */
+    readonly textActionOne: string;
+    readonly textActionMany: string;
+    readonly textStop: string;
+    /** `{appLink}`, `{stopLink}` and `{digestLink}` are anchors, already escaped. */
+    readonly footer: string;
+    readonly stop: string;
+    readonly stopDigest: string;
+  };
 }
 
 /** The four OTP purposes, spelled as `OtpType` spells them minus the dashes. */

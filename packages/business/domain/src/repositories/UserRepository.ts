@@ -19,6 +19,8 @@ export interface AlertRecipient {
   id: string;
   email: string;
   name: string;
+  /** NULL for every account that signed up before it was recorded. */
+  language: string | null;
   unsubscribeToken: string;
 }
 
@@ -132,6 +134,7 @@ export class UserRepository extends BaseRepository<User, NewUser> {
         id: schema.users.id,
         email: schema.users.email,
         name: schema.users.name,
+        language: schema.users.language,
         unsubscribeToken: schema.users.emailUnsubscribeToken,
       })
       .from(schema.users)

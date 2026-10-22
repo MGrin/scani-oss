@@ -1,5 +1,6 @@
 import type { EmailBrand, EmailContent } from '../types';
 import { escapeHtml, layout } from './layout';
+import { oneClickUnsubscribeHeaders } from './unsubscribe-headers';
 
 /**
  * The digest's shape, declared HERE rather than imported from `@scani/domain`.
@@ -206,5 +207,6 @@ export function renderWeeklyDigestEmail({
                 <a href="${escapeHtml(unsubscribeUrl)}" data-no-track style="color:${brand.textMuted};text-decoration:underline;">Unsubscribe</a>
                 — one click, no sign-in.`,
     }),
+    headers: oneClickUnsubscribeHeaders(unsubscribeUrl),
   };
 }

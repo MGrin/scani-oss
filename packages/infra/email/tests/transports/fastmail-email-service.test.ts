@@ -204,3 +204,26 @@ test('aborting a Fastmail send cancels a response body after headers arrived', a
     server.stop(true);
   }
 });
+
+test('extra headers are set on the draft as text header fields (SC-1721)', async () => {
+  const { fetcher, calls } = makeFakeFetch([
+    sessionResponse,
+    identitiesResponse,
+    draftsResponse,
+    okSendResponse,
+  ]);
+  const svc = new FastmailEmailService({ apiToken: 't', fetcher });
+  await svc.send({
+    from: '"Scani" <welcome@scani.xyz>',
+    to: 'a@x',
+    subject: 's',
+    text: 't',
+    headers: {
+      'List-Unsubscribe': '<https://api.scani.xyz/e/a/t>',
+      'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+    },
+  });
+  const draft = JSON.parse(String(calls[3]?.init.body)).methodCalls[0][1].create.e1;
+  expect(draft['header:List-Unsubscribe:asText']).toBe(' <https://api.scani.xyz/e/a/t>');
+  expect(draft['header:List-Unsubscribe-Post:asText']).toBe(' List-Unsubscribe=One-Click');
+});

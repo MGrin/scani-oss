@@ -149,7 +149,7 @@ describe('SendIntegrationAlertsUseCase (SC-459)', () => {
     expect(summary.claimed).toBe(1);
     const letter = harness.sent[0];
     expect(letter?.to).toBe('alice@example.com');
-    expect(letter?.subject).toContain('Kraken');
+    expect(letter?.text).toContain('Kraken');
     expect(letter?.html).toContain('https://app.scani.xyz/integrations');
     // Both streams' links, because the footer promises the reader that opting
     // out of alerts leaves the digest running and offers the other one.
@@ -159,6 +159,17 @@ describe('SendIntegrationAlertsUseCase (SC-459)', () => {
     expect(letter?.html).toContain(
       'https://api.scani.xyz/e/u/8b1f1a2e-0000-4000-8000-000000000000'
     );
+  });
+
+  // The alert was English for everyone; a Russian reader got an English
+  // letter (SC-1721).
+  test("the letter is written in the recipient's language", async () => {
+    const { useCase, harness } = makeUseCase({
+      targets: [target()],
+      recipients: [recipient({ language: 'ru' })],
+    });
+    await useCase.execute(OPTIONS, NOW);
+    expect(harness.sent[0]?.subject).toBe('Scani: подключение требует внимания');
   });
 
   test('the threshold is applied as a cutoff, not left to the caller', async () => {
