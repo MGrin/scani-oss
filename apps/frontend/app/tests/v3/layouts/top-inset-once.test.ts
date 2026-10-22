@@ -23,20 +23,24 @@ describe('the top clearance is applied once', () => {
     expect(header).not.toContain('--scani-inset-top');
   });
 
-  // Hidden, the header gives up the inset too: the page scrolls under the
-  // status bar, as mgrin asked on his iPhone, instead of leaving a band (SC-1631).
-  test('a hidden header keeps no band under the status bar', async () => {
+  // Hidden, the whole header slides up, the inset with it, so the page shows
+  // under the status bar with no band (SC-1631). It slides by transform and
+  // never changes size: resizing it moved the page under the finger, 56px
+  // past it going down and back again going up (SC-1714).
+  test('a hidden header slides away whole and never resizes', async () => {
     const shell = await read('src/v3/layouts/V3Shell.tsx');
     const header = shell.slice(shell.indexOf('<header'), shell.indexOf('</header>'));
-    expect(header).toContain("paddingTop: chrome.hidden ? 0 : 'var(--scani-header-inset)'");
-    expect(header).toMatch(/minHeight: chrome\.hidden\s*\?\s*0\b/);
+    expect(header).toContain("translate: chrome.hidden ? '0 -100%' : '0 0'");
+    expect(header).not.toMatch(/(paddingTop|minHeight|height): chrome\.hidden/);
+    expect(header).toContain('absolute');
   });
 
-  test('a hidden tab bar leaves only the home-indicator inset below the page', async () => {
+  test('the page keeps the header’s and the tab bar’s room whether they show or not', async () => {
     const shell = await read('src/v3/layouts/V3Shell.tsx');
-    expect(shell).toContain(
-      "height: chrome.hidden ? 'env(safe-area-inset-bottom, 0px)' : V3_TAB_BAR_SPACER"
-    );
+    const main = shell.slice(shell.indexOf('<main'), shell.indexOf('</main>'));
+    expect(main).toContain("height: 'calc(var(--scani-header-row) + var(--scani-header-inset))'");
+    expect(main).toContain('height: V3_TAB_BAR_SPACER');
+    expect(main).not.toContain('chrome.hidden');
   });
 
   test('the header inset is the clearance minus a fixed banner above it, never negative', async () => {

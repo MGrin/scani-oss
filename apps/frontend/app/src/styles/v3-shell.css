@@ -13,3 +13,16 @@
 [data-v3-shell]:has(> [data-top-banner]) {
   --scani-header-inset: 0px;
 }
+
+/* Where the floating phone header ends, for a page's sticky bar (SC-1714):
+ * its full height while it shows, nothing once it has slid away or on a
+ * desktop, where there is no such header. */
+[data-v3-shell] [data-chrome='shown'] {
+  --v3-chrome-top: calc(var(--scani-header-row) + var(--scani-header-inset));
+}
+
+@media (min-width: 1024px) {
+  [data-v3-shell] [data-chrome] {
+    --v3-chrome-top: 0px;
+  }
+}

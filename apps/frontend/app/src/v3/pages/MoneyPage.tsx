@@ -332,7 +332,7 @@ function BillsList({
   );
 
   const toolbar = (
-    <div className="sticky top-0 z-10 flex flex-col gap-2 bg-background pb-2 pt-1">
+    <div className="sticky top-[var(--v3-chrome-top,0px)] z-10 flex flex-col gap-2 bg-background pb-2 pt-1 [transition:top_var(--motion-base)_var(--motion-ease)]">
       <DataViewToolbar
         search={search}
         onSearchChange={setSearch}
