@@ -121,6 +121,16 @@ test.describe('auth: passkeys (SC-1646)', () => {
     return { cdp, authenticatorId };
   }
 
+  // SC-1767: /auth offers a saved passkey in the email field's autofill, and
+  // the virtual authenticator answers that request on its own as the page
+  // loads, unlike a person, who has to pick it. A test of the BUTTON turns
+  // autofill off, or it races its own click and times out on a detached button.
+  async function withoutAutofill(page: Page) {
+    await page.addInitScript(() => {
+      PublicKeyCredential.isConditionalMediationAvailable = async () => false;
+    });
+  }
+
   test('a passkey added in Settings signs in without email or TOTP', async ({ page }, testInfo) => {
     const { email } = await signIn({ page, testInfo });
     await enrol(page);
@@ -130,10 +140,63 @@ test.describe('auth: passkeys (SC-1646)', () => {
     await page.getByRole('button', { name: 'Add a passkey' }).click();
     await expect(page.getByText('Passkey added.').first()).toBeVisible();
 
+    await withoutAutofill(page);
     await page.context().clearCookies();
     await page.goto('/auth');
     await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
     await expect(page).not.toHaveURL(/\/auth|\/sign-in\/2fa/);
+    expect(await sessionEmail(page)).toBe(email);
+  });
+
+  test('a saved passkey picked from the email autofill signs in', async ({ page }, testInfo) => {
+    const { email } = await signIn({ page, testInfo });
+    await enrol(page);
+    await authenticator(page, true);
+    await page.goto('/settings/account');
+    await page.getByRole('button', { name: 'Add a passkey' }).click();
+    await expect(page.getByText('Passkey added.').first()).toBeVisible();
+
+    await page.context().clearCookies();
+    await page.goto('/auth');
+    await expect(page).not.toHaveURL(/\/auth|\/sign-in\/2fa/);
+    expect(await sessionEmail(page)).toBe(email);
+  });
+
+  // SC-1767: with autofill on, the button's ceremony and the autofill's are
+  // both in flight. The autofill's options are held until the button's
+  // ceremony has started, so the button cannot lose its click to the autofill.
+  test('the button signs in even when the autofill request lands after it', async ({
+    page,
+  }, testInfo) => {
+    const { email } = await signIn({ page, testInfo });
+    await enrol(page);
+    await authenticator(page, true);
+    await page.goto('/settings/account');
+    await page.getByRole('button', { name: 'Add a passkey' }).click();
+    await expect(page.getByText('Passkey added.').first()).toBeVisible();
+
+    let releaseAutofill: () => void = () => {};
+    const autofillHeld = new Promise<void>((resolve) => {
+      releaseAutofill = resolve;
+    });
+    let optionRequests = 0;
+    await page.route('**/passkey/generate-authenticate-options*', async (route) => {
+      optionRequests += 1;
+      if (optionRequests === 1) {
+        const response = await route.fetch();
+        await autofillHeld;
+        await route.fulfill({ response });
+        return;
+      }
+      await route.fulfill({ response: await route.fetch() });
+      setTimeout(releaseAutofill, 300);
+    });
+
+    await page.context().clearCookies();
+    await page.goto('/auth');
+    await expect.poll(() => optionRequests).toBe(1);
+    await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
+    await expect(page).not.toHaveURL(/\/auth|\/sign-in\/2fa/, { timeout: 20_000 });
     expect(await sessionEmail(page)).toBe(email);
   });
 
@@ -150,6 +213,7 @@ test.describe('auth: passkeys (SC-1646)', () => {
     await page.getByRole('button', { name: 'Add a passkey' }).click();
     await expect(page.getByText('Passkey added.').first()).toBeVisible();
 
+    await withoutAutofill(page);
     await page.addInitScript(() => {
       const get = navigator.credentials.get.bind(navigator.credentials);
       navigator.credentials.get = (options) =>
@@ -171,6 +235,7 @@ test.describe('auth: passkeys (SC-1646)', () => {
 
     await page.context().clearCookies();
     await cdp.send('WebAuthn.setUserVerified', { authenticatorId, isUserVerified: false });
+    await withoutAutofill(page);
     await page.goto('/auth');
     await page.getByRole('button', { name: 'Sign in with a passkey' }).click();
     await expect(page.getByRole('alert')).toBeVisible();
