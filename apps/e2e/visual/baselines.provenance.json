@@ -1,195 +1,147 @@
 {
   "baselines": {
     "holdings-desktop": {
-      "head": "9877e81ee104c6ea212e601696b15d3ca4c73bca",
-      "renderedDigest": "548e38801526ae90a27d99152a6f085453211b3ebefa74914c7731ff6b4f016d",
+      "head": "cf51c1b9e256b265982a762250e1770f94dc88f5",
+      "renderedDigest": "fbeb94a70ad24cb08a95c6f2883a5ff4322603f5d801cefd79882432707171e1",
       "dirty": [],
       "dirtyCount": 0,
       "base": {
-        "ref": "479bfce3ebb8c463fec6eca41e3f6f0ce6472795",
+        "ref": "c50c526e6f0dea897568551e9b03c65025e5ffd4",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "cec8616d2628f52fe398bd9f44a875de01ae3466c9ecdd958295ae59aefca90f",
-      "capturedAt": "2026-10-02T13:16:45.832Z"
+      "sha256": "32a241a626904c959c19fee6ab44d2f5caf4fc6629beb19a3582d70cc98f85b8",
+      "capturedAt": "2026-10-10T19:02:13.851Z"
     },
     "holdings-desktop-ar": {
-      "head": "9877e81ee104c6ea212e601696b15d3ca4c73bca",
-      "renderedDigest": "548e38801526ae90a27d99152a6f085453211b3ebefa74914c7731ff6b4f016d",
+      "head": "cf51c1b9e256b265982a762250e1770f94dc88f5",
+      "renderedDigest": "fbeb94a70ad24cb08a95c6f2883a5ff4322603f5d801cefd79882432707171e1",
       "dirty": [],
       "dirtyCount": 0,
       "base": {
-        "ref": "479bfce3ebb8c463fec6eca41e3f6f0ce6472795",
+        "ref": "c50c526e6f0dea897568551e9b03c65025e5ffd4",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "8e668014e7612c86bb694e7064092e4a98eb7d7ce2365ee4befe28588164a8d5",
-      "capturedAt": "2026-10-02T13:16:45.832Z"
+      "sha256": "ccca03818672e6de0c513f90dc7cf54bac4b1bd455254f4fb01bcd905fd6261b",
+      "capturedAt": "2026-10-10T19:02:13.851Z"
     },
     "holdings-desktop-rtl": {
-      "head": "9877e81ee104c6ea212e601696b15d3ca4c73bca",
-      "renderedDigest": "548e38801526ae90a27d99152a6f085453211b3ebefa74914c7731ff6b4f016d",
+      "head": "cf51c1b9e256b265982a762250e1770f94dc88f5",
+      "renderedDigest": "fbeb94a70ad24cb08a95c6f2883a5ff4322603f5d801cefd79882432707171e1",
       "dirty": [],
       "dirtyCount": 0,
       "base": {
-        "ref": "479bfce3ebb8c463fec6eca41e3f6f0ce6472795",
+        "ref": "c50c526e6f0dea897568551e9b03c65025e5ffd4",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "9044e55f7b7e2ec4f66c6d4cc7d0641b4fa829e7f040be2d9918dc0358c97e65",
-      "capturedAt": "2026-10-02T13:16:45.832Z"
+      "sha256": "8ec74fa4fc64dcd952a5ea5a691e2a2a21a1db5bf5a208c28ab3d76ef2540684",
+      "capturedAt": "2026-10-10T19:02:13.851Z"
     },
     "holdings-phone": {
-      "head": "47d8b23717393ef6b4fbe1f760539d61dc80ec09",
-      "renderedDigest": "3c0fbe98185ed75cbf50eda83ccd1ed2f216567f9665eff37ae0aa64cb61d153",
-      "dirty": [
-        "apps/frontend/app/src/v3/components/holdings/holdingPeek.tsx",
-        "apps/frontend/app/src/v3/components/holdings/holdingsConfig.tsx",
-        "apps/frontend/app/src/v3/lib/holdings.ts",
-        "apps/frontend/app/tests/v3/components/holdingPeek.test.tsx",
-        "apps/frontend/app/tests/v3/lib/holdings.test.ts"
-      ],
-      "dirtyCount": 5,
+      "head": "cf51c1b9e256b265982a762250e1770f94dc88f5",
+      "renderedDigest": "fbeb94a70ad24cb08a95c6f2883a5ff4322603f5d801cefd79882432707171e1",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "479bfce3ebb8c463fec6eca41e3f6f0ce6472795",
+        "ref": "c50c526e6f0dea897568551e9b03c65025e5ffd4",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "a7dd5a724421e04c9228632b308bfeb887537dc018ad78f5368a775f3ef2a7a0",
-      "capturedAt": "2026-10-02T12:55:58.265Z"
+      "sha256": "59255cf99b69fbbe02d43b9394d66811796e2ad77875c54dda8c5a5a6978b362",
+      "capturedAt": "2026-10-10T19:02:13.851Z"
     },
     "home-allocation-fold-desktop": {
-      "head": "47d8b23717393ef6b4fbe1f760539d61dc80ec09",
-      "renderedDigest": "3c0fbe98185ed75cbf50eda83ccd1ed2f216567f9665eff37ae0aa64cb61d153",
-      "dirty": [
-        "apps/frontend/app/src/v3/components/holdings/holdingPeek.tsx",
-        "apps/frontend/app/src/v3/components/holdings/holdingsConfig.tsx",
-        "apps/frontend/app/src/v3/lib/holdings.ts",
-        "apps/frontend/app/tests/v3/components/holdingPeek.test.tsx",
-        "apps/frontend/app/tests/v3/lib/holdings.test.ts"
-      ],
-      "dirtyCount": 5,
+      "head": "cf51c1b9e256b265982a762250e1770f94dc88f5",
+      "renderedDigest": "fbeb94a70ad24cb08a95c6f2883a5ff4322603f5d801cefd79882432707171e1",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "479bfce3ebb8c463fec6eca41e3f6f0ce6472795",
+        "ref": "c50c526e6f0dea897568551e9b03c65025e5ffd4",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "8b00a920d0437bc8d79d90223a5d6fd36102382372bfaf91689911b28b451a24",
-      "capturedAt": "2026-10-02T12:55:58.265Z"
+      "sha256": "f2db0ad6839b417d393a73916d4f775fb16396faa539664149b985053f390d8e",
+      "capturedAt": "2026-10-10T19:02:13.851Z"
     },
     "home-desktop": {
-      "head": "47d8b23717393ef6b4fbe1f760539d61dc80ec09",
-      "renderedDigest": "3c0fbe98185ed75cbf50eda83ccd1ed2f216567f9665eff37ae0aa64cb61d153",
-      "dirty": [
-        "apps/frontend/app/src/v3/components/holdings/holdingPeek.tsx",
-        "apps/frontend/app/src/v3/components/holdings/holdingsConfig.tsx",
-        "apps/frontend/app/src/v3/lib/holdings.ts",
-        "apps/frontend/app/tests/v3/components/holdingPeek.test.tsx",
-        "apps/frontend/app/tests/v3/lib/holdings.test.ts"
-      ],
-      "dirtyCount": 5,
+      "head": "36ac23b8849dd2f8c5772e5ce53293c2d30cee79",
+      "renderedDigest": "6f2f5d191bb1980f6dc38882cdd3e2d1c83319f344eef460270aa9aa0c27c75b",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "479bfce3ebb8c463fec6eca41e3f6f0ce6472795",
-        "confirmed": true,
+        "ref": "ef7379954f742d8a90c5745ba1d8704e0e3cb6af",
+        "confirmed": false,
         "behind": 0
       },
-      "sha256": "2b665216094c49b6b8f4fac6b8262c73bdcb7cdcd381635b93d8bddd95ab778a",
-      "capturedAt": "2026-10-02T12:55:58.265Z"
+      "sha256": "fe1080e59a9ade6fb725a8c9d9a763e2dc353c12545a76a1f2a6e50b37effef1",
+      "capturedAt": "2026-10-14T10:29:43.176Z"
     },
     "home-empty-phone": {
-      "head": "47d8b23717393ef6b4fbe1f760539d61dc80ec09",
-      "renderedDigest": "3c0fbe98185ed75cbf50eda83ccd1ed2f216567f9665eff37ae0aa64cb61d153",
-      "dirty": [
-        "apps/frontend/app/src/v3/components/holdings/holdingPeek.tsx",
-        "apps/frontend/app/src/v3/components/holdings/holdingsConfig.tsx",
-        "apps/frontend/app/src/v3/lib/holdings.ts",
-        "apps/frontend/app/tests/v3/components/holdingPeek.test.tsx",
-        "apps/frontend/app/tests/v3/lib/holdings.test.ts"
-      ],
-      "dirtyCount": 5,
+      "head": "cf51c1b9e256b265982a762250e1770f94dc88f5",
+      "renderedDigest": "fbeb94a70ad24cb08a95c6f2883a5ff4322603f5d801cefd79882432707171e1",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "479bfce3ebb8c463fec6eca41e3f6f0ce6472795",
+        "ref": "c50c526e6f0dea897568551e9b03c65025e5ffd4",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "ed150bddb5e7169912237b0b9d6221e99409fcbfdf080afc3def854a1030cccf",
-      "capturedAt": "2026-10-02T12:55:58.265Z"
+      "sha256": "812186ecc47a4da7c7eb7433ec16c7bf372736cb5fed36f80d31113b550c9fc8",
+      "capturedAt": "2026-10-10T19:02:13.851Z"
     },
     "home-phone": {
-      "head": "47d8b23717393ef6b4fbe1f760539d61dc80ec09",
-      "renderedDigest": "3c0fbe98185ed75cbf50eda83ccd1ed2f216567f9665eff37ae0aa64cb61d153",
-      "dirty": [
-        "apps/frontend/app/src/v3/components/holdings/holdingPeek.tsx",
-        "apps/frontend/app/src/v3/components/holdings/holdingsConfig.tsx",
-        "apps/frontend/app/src/v3/lib/holdings.ts",
-        "apps/frontend/app/tests/v3/components/holdingPeek.test.tsx",
-        "apps/frontend/app/tests/v3/lib/holdings.test.ts"
-      ],
-      "dirtyCount": 5,
+      "head": "36ac23b8849dd2f8c5772e5ce53293c2d30cee79",
+      "renderedDigest": "6f2f5d191bb1980f6dc38882cdd3e2d1c83319f344eef460270aa9aa0c27c75b",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "479bfce3ebb8c463fec6eca41e3f6f0ce6472795",
-        "confirmed": true,
+        "ref": "ef7379954f742d8a90c5745ba1d8704e0e3cb6af",
+        "confirmed": false,
         "behind": 0
       },
-      "sha256": "86bc1dc9cdfb56ffde2aea884ab5aace59c9d4712ec8163fb5e8a4517599c1ac",
-      "capturedAt": "2026-10-02T12:55:58.265Z"
+      "sha256": "d3af569ec7f390444a6a2f472a7111c76b84870a215e024b0cc14e1513b57c05",
+      "capturedAt": "2026-10-14T10:29:43.176Z"
     },
     "home-phone-rtl": {
-      "head": "47d8b23717393ef6b4fbe1f760539d61dc80ec09",
-      "renderedDigest": "3c0fbe98185ed75cbf50eda83ccd1ed2f216567f9665eff37ae0aa64cb61d153",
-      "dirty": [
-        "apps/frontend/app/src/v3/components/holdings/holdingPeek.tsx",
-        "apps/frontend/app/src/v3/components/holdings/holdingsConfig.tsx",
-        "apps/frontend/app/src/v3/lib/holdings.ts",
-        "apps/frontend/app/tests/v3/components/holdingPeek.test.tsx",
-        "apps/frontend/app/tests/v3/lib/holdings.test.ts"
-      ],
-      "dirtyCount": 5,
+      "head": "36ac23b8849dd2f8c5772e5ce53293c2d30cee79",
+      "renderedDigest": "6f2f5d191bb1980f6dc38882cdd3e2d1c83319f344eef460270aa9aa0c27c75b",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "479bfce3ebb8c463fec6eca41e3f6f0ce6472795",
-        "confirmed": true,
+        "ref": "ef7379954f742d8a90c5745ba1d8704e0e3cb6af",
+        "confirmed": false,
         "behind": 0
       },
-      "sha256": "8350e2adc8ae85892de6e7291869cbe7081dac421577776ee719d69ee04bdfff",
-      "capturedAt": "2026-10-02T12:55:58.265Z"
+      "sha256": "253d57730a20cde81803bb65fd89f12bbda65a2d6e9811a5461d66865766874d",
+      "capturedAt": "2026-10-14T10:29:43.176Z"
     },
     "kitchen-sink-desktop": {
-      "head": "47d8b23717393ef6b4fbe1f760539d61dc80ec09",
-      "renderedDigest": "3c0fbe98185ed75cbf50eda83ccd1ed2f216567f9665eff37ae0aa64cb61d153",
-      "dirty": [
-        "apps/frontend/app/src/v3/components/holdings/holdingPeek.tsx",
-        "apps/frontend/app/src/v3/components/holdings/holdingsConfig.tsx",
-        "apps/frontend/app/src/v3/lib/holdings.ts",
-        "apps/frontend/app/tests/v3/components/holdingPeek.test.tsx",
-        "apps/frontend/app/tests/v3/lib/holdings.test.ts"
-      ],
-      "dirtyCount": 5,
+      "head": "cf51c1b9e256b265982a762250e1770f94dc88f5",
+      "renderedDigest": "fbeb94a70ad24cb08a95c6f2883a5ff4322603f5d801cefd79882432707171e1",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "479bfce3ebb8c463fec6eca41e3f6f0ce6472795",
+        "ref": "c50c526e6f0dea897568551e9b03c65025e5ffd4",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "1c598b7378ae3116e0d089d736079098608b821cce209920d460033ff97fbf91",
-      "capturedAt": "2026-10-02T12:55:58.265Z"
+      "sha256": "9e7ea2bdf9e152901ca7c64848b932853803ace83777320acd52a93b702c9f00",
+      "capturedAt": "2026-10-10T19:02:13.851Z"
     },
     "kitchen-sink-desktop-rtl": {
-      "head": "47d8b23717393ef6b4fbe1f760539d61dc80ec09",
-      "renderedDigest": "3c0fbe98185ed75cbf50eda83ccd1ed2f216567f9665eff37ae0aa64cb61d153",
-      "dirty": [
-        "apps/frontend/app/src/v3/components/holdings/holdingPeek.tsx",
-        "apps/frontend/app/src/v3/components/holdings/holdingsConfig.tsx",
-        "apps/frontend/app/src/v3/lib/holdings.ts",
-        "apps/frontend/app/tests/v3/components/holdingPeek.test.tsx",
-        "apps/frontend/app/tests/v3/lib/holdings.test.ts"
-      ],
-      "dirtyCount": 5,
+      "head": "cf51c1b9e256b265982a762250e1770f94dc88f5",
+      "renderedDigest": "fbeb94a70ad24cb08a95c6f2883a5ff4322603f5d801cefd79882432707171e1",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "479bfce3ebb8c463fec6eca41e3f6f0ce6472795",
+        "ref": "c50c526e6f0dea897568551e9b03c65025e5ffd4",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "acfb6b38ca723bf62ed0f2a252abe90e66630b031bbbccf151a0559d998848ab",
-      "capturedAt": "2026-10-02T12:55:58.265Z"
+      "sha256": "7c4c50843738f7d270e53e85516dfeec25d11a40e47418c421095102b9d264af",
+      "capturedAt": "2026-10-10T19:02:13.851Z"
     },
     "kitchen-sink-phone": {
       "head": "47d8b23717393ef6b4fbe1f760539d61dc80ec09",
@@ -211,42 +163,30 @@
       "capturedAt": "2026-10-02T12:55:58.265Z"
     },
     "payment-form-phone": {
-      "head": "47d8b23717393ef6b4fbe1f760539d61dc80ec09",
-      "renderedDigest": "3c0fbe98185ed75cbf50eda83ccd1ed2f216567f9665eff37ae0aa64cb61d153",
-      "dirty": [
-        "apps/frontend/app/src/v3/components/holdings/holdingPeek.tsx",
-        "apps/frontend/app/src/v3/components/holdings/holdingsConfig.tsx",
-        "apps/frontend/app/src/v3/lib/holdings.ts",
-        "apps/frontend/app/tests/v3/components/holdingPeek.test.tsx",
-        "apps/frontend/app/tests/v3/lib/holdings.test.ts"
-      ],
-      "dirtyCount": 5,
+      "head": "cf51c1b9e256b265982a762250e1770f94dc88f5",
+      "renderedDigest": "fbeb94a70ad24cb08a95c6f2883a5ff4322603f5d801cefd79882432707171e1",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "479bfce3ebb8c463fec6eca41e3f6f0ce6472795",
+        "ref": "c50c526e6f0dea897568551e9b03c65025e5ffd4",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "c71628e8efc4eef5ed9499adb3379b3129a882653421596e1dc07f40871b4a7c",
-      "capturedAt": "2026-10-02T12:55:58.265Z"
+      "sha256": "6752c396a15571974a8b9591d6ee7681ab735985ed1bde00d14861126b2e8aef",
+      "capturedAt": "2026-10-10T19:02:13.851Z"
     },
     "payment-form-phone-rtl": {
-      "head": "47d8b23717393ef6b4fbe1f760539d61dc80ec09",
-      "renderedDigest": "3c0fbe98185ed75cbf50eda83ccd1ed2f216567f9665eff37ae0aa64cb61d153",
-      "dirty": [
-        "apps/frontend/app/src/v3/components/holdings/holdingPeek.tsx",
-        "apps/frontend/app/src/v3/components/holdings/holdingsConfig.tsx",
-        "apps/frontend/app/src/v3/lib/holdings.ts",
-        "apps/frontend/app/tests/v3/components/holdingPeek.test.tsx",
-        "apps/frontend/app/tests/v3/lib/holdings.test.ts"
-      ],
-      "dirtyCount": 5,
+      "head": "cf51c1b9e256b265982a762250e1770f94dc88f5",
+      "renderedDigest": "fbeb94a70ad24cb08a95c6f2883a5ff4322603f5d801cefd79882432707171e1",
+      "dirty": [],
+      "dirtyCount": 0,
       "base": {
-        "ref": "479bfce3ebb8c463fec6eca41e3f6f0ce6472795",
+        "ref": "c50c526e6f0dea897568551e9b03c65025e5ffd4",
         "confirmed": true,
         "behind": 0
       },
-      "sha256": "4f9fea5a36b8cbcee9bc4611d654b60c5f3e5b6fa1de842f089071a99bc04461",
-      "capturedAt": "2026-10-02T12:55:58.265Z"
+      "sha256": "d87e125993f77ccb5f79063afb33095c923ecd683e67203198c8ecdc82ef3d27",
+      "capturedAt": "2026-10-10T19:02:13.851Z"
     }
   }
 }

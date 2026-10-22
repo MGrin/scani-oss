@@ -4,12 +4,13 @@ import { LoadingRamp } from '@scani/ui/v3/components/feedback/LoadingRamp';
 import { QueryError } from '@scani/ui/v3/components/feedback/QueryError';
 import { DashboardGrid, DashboardItem, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { useDelayedLoading } from '@scani/ui/v3/hooks/useDelayedLoading';
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Navigate, useLocation } from 'react-router-dom';
 import { trpc } from '@/lib/trpc';
 import { useHomeChart } from '@/v3/hooks/useHomeChart';
 import { useOpenCapture } from '../components/capture/CaptureSheetContext';
+import { RevealTogether } from '../components/feedback/RevealTogether';
 import { StaleNotice } from '../components/feedback/StaleNotice';
 import { AllocationBlock } from '../components/home/AllocationBlock';
 import { DebtBlock } from '../components/home/DebtBlock';
@@ -30,6 +31,7 @@ import { VaultsBlock } from '../components/home/VaultsBlock';
 import { WrapperGainsBlock } from '../components/home/WrapperGainsBlock';
 import { AccountDeletionNotice } from '../components/settings/AccountDeletionNotice';
 import { HOME_METRIC_TITLE_KEYS } from '../lib/home';
+import { INCOME_HORIZON_DAYS } from '../lib/money';
 import { V3_ROUTES } from '../lib/routes';
 
 /**
@@ -113,6 +115,41 @@ function useNetWorthSeriesPrefetch(range: { from: Date; to: Date }): void {
 }
 
 /**
+ * Asks for what sits above the tiles as soon as the screen exists (SC-1742).
+ *
+ * The household row and the Needs-you strip used to ask when the dashboard
+ * mounted, one round trip after the overview, and landed above the tiles
+ * after the page had shown: everything below them moved. Asked now, they
+ * arrive with the overview and are in the first frame the reader sees. The
+ * inputs are the ones `HouseholdLink` and `NeedsYou` query with, so those
+ * blocks join these requests rather than repeat them.
+ */
+function useAboveTilesPrefetch(): void {
+  const utils = trpc.useUtils();
+  useEffect(() => {
+    void utils.household.mine.prefetch();
+    void utils.review.listPending.prefetch();
+    void utils.payments.upcoming.prefetch({ days: INCOME_HORIZON_DAYS });
+  }, [utils]);
+}
+
+/** How long the dashboard waits, past the overview, for the rest of the page's
+ *  first answers before it shows what it has: answers this close together
+ *  read as one screen (SC-1742). */
+const HOME_REVEAL_GRACE_MS = 300;
+
+/** How long the tiles wait for each other behind one skeleton. Longer than the
+ *  page's grace: the tiles ask when the dashboard mounts, a round trip after
+ *  the page, and a phone round trip is ~600 ms. A tile still loading past it
+ *  fills in place without moving its neighbours. */
+const HOME_TILES_CAP_MS = 1000;
+
+/** The tile grid while it waits: one block, not one placeholder per tile. */
+function TilesSkeleton() {
+  return <Skeleton aria-hidden="true" className="h-52 w-full rounded-lg" />;
+}
+
+/**
  * The name of the page, in the heading tree (SC-1206).
  *
  * This screen had **no `h1` at all** once it had data, so a screen reader's
@@ -158,7 +195,10 @@ export function HomePage() {
   const { pathname } = useLocation();
   const overview = trpc.dashboard.getOverview.useQuery();
   const openCapture = useOpenCapture();
-  const loadingPhase = useDelayedLoading(overview.isLoading);
+  const [dashboardShown, setDashboardShown] = useState(false);
+  const markDashboardShown = useCallback(() => setDashboardShown(true), []);
+  const loadingPhase = useDelayedLoading(!dashboardShown);
+  useAboveTilesPrefetch();
   // Held here rather than in `HeroBlock` because two blocks read it now: the
   // hero draws the selected tab, and the returns block below gives up its own
   // window picker and its copy of the money sentence while Returns is that tab
@@ -199,26 +239,24 @@ export function HomePage() {
     );
   }
 
-  if (overview.data === undefined) {
-    return (
-      <>
-        <HomeHeading />
-        <PageLayout>
-          {/* Nothing for 300ms. The home screen is the app's cold start *and*
-              its most-revisited surface — on the second visit the overview is
-              in cache and this renders nothing at all, which is the point. */}
-          <LoadingRamp
-            phase={loadingPhase}
-            skeleton={<HomeSkeleton />}
-            label={t('v3.home.loadingLabel')}
-            onRetry={() => void overview.refetch()}
-          />
-        </PageLayout>
-      </>
-    );
-  }
+  // One placeholder from the first frame to the reveal, so its ramp never
+  // restarts when the overview lands (SC-1742).
+  const loading = (
+    <PageLayout>
+      {/* Nothing for 300ms. The home screen is the app's cold start *and*
+          its most-revisited surface — on the second visit the overview is
+          in cache and this renders nothing at all, which is the point. */}
+      <LoadingRamp
+        phase={loadingPhase}
+        skeleton={<HomeSkeleton />}
+        label={t('v3.home.loadingLabel')}
+        onRetry={() => void overview.refetch()}
+      />
+    </PageLayout>
+  );
 
-  if (overview.data.counts.holdings === 0) {
+  const data = overview.data;
+  if (data !== undefined && data.counts.holdings === 0) {
     return (
       <PageLayout className="items-start">
         <AccountDeletionNotice />
@@ -243,79 +281,97 @@ export function HomePage() {
   return (
     <>
       <HomeHeading />
-      <FigureVisibilityProvider>
-        <HomePageStaleContext.Provider value={overview.isError}>
-          <DashboardGrid>
-            {/* Before everything else: an account its owner asked to delete, and
+      {/* Once the overview has answered, the page waits a moment for the rest
+          of its first answers, so the reader sees one screen rather than its
+          parts arriving. */}
+      <RevealTogether
+        hold={data === undefined}
+        capMs={HOME_REVEAL_GRACE_MS}
+        skeleton={loading}
+        skeletonRamps
+        onShown={markDashboardShown}
+      >
+        {data === undefined ? null : (
+          <FigureVisibilityProvider>
+            <HomePageStaleContext.Provider value={overview.isError}>
+              <DashboardGrid>
+                {/* Before everything else: an account its owner asked to delete, and
           believes is gone, is still here (SC-1276). Renders nothing otherwise. */}
-            <AccountDeletionNotice className="col-span-full" />
+                <AccountDeletionNotice className="col-span-full" />
 
-            {/* Above everything, because it qualifies everything: with the api
+                {/* Above everything, because it qualifies everything: with the api
           unreachable this screen renders a full portfolio to the cent off the
           cache and used to say nothing at all about how old it was (SC-71 9.1).
           `overview` is the query the net worth, the totals and the top
           holdings all come from, so its state is the honest one to report. */}
-            {overview.isError ? (
-              <DashboardItem span="full">
-                <StaleNotice onRetry={() => void overview.refetch()} />
-              </DashboardItem>
-            ) : null}
+                {overview.isError ? (
+                  <DashboardItem span="full">
+                    <StaleNotice onRetry={() => void overview.refetch()} />
+                  </DashboardItem>
+                ) : null}
 
-            {/* The hero takes the full row rather than sharing it. It is the one
+                {/* The hero takes the full row rather than sharing it. It is the one
           block the screen exists for, and its chart is the only element here
           that turns width directly into resolution — a wider trace is a longer
           readable history, not just a bigger picture. */}
-            <DashboardItem span="full">
-              <HeroBlock total={total} currency={currency} chart={chart} variant="compact" />
-            </DashboardItem>
+                <DashboardItem span="full">
+                  <HeroBlock total={total} currency={currency} chart={chart} variant="compact" />
+                </DashboardItem>
 
-            <HouseholdLink />
+                <HouseholdLink />
 
-            {/* Full width because it is an alert: a row that has to be noticed
+                {/* Full width because it is an alert: a row that has to be noticed
           cannot be the narrow one in a row of three. */}
-            <DashboardItem span="full">
-              <NeedsYou />
-            </DashboardItem>
+                <DashboardItem span="full">
+                  <NeedsYou />
+                </DashboardItem>
 
-            {/* One figure per tile, two to a row on a phone (SC-1669). The page
+                {/* One figure per tile, two to a row on a phone (SC-1669). The page
           was 4.3 phone screens of full cards; every card is still here, one
           tap away in its peek, and a tile with nothing to say renders no cell. */}
-            <DashboardItem span="full">
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <AllocationBlock variant="tile" />
-                <UpcomingBlock currency={currency} variant="tile" />
-                <ReturnsBlock variant="tile" />
-                <TopHoldingsBlock
-                  holdings={overview.data.topHoldings}
-                  total={total}
-                  currency={currency}
-                  query={overview}
-                  variant="tile"
-                />
-                <IncomeBlock variant="tile" />
-                <WrapperGainsBlock variant="tile" />
-                <DebtBlock variant="tile" />
-                <GroupsBlock variant="tile" />
-                <VaultsBlock variant="tile" />
-              </div>
-            </DashboardItem>
-          </DashboardGrid>
-          <HomePeek
-            currency={currency}
-            hero={<HeroDetails chart={chart} currency={currency} />}
-            heroTitle={t(HOME_METRIC_TITLE_KEYS[chart.metric])}
-            holdings={
-              <TopHoldingsBlock
-                holdings={overview.data.topHoldings}
-                total={total}
+                <DashboardItem span="full">
+                  <RevealTogether capMs={HOME_TILES_CAP_MS} skeleton={<TilesSkeleton />}>
+                    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                      <AllocationBlock variant="tile" />
+                      <UpcomingBlock currency={currency} variant="tile" />
+                      <ReturnsBlock variant="tile" />
+                      <TopHoldingsBlock
+                        holdings={data.topHoldings}
+                        total={total}
+                        currency={currency}
+                        query={overview}
+                        variant="tile"
+                      />
+                      <IncomeBlock variant="tile" />
+                      <DebtBlock variant="tile" />
+                      <GroupsBlock variant="tile" />
+                      <VaultsBlock variant="tile" />
+                      {/* Last: it alone learns from its slow query whether it has
+                      anything to show, so when it turns out empty after the
+                      reveal, no tile after it reflows (SC-1742). */}
+                      <WrapperGainsBlock variant="tile" />
+                    </div>
+                  </RevealTogether>
+                </DashboardItem>
+              </DashboardGrid>
+              <HomePeek
                 currency={currency}
-                query={overview}
-                variant="peek"
+                hero={<HeroDetails chart={chart} currency={currency} />}
+                heroTitle={t(HOME_METRIC_TITLE_KEYS[chart.metric])}
+                holdings={
+                  <TopHoldingsBlock
+                    holdings={data.topHoldings}
+                    total={total}
+                    currency={currency}
+                    query={overview}
+                    variant="peek"
+                  />
+                }
               />
-            }
-          />
-        </HomePageStaleContext.Provider>
-      </FigureVisibilityProvider>
+            </HomePageStaleContext.Provider>
+          </FigureVisibilityProvider>
+        )}
+      </RevealTogether>
     </>
   );
 }

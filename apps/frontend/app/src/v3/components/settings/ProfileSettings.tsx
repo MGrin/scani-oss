@@ -180,7 +180,7 @@ export function ProfileSettings() {
                 the app is showing you is drawn as a fact: no field chrome, the
                 sentence under it says why, and there is nothing to tap. */}
             <Field label={t('settings.email')} hint={t('v3.settings.profile.emailImmutable')}>
-              <p className="min-w-0 truncate py-2.5 text-body">{user?.email ?? ''}</p>
+              <p className="min-h-11 min-w-0 truncate py-2.5 text-body">{user?.email ?? ''}</p>
             </Field>
           </FieldRow>
         </FieldSet>
