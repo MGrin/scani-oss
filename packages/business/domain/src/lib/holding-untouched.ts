@@ -77,9 +77,19 @@ export const HOLDING_INTENT_TABLES = [
 /** Records nothing that a delete could lose. `holding_coverage` is derived from
  *  the ledger and rebuilt on demand; `engine_shadow_differences` is a nightly
  *  comparison report whose FK is SET NULL, so a delete clears the reference and
- *  the difference stands. See the docblock — this is the exclusion the FK test
- *  checks against, not an omission. */
-export const HOLDING_DERIVED_TABLES = ['holding_coverage', 'engine_shadow_differences'] as const;
+ *  the difference stands. `_sc357_solana_rekey_20260817` is a repair
+ *  migration's copy of rows it rewrote; it cascades so that deleting the
+ *  holding deletes the copy too (SC-1753), and nobody's intent lives in it.
+ *  `_sc1634_apy_balance_copies_20261017` archives balance copies the engine
+ *  never read, which mean nothing once their holding is gone, and cascades the
+ *  same way. See the docblock — this is the exclusion the FK test checks
+ *  against, not an omission. */
+export const HOLDING_DERIVED_TABLES = [
+  'holding_coverage',
+  'engine_shadow_differences',
+  '_sc357_solana_rekey_20260817',
+  '_sc1634_apy_balance_copies_20261017',
+] as const;
 
 /**
  * True when nothing in `HOLDING_INTENT_TABLES` references this holding.
