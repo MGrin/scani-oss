@@ -20,28 +20,32 @@ interface FaviconImgProps {
  * Small favicon wrapper that handles onError through React state instead of
  * imperative DOM mutation. Two behaviors:
  *  - no fallbackClassName → img disappears on error (matches most usages)
- *  - with fallbackClassName → shows a first-letter placeholder span on error
+ *  - with fallbackClassName → shows a first-letter placeholder span on error,
+ *    and while the image is still loading: an icon in flight otherwise leaves
+ *    an empty box in the row's mark (SC-1699)
  */
 export function FaviconImg({ src, name, className, fallbackClassName }: FaviconImgProps) {
   const [errored, setErrored] = useState(false);
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const letter = fallbackClassName ? (
+    <span className={cn(fallbackClassName)} aria-hidden="true">
+      {name.charAt(0).toUpperCase()}
+    </span>
+  ) : null;
 
-  if (!src || errored) {
-    if (fallbackClassName) {
-      return (
-        <span className={cn(fallbackClassName)} aria-hidden="true">
-          {name.charAt(0).toUpperCase()}
-        </span>
-      );
-    }
-    return null;
-  }
+  if (!src || errored) return letter;
 
+  const loaded = loadedSrc === src;
   return (
-    <img
-      src={src}
-      alt={uiT('ui.brand.logoAlt', { name })}
-      className={className}
-      onError={() => setErrored(true)}
-    />
+    <>
+      {loaded ? null : letter}
+      <img
+        src={src}
+        alt={uiT('ui.brand.logoAlt', { name })}
+        className={cn(className, letter && !loaded && 'hidden')}
+        onLoad={() => setLoadedSrc(src)}
+        onError={() => setErrored(true)}
+      />
+    </>
   );
 }
