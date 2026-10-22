@@ -504,6 +504,24 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('apps/e2e/package.json') }}
 
+      # SC-1764. The browser cache above holds no system package, so every run
+      # downloaded ~189 .deb files (119 MB) from the runner's Ubuntu mirror. On
+      # 2026-10-22 azure.archive.ubuntu.com served 24 of them in 11 minutes and
+      # the install step timed out six times in one day, before any test ran.
+      # So the downloaded packages are kept and put back where apt looks first,
+      # and apt's waits are bounded so a stalled mirror errors and retries on
+      # the next one in its mirror list instead of hanging the step.
+      - name: Restore apt packages
+        id: apt-debs
+        uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/apt-debs
+          key: apt-debs-${{ runner.os }}-${{ hashFiles('apps/e2e/package.json') }}
+          restore-keys: apt-debs-${{ runner.os }}-
+
+      - name: Seed apt with the restored packages
+        run: bun apps/e2e/scripts/apt-debs.ts seed
+
       # SC-925. `--with-deps` shells out to `apt-get`, so this step takes a
       # hard dependency on packages.microsoft.com — a host we need no browser
       # from and do not control. It has broken this job twice in three days,
@@ -517,7 +535,7 @@ jobs:
       # and its slowest SUCCESSFUL install is 7m33s (n=30, p50 0m38s), spent
       # inside `apt-get` installing several hundred WebKit packages — GTK4,
       # GStreamer, the font sets — none of which the runner image ships and
-      # none of which any cache here covers. Sizing this to one repo's
+      # none of which the browser cache covers. Sizing this to one repo's
       # distribution would have converted that run into a red.
       #
       # So: 1.6x the slowest success observed anywhere, and still 2m40s
@@ -526,6 +544,21 @@ jobs:
       - name: Install Playwright Chromium + WebKit
         timeout-minutes: 12
         run: cd apps/e2e && bunx playwright install --with-deps chromium webkit
+
+      # Saved here, right after the install, rather than by a post step: a post
+      # step saves only when the whole job passes, and a flaky suite would then
+      # keep the packages from ever being kept.
+      - name: Collect apt packages
+        id: apt-collect
+        if: steps.apt-debs.outputs.cache-hit != 'true'
+        run: bun apps/e2e/scripts/apt-debs.ts collect >> "$GITHUB_OUTPUT"
+
+      - name: Save apt packages
+        if: steps.apt-debs.outputs.cache-hit != 'true' && steps.apt-collect.outputs.kept != '0'
+        uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/apt-debs
+          key: apt-debs-${{ runner.os }}-${{ hashFiles('apps/e2e/package.json') }}
 
       - name: Start stack
         run: cp .env.example .env && bun dev:stack
