@@ -3,6 +3,7 @@ import { Button } from '@scani/ui/ui/button';
 import { DataRow, DataRowList } from '@scani/ui/v3/components/DataRow';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
 import { peekOpenState, peekPath } from '@scani/ui/v3/lib/peek';
+import type { TFunction } from 'i18next';
 import { CalendarClock } from 'lucide-react';
 import { type ReactNode, useMemo } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
@@ -145,6 +146,25 @@ export function UpcomingFootLine({
  * the reason `<UpcomingFootLine>` is: the block owns four tRPC queries, and
  * this is the part a test can render.
  */
+/**
+ * The Bills tile's caption. A tile caption is one line and is cut at the
+ * tile's edge, so "nothing due" is the short form; the card and the peek keep
+ * the full sentence with its horizon (SC-1703).
+ */
+export function upcomingTileCaption(
+  t: TFunction,
+  ahead: readonly { dueDate: string }[],
+  today: string
+): string {
+  const next = ahead[0];
+  return next
+    ? t('v3.home.upcoming.dueNext', {
+        count: ahead.length,
+        when: formatDueIn(next.dueDate, today, t).toLocaleLowerCase(),
+      })
+    : t('v3.home.upcoming.tileEmpty');
+}
+
 export function UpcomingCard({
   queries,
   empty,
@@ -279,12 +299,7 @@ export function UpcomingBlock({ currency, variant = 'card' }: UpcomingBlockProps
             />
           </>
         ),
-        caption: ahead[0]
-          ? t('v3.home.upcoming.dueNext', {
-              count: ahead.length,
-              when: formatDueIn(ahead[0].dueDate, today, t).toLocaleLowerCase(),
-            })
-          : t('v3.home.upcoming.empty', { count: PAYMENTS_HORIZON_DAYS }),
+        caption: upcomingTileCaption(t, ahead, today),
       })}
       empty={due.length === 0}
       rows={

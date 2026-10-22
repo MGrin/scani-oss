@@ -306,7 +306,9 @@ export const VISUAL_SCREENS: readonly VisualScreen[] = [
   },
   {
     name: 'home-allocation-fold-desktop',
-    route: '/',
+    // The Allocation peek: since the Home tiles (SC-1669) the bar and its
+    // fold live there, not on Home itself (SC-1703).
+    route: '/home/allocation',
     session: 'allocation',
     viewport: 'desktop',
     height: 1400,
