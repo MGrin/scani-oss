@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import type * as Sentry from '@sentry/node';
 import {
   addBreadcrumb,
   captureContext,
@@ -6,6 +7,7 @@ import {
   flushSentry,
   initSentry,
   prepareSentryEvent,
+  traceSampleRate,
 } from '../src/sentry';
 
 // All assertions in this file run with SENTRY_DSN unset (the test default),
@@ -73,6 +75,23 @@ describe('initSentry idempotence', () => {
 });
 
 describe('prepareSentryEvent (SC-1350)', () => {
+  test('an adjust hook runs after the scrub, and a dropped event never reaches it (SC-1738)', () => {
+    const seen: unknown[] = [];
+    const adjust = <T>(event: T): T => {
+      seen.push(event);
+      return { ...event, level: 'warning' } as T;
+    };
+    const fatal: Sentry.Event = { message: 'plain', level: 'fatal' };
+    expect(prepareSentryEvent(fatal, undefined, adjust)).toEqual({
+      message: 'plain',
+      level: 'warning',
+    });
+    expect(
+      prepareSentryEvent({ request: { url: 'https://api.scani.xyz/.env' } }, undefined, adjust)
+    ).toBeNull();
+    expect(seen).toHaveLength(1);
+  });
+
   const scrub = <T>(event: T): T => JSON.parse(JSON.stringify(event).replaceAll('SECRET-1', 'x'));
 
   test('runs the app-supplied scrubber over every event it keeps', () => {
@@ -103,5 +122,21 @@ describe('captureContext (SC-1545)', () => {
   test('control: with none, Sentry is left to group the event itself', () => {
     expect('fingerprint' in captureContext({ kind: 'dlq-depth-alert' })).toBe(false);
     expect('fingerprint' in captureContext({ kind: 'dlq-depth-alert' }, [])).toBe(false);
+  });
+});
+
+describe('traceSampleRate (SC-1745)', () => {
+  test('getReturns is kept whole, so its latency is read from every call', () => {
+    expect(traceSampleRate({ name: 'trpc/portfolio.getReturns' })).toBe(1);
+  });
+
+  test('control: every other span keeps the 10% rate', () => {
+    expect(traceSampleRate({ name: 'trpc/dashboard.getOverview' })).toBe(0.1);
+    expect(traceSampleRate({ name: 'trpc/portfolio.getReturnsComparison' })).toBe(0.1);
+  });
+
+  test("a child follows its parent's decision", () => {
+    expect(traceSampleRate({ name: 'trpc/portfolio.getReturns', parentSampled: false })).toBe(0);
+    expect(traceSampleRate({ name: 'job/x', parentSampled: true })).toBe(1);
   });
 });

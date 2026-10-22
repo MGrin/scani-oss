@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, test } from 'bun:test';
+import { beforeEach, describe, expect, setSystemTime, test } from 'bun:test';
 import { _resetReturnsCache, sharedReturnsRun } from '../../src/lib/returns-cache';
 
 // The returns run is shared across requests only while the data under it is
@@ -46,6 +46,21 @@ describe('sharedReturnsRun', () => {
     await sharedReturnsRun(KEY, USER, c.compute, fixedVersion('v1'), '2026-09-24');
     await sharedReturnsRun(KEY, USER, c.compute, fixedVersion('v1'), '2026-09-25');
     expect(c.runs()).toBe(2);
+  });
+
+  test('unchanged data hours later still shares the run (SC-1745)', async () => {
+    // The key already moves with the data and the day. A clock on top of it
+    // only made a Home load after a coffee break pay the whole cold cost.
+    const c = counter('result');
+    setSystemTime(new Date('2026-09-24T08:00:00.000Z'));
+    try {
+      await sharedReturnsRun(KEY, USER, c.compute, fixedVersion('v1'), '2026-09-24');
+      setSystemTime(new Date('2026-09-24T20:00:00.000Z'));
+      await sharedReturnsRun(KEY, USER, c.compute, fixedVersion('v1'), '2026-09-24');
+    } finally {
+      setSystemTime();
+    }
+    expect(c.runs()).toBe(1);
   });
 
   test('a different request key is never shared', async () => {
@@ -121,5 +136,21 @@ describe('sharedReturnsRun', () => {
       '2026-09-24'
     );
     expect(seen[0]).not.toBe(seen[1]);
+  });
+});
+
+describe('sharedReturnsRun observation (SC-1745)', () => {
+  test('reports a miss, then a hit, with the version read timed each time', async () => {
+    const seen: Array<{ hit: boolean; versionMs: number }> = [];
+    const c = counter('result');
+    const slowVersion = async () => {
+      await Bun.sleep(20);
+      return 'v1';
+    };
+    const observe = (o: { hit: boolean; versionMs: number }) => seen.push(o);
+    await sharedReturnsRun(KEY, USER, c.compute, slowVersion, '2026-09-24', observe);
+    await sharedReturnsRun(KEY, USER, c.compute, slowVersion, '2026-09-24', observe);
+    expect(seen.map((o) => o.hit)).toEqual([false, true]);
+    for (const o of seen) expect(o.versionMs).toBeGreaterThanOrEqual(15);
   });
 });

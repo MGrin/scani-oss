@@ -16,6 +16,7 @@ import * as schema from '@scani/db/schema';
 import { periodBreakdown } from '@scani/domain/lib/portfolio/period-breakdown';
 import { getOrComputeFromCache } from '@scani/domain/lib/request-cache';
 import { buildComparison } from '@scani/domain/lib/returns/comparison';
+import { withoutPeriodSeries } from '@scani/domain/lib/returns/response';
 import { sampleDays } from '@scani/domain/lib/returns/sample-days';
 import { notScamFor } from '@scani/domain/lib/scam-verdict';
 import { PortfolioValueDailyRepository, UserJobRepository } from '@scani/domain/repositories';
@@ -30,6 +31,7 @@ import {
 } from '@scani/domain/services';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
 import { PORTFOLIO_HISTORY_BACKFILL, PORTFOLIO_HISTORY_LOOKBACK_DAYS } from '@scani/jobs';
+import { setSpanAttributes } from '@scani/logging/sentry';
 import { BullMqEnqueueService } from '@scani/queue';
 import { TRPCError } from '@trpc/server';
 import Decimal from 'decimal.js';
@@ -54,7 +56,6 @@ import {
   keepLastComplete,
   type LastComplete,
 } from '../../lib/returns-last-complete';
-import { withoutPeriodSeries } from '../../lib/returns-response';
 import { ReturnsRunner } from '../../returns-pool';
 import { strictInput } from '../lib/strict-input';
 import { assertTokensVisible } from '../lib/token-visibility';
@@ -335,16 +336,26 @@ function computeReturns(
   // Shared across requests too, while the user's data is unchanged: see
   // `lib/returns-cache.ts` for the measurement and for what the key carries.
   return getOrComputeFromCache(requestCache, key, () =>
-    sharedReturnsRun(key, request.userId, (dataKey) =>
-      // Off the API's event loop (SC-1671): `returns-pool.ts`.
-      Container.get(ReturnsRunner).run(
-        {
-          userId: request.userId,
-          scope: request.scope,
-          window: request.window,
-        },
-        dataKey
-      )
+    sharedReturnsRun(
+      key,
+      request.userId,
+      (dataKey) =>
+        // Off the API's event loop (SC-1671): `returns-pool.ts`.
+        Container.get(ReturnsRunner).run(
+          {
+            userId: request.userId,
+            scope: request.scope,
+            window: request.window,
+          },
+          dataKey
+        ),
+      undefined,
+      undefined,
+      ({ hit, versionMs }) =>
+        setSpanAttributes({
+          'returns.cache': hit ? 'hit' : 'miss',
+          'returns.version_ms': versionMs,
+        })
     )
   );
 }
