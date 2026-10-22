@@ -69,7 +69,7 @@ export { SendPaymentDueRemindersUseCase } from './SendPaymentDueRemindersUseCase
 export { SendTestNotificationUseCase } from './SendTestNotificationUseCase';
 export { SendWeeklyDigestsUseCase } from './SendWeeklyDigestsUseCase';
 // Cron Job Use Cases
-export { SyncExchangeBalancesUseCase } from './SyncExchangeBalancesUseCase';
+export { needsReconnect, SyncExchangeBalancesUseCase } from './SyncExchangeBalancesUseCase';
 export { SyncExchangeTransactionsUseCase } from './SyncExchangeTransactionsUseCase';
 export { SyncWalletBalancesUseCase } from './SyncWalletBalancesUseCase';
 export { UpdateHoldingPriceUseCase } from './UpdateHoldingPriceUseCase';

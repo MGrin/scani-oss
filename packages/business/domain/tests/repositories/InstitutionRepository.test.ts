@@ -206,6 +206,29 @@ describe('findStaleSyncTargets', () => {
     });
   });
 
+  test('carries whether the provider refused the key itself (SC-1749)', async () => {
+    await withTestDb(async (tx) => {
+      const exchange = await makeInstitutionType(tx, { code: 'exchange' });
+      const bybit = await makeInstitution(tx, { name: 'Bybit', typeId: exchange.id });
+      const refused = await makeUser(tx);
+      const quiet = await makeUser(tx);
+      const stale = { lastSync: new Date('2020-01-01').toISOString() };
+      await makeCredential(tx, {
+        userId: refused.id,
+        institutionId: bybit.id,
+        syncLastError: 'Bybit retCode=33004: Your api key has expired.',
+        syncRefusalKind: 'auth-failed',
+      });
+      await makeCredential(tx, { userId: quiet.id, institutionId: bybit.id });
+      await makeAccount(tx, { userId: refused.id, institutionId: bybit.id, metadata: stale });
+      await makeAccount(tx, { userId: quiet.id, institutionId: bybit.id, metadata: stale });
+      const targets = await repo().findStaleSyncTargets(new Date('2026-01-01'), tx);
+      const of = (userId: string) => targets.find((t) => t.userId === userId)?.refusalKind;
+      expect(of(refused.id)).toBe('auth-failed');
+      expect(of(quiet.id)).toBeNull();
+    });
+  });
+
   test('flags a zero-account institution whose credential import failed', async () => {
     await withTestDb(async (tx) => {
       const user = await makeUser(tx);

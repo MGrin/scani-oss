@@ -33,6 +33,7 @@ const target = (credentialId: string, institutionName: string): StaleSyncTarget 
   institutionName,
   kind: 'orphaned-credential',
   lastError: null,
+  refusalKind: null,
 });
 
 /** What the probe currently sees. Reassigned between probes to move the world. */
@@ -157,6 +158,27 @@ describe('stale-sync probe', () => {
     );
     expect(captured[0]?.message).toContain('Kraken(stale-account)');
     expect(captured[0]?.message).not.toContain('Kraken(stale-account:');
+  });
+
+  // SC-1749: the exchange refused the key itself. The app asks its owner to
+  // reconnect and the sync stops calling, so only the owner can fix it, and
+  // a page to us has nothing to act on.
+  test('a key the provider refused is left to its owner, not paged', async () => {
+    const { captured, probeAt } = harness();
+    current = [
+      {
+        ...target('cred-1', 'Bybit'),
+        kind: 'stale-account',
+        lastError: 'Bybit retCode=33004: Your api key has expired.',
+        refusalKind: 'auth-failed',
+      },
+      { ...target('cred-2', 'Kraken'), kind: 'stale-account' },
+    ];
+    await probeAt(0);
+    await probeAt(7 * 24 + 1);
+    expect(captured.map((c) => c.message).join('\n')).not.toContain('Bybit');
+    expect(captured).toHaveLength(2);
+    expect(captured[0]?.message).toContain('Kraken(stale-account)');
   });
 
   test('a condition true throughout is re-stated once a week, not once an hour', async () => {
