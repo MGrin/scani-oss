@@ -31,6 +31,7 @@ import { UserIntegrationCredentialsRepository } from '../repositories/UserIntegr
 import { type FullImportHistory, UserJobRepository } from '../repositories/UserJobRepository';
 import { BALANCE_RUN_LEDGER_SOURCES } from '../services/transactions/ledger-cadence';
 import { ledgerSourceOf, sourceForProvider } from '../services/transactions/transaction-source';
+import { needsReconnect } from './SyncExchangeBalancesUseCase';
 
 const logger = createComponentLogger('use-case:sync-exchange-transactions');
 
@@ -70,6 +71,8 @@ export interface SyncExchangeTransactionsResult {
   accountsFound: number;
   /** Accounts skipped because their provider has no ingester source. */
   skippedNoSource: number;
+  /** Credentials whose key the provider rejected; no import until it is replaced (SC-1728). */
+  skippedNeedsReconnect: number;
   /** Targets emitted without a `since`: an empty ledger or an unclaimed holding. */
   fullHistoryTargets: number;
   /** Windowed reads left to the hourly balance run, which reads them with the balance (SC-1665). */
@@ -102,12 +105,17 @@ export class SyncExchangeTransactionsUseCase {
     const candidates: Candidate[] = [];
     let accountsFound = 0;
     let skippedNoSource = 0;
+    let skippedNeedsReconnect = 0;
 
     for (const institution of institutions) {
       const providerSource = sourceForProvider(institution.name);
       const credentials = await this.credentialsRepository.findByInstitution(institution.id);
 
       for (const credential of credentials) {
+        if (needsReconnect(credential)) {
+          skippedNeedsReconnect++;
+          continue;
+        }
         const accounts = await this.accountRepository.findByUser(credential.userId);
         for (const account of accounts) {
           if (account.institutionId !== institution.id || !account.isActive) continue;
@@ -143,6 +151,7 @@ export class SyncExchangeTransactionsUseCase {
         accountsFound,
         targets: targets.length,
         skippedNoSource,
+        skippedNeedsReconnect,
         fullHistoryTargets,
         ledgerWithBalance,
       },
@@ -152,6 +161,7 @@ export class SyncExchangeTransactionsUseCase {
       targets,
       accountsFound,
       skippedNoSource,
+      skippedNeedsReconnect,
       fullHistoryTargets,
       ledgerWithBalance,
       durationMs: Date.now() - startTime,

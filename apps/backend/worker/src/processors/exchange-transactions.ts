@@ -56,6 +56,7 @@ export class ExchangeTransactionsProcessor extends ScheduledJobProcessor {
           enqueued,
           enqueueFailed,
           skippedNoSource: result.skippedNoSource,
+          skippedNeedsReconnect: result.skippedNeedsReconnect,
           fullHistoryTargets: result.fullHistoryTargets,
           durationMs: Date.now() - startTime,
         },

@@ -71,6 +71,33 @@ describe('IntegrationCredentialsService — connect, disconnect and reconnect', 
     expect((await credentials().getUserCredentials(userId)).map((c) => c.id)).toEqual([first.id]);
   });
 
+  test('a new key clears the refusal recorded against the old one (SC-1728)', async () => {
+    const refuse = (id: string) =>
+      getDb()
+        .update(schema.userIntegrationCredentials)
+        .set({ syncRefusalKind: 'auth-failed', syncLastError: 'expired', syncFailureCount: 8 })
+        .where(eq(schema.userIntegrationCredentials.id, id));
+    const refusalOf = async (userId: string) => {
+      const [row] = await storedRows(userId);
+      return [row!.syncRefusalKind, row!.syncLastError, row!.syncFailureCount];
+    };
+    const { userId, institutionId } = await commitExchange(rows);
+    const first = await credentials().storeCredentials(
+      userId,
+      institutionId,
+      { apiKey: 'first' },
+      'api_key'
+    );
+
+    await refuse(first.id);
+    await credentials().storeCredentials(userId, institutionId, { apiKey: 'second' }, 'api_key');
+    expect(await refusalOf(userId)).toEqual([null, null, 0]);
+
+    await refuse(first.id);
+    await credentials().updateCredentials(userId, institutionId, { apiKey: 'third' });
+    expect(await refusalOf(userId)).toEqual([null, null, 0]);
+  });
+
   test('deleting disconnects: the row stays, inactive, and reads back as absent', async () => {
     const { userId, institutionId } = await commitExchange(rows);
     const stored = await credentials().storeCredentials(
