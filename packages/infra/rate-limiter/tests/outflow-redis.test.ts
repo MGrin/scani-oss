@@ -72,9 +72,11 @@ describe('RedisOutflowRateLimiter', () => {
       windowMs: 60_000,
     });
     await limiter.execute(() => Promise.resolve('x'));
-    // ARGV[1] = nowMs, ARGV[2] = windowMs, ARGV[3] = max
-    expect(calls[0]?.args[2]).toBe('60000');
-    expect(calls[0]?.args[3]).toBe('50');
+    // KEYS = window, priority waiters (SC-1766); then ARGV[1] = nowMs,
+    // ARGV[2] = windowMs, ARGV[3] = max
+    expect(calls[0]?.numKeys).toBe(2);
+    expect(calls[0]?.args[3]).toBe('60000');
+    expect(calls[0]?.args[4]).toBe('50');
   });
 
   test('blocks until the script signals 0 (slot acquired)', async () => {

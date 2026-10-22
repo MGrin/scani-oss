@@ -1,23 +1,40 @@
 import { withDeadline } from '@scani/deadline';
 import type { Redis } from 'ioredis';
-import { OutflowRateLimiter } from './outflow-rate-limiter';
+import { OutflowRateLimiter, PRIORITY_YIELD_MS } from './outflow-rate-limiter';
 
 // Lua-scripted sliding window on a Redis sorted set.
 //   - `ZREMRANGEBYSCORE` evicts entries older than `now - windowMs`.
 //   - If `ZCARD < max`, append a new entry and grant the slot (return 0).
 //   - Else return the wait delta until the oldest entry expires; the
 //     caller sleeps and retries.
+// Priority (SC-1766): KEYS[2] holds the `high` callers waiting, scored by when
+// their claim lapses. A `high` caller records itself; while any is recorded, a
+// `normal` caller is told to wait. Every grant still comes from KEYS[1], so
+// priority reorders callers and never adds a slot.
 const ACQUIRE_SCRIPT = `
   local key = KEYS[1]
+  local waiters = KEYS[2]
   local nowMs = tonumber(ARGV[1])
   local windowMs = tonumber(ARGV[2])
   local max = tonumber(ARGV[3])
+  local waiter = ARGV[4]
+  local yieldMs = tonumber(ARGV[5])
   local cutoff = nowMs - windowMs
   redis.call('ZREMRANGEBYSCORE', key, '-inf', '(' .. cutoff)
+  redis.call('ZREMRANGEBYSCORE', waiters, '-inf', nowMs)
+  if waiter ~= '' then
+    redis.call('ZADD', waiters, nowMs + windowMs + 1000, waiter)
+    redis.call('PEXPIRE', waiters, windowMs + 1000)
+  elseif redis.call('ZCARD', waiters) > 0 then
+    return yieldMs
+  end
   local count = redis.call('ZCARD', key)
   if count < max then
     redis.call('ZADD', key, nowMs, nowMs .. ':' .. math.random())
     redis.call('PEXPIRE', key, windowMs)
+    if waiter ~= '' then
+      redis.call('ZREM', waiters, waiter)
+    end
     return 0
   end
   local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
@@ -124,9 +141,9 @@ export class RedisOutflowRateLimiter extends OutflowRateLimiter {
     this.timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   }
 
-  protected async tryAcquire(subKey?: string): Promise<number> {
+  protected async tryAcquire(subKey?: string, highWaiter?: string): Promise<number> {
     try {
-      return await this.withTimeout(this.acquireInRedis(subKey));
+      return await this.withTimeout(this.acquireInRedis(subKey, highWaiter));
     } catch (cause) {
       // Both shapes of the same outage arrive here — a command that hung past
       // the bound, and a rejection from a connection that does bound its
@@ -136,16 +153,20 @@ export class RedisOutflowRateLimiter extends OutflowRateLimiter {
     }
   }
 
-  private async acquireInRedis(subKey?: string): Promise<number> {
+  private async acquireInRedis(subKey?: string, highWaiter?: string): Promise<number> {
     const now = Date.now();
+    const key = this.redisKey(subKey);
     // biome-ignore lint/suspicious/noExplicitAny: ioredis `eval` returns `unknown`.
     const raw = (await (this.redis as any).eval(
       ACQUIRE_SCRIPT,
-      1,
-      this.redisKey(subKey),
+      2,
+      key,
+      `${key}:priority`,
       String(now),
       String(this.windowMs),
-      String(this.maxRequests)
+      String(this.maxRequests),
+      highWaiter ?? '',
+      String(PRIORITY_YIELD_MS)
     )) as number | string;
     return typeof raw === 'number' ? raw : Number.parseInt(String(raw), 10);
   }

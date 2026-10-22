@@ -72,3 +72,24 @@ export function matchVerifiedExternalToken(
   }
   return null;
 }
+
+/**
+ * Confirms a pick against the server's own search with as few searches as it
+ * takes (SC-1766): keyless CoinGecko answers one every 6 s, so each is a wait.
+ * The name first, because the search keeps one hit per provider and symbol and
+ * a pick made from a name search may not be the hit a ticker search keeps; the
+ * symbol only when the name search does not return the pick.
+ */
+export async function confirmExternalPick(
+  pick: { symbol: string; provider: ExternalProvider; metadata: Record<string, unknown> },
+  search: (query: string) => Promise<readonly ExternalSearchItem[]>
+): Promise<Record<string, unknown> | null> {
+  const name = typeof pick.metadata.name === 'string' ? pick.metadata.name.slice(0, 100) : '';
+  const queries = [...new Set([name, pick.symbol].filter((q) => q.length > 0))];
+  for (const query of queries) {
+    const results = await search(query).catch(() => [] as const);
+    const confirmed = matchVerifiedExternalToken(results, pick);
+    if (confirmed) return confirmed;
+  }
+  return null;
+}

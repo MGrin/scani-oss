@@ -9,6 +9,16 @@
 
 const ACQUIRE_JITTER_MAX_MS = 25;
 
+/**
+ * `high` is a caller someone is waiting on, such as a user's search. It takes
+ * a slot from the same window as everyone else, so the budget is unchanged;
+ * while one waits, `normal` callers do not take a slot (SC-1766).
+ */
+export type OutflowPriority = 'normal' | 'high';
+
+/** How long a `normal` caller sleeps before asking again while a `high` one waits. */
+export const PRIORITY_YIELD_MS = 250;
+
 export abstract class OutflowRateLimiter {
   protected readonly maxRequests: number;
   protected readonly windowMs: number;
@@ -22,8 +32,13 @@ export abstract class OutflowRateLimiter {
   // sliding windows. Used for per-credential limits (hashed API key) so
   // one user's traffic doesn't starve another's, and so provider-side
   // per-token limits stay accurate.
-  async execute<T>(fn: () => Promise<T>, subKey?: string, signal?: AbortSignal): Promise<T> {
-    await this.waitForSlot(subKey, signal);
+  async execute<T>(
+    fn: () => Promise<T>,
+    subKey?: string,
+    signal?: AbortSignal,
+    priority: OutflowPriority = 'normal'
+  ): Promise<T> {
+    await this.waitForSlot(subKey, signal, priority);
     signal?.throwIfAborted();
     return fn();
   }
@@ -37,10 +52,15 @@ export abstract class OutflowRateLimiter {
     return { ok: false, retryAfterMs: waitMs };
   }
 
-  protected async waitForSlot(subKey?: string, signal?: AbortSignal): Promise<void> {
+  protected async waitForSlot(
+    subKey?: string,
+    signal?: AbortSignal,
+    priority: OutflowPriority = 'normal'
+  ): Promise<void> {
+    const waiter = priority === 'high' ? crypto.randomUUID() : undefined;
     while (true) {
       signal?.throwIfAborted();
-      const waitMs = await this.tryAcquire(subKey);
+      const waitMs = await this.tryAcquire(subKey, waiter);
       signal?.throwIfAborted();
       if (waitMs === 0) return;
       // Add a tiny jitter so colliding callers don't all wake up at the
@@ -51,9 +71,11 @@ export abstract class OutflowRateLimiter {
 
   /**
    * Returns 0 if a slot was acquired, otherwise the milliseconds the
-   * caller should wait before retrying.
+   * caller should wait before retrying. `highWaiter` names a `high` caller:
+   * it is recorded as waiting until it gets its slot or stops asking for
+   * longer than a window, and while any is recorded no other caller gets one.
    */
-  protected abstract tryAcquire(subKey?: string): Promise<number>;
+  protected abstract tryAcquire(subKey?: string, highWaiter?: string): Promise<number>;
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {

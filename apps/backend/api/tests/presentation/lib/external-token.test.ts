@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import {
+  confirmExternalPick,
   externalSearchMetadata,
   matchVerifiedExternalToken,
 } from '../../../src/presentation/lib/external-token';
@@ -84,5 +85,39 @@ describe('matchVerifiedExternalToken (SC-1339)', () => {
         metadata: { ...externalSearchMetadata(apple), id: 'aapl' },
       })
     ).toBeNull();
+  });
+});
+
+describe('confirmExternalPick (SC-1766)', () => {
+  // Keyless CoinGecko answers one search every 6 s, so each confirm search a
+  // pick spends is one the user waits for.
+  const pick = {
+    symbol: 'BTC',
+    provider: 'coingecko' as const,
+    metadata: { name: 'Bitcoin', providerMetadata: { id: 'bitcoin' } },
+  };
+
+  it('confirms with one search when the name finds the pick', async () => {
+    const asked: string[] = [];
+    const confirmed = await confirmExternalPick(pick, async (query) => {
+      asked.push(query);
+      return [bitcoin];
+    });
+    expect(confirmed?.symbol).toBe('BTC');
+    expect(asked).toEqual(['Bitcoin']);
+  });
+
+  it('asks by symbol only when the name search does not keep the pick', async () => {
+    const asked: string[] = [];
+    const confirmed = await confirmExternalPick(pick, async (query) => {
+      asked.push(query);
+      return query === 'BTC' ? [bitcoin] : [];
+    });
+    expect(confirmed?.symbol).toBe('BTC');
+    expect(asked).toEqual(['Bitcoin', 'BTC']);
+  });
+
+  it('control: a pick neither search returns is refused', async () => {
+    expect(await confirmExternalPick(pick, async () => [apple])).toBeNull();
   });
 });

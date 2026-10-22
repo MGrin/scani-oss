@@ -32,7 +32,7 @@ export {
 } from './inflow/inflow-rate-limiter';
 export { RedisInflowRateLimiter } from './inflow/redis';
 export { InMemoryOutflowRateLimiter } from './outflow/in-memory';
-export { OutflowRateLimiter } from './outflow/outflow-rate-limiter';
+export { type OutflowPriority, OutflowRateLimiter } from './outflow/outflow-rate-limiter';
 export { RedisOutflowRateLimiter } from './outflow/redis';
 export {
   type OutflowLimiterConfig,

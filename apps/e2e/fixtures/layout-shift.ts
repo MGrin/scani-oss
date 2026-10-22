@@ -38,6 +38,9 @@ export async function watchLayout(page: Page): Promise<void> {
       'main h2',
     ].join(',');
     const tick = () => {
+      // One stamp per frame. Read per row, the layout each row forces put rows
+      // of one frame 1-9 ms apart on a loaded CI runner, which read as late.
+      const frameAt = Math.round(performance.now());
       const boxes = Array.from(document.querySelectorAll(selector));
       const watched = new Set(boxes);
       const cur = new Map<number, { top: number; label: string }>();
@@ -61,7 +64,7 @@ export async function watchLayout(page: Page): Promise<void> {
           const before = prev.get(id);
           if (before && Math.abs(box.top - before.top) > 1)
             moves.push({
-              at: Math.round(performance.now()),
+              at: frameAt,
               label: box.label,
               by: box.top - before.top,
             });
@@ -75,7 +78,7 @@ export async function watchLayout(page: Page): Promise<void> {
         if (rect.width < 1 || rect.height < 1) continue;
         rowsSeen.add(row);
         rows.push({
-          at: Math.round(performance.now()),
+          at: frameAt,
           label: ((row as HTMLElement).innerText ?? '').replace(/\s+/g, ' ').trim().slice(0, 40),
         });
       }
