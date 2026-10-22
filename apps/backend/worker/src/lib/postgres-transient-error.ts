@@ -27,3 +27,33 @@ const POSTGRES_TRANSIENT_ERROR = new RegExp(
 export function isPostgresTransientError(message: string): boolean {
   return POSTGRES_TRANSIENT_ERROR.test(message);
 }
+
+const SURGE_WINDOW_MS = 3_600_000;
+// Neon suspends production's compute every 30-60 minutes; more drops than this
+// in an hour is something else wearing the same message.
+const SURGE_LIMIT = 5;
+
+interface ReportedEvent {
+  level?: string;
+  message?: string;
+  exception?: { values?: Array<{ value?: string }> };
+}
+
+/**
+ * A connection drop the uncaught-exception handler survives is reported as a
+ * warning, not Sentry's default fatal, so a routine Neon suspend does not page
+ * (SC-1738). Past `SURGE_LIMIT` in an hour it is an error again. Any other
+ * event keeps its level. Counts are per process.
+ */
+export class PostgresTransientReport {
+  private seen: number[] = [];
+
+  adjust<T>(event: T, now: number = Date.now()): T {
+    const reported = event as ReportedEvent;
+    const message = reported.exception?.values?.at(-1)?.value ?? reported.message ?? '';
+    if (!isPostgresTransientError(message)) return event;
+    this.seen = this.seen.filter((at) => now - at < SURGE_WINDOW_MS);
+    this.seen.push(now);
+    return { ...reported, level: this.seen.length > SURGE_LIMIT ? 'error' : 'warning' } as T;
+  }
+}
