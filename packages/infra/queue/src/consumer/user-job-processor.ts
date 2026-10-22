@@ -9,8 +9,8 @@ import {
   WIRE_RESULT_MAX_BYTES,
 } from '../core/result-truncator';
 import type { JobEventPayload, LifecycleEvent, ProcessorContext, UserJobBase } from '../core/types';
-import { userFacingMessage } from '../core/user-facing';
 import { RedisLifecyclePublisher } from '../lifecycle/redis-lifecycle-publisher';
+import { ownerReason } from './failure-explainer';
 import { LIFECYCLE_MIRROR, type LifecycleMirror } from './lifecycle-mirror';
 
 const log = createComponentLogger('queue:user-job-processor');
@@ -97,7 +97,6 @@ export abstract class UserJobProcessor<TPayload extends UserJobBase, TResult = u
           jobId,
           userId: data.userId,
           jobName: this.descriptor.name,
-          progress: 0,
           statusMessage: message,
         });
         await this.publish(data.userId, jobId, { state: 'progress', statusMessage: message });
@@ -167,7 +166,7 @@ export abstract class UserJobProcessor<TPayload extends UserJobBase, TResult = u
       // operator ever reads a WS frame, so it carries only what a processor
       // marked `userFacing(...)`. Unmarked, the client shows the translated
       // failure category (`jobFailureSentence`, SC-424) and no internal text.
-      const ownerMessage = userFacingMessage(err);
+      const ownerMessage = ownerReason(err);
       await this.fire({
         type: 'failed',
         jobId,

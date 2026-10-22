@@ -22,7 +22,8 @@ export class UserJobLifecycleMirror implements LifecycleMirror {
         await this.repo.markActive(event.jobId, event.attemptsMade);
         return;
       case 'progress':
-        await this.repo.updateProgress(event.jobId, event.progress);
+        if (event.progress !== undefined)
+          await this.repo.updateProgress(event.jobId, event.progress);
         return;
       case 'completed':
         await this.repo.markCompleted(event.jobId, event.result);

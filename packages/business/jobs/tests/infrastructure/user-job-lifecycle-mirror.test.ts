@@ -99,6 +99,16 @@ describe('UserJobLifecycleMirror', () => {
     expect(calls[0]?.args[1]).toMatchObject({ reason: 'unrecoverable', attemptsMade: 1 });
   });
 
+  // A status report carries a phase and no figure; writing one would reset a
+  // job at 70% to 0% on /jobs (SC-1715).
+  test('a status report leaves the stored progress alone', async () => {
+    const { mirror, calls } = makeMirror();
+    await mirror.onLifecycle({ ...base, type: 'progress', progress: 0.7 });
+    await mirror.onLifecycle({ ...base, type: 'progress', statusMessage: 'Waiting for IBKR' });
+
+    expect(calls.map((c) => [c.method, c.args[1]])).toEqual([['updateProgress', 0.7]]);
+  });
+
   test('the ordinary lifecycle still routes where it always did', async () => {
     const { mirror, calls } = makeMirror();
     await mirror.onLifecycle({ ...base, type: 'active', attemptsMade: 1 });

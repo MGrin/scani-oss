@@ -5,6 +5,7 @@ import { z } from 'zod';
 // This workspace cannot depend on @scani/domain (it sits below it), so the
 // shared helper is reached the same way the shared test preload is: by path.
 import { restoreContainerAfterAll } from '../../../../business/domain/test/helpers/container';
+import { FAILURE_EXPLAINER } from '../../src/consumer/failure-explainer';
 import { LIFECYCLE_MIRROR } from '../../src/consumer/lifecycle-mirror';
 import { UserJobProcessor } from '../../src/consumer/user-job-processor';
 import type { UserJobDescriptor } from '../../src/core/job-descriptor';
@@ -130,6 +131,8 @@ describe('UserJobProcessor — orchestration', () => {
     expect(types).toEqual(['active', 'progress', 'completed']);
     const progressEvent = mirrorEvents[1] as Extract<LifecycleEvent, { type: 'progress' }>;
     expect(progressEvent.statusMessage).toBe('Waiting for IBKR — attempt 3/24');
+    // A phase is not a figure: sending 0 here put a job at 70% back to 0% (SC-1715).
+    expect(progressEvent.progress).toBeUndefined();
     const wsPayload = publisherCalls[1]?.payload as {
       state: string;
       statusMessage?: string;
@@ -398,5 +401,60 @@ describe('UserJobProcessor — which words reach whom on failure', () => {
     await expect(
       proc.process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }))
     ).rejects.toBeInstanceOf(UnrecoverableError);
+  });
+
+  // SC-1711. A provider's 429 thrown unmarked left the owner a failed job with
+  // no reason at all. The app may explain an error class it recognises; the
+  // explanation is its own sentence, never the error's words.
+  describe('an explainer the app binds (SC-1711)', () => {
+    const RAW_429 = 'bitcoin HTTP 429 — Rate limited';
+    const EXPLAINED = 'Bitcoin is limiting how often Scani may ask it. Try again later.';
+
+    beforeEach(() => {
+      Container.set(FAILURE_EXPLAINER, {
+        explain: (error: unknown) =>
+          error instanceof Error && error.message === RAW_429 ? EXPLAINED : null,
+      });
+    });
+    afterEach(() => {
+      Container.set(FAILURE_EXPLAINER, { explain: () => null });
+    });
+
+    test('an unmarked throw it recognises reaches the owner as the explanation', async () => {
+      const proc = new StubProcessor(async () => {
+        throw new Error(RAW_429);
+      });
+      await expect(
+        proc.process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }))
+      ).rejects.toThrow();
+
+      expect(lastFailed().error).toBe(RAW_429);
+      expect(lastFailed().userFacingError).toBe(EXPLAINED);
+      expect(publishedError()).toBe(EXPLAINED);
+    });
+
+    test('CONTROL: an unmarked throw it does not recognise still reaches the owner as nothing', async () => {
+      const proc = new StubProcessor(async () => {
+        throw new Error(RAW_SQL);
+      });
+      await expect(
+        proc.process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }))
+      ).rejects.toThrow();
+
+      expect(lastFailed().userFacingError).toBeNull();
+      expect(publishedError()).toBeUndefined();
+    });
+
+    test('a marked message wins over the explanation', async () => {
+      const COPY = 'Your API key was rejected.';
+      const proc = new StubProcessor(async () => {
+        throw userFacing(new UnrecoverableError(COPY));
+      });
+      await expect(
+        proc.process(makeJob({ userId: 'u1', requestId: 'r1', value: 'v' }))
+      ).rejects.toThrow();
+
+      expect(lastFailed().userFacingError).toBe(COPY);
+    });
   });
 });
