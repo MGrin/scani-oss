@@ -8,7 +8,7 @@ import { HoldingRepository, PortfolioValueDailyRepository } from '@scani/domain/
 import { PortfolioValueCache } from '@scani/domain/services';
 import { restoreContainerAfterAll } from '@scani/domain/test-helpers';
 import { ReconcilePaymentsUseCase, SyncExchangeBalancesUseCase } from '@scani/domain/use-cases';
-import { BullMqEnqueueService } from '@scani/queue';
+import { BullMqEnqueueService, QueueClient } from '@scani/queue';
 import { Container } from 'typedi';
 import { ExchangeBalancesProcessor } from '../../src/processors/exchange-balances';
 
@@ -53,6 +53,9 @@ function syncWriting(ledgerWrites: Array<{ userId: string; accountId: string }>)
   Container.set(HoldingRepository, {
     hasHoldingCreatedAfter: async () => false,
   } as unknown as HoldingRepository);
+  Container.set(QueueClient, {
+    get: () => ({ getJobState: async () => 'unknown', getJob: async () => undefined }),
+  } as unknown as QueueClient);
   Container.set(BullMqEnqueueService, {
     add: async (_d: unknown, payload: { userId: string }) => {
       queued.push(payload.userId);

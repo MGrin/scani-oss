@@ -1,4 +1,8 @@
-import { OpeningBalanceReconciliationService, PriceHubResolver } from '@scani/domain/services';
+import {
+  OpeningBalanceReconciliationService,
+  PriceHubResolver,
+  ReturnsLastCompleteService,
+} from '@scani/domain/services';
 import type { RollupSummary } from '@scani/domain/use-cases';
 import {
   BackfillHistoricalPricesUseCase,
@@ -150,6 +154,25 @@ export async function scheduleLockHeldRetry(
       fromDay
     );
   await enqueueCoalescedBackfill(queue, base, payload, { delay });
+}
+
+/**
+ * The price phase asks only for the days this rebuild values (SC-1725). A
+ * token's lifetime gaps are the nightly historical-price-backfill's: asking
+ * for them here re-requested 6,677 days no provider had on every 7-day
+ * rebuild, 17 minutes each.
+ */
+export function priceBackfillOptions(
+  data: Pick<PortfolioHistoryBackfillJob, 'userId' | 'tokenIds' | 'lookbackDays'>,
+  usdTokenId: string
+) {
+  return {
+    usdTokenId,
+    userId: data.userId,
+    tokenIds: data.tokenIds,
+    lookbackDays: data.lookbackDays,
+    boundToLookback: true,
+  };
 }
 
 const logger = createComponentLogger('processor:portfolio-history-backfill');
@@ -487,12 +510,9 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     }
     await ctx.reportProgress(0.2);
 
-    const priceSummary = await Container.get(BackfillHistoricalPricesUseCase).execute({
-      usdTokenId,
-      userId: data.userId,
-      tokenIds: data.tokenIds,
-      lookbackDays: data.lookbackDays,
-    });
+    const priceSummary = await Container.get(BackfillHistoricalPricesUseCase).execute(
+      priceBackfillOptions(data, usdTokenId)
+    );
     await ctx.reportProgress(0.55);
 
     // The phases above can change days before the trigger's start: a moved or
@@ -600,6 +620,8 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     }
     await ctx.reportProgress(0.95);
 
+    // Before the announcement, so the refetch it causes finds them (SC-1707).
+    await keepHomeReturns(data.userId, ctx.job.id, deferredAtDayOffset);
     announceHistoryRebuilt(data.userId, deferredAtDayOffset);
 
     await ctx.reportProgress(1);
@@ -657,6 +679,36 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
         openingChangedAt: new Date(0),
       };
     }
+  }
+}
+
+type HomeReturnsRefresh = (
+  userId: string,
+  options: { ignoreRebuildJobId?: string }
+) => Promise<unknown>;
+
+/**
+ * Keep the returns of every window Home offers, once the whole chain has
+ * finished (SC-1707). While the next rebuild runs, Home shows these "as of"
+ * this moment instead of nothing. Inside the user's lock, so no other rebuild
+ * writes under the figures. A failure only costs that fallback, never the
+ * rebuild.
+ */
+export async function keepHomeReturns(
+  userId: string,
+  jobId: string | undefined,
+  deferredAtDayOffset: number | null,
+  refresh: HomeReturnsRefresh = (id, options) =>
+    Container.get(ReturnsLastCompleteService).refreshHome(id, options)
+): Promise<void> {
+  if (deferredAtDayOffset !== null) return;
+  try {
+    await refresh(userId, { ignoreRebuildJobId: jobId });
+  } catch (error) {
+    logger.warn(
+      { userId, jobId, error: error instanceof Error ? error.message : String(error) },
+      'Could not keep Home returns after the rebuild'
+    );
   }
 }
 

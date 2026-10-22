@@ -2,10 +2,12 @@ import { relations, sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
   boolean,
+  date,
   index,
   integer,
   jsonb,
   pgTable,
+  primaryKey,
   real,
   text,
   timestamp,
@@ -285,6 +287,28 @@ export const tokenPrices = pgTable(
       table.granularity,
       table.timestamp.desc()
     ),
+  })
+);
+
+// A day a historical price provider answered with nothing, so the backfill
+// does not ask again until `checkedAt` is a week old (SC-1725). Providers
+// backfill, so a miss is rechecked, never permanent. Weekends and exchange
+// holidays of an FX currency land here, which is expected: valuation takes the
+// latest rate at or before the day.
+export const tokenPriceMisses = pgTable(
+  'token_price_misses',
+  {
+    tokenId: uuid('token_id')
+      .notNull()
+      .references(() => tokens.id, { onDelete: 'cascade' }),
+    baseTokenId: uuid('base_token_id')
+      .notNull()
+      .references(() => tokens.id, { onDelete: 'cascade' }),
+    day: date('day', { mode: 'string' }).notNull(),
+    checkedAt: timestamp('checked_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.tokenId, table.baseTokenId, table.day] }),
   })
 );
 

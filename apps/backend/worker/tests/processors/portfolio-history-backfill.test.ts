@@ -15,6 +15,7 @@ import {
   chunkLockWaitsFor,
   handleMemoryStop,
   handleRollupLockHeld,
+  keepHomeReturns,
   LOCK_HELD_RETRY_DELAY_MS,
   LOCK_HELD_RETRY_REQUEST_ID,
   MEMORY_DEFER_DELAY_MS,
@@ -22,6 +23,7 @@ import {
   MEMORY_DEFER_REQUEST_PREFIX,
   newerBackfillPending,
   nextMemoryDeferRequestId,
+  priceBackfillOptions,
   RollupLockHeld,
   RollupMemoryStop,
   resumableProgress,
@@ -859,5 +861,48 @@ describe('the start day survives retries and continuations (SC-1607)', () => {
       { add }
     );
     expect((add.mock.calls[0]![1] as Data).fromDay).toBe('2026-09-30');
+  });
+});
+
+// While a rebuild runs, Home shows the last answer kept for its window. Kept
+// only when a reader happened to ask at an eligible moment, the 3M chart had
+// none and read "—" (SC-1707). The finished rebuild keeps them itself.
+describe('keepHomeReturns (SC-1707)', () => {
+  it("keeps Home's returns when the whole chain finished, reading past its own job", async () => {
+    const calls: Array<{ userId: string; ignoreRebuildJobId?: string }> = [];
+    await keepHomeReturns('user-1', 'job-1', null, async (userId, options) => {
+      calls.push({ userId, ...options });
+    });
+    expect(calls).toEqual([{ userId: 'user-1', ignoreRebuildJobId: 'job-1' }]);
+  });
+
+  it('keeps nothing while a continuation is queued: the history is half rebuilt', async () => {
+    let called = false;
+    await keepHomeReturns('user-1', 'job-1', 120, async () => {
+      called = true;
+    });
+    expect(called).toBe(false);
+  });
+
+  it('a failure to keep never fails the rebuild', async () => {
+    await expect(
+      keepHomeReturns('user-1', 'job-1', null, async () => {
+        throw new Error('engine down');
+      })
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe('the price phase of a history rebuild (SC-1725)', () => {
+  it('asks only for prices inside its own window', () => {
+    expect(
+      priceBackfillOptions({ userId: 'user-1', tokenIds: [], lookbackDays: 7 }, 'usd-1')
+    ).toEqual({
+      usdTokenId: 'usd-1',
+      userId: 'user-1',
+      tokenIds: [],
+      lookbackDays: 7,
+      boundToLookback: true,
+    });
   });
 });

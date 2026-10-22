@@ -13,6 +13,7 @@ import { ProviderError } from '@scani/providers/core/errors';
 import {
   BullMqEnqueueService,
   type ProcessorContext,
+  QueueClient,
   UnrecoverableError,
   userFacingMessage,
 } from '@scani/queue';
@@ -165,8 +166,29 @@ describe('IngestTransactionsProcessor error classification', () => {
  * yesterday rebuilt 8 days and left the other 192 stale.
  */
 describe('the rebuild after an import reaches the oldest row it wrote', () => {
-  function processorEnqueuing(earliestWrittenAt: string | null) {
+  function processorEnqueuing(
+    earliestWrittenAt: string | null,
+    open: Record<string, { state: string; data?: Record<string, unknown> }> = {}
+  ) {
     const added: Array<{ requestId: string; lookbackDays: number }> = [];
+    const updated: Array<Record<string, unknown>> = [];
+    Container.set(QueueClient, {
+      get: () => ({
+        getJobState: async (jobId: string) =>
+          open[jobId.split('_').pop() ?? '']?.state ?? 'unknown',
+        getJob: async (jobId: string) => {
+          const job = open[jobId.split('_').pop() ?? ''];
+          return job
+            ? {
+                data: job.data,
+                updateData: async (data: Record<string, unknown>) => {
+                  updated.push(data);
+                },
+              }
+            : undefined;
+        },
+      }),
+    } as unknown as QueueClient);
     Container.set(TransactionImportCoordinator, {
       execute: async () => ({
         transactions: 3,
@@ -193,23 +215,37 @@ describe('the rebuild after an import reaches the oldest row it wrote', () => {
     Container.set(ReconcilePaymentsUseCase, {
       execute: async () => ({ scanned: 0, matched: 0 }),
     } as unknown as ReconcilePaymentsUseCase);
-    return { processor: new TestableProcessor(), added };
+    return { processor: new TestableProcessor(), added, updated };
   }
 
-  test('the queued job carries the widened window under its own id', async () => {
+  test('the queued job carries the widened window', async () => {
     const earliest = new Date(Date.now() - 200 * 86_400_000).toISOString();
     const { processor, added } = processorEnqueuing(earliest);
     await processor.run(JOB, makeCtx());
     expect(added).toHaveLength(1);
     expect(added[0]?.lookbackDays).toBeGreaterThanOrEqual(200);
-    expect(added[0]?.requestId).toMatch(/^tx-import-\d+-\d+d$/);
+    expect(added[0]?.requestId).toBe('tx-import');
   });
 
-  test('control: a recent import keeps the bucket id, so a wave still coalesces into one job', async () => {
-    const { processor, added } = processorEnqueuing(new Date().toISOString());
+  test('a trigger while a rebuild runs queues one follow-up, not a new job every five minutes (SC-1725)', async () => {
+    const { processor, added } = processorEnqueuing(new Date().toISOString(), {
+      'tx-import': { state: 'active' },
+    });
     await processor.run(JOB, makeCtx());
-    expect(added[0]?.lookbackDays).toBeLessThan(30);
-    expect(added[0]?.requestId).toMatch(/^tx-import-\d+$/);
+    expect(added.map((a) => a.requestId)).toEqual(['tx-import-2']);
+  });
+
+  test('a trigger onto a waiting follow-up joins it and widens it (SC-1725)', async () => {
+    const earliest = new Date(Date.now() - 200 * 86_400_000).toISOString();
+    const { processor, updated } = processorEnqueuing(earliest, {
+      'tx-import': {
+        state: 'waiting',
+        data: { userId: JOB.userId, requestId: 'tx-import', tokenIds: [], lookbackDays: 8 },
+      },
+    });
+    await processor.run(JOB, makeCtx());
+    expect(updated).toHaveLength(1);
+    expect(updated[0]?.lookbackDays as number).toBeGreaterThanOrEqual(200);
   });
 });
 

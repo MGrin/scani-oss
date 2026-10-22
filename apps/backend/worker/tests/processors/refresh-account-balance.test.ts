@@ -18,6 +18,7 @@ import {
   BullMqEnqueueService,
   PostgresResourceLock,
   type ProcessorContext,
+  QueueClient,
   UnrecoverableError,
   userFacingMessage,
 } from '@scani/queue';
@@ -133,6 +134,9 @@ describe('a refresh whose ledger read wrote rows', () => {
     Container.set(HoldingRepository, {
       hasHoldingCreatedAfter: async () => false,
     } as unknown as HoldingRepository);
+    Container.set(QueueClient, {
+      get: () => ({ getJobState: async () => 'unknown', getJob: async () => undefined }),
+    } as unknown as QueueClient);
     Container.set(BullMqEnqueueService, {
       add: async (descriptor: { name: string }) => {
         queued.push(descriptor.name);
