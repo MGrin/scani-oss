@@ -438,6 +438,14 @@ export const ASSERTED_NOT_PRODUCTION: ReadonlySet<string> = new Set(
     '44c5c88c-c258-50bf-880a-dc0e40bbe296',
     '4ebd0208-8328-5d69-8c44-ec50939c0967',
     '77ae2dd3-8047-52c9-a718-905c83278e3e',
+    // SC-1726. Published specimens: an entry reference and an IBAN out of
+    // mBank's camt.053 format description, and a line reference out of
+    // Raiffeisenbank CZ's MT940 one. Each bank prints them for implementers,
+    // and `packages/business/file-import/tests/fixtures/README.md` links both
+    // documents.
+    '2405150194044',
+    '19114020620000489620001001',
+    '3538323671',
   ].map((v) => v.toLowerCase())
 );
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import type { ParsedTransaction, ParseResult } from '@scani/file-import';
+import { type ParsedTransaction, type ParseResult, parseStatement } from '@scani/file-import';
 import {
   type StatementIngesterResult,
   StatementTransactionIngester,
@@ -279,5 +279,58 @@ describe('StatementTransactionIngester — positions', () => {
     expect(statementWarnings(result, new Set(['AAPL']))).toEqual([
       "Unknown symbol 'AAPL' — this position was not imported",
     ]);
+  });
+});
+
+describe('a statement that states its own closing balance (SC-1726)', () => {
+  const ingestFile = async (content: string, filename: string) =>
+    new StatementTransactionIngester().ingest({
+      accountId: 'a1',
+      parseResult: await parseStatement(content, filename),
+    });
+
+  it('MT940: closes on the stated balance at the end of its day, with a synthetic id per line', async () => {
+    const result = await ingestFile(
+      [
+        ':20:REF',
+        ':25:NL00BANK0000000001',
+        ':28C:1/1',
+        ':60F:C250101EUR100,00',
+        ':61:2501020102C5,00NTRFNONREF',
+        ':86:Rent January',
+        ':62F:C250102EUR105,00',
+      ].join('\n'),
+      'import.mt940'
+    );
+
+    expect(result.closes).toEqual([
+      { currency: 'EUR', at: new Date('2025-01-02T23:59:59.999Z'), balance: '105' },
+    ]);
+    expect(shapeOf(result)).toEqual([['EUR', ['synthetic:2025-01-02T00:00:00:5:Rent January:1']]]);
+    expect(rowsOf(result)[0]).toMatchObject({
+      source: 'statement-mt940',
+      kind: 'deposit',
+      quantity: '5',
+    });
+  });
+
+  it("CAMT.053: keys each row on the bank's reference, so a second upload of the entry is the same row", async () => {
+    const result = await ingestFile(
+      '<?xml version="1.0"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.08"><BkToCstmrStmt><Stmt><Acct><Id><IBAN>NL00BANK0000000001</IBAN></Id><Ccy>EUR</Ccy></Acct>' +
+        '<Bal><Tp><CdOrPrtry><Cd>CLBD</Cd></CdOrPrtry></Tp><Amt Ccy="EUR">60.00</Amt><CdtDbtInd>CRDT</CdtDbtInd><Dt><Dt>2025-01-02</Dt></Dt></Bal>' +
+        '<Ntry><Amt Ccy="EUR">40.00</Amt><CdtDbtInd>DBIT</CdtDbtInd><Sts><Cd>BOOK</Cd></Sts><BookgDt><Dt>2025-01-02</Dt></BookgDt><AcctSvcrRef>REF-1</AcctSvcrRef></Ntry>' +
+        '</Stmt></BkToCstmrStmt></Document>',
+      'import.camt053'
+    );
+
+    expect(result.closes).toEqual([
+      { currency: 'EUR', at: new Date('2025-01-02T23:59:59.999Z'), balance: '60' },
+    ]);
+    expect(shapeOf(result)).toEqual([['EUR', ['natural:REF-1:DBIT:40']]]);
+    expect(rowsOf(result)[0]).toMatchObject({
+      source: 'statement-camt053',
+      kind: 'withdraw',
+      quantity: '-40',
+    });
   });
 });

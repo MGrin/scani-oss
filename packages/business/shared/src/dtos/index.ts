@@ -20,6 +20,7 @@ export * from './outbox-event';
 export * from './period-disposals';
 export * from './realized-ledger';
 export * from './review';
+export * from './statement-file-type.dto';
 export * from './token';
 export * from './transfer-review';
 export * from './user';

@@ -7,7 +7,7 @@ import { AccountRepository } from '@scani/domain/repositories';
 import { FILE_IMPORT } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { BullMqEnqueueService } from '@scani/queue';
-import { CsvMappingDto } from '@scani/shared';
+import { CsvMappingDto, StatementFileTypeDto } from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
@@ -35,7 +35,7 @@ export const fileImportRouter = router({
           // The presigned key is a uuid; without the real name the Files
           // list can only show `a1b2c3.csv`.
           originalFilename: z.string().min(1).max(512).optional(),
-          fileType: z.enum(['csv', 'ofx', 'qif']).default('csv'),
+          fileType: StatementFileTypeDto.default('csv'),
           accountId: z.string().min(1, 'accountId is required'),
           requestId: z.string().uuid(),
           // Forwarded to the file-import worker as a fallback when the

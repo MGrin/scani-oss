@@ -264,6 +264,11 @@ describe('summariseJobPayload', () => {
     expect(summariseJobPayload(t, 'file-import', { fileType: 'ofx' })).toBe('OFX file');
   });
 
+  test('names CAMT.053 the way the upload form does (SC-1726)', () => {
+    expect(summariseJobPayload(t, 'file-import', { fileType: 'camt053' })).toBe('CAMT.053 file');
+    expect(summariseJobPayload(t, 'file-import', { fileType: 'mt940' })).toBe('MT940 file');
+  });
+
   test('a job name with nothing to say says nothing', () => {
     expect(summariseJobPayload(t, 'transaction-import', { anything: 1 })).toBeNull();
   });
