@@ -81,6 +81,7 @@
     "files": "Ficheiros",
     "groups": "Grupos",
     "holdings": "Posições",
+    "household": "Agregado familiar",
     "home": "Início",
     "institutions": "Instituições",
     "jobs": "Tarefas",
@@ -316,6 +317,7 @@
           "noFilesYet": "Ainda sem ficheiros"
         },
         "filter": {
+          "account": "Conta",
           "invoices": "Faturas",
           "kind": "Género"
         },
@@ -935,6 +937,18 @@
         "period": {
           "all": "Todo o período",
           "custom": "Intervalo personalizado"
+        }
+      },
+      "householdAccounts": {
+        "col": {
+          "member": "Membro"
+        },
+        "filter": {
+          "member": "Membro"
+        },
+        "empty": {
+          "title": "Ainda não há contas partilhadas",
+          "description": "Cada membro escolhe nas Definições que contas o agregado vê."
         }
       }
     },

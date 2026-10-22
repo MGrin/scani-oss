@@ -96,6 +96,7 @@
     },
     "home": "ホーム",
     "holdings": "保有資産",
+    "household": "世帯",
     "accounts": "口座",
     "institutions": "金融機関",
     "groups": "グループ",
@@ -274,6 +275,7 @@
           "noFilesYet": "ファイルはまだありません"
         },
         "filter": {
+          "account": "口座",
           "invoices": "請求書",
           "kind": "種類"
         },
@@ -848,6 +850,18 @@
         "period": {
           "all": "全期間",
           "custom": "期間を指定"
+        }
+      },
+      "householdAccounts": {
+        "col": {
+          "member": "メンバー"
+        },
+        "filter": {
+          "member": "メンバー"
+        },
+        "empty": {
+          "title": "共有口座はまだありません",
+          "description": "世帯に見せる口座は、各メンバーが設定で選びます。"
         }
       }
     },

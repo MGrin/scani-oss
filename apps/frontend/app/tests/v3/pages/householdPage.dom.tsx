@@ -16,6 +16,7 @@ import { HouseholdPage } from '@/v3/pages/HouseholdPage';
 
 let calls: { path: string; input: unknown }[];
 let member = true;
+let unmeasuredOnly = false;
 const NOT_FOUND = Symbol('not found');
 const realFetch = globalThis.fetch;
 
@@ -28,7 +29,9 @@ const VIEW = {
     {
       accountId: 'a1',
       name: 'Joint',
+      institutionId: 'bank',
       institutionName: 'Bank',
+      institutionWebsite: null,
       ownerId: 'alice',
       ownerName: 'Alice',
       ownedByViewer: false,
@@ -37,7 +40,9 @@ const VIEW = {
     {
       accountId: 'b1',
       name: 'joint',
+      institutionId: 'bank',
       institutionName: 'Bank',
+      institutionWebsite: null,
       ownerId: 'bob',
       ownerName: 'Bob',
       ownedByViewer: true,
@@ -47,11 +52,27 @@ const VIEW = {
   trackedTwice: [{ accountIds: ['a1', 'b1'], reason: 'same-name' }],
 };
 
+const MINE = {
+  viewerId: 'bob',
+  household: { householdId: 'h1', name: 'Home', role: 'member', baseCurrencyId: 'usd' },
+  members: [
+    { userId: 'alice', name: 'Alice', role: 'admin', joinedAt: '2026-09-01T00:00:00.000Z' },
+    { userId: 'bob', name: 'Bob', role: 'member', joinedAt: '2026-09-02T00:00:00.000Z' },
+    { userId: 'cara', name: 'Cara', role: 'member', joinedAt: '2026-09-03T00:00:00.000Z' },
+  ],
+  invites: [{ id: 'i1', email: 'dan@example.com', expiresAt: '2026-12-01T00:00:00.000Z' }],
+  sharedAccountIds: ['b1'],
+};
+
 function respond(path: string, input: unknown): unknown {
   calls.push({ path, input });
   if (!member && path.startsWith('household.')) return NOT_FOUND;
   if (path === 'household.view') return VIEW;
+  if (path === 'household.mine') return MINE;
   if (path === 'household.history') {
+    if (unmeasuredOnly) {
+      return { baseCurrencyId: 'usd', series: [], unmeasuredDates: ['2026-09-01', '2026-09-02'] };
+    }
     return {
       baseCurrencyId: 'usd',
       series: [
@@ -67,6 +88,7 @@ function respond(path: string, input: unknown): unknown {
 beforeEach(() => {
   calls = [];
   member = true;
+  unmeasuredOnly = false;
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
     const paths = decodeURIComponent(url.pathname.replace(/^\/trpc\//, '')).split(',');
@@ -136,10 +158,41 @@ describe('the household page', () => {
     expect(calls.some((call) => call.path === 'household.history')).toBe(true);
   });
 
-  test('labels every account with its owner, and the viewer’s own as theirs', async () => {
+  test('labels every account with its owner and bank, and the viewer’s own as theirs', async () => {
     await mount();
-    expect(text()).toContain('Joint · Alice');
-    expect(text()).toContain('joint · You');
+    // The list's row on a phone, the table's on a wide screen: either names both.
+    const row = (name: string) =>
+      [...document.querySelectorAll('tr, li')].find((el) => el.textContent?.startsWith(name))
+        ?.textContent ?? '';
+    expect(row('Joint')).toContain('Alice');
+    expect(row('Joint')).toContain('Bank');
+    expect(row('joint')).toContain('You');
+    expect(row('joint')).toContain('Bank');
+  });
+
+  test('lists who is in the household, what each shares, and marks the viewer (SC-1712)', async () => {
+    await mount();
+    const members = document.querySelector('section[aria-labelledby="household-members-heading"]');
+    const rows = (members?.textContent ?? '').replace(/\s+/g, ' ');
+    expect(rows).toContain('Alice');
+    expect(rows).toContain('Admin · shares 1 account');
+    expect(rows).toContain('Bob (you)');
+    expect(rows).toContain('Cara');
+    expect(rows).toContain('Member · shares nothing yet');
+    expect(rows.indexOf('Alice')).toBeLessThan(rows.indexOf('Bob (you)'));
+  });
+
+  test('shows a pending invite as invited, beside the members', async () => {
+    await mount();
+    const members = document.querySelector('section[aria-labelledby="household-members-heading"]');
+    expect(members?.textContent).toContain('dan@example.com');
+    expect(members?.textContent).toContain('Invited');
+  });
+
+  test('links to Settings to manage members', async () => {
+    await mount();
+    const manage = [...document.querySelectorAll('a')].find((a) => a.textContent === 'Manage');
+    expect(manage?.getAttribute('href')).toBe('/settings/data');
   });
 
   test('tells a non-member they are not in a household, at once, and points to Settings', async () => {
@@ -151,8 +204,24 @@ describe('the household page', () => {
     const link = [...document.querySelectorAll('a')].find((a) =>
       a.textContent?.includes('Settings')
     );
-    expect(link?.getAttribute('href')).toBe('/settings');
+    expect(link?.getAttribute('href')).toBe('/settings/data');
     expect(calls.filter((call) => call.path === 'household.view')).toHaveLength(1);
+  });
+
+  // SC-1712. A day a shared account was never valued is unmeasured; with no
+  // measured day there is no household line to draw, so no chart at all.
+  test('draws the household chart only when some day was measured', async () => {
+    const chart = () =>
+      document.querySelector('[aria-label="Household net worth over the last year"]');
+    await mount();
+    expect(chart()).not.toBeNull();
+    await act(async () => root?.unmount());
+    document.body.innerHTML = '';
+
+    unmeasuredOnly = true;
+    await mount();
+    expect(text()).toContain('In USD');
+    expect(chart()).toBeNull();
   });
 
   test('says when two members track the same account', async () => {

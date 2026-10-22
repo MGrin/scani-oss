@@ -109,6 +109,7 @@ describe('household router (SC-1647)', () => {
     const alice = await person('alice');
     const asAlice = makeAuthedCaller(alice);
     expect(await asAlice.household.mine()).toEqual({
+      viewerId: alice.id,
       household: null,
       members: [],
       invites: [],
@@ -122,6 +123,7 @@ describe('household router (SC-1647)', () => {
     expect(mine.household).toMatchObject({ householdId: created.id, name: 'Home', role: 'admin' });
     expect(mine.household?.baseCurrencyId).toBe(usdId);
     expect(mine.members.map((m) => [m.userId, m.role])).toEqual([[alice.id, 'admin']]);
+    expect(mine.viewerId).toBe(alice.id);
     expect(mine.invites).toEqual([]);
     expect(mine.sharedAccountIds).toEqual([]);
   });
@@ -279,6 +281,7 @@ describe('household router (SC-1647)', () => {
     const first = await household();
     await first.asBob.household.leave();
     expect(await first.asBob.household.mine()).toEqual({
+      viewerId: first.bob.id,
       household: null,
       members: [],
       invites: [],

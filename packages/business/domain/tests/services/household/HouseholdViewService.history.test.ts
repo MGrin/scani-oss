@@ -77,14 +77,38 @@ describe('HouseholdViewService.history (SC-1647)', () => {
       await row(alice.id, usd.id, a1.id, '2026-09-01', '100');
       await row(alice.id, usd.id, a1.id, '2026-09-02', '110');
       await row(dan.id, usd.id, d1.id, '2026-09-01', '40');
+      await row(dan.id, usd.id, d1.id, '2026-09-02', '45');
 
       const history = await view.history(alice.id, FROM, TO, tx);
       expect(history.baseCurrencyId).toBe(usd.id);
       expect(history.series).toEqual([
         { date: '2026-09-01', value: '140' },
-        { date: '2026-09-02', value: '110' },
+        { date: '2026-09-02', value: '155' },
       ]);
       expect(history.unmeasuredDates).toEqual([]);
+    });
+  });
+
+  // SC-1712. The rollup writes a row for every account on every day it values,
+  // an empty one included, so a shared account with no row that day was never
+  // valued. Summing the others would chart one member's money as the household's.
+  test('a day a shared account has no stored row is unmeasured, never summed short', async () => {
+    await withTestDb(async (tx) => {
+      const { usd, member, account, row, household, share } = await world(tx);
+      const alice = await member('Alice', usd.id);
+      const theo = await member('Theo', usd.id);
+      const householdId = await household(usd.id, alice.id, [theo.id]);
+      const a1 = await account(alice.id, 'A1');
+      const t1 = await account(theo.id, 'T1');
+      await share(householdId, a1.id, alice.id);
+      await share(householdId, t1.id, theo.id);
+      await row(alice.id, usd.id, a1.id, '2026-09-01', '100');
+      await row(alice.id, usd.id, a1.id, '2026-09-02', '110');
+      await row(theo.id, usd.id, t1.id, '2026-09-02', '40');
+
+      const history = await view.history(alice.id, FROM, TO, tx);
+      expect(history.series).toEqual([{ date: '2026-09-02', value: '150' }]);
+      expect(history.unmeasuredDates).toEqual(['2026-09-01']);
     });
   });
 

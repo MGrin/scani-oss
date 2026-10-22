@@ -99,6 +99,7 @@
     },
     "home": "Home",
     "holdings": "Holdings",
+    "household": "Household",
     "accounts": "Accounts",
     "institutions": "Institutions",
     "groups": "Groups",
@@ -309,6 +310,7 @@
           "noFilesYet": "No files yet"
         },
         "filter": {
+          "account": "Account",
           "invoices": "Invoices",
           "kind": "Kind"
         },
@@ -791,6 +793,18 @@
         "period": {
           "all": "All time",
           "custom": "Custom range"
+        }
+      },
+      "householdAccounts": {
+        "col": {
+          "member": "Member"
+        },
+        "filter": {
+          "member": "Member"
+        },
+        "empty": {
+          "title": "No shared accounts yet",
+          "description": "Each member picks which of their accounts the household sees, in Settings."
         }
       }
     }

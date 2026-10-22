@@ -22,7 +22,10 @@ import { HouseholdError } from './household-errors';
 export interface HouseholdAccountRow {
   accountId: string;
   name: string;
+  institutionId: string;
   institutionName: string;
+  /** For the institution's mark; null shows its initial. */
+  institutionWebsite: string | null;
   ownerId: string;
   ownerName: string;
   ownedByViewer: boolean;
@@ -54,6 +57,7 @@ type AccountFacts = VisibleAccount & {
   name: string;
   institutionId: string;
   institutionName: string;
+  institutionWebsite: string | null;
   walletAddress: string | null;
 };
 
@@ -130,7 +134,9 @@ export class HouseholdViewService {
       accounts: facts.map((account) => ({
         accountId: account.accountId,
         name: account.name,
+        institutionId: account.institutionId,
         institutionName: account.institutionName,
+        institutionWebsite: account.institutionWebsite,
         ownerId: account.ownerId,
         ownerName: account.ownerName,
         ownedByViewer: account.ownedByViewer,
@@ -166,6 +172,10 @@ export class HouseholdViewService {
     const today = new Date().toISOString().slice(0, 10);
     const sums = new Map<string, Decimal>();
     const unmeasured = new Set<string>();
+    // The rollup writes a row for every account on every day it values, an
+    // empty one included: a shared account with no row that day was never
+    // valued, so the day is unmeasured rather than summed short (SC-1712).
+    const valuedAccounts = new Map<string, Set<string>>();
 
     for (const ownerId of owners) {
       const ownerBase = baseOf.get(ownerId);
@@ -179,6 +189,9 @@ export class HouseholdViewService {
         });
         for (const row of rows) {
           const date = String(row.snapshotDate);
+          const valued = valuedAccounts.get(date) ?? new Set<string>();
+          valued.add(account.accountId);
+          valuedAccounts.set(date, valued);
           // The rollup values a past day at its last millisecond, today at the run.
           const at = date === today ? row.computedAt : new Date(`${date}T23:59:59.999Z`);
           const day = days.get(date) ?? { value: new Decimal(0), at };
@@ -219,6 +232,9 @@ export class HouseholdViewService {
       }
     }
 
+    for (const [date, valued] of valuedAccounts) {
+      if (valued.size < visible.length) unmeasured.add(date);
+    }
     const dates = [...new Set([...sums.keys(), ...unmeasured])].sort();
     return {
       baseCurrencyId,
@@ -253,6 +269,7 @@ export class HouseholdViewService {
         name: schema.accounts.name,
         institutionId: schema.accounts.institutionId,
         institutionName: schema.institutions.name,
+        institutionWebsite: schema.institutions.website,
         metadata: schema.accounts.metadata,
       })
       .from(schema.accounts)
@@ -286,6 +303,7 @@ export class HouseholdViewService {
           name: row.name,
           institutionId: row.institutionId,
           institutionName: row.institutionName,
+          institutionWebsite: row.institutionWebsite,
           walletAddress: typeof walletId === 'string' ? (addressOf.get(walletId) ?? null) : null,
         },
       ];

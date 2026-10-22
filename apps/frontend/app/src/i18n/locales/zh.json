@@ -96,6 +96,7 @@
     },
     "home": "首页",
     "holdings": "持仓",
+    "household": "家庭",
     "accounts": "账户",
     "institutions": "机构",
     "groups": "分组",
@@ -274,6 +275,7 @@
           "noFilesYet": "还没有文件"
         },
         "filter": {
+          "account": "账户",
           "invoices": "发票",
           "kind": "种类"
         },
@@ -848,6 +850,18 @@
         "period": {
           "all": "全部时间",
           "custom": "自定义范围"
+        }
+      },
+      "householdAccounts": {
+        "col": {
+          "member": "成员"
+        },
+        "filter": {
+          "member": "成员"
+        },
+        "empty": {
+          "title": "还没有共享账户",
+          "description": "每位成员在设置中选择家庭能看到哪些账户。"
         }
       }
     },

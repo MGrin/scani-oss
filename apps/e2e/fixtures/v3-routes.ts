@@ -16,6 +16,7 @@
 export const V3_A11Y_ROUTES: readonly string[] = [
   '/',
   '/holdings',
+  '/household',
   '/payments',
   '/payments/recurring',
   '/payments?sheet=payment%3Anew',
