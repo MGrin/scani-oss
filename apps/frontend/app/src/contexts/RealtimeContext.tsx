@@ -2,7 +2,7 @@ import type { ReactNode } from 'react';
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  invalidateForEntityEvent,
+  createRealtimeInvalidator,
   invalidateForUserEvent,
   resyncAfterReconnect,
 } from '@/hooks/invalidatePortfolioQueries';
@@ -162,6 +162,7 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
 
   useEffect(() => {
     let isUnmounted = false;
+    const invalidator = createRealtimeInvalidator(() => utilsRef.current);
     let socket: WebSocket | null = null;
     let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
     let pingTimer: ReturnType<typeof setInterval> | null = null;
@@ -244,6 +245,7 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
             console.warn('[realtime] global job listener threw', err);
           }
         }
+        invalidator.job(data);
         return;
       }
 
@@ -255,8 +257,8 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
         return;
       }
 
-      // Fire-and-forget — React Query handles dedup internally.
-      void invalidateForEntityEvent(utilsRef.current, event.entityType);
+      // Coalesced: React Query does NOT dedupe an invalidation per event (SC-1754).
+      invalidator.entity(event.entityType);
     };
 
     const scheduleReconnect = () => {
@@ -419,6 +421,7 @@ export function RealtimeProvider({ children }: RealtimeProviderProps) {
 
     return () => {
       isUnmounted = true;
+      invalidator.dispose();
       authSub.subscription.unsubscribe();
       if (typeof document !== 'undefined') {
         document.removeEventListener('visibilitychange', handleWake);
