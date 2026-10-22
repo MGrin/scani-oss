@@ -7,10 +7,17 @@ import { showError, showSuccess } from '@scani/ui/ui/use-toast';
 import { Block } from '@scani/ui/v3/components/Block';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { QueryError } from '@scani/ui/v3/components/feedback/QueryError';
-import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { getQueryKey } from '@trpc/react-query';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { trpc } from '@/lib/trpc';
 import { FiatCurrencyField } from '../form/FiatCurrencyField';
+
+/** Production p90 1.35 s: asked here, it rides with `household.mine` rather
+ *  than holding the area's fast reads (SC-1743). The Accounts page asks for
+ *  the same read in its own batch. */
+const HOUSEHOLD_LANE = { trpc: { context: { lane: 'household' } } };
 
 /**
  * A household (SC-1647): read-only access to the accounts each member chooses
@@ -21,8 +28,21 @@ import { FiatCurrencyField } from '../form/FiatCurrencyField';
 export function HouseholdSettings() {
   const { t } = useTranslation();
   const utils = trpc.useUtils();
+  const client = useQueryClient();
   const mine = trpc.household.mine.useQuery(undefined, { refetchInterval: 60_000 });
   const refresh = () => void utils.household.mine.invalidate();
+  // Asked now rather than when the parts that read them mount, a round trip
+  // after `household.mine`: Settings shows an area once its answers are in,
+  // and a second wait put this section past that and let it grow by 288 px
+  // under the reader (SC-1742).
+  useEffect(() => {
+    void client.prefetchQuery({
+      queryKey: getQueryKey(trpc.accounts.getByUserIdWithSummary, undefined, 'query'),
+      queryFn: () =>
+        utils.client.accounts.getByUserIdWithSummary.query(undefined, HOUSEHOLD_LANE.trpc),
+    });
+    void utils.users.getSupportedCurrencies.prefetch();
+  }, [client, utils]);
 
   if (mine.error) {
     return (
@@ -304,7 +324,7 @@ function SharedAccounts({
   onChanged: () => void;
 }) {
   const { t } = useTranslation();
-  const accounts = trpc.accounts.getByUserIdWithSummary.useQuery();
+  const accounts = trpc.accounts.getByUserIdWithSummary.useQuery(undefined, HOUSEHOLD_LANE);
   const onError = (error: unknown) => showError(error, t('v3.settings.household.sharing'));
   const share = trpc.household.share.useMutation({ onSuccess: onChanged, onError });
   const unshare = trpc.household.unshare.useMutation({ onSuccess: onChanged, onError });

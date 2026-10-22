@@ -1,10 +1,10 @@
 import { formatDate } from '@scani/shared';
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSignedInUser } from '@/contexts/auth-context';
 import { useBaseCurrency } from '@/contexts/BaseCurrencyContext';
 import { trpc } from '@/lib/trpc';
-import { readLocalPushEndpoint } from '../../lib/push-local';
+import { useLocalPushEndpoint } from '../../lib/push-local';
 import type { SettingsAreaValue } from '../../lib/settings-areas';
 
 interface Read {
@@ -44,25 +44,14 @@ export function useSettingsAreaValues(): Record<string, SettingsAreaValue> {
   const currency = useBaseCurrency();
   const profile = trpc.users.getCurrent.useQuery();
   const costBasis = trpc.users.getCostBasisMethod.useQuery();
-  const push = trpc.push.status.useQuery();
   const sessions = trpc.sessions.list.useQuery(undefined, { refetchOnWindowFocus: true });
   const backup = trpc.backups.latest.useQuery();
   // Whether THIS browser is subscribed, which is what the section's own switch
-  // shows. `undefined` until it has been read, and the row then says nothing
-  // about reminders rather than guessing.
-  const [subscribed, setSubscribed] = useState<boolean | undefined>(undefined);
-  const pushReadAt = push.dataUpdatedAt;
-
-  // `NotificationSettings` invalidates the status after every switch, and on a
-  // desktop this list sits beside it.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `pushReadAt` is the signal to read again, not an input
-  useEffect(() => {
-    let live = true;
-    readLocalPushEndpoint().then((endpoint) => live && setSubscribed(endpoint !== null));
-    return () => {
-      live = false;
-    };
-  }, [pushReadAt]);
+  // shows: the same cache entry, so the two always agree. `undefined` until it
+  // has been read, and the row then says nothing about reminders rather than
+  // guessing.
+  const local = useLocalPushEndpoint().endpoint;
+  const subscribed = local === undefined ? undefined : local !== null;
 
   const you = settle(profile, costBasis);
   return {
@@ -104,7 +93,14 @@ export function useSettingsAreaValues(): Record<string, SettingsAreaValue> {
  */
 export function useAgentsArea(): { listed: boolean; empty: boolean; value: SettingsAreaValue } {
   const { t } = useTranslation();
+  const utils = trpc.useUtils();
   const access = trpc.agentTokens.status.useQuery();
+  // Asked beside `status`, not after it: a round trip later put the token rows
+  // past the area's reveal, and they pushed the sections below down 66 px
+  // (SC-1743). With access off the server refuses it once, and nothing waits.
+  useEffect(() => {
+    void utils.agentTokens.list.prefetch(undefined, { retry: false });
+  }, [utils]);
   const apps = trpc.agentTokens.connectedApps.useQuery();
   const activity = trpc.agentTokens.activity.useQuery();
   const calls = trpc.agentTokens.calls.useQuery();

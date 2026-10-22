@@ -10,6 +10,12 @@ describe('trpcBatchLane', () => {
     expect(trpcBatchLane('portfolio.getReturnsComparison')).toBe('returns');
   });
 
+  test('gains by wrapper rides the returns lane: it runs the same engine (SC-1742)', () => {
+    // In the default lane it held Home's household row, bills, groups and
+    // vaults for as long as the engine took: 8-17 s on production.
+    expect(trpcBatchLane('portfolio.getGainsByWrapper')).toBe('returns');
+  });
+
   test('the fast half of the same router stays in the default lane', () => {
     // The control. A `portfolio.` prefix would have put the hero chart back
     // behind the returns engine, which is the defect this removes.
@@ -45,6 +51,25 @@ describe('trpcBatchLane', () => {
     expect(trpcBatchLane('groups.getAll')).toBe('default');
     expect(trpcBatchLane('institutions.getByUserId')).toBe('default');
     expect(trpcBatchLane('accountTypes.getAll')).toBe('default');
+  });
+
+  test('the household read rides its own lane, off every fast batch (SC-1743)', () => {
+    // Production p90 0.7 s. In the default lane it held Settings > Data's
+    // backup, bills calendar and AI rows past the reveal, then all of them
+    // landed at once and pushed the page down by 1,161 px.
+    expect(trpcBatchLane('household.mine')).toBe('household');
+  });
+
+  test('a caller can send a read to a lane, without moving it for everyone (SC-1743)', () => {
+    // Household's share switches ask for the accounts summary (production p90
+    // 1.35 s) in the household lane. The Accounts page asks for the same read
+    // with no lane and keeps its one batch: the SC-1671 control above.
+    expect(trpcBatchLane('accounts.getByUserIdWithSummary', { lane: 'household' })).toBe(
+      'household'
+    );
+    expect(trpcBatchLane('accounts.getByUserIdWithSummary', {})).toBe('default');
+    // Only a lane that exists is honoured.
+    expect(trpcBatchLane('users.getCurrent', { lane: 'nowhere' })).toBe('default');
   });
 
   test('dashboard.* keeps the lane it already had', () => {

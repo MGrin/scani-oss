@@ -13,6 +13,7 @@ import {
   settingsAreaPath,
 } from '../../lib/settings-areas';
 import { BackLink } from '../BackLink';
+import { RevealTogether } from '../feedback/RevealTogether';
 import { useAgentsArea, useSettingsAreaValues } from './useSettingsAreaValues';
 
 /**
@@ -20,6 +21,10 @@ import { useAgentsArea, useSettingsAreaValues } from './useSettingsAreaValues';
  * 1024 the area column was 408px, and a paired field in it 180px.
  */
 const SPLIT_QUERY = '(min-width: 1280px)';
+
+/** How long an area's sections wait for each other: a phone round trip and a
+ *  margin. A section still loading past it fills in where it stands. */
+const SETTINGS_AREA_CAP_MS = 1000;
 
 /**
  * Settings as a list of areas (SC-1670).
@@ -58,7 +63,17 @@ export function SettingsAreas({
           <section className="flex min-w-0 flex-col gap-6" aria-label={t(shown.titleKey)}>
             {!split && <BackLink to={V3_ROUTES.settings} label={t('settings.title')} />}
             <PageHeader title={t(shown.titleKey)} />
-            {shown.sections()}
+            {/* One placeholder for the area, then every section at once:
+                sections that filled in one by one pushed the ones below them
+                down by up to 1,100 px (SC-1742). Keyed, so each area waits
+                for its own sections. */}
+            <RevealTogether
+              key={shown.id}
+              capMs={SETTINGS_AREA_CAP_MS}
+              skeleton={<Skeleton aria-hidden="true" className="h-64 w-full rounded-lg" />}
+            >
+              {shown.sections()}
+            </RevealTogether>
           </section>
         )}
       </div>
@@ -94,18 +109,31 @@ function AreaList({
           {t('v3.settings.areas.notFound')}
         </p>
       )}
-      <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface-1">
-        {areas.map((area) => {
-          const row = (value: SettingsAreaValue) => (
-            <li key={area.id}>
-              <AreaRow area={area} current={area.id === currentId} value={value} />
-            </li>
-          );
-          if (area.Row) return <area.Row key={area.id}>{row}</area.Row>;
-          if (area.id === 'agents') return agents.listed ? row(agents.value) : null;
-          return row(area.id in values ? values[area.id] : null);
-        })}
-      </ul>
+      {/* Shown once its reads are in: the agents row is listed only once
+          access is known, and arriving after the others it grew the list
+          under the reader (SC-1743). */}
+      <RevealTogether
+        capMs={SETTINGS_AREA_CAP_MS}
+        skeleton={
+          // One row's height per area: the list's own height once shown.
+          <div aria-hidden="true" style={{ height: `${areas.length * 3.5}rem` }}>
+            <Skeleton className="h-full w-full rounded-lg" />
+          </div>
+        }
+      >
+        <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface-1">
+          {areas.map((area) => {
+            const row = (value: SettingsAreaValue) => (
+              <li key={area.id}>
+                <AreaRow area={area} current={area.id === currentId} value={value} />
+              </li>
+            );
+            if (area.Row) return <area.Row key={area.id}>{row}</area.Row>;
+            if (area.id === 'agents') return agents.listed ? row(agents.value) : null;
+            return row(area.id in values ? values[area.id] : null);
+          })}
+        </ul>
+      </RevealTogether>
     </nav>
   );
 }
