@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { DatabaseTransaction } from '@scani/db';
+import { sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { EngineEvidenceRepository } from '../../src/repositories/EngineEvidenceRepository';
 import { withTestDb } from '../../test/helpers/db';
@@ -47,6 +48,7 @@ type Reading = {
   role?: 'snapshot' | 'checkpoint' | null;
   authority?: 'provider' | 'person' | 'statement';
   source?: string;
+  sourceMetadata?: Record<string, unknown>;
 };
 
 function checkpoints(h: { userId: string; holdingId: string }, balances: Array<string | Reading>) {
@@ -202,6 +204,68 @@ describe('findHoldingEvidence withoutRepeatedCheckpoints (SC-1671)', () => {
       await makeObservations(tx, checkpoints(a, ['10', '10', '10']));
       await makeObservations(tx, checkpoints({ userId: a.userId, holdingId: b.holdingId }, ['7']));
       expect(await hoursRead(tx, a, COLLAPSED)).toEqual([0, 2]);
+    });
+  });
+});
+
+/**
+ * Rows of `holding_balance_observations` this transaction has read so far, by
+ * an index or in sequence: a count the server keeps, whatever the plan.
+ */
+async function observationRowsRead(tx: DatabaseTransaction): Promise<number> {
+  const [row] = (await tx.execute(sql`
+    SELECT (coalesce(seq_tup_read, 0) + coalesce(idx_tup_fetch, 0))::int AS read
+      FROM pg_stat_xact_user_tables
+     WHERE schemaname = 'public' AND relname = 'holding_balance_observations'`)) as unknown as Array<{
+    read: number;
+  }>;
+  if (!row) throw new Error('holding_balance_observations has no statistics in this transaction');
+  return row.read;
+}
+
+describe('findHoldingEvidence withoutRepeatedCheckpoints, cost (SC-1745)', () => {
+  test("a holding's readings are read once, not once to judge and again to return", async () => {
+    // Two passes per 25-holding batch, each over every reading, was half of
+    // the 1.6 s this read cost one production user per cold returns load.
+    await withTestDb(async (tx) => {
+      const h = await feedHolding(tx);
+      const readings = Array.from({ length: 20 }, () => '10');
+      await makeObservations(tx, checkpoints(h, readings));
+      const before = await observationRowsRead(tx);
+      expect(await hoursRead(tx, h, COLLAPSED)).toEqual([0, 19]);
+      const read = (await observationRowsRead(tx)) - before;
+      expect(read).toBeGreaterThan(0);
+      expect(read).toBeLessThanOrEqual(readings.length);
+    });
+  });
+
+  test('a metadata key set to JSON null says what an absent key says', async () => {
+    // The comparison must keep jsonb's equality: ->> of an absent key is SQL
+    // NULL, of {"origin": null} the jsonb null, and the two were one value.
+    await withTestDb(async (tx) => {
+      const h = await feedHolding(tx);
+      await makeObservations(
+        tx,
+        checkpoints(h, ['10', { balance: '10', sourceMetadata: { origin: null } }, '10'])
+      );
+      expect(await hoursRead(tx, h, COLLAPSED)).toEqual([0, 2]);
+    });
+  });
+
+  test('CONTROL: a metadata key with a value is a difference', async () => {
+    await withTestDb(async (tx) => {
+      const h = await feedHolding(tx);
+      await makeObservations(
+        tx,
+        checkpoints(h, [
+          '10',
+          '10',
+          { balance: '10', sourceMetadata: { origin: 'csv' } },
+          '10',
+          '10',
+        ])
+      );
+      expect(await hoursRead(tx, h, COLLAPSED)).toEqual([0, 1, 2, 3, 4]);
     });
   });
 });

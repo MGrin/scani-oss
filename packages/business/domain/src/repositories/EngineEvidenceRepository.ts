@@ -12,6 +12,7 @@ import {
   lt,
   type SQL,
   type SQLWrapper,
+  Subquery,
   sql,
 } from 'drizzle-orm';
 import { makePgArray, type PgColumn, type PgTable } from 'drizzle-orm/pg-core';
@@ -139,7 +140,8 @@ const TRANSACTION_EVIDENCE = {
 
 /**
  * The observations of `holdings` less every checkpoint that repeats both
- * neighbours (SC-1671). An hourly sync writes a checkpoint whether or not the
+ * neighbours (SC-1671), as a derived table under the table's own name, so a
+ * select, a page boundary and an order written against `obs` read it as is. An hourly sync writes a checkpoint whether or not the
  * balance moved: 141,927 of one production user's 142,260 readings, of which
  * 642 change a balance. Between two equal balances with no entry between them,
  * `balanceAt` walks the same from the earlier neighbour as from the reading
@@ -165,28 +167,36 @@ const TRANSACTION_EVIDENCE = {
  * Balances compare as text, which is narrower than numeric equality: `1.5`
  * and `1.50` are kept apart. The ledger bounds are widened to whole
  * milliseconds, the precision the comparison was proven at.
+ *
+ * One pass, and `said` is a row compared IS DISTINCT FROM rather than a jsonb
+ * array (SC-1745): building and copying the array was 490 ms of one user's
+ * 1.4 s, and a second scan to return the kept rows most of the rest. A
+ * metadata key reads as jsonb `null` when absent, which is what the array
+ * made of it, so `{"origin": null}` and no key still say the same.
  */
-function sayingSomething(holdings: SQLWrapper): SQL {
-  const said = sql`jsonb_build_array(
-    o.balance::text, o.source, o.role, o.authority, o.input_id, o.cause, o.gap_review,
-    o.source_metadata -> 'origin', o.source_metadata -> 'source',
-    o.source_metadata -> ${sql.raw(`'${LEGACY_ANCHOR_KEY}'`)}
-  )`;
-  return sql`(
-    select k.id from (
-      select o.id, o.holding_id, o.superseded_at, o.role, o.gap_review, o.source,
-        ${said} as said,
-        lag(${said}) over w as said_before,
-        lead(${said}) over w as said_after,
-        lag(o.superseded_at) over w as superseded_before,
-        lead(o.superseded_at) over w as superseded_after,
-        lag(o.observed_at) over w as at_before,
-        lead(o.observed_at) over w as at_after,
-        coalesce(bool_or(o.role = 'snapshot') over (partition by o.holding_id), false)
+function keptObservations(holdings: SQLWrapper): Subquery {
+  const key = (name: string) =>
+    sql`coalesce(o.source_metadata -> ${sql.raw(`'${name}'`)}, 'null'::jsonb)`;
+  const kept = sql`
+    select k.* from (
+      select s.*,
+        lag(s.said) over w as said_before,
+        lead(s.said) over w as said_after,
+        lag(s.superseded_at) over w as superseded_before,
+        lead(s.superseded_at) over w as superseded_after,
+        lag(s.observed_at) over w as at_before,
+        lead(s.observed_at) over w as at_after,
+        coalesce(bool_or(s.role = 'snapshot') over (partition by s.holding_id), false)
           as beside_snapshot
-      from ${obs} o
-      where o.holding_id in ${holdings}
-      window w as (partition by o.holding_id order by o.observed_at, o.id)
+      from (
+        select o.*, row(
+          o.balance, o.source, o.role, o.authority, o.input_id, o.cause, o.gap_review,
+          ${key('origin')}, ${key('source')}, ${key(LEGACY_ANCHOR_KEY)}
+        ) as said
+        from ${obs} o
+        where o.holding_id in ${holdings}
+      ) s
+      window w as (partition by s.holding_id order by s.observed_at, s.id)
     ) k
     where k.role is distinct from 'checkpoint'
       or k.gap_review is not null
@@ -194,8 +204,8 @@ function sayingSomething(holdings: SQLWrapper): SQL {
       or k.beside_snapshot
       or k.said_before is null
       or k.said_after is null
-      or k.said <> k.said_before
-      or k.said <> k.said_after
+      or k.said is distinct from k.said_before
+      or k.said is distinct from k.said_after
       or k.superseded_at is not null
       or k.superseded_before is not null
       or k.superseded_after is not null
@@ -204,8 +214,8 @@ function sayingSomething(holdings: SQLWrapper): SQL {
         where t.holding_id = k.holding_id
           and t.occurred_at >= date_trunc('milliseconds', k.at_before)
           and t.occurred_at < date_trunc('milliseconds', k.at_after) + interval '1 millisecond'
-      )
-  )`;
+      )`;
+  return new Subquery(kept, {}, getTableName(obs));
 }
 
 const ENTRY_LABEL_COLUMNS: readonly LabelColumn<EntryLabel>[] = [
@@ -270,18 +280,16 @@ export class EngineEvidenceRepository extends BaseRepository<Holding, NewHolding
       obs,
       obs.observedAt,
       (after) =>
-        database
-          .select(OBSERVATION_EVIDENCE)
-          .from(obs)
-          .where(
-            and(
-              inArray(obs.holdingId, scopedHoldings()),
-              options?.withoutRepeatedCheckpoints
-                ? inArray(obs.id, sayingSomething(scopedHoldings()))
-                : undefined,
-              after
-            )
-          )
+        (options?.withoutRepeatedCheckpoints
+          ? database
+              .select(OBSERVATION_EVIDENCE)
+              .from(keptObservations(scopedHoldings()))
+              .where(after)
+          : database
+              .select(OBSERVATION_EVIDENCE)
+              .from(obs)
+              .where(and(inArray(obs.holdingId, scopedHoldings()), after))
+        )
           .orderBy(asc(obs.observedAt), asc(obs.id))
           .limit(EVIDENCE_PAGE_ROWS),
       (row) => internObservation(row, intern),
