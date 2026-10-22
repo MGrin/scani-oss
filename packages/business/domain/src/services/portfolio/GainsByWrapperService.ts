@@ -2,7 +2,7 @@ import { type DatabaseTransaction, getDb } from '@scani/db';
 import type { WrapperTreatment } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
 import { Decimal, HISTORY_REBUILD_JOB_NAME } from '@scani/shared';
-import { and, desc, eq, gt, inArray, lt, lte } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, lt, lte, type SQL } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
 import { includedInTotalSql } from '../../lib/holding-inclusion';
 import { type ReturnWindowRequest, resolveReturnWindow } from '../../lib/returns/window';
@@ -87,31 +87,50 @@ export class GainsByWrapperService {
     let carriedHoldings = 0;
     if (user?.baseCurrencyId && accounts.length > 0) {
       const pvd = schema.portfolioValueDaily;
-      const lastRow = (before: ReturnType<typeof lte>, valuedOnly: boolean) =>
-        db
-          .selectDistinctOn([pvd.scopeId], {
-            holdingId: pvd.scopeId,
-            accountId: schema.holdings.accountId,
+      const baseCurrencyId = user.baseCurrencyId;
+      // The newest row per holding, one bounded index read each (SC-1741). A
+      // DISTINCT ON over the join read every row of every history to keep one.
+      const lastRow = (before: SQL, valuedOnly: boolean) => {
+        const newest = db
+          .select({
             date: pvd.snapshotDate,
             realized: pvd.realizedPnl,
             unrealized: pvd.unrealizedPnl,
           })
           .from(pvd)
-          .innerJoin(schema.holdings, eq(schema.holdings.id, pvd.scopeId))
-          .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
           .where(
             and(
               eq(pvd.userId, userId),
               eq(pvd.scopeKind, 'holding'),
-              eq(pvd.baseCurrencyId, user.baseCurrencyId as string),
-              inArray(schema.holdings.accountId, [...treatmentOf.keys()]),
-              // The holdings a total counts, as the value series and Returns read them.
-              includedInTotalSql(),
+              eq(pvd.scopeId, schema.holdings.id),
+              eq(pvd.baseCurrencyId, baseCurrencyId),
               before,
               valuedOnly ? gt(pvd.holdingsWithKnownValue, 0) : undefined
             )
           )
-          .orderBy(pvd.scopeId, desc(pvd.snapshotDate));
+          .orderBy(desc(pvd.snapshotDate))
+          .limit(1)
+          .as('newest');
+        return db
+          .select({
+            holdingId: schema.holdings.id,
+            accountId: schema.holdings.accountId,
+            date: newest.date,
+            realized: newest.realized,
+            unrealized: newest.unrealized,
+          })
+          .from(schema.holdings)
+          .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
+          .crossJoinLateral(newest)
+          .where(
+            and(
+              eq(schema.holdings.userId, userId),
+              inArray(schema.holdings.accountId, [...treatmentOf.keys()]),
+              // The holdings a total counts, as the value series and Returns read them.
+              includedInTotalSql()
+            )
+          );
+      };
 
       const [ends, starts, latest] = await Promise.all([
         lastRow(lte(pvd.snapshotDate, toDay), true),
