@@ -90,7 +90,7 @@ export interface AgentPrincipal {
 export type Admission =
   | ({ ok: true } & AgentPrincipal)
   | { ok: false; reason: 'unauthenticated' | 'agent_access_off' | 'unknown_user' }
-  | { ok: false; reason: 'rate_limited'; retryAfterSec: number };
+  | { ok: false; reason: 'rate_limited' | 'unavailable'; retryAfterSec: number };
 
 function bearer(req: Request): string | null {
   const header = req.headers.get('authorization');
@@ -98,8 +98,56 @@ function bearer(req: Request): string | null {
   return match?.[1] ?? null;
 }
 
-/** Who is asking, and whether they may ask at all right now. */
+// postgres.js names a connection it lost or could not open by `code`; Postgres
+// names a server that is shutting down or starting, as a Neon compute does when
+// it suspends or resumes, by SQLSTATE.
+const UNREACHABLE_CODES = new Set([
+  'CONNECT_TIMEOUT',
+  'CONNECTION_CLOSED',
+  'CONNECTION_ENDED',
+  'CONNECTION_DESTROYED',
+  'ECONNREFUSED',
+  'ECONNRESET',
+  '57P01',
+  '57P02',
+  '57P03',
+]);
+const CONNECTION_EXCEPTION = /^08[0-9A-Z]{3}$/;
+// The resume behind SC-1762 took 3 s.
+const UNREACHABLE_RETRY_AFTER_SEC = 5;
+
+function unreachableCode(error: unknown): string | null {
+  let current = error;
+  for (let depth = 0; current instanceof Error && depth < 5; depth++) {
+    const code = (current as { code?: unknown }).code;
+    if (
+      typeof code === 'string' &&
+      (UNREACHABLE_CODES.has(code) || CONNECTION_EXCEPTION.test(code))
+    )
+      return code;
+    current = current.cause;
+  }
+  return null;
+}
+
+/**
+ * Who is asking, and whether they may ask at all right now. A store that
+ * cannot be reached says nothing about the token, so it answers `unavailable`
+ * rather than `unauthenticated` or a thrown 500 (SC-1762). Any other failure
+ * still throws.
+ */
 export async function admit(req: Request, deps: AgentDeps): Promise<Admission> {
+  try {
+    return await admitReachable(req, deps);
+  } catch (error) {
+    const code = unreachableCode(error);
+    if (!code) throw error;
+    log.warn({ code }, 'agent admission could not reach a store');
+    return { ok: false, reason: 'unavailable', retryAfterSec: UNREACHABLE_RETRY_AFTER_SEC };
+  }
+}
+
+async function admitReachable(req: Request, deps: AgentDeps): Promise<Admission> {
   const raw = bearer(req);
   const verified = raw ? await deps.verifyToken(raw) : null;
   if (!verified) return { ok: false, reason: 'unauthenticated' };

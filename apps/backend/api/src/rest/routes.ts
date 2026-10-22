@@ -19,6 +19,7 @@ export const REST_ERROR_CODES = [
   'method_not_allowed',
   'conflict',
   'internal',
+  'unavailable',
 ] as const;
 
 export interface RestRoute {

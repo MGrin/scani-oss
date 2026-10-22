@@ -66,8 +66,8 @@ describe('the generated OpenAPI document (SC-1648)', () => {
     for (const { route, op } of operations()) {
       const expected =
         route.method === 'POST'
-          ? ['200', '400', '401', '403', '404', '409', '429', '500']
-          : ['200', '400', '401', '403', '404', '429', '500'];
+          ? ['200', '400', '401', '403', '404', '409', '429', '500', '503']
+          : ['200', '400', '401', '403', '404', '429', '500', '503'];
       expect({ tool: route.tool, statuses: Object.keys(op.responses).sort() }).toEqual({
         tool: route.tool,
         statuses: expected,

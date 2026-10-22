@@ -110,6 +110,7 @@ is running answers 409; retry it.
 | 409 | `conflict` | The change cannot be made as things stand. |
 | 429 | `rate_limited` | A budget is spent. |
 | 500 | `internal` | The request failed on the server. |
+| 503 | `unavailable` | Scani could not be reached just now. `Retry-After` says when to try again. |
 
 An id that belongs to another user answers 404, never 403, so the API does
 not confirm that the id exists.
