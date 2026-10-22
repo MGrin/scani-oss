@@ -1,5 +1,6 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 
 export interface TransactionImportJob extends UserJobBase {
@@ -22,8 +23,6 @@ const transactionImportSchema: z.ZodType<TransactionImportJob> = z.object({
   institutionId: z.string().optional(),
 });
 
-const JOB_ID_SEP = '_';
-
 export const TRANSACTION_IMPORT: UserJobDescriptor<TransactionImportJob> = {
   name: JOB_NAMES.transactionImport,
   schema: transactionImportSchema,
@@ -40,7 +39,7 @@ export const TRANSACTION_IMPORT: UserJobDescriptor<TransactionImportJob> = {
   // fresh requestId gets a new id; accidental double-click with the
   // same requestId collapses via BullMQ's native dedup.
   computeJobId: (d) =>
-    [JOB_NAMES.transactionImport, d.userId, d.accountId, d.source, d.requestId].join(JOB_ID_SEP),
+    jobIdOf(JOB_NAMES.transactionImport, d.userId, d.accountId, d.source, d.requestId),
   summarizePayload: (d) => ({
     accountId: d.accountId,
     source: d.source,

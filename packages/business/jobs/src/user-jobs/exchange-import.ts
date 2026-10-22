@@ -1,5 +1,6 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 import { RETRY_EXTERNAL } from '../retry-policies';
 
@@ -17,8 +18,6 @@ const exchangeImportSchema: z.ZodType<ExchangeImportJob> = z.object({
   provider: z.string().min(1),
 });
 
-const JOB_ID_SEP = '_';
-
 export const EXCHANGE_IMPORT: UserJobDescriptor<ExchangeImportJob> = {
   name: JOB_NAMES.exchangeImport,
   schema: exchangeImportSchema,
@@ -27,7 +26,6 @@ export const EXCHANGE_IMPORT: UserJobDescriptor<ExchangeImportJob> = {
     removeOnComplete: 100,
     removeOnFail: 500,
   },
-  computeJobId: (d) =>
-    [JOB_NAMES.exchangeImport, d.userId, d.institutionId, d.requestId].join(JOB_ID_SEP),
+  computeJobId: (d) => jobIdOf(JOB_NAMES.exchangeImport, d.userId, d.institutionId, d.requestId),
   summarizePayload: (d) => ({ institutionId: d.institutionId, provider: d.provider }),
 };

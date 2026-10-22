@@ -1,5 +1,6 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 
 export interface BudgetAppImportUndoJob extends UserJobBase {
@@ -22,6 +23,6 @@ export const BUDGET_APP_IMPORT_UNDO: UserJobDescriptor<BudgetAppImportUndoJob> =
     removeOnComplete: 100,
     removeOnFail: 500,
   },
-  computeJobId: (d) => [JOB_NAMES.budgetAppImportUndo, d.userId, d.importId].join('_'),
+  computeJobId: (d) => jobIdOf(JOB_NAMES.budgetAppImportUndo, d.userId, d.importId),
   summarizePayload: () => ({}),
 };

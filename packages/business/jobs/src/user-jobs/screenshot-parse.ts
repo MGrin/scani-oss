@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 
 export interface ScreenshotParseJob extends UserJobBase {
@@ -30,8 +31,6 @@ const screenshotParseSchema: z.ZodType<ScreenshotParseJob> = z.object({
   accountId: z.string().optional(),
 });
 
-const JOB_ID_SEP = '_';
-
 export const SCREENSHOT_PARSE: UserJobDescriptor<ScreenshotParseJob> = {
   name: JOB_NAMES.screenshotParse,
   schema: screenshotParseSchema,
@@ -47,7 +46,7 @@ export const SCREENSHOT_PARSE: UserJobDescriptor<ScreenshotParseJob> = {
     // dedup per file-set. 16 hex chars = 64 bits, ample for collision
     // resistance within a single user's job stream.
     const keyDigest = createHash('sha256').update(d.r2Keys.join('|')).digest('hex').slice(0, 16);
-    return [JOB_NAMES.screenshotParse, d.userId, keyDigest, d.requestId].join(JOB_ID_SEP);
+    return jobIdOf(JOB_NAMES.screenshotParse, d.userId, keyDigest, d.requestId);
   },
   summarizePayload: (d) => ({
     fileCount: d.r2Keys.length,

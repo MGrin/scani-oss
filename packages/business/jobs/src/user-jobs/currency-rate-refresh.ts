@@ -1,5 +1,6 @@
 import type { UserJobBase, UserJobDescriptor } from '@scani/queue';
 import { z } from 'zod';
+import { jobIdOf } from '../job-id';
 import { JOB_NAMES } from '../job-names';
 import { RETRY_EXTERNAL } from '../retry-policies';
 
@@ -53,8 +54,6 @@ const currencyRateRefreshSchema: z.ZodType<CurrencyRateRefreshJob> = z.object({
   toSymbol: z.string().min(1).max(32),
 });
 
-const JOB_ID_SEP = '_';
-
 export const CURRENCY_RATE_REFRESH: UserJobDescriptor<CurrencyRateRefreshJob> = {
   name: JOB_NAMES.currencyRateRefresh,
   schema: currencyRateRefreshSchema,
@@ -69,7 +68,7 @@ export const CURRENCY_RATE_REFRESH: UserJobDescriptor<CurrencyRateRefreshJob> = 
   // the in-memory cache. Without pair-level dedup that is one queued upstream
   // call per user per currency, all of them behind a 2-per-60s limiter.
   computeJobId: (d) =>
-    [JOB_NAMES.currencyRateRefresh, d.fromTokenId, d.toTokenId, d.requestId].join(JOB_ID_SEP),
+    jobIdOf(JOB_NAMES.currencyRateRefresh, d.fromTokenId, d.toTokenId, d.requestId),
   summarizePayload: (d) => ({ pair: `${d.fromSymbol}->${d.toSymbol}` }),
 };
 
