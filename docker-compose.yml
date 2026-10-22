@@ -149,12 +149,23 @@ services:
   # server can read from it without running its own install.
   # `bun install --frozen-lockfile` is a verified no-op on subsequent
   # boots — the volume persists across `compose up` calls.
+  # The bun cache is outside the throwaway container, so a cold install does
+  # not download and extract every package again (SC-1748: 3.56 GB written per
+  # cold install). `bun dev:stack` points SCANI_BUN_CACHE at one host directory
+  # every checkout shares; without it the cache is a volume of this project.
   deps:
     image: oven/bun:1.4.2
     working_dir: /app
+    environment:
+      BUN_INSTALL_CACHE_DIR: /bun-cache
+      # Frozen install only: a non-frozen one would write this URL into
+      # bun.lock. `bun dev:stack` points it at a local npm cache when that
+      # answers (SC-1748); everywhere else it is the public registry.
+      BUN_CONFIG_REGISTRY: ${SCANI_NPM_REGISTRY:-https://registry.npmjs.org/}
     volumes:
       - .:/app
       - workspace-node-modules:/app/node_modules
+      - ${SCANI_BUN_CACHE:-bun-install-cache}:/bun-cache
     command: ["bun", "install", "--frozen-lockfile"]
     restart: "no"
 
@@ -201,6 +212,8 @@ services:
     build:
       context: .
       dockerfile: apps/backend/data-provider/Dockerfile
+      args:
+        NPM_REGISTRY: ${SCANI_NPM_REGISTRY:-https://registry.npmjs.org/}
     image: data-provider:${SCANI_STACK_TAG:-dev}
     depends_on:
       postgres:
@@ -282,6 +295,8 @@ services:
     build:
       context: .
       dockerfile: apps/backend/api/Dockerfile
+      args:
+        NPM_REGISTRY: ${SCANI_NPM_REGISTRY:-https://registry.npmjs.org/}
     image: api:${SCANI_STACK_TAG:-dev}
     depends_on:
       postgres:
@@ -359,6 +374,8 @@ services:
     build:
       context: .
       dockerfile: apps/backend/worker/Dockerfile
+      args:
+        NPM_REGISTRY: ${SCANI_NPM_REGISTRY:-https://registry.npmjs.org/}
     image: worker:${SCANI_STACK_TAG:-dev}
     depends_on:
       postgres:
@@ -441,3 +458,4 @@ volumes:
   redis-data:
   seaweedfs-data:
   workspace-node-modules:
+  bun-install-cache:
