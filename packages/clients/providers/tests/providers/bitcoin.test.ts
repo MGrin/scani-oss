@@ -418,8 +418,8 @@ describe('BitcoinProvider: a non-2xx answer is a classified ProviderError (SC-17
 // blockchain.info itself answered 200 from elsewhere.
 describe('BitcoinProvider: blockchain.info is left alone after a 429 (SC-1716)', () => {
   const MEMPOOL = {
-    chain_stats: { funded_txo_sum: 100_000_000, spent_txo_sum: 40_000_000 },
-    mempool_stats: { funded_txo_sum: 5_000_000, spent_txo_sum: 0 },
+    chain_stats: { funded_txo_sum: 100_000_000, spent_txo_sum: 40_000_000, tx_count: 3 },
+    mempool_stats: { funded_txo_sum: 5_000_000, spent_txo_sum: 0, tx_count: 1 },
   };
 
   function stubFetch(blockchainInfoStatus: number) {
@@ -458,6 +458,48 @@ describe('BitcoinProvider: blockchain.info is left alone after a 429 (SC-1716)',
     }
   });
 
+  // SC-1770: detection asked only blockchain.info, so for the hour after one
+  // 429 every Bitcoin wallet import failed with source_unavailable.
+  test('a 429 on detection costs one request, and the answer comes from mempool.space', async () => {
+    const { calls, restore } = stubFetch(429);
+    try {
+      const active = await new BitcoinProvider(passthroughLimiter()).hasActivity(
+        WALLET,
+        'bitcoin',
+        ctx as never
+      );
+      expect(calls.blockchainInfo).toBe(1);
+      expect(calls.mempool).toBe(1);
+      expect(active).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+
+  test('detection through mempool.space reads an unused address as no activity', async () => {
+    const { calls, restore } = stubFetch(429);
+    const fetchWithStats = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      if (!String(url).includes('mempool.space')) return fetchWithStats(url);
+      calls.mempool++;
+      const empty = { funded_txo_sum: 0, spent_txo_sum: 0, tx_count: 0 };
+      return new Response(JSON.stringify({ chain_stats: empty, mempool_stats: empty }), {
+        status: 200,
+      });
+    }) as unknown as typeof fetch;
+    try {
+      const active = await new BitcoinProvider(passthroughLimiter()).hasActivity(
+        WALLET,
+        'bitcoin',
+        ctx as never
+      );
+      expect(calls.mempool).toBe(1);
+      expect(active).toBe(false);
+    } finally {
+      restore();
+    }
+  });
+
   test('inside the penalty, no call reaches blockchain.info', async () => {
     const { calls, restore } = stubFetch(429);
     try {
@@ -469,8 +511,7 @@ describe('BitcoinProvider: blockchain.info is left alone after a 429 (SC-1716)',
 
       expect(calls.blockchainInfo).toBe(1);
       expect(second[0]?.balance).toBe('0.65');
-      expect((activity as ProviderError).kind).toBe('rate-limited');
-      expect((activity as ProviderError).retryAfterMs).toBeGreaterThan(0);
+      expect(activity).toBe(true);
       expect((txs as ProviderError).kind).toBe('rate-limited');
     } finally {
       restore();

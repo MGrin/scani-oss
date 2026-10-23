@@ -102,6 +102,13 @@ const BLOCKCHAIN_INFO_PENALTY_MS = 60 * 60 * 1000;
 interface MempoolAddressStats {
   funded_txo_sum: number;
   spent_txo_sum: number;
+  tx_count: number;
+}
+
+/** mempool.space's `/api/address/{addr}`: confirmed and pending, apart. */
+interface MempoolAddress {
+  chain_stats: MempoolAddressStats;
+  mempool_stats: MempoolAddressStats;
 }
 
 /**
@@ -167,6 +174,10 @@ export class BitcoinProvider
    * `n_tx > 0` from blockchain.info's `/rawaddr` covers both incoming
    * and outgoing. Cheap (one HTTP call), shares the bitcoin rate limiter.
    *
+   * While blockchain.info is rate-limiting this server it asks mempool.space,
+   * as balances do: one 429 there otherwise failed every Bitcoin import for
+   * the hour that follows (SC-1770).
+   *
    * Throws when the probe could not be completed. blockchain.info answers
    * a burst with a 429 that lasts 40+ minutes (SC-364), and swallowing it
    * reported the wallet as having no Bitcoin history — indistinguishable
@@ -178,11 +189,17 @@ export class BitcoinProvider
     _ctx: ProviderContext
   ): Promise<boolean> {
     if (!this.isValidAddress(address)) return false;
-    const response = await this.blockchainInfo(
-      `https://blockchain.info/rawaddr/${address}?limit=0`
-    );
-    const data = (await response.json()) as { n_tx?: number };
-    return typeof data.n_tx === 'number' && data.n_tx > 0;
+    try {
+      const response = await this.blockchainInfo(
+        `https://blockchain.info/rawaddr/${address}?limit=0`
+      );
+      const data = (await response.json()) as { n_tx?: number };
+      return typeof data.n_tx === 'number' && data.n_tx > 0;
+    } catch (error) {
+      if (!isRateLimited(error)) throw error;
+      const { chain_stats, mempool_stats } = await this.mempoolAddress(address);
+      return chain_stats.tx_count + mempool_stats.tx_count > 0;
+    }
   }
 
   async fetchBalances(
@@ -344,22 +361,26 @@ export class BitcoinProvider
       const data = (await response.json()) as BlockchainInfoAddress;
       return new Decimal(data.final_balance);
     } catch (error) {
-      if (!(error instanceof ProviderError) || error.kind !== 'rate-limited') throw error;
-      const response = await this.limiter.execute(async () =>
-        fetchWithTimeout(`https://mempool.space/api/address/${address}`)
-      );
-      if (!response.ok) throw ProviderError.fromHttp(this.providerKey, response);
-      const { chain_stats, mempool_stats } = (await response.json()) as {
-        chain_stats: MempoolAddressStats;
-        mempool_stats: MempoolAddressStats;
-      };
+      if (!isRateLimited(error)) throw error;
+      const { chain_stats, mempool_stats } = await this.mempoolAddress(address);
       return new Decimal(chain_stats.funded_txo_sum)
         .minus(chain_stats.spent_txo_sum)
         .plus(mempool_stats.funded_txo_sum)
         .minus(mempool_stats.spent_txo_sum);
     }
   }
+
+  private async mempoolAddress(address: string): Promise<MempoolAddress> {
+    const response = await this.limiter.execute(async () =>
+      fetchWithTimeout(`https://mempool.space/api/address/${address}`)
+    );
+    if (!response.ok) throw ProviderError.fromHttp(this.providerKey, response);
+    return (await response.json()) as MempoolAddress;
+  }
 }
+
+const isRateLimited = (error: unknown): boolean =>
+  error instanceof ProviderError && error.kind === 'rate-limited';
 
 export const bitcoinFactory: ProviderFactory = async (deps) => {
   // 1 req/s, not the 5 this used to claim "keeps us out of trouble".
