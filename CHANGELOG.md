@@ -19,6 +19,14 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.55.1](https://github.com/MGrin/scani-oss/compare/v0.55.0...v0.55.1) (2026-10-23)
+
+
+### Bug Fixes
+
+* **auth:** one passkey ceremony at a time, so the button is not cancelled by a late autofill ([cbe1920](https://github.com/MGrin/scani-oss/commit/cbe1920d6802a69792c88fb5773f41df66073a0d))
+* **tokens:** a pick right after the user's own search is confirmed, not refused ([a0b3072](https://github.com/MGrin/scani-oss/commit/a0b3072e9fb1ad91c599155aa58be447c4baf9f1))
+
 ## [0.55.0](https://github.com/MGrin/scani-oss/compare/v0.54.0...v0.55.0) (2026-10-22)
 
 
