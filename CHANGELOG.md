@@ -19,6 +19,13 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.55.3](https://github.com/MGrin/scani-oss/compare/v0.55.2...v0.55.3) (2026-10-23)
+
+
+### Bug Fixes
+
+* **bitcoin:** wallet detection falls back to mempool.space while blockchain.info is rate-limiting ([c0f9bc2](https://github.com/MGrin/scani-oss/commit/c0f9bc24a51fa1b82ca699e2bd9633a02e9908a5))
+
 ## [0.55.2](https://github.com/MGrin/scani-oss/compare/v0.55.1...v0.55.2) (2026-10-23)
 
 
