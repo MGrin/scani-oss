@@ -91,7 +91,13 @@ export function useSettingsAreaValues(): Record<string, SettingsAreaValue> {
  * those readable with access off, because a person must always be able to see
  * and cut off what can read their data.
  */
-export function useAgentsArea(): { listed: boolean; empty: boolean; value: SettingsAreaValue } {
+export function useAgentsArea(): {
+  listed: boolean;
+  /** Whether `listed` is the final answer, rather than "not yet known". */
+  known: boolean;
+  empty: boolean;
+  value: SettingsAreaValue;
+} {
   const { t } = useTranslation();
   const utils = trpc.useUtils();
   const access = trpc.agentTokens.status.useQuery();
@@ -107,10 +113,12 @@ export function useAgentsArea(): { listed: boolean; empty: boolean; value: Setti
   const on = access.data?.enabled === true;
   const keys = trpc.agentTokens.list.useQuery(undefined, { enabled: on });
   const used = [apps, activity, calls].some((read) => (read.data?.length ?? 0) > 0);
+  const answered = settle(access, apps, activity, calls) !== 'reading';
 
   return {
     listed: on || used,
-    empty: !on && !used && settle(access, apps, activity, calls) !== 'reading',
+    known: on || used || answered,
+    empty: !on && !used && answered,
     value: on
       ? rowValue(settle(keys), () =>
           t('v3.settings.areas.agents.keys', { count: keys.data?.length ?? 0 })
