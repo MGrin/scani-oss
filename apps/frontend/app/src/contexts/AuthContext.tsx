@@ -1,5 +1,6 @@
 import { turnstileHeaders } from '@scani/ui/components/Turnstile';
 import { isPWA, logPWAInfo } from '@scani/ui/lib/pwa-utils';
+import { startAuthentication, WebAuthnAbortService } from '@simplewebauthn/browser';
 import { useQueryClient } from '@tanstack/react-query';
 import type React from 'react';
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
@@ -306,22 +307,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return {};
   };
 
-  const signInWithPasskey = async (options?: {
-    autoFill?: boolean;
-  }): Promise<AuthAttemptResult> => {
-    // The ceremony waits on the person: choosing a passkey, Touch ID, or a phone
-    // scanning a QR, which routinely takes over 15 s (SC-1752). Its two
-    // requests are still bounded, each by `fetchWithDeadline`.
-    const result = await attempt(
-      () => authClient.signIn.passkey({ autoFill: options?.autoFill ?? false }),
-      null
-    );
+  /** The autofill offer /auth makes on load, while it is still pending. */
+  const autofill = useRef<{ stopped: boolean; settled: Promise<AuthAttemptResult> } | null>(null);
+
+  const finishPasskey = async (result: AuthAttemptResult): Promise<AuthAttemptResult> => {
     // A device with no platform authenticator rejects the ceremony with the
     // browser's own text; the reader needs the way out, which is their email.
     if (result.kind === 'server') return { ...result, error: t('auth.signIn.passkeyFailed') };
     if (result.error) return result;
     await resolveSession();
     return {};
+  };
+
+  // The autofill's own options fetch, so it can stand down between fetching
+  // and prompting: better-auth's helper goes straight from one to the other.
+  const autofillCeremony = async (run: {
+    stopped: boolean;
+  }): Promise<{ error?: { message?: string } | null }> => {
+    const options = await authClient.$fetch<
+      Parameters<typeof startAuthentication>[0]['optionsJSON']
+    >('/passkey/generate-authenticate-options', { method: 'GET', throw: false });
+    if (!options.data) return { error: options.error };
+    if (run.stopped) return { error: { message: 'superseded by the passkey button' } };
+    const { clientExtensionResults: _unused, ...response } = await startAuthentication({
+      optionsJSON: options.data,
+      useBrowserAutofill: true,
+    });
+    return authClient.$fetch('/passkey/verify-authentication', {
+      method: 'POST',
+      body: { response },
+      throw: false,
+    });
+  };
+
+  const signInWithPasskey = async (options?: {
+    autoFill?: boolean;
+  }): Promise<AuthAttemptResult> => {
+    // The ceremony waits on the person: choosing a passkey, Touch ID, or a phone
+    // scanning a QR, which routinely takes over 15 s (SC-1752). Its two
+    // requests are still bounded, each by `fetchWithDeadline`.
+    if (options?.autoFill) {
+      if (autofill.current) autofill.current.stopped = true;
+      const run = { stopped: false, settled: Promise.resolve<AuthAttemptResult>({}) };
+      run.settled = attempt(() => autofillCeremony(run), null).then(finishPasskey);
+      autofill.current = run;
+      return run.settled;
+    }
+    // One ceremony at a time (SC-1767). Both share one challenge cookie and
+    // one abort signal, so an autofill whose options land after this click
+    // cancels the person's prompt and leaves them on /auth. Stand it down and
+    // let it settle first; if it already signed them in, that is the answer.
+    const pending = autofill.current;
+    if (pending) {
+      pending.stopped = true;
+      autofill.current = null;
+      WebAuthnAbortService.cancelCeremony();
+      const settled = await pending.settled;
+      if (!settled.error) return settled;
+    }
+    return finishPasskey(await attempt(() => authClient.signIn.passkey({ autoFill: false }), null));
   };
 
   const handleSignOut = async () => {
