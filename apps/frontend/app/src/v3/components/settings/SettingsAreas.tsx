@@ -4,6 +4,7 @@ import { Skeleton } from '@scani/ui/ui/skeleton';
 import { PageHeader, PageLayout } from '@scani/ui/v3/components/PageLayout';
 import { useMediaQuery } from '@scani/ui/v3/hooks/useMediaQuery';
 import { ChevronRight } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link } from 'react-router-dom';
 import { V3_ROUTES } from '../../lib/routes';
@@ -25,6 +26,11 @@ const SPLIT_QUERY = '(min-width: 1280px)';
 /** How long an area's sections wait for each other: a phone round trip and a
  *  margin. A section still loading past it fills in where it stands. */
 const SETTINGS_AREA_CAP_MS = 1000;
+
+/** How long the list waits to learn whether it has an agents row (SC-1768).
+ *  A row added after the others moves the list under the reader, and on a
+ *  phone that answer can land past the 1 s cap. Past this, it is added late. */
+const AGENTS_DECISION_CAP_MS = 3000;
 
 /**
  * Settings as a list of areas (SC-1670).
@@ -95,6 +101,11 @@ function AreaList({
   const { t } = useTranslation();
   const values = useSettingsAreaValues();
   const agents = useAgentsArea();
+  const [decisionTimedOut, setDecisionTimedOut] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setDecisionTimedOut(true), AGENTS_DECISION_CAP_MS);
+    return () => clearTimeout(timer);
+  }, []);
   const title = t('settings.title');
 
   return (
@@ -111,9 +122,12 @@ function AreaList({
       )}
       {/* Shown once its reads are in: the agents row is listed only once
           access is known, and arriving after the others it grew the list
-          under the reader (SC-1743). */}
+          under the reader (SC-1743). The cap alone did not hold it: the
+          list is held until that answer is in, under its own bound
+          (SC-1768). */}
       <RevealTogether
         capMs={SETTINGS_AREA_CAP_MS}
+        hold={!agents.known && !decisionTimedOut}
         skeleton={
           // One row's height per area: the list's own height once shown.
           <div aria-hidden="true" style={{ height: `${areas.length * 3.5}rem` }}>

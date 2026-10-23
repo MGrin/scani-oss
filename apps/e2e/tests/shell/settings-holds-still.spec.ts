@@ -109,3 +109,29 @@ test('/settings shows every area row at once', async ({ page }) => {
     `rows after the list's first: ${late.map((r) => `${r.at - first}ms "${r.label}"`).join('; ')}`
   ).toEqual([]);
 });
+
+// SC-1768: on scani-oss#709 the agents row came in 94-160 ms after the other
+// five. Whether the row is listed waits on `agentTokens.status`, and when that
+// answer lands past the 1 s cap (here: batched with a slow procedure, as a
+// phone's request can be) the list must still show every row at once.
+test('/settings lists the agents row with the others when access is decided late', async ({
+  page,
+}) => {
+  await page.unroute(`${API_BASE_URL}/trpc/**`);
+  await delayApi(page, API_BASE_URL, {
+    ...PHONE,
+    slow: /^(accounts\.getByUserIdWithSummary|users\.accountDeletion|household\.mine|agentTokens\.status)$/,
+  });
+  await page.goto('/settings');
+  await page.locator('main').waitFor();
+  await page.waitForTimeout(PHONE.slowMs + 3000);
+  await expect(page.locator('main li', { hasText: 'AI agents' })).toBeVisible();
+  const rows = await rowsShown(page);
+  const first = Math.min(...rows.map((r) => r.at));
+  const late = rows.filter((r) => r.at > first);
+  expect(rows.length, 'the list showed no rows').toBeGreaterThan(4);
+  expect(
+    late,
+    `rows after the list's first: ${late.map((r) => `${r.at - first}ms "${r.label}"`).join('; ')}`
+  ).toEqual([]);
+});
