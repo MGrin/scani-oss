@@ -144,6 +144,7 @@ describe('portfolio.getReturns (SC-1159)', () => {
       returns: null,
       benchmarks: [],
       lastComplete: null,
+      stale: false,
     });
   });
 

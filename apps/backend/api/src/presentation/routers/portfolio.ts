@@ -27,6 +27,7 @@ import {
   PriceHubResolver,
   PriceReader,
   ReturnsService,
+  returnsLatestKeyFor,
   returnsRequestKey,
   UNMATCHED_TOKEN_MARKER,
 } from '@scani/domain/services';
@@ -51,12 +52,13 @@ import {
   unmeasuredDates,
 } from '../../lib/net-worth-series';
 import { loadPeriodBreakdown } from '../../lib/period-breakdown';
-import { sharedReturnsRun } from '../../lib/returns-cache';
+import { latestOrSharedReturnsRun, sharedReturnsRun } from '../../lib/returns-cache';
 import {
   findLastComplete,
   keepLastComplete,
   type LastComplete,
 } from '../../lib/returns-last-complete';
+import { returnsSpanAttributes } from '../../lib/returns-span';
 import { ReturnsRunner } from '../../returns-pool';
 import { strictInput } from '../lib/strict-input';
 import { assertTokensVisible } from '../lib/token-visibility';
@@ -315,14 +317,25 @@ const ReturnsInput = z
 /** A store that holds nothing, for answers that stay in this process. */
 const PROCESS_ONLY = { get: async () => undefined, set: async () => {} };
 
-function computeReturns(
-  requestCache: Map<string, unknown>,
-  request: {
-    userId: string;
-    scope: { kind: 'user' } | { kind: 'account' | 'institution'; id: string };
-    window: z.infer<typeof ReturnsInput>['window'];
-  }
-) {
+type ReturnsRequest = {
+  userId: string;
+  scope: { kind: 'user' } | { kind: 'account' | 'institution'; id: string };
+  window: z.infer<typeof ReturnsInput>['window'];
+};
+
+// Off the API's event loop (SC-1671): `returns-pool.ts`.
+const runReturns = (request: ReturnsRequest) => (dataKey: string) =>
+  Container.get(ReturnsRunner).run(
+    { userId: request.userId, scope: request.scope, window: request.window },
+    dataKey
+  );
+
+const observeReturns =
+  (request: ReturnsRequest) =>
+  (o: { hit: boolean; shared?: boolean; stale?: boolean; versionMs: number }) =>
+    setSpanAttributes(returnsSpanAttributes(o, request));
+
+function computeReturns(requestCache: Map<string, unknown>, request: ReturnsRequest) {
   const key = returnsRequestKey(request);
   // Shared across requests too, while the user's data is unchanged: see
   // `lib/returns-cache.ts` for the measurement and for what the key carries.
@@ -330,24 +343,24 @@ function computeReturns(
     sharedReturnsRun(
       key,
       request.userId,
-      (dataKey) =>
-        // Off the API's event loop (SC-1671): `returns-pool.ts`.
-        Container.get(ReturnsRunner).run(
-          {
-            userId: request.userId,
-            scope: request.scope,
-            window: request.window,
-          },
-          dataKey
-        ),
+      runReturns(request),
       undefined,
       undefined,
-      ({ hit, shared, versionMs }) =>
-        setSpanAttributes({
-          'returns.cache': shared ? 'shared' : hit ? 'hit' : 'miss',
-          'returns.version_ms': versionMs,
-        })
+      observeReturns(request),
+      undefined,
+      returnsLatestKeyFor(request)
     )
+  );
+}
+
+/** What the card shows: the current answer, or the last one marked stale while it is computed. */
+function latestReturns(requestCache: Map<string, unknown>, request: ReturnsRequest) {
+  const key = returnsRequestKey(request);
+  return getOrComputeFromCache(requestCache, `${key}:latest`, () =>
+    latestOrSharedReturnsRun(key, request.userId, runReturns(request), {
+      observe: observeReturns(request),
+      latestKey: returnsLatestKeyFor(request),
+    })
   );
 }
 
@@ -378,11 +391,11 @@ export const portfolioRouter = router({
       scope: input.scope ?? { kind: 'user' as const },
       window: input.window,
     };
-    const outcome = await computeReturns(ctx.requestCache, request);
+    const { value: outcome, stale } = await latestReturns(ctx.requestCache, request);
     // An account with no base currency has no rollup rows to measure, so
     // there is nothing to show and nothing has gone wrong.
     if (outcome.status !== 'ok') {
-      return { returns: null, benchmarks: [], lastComplete: null as LastComplete | null };
+      return { returns: null, benchmarks: [], lastComplete: null as LastComplete | null, stale };
     }
     const { eligibility, effectiveWindow, baseCurrencyId } = outcome.returns;
     // Over exactly the days the portfolio was measured on, so the comparison
@@ -392,13 +405,13 @@ export const portfolioRouter = router({
         ? await Container.get(BenchmarkReturnService).over(effectiveWindow, baseCurrencyId)
         : [];
     const returns = withoutPeriodSeries(outcome.returns);
-    if (eligibility.eligible) keepLastComplete(request, { returns, benchmarks });
+    if (eligibility.eligible && !stale) keepLastComplete(request, { returns, benchmarks });
     // While a rebuild runs, the card shows the last answer "as of" its time
     // rather than nothing for hours (SC-1694).
     const lastComplete = eligibility.reasons.includes('rebuilding-history')
       ? await findLastComplete(request, baseCurrencyId)
       : null;
-    return { returns, benchmarks, lastComplete };
+    return { returns, benchmarks, lastComplete, stale };
   }),
 
   /**

@@ -224,6 +224,8 @@ export {
   readReturnsDataVersion,
   returnsDataKey,
   returnsDataVersionSql,
+  returnsLatestKey,
+  returnsLatestKeyFor,
   returnsRequestKey,
 } from './returns/ReturnsAnswerCache';
 export {
