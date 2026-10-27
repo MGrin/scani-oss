@@ -141,12 +141,10 @@ describe('CoinGecko retries (SC-1706)', () => {
       return new Response(body, { status });
     }) as unknown as typeof fetch;
     const now = Date.now();
-    const quotes = await new CoinGeckoProvider(counting, { apiKey: 'k' }).fetchHistoricalRange(
-      btc,
-      new Date(now - 30 * DAY),
-      new Date(now),
-      { baseCurrency: usd }
-    );
+    const quotes = await new CoinGeckoProvider(counting, {
+      apiKey: 'k',
+      penaltyMs: 10,
+    }).fetchHistoricalRange(btc, new Date(now - 30 * DAY), new Date(now), { baseCurrency: usd });
     expect(asked).toHaveLength(3);
     expect(slots).toBe(3);
     expect(quotes.length).toBeGreaterThan(0);
@@ -162,12 +160,10 @@ describe('CoinGecko retries (SC-1706)', () => {
     } as OutflowRateLimiter;
     answer(429);
     const now = Date.now();
-    const fetching = new CoinGeckoProvider(counting, { apiKey: 'k' }).fetchHistoricalRange(
-      btc,
-      new Date(now - 30 * DAY),
-      new Date(now),
-      { baseCurrency: usd }
-    );
+    const fetching = new CoinGeckoProvider(counting, {
+      apiKey: 'k',
+      penaltyMs: 10,
+    }).fetchHistoricalRange(btc, new Date(now - 30 * DAY), new Date(now), { baseCurrency: usd });
     await expect(fetching).rejects.toThrow('429');
     expect(asked).toHaveLength(3);
     expect(slots).toBe(3);

@@ -1,6 +1,9 @@
-import { db } from '@scani/db/connection';
-import { HISTORY_REBUILD_JOB_NAME } from '@scani/shared';
-import { type SQL, sql } from 'drizzle-orm';
+import {
+  RedisReturnsAnswerStore,
+  type ReturnsAnswerStore,
+  readReturnsDataVersion,
+  returnsDataKey,
+} from '@scani/domain/services';
 import { LruCache } from './lru-cache';
 
 // The key moves with the data version and the UTC day, which is everything the
@@ -14,35 +17,6 @@ const runs = new LruCache<string, Promise<unknown>>({
   ttlMs: RETURNS_CACHE_TTL_MS,
 });
 
-/**
- * The statement behind a user's returns data version; one row, column `v`.
- *
- * Observations are read as their newest write and review, with no count
- * (SC-1741): nothing deletes an observation but the cascade from its holding
- * or user, and the holdings part already moves when a holding goes.
- */
-export function returnsDataVersionSql(userId: string): SQL {
-  return sql`
-    SELECT concat_ws('|',
-      (SELECT count(*) || ':' || coalesce(max(updated_at)::text, '') FROM holding_transactions WHERE user_id = ${userId}),
-      (SELECT coalesce(max(computed_at)::text, '') FROM portfolio_value_daily WHERE user_id = ${userId}),
-      (SELECT count(*) || ':' || coalesce(max(last_updated)::text, '') FROM holdings WHERE user_id = ${userId}),
-      (SELECT coalesce(max(c.updated_at)::text, '') FROM holding_coverage c JOIN holdings h ON h.id = c.holding_id WHERE h.user_id = ${userId}),
-      (SELECT coalesce(max(created_at)::text, '') FROM holding_balance_observations WHERE user_id = ${userId}) || ':' ||
-        (SELECT coalesce(max(gap_reviewed_at)::text, '') FROM holding_balance_observations WHERE user_id = ${userId}),
-      (SELECT base_currency_id::text FROM users WHERE id = ${userId}),
-      (SELECT coalesce(string_agg(job_id, ',' ORDER BY job_id), '') FROM user_jobs WHERE user_id = ${userId} AND job_name = ${HISTORY_REBUILD_JOB_NAME} AND state IN ('queued', 'active', 'progress'))
-    ) AS v
-  `;
-}
-
-async function readReturnsDataVersion(userId: string): Promise<string> {
-  const [row] = (await db.execute<{ v: string }>(
-    returnsDataVersionSql(userId)
-  )) as unknown as Array<{ v: string }>;
-  return row?.v ?? '';
-}
-
 export async function sharedReturnsRun<T>(
   requestKey: string,
   userId: string,
@@ -55,21 +29,40 @@ export async function sharedReturnsRun<T>(
   today: string = new Date().toISOString().slice(0, 10),
   /**
    * The version read is the call's first query, so its time is what a cold
-   * database adds; a hit pays nothing else (SC-1745).
+   * database adds; a hit pays nothing else (SC-1745). `shared` marks a hit
+   * served from the store rather than from this process.
    */
-  observe?: (o: { hit: boolean; versionMs: number }) => void
+  observe?: (o: { hit: boolean; shared?: boolean; versionMs: number }) => void,
+  /**
+   * Answers every API machine and the worker share (SC-1745): the worker
+   * fills it for Home after the writes that move the version.
+   */
+  store: ReturnsAnswerStore = new RedisReturnsAnswerStore()
 ): Promise<T> {
   const started = performance.now();
   const version = await readVersion(userId);
   const versionMs = Math.round(performance.now() - started);
-  const dataKey = `${userId}:${today}:${version}`;
+  const dataKey = returnsDataKey(userId, version, today);
   const key = `${requestKey}:${dataKey}`;
 
   const cached = runs.get(key) as Promise<T> | undefined;
-  observe?.({ hit: cached !== undefined, versionMs });
-  if (cached) return cached;
+  if (cached) {
+    observe?.({ hit: true, versionMs });
+    return cached;
+  }
 
-  const run = compute(dataKey);
+  const run = (async () => {
+    const stored = (await store.get(key)) as T | undefined;
+    observe?.({
+      hit: stored !== undefined,
+      ...(stored !== undefined && { shared: true }),
+      versionMs,
+    });
+    if (stored !== undefined) return stored;
+    const computed = await compute(dataKey);
+    void store.set(key, computed as never);
+    return computed;
+  })();
   runs.set(key, run);
   // A failed run must not be served to the next caller for the rest of the day.
   run.catch(() => runs.delete(key));
