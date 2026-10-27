@@ -425,7 +425,7 @@ jobs:
     # a11y walk began failing with `net::ERR_INSUFFICIENT_RESOURCES` in
     # Chromium. The same main commit (f27467877) was green on 24.04 on
     # 2026-10-11 and red on 26.04 on 2026-10-22. SC-1764 removes the pin.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     # SC-925. THE JOB BUDGET IS A BACKSTOP AND MUST NOT BE THE BINDING
     # CONSTRAINT, because it is the only budget here whose expiry is
     # ILLEGIBLE. `timeout-minutes` on a JOB kills it as `cancelled` — neither
