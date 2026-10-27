@@ -425,7 +425,7 @@ jobs:
     # a11y walk began failing with `net::ERR_INSUFFICIENT_RESOURCES` in
     # Chromium. The same main commit (f27467877) was green on 24.04 on
     # 2026-10-11 and red on 26.04 on 2026-10-22. SC-1764 removes the pin.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     # SC-925. THE JOB BUDGET IS A BACKSTOP AND MUST NOT BE THE BINDING
     # CONSTRAINT, because it is the only budget here whose expiry is
     # ILLEGIBLE. `timeout-minutes` on a JOB kills it as `cancelled` — neither
@@ -498,11 +498,16 @@ jobs:
       - uses: actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3 # v6.0.0
       - uses: ./.github/actions/setup-bun
 
+      - name: Name the runner image
+        run: |
+          echo "RUNNER_IMAGE=$(. /etc/os-release && echo "$ID$VERSION_ID")" >> "$GITHUB_ENV"
+          echo "nofile soft=$(ulimit -Sn) hard=$(ulimit -Hn) file-max=$(cat /proc/sys/fs/file-max)"
+
       - name: Cache Playwright browsers
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ hashFiles('apps/e2e/package.json') }}
+          key: playwright-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-${{ hashFiles('apps/e2e/package.json') }}
 
       # SC-1764. The browser cache above holds no system package, so every run
       # downloaded ~189 .deb files (119 MB) from the runner's Ubuntu mirror. On
@@ -516,8 +521,8 @@ jobs:
         uses: actions/cache/restore@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/apt-debs
-          key: apt-debs-${{ runner.os }}-${{ hashFiles('apps/e2e/package.json') }}
-          restore-keys: apt-debs-${{ runner.os }}-
+          key: apt-debs-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-${{ hashFiles('apps/e2e/package.json') }}
+          restore-keys: apt-debs-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-
 
       - name: Seed apt with the restored packages
         run: bun apps/e2e/scripts/apt-debs.ts seed
@@ -558,7 +563,7 @@ jobs:
         uses: actions/cache/save@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: ~/apt-debs
-          key: apt-debs-${{ runner.os }}-${{ hashFiles('apps/e2e/package.json') }}
+          key: apt-debs-${{ runner.os }}-${{ env.RUNNER_IMAGE }}-${{ hashFiles('apps/e2e/package.json') }}
 
       - name: Start stack
         run: cp .env.example .env && bun dev:stack
