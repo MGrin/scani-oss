@@ -5,6 +5,7 @@ import {
   type ReturnsAnswerStore,
   type ReturnsPrecomputeDeps,
   returnsDataKey,
+  returnsLatestKey,
   returnsRequestKey,
 } from '../../../src/services/returns/ReturnsAnswerCache';
 import type { ReturnsOutcome } from '../../../src/services/returns/ReturnsService';
@@ -54,8 +55,30 @@ describe('precomputeHomeReturns (SC-1745)', () => {
     // The API builds this key from a Home request with no scope given.
     const apiKey = (kind: 'all' | '1y' | 'ytd') =>
       `${returnsRequestKey({ userId: USER, scope: { kind: 'user' }, window: { kind } })}:${returnsDataKey(USER, 'v1', '2026-10-27')}`;
-    expect(store.keys()).toEqual([apiKey('1y'), apiKey('all'), apiKey('ytd')].sort());
+    const latest = (kind: 'all' | '1y' | 'ytd') =>
+      returnsLatestKey(
+        returnsRequestKey({ userId: USER, scope: { kind: 'user' }, window: { kind } })
+      );
+    expect(store.keys()).toEqual(
+      [
+        apiKey('1y'),
+        apiKey('all'),
+        apiKey('ytd'),
+        latest('1y'),
+        latest('all'),
+        latest('ytd'),
+      ].sort()
+    );
     expect(await store.get(apiKey('all'))).toBe(OK);
+  });
+
+  test('each window it computes becomes the answer Home is shown while the next is computed', async () => {
+    const { all, store } = deps();
+    await precomputeHomeReturns(USER, all);
+    for (const window of HOME_RETURNS_WINDOWS) {
+      const requestKey = returnsRequestKey({ userId: USER, scope: { kind: 'user' }, window });
+      expect(await store.get(returnsLatestKey(requestKey))).toBe(OK);
+    }
   });
 
   test('a second run over the same data computes nothing', async () => {

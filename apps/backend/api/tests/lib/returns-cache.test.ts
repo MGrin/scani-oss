@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, setSystemTime, test } from 'bun:test';
-import { _resetReturnsCache, sharedReturnsRun } from '../../src/lib/returns-cache';
+import {
+  _resetReturnsCache,
+  latestOrSharedReturnsRun,
+  sharedReturnsRun,
+} from '../../src/lib/returns-cache';
 
 // The returns run is shared across requests only while the data under it is
 // unchanged. Each case below is a way the cache could answer with a stale or
@@ -211,5 +215,93 @@ describe('sharedReturnsRun with the shared answer store (SC-1745)', () => {
     );
     expect(out).toBe('fresh');
     expect(c.runs()).toBe(1);
+  });
+});
+
+// SC-1745: a write moves the data version, and the next Home read paid the
+// whole compute, ~3 s on production, before the worker's precompute could land.
+// Home now gets the request's last answer at once, marked stale, while this
+// process computes the fresh one.
+describe('latestOrSharedReturnsRun (SC-1745)', () => {
+  function store(initial: Record<string, unknown> = {}) {
+    const map = new Map<string, unknown>(Object.entries(initial));
+    return {
+      get: async (key: string) => map.get(key) as never,
+      set: async (key: string, value: unknown) => {
+        map.set(key, value);
+      },
+      map,
+    };
+  }
+  const run = (
+    compute: (dataKey: string) => Promise<string>,
+    version: string,
+    s: ReturnType<typeof store>,
+    key = KEY
+  ) =>
+    latestOrSharedReturnsRun(key, USER, compute, {
+      readVersion: fixedVersion(version),
+      today: '2026-09-24',
+      store: s,
+    });
+
+  test('a miss with an earlier answer serves it at once, stale, and computes the fresh one', async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    let runs = 0;
+    const slow = async () => {
+      runs += 1;
+      await gate;
+      return 'fresh';
+    };
+    const s = store({ [`${KEY}:latest`]: 'earlier' });
+    expect(await run(slow, 'v2', s)).toEqual({ value: 'earlier', stale: true });
+    expect(runs).toBe(1);
+    release();
+    expect(await run(slow, 'v2', s)).toEqual({ value: 'fresh', stale: false });
+    expect(runs).toBe(1);
+  });
+
+  test('a computed answer becomes the request’s latest', async () => {
+    const c = counter('fresh');
+    const s = store();
+    await run(c.compute, 'v1', s);
+    await Bun.sleep(0);
+    expect(s.map.get(`${KEY}:latest`)).toBe('fresh');
+  });
+
+  test('with no earlier answer it waits for the compute', async () => {
+    const c = counter('fresh');
+    expect(await run(c.compute, 'v1', store())).toEqual({ value: 'fresh', stale: false });
+  });
+
+  test('an answer stored under the current version is served fresh, not stale', async () => {
+    const c = counter('fresh');
+    const s = store({ [`${KEY}:user-a:2026-09-24:v1`]: 'stored', [`${KEY}:latest`]: 'earlier' });
+    expect(await run(c.compute, 'v1', s)).toEqual({ value: 'stored', stale: false });
+    expect(c.runs()).toBe(0);
+  });
+
+  test('CONTROL: another request’s latest answer is never served', async () => {
+    const c = counter('fresh');
+    const s = store({ [`${KEY}:1y:latest`]: 'other window' });
+    expect(await run(c.compute, 'v1', s)).toEqual({ value: 'fresh', stale: false });
+  });
+
+  test('CONTROL: sharedReturnsRun, which the comparison builds on, never serves a latest answer', async () => {
+    const c = counter('fresh');
+    const s = store({ [`${KEY}:latest`]: 'earlier' });
+    const out = await sharedReturnsRun(
+      KEY,
+      USER,
+      c.compute,
+      fixedVersion('v1'),
+      '2026-09-24',
+      undefined,
+      s
+    );
+    expect(out).toBe('fresh');
   });
 });

@@ -20,6 +20,7 @@ import {
   returnsView,
 } from '../../lib/returns';
 import { type ComparisonView, comparisonView } from '../../lib/returns-comparison';
+import { whileStale } from '../../lib/returns-stale';
 import { VIEW_PREFERENCE_KEYS } from '../../lib/view-preference';
 import { AttributionBar } from './AttributionBar';
 import { HomeCard, type HomeCardVariant, RowsSkeleton } from './HomeCard';
@@ -72,11 +73,11 @@ export function ReturnsBlock({
   const canCompare = !isTile && heroWindow === null && ownProbe.data?.hasReturns === true;
   const allStart = trpc.portfolio.getReturns.useQuery(
     { window: { kind: 'all' }, scope },
-    { enabled: canCompare }
+    { enabled: canCompare, refetchInterval: (data, q) => whileStale(data, q) }
   );
   const yearStart = trpc.portfolio.getReturns.useQuery(
     { window: { kind: '1y' }, scope },
-    { enabled: canCompare }
+    { enabled: canCompare, refetchInterval: (data, q) => whileStale(data, q) }
   );
   const windows = offeredReturnsWindows(
     allStart.data?.returns?.effectiveWindow?.from,
@@ -94,7 +95,7 @@ export function ReturnsBlock({
   const hasHistory = historyQuery.data?.hasReturns === true;
   const query = trpc.portfolio.getReturns.useQuery(
     { window: request, scope },
-    { enabled: hasHistory }
+    { enabled: hasHistory, refetchInterval: (data, q) => whileStale(data, q) }
   );
   const view = returnsView(
     query.data?.returns,

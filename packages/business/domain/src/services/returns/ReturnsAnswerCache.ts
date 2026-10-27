@@ -32,6 +32,15 @@ export function returnsRequestKey(request: {
   return `returns:${request.userId}:${JSON.stringify(request.scope)}:${windowKey(request.window)}`;
 }
 
+/**
+ * Where a request's last good answer is kept, whatever data it was computed
+ * on: what Home is shown at once, marked stale, while the answer for the
+ * current data is computed (SC-1745).
+ */
+export function returnsLatestKey(requestKey: string): string {
+  return `${requestKey}:latest`;
+}
+
 function windowKey(window: ReturnWindowRequest): string {
   if (window.kind !== 'custom') return JSON.stringify(window);
   return `custom:${window.from.toISOString().slice(0, 10)}:${window.to.toISOString().slice(0, 10)}`;
@@ -166,13 +175,17 @@ export async function precomputeHomeReturns(
   let computed = 0;
   let alreadyStored = 0;
   for (const window of HOME_RETURNS_WINDOWS) {
-    const key = `${returnsRequestKey({ userId, scope: USER_SCOPE, window })}:${dataKey}`;
+    const requestKey = returnsRequestKey({ userId, scope: USER_SCOPE, window });
+    const key = `${requestKey}:${dataKey}`;
     if (await deps.store.get(key)) {
       alreadyStored += 1;
       continue;
     }
     const outcome = await deps.compute({ userId, scope: USER_SCOPE, window }, shared);
-    if (outcome.status === 'ok') await deps.store.set(key, outcome);
+    if (outcome.status === 'ok') {
+      await deps.store.set(key, outcome);
+      await deps.store.set(returnsLatestKey(requestKey), outcome);
+    }
     computed += 1;
   }
   return { computed, alreadyStored };

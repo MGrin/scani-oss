@@ -231,10 +231,16 @@ export const MCP_TOOLS: readonly McpTool[] = [
     input: z.object({ window: z.enum(['ytd', '1y', 'all']) }).strict(),
     run: async (caller, input) => {
       const window = { kind: input.window as 'ytd' | '1y' | 'all' };
-      const [returns, gains] = await Promise.all([
+      const [first, gains] = await Promise.all([
         caller.portfolio.getReturns({ window }),
         caller.portfolio.getGainsByWrapper({ window }),
       ]);
+      // An agent cannot re-ask, so it never gets the last answer Home is shown
+      // while the current one computes (SC-1745). The second call joins that
+      // compute in this process.
+      const { stale: _stale, ...returns } = first.stale
+        ? await caller.portfolio.getReturns({ window })
+        : first;
       return { ...returns, gains_by_treatment: gains };
     },
   },
