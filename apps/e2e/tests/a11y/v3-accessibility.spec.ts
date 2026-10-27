@@ -92,7 +92,10 @@ async function seed(target: Page): Promise<void> {
   }
 }
 
-async function visit(route: string, shellTimeoutMs = SHELL_TIMEOUT_MS): Promise<void> {
+async function visit(
+  route: string,
+  { shellTimeoutMs = SHELL_TIMEOUT_MS, inApp = true } = {}
+): Promise<void> {
   // SC-790. WebKit fails here as "interrupted by another navigation to /", as
   // an internal error, and as a shell that never appears, and a retry hides
   // most of them. Recording every main-frame navigation makes the next red
@@ -113,7 +116,20 @@ async function visit(route: string, shellTimeoutMs = SHELL_TIMEOUT_MS): Promise<
   page.on('framenavigated', onNavigated);
   page.on('request', onRequest);
   try {
-    await page.goto(route);
+    if (inApp) {
+      // SC-1764. A full load re-requests the whole dev-server module graph,
+      // ~800 files, so the walk issued 13,500 requests from one page and
+      // Chromium on ubuntu-26.04 refused a burst of them with
+      // `net::ERR_INSUFFICIENT_RESOURCES`. The router re-renders on popstate,
+      // so the screens are the same and the modules are already loaded.
+      await page.evaluate((to) => {
+        window.history.pushState(null, '', to);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, route);
+      await page.waitForURL((url) => `${url.pathname}${url.search}` === route);
+    } else {
+      await page.goto(route);
+    }
     await page.waitForSelector('[data-ui="v3"]', { timeout: shellTimeoutMs });
   } catch (err) {
     throw new Error(
@@ -161,7 +177,7 @@ test.beforeAll(async ({ browser }, testInfo) => {
   // Pay the Vite compile once, here, where the budget is explicit — rather
   // than inside the walk, where it lands on whichever route happens to be
   // first and reads as that route failing to render.
-  await visit('/', WARMUP_TIMEOUT_MS);
+  await visit('/', { shellTimeoutMs: WARMUP_TIMEOUT_MS, inApp: false });
 });
 
 test.afterAll(async () => {
