@@ -245,4 +245,21 @@ describe('RollupPortfolioValueDailyUseCase — rows before the earliest record (
     expect(await oldestStoredDay(f)).toBe(afterFirst);
     expect(afterFirst).toBe(new Date(runStart.getTime() - 6 * DAY).toISOString().slice(0, 10));
   });
+
+  test("a new user's window bounded to their history still clears what lies before it (SC-1765)", async () => {
+    // The worker bounds a rebuild with no floor: a day-old record gives three
+    // days, one chunk, and the delete above still fires.
+    const runStart = new Date();
+    const f = await setupFixture(new Date(runStart.getTime() - DAY));
+    const lookbackDays = await Container.get(PortfolioValueDailyRepository).findHistoryLookbackDays(
+      f.userId,
+      1
+    );
+    expect(lookbackDays).toBe(3);
+    await rollup().execute({ userId: f.userId, lookbackDays, runStart });
+    expect(await staleLeft(f)).toEqual(['user/other']);
+    expect(await oldestStoredDay(f)).toBe(
+      new Date(runStart.getTime() - 2 * DAY).toISOString().slice(0, 10)
+    );
+  });
 });
