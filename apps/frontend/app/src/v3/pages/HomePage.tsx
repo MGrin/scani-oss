@@ -334,7 +334,11 @@ export function HomePage() {
                     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                       <AllocationBlock variant="tile" />
                       <UpcomingBlock currency={currency} variant="tile" />
-                      <ReturnsBlock variant="tile" />
+                      {/* A tile the overview says is empty is never drawn. Left
+                      to its own query, one still loading at the cap drew its
+                      skeleton, answered empty and left, and every tile after
+                      it moved up (SC-1773). */}
+                      {data.presence.returns ? <ReturnsBlock variant="tile" /> : null}
                       <TopHoldingsBlock
                         holdings={data.topHoldings}
                         total={total}
@@ -342,14 +346,16 @@ export function HomePage() {
                         query={overview}
                         variant="tile"
                       />
-                      <IncomeBlock variant="tile" />
-                      <DebtBlock variant="tile" />
-                      <GroupsBlock variant="tile" />
-                      <VaultsBlock variant="tile" />
-                      {/* Last: it alone learns from its slow query whether it has
-                      anything to show, so when it turns out empty after the
-                      reveal, no tile after it reflows (SC-1742). */}
-                      <WrapperGainsBlock variant="tile" />
+                      {data.presence.income ? <IncomeBlock variant="tile" /> : null}
+                      {Number(data.assetAllocation.totalDebt) < 0 ? (
+                        <DebtBlock variant="tile" />
+                      ) : null}
+                      {data.presence.groups ? <GroupsBlock variant="tile" /> : null}
+                      {data.presence.vaults ? <VaultsBlock variant="tile" /> : null}
+                      {/* Last: its slow query can still find nothing to show
+                      for a wrapped account, and then no tile after it
+                      reflows (SC-1742). */}
+                      {data.presence.wrapped ? <WrapperGainsBlock variant="tile" /> : null}
                     </div>
                   </RevealTogether>
                 </DashboardItem>

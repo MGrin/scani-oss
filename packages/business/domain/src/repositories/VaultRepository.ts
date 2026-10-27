@@ -142,6 +142,16 @@ export class VaultRepository extends BaseRepository<Vault, NewVault> {
     }
   }
 
+  /** Whether `findByUserWithHoldingsCounts` would return any row. */
+  async hasActiveForUser(userId: string, transaction?: DatabaseTransaction): Promise<boolean> {
+    const [row] = await this.getDb(transaction)
+      .select({ id: schema.vaults.id })
+      .from(schema.vaults)
+      .where(and(eq(schema.vaults.userId, userId), eq(schema.vaults.isActive, true)))
+      .limit(1);
+    return Boolean(row);
+  }
+
   async findByUserWithHoldingsCounts(
     userId: string,
     transaction?: DatabaseTransaction

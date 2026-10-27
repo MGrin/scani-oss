@@ -1,7 +1,7 @@
 import { BaseRepository, type DatabaseTransaction } from '@scani/db';
 import type { Account, NewAccount } from '@scani/db/schema';
 import * as schema from '@scani/db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, sql } from 'drizzle-orm';
 import { Service } from 'typedi';
 
 /**
@@ -96,6 +96,26 @@ export class AccountRepository extends BaseRepository<Account, NewAccount> {
         )
       );
     return row?.count ?? 0;
+  }
+
+  /** `GainsByWrapperService`'s `anyWrapped`, without computing the gains. */
+  async hasWrappedAssetAccount(
+    userId: string,
+    transaction?: DatabaseTransaction
+  ): Promise<boolean> {
+    const [row] = await this.getDb(transaction)
+      .select({ id: schema.accounts.id })
+      .from(schema.accounts)
+      .innerJoin(schema.accountTypes, eq(schema.accountTypes.id, schema.accounts.typeId))
+      .where(
+        and(
+          eq(schema.accounts.userId, userId),
+          eq(schema.accountTypes.class, 'asset'),
+          isNotNull(schema.accounts.wrapper)
+        )
+      )
+      .limit(1);
+    return Boolean(row);
   }
 
   async findByUser(userId: string, transaction?: DatabaseTransaction): Promise<AccountWithType[]> {

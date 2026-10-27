@@ -31,6 +31,7 @@ import {
 import { alias, type PgColumn } from 'drizzle-orm/pg-core';
 import { Container, Service } from 'typedi';
 import type { LedgerKind } from '../engine/types';
+import { includedInTotalSql } from '../lib/holding-inclusion';
 import { ledgerOrderBy } from '../lib/ledger-order';
 import { PERSON_AUTHORED_SOURCES } from '../lib/person-authored-sources';
 import { isSettlementLeg } from '../lib/transactions/trade-settlement';
@@ -2033,6 +2034,28 @@ export class HoldingTransactionRepository extends BaseRepository<
         earliest === null || row.occurredAt < earliest ? row.occurredAt : earliest,
       null
     );
+  }
+
+  /**
+   * Whether the user has any income row on a holding counted in the total, in
+   * any window. `false` means `IncomeService` has nothing to show in every
+   * window; `true` does not promise a row in a particular one.
+   */
+  async hasIncomeForUser(userId: string, transaction?: DatabaseTransaction): Promise<boolean> {
+    const [row] = await this.getDb(transaction)
+      .select({ id: schema.holdingTransactions.id })
+      .from(schema.holdingTransactions)
+      .innerJoin(schema.holdings, eq(schema.holdings.id, schema.holdingTransactions.holdingId))
+      .innerJoin(schema.tokens, eq(schema.tokens.id, schema.holdings.tokenId))
+      .where(
+        and(
+          eq(schema.holdingTransactions.userId, userId),
+          eq(schema.holdingTransactions.ledgerKind, 'income'),
+          includedInTotalSql()
+        )
+      )
+      .limit(1);
+    return Boolean(row);
   }
 
   // Whether an earlier version's synthesized opening row still stands. The
