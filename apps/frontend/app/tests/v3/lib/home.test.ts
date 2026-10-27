@@ -21,6 +21,7 @@ import {
   HOME_METRICS,
   HOME_PERIOD_KEYS,
   HOME_PERIODS,
+  heroCoverageSlot,
   heroDeltaState,
   homePeriodByKey,
   homePeriodRange,
@@ -1560,5 +1561,59 @@ describe('topHoldingsCaption', () => {
       '10000'
     );
     expect(topHoldingsCaption(rows)).toBe('A · B · C · D');
+  });
+});
+
+/**
+ * SC-1775: the hero painted its figure, then gained "All N holdings priced" a
+ * second later and pushed every card below it down. The line comes off the
+ * series' latest measured day, and a new holding's history is built by a
+ * background job, so a funded portfolio's first series can answer with no
+ * measured day. The slot is kept while that answer is coming.
+ */
+describe('heroCoverageSlot (SC-1775)', () => {
+  const quality = {
+    priced: 1,
+    priceable: 1,
+    percent: 100,
+    complete: true,
+    unpriceable: 0,
+    stalePriced: 0,
+    basisUnknown: 0,
+    transfersUnreviewed: 0,
+  };
+  const base = {
+    quality: null,
+    loading: false,
+    failed: false,
+    isReturns: false,
+    hasMeasuredDay: false,
+    total: '1000',
+  };
+
+  test('a funded portfolio whose series has no measured day yet keeps the slot', () => {
+    expect(heroCoverageSlot(base)).toBe('reserved');
+  });
+
+  test('the slot is kept while the series is still loading', () => {
+    expect(heroCoverageSlot({ ...base, loading: true })).toBe('reserved');
+  });
+
+  test('the note takes the slot once the series has a measured day', () => {
+    expect(heroCoverageSlot({ ...base, quality, hasMeasuredDay: true })).toBe('note');
+  });
+
+  test('control: a measured day with nothing priceable shows nothing, as before', () => {
+    expect(heroCoverageSlot({ ...base, hasMeasuredDay: true })).toBe('none');
+  });
+
+  test('control: a portfolio worth nothing reserves nothing', () => {
+    expect(heroCoverageSlot({ ...base, total: '0' })).toBe('none');
+    expect(heroCoverageSlot({ ...base, total: undefined, loading: true })).toBe('none');
+  });
+
+  test('control: a failed series and the returns tab show nothing', () => {
+    expect(heroCoverageSlot({ ...base, failed: true })).toBe('none');
+    expect(heroCoverageSlot({ ...base, isReturns: true, quality })).toBe('none');
   });
 });

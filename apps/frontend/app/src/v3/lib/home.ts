@@ -792,6 +792,30 @@ export function heroFigureQuality(input: {
   });
 }
 
+/**
+ * What the line under the hero figure holds (SC-1775). The figure comes from
+ * `dashboard.getOverview`, which is live, and the coverage note from the
+ * series, which waits on the rollup. A funded portfolio whose rollup has not
+ * run yet, a new account or a starved worker, paints its figure with no
+ * measured day behind it. The note then arrives with the rollup and pushes
+ * every card below the hero down a line. So while a non-zero figure has no
+ * measured day yet, the line is kept for it.
+ */
+export function heroCoverageSlot(input: {
+  quality: FigureQuality | null;
+  loading: boolean;
+  failed: boolean;
+  isReturns: boolean;
+  hasMeasuredDay: boolean;
+  total: string | undefined;
+}): 'note' | 'reserved' | 'none' {
+  if (input.failed || input.isReturns) return 'none';
+  const total = toFiniteNumber(input.total);
+  if (total === null || total === 0) return 'none';
+  if (input.loading || !input.hasMeasuredDay) return 'reserved';
+  return input.quality ? 'note' : 'none';
+}
+
 export function latestPnl(points: readonly PnLChartPoint[]): PnLChartPoint | null {
   for (let index = points.length - 1; index >= 0; index -= 1) {
     const point = points[index];

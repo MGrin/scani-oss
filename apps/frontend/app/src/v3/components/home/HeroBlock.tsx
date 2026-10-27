@@ -17,10 +17,13 @@ import {
   HOME_METRIC_TITLE_KEYS,
   HOME_PERIODS,
   type HomeMetric,
+  heroCoverageSlot,
   heroDeltaState,
   heroFigureQuality,
   lastMeasuredBeforeToday,
+  latestMeasured,
   latestPnl,
+  latestPnlSource,
   netWorthChartPoints,
   rebasePnlSeries,
   resolvePeriodDelta,
@@ -223,6 +226,15 @@ export function HeroBlock({ total, currency, chart, variant = 'full' }: HeroBloc
   // genuinely nothing on screen. A refetch that fails behind a chart already
   // drawn leaves the chart standing, the same rule `V3DataView` follows.
   const failed = active.isError && active.data === undefined;
+  const coverageSlot = heroCoverageSlot({
+    quality,
+    loading,
+    failed,
+    isReturns,
+    hasMeasuredDay:
+      (isPnl ? latestPnlSource(pnlSeries.data?.series ?? []) : latestMeasured(points)) !== null,
+    total,
+  });
   // Both tiles read the *active* query's flags, and only one tile is mounted at
   // a time — the metric control unmounts the other.
   const deltaState = heroDeltaState({
@@ -371,7 +383,15 @@ export function HeroBlock({ total, currency, chart, variant = 'full' }: HeroBloc
           the same rule the delta line follows, and for the same reason: a
           coverage claim under a stale figure describes a day nobody asked
           about. */}
-      {quality && !loading && !failed && !isReturns ? <CoverageNote quality={quality} /> : null}
+      {coverageSlot === 'note' && quality ? (
+        <CoverageNote quality={quality} />
+      ) : coverageSlot === 'reserved' ? (
+        // One caption line, the height the note's headline takes, so the
+        // note arriving with the rollup does not push the cards below (SC-1775).
+        <div aria-hidden="true" className="text-caption">
+          {'\u00A0'}
+        </div>
+      ) : null}
 
       {/* The export sits beside the metric control rather than in the block's
           header: it acts on the *chart's* data, and putting it next to the two
