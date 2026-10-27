@@ -141,6 +141,16 @@ export class GroupRepository extends BaseRepository<Group, NewGroup> {
     }
   }
 
+  /** Whether `findByUserWithCounts` would return any row. */
+  async hasActiveForUser(userId: string, transaction?: DatabaseTransaction): Promise<boolean> {
+    const [row] = await this.getDb(transaction)
+      .select({ id: schema.groups.id })
+      .from(schema.groups)
+      .where(and(eq(schema.groups.userId, userId), eq(schema.groups.isActive, true)))
+      .limit(1);
+    return Boolean(row);
+  }
+
   async findByUserWithCounts(
     userId: string,
     transaction?: DatabaseTransaction

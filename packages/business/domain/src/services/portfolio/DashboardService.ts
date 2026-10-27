@@ -3,7 +3,11 @@ import Decimal from 'decimal.js';
 import { Container, Service } from 'typedi';
 import { extractPriceMap } from '../../lib/price-map';
 import { getOrComputeFromCache } from '../../lib/request-cache';
+import { AccountRepository } from '../../repositories/AccountRepository';
+import { GroupRepository } from '../../repositories/GroupRepository';
 import { HoldingRepository } from '../../repositories/HoldingRepository';
+import { HoldingTransactionRepository } from '../../repositories/HoldingTransactionRepository';
+import { VaultRepository } from '../../repositories/VaultRepository';
 import { BaseService } from '../BaseService';
 import { AssetAllocationService } from './AssetAllocationService';
 import {
@@ -40,6 +44,23 @@ export interface DashboardOverview {
     institutions: number;
     accounts: number;
     holdings: number;
+  };
+  /**
+   * Whether each Home tile that can be absent has anything to show (SC-1773),
+   * so Home leaves an empty tile out from its first frame rather than drawing
+   * its skeleton and removing it when the tile's own query answers. Each is a
+   * `LIMIT 1` probe, never the tile's computation. Debt needs none: it is
+   * `assetAllocation.totalDebt` below.
+   */
+  presence: {
+    groups: boolean;
+    vaults: boolean;
+    /** Any asset account in a tax wrapper: the gains-by-wrapper tile. */
+    wrapped: boolean;
+    /** Any income row at all; `true` does not promise one in the tile's window. */
+    income: boolean;
+    /** Returns has nothing to measure without a base currency. */
+    returns: boolean;
   };
   topHoldings: Array<{
     id: string;
@@ -80,6 +101,10 @@ export class DashboardService extends BaseService {
   private readonly portfolioService = Container.get(PortfolioValuationService);
   private readonly holdingRepository = Container.get(HoldingRepository);
   private readonly assetAllocationUseCase = Container.get(AssetAllocationService);
+  private readonly groupRepository = Container.get(GroupRepository);
+  private readonly vaultRepository = Container.get(VaultRepository);
+  private readonly accountRepository = Container.get(AccountRepository);
+  private readonly holdingTransactionRepository = Container.get(HoldingTransactionRepository);
 
   constructor() {
     super('DashboardService');
@@ -105,7 +130,7 @@ export class DashboardService extends BaseService {
     const holdingsCacheKey = `holdings:${userId}:complete`;
 
     // Parallel fetch: portfolio value and holdings with complete details (with caching)
-    const [portfolioValue, holdingsWithDetails] = await Promise.all([
+    const [portfolioValue, holdingsWithDetails, presence] = await Promise.all([
       this.portfolioService.getUserPortfolioValue(
         userId,
         userBaseCurrencyId,
@@ -115,6 +140,7 @@ export class DashboardService extends BaseService {
       getOrComputeFromCache(requestCache, holdingsCacheKey, () =>
         this.holdingRepository.findByUserWithFullDetails(userId)
       ),
+      this.getTilePresence(userId, userBaseCurrencyId),
     ]);
 
     // Filter active holdings for counts (exclude inactive holdings)
@@ -159,9 +185,24 @@ export class DashboardService extends BaseService {
         baseCurrency: portfolioValue.baseCurrency,
       },
       counts,
+      presence,
       topHoldings,
       assetAllocation,
     };
+  }
+
+  private async getTilePresence(
+    userId: string,
+    userBaseCurrencyId: string | undefined
+  ): Promise<DashboardOverview['presence']> {
+    const [groups, vaults, wrapped, income] = await Promise.all([
+      this.groupRepository.hasActiveForUser(userId),
+      this.vaultRepository.hasActiveForUser(userId),
+      this.accountRepository.hasWrappedAssetAccount(userId),
+      this.holdingTransactionRepository.hasIncomeForUser(userId),
+    ]);
+    const returns = Boolean(userBaseCurrencyId);
+    return { groups, vaults, wrapped, income: returns && income, returns };
   }
 
   /**

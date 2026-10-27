@@ -99,7 +99,8 @@ export const MCP_TOOLS: readonly McpTool[] = [
     inputSchema: NO_INPUT,
     input: z.object({}).strict(),
     run: async (caller) => {
-      const overview = await caller.dashboard.getOverview();
+      // `presence` only tells Home which tiles to draw.
+      const { presence: _presence, ...overview } = await caller.dashboard.getOverview();
       return {
         ...overview,
         // Its `id` is a list key for the dashboard, not a holding id.
