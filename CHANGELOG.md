@@ -19,6 +19,22 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.55.4](https://github.com/MGrin/scani-oss/compare/v0.55.3...v0.55.4) (2026-10-27)
+
+
+### Bug Fixes
+
+* **app:** a transient API failure no longer strands the app on an error screen ([d4a6ef9](https://github.com/MGrin/scani-oss/commit/d4a6ef920cf66a787d6ee3c96c7dbe6f60a6e2d2))
+* **coingecko:** after a 429 nothing goes out until its penalty has passed ([ea55ee9](https://github.com/MGrin/scani-oss/commit/ea55ee9a658adcf94e3cc6eb58270a4ddc1584c3))
+* **e2e:** give the a11y walk's history entries a fresh router key (SC-1764) ([84d8a2f](https://github.com/MGrin/scani-oss/commit/84d8a2ffc7723a8715a1f012f22acdf3d9d84aca))
+* **e2e:** run the E2E job on ubuntu-26.04 again (SC-1764) ([27b4610](https://github.com/MGrin/scani-oss/commit/27b4610e9ffd629f818a5eadd9cd74a937c20d77))
+* **worker:** a history rebuild reaches no further back than the user's records ([6002355](https://github.com/MGrin/scani-oss/commit/60023558ece99ae965e884e2aea11b82975cb12f))
+
+
+### Performance Improvements
+
+* **returns:** the worker precomputes Home's returns into a cache both API machines share ([9936b71](https://github.com/MGrin/scani-oss/commit/9936b717ff74737146f2a78f26eecc9060062a48))
+
 ## [0.55.3](https://github.com/MGrin/scani-oss/compare/v0.55.2...v0.55.3) (2026-10-23)
 
 
