@@ -213,8 +213,19 @@ export { PricingService } from './pricing/PricingService';
 export { FX_BASELINE } from './pricing/price-hubs';
 // review/
 export { ReviewFeedService } from './ReviewFeedService';
-// returns/
 export { BenchmarkReturnService } from './returns/BenchmarkReturnService';
+// returns/
+export {
+  HOME_RETURNS_WINDOWS,
+  precomputeHomeReturns,
+  RedisReturnsAnswerStore,
+  type ReturnsAnswerStore,
+  type ReturnsPrecomputeOutcome,
+  readReturnsDataVersion,
+  returnsDataKey,
+  returnsDataVersionSql,
+  returnsRequestKey,
+} from './returns/ReturnsAnswerCache';
 export {
   type LastComplete,
   lastCompleteWindowKey,

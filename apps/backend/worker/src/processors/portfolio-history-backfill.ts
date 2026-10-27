@@ -1,3 +1,4 @@
+import { PortfolioValueDailyRepository } from '@scani/domain/repositories';
 import {
   OpeningBalanceReconciliationService,
   PriceHubResolver,
@@ -176,6 +177,30 @@ export function priceBackfillOptions(
 }
 
 const logger = createComponentLogger('processor:portfolio-history-backfill');
+
+/**
+ * The window no further back than the user's own records, plus the two days
+ * the stale-row delete needs to fire (SC-1627). A new user's rebuild walked the
+ * 400-day floor, 14 chunks of days before their first record, and four of them
+ * filled every worker slot while the user's own holdings waited (SC-1765).
+ * Read after the phases that can move a record earlier.
+ */
+export async function boundToHistory<T extends { userId: string; lookbackDays: number }>(
+  data: T,
+  historyDays: (userId: string) => Promise<number> = (userId) =>
+    Container.get(PortfolioValueDailyRepository).findHistoryLookbackDays(userId, 1)
+): Promise<T> {
+  try {
+    const days = await historyDays(data.userId);
+    return days < data.lookbackDays ? { ...data, lookbackDays: days } : data;
+  } catch (error) {
+    logger.warn(
+      { userId: data.userId, error: error instanceof Error ? error.message : String(error) },
+      "Could not read the user's history span; keeping the requested window"
+    );
+    return data;
+  }
+}
 
 function lockHeldRetryQueue(): LockHeldRetryQueue {
   return backfillQueueOf(Container.get(BullMqEnqueueService), Container.get(QueueClient).get());
@@ -510,8 +535,9 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     }
     await ctx.reportProgress(0.2);
 
+    const bounded = await boundToHistory(data);
     const priceSummary = await Container.get(BackfillHistoricalPricesUseCase).execute(
-      priceBackfillOptions(data, usdTokenId)
+      priceBackfillOptions(bounded, usdTokenId)
     );
     await ctx.reportProgress(0.55);
 
@@ -519,7 +545,7 @@ export class PortfolioHistoryBackfillProcessor extends UserJobProcessor<
     // removed opening, a new transfer link, a price written further back. The
     // rebuild reaches the earliest of them (SC-1607). Saved with the progress,
     // because a re-run of the phases would find them already done.
-    const { fromDay: _requested, ...rest } = data;
+    const { fromDay: _requested, ...rest } = bounded;
     const widened = withFromDay(
       rest,
       earliestFromDay(

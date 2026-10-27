@@ -21,6 +21,7 @@ import '@scani/domain/services';
 import '@scani/jobs';
 import { awaitSchemaReady, db } from '@scani/db';
 import { ensureDemoDatasetSeeded, isDemoModeRequested } from '@scani/domain/demo';
+import { precomputeHomeReturns } from '@scani/domain/services';
 import { DEMO_RESET_SCHEDULE, SCHEDULED_JOB_DESCRIPTORS } from '@scani/jobs';
 import { createComponentLogger } from '@scani/logging';
 import { flushSentry, initSentry, captureException as sentryCapture } from '@scani/logging/sentry';
@@ -62,6 +63,7 @@ import {
   assertQueueBindings,
   FAILURE_EXPLAINER,
   JobScheduler,
+  LIFECYCLE_MIRROR,
   PostgresResourceLock,
   QueueClient,
   RedisLifecyclePublisher,
@@ -118,6 +120,7 @@ import { Container } from 'typedi';
 // pulls them out and registers them.
 import { ProviderFailureExplainer } from './lib/failure-explainer';
 import { isPostgresTransientError, PostgresTransientReport } from './lib/postgres-transient-error';
+import { PrecomputingLifecycleMirror, ReturnsPrecomputeScheduler } from './lib/returns-precompute';
 import { startOutboxDispatchLoop } from './outbox/outbox-dispatch-loop';
 import { ActivationNudgeProcessor } from './processors/activation-nudge';
 import { ActivePricingProcessor } from './processors/active-pricing';
@@ -422,6 +425,15 @@ async function main(): Promise<void> {
     'heartbeat-writer',
     'failure-explainer',
   ]);
+  // SC-1745: a completed user job precomputes its owner's Home returns into
+  // the cache the api reads first, once that user's writes settle.
+  Container.set(
+    LIFECYCLE_MIRROR,
+    new PrecomputingLifecycleMirror(
+      Container.get(LIFECYCLE_MIRROR),
+      new ReturnsPrecomputeScheduler((userId) => precomputeHomeReturns(userId))
+    )
+  );
 
   // Consumer side: WorkerClient owns the BullMQ Worker + dispatch table
   // + DLQ push on terminal failure.

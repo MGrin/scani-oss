@@ -154,3 +154,62 @@ describe('sharedReturnsRun observation (SC-1745)', () => {
     for (const o of seen) expect(o.versionMs).toBeGreaterThanOrEqual(15);
   });
 });
+
+// SC-1745: each API process kept its own cache, and the worker precomputes
+// Home's answers into one both machines read. A process that has not run a
+// window yet serves the stored answer instead of computing it.
+describe('sharedReturnsRun with the shared answer store (SC-1745)', () => {
+  function store(initial: Record<string, unknown> = {}) {
+    const map = new Map<string, unknown>(Object.entries(initial));
+    return {
+      get: async (key: string) => map.get(key) as never,
+      set: async (key: string, value: unknown) => {
+        map.set(key, value);
+      },
+      map,
+    };
+  }
+  const FULL = `${KEY}:user-a:2026-09-24:v1`;
+
+  test('an answer the worker stored is served without computing', async () => {
+    const c = counter('fresh');
+    const seen: Array<{ hit: boolean; shared?: boolean }> = [];
+    const s = store({ [FULL]: 'stored' });
+    const out = await sharedReturnsRun(
+      KEY,
+      USER,
+      c.compute,
+      fixedVersion('v1'),
+      '2026-09-24',
+      (o) => seen.push(o),
+      s
+    );
+    expect(out).toBe('stored' as never);
+    expect(c.runs()).toBe(0);
+    expect(seen).toEqual([{ hit: true, shared: true, versionMs: expect.any(Number) } as never]);
+  });
+
+  test('a computed answer is stored for the other machine', async () => {
+    const c = counter('fresh');
+    const s = store();
+    await sharedReturnsRun(KEY, USER, c.compute, fixedVersion('v1'), '2026-09-24', undefined, s);
+    await Bun.sleep(0);
+    expect(s.map.get(FULL)).toBe('fresh');
+  });
+
+  test('CONTROL: an answer stored under an older version is not served', async () => {
+    const c = counter('fresh');
+    const s = store({ [`${KEY}:user-a:2026-09-24:v0`]: 'stale' });
+    const out = await sharedReturnsRun(
+      KEY,
+      USER,
+      c.compute,
+      fixedVersion('v1'),
+      '2026-09-24',
+      undefined,
+      s
+    );
+    expect(out).toBe('fresh');
+    expect(c.runs()).toBe(1);
+  });
+});

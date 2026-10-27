@@ -48,3 +48,46 @@ describe('the app query defaults on window focus (SC-1599)', () => {
     expect(await harness({ staleTime: 0, refetchOnWindowFocus: false })).toBe(0);
   });
 });
+
+/**
+ * A short outage outlived the three retries and left Home on "Couldn't load
+ * your portfolio" after the server was back, until a tap or a focus change
+ * (SC-1772). This is the decision; `query-defaults-refetch.dom.tsx` shows
+ * React Query acting on it, which needs a `window`.
+ */
+describe('the app query defaults after a transient failure (SC-1772)', () => {
+  const failure = (httpStatus: number | null): Error =>
+    httpStatus === null
+      ? new Error('Unexpected token \'<\', "<html>Bad"... is not valid JSON')
+      : Object.assign(new Error(`HTTP ${httpStatus}`), { data: { httpStatus } });
+
+  const decide = (error: Error): number | false => {
+    const interval = QUERY_DEFAULTS.refetchInterval;
+    if (typeof interval !== 'function') return interval ?? false;
+    const query = { state: { status: 'error', error } } as unknown as Parameters<
+      typeof interval
+    >[1];
+    return interval(undefined, query);
+  };
+
+  test('it waits 15 s between asks, and asks after a 503, 504, 408 or 429 too', () => {
+    for (const status of [500, 503, 504, 408, 429]) expect(decide(failure(status))).toBe(15_000);
+  });
+
+  test("it asks again after no answer at all, or a proxy's HTML page", () => {
+    expect(decide(failure(null))).toBe(15_000);
+  });
+
+  test('control: a 4xx is an answer, so it is not asked again', () => {
+    for (const status of [400, 401, 403, 404, 409, 422])
+      expect(decide(failure(status))).toBe(false);
+  });
+
+  test('control: a query that succeeded does not poll', () => {
+    const interval = QUERY_DEFAULTS.refetchInterval;
+    const query = { state: { status: 'success', error: null } } as unknown as Parameters<
+      Extract<typeof interval, (...args: never[]) => unknown>
+    >[1];
+    expect(typeof interval === 'function' ? interval({ total: 1 }, query) : interval).toBeFalsy();
+  });
+});

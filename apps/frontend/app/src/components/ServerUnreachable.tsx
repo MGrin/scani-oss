@@ -8,6 +8,8 @@ import { Link } from 'react-router-dom';
 import { useOnlineStatus } from '@/hooks/useOnlineStatus';
 import { serverUnreachableCopy } from '@/lib/offline-shell';
 
+const RETRY_EVERY_MS = 10_000;
+
 /**
  * What the app shows when it cannot ask whether you are signed in (SC-78 §2).
  *
@@ -42,17 +44,35 @@ export function ServerUnreachable({ email, onRetry }: ServerUnreachableProps) {
   const online = useOnlineStatus();
   const copy = serverUnreachableCopy({ email, online, t });
 
+  // A server outage never changes `navigator.onLine`, so asking only on mount
+  // and on reconnect left this screen up after the server was back (SC-1772).
+  // It also asks on a timer, and at once when the app returns to the
+  // foreground; never while hidden, and never on top of an ask in flight.
   useEffect(() => {
     if (!online) return;
     // The provider retries on `online` too; this covers the case where the
     // network was already back before this screen mounted.
     let cancelled = false;
-    setRetrying(true);
-    void onRetry().finally(() => {
-      if (!cancelled) setRetrying(false);
-    });
+    let inFlight = false;
+    const ask = () => {
+      if (inFlight) return;
+      inFlight = true;
+      setRetrying(true);
+      void onRetry().finally(() => {
+        inFlight = false;
+        if (!cancelled) setRetrying(false);
+      });
+    };
+    const askIfVisible = () => {
+      if (document.visibilityState !== 'hidden') ask();
+    };
+    ask();
+    const timer = setInterval(askIfVisible, RETRY_EVERY_MS);
+    document.addEventListener('visibilitychange', askIfVisible);
     return () => {
       cancelled = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', askIfVisible);
     };
   }, [online, onRetry]);
 
