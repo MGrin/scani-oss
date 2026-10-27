@@ -17,7 +17,7 @@ const TARGETS = [
   { name: 'mailpit', url: `${MAILPIT_URL}/api/v1/info` },
 ] as const;
 
-const TIMEOUT_MS = 90_000;
+const TIMEOUT_MS = Number(process.env.STACK_WAIT_TIMEOUT_MS ?? 90_000);
 
 async function probe(url: string): Promise<boolean> {
   try {

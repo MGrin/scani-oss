@@ -425,7 +425,7 @@ jobs:
     # a11y walk began failing with `net::ERR_INSUFFICIENT_RESOURCES` in
     # Chromium. The same main commit (f27467877) was green on 24.04 on
     # 2026-10-11 and red on 26.04 on 2026-10-22. SC-1764 removes the pin.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     # SC-925. THE JOB BUDGET IS A BACKSTOP AND MUST NOT BE THE BINDING
     # CONSTRAINT, because it is the only budget here whose expiry is
     # ILLEGIBLE. `timeout-minutes` on a JOB kills it as `cancelled` — neither
@@ -575,6 +575,7 @@ jobs:
           # locally on one suite slice: queue-wait p90 12.6 s at 4, 1.5 s at 8;
           # a lone backfill costs the same on main and on this tree.
           WORKER_CONCURRENCY: "8"
+          FRONTEND_COMMAND: "bun run vite build && exec bun run vite preview --host 0.0.0.0 --port 5173 --strictPort"
 
       # `docker compose up` reports only `service "x" didn't complete
       # successfully: exit 1` and discards the container's own output, so a
@@ -587,6 +588,8 @@ jobs:
 
       - name: Wait for stack health
         run: bun apps/e2e/scripts/wait-for-stack.ts
+        env:
+          STACK_WAIT_TIMEOUT_MS: "420000"
 
       # SC-745. The suite runs THROUGH `apps/e2e/scripts/run.ts` (its
       # `test:e2e` script), the same runner every local run uses, so the

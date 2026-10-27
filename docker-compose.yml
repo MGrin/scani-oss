@@ -451,7 +451,7 @@ services:
     volumes:
       - .:/app
       - workspace-node-modules:/app/node_modules
-    command: ["bun", "run", "vite", "--host", "0.0.0.0"]
+    command: ["sh", "-c", "${FRONTEND_COMMAND:-exec bun run vite --host 0.0.0.0}"]
 
 volumes:
   postgres-data:
