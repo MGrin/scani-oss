@@ -27,6 +27,7 @@ import {
   PriceHubResolver,
   PriceReader,
   ReturnsService,
+  returnsLatestKeyFor,
   returnsRequestKey,
   UNMATCHED_TOKEN_MARKER,
 } from '@scani/domain/services';
@@ -57,6 +58,7 @@ import {
   keepLastComplete,
   type LastComplete,
 } from '../../lib/returns-last-complete';
+import { returnsSpanAttributes } from '../../lib/returns-span';
 import { ReturnsRunner } from '../../returns-pool';
 import { strictInput } from '../lib/strict-input';
 import { assertTokensVisible } from '../lib/token-visibility';
@@ -328,28 +330,26 @@ const runReturns = (request: ReturnsRequest) => (dataKey: string) =>
     dataKey
   );
 
-const observeReturns = ({
-  hit,
-  shared,
-  stale,
-  versionMs,
-}: {
-  hit: boolean;
-  shared?: boolean;
-  stale?: boolean;
-  versionMs: number;
-}) =>
-  setSpanAttributes({
-    'returns.cache': stale ? 'stale' : shared ? 'shared' : hit ? 'hit' : 'miss',
-    'returns.version_ms': versionMs,
-  });
+const observeReturns =
+  (request: ReturnsRequest) =>
+  (o: { hit: boolean; shared?: boolean; stale?: boolean; versionMs: number }) =>
+    setSpanAttributes(returnsSpanAttributes(o, request));
 
 function computeReturns(requestCache: Map<string, unknown>, request: ReturnsRequest) {
   const key = returnsRequestKey(request);
   // Shared across requests too, while the user's data is unchanged: see
   // `lib/returns-cache.ts` for the measurement and for what the key carries.
   return getOrComputeFromCache(requestCache, key, () =>
-    sharedReturnsRun(key, request.userId, runReturns(request), undefined, undefined, observeReturns)
+    sharedReturnsRun(
+      key,
+      request.userId,
+      runReturns(request),
+      undefined,
+      undefined,
+      observeReturns(request),
+      undefined,
+      returnsLatestKeyFor(request)
+    )
   );
 }
 
@@ -357,7 +357,10 @@ function computeReturns(requestCache: Map<string, unknown>, request: ReturnsRequ
 function latestReturns(requestCache: Map<string, unknown>, request: ReturnsRequest) {
   const key = returnsRequestKey(request);
   return getOrComputeFromCache(requestCache, `${key}:latest`, () =>
-    latestOrSharedReturnsRun(key, request.userId, runReturns(request), { observe: observeReturns })
+    latestOrSharedReturnsRun(key, request.userId, runReturns(request), {
+      observe: observeReturns(request),
+      latestKey: returnsLatestKeyFor(request),
+    })
   );
 }
 

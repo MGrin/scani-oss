@@ -40,7 +40,7 @@ async function runKeys(
 }
 
 function runUnder<T>(
-  requestKey: string,
+  latestKey: string,
   { key, dataKey, versionMs }: RunKeys,
   compute: (dataKey: string) => Promise<T>,
   store: ReturnsAnswerStore,
@@ -62,12 +62,12 @@ function runUnder<T>(
     // Kept as the latest on a store hit too: the worker's answer is often the
     // only one an open reads before its refresh moves the version.
     if (stored !== undefined) {
-      void store.set(returnsLatestKey(requestKey), stored as never);
+      void store.set(latestKey, stored as never);
       return stored;
     }
     const computed = await compute(dataKey);
     void store.set(key, computed as never);
-    void store.set(returnsLatestKey(requestKey), computed as never);
+    void store.set(latestKey, computed as never);
     return computed;
   })();
   runs.set(key, run);
@@ -96,10 +96,12 @@ export async function sharedReturnsRun<T>(
    * Answers every API machine and the worker share (SC-1745): the worker
    * fills it for Home after the writes that move the version.
    */
-  store: ReturnsAnswerStore = new RedisReturnsAnswerStore()
+  store: ReturnsAnswerStore = new RedisReturnsAnswerStore(),
+  /** Where this request's last answer is kept; a custom window's is by length (SC-1776). */
+  latestKey: string = returnsLatestKey(requestKey)
 ): Promise<T> {
   const keys = await runKeys(requestKey, userId, readVersion, today);
-  return runUnder(requestKey, keys, compute, store, observe);
+  return runUnder(latestKey, keys, compute, store, observe);
 }
 
 /**
@@ -119,23 +121,25 @@ export async function latestOrSharedReturnsRun<T>(
     today = new Date().toISOString().slice(0, 10),
     observe,
     store = new RedisReturnsAnswerStore(),
+    latestKey = returnsLatestKey(requestKey),
   }: {
     readVersion?: (userId: string) => Promise<string>;
     today?: string;
     observe?: Observe;
     store?: ReturnsAnswerStore;
+    latestKey?: string;
   } = {}
 ): Promise<{ value: T; stale: boolean }> {
   const keys = await runKeys(requestKey, userId, readVersion, today);
   if (!runs.get(keys.key) && (await store.get(keys.key)) === undefined) {
-    const latest = (await store.get(returnsLatestKey(requestKey))) as T | undefined;
+    const latest = (await store.get(latestKey)) as T | undefined;
     if (latest !== undefined) {
       observe?.({ hit: false, stale: true, versionMs: keys.versionMs });
-      runUnder(requestKey, keys, compute, store).catch(() => {});
+      runUnder(latestKey, keys, compute, store).catch(() => {});
       return { value: latest, stale: true };
     }
   }
-  return { value: await runUnder(requestKey, keys, compute, store, observe), stale: false };
+  return { value: await runUnder(latestKey, keys, compute, store, observe), stale: false };
 }
 
 /** Test-only: forget every shared run. Not exported from package barrels. */

@@ -295,6 +295,21 @@ describe('latestOrSharedReturnsRun (SC-1745)', () => {
     expect(c.runs()).toBe(0);
   });
 
+  test('a request given a latest key shares it with another request of that key (SC-1776)', async () => {
+    // The hero's 1M today and yesterday are two request keys and one latest key.
+    const c = counter('today');
+    const s = store({ 'returns:user-a:1m-latest': 'yesterday' });
+    const out = await latestOrSharedReturnsRun(`${KEY}:custom:today`, USER, c.compute, {
+      readVersion: fixedVersion('v1'),
+      today: '2026-09-24',
+      store: s,
+      latestKey: 'returns:user-a:1m-latest',
+    });
+    expect(out).toEqual({ value: 'yesterday', stale: true });
+    await Bun.sleep(0);
+    expect(s.map.get('returns:user-a:1m-latest')).toBe('today');
+  });
+
   test('CONTROL: another request’s latest answer is never served', async () => {
     const c = counter('fresh');
     const s = store({ [`${KEY}:1y:latest`]: 'other window' });

@@ -1,11 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  answerTtlSeconds,
   HOME_RETURNS_WINDOWS,
   precomputeHomeReturns,
   type ReturnsAnswerStore,
   type ReturnsPrecomputeDeps,
   returnsDataKey,
   returnsLatestKey,
+  returnsLatestKeyFor,
   returnsRequestKey,
 } from '../../../src/services/returns/ReturnsAnswerCache';
 import type { ReturnsOutcome } from '../../../src/services/returns/ReturnsService';
@@ -129,5 +131,47 @@ describe('precomputeHomeReturns (SC-1745)', () => {
 
   test('CONTROL: Home asks for exactly these windows', () => {
     expect(HOME_RETURNS_WINDOWS.map((w) => w.kind)).toEqual(['all', '1y', 'ytd']);
+  });
+});
+
+// SC-1776: the hero's windows are `custom` and move every day, so their latest
+// answer, keyed by date, was never found on the next day's first read: a cold
+// compute on production. Kept by length instead, as SC-1694's last complete is.
+describe('returnsLatestKeyFor (SC-1776)', () => {
+  const user = { kind: 'user' as const };
+  const custom = (from: string, to: string) => ({
+    userId: USER,
+    scope: user,
+    window: { kind: 'custom' as const, from: new Date(from), to: new Date(to) },
+  });
+
+  test('the same period a day later finds the same latest answer', () => {
+    expect(returnsLatestKeyFor(custom('2026-09-27', '2026-10-27'))).toBe(
+      returnsLatestKeyFor(custom('2026-09-28', '2026-10-28'))
+    );
+  });
+
+  test('CONTROL: another period length is another answer', () => {
+    expect(returnsLatestKeyFor(custom('2026-09-27', '2026-10-27'))).not.toBe(
+      returnsLatestKeyFor(custom('2026-07-27', '2026-10-27'))
+    );
+  });
+
+  test('another scope or user is never shared', () => {
+    const a = custom('2026-09-27', '2026-10-27');
+    expect(returnsLatestKeyFor({ ...a, userId: 'user-b' })).not.toBe(returnsLatestKeyFor(a));
+    expect(returnsLatestKeyFor({ ...a, scope: { kind: 'account', id: 'x' } })).not.toBe(
+      returnsLatestKeyFor(a)
+    );
+  });
+
+  test('a named window keeps the key the precompute writes', () => {
+    const request = { userId: USER, scope: user, window: { kind: 'ytd' as const } };
+    expect(returnsLatestKeyFor(request)).toBe(returnsLatestKey(returnsRequestKey(request)));
+  });
+
+  test('a latest answer outlives a day; an answer under a version does not', () => {
+    expect(answerTtlSeconds(returnsLatestKey('returns:u:x'))).toBe(7 * 24 * 60 * 60);
+    expect(answerTtlSeconds('returns:u:x:u:2026-10-27:v1')).toBe(24 * 60 * 60);
   });
 });

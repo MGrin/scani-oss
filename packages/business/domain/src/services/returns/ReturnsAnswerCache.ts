@@ -41,6 +41,27 @@ export function returnsLatestKey(requestKey: string): string {
   return `${requestKey}:latest`;
 }
 
+const DAY_MS = 86_400_000;
+
+/**
+ * The latest key for a request. A `custom` window is kept by its length: the
+ * hero's periods move every day, and keyed by date the next day's first read
+ * found nothing to show, a cold compute on production (SC-1776). SC-1694 keeps
+ * its last complete answer the same way.
+ */
+export function returnsLatestKeyFor(request: {
+  userId: string;
+  scope: ReturnsScope;
+  window: ReturnWindowRequest;
+}): string {
+  const { window } = request;
+  if (window.kind !== 'custom') return returnsLatestKey(returnsRequestKey(request));
+  const days = Math.round((window.to.getTime() - window.from.getTime()) / DAY_MS);
+  return returnsLatestKey(
+    `returns:${request.userId}:${JSON.stringify(request.scope)}:custom:${days}d`
+  );
+}
+
 function windowKey(window: ReturnWindowRequest): string {
   if (window.kind !== 'custom') return JSON.stringify(window);
   return `custom:${window.from.toISOString().slice(0, 10)}:${window.to.toISOString().slice(0, 10)}`;
@@ -88,6 +109,13 @@ export interface ReturnsAnswerStore {
 
 // The key already moves with the data and the UTC day; this bounds memory.
 const ANSWER_TTL_S = 24 * 60 * 60;
+// A latest answer is only ever shown marked stale, so it may be days old: a
+// reader who opens Home every other day still gets one (SC-1776).
+const LATEST_TTL_S = 7 * ANSWER_TTL_S;
+
+export function answerTtlSeconds(key: string): number {
+  return key.endsWith(':latest') ? LATEST_TTL_S : ANSWER_TTL_S;
+}
 
 /**
  * Redis, because each API process kept its own cache: two machines, and a
@@ -111,7 +139,7 @@ export class RedisReturnsAnswerStore implements ReturnsAnswerStore {
     const redis = getSharedRedis();
     if (!redis) return;
     try {
-      await redis.set(`${key}:answer`, JSON.stringify(outcome), 'EX', ANSWER_TTL_S);
+      await redis.set(`${key}:answer`, JSON.stringify(outcome), 'EX', answerTtlSeconds(key));
     } catch (error) {
       log.warn({ err: error }, 'returns answer write failed');
     }
@@ -179,14 +207,14 @@ export async function precomputeHomeReturns(
     const key = `${requestKey}:${dataKey}`;
     const stored = await deps.store.get(key);
     if (stored) {
-      await deps.store.set(returnsLatestKey(requestKey), stored);
+      await deps.store.set(returnsLatestKeyFor({ userId, scope: USER_SCOPE, window }), stored);
       alreadyStored += 1;
       continue;
     }
     const outcome = await deps.compute({ userId, scope: USER_SCOPE, window }, shared);
     if (outcome.status === 'ok') {
       await deps.store.set(key, outcome);
-      await deps.store.set(returnsLatestKey(requestKey), outcome);
+      await deps.store.set(returnsLatestKeyFor({ userId, scope: USER_SCOPE, window }), outcome);
     }
     computed += 1;
   }
