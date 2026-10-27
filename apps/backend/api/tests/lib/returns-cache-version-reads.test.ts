@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import * as schema from '@scani/db/schema';
+import { returnsDataVersionSql } from '@scani/domain/services';
 import {
   makeAccount,
   makeHolding,
@@ -9,7 +10,6 @@ import {
   withTestDb,
 } from '@scani/domain/test-helpers';
 import { eq, sql } from 'drizzle-orm';
-import { returnsDataVersionSql } from '../../src/lib/returns-cache';
 
 // SC-1741: every returns request reads this version first. Its observation part
 // counted every balance observation the user has, a scan of the whole table

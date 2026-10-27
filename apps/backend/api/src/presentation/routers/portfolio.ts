@@ -27,6 +27,7 @@ import {
   PriceHubResolver,
   PriceReader,
   ReturnsService,
+  returnsRequestKey,
   UNMATCHED_TOKEN_MARKER,
 } from '@scani/domain/services';
 import { HIDE_CLOSED_HOLDINGS_STALE_DAYS } from '@scani/domain/use-cases';
@@ -311,18 +312,8 @@ const ReturnsInput = z
     }
   });
 
-function returnsKey(request: {
-  userId: string;
-  scope: { kind: 'user' } | { kind: 'account' | 'institution'; id: string };
-  window: z.infer<typeof ReturnsInput>['window'];
-}): string {
-  return `returns:${request.userId}:${JSON.stringify(request.scope)}:${windowKey(request.window)}`;
-}
-
-function windowKey(window: z.infer<typeof ReturnsInput>['window']): string {
-  if (window.kind !== 'custom') return JSON.stringify(window);
-  return `custom:${window.from.toISOString().slice(0, 10)}:${window.to.toISOString().slice(0, 10)}`;
-}
+/** A store that holds nothing, for answers that stay in this process. */
+const PROCESS_ONLY = { get: async () => undefined, set: async () => {} };
 
 function computeReturns(
   requestCache: Map<string, unknown>,
@@ -332,7 +323,7 @@ function computeReturns(
     window: z.infer<typeof ReturnsInput>['window'];
   }
 ) {
-  const key = returnsKey(request);
+  const key = returnsRequestKey(request);
   // Shared across requests too, while the user's data is unchanged: see
   // `lib/returns-cache.ts` for the measurement and for what the key carries.
   return getOrComputeFromCache(requestCache, key, () =>
@@ -351,9 +342,9 @@ function computeReturns(
         ),
       undefined,
       undefined,
-      ({ hit, versionMs }) =>
+      ({ hit, shared, versionMs }) =>
         setSpanAttributes({
-          'returns.cache': hit ? 'hit' : 'miss',
+          'returns.cache': shared ? 'shared' : hit ? 'hit' : 'miss',
           'returns.version_ms': versionMs,
         })
     )
@@ -464,43 +455,52 @@ export const portfolioRouter = router({
         window: input.window,
       };
       // Prices share the run's data version; the TTL bounds a new price landing today.
-      return sharedReturnsRun(`comparison:${returnsKey(request)}`, dbUser.id, async () => {
-        const outcome = await computeReturns(ctx.requestCache, request);
-        if (
-          outcome.status !== 'ok' ||
-          !outcome.returns.eligibility.eligible ||
-          outcome.returns.series.length === 0
-        ) {
-          return { comparison: null, baseCurrencyId: null, truncated: false };
-        }
+      return sharedReturnsRun(
+        `comparison:${returnsRequestKey(request)}`,
+        dbUser.id,
+        async () => {
+          const outcome = await computeReturns(ctx.requestCache, request);
+          if (
+            outcome.status !== 'ok' ||
+            !outcome.returns.eligibility.eligible ||
+            outcome.returns.series.length === 0
+          ) {
+            return { comparison: null, baseCurrencyId: null, truncated: false };
+          }
 
-        const { series, baseCurrencyId, netExternalFlow, attribution } = outcome.returns;
-        const days = sampleDays(
-          series.map((point) => point.date),
-          CHART_POINT_CAP
-        );
-        const kept = new Set(days);
+          const { series, baseCurrencyId, netExternalFlow, attribution } = outcome.returns;
+          const days = sampleDays(
+            series.map((point) => point.date),
+            CHART_POINT_CAP
+          );
+          const kept = new Set(days);
 
-        const benchmarkPrices = await Container.get(BenchmarkReturnService).pricesOn(
-          series.map((point) => point.date),
-          baseCurrencyId
-        );
-        const comparison = buildComparison({
-          series,
-          netExternalFlow,
-          attribution,
-          benchmarkPrices,
-        });
+          const benchmarkPrices = await Container.get(BenchmarkReturnService).pricesOn(
+            series.map((point) => point.date),
+            baseCurrencyId
+          );
+          const comparison = buildComparison({
+            series,
+            netExternalFlow,
+            attribution,
+            benchmarkPrices,
+          });
 
-        return {
-          comparison: {
-            ...comparison,
-            chart: comparison.chart.filter((point) => kept.has(point.date)),
-          },
-          baseCurrencyId,
-          truncated: days.length < series.length,
-        };
-      });
+          return {
+            comparison: {
+              ...comparison,
+              chart: comparison.chart.filter((point) => kept.has(point.date)),
+            },
+            baseCurrencyId,
+            truncated: days.length < series.length,
+          };
+        },
+        undefined,
+        undefined,
+        undefined,
+        // Kept to this process: only getReturns' answers were measured and shared.
+        PROCESS_ONLY
+      );
     }),
 
   getNetWorthSeries: protectedProcedure
