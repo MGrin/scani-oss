@@ -272,6 +272,17 @@ describe('latestOrSharedReturnsRun (SC-1745)', () => {
     expect(s.map.get(`${KEY}:latest`)).toBe('fresh');
   });
 
+  test('an answer served from the store becomes the request’s latest too', async () => {
+    // Live 10-27: the first read of an open came from the worker's store, so no
+    // latest was kept, and the read after the refresh waited 2,867 ms.
+    const c = counter('fresh');
+    const s = store({ [`${KEY}:user-a:2026-09-24:v1`]: 'stored' });
+    await run(c.compute, 'v1', s);
+    await Bun.sleep(0);
+    expect(s.map.get(`${KEY}:latest`)).toBe('stored');
+    expect(await run(c.compute, 'v2', s)).toEqual({ value: 'stored', stale: true });
+  });
+
   test('with no earlier answer it waits for the compute', async () => {
     const c = counter('fresh');
     expect(await run(c.compute, 'v1', store())).toEqual({ value: 'fresh', stale: false });

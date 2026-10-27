@@ -177,7 +177,9 @@ export async function precomputeHomeReturns(
   for (const window of HOME_RETURNS_WINDOWS) {
     const requestKey = returnsRequestKey({ userId, scope: USER_SCOPE, window });
     const key = `${requestKey}:${dataKey}`;
-    if (await deps.store.get(key)) {
+    const stored = await deps.store.get(key);
+    if (stored) {
+      await deps.store.set(returnsLatestKey(requestKey), stored);
       alreadyStored += 1;
       continue;
     }

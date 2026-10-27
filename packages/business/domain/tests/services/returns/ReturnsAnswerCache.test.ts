@@ -81,6 +81,18 @@ describe('precomputeHomeReturns (SC-1745)', () => {
     }
   });
 
+  test('a window already stored still becomes the latest answer', async () => {
+    const { all, store } = deps();
+    const requestKey = returnsRequestKey({
+      userId: USER,
+      scope: { kind: 'user' },
+      window: { kind: 'all' },
+    });
+    await store.set(`${requestKey}:${returnsDataKey(USER, 'v1', '2026-10-27')}`, OK);
+    await precomputeHomeReturns(USER, all);
+    expect(await store.get(returnsLatestKey(requestKey))).toBe(OK);
+  });
+
   test('a second run over the same data computes nothing', async () => {
     const { all, computed } = deps();
     await precomputeHomeReturns(USER, all);

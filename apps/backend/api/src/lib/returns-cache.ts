@@ -59,7 +59,12 @@ function runUnder<T>(
       ...(stored !== undefined && { shared: true }),
       versionMs,
     });
-    if (stored !== undefined) return stored;
+    // Kept as the latest on a store hit too: the worker's answer is often the
+    // only one an open reads before its refresh moves the version.
+    if (stored !== undefined) {
+      void store.set(returnsLatestKey(requestKey), stored as never);
+      return stored;
+    }
     const computed = await compute(dataKey);
     void store.set(key, computed as never);
     void store.set(returnsLatestKey(requestKey), computed as never);
