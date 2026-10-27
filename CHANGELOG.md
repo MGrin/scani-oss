@@ -19,6 +19,21 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.55.5](https://github.com/MGrin/scani-oss/compare/v0.55.4...v0.55.5) (2026-10-27)
+
+
+### Bug Fixes
+
+* **app:** Home leaves an empty tile out from its first frame (SC-1773) ([9677e09](https://github.com/MGrin/scani-oss/commit/9677e09c80c758f1e7c14cad97686779b7323b25))
+* **home:** keep the hero's coverage line while the rollup catches up ([0a217e0](https://github.com/MGrin/scani-oss/commit/0a217e03989c887a2646ebfd038c1375005b9ced))
+* **returns:** a store hit is kept as the latest answer too ([76d12f7](https://github.com/MGrin/scani-oss/commit/76d12f75ddf88e49da2ef6276b4d66f477ffa722))
+* **returns:** the hero's custom windows find yesterday's answer ([e9d3cd0](https://github.com/MGrin/scani-oss/commit/e9d3cd0cecde7facf16155bc9e030a364b92ed98))
+
+
+### Performance Improvements
+
+* **returns:** Home gets the last returns at once after a write ([a8f41bd](https://github.com/MGrin/scani-oss/commit/a8f41bd81172f0a5e23353793c8b771c45ceac9f))
+
 ## [0.55.4](https://github.com/MGrin/scani-oss/compare/v0.55.3...v0.55.4) (2026-10-27)
 
 
