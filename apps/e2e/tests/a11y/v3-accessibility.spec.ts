@@ -122,9 +122,15 @@ async function visit(
       // Chromium on ubuntu-26.04 refused a burst of them with
       // `net::ERR_INSUFFICIENT_RESOURCES`. The router re-renders on popstate,
       // so the screens are the same and the modules are already loaded.
+      // The entry carries react-router's own `{ usr, key, idx }` state: with
+      // `null` every location keys as "default", and
+      // `useViewTransitionLocation` keeps the old screen for a key it has
+      // already shown.
       await page.evaluate((to) => {
-        window.history.pushState(null, '', to);
-        window.dispatchEvent(new PopStateEvent('popstate'));
+        const idx = ((window.history.state as { idx?: number } | null)?.idx ?? 0) + 1;
+        const key = Math.random().toString(36).slice(2, 10);
+        window.history.pushState({ usr: null, key, idx }, '', to);
+        window.dispatchEvent(new PopStateEvent('popstate', { state: window.history.state }));
       }, route);
       await page.waitForURL((url) => `${url.pathname}${url.search}` === route);
     } else {
@@ -145,6 +151,26 @@ async function visit(
   // network go quiet is what makes the scan land on the real screen.
   await page.waitForLoadState('networkidle').catch(() => undefined);
   await page.waitForTimeout(SETTLE_MS);
+}
+
+/**
+ * The in-app `visit` writes the history entry react-router would write. Six of
+ * the walked routes have no link anywhere in the app, so there is no real
+ * navigation to drive instead. This takes one real one, a click on the first
+ * visible in-app link, and fails if the entry the router wrote is no longer
+ * that shape, so a router upgrade breaks here by name rather than as a walk
+ * that silently stays on one screen.
+ */
+async function expectRouterHistoryShape(): Promise<void> {
+  await page.locator('[data-ui="v3"] a[href^="/"]:not([href="/"]):visible').first().click();
+  await page.waitForURL((url) => url.pathname !== '/');
+  const state = await page.evaluate(() => window.history.state as unknown);
+  const message =
+    "react-router's history entry changed shape; visit() fakes { usr, key, idx } and must follow it";
+  expect(state, message).toHaveProperty('usr');
+  expect(state, message).toEqual(
+    expect.objectContaining({ key: expect.any(String), idx: expect.any(Number) })
+  );
 }
 
 test.beforeAll(async ({ browser }, testInfo) => {
@@ -178,6 +204,7 @@ test.beforeAll(async ({ browser }, testInfo) => {
   // than inside the walk, where it lands on whichever route happens to be
   // first and reads as that route failing to render.
   await visit('/', { shellTimeoutMs: WARMUP_TIMEOUT_MS, inApp: false });
+  await expectRouterHistoryShape();
 });
 
 test.afterAll(async () => {
