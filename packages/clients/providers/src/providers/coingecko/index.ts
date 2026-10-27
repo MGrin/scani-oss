@@ -135,6 +135,10 @@ interface CoinListEntry {
   platforms?: Record<string, string | null>;
 }
 
+/** How long the public tier went on refusing after a 429: about a minute, every night (SC-1706). */
+const DEFAULT_PENALTY_MS = 60_000;
+const MAX_PENALTY_MS = 10 * 60_000;
+
 export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentityProvider {
   readonly providerKey = 'coingecko';
   readonly capabilities: readonly Capability[] = [
@@ -147,9 +151,16 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
   private coinListCache: CoinListEntry[] | null = null;
   private readonly searchCache = new Map<string, { at: number; results: TokenSearchResult[] }>();
 
+  /** No request goes out before this, after a 429 (SC-1706). */
+  private pausedUntil = 0;
+
   constructor(
     private readonly limiter: OutflowRateLimiter,
-    private readonly opts: { apiKey?: string | undefined } = {}
+    private readonly opts: {
+      apiKey?: string | undefined;
+      /** The pause after a 429 that names none. Tests shorten it. */
+      penaltyMs?: number;
+    } = {}
   ) {
     this.logger = createComponentLogger('provider:coingecko');
   }
@@ -522,6 +533,11 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
    * Every attempt takes its own slot (SC-1706). Retried inside one slot, a
    * refused request went out again 1 s and 3 s later, which no per-minute cap
    * forgives, so a 429 sent more requests rather than fewer.
+   *
+   * And after a 429 nothing goes out until its penalty has passed (SC-1706).
+   * The public tier's refusal lasts about a minute: one 429 a night became ten
+   * or eleven, one per 6 s slot, each refused and counted. Background calls
+   * wait it out; a user's search answers as refused at once, sending nothing.
    */
   private async get(
     url: string,
@@ -541,6 +557,11 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
     };
     for (let attempt = 0; ; attempt++) {
       const last = attempt >= retries;
+      const pauseLeft = this.pausedUntil - Date.now();
+      if (pauseLeft > 0) {
+        if (lane === 'interactive') return new Response(null, { status: 429 });
+        await Bun.sleep(pauseLeft);
+      }
       let response: Response;
       try {
         response = await this.slot(lane, () =>
@@ -551,6 +572,7 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
         await Bun.sleep(2 ** attempt * 1000);
         continue;
       }
+      if (response.status === 429) this.pausedUntil = Date.now() + this.penaltyFor(response);
       const retryable = response.status === 429 || response.status >= 500;
       if (!retryable || last) {
         // Only a 429 no retry cleared: that is a price not fetched, and what
@@ -558,8 +580,16 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
         if (response.status === 429) recordRefusal('coingecko');
         return response;
       }
-      await Bun.sleep(2 ** attempt * 1000);
+      // A 429's wait is the pause, taken at the top of the next attempt.
+      if (response.status !== 429) await Bun.sleep(2 ** attempt * 1000);
     }
+  }
+
+  /** CoinGecko's Retry-After when it sends one, else a minute; never past ten. */
+  private penaltyFor(response: Response): number {
+    const seconds = Number(response.headers.get('retry-after'));
+    if (Number.isFinite(seconds) && seconds > 0) return Math.min(seconds * 1000, MAX_PENALTY_MS);
+    return this.opts.penaltyMs ?? DEFAULT_PENALTY_MS;
   }
 
   /**
