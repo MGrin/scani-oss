@@ -1588,11 +1588,16 @@ describe('heroCoverageSlot (SC-1775)', () => {
     failed: false,
     isReturns: false,
     hasMeasuredDay: false,
+    historyPending: true,
     total: '1000',
   };
 
-  test('a funded portfolio whose series has no measured day yet keeps the slot', () => {
+  test('a funded portfolio whose history the rollup has not written yet keeps the slot', () => {
     expect(heroCoverageSlot(base)).toBe('reserved');
+  });
+
+  test('a window known to have no history keeps nothing: no note is coming (SC-1514 drift)', () => {
+    expect(heroCoverageSlot({ ...base, historyPending: false })).toBe('none');
   });
 
   test('the slot is kept while the series is still loading', () => {

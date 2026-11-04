@@ -267,12 +267,16 @@ export const MCP_TOOLS: readonly McpTool[] = [
         granularity: z.enum(['auto', 'daily', 'weekly', 'monthly']).default('auto'),
       })
       .strict(),
-    run: (caller, input) =>
-      caller.portfolio.getNetWorthSeries({
-        from: input.from as Date,
-        to: input.to as Date,
-        granularity: input.granularity as 'auto' | 'daily' | 'weekly' | 'monthly',
-      }),
+    run: async (caller, input) => {
+      // `historyPending` only tells the hero whether to keep a line (SC-1775).
+      const { historyPending: _historyPending, ...series } =
+        await caller.portfolio.getNetWorthSeries({
+          from: input.from as Date,
+          to: input.to as Date,
+          granularity: input.granularity as 'auto' | 'daily' | 'weekly' | 'monthly',
+        });
+      return series;
+    },
   },
   {
     name: 'get_realized_gains',

@@ -798,8 +798,10 @@ export function heroFigureQuality(input: {
  * series, which waits on the rollup. A funded portfolio whose rollup has not
  * run yet, a new account or a starved worker, paints its figure with no
  * measured day behind it. The note then arrives with the rollup and pushes
- * every card below the hero down a line. So while a non-zero figure has no
- * measured day yet, the line is kept for it.
+ * every card below the hero down a line. So while a non-zero figure is waiting
+ * on the rollup's first pass, the line is kept for it. A window the series
+ * answered with no history and nothing pending keeps nothing: no note is
+ * coming, and a kept line there is a permanent blank (SC-1514's drift).
  */
 export function heroCoverageSlot(input: {
   quality: FigureQuality | null;
@@ -807,12 +809,15 @@ export function heroCoverageSlot(input: {
   failed: boolean;
   isReturns: boolean;
   hasMeasuredDay: boolean;
+  /** The rollup has not written this user's history yet (`getNetWorthSeries`). */
+  historyPending: boolean;
   total: string | undefined;
 }): 'note' | 'reserved' | 'none' {
   if (input.failed || input.isReturns) return 'none';
   const total = toFiniteNumber(input.total);
   if (total === null || total === 0) return 'none';
-  if (input.loading || !input.hasMeasuredDay) return 'reserved';
+  if (input.loading) return 'reserved';
+  if (!input.hasMeasuredDay) return input.historyPending ? 'reserved' : 'none';
   return input.quality ? 'note' : 'none';
 }
 
