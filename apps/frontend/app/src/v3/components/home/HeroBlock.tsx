@@ -233,6 +233,7 @@ export function HeroBlock({ total, currency, chart, variant = 'full' }: HeroBloc
     isReturns,
     hasMeasuredDay:
       (isPnl ? latestPnlSource(pnlSeries.data?.series ?? []) : latestMeasured(points)) !== null,
+    historyPending: series.data?.historyPending === true,
     total,
   });
   // Both tiles read the *active* query's flags, and only one tile is mounted at

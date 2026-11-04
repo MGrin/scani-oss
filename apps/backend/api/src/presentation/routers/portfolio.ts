@@ -530,6 +530,7 @@ export const portfolioRouter = router({
           baseCurrencyId: null,
           granularity: 'daily' as Granularity,
           unmeasuredDates: [] as string[],
+          historyPending: false,
         };
       }
       const dailyRepo = Container.get(PortfolioValueDailyRepository);
@@ -600,7 +601,15 @@ export const portfolioRouter = router({
         requestedThrough < today ? requestedThrough : today
       );
 
-      return { series, baseCurrencyId: baseId, granularity, unmeasuredDates: gaps };
+      // Whether a window with nothing measured in it is still waiting on the
+      // rollup's first pass for this user, or simply has no history: the hero
+      // keeps a line for its coverage note only for the first (SC-1775). Asked
+      // only on that path, so a measured window pays nothing for it.
+      const historyPending =
+        !daily.some(hasKnownCoverage) &&
+        (await dailyRepo.findLatestSnapshotDate(dbUser.id)) === null;
+
+      return { series, baseCurrencyId: baseId, granularity, unmeasuredDates: gaps, historyPending };
     }),
 
   // The Home chart peek's details (SC-1692): the period's change by account
