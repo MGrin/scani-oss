@@ -125,6 +125,36 @@ describe('CoinGecko is left alone after a 429 (SC-1706)', () => {
     }
   }, 10_000);
 
+  test('a call already waiting for a slot when the 429 lands does not go out inside the penalty', async () => {
+    // Production, 10-28..11-04: the second 429 came 6 s after the first. That
+    // call had passed the pause check before the 429 and was waiting its turn
+    // in the limiter, which spaces calls 6 s apart here 100 ms.
+    const capture = spyOn(sentry, 'captureWarning').mockImplementation(() => {});
+    const at = recordCalls(429, 200, 200);
+    let free = Promise.resolve();
+    const spaced = {
+      execute: <T>(fn: () => Promise<T>) => {
+        const turn = free.then(() => fn());
+        free = turn.then(
+          () => Bun.sleep(100),
+          () => Bun.sleep(100)
+        );
+        return turn;
+      },
+    } as OutflowRateLimiter;
+    try {
+      const p = new CoinGeckoProvider(spaced, { penaltyMs: PENALTY_MS });
+      await Promise.all([
+        p.fetchCurrentPrice(btc, { baseCurrency: usd }),
+        p.fetchCurrentPrice(btc, { baseCurrency: usd }),
+      ]);
+      expect(capture).toHaveBeenCalledTimes(1);
+      for (const t of at.slice(1)) expect(t - (at[0] ?? 0)).toBeGreaterThanOrEqual(PENALTY_MS - 20);
+    } finally {
+      capture.mockRestore();
+    }
+  }, 10_000);
+
   test("a user's search inside the penalty sends nothing and answers empty", async () => {
     const capture = spyOn(sentry, 'captureWarning').mockImplementation(() => {});
     const at = recordCalls(429, 200);

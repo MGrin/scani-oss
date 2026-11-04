@@ -562,14 +562,23 @@ export class CoinGeckoProvider implements HistoricalPriceProvider, TokenIdentity
         if (lane === 'interactive') return new Response(null, { status: 429 });
         await Bun.sleep(pauseLeft);
       }
-      let response: Response;
+      let response: Response | null;
       try {
+        // Checked again once the slot opens: a call waiting its turn when a 429
+        // landed went out one slot later, inside the pause (SC-1706, 10-28).
         response = await this.slot(lane, () =>
-          fetchWithTimeout(url, { headers: this.headers() }, timeoutMs, 0, onResponse)
+          this.pausedUntil > Date.now()
+            ? Promise.resolve(null)
+            : fetchWithTimeout(url, { headers: this.headers() }, timeoutMs, 0, onResponse)
         );
       } catch (error) {
         if (last || !(error instanceof Error) || !isRetryableError(error)) throw error;
         await Bun.sleep(2 ** attempt * 1000);
+        continue;
+      }
+      if (response === null) {
+        if (lane === 'interactive') return new Response(null, { status: 429 });
+        attempt--;
         continue;
       }
       if (response.status === 429) this.pausedUntil = Date.now() + this.penaltyFor(response);
