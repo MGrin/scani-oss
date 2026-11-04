@@ -19,6 +19,14 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.55.6](https://github.com/MGrin/scani-oss/compare/v0.55.5...v0.55.6) (2026-11-04)
+
+
+### Bug Fixes
+
+* **coingecko:** a call waiting for a slot re-checks the 429 pause before it goes out ([2523d52](https://github.com/MGrin/scani-oss/commit/2523d52d4cdec24800cf49f0d06091df531798f0))
+* **home:** keep no line under the hero when the window has no history ([ea95c59](https://github.com/MGrin/scani-oss/commit/ea95c590bb63ead5a0e72919352fb735b4706a17))
+
 ## [0.55.5](https://github.com/MGrin/scani-oss/compare/v0.55.4...v0.55.5) (2026-10-27)
 
 
