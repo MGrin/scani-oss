@@ -79,7 +79,8 @@ export class HoldingQueryService extends BaseService {
         user.id,
         user.baseCurrencyId,
         accountId,
-        requestCache
+        requestCache,
+        includeHidden
       ),
       this.portfolioValueDailyRepository.findLatestHoldingCostBasis(user.id, user.baseCurrencyId),
     ]);

@@ -4,6 +4,7 @@ import * as schema from '@scani/db/schema';
 import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWriter';
+import { HoldingQueryService } from '../../../src/services/holdings/HoldingQueryService';
 import { PortfolioValuationService } from '../../../src/services/portfolio/PortfolioValuationService';
 import { PortfolioValueVersion } from '../../../src/services/portfolio/PortfolioValueVersion';
 import { PriceReader } from '../../../src/services/pricing/PriceReader';
@@ -203,5 +204,33 @@ test('a damaged identity quote forces the live fallback', async () => {
         tx,
       })
     ).toBeNull();
+  });
+});
+
+test('explicit hidden details keep their own value while portfolio totals exclude them', async () => {
+  await withTestDb(async (tx) => {
+    const f = await fixture(tx);
+    const hidden = f.rows[1]!;
+    await tx
+      .update(schema.holdings)
+      .set({ isHidden: true, hiddenBy: 'user' })
+      .where(eq(schema.holdings.id, hidden.id));
+    const select = spyOn(db, 'select').mockImplementation(tx.select.bind(tx));
+    try {
+      const details = await new HoldingQueryService().getHoldingsByAccountIdWithDetails(
+        f.user,
+        undefined,
+        true
+      );
+      expect(details.find((h) => h.id === hidden.id)?.value).toBe(-30.3704);
+      expect(details.find((h) => h.id === hidden.id)?.price?.value).toBe('10.123456789');
+      const portfolio = await Container.get(PortfolioValuationService).getUserPortfolioValue(
+        f.user.id
+      );
+      expect(portfolio.totalValue).toBe('25.246913578');
+      expect(portfolio.holdings.some((h) => h.holdingId === hidden.id)).toBe(false);
+    } finally {
+      select.mockRestore();
+    }
   });
 });

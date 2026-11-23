@@ -1,5 +1,6 @@
 import type { HoldingValueQuote } from '@scani/db/schema';
 import { Decimal } from '@scani/shared';
+import { compatibleHoldingQuote } from '../portfolio/holding-value-quote';
 
 /** In the order they are tried: the first that holds names the difference. */
 const VALUE_DIFF_CATEGORIES = [
@@ -60,16 +61,28 @@ export function compareValue(
   if (valuesAgree) {
     if (cached.quote === undefined) return null;
     const quote = cached.quote;
+    const compatible =
+      live.baseTokenId !== undefined &&
+      compatibleHoldingQuote(
+        {
+          valueQuote: quote,
+          valueBase: cached.value,
+          valuePricedAt: cached.pricedAt,
+          balance: live.balance,
+        },
+        live.baseTokenId,
+        at
+      );
     const category =
-      quote === null || quote.version !== 1 || quote.baseTokenId !== live.baseTokenId
+      !compatible || (live.isBase && (quote?.price !== '1' || quote?.staleAfter !== null))
         ? 'quote-missing'
-        : quote.price !== live.price ||
+        : quote!.price !== live.price ||
             (!live.isBase &&
-              (quote.source !== (live.source ?? null) ||
+              (quote!.source !== (live.source ?? null) ||
                 cached.pricedAt?.getTime() !== live.readingAt?.getTime()))
           ? 'quote-metadata-differs'
           : live.price !== null &&
-              (quote.staleAfter !== null && at > new Date(quote.staleAfter)) !== live.stale
+              (quote!.staleAfter !== null && at > new Date(quote!.staleAfter)) !== live.stale
             ? 'quote-freshness-differs'
             : null;
     return category === null

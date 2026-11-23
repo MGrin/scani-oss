@@ -164,7 +164,8 @@ export class PortfolioValuationService {
     userId: string,
     _userBaseCurrencyId?: string,
     accountId?: string,
-    requestCache?: RequestCache
+    requestCache?: RequestCache,
+    includeHidden = false
   ): Promise<PortfolioValueResult> {
     // Two cache layers wrap the (expensive) computation:
     //   1. `requestCache` — dedupes sibling tRPC procedures within one
@@ -175,7 +176,7 @@ export class PortfolioValuationService {
     //      blocking the single thread for a second or more (SC-1322).
     return getOrComputeFromCache(
       requestCache,
-      createPortfolioCacheKey(userId, accountId),
+      `${createPortfolioCacheKey(userId, accountId)}${includeHidden ? ':hidden' : ''}`,
       async () => {
         const [owner] = await db
           .select({ baseCurrencyId: schema.users.baseCurrencyId })
@@ -187,16 +188,18 @@ export class PortfolioValuationService {
           at: new Date(),
           baseCurrencyId,
           accountId,
+          includeHidden,
         });
         if (cached !== null) return cached;
         const dataVersion = await this.portfolioValueVersion.read(userId);
         return this.portfolioValueCache.getOrCompute(
-          createPortfolioRedisKey(userId, accountId, baseCurrencyId, dataVersion),
+          `${createPortfolioRedisKey(userId, accountId, baseCurrencyId, dataVersion)}${includeHidden ? ':hidden' : ''}`,
           () =>
             this.computePortfolioValueAt(userId, {
               at: new Date(),
               baseCurrencyId,
               accountId,
+              includeHidden,
             })
         );
       }
@@ -206,7 +209,13 @@ export class PortfolioValuationService {
   /** Null means this rolling-deploy projection needs the independent live path. */
   async readCachedPortfolioValueAt(
     userId: string,
-    opts: { at: Date; baseCurrencyId: string; accountId?: string; tx?: DatabaseTransaction }
+    opts: {
+      at: Date;
+      baseCurrencyId: string;
+      accountId?: string;
+      includeHidden?: boolean;
+      tx?: DatabaseTransaction;
+    }
   ): Promise<PortfolioValueResult | null> {
     const reader = opts.tx ?? db;
     const [base] = await reader
@@ -214,11 +223,8 @@ export class PortfolioValuationService {
       .from(schema.tokens)
       .where(eq(schema.tokens.id, opts.baseCurrencyId));
     if (!base) throw new Error('Base currency token not found');
-    const conditions = [
-      eq(schema.holdings.userId, userId),
-      eq(schema.holdings.isHidden, false),
-      notScamFor(),
-    ];
+    const conditions = [eq(schema.holdings.userId, userId), notScamFor()];
+    if (!opts.includeHidden) conditions.push(eq(schema.holdings.isHidden, false));
     if (opts.accountId) conditions.push(eq(schema.holdings.accountId, opts.accountId));
     const rows = await reader
       .select({
@@ -231,6 +237,7 @@ export class PortfolioValuationService {
         valuePricedAt: schema.holdings.valuePricedAt,
         valueQuote: schema.holdings.valueQuote,
         isActive: schema.holdings.isActive,
+        isHidden: schema.holdings.isHidden,
       })
       .from(schema.holdings)
       .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
@@ -259,7 +266,8 @@ export class PortfolioValuationService {
       });
     }
     let total = holdings.reduce(
-      (sum, h) => (h.isActive && h.value !== null ? sum.add(h.value) : sum),
+      (sum, h, i) =>
+        h.isActive && !rows[i]?.isHidden && h.value !== null ? sum.add(h.value) : sum,
       new Decimal(0)
     );
     const inTransit: NonNullable<PortfolioValueResult['inTransit']> = [];
@@ -268,7 +276,11 @@ export class PortfolioValuationService {
       : await this.inTransitService.amountsAt(userId, [opts.at], opts.tx);
     for (const amount of amounts) {
       const destination = holdings.find((h) => h.holdingId === amount.destinationHoldingId);
-      if (!destination?.isActive) continue;
+      if (
+        !destination?.isActive ||
+        rows.find((row) => row.holdingId === destination.holdingId)?.isHidden
+      )
+        continue;
       if (destination.tokenId !== amount.tokenId) return null;
       const currentPrice = destination.currentPrice;
       const value = currentPrice === null ? null : amount.quantity.mul(currentPrice).toString();
@@ -302,6 +314,7 @@ export class PortfolioValuationService {
       /** Values in this currency instead of the user's own: a household's (SC-1647). */
       baseCurrencyId?: string;
       accountId?: string;
+      includeHidden?: boolean;
       /** Read inside it: the value shadow compares the cache in the same snapshot (SC-1610). */
       tx?: DatabaseTransaction;
     }
@@ -355,11 +368,8 @@ export class PortfolioValuationService {
     // get priced and their per-holding `value` can be displayed in
     // lists. They're excluded only from the aggregated `totalValue` sum
     // further down.
-    const conditions = [
-      eq(schema.holdings.userId, userId),
-      eq(schema.holdings.isHidden, false),
-      notScamFor(),
-    ];
+    const conditions = [eq(schema.holdings.userId, userId), notScamFor()];
+    if (!opts.includeHidden) conditions.push(eq(schema.holdings.isHidden, false));
     if (accountId) {
       conditions.push(eq(schema.holdings.accountId, accountId));
     }

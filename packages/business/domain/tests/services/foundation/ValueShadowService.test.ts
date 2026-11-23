@@ -163,3 +163,39 @@ test('shadow compares transit values against live valuation', async () => {
     expect(result.summary.byCategory['transit-value-differs']).toBe(1);
   });
 });
+
+test('shadow names malformed and future quote metadata even when values agree', async () => {
+  await withTestDb(async (tx) => {
+    const base = await makeToken(tx);
+    const token = await makeToken(tx);
+    const user = await makeUser(tx, { baseCurrencyId: base.id });
+    const institution = await makeInstitution(tx);
+    const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+    const h = await makeHolding(tx, {
+      userId: user.id,
+      accountId: account.id,
+      tokenId: token.id,
+      balance: '2',
+    });
+    await price(tx, token.id, base.id, '10', T0);
+    await Container.get(HoldingCacheWriter).revalue(user.id, [h.id], T0, tx);
+    const [row] = await tx.select().from(schema.holdings).where(eq(schema.holdings.id, h.id));
+    for (const fields of [
+      { calculatedAt: 'invalid' },
+      { calculatedAt: '2099-01-01T00:00:00Z' },
+      { staleAfter: 'invalid' },
+    ]) {
+      await seedHoldingCache(tx, (c) =>
+        c
+          .update(schema.holdings)
+          .set({ valueQuote: { ...row!.valueQuote!, ...fields } })
+          .where(eq(schema.holdings.id, h.id))
+      );
+      const result = await Container.get(ValueShadowService).run(
+        { asOf: AS_OF, userId: user.id },
+        tx
+      );
+      expect(result.summary.byCategory).toEqual({ 'quote-missing': 1 });
+    }
+  });
+});

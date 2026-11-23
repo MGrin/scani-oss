@@ -179,6 +179,7 @@ export class HoldingCacheWriter {
     const ids = [...new Set(holdingIds)].sort();
     const balances = new Map<string, { balance: string; dueAt: Date | null }>();
     if (ids.length === 0) return balances;
+    await this.lockCurrency(userId, tx);
     const locked = await tx
       .select({ id: schema.holdings.id })
       .from(schema.holdings)
@@ -234,6 +235,16 @@ export class HoldingCacheWriter {
     return this.revalueOnce(userId, holdingIds, at, tx, true);
   }
 
+  /** All cache paths lock owner before holding, including balance writes. */
+  private async lockCurrency(userId: string, tx: DatabaseTransaction): Promise<string | null> {
+    const [owner] = await tx
+      .select({ baseTokenId: schema.users.baseCurrencyId })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .for('share');
+    return owner?.baseTokenId ?? null;
+  }
+
   private async revalueOnce(
     userId: string,
     holdingIds: readonly string[],
@@ -242,12 +253,7 @@ export class HoldingCacheWriter {
     retry: boolean
   ): Promise<string[]> {
     if (holdingIds.length === 0) return [];
-    const [owner] = await tx
-      .select({ baseTokenId: schema.users.baseCurrencyId })
-      .from(schema.users)
-      .where(eq(schema.users.id, userId))
-      .for('share');
-    const base = owner?.baseTokenId ?? null;
+    const base = await this.lockCurrency(userId, tx);
     const rows = await tx
       .select({
         id: schema.holdings.id,
@@ -275,13 +281,20 @@ export class HoldingCacheWriter {
     const writes: Array<{
       id: string;
       balance: string;
+      tokenId: string;
       valueBase: string | null;
       valuePricedAt: Date | null;
       previousQuote: schema.HoldingValueQuote | null;
       valueQuote: schema.HoldingValueQuote | null;
     }> = [];
     for (const row of rows) {
-      if (row.valueQuote && row.valueQuote.calculatedAt > at.toISOString()) continue;
+      const previousInstant = Date.parse(row.valueQuote?.calculatedAt ?? '');
+      if (
+        Number.isFinite(previousInstant) &&
+        previousInstant > at.getTime() &&
+        previousInstant <= Date.now()
+      )
+        continue;
       const answer =
         base === null
           ? null
@@ -317,6 +330,7 @@ export class HoldingCacheWriter {
       writes.push({
         id: row.id,
         balance: row.balance,
+        tokenId: row.tokenId,
         valueBase,
         valuePricedAt,
         previousQuote: row.valueQuote,
@@ -328,7 +342,7 @@ export class HoldingCacheWriter {
     const values = sql.join(
       writes.map(
         (w) =>
-          sql`(${w.id}::uuid, ${w.balance}::text, ${w.valueBase}::text, ${w.valuePricedAt?.toISOString() ?? null}::timestamptz, ${JSON.stringify(w.previousQuote)}::jsonb, ${JSON.stringify(w.valueQuote)}::jsonb)`
+          sql`(${w.id}::uuid, ${w.tokenId}::uuid, ${w.balance}::text, ${w.valueBase}::text, ${w.valuePricedAt?.toISOString() ?? null}::timestamptz, ${JSON.stringify(w.previousQuote)}::jsonb, ${JSON.stringify(w.valueQuote)}::jsonb)`
       ),
       sql`, `
     );
@@ -336,8 +350,9 @@ export class HoldingCacheWriter {
       calculator.execute<{ id: string }>(sql`
         UPDATE holdings AS h
            SET value_base = v.value_base, value_priced_at = v.value_priced_at, value_quote = NULLIF(v.value_quote, 'null'::jsonb)
-          FROM (VALUES ${values}) AS v(id, balance, value_base, value_priced_at, previous_quote, value_quote)
+          FROM (VALUES ${values}) AS v(id, token_id, balance, value_base, value_priced_at, previous_quote, value_quote)
          WHERE h.id = v.id AND h.balance = v.balance
+           AND h.token_id = v.token_id AND h.user_id = ${userId}::uuid
            AND h.value_quote IS NOT DISTINCT FROM NULLIF(v.previous_quote, 'null'::jsonb)
            AND EXISTS (SELECT 1 FROM users u WHERE u.id = h.user_id AND u.base_currency_id IS NOT DISTINCT FROM ${base}::uuid)
      RETURNING h.id`)

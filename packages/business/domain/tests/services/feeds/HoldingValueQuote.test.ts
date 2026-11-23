@@ -148,3 +148,49 @@ test('a token reassignment invalidates its previous token quote', async () => {
     expect((await f.read()).valueQuote).toBeNull();
   });
 });
+
+test('reassignment during a first price load cannot restore the previous token quote', async () => {
+  await withTestDb(async (tx) => {
+    const f = await fixture(tx, '2');
+    await f.price('10');
+    const replacement = await makeToken(tx);
+    const reader = Container.get(PriceReader);
+    const load = reader.at.bind(reader);
+    let moved = false;
+    const spy = spyOn(reader, 'at').mockImplementation(async (...args) => {
+      const answer = await load(...args);
+      if (!moved) {
+        moved = true;
+        await tx
+          .update(schema.holdings)
+          .set({ tokenId: replacement.id })
+          .where(eq(schema.holdings.id, f.holding.id));
+      }
+      return answer;
+    });
+    try {
+      await f.revalue();
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await f.read()).valueQuote?.price).toBeNull();
+    expect((await f.read()).valueBase).toBeNull();
+  });
+});
+
+test('a damaged future calculation stamp does not prevent projection repair', async () => {
+  await withTestDb(async (tx) => {
+    const f = await fixture(tx, '2');
+    await f.price('10');
+    await f.revalue();
+    const row = await f.read();
+    await seedHoldingCache(tx, (c) =>
+      c
+        .update(schema.holdings)
+        .set({ valueQuote: { ...row.valueQuote!, calculatedAt: '2099-01-01T00:00:00Z' } })
+        .where(eq(schema.holdings.id, f.holding.id))
+    );
+    await f.revalue();
+    expect((await f.read()).valueQuote?.calculatedAt).toBe(at.toISOString());
+  });
+});
