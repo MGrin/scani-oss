@@ -27,6 +27,7 @@ Located in `apps/backend/api/src/presentation/routers/`.
 | `valued-assets` | Property and vehicles valued by hand: create one from its purchase, add a dated valuation (a same-day correction is a later row), read its valuation history, edit its details. Each write rebuilds the rollup from the day it changed. |
 | `tokens` | Search tokens, materialise via `TokenIdentityService`. |
 | `transactions` | Read the ledger. Filter by date range, kind, account, holding, transfer group, category. `setCategory` sets or clears the category on up to 500 rows at once (SC-1652). |
+| `category-rules` | Nested under `categories.rules`: account-scoped exact-payee definitions, complete preview, atomic apply, recent applications and category-only undo. |
 | `categories` | A person's own transaction categories, nested one level (SC-1652): `list` with per-category counts, `create`, `update`, `delete` (moving its rows to a replacement), and `suggest`, which creates a starter set only when the person asks. |
 | `vaults` | CRUD on vaults, attach/detach holdings with percentage splits. |
 | `groups` | CRUD on groups, attach holdings. |

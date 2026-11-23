@@ -108,6 +108,22 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
   await tx
     .insert(schema.transactionCategoryAiAnswers)
     .values({ userId, payeeKey: 'tesco', categoryId: category!.id });
+  await tx.insert(schema.transactionCategoryRules).values({
+    userId,
+    accountId: account.id,
+    categoryId: category!.id,
+    payeeKey: 'cafe example',
+    enabled: false,
+  });
+  await tx.insert(schema.transactionCategoryRuleRuns).values({
+    userId,
+    scope: { accountId: account.id, from: '2026-11-01T00:00:00Z', to: '2026-12-01T00:00:00Z' },
+    snapshot: {},
+    candidateIds: [],
+    changedIds: [],
+    candidates: [],
+    expiresAt: new Date('2026-11-23T00:15:00Z'),
+  });
 
   await tx.insert(schema.holdingBalanceObservations).values({
     userId,

@@ -19,17 +19,20 @@ export function AutoCategoryNote({
   pending: boolean;
 }) {
   const { t } = useTranslation();
-  if (setBy !== 'rule' && setBy !== 'ai' && setBy !== 'kind') return null;
+  if (setBy !== 'rule' && setBy !== 'ai' && setBy !== 'kind' && setBy !== 'custom_rule')
+    return null;
   return (
     <div className="flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2">
       <span className="flex min-w-0 items-center gap-2 text-label text-muted-foreground">
         <Sparkles aria-hidden="true" className="size-4 shrink-0" />
         <span>
-          {setBy === 'ai'
-            ? t('v3.categories.auto.reasonAi')
-            : setBy === 'kind'
-              ? t('v3.categories.auto.reasonKind')
-              : t('v3.categories.auto.reasonRule', { payee: payee ?? '' })}
+          {setBy === 'custom_rule'
+            ? t('v3.categories.auto.reasonCustomRule')
+            : setBy === 'ai'
+              ? t('v3.categories.auto.reasonAi')
+              : setBy === 'kind'
+                ? t('v3.categories.auto.reasonKind')
+                : t('v3.categories.auto.reasonRule', { payee: payee ?? '' })}
         </span>
       </span>
       <Button variant="outline" size="sm" onClick={onKeep} disabled={pending}>

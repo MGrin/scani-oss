@@ -108,3 +108,24 @@ describe('ImportedCategoryAssigner (SC-1652)', () => {
     });
   });
 });
+
+test('later import can replace a saved custom category', async () => {
+  await withTestDb(async (tx) => {
+    const user = await makeUser(tx);
+    const row = await makeHoldingTransaction(tx, { userId: user.id });
+    const old = await Container.get(TransactionCategoryService).create(
+      user.id,
+      { name: 'Old' },
+      tx
+    );
+    await tx.execute(
+      sql`update holding_transactions set category_id = ${old.id}, category_set_by = 'custom_rule' where id = ${row.id}`
+    );
+    await new ImportedCategoryAssigner().assign(
+      user.id,
+      [{ id: row.id, category: 'Imported' }],
+      tx
+    );
+    expect(await pathOf(tx, row.id)).toEqual(['Imported', 'import']);
+  });
+});

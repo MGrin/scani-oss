@@ -211,7 +211,7 @@ describe('BackupWriter (SC-1649)', () => {
       const mine = await seedAccount(tx);
       const records = await collect(new BackupWriter().records(mine.user.id, tx, 2));
 
-      expect(records[0]).toMatchObject({ type: 'header', format: 'scani-backup', version: 2 });
+      expect(records[0]).toMatchObject({ type: 'header', format: 'scani-backup', version: 3 });
       const header = records[0];
       const left = header?.type === 'header' ? header.notIncluded.map((n) => n.table) : [];
       expect(left).toContain('user_integration_credentials');

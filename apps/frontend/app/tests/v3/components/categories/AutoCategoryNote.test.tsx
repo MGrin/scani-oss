@@ -40,3 +40,11 @@ describe('AutoCategoryNote (SC-1695)', () => {
     }
   });
 });
+
+test('saved custom rule uses distinct provenance and offers Keep', () => {
+  const html = renderToStaticMarkup(
+    <AutoCategoryNote setBy="custom_rule" payee="Cafe" onKeep={() => {}} pending={false} />
+  );
+  expect(html).toInclude('Set by your saved rule');
+  expect(html).toInclude('>Keep<');
+});

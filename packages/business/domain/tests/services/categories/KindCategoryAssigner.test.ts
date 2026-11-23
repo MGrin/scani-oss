@@ -142,6 +142,10 @@ describe('KindCategoryAssigner (SC-1720)', () => {
       const picked = await row(tx, user.id, 'fee');
       const cleared = await row(tx, user.id, 'fee');
       const imported = await row(tx, user.id, 'fee');
+      const custom = await row(tx, user.id, 'fee');
+      await tx.execute(
+        sql`update holding_transactions set category_id = ${c.income}, category_set_by = 'custom_rule' where id = ${custom}`
+      );
       await tx.execute(
         sql`update holding_transactions set category_id = ${c.income}, category_set_by = 'person' where id = ${picked}`
       );
@@ -155,6 +159,7 @@ describe('KindCategoryAssigner (SC-1720)', () => {
       expect(await stateOf(tx, picked)).toEqual([c.income, 'person']);
       expect(await stateOf(tx, cleared)).toEqual([null, 'cleared']);
       expect(await stateOf(tx, imported)).toEqual([c.income, 'import']);
+      expect(await stateOf(tx, custom)).toEqual([c.income, 'custom_rule']);
     });
   });
 

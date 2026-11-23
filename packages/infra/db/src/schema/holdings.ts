@@ -164,7 +164,14 @@ export const holdings = pgTable(
 // manual entry, plus synthesized 'opening_balance' rows from
 // reconciliation. Never overrides holdings.balance — strictly additive.
 /** 'cleared' is a person's "none", and carries no category (SC-1695). */
-export type CategorySetBy = 'person' | 'import' | 'rule' | 'ai' | 'kind' | 'cleared';
+export type CategorySetBy =
+  | 'person'
+  | 'import'
+  | 'rule'
+  | 'ai'
+  | 'kind'
+  | 'cleared'
+  | 'custom_rule';
 
 export const holdingTransactions = pgTable(
   'holding_transactions',

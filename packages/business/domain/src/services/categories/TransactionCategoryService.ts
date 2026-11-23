@@ -4,6 +4,7 @@ import { SUGGESTED_CATEGORIES } from '@scani/shared';
 import { Container, Service } from 'typedi';
 import { TransactionCategoryRepository } from '../../repositories/TransactionCategoryRepository';
 import { normalizeCategoryName } from './category-names';
+import { CategoryRuleInUseError } from './category-rule-errors';
 
 export class CategoryConflictError extends Error {
   constructor(name: string) {
@@ -32,6 +33,7 @@ export type CategoryNode = {
   color: string | null;
   parentId: string | null;
   transactionCount: number;
+  savedRuleCount?: number;
   children: CategoryNode[];
 };
 
@@ -51,6 +53,7 @@ export class TransactionCategoryService {
           color: r.color,
           parentId: r.parentId,
           transactionCount: r.transactionCount,
+          ...(r.savedRuleCount ? { savedRuleCount: r.savedRuleCount } : {}),
           children: [],
         },
       ])
@@ -131,6 +134,9 @@ export class TransactionCategoryService {
           throw new CategoryNotFoundError();
         }
       }
+      await this.repo.lockOwned(userId, id, db);
+      const ruleCount = await this.repo.savedRuleCount(userId, id, db);
+      if (ruleCount) throw new CategoryRuleInUseError(ruleCount);
       const moved = await this.repo.moveTransactions(userId, id, replacementId ?? null, db);
       await this.repo.deleteOwned(userId, id, db);
       return { moved };

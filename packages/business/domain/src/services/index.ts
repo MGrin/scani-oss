@@ -42,12 +42,14 @@ export {
   CategoryNameError,
   parseImportedCategory,
 } from './categories/category-names';
+export { CategoryRuleError, CategoryRuleInUseError } from './categories/category-rule-errors';
 export {
   ImportedCategoryAssigner,
   type ImportedCategoryRow,
 } from './categories/ImportedCategoryAssigner';
 export { KindCategoryAssigner } from './categories/KindCategoryAssigner';
 export { LearnedCategoryRules, type PlannedCategory } from './categories/LearnedCategoryRules';
+export { TransactionCategoryRuleService } from './categories/TransactionCategoryRuleService';
 export {
   CategoryConflictError,
   CategoryDepthError,

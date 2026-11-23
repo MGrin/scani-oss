@@ -280,7 +280,7 @@ describe('AiCategorySuggester (SC-1695)', () => {
           sql`update holding_transactions set category_id = ${categoryId}, category_set_by = ${by} where id = ${id}`
         );
       const kept = await Promise.all(
-        (['person', 'import', 'rule'] as const).map(async (by) => {
+        (['person', 'import', 'rule', 'custom_rule'] as const).map(async (by) => {
           const id = await row(tx, user.id, `Shop ${by}`);
           await set(id, food, by);
           return id;

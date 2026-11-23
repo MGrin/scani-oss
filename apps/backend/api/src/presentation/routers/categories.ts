@@ -11,6 +11,7 @@ import {
   CategoryDepthError,
   CategoryNameError,
   CategoryNotFoundError,
+  CategoryRuleInUseError,
   TransactionCategoryService,
 } from '@scani/domain/services';
 import { SUGGESTED_CATEGORY_KEYS } from '@scani/shared';
@@ -20,6 +21,7 @@ import { z } from 'zod';
 import { strictInput } from '../lib/strict-input';
 import { requireAuth } from '../middleware/auth';
 import { protectedProcedure, router } from '../trpc';
+import { categoryRulesRouter } from './category-rules';
 
 const Color = z
   .string()
@@ -35,7 +37,7 @@ async function refusalsAsTrpc<T>(work: () => Promise<T>): Promise<T> {
   try {
     return await work();
   } catch (error) {
-    if (error instanceof CategoryConflictError) {
+    if (error instanceof CategoryConflictError || error instanceof CategoryRuleInUseError) {
       throw new TRPCError({ code: 'CONFLICT', message: error.message });
     }
     if (error instanceof CategoryDepthError || error instanceof CategoryNameError) {
@@ -51,6 +53,7 @@ async function refusalsAsTrpc<T>(work: () => Promise<T>): Promise<T> {
 const service = () => Container.get(TransactionCategoryService);
 
 export const categoriesRouter = router({
+  rules: categoryRulesRouter,
   list: protectedProcedure.query(async ({ ctx }) => {
     const { dbUser } = await requireAuth(ctx);
     return await service().list(dbUser.id);

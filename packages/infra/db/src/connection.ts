@@ -133,7 +133,9 @@ db = drizzlePostgres(client, {
           dbLogger.debug(
             {
               query: query.substring(0, 1000),
-              params: params?.slice(0, 10),
+              params: /transaction_category_rule|transaction_payee_key/i.test(query)
+                ? undefined
+                : params?.slice(0, 10),
             },
             '📊 Drizzle PostgreSQL Query'
           );

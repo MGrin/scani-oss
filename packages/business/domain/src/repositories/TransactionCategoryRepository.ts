@@ -17,7 +17,7 @@ export class TransactionCategoryRepository extends BaseRepository<
   async listWithCounts(
     userId: string,
     tx?: DatabaseTransaction
-  ): Promise<Array<TransactionCategory & { transactionCount: number }>> {
+  ): Promise<Array<TransactionCategory & { transactionCount: number; savedRuleCount: number }>> {
     // Qualified by hand: drizzle renders a column bare inside `sql`, and a bare
     // `id` here would bind to the subquery's own row.
     const counts = sql<number>`(select count(*)::int from holding_transactions h
@@ -33,6 +33,7 @@ export class TransactionCategoryRepository extends BaseRepository<
         createdAt: t.createdAt,
         updatedAt: t.updatedAt,
         transactionCount: counts,
+        savedRuleCount: sql<number>`(select count(*)::int from transaction_category_rules r where r.user_id = transaction_categories.user_id and r.category_id = transaction_categories.id)`,
       })
       .from(t)
       .where(eq(t.userId, userId))
@@ -115,10 +116,36 @@ export class TransactionCategoryRepository extends BaseRepository<
     const moved = await this.getDb(tx)
       .update(h)
       // A move keeps who set each row, so a guess stays a guess (SC-1695).
-      .set(to ? { categoryId: to } : { categoryId: null, categorySetBy: null })
+      .set(
+        to
+          ? { categoryId: to, updatedAt: sql`clock_timestamp()` }
+          : { categoryId: null, categorySetBy: null, updatedAt: sql`clock_timestamp()` }
+      )
       .where(and(eq(h.userId, userId), eq(h.categoryId, from)))
       .returning({ id: h.id });
     return moved.length;
+  }
+
+  async savedRuleCount(
+    userId: string,
+    categoryId: string,
+    tx?: DatabaseTransaction
+  ): Promise<number> {
+    const [row] = await this.getDb(tx)
+      .select({ n: sql<number>`count(*)::int` })
+      .from(schema.transactionCategoryRules)
+      .where(
+        and(
+          eq(schema.transactionCategoryRules.userId, userId),
+          eq(schema.transactionCategoryRules.categoryId, categoryId)
+        )
+      );
+    return row?.n ?? 0;
+  }
+  async lockOwned(userId: string, id: string, tx: DatabaseTransaction): Promise<void> {
+    await tx.execute(
+      sql`select id from transaction_categories where id = ${id} and user_id = ${userId} for update`
+    );
   }
 
   async deleteOwned(userId: string, id: string, tx?: DatabaseTransaction): Promise<void> {

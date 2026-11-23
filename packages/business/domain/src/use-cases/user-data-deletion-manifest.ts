@@ -54,6 +54,18 @@ export type TableDisposition =
  * cascade and SET-NULL churn on rows that are about to be deleted anyway.
  */
 export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
+  {
+    kind: 'delete',
+    table: schema.transactionCategoryRuleRuns,
+    userColumn: schema.transactionCategoryRuleRuns.userId,
+    echo: schema.transactionCategoryRuleRuns.id,
+  },
+  {
+    kind: 'delete',
+    table: schema.transactionCategoryRules,
+    userColumn: schema.transactionCategoryRules.userId,
+    echo: schema.transactionCategoryRules.id,
+  },
   // PnL / historical-balance tables. Explicit even where the accounts delete
   // below would cascade them, because the returned counts are what the audit
   // log reports as "here is what we removed".

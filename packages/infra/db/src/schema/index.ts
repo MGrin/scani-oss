@@ -42,6 +42,10 @@ export * from './returns-last-complete';
 export * from './token-identity-authority';
 export * from './tokens';
 export * from './transaction-categories';
+export {
+  transactionCategoryRuleRuns,
+  transactionCategoryRules,
+} from './transaction-category-rules';
 export * from './transfer-review-rules';
 export * from './user-backups';
 export * from './user-integration-credentials';
