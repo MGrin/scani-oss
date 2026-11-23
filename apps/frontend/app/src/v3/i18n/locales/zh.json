@@ -898,6 +898,7 @@
         "placeholder": "储蓄、押金、婚礼礼金…"
       },
       "deleteAction": {
+        "triggerHide": "隐藏",
         "trigger": "删除",
         "commit": "删除 {{symbol}}",
         "commitHide": "隐藏 {{symbol}}",
@@ -2380,7 +2381,9 @@
         "noneYet": "还没有账户——输入名称来添加第一个。"
       },
       "page": {
-        "uploadAndRead": "上传并读取",
+        "chooseFileAction": "选择文件",
+        "importStatement": "导入对账单",
+        "uploadForReview": "上传以供审核",
         "fileImport": {
           "fieldset": "文件",
           "subject": "这个文件",

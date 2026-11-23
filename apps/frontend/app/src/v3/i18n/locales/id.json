@@ -898,6 +898,7 @@
         "placeholder": "Tabungan, Deposito, Hadiah pernikahan…"
       },
       "deleteAction": {
+        "triggerHide": "Sembunyikan",
         "trigger": "Hapus",
         "commit": "Hapus {{symbol}}",
         "commitHide": "Sembunyikan {{symbol}}",
@@ -2380,7 +2381,9 @@
         "noneYet": "Belum ada akun — ketik nama untuk menambahkan yang pertama."
       },
       "page": {
-        "uploadAndRead": "Unggah dan baca",
+        "chooseFileAction": "Pilih file",
+        "importStatement": "Impor laporan",
+        "uploadForReview": "Unggah untuk ditinjau",
         "fileImport": {
           "fieldset": "Berkasnya",
           "subject": "berkas ini",

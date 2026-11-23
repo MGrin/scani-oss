@@ -116,7 +116,11 @@ export function InvoiceUploadPage() {
         invoice
       />
       <CaptureSubmit
-        label={t('v3.capture.page.uploadAndRead')}
+        label={t(
+          file && planInvoiceFile(file)
+            ? 'v3.capture.page.uploadForReview'
+            : 'v3.capture.page.chooseFileAction'
+        )}
         blockers={[
           ...describeInvoiceBlockers(t, file),
           ...(!usable

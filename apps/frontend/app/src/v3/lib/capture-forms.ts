@@ -68,6 +68,11 @@ export interface ImportFilePlan {
   format?: StatementFileType;
 }
 
+export function importActionLabelKey(plan: ImportFilePlan | null): string {
+  if (!plan) return 'v3.capture.page.chooseFileAction';
+  return plan.format ? 'v3.capture.page.importStatement' : 'v3.capture.page.uploadForReview';
+}
+
 function fileExtension(filename: string): string {
   const dot = filename.lastIndexOf('.');
   return dot === -1 ? '' : filename.slice(dot + 1).toLowerCase();

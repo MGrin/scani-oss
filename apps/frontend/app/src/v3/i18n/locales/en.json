@@ -978,6 +978,7 @@
         "placeholder": "Savings, Deposit, Wedding gift…"
       },
       "deleteAction": {
+        "triggerHide": "Hide",
         "trigger": "Delete",
         "commit": "Delete {{symbol}}",
         "commitHide": "Hide {{symbol}}",
@@ -2543,7 +2544,9 @@
         "noneYet": "No accounts yet — type a name to add your first."
       },
       "page": {
-        "uploadAndRead": "Upload and read it",
+        "chooseFileAction": "Choose a file",
+        "importStatement": "Import statement",
+        "uploadForReview": "Upload for review",
         "fileImport": {
           "fieldset": "The file",
           "subject": "this file",

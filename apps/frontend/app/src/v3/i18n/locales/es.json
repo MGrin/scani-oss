@@ -159,7 +159,9 @@
           "potNameHeldHint": "{{account}} ya tiene {{symbol}}. Ponle a esta un nombre propio para conservar ambas como botes separados o, si es el mismo dinero, cambia el saldo de esa posición en lugar de añadir una fila.",
           "alreadyHeldError": "No se ha guardado: la cuenta ya tiene uno de estos tokens con el mismo nombre. No se ha añadido nada; las filas están marcadas arriba."
         },
-        "uploadAndRead": "Subirlo y leerlo",
+        "chooseFileAction": "Elige un archivo",
+        "importStatement": "Importar extracto",
+        "uploadForReview": "Subir para revisar",
         "wallet": {
           "addressHint": "Cualquier cadena admitida — Ethereum, Bitcoin, Solana y las demás. No hace falta que digas cuál.",
           "addressLabel": "Dirección del monedero",
@@ -840,6 +842,7 @@
         "hideConsequence_other": "{{symbols}} quedan ocultos: salen del total de tu cartera y conservan sus transacciones. Tokens → Ocultos los devuelve."
       },
       "deleteAction": {
+        "triggerHide": "Ocultar",
         "commit": "Eliminar {{symbol}}",
         "commitHide": "Ocultar {{symbol}}",
         "consequence": "{{symbol}} en {{account}} se elimina, junto con todas las transacciones registradas sobre él — <value/> sale del total de tu cartera. Nada lo restaura; una nueva importación tendría que reconstruir el historial. Para sacarlo del total conservando el registro, usa Desactivar.",

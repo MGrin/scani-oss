@@ -4,7 +4,7 @@ import * as schema from '@scani/db/schema';
 import { and, count, eq, inArray, isNotNull } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { isDemoPersonaPresent } from '../../src/demo/bootstrap';
-import { DemoDatasetSeeder } from '../../src/demo/DemoDatasetSeeder';
+import { DemoDatasetSeeder, type DemoSeedSummary } from '../../src/demo/DemoDatasetSeeder';
 import { buildDemoDataset } from '../../src/demo/dataset';
 import { EngineEvidenceRepository } from '../../src/repositories/EngineEvidenceRepository';
 import {
@@ -188,6 +188,37 @@ const failedSeed = (tx: DatabaseTransaction) =>
   );
 
 describe('DemoDatasetSeeder.write', () => {
+  test('keeps bounded completion metadata through coverage and final cache application', async () => {
+    const snapshotAt = new Date('2026-11-23T00:00:00Z');
+    const bounded = buildDemoDataset({ anchorDate: '2026-11-23', days: 60, snapshotAt });
+    await withTestDb(async (tx) => {
+      await Container.get(DemoDatasetSeeder).write(bounded, tx);
+      const holdings = await tx
+        .select({ at: schema.holdings.lastUpdated })
+        .from(schema.holdings)
+        .where(eq(schema.holdings.userId, bounded.user.id));
+      const coverage = await tx
+        .select({ at: schema.holdingCoverage.lastReconciledAt })
+        .from(schema.holdingCoverage)
+        .where(
+          inArray(
+            schema.holdingCoverage.holdingId,
+            bounded.holdings.map((row) => row.id)
+          )
+        );
+      const rollups = await tx
+        .select({ at: schema.portfolioValueDaily.computedAt })
+        .from(schema.portfolioValueDaily)
+        .where(eq(schema.portfolioValueDaily.userId, bounded.user.id));
+      expect(holdings).toHaveLength(15);
+      expect(coverage).toHaveLength(15);
+      expect(rollups.length).toBeGreaterThan(0);
+      for (const row of [...holdings, ...coverage, ...rollups]) {
+        expect(row.at?.toISOString()).toBe(snapshotAt.toISOString());
+      }
+    });
+  });
+
   test('stores the kind and starts_at the plan states for each holding, itself, before its classifier could fill either (R84)', async () => {
     const { insertedKinds } = await seedOnce();
 
@@ -302,5 +333,59 @@ describe('DemoDatasetSeeder.write, with the engine writer guard on (A5 D-4)', ()
         new Map(settled.holdings.map((holding) => [holding.id, holding.balance]))
       );
     });
+  });
+});
+
+const summary: DemoSeedSummary = {
+  userId: 'demo',
+  anchorDate: '2026-11-23',
+  startDate: '2026-01-01',
+  counts: {},
+};
+
+describe('live demo seed clock', () => {
+  test('passes the explicit snapshot bound to the writer', async () => {
+    const seeder = new DemoDatasetSeeder();
+    const write = spyOn(seeder, 'write').mockResolvedValue(summary);
+    try {
+      const snapshotAt = new Date('2026-11-23T00:00:00Z');
+      await seeder.seed({ anchorDate: '2026-11-23', snapshotAt });
+      const data = write.mock.calls[0]?.[0];
+      expect(data?.holdings[0]?.lastUpdated).toEqual(snapshotAt);
+      expect(data?.rollups[0]?.computedAt).toEqual(snapshotAt);
+    } finally {
+      write.mockRestore();
+    }
+  });
+
+  test('captures a live clock instead of leaving end-of-day metadata', async () => {
+    const seeder = new DemoDatasetSeeder();
+    const write = spyOn(seeder, 'write').mockResolvedValue(summary);
+    try {
+      const before = Date.now();
+      await seeder.seed({ anchorDate: '2099-01-01' });
+      const after = Date.now();
+      const data = write.mock.calls[0]?.[0];
+      const times = new Set(data?.holdings.map((row) => row.lastUpdated.getTime()));
+      expect(times.size).toBe(1);
+      for (const time of times) {
+        expect(time).toBeGreaterThanOrEqual(before);
+        expect(time).toBeLessThanOrEqual(after);
+      }
+      expect(data?.rollups[0]?.computedAt.getTime()).toBe([...times][0]);
+    } finally {
+      write.mockRestore();
+    }
+  });
+
+  test('invalid time refuses before any write', async () => {
+    const seeder = new DemoDatasetSeeder();
+    const write = spyOn(seeder, 'write').mockResolvedValue(summary);
+    try {
+      await expect(seeder.seed({ snapshotAt: new Date(Number.NaN) })).rejects.toThrow('snapshotAt');
+      expect(write).not.toHaveBeenCalled();
+    } finally {
+      write.mockRestore();
+    }
   });
 });

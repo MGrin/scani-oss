@@ -1401,6 +1401,7 @@
         "placeholder": "Накопления, депозит, подарок на свадьбу…"
       },
       "deleteAction": {
+        "triggerHide": "Скрыть",
         "trigger": "Удалить",
         "commit": "Удалить {{symbol}}",
         "commitHide": "Скрыть {{symbol}}",
@@ -3237,7 +3238,9 @@
         "noneYet": "Счетов пока нет — введите название, чтобы добавить первый."
       },
       "page": {
-        "uploadAndRead": "Загрузить и прочитать",
+        "chooseFileAction": "Выберите файл",
+        "importStatement": "Импортировать выписку",
+        "uploadForReview": "Загрузить для проверки",
         "fileImport": {
           "fieldset": "Файл",
           "prompt": "Выберите файл или перетащите его сюда",

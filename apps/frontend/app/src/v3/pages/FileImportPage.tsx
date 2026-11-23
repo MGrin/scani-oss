@@ -23,6 +23,7 @@ import {
   IMPORT_ACCEPT,
   IMPORT_FORMATS_KEY,
   INVOICE_ACCEPT,
+  importActionLabelKey,
   planImportFile,
   planInvoiceFile,
 } from '../lib/capture-forms';
@@ -224,7 +225,7 @@ export function FileImportPage() {
       )}
 
       <CaptureSubmit
-        label={t('v3.capture.page.uploadAndRead')}
+        label={t(importActionLabelKey(plan))}
         blockers={blockers}
         onSubmit={submit}
         stage={stage}
