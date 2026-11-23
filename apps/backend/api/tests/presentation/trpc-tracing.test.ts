@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
+import * as sentry from '@scani/logging/sentry';
 import { TRPCError } from '@trpc/server';
 import {
   protectedProcedure,
@@ -105,6 +106,33 @@ describe('the tracing middleware is wired into the shipped procedure builders', 
  * the top of this file.
  */
 describe('wrapping a procedure in a span does not change what it returns', () => {
+  test('an overview span observer failure preserves successful values and original errors', async () => {
+    const original = new Error('original failure');
+    let fail = false;
+    const app = router({
+      dashboard: router({
+        getOverview: publicProcedure.query(() => {
+          if (fail) throw original;
+          return 'unchanged';
+        }),
+      }),
+    });
+    const observer = spyOn(sentry, 'setSpanAttributes').mockImplementation(() => {
+      throw new Error('observer');
+    });
+    try {
+      expect(await app.createCaller(context()).dashboard.getOverview()).toBe('unchanged');
+      fail = true;
+      const error = await app
+        .createCaller(context())
+        .dashboard.getOverview()
+        .catch((error) => error);
+      expect(error.message).toBe('original failure');
+      expect(error.cause).toBe(original);
+    } finally {
+      observer.mockRestore();
+    }
+  });
   test('a successful call still returns its value', async () => {
     await expect(probe.createCaller(context()).sc751TracedQuery()).resolves.toBe('ok');
   });

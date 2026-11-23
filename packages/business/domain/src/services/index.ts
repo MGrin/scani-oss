@@ -190,6 +190,7 @@ export { DashboardService } from './portfolio/DashboardService';
 export { EntityValuationService } from './portfolio/EntityValuationService';
 export { type GainsByWrapper, GainsByWrapperService } from './portfolio/GainsByWrapperService';
 export { GroupValuationService } from './portfolio/GroupValuationService';
+export type { OverviewObserver } from './portfolio/overview-observation';
 export { PnLAtTimeService } from './portfolio/PnLAtTimeService';
 export { PortfolioValuationService } from './portfolio/PortfolioValuationService';
 export { PortfolioValueCache } from './portfolio/PortfolioValueCache';

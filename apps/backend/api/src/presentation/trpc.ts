@@ -7,13 +7,14 @@ import {
   logConfig,
   sanitizeUrl,
 } from '@scani/logging';
-import { captureException, withSpan } from '@scani/logging/sentry';
+import { captureException, setSpanAttributes, withSpan } from '@scani/logging/sentry';
 import type { InflowRateLimiter } from '@scani/rate-limiter';
 import { initTRPC, TRPCError } from '@trpc/server';
 import type { FetchCreateContextFnOptions } from '@trpc/server/adapters/fetch';
 import type { BetterAuthInstance } from '../auth/better-auth';
 import { isDemoMode } from '../config/demo';
 import { enterProcedure } from '../lib/event-loop-stalls';
+import { OverviewObservation } from '../lib/overview-observation';
 import { readableError } from './lib/readable-error';
 import { unrecognizedKeysFrom } from './lib/strict-input';
 import { type AuthContext, createAuthContext } from './middleware/auth';
@@ -56,6 +57,7 @@ type RequestCache = Map<string, unknown>;
 
 // Create context type with request tracking, auth, and request-scoped cache
 export type Context = {
+  overviewObservation?: OverviewObservation;
   requestId: string;
   startTime: number;
   requestCache: RequestCache; // Shared cache for all procedures in this request
@@ -297,6 +299,18 @@ const tracingMiddleware = t.middleware(traceProcedureSpan);
 
 // Logging middleware for all procedures
 const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) => {
+  const overview = path === 'dashboard.getOverview' ? new OverviewObservation() : undefined;
+  const finishOverview = (ok: boolean) => {
+    const fields = overview?.finish(ok);
+    if (fields) {
+      try {
+        setSpanAttributes(fields);
+      } catch {
+        // Span observers cannot change the procedure result or its original error.
+      }
+    }
+    return fields;
+  };
   // Retained record of which procedures anything still calls (SC-742).
   //
   // BEFORE `next()`, not in a `finally` and not in the `catch`. The docblock
@@ -335,7 +349,10 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
   try {
     const leave = enterProcedure(path);
     let loopTime = { blockedMs: 0, lagSumMs: 0 };
-    const result = await next().finally(() => {
+    const result = await (overview
+      ? next({ ctx: { ...ctx, overviewObservation: overview } })
+      : next()
+    ).finally(() => {
       loopTime = leave();
       // SC-1689: into its minute's row, so a memory spike names what ran.
       procedureCallRecorder.complete(path, {
@@ -344,6 +361,7 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
       });
     });
     const duration = timer.end();
+    const overviewFields = finishOverview(result.ok);
     const serializedOutput =
       logOutput && result.ok && result.data !== undefined ? safeStringify(result.data) : undefined;
 
@@ -351,6 +369,7 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
       procedureLogger.info(
         {
           duration: `${duration}ms`,
+          ...overviewFields,
           loopBlockedMs: loopTime.blockedMs,
           loopLagSumMs: loopTime.lagSumMs,
           outputSize: serializedOutput ? serializedOutput.length : undefined,
@@ -367,6 +386,7 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
       procedureLogger.warn(
         {
           duration: `${duration}ms`,
+          ...overviewFields,
           loopBlockedMs: loopTime.blockedMs,
           loopLagSumMs: loopTime.lagSumMs,
           error: result.error,
@@ -383,6 +403,7 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
     procedureLogger.error(
       {
         duration: `${duration}ms`,
+        ...finishOverview(false),
         error:
           error instanceof Error
             ? {

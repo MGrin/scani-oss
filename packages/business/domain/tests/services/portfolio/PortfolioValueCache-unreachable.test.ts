@@ -66,7 +66,16 @@ describe('an unreachable Redis degrades instead of hanging', () => {
     const cache = new PortfolioValueCache();
 
     const started = performance.now();
-    const result = await cache.getOrCompute('pv:v2:u1:all:c1', async () => sampleResult('42'));
+    const observations: unknown[] = [];
+    const result = await cache.getOrCompute(
+      'pv:v2:u1:all:c1',
+      async () => sampleResult('42'),
+      (o) => {
+        observations.push(o);
+        throw new Error('observer failure');
+      }
+    );
+    expect(observations).toEqual([{ cache: 'live', liveReason: 'redis_error' }]);
 
     expect(result.totalValue).toBe('42');
     // 8x the cache's own 250ms deadline: loose enough that a saturated box

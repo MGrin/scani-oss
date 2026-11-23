@@ -10,6 +10,7 @@ import { HoldingTransactionRepository } from '../../repositories/HoldingTransact
 import { VaultRepository } from '../../repositories/VaultRepository';
 import { BaseService } from '../BaseService';
 import { AssetAllocationService } from './AssetAllocationService';
+import { measureOverview, type OverviewObserver, observeOverview } from './overview-observation';
 import {
   PortfolioValuationService,
   type PortfolioValueResult,
@@ -121,7 +122,8 @@ export class DashboardService extends BaseService {
   async getDashboardOverview(
     userId: string,
     userBaseCurrencyId?: string,
-    requestCache?: RequestCache
+    requestCache?: RequestCache,
+    observer?: OverviewObserver
   ): Promise<DashboardOverview> {
     this.logger.debug({ userId }, 'Fetching dashboard overview');
 
@@ -131,64 +133,88 @@ export class DashboardService extends BaseService {
 
     // Parallel fetch: portfolio value and holdings with complete details (with caching)
     const [portfolioValue, holdingsWithDetails, presence] = await Promise.all([
-      this.portfolioService.getUserPortfolioValue(
-        userId,
-        userBaseCurrencyId,
-        undefined,
-        requestCache
+      measureOverview(
+        'portfolio',
+        () =>
+          this.portfolioService.getUserPortfolioValue(
+            userId,
+            userBaseCurrencyId,
+            undefined,
+            requestCache,
+            false,
+            observer
+          ),
+        observer
       ),
-      getOrComputeFromCache(requestCache, holdingsCacheKey, () =>
-        this.holdingRepository.findByUserWithFullDetails(userId)
+      measureOverview(
+        'details',
+        () =>
+          getOrComputeFromCache(requestCache, holdingsCacheKey, () =>
+            this.holdingRepository.findByUserWithFullDetails(userId)
+          ),
+        observer
       ),
-      this.getTilePresence(userId, userBaseCurrencyId),
+      measureOverview('presence', () => this.getTilePresence(userId, userBaseCurrencyId), observer),
     ]);
 
-    // Filter active holdings for counts (exclude inactive holdings)
-    const activeHoldings = holdingsWithDetails.filter((h) => h.holding.isActive);
+    const composeStart = observer ? performance.now() : 0;
+    try {
+      // Filter active holdings for counts (exclude inactive holdings)
+      const activeHoldings = holdingsWithDetails.filter((h) => h.holding.isActive);
 
-    // Extract unique accounts and institutions from active holdings only
-    const accountMap = new Map<string, { id: string; name: string; institutionId: string }>();
-    const institutionSet = new Set<string>();
+      // Extract unique accounts and institutions from active holdings only
+      const accountMap = new Map<string, { id: string; name: string; institutionId: string }>();
+      const institutionSet = new Set<string>();
 
-    activeHoldings.forEach(({ account, institution }) => {
-      if (!accountMap.has(account.id)) {
-        accountMap.set(account.id, account);
-      }
-      institutionSet.add(institution.id);
-    });
+      activeHoldings.forEach(({ account, institution }) => {
+        if (!accountMap.has(account.id)) {
+          accountMap.set(account.id, account);
+        }
+        institutionSet.add(institution.id);
+      });
 
-    const counts = {
-      institutions: institutionSet.size,
-      accounts: accountMap.size,
-      holdings: activeHoldings.length,
-    };
+      const counts = {
+        institutions: institutionSet.size,
+        accounts: accountMap.size,
+        holdings: activeHoldings.length,
+      };
 
-    this.logger.debug({ userId, counts }, 'Counts calculated');
+      this.logger.debug({ userId, counts }, 'Counts calculated');
 
-    // Parallel calculation: top holdings and default asset allocation (token_type)
-    // Asset allocation reuses the already-fetched portfolio data
-    const [topHoldings, assetAllocation] = await Promise.all([
-      this.calculateTopHoldings(holdingsWithDetails, portfolioValue),
-      this.assetAllocationUseCase.calculateFromFetchedData(
-        userId,
-        'token_type',
-        portfolioValue,
-        holdingsWithDetails
-      ),
-    ]);
+      // Parallel calculation: top holdings and default asset allocation (token_type)
+      // Asset allocation reuses the already-fetched portfolio data
+      const [topHoldings, assetAllocation] = await Promise.all([
+        this.calculateTopHoldings(holdingsWithDetails, portfolioValue),
+        this.assetAllocationUseCase.calculateFromFetchedData(
+          userId,
+          'token_type',
+          portfolioValue,
+          holdingsWithDetails
+        ),
+      ]);
 
-    this.logger.debug({ userId, topHoldingsCount: topHoldings.length }, 'Top holdings calculated');
+      this.logger.debug(
+        { userId, topHoldingsCount: topHoldings.length },
+        'Top holdings calculated'
+      );
 
-    return {
-      portfolioValue: {
-        totalValue: portfolioValue.totalValue,
-        baseCurrency: portfolioValue.baseCurrency,
-      },
-      counts,
-      presence,
-      topHoldings,
-      assetAllocation,
-    };
+      return {
+        portfolioValue: {
+          totalValue: portfolioValue.totalValue,
+          baseCurrency: portfolioValue.baseCurrency,
+        },
+        counts,
+        presence,
+        topHoldings,
+        assetAllocation,
+      };
+    } finally {
+      if (observer)
+        observeOverview(observer, {
+          phase: 'compose',
+          durationMs: performance.now() - composeStart,
+        });
+    }
   }
 
   private async getTilePresence(

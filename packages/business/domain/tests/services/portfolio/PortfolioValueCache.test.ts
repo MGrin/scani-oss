@@ -63,6 +63,98 @@ afterEach(() => {
 });
 
 describe('PortfolioValueCache', () => {
+  test('reports only this caller’s cache path and isolates throwing observers', async () => {
+    const redis = makeFakeRedis();
+    useFakeRedis(redis);
+    const cache = new PortfolioValueCache();
+    const producer: unknown[] = [];
+    const waiter: unknown[] = [];
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let calls = 0;
+    const first = cache.getOrCompute(
+      'same',
+      async () => {
+        calls++;
+        await held;
+        return sampleResult('42');
+      },
+      (o) => producer.push(o)
+    );
+    const second = cache.getOrCompute(
+      'same',
+      async () => {
+        throw new Error('waiter must not compute');
+      },
+      (o) => waiter.push(o)
+    );
+    release();
+    expect(await second).toEqual(await first);
+    expect(producer).toEqual([{ cache: 'live', liveReason: 'redis_miss' }]);
+    expect(waiter).toEqual([{ cache: 'inflight_wait' }]);
+    const hit: unknown[] = [];
+    await cache.getOrCompute(
+      'same',
+      async () => {
+        calls++;
+        return sampleResult();
+      },
+      (o) => hit.push(o)
+    );
+    expect(hit).toEqual([{ cache: 'redis_hit' }]);
+    await expect(
+      cache.getOrCompute(
+        'same',
+        async () => {
+          calls++;
+          return sampleResult();
+        },
+        () => {
+          throw new Error('observer');
+        }
+      )
+    ).resolves.toEqual(sampleResult('42'));
+    expect(calls).toBe(1);
+  });
+
+  test.each(['unavailable', 'error', 'malformed'] as const)(
+    'reports Redis %s without changing factory calls or errors',
+    async (branch) => {
+      const redis = makeFakeRedis();
+      if (branch === 'error')
+        redis.get = async () => {
+          throw new Error('Redis unavailable');
+        };
+      if (branch === 'malformed') redis.store.set('key', '{');
+      if (branch !== 'unavailable') useFakeRedis(redis);
+      const observations: unknown[] = [];
+      const failure = new Error('original factory failure');
+      let calls = 0;
+      await expect(
+        new PortfolioValueCache().getOrCompute(
+          'key',
+          async () => {
+            calls++;
+            throw failure;
+          },
+          (o) => {
+            observations.push(o);
+            throw new Error('observer');
+          }
+        )
+      ).rejects.toBe(failure);
+      expect(calls).toBe(1);
+      expect(observations).toEqual([
+        {
+          cache: 'live',
+          liveReason: branch === 'unavailable' ? 'redis_unavailable' : 'redis_error',
+        },
+      ]);
+    }
+  );
+
   test('busting a user stops sharing and caching a computation begun before the mutation', async () => {
     const redis = makeFakeRedis();
     useFakeRedis(redis);
