@@ -436,6 +436,7 @@ describe('the prose that states the image set agrees with the manifest', () => {
 describe('every file that states the whole image set agrees with it', () => {
   /** Present, and stating the whole set, in BOTH trees. */
   const SHARED = [
+    'apps/frontend/docs/src/content/docs/contributing/release-flow.md',
     'apps/frontend/docs/src/content/docs/self-hosting/tier1/production.mdx',
     'apps/frontend/docs/src/content/docs/self-hosting/tier1/upgrades.md',
     'docker-compose.prod.yml',
