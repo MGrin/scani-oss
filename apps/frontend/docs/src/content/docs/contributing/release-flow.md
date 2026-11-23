@@ -211,16 +211,16 @@ git commit -s --allow-empty -m "fix(scope): what the change did (SC-000)"
 
 ## Image publish
 
-`.github/workflows/docker-publish.yml` builds four images on:
+`.github/workflows/docker-publish.yml` publishes five multi-arch images on
+`v*` tag pushes or a `workflow_dispatch` at a version tag. Release-please
+explicitly dispatches at its new tag because its token-created tag cannot
+trigger another workflow. Tags are `:1.2.3`, `:1.2`, `:1`, and `:latest`.
+`latest` means the most recent published release, not `main`.
 
-- Pushes to `main` — tags `:latest` and `:sha-<short>`.
-- Semver tag pushes — tags `:1.2.3`, `:1.2`, `:1`, and `:latest`.
-- PRs — builds amd64-only (no push) to catch image-build
-  regressions early.
-- `workflow_dispatch` — manual trigger.
-
-Architectures: `linux/amd64` + `linux/arm64` on main/tag pushes.
-PRs are amd64-only for speed.
+PRs and branch dispatches build amd64 smoke checks without pushing images.
+Main pushes do not publish images. Version-tag builds target both
+`linux/amd64` and `linux/arm64`. Preserve published digests and source/version
+labels when validating a release; mutable aliases are not immutable receipts.
 
 Images published to Docker Hub under the `scani/` namespace:
 
@@ -228,6 +228,7 @@ Images published to Docker Hub under the `scani/` namespace:
 - `scani/worker`
 - `scani/data-provider`
 - `scani/frontend-app`
+- `scani/migrate`
 
 The frontend image bakes `VITE_API_URL=/api` (a relative path) so
 nginx can do the backend routing at runtime — no rebuild per

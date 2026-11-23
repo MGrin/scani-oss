@@ -3,8 +3,9 @@
 # `scani/frontend-app`, `scani/migrate`) rather than building from source
 # — useful as a one-command bring-your-own-server setup.
 #
-# Usage (first boot AND every upgrade):
-#   cp .env.example .env             # then fill in real values
+# First boot (existing installs: follow the maintenance upgrade runbook):
+#   bash scripts/self-host.sh       # generates secrets and boots the stack
+# Manual first boot with an existing, complete .env:
 #   docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
 #   docker compose -f docker-compose.prod.yml up -d
 #   docker compose -f docker-compose.prod.yml logs -f frontend-app api worker
@@ -106,8 +107,10 @@ services:
   # migrations, exits with code 0 on success. Re-running is a no-op
   # for already-applied migrations.
   #
-  # Run before every `up -d` on a fresh deploy AND on every upgrade
-  # after `docker compose pull`:
+  # Run before first boot. For upgrades: pull one pinned version, stop ALL
+  # old API/workers, save a final DB snapshot, then migrate and start matching
+  # new services. Keep old apps stopped on failure; never delete data volumes.
+  # Full contract: https://docs.scani.xyz/self-hosting/tier1/upgrades/
   #
   #   docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
   #

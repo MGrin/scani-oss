@@ -39,10 +39,14 @@
 #                             FRONTEND_PORT / MAILPIT_UI_PORT are accepted as the same
 #                             two ports; naming one port twice, differently, is refused
 #   SCANI_SKIP_UP=1           write .env and stop — for inspecting before booting
+#   SCANI_UPGRADE_BACKUP_CONFIRMED=1  existing install: all writers drained and final DB snapshot saved
 #   SCANI_RESET=1             DELETE this project's data volumes first (see below)
 #
 set -euo pipefail
 
+EXISTING_CONFIG=0
+[ ! -f .env ] || EXISTING_CONFIG=1
+REQUESTED_IMAGE_TAG="${SCANI_IMAGE_TAG:-}"
 SCANI_REF="${SCANI_REF:-main}"
 SCANI_IMAGE_TAG="${SCANI_IMAGE_TAG:-latest}"
 SCANI_DEPLOYMENT_TIER="${SCANI_DEPLOYMENT_TIER:-1}"
@@ -356,7 +360,7 @@ if [ "$INSTALL_TIER" = 2 ]; then
 fi
 
 if [ "${SCANI_SKIP_UP:-0}" = "1" ]; then
-  ok "SCANI_SKIP_UP=1 — stopping before boot. Review .env, then: docker compose up -d"
+  ok "SCANI_SKIP_UP=1 — stopping before boot. Review .env, then re-run this script."
   exit 0
 fi
 
@@ -364,8 +368,34 @@ fi
 
 compose() { docker compose "${COMPOSE_ARGS[@]}" "$@"; }
 
+SCANI_IMAGE_TAG="${REQUESTED_IMAGE_TAG:-$(env_value SCANI_IMAGE_TAG)}"
+export SCANI_IMAGE_TAG="${SCANI_IMAGE_TAG:-latest}"
+if [ "$EXISTING_CONFIG" = 1 ]; then
+  [[ "$SCANI_IMAGE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+    || die "An existing install requires SCANI_IMAGE_TAG=<published X.Y.Z>, not a mutable alias."
+  [ "$SCANI_IMAGE_TAG" = "$(env_value SCANI_IMAGE_TAG)" ] \
+    || die "Save SCANI_IMAGE_TAG=${SCANI_IMAGE_TAG} in .env first, so later Compose commands keep the same version."
+  [ "${SCANI_UPGRADE_BACKUP_CONFIRMED:-0}" = 1 ] \
+    || die "Before upgrading, drain and stop every API/worker replica, then save a full Postgres snapshot and configuration.
+  Follow https://docs.scani.xyz/self-hosting/tier1/upgrades/ and re-run with SCANI_UPGRADE_BACKUP_CONFIRMED=1.
+  This confirms your backup; the installer does not create or validate it."
+fi
+
+IMAGES="$(compose --profile '*' config --images)"
+for image in api worker data-provider frontend-app migrate; do
+  grep -Fxq "scani/${image}:${SCANI_IMAGE_TAG}" <<<"$IMAGES" \
+    || die "All five Scani images must use the same pin: scani/${image}:${SCANI_IMAGE_TAG}."
+done
+
 log "pulling images (tag: ${SCANI_IMAGE_TAG})"
-compose pull --quiet </dev/null
+compose --profile '*' pull --quiet api worker data-provider frontend-app migrate </dev/null
+
+log "stopping application services before schema changes (data services stay running)"
+compose stop --timeout 60 frontend-app api worker data-provider </dev/null \
+  || die "Could not stop application services. No migration was attempted."
+RUNNING_APPS="$(compose ps --status running --quiet frontend-app api worker data-provider)" \
+  || die "Could not verify application shutdown. No migration was attempted."
+[ -z "$RUNNING_APPS" ] || die "Application containers are still running. No migration was attempted."
 
 # Migrations are a separate, explicit step in docker-compose.prod.yml — the
 # app never rewrites its own schema as a startup side-effect. `--allow-remote
@@ -381,10 +411,17 @@ compose pull --quiet </dev/null
 # else. A silent partial success is the failure mode to fear here, so every
 # docker call below that could touch stdin gets the redirect.
 log "applying database migrations"
-compose --profile migrate run --rm --no-TTY migrate /app/migrate --allow-remote postgres </dev/null
+compose --profile migrate run --rm --no-TTY migrate /app/migrate --allow-remote postgres </dev/null \
+  || die "Migration failed. Application services remain stopped. Keep maintenance enabled and inspect the migration error."
 
 log "starting services"
-compose up -d </dev/null
+START_ARGS=()
+if [ "$EXISTING_CONFIG" = 1 ]; then
+  START_ARGS=(--no-deps frontend-app api worker)
+  [ "$INSTALL_TIER" = 2 ] || START_ARGS+=(data-provider)
+fi
+compose up -d --wait --wait-timeout 180 "${START_ARGS[@]}" </dev/null \
+  || die "New services did not become healthy. Keep maintenance enabled; do not restart old images on the migrated database."
 
 # `up -d` returns as soon as containers are created, which is well before the
 # api can answer. Wait on the thing a person actually wants — an HTTP 200
@@ -392,7 +429,7 @@ compose up -d </dev/null
 # while nginx is still booting.
 log "waiting for http://localhost:${SCANI_PORT} to answer"
 deadline=$(( $(date +%s) + 180 ))
-until curl -fsS -o /dev/null "http://localhost:${SCANI_PORT}/healthz" 2>/dev/null; do
+until curl -fsS -o /dev/null "http://localhost:${SCANI_PORT}/api/readyz" 2>/dev/null; do
   if [ "$(date +%s)" -ge "$deadline" ]; then
     compose ps
     die "gave up after 180s. \`docker compose -f $COMPOSE_FILE logs api worker\` will say why."
