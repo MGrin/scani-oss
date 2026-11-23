@@ -19,6 +19,29 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.56.0](https://github.com/MGrin/scani-oss/compare/v0.55.6...v0.56.0) (2026-11-23)
+
+
+### Features
+
+* **categories:** add account-scoped saved rules with preview and undo ([36d9ca1](https://github.com/MGrin/scani-oss/commit/36d9ca17b18a48b4b09e0e7cc7cc43e33f16de0b))
+* **observability:** record bounded overview request measurements ([0d82231](https://github.com/MGrin/scani-oss/commit/0d82231f2f6ea179c91c82c0dc13ad5f76051c77))
+* **valuation:** read current values from guarded holding quotes ([5424bfb](https://github.com/MGrin/scani-oss/commit/5424bfbd3fcc26e6a00743ec556f2323a00a0225))
+
+
+### Bug Fixes
+
+* **categories:** serialize erasure with saved rule operations ([38c6a15](https://github.com/MGrin/scani-oss/commit/38c6a1504be784874272c1b22b9736abf7840ef8))
+* **self-hosting:** preserve first-install recovery during upgrades (SC-1791) ([0eb4cba](https://github.com/MGrin/scani-oss/commit/0eb4cba1a1852ddecaf206eccdf740a600230017))
+* **self-hosting:** stop old writers before upgrade migrations (SC-1791) ([789ecbb](https://github.com/MGrin/scani-oss/commit/789ecbb2e8146c6cd408fe89ce03e5dcd88d58d1))
+* **ux:** clarify holding removal, imports and demo freshness ([4e994dd](https://github.com/MGrin/scani-oss/commit/4e994dd483de1ac03d5d201419912c0a96e0ca1c))
+* **valuation:** avoid currency waits while callers hold holdings ([9feb538](https://github.com/MGrin/scani-oss/commit/9feb538c3e95d89276865fff157cc73f50769acd))
+* **valuation:** invalidate reassigned quotes and validate identity ([93be2ca](https://github.com/MGrin/scani-oss/commit/93be2caa203d0646323bda10266979b80cdaf49c))
+* **valuation:** keep hidden fallback outside the visible price fingerprint ([e0bfd34](https://github.com/MGrin/scani-oss/commit/e0bfd347896e67ed77df52b22687d708dfbe728b))
+* **valuation:** make direct financial readers honor invalidation ([8f7ff5f](https://github.com/MGrin/scani-oss/commit/8f7ff5fba10d9d47ae3b0954dc7cb0361263ca62))
+* **valuation:** preserve hidden details and settle concurrent cache writes ([2e81d2f](https://github.com/MGrin/scani-oss/commit/2e81d2f28409930d80ee83da6c4883b000f421c8))
+* **valuation:** recompute guarded quotes when undoing agent writes ([c0df026](https://github.com/MGrin/scani-oss/commit/c0df02690fd898bc655cc68cc18b1f016ea7c544))
+
 ## [0.55.6](https://github.com/MGrin/scani-oss/compare/v0.55.5...v0.55.6) (2026-11-04)
 
 
