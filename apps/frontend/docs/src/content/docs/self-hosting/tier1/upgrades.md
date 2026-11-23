@@ -46,7 +46,8 @@ running. Never remove data volumes during an upgrade.
    docker compose -f docker-compose.prod.yml --profile migrate pull api worker data-provider frontend-app migrate
    ```
 
-   This includes `api`, `worker`, `data-provider`, `frontend-app` and `migrate`.
+   This includes `scani/api`, `scani/worker`, `scani/data-provider`,
+   `scani/frontend-app` and `scani/migrate`.
    Record image digests and keep the previous version and configuration.
    Semver tags are the production default; mutable aliases can change between pulls.
 
