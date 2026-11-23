@@ -51,10 +51,11 @@ export async function userData(userId: string): Promise<Record<string, string[]>
     ORDER BY c.table_name
   `);
   const out: Record<string, string[]> = {};
+  // Quote metadata is recalculated by the engine after undo, never restored.
   for (const { table_name } of tables) {
     if (NOT_COMPARED[table_name]) continue;
     const rows = await db.execute<{ image: string }>(sql`
-      SELECT to_jsonb(t)::text AS image FROM ${sql.raw(`"${table_name}"`)} t
+      SELECT (${table_name === 'holdings' ? sql`to_jsonb(t) - 'value_quote'` : sql`to_jsonb(t)`})::text AS image FROM ${sql.raw(`"${table_name}"`)} t
       WHERE user_id = ${userId}
     `);
     out[table_name] = rows.map((r) => r.image).sort();

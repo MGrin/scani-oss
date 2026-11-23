@@ -7,16 +7,30 @@ CREATE OR REPLACE FUNCTION holdings_engine_writer_guard() RETURNS trigger LANGUA
 BEGIN
   IF coalesce(current_setting('scani.engine_writer', true), '') <> 'calculator' THEN
     IF TG_OP = 'INSERT' THEN
-      IF NEW.balance::numeric <> 0 OR NEW.value_base IS NOT NULL OR
-         NEW.value_priced_at IS NOT NULL OR NEW.value_quote IS NOT NULL THEN
-        RAISE EXCEPTION 'holding cache is written only by the engine calculator' USING ERRCODE = 'SCE01';
+      IF NEW.balance::numeric <> 0 THEN
+        RAISE EXCEPTION 'holdings.balance is written only by the engine calculator' USING ERRCODE = 'SCE01';
+      END IF;
+      IF NEW.value_base IS NOT NULL THEN
+        RAISE EXCEPTION 'holdings.value_base is written only by the engine calculator' USING ERRCODE = 'SCE01';
+      END IF;
+      IF NEW.value_priced_at IS NOT NULL THEN
+        RAISE EXCEPTION 'holdings.value_priced_at is written only by the engine calculator' USING ERRCODE = 'SCE01';
+      END IF;
+      IF NEW.value_quote IS NOT NULL THEN
+        RAISE EXCEPTION 'holdings.value_quote is written only by the engine calculator' USING ERRCODE = 'SCE01';
       END IF;
     ELSE
-      IF NEW.balance::numeric IS DISTINCT FROM OLD.balance::numeric OR
-         NEW.value_base::numeric IS DISTINCT FROM OLD.value_base::numeric OR
-         NEW.value_priced_at IS DISTINCT FROM OLD.value_priced_at OR
-         NEW.value_quote IS DISTINCT FROM OLD.value_quote THEN
-        RAISE EXCEPTION 'holding cache is written only by the engine calculator' USING ERRCODE = 'SCE01';
+      IF NEW.balance::numeric IS DISTINCT FROM OLD.balance::numeric THEN
+        RAISE EXCEPTION 'holdings.balance is written only by the engine calculator' USING ERRCODE = 'SCE01';
+      END IF;
+      IF NEW.value_base::numeric IS DISTINCT FROM OLD.value_base::numeric THEN
+        RAISE EXCEPTION 'holdings.value_base is written only by the engine calculator' USING ERRCODE = 'SCE01';
+      END IF;
+      IF NEW.value_priced_at IS DISTINCT FROM OLD.value_priced_at THEN
+        RAISE EXCEPTION 'holdings.value_priced_at is written only by the engine calculator' USING ERRCODE = 'SCE01';
+      END IF;
+      IF NEW.value_quote IS DISTINCT FROM OLD.value_quote THEN
+        RAISE EXCEPTION 'holdings.value_quote is written only by the engine calculator' USING ERRCODE = 'SCE01';
       END IF;
     END IF;
   END IF;
