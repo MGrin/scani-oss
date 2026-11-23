@@ -6,6 +6,7 @@ import { Container } from 'typedi';
 import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWriter';
 import { HoldingQueryService } from '../../../src/services/holdings/HoldingQueryService';
 import { PortfolioValuationService } from '../../../src/services/portfolio/PortfolioValuationService';
+import { PortfolioValueCache } from '../../../src/services/portfolio/PortfolioValueCache';
 import { PortfolioValueVersion } from '../../../src/services/portfolio/PortfolioValueVersion';
 import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { withTestDb } from '../../../test/helpers/db';
@@ -229,6 +230,31 @@ test('explicit hidden details keep their own value while portfolio totals exclud
       );
       expect(portfolio.totalValue).toBe('25.246913578');
       expect(portfolio.holdings.some((h) => h.holdingId === hidden.id)).toBe(false);
+      await seedHoldingCache(tx, (c) =>
+        c.update(schema.holdings).set({ valueQuote: null }).where(eq(schema.holdings.id, hidden.id))
+      );
+      const redis = spyOn(Container.get(PortfolioValueCache), 'getOrCompute');
+      const priceReader = Container.get(PriceReader);
+      const load = priceReader.at.bind(priceReader);
+      const priceLoad = spyOn(priceReader, 'at').mockImplementation((ids, base, instant) =>
+        load(ids, base, instant, tx)
+      );
+      try {
+        const fallback = await Container.get(PortfolioValuationService).getUserPortfolioValue(
+          f.user.id,
+          undefined,
+          undefined,
+          undefined,
+          true
+        );
+        expect(fallback.holdings.find((h) => h.holdingId === hidden.id)?.currentPrice).toBe(
+          '10.123456789'
+        );
+        expect(redis).not.toHaveBeenCalled();
+      } finally {
+        redis.mockRestore();
+        priceLoad.mockRestore();
+      }
     } finally {
       select.mockRestore();
     }

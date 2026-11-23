@@ -191,6 +191,14 @@ export class PortfolioValuationService {
           includeHidden,
         });
         if (cached !== null) return cached;
+        // The Redis fingerprint covers visible-token prices only.
+        if (includeHidden)
+          return this.computePortfolioValueAt(userId, {
+            at: new Date(),
+            baseCurrencyId,
+            accountId,
+            includeHidden,
+          });
         const dataVersion = await this.portfolioValueVersion.read(userId);
         return this.portfolioValueCache.getOrCompute(
           `${createPortfolioRedisKey(userId, accountId, baseCurrencyId, dataVersion)}${includeHidden ? ':hidden' : ''}`,
