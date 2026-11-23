@@ -1623,6 +1623,7 @@
         "placeholder": "Épargne, Apport, Cadeau de mariage…"
       },
       "deleteAction": {
+        "triggerHide": "Masquer",
         "trigger": "Supprimer",
         "commit": "Supprimer {{symbol}}",
         "commitHide": "Masquer {{symbol}}",
@@ -2150,7 +2151,9 @@
         "noneYet": "Aucun compte pour l’instant — saisissez un nom pour ajouter le premier."
       },
       "page": {
-        "uploadAndRead": "Envoyer et lire le fichier",
+        "chooseFileAction": "Choisir un fichier",
+        "importStatement": "Importer le relevé",
+        "uploadForReview": "Envoyer pour vérification",
         "fileImport": {
           "fieldset": "Le fichier",
           "subject": "ce fichier",

@@ -308,6 +308,8 @@ export interface DemoDataset {
 }
 
 export interface BuildDemoDatasetOptions {
+  /** Upper bound for completed-update metadata; financial event times stay unchanged. */
+  readonly snapshotAt?: Date;
   /** Last day the dataset covers. Defaults to `DEMO_ANCHOR_DATE`. */
   readonly anchorDate?: string;
   /** Length of the window, inclusive. Defaults to `DEMO_HISTORY_DAYS`. */
@@ -1162,6 +1164,12 @@ function buildOccurrences(startDate: string, anchorDate: string): DemoOccurrence
 // ===========================================================================
 
 export function buildDemoDataset(options: BuildDemoDatasetOptions = {}): DemoDataset {
+  const snapshotTime = options.snapshotAt?.getTime();
+  if (snapshotTime !== undefined && !Number.isFinite(snapshotTime)) {
+    throw new Error('snapshotAt must be a finite Date');
+  }
+  const completionAt = (scheduled: Date): Date =>
+    new Date(Math.min(scheduled.getTime(), snapshotTime ?? Number.POSITIVE_INFINITY));
   const anchorDate = options.anchorDate ?? DEMO_ANCHOR_DATE;
   const days = options.days ?? DEMO_HISTORY_DAYS;
   const startDate = addDays(anchorDate, -(days - 1));
@@ -1355,7 +1363,7 @@ export function buildDemoDataset(options: BuildDemoDatasetOptions = {}): DemoDat
       arrival: spec.arrival,
       label: spec.label ?? null,
       createdAt,
-      lastUpdated: atHour(anchorDate, 23, 45),
+      lastUpdated: completionAt(atHour(anchorDate, 23, 45)),
       firstTxAt: atHour(addDays(startDate, first), 6),
       lastTxAt: atHour(addDays(startDate, state.lastIndex), 20),
       txSources: [...state.sources].sort(),
@@ -1413,7 +1421,7 @@ export function buildDemoDataset(options: BuildDemoDatasetOptions = {}): DemoDat
     accountsByInstitution.set(spec.institution, list);
   }
 
-  const computedAt = atHour(anchorDate, 4);
+  const computedAt = completionAt(atHour(anchorDate, 4));
   const rollups: DemoRollupRow[] = [];
 
   const emit = (

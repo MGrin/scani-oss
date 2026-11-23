@@ -1,8 +1,15 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
+import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { sql } from 'drizzle-orm';
+import { Container } from 'typedi';
 import { assertNoForeignUsers, DemoModeRefused } from '../../src/demo';
-import { isDemoPersonaPresent, todayAnchor } from '../../src/demo/bootstrap';
+import {
+  ensureDemoDatasetSeeded,
+  isDemoPersonaPresent,
+  todayAnchor,
+} from '../../src/demo/bootstrap';
+import { DemoDatasetSeeder } from '../../src/demo/DemoDatasetSeeder';
 import { buildDemoDataset } from '../../src/demo/dataset';
 import { withTestDb } from '../../test/helpers/db';
 
@@ -14,7 +21,7 @@ import { withTestDb } from '../../test/helpers/db';
  * worker. The two decisions that entails are tested here: whether the persona
  * is already present, and whether it is safe to write.
  *
- * `ensureDemoDatasetSeeded` itself is deliberately NOT called from this file.
+ * `ensureDemoDatasetSeeded` writes are stubbed in the clock-forwarding test.
  * It writes through the process-wide `db` handle rather than a transaction, so
  * exercising it here would leave 21,500 rows in the gate database and make
  * this file's result depend on the order the suite ran in. Its two decisions
@@ -121,5 +128,32 @@ describe('todayAnchor', () => {
     // would produce two different datasets on the same calendar day for half
     // the world.
     expect(todayAnchor(new Date('2026-08-21T16:30:00+08:00'))).toBe('2026-08-21');
+  });
+});
+
+describe('bootstrap seed clock', () => {
+  test('forwards one supplied instant as anchor and completion bound', async () => {
+    const now = new Date('2026-11-23T00:00:00Z');
+    const select = spyOn(db, 'select');
+    const seed = spyOn(Container.get(DemoDatasetSeeder), 'seed').mockResolvedValue({
+      userId: demoUser.id,
+      anchorDate: '2026-11-23',
+      startDate: '2025-05-24',
+      counts: {},
+    });
+    const noPersona = { from: () => ({ where: () => ({ limit: async () => [] }) }) };
+    const noForeignUsers = { from: async () => [] };
+    select.mockReturnValueOnce(noPersona as unknown as ReturnType<typeof db.select>);
+    select.mockReturnValueOnce(noForeignUsers as unknown as ReturnType<typeof db.select>);
+    try {
+      expect(await ensureDemoDatasetSeeded(now)).toEqual({
+        seeded: true,
+        anchorDate: '2026-11-23',
+      });
+      expect(seed).toHaveBeenCalledWith({ anchorDate: '2026-11-23', snapshotAt: now });
+    } finally {
+      seed.mockRestore();
+      select.mockRestore();
+    }
   });
 });

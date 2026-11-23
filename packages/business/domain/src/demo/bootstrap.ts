@@ -86,7 +86,7 @@ export async function ensureDemoDatasetSeeded(
 
   const anchorDate = todayAnchor(now);
   const start = Date.now();
-  const summary = await Container.get(DemoDatasetSeeder).seed({ anchorDate });
+  const summary = await Container.get(DemoDatasetSeeder).seed({ anchorDate, snapshotAt: now });
   logger.info(
     { anchorDate: summary.anchorDate, counts: summary.counts, totalMs: Date.now() - start },
     '🎭 Demo dataset seeded at boot'

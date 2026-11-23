@@ -101,7 +101,7 @@ export class DemoDatasetSeeder {
   private readonly categories = Container.get(TransactionCategoryService);
 
   async seed(options: BuildDemoDatasetOptions = {}): Promise<DemoSeedSummary> {
-    const dataset = buildDemoDataset(options);
+    const dataset = buildDemoDataset({ ...options, snapshotAt: options.snapshotAt ?? new Date() });
     return this.write(dataset);
   }
 

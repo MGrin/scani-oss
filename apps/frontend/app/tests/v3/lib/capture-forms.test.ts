@@ -15,6 +15,7 @@ import {
   formatFileSize,
   IMPORT_ACCEPT,
   INVOICE_ACCEPT,
+  importActionLabelKey,
   integrationCategoryLabel,
   planImportFile,
   planInvoiceFile,
@@ -22,6 +23,46 @@ import {
 import { type AccountTargetDraft, emptyAccountTarget } from '@/v3/lib/manual-entry';
 
 const t = i18n.t.bind(i18n);
+
+// Resolved through the real instance against the shipped `en.json`.
+
+describe('import action names the processing branch', () => {
+  for (const ext of [
+    'csv',
+    'tsv',
+    'ofx',
+    'qfx',
+    'qif',
+    'xlsx',
+    'xls',
+    'sta',
+    'mt940',
+    '940',
+    'xml',
+    'CSV',
+  ]) {
+    test(`${ext} imports a statement even with a misleading MIME`, () => {
+      expect(
+        t(importActionLabelKey(planImportFile({ name: `bank.${ext}`, type: 'image/png' })))
+      ).toBe('Import statement');
+    });
+  }
+  for (const ext of ['png', 'jpg', 'jpeg', 'gif', 'webp', 'PDF']) {
+    test(`${ext} uploads for review`, () => {
+      expect(t(importActionLabelKey(planImportFile({ name: `bank.${ext}` })))).toBe(
+        'Upload for review'
+      );
+    });
+  }
+  for (const name of ['unknown.exe', 'no-extension']) {
+    test(`${name} cannot promise an unsupported import`, () => {
+      expect(t(importActionLabelKey(planImportFile({ name })))).toBe('Choose a file');
+    });
+  }
+  test('no selection asks for a file', () => {
+    expect(t(importActionLabelKey(null))).toBe('Choose a file');
+  });
+});
 
 // Resolved through the real instance against the shipped `en.json`.
 

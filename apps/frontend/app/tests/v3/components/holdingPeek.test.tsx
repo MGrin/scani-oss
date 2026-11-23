@@ -357,6 +357,31 @@ describe('a stale price', () => {
 });
 
 describe('actions', () => {
+  test('feed removal says Hide with an ordinary outline trigger', () => {
+    const html =
+      renderNode(holdingPeekSpec(holding({ deleteHides: true }), CONTEXT).actions)
+        .match(/<button\b[^>]*>[\s\S]*?<\/button>/g)
+        ?.find((button) => /(?:Hide|Delete)<\/button>$/.test(button)) ?? '';
+    expect(html).toContain('Hide');
+    expect(html).toContain('lucide-eye-off');
+    expect(html).not.toContain('lucide-trash-2');
+    expect(html).not.toContain('text-destructive');
+    expect(html).not.toContain('data-destructive');
+    expect(html).not.toContain('>Delete<');
+  });
+
+  test('snapshot removal stays Delete with a destructive trigger', () => {
+    const html =
+      renderNode(holdingPeekSpec(holding({ deleteHides: false }), CONTEXT).actions)
+        .match(/<button\b[^>]*>[\s\S]*?<\/button>/g)
+        ?.find((button) => /(?:Hide|Delete)<\/button>$/.test(button)) ?? '';
+    expect(html).toContain('Delete');
+    expect(html).toContain('lucide-trash-2');
+    expect(html).toContain('text-destructive');
+    expect(html).toContain('data-destructive');
+    expect(html).not.toContain('lucide-eye-off');
+  });
+
   test('removing interest is a peek action, confirmed inline, and only with a rate (SC-1413)', () => {
     const savings = { ...holding().account, typeCode: 'savings' };
     const withRate = holding({

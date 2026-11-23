@@ -159,7 +159,9 @@
           "potNameHeldHint": "{{account}} já detém {{symbol}}. Dê a esta linha um nome próprio para manter as duas como potes separados — ou, se for o mesmo dinheiro, altere o saldo dessa posição em vez de adicionar uma linha.",
           "alreadyHeldError": "Não guardado: a conta já detém um destes tokens com o mesmo nome. Nada foi adicionado — as linhas em causa estão assinaladas acima."
         },
-        "uploadAndRead": "Carregar e ler",
+        "chooseFileAction": "Escolher um arquivo",
+        "importStatement": "Importar extrato",
+        "uploadForReview": "Enviar para revisão",
         "wallet": {
           "addressHint": "Qualquer cadeia suportada — Ethereum, Bitcoin, Solana e as restantes. Não tem de dizer qual.",
           "addressLabel": "Endereço da carteira",
@@ -841,6 +843,7 @@
         "hideConsequence_other": "{{symbols}} ficam ocultos: saem do total do seu portefólio e mantêm as suas transações. Tokens → Ocultos repõe-nos."
       },
       "deleteAction": {
+        "triggerHide": "Ocultar",
         "commit": "Eliminar {{symbol}}",
         "commitHide": "Ocultar {{symbol}}",
         "consequence": "{{symbol}} em {{account}} é removido, juntamente com todas as transações registadas contra ele — <value/> saem do total do seu portefólio. Nada o repõe; uma nova importação teria de reconstruir o histórico. Para o tirar do total e manter o registo, use Desativar.",

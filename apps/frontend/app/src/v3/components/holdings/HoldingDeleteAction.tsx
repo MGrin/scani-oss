@@ -1,7 +1,7 @@
 import type { HoldingWithDetails } from '@scani/shared';
 import { ConfirmAction } from '@scani/ui/v3/components/ConfirmAction';
 import { Numeric } from '@scani/ui/v3/components/Numeric';
-import { Trash2 } from 'lucide-react';
+import { EyeOff, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
@@ -51,16 +51,17 @@ export function HoldingDeleteAction({
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const hides = holding.deleteHides;
+  const Icon = hides ? EyeOff : Trash2;
 
   return (
     <ConfirmAction
       label={
         <>
-          <Trash2 className="me-2 size-4" aria-hidden="true" />
-          {t('v3.holdings.deleteAction.trigger')}
+          <Icon className="me-2 size-4" aria-hidden="true" />
+          {t(hides ? 'v3.holdings.deleteAction.triggerHide' : 'v3.holdings.deleteAction.trigger')}
         </>
       }
-      triggerClassName="text-destructive hover:text-destructive"
+      triggerClassName={hides ? undefined : 'text-destructive hover:text-destructive'}
       confirmLabel={t(
         hides ? 'v3.holdings.deleteAction.commitHide' : 'v3.holdings.deleteAction.commit',
         { symbol: holding.token.symbol }
