@@ -240,6 +240,7 @@ export class PortfolioValuationService {
       const quote = compatibleHoldingQuote(row, opts.baseCurrencyId, opts.at);
       if (quote === null) return null;
       const identity = row.tokenId === opts.baseCurrencyId;
+      if (identity && (quote.price !== '1' || quote.staleAfter !== null)) return null;
       holdings.push({
         holdingId: row.holdingId,
         accountId: row.accountId,

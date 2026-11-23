@@ -5,7 +5,21 @@ ALTER TABLE holdings ADD COLUMN value_quote jsonb;
 
 CREATE OR REPLACE FUNCTION holdings_engine_writer_guard() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
-  IF coalesce(current_setting('scani.engine_writer', true), '') = 'calculator' THEN
+  IF coalesce(current_setting('scani.engine_writer', true), '') <> 'calculator' THEN
+    IF TG_OP = 'INSERT' THEN
+      IF NEW.balance::numeric <> 0 OR NEW.value_base IS NOT NULL OR
+         NEW.value_priced_at IS NOT NULL OR NEW.value_quote IS NOT NULL THEN
+        RAISE EXCEPTION 'holding cache is written only by the engine calculator' USING ERRCODE = 'SCE01';
+      END IF;
+    ELSE
+      IF NEW.balance::numeric IS DISTINCT FROM OLD.balance::numeric OR
+         NEW.value_base::numeric IS DISTINCT FROM OLD.value_base::numeric OR
+         NEW.value_priced_at IS DISTINCT FROM OLD.value_priced_at OR
+         NEW.value_quote IS DISTINCT FROM OLD.value_quote THEN
+        RAISE EXCEPTION 'holding cache is written only by the engine calculator' USING ERRCODE = 'SCE01';
+      END IF;
+    END IF;
+  END IF;
   IF TG_OP = 'UPDATE' THEN
     IF NEW.value_quote IS NOT DISTINCT FROM OLD.value_quote AND (
       NEW.balance::numeric IS DISTINCT FROM OLD.balance::numeric OR
@@ -15,21 +29,6 @@ BEGIN
       NEW.user_id IS DISTINCT FROM OLD.user_id
     ) THEN
       NEW.value_quote := NULL;
-    END IF;
-  END IF;
-    RETURN NEW;
-  END IF;
-  IF TG_OP = 'INSERT' THEN
-    IF NEW.balance::numeric <> 0 OR NEW.value_base IS NOT NULL OR
-       NEW.value_priced_at IS NOT NULL OR NEW.value_quote IS NOT NULL THEN
-      RAISE EXCEPTION 'holding cache is written only by the engine calculator' USING ERRCODE = 'SCE01';
-    END IF;
-  ELSE
-    IF NEW.balance::numeric IS DISTINCT FROM OLD.balance::numeric OR
-       NEW.value_base::numeric IS DISTINCT FROM OLD.value_base::numeric OR
-       NEW.value_priced_at IS DISTINCT FROM OLD.value_priced_at OR
-       NEW.value_quote IS DISTINCT FROM OLD.value_quote THEN
-      RAISE EXCEPTION 'holding cache is written only by the engine calculator' USING ERRCODE = 'SCE01';
     END IF;
   END IF;
   RETURN NEW;

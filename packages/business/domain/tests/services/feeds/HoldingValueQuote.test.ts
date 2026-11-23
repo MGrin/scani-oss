@@ -134,3 +134,17 @@ test('a currency change during pricing cannot stamp a quote in the previous curr
     expect((await f.read()).valueBase).toBe('40');
   });
 });
+
+test('a token reassignment invalidates its previous token quote', async () => {
+  await withTestDb(async (tx) => {
+    const f = await fixture(tx, '2');
+    await f.price('10');
+    await f.revalue();
+    const replacement = await makeToken(tx);
+    await tx
+      .update(schema.holdings)
+      .set({ tokenId: replacement.id })
+      .where(eq(schema.holdings.id, f.holding.id));
+    expect((await f.read()).valueQuote).toBeNull();
+  });
+});

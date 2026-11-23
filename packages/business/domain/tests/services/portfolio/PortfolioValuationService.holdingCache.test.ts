@@ -125,6 +125,18 @@ test('cached transit uses the destination holding and excludes hidden destinatio
   await withTestDb(async (tx) => {
     const t = await travelling(tx);
     await absorb(tx, t);
+    const base = await makeToken(tx);
+    await tx
+      .update(schema.users)
+      .set({ baseCurrencyId: base.id })
+      .where(eq(schema.users.id, t.userId));
+    await tx.insert(schema.tokenPrices).values({
+      tokenId: t.destination.tokenId,
+      baseTokenId: base.id,
+      price: '1',
+      timestamp: new Date(Date.now() - 1000),
+      source: 'fixture',
+    });
     const service = Container.get(PortfolioValuationService);
     const live = await service.computePortfolioValueAt(t.userId, { at: new Date(), tx });
     await Container.get(HoldingCacheWriter).revalue(
@@ -141,6 +153,24 @@ test('cached transit uses the destination holding and excludes hidden destinatio
     });
     expect(result?.totalValue).toBe('3000');
     expect(result?.inTransit?.[0]?.value).toBe('500');
+    const [destination] = await tx
+      .select()
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, t.destination.id));
+    await seedHoldingCache(tx, (c) =>
+      c
+        .update(schema.holdings)
+        .set({ valueBase: '2000', valueQuote: { ...destination!.valueQuote!, price: '2' } })
+        .where(eq(schema.holdings.id, t.destination.id))
+    );
+    const changed = await service.readCachedPortfolioValueAt(t.userId, {
+      at: new Date(),
+      baseCurrencyId: base.id,
+      tx,
+    });
+    expect(changed?.inTransit?.[0]?.currentPrice).toBe('2');
+    expect(changed?.inTransit?.[0]?.value).toBe('1000');
+    expect(changed?.totalValue).toBe('4500');
     await tx
       .update(schema.holdings)
       .set({ isHidden: true })
@@ -152,5 +182,26 @@ test('cached transit uses the destination holding and excludes hidden destinatio
     });
     expect(hidden?.totalValue).toBe('1500');
     expect(hidden?.inTransit ?? []).toEqual([]);
+  });
+});
+
+test('a damaged identity quote forces the live fallback', async () => {
+  await withTestDb(async (tx) => {
+    const f = await fixture(tx);
+    const cash = f.rows[4]!;
+    const [cached] = await tx.select().from(schema.holdings).where(eq(schema.holdings.id, cash.id));
+    await seedHoldingCache(tx, (c) =>
+      c
+        .update(schema.holdings)
+        .set({ valueBase: '10', valueQuote: { ...cached!.valueQuote!, price: '2' } })
+        .where(eq(schema.holdings.id, cash.id))
+    );
+    expect(
+      await Container.get(PortfolioValuationService).readCachedPortfolioValueAt(f.user.id, {
+        at,
+        baseCurrencyId: f.base.id,
+        tx,
+      })
+    ).toBeNull();
   });
 });

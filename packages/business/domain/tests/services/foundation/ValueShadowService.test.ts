@@ -130,6 +130,12 @@ test('shadow compares transit values against live valuation', async () => {
   await withTestDb(async (tx) => {
     const t = await travelling(tx);
     await absorb(tx, t);
+    const base = await makeToken(tx);
+    await tx
+      .update(schema.users)
+      .set({ baseCurrencyId: base.id })
+      .where(eq(schema.users.id, t.userId));
+    await price(tx, t.destination.tokenId, base.id, '1', new Date(Date.now() - 1000));
     const [owner] = await tx.select().from(schema.users).where(eq(schema.users.id, t.userId));
     const ids = [t.source.id, t.destination.id];
     await Container.get(HoldingCacheWriter).revalue(t.userId, ids, new Date(), tx);
