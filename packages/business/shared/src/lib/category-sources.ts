@@ -32,4 +32,4 @@ export function isOutsideCategories(row: {
  * learned rule, AI, or the row's type (SC-1695, SC-1720). The app marks these
  * "Set automatically".
  */
-export const AUTO_CATEGORY_SOURCES = ['rule', 'ai', 'kind'] as const;
+export const AUTO_CATEGORY_SOURCES = ['rule', 'ai', 'kind', 'custom_rule'] as const;

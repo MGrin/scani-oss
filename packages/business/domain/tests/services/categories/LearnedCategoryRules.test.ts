@@ -15,7 +15,7 @@ restoreContainerAfterAll();
 const rules = () => Container.get(LearnedCategoryRules);
 const categories = () => Container.get(TransactionCategoryService);
 
-type SetBy = 'person' | 'import' | 'rule' | 'ai' | 'kind' | 'cleared' | null;
+type SetBy = 'person' | 'import' | 'rule' | 'ai' | 'kind' | 'cleared' | 'custom_rule' | null;
 
 /** A small ledger for one user: every row on one holding, seeded as given. */
 async function ledger(tx: DatabaseTransaction, userId: string) {
@@ -103,10 +103,12 @@ describe('LearnedCategoryRules (SC-1695)', () => {
       for (let i = 0; i < 4; i += 1) await row('Tesco', food, 'person');
       const picked = await row('Tesco', shop, 'person');
       const imported = await row('Tesco', shop, 'import');
+      const custom = await row('Tesco', shop, 'custom_rule');
 
       await rules().apply(user.id, tx);
       expect(await stateOf(tx, picked)).toEqual([shop, 'person']);
       expect(await stateOf(tx, imported)).toEqual([shop, 'import']);
+      expect(await stateOf(tx, custom)).toEqual([shop, 'custom_rule']);
     });
   });
 
@@ -311,5 +313,17 @@ describe('LearnedCategoryRules and the transaction type (SC-1720)', () => {
       expect(await stateOf(tx, open)).toEqual([food, 'rule']);
       expect(await stateOf(tx, trade)).toEqual([null, null]);
     });
+  });
+});
+
+test('custom categories never teach learned rules', async () => {
+  await withTestDb(async (tx) => {
+    const user = await makeUser(tx);
+    const food = await category(tx, user.id, 'Food');
+    const row = await ledger(tx, user.id);
+    for (let i = 0; i < 4; i++) await row('Cafe Example', food, 'custom_rule');
+    const open = await row('Cafe Example');
+    expect(await rules().apply(user.id, tx)).toEqual({ categorized: 0 });
+    expect(await stateOf(tx, open)).toEqual([null, null]);
   });
 });

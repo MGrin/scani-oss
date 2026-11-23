@@ -315,8 +315,9 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
     type,
   });
 
-  const logInput = logConfig.logRequestBodies;
-  const logOutput = logConfig.logResponseBodies;
+  const privateCategoryRules = path.startsWith('categories.rules.');
+  const logInput = logConfig.logRequestBodies && !privateCategoryRules;
+  const logOutput = logConfig.logResponseBodies && !privateCategoryRules;
   const serializedInput = logInput && input !== undefined ? safeStringify(input) : undefined;
 
   procedureLogger.debug(

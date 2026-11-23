@@ -9,6 +9,23 @@
 export * from './brand/scani-mark';
 export * from './decimal';
 export * from './dtos';
+export type {
+  CategoryRuleDraft,
+  CategoryRuleSave,
+  RuleApplyResult,
+  RuleOperationSummary,
+  RulePreview,
+  RulePreviewRow,
+  RuleRecentOperations,
+  RuleScope,
+  RuleUndoResult,
+  SavedCategoryRule,
+} from './dtos/category-rules';
+export {
+  categoryRuleDraftSchema,
+  categoryRuleSaveSchema,
+  categoryRuleScopeSchema,
+} from './dtos/category-rules';
 export * from './format/currency';
 export * from './format/date';
 export * from './format/locale';

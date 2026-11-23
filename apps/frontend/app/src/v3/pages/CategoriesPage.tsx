@@ -1,4 +1,4 @@
-import { SUGGESTED_CATEGORY_KEYS } from '@scani/shared';
+import { type CategoryRuleSave, SUGGESTED_CATEGORY_KEYS } from '@scani/shared';
 import { useDocumentTitle } from '@scani/ui/hooks/useDocumentTitle';
 import { Button } from '@scani/ui/ui/button';
 import { showError } from '@scani/ui/ui/use-toast';
@@ -17,6 +17,7 @@ import {
   CategoryFormSheet,
 } from '../components/categories/CategoryFormSheet';
 import { CategoryRow, categoryTotal } from '../components/categories/CategoryRow';
+import { CategoryRulesSection } from '../components/categories/CategoryRulesSection';
 
 /** A person's categories: create, rename, recolour, move and delete (SC-1652). */
 export function CategoriesPage() {
@@ -28,6 +29,7 @@ export function CategoriesPage() {
   const refresh = () =>
     Promise.all([utils.categories.list.invalidate(), utils.transactions.list.invalidate()]);
 
+  const [ruleDraft, setRuleDraft] = useState<CategoryRuleSave | null>(null);
   const [draft, setDraft] = useState<CategoryDraft | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const create = trpc.categories.create.useMutation({
@@ -90,10 +92,20 @@ export function CategoriesPage() {
       <PageHeader
         title={t('v3.categories.page.title')}
         action={
-          <Button onClick={startCreate}>
-            <Plus className="me-1.5 size-4" aria-hidden="true" />
-            {t('v3.categories.page.new')}
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              onClick={() =>
+                setRuleDraft({ payeeText: '', accountId: '', categoryId: '', enabled: true })
+              }
+            >
+              {t('v3.categories.rules.add')}
+            </Button>
+            <Button onClick={startCreate}>
+              <Plus className="me-1.5 size-4" aria-hidden="true" />
+              {t('v3.categories.page.new')}
+            </Button>
+          </div>
         }
       />
 
@@ -141,6 +153,8 @@ export function CategoriesPage() {
           ])}
         </ul>
       )}
+
+      <CategoryRulesSection nodes={nodes} draft={ruleDraft} onDraft={setRuleDraft} />
 
       <CategoryFormSheet
         draft={draft}

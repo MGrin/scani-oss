@@ -56,3 +56,15 @@ describe('CategoryDeleteSheet (SC-1652)', () => {
     expect(render('travel')).toInclude('Uncategorized');
   });
 });
+
+test('category used by saved rules points to those rules before deletion', () => {
+  const html = renderToStaticMarkup(
+    <CategoryDeleteBody
+      nodes={[{ ...TREE[1]!, savedRuleCount: 2 }]}
+      categoryId="travel"
+      replacementId={null}
+      onReplacement={() => {}}
+    />
+  );
+  expect(html).toInclude('2 saved rules use this category');
+});

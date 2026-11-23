@@ -6,6 +6,7 @@ import type { CategoryNodeView } from './CategoryPicker';
 
 export interface CountedCategory extends CategoryNodeView {
   transactionCount: number;
+  savedRuleCount?: number;
   children: CountedCategory[];
 }
 
@@ -45,17 +46,33 @@ export function CategoryDeleteBody({
   categoryId,
   replacementId,
   onReplacement,
+  onRules,
 }: {
   nodes: readonly CountedCategory[];
   categoryId: string;
   replacementId: string | null;
   onReplacement: (id: string | null) => void;
+  onRules?: () => void;
 }) {
   const { t } = useTranslation();
   const category = find(nodes, categoryId);
   if (!category) return null;
   return (
     <div className="flex flex-col gap-3">
+      {category.savedRuleCount ? (
+        <p role="alert" className="text-body">
+          <button
+            type="button"
+            onClick={() => {
+              onRules?.();
+              document.getElementById('saved-rules')?.scrollIntoView();
+            }}
+            className="text-start underline"
+          >
+            {t('v3.categories.rules.inUse', { count: category.savedRuleCount })}
+          </button>
+        </p>
+      ) : null}
       <p className="text-body">
         {t('v3.categories.delete.where', {
           count: category.transactionCount,
@@ -119,7 +136,11 @@ export function CategoryDeleteSheet({
           pendingLabel={t('v3.categories.delete.pending')}
           onSubmit={() => onConfirm(replacementId ?? undefined)}
           onCancel={onClose}
-          blockers={[]}
+          blockers={
+            category?.savedRuleCount
+              ? [t('v3.categories.rules.inUse', { count: category.savedRuleCount })]
+              : []
+          }
           pending={pending}
           error={null}
         />
@@ -131,6 +152,7 @@ export function CategoryDeleteSheet({
           categoryId={categoryId}
           replacementId={replacementId}
           onReplacement={setReplacementId}
+          onRules={onClose}
         />
       ) : null}
     </FormSheet>
