@@ -632,3 +632,25 @@ describe('BackupRestorer uploaded documents (SC-1662)', () => {
       expect(report.rows.payment_occurrences).toBe(1);
     }));
 });
+
+test('restore ignores serialized engine quote projections', () =>
+  withTestDb(async (tx) => {
+    const source = await seedSource(tx);
+    const records = await fileOf(source.user.id, tx);
+    const row = records.find((r) => r.type === 'row' && r.table === 'holdings');
+    if (!row || row.type !== 'row') throw new Error('holding missing');
+    row.row.valueQuote = {
+      version: 1,
+      baseTokenId: row.row.tokenId,
+      price: '999',
+      source: 'fixture',
+      staleAfter: null,
+      calculatedAt: new Date().toISOString(),
+    };
+    const target = await makeUser(tx);
+    const report = await new BackupRestorer().restore(target.id, opener(records), tx);
+    const id = report.ids.get(String(row.row.id));
+    if (!id) throw new Error('restored holding missing');
+    const [restored] = await tx.select().from(schema.holdings).where(eq(schema.holdings.id, id));
+    expect(restored?.valueQuote).toBeNull();
+  }));

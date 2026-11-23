@@ -24,6 +24,7 @@ import {
   BenchmarkReturnService,
   GainsByWrapperService,
   IncomeService,
+  PortfolioValuationService,
   PriceHubResolver,
   PriceReader,
   ReturnsService,
@@ -990,17 +991,35 @@ export const portfolioRouter = router({
     // owner, priced, and holding more than it was hidden at; a row hidden
     // before that figure was kept is measured from zero. A sweep-hidden row
     // still counts in totals, so it is not one.
-    const hiddenWithNewBalance = (
+    const hiddenCandidates = (
       await db.execute<{ id: string }>(sql`
         SELECT h.id FROM holdings h JOIN tokens t ON t.id = h.token_id
         WHERE h.user_id = ${userId}
           AND h.is_hidden
           AND h.hidden_by IS DISTINCT FROM 'auto'
           AND ${notScamFor('h', 't')}
-          AND coalesce(h.value_base::numeric, 0) > 0
           AND h.balance::numeric > coalesce(h.hidden_balance, '0')::numeric
         ORDER BY h.id`)
     ).map((row) => row.id);
+
+    const hiddenValues =
+      hiddenCandidates.length === 0
+        ? new Map<string, string | null>()
+        : new Map(
+            (
+              await Container.get(PortfolioValuationService).getUserPortfolioValue(
+                userId,
+                undefined,
+                undefined,
+                ctx.requestCache,
+                true
+              )
+            ).holdings.map((h) => [h.holdingId, h.value])
+          );
+    const hiddenWithNewBalance = hiddenCandidates.filter((id) => {
+      const value = hiddenValues.get(id);
+      return value !== null && value !== undefined && new Decimal(value).gt(0);
+    });
 
     return {
       /**

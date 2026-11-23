@@ -202,7 +202,7 @@ describe('HoldingCacheWriter — the value cache (SC-1610)', () => {
     });
   });
 
-  test('a revalue that moves nothing writes nothing', async () => {
+  test('identical projections write nothing, but a newer same-price reading refreshes metadata', async () => {
     await withTestDb(async (tx) => {
       const { usd } = await hubs(tx);
       const h = await holder(tx, usd, '2');
@@ -211,9 +211,9 @@ describe('HoldingCacheWriter — the value cache (SC-1610)', () => {
 
       expect(await writer.revalue(h.userId, [h.holdingId], AT, tx)).toEqual([h.holdingId]);
       expect(await writer.revalue(h.userId, [h.holdingId], AT, tx)).toEqual([]);
-      // A newer reading at the same price, well inside the refresh horizon: nothing to write.
+      // A newer same-price reading refreshes its metadata immediately.
       await price(tx, h.tokenId, usd, '10', new Date(T0.getTime() + 60_000));
-      expect(await writer.revalue(h.userId, [h.holdingId], AT, tx)).toEqual([]);
+      expect(await writer.revalue(h.userId, [h.holdingId], AT, tx)).toEqual([h.holdingId]);
       await price(tx, h.tokenId, usd, '11', new Date(T0.getTime() + 120_000));
       expect(await writer.revalue(h.userId, [h.holdingId], AT, tx)).toEqual([h.holdingId]);
     });
@@ -254,7 +254,7 @@ describe('HoldingCacheWriter — the value cache (SC-1610)', () => {
     });
   });
 
-  test('a changed pair revalues the holdings routed through it, and writes only a moved value', async () => {
+  test('a changed pair revalues candidates and advances their quote ordering', async () => {
     await withTestDb(async (tx) => {
       const { usd, eur } = await hubs(tx);
       const h = await holder(tx, eur, '2');
@@ -276,10 +276,10 @@ describe('HoldingCacheWriter — the value cache (SC-1610)', () => {
 
       // Dated by the route's binding leg, the older one: the token's own reading.
       expect(await cached(tx, h.holdingId)).toEqual({ value: '12.5', pricedAt: T0.toISOString() });
-      // A candidate too (a route of it hops through EUR), but its value did not move.
+      // The unchanged candidate advances its calculation ordering too.
       expect((await cached(tx, bystander.holdingId)).value).toBe('5');
       expect(written).toContain(h.holdingId);
-      expect(written).not.toContain(bystander.holdingId);
+      expect(written).toContain(bystander.holdingId);
 
       const unrelated = await makeToken(tx);
       expect(

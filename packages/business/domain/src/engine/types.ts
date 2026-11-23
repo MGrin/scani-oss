@@ -123,5 +123,6 @@ export interface PriceAt {
   readingAt: Date;
   path: PricePath;
   stale: boolean;
+  staleAfter?: Date | null;
   source: string | null;
 }

@@ -101,10 +101,12 @@ function makeService(rows: Row[]): HoldingQueryService {
   } as unknown as HoldingRepository);
   Container.set(PortfolioValuationService, {
     getUserPortfolioValue: async () => ({
-      holdings: rows.map((row) => ({
+      holdings: rows.map((row, i) => ({
+        holdingId: `holding-${i}`,
         tokenId: row.tokenId,
         tokenSymbol: row.symbol,
         currentPrice: row.price,
+        value: String(Number(row.price) * 2),
         priceTimestamp: new Date('2026-08-14T00:00:00Z'),
         priceSource: row.source,
         priceStale: row.stale,
@@ -173,4 +175,15 @@ describe('HoldingQueryService — two tokens under one symbol', () => {
     const prices = holdings.map((h) => h.price?.value);
     expect(new Set(prices).size).toBe(2);
   });
+});
+
+test('two holdings of the same token keep their different quote metadata', async () => {
+  const rows = [CUSTOM, { ...CUSTOM, price: '2000', source: 'updated', stale: true }];
+  const result = await makeService(rows).getHoldingsByAccountIdWithDetails(user);
+  expect(result[0]?.price?.value).toBe('1500');
+  expect(result[1]?.price?.value).toBe('2000');
+  expect(result[0]?.value).toBe(3000);
+  expect(result[1]?.value).toBe(4000);
+  expect(result[0]?.priceStale).toBe(false);
+  expect(result[1]?.priceStale).toBe(true);
 });

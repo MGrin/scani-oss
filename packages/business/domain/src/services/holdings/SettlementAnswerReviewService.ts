@@ -349,7 +349,7 @@ export class SettlementAnswerReviewService {
       await restoreRows(
         transaction,
         schema.holdings,
-        sql`jsonb_build_array(${stored(sql`${removed} -> 'holding'`)} || '{"balance": "0", "value_base": null, "value_priced_at": null}'::jsonb)`
+        sql`jsonb_build_array(${stored(sql`${removed} -> 'holding'`)} || '{"balance": "0", "value_base": null, "value_priced_at": null, "value_quote": null}'::jsonb)`
       );
       funded.push({
         holdingId: String(bundle.holding.id),

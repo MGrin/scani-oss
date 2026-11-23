@@ -36,6 +36,7 @@ function holding(fields: Partial<Holding> = {}): Holding {
     kind: null,
     startsAt: null,
     valueBase: null,
+    valueQuote: null,
     valuePricedAt: null,
     cacheDueAt: null,
     lastUpdated: CREATED,

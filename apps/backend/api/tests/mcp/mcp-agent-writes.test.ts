@@ -10,6 +10,7 @@
  */ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
+import { PortfolioValuationService } from '@scani/domain/services';
 import { OpeningBalanceReconciliationService } from '@scani/domain/services/holdings/OpeningBalanceReconciliationService';
 import { makeHolding, makeToken } from '@scani/domain/test-helpers';
 import { InMemoryInflowRateLimiter } from '@scani/rate-limiter';
@@ -206,7 +207,7 @@ describe('agent write, then undo, is byte-identical (SC-1617)', () => {
     await reading(alice.userId, stale.id, '40', new Date('2026-09-02T00:00:00Z'));
     const row = async () => {
       const [r] = await db.execute<{ image: string; balance: string }>(sql`
-        SELECT (to_jsonb(h) - 'balance')::text AS image, balance FROM holdings h WHERE id = ${stale.id}
+        SELECT (to_jsonb(h) - 'balance' - 'value_quote')::text AS image, balance FROM holdings h WHERE id = ${stale.id}
       `);
       return r;
     };
@@ -330,4 +331,31 @@ describe('write scope and tenancy (SC-1617)', () => {
     expect(refused).toBeInstanceOf(TRPCError);
     expect((refused as TRPCError).code).toBe('FORBIDDEN');
   });
+});
+
+test('undo recomputes the protected quote from restored evidence', async () => {
+  const id = await write(alice, 'record_movement', {
+    direction: 'inflow',
+    holdingId: alice.holdingId,
+    amount: '2',
+    occurredAt: '2026-10-01T09:00:00Z',
+  });
+  expect((await undo(alice, id)).isError).toBe(false);
+  const [holding] = await db
+    .select()
+    .from(schema.holdings)
+    .where(eq(schema.holdings.id, alice.holdingId));
+  const [owner] = await db.select().from(schema.users).where(eq(schema.users.id, alice.userId));
+  expect(holding?.valueQuote).not.toBeNull();
+  const asOf = new Date();
+  const live = await Container.get(PortfolioValuationService).computePortfolioValueAt(
+    alice.userId,
+    { at: asOf }
+  );
+  const valued = live.holdings.find((h) => h.holdingId === alice.holdingId);
+  if (!owner?.baseCurrencyId) throw new Error('fixture owner has no currency');
+  expect(holding?.valueQuote?.baseTokenId).toBe(owner.baseCurrencyId);
+  expect(holding?.valueQuote?.price).toBe(valued?.currentPrice ?? null);
+  expect(holding?.valueBase).toBe(valued?.value ?? null);
+  expect(new Date(holding!.valueQuote!.calculatedAt).getTime()).toBeLessThanOrEqual(+asOf);
 });
