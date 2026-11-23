@@ -1,7 +1,13 @@
+import type { HoldingValueQuote } from '@scani/db/schema';
 import { Decimal } from '@scani/shared';
 
 /** In the order they are tried: the first that holds names the difference. */
 const VALUE_DIFF_CATEGORIES = [
+  'quote-missing',
+  'quote-metadata-differs',
+  'quote-freshness-differs',
+  'transit-value-differs',
+  'transit-cache-missing',
   'not-valued',
   'no-longer-priced',
   'price-moved-since',
@@ -14,6 +20,7 @@ export type ValueComparator = 'cache-vs-live';
 export interface CachedValue {
   value: string | null;
   pricedAt: Date | null;
+  quote?: HoldingValueQuote | null;
 }
 
 export interface LiveValue {
@@ -24,6 +31,9 @@ export interface LiveValue {
   balance: string;
   /** The holding is of the owner's base currency, whose identity price has no reading. */
   isBase: boolean;
+  baseTokenId?: string;
+  source?: string;
+  stale?: boolean;
 }
 
 /**
@@ -44,9 +54,41 @@ export function compareValue(
   legacyValue: string | null;
   detail: Record<string, unknown>;
 } | null {
-  if (cached.value === null && live.value === null) return null;
-  if (cached.value !== null && live.value !== null && new Decimal(cached.value).eq(live.value)) {
-    return null;
+  const valuesAgree =
+    (cached.value === null && live.value === null) ||
+    (cached.value !== null && live.value !== null && new Decimal(cached.value).eq(live.value));
+  if (valuesAgree) {
+    if (cached.quote === undefined) return null;
+    const quote = cached.quote;
+    const category =
+      quote === null || quote.version !== 1 || quote.baseTokenId !== live.baseTokenId
+        ? 'quote-missing'
+        : quote.price !== live.price ||
+            (!live.isBase &&
+              (quote.source !== (live.source ?? null) ||
+                cached.pricedAt?.getTime() !== live.readingAt?.getTime()))
+          ? 'quote-metadata-differs'
+          : live.price !== null &&
+              (quote.staleAfter !== null && at > new Date(quote.staleAfter)) !== live.stale
+            ? 'quote-freshness-differs'
+            : null;
+    return category === null
+      ? null
+      : {
+          comparator: 'cache-vs-live',
+          category,
+          at,
+          engineValue: cached.value,
+          legacyValue: live.value,
+          detail: {
+            quote,
+            livePrice: live.price,
+            liveSource: live.source ?? null,
+            liveStale: live.stale,
+            cachedPricedAt: cached.pricedAt?.toISOString() ?? null,
+            liveReadingAt: live.readingAt?.toISOString() ?? null,
+          },
+        };
   }
   const category: ValueDiffCategory =
     cached.value === null

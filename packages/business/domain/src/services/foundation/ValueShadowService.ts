@@ -55,6 +55,7 @@ export class ValueShadowService {
             id: schema.holdings.id,
             value: schema.holdings.valueBase,
             pricedAt: schema.holdings.valuePricedAt,
+            quote: schema.holdings.valueQuote,
           })
           .from(schema.holdings)
           .where(eq(schema.holdings.userId, unit.userId))
@@ -66,13 +67,20 @@ export class ValueShadowService {
       tally.compared += 1;
       const cache = cached.get(holding.holdingId);
       const difference = compareValue(
-        { value: cache?.value ?? null, pricedAt: cache?.pricedAt ?? null },
+        {
+          value: cache?.value ?? null,
+          pricedAt: cache?.pricedAt ?? null,
+          quote: cache?.quote ?? null,
+        },
         {
           value: holding.value,
           readingAt: holding.priceTimestamp ?? null,
           price: holding.currentPrice,
           balance: holding.balance,
           isBase: holding.tokenId === unit.baseTokenId,
+          baseTokenId: unit.baseTokenId,
+          source: holding.priceSource,
+          stale: holding.priceStale,
         },
         asOf
       );
@@ -83,6 +91,43 @@ export class ValueShadowService {
         holdingId: holding.holdingId,
         tokenId: holding.tokenId,
         baseTokenId: unit.baseTokenId,
+      });
+    }
+    const projection = await this.valuation.readCachedPortfolioValueAt(unit.userId, {
+      at: asOf,
+      baseCurrencyId: unit.baseTokenId,
+      tx,
+    });
+    const cachedLines = new Map(projection?.inTransit?.map((line) => [line.outflowId, line]));
+    const liveLines = new Map(live.inTransit?.map((line) => [line.outflowId, line]));
+    for (const outflowId of new Set([...cachedLines.keys(), ...liveLines.keys()])) {
+      tally.compared += 1;
+      const line = liveLines.get(outflowId);
+      const cache = cachedLines.get(outflowId);
+      if (
+        cache &&
+        line &&
+        cache.value === line.value &&
+        cache.currentPrice === line.currentPrice &&
+        cache.quantity === line.quantity &&
+        cache.destinationHoldingId === line.destinationHoldingId
+      )
+        continue;
+      tally.differences.push({
+        comparator: 'cache-vs-live',
+        category: projection === null ? 'transit-cache-missing' : 'transit-value-differs',
+        at: asOf,
+        engineValue: cache?.value ?? null,
+        legacyValue: line?.value ?? null,
+        userId: unit.userId,
+        holdingId: line?.destinationHoldingId ?? cache?.destinationHoldingId ?? null,
+        tokenId: line?.tokenId ?? cache?.tokenId ?? null,
+        baseTokenId: unit.baseTokenId,
+        detail: {
+          outflowId,
+          cachedPrice: cache?.currentPrice ?? null,
+          livePrice: line?.currentPrice ?? null,
+        },
       });
     }
     return tally;

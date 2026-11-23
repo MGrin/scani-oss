@@ -12,8 +12,10 @@ import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWrit
 import { ValueShadowService } from '../../../src/services/foundation/ValueShadowService';
 import { PriceHubResolver } from '../../../src/services/pricing/PriceHubResolver';
 import { withTestDb } from '../../../test/helpers/db';
+import { seedHoldingCache } from '../../../test/helpers/engine-guard';
 import { makeInstitution, makeUser } from '../../../test/helpers/factories';
 import { makeAccount, makeHolding, makeToken } from '../../../test/helpers/factories-extra';
+import { absorb, travelling } from '../../../test/helpers/transit';
 
 type Tx = Parameters<Parameters<typeof withTestDb>[0]>[0];
 
@@ -88,5 +90,70 @@ describe('ValueShadowService (SC-1610)', () => {
       const after = await shadow.run({ asOf: AS_OF, userId: user.id }, tx);
       expect(after.summary).toMatchObject({ compared: 3, matched: 3 });
     });
+  });
+});
+
+test('shadow detects equal-value quote metadata and freshness corruption independently', async () => {
+  await withTestDb(async (tx) => {
+    const base = await makeToken(tx);
+    const token = await makeToken(tx);
+    const user = await makeUser(tx, { baseCurrencyId: base.id });
+    const institution = await makeInstitution(tx);
+    const account = await makeAccount(tx, { userId: user.id, institutionId: institution.id });
+    const holding = await makeHolding(tx, {
+      userId: user.id,
+      accountId: account.id,
+      tokenId: token.id,
+      balance: '0',
+    });
+    await price(tx, token.id, base.id, '10', T0);
+    await Container.get(HoldingCacheWriter).revalue(user.id, [holding.id], T0, tx);
+    const [row] = await tx.select().from(schema.holdings).where(eq(schema.holdings.id, holding.id));
+    const shadow = Container.get(ValueShadowService);
+    for (const [fields, category] of [
+      [{ source: 'wrong' }, 'quote-metadata-differs'],
+      [{ staleAfter: T0.toISOString() }, 'quote-freshness-differs'],
+    ] as const) {
+      await seedHoldingCache(tx, (c) =>
+        c
+          .update(schema.holdings)
+          .set({ valueQuote: { ...row!.valueQuote!, ...fields } })
+          .where(eq(schema.holdings.id, holding.id))
+      );
+      const result = await shadow.run({ asOf: AS_OF, userId: user.id }, tx);
+      expect(result.summary.byCategory).toEqual({ [category]: 1 });
+    }
+  });
+});
+
+test('shadow compares transit values against live valuation', async () => {
+  await withTestDb(async (tx) => {
+    const t = await travelling(tx);
+    await absorb(tx, t);
+    const [owner] = await tx.select().from(schema.users).where(eq(schema.users.id, t.userId));
+    const ids = [t.source.id, t.destination.id];
+    await Container.get(HoldingCacheWriter).revalue(t.userId, ids, new Date(), tx);
+    const [destination] = await tx
+      .select()
+      .from(schema.holdings)
+      .where(eq(schema.holdings.id, t.destination.id));
+    await seedHoldingCache(tx, (c) =>
+      c
+        .update(schema.holdings)
+        .set({
+          valueBase: '2000',
+          valueQuote: {
+            ...destination!.valueQuote!,
+            baseTokenId: owner!.baseCurrencyId!,
+            price: '2',
+          },
+        })
+        .where(eq(schema.holdings.id, t.destination.id))
+    );
+    const result = await Container.get(ValueShadowService).run(
+      { asOf: new Date(), userId: t.userId },
+      tx
+    );
+    expect(result.summary.byCategory['transit-value-differs']).toBe(1);
   });
 });

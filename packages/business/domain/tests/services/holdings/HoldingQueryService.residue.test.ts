@@ -84,7 +84,9 @@ function makeService(coverage: Coverage | null): HoldingQueryService {
           // (SC-1114). Matches the holding row's token above.
           tokenId: 'token-0',
           tokenSymbol: 'TESTCOIN',
+          holdingId: 'holding-0',
           currentPrice: '2',
+          value: '20',
           priceTimestamp: new Date('2026-08-14T00:00:00Z'),
           priceSource: 'coingecko',
         },

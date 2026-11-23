@@ -14,7 +14,7 @@ import {
 } from '../../lib/request-cache';
 import { effectiveScamProbability, notScamFor } from '../../lib/scam-verdict';
 import { PriceReader } from '../pricing/PriceReader';
-import { UserService } from '../users/UserService';
+import { compatibleHoldingQuote } from './holding-value-quote';
 import { InTransitService } from './InTransitService';
 import { PortfolioValueCache } from './PortfolioValueCache';
 import { PortfolioValueVersion } from './PortfolioValueVersion';
@@ -145,7 +145,6 @@ export function sumPortfolioDebtByAccount(
 export class PortfolioValuationService {
   private readonly logger = createComponentLogger('portfolio-valuation');
   private readonly priceReader = Container.get(PriceReader);
-  private readonly userService = Container.get(UserService);
   private readonly portfolioValueCache = Container.get(PortfolioValueCache);
   private readonly portfolioValueVersion = Container.get(PortfolioValueVersion);
   private readonly inTransitService = Container.get(InTransitService);
@@ -163,7 +162,7 @@ export class PortfolioValuationService {
    */
   async getUserPortfolioValue(
     userId: string,
-    userBaseCurrencyId?: string,
+    _userBaseCurrencyId?: string,
     accountId?: string,
     requestCache?: RequestCache
   ): Promise<PortfolioValueResult> {
@@ -178,21 +177,119 @@ export class PortfolioValuationService {
       requestCache,
       createPortfolioCacheKey(userId, accountId),
       async () => {
-        const [baseCurrencyId, dataVersion] = await Promise.all([
-          userBaseCurrencyId ?? this.userService.getBaseCurrency(userId).then((c) => c.id),
-          this.portfolioValueVersion.read(userId),
-        ]);
+        const [owner] = await db
+          .select({ baseCurrencyId: schema.users.baseCurrencyId })
+          .from(schema.users)
+          .where(eq(schema.users.id, userId));
+        const baseCurrencyId = owner?.baseCurrencyId;
+        if (!baseCurrencyId) throw new Error('User not found or has no base currency set');
+        const cached = await this.readCachedPortfolioValueAt(userId, {
+          at: new Date(),
+          baseCurrencyId,
+          accountId,
+        });
+        if (cached !== null) return cached;
+        const dataVersion = await this.portfolioValueVersion.read(userId);
         return this.portfolioValueCache.getOrCompute(
           createPortfolioRedisKey(userId, accountId, baseCurrencyId, dataVersion),
           () =>
             this.computePortfolioValueAt(userId, {
               at: new Date(),
-              userBaseCurrencyId,
+              baseCurrencyId,
               accountId,
             })
         );
       }
     );
+  }
+
+  /** Null means this rolling-deploy projection needs the independent live path. */
+  async readCachedPortfolioValueAt(
+    userId: string,
+    opts: { at: Date; baseCurrencyId: string; accountId?: string; tx?: DatabaseTransaction }
+  ): Promise<PortfolioValueResult | null> {
+    const reader = opts.tx ?? db;
+    const [base] = await reader
+      .select({ symbol: schema.tokens.symbol })
+      .from(schema.tokens)
+      .where(eq(schema.tokens.id, opts.baseCurrencyId));
+    if (!base) throw new Error('Base currency token not found');
+    const conditions = [
+      eq(schema.holdings.userId, userId),
+      eq(schema.holdings.isHidden, false),
+      notScamFor(),
+    ];
+    if (opts.accountId) conditions.push(eq(schema.holdings.accountId, opts.accountId));
+    const rows = await reader
+      .select({
+        holdingId: schema.holdings.id,
+        accountId: schema.holdings.accountId,
+        tokenId: schema.holdings.tokenId,
+        tokenSymbol: schema.tokens.symbol,
+        balance: schema.holdings.balance,
+        valueBase: schema.holdings.valueBase,
+        valuePricedAt: schema.holdings.valuePricedAt,
+        valueQuote: schema.holdings.valueQuote,
+        isActive: schema.holdings.isActive,
+      })
+      .from(schema.holdings)
+      .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
+      .where(and(...conditions));
+    const holdings: PortfolioValueResult['holdings'] = [];
+    for (const row of rows) {
+      const quote = compatibleHoldingQuote(row, opts.baseCurrencyId, opts.at);
+      if (quote === null) return null;
+      const identity = row.tokenId === opts.baseCurrencyId;
+      holdings.push({
+        holdingId: row.holdingId,
+        accountId: row.accountId,
+        tokenId: row.tokenId,
+        tokenSymbol: row.tokenSymbol,
+        balance: new Decimal(row.balance).toString(),
+        currentPrice: quote.price,
+        value: row.valueBase,
+        priceTimestamp: identity ? opts.at : (row.valuePricedAt ?? undefined),
+        priceSource: identity ? 'Base Currency' : (quote.source ?? undefined),
+        priceStale:
+          quote.price === null
+            ? undefined
+            : quote.staleAfter !== null && opts.at > new Date(quote.staleAfter),
+        isActive: row.isActive,
+      });
+    }
+    let total = holdings.reduce(
+      (sum, h) => (h.isActive && h.value !== null ? sum.add(h.value) : sum),
+      new Decimal(0)
+    );
+    const inTransit: NonNullable<PortfolioValueResult['inTransit']> = [];
+    const amounts = opts.accountId
+      ? []
+      : await this.inTransitService.amountsAt(userId, [opts.at], opts.tx);
+    for (const amount of amounts) {
+      const destination = holdings.find((h) => h.holdingId === amount.destinationHoldingId);
+      if (!destination?.isActive) continue;
+      if (destination.tokenId !== amount.tokenId) return null;
+      const currentPrice = destination.currentPrice;
+      const value = currentPrice === null ? null : amount.quantity.mul(currentPrice).toString();
+      inTransit.push({
+        outflowId: amount.outflowId,
+        sourceHoldingId: amount.sourceHoldingId,
+        destinationHoldingId: amount.destinationHoldingId,
+        tokenId: amount.tokenId,
+        tokenSymbol: destination.tokenSymbol,
+        sentAt: amount.sentAt,
+        quantity: amount.quantity.toString(),
+        currentPrice,
+        value,
+      });
+      if (value !== null) total = total.add(value);
+    }
+    return {
+      totalValue: total.toString(),
+      baseCurrency: base.symbol,
+      holdings,
+      ...(inTransit.length ? { inTransit } : {}),
+    };
   }
 
   /** The portfolio valued at `at`. Uncached: `getUserPortfolioValue` is the cached entry. */
@@ -208,7 +305,7 @@ export class PortfolioValuationService {
       tx?: DatabaseTransaction;
     }
   ): Promise<PortfolioValueResult> {
-    const { userBaseCurrencyId, accountId } = opts;
+    const { accountId } = opts;
     const reader = opts.tx ?? db;
     let baseCurrency: { id: string; symbol: string; name: string };
 
@@ -220,9 +317,6 @@ export class PortfolioValuationService {
         .limit(1);
       if (!token) throw new Error('Base currency token not found');
       baseCurrency = token;
-    } else if (userBaseCurrencyId) {
-      // Use enhanced user context service with caching
-      baseCurrency = await this.userService.getBaseCurrency(userId);
     } else {
       // Fallback: get user and base currency in a single query
       const [userWithBaseCurrency] = await reader
