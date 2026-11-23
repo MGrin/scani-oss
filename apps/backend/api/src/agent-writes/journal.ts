@@ -54,8 +54,8 @@ const TABLES: readonly TrackedTable[] = [
     name: 'holdings',
     key: 'id',
     scope: owned('user_id'),
-    volatile: ['value_base', 'value_priced_at'],
-    derived: { balance: '0', value_base: null, value_priced_at: null },
+    volatile: ['value_base', 'value_priced_at', 'value_quote'],
+    derived: { balance: '0', value_base: null, value_priced_at: null, value_quote: null },
   },
   {
     name: 'holding_coverage',

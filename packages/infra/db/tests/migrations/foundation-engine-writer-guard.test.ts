@@ -55,7 +55,7 @@ const probeBalance = async (tx: Tx) =>
     }[]
   )[0]?.balance;
 
-test('the trigger exists on holdings, fires before an insert or an update of the three columns, and is enabled', async () => {
+test('the trigger exists on holdings, fires before an insert or an update of the cache and identity columns, and is enabled', async () => {
   await inRollback(async (tx) => {
     const [trigger] = (await tx.execute(
       sql`SELECT tgenabled, pg_get_triggerdef(oid) AS definition
@@ -66,7 +66,7 @@ test('the trigger exists on holdings, fires before an insert or an update of the
     expect(trigger?.tgenabled).toBe('O');
     // A5 D-3: an UPDATE that names none of the three never runs the function.
     expect(trigger?.definition).toContain(
-      'BEFORE INSERT OR UPDATE OF balance, value_base, value_priced_at ON'
+      'BEFORE INSERT OR UPDATE OF balance, value_base, value_priced_at, value_quote, token_id, user_id ON'
     );
     expect(trigger?.definition).toContain('FOR EACH ROW');
     expect(trigger?.definition).toContain('EXECUTE FUNCTION holdings_engine_writer_guard()');

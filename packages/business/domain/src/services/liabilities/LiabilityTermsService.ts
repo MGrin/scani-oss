@@ -18,6 +18,8 @@ import {
 } from '../../lib/liabilities/amortization';
 import { LiabilityTermsRepository } from '../../repositories/LiabilityTermsRepository';
 import { localDate } from '../payments/PaymentReminderService';
+import { compatibleHoldingQuote } from '../portfolio/holding-value-quote';
+import { PriceReader } from '../pricing/PriceReader';
 import { AccountClassService } from './AccountClassService';
 
 export class LiabilityAccountNotFound extends Error {
@@ -63,6 +65,7 @@ export function userToday(now: Date, timezone: string | null | undefined): strin
 export class LiabilityTermsService {
   private readonly accountClass = Container.get(AccountClassService);
   private readonly repo = Container.get(LiabilityTermsRepository);
+  private readonly prices = Container.get(PriceReader);
 
   async get(
     userId: string,
@@ -161,7 +164,7 @@ export class LiabilityTermsService {
    * The debt is the account's visible fiat holding, stored negative. With more
    * than one currency on the account, the largest by base value is the
    * loan's (SC-1672): 50,000 yen is less than 1,000 pounds. Where no holding
-   * has a base value yet, the raw balance decides. The others still count in
+   * has a price yet, the raw balance decides. The others still count in
    * net worth through their own holdings.
    */
   private async readDebt(userId: string, accountId: string, tx?: DatabaseTransaction) {
@@ -169,12 +172,16 @@ export class LiabilityTermsService {
       .select({
         balance: schema.holdings.balance,
         valueBase: schema.holdings.valueBase,
+        valueQuote: schema.holdings.valueQuote,
+        valuePricedAt: schema.holdings.valuePricedAt,
+        baseCurrencyId: schema.users.baseCurrencyId,
         symbol: schema.tokens.symbol,
         decimals: schema.tokens.decimals,
         tokenId: schema.tokens.id,
       })
       .from(schema.holdings)
       .innerJoin(schema.tokens, eq(schema.holdings.tokenId, schema.tokens.id))
+      .innerJoin(schema.users, eq(schema.holdings.userId, schema.users.id))
       .innerJoin(schema.tokenTypes, eq(schema.tokens.typeId, schema.tokenTypes.id))
       .where(
         and(
@@ -184,6 +191,25 @@ export class LiabilityTermsService {
           eq(schema.tokenTypes.code, 'fiat')
         )
       );
+    const base = rows[0]?.baseCurrencyId;
+    const now = new Date();
+    if (base && rows.some((row) => compatibleHoldingQuote(row, base, now) === null)) {
+      const prices = await this.prices.at(
+        [...new Set(rows.map((row) => row.tokenId))],
+        base,
+        now,
+        tx
+      );
+      for (const row of rows) {
+        const price = prices.get(row.tokenId);
+        row.valueBase =
+          price === null || price === undefined
+            ? null
+            : new Decimal(row.balance).mul(price.price).toString();
+      }
+    } else if (!base) {
+      for (const row of rows) row.valueBase = null;
+    }
     const byValue = rows.every((r) => r.valueBase !== null);
     const size = (r: (typeof rows)[number]) =>
       new Decimal((byValue ? r.valueBase : r.balance) ?? 0).abs();

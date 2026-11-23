@@ -22,6 +22,15 @@ import { transferReviewRules } from './transfer-review-rules';
 import { users } from './users';
 import { vaultHoldings } from './vaults';
 
+export interface HoldingValueQuote {
+  version: 1;
+  baseTokenId: string;
+  price: string | null;
+  source: string | null;
+  staleAfter: string | null;
+  calculatedAt: string;
+}
+
 // Per-user position rows: a single (account, token) holding with a balance.
 // Hidden holdings are excluded from queries but still updated by cron;
 // inactive holdings are visible but excluded from total calculations.
@@ -89,6 +98,7 @@ export const holdings = pgTable(
     kind: text('kind').$type<'snapshot' | 'feed'>(),
     startsAt: timestamp('starts_at', { withTimezone: true }),
     valueBase: text('value_base'),
+    valueQuote: jsonb('value_quote').$type<HoldingValueQuote>(),
     valuePricedAt: timestamp('value_priced_at', { withTimezone: true }),
     // The earliest evidence instant after the last cache write: the balance is
     // due to be rewritten then. Null when nothing is ahead of now (SC-1633).

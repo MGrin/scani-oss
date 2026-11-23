@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { getDb } from '@scani/db';
 import * as schema from '@scani/db/schema';
 import { UNMATCHED_TOKEN_MARKER } from '@scani/domain/services';
+import { SnapshotWriter } from '@scani/domain/services/feeds/SnapshotWriter';
 import {
   dropPricesOf,
   makeAccount,
@@ -13,6 +14,7 @@ import {
   restoreContainerAfterAll,
 } from '@scani/domain/test-helpers';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { Container } from 'typedi';
 import { makeAuthedCaller } from '../../helpers/test-caller';
 
 // `portfolio.getDataQualityReport` (foundation A3, Task 17): "no recent price"
@@ -175,6 +177,14 @@ describe('portfolio.getDataQualityReport — a hidden holding with a new balance
         valuePricedAt: fields.valueBase === null ? null : new Date(),
       })
     );
+    if (fields.valueBase !== null)
+      await db().insert(schema.tokenPrices).values({
+        tokenId: token.id,
+        baseTokenId: usdId,
+        price: '3',
+        timestamp: new Date(),
+        source: 'fixture',
+      });
     return holding.id;
   }
 
@@ -235,6 +245,65 @@ describe('portfolio.getDataQualityReport — a hidden holding with a new balance
     expect(report.hiddenWithNewBalance).toBeArray();
     expect(report.hiddenWithNewBalance).not.toContain(id);
   });
+});
+
+test('hidden-balance flag sees a contended zero-to-positive snapshot before refill', async () => {
+  const token = await db().transaction((tx) => makeToken(tx));
+  made.tokens.push(token.id);
+  const h = await db().transaction((tx) =>
+    makeHolding(tx, {
+      userId: user.id,
+      accountId,
+      tokenId: token.id,
+      balance: '0',
+      valueBase: '0',
+      isHidden: true,
+      hiddenBy: 'user',
+      hiddenBalance: '0',
+    })
+  );
+  await db().insert(schema.tokenPrices).values({
+    tokenId: token.id,
+    baseTokenId: usdId,
+    price: '3',
+    timestamp: new Date(),
+    source: 'fixture',
+  });
+  const locked = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const owner = db().transaction(async (tx) => {
+    await tx
+      .update(schema.users)
+      .set({ name: 'profile update' })
+      .where(eq(schema.users.id, user.id));
+    locked.resolve();
+    await release.promise;
+  });
+  try {
+    await locked.promise;
+    await db().transaction((tx) =>
+      Container.get(SnapshotWriter).record(
+        {
+          userId: user.id,
+          holdingId: h.id,
+          amount: '5',
+          at: new Date(),
+          cause: 'correction',
+          legacySource: 'manual',
+          legacyMeta: {},
+        },
+        { cache: 'set' },
+        tx
+      )
+    );
+    release.resolve();
+    await owner;
+    const report = await makeAuthedCaller(user).portfolio.getDataQualityReport();
+    expect(report.hiddenWithNewBalance).toContain(h.id);
+  } finally {
+    release.resolve();
+    await owner.catch(() => {});
+  }
 });
 
 // SC-1649 Q3: a restore never refuses a whole file for a token this instance

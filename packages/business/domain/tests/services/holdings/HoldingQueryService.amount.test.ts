@@ -79,11 +79,13 @@ function makeService(rows: Row[]): HoldingQueryService {
   Container.set(PortfolioValuationService, {
     getUserPortfolioValue: async () => ({
       holdings: rows.map((row, i) => ({
+        holdingId: `holding-${i}`,
         // The token id is what a price is keyed on — a symbol is not unique
         // (SC-1114). Same `token-${i}` the holding rows above carry.
         tokenId: `token-${i}`,
         tokenSymbol: row.symbol,
         currentPrice: '1',
+        value: row.balance,
         priceTimestamp: new Date('2026-08-14T00:00:00Z'),
         priceSource: 'coingecko',
       })),

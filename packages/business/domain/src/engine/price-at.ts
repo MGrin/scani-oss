@@ -79,7 +79,14 @@ export function priceAt(
   at: Date
 ): PriceAt | null {
   if (asset.tokenId === baseTokenId) {
-    return { price: new Decimal(1), readingAt: at, path: 'identity', stale: false, source: null };
+    return {
+      price: new Decimal(1),
+      readingAt: at,
+      path: 'identity',
+      stale: false,
+      staleAfter: null,
+      source: null,
+    };
   }
   const index = 'readings' in evidence ? indexPriceEvidence(evidence) : evidence;
   const best: Best = (from, to) => bestReading(index, from, to, at);
@@ -94,11 +101,17 @@ export function priceAt(
   if (route === null) return null;
   const classOf = (tokenId: string): AssetClass =>
     tokenId === asset.tokenId ? asset.assetClass : (index.assetClasses[tokenId] ?? 'unknown');
+  const deadlines = route.legs.flatMap((leg) => {
+    const horizon = STALENESS_HORIZON_MS[classOf(leg.tokenId)];
+    return horizon === null ? [] : [leg.at.getTime() + horizon];
+  });
+  const staleAfter = deadlines.length === 0 ? null : new Date(Math.min(...deadlines));
   return {
     price: route.price,
     readingAt: route.at,
     path: route.path,
-    stale: route.legs.some((leg) => pastHorizon(leg.at, classOf(leg.tokenId), at)),
+    stale: staleAfter !== null && at > staleAfter,
+    staleAfter,
     source: route.source,
   };
 }
@@ -299,9 +312,4 @@ function freshest(candidates: readonly Route[]): Route | null {
     if (top === null || candidate.at > top.at) top = candidate;
   }
   return top;
-}
-
-function pastHorizon(readAt: Date, assetClass: AssetClass, at: Date): boolean {
-  const horizon = STALENESS_HORIZON_MS[assetClass];
-  return horizon !== null && at.getTime() - readAt.getTime() > horizon;
 }

@@ -81,12 +81,14 @@ function makeService(rows: Row[]): HoldingQueryService {
   Container.set(PortfolioValuationService, {
     getUserPortfolioValue: async () => ({
       holdings: rows.map((row, i) => ({
+        holdingId: `holding-${i}`,
         // Keyed on the token id, which is what `HoldingQueryService` looks a
         // price up by — a symbol is not unique (SC-1114). Same `tokenIdOf`
         // the holding rows above use, so the two sides join.
         tokenId: tokenIdOf(row, i),
         tokenSymbol: row.symbol,
         currentPrice: row.price,
+        value: row.price === null ? null : String(Number(row.price) * 10),
         // The base-currency row is the one case with no `token_prices` row of
         // its own — the valuation carries no metadata for it, which is what
         // sends `HoldingQueryService` down its own fallback.

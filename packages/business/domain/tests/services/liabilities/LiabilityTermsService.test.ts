@@ -137,6 +137,27 @@ describe('LiabilityTermsService.projection', () => {
       const { user, account } = await setup(tx, 'loan');
       const pounds = await fiatToken(tx);
       const yen = await fiatToken(tx);
+      const base = await fiatToken(tx);
+      await tx
+        .update(schema.users)
+        .set({ baseCurrencyId: base.id })
+        .where(eq(schema.users.id, user.id));
+      await tx.insert(schema.tokenPrices).values([
+        {
+          tokenId: pounds.id,
+          baseTokenId: base.id,
+          price: '1.27',
+          timestamp: new Date(),
+          source: 'fixture',
+        },
+        {
+          tokenId: yen.id,
+          baseTokenId: base.id,
+          price: '0.0067',
+          timestamp: new Date(),
+          source: 'fixture',
+        },
+      ]);
       await makeHolding(tx, {
         userId: user.id,
         accountId: account.id,

@@ -221,12 +221,9 @@ export class HoldingCacheWriter {
   }
 
   /**
-   * One price load and at most one UPDATE for the user. A holding with no
-   * price, or an owner with no base, caches null. Writes a holding only when
-   * its value moved, or when its date moved and the stored one is past its
-   * class's refresh horizon; returns the holdings written. A holding whose
-   * balance moved after it was read is read and priced once more, so a sync
-   * that priced it before a price committed is not left stale (SC-1620).
+   * One price load, writing value and all quote metadata atomically. Currency
+   * is locked for the calculation. Balance and observed quote are compared at
+   * UPDATE; a losing write reloads once. Older calculation instants never win.
    */
   revalue(
     userId: string,
@@ -237,6 +234,16 @@ export class HoldingCacheWriter {
     return this.revalueOnce(userId, holdingIds, at, tx, true);
   }
 
+  /** Callers may hold holdings already; never wait for a currency writer here. */
+  private async tryLockCurrency(userId: string, tx: DatabaseTransaction) {
+    const [owner] = await tx
+      .select({ baseTokenId: schema.users.baseCurrencyId })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .for('share', { skipLocked: true });
+    return owner;
+  }
+
   private async revalueOnce(
     userId: string,
     holdingIds: readonly string[],
@@ -245,17 +252,32 @@ export class HoldingCacheWriter {
     retry: boolean
   ): Promise<string[]> {
     if (holdingIds.length === 0) return [];
-    const [owner] = await tx
-      .select({ baseTokenId: schema.users.baseCurrencyId })
-      .from(schema.users)
-      .where(eq(schema.users.id, userId));
-    const base = owner?.baseTokenId ?? null;
+    const owner = await this.tryLockCurrency(userId, tx);
+    if (!owner) {
+      // The next reader uses live prices; the sweep later refills metadata.
+      const invalidated = await asEngineCalculator(tx, (calculator) =>
+        calculator
+          .update(schema.holdings)
+          .set({ valueQuote: null })
+          .where(
+            and(
+              eq(schema.holdings.userId, userId),
+              inArray(schema.holdings.id, [...holdingIds]),
+              isNotNull(schema.holdings.valueQuote)
+            )
+          )
+          .returning({ id: schema.holdings.id })
+      );
+      return invalidated.map((row) => row.id);
+    }
+    const base = owner.baseTokenId;
     const rows = await tx
       .select({
         id: schema.holdings.id,
         tokenId: schema.holdings.tokenId,
         balance: schema.holdings.balance,
         valueBase: schema.holdings.valueBase,
+        valueQuote: schema.holdings.valueQuote,
         valuePricedAt: schema.holdings.valuePricedAt,
         typeCode: schema.tokenTypes.code,
       })
@@ -276,48 +298,80 @@ export class HoldingCacheWriter {
     const writes: Array<{
       id: string;
       balance: string;
+      tokenId: string;
       valueBase: string | null;
       valuePricedAt: Date | null;
+      previousQuote: schema.HoldingValueQuote | null;
+      valueQuote: schema.HoldingValueQuote | null;
     }> = [];
     for (const row of rows) {
+      const previousInstant = Date.parse(row.valueQuote?.calculatedAt ?? '');
+      if (
+        Number.isFinite(previousInstant) &&
+        previousInstant > at.getTime() &&
+        previousInstant <= Date.now()
+      )
+        continue;
       const answer =
         base === null
           ? null
           : row.tokenId === base
-            ? { price: new Decimal(1), readingAt: at }
+            ? { price: new Decimal(1), readingAt: at, source: null, staleAfter: null }
             : (priced.get(row.tokenId) ?? null);
       const valueBase = answer
         ? new Decimal(row.balance).mul(new Decimal(answer.price.toString())).toString()
         : null;
       const valuePricedAt = answer?.readingAt ?? null;
-      const valueMoved =
-        valueBase === null || row.valueBase === null
-          ? valueBase !== row.valueBase
-          : !new Decimal(valueBase).eq(row.valueBase);
-      const dateMoved = valuePricedAt?.getTime() !== row.valuePricedAt?.getTime();
+      const valueQuote: schema.HoldingValueQuote | null =
+        base === null
+          ? null
+          : {
+              version: 1,
+              baseTokenId: base,
+              price: answer?.price.toString() ?? null,
+              source: answer?.source || null,
+              staleAfter: answer?.staleAfter?.toISOString() ?? null,
+              calculatedAt: at.toISOString(),
+            };
       if (
-        valueMoved ||
-        (dateMoved &&
-          (row.valuePricedAt === null || pastRefresh(row.valuePricedAt, row.typeCode, at)))
-      ) {
-        writes.push({ id: row.id, balance: row.balance, valueBase, valuePricedAt });
-      }
+        valueBase === row.valueBase &&
+        valuePricedAt?.getTime() === row.valuePricedAt?.getTime() &&
+        (valueQuote === null
+          ? row.valueQuote === null
+          : row.valueQuote !== null &&
+            (Object.keys(valueQuote) as Array<keyof schema.HoldingValueQuote>).every(
+              (key) => valueQuote[key] === row.valueQuote?.[key]
+            ))
+      )
+        continue;
+      writes.push({
+        id: row.id,
+        balance: row.balance,
+        tokenId: row.tokenId,
+        valueBase,
+        valuePricedAt,
+        previousQuote: row.valueQuote,
+        valueQuote,
+      });
     }
     // A balance written since it was read here is left for its own writer's revalue.
     if (writes.length === 0) return [];
     const values = sql.join(
       writes.map(
         (w) =>
-          sql`(${w.id}::uuid, ${w.balance}::text, ${w.valueBase}::text, ${w.valuePricedAt?.toISOString() ?? null}::timestamptz)`
+          sql`(${w.id}::uuid, ${w.tokenId}::uuid, ${w.balance}::text, ${w.valueBase}::text, ${w.valuePricedAt?.toISOString() ?? null}::timestamptz, ${JSON.stringify(w.previousQuote)}::jsonb, ${JSON.stringify(w.valueQuote)}::jsonb)`
       ),
       sql`, `
     );
     const updated = await asEngineCalculator(tx, (calculator) =>
       calculator.execute<{ id: string }>(sql`
         UPDATE holdings AS h
-           SET value_base = v.value_base, value_priced_at = v.value_priced_at
-          FROM (VALUES ${values}) AS v(id, balance, value_base, value_priced_at)
+           SET value_base = v.value_base, value_priced_at = v.value_priced_at, value_quote = NULLIF(v.value_quote, 'null'::jsonb)
+          FROM (VALUES ${values}) AS v(id, token_id, balance, value_base, value_priced_at, previous_quote, value_quote)
          WHERE h.id = v.id AND h.balance = v.balance
+           AND h.token_id = v.token_id AND h.user_id = ${userId}::uuid
+           AND h.value_quote IS NOT DISTINCT FROM NULLIF(v.previous_quote, 'null'::jsonb)
+           AND EXISTS (SELECT 1 FROM users u WHERE u.id = h.user_id AND u.base_currency_id IS NOT DISTINCT FROM ${base}::uuid)
      RETURNING h.id`)
     );
     const done = [...updated].map((row) => row.id);
@@ -331,8 +385,8 @@ export class HoldingCacheWriter {
    * routes reads a changed (token, base) pair. With `sweep` (the hourly run)
    * also every one never valued, and every one whose cached date is past its
    * class's refresh horizon, so a price that stops moving does not leave the
-   * cache dated while the live read is fresh. A route switch on a same-price
-   * reading is missed; the shadow names it and the refresh bounds it. Hidden
+   * cache dated while the live read is fresh. Missing or wrong-currency quote
+   * projections are filled too, including manual steps. Hidden
    * holdings too: no total reads them, but the flag for a hidden holding with
    * a new balance does (SC-1676). Each owner in its own transaction unless one
    * is handed. Returns the holdings written.
@@ -352,6 +406,7 @@ export class HoldingCacheWriter {
         tokenId: schema.holdings.tokenId,
         baseTokenId: schema.users.baseCurrencyId,
         valuePricedAt: schema.holdings.valuePricedAt,
+        valueQuote: schema.holdings.valueQuote,
         typeCode: schema.tokenTypes.code,
       })
       .from(schema.holdings)
@@ -379,7 +434,10 @@ export class HoldingCacheWriter {
           changed.has(pairKey(p.tokenId, p.baseTokenId))
         );
       const swept =
-        sweep && (h.valuePricedAt === null || pastRefresh(h.valuePricedAt, h.typeCode, at));
+        sweep &&
+        (h.valueQuote?.baseTokenId !== h.baseTokenId ||
+          h.valuePricedAt === null ||
+          pastRefresh(h.valuePricedAt, h.typeCode, at));
       if (!routed && !swept) continue;
       const ids = byUser.get(h.userId);
       if (ids) ids.push(h.id);

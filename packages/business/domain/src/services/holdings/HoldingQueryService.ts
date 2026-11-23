@@ -79,7 +79,8 @@ export class HoldingQueryService extends BaseService {
         user.id,
         user.baseCurrencyId,
         accountId,
-        requestCache
+        requestCache,
+        includeHidden
       ),
       this.portfolioValueDailyRepository.findLatestHoldingCostBasis(user.id, user.baseCurrencyId),
     ]);
@@ -110,21 +111,8 @@ export class HoldingQueryService extends BaseService {
         ),
       ]);
 
-    // All three maps below are keyed on the TOKEN ID, never the symbol.
-    // A symbol is not unique — a `private-company` token and a crypto token
-    // can carry the same one — and `new Map()` keeps the LAST duplicate, so
-    // keying on it made both holdings render the survivor's price, source and
-    // staleness. `PortfolioValuationService` prices per token id throughout
-    // and now says so on its row shape (SC-1114).
-    //
-    // portfolioPriceMap only contains tokens we could actually price.
-    // Skipping null currentPrices here propagates "unpriceable" all the
-    // way to the wire so the UI can render "—" instead of "$0".
-    const portfolioPriceMap = new Map(
-      portfolioValue.holdings.flatMap((h) =>
-        h.currentPrice !== null ? [[h.tokenId, h.currentPrice] as const] : []
-      )
-    );
+    // Each holding retains its own value and quote, even for the same token.
+    const portfolioHoldingMap = new Map(portfolioValue.holdings.map((h) => [h.holdingId, h]));
 
     // Keyed on the timestamp alone: `source` is nullable in
     // `token_prices`, and dropping the row for a missing source hid the
@@ -133,7 +121,7 @@ export class HoldingQueryService extends BaseService {
       portfolioValue.holdings
         .filter((h) => h.priceTimestamp)
         .map((h) => [
-          h.tokenId,
+          h.holdingId,
           {
             // Pass null through — the UI distinguishes "no price" from
             // "price = $0" via the nullable field on the wire DTO.
@@ -150,23 +138,18 @@ export class HoldingQueryService extends BaseService {
     // nothing dated this price so the question could not be asked — is the one
     // that filter silently produces, and merging the two would make an absence
     // here indistinguishable from a row the filter dropped (SC-956).
-    const priceStaleMap = new Map(portfolioValue.holdings.map((h) => [h.tokenId, h.priceStale]));
+    const priceStaleMap = new Map(portfolioValue.holdings.map((h) => [h.holdingId, h.priceStale]));
 
     const detailedHoldings: HoldingWithDetails[] = holdingsWithFullDetails.map(
       ({ holding, token, account, institution }) => {
-        const currentPrice = portfolioPriceMap.get(token.id);
+        const valued = portfolioHoldingMap.get(holding.id);
 
         // Bounded rounding before .toNumber() (4 dp = 1/100 of a cent).
         // See git history for the previous comment about IEEE-754
         // precision; the only change here is null-propagation when the
         // price isn't resolvable.
         const currentValue =
-          currentPrice === undefined
-            ? null
-            : new Decimal(holding.balance)
-                .mul(new Decimal(currentPrice))
-                .toDecimalPlaces(4)
-                .toNumber();
+          valued?.value == null ? null : new Decimal(valued.value).toDecimalPlaces(4).toNumber();
 
         // Cost basis comes from the latest portfolio_value_daily
         // holding-scope rollup row (transfer-aware FIFO, in the user's
@@ -178,8 +161,8 @@ export class HoldingQueryService extends BaseService {
 
         // The base currency's price, date and freshness are decided once, in
         // `PortfolioValuationService` (SC-1447).
-        const priceInfo = priceMetadataMap.get(token.id);
-        const priceStale = priceStaleMap.get(token.id);
+        const priceInfo = priceMetadataMap.get(holding.id);
+        const priceStale = priceStaleMap.get(holding.id);
 
         const holdingGroups = groupsMap.get(holding.id) || [];
         const apyConfig = apyConfigsMap.get(holding.id);
