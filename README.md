@@ -213,12 +213,18 @@ bash scripts/self-host.sh
 Migrations are explicit, not auto-applied. With the generated configuration:
 
 ```bash
-# Apply schema migrations (do this on first install AND on every upgrade)
+# First install only. Existing installs must use the maintenance upgrade flow.
 docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
 
 # Bring the long-running services up
 docker compose -f docker-compose.prod.yml up -d
 ```
+
+**Upgrades require a maintenance window:** pin every image, stop all old API/worker
+replicas, save a final database snapshot, migrate, then start matching new services.
+Follow [Upgrades & version pinning](https://docs.scani.xyz/self-hosting/tier1/upgrades/).
+A downgrade requires the matching pre-upgrade database snapshot; old images alone
+are unsafe after quote/category migrations.
 
 See [self-hosting → production → Apply migrations](https://docs.scani.xyz/self-hosting/tier1/production/#apply-migrations)
 for the alternative orchestrators (Kubernetes Job, CI deploy step,

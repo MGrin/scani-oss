@@ -77,8 +77,10 @@ another orchestrator:
    reached under `/api` — Better-Auth derives its route base path from it,
    and a path there silently moves every auth route out of reach.
 
-3. Apply database migrations. **Do this on every fresh install AND
-   on every upgrade**, before bringing the long-running services up.
+3. Apply database migrations before first boot. **For an existing installation,
+   follow [the maintenance upgrade flow](/self-hosting/tier1/upgrades/) first:**
+   pin all images, stop every old API/worker, and save a final database snapshot.
+   Stop failures must prevent migration. Keep old services stopped if migration fails.
 
    ```sh
    docker compose -f docker-compose.prod.yml --profile migrate run --rm migrate
@@ -201,11 +203,11 @@ iterating on a new migration locally.
 ### When to run it
 
 - **First install:** before the first `docker compose -f docker-compose.prod.yml up -d`.
-- **Every upgrade:** after `docker compose -f docker-compose.prod.yml pull`
-  and before `docker compose -f docker-compose.prod.yml up -d` / `restart`.
-  Some upgrades ship schema
-  changes; some don't. Always running migrate first is safe and
-  cheap.
+- **Every upgrade:** follow [the maintenance upgrade flow](/self-hosting/tier1/upgrades/).
+  Pull one pinned version, stop all old application writers, save the final full
+  database snapshot, migrate, then start matching new services. A successful
+  migration alone does not make old API/worker replicas compatible. Keep data
+  services and retained volumes intact.
 
 ### How the app behaves if you forget
 

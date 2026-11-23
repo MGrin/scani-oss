@@ -30,6 +30,8 @@ case "$*" in
   info) ;;
   "compose -f - config") cat >/dev/null; echo "name: zzportalias" ;;
   "volume inspect"*) exit 1 ;;
+  *"config --images")
+    for image in api worker data-provider frontend-app migrate; do echo "scani/$image:$SCANI_IMAGE_TAG"; done ;;
   "ps -q --filter"*) printf '%s' "\${FAKE_RUNNING:-}" ;;
   *) exit 0 ;;
 esac
@@ -145,7 +147,7 @@ describe('a re-run waits on, and prints, the ports in ./.env', () => {
     const dir = installDir();
     writeFileSync(
       join(dir, '.env'),
-      `SCANI_DEPLOYMENT_TIER=1\nFRONTEND_PORT=${web}\nMAILPIT_UI_PORT=${mail}\nSEAWEEDFS_S3_HOST_PORT=${freePort()}\n`
+      `SCANI_IMAGE_TAG=0.56.0\nSCANI_DEPLOYMENT_TIER=1\nFRONTEND_PORT=${web}\nMAILPIT_UI_PORT=${mail}\nSEAWEEDFS_S3_HOST_PORT=${freePort()}\n`
     );
     return dir;
   }
@@ -153,9 +155,9 @@ describe('a re-run waits on, and prints, the ports in ./.env', () => {
   test('the boot wait polls the web port .env names, and the banner prints both', () => {
     const [web, mail] = [freePort(), freePort()];
     const dir = existingInstall(web, mail);
-    const r = run(dir, { FAKE_RUNNING: 'abc123' });
+    const r = run(dir, { FAKE_RUNNING: 'abc123', SCANI_UPGRADE_BACKUP_CONFIRMED: '1' });
     expect(r.code).toBe(0);
-    expect(polled(dir)).toContain(`http://localhost:${web}/healthz`);
+    expect(polled(dir)).toContain(`http://localhost:${web}/api/readyz`);
     expect(r.out).toContain(`Scani is running at http://localhost:${web}`);
     expect(r.out).toContain(`Sign-in:   http://localhost:${mail}`);
   });
