@@ -15,7 +15,8 @@ export const dashboardRouter = router({
     return await Container.get(DashboardService).getDashboardOverview(
       dbUser.id,
       dbUser.baseCurrencyId || undefined,
-      ctx.requestCache
+      ctx.requestCache,
+      ctx.overviewObservation?.observe
     );
   }),
 

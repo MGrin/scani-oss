@@ -16,6 +16,7 @@ import { effectiveScamProbability, notScamFor } from '../../lib/scam-verdict';
 import { PriceReader } from '../pricing/PriceReader';
 import { compatibleHoldingQuote } from './holding-value-quote';
 import { InTransitService } from './InTransitService';
+import { observeOverview, type PortfolioCacheObservation } from './overview-observation';
 import { PortfolioValueCache } from './PortfolioValueCache';
 import { PortfolioValueVersion } from './PortfolioValueVersion';
 
@@ -165,7 +166,8 @@ export class PortfolioValuationService {
     _userBaseCurrencyId?: string,
     accountId?: string,
     requestCache?: RequestCache,
-    includeHidden = false
+    includeHidden = false,
+    observer?: (observation: PortfolioCacheObservation) => void
   ): Promise<PortfolioValueResult> {
     // Two cache layers wrap the (expensive) computation:
     //   1. `requestCache` — dedupes sibling tRPC procedures within one
@@ -174,10 +176,17 @@ export class PortfolioValuationService {
     //      machines, keyed on a fingerprint of the holdings and prices the
     //      computation reads, so a reload reuses one computation instead of
     //      blocking the single thread for a second or more (SC-1322).
-    return getOrComputeFromCache(
+    let computed = false;
+    let cacheObserved = false;
+    const reportCache = (observation: PortfolioCacheObservation) => {
+      cacheObserved = true;
+      observeOverview(observer, observation);
+    };
+    const pending = getOrComputeFromCache(
       requestCache,
       `${createPortfolioCacheKey(userId, accountId)}${includeHidden ? ':hidden' : ''}`,
       async () => {
+        computed = true;
         const [owner] = await db
           .select({ baseCurrencyId: schema.users.baseCurrencyId })
           .from(schema.users)
@@ -190,15 +199,20 @@ export class PortfolioValuationService {
           accountId,
           includeHidden,
         });
-        if (cached !== null) return cached;
+        if (cached !== null) {
+          reportCache({ cache: 'projection_hit' });
+          return cached;
+        }
         // The Redis fingerprint covers visible-token prices only.
-        if (includeHidden)
+        if (includeHidden) {
+          reportCache({ cache: 'live', liveReason: 'hidden_inclusive' });
           return this.computePortfolioValueAt(userId, {
             at: new Date(),
             baseCurrencyId,
             accountId,
             includeHidden,
           });
+        }
         const dataVersion = await this.portfolioValueVersion.read(userId);
         return this.portfolioValueCache.getOrCompute(
           `${createPortfolioRedisKey(userId, accountId, baseCurrencyId, dataVersion)}${includeHidden ? ':hidden' : ''}`,
@@ -208,10 +222,18 @@ export class PortfolioValuationService {
               baseCurrencyId,
               accountId,
               includeHidden,
-            })
+            }),
+          reportCache
         );
       }
     );
+    if (!computed) reportCache({ cache: 'request_reuse' });
+    try {
+      return await pending;
+    } catch (error) {
+      if (!cacheObserved) reportCache({ cache: 'error' });
+      throw error;
+    }
   }
 
   /** Null means this rolling-deploy projection needs the independent live path. */

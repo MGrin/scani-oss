@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWriter';
 import { HoldingQueryService } from '../../../src/services/holdings/HoldingQueryService';
+import type { PortfolioCacheObservation } from '../../../src/services/portfolio/overview-observation';
 import { PortfolioValuationService } from '../../../src/services/portfolio/PortfolioValuationService';
 import { PortfolioValueCache } from '../../../src/services/portfolio/PortfolioValueCache';
 import { PortfolioValueVersion } from '../../../src/services/portfolio/PortfolioValueVersion';
@@ -55,11 +56,31 @@ test('healthy current read skips price loads and price fingerprinting, with miss
   await withTestDb(async (tx) => {
     const f = await fixture(tx);
     const service = Container.get(PortfolioValuationService);
+    setSystemTime(at);
     const select = spyOn(db, 'select').mockImplementation(tx.select.bind(tx));
     const prices = spyOn(Container.get(PriceReader), 'at');
     const version = spyOn(Container.get(PortfolioValueVersion), 'read');
     try {
       const result = await service.getUserPortfolioValue(f.user.id);
+      const baselineReads = select.mock.calls.length;
+      select.mockClear();
+      const observed: PortfolioCacheObservation[] = [];
+      const observe = (o: PortfolioCacheObservation) => {
+        observed.push(o);
+        throw new Error('observer failure');
+      };
+      expect(
+        await service.getUserPortfolioValue(
+          f.user.id,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          observe
+        )
+      ).toEqual(result);
+      expect(select.mock.calls.length).toBe(baselineReads);
+      expect(observed).toEqual([{ cache: 'projection_hit' }]);
       expect(prices).not.toHaveBeenCalled();
       expect(version).not.toHaveBeenCalled();
       expect(result.totalValue).toBe('-5.123456789');
@@ -78,13 +99,118 @@ test('healthy current read skips price loads and price fingerprinting, with miss
           .set({ valueQuote: null })
           .where(eq(schema.holdings.id, f.rows[0]!.id))
       );
-      await service.getUserPortfolioValue(f.user.id);
+      const baselineFallback = await service.getUserPortfolioValue(f.user.id);
+      observed.length = 0;
+      const fallback = await service.getUserPortfolioValue(
+        f.user.id,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        observe
+      );
+      expect(observed[0]?.cache).toBe('live');
+      expect(fallback).toEqual(baselineFallback);
       expect(version).toHaveBeenCalled();
       expect(prices).toHaveBeenCalled();
     } finally {
       select.mockRestore();
       prices.mockRestore();
       version.mockRestore();
+      setSystemTime();
+    }
+  });
+});
+
+test('request reuse reports its own path for pending and settled values, without additional reads', async () => {
+  await withTestDb(async (tx) => {
+    const f = await fixture(tx);
+    const service = new PortfolioValuationService();
+    const select = spyOn(db, 'select').mockImplementation(tx.select.bind(tx));
+    try {
+      const requestCache = new Map<string, unknown>();
+      const producer: unknown[] = [],
+        waiter: unknown[] = [],
+        settled: unknown[] = [];
+      const first = service.getUserPortfolioValue(
+        f.user.id,
+        undefined,
+        undefined,
+        requestCache,
+        false,
+        (o) => producer.push(o)
+      );
+      const second = service.getUserPortfolioValue(
+        f.user.id,
+        undefined,
+        undefined,
+        requestCache,
+        false,
+        (o) => waiter.push(o)
+      );
+      expect(await second).toBe(await first);
+      const reads = select.mock.calls.length;
+      await service.getUserPortfolioValue(
+        f.user.id,
+        undefined,
+        undefined,
+        requestCache,
+        false,
+        (o) => settled.push(o)
+      );
+      expect(select.mock.calls.length).toBe(reads);
+      expect(producer).toEqual([{ cache: 'projection_hit' }]);
+      expect(waiter).toEqual([{ cache: 'request_reuse' }]);
+      expect(settled).toEqual([{ cache: 'request_reuse' }]);
+    } finally {
+      select.mockRestore();
+    }
+  });
+});
+
+test('hidden-inclusive fallback keeps values, read counts and bypasses fingerprint/cache', async () => {
+  await withTestDb(async (tx) => {
+    const f = await fixture(tx);
+    await seedHoldingCache(tx, (c) =>
+      c
+        .update(schema.holdings)
+        .set({ isHidden: true, valueQuote: null })
+        .where(eq(schema.holdings.id, f.rows[0]!.id))
+    );
+    const service = new PortfolioValuationService();
+    setSystemTime(at);
+    const select = spyOn(db, 'select').mockImplementation(tx.select.bind(tx));
+    const version = spyOn(Container.get(PortfolioValueVersion), 'read');
+    const cache = spyOn(Container.get(PortfolioValueCache), 'getOrCompute');
+    try {
+      const baseline = await service.getUserPortfolioValue(
+        f.user.id,
+        undefined,
+        undefined,
+        undefined,
+        true
+      );
+      const reads = select.mock.calls.length;
+      select.mockClear();
+      const observations: unknown[] = [];
+      const result = await service.getUserPortfolioValue(
+        f.user.id,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        (o) => observations.push(o)
+      );
+      expect(result).toEqual(baseline);
+      expect(select.mock.calls.length).toBe(reads);
+      expect(observations).toEqual([{ cache: 'live', liveReason: 'hidden_inclusive' }]);
+      expect(version).not.toHaveBeenCalled();
+      expect(cache).not.toHaveBeenCalled();
+    } finally {
+      select.mockRestore();
+      version.mockRestore();
+      cache.mockRestore();
+      setSystemTime();
     }
   });
 });
@@ -155,6 +281,30 @@ test('cached transit uses the destination holding and excludes hidden destinatio
     });
     expect(result?.totalValue).toBe('3000');
     expect(result?.inTransit?.[0]?.value).toBe('500');
+    const select = spyOn(db, 'select').mockImplementation(tx.select.bind(tx));
+    setSystemTime(new Date());
+    try {
+      const baseline = await service.getUserPortfolioValue(t.userId);
+      const reads = select.mock.calls.length;
+      select.mockClear();
+      const observations: unknown[] = [];
+      const observed = await service.getUserPortfolioValue(
+        t.userId,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        (o) => observations.push(o)
+      );
+      expect(observed).toEqual(baseline);
+      expect(observed.totalValue).toBe('3000');
+      expect(observed.inTransit?.[0]?.value).toBe('500');
+      expect(select.mock.calls.length).toBe(reads);
+      expect(observations).toEqual([{ cache: 'projection_hit' }]);
+    } finally {
+      select.mockRestore();
+      setSystemTime();
+    }
     const [destination] = await tx
       .select()
       .from(schema.holdings)

@@ -2,6 +2,7 @@ import { StoreCommandTimeoutError, withDeadline } from '@scani/deadline';
 import { createComponentLogger } from '@scani/logging';
 import { getSharedRedis } from '@scani/rate-limiter';
 import { Service } from 'typedi';
+import { observeOverview, type PortfolioCacheObservation } from './overview-observation';
 import type { PortfolioValueResult } from './PortfolioValuationService';
 
 const logger = createComponentLogger('portfolio-value-cache');
@@ -41,11 +42,15 @@ export class PortfolioValueCache {
    */
   async getOrCompute(
     key: string,
-    factory: () => Promise<PortfolioValueResult>
+    factory: () => Promise<PortfolioValueResult>,
+    observer?: (observation: PortfolioCacheObservation) => void
   ): Promise<PortfolioValueResult> {
     const existing = this.inFlight.get(key);
-    if (existing) return existing;
-    const pending = this.compute(key, factory, () => this.inFlight.get(key) === pending);
+    if (existing) {
+      observeOverview(observer, { cache: 'inflight_wait' });
+      return existing;
+    }
+    const pending = this.compute(key, factory, () => this.inFlight.get(key) === pending, observer);
     this.inFlight.set(key, pending);
     try {
       return await pending;
@@ -57,22 +62,34 @@ export class PortfolioValueCache {
   private async compute(
     key: string,
     factory: () => Promise<PortfolioValueResult>,
-    isCurrent: () => boolean
+    isCurrent: () => boolean,
+    observer?: (observation: PortfolioCacheObservation) => void
   ): Promise<PortfolioValueResult> {
     const redis = getSharedRedis();
-    if (!redis) return factory();
+    if (!redis) {
+      observeOverview(observer, { cache: 'live', liveReason: 'redis_unavailable' });
+      return factory();
+    }
 
+    let liveReason: PortfolioCacheObservation['liveReason'] = 'redis_miss';
+    let hit: PortfolioValueResult | undefined;
     try {
       const cached = await withDeadline(
         redis.get(key),
         REDIS_TIMEOUT_MS,
         () => new StoreCommandTimeoutError('redis', 'GET', REDIS_TIMEOUT_MS)
       );
-      if (cached) return reviveDates(JSON.parse(cached) as PortfolioValueResult);
+      if (cached) hit = reviveDates(JSON.parse(cached) as PortfolioValueResult);
     } catch (error) {
+      liveReason = 'redis_error';
       logger.warn({ error, key }, 'Portfolio-value cache read failed — recomputing');
     }
 
+    if (hit) {
+      observeOverview(observer, { cache: 'redis_hit' });
+      return hit;
+    }
+    observeOverview(observer, { cache: 'live', liveReason });
     const value = await factory();
 
     // Fire-and-forget write: a slow Redis must add zero latency to the
