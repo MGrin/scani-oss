@@ -30,6 +30,7 @@ case "$*" in
   info) ;;
   "compose -f - config") cat >/dev/null; echo "name: zzportalias" ;;
   "volume inspect"*) exit 1 ;;
+  *"config --services") printf '%s\\n' postgres redis seaweedfs mailpit api worker data-provider frontend-app ;;
   *"config --images")
     for image in api worker data-provider frontend-app migrate; do echo "scani/$image:$SCANI_IMAGE_TAG"; done ;;
   "ps -q --filter"*) printf '%s' "\${FAKE_RUNNING:-}" ;;
