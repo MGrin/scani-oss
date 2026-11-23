@@ -507,6 +507,7 @@ export class BackupRestorer {
         // from its evidence once that is in.
         row.balance = '0';
         row.valueBase = null;
+        row.valueQuote = null;
         row.valuePricedAt = null;
       }
       if (record.table === 'feed_input_windows') row.uploadRef = null;

@@ -5,6 +5,7 @@ import { eq, inArray, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWriter';
 import { SnapshotWriter } from '../../../src/services/feeds/SnapshotWriter';
+import { LiabilityTermsService } from '../../../src/services/liabilities/LiabilityTermsService';
 import { PortfolioValuationService } from '../../../src/services/portfolio/PortfolioValuationService';
 import { PriceReader } from '../../../src/services/pricing/PriceReader';
 import { UpdateHoldingUseCase } from '../../../src/use-cases/UpdateHoldingUseCase';
@@ -268,5 +269,93 @@ test('currency contention invalidates a quote and takes live fallback until refi
     release.resolve();
     await owner.catch(() => {});
     await f.cleanup();
+  }
+}, 10000);
+
+test('liability projection ranks current currency values after a contended repayment', async () => {
+  const f = await db.transaction(async (tx) => {
+    const [fiat] = await tx
+      .select()
+      .from(schema.tokenTypes)
+      .where(eq(schema.tokenTypes.code, 'fiat'));
+    const [loan] = await tx
+      .select()
+      .from(schema.accountTypes)
+      .where(eq(schema.accountTypes.code, 'loan'));
+    if (!fiat || !loan) throw new Error('fixture types missing');
+    const usd = await makeToken(tx, { typeId: fiat.id });
+    const eur = await makeToken(tx, { typeId: fiat.id });
+    const user = await makeUser(tx, { baseCurrencyId: usd.id });
+    const institution = await makeInstitution(tx);
+    const account = await makeAccount(tx, {
+      userId: user.id,
+      institutionId: institution.id,
+      typeId: loan.id,
+    });
+    const a = await makeHolding(tx, {
+      userId: user.id,
+      accountId: account.id,
+      tokenId: usd.id,
+      balance: '-1000',
+    });
+    const b = await makeHolding(tx, {
+      userId: user.id,
+      accountId: account.id,
+      tokenId: eur.id,
+      balance: '-500',
+    });
+    await tx.insert(schema.tokenPrices).values({
+      tokenId: eur.id,
+      baseTokenId: usd.id,
+      price: '1.1',
+      timestamp: at,
+      source: 'fixture',
+    });
+    await writer().revalue(user.id, [a.id, b.id], at, tx);
+    return { user, account, institution, usd, eur, a };
+  });
+  const locked = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const owner = db.transaction(async (tx) => {
+    await tx
+      .update(schema.users)
+      .set({ name: 'profile update' })
+      .where(eq(schema.users.id, f.user.id));
+    locked.resolve();
+    await release.promise;
+  });
+  try {
+    await locked.promise;
+    await db.transaction((tx) =>
+      Container.get(SnapshotWriter).record(
+        {
+          userId: f.user.id,
+          holdingId: f.a.id,
+          amount: '-10',
+          at: new Date(),
+          cause: 'correction',
+          legacySource: 'manual',
+          legacyMeta: {},
+        },
+        { cache: 'set' },
+        tx
+      )
+    );
+    release.resolve();
+    await owner;
+    const projection = await Container.get(LiabilityTermsService).projection(
+      f.user.id,
+      f.account.id,
+      '2026-11-23'
+    );
+    expect(projection.currency).toBe(f.eur.symbol);
+    expect(projection.owed).toBe('500');
+  } finally {
+    release.resolve();
+    await owner.catch(() => {});
+    await db.delete(schema.users).where(eq(schema.users.id, f.user.id));
+    await db.delete(schema.tokenPrices).where(eq(schema.tokenPrices.tokenId, f.eur.id));
+    await db.delete(schema.tokens).where(inArray(schema.tokens.id, [f.usd.id, f.eur.id]));
+    await db.delete(schema.institutions).where(eq(schema.institutions.id, f.institution.id));
   }
 }, 10000);

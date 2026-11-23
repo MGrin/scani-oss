@@ -1,4 +1,4 @@
-import { expect, spyOn, test } from 'bun:test';
+import { expect, setSystemTime, spyOn, test } from 'bun:test';
 import { db } from '@scani/db/connection';
 import * as schema from '@scani/db/schema';
 import { eq } from 'drizzle-orm';
@@ -257,6 +257,36 @@ test('explicit hidden details keep their own value while portfolio totals exclud
       }
     } finally {
       select.mockRestore();
+    }
+  });
+});
+
+test('current cache reads cross the freshness horizon without price loads', async () => {
+  await withTestDb(async (tx) => {
+    const f = await fixture(tx);
+    const deadline = new Date(+at + 48 * 3_600_000);
+    const select = spyOn(db, 'select').mockImplementation(tx.select.bind(tx));
+    const prices = spyOn(Container.get(PriceReader), 'at');
+    const version = spyOn(Container.get(PortfolioValueVersion), 'read');
+    try {
+      setSystemTime(deadline);
+      const fresh = await Container.get(PortfolioValuationService).getUserPortfolioValue(f.user.id);
+      setSystemTime(new Date(+deadline + 1));
+      const stale = await Container.get(PortfolioValuationService).getUserPortfolioValue(f.user.id);
+      expect(fresh.holdings.find((h) => h.tokenId === f.asset.id)?.priceStale).toBe(false);
+      const row = stale.holdings.find((h) => h.tokenId === f.asset.id);
+      expect(row?.priceStale).toBe(true);
+      expect(row?.currentPrice).toBe('10.123456789');
+      expect(row?.priceTimestamp).toEqual(at);
+      expect(row?.priceSource).toBe('fixture');
+      expect(stale.totalValue).toBe(fresh.totalValue);
+      expect(prices).not.toHaveBeenCalled();
+      expect(version).not.toHaveBeenCalled();
+    } finally {
+      setSystemTime();
+      select.mockRestore();
+      prices.mockRestore();
+      version.mockRestore();
     }
   });
 });

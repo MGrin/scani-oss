@@ -892,3 +892,18 @@ describe('SettlementAnswerReviewService.undoRetire', () => {
     });
   });
 });
+
+test('retired holding restore ignores captured quote projections', async () => {
+  await withTestDb(async (tx) => {
+    const { user, closing } = await movedFixture(tx, { createDestination: true });
+    const service = new SettlementAnswerReviewService();
+    const result = await service.retire(user.id, closing.id, { confirmOtherHolding: true }, tx);
+    if (!('retired' in result)) throw new Error('not retired');
+    await tx.execute(sql`UPDATE retired_gap_answers SET removed_holdings = jsonb_set(removed_holdings, '{0,holding,value_quote}',
+      '{"version":1,"baseTokenId":"old","price":"999","source":"fixture","staleAfter":null,"calculatedAt":"2026-11-01T00:00:00Z"}'::jsonb)
+      WHERE id = ${result.retired.id}`);
+    expect(await service.undoRetire(user.id, result.retired.id, new Date(), tx)).toHaveProperty(
+      'restored'
+    );
+  });
+});
