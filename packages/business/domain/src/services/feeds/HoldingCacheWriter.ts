@@ -179,7 +179,6 @@ export class HoldingCacheWriter {
     const ids = [...new Set(holdingIds)].sort();
     const balances = new Map<string, { balance: string; dueAt: Date | null }>();
     if (ids.length === 0) return balances;
-    await this.lockCurrency(userId, tx);
     const locked = await tx
       .select({ id: schema.holdings.id })
       .from(schema.holdings)
@@ -235,14 +234,14 @@ export class HoldingCacheWriter {
     return this.revalueOnce(userId, holdingIds, at, tx, true);
   }
 
-  /** All cache paths lock owner before holding, including balance writes. */
-  private async lockCurrency(userId: string, tx: DatabaseTransaction): Promise<string | null> {
+  /** Callers may hold holdings already; never wait for a currency writer here. */
+  private async tryLockCurrency(userId: string, tx: DatabaseTransaction) {
     const [owner] = await tx
       .select({ baseTokenId: schema.users.baseCurrencyId })
       .from(schema.users)
       .where(eq(schema.users.id, userId))
-      .for('share');
-    return owner?.baseTokenId ?? null;
+      .for('share', { skipLocked: true });
+    return owner;
   }
 
   private async revalueOnce(
@@ -253,7 +252,25 @@ export class HoldingCacheWriter {
     retry: boolean
   ): Promise<string[]> {
     if (holdingIds.length === 0) return [];
-    const base = await this.lockCurrency(userId, tx);
+    const owner = await this.tryLockCurrency(userId, tx);
+    if (!owner) {
+      // The next reader uses live prices; the sweep later refills metadata.
+      const invalidated = await asEngineCalculator(tx, (calculator) =>
+        calculator
+          .update(schema.holdings)
+          .set({ valueQuote: null })
+          .where(
+            and(
+              eq(schema.holdings.userId, userId),
+              inArray(schema.holdings.id, [...holdingIds]),
+              isNotNull(schema.holdings.valueQuote)
+            )
+          )
+          .returning({ id: schema.holdings.id })
+      );
+      return invalidated.map((row) => row.id);
+    }
+    const base = owner.baseTokenId;
     const rows = await tx
       .select({
         id: schema.holdings.id,

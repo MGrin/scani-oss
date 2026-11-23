@@ -4,8 +4,10 @@ import * as schema from '@scani/db/schema';
 import { eq, inArray, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { HoldingCacheWriter } from '../../../src/services/feeds/HoldingCacheWriter';
+import { SnapshotWriter } from '../../../src/services/feeds/SnapshotWriter';
 import { PortfolioValuationService } from '../../../src/services/portfolio/PortfolioValuationService';
 import { PriceReader } from '../../../src/services/pricing/PriceReader';
+import { UpdateHoldingUseCase } from '../../../src/use-cases/UpdateHoldingUseCase';
 import { makeInstitution, makeUser } from '../../../test/helpers/factories';
 import { makeAccount, makeHolding, makeToken } from '../../../test/helpers/factories-extra';
 
@@ -154,38 +156,117 @@ test('a concurrent currency update waits for valuation and cannot relabel its ol
   }
 }, 10000);
 
-test('balance writes lock currency before holdings, avoiding inversion with a currency writer', async () => {
+for (const path of ['edit', 'snapshot'] as const) {
+  test(`real ${path} with a holding lock avoids inversion with a currency writer`, async () => {
+    const f = await fixture();
+    const ownerLocked = Promise.withResolvers<void>();
+    const holdingLocked = Promise.withResolvers<void>();
+    const firstPid = Promise.withResolvers<number>();
+    const proceedFirst = Promise.withResolvers<void>();
+    const proceedSecond = Promise.withResolvers<void>();
+    const first = db.transaction(async (tx) => {
+      await tx.execute(sql`SET LOCAL deadlock_timeout = '100ms'`);
+      const [pid] = await tx.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`);
+      firstPid.resolve(pid!.pid);
+      await tx
+        .update(schema.users)
+        .set({ baseCurrencyId: f.alternate.id })
+        .where(eq(schema.users.id, f.user.id));
+      ownerLocked.resolve();
+      await proceedFirst.promise;
+      await writer().revalue(f.user.id, [f.holding.id], at, tx);
+    });
+    let second: Promise<unknown> | undefined;
+    try {
+      await ownerLocked.promise;
+      second = db.transaction(async (tx) => {
+        await tx.execute(sql`SET LOCAL deadlock_timeout = '100ms'`);
+        await tx
+          .select()
+          .from(schema.holdings)
+          .where(eq(schema.holdings.id, f.holding.id))
+          .for('no key update');
+        holdingLocked.resolve();
+        await proceedSecond.promise;
+        if (path === 'edit') {
+          await Container.get(UpdateHoldingUseCase).execute(
+            f.holding.id,
+            { balance: '3', editCause: 'flow' },
+            f.user.id,
+            tx
+          );
+        } else {
+          await Container.get(SnapshotWriter).record(
+            {
+              userId: f.user.id,
+              holdingId: f.holding.id,
+              amount: '3',
+              at: new Date(),
+              cause: 'flow',
+              legacySource: 'manual',
+              legacyMeta: {},
+            },
+            { cache: 'set' },
+            tx
+          );
+        }
+      });
+      await holdingLocked.promise;
+      proceedFirst.resolve();
+      await blocked(await firstPid.promise);
+      proceedSecond.resolve();
+      await Promise.all([first, second]);
+      expect((await f.read()).balance).toBe('3');
+      expect((await f.read()).valueQuote?.baseTokenId).toBe(f.alternate.id);
+      expect((await f.read()).valueBase).toBe('60');
+    } finally {
+      proceedFirst.resolve();
+      proceedSecond.resolve();
+      await Promise.allSettled([first, second]);
+      await f.cleanup();
+    }
+  }, 10000);
+}
+
+test('currency contention invalidates a quote and takes live fallback until refill', async () => {
   const f = await fixture();
-  const ownerLocked = Promise.withResolvers<void>();
-  const proceed = Promise.withResolvers<void>();
-  const first = db.transaction(async (tx) => {
-    await tx.execute(sql`SET LOCAL deadlock_timeout = '100ms'`);
+  await db.transaction((tx) => writer().revalue(f.user.id, [f.holding.id], at, tx));
+  const locked = Promise.withResolvers<void>();
+  const release = Promise.withResolvers<void>();
+  const owner = db.transaction(async (tx) => {
     await tx
       .update(schema.users)
       .set({ baseCurrencyId: f.alternate.id })
       .where(eq(schema.users.id, f.user.id));
-    ownerLocked.resolve();
-    await proceed.promise;
-    await writer().revalue(f.user.id, [f.holding.id], at, tx);
+    locked.resolve();
+    await release.promise;
   });
-  const pid = Promise.withResolvers<number>();
-  let second: Promise<unknown> | undefined;
+  let expired = false;
+  const timeout = setTimeout(() => {
+    expired = true;
+    release.resolve();
+  }, 2000);
   try {
-    await ownerLocked.promise;
-    second = db.transaction(async (tx) => {
-      await tx.execute(sql`SET LOCAL deadlock_timeout = '100ms'`);
-      const [row] = await tx.execute<{ pid: number }>(sql`SELECT pg_backend_pid() AS pid`);
-      pid.resolve(row!.pid);
-      await writer().apply(f.user.id, [{ holdingId: f.holding.id }], tx);
-    });
-    await blocked(await pid.promise);
-    proceed.resolve();
-    await Promise.all([first, second]);
+    await locked.promise;
+    await db.transaction((tx) => writer().revalue(f.user.id, [f.holding.id], later, tx));
+    expect(expired).toBe(false);
+    expect((await f.read()).valueQuote).toBeNull();
+    expect((await f.read()).valueBase).toBe('20');
+    expect(
+      await Container.get(PortfolioValuationService).readCachedPortfolioValueAt(f.user.id, {
+        at: later,
+        baseCurrencyId: f.base.id,
+      })
+    ).toBeNull();
+    release.resolve();
+    await owner;
+    await db.transaction((tx) => writer().revalue(f.user.id, [f.holding.id], later, tx));
     expect((await f.read()).valueQuote?.baseTokenId).toBe(f.alternate.id);
-    expect((await f.read()).valueBase).toBe('0');
+    expect((await f.read()).valueBase).toBe('40');
   } finally {
-    proceed.resolve();
-    await Promise.allSettled([first, second]);
+    clearTimeout(timeout);
+    release.resolve();
+    await owner.catch(() => {});
     await f.cleanup();
   }
 }, 10000);
