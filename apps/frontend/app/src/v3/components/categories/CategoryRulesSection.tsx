@@ -8,6 +8,7 @@ import {
 import { Button } from '@scani/ui/ui/button';
 import { Input } from '@scani/ui/ui/input';
 import { Label } from '@scani/ui/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '@/contexts/AuthContext';
@@ -224,19 +225,22 @@ export function CategoryRulesSection({
         <div className="flex flex-wrap items-end gap-3">
           <div className="min-w-0 flex-1 space-y-2">
             <Label htmlFor="preview-account">{t('v3.categories.rules.account')}</Label>
-            <select
-              id="preview-account"
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-body"
-              value={accountId}
-              onChange={(e) => setAccountId(e.target.value)}
-            >
-              <option value="">{t('v3.categories.rules.chooseAccount')}</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
+            <Select value={accountId || undefined} onValueChange={setAccountId}>
+              <SelectTrigger
+                id="preview-account"
+                className="h-11"
+                aria-label={t('v3.categories.rules.account')}
+              >
+                <SelectValue placeholder={t('v3.categories.rules.chooseAccount')} />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="space-y-2">
             <Label htmlFor="rule-month">{t('v3.categories.rules.period')}</Label>

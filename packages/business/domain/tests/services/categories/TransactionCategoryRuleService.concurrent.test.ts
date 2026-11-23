@@ -4,6 +4,7 @@ import { type SQL, sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { TransactionCategoryRepository } from '../../../src/repositories/TransactionCategoryRepository';
 import { TransactionCategoryRuleService } from '../../../src/services/categories/TransactionCategoryRuleService';
+import { DeleteAllUserDataUseCase } from '../../../src/use-cases/DeleteAllUserDataUseCase';
 import { seedHoldingCache } from '../../../test/helpers/engine-guard';
 import { makeInstitution, makeUser } from '../../../test/helpers/factories';
 import {
@@ -20,6 +21,34 @@ function deferred() {
   });
   return { promise, resolve };
 }
+function interceptedBuilder(
+  builder: object,
+  hook: (query: string, run: () => Promise<unknown>) => Promise<unknown>
+): object {
+  return new Proxy(builder, {
+    get(target, prop) {
+      const member = Reflect.get(target, prop);
+      if (prop === 'then')
+        return (resolve: (value: unknown) => unknown, reject: (error: unknown) => unknown) => {
+          const query = Reflect.apply(Reflect.get(target, 'toSQL'), target, []) as { sql: string };
+          return hook(
+            query.sql,
+            () => new Promise((accept, refuse) => Reflect.apply(member, target, [accept, refuse]))
+          ).then(resolve, reject);
+        };
+      if (typeof member === 'function')
+        return (...args: unknown[]) => {
+          const result: unknown = Reflect.apply(member, target, args);
+          return result !== null &&
+            typeof result === 'object' &&
+            typeof Reflect.get(result, 'then') === 'function'
+            ? interceptedBuilder(result, hook)
+            : result;
+        };
+      return member;
+    },
+  });
+}
 const dialect = new PgDialect();
 function intercepted(
   tx: DatabaseTransaction,
@@ -30,6 +59,9 @@ function intercepted(
       if (prop === 'execute')
         return (query: SQL) =>
           hook(dialect.sqlToQuery(query).sql, async () => target.execute(query));
+      if (prop === 'delete')
+        return (...args: unknown[]) =>
+          interceptedBuilder(Reflect.apply(target.delete, target, args) as object, hook);
       if (prop === 'transaction')
         return (fn: (inner: DatabaseTransaction) => Promise<unknown>) =>
           target.transaction((inner) => fn(intercepted(inner, hook)));
@@ -744,3 +776,152 @@ test('foreign previews and pruned/missing operations share NOT_FOUND', async () 
       await getDb().execute(sql`delete from users where id = ${foreign.id}`);
     }
   }));
+
+async function waitOutcome(
+  pid: number,
+  completed: () => boolean
+): Promise<'blocked' | 'completed'> {
+  const deadline = Date.now() + 1500;
+  while (Date.now() < deadline) {
+    if (completed()) return 'completed';
+    const [row] = await getDb().execute(sql`select cardinality(pg_blocking_pids(${pid})) n`);
+    if (Number((row as { n: number }).n) > 0) return 'blocked';
+    await Bun.sleep(10);
+  }
+  throw new Error('Neither completion nor an actual blocking lock was observed');
+}
+async function ownerRunCount(userId: string): Promise<number> {
+  const [row] = await getDb().execute(
+    sql`select count(*)::int n from transaction_category_rule_runs where user_id = ${userId}`
+  );
+  return (row as { n: number }).n;
+}
+for (const erasureFirst of [true, false])
+  test(
+    `erasure and preview serialize with zero retained private runs; erasureFirst=${erasureFirst}`,
+    async () =>
+      usingFixture(async (f) =>
+        usingFixture(async (second) => {
+          const ready = deferred();
+          const release = deferred();
+          const contenderReady = deferred();
+          const eraser = new DeleteAllUserDataUseCase();
+          let firstPid = 0;
+          let pid = 0;
+          let contenderCompleted = false;
+          let manifestStarted = false;
+          const erase = (pause: boolean) =>
+            getDb().transaction(async (tx) => {
+              const [backend] = await tx.execute(sql`select pg_backend_pid() pid`);
+              if (pause) firstPid = (backend as { pid: number }).pid;
+              else {
+                pid = (backend as { pid: number }).pid;
+                contenderReady.resolve();
+              }
+              return eraser.deleteRows(
+                intercepted(tx, async (query, run) => {
+                  if (
+                    query
+                      .replaceAll('"', '')
+                      .startsWith('delete from transaction_category_rule_runs')
+                  ) {
+                    manifestStarted = true;
+                    const value = await run();
+                    if (pause) {
+                      ready.resolve();
+                      await release.promise;
+                    }
+                    return value;
+                  }
+                  return run();
+                }),
+                f.user.id
+              );
+            });
+          const preview = (pause: boolean) =>
+            getDb().transaction(async (tx) => {
+              const [backend] = await tx.execute(sql`select pg_backend_pid() pid`);
+              if (pause) firstPid = (backend as { pid: number }).pid;
+              else {
+                pid = (backend as { pid: number }).pid;
+                contenderReady.resolve();
+              }
+              return f.s.preview(
+                f.user.id,
+                f.scope,
+                intercepted(tx, async (query, run) => {
+                  const value = await run();
+                  if (pause && query.includes('insert into transaction_category_rule_runs')) {
+                    ready.resolve();
+                    await release.promise;
+                  }
+                  return value;
+                })
+              );
+            });
+          const first = erasureFirst ? erase(true) : preview(true);
+          await ready.promise;
+          const contender = (erasureFirst ? preview(false) : erase(false)).then(
+            (value) => ({ ok: true as const, value }),
+            (error) => ({ ok: false as const, error })
+          );
+          void contender.then(() => {
+            contenderCompleted = true;
+          });
+          let observed: 'blocked' | 'completed';
+          let waitingQuery = '';
+          let blockers: number[] = [];
+          let deletionBeforeRelease = false;
+          try {
+            await contenderReady.promise;
+            observed = await waitOutcome(pid, () => contenderCompleted);
+            const [activity] = await getDb().execute(
+              sql`select query, pg_blocking_pids(pid) blockers from pg_stat_activity where pid = ${pid}`
+            );
+            waitingQuery = (activity as { query: string }).query;
+            blockers = (activity as { blockers: number[] }).blockers;
+            deletionBeforeRelease = manifestStarted;
+            const otherPreview = await second.s.preview(second.user.id, second.scope);
+            expect(otherPreview.changed).toBe(1);
+          } finally {
+            release.resolve();
+          }
+          await first;
+          const result = await contender;
+          expect(await ownerRunCount(f.user.id)).toBe(0);
+          expect(observed).toBe('blocked');
+          expect(firstPid).toBeGreaterThan(0);
+          expect(blockers).toContain(firstPid);
+          expect(
+            await getDb().execute(sql`select id from users where id = ${f.user.id}`)
+          ).toHaveLength(1);
+          expect(await f.s.list(f.user.id)).toEqual([]);
+          expect(
+            await getDb().execute(sql`select id from accounts where user_id = ${f.user.id}`)
+          ).toHaveLength(0);
+          expect(
+            await getDb().execute(
+              sql`select id from holding_transactions where user_id = ${f.user.id}`
+            )
+          ).toHaveLength(0);
+          expect(waitingQuery).toContain('pg_advisory_xact_lock');
+          if (erasureFirst) {
+            expect(result).toMatchObject({ ok: false, error: { code: 'NOT_FOUND' } });
+          } else {
+            expect(result.ok).toBe(true);
+            expect(deletionBeforeRelease).toBe(false);
+          }
+          expect(await ownerRunCount(second.user.id)).toBe(1);
+          expect(await second.s.list(second.user.id)).toHaveLength(1);
+          expect(
+            await getDb().execute(sql`select id from accounts where id = ${second.account.id}`)
+          ).toHaveLength(1);
+          expect(
+            await getDb().execute(
+              sql`select id from holding_transactions where id = ${second.row.id}`
+            )
+          ).toHaveLength(1);
+        })
+      ),
+    30_000
+  );

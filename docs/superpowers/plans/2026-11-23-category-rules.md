@@ -175,10 +175,10 @@ Create frontend mirrored tests for CategoryRulesSection and CategoryRulePreviewS
 **Files:** Add shared user docs `apps/frontend/docs/src/content/docs/features/category-rules.md`; adopt this design/plan into `docs/superpowers/specs/2026-11-23-category-rules-design.md` and `docs/superpowers/plans/2026-11-23-category-rules.md` in the assigned worktree. Add one synthetic E2E journey `apps/e2e/tests/transactions/category-rules.spec.ts`, using existing authenticated fixture conventions (do not use production accounts).
 
 - [ ] E2E: create rules for the same payee in two accounts, prove independent targets, preview one account’s mixed fixture, apply, verify only reviewed eligible rows changed, undo; second run edits one row then proves whole undo refuses. Verify persisted rule after reload and successful undo after deleting that rule. Verify protected/no-op edits cannot block undo on changed IDs. Capture desktop and 390×844 screenshots with sibling layout comparison.
-- [ ] Run locally only touched tests in the repository's gate-db isolation form, never the entire suite. Check final PASS verdict/count, source provenance and no unaccounted failures. Example (adapt paths only if OSS conventions differ):
+- [ ] Run locally only touched tests against an owned isolated Postgres, never the entire suite. Set DATABASE_URL to that instance first. Keep the normal preloads and final test counts; the public base has no gate-db wrapper.
 
 ```sh
-NODE_ENV=test bun scripts/gate-db.ts -- bun test \
+NODE_ENV=test bun test \
   --preload ./packages/business/domain/test-preload.ts \
   --preload ./apps/frontend/app/tests/i18n-preload.ts --timeout 30000 \
   packages/business/domain/tests/services/categories/TransactionCategoryRuleService.test.ts \
@@ -186,7 +186,6 @@ NODE_ENV=test bun scripts/gate-db.ts -- bun test \
   packages/business/domain/tests/repositories/transaction-category-rules-schema.test.ts \
   packages/business/domain/tests/services/backup/category-rules.test.ts \
   apps/backend/api/tests/presentation/routers/category-rules.test.ts \
-  apps/frontend/app/tests/v3/components/categories/CategoryRulesSection.test.tsx \
   apps/frontend/app/tests/v3/components/categories/CategoryRulePreviewSheet.test.tsx
 ```
 

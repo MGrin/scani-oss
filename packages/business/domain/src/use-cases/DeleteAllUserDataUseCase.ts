@@ -7,6 +7,7 @@ import { QueueClient } from '@scani/queue';
 import { eq, getTableColumns } from 'drizzle-orm';
 import { type AnyPgColumn, getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import { Container, Service } from 'typedi';
+import { lockCategoryRuleOwner } from '../lib/category-rule-owner-lock';
 import { HouseholdMembershipService } from '../services/household/HouseholdMembershipService';
 import {
   USER_DATA_TABLE_DISPOSITIONS,
@@ -61,6 +62,8 @@ export class DeleteAllUserDataUseCase {
    * transaction has committed.
    */
   async deleteRows(tx: DatabaseTransaction, userId: string): Promise<Map<PgTable, string[]>> {
+    // Acquire before household or manifest locks: previews must finish before erasure can sweep their receipts.
+    await lockCategoryRuleOwner(tx, userId);
     const echoed = new Map<PgTable, string[]>();
     // Before the manifest deletes the membership: an admin's household passes
     // to the member who joined first, or goes with them when they are alone (SC-1647).

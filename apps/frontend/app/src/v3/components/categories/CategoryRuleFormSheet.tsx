@@ -1,6 +1,7 @@
 import type { CategoryRuleSave } from '@scani/shared';
 import { Input } from '@scani/ui/ui/input';
 import { Label } from '@scani/ui/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@scani/ui/ui/select';
 import { useTranslation } from 'react-i18next';
 import { FormActions, FormSheet } from '../form/FormSheet';
 import { CategoryPickerQuery } from './CategoryPickerQuery';
@@ -60,19 +61,25 @@ export function CategoryRuleFormSheet({
           </p>
           <div className="space-y-2">
             <Label htmlFor="rule-account">{t('v3.categories.rules.account')}</Label>
-            <select
-              id="rule-account"
-              className="h-10 w-full rounded-md border border-input bg-background px-3 text-body"
-              value={draft.accountId}
-              onChange={(e) => onChange({ ...draft, accountId: e.target.value })}
+            <Select
+              value={draft.accountId || undefined}
+              onValueChange={(accountId) => onChange({ ...draft, accountId })}
             >
-              <option value="">{t('v3.categories.rules.chooseAccount')}</option>
-              {accounts.map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-            </select>
+              <SelectTrigger
+                id="rule-account"
+                className="h-11"
+                aria-label={t('v3.categories.rules.account')}
+              >
+                <SelectValue placeholder={t('v3.categories.rules.chooseAccount')} />
+              </SelectTrigger>
+              <SelectContent>
+                {accounts.map((account) => (
+                  <SelectItem key={account.id} value={account.id}>
+                    {account.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <fieldset>
             <legend className="mb-2 text-label">{t('v3.categories.rules.category')}</legend>

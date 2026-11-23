@@ -3,7 +3,9 @@ import type { RuleScope, SavedCategoryRule } from '@scani/shared';
 import { type SQL, sql } from 'drizzle-orm';
 import { CategoryRuleError } from '../services/categories/category-rule-errors';
 import { CUSTOM_RULE_ELIGIBLE } from '../services/categories/custom-rule-eligibility';
-import { ruleRows } from './TransactionCategoryRuleRepository';
+export async function ruleRows<T>(db: DatabaseTransaction, query: SQL): Promise<T[]> {
+  return (await db.execute(query)) as unknown as T[];
+}
 
 type Category = {
   id: string;

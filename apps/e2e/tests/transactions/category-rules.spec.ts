@@ -91,7 +91,8 @@ test('saved account rules preview, apply, reload and category-only undo', async 
   await expect(page.getByText('cafe example', { exact: true })).toHaveCount(2);
   await page.reload();
   await expect(page.getByText('cafe example', { exact: true })).toHaveCount(2);
-  await page.locator('#preview-account').selectOption(a.id);
+  await page.locator('#preview-account').click();
+  await page.getByRole('option', { name: 'Everyday saved rules', exact: true }).click();
   await page.locator('#rule-month').fill('2026-11');
   await page.getByRole('button', { name: 'Preview', exact: true }).click();
   await expect(page.getByText('Only these reviewed transactions will change.')).toBeVisible();

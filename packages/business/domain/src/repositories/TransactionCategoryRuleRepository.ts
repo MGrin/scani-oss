@@ -8,20 +8,19 @@ import type {
   RuleUndoResult,
   SavedCategoryRule,
 } from '@scani/shared';
-import { type SQL, sql } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { Service } from 'typedi';
+import { lockCategoryRuleOwner } from '../lib/category-rule-owner-lock';
 import { CategoryRuleError } from '../services/categories/category-rule-errors';
 import {
   dependencyIds,
   lockDependencies,
   type Materialization,
   materialize,
+  ruleRows,
 } from './category-rule-materialization';
 
 const ruleFields = sql`id, payee_key as "payeeKey", account_id as "accountId", category_id as "categoryId", enabled, revision`;
-export async function ruleRows<T>(db: DatabaseTransaction, query: SQL): Promise<T[]> {
-  return (await db.execute(query)) as unknown as T[];
-}
 function sqlState(error: unknown): string | undefined {
   const e = error as { code?: string; cause?: unknown };
   return e?.code ?? (e?.cause ? sqlState(e.cause) : undefined);
@@ -38,9 +37,7 @@ export class TransactionCategoryRuleRepository {
       const work = async (tx: DatabaseTransaction) => {
         await tx.execute(sql`set local lock_timeout = '3s'`);
         await tx.execute(sql`set local statement_timeout = '3s'`);
-        await tx.execute(
-          sql`select pg_advisory_xact_lock(hashtextextended(${'category-rules:' + userId}, 0))`
-        );
+        await lockCategoryRuleOwner(tx, userId);
         const users = await ruleRows(
           tx,
           sql`select id from users where id = ${userId} order by id for key share`
