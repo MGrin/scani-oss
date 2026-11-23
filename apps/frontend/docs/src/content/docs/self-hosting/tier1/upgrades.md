@@ -110,7 +110,9 @@ running. Never remove data volumes during an upgrade.
    install directory before running it. The confirmation means you already drained
    all replicas and saved the final snapshot. It does not create or validate a backup.
    Data services must remain available. The installer repeats local stop/verification
-   before migration and restarts only application services on reruns. A failed
+   before migration. It starts missing data services without recreating existing
+   containers, then starts matching application services. This also supports a
+   rerun after `SCANI_SKIP_UP=1` or a failed first install. A failed
    migration leaves those services stopped; success waits for new service health.
 
 ## Rollback

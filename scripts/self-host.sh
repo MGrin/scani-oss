@@ -397,6 +397,16 @@ RUNNING_APPS="$(compose ps --status running --quiet frontend-app api worker data
   || die "Could not verify application shutdown. No migration was attempted."
 [ -z "$RUNNING_APPS" ] || die "Application containers are still running. No migration was attempted."
 
+SERVICES="$(compose config --services)"
+DATA_SERVICES=()
+for service in postgres redis seaweedfs mailpit; do
+  if grep -Fxq "$service" <<<"$SERVICES"; then DATA_SERVICES+=("$service"); fi
+done
+if [ "${#DATA_SERVICES[@]}" -gt 0 ]; then
+  compose up -d --no-recreate --wait --wait-timeout 180 "${DATA_SERVICES[@]}" </dev/null \
+    || die "Data services are unavailable. Application services remain stopped; no migration was attempted."
+fi
+
 # Migrations are a separate, explicit step in docker-compose.prod.yml — the
 # app never rewrites its own schema as a startup side-effect. `--allow-remote
 # postgres` is passed here rather than left to the compose file's `command:`
@@ -415,18 +425,13 @@ compose --profile migrate run --rm --no-TTY migrate /app/migrate --allow-remote 
   || die "Migration failed. Application services remain stopped. Keep maintenance enabled and inspect the migration error."
 
 log "starting services"
-START_ARGS=()
-if [ "$EXISTING_CONFIG" = 1 ]; then
-  START_ARGS=(--no-deps frontend-app api worker)
-  [ "$INSTALL_TIER" = 2 ] || START_ARGS+=(data-provider)
-fi
-compose up -d --wait --wait-timeout 180 "${START_ARGS[@]}" </dev/null \
+APP_SERVICES=(frontend-app api worker)
+[ "$INSTALL_TIER" = 2 ] || APP_SERVICES+=(data-provider)
+compose up -d --wait --wait-timeout 180 --no-deps "${APP_SERVICES[@]}" </dev/null \
   || die "New services did not become healthy. Keep maintenance enabled; do not restart old images on the migrated database."
 
-# `up -d` returns as soon as containers are created, which is well before the
-# api can answer. Wait on the thing a person actually wants — an HTTP 200
-# from the SPA's origin — rather than on container state, which is green
-# while nginx is still booting.
+# Probe through the frontend proxy: nginx health alone can pass while the API
+# is unavailable.
 log "waiting for http://localhost:${SCANI_PORT} to answer"
 deadline=$(( $(date +%s) + 180 ))
 until curl -fsS -o /dev/null "http://localhost:${SCANI_PORT}/api/readyz" 2>/dev/null; do

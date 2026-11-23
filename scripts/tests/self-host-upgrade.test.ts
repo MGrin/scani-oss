@@ -26,6 +26,9 @@ case "$*" in
   'compose -f - config') cat >/dev/null; echo 'name: upgrade-test' ;;
   'volume inspect'*) exit 1 ;;
   'ps -q --filter'*) echo old-api ;;
+  *'config --services')
+    printf '%s\\n' postgres redis seaweedfs api worker frontend-app
+    if [ "\${SCANI_DEPLOYMENT_TIER:-1}" != 2 ]; then printf '%s\\n' mailpit data-provider; fi ;;
   *'config --images')
     for image in api worker data-provider frontend-app migrate; do
       echo "scani/$image:\${FAKE_IMAGE_TAG:-$SCANI_IMAGE_TAG}"
@@ -33,12 +36,20 @@ case "$*" in
   *'stop --timeout 60'*) exit "\${FAIL_STOP:-0}" ;;
   *'ps --status running --quiet'*) printf '%s' "\${SURVIVING_WRITER:-}"; exit "\${FAIL_STATUS:-0}" ;;
   *'run --rm --no-TTY migrate'*) exit "\${FAIL_MIGRATE:-0}" ;;
-  *'up -d --wait'*) exit "\${FAIL_START:-0}" ;;
+  *'up -d --no-recreate'*) [ "\${FAIL_INFRA:-0}" = 0 ] || exit 42; touch "$PWD/.infra-ready" ;;
+  *'up -d --wait'*)
+    if [ "\${REQUIRE_INFRA:-0}" = 1 ] && [ ! -f "$PWD/.infra-ready" ]; then exit 41; fi
+    exit "\${FAIL_START:-0}" ;;
   *'pull --quiet api worker data-provider frontend-app migrate') ;;
   *) echo "unexpected docker call: $*" >&2; exit 99 ;;
 esac
 `;
-function run(overrides: Record<string, string> = {}, pin = '0.56.0', existing = true) {
+function run(
+  overrides: Record<string, string> = {},
+  pin = '0.56.0',
+  existing = true,
+  prepareOnly = false
+) {
   const dir = mkdtempSync(join(tmpdir(), 'scani-upgrade-'));
   dirs.push(dir);
   const bin = join(dir, '.bin');
@@ -55,7 +66,15 @@ function run(overrides: Record<string, string> = {}, pin = '0.56.0', existing = 
       `SCANI_IMAGE_TAG=${pin}\nSCANI_DEPLOYMENT_TIER=${overrides.SCANI_DEPLOYMENT_TIER ?? '1'}\nFRONTEND_PORT=15000\n`
     );
   const trace = join(dir, 'trace');
-  const result = Bun.spawnSync(['bash', join(ROOT, 'scripts/self-host.sh')], {
+  const command = [overrides.TEST_BASH ?? 'bash', join(ROOT, 'scripts/self-host.sh')];
+  if (prepareOnly) {
+    const prepared = Bun.spawnSync(command, {
+      cwd: dir,
+      env: { PATH: `${bin}:${process.env.PATH}`, TRACE: trace, SCANI_SKIP_UP: '1', ...overrides },
+    });
+    if (prepared.exitCode !== 0) throw new Error(prepared.stderr.toString());
+  }
+  const result = Bun.spawnSync(command, {
     cwd: dir,
     env: {
       PATH: `${bin}:${process.env.PATH}`,
@@ -71,7 +90,43 @@ function run(overrides: Record<string, string> = {}, pin = '0.56.0', existing = 
   };
 }
 
+function freePort(): string {
+  const socket = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } });
+  const port = String(socket.port);
+  socket.stop();
+  return port;
+}
+
 describe('self-host upgrade maintenance barrier', () => {
+  test('a configured-only install starts missing data services on its second run', () => {
+    const r = run(
+      {
+        REQUIRE_INFRA: '1',
+        SCANI_IMAGE_TAG: '0.56.0',
+        SCANI_PORT: freePort(),
+        SCANI_MAIL_PORT: freePort(),
+        SEAWEEDFS_S3_HOST_PORT: freePort(),
+      },
+      '0.56.0',
+      false,
+      true
+    );
+    expect(r.code).toBe(0);
+    expect(r.calls).toContain('up -d --no-recreate');
+    expect(r.calls.match(/run --rm --no-TTY migrate/g)).toHaveLength(1);
+    expect(r.calls.indexOf('up -d --no-recreate')).toBeLessThan(
+      r.calls.indexOf('run --rm --no-TTY migrate')
+    );
+  });
+  test('a failed first install can recover without recreating data services', () => {
+    const r = run({ REQUIRE_INFRA: '1' });
+    expect(r.code).toBe(0);
+    expect(r.calls).toContain('up -d --no-recreate');
+  });
+  test('a fresh boot works with the system Bash, including Bash 3', () => {
+    const r = run({ TEST_BASH: '/bin/bash', SCANI_UPGRADE_BACKUP_CONFIRMED: '' }, 'latest', false);
+    expect(r.code).toBe(0);
+  });
   test('stops old writers before migration and waits for the new services', () => {
     const r = run();
     expect(r.code).toBe(0);
@@ -135,6 +190,13 @@ describe('self-host upgrade maintenance barrier', () => {
     expect(r.output).toContain('in .env first');
     expect(r.calls).not.toContain('stop --timeout');
   });
+  test('unavailable data services prevent migration and application startup', () => {
+    const r = run({ FAIL_INFRA: '1' });
+    expect(r.code).not.toBe(0);
+    expect(r.calls).not.toContain('run --rm');
+    expect(r.calls).not.toContain('up -d --wait');
+    expect(r.output).toContain('no migration was attempted');
+  });
   test('a failed stop prevents migration', () => {
     const r = run({ FAIL_STOP: '1' });
     expect(r.code).not.toBe(0);
@@ -150,7 +212,7 @@ describe('self-host upgrade maintenance barrier', () => {
     const r = run({ FAIL_MIGRATE: '1' });
     expect(r.code).not.toBe(0);
     expect(r.calls).toContain('stop --timeout');
-    expect(r.calls).not.toContain('up -d');
+    expect(r.calls).not.toContain('up -d --wait');
     expect(r.output).toContain('remain stopped');
   });
   test('failed service health does not report a successful upgrade', () => {
