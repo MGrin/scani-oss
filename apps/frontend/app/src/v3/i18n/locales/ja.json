@@ -898,6 +898,7 @@
         "placeholder": "貯蓄、頭金、結婚祝い…"
       },
       "deleteAction": {
+        "triggerHide": "非表示",
         "trigger": "削除",
         "commit": "{{symbol}} を削除",
         "commitHide": "{{symbol}} を非表示",
@@ -2380,7 +2381,9 @@
         "noneYet": "まだ口座がありません。名前を入力して最初の口座を追加してください。"
       },
       "page": {
-        "uploadAndRead": "アップロードして読み取る",
+        "chooseFileAction": "ファイルを選択",
+        "importStatement": "明細をインポート",
+        "uploadForReview": "確認用にアップロード",
         "fileImport": {
           "fieldset": "ファイル",
           "subject": "このファイル",

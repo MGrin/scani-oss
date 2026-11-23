@@ -20,6 +20,39 @@ const SHOWCASE_OUTFLOWS = (externalId: string | null): boolean =>
   externalId === 'demo-unanswered-gbp' ||
   (externalId?.startsWith('demo-move-out-orphan-') ?? false);
 
+describe('demo completion timestamps', () => {
+  for (const time of ['00:00:00Z', '03:59:59Z', '06:00:00Z', '23:45:00Z', '23:59:59.999Z']) {
+    it(`bounds completed updates at ${time} without changing the financial timeline`, () => {
+      const options = { anchorDate: '2026-11-23', snapshotAt: new Date(`2026-11-23T${time}`) };
+      const bounded = buildDemoDataset(options);
+      const scheduled = buildDemoDataset({ anchorDate: options.anchorDate });
+      for (const holding of bounded.holdings) {
+        expect(holding.lastUpdated.getTime()).toBeLessThanOrEqual(options.snapshotAt.getTime());
+      }
+      for (const row of bounded.rollups) {
+        expect(row.computedAt.getTime()).toBeLessThanOrEqual(options.snapshotAt.getTime());
+      }
+      expect(JSON.stringify(buildDemoDataset(options))).toBe(JSON.stringify(bounded));
+      const financialRows = (data: typeof dataset) => ({
+        ...data,
+        holdings: data.holdings.map(({ lastUpdated: _, ...holding }) => holding),
+        rollups: data.rollups.map(({ computedAt: _, ...row }) => row),
+      });
+      expect(financialRows(bounded)).toEqual(financialRows(scheduled));
+    });
+  }
+
+  it('preserves historical completion times when seeded later', () => {
+    expect(
+      buildDemoDataset({ anchorDate: '2026-11-22', snapshotAt: new Date('2026-11-23T06:00:00Z') })
+    ).toEqual(buildDemoDataset({ anchorDate: '2026-11-22' }));
+  });
+
+  it('rejects an invalid snapshot time', () => {
+    expect(() => buildDemoDataset({ snapshotAt: new Date(Number.NaN) })).toThrow('snapshotAt');
+  });
+});
+
 describe('demo dataset — determinism', () => {
   it('produces a byte-identical plan on a second build', () => {
     // The whole contract of this dataset in one assertion. A visual baseline

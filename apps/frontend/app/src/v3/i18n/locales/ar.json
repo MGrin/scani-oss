@@ -1891,6 +1891,7 @@
         "placeholder": "مدخرات، وديعة، هدية زفاف…"
       },
       "deleteAction": {
+        "triggerHide": "إخفاء",
         "trigger": "حذف",
         "commit": "حذف {{symbol}}",
         "commitHide": "إخفاء {{symbol}}",
@@ -2849,7 +2850,9 @@
         "noneYet": "لا توجد حسابات بعد — اكتب اسمًا لإضافة حسابك الأول."
       },
       "page": {
-        "uploadAndRead": "الرفع والقراءة",
+        "chooseFileAction": "اختر ملفًا",
+        "importStatement": "استيراد كشف الحساب",
+        "uploadForReview": "رفع للمراجعة",
         "fileImport": {
           "fieldset": "الملف",
           "subject": "هذا الملف",
