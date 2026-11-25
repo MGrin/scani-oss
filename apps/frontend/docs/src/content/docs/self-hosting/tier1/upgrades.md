@@ -112,9 +112,14 @@ running. Never remove data volumes during an upgrade.
    all replicas and saved the final snapshot. It does not create or validate a backup.
    Data services must remain available. The installer repeats local stop/verification
    before migration. It starts missing data services without recreating existing
-   containers, then starts matching application services. This also supports a
-   rerun after `SCANI_SKIP_UP=1` or a failed first install. A failed
-   migration leaves those services stopped; success waits for new service health.
+   containers, then starts matching application services. A failed migration leaves
+   those services stopped; success waits for new service health.
+
+   `SCANI_SKIP_UP=1` prepares configuration only. If no data services or application
+   writers have ever run, keep `.env`, save a published full semver pin, and use the
+   [manual first-boot steps](/self-hosting/tier1/production/#doing-it-by-hand).
+   The backup confirmation is not a first-boot switch. If state is uncertain,
+   establish it before proceeding.
 
 ## Rollback
 

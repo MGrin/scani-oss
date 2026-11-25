@@ -34,9 +34,12 @@ password nobody has any more.
 **Fix.** Two, and the script prints both with your project's names in them:
 
 - **Keep the data.** Put that run's `.env` back next to the compose file and
-  run the script again. Nothing is regenerated and the install converges —
-  this is the ordinary recovery, and it works from any partly-failed run as
-  long as the `.env` survived.
+  follow [the maintenance upgrade flow](/self-hosting/tier1/upgrades/).
+  Installer reruns preserve the file, but require a saved full semver pin,
+  stopped writers and a verified final backup before confirmation.
+  A prepared-only configuration with no prior data services or writers uses the
+  [manual first-boot steps](/self-hosting/tier1/production/#doing-it-by-hand) instead.
+  If state is uncertain, establish it before migrating or starting services.
 - **Throw the data away.** Re-run with `SCANI_RESET=1`, which deletes this
   project's containers and its `postgres-data`, `redis-data` and `seaweedfs-data`
   volumes before installing. By hand, the same thing:

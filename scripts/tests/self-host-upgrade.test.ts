@@ -74,6 +74,7 @@ function run(
     });
     if (prepared.exitCode !== 0) throw new Error(prepared.stderr.toString());
   }
+  const preparedEnv = prepareOnly ? readFileSync(join(dir, '.env'), 'utf8') : undefined;
   const result = Bun.spawnSync(command, {
     cwd: dir,
     env: {
@@ -87,6 +88,10 @@ function run(
     code: result.exitCode,
     output: result.stdout.toString() + result.stderr.toString(),
     calls: readFileSync(trace, 'utf8'),
+    preparedEnvUnchanged:
+      preparedEnv === undefined
+        ? undefined
+        : readFileSync(join(dir, '.env'), 'utf8') === preparedEnv,
   };
 }
 
@@ -98,7 +103,7 @@ function freePort(): string {
 }
 
 describe('self-host upgrade maintenance barrier', () => {
-  test('a configured-only install starts missing data services on its second run', () => {
+  test('an attested configured install starts missing data services on its second run', () => {
     const r = run(
       {
         REQUIRE_INFRA: '1',
@@ -117,6 +122,31 @@ describe('self-host upgrade maintenance barrier', () => {
     expect(r.calls.indexOf('up -d --no-recreate')).toBeLessThan(
       r.calls.indexOf('run --rm --no-TTY migrate')
     );
+  });
+  test('default preparation cannot turn a bare rerun into an unpinned install', () => {
+    const r = run({ SCANI_UPGRADE_BACKUP_CONFIRMED: '' }, 'latest', false, true);
+    expect(r.code).not.toBe(0);
+    expect(r.output).toContain('not a mutable alias');
+    expect(r.preparedEnvUnchanged).toBe(true);
+    expect(r.calls).not.toContain('pull --quiet');
+    expect(r.calls).not.toContain('stop --timeout');
+    expect(r.calls).not.toContain('run --rm');
+    expect(r.calls).not.toContain('up -d');
+  });
+  test('pinned preparation cannot bypass the genuine backup confirmation on rerun', () => {
+    const r = run(
+      { SCANI_IMAGE_TAG: '0.56.0', SCANI_UPGRADE_BACKUP_CONFIRMED: '' },
+      '0.56.0',
+      false,
+      true
+    );
+    expect(r.code).not.toBe(0);
+    expect(r.output).toContain('SCANI_UPGRADE_BACKUP_CONFIRMED=1');
+    expect(r.preparedEnvUnchanged).toBe(true);
+    expect(r.calls).not.toContain('pull --quiet');
+    expect(r.calls).not.toContain('stop --timeout');
+    expect(r.calls).not.toContain('run --rm');
+    expect(r.calls).not.toContain('up -d');
   });
   test('a failed first install can recover without recreating data services', () => {
     const r = run({ REQUIRE_INFRA: '1' });
