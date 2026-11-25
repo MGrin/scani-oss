@@ -12,7 +12,13 @@ import {
   HoldingTransactionRepository,
   TransactionsNotFoundError,
 } from '@scani/domain/repositories';
-import { LearnedCategoryRules } from '@scani/domain/services';
+import {
+  CategorySpendingDataError,
+  CategorySpendingNotFoundError,
+  CategorySpendingService,
+  LearnedCategoryRules,
+} from '@scani/domain/services';
+import { categorySpendingInputSchema } from '@scani/shared';
 import { TRPCError } from '@trpc/server';
 import { Container } from 'typedi';
 import { z } from 'zod';
@@ -39,6 +45,20 @@ const ListInput = z.object({
 });
 
 export const transactionsRouter = router({
+  spending: protectedProcedure
+    .input(strictInput(categorySpendingInputSchema))
+    .query(async ({ ctx, input }) => {
+      const { dbUser } = await requireAuth(ctx);
+      try {
+        return await Container.get(CategorySpendingService).read(dbUser.id, input);
+      } catch (error) {
+        if (error instanceof CategorySpendingNotFoundError)
+          throw new TRPCError({ code: 'NOT_FOUND', message: error.message });
+        if (error instanceof CategorySpendingDataError)
+          throw new TRPCError({ code: 'PRECONDITION_FAILED', message: error.message });
+        throw error;
+      }
+    }),
   list: protectedProcedure.input(strictInput(ListInput)).query(async ({ ctx, input }) => {
     const { dbUser } = await requireAuth(ctx);
     const repo = Container.get(HoldingTransactionRepository);

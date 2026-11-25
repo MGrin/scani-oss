@@ -29,6 +29,7 @@ export const V3_ROUTES = {
   settings: '/settings',
   /** Every ledger row, filtered and categorized (SC-1652). */
   transactions: '/transactions',
+  categorySpending: '/transactions/spending',
   categories: '/categories',
   groups: '/groups',
   tokens: '/tokens',

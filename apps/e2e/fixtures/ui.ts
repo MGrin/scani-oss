@@ -32,8 +32,14 @@ interface IdName {
   name: string;
 }
 
-async function trpcGet<T>(page: Page, procedure: string): Promise<T> {
-  const res = await page.request.get(`${API_BASE_URL}/trpc/${procedure}?input=%7B%7D`);
+export async function trpcGet<T>(
+  page: Page,
+  procedure: string,
+  input: Record<string, unknown> = {}
+): Promise<T> {
+  const res = await page.request.get(
+    `${API_BASE_URL}/trpc/${procedure}?input=${encodeURIComponent(JSON.stringify(input))}`
+  );
   if (!res.ok()) {
     throw new Error(`trpc.${procedure} failed: ${res.status()} ${await res.text()}`);
   }

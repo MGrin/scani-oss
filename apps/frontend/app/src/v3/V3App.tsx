@@ -79,6 +79,10 @@ const CategoriesPage = lazyRoute('categories', () =>
   import('./pages/CategoriesPage').then((m) => m.CategoriesPage)
 );
 
+const CategorySpendingPage = lazyRoute('category-spending', () =>
+  import('./pages/CategorySpendingPage').then((m) => m.CategorySpendingPage)
+);
+
 const TransactionsPage = lazyRoute('transactions', () =>
   import('./pages/TransactionsPage').then((m) => m.TransactionsPage)
 );
@@ -216,6 +220,7 @@ export function V3App() {
                 `/settings/<area>`; a form surface, so no peek. */}
             <Route path={`${relative(V3_ROUTES.settings)}/:area?`} element={<SettingsPage />} />
             <Route path={relative(V3_ROUTES.household)} element={<HouseholdPage />} />
+            <Route path={relative(V3_ROUTES.categorySpending)} element={<CategorySpendingPage />} />
             <Route
               path={`${relative(V3_ROUTES.transactions)}/:peekId?`}
               element={<TransactionsPage />}

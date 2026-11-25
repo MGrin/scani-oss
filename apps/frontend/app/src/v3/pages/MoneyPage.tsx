@@ -111,6 +111,9 @@ export function MoneyPage() {
         action={
           <div className="flex flex-wrap gap-2">
             <Button asChild variant="outline">
+              <Link to={V3_ROUTES.categorySpending}>{t('v3.spending.title')}</Link>
+            </Button>
+            <Button asChild variant="outline">
               <Link to={V3_ROUTES.transactions}>
                 <ReceiptText className="me-1.5 h-4 w-4" aria-hidden="true" />
                 {t('v3.transactions.title')}

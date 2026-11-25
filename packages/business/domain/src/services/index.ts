@@ -39,6 +39,11 @@ export {
   AiCategorySuggester,
 } from './categories/AiCategorySuggester';
 export {
+  CategorySpendingDataError,
+  CategorySpendingNotFoundError,
+  CategorySpendingService,
+} from './categories/CategorySpendingService';
+export {
   CategoryNameError,
   parseImportedCategory,
 } from './categories/category-names';
