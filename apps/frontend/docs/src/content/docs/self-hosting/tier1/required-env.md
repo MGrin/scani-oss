@@ -35,7 +35,7 @@ and is enumerated in the [Environment variables reference](/reference/environmen
 | Variable | What it does |
 |---|---|
 | `FRONTEND_URL` | The browser-facing URL of the SPA (e.g. `https://scani.example.com`). Used for CORS and the Better-Auth cookie scope. **Must be https://** in production. |
-| `BACKEND_URL` | The browser-facing URL of the api (e.g. `https://api.scani.example.com` or `https://scani.example.com/api`). Embedded in magic-link emails — must be reachable by the user's email client. |
+| `BACKEND_URL` | The browser-facing API origin. Use `https://scani.example.com` with the bundled proxy, or `https://api.scani.example.com` for split origins. Do not append a path. Better Auth derives its authentication path from this value. |
 | `COOKIE_DOMAIN` | Set to `.your-domain.example.com` if api and SPA live on different subdomains. The session cookie is set with this domain so it reaches both. Leave unset if both share an origin. |
 
 ## Tier wiring

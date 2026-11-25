@@ -37,12 +37,21 @@ before anything boots. `SCANI_RESET=1` deletes this project's data volumes
 first — see
 [Troubleshooting](/self-hosting/tier1/troubleshooting/#a-failed-install-cannot-be-re-run).
 
-Re-running the script is the recovery from a failed install: it reuses the
-`.env` it finds rather than generating new secrets, so a second run converges
-on the first one's. What it will **not** do is generate fresh secrets over a
-database that already exists — if the volumes are there and the `.env` is not,
-it stops and says so instead of leaving you with `password authentication
-failed for user "scani"`.
+`SCANI_SKIP_UP=1` only prepares configuration. Keep the generated `.env`.
+If no data services or application writers have ever run, save a published full
+semver `SCANI_IMAGE_TAG` there, such as `0.56.0`. Then use the
+[manual first-boot migration and startup steps](#doing-it-by-hand) below.
+Continue to startup only after migration exits successfully.
+
+An installer rerun reuses `.env`, but requires a saved full semver pin and genuine
+maintenance backup confirmation whenever that file exists. This includes a
+prepared-only configuration. Do not set `SCANI_UPGRADE_BACKUP_CONFIRMED=1` without
+the final backup. If data services or application writers have run, or their state
+is uncertain, follow [the maintenance upgrade flow](/self-hosting/tier1/upgrades/).
+
+The installer refuses to generate fresh secrets when previous data volumes exist
+without `.env`. Recover the matching configuration; deleting the install directory
+does not delete its database or recover its encryption key.
 
 <Aside type="caution" title="Do not assemble .env by hand">
   The older instructions here said to copy `.env.example` and fill in eight
@@ -77,8 +86,9 @@ another orchestrator:
    reached under `/api` — Better-Auth derives its route base path from it,
    and a path there silently moves every auth route out of reach.
 
-3. Apply database migrations before first boot. **For an existing installation,
-   follow [the maintenance upgrade flow](/self-hosting/tier1/upgrades/) first:**
+3. Apply database migrations before first boot. **If data services or application
+   writers have run, or their state is uncertain, follow
+   [the maintenance upgrade flow](/self-hosting/tier1/upgrades/) first:**
    pin all images, stop every old API/worker, and save a final database snapshot.
    Stop failures must prevent migration. Keep old services stopped if migration fails.
 
@@ -91,7 +101,8 @@ another orchestrator:
    and for the alternative orchestrators (Kubernetes Job, CI step,
    `docker run` standalone).
 
-4. Boot the long-running services.
+4. Boot the long-running services only after the migration exits with code 0.
+   On failure, stop here and inspect the error; keep application writers stopped.
 
    ```sh
    docker compose -f docker-compose.prod.yml up -d

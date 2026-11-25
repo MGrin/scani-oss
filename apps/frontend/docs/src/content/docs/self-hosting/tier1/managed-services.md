@@ -64,6 +64,14 @@ pre-built one-shot that applies both the application schema (Drizzle)
 and the job-queue schema (BullMQ) — no workspace clone, no Bun install
 on your side.
 
+**Installer limitation:** `scripts/self-host.sh` passes `--allow-remote postgres`
+and does not honor a custom `SCANI_MIGRATE_HOST`. That setting belongs to the
+production Compose migrator command; the installer overrides that command.
+For a managed hostname, use the explicit manual migration command below instead
+of the installer. Pin the same published version as your application images.
+If writers have run, first follow
+[the maintenance upgrade flow](/self-hosting/tier1/upgrades/) and verify the final backup.
+
 ```sh
 docker run --rm \
   -e DATABASE_URL="$DATABASE_URL" \

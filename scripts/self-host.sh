@@ -360,7 +360,8 @@ if [ "$INSTALL_TIER" = 2 ]; then
 fi
 
 if [ "${SCANI_SKIP_UP:-0}" = "1" ]; then
-  ok "SCANI_SKIP_UP=1 — stopping before boot. Review .env, then re-run this script."
+  ok "SCANI_SKIP_UP=1 — stopping before boot. This run did not start services."
+  log "Keep .env. First boot and reruns: https://docs.scani.xyz/self-hosting/tier1/production/"
   exit 0
 fi
 
