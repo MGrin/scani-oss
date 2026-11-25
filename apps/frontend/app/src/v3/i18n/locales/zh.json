@@ -3753,7 +3753,8 @@
       "inactiveHolding": "未启用的持仓",
       "inactiveAccount": "未启用的账户",
       "includesChildren": "包含子类别",
-      "emptyDetail": "此页没有交易。请返回第一页或选择其他类别。"
+      "emptyDetail": "此页没有交易。请返回第一页或选择其他类别。",
+      "loading": "正在加载支出…"
     }
   }
 }

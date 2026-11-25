@@ -3753,7 +3753,8 @@
       "inactiveHolding": "Posisi tidak aktif",
       "inactiveAccount": "Rekening tidak aktif",
       "includesChildren": "Termasuk subkategori",
-      "emptyDetail": "Tidak ada transaksi di halaman ini. Kembali ke halaman pertama atau pilih kategori lain."
+      "emptyDetail": "Tidak ada transaksi di halaman ini. Kembali ke halaman pertama atau pilih kategori lain.",
+      "loading": "Memuat pengeluaran…"
     }
   }
 }

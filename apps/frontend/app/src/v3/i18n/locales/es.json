@@ -4211,7 +4211,8 @@
       "inactiveHolding": "Posición inactiva",
       "inactiveAccount": "Cuenta inactiva",
       "includesChildren": "Incluye subcategorías",
-      "emptyDetail": "No hay transacciones en esta página. Vuelve a la primera página o elige otra categoría."
+      "emptyDetail": "No hay transacciones en esta página. Vuelve a la primera página o elige otra categoría.",
+      "loading": "Cargando gastos…"
     }
   }
 }

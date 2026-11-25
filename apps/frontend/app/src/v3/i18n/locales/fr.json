@@ -4214,7 +4214,8 @@
       "inactiveHolding": "Position inactive",
       "inactiveAccount": "Compte inactif",
       "includesChildren": "Sous-catégories incluses",
-      "emptyDetail": "Aucune transaction sur cette page. Revenez à la première page ou choisissez une autre catégorie."
+      "emptyDetail": "Aucune transaction sur cette page. Revenez à la première page ou choisissez une autre catégorie.",
+      "loading": "Chargement des dépenses…"
     }
   }
 }

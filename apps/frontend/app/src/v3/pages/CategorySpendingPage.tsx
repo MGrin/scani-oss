@@ -210,7 +210,7 @@ export function CategorySpendingView({
         <div
           role="status"
           className="h-28 animate-pulse rounded-lg bg-muted"
-          aria-label={t('common.loading')}
+          aria-label={t('v3.spending.loading')}
         />
       ) : null}
       {error ? (
@@ -322,7 +322,14 @@ export function CategorySpendingView({
                       t('v3.categories.uncategorized')
                     }
                     wrapIdentity
-                    sublabel={`${row.occurredAt.slice(0, 10)} UTC · ${row.accountName}${row.accountInactive ? ` · ${t('v3.spending.inactiveAccount')}` : ''}${row.holdingInactive ? ` · ${t('v3.spending.inactiveHolding')}` : ''}`}
+                    sublabel={[
+                      `${row.occurredAt.slice(0, 10)} UTC`,
+                      row.accountName,
+                      row.accountInactive ? t('v3.spending.inactiveAccount') : null,
+                      row.holdingInactive ? t('v3.spending.inactiveHolding') : null,
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                     value={<SpendingAmount value={row.quantity} currency={row.symbol} />}
                   />
                 </DataRowList>

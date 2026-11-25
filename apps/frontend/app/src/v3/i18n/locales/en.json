@@ -3984,7 +3984,8 @@
       "inactiveHolding": "Inactive holding",
       "inactiveAccount": "Inactive account",
       "includesChildren": "Includes subcategories",
-      "emptyDetail": "No transactions on this page. Return to the first page or choose another category."
+      "emptyDetail": "No transactions on this page. Return to the first page or choose another category.",
+      "loading": "Loading spending…"
     }
   }
 }
