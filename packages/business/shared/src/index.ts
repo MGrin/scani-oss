@@ -26,6 +26,7 @@ export {
   categoryRuleSaveSchema,
   categoryRuleScopeSchema,
 } from './dtos/category-rules';
+export * from './dtos/category-spending';
 export * from './format/currency';
 export * from './format/date';
 export * from './format/locale';

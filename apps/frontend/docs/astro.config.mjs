@@ -123,6 +123,13 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Features',
+          items: [
+            { label: 'Saved category rules', slug: 'features/category-rules' },
+            { label: 'Spending by category', slug: 'features/category-spending' },
+          ],
+        },
+        {
           label: 'Design decisions',
           items: [
             { label: 'Why an append-only ledger', slug: 'decisions/append-only-ledger' },

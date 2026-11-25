@@ -329,9 +329,10 @@ const loggingMiddleware = t.middleware(async ({ ctx, path, type, input, next }) 
     type,
   });
 
-  const privateCategoryRules = path.startsWith('categories.rules.');
-  const logInput = logConfig.logRequestBodies && !privateCategoryRules;
-  const logOutput = logConfig.logResponseBodies && !privateCategoryRules;
+  const privateFinancialData =
+    path.startsWith('categories.rules.') || path === 'transactions.spending';
+  const logInput = logConfig.logRequestBodies && !privateFinancialData;
+  const logOutput = logConfig.logResponseBodies && !privateFinancialData;
   const serializedInput = logInput && input !== undefined ? safeStringify(input) : undefined;
 
   procedureLogger.debug(
