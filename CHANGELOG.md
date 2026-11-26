@@ -19,6 +19,20 @@ version heading stays there permanently, above every future release. This
 comment is deliberately in that position; explanatory prose should not be.
 -->
 
+## [0.57.0](https://github.com/MGrin/scani-oss/compare/v0.56.0...v0.57.0) (2026-11-26)
+
+
+### Features
+
+* add monthly category spending reports ([5826006](https://github.com/MGrin/scani-oss/commit/58260064db834b223495f2ec14ee1ac06e4dc722))
+* **backup:** add monthly budget compatibility layer ([44e54c1](https://github.com/MGrin/scani-oss/commit/44e54c10b1b9c9e7299196586bc78ae491c54881))
+
+
+### Bug Fixes
+
+* **budgets:** keep fiat visibility shared across creators ([dda5a10](https://github.com/MGrin/scani-oss/commit/dda5a10ff35dfae4e80369f287d18f6e90c481c9))
+* keep spending report copy translation-safe ([a8e1d82](https://github.com/MGrin/scani-oss/commit/a8e1d827b2d4ca07882331e149930cb21f32ce56))
+
 ## [0.56.0](https://github.com/MGrin/scani-oss/compare/v0.55.6...v0.56.0) (2026-11-23)
 
 
