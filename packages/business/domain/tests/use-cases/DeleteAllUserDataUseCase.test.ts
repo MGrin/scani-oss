@@ -66,7 +66,12 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
   const institution = await makeInstitution(tx);
   seededInstitutionId = institution.id;
   const token = await makeToken(tx);
-  const baseToken = await makeToken(tx);
+  await tx.insert(schema.tokenTypes).values({ code: 'fiat', name: 'Fiat' }).onConflictDoNothing();
+  const [fiat] = await tx
+    .select()
+    .from(schema.tokenTypes)
+    .where(eq(schema.tokenTypes.code, 'fiat'));
+  const baseToken = await makeToken(tx, { typeId: fiat!.id });
   seededTokenIds = [token.id, baseToken.id];
 
   const user = await makeUser(tx);
@@ -103,6 +108,13 @@ async function seed(tx: DatabaseTransaction): Promise<void> {
     holdingId: holding.id,
     categoryId: category!.id,
     categorySetBy: 'person',
+  });
+  await tx.insert(schema.monthlyCategoryBudgets).values({
+    userId,
+    categoryId: category!.id,
+    tokenId: baseToken.id,
+    month: '2026-01-01',
+    limit: '123.000000000000000001',
   });
   // An AI answer references the category, so it has to go first (SC-1695).
   await tx

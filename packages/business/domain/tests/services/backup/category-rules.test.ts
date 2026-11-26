@@ -1,6 +1,7 @@
 import { expect, test } from 'bun:test';
 import * as schema from '@scani/db/schema';
 import { eq, sql } from 'drizzle-orm';
+import { lockCategoryRuleOwner } from '../../../src/lib/category-rule-owner-lock';
 import { BackupRestorer } from '../../../src/services/backup/BackupRestorer';
 import {
   type BackupRecord,
@@ -15,8 +16,10 @@ import { makeAccount, makeHoldingTransaction } from '../../../test/helpers/facto
 for (const keepRule of [true, false])
   test(`format 3 remaps account/category/owner and preserves custom provenance; rules present=${keepRule}`, async () => {
     await withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const source = await makeUser(tx);
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
       const institution = await makeInstitution(tx);
       const account = await makeAccount(tx, { userId: source.id, institutionId: institution.id });
       const [cat] = await tx.execute(
@@ -38,7 +41,11 @@ for (const keepRule of [true, false])
         );
       const records: BackupRecord[] = [];
       for await (const record of new BackupWriter().records(source.id, tx, 3))
-        records.push(JSON.parse(backupLine(record)) as BackupRecord);
+        records.push(
+          JSON.parse(
+            backupLine(record.type === 'header' ? { ...record, version: 3 } : record)
+          ) as BackupRecord
+        );
       expect(records[0]).toMatchObject({ type: 'header', version: 3 });
       expect(
         records.filter((r) => r.type === 'row' && r.table === 'transaction_category_rule_runs')
@@ -68,11 +75,13 @@ for (const keepRule of [true, false])
     });
   });
 
-for (const version of [1, 2])
+for (const version of [1, 2, 3])
   test(`reader still restores format ${version} without saved rules`, async () => {
     await withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const source = await makeUser(tx);
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
       const records: BackupRecord[] = [];
       for await (const record of new BackupWriter().records(source.id, tx, 3))
         records.push(record.type === 'header' ? { ...record, version } : record);

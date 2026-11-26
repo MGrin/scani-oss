@@ -1,7 +1,9 @@
-import type { DatabaseTransaction } from '@scani/db';
+import { type DatabaseTransaction, getDb } from '@scani/db';
 import { withTransaction } from '@scani/db/transaction';
 import { SUGGESTED_CATEGORIES } from '@scani/shared';
+import { sql } from 'drizzle-orm';
 import { Container, Service } from 'typedi';
+import { lockCategoryRuleOwner } from '../../lib/category-rule-owner-lock';
 import { TransactionCategoryRepository } from '../../repositories/TransactionCategoryRepository';
 import { normalizeCategoryName } from './category-names';
 import { CategoryRuleInUseError } from './category-rule-errors';
@@ -93,29 +95,38 @@ export class TransactionCategoryService {
     patch: { name?: string; color?: string | null; parentId?: string | null },
     tx?: DatabaseTransaction
   ): Promise<void> {
-    await this.run(tx, async (db) => {
-      const current = await this.repo.findOwned(userId, id, db);
-      if (!current) throw new CategoryNotFoundError();
-      const parentId = patch.parentId === undefined ? current.parentId : patch.parentId;
-      const name = patch.name === undefined ? current.name : normalizeCategoryName(patch.name);
-      if (parentId) {
-        if (parentId === id) throw new CategoryDepthError();
-        await this.assertCanParent(userId, parentId, db);
-        if (await this.repo.hasChildren(userId, id, db)) throw new CategoryDepthError();
-      }
-      const clash = await this.repo.findByName(userId, parentId, name, db);
-      if (clash && clash.id !== id) throw new CategoryConflictError(name);
-      await this.repo.updateOwned(
-        userId,
-        id,
-        {
-          name,
-          parentId,
-          ...(patch.color === undefined ? {} : { color: patch.color }),
-        },
-        db
-      );
-    });
+    await this.run(
+      tx,
+      async (db) => {
+        for (const categoryId of [
+          ...new Set([id, ...(patch.parentId ? [patch.parentId] : [])]),
+        ].sort()) {
+          await this.repo.lockOwned(userId, categoryId, db);
+        }
+        const current = await this.repo.findOwned(userId, id, db);
+        if (!current) throw new CategoryNotFoundError();
+        const parentId = patch.parentId === undefined ? current.parentId : patch.parentId;
+        const name = patch.name === undefined ? current.name : normalizeCategoryName(patch.name);
+        if (parentId) {
+          if (parentId === id) throw new CategoryDepthError();
+          await this.assertCanParent(userId, parentId, db);
+          if (await this.repo.hasChildren(userId, id, db)) throw new CategoryDepthError();
+        }
+        const clash = await this.repo.findByName(userId, parentId, name, db);
+        if (clash && clash.id !== id) throw new CategoryConflictError(name);
+        await this.repo.updateOwned(
+          userId,
+          id,
+          {
+            name,
+            parentId,
+            ...(patch.color === undefined ? {} : { color: patch.color }),
+          },
+          db
+        );
+      },
+      userId
+    );
   }
 
   /** Its rows go to `replacementId` or become uncategorized; its children move to the top level. */
@@ -125,22 +136,30 @@ export class TransactionCategoryService {
     replacementId?: string,
     tx?: DatabaseTransaction
   ): Promise<{ moved: number }> {
-    return await this.run(tx, async (db) => {
-      const current = await this.repo.findOwned(userId, id, db);
-      if (!current) throw new CategoryNotFoundError();
-      if (replacementId) {
-        const replacement = await this.repo.findOwned(userId, replacementId, db);
-        if (!replacement || replacement.id === id || replacement.parentId === id) {
-          throw new CategoryNotFoundError();
+    return await this.run(
+      tx,
+      async (db) => {
+        for (const categoryId of [
+          ...new Set([id, ...(replacementId ? [replacementId] : [])]),
+        ].sort()) {
+          await this.repo.lockOwned(userId, categoryId, db);
         }
-      }
-      await this.repo.lockOwned(userId, id, db);
-      const ruleCount = await this.repo.savedRuleCount(userId, id, db);
-      if (ruleCount) throw new CategoryRuleInUseError(ruleCount);
-      const moved = await this.repo.moveTransactions(userId, id, replacementId ?? null, db);
-      await this.repo.deleteOwned(userId, id, db);
-      return { moved };
-    });
+        const current = await this.repo.findOwned(userId, id, db);
+        if (!current) throw new CategoryNotFoundError();
+        if (replacementId) {
+          const replacement = await this.repo.findOwned(userId, replacementId, db);
+          if (!replacement || replacement.id === id || replacement.parentId === id) {
+            throw new CategoryNotFoundError();
+          }
+        }
+        const ruleCount = await this.repo.savedRuleCount(userId, id, db);
+        if (ruleCount) throw new CategoryRuleInUseError(ruleCount);
+        const moved = await this.repo.moveTransactions(userId, id, replacementId ?? null, db);
+        await this.repo.deleteOwned(userId, id, db);
+        return { moved };
+      },
+      userId
+    );
   }
 
   /** The starter set, only for a person with no categories, so a second tap creates nothing. */
@@ -211,8 +230,20 @@ export class TransactionCategoryService {
 
   private async run<T>(
     tx: DatabaseTransaction | undefined,
-    fn: (db: DatabaseTransaction) => Promise<T>
+    fn: (db: DatabaseTransaction) => Promise<T>,
+    ownerId?: string
   ): Promise<T> {
+    if (ownerId) {
+      const work = async (db: DatabaseTransaction) => {
+        await db.execute(sql`set local lock_timeout = '3s'`);
+        await db.execute(sql`set local statement_timeout = '3s'`);
+        await lockCategoryRuleOwner(db, ownerId);
+        return fn(db);
+      };
+      return tx
+        ? tx.transaction(work)
+        : getDb().transaction(work, { isolationLevel: 'read committed' });
+    }
     return tx ? await fn(tx) : await withTransaction(fn, { name: 'transaction-categories' });
   }
 }

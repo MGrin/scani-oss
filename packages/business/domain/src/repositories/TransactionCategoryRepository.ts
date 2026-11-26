@@ -27,6 +27,7 @@ export class TransactionCategoryRepository extends BaseRepository<
         id: t.id,
         userId: t.userId,
         parentId: t.parentId,
+        budgetRoot: t.budgetRoot,
         name: t.name,
         color: t.color,
         displayOrder: t.displayOrder,

@@ -77,7 +77,7 @@ describe('UserBackupService (SC-1649)', () => {
     expect(backup).toMatchObject({
       userId: me,
       storageKey: written[0]?.key,
-      formatVersion: 3,
+      formatVersion: 4,
       byteSize: 3,
       sha256: 'abc',
       recordCount: 7,

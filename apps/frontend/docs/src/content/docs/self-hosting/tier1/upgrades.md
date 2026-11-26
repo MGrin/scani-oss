@@ -203,3 +203,39 @@ Then run the check again and continue from step 3.
 - [Backup & restore](/self-hosting/tier1/backup-restore/)
 - [Release flow](/contributing/release-flow/)
 - [Production with docker-compose](/self-hosting/tier1/production/)
+
+
+## Monthly-budget compatibility boundary
+
+The additive migration `20261126010000_monthly_category_budgets_compatibility`
+introduces budget storage and protects root categories with a native foreign key.
+The compatibility build exports and erases budgets, but provides no budget setter,
+copy action or UI. It explicitly refuses every portable import containing budget
+rows before catalog resolution or target writes. Keep those files for a later
+build that supports budget imports; never discard their budget rows.
+
+Portable exports now use format 4, including exports with zero budgets. This build
+still reads formats 1, 2 and 3 without fabricating budgets. Older readers refuse
+format 4. An export reads its catalog and account rows in one read-only,
+repeatable-read snapshot; metadata publication follows the snapshot's release.
+Full Postgres backups continue to include the budget table.
+
+Before using this compatibility bridge, verify that the budget table contains no
+rows. Unexpected existing rows require maintenance with compatible backup and
+erasure binaries. Never place legacy writers over populated budget storage.
+Use the stopped-writer procedure above, retain the full snapshot and pin all
+restarted services and direct runners to the matching compatible artifact.
+Queued jobs keep their original IDs. Verify old worker processes and active
+backup, restore and erasure executions have ended; a handed-back job message does
+not prove process exit.
+
+Budget-producing functionality belongs to a separate subsequent build. Enable it
+only after every serving API, consuming worker and approved direct runner meets
+this compatibility floor. Users skipping the bridge can upgrade under the same
+full maintenance procedure with every old writer stopped.
+
+Once budgets exist, pre-compatibility backup and erasure binaries are unsafe
+rollback targets. Retain a compatible build or use a forward fix. This bridge can
+export and erase populated budgets, but still refuses their portable import.
+Never delete budget rows to permit a downgrade. A database/image rollback needs
+a matching, verified full backup and must account for changes since that backup.
