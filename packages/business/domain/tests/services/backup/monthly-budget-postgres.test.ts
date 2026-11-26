@@ -6,6 +6,7 @@ import { BACKUP_UPLOAD_MAX_BYTES } from '@scani/shared';
 import { and, eq, sql } from 'drizzle-orm';
 import { Container } from 'typedi';
 import { lockCategoryRuleOwner } from '../../../src/lib/category-rule-owner-lock';
+import { TokenRepository } from '../../../src/repositories/TokenRepository';
 import { BackupRestorer, backupRecords } from '../../../src/services/backup/BackupRestorer';
 import { type BackupRecord, BackupWriter } from '../../../src/services/backup/BackupWriter';
 import { UserBackupService } from '../../../src/services/backup/UserBackupService';
@@ -915,5 +916,73 @@ test('category update revalidates a proposed parent after a legacy reparent rele
     release.resolve();
     await Promise.allSettled([leader, contender]);
     await drop(f);
+  }
+});
+
+test('another creator does not make fiat private: second owner can insert/update budgets while non-fiat and foreign categories refuse', async () => {
+  const creator = await fixture();
+  const owner = await fixture();
+  let nonFiatId: string | undefined;
+  try {
+    await db
+      .update(schema.tokens)
+      .set({ createdByUserId: creator.userId })
+      .where(eq(schema.tokens.id, creator.tokenId));
+    const tokens = new TokenRepository();
+    expect(await tokens.findVisibleById(creator.tokenId, owner.userId)).toMatchObject({
+      id: creator.tokenId,
+      createdByUserId: creator.userId,
+    });
+    expect((await tokens.findByType('fiat')).map((token) => token.id)).toContain(creator.tokenId);
+
+    await db.transaction(async (tx) => {
+      await tx.insert(t).values(budget(owner, { tokenId: creator.tokenId }));
+      await tx.insert(t).values(budget(owner, { month: '2026-02-01' }));
+      await tx
+        .update(t)
+        .set({ tokenId: creator.tokenId })
+        .where(and(eq(t.userId, owner.userId), eq(t.month, '2026-02-01')));
+    });
+    const saved = await count(owner);
+    expect(saved).toHaveLength(2);
+    for (const row of saved)
+      expect(row).toMatchObject({
+        userId: owner.userId,
+        categoryId: owner.categoryId,
+        tokenId: creator.tokenId,
+        limit: exact,
+      });
+
+    const nonFiat = await db.transaction((tx) =>
+      makeToken(tx, { createdByUserId: creator.userId })
+    );
+    nonFiatId = nonFiat.id;
+    for (const { patch, code } of [
+      { patch: { tokenId: nonFiat.id }, code: '23514' },
+      { patch: { categoryId: creator.categoryId }, code: '23503' },
+    ]) {
+      const result = await db
+        .transaction(async (tx) => {
+          await tx
+            .insert(t)
+            .values(budget(owner, { month: '2026-03-01', tokenId: creator.tokenId }));
+          await tx
+            .insert(t)
+            .values(budget(owner, { month: '2026-04-01', tokenId: creator.tokenId, ...patch }));
+        })
+        .then(
+          () => ({ code: undefined as string | undefined }),
+          (error: unknown) => {
+            const e = error as { code?: string; cause?: { code?: string } };
+            return { code: e.cause?.code ?? e.code };
+          }
+        );
+      expect(result.code).toBe(code);
+      expect(await count(owner)).toEqual(saved);
+    }
+  } finally {
+    await drop(owner);
+    if (nonFiatId) await db.delete(schema.tokens).where(eq(schema.tokens.id, nonFiatId));
+    await drop(creator);
   }
 });

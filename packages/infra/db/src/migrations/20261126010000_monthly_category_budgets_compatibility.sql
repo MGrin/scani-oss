@@ -30,7 +30,6 @@ CREATE FUNCTION monthly_category_budgets_token_check() RETURNS trigger LANGUAGE 
 BEGIN
   PERFORM 1 FROM tokens t JOIN token_types tt ON tt.id = t.type_id
     WHERE t.id = NEW.token_id AND tt.code = 'fiat'
-      AND (t.created_by_user_id IS NULL OR t.created_by_user_id = NEW.user_id)
     FOR KEY SHARE OF t, tt;
   IF NOT FOUND THEN
     RAISE EXCEPTION 'monthly category budget requires an eligible fiat token'
