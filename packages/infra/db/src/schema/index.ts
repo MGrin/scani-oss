@@ -30,6 +30,7 @@ export * from './inflation';
 export * from './institutions';
 export * from './job-heartbeats';
 export * from './liabilities';
+export * from './monthly-category-budgets';
 export * from './oauth-provider';
 export * from './operator-alarms';
 export * from './payments';

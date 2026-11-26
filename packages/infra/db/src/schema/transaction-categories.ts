@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  boolean,
   foreignKey,
   index,
   integer,
@@ -24,6 +25,7 @@ export const transactionCategories = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     parentId: uuid('parent_id'),
+    budgetRoot: boolean('budget_root').notNull().generatedAlwaysAs(sql`parent_id IS NULL`),
     name: text('name').notNull(),
     color: text('color'),
     displayOrder: integer('display_order').notNull().default(0),
@@ -31,6 +33,11 @@ export const transactionCategories = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
+    budgetRootUq: unique('transaction_categories_budget_root_uq').on(
+      table.id,
+      table.userId,
+      table.budgetRoot
+    ),
     idUserUq: unique('transaction_categories_id_user_uq').on(table.id, table.userId),
     parentFk: foreignKey({
       name: 'transaction_categories_parent_fk',

@@ -99,9 +99,15 @@ export class BackupWriter {
    */
   async file(
     userId: string,
-    db: Reader = getDb(),
+    db: DatabaseTransaction | undefined = undefined,
     files: BackupFileSource | null = null
   ): Promise<BackupFile> {
+    if (!db) {
+      return getDb().transaction((tx) => this.file(userId, tx, files), {
+        isolationLevel: 'repeatable read',
+        accessMode: 'read only',
+      });
+    }
     const gzip = new CompressionStream('gzip');
     const writer = gzip.writable.getWriter();
     const chunks: Uint8Array[] = [];
@@ -113,45 +119,54 @@ export class BackupWriter {
         chunks.push(value);
       }
     })();
-    const encoder = new TextEncoder();
-    let pending = '';
-    let end: Extract<BackupRecord, { type: 'end' }> | undefined;
-    let leftOut = 0;
-    for await (const record of this.records(userId, db, PAGE, files)) {
-      pending += backupLine(record);
-      if (pending.length >= FLUSH_BYTES) {
-        await writer.write(encoder.encode(pending));
-        pending = '';
+    void drained.catch(() => {});
+    try {
+      const encoder = new TextEncoder();
+      let pending = '';
+      let end: Extract<BackupRecord, { type: 'end' }> | undefined;
+      let leftOut = 0;
+      for await (const record of this.records(userId, db, PAGE, files)) {
+        pending += backupLine(record);
+        if (pending.length >= FLUSH_BYTES) {
+          await writer.write(encoder.encode(pending));
+          pending = '';
+        }
+        if (record.type === 'header') {
+          leftOut = (record.files?.omitted ?? []).filter((o) => o.reason === 'too-large').length;
+        }
+        if (record.type === 'end') end = record;
       }
-      if (record.type === 'header') {
-        leftOut = (record.files?.omitted ?? []).filter((o) => o.reason === 'too-large').length;
-      }
-      if (record.type === 'end') end = record;
+      if (pending) await writer.write(encoder.encode(pending));
+      await writer.close();
+      await drained;
+      if (!end) throw new Error('BackupWriter: the records ended without an end record');
+      const bytes = new Uint8Array(Buffer.concat(chunks));
+      const sha256 = createHash('sha256').update(bytes).digest('hex');
+      return {
+        bytes,
+        sha256,
+        records: end.records,
+        counts: end.counts,
+        filesIncluded: end.counts.files ?? 0,
+        filesLeftOut: leftOut,
+      };
+    } catch (error) {
+      await writer.abort(error).catch(() => {});
+      await drained.catch(() => {});
+      throw error;
     }
-    if (pending) await writer.write(encoder.encode(pending));
-    await writer.close();
-    await drained;
-    if (!end) throw new Error('BackupWriter: the records ended without an end record');
-    const bytes = new Uint8Array(Buffer.concat(chunks));
-    const sha256 = createHash('sha256').update(bytes).digest('hex');
-    return {
-      bytes,
-      sha256,
-      records: end.records,
-      counts: end.counts,
-      filesIncluded: end.counts.files ?? 0,
-      filesLeftOut: leftOut,
-    };
   }
 
   /**
+   * The caller owns this explicit transaction and its snapshot. Portable file
+   * exports use `file`, which owns a read-only repeatable-read snapshot.
    * Without `files`, no document is carried and every one is named as too
    * large: that is the build a backup falls back to when its files would not
    * fit (SC-1662).
    */
   async *records(
     userId: string,
-    db: Reader = getDb(),
+    db: DatabaseTransaction,
     page = PAGE,
     files: BackupFileSource | null = null
   ): AsyncGenerator<BackupRecord> {

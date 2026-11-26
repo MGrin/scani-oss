@@ -4,6 +4,7 @@ import { createComponentLogger } from '@scani/logging';
 import { eq, inArray } from 'drizzle-orm';
 import type { PgTable } from 'drizzle-orm/pg-core';
 import { Container, Service } from 'typedi';
+import { lockCategoryRuleOwner } from '../lib/category-rule-owner-lock';
 import { pendingSignInIds } from '../lib/pending-sign-in';
 import { DeleteAllUserDataUseCase } from './DeleteAllUserDataUseCase';
 
@@ -37,6 +38,7 @@ export class DeleteAccountUseCase {
 
     const deleted = await withTransaction(
       async (tx) => {
+        await lockCategoryRuleOwner(tx, userId);
         const [user] = await tx
           .select({ email: schema.users.email })
           .from(schema.users)

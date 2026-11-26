@@ -4,6 +4,7 @@ import * as schema from '@scani/db/schema';
 import { eq } from 'drizzle-orm';
 import { getTableConfig } from 'drizzle-orm/pg-core';
 import { Container } from 'typedi';
+import { lockCategoryRuleOwner } from '../../../src/lib/category-rule-owner-lock';
 import {
   type BackupFileStore,
   BackupRestorer,
@@ -175,9 +176,11 @@ async function seedSource(tx: DatabaseTransaction) {
 describe('BackupRestorer (SC-1649)', () => {
   test('restores every row into an empty account, under new ids, with equal balances', () =>
     withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const source = await seedSource(tx);
       const records = await fileOf(source.user.id, tx);
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
 
       const report = await new BackupRestorer().restore(target.id, opener(records), tx);
 
@@ -199,9 +202,11 @@ describe('BackupRestorer (SC-1649)', () => {
 
   test('rewrites every id the file issued, wherever it appears, and leaves no source id behind', () =>
     withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const source = await seedSource(tx);
       const records = await fileOf(source.user.id, tx);
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
       const report = await new BackupRestorer().restore(target.id, opener(records), tx);
       const outflow = report.ids.get(source.outflow.id) as string;
 
@@ -237,9 +242,11 @@ describe('BackupRestorer (SC-1649)', () => {
 
   test('keeps what only the file knows: history claims, settled terms, settings', () =>
     withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const source = await seedSource(tx);
       const records = await fileOf(source.user.id, tx);
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
       const report = await new BackupRestorer().restore(target.id, opener(records), tx);
 
       const [coverage] = await tx
@@ -273,6 +280,8 @@ describe('BackupRestorer (SC-1649)', () => {
 
   test('names a holding whose cache in the file disagrees with its evidence', () =>
     withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const source = await seedSource(tx);
       const cash = source.holdings[0]?.id as string;
       const records = (await fileOf(source.user.id, tx)).map((r) =>
@@ -280,7 +289,7 @@ describe('BackupRestorer (SC-1649)', () => {
           ? { ...r, row: { ...r.row, balance: '999' } }
           : r
       );
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
 
       const report = await new BackupRestorer().restore(target.id, opener(records), tx);
 
@@ -291,9 +300,11 @@ describe('BackupRestorer (SC-1649)', () => {
 
   test('refuses an account that already has data, and writes nothing', () =>
     withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const source = await seedSource(tx);
       const records = await fileOf(source.user.id, tx);
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
       await makeAccount(tx, { userId: target.id, institutionId: (await makeInstitution(tx)).id });
 
       await expect(
@@ -310,9 +321,11 @@ describe('BackupRestorer (SC-1649)', () => {
 
   test('refuses a file cut short before writing anything', () =>
     withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const source = await seedSource(tx);
       const records = (await fileOf(source.user.id, tx)).slice(0, -2);
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
 
       const refused = await new BackupRestorer()
         .restore(target.id, opener(records), tx)
@@ -328,6 +341,8 @@ describe('BackupRestorer (SC-1649)', () => {
 
   test('restores a shared token this instance lacks as the account own, flagged', () =>
     withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const source = await seedSource(tx);
       // The file as another instance wrote it: its shared token is one this instance never had.
       const unknown = '22222222-2222-4222-8222-222222222222';
@@ -345,7 +360,7 @@ describe('BackupRestorer (SC-1649)', () => {
           throw new Error('no provider knows this token');
         },
       } as unknown as TokenIdentityService);
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
 
       const report = await new BackupRestorer().restore(target.id, opener(rewired), tx);
 
@@ -374,6 +389,8 @@ describe('BackupRestorer (SC-1649)', () => {
 describe('BackupRestorer categories (SC-1652)', () => {
   test("keeps a parent, its child, and a row's category, under new ids", () =>
     withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const user = await makeUser(tx);
       const row = await makeHoldingTransaction(tx, { userId: user.id });
       const [bills] = await tx
@@ -389,7 +406,7 @@ describe('BackupRestorer categories (SC-1652)', () => {
         .set({ categoryId: rent!.id, categorySetBy: 'person' })
         .where(eq(schema.holdingTransactions.id, row.id));
       const records = await fileOf(user.id, tx);
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
 
       const report = await new BackupRestorer().restore(target.id, opener(records), tx);
 
@@ -507,9 +524,11 @@ async function fileWithDocuments(userId: string, files: BackupFileSource, tx: Da
 describe('BackupRestorer uploaded documents (SC-1662)', () => {
   test('restores each document and its file under the new account, and the bill matched to it', () =>
     withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const source = await seedWithDocument(tx);
       const records = await fileWithDocuments(source.user.id, source.files, tx);
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
       const { store, objects } = memoryStore();
 
       const report = await new BackupRestorer().restore(target.id, opener(records), tx, store);
@@ -544,6 +563,8 @@ describe('BackupRestorer uploaded documents (SC-1662)', () => {
   // name follows the document to its new id.
   test('a statement window comes back naming the restored document', () =>
     withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const source = await seedWithDocument(tx);
       const institution = await makeInstitution(tx);
       const account = await makeAccount(tx, {
@@ -567,7 +588,7 @@ describe('BackupRestorer uploaded documents (SC-1662)', () => {
         })
         .returning();
       const records = await fileWithDocuments(source.user.id, source.files, tx);
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
 
       const report = await new BackupRestorer().restore(
         target.id,
@@ -585,12 +606,14 @@ describe('BackupRestorer uploaded documents (SC-1662)', () => {
 
   test('refuses a file whose bytes do not match its hash, and writes nothing', () =>
     withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const source = await seedWithDocument(tx);
       const records = await fileWithDocuments(source.user.id, source.files, tx);
       const damaged = records.map((r) =>
         r.type === 'file' ? { ...r, data: Buffer.from([9, 9, 9, 9]).toString('base64') } : r
       );
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
       const { store, objects } = memoryStore();
 
       await expect(
@@ -606,9 +629,11 @@ describe('BackupRestorer uploaded documents (SC-1662)', () => {
 
   test('a restore that fails after writing a file deletes what it wrote', () =>
     withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const source = await seedWithDocument(tx);
       const records = await fileWithDocuments(source.user.id, source.files, tx);
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
       const { store, objects } = memoryStore({ failOnWrite: 2 });
 
       await expect(
@@ -619,13 +644,15 @@ describe('BackupRestorer uploaded documents (SC-1662)', () => {
 
   test('still restores a version 1 backup, which carries no documents', () =>
     withTestDb(async (tx) => {
+      const targetId = crypto.randomUUID();
+      await lockCategoryRuleOwner(tx, targetId);
       const source = await seedWithDocument(tx);
       const records = (await fileOf(source.user.id, tx)).map((r) => {
         if (r.type !== 'header') return r;
         const { files: _files, ...v1 } = r;
         return { ...v1, version: 1 } as BackupRecord;
       });
-      const target = await makeUser(tx);
+      const target = await makeUser(tx, { id: targetId });
 
       const report = await new BackupRestorer().restore(target.id, opener(records), tx);
       expect(report.rows.documents ?? 0).toBe(0);
@@ -635,6 +662,8 @@ describe('BackupRestorer uploaded documents (SC-1662)', () => {
 
 test('restore ignores serialized engine quote projections', () =>
   withTestDb(async (tx) => {
+    const targetId = crypto.randomUUID();
+    await lockCategoryRuleOwner(tx, targetId);
     const source = await seedSource(tx);
     const records = await fileOf(source.user.id, tx);
     const row = records.find((r) => r.type === 'row' && r.table === 'holdings');
@@ -647,7 +676,7 @@ test('restore ignores serialized engine quote projections', () =>
       staleAfter: null,
       calculatedAt: new Date().toISOString(),
     };
-    const target = await makeUser(tx);
+    const target = await makeUser(tx, { id: targetId });
     const report = await new BackupRestorer().restore(target.id, opener(records), tx);
     const id = report.ids.get(String(row.row.id));
     if (!id) throw new Error('restored holding missing');

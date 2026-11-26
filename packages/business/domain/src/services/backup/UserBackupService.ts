@@ -49,7 +49,7 @@ export class UserBackupService {
       exists: (key) => this.storage.exists(key),
       read: (key) => this.storage.read(key, { maxBytes: UPLOADED_FILE_MAX_BYTES }),
     };
-    let file = await this.writer.file(userId, getDb(), files);
+    let file = await this.writer.file(userId, undefined, files);
     // A backup the restore would refuse is no backup. When the files are what
     // takes it past the restore's limit, build it again without them, and the
     // Backup card says how many were left out (SC-1662).
@@ -58,7 +58,7 @@ export class UserBackupService {
         { userId, bytes: file.bytes.byteLength, files: file.filesIncluded },
         'Backup with files is over the restore limit; building it without them'
       );
-      file = await this.writer.file(userId, getDb(), null);
+      file = await this.writer.file(userId, undefined, null);
     }
     if (file.bytes.byteLength > MAX_BACKUP_BYTES) {
       throw new BackupTooLargeError(file.bytes.byteLength);

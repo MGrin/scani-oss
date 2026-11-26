@@ -6,6 +6,7 @@ import { Decimal } from '@scani/shared';
 import { and, eq, getTableColumns, isNull, type SQL, sql } from 'drizzle-orm';
 import { type AnyPgColumn, getTableConfig, type PgTable } from 'drizzle-orm/pg-core';
 import { Container, Service } from 'typedi';
+import { lockCategoryRuleOwner } from '../../lib/category-rule-owner-lock';
 import { HoldingCoverageRepository } from '../../repositories/HoldingCoverageRepository';
 import { retainedDocumentKey } from '../documents/DocumentRetentionService';
 import { HoldingCacheWriter } from '../feeds/HoldingCacheWriter';
@@ -30,7 +31,8 @@ export type RestoreRefusal =
   | 'damaged-file'
   | 'no-such-user'
   | 'not-empty'
-  | 'unknown-catalog';
+  | 'unknown-catalog'
+  | 'budgets-not-supported';
 
 /** A file this restore will not load, or an account it will not load into. Nothing was written. */
 export class RestoreRefused extends Error {
@@ -130,6 +132,9 @@ export class BackupRestorer {
    * Without `tx`, shared tokens are created outside the restore's own
    * transaction, since a token's identity lookup may call a provider.
    *
+   * A supplied transaction's caller must acquire lockCategoryRuleOwner before
+   * any target-user, category or catalog locks. Direct runners omit `tx`.
+   *
    * A file carrying documents (format 2) needs `files`: each document's file
    * is written there before the transaction commits, and deleted again if the
    * restore fails, so a failed restore leaves no object behind (SC-1662).
@@ -144,14 +149,19 @@ export class BackupRestorer {
     if (scan.files > 0 && !files) {
       throw new Error('BackupRestorer: this backup carries files and no store was given');
     }
+    if (tx) await lockCategoryRuleOwner(tx, userId);
     const ids = new Map(scan.ids);
     for (const sourceUser of scan.users) ids.set(sourceUser, userId);
     const fallbacks = await this.resolveCatalog(scan.catalog, ids, tx);
     const written: string[] = [];
-    const write = (t: DatabaseTransaction) =>
-      this.write(userId, open, ids, fallbacks, t, { store: files, written });
+    const write = async (t: DatabaseTransaction) => {
+      await lockCategoryRuleOwner(t, userId);
+      return this.write(userId, open, ids, fallbacks, t, { store: files, written });
+    };
     try {
-      return await (tx ? write(tx) : getDb().transaction(write));
+      return await (tx
+        ? write(tx)
+        : getDb().transaction(write, { isolationLevel: 'read committed' }));
     } catch (error) {
       for (const key of written) {
         await files
@@ -183,6 +193,9 @@ export class BackupRestorer {
         if (record.type !== 'header' || record.format !== BACKUP_FORMAT) {
           throw new RestoreRefused('not-a-backup', 'This file is not a Scani backup.');
         }
+        if (!Number.isInteger(record.version) || record.version < 1) {
+          throw new RestoreRefused('not-a-backup', 'This file has an invalid backup version.');
+        }
         if (record.version > BACKUP_VERSION) {
           throw new RestoreRefused(
             'newer-version',
@@ -197,6 +210,12 @@ export class BackupRestorer {
         catalog.set(record.table, rows);
         counts[`catalog:${record.table}`] = (counts[`catalog:${record.table}`] ?? 0) + 1;
       } else if (record.type === 'row') {
+        if (record.table === 'monthly_category_budgets') {
+          throw new RestoreRefused(
+            'budgets-not-supported',
+            'This compatibility build exports and erases monthly budgets, but cannot import them yet. Keep the backup for a later compatible build.'
+          );
+        }
         const links = LINKS.get(record.table);
         if (!links) {
           throw new RestoreRefused(
@@ -485,6 +504,12 @@ export class BackupRestorer {
         continue;
       }
       if (record.type !== 'row') continue;
+      if (record.table === 'monthly_category_budgets') {
+        throw new RestoreRefused(
+          'budgets-not-supported',
+          'This compatibility build cannot import monthly budgets.'
+        );
+      }
       if (record.table !== table) {
         await finish();
         table = record.table;

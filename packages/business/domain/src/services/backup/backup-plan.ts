@@ -2,7 +2,7 @@ import * as schema from '@scani/db/schema';
 import type { AnyPgColumn, PgTable } from 'drizzle-orm/pg-core';
 
 export const BACKUP_FORMAT = 'scani-backup';
-export const BACKUP_VERSION = 3;
+export const BACKUP_VERSION = 4;
 
 /**
  * How a backed-up table's rows are found for one account: by a column naming
@@ -58,6 +58,7 @@ export const BACKED_UP_TABLES: readonly BackedUpTable[] = [
   byParent(schema.feedInputWindows, schema.feedInputWindows.inputId, schema.feedInputs),
   byUser(schema.feedMatchRules, schema.feedMatchRules.userId),
   byUser(schema.transactionCategories, schema.transactionCategories.userId),
+  byUser(schema.monthlyCategoryBudgets, schema.monthlyCategoryBudgets.userId),
   byUser(schema.transactionCategoryRules, schema.transactionCategoryRules.userId),
   byUser(schema.holdingTransactions, schema.holdingTransactions.userId),
   byUser(schema.holdingBalanceObservations, schema.holdingBalanceObservations.userId),

@@ -115,6 +115,12 @@ export const USER_DATA_TABLE_DISPOSITIONS: readonly TableDisposition[] = [
   },
   {
     kind: 'delete',
+    table: schema.monthlyCategoryBudgets,
+    userColumn: schema.monthlyCategoryBudgets.userId,
+    echo: schema.monthlyCategoryBudgets.id,
+  },
+  {
+    kind: 'delete',
     table: schema.transactionCategories,
     userColumn: schema.transactionCategories.userId,
     echo: schema.transactionCategories.id,
